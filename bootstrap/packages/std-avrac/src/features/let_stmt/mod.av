@@ -3,7 +3,7 @@
 // is in scope without a self-import.
 use codegen.{err_stmt, StmtResult}
 use codegen.{ok_sr, err_sr}
-use features.eval.{error_result}
+use features.eval.{error_result, ok_result, eval_expr, define_binding, value_null}
 use core.{feature_new, Feature}
 use resolve.{define_param_names, resolve_expr}
 use features.tuples.{emit_let_destructure}
@@ -90,12 +90,30 @@ fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-/// Tree-walk evaluator hook for `let (a, b) = ...`. Currently
-/// unsupported — the eval path returns an error so the failure is
-/// visible (the codegen path handles destructuring).
+/// Tree-walk evaluator hook for `let (a, b) = expr`. Evaluates the
+/// initializer to a tuple/list Value and binds each name to the
+/// matching positional element (missing positions bind null). Tuples
+/// and the index/element pairs from `enumerate()`/`zip()` are both
+/// represented as list-kind Values, so this also powers
+/// `for (i, x) in xs.enumerate()` inside @comptime macros.
 fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
-        .LetDestructure(_, _) -> error_result(rt, "destructuring is not supported by the tree-walk evaluator")
+        .LetDestructure(names, initializer) -> {
+            let init = eval_expr(rt, initializer)
+            if init.had_error { return init }
+            if init.value.kind != "list" {
+                return error_result(init.runtime, "cannot destructure non-tuple value (kind=${init.value.kind})")
+            }
+            let payload = init.value.list_payload
+            mut cur = init.runtime
+            mut i = 0
+            while i < names.length {
+                let v = if i < payload.length { payload[i] } else { value_null() }
+                cur = define_binding(cur, names[i].name, false, v)
+                i = i + 1
+            }
+            ok_result(cur, value_null())
+        }
         _ -> error_result(rt, "expected LetDestructure")
     }
 }

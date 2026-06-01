@@ -1666,6 +1666,37 @@ fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: Lis
         let new_list = list_val with { list_payload: new_payload }
         return ok_result(arg_r.runtime, new_list)
     }
+    // ryvy: enumerate -> list of (index, element) pairs. Each pair is a
+    // list-kind Value of two elements, which `let (i, x) = …` destructures
+    // via the eval LetDestructure hook. Lets `for (i, x) in xs.enumerate()`
+    // run inside @comptime macros, not just compiled code.
+    if method == "enumerate" {
+        if args.length != 0 { return error_result(runtime, "list.enumerate expects 0 arguments") }
+        mut pairs: List<Value> = []
+        mut i = 0
+        while i < list_val.list_payload.length {
+            pairs = pairs.push(value_list([value_number(string(i)), list_val.list_payload[i]]))
+            i = i + 1
+        }
+        return ok_result(runtime, value_list(pairs))
+    }
+    // ryvy: zip -> list of (a, b) pairs, truncated to the shorter input.
+    if method == "zip" {
+        if args.length != 1 { return error_result(runtime, "list.zip expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        if arg_r.value.kind != "list" { return error_result(arg_r.runtime, "list.zip expects a list argument") }
+        let a = list_val.list_payload
+        let b = arg_r.value.list_payload
+        let n = if a.length < b.length { a.length } else { b.length }
+        mut pairs: List<Value> = []
+        mut i = 0
+        while i < n {
+            pairs = pairs.push(value_list([a[i], b[i]]))
+            i = i + 1
+        }
+        return ok_result(arg_r.runtime, value_list(pairs))
+    }
     null
 }
 

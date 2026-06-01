@@ -1153,6 +1153,13 @@ export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
     }
 }
 
+/// The result type of `enumerate()` / `zip()`: `List<(A, B)>`. Single
+/// source of truth for the pair-list shape so codegen and type-check
+/// can never drift (ryvy).
+export fn vtype_pair_list(a: ValueType, b: ValueType) -> ValueType {
+    ValueType.List(ValueType.Tuple([a, b]))
+}
+
 // ── Operators ──
 
 /// Binary operators that appear in `Expr.Binary(left, op, right)`.
