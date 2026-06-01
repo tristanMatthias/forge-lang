@@ -1,0 +1,55 @@
+// pry2: typeck's return-check pass (`tc_check_stmt_returns`) used to
+// re-walk a fn body to validate `return X` matched the declared
+// type, but it skipped `.Let / .Mut / .Const` — so locals declared
+// mid-block were absent from the TC when the .Return arm called
+// `check_expr_expected` on the returned expression. That made every
+// field-access through a local fall back to Unknown, and the F1000
+// "but return produces" check passed silently when it shouldn't have
+// (and falsely fired when the user fixture happened to produce a
+// concrete shape via the annotate pass).
+//
+// I filed pry2 against the original Tuple symptom (a (string, Span)
+// return on a fn whose body referenced an imported struct's field),
+// but the root cause is the missing let-binding pass — the same
+// path masked a real bug in `@std::avrac::resolve::item_is_exported`
+// (returned `bool` but produced the int-typed `it.exported` field).
+//
+// Why this test observes the fix: the fixture has the minimal shape
+// — a fn with a typed local binding, then a return statement that
+// reads a field through the local. Pre-fix the typeck didn't see
+// the binding, so `o.expand_site` resolved to Unknown and the
+// return-check passed silently — `bs2 check` printed `ok` against
+// code that would later fail at codegen with an Unknown-typed
+// argument. Post-fix the binding is honored, the field-access
+// resolves to its declared `Span`, the tuple-vs-tuple comparison
+// succeeds, and the check still prints `ok` — but reverting the
+// `.Let / .Mut / .Const` arms in `tc_check_stmt_returns` flips the
+// fixture into an F1000 false positive because the elements no
+// longer match.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "pry2: tc_check_stmt_returns honours let/mut/const bindings" {
+    then "fn with `let o = list[0]` + return through o.field type-checks clean" {
+        let fixture = "/tmp/avra_pry2_return_local_test.av"
+        write_fixture(fixture,
+            "use @std.avrac.diagnostics.{Span, span_dummy, MacroFnOrigin}\n" +
+            "\n" +
+            "fn decorate(origins: List<MacroFnOrigin>, msg: string, fb: Span) -> (string, Span) {\n" +
+            "    if origins.length > 0 {\n" +
+            "        let o = origins[0]\n" +
+            "        return (msg, o.expand_site)\n" +
+            "    }\n" +
+            "    (msg, fb)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        // F1000 = type mismatch on return — fires pre-fix because the
+        // tuple element from `o.expand_site` is Unknown (the let
+        // binding was skipped) and the comparison against the
+        // declared `(string, Span)` reports `(tuple) vs (tuple)`.
+        out.contains("ok") && !out.contains("F1000")
+    }
+}

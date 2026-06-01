@@ -66,7 +66,7 @@ use list_ops.{list_any, list_push_copy}
 type ModuleItemEntry = {
     short_name: string,
     canonical: string,
-    exported: int,
+    exported: bool,
 }
 
 /// Hierarchical module tree built from `Stmt.Module` nodes. Each
@@ -281,7 +281,7 @@ fn collect_module_items(stmts: List<SStmt>, mod_path: string) -> List<ModuleItem
 /// params are immutable, but the underlying heap AvraArray is
 /// shared so push mutations reach the caller (same convention as
 /// test_runner/discovery.av).
-fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, out_ref: List<ModuleItemEntry>) {
+fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref: List<ModuleItemEntry>) {
     mut out = out_ref
     match stmt {
         .Function(name, _, _, _, _) -> {
@@ -831,34 +831,34 @@ fn collect_macro_item_from_stmt(stmt: Stmt, mod_path: string, acc: List<GraphIte
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .ExternFn(name, _, _) -> {
-            out.push(GraphItem { short_name: name, canonical: name, exported: 1 })
+            out.push(GraphItem { short_name: name, canonical: name, exported: true })
         }
         .TypeDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .EnumDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .NewtypeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .UnionAliasDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .ShapeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .TraitDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: 0 })
+            out.push(GraphItem { short_name: name, canonical, exported: false })
         }
         .Annotated(_, inner) -> collect_macro_item_from_stmt(inner, mod_path, out)
         _ -> {}

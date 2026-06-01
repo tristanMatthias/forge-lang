@@ -155,7 +155,7 @@ export type ModuleGraphNode = {
 export type GraphItem = {
     short_name: string,
     canonical: string,
-    exported: int,
+    exported: bool,
 }
 
 /// The whole graph.
@@ -205,7 +205,7 @@ export fn module_graph_new() -> ModuleGraph {
 /// either exported (1) or private (0). Used during graph construction
 /// when an item is encountered with `@export`. Read by the resolver
 /// at use-resolution time to enforce visibility.
-export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: int) -> ModuleGraph {
+export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: bool) -> ModuleGraph {
     avra_map_set_cstr(g.item_exports, canonical, exported)
     g
 }
@@ -217,7 +217,7 @@ export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: i
 /// shared list identity — the returned graph is the same struct value
 /// with the same pointer; the prior cons-list version returned a new
 /// graph because cons was the only way to extend.
-export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical: string, exported: int) -> ModuleGraph {
+export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical: string, exported: bool) -> ModuleGraph {
     mut items = g.all_items
     items.push(GraphItem { short_name, canonical, exported })
     g

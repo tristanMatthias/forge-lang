@@ -1284,6 +1284,16 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         .Defer(_) -> tc  // defer bodies should not contain return
         .Errdefer(_) -> tc
         .Parallel(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
+        // pry2: let/mut/const bind locals so subsequent `.Return`
+        // expressions in the same block see them. Without threading
+        // these bindings, a `return (msg, o.expand_site)` after
+        // `let o = origins[0]` sees `o` as Unknown — the return-check
+        // pass re-runs check_expr (it doesn't trust the annotate
+        // pass's SExpr.ty) but reuses the input TC verbatim, so
+        // locals declared mid-block fall out of scope.
+        .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+        .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+        .Const(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
         _ -> tc
     }
 }

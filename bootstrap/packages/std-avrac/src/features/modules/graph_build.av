@@ -394,7 +394,7 @@ fn walk_ast_stmt(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string) -> M
 /// from `Annotated(@export, …)` wrappers. Each registered item
 /// records its exported state in the graph's `item_exports` strmap so
 /// the resolver can enforce visibility without the AST tree.
-fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string, exported: int) -> ModuleGraph {
+fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string, exported: bool) -> ModuleGraph {
     match stmt {
         .Module(name, body) -> {
             let child_canon = if canon == "" { name } else { "${canon}::${name}" }
@@ -435,7 +435,7 @@ fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: 
 /// `mod::name` as their alias canonical; externs get the bare name
 /// (C ABI requirement). Both go into `all_items` for global-index
 /// construction and `item_exports` for visibility checks.
-fn register_item_typed(g: ModuleGraph, parent_id: int, canon: string, name: string, exported: int, is_extern: bool) -> ModuleGraph {
+fn register_item_typed(g: ModuleGraph, parent_id: int, canon: string, name: string, exported: bool, is_extern: bool) -> ModuleGraph {
     let alloc = module_graph_alloc_item(g)
     let g1 = module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
     let item_canon = if canon == "" { name } else { "${canon}::${name}" }
