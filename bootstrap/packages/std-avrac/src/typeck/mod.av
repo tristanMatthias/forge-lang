@@ -1100,7 +1100,7 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
         }
     }
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
-        let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
+        let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
     }
     if is_const && !is_const_expr(init) {
@@ -1455,7 +1455,7 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
         let arg_ty = check_expr(cur, args[i].node).ty
         if param_ty is .Newtype {
             if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Unknown) {
-                let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_display(param_ty)}`, got `${vtype_display(arg_ty)}`"
+                let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
         }
@@ -1480,7 +1480,7 @@ fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueT
     match ret_ty {
         .Newtype(_, inner_ty, _) -> {
             if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Unknown || inner_ty is .Unknown) {
-                let msg = "`${name}()` expects `${vtype_display(inner_ty)}`, got `${vtype_display(arg_ty)}`"
+                let msg = "`${name}()` expects `${vtype_render_full(inner_ty)}`, got `${vtype_render_full(arg_ty)}`"
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
             tc
@@ -1522,7 +1522,7 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
             let expected_vt = resolve_vtype(acc, e.resolved)
             let actual_vt = resolve_vtype(acc, field_vtype_of(available, e.name))
             if !vtype_is_unknown(expected_vt) && !vtype_is_unknown(actual_vt) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
-                let msg = "field `${e.name}` has type `${vtype_display(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_display(expected_vt)}`"
+                let msg = "field `${e.name}` has type `${vtype_render_full(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_render_full(expected_vt)}`"
                 acc = tc_report(acc, DiagCode.TypeMismatch, msg)
             }
         }
@@ -1630,7 +1630,7 @@ fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: L
         let skip_generic = vtype_mentions_typeparam(p.vtype, tp)
         if !skip_unknown && !skip_generic {
             if !vtype_eq(arg_ty, p.vtype) && !vtype_assignable(arg_ty, p.vtype) {
-                let msg = "`${name}` parameter `${p.name}` expects ${vtype_display(p.vtype)}, got ${vtype_display(arg_ty)}"
+                let msg = "`${name}` parameter `${p.name}` expects ${vtype_render_full(p.vtype)}, got ${vtype_render_full(arg_ty)}"
                 cur_tc = tc_warn(cur_tc, DiagCode.ArgTypeMismatch, msg)
             }
         }
