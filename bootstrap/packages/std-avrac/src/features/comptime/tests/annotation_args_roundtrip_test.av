@@ -9,13 +9,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_annotation_args_roundtrip_test.av", source)
-}
-
 spec "AnnotatedDecl.annotation.args: round-trips Ident + String + Number" {
     then "macro reads three different Expr kinds back from the encoded args" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_annotation_args_roundtrip_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx}\n" +
             "\n" +

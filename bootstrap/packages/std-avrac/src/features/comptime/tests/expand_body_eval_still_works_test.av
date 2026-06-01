@@ -12,13 +12,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_expand_body_eval_still_works_test.av", source)
-}
-
 spec "qa6i: macro body eval still has resolved names available" {
     then "macro body calls a sibling @comptime helper fn and the program runs" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_body_eval_still_works_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "\n" +
             "@comptime\n" +

@@ -9,17 +9,11 @@
 // in `quote_splice_arm_list_test.av` once probe 2 lands.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
-
-fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_quote_arm_test.av"
-    write_fixture(path, source)
-    cached_fixture_run(path)
-}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "quote arm: parses and lowers without errors" {
     then "a @comptime fn returning MatchArm via `quote arm { ... }` compiles + runs" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_quote_arm_test.av", 
             "use @std.avrac.core.{MatchArm}\n" +
             "\n" +
             "@comptime\n" +

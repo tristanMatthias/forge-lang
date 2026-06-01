@@ -11,13 +11,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_find_test.av", source)
-}
-
 spec "derive_walker: find() returns first matching descendant; null when absent" {
     then "deeply-nested Leaf(42) is found; missing 99 returns null" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_find_test.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

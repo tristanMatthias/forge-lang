@@ -18,13 +18,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_y9y416_self_recursive_fixture.av", source)
-}
-
 spec "y9y4.16: self-recursive generic monomorphizes once per concrete arg" {
     then "Tree.fold<S=int> recurses through Nodes without duplicate-function or undefined-function errors" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_y9y416_self_recursive_fixture.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

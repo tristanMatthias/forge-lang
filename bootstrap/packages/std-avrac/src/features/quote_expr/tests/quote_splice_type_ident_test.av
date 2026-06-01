@@ -4,17 +4,11 @@
 // so the macro's local resolves against scope at construction time.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
-
-fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_quote_splice_type_ident_test.av"
-    write_fixture(path, source)
-    cached_fixture_run(path)
-}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "quote: ~ident splices into type position" {
     then "spliced type name produces a fn whose param + return type are bound at expansion" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_quote_splice_type_ident_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "\n" +
             "@comptime\n" +

@@ -10,13 +10,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", source)
-}
-
 spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
     then "Wrap → [node]; DoubleWrap → [value, node]" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
             "\n" +
@@ -60,7 +56,7 @@ spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
 
 spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
     then "Rec { self_ref: Rec, payload: int } → [payload] without infinite loop" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
             "\n" +
@@ -104,7 +100,7 @@ spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
 // name set, which is enough for unwrap_path_bfs to short-circuit.
 spec "ResolverCtx: ctx_unwrap_path_to on primitives returns []" {
     then "string→int and int→int both return an empty path" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy, TypeKind}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedType, ResolvedField, ResolvedVariant, ctx_unwrap_path_to}\n" +
             "\n" +

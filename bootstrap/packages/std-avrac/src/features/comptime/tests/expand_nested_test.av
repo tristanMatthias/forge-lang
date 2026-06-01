@@ -10,13 +10,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_expand_nested_test.av", source)
-}
-
 spec "@expand nested: outer macro emits code carrying @expand(inner)" {
     then "inner macro fires on second fixpoint iteration" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_nested_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "\n" +
             "@comptime\n" +

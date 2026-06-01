@@ -11,13 +11,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_list_self_test.av", source)
-}
-
 spec "derive_walker: List<Self> field flattens into children()" {
     then "Group with N items returns N children" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_list_self_test.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

@@ -4,13 +4,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_expand_introduces_type_test.av", source)
-}
-
 spec "qa6i: @expand macro can introduce a type decl callable from main" {
     then "macro-emitted type Foo is constructible and accessible from main" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_introduces_type_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "\n" +
             "@comptime\n" +

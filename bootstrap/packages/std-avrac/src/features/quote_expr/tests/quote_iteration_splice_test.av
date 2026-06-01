@@ -16,17 +16,11 @@
 // the same pattern works with a loop.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
-
-fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_quote_iteration_splice_test.av"
-    write_fixture(path, source)
-    cached_fixture_run(path)
-}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "quote: iteration-style splice via list-return convention" {
     then "@comptime fn returning List<SStmt> splices each entry as a sibling stmt" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_quote_iteration_splice_test.av", 
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
             "\n" +
             "@comptime\n" +

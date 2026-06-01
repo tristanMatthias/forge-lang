@@ -12,13 +12,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_pattern_test.av", source)
-}
-
 spec "derive_walker: applied to core/ast.av's Pattern enum" {
     then "Pattern.children() — structural counts (so07.7.14)" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_pattern_test.av", 
             "use @std.avrac.core.{Pattern, ParamEntry}\n" +
             "fn main() {\n" +
             "    let wild_ok = Pattern.Wildcard.children().length == 0\n" +

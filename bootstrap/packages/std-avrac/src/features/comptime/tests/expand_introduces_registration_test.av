@@ -15,13 +15,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_expand_introduces_registration_test.av", source)
-}
-
 spec "@expand: introduced fn is registered for downstream macros" {
     then "second 2-arg macro qualifies the introduced name via ctx" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_introduces_registration_test.av", 
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ctx_qualify_ident}\n" +

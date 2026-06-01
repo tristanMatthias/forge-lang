@@ -6,13 +6,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_expand_multi_decl_test.av", source)
-}
-
 spec "qa6i: @expand macro can introduce multiple sibling decls" {
     then "macro-emitted TypeDecl + Impl land as siblings and the impl method is callable" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_multi_decl_test.av", 
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
             "\n" +
             "@comptime\n" +

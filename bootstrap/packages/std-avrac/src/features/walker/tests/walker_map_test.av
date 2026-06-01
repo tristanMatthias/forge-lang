@@ -12,13 +12,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", source)
-}
-
 spec "y9y4.2: derive_walker emits Type__map" {
     then "map(id) is identity on a Leaf-shaped tree" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +
@@ -41,7 +37,7 @@ spec "y9y4.2: derive_walker emits Type__map" {
         out.contains("v=7")
     }
     then "map(double_leaf) doubles every Leaf value via per-arm reconstruction" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

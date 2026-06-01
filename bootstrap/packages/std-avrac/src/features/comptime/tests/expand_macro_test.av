@@ -1,19 +1,14 @@
 // vez6.6/println — basic @expand: macro returning quote stmt prints at runtime.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
-fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_expand_macro_test.av"
-    write_fixture(path, source)
-    cached_fixture_run(path)
-}
 
 spec "vez6.6: @expand macro replaces decl with macro output" {
     then "macro returning quote stmt prints at runtime" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "\n" +
             "@comptime\n" +

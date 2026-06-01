@@ -15,16 +15,13 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", source)
-}
 
 // so07.7.14 — assertions derive their expected counts from the test
 // inputs (args.length, etc.) instead of hardcoded magic numbers.
 
 spec "derive_walker: applied to core/ast.av's ValueType enum" {
     then "primitive scalars — zero children" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let ok = ValueType.Int.children().length == 0\n" +
@@ -35,7 +32,7 @@ spec "derive_walker: applied to core/ast.av's ValueType enum" {
         out.contains("scalars=true")
     }
     then "direct-Self field (List variant elem) — one child" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let lst = ValueType.List(ValueType.Int)\n" +
@@ -44,7 +41,7 @@ spec "derive_walker: applied to core/ast.av's ValueType enum" {
         out.contains("one=true")
     }
     then "list-of-Self field (Enum.type_args) — count matches input.length" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let args: List<ValueType> = [ValueType.Int, ValueType.Str, ValueType.Bool]\n" +
@@ -54,7 +51,7 @@ spec "derive_walker: applied to core/ast.av's ValueType enum" {
         out.contains("matches=true")
     }
     then "mixed direct+list (FnTyped) — 1 (ret) + params.length" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let params: List<ValueType> = [ValueType.Int, ValueType.Str]\n" +

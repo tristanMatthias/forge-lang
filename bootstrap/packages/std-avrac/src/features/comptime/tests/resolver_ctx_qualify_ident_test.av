@@ -10,13 +10,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_resolver_ctx_qualify_ident_test.av", source)
-}
-
 spec "ResolverCtx: ctx_qualify_ident hits aliases" {
     then "imported name resolves to its qualified path" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_qualify_ident_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_qualify_ident}\n" +
             "\n" +

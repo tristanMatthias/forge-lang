@@ -9,19 +9,14 @@
 // expansion was dropped silently.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 const MAIN_HEADER: string = "fn " + "main()"
 
-fn run_capture(source: string) -> string {
-    let path = "/tmp/avra_expand_macro_multi_stmt_test.av"
-    write_fixture(path, source)
-    cached_fixture_run(path)
-}
 
 spec "multi-stmt @expand splices a List<Stmt> into the parent decl list" {
     then "macro returning quote stmts emits BOTH println sites" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_multi_stmt_test.av", 
             "use @std.avrac.core.{SStmt}\n" +
             "\n" +
             "@comptime\n" +

@@ -9,13 +9,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", source)
-}
-
 spec "derive_walker: Stmt enum carries .children()" {
     then "scalar variant (Stmt.NoOp) — zero children" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "fn main() {\n" +
             "    let n = Stmt.NoOp.children().length\n" +
@@ -24,7 +20,7 @@ spec "derive_walker: Stmt enum carries .children()" {
         out.contains("empty=true")
     }
     then "direct-Self field (Stmt.While body) — exactly the body" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt, Expr}\n" +
             "fn main() {\n" +
             "    let w = Stmt.While(Expr.Bool(true), Stmt.Break)\n" +
@@ -34,7 +30,7 @@ spec "derive_walker: Stmt enum carries .children()" {
         out.contains("matches_one=true")
     }
     then "wrapper-list field (Stmt.Block body) — count matches input.length" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
             "fn main() {\n" +
             "    let inner: List<SStmt> = [sstmt_dummy(Stmt.NoOp), sstmt_dummy(Stmt.Break), sstmt_dummy(Stmt.Continue)]\n" +
@@ -47,7 +43,7 @@ spec "derive_walker: Stmt enum carries .children()" {
 
 spec "derive_walker: Expr enum carries .children()" {
     then "scalar literal (Expr.Number) — zero children" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Expr}\n" +
             "fn main() {\n" +
             "    let n = Expr.Number(\"42\").children().length\n" +
@@ -56,7 +52,7 @@ spec "derive_walker: Expr enum carries .children()" {
         out.contains("empty=true")
     }
     then "two-direct-Self (Expr.Binary) — both operands" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Expr, BinOp}\n" +
             "fn main() {\n" +
             "    let lhs = Expr.Number(\"1\")\n" +
@@ -67,7 +63,7 @@ spec "derive_walker: Expr enum carries .children()" {
         out.contains("two=true")
     }
     then "mixed direct-Self + wrapper-list (Expr.Call) — callee + unwrapped args" {
-        let out = run_capture(
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Expr, SExpr, sexpr_dummy}\n" +
             "fn main() {\n" +
             "    let callee = Expr.Ident(\"f\")\n" +

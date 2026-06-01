@@ -10,13 +10,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_resolver_ctx_lookup_type_test.av", source)
-}
-
 spec "ResolverCtx: ctx_lookup_type resolves declared types" {
     then "known type returns its canonical name; unknown returns null" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_lookup_type_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type}\n" +
             "\n" +

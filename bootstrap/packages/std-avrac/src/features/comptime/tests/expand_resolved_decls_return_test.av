@@ -11,13 +11,9 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_expand_resolved_decls_return_test.av", source)
-}
-
 spec "@expand: 2-arg macro can return ResolvedDecls" {
     then "decls in the returned struct are spliced into the parent scope" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_expand_resolved_decls_return_test.av", 
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +

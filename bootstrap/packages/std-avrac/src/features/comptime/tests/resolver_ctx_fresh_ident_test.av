@@ -12,10 +12,6 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-fn run_capture(source: string) -> string {
-    write_fixture_and_run("/tmp/avra_resolver_ctx_fresh_ident_test.av", source)
-}
-
 fn count_separators(s: string, sep: string) -> int {
     mut n = 0
     mut i = 0
@@ -28,7 +24,7 @@ fn count_separators(s: string, sep: string) -> int {
 
 spec "ResolverCtx: ctx_fresh_ident returns 10 distinct ids" {
     then "all ten ids share the __avra_fresh_ prefix and are pairwise unique" {
-        let out = run_capture(
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_fresh_ident_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_fresh_ident}\n" +
             "\n" +
