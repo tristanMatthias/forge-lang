@@ -79,18 +79,42 @@ A legacy `llvm_type_for` still exists (maps Bool/Float to i64) for callers not y
 
 ```bash
 cd bootstrap/
-make              # build the bootstrap compiler (produces build/bs2)
-make test         # spec test suite + fixed-point check
-make coverage     # run all spec tests with coverage instrumentation
-make run FILE=x   # compile and run a Avra program
-make update-seed  # rebuild seed IR after dogfooding
-make clean        # remove build artifacts
-make help         # show all targets
+make                       # build the bootstrap compiler (produces build/bs2)
+make build-quick           # rebuild bs2, skip selfhost verify (inner loop)
+make test                  # spec suite + selfhost. Options: FILTER=<substr>, SKIP_SELFHOST=1
+make test FILTER=<substr>  # narrow tests (substring match against filename) — USE THIS for iteration
+make coverage              # run all spec tests with coverage instrumentation
+make run FILE=x            # compile and run a Avra program
+make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
+make clean                 # remove all build artifacts (3-min seed rebuild on next make)
+make help                  # show all targets
 ```
 
 Pipeline: `seed/seed.ll → llc + cc → seed binary → compiles src/ → bs2 → compiles src/ → bs3 (must match bs2)`
 
 Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analysis)
+
+## CRITICAL RULE: Test cycle hygiene
+
+The full `make test` is 360s today (umbrella: uzs9 — Test cycle speed, P0).
+Don't burn it on every failure. The pattern that wastes the most time is:
+**`make test` → `grep FAIL` → `make test` again to "see if it passes this time"**.
+Don't do this. Each round costs 6 minutes.
+
+When a test fails, the loop is:
+1. **Once** — `make test 2>&1 | grep -A2 FAIL` to capture the failing test path.
+2. Isolate — `./build/bs2 test <single_file>` to reproduce the failure deterministically.
+3. If it doesn't reproduce in isolation, it's an ORDERING / GLOBAL-STATE bug. Don't re-run the bundled suite to confirm — file or fix the state leak.
+4. Fix the root cause. Then ONE bundled rerun before commit, via the pre-commit hook.
+
+Anti-patterns:
+- Bundled-test rerun-loops to "check if it flaked." Flakes are bugs; isolate them.
+- `make clean` between failed runs unless you have a concrete reason. The seed rebuild costs another 3 min on top.
+- `find packages -type d -name cache -exec rm -rf {} +` as a "fresh start." Same as above.
+- Running the suite without `FILTER=<x>` when you only need a feature area's tests.
+
+Per-file test runs are 15s each (uzs9.1 — cache miss bug). When debugging,
+isolate-and-iterate on ONE file. Don't bundle.
 
 ## CRITICAL RULE: Build What You Need
 
