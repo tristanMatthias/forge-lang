@@ -287,7 +287,7 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
         current = walked.out
         current_state = walked.state
         bag = bag_merge(bag, walked.bag)
-        for o in walked.origins { origins.push(o) }
+        origins = list_concat(origins, walked.origins)
         iters = iters + 1
     }
     bag = bag_report(bag, diag_error(
@@ -431,7 +431,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                     // annotation when find_annotation returns null.
                     let invoked = invoke_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module, ss.node)
                     bag = bag_merge(bag, invoked.bag)
-                    for o in invoked.origins { origins.push(o) }
+                    origins = list_concat(origins, invoked.origins)
                     splice_expansion(out, ss, invoked.replacement)
                     if invoked.replacement != null {
                         current_state = register_and_repopulate(current_state, invoked.replacement!, current_module)
@@ -453,7 +453,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
-                for o in sub.origins { origins.push(o) }
+                origins = list_concat(origins, sub.origins)
                 let new_stmt = Stmt.Module(mod_name, sub.out)
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
@@ -462,7 +462,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                     avra_rd_set_current_module(current_module)
                     let attempt = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
                     bag = bag_merge(bag, attempt.bag)
-                    for o in attempt.origins { origins.push(o) }
+                    origins = list_concat(origins, attempt.origins)
                     splice_expansion(out, ss, attempt.replacement)
                     if attempt.replacement != null {
                         current_state = register_and_repopulate(current_state, attempt.replacement!, current_module)
@@ -684,8 +684,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
                 ))
             }
         }
-        let origins = build_origins(out, macro_name, line, col, file)
-        return ExpandAttempt { replacement: out, bag, origins }
+        return expand_ok(out, bag, macro_name, line, col, file)
     }
     // Try List<SStmt> — what `quote stmts { ... }` produces.
     // value_to_stmt_list returns null when v isn't a list, so this is
@@ -696,8 +695,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         for ss in as_list! {
             out.push(sstmt_at(ss.node, line, col, file))
         }
-        let origins = build_origins(out, macro_name, line, col, file)
-        return ExpandAttempt { replacement: out, bag: bag_new(), origins }
+        return expand_ok(out, bag_new(), macro_name, line, col, file)
     }
     // Fall back to single Stmt — `quote stmt { ... }` macros.
     let decoded = value_to_stmt(v)
@@ -710,8 +708,17 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     }
     mut single: List<SStmt> = []
     single.push(sstmt_at(decoded!, line, col, file))
-    let origins = build_origins(single, macro_name, line, col, file)
-    ExpandAttempt { replacement: single, bag: bag_new(), origins }
+    expand_ok(single, bag_new(), macro_name, line, col, file)
+}
+
+/// Successful ExpandAttempt constructor. Builds the macro-origin
+/// table for each Function-shape entry in `replacement` (so typeck
+/// can blame the macro on errors against the synthesised fns) and
+/// wraps the canonical ExpandAttempt shape so the 3 decode arms in
+/// `invoke_macro` collapse to a single line.
+fn expand_ok(replacement: List<SStmt>, bag: DiagnosticBag, macro_name: string, line: int, col: int, file: string) -> ExpandAttempt {
+    let origins = build_origins(replacement, macro_name, line, col, file)
+    ExpandAttempt { replacement, bag, origins }
 }
 
 /// Build a `MacroFnOrigin` entry per Function-shape SStmt in `spliced`.

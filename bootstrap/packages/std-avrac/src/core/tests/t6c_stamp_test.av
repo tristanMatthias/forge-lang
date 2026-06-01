@@ -19,7 +19,7 @@
 
 use @std.avrac.test_runner.{write_fixture}
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec}
 
 fn build_probe_detail(path: string) -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS AVRA_T6_PROBE=1 AVRA_T6_PROBE_DETAIL=1 ./build/bs2 compile '${path}' 2>&1 || true")

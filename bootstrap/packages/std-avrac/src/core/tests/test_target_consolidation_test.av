@@ -8,7 +8,7 @@
 // longer exists. Reverting either the PHONY removal OR the help
 // text drop puts it back; the assertions check both surfaces.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec}
 
 spec "Makefile: test-quick consolidated into `test SKIP_SELFHOST=1`" {
     then "make help no longer documents test-quick as a separate target" {

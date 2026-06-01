@@ -18,7 +18,7 @@
 
 use @std.avrac.test_runner.{write_fixture}
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec}
 
 fn build_with_probe(path: string, source: string) -> string {
     write_fixture(path, source)

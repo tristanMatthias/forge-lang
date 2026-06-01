@@ -12,7 +12,7 @@
 // hint or restores the deleted `make seed-patch` line — both
 // observable changes to the help output.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec}
 
 spec "so07.7.13: update-seed help advertises FAST=1 mode" {
     then "make help mentions the FAST=1 inner-loop variant" {
