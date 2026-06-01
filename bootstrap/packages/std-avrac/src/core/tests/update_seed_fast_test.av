@@ -1,0 +1,33 @@
+// so07.7.13: `make update-seed FAST=1` is the inner-loop variant of
+// the (formerly fragmented) seed-update toolchain. Pre-fix there
+// were two targets: `update-seed` (verified, slow) and `seed-patch`
+// (fast, no rebuild). Future agents had to know which to pick.
+// Consolidation: one workflow target, two modes via FAST=1, with
+// the default staying safe.
+//
+// Why this test observes the fix: `make help` advertises the
+// FAST=1 mode under `make update-seed`. Pre-consolidation the help
+// line was different (it documented `seed-patch` as a separate
+// target). Reverting the consolidation either drops the FAST=1
+// hint or restores the deleted `make seed-patch` line — both
+// observable changes to the help output.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "so07.7.13: update-seed help advertises FAST=1 mode" {
+    then "make help mentions the FAST=1 inner-loop variant" {
+        let out = avra_shell_exec("make help 2>&1")
+        out.contains("update-seed") && out.contains("FAST=1")
+    }
+    then "old seed-patch target is removed (consolidation)" {
+        let out = avra_shell_exec("make help 2>&1")
+        // Bare `seed-patch` line was deleted — only `seed-patch-traps`
+        // (different workflow) remains. The substring filters to
+        // avoid matching `seed-patch-traps`.
+        !out.contains("make seed-patch    ")
+    }
+    then "PHONY declares update-seed but not the deleted seed-patch alias" {
+        let phony = avra_shell_exec("grep '^.PHONY' Makefile 2>&1")
+        phony.contains("update-seed") && !phony.contains(" seed-patch ")
+    }
+}

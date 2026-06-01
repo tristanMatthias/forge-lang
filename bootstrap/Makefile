@@ -21,7 +21,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test test-quick quick run selfhost clean help install-hooks score update-seed seed-patch verify-seed seed-sigs next work epic coverage
+.PHONY: build build-O0 build-debug build-quick test test-quick quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -44,10 +44,12 @@ help:
 	@echo "  make quick         Inner-loop combo: build-quick + test-quick. FILTER= supported."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
-	@echo "  make update-seed   Rebuild seed/seed.ll from current source (with verify)."
-	@echo "  make seed-patch    Incremental seed update with per-function diff report."
+	@echo "  make update-seed   Rebuild seed/seed.ll from current source. Add FAST=1"
+	@echo "                     for the inner-loop variant (per-fn diff, no verify)."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
+	@echo "  make seed-patch-traps  Patch seed match-traps when adding enum variants"
+	@echo "                         (run BEFORE 'make build' for new ValueType/Stmt/Expr)."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
@@ -151,10 +153,31 @@ coverage-lcov:
 	@$(BS2) test --lcov build/coverage/compiler.lcov
 
 # Update the seed IR from the current self-hosted compiler.
-# Run this after dogfooding new syntax into bootstrap source.
-# The auto-cycle in --build-bs2 handles most seed updates automatically,
-# but this target does a VERIFIED update with fixed-point check.
+# Run this after dogfooding new syntax into bootstrap source OR after
+# editing a @comptime macro (derive_walker etc) — bs2's compiled macro
+# output is baked into seed.ll, so the seed has to be refreshed before
+# the new macro expansion takes effect at compile time.
+#
+#   make update-seed           Safe / committable: verifies bs2 == bs3,
+#                              patches seed, full clean rebuild + re-verify.
+#                              Use before a commit.
+#   make update-seed FAST=1    Inner loop: per-fn diff report against the
+#                              old seed, patch, incremental rebuild (no
+#                              clean, no fixed-point verify). ~50% faster.
+#                              Trade-off: skipped verify catches bs2
+#                              corruption later (selfhost at commit time
+#                              still gates it).
+#
+# Only one workflow target — so future agents have ONE answer to "I
+# edited a @comptime fn, what now?". The structural fix (live-mode
+# bs2 that reads macro source directly, no seed cycle) is filed as
+# so07.7.21 and retires this command for the inner loop entirely.
 update-seed:
+ifeq ($(FAST),1)
+	@$(DIAG) --seed-patch
+	@$(DIAG) --ensure-bs2
+	@echo "seed patched (FAST mode) + bs2 rebuilt — run 'make update-seed' (no FAST) before commit"
+else
 	@$(DIAG) --build-bs2
 	@$(DIAG) --check-fixedpoint
 	@cp $(CLI_SRC_DIR)/main.av.ll seed/seed.ll
@@ -166,22 +189,19 @@ update-seed:
 	 SRC_HASH=$$(find $(CLI_SRC_DIR)/ $(LIB_SRC_DIR)/ -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
 	 { printf '; seed built from commit %s at %s\n; source hash: %s\n' "$$COMMIT" "$$TIMESTAMP" "$$SRC_HASH"; cat seed/seed.ll; } > seed/seed.ll.tmp && \
 	 mv seed/seed.ll.tmp seed/seed.ll
-	@rm -f build/seed build/seed.o
-	@echo "seed/seed.ll updated ($$(wc -l < seed/seed.ll | tr -d ' ') lines)"
-	@echo "build/seed invalidated — next 'make build' rebuilds from new seed"
 	@rm -rf build
 	@$(DIAG) --build-bs2
+	@echo "seed/seed.ll updated ($$(wc -l < seed/seed.ll | tr -d ' ') lines)"
 	@echo "clean rebuild from new seed: OK"
+endif
 
-# Incremental seed update: compile with bs2, report per-function diff, copy.
-# Faster than 'update-seed' — skips the verification rebuild.
-seed-patch:
-	@$(DIAG) --seed-patch
 
 # Patch seed to handle new enum variants.
 # Run this BEFORE 'make build' when adding new ValueType/Stmt/Expr variants.
 # Converts all match trap blocks to safe fallthrough so the seed doesn't
-# crash on unknown enum tags.
+# crash on unknown enum tags. Different workflow from `update-seed`:
+# this preps an existing seed for source that adds variants, before
+# bs2 can build at all; `update-seed` requires a working bs2.
 seed-patch-traps:
 	@python3 scripts/patch-seed-traps.py
 	@rm -f build/seed build/seed.o
