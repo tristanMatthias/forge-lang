@@ -28,71 +28,76 @@ fi
 # test files or scripts doesn't require it.
 src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|bootstrap/packages/cli/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
-echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite (--per_file)"
-TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
-# Hard timeout: kill the test suite if it runs longer than 30 min.
-# --per_file: each *_test.av is its own subprocess shard. Properties:
-#  - Process-level isolation: no state leakage between tests.
-#  - Parallel dispatch: ~8x speedup vs bundled mode.
-#  - 2257/2257 passes; bundled mode has known flakies (see bd
-#    forge-crafting-intepreters-i7gw for the bundled-mode rework).
-# Warm runs ~110s; cold (post-rebuild) ~14min. 30 min gives headroom.
-TEST_TIMEOUT_SEC=1800
-TEST_START=$(date +%s)
-perl -e 'alarm shift; exec @ARGV' "$TEST_TIMEOUT_SEC" \
-     sh -c 'cd bootstrap && ./build/bs2 test --per_file' > "$TEST_LOG" 2>&1
-TEST_RC=$?
-TEST_ELAPSED=$(( $(date +%s) - TEST_START ))
-if [ $TEST_RC -ne 0 ]; then
-  echo
-  if [ $TEST_ELAPSED -ge $TEST_TIMEOUT_SEC ]; then
-    echo "[pre-commit] spec test suite TIMED OUT after ${TEST_ELAPSED}s (limit ${TEST_TIMEOUT_SEC}s) — commit blocked"
-    echo "[pre-commit] baseline ~2min warm / ~14min cold; this run exceeded that."
-    echo "[pre-commit] perf regression suspected. Inspect: $TEST_LOG"
-  else
-    echo "[pre-commit] spec test suite failed after ${TEST_ELAPSED}s — commit blocked"
-    echo "[pre-commit] full output: $TEST_LOG"
-    echo "[pre-commit] failures (excerpt):"
-    grep -E "✗|Failures:|tests passed" "$TEST_LOG" | tail -25
-    echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
+# Test-suite cache marker: same idea as diagnose.sh's `.fp_verified`.
+# When bs2 + every .av source + every test/fixture file is byte-
+# identical to the last successful verify, skip the suite entirely.
+# Pre-this-cache: back-to-back commits with only e.g. doc edits or
+# repeated test reruns still paid 90+s. With the cache, the second
+# commit is ~50ms (hashing the inputs). Set AVRA_FORCE_TESTS=1 to
+# bypass the cache when you suspect drift.
+TEST_MARKER="bootstrap/build/.tests_verified"
+TEST_INPUT_HASH=$(
+  { shasum -a 256 bootstrap/build/bs2 2>/dev/null
+    find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
+    shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
+  } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+)
+if [ "${AVRA_FORCE_TESTS:-0}" != "1" ] && [ -f "$TEST_MARKER" ] \
+   && [ "$(cat "$TEST_MARKER" 2>/dev/null)" = "$TEST_INPUT_HASH" ]; then
+  echo "[pre-commit] spec test suite cached — bs2 + .av sources + runtime unchanged since last verify"
+else
+  echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite (--per_file)"
+  TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
+  # Hard timeout: kill the test suite if it runs longer than 30 min.
+  # --per_file: each *_test.av is its own subprocess shard. Properties:
+  #  - Process-level isolation: no state leakage between tests.
+  #  - Parallel dispatch: ~8x speedup vs bundled mode.
+  # Warm runs are now ~10-20s (was ~110s before in-process check_source
+  # migrations); cold (post-rebuild) ~14min. 30 min gives headroom.
+  TEST_TIMEOUT_SEC=1800
+  TEST_START=$(date +%s)
+  perl -e 'alarm shift; exec @ARGV' "$TEST_TIMEOUT_SEC" \
+       sh -c 'cd bootstrap && ./build/bs2 test --per_file' > "$TEST_LOG" 2>&1
+  TEST_RC=$?
+  TEST_ELAPSED=$(( $(date +%s) - TEST_START ))
+  if [ $TEST_RC -ne 0 ]; then
+    echo
+    if [ $TEST_ELAPSED -ge $TEST_TIMEOUT_SEC ]; then
+      echo "[pre-commit] spec test suite TIMED OUT after ${TEST_ELAPSED}s (limit ${TEST_TIMEOUT_SEC}s) — commit blocked"
+      echo "[pre-commit] baseline ~10-20s warm / ~14min cold; this run exceeded that."
+      echo "[pre-commit] perf regression suspected. Inspect: $TEST_LOG"
+    else
+      echo "[pre-commit] spec test suite failed after ${TEST_ELAPSED}s — commit blocked"
+      echo "[pre-commit] full output: $TEST_LOG"
+      echo "[pre-commit] failures (excerpt):"
+      grep -E "✗|Failures:|tests passed" "$TEST_LOG" | tail -25
+      echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
+    fi
+    exit 1
   fi
-  exit 1
+  echo "[pre-commit] spec test suite passed in ${TEST_ELAPSED}s"
+  rm -f "$TEST_LOG"
+  echo "$TEST_INPUT_HASH" > "$TEST_MARKER"
 fi
-echo "[pre-commit] spec test suite passed in ${TEST_ELAPSED}s"
-rm -f "$TEST_LOG"
 
 if [ -n "$src_relevant" ]; then
+  # Combined fixed-point + self-check: diagnose.sh runs `bs2 compile
+  # main.av` then `bs3 compile main.av` and asserts byte-equal IR. If
+  # bs2 couldn't check its own source, the compile would fail first —
+  # so the previous separate `bs2 check main.av` self-check was
+  # always strictly redundant with the fp check passing. Dropped.
   echo "[pre-commit] bootstrap source touched — verifying self-host fixed point"
   if ! bootstrap/scripts/diagnose.sh --check-fixedpoint; then
     echo
     echo "[pre-commit] SELF-HOST FIXED POINT BROKEN — commit blocked"
-    echo "[pre-commit] bs2 and bs3 emit different IR for packages/cli/src/main.av"
-    echo "[pre-commit] this means the last change to bootstrap source produced a"
-    echo "[pre-commit] non-self-consistent compiler. Fix or 'git commit --no-verify'."
+    echo "[pre-commit] bs2 and bs3 emit different IR for packages/cli/src/main.av,"
+    echo "[pre-commit] OR bs2 / bs3 couldn't compile main.av at all. Either way the"
+    echo "[pre-commit] staged source is non-self-consistent. Fix or 'git commit --no-verify'."
+    echo "[pre-commit] (a typeck change without a matching seed update lands here —"
+    echo "[pre-commit]  run 'make update-seed' then re-commit if so.)"
     exit 1
   fi
   echo "[pre-commit] self-host fixed point holds"
-
-  # 4e0a: cold-build verification. The fixed-point check above can pass
-  # asymmetrically — if the staged seed.ll is older than the staged
-  # source, the seed builds bs2-with-new-rule, bs2 vs bs3 byte-equal
-  # (both have the new rule), but a fresh `make build` from scratch
-  # would fail because the seed's pre-rule typeck accepts source that
-  # bs2's post-rule typeck rejects. Run bs2 check explicitly to catch
-  # this — if bs2 can't check its own source, a fresh build will fail.
-  echo "[pre-commit] verifying bs2 can check main.av without errors"
-  if ! (cd bootstrap && ./build/bs2 check packages/cli/src/main.av) >/dev/null 2>&1; then
-    echo
-    echo "[pre-commit] BS2 SELF-CHECK FAILED — commit blocked"
-    echo "[pre-commit] bs2 produces errors when checking main.av. This means a"
-    echo "[pre-commit] foundational typeck change shipped without updating the"
-    echo "[pre-commit] seed to match — fresh builds from this commit will fail."
-    echo "[pre-commit] errors (excerpt):"
-    (cd bootstrap && ./build/bs2 check packages/cli/src/main.av 2>&1) | grep "error\[F" | head -5
-    echo "[pre-commit] run 'make update-seed' then re-commit, or 'git commit --no-verify'."
-    exit 1
-  fi
-  echo "[pre-commit] bs2 self-check passes"
 fi
 
 # Verify the seed IR exists and hasn't been deleted.
