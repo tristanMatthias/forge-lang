@@ -1100,13 +1100,11 @@ fn lint_index_guard_coll(cond: Expr) -> string {
     }
 }
 
-/// F9005 lint (opt-in via AVRA_LINT_LOOPS): flag the manual
-/// `mut i = 0` / `while i < xs.length { … }` index-loop antipattern,
-/// which should be a `for` loop. Structural AST match (not a string
-/// heuristic): a `Mut("i", _, 0)` immediately followed by a `While`
-/// whose guard is `i < <coll>.length`.
+/// F9005 lint: flag the manual `mut i = 0` / `while i < xs.length { … }`
+/// index-loop antipattern, which should be a `for` loop. Always on —
+/// a structural AST match (not a string heuristic): a `Mut("i", _, 0)`
+/// immediately followed by a `While` whose guard is `i < <coll>.length`.
 fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
-    if avra_process_env_get("AVRA_LINT_LOOPS") == "" { return tc }
     mut cur = tc
     for (k, ss) in stmts.enumerate() {
         if k + 1 < stmts.length {

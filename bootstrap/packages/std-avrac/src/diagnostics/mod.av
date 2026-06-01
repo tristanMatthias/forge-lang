@@ -258,8 +258,8 @@ export enum DiagCode {
     /// F9005 — a manual `mut i = 0; while i < xs.length { … }` index
     /// loop that should be a `for` loop (`for x in xs`, or
     /// `for (i, x) in xs.enumerate()` when the index is also used).
-    /// Off by default; opt in with `AVRA_LINT_LOOPS=1`. Style nudge —
-    /// the structural `for` form is clearer and bounds-safe.
+    /// Style nudge — the structural `for` form is clearer and
+    /// bounds-safe.
     ManualIndexLoop
     /// F9050 — `@expand` macro returned a `ResolvedDecls` whose
     /// `.introduces` lists a name that doesn't correspond to any decl
