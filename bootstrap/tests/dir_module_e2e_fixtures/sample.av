@@ -18,6 +18,8 @@
 // Probes echo from this fixture; the parent test asserts on them.
 
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_host_os() -> string
+extern fn avra_process_env_get(name: string) -> string
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
@@ -85,10 +87,14 @@ fn main() -> int {
     let ll_exists = avra_shell_exec("test -f '" + root + "/main.av.ll' && echo yes || echo no").trim()
     probe("ll_emitted", ll_exists == "yes")
 
-    // Probe 4 — link + run, expect "s=5 p=20".
-    let llvm_prefix = avra_shell_exec("test -d /opt/homebrew/opt/llvm && echo /opt/homebrew/opt/llvm || which llc | xargs dirname | xargs dirname").trim()
-    avra_shell_exec("'" + llvm_prefix + "/bin/llc' -filetype=obj '" + root + "/main.av.ll' -o '" + root + "/main.o' 2>/dev/null")
-    avra_shell_exec("clang '" + root + "/main.o' build/runtime.o build/llvm_wrapper.o -o '" + root + "/main.bin' -L'" + llvm_prefix + "/lib' -lLLVM 2>/dev/null")
+    // Probe 4 — link + run, expect "s=5 p=20". PIC object + platform-aware
+    // link (LLD + libstdc++ on Linux, default ld + libc++ on macOS).
+    let env_pfx = avra_process_env_get("LLVM_PREFIX")
+    let llvm_prefix = if env_pfx != "" { env_pfx } else { avra_shell_exec("test -d /opt/homebrew/opt/llvm && echo /opt/homebrew/opt/llvm || which llc | xargs dirname | xargs dirname").trim() }
+    let is_mac = avra_host_os() == "macos"
+    let link_flags = if is_mac { "-lc++" } else { "-fuse-ld=lld -lstdc++" }
+    avra_shell_exec("'" + llvm_prefix + "/bin/llc' -relocation-model=pic -filetype=obj '" + root + "/main.av.ll' -o '" + root + "/main.o' 2>/dev/null")
+    avra_shell_exec("cc '" + root + "/main.o' build/runtime.o build/llvm_wrapper.o -o '" + root + "/main.bin' -L'" + llvm_prefix + "/lib' -lLLVM " + link_flags + " 2>/dev/null")
     let output = avra_shell_exec("'" + root + "/main.bin' 2>&1").trim()
     probe("runtime_output_correct", output == "s=5 p=20")
 

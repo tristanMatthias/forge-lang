@@ -9,6 +9,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
+extern fn avra_host_os() -> string
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
@@ -29,18 +30,26 @@ fn main() -> int {
     let llc = if llvm_prefix == "" { "/opt/homebrew/opt/llvm/bin/llc" } else { "${llvm_prefix}/bin/llc" }
     let lib_dir = if llvm_prefix == "" { "/opt/homebrew/opt/llvm/lib" } else { "${llvm_prefix}/lib" }
 
+    // Platform-portable link flags: PIC objects everywhere; macOS uses
+    // ld64 `-stack_size` + libc++, Linux uses LLD + libstdc++ (matching
+    // @std/avrac/build/link.av).
+    let is_mac = avra_host_os() == "macos"
+    let stack_flag = if is_mac { "-Wl,-stack_size,0x2000000" } else { "" }
+    let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
+    let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
+
     let rc1 = avra_shell_exec_status("${bs2} compile --emit_metadata --module_path=producer ${dir}/producer.av")
     probe("producer_compile_rc_zero", rc1 == 0)
-    let rc2 = avra_shell_exec_status("${llc} -O2 -filetype=obj ${dir}/producer.av.ll -o ${dir}/producer.av.o")
+    let rc2 = avra_shell_exec_status("${llc} -O2 -relocation-model=pic -filetype=obj ${dir}/producer.av.ll -o ${dir}/producer.av.o")
     probe("producer_llc_rc_zero", rc2 == 0)
 
     let rc3 = avra_shell_exec_status("AVRA_USE_METADATA=1 ${bs2} compile ${dir}/consumer.av")
     probe("consumer_compile_rc_zero", rc3 == 0)
-    let rc4 = avra_shell_exec_status("${llc} -O2 -filetype=obj ${dir}/consumer.av.ll -o ${dir}/consumer.av.o")
+    let rc4 = avra_shell_exec_status("${llc} -O2 -relocation-model=pic -filetype=obj ${dir}/consumer.av.ll -o ${dir}/consumer.av.o")
     probe("consumer_llc_rc_zero", rc4 == 0)
 
     let bin = "${dir}/program"
-    let cc_cmd = "cc -o ${bin} ${dir}/consumer.av.o ${dir}/producer.av.o ${pwd}/build/runtime.o ${pwd}/build/llvm_wrapper.o -Wl,-stack_size,0x2000000 -L${lib_dir} -lLLVM -lc++"
+    let cc_cmd = "cc -o ${bin} ${dir}/consumer.av.o ${dir}/producer.av.o ${pwd}/build/runtime.o ${pwd}/build/llvm_wrapper.o ${stack_flag} ${ld_sel} -L${lib_dir} -lLLVM ${cxxlib}"
     let rc5 = avra_shell_exec_status(cc_cmd)
     probe("link_rc_zero", rc5 == 0)
 

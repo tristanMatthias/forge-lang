@@ -8,8 +8,13 @@
 
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn avra_process_env_get(name: string) -> string
+extern fn avra_host_os() -> string
 
 use @std.json.{json_array, json_str}
+
+/// True on macOS. Gates the macOS-only linker conventions (ld64
+/// `-stack_size`, libc++) against the Linux ones (LLD, libstdc++).
+fn host_is_macos() -> bool { avra_host_os() == "macos" }
 
 /// Per-link options. Defaults are the bootstrap's current behaviour:
 /// stack_size_hex 0x2000000 (32 MiB — needed for deep parser recursion),
@@ -60,11 +65,25 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
     items.push(json_str(llvm_wrapper_o))
     items.push(json_str("-o"))
     items.push(json_str(out))
-    items.push(json_str("-Wl,-stack_size,${opts.stack_size_hex}"))
+    let is_mac = host_is_macos()
+    // Main-thread stack size: macOS pins it at link time via ld64's
+    // `-stack_size`; Linux derives it from RLIMIT_STACK (the driver
+    // raises the soft limit), so the flag is macOS-only.
+    if is_mac {
+        items.push(json_str("-Wl,-stack_size,${opts.stack_size_hex}"))
+    }
     let llvm_prefix = resolve_llvm_prefix(opts)
     items.push(json_str("-L${llvm_prefix}/lib"))
     items.push(json_str("-lLLVM"))
-    items.push(json_str("-lc++"))
+    // C++ runtime libLLVM was built against, plus the linker. macOS:
+    // libc++ + default ld64. Linux: libstdc++ + LLD (GNU ld mis-parses
+    // the `@`-prefixed mangled symbols as version separators).
+    if is_mac {
+        items.push(json_str("-lc++"))
+    } else {
+        items.push(json_str("-lstdc++"))
+        items.push(json_str("-fuse-ld=lld"))
+    }
     if opts.coverage && coverage_libs != "" {
         items.push(json_str(coverage_libs))
     }

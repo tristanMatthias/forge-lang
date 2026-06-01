@@ -35,14 +35,15 @@ fn main() -> int {
     probe("avrac_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(std_avrac)) != 0)
     probe("avrac_ll_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.ll") != 0)
 
-    // Symbols should be qualified with @std::avrac:: — verify by
-    // grepping for one canonical fn that exists in @std/avrac/codegen.
-    let qualified_grep = avra_shell_exec("grep -c '@\"@std::avrac::codegen' ${std_avrac}/src/avrac.av.ll").trim()
+    // Symbols are qualified with @std::avrac::, which the object-file
+    // mangler escapes (`@`->$40, `:`->$3A) to `$40std$3A$3Aavrac$3A$3A…`.
+    // Grep for one canonical fn that exists in @std/avrac/codegen.
+    let qualified_grep = avra_shell_exec("grep -c '@\"$40std$3A$3Aavrac$3A$3Acodegen' ${std_avrac}/src/avrac.av.ll").trim()
     probe("symbols_qualified_under_at_std_avrac", int(qualified_grep) > 100)
 
-    // Unqualified `codegen::` should NOT appear at the start of any
-    // define line (those would mean the wrap didn't reach those fns).
-    let unq = avra_shell_exec("grep -c '^define [a-z0-9]* @\"codegen::' ${std_avrac}/src/avrac.av.ll").trim()
+    // Unqualified `codegen::` (mangled `codegen$3A$3A`) should NOT appear at
+    // the start of any define line (that would mean the wrap missed those fns).
+    let unq = avra_shell_exec("grep -c '^define [a-z0-9]* @\"codegen$3A$3A' ${std_avrac}/src/avrac.av.ll").trim()
     probe("no_unqualified_codegen_fns", int(unq) == 0)
 
     0

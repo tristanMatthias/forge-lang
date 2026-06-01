@@ -1059,7 +1059,7 @@ fn collect_workspace_lib_objs(project_dir: string) -> string {
     // it doesn't tickle Avra's interpolation parser. The replacement
     // step uses sed instead of `${ll%.ll}.realobj.o`.
     let llvm_pfx = if avra_process_env_get("LLVM_PREFIX") == "" { "/opt/homebrew/opt/llvm" } else { avra_process_env_get("LLVM_PREFIX") }
-    let mat_cmd = "for ll in '${project_dir}/packages'/std-*/build/cache/*/unit.ll; do o=`echo \"$ll\" | sed 's/.ll$/.realobj.o/'`; if [ -f \"$ll\" ] && [ ! -f \"$o\" ]; then '${llvm_pfx}/bin/llc' -O2 -filetype=obj \"$ll\" -o \"$o\" 2>/dev/null; fi; done"
+    let mat_cmd = "for ll in '${project_dir}/packages'/std-*/build/cache/*/unit.ll; do o=`echo \"$ll\" | sed 's/.ll$/.realobj.o/'`; if [ -f \"$ll\" ] && [ ! -f \"$o\" ]; then '${llvm_pfx}/bin/llc' -O2 -relocation-model=pic -filetype=obj \"$ll\" -o \"$o\" 2>/dev/null; fi; done"
     avra_shell_exec(mat_cmd)
     let listing = avra_shell_exec("ls -t '${project_dir}/packages'/std-*/build/cache/*/unit.realobj.o 2>/dev/null")
     if listing == "" { return "" }
@@ -1320,7 +1320,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
                 continue
             }
         }
-        llc_cmds.push("${llc_bin} -O0 -filetype=obj '${ll}' -o '${o}' > '${out_dir}/${sl}.llc.log' 2>&1")
+        llc_cmds.push("${llc_bin} -O0 -relocation-model=pic -filetype=obj '${ll}' -o '${o}' > '${out_dir}/${sl}.llc.log' 2>&1")
         k = k + 1
     }
     if !args.json {

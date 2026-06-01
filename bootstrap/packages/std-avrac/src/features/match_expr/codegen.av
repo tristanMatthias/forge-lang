@@ -786,7 +786,17 @@ export fn emit_when_expr(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>) -
 /// arm emitting its condition + body and unifying result types
 /// across arms via `warn_arm_type_mismatch` on disagreement.
 fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
-    if idx >= arms.length { return ok_match_ty(.Unknown) }
+    if idx >= arms.length {
+        // No (more) arms matched. Terminate the trailing `when_next`
+        // fallthrough block by branching to merge, where the result
+        // slot's default (0/null) is loaded — the defined value for a
+        // non-exhaustive `when` expression. Without this branch the
+        // final fallthrough block is left unterminated, producing
+        // malformed IR (LLVM rejects "block does not have terminator";
+        // an optimizer that DCEs the unreachable block merely hides it).
+        ctx.br_if_open(merge_bb)
+        return ok_match_ty(.Unknown)
+    }
     let arm = arms[idx]
     ctx.cov_match_arm(arm.body.line)
     if arm.cond == null {
