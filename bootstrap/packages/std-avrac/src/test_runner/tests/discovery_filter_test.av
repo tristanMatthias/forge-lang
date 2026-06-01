@@ -91,6 +91,54 @@ spec "filter_by_path: empty filter is a no-op" {
     }
 }
 
+// mi39: filter_by_path + filter_discovered compose in the order
+// (path-filter, then -f filter). Audit every observable combo
+// against synthetic inputs so a future change to the dispatch order
+// trips a specific assertion instead of a vague "less work" feeling.
+
+spec "mi39: path-filter + -f filter compose left-to-right" {
+    then "path-filter narrows to one file, -f matches its basename: passes through" {
+        let files = sample_files()
+        let after_path = filter_by_path(files, "packages/std-avrac/src/features/generics/tests/generics_test.av")
+        let after_both = filter_discovered(after_path, "generics")
+        after_both.length == 1
+            && after_both[0].path.ends_with("generics_test.av")
+    }
+    then "path-filter narrows to one file, -f doesn't match its basename: empty" {
+        // Mirrors the CLI behaviour: a -f filter that excludes the
+        // path-narrowed file leaves zero accepted tests — the CLI
+        // then prints `No spec test files matched filter.`
+        let files = sample_files()
+        let after_path = filter_by_path(files, "packages/std-avrac/src/features/generics/tests/generics_test.av")
+        let after_both = filter_discovered(after_path, "xyz_no_match")
+        after_both.length == 0
+    }
+    then "no path-filter, -f matches basename substring: filter_discovered alone" {
+        // path_filter="" is the bs2 test -f form. filter_by_path is a
+        // no-op; filter_discovered narrows.
+        let files = sample_files()
+        let after_path = filter_by_path(files, "")
+        let after_both = filter_discovered(after_path, "generic")
+        after_both.length == 2
+    }
+    then "both empty: every file passes through" {
+        // bs2 test (no flags) — everything is in scope.
+        let files = sample_files()
+        let after_path = filter_by_path(files, "")
+        let after_both = filter_discovered(after_path, "")
+        after_both.length == files.length
+    }
+    then "path-filter matches one file, -f matches its basename via substring (not exact): passes" {
+        // Substring-based -f over the path-narrowed set — verifies
+        // -f's semantics don't mutate after path-filter has run.
+        let files = sample_files()
+        let after_path = filter_by_path(files, "packages/std-avrac/src/features/null_safety/tests/null_safety_example_test.av")
+        let after_both = filter_discovered(after_path, "null_safety")
+        after_both.length == 1
+            && after_both[0].path.contains("null_safety")
+    }
+}
+
 spec "filter_discovered: substring filter narrows by basename" {
     then "matches every file whose basename contains the filter" {
         let files = sample_files()
