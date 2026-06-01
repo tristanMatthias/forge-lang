@@ -14,6 +14,21 @@ set -euo pipefail
 REPO_DIR=$(git rev-parse --show-toplevel)
 cd "$REPO_DIR"
 
+# u1s0: kill the background test PID on SIGINT / SIGTERM / normal exit.
+# Without this, Ctrl-C'ing during the hook leaves bg `bs2 test --per_file`
+# running to natural completion (~22-380s of CPU), and the user sees the
+# hook exit cleanly while their process table fills up.
+TEST_PID=""
+cleanup() {
+  if [ -n "$TEST_PID" ] && kill -0 "$TEST_PID" 2>/dev/null; then
+    kill "$TEST_PID" 2>/dev/null || true
+    # Give it a moment to drop, then SIGKILL if still alive.
+    sleep 0.2
+    kill -9 "$TEST_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
 # Files staged in this commit.
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
