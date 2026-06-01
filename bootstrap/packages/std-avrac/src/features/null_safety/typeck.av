@@ -1,6 +1,6 @@
 // WHY: type checking for null-safety features (catch, null coalesce).
 
-use core.{Expr, ValueType, vtype_eq, vtype_display, vtype_assignable}
+use core.{Expr, ValueType, vtype_eq, vtype_render_full, vtype_assignable}
 use core.{is_result_enum_name}
 use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_report_at}
 use diagnostics.{DiagCode}
@@ -18,7 +18,7 @@ export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
             if maybe_ok != null {
                 let ok_ty = maybe_ok!
                 if !vtype_eq(ok_ty, cb.ty) && !vtype_assignable(cb.ty, ok_ty) {
-                    let msg = "catch body type `${vtype_display(cb.ty)}` does not match expected type `${vtype_display(ok_ty)}`"
+                    let msg = "catch body type `${vtype_render_full(cb.ty)}` does not match expected type `${vtype_render_full(ok_ty)}`"
                     return tc_er(tc_report_at(cb.tc, DiagCode.TypeMismatch, msg, cl, cc, 5), ok_ty)
                 }
                 return tc_er(cb.tc, ok_ty)

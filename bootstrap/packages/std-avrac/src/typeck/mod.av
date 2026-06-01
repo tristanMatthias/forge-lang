@@ -199,11 +199,11 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     match ret_ty {
         .Enum(name, args, _) -> {
             if !is_result_enum_name(name) { return null }
-            // First type arg is the Ok type
-            match args {
-                .Node(ok_ty, _) -> ok_ty
-                .End -> null
-            }
+            // First type arg is the Ok type. List<ValueType> replaced
+            // the retired TypeList cons-list — index with [] / length,
+            // not .Node/.End (which match a different runtime shape
+            // and cause an ICE here).
+            if args.length == 0 { null } else { args[0] }
         }
         _ -> null
     }

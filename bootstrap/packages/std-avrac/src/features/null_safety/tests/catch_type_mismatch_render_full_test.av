@@ -1,0 +1,25 @@
+// WHY: vtype_render_full sweep — null_safety typeck.av:21 used
+// vtype_display, which collapses tuple/list/Result elements to bare
+// kind names. A catch-arm whose body returns a 2-tuple of the wrong
+// element types would print `(tuple)` vs `(tuple)` instead of the
+// actual element types, hiding the real mismatch from the user.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "catch-body type mismatch shows full element types" {
+    then "(int, int) vs (string, string) — not bare `(tuple)`" {
+        let fixture = "/tmp/avra_null_catch_mismatch_test.av"
+        write_fixture(fixture,
+            "fn fail() -> Result<(int, int), string> { .Err(\"x\") }\n" +
+            "fn main() -> int {\n" +
+            "    let pair = fail() catch { (\"a\", \"b\") }\n" +
+            "    0\n" +
+            "}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        // Pre-fix would render both sides as `(tuple)`. Post-fix must
+        // expose at least one full element-typed form.
+        (out.contains("(int, int)") || out.contains("(string, string)"))
+            && !out.contains("`(tuple)` does not match expected type `(tuple)`")
+    }
+}
