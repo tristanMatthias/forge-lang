@@ -82,7 +82,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
         return Result.Err(named.error_message)
     }
     let post_comptime = run_comptime(named.stmts)
-    let tc_result = typecheck_program(post_comptime, named.type_reg)
+    let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
     let _ = guard_bag(tc_result.bag, target.diag_filename, "type check failed")?
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
     let _ = guard_bag(mono.bag, target.diag_filename, "monomorphization failed")?

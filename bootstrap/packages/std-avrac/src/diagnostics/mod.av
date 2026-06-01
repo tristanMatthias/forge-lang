@@ -48,6 +48,39 @@ export fn span_dummy() -> Span {
     Span { start: 0, end: 0, line: 0, col: 0, file: "" }
 }
 
+/// One spliced fn's macro origin — built during @expand splice in
+/// features.comptime.expand_macro, consumed by typeck so any
+/// diagnostic emitted against `fn_name` can blame the macro
+/// instead of the synthesized function. so07.3 (T3 Phase 1).
+///
+/// `fn_name` is the unqualified name of a Function-shape SStmt that
+/// `splice_expansion` inserted into the parent list. `macro_name`
+/// is the @expand target identifier. `expand_site` points at the
+/// `@expand(macro_name)` annotation in the user's source so the
+/// retagged diagnostic carets there, not at the synthesised body.
+///
+/// Lives in `diagnostics` rather than `features.comptime` because
+/// `resolve.NameResolveResult` carries it through to `typecheck_program`
+/// and `resolve` predates `features` in the module graph.
+export type MacroFnOrigin = {
+    fn_name: string,
+    macro_name: string,
+    expand_site: Span,
+}
+
+/// Lookup helper: returns the `MacroFnOrigin` whose `fn_name`
+/// matches, or null. Used by `tc_report*` to decide whether to
+/// retag a diagnostic.
+export fn macro_origin_lookup(origins: List<MacroFnOrigin>, fn_name: string) -> MacroFnOrigin? {
+    if fn_name == "" { return null }
+    mut i = 0
+    while i < origins.length {
+        if origins[i].fn_name == fn_name { return origins[i] }
+        i = i + 1
+    }
+    null
+}
+
 // ── Severity ──
 
 /// Diagnostic severity levels. Drives exit code (errors fail the

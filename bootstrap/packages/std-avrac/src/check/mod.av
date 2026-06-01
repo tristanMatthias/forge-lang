@@ -54,7 +54,7 @@ export fn check_source(source: string) -> DiagnosticBag {
         return bag_merge(comp.bag, named.bag)
     }
     let post_comptime = run_comptime(named.stmts)
-    let tc_result = typecheck_program(post_comptime, named.type_reg)
+    let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
     if bag_has_errors(tc_result.bag) {
         return tc_result.bag
     }

@@ -48,7 +48,7 @@
 //                                  type checking
 
 use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name}
-use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
+use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
@@ -646,13 +646,19 @@ fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<Al
 // ── Public entry point ──
 
 /// Output of `resolve_names` — the rewritten statement tree, error
-/// flags, accumulated diagnostics, and the populated type registry.
+/// flags, accumulated diagnostics, the populated type registry, and
+/// the macro-origin table built during @expand splice. Origins are
+/// empty for the bare resolver path; populated by
+/// `resolve_and_expand_program` when macros fire. Consumed by
+/// `typecheck_program` so synthetic fns can blame their macro in
+/// diagnostics (so07.3 / T3).
 export type NameResolveResult = {
     stmts: List<SStmt>,
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
     type_reg: TypeRegistry,
+    macro_origins: List<MacroFnOrigin>,
 }
 
 /// Snapshot produced by `register_decls`: every fact discovered
@@ -904,6 +910,7 @@ export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState)
     let unused_bag = check_unused_imports(state.aliases, used)
     let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
+    let no_origins: List<MacroFnOrigin> = []
     NameResolveResult {
         stmts: stmts,
         had_error: has_errors,
@@ -912,6 +919,7 @@ export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState)
         } else { "" },
         type_reg: state.type_reg,
         bag: merged_bag,
+        macro_origins: no_origins,
     }
 }
 

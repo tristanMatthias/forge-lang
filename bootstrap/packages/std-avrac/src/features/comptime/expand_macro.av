@@ -46,7 +46,7 @@ use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_nam
 use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use features.quote_expr.{construct_expr}
-use diagnostics.{DiagnosticBag, DiagCode, Span, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
+use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
 
 // ── ResolverCtx state stack (step 5) ──
@@ -242,6 +242,7 @@ fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
 export type ExpandResult = {
     stmts: List<SStmt>,
     bag: DiagnosticBag,
+    origins: List<MacroFnOrigin>,
 }
 
 /// Phase 2 (post-resolve): walk the stmt list, invoke every macro
@@ -270,11 +271,12 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
     mut current = stmts
     mut current_state = state
     mut bag = bag_new()
+    mut origins: List<MacroFnOrigin> = []
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
         if !any_expand_annotation(current) && comp_macros.length == 0 {
-            return ExpandResult { stmts: current, bag }
+            return ExpandResult { stmts: current, bag, origins }
         }
         if iters > 0 {
             current_state = register_macro_decls(current_state, current)
@@ -285,6 +287,7 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
         current = walked.out
         current_state = walked.state
         bag = bag_merge(bag, walked.bag)
+        for o in walked.origins { origins.push(o) }
         iters = iters + 1
     }
     bag = bag_report(bag, diag_error(
@@ -292,7 +295,7 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
         "@expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself",
         span_at(0, 0, 0, 0, "")
     ))
-    ExpandResult { stmts: current, bag }
+    ExpandResult { stmts: current, bag, origins }
 }
 
 
@@ -401,6 +404,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
     mut out: List<SStmt> = []
     mut current_state = in_state
     mut bag = bag_new()
+    mut origins: List<MacroFnOrigin> = []
     for ss in stmts {
         let inner = peel_annotations(ss.node)
         // vez6.8.5: a ComponentDef with @expand only REGISTERS
@@ -427,6 +431,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                     // annotation when find_annotation returns null.
                     let invoked = invoke_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module, ss.node)
                     bag = bag_merge(bag, invoked.bag)
+                    for o in invoked.origins { origins.push(o) }
                     splice_expansion(out, ss, invoked.replacement)
                     if invoked.replacement != null {
                         current_state = register_and_repopulate(current_state, invoked.replacement!, current_module)
@@ -448,6 +453,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
+                for o in sub.origins { origins.push(o) }
                 let new_stmt = Stmt.Module(mod_name, sub.out)
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
@@ -456,6 +462,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                     avra_rd_set_current_module(current_module)
                     let attempt = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
                     bag = bag_merge(bag, attempt.bag)
+                    for o in attempt.origins { origins.push(o) }
                     splice_expansion(out, ss, attempt.replacement)
                     if attempt.replacement != null {
                         current_state = register_and_repopulate(current_state, attempt.replacement!, current_module)
@@ -466,7 +473,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             }
         }
     }
-    WalkerOut { out, state: current_state, bag }
+    WalkerOut { out, state: current_state, bag, origins }
 }
 
 /// Walker's per-iter return: the spliced stmts + the state after any
@@ -480,16 +487,21 @@ type WalkerOut = {
     out: List<SStmt>,
     state: ResolverState,
     bag: DiagnosticBag,
+    origins: List<MacroFnOrigin>,
 }
 
 /// Internal carrier for a single macro-expansion attempt. `replacement`
 /// is the spliced statements on success or null on any failure;
-/// `bag` collects any diagnostics produced. Returned as a record so
-/// the walker can both merge the bag and act on the null/non-null
-/// replacement without losing diagnostics on the failure path.
+/// `bag` collects any diagnostics produced; `origins` is the
+/// MacroFnOrigin entries (one per spliced Function-shape SStmt) so
+/// downstream typeck can blame the macro on errors against the
+/// synthesized fns. Returned as a record so the walker can both
+/// merge the bag and act on the null/non-null replacement without
+/// losing diagnostics on the failure path.
 type ExpandAttempt = {
     replacement: List<SStmt>?,
     bag: DiagnosticBag,
+    origins: List<MacroFnOrigin>,
 }
 
 /// Build a failed ExpandAttempt carrying a single F-coded error.
@@ -498,9 +510,11 @@ type ExpandAttempt = {
 /// fail-path in invoke_macro / try_expand_one would otherwise
 /// repeat verbatim.
 fn expand_fail(code: DiagCode, message: string, span: Span) -> ExpandAttempt {
+    let no_origins: List<MacroFnOrigin> = []
     ExpandAttempt {
         replacement: null,
         bag: bag_report(bag_new(), diag_error(code, message, span)),
+        origins: no_origins,
     }
 }
 
@@ -670,7 +684,8 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
                 ))
             }
         }
-        return ExpandAttempt { replacement: out, bag }
+        let origins = build_origins(out, macro_name, line, col, file)
+        return ExpandAttempt { replacement: out, bag, origins }
     }
     // Try List<SStmt> — what `quote stmts { ... }` produces.
     // value_to_stmt_list returns null when v isn't a list, so this is
@@ -681,7 +696,8 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         for ss in as_list! {
             out.push(sstmt_at(ss.node, line, col, file))
         }
-        return ExpandAttempt { replacement: out, bag: bag_new() }
+        let origins = build_origins(out, macro_name, line, col, file)
+        return ExpandAttempt { replacement: out, bag: bag_new(), origins }
     }
     // Fall back to single Stmt — `quote stmt { ... }` macros.
     let decoded = value_to_stmt(v)
@@ -694,7 +710,25 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     }
     mut single: List<SStmt> = []
     single.push(sstmt_at(decoded!, line, col, file))
-    ExpandAttempt { replacement: single, bag: bag_new() }
+    let origins = build_origins(single, macro_name, line, col, file)
+    ExpandAttempt { replacement: single, bag: bag_new(), origins }
+}
+
+/// Build a `MacroFnOrigin` entry per Function-shape SStmt in `spliced`.
+/// `(line, col, file)` describe the `@expand(macro_name)` annotation
+/// site in the user's source; typeck's `tc_report_at` uses both the
+/// macro name and span to retag diagnostics emitted against the
+/// synthesised fns. so07.3 (T3 Phase 1).
+fn build_origins(spliced: List<SStmt>, macro_name: string, line: int, col: int, file: string) -> List<MacroFnOrigin> {
+    mut out: List<MacroFnOrigin> = []
+    let site = span_at(0, 0, line, col, file)
+    for ss in spliced {
+        let name = decl_name_of(ss.node)
+        if name != "" {
+            out.push(MacroFnOrigin { fn_name: name, macro_name, expand_site: site })
+        }
+    }
+    out
 }
 
 /// Decoded payload of a ResolvedDecls struct value.
@@ -956,5 +990,6 @@ export fn resolve_and_expand_program(stmts: List<SStmt>) -> NameResolveResult {
         } else { "" },
         type_reg: validated.type_reg,
         bag: merged_bag,
+        macro_origins: expanded.origins,
     }
 }

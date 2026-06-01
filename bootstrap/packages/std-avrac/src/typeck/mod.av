@@ -4,7 +4,7 @@
 // compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
-use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
+use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
@@ -538,6 +538,13 @@ type TC = {
     // standalone (no resolver pass) — same id=0 → name-fallback
     // behaviour preserved.
     type_reg: TypeRegistry,
+    // Macro-origin table from the resolver (so07.3 / T3 Phase 1).
+    // Empty when typeck is invoked without macro expansion. Used by
+    // tc_report_at to retag diagnostics whose `current_fn` was
+    // synthesised by @expand: the message gets a "[from macro …]"
+    // prefix and the span swaps to the @expand site so the caret
+    // lands on the user's annotation, not the synthetic body.
+    macro_origins: List<MacroFnOrigin>,
 }
 
 /// One `impl Trait for Type` relationship. The full registry is
@@ -573,7 +580,7 @@ type ExprResult = {
 /// `type_reg` is the resolver's TypeId allocator threaded through
 /// from `typecheck_program`; an empty registry preserves the
 /// id=0 sentinel behaviour for any standalone use.
-fn tc_new(type_reg: TypeRegistry) -> TC {
+fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TC {
     let empty_shapes: List<string> = []
     let empty_assoc: List<AssocTypeEntry> = []
     let empty_impls: List<TraitImplEntry> = []
@@ -596,6 +603,7 @@ fn tc_new(type_reg: TypeRegistry) -> TC {
         assoc_type_defs: empty_assoc,
         features: build_registry(),
         type_reg,
+        macro_origins,
     }
 }
 
@@ -620,11 +628,27 @@ export fn tc_report(tc: TC, code: DiagCode, msg: string) -> TC {
 /// Append a diagnostic at an explicit `(line, col, len)` span.
 /// Used when the offending expression has a known span that
 /// differs from the TC's "current" position.
+///
+/// so07.3 / T3 Phase 1: if `tc.current_fn` is in the macro-origin
+/// table, retag the diagnostic. The message gets a
+/// `[from @expand(<macro>)]` prefix and the span swaps to the
+/// `@expand` annotation site so the caret lands on the user's
+/// source, not the synthetic body the macro produced.
 export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int, len: int) -> TC {
-    let message = if tc.current_fn.length > 0 {
+    let origin = macro_origin_lookup(tc.macro_origins, tc.current_fn)
+    let message = if origin != null {
+        let o = origin!
+        "[from @expand(${o.macro_name})] ${msg} (in synthesized function `${tc.current_fn}`)"
+    } else if tc.current_fn.length > 0 {
         "${msg} (in function `${tc.current_fn}`)"
     } else { msg }
-    let sp = if line > 0 { span_new(0, len, line, col) } else { span_dummy() }
+    let sp = if origin != null {
+        origin!.expand_site
+    } else if line > 0 {
+        span_new(0, len, line, col)
+    } else {
+        span_dummy()
+    }
     tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
 }
 
@@ -633,19 +657,32 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
 /// strict-mode checks that want to surface signal without blocking
 /// the build (e.g. AVRA_STRICT_ARGS).
 export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
-    let message = if tc.current_fn.length > 0 {
+    let origin = macro_origin_lookup(tc.macro_origins, tc.current_fn)
+    let message = if origin != null {
+        let o = origin!
+        "[from @expand(${o.macro_name})] ${msg} (in synthesized function `${tc.current_fn}`)"
+    } else if tc.current_fn.length > 0 {
         "${msg} (in function `${tc.current_fn}`)"
     } else { msg }
-    tc with { bag: bag_report(tc.bag, diag_warning(code, message, span_dummy())) }
+    let sp = if origin != null { origin!.expand_site } else { span_dummy() }
+    tc with { bag: bag_report(tc.bag, diag_warning(code, message, sp)) }
 }
 
 /// Append a diagnostic with a dedicated cause message — surfaced
 /// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
-    let message = if tc.current_fn.length > 0 {
+    let origin = macro_origin_lookup(tc.macro_origins, tc.current_fn)
+    let message = if origin != null {
+        let o = origin!
+        "[from @expand(${o.macro_name})] ${msg} (in synthesized function `${tc.current_fn}`)"
+    } else if tc.current_fn.length > 0 {
         "${msg} (in function `${tc.current_fn}`)"
     } else { msg }
-    let sp = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
+    let sp = if origin != null {
+        origin!.expand_site
+    } else if tc.current_line > 0 {
+        span_new(0, 0, tc.current_line, tc.current_col)
+    } else { span_dummy() }
     let primary = diag_error(code, message, sp)
     let cause = diag_error(code, cause_msg, span_dummy())
     tc with { bag: bag_report(tc.bag, diag_with_cause(primary, cause)) }
@@ -724,7 +761,7 @@ export type TypeCheckResult = {
 /// passes: pre-pass `collect_decls` registers types/fns; main
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
-export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry) -> TypeCheckResult {
+export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TypeCheckResult {
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
     // four typeck passes (collect / check / naming / annotate)
@@ -732,7 +769,7 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry) -> TypeC
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
 
-    let tc0 = tc_new(type_reg)
+    let tc0 = tc_new(type_reg, macro_origins)
     // T6.C: re-stamp registry ids on every nominal slot whose id=0.
     // Macro/comptime/monomorphizer-emitted AST nodes carry
     // parser-shape ValueTypes with id=0 even when the name IS
