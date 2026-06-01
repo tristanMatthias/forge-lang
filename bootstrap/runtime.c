@@ -11,6 +11,14 @@
 // All functions use C-string (const char*) and i64 conventions
 // matching the bootstrap's everything-is-i64 value model.
 
+// glibc gates several extensions used below behind _GNU_SOURCE:
+// `Dl_info`/`dladdr` (<dlfcn.h>) and the `qsort_r` prototype. Must be
+// defined before any system header is pulled in. No-op on macOS/BSD,
+// which expose these unconditionally.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -721,9 +729,17 @@ static void avra_clear_spec_guard_in_child(void) {
 
 __attribute__((constructor))
 static void avra_install_signal_handlers(void) {
-    // Alternate signal stack so handler works during stack overflow
-    static char alt_stack[SIGSTKSZ + 65536];
-    stack_t ss = { .ss_sp = alt_stack, .ss_size = sizeof(alt_stack), .ss_flags = 0 };
+    // Alternate signal stack so the handler runs during stack overflow.
+    // SIGSTKSZ is a runtime value on modern glibc (>= 2.34) so it can't
+    // size a static array; allocate at install time from the runtime
+    // SIGSTKSZ with a 256 KiB floor (the handler's crash-report path is
+    // not trivial). The buffer lives for the process lifetime — never
+    // freed, by design.
+    size_t alt_stack_size = (size_t)SIGSTKSZ;
+    if (alt_stack_size < 256 * 1024) alt_stack_size = 256 * 1024;
+    static char* alt_stack = NULL;
+    if (!alt_stack) alt_stack = (char*)malloc(alt_stack_size);
+    stack_t ss = { .ss_sp = alt_stack, .ss_size = alt_stack_size, .ss_flags = 0 };
     sigaltstack(&ss, NULL);
 
     struct sigaction sa;
@@ -950,6 +966,44 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
     dst->len = count;
     dst->data = (int64_t*)malloc(dst->cap * sizeof(int64_t));
     memcpy(dst->data, src->data + start, count * sizeof(int64_t));
+    return dst;
+}
+
+// Pair the index with each element: List<T> -> List<(int, T)>.
+// Each pair is a 2-slot i64 buffer matching the tuple memory model
+// (a tuple `(a, b)` is a heap buffer of i64 slots; slot 0 = a, 1 = b).
+// Backs `xs.enumerate()` — the idiomatic replacement for the manual
+// `mut i = 0; while i < xs.length { let x = xs[i]; …; i += 1 }` loop.
+void* avra_array_enumerate(void* arr) {
+    void* dst = avra_array_new();
+    if (!arr) return dst;
+    AvraArray* src = (AvraArray*)arr;
+    for (int64_t i = 0; i < src->len; i++) {
+        int64_t* pair = (int64_t*)malloc(2 * sizeof(int64_t));
+        pair[0] = i;
+        pair[1] = src->data[i];
+        avra_array_push(dst, (int64_t)(uintptr_t)pair);
+    }
+    return dst;
+}
+
+// Parallel iteration: List<A>, List<B> -> List<(A, B)>, truncated to
+// the shorter input (like Python's zip / Rust's Iterator::zip).
+// Each pair uses the same 2-slot i64 tuple buffer as enumerate.
+// Backs `a.zip(b)` — the idiomatic replacement for the manual
+// `while i < min(a.length, b.length) { … a[i] … b[i] … }` loop.
+void* avra_array_zip(void* a_, void* b_) {
+    void* dst = avra_array_new();
+    if (!a_ || !b_) return dst;
+    AvraArray* a = (AvraArray*)a_;
+    AvraArray* b = (AvraArray*)b_;
+    int64_t n = a->len < b->len ? a->len : b->len;
+    for (int64_t i = 0; i < n; i++) {
+        int64_t* pair = (int64_t*)malloc(2 * sizeof(int64_t));
+        pair[0] = a->data[i];
+        pair[1] = b->data[i];
+        avra_array_push(dst, (int64_t)(uintptr_t)pair);
+    }
     return dst;
 }
 
@@ -1903,10 +1957,13 @@ void avra_trace_ptr(const char* label, int64_t val) {
     const char* region = "unknown";
 
     // (Global bump arena removed — all allocations use RC or per-scope arenas)
-    // Check stack (rough heuristic — stack is near sp)
+    // Check stack (rough heuristic — stack is near sp). The address of a
+    // local is a portable approximation of the current stack pointer, so
+    // no arch-specific inline asm is needed (ARM64 `sp` isn't a valid
+    // x86-64 register name).
     {
-        uintptr_t sp;
-        __asm__ volatile("mov %0, sp" : "=r"(sp));
+        uintptr_t sp_anchor;
+        uintptr_t sp = (uintptr_t)&sp_anchor;
         if (p > sp - 1024*1024 && p < sp + 1024*1024) {
             region = "stack";
         }
@@ -3552,11 +3609,23 @@ void avra_process_env_unset(const char* key) {
     unsetenv(key);
 }
 
-/// Get the directory containing the current executable.
+/// Get the directory containing the current executable. The path to
+/// the running binary is resolved per-platform: `_NSGetExecutablePath`
+/// on macOS, the `/proc/self/exe` symlink on Linux.
 const char* avra_process_self_dir(void) {
     char path[4096];
+    int ok = 0;
+#if defined(__APPLE__)
     uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) == 0) {
+    ok = (_NSGetExecutablePath(path, &size) == 0);
+#else
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (n > 0) {
+        path[n] = '\0';
+        ok = 1;
+    }
+#endif
+    if (ok) {
         // Find last /
         char* last_slash = strrchr(path, '/');
         if (last_slash) {
@@ -3567,6 +3636,21 @@ const char* avra_process_self_dir(void) {
         }
     }
     return ".";
+}
+
+/// Host OS identifier, used by the linker step to pick platform-specific
+/// flags (ld64 `-stack_size` + libc++ on macOS vs LLD + libstdc++ on
+/// Linux). Returns a stable string literal — callers must not free it.
+const char* avra_host_os(void) {
+#if defined(__APPLE__)
+    return "macos";
+#elif defined(__linux__)
+    return "linux";
+#elif defined(_WIN32)
+    return "windows";
+#else
+    return "unknown";
+#endif
 }
 
 // ── Trait objects (dynamic dispatch) ──
@@ -3595,6 +3679,12 @@ void* avra_trait_object_vtable(void* obj) {
 // Kept in C to avoid mutable globals in Avra source.
 static int64_t g_lambda_counter = 0;
 int64_t avra_next_lambda_id(void) { return g_lambda_counter++; }
+
+// General-purpose fresh-id source for synthetic names the parser/codegen
+// generate (e.g. the for-(a,b) loop temp). Process-wide and monotonic, so
+// every call yields a name that can never collide with another.
+static int64_t g_gensym_counter = 0;
+int64_t avra_gensym(void) { return g_gensym_counter++; }
 
 // ── Error trace support ──
 // Format a source location as "file:line" string for error traces.

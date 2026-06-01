@@ -121,6 +121,10 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     decl(m, "avra_array_reverse", pt, [pt])
     decl(m, "avra_array_sort", pt, [pt, i64t])
     decl(m, "avra_array_insert", pt, [pt, i64t, i64t])
+    // ryvy: index+element / parallel iteration — each result element
+    // is a heap tuple buffer `(int, T)` / `(A, B)`.
+    decl(m, "avra_array_enumerate", pt, [pt])
+    decl(m, "avra_array_zip", pt, [pt, pt])
 
     // ── strings ──
     decl(m, "avra_str_contains", i64t, [pt, pt])

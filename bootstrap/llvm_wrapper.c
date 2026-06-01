@@ -162,16 +162,62 @@ LLVMValueRef avra_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend)
 
 // ── Functions ──
 
+// Mangle a logical Avra symbol name into a valid object-file symbol.
+// Logical names carry module qualifiers (`@pkg::mod::Type__method`) and
+// generic instantiations (`Foo<int, Bar>`), so they contain '@', ':',
+// '<', '>', ',', spaces, etc. GNU ld in particular reads a leading '@'
+// as the ELF symbol-version separator and rejects the whole object
+// ("multiple definition of `no symbol'"). Map every byte outside
+// [A-Za-z0-9_] to a "$HH" hex escape. The escape is unambiguous (source
+// identifiers never contain '$', so '$' in the output always introduces
+// an escape), so distinct logical names can never collide. The result
+// uses only '$', hex digits and identifier chars — accepted unquoted by
+// LLVM IR and as symbols by ELF, Mach-O, GNU ld and LLD alike (Swift
+// likewise prefixes its Mach-O symbols with '$'). Pure-identifier names
+// — every C runtime symbol, `main`, `__bs_top_level` — pass through
+// unchanged. Returns a malloc'd string the caller must free.
+//
+// This is THE single boundary between the compiler's logical name space
+// and the linker's: every symbol definition (avra_llvm_add_function /
+// _add_global) and every reference (avra_llvm_get_named_function) routes
+// through it, so definitions and references always agree.
+static char* avra_mangle_symbol(const char* name) {
+    if (!name) return NULL;
+    static const char hex[] = "0123456789ABCDEF";
+    size_t n = strlen(name);
+    char* out = (char*)malloc(n * 3 + 1); // worst case: every byte → "$HH"
+    size_t j = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '_') {
+            out[j++] = (char)c;
+        } else {
+            out[j++] = '$';
+            out[j++] = hex[(c >> 4) & 0xF];
+            out[j++] = hex[c & 0xF];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
 LLVMValueRef avra_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeRef fn_type) {
     if (!fn_type) {
         fprintf(stderr, "[CRASH] avra_llvm_add_function: fn_type is NULL (name=%s)\n", name);
         abort();
     }
-    return LLVMAddFunction(m, name, fn_type);
+    char* sym = avra_mangle_symbol(name);
+    LLVMValueRef fn = LLVMAddFunction(m, sym ? sym : name, fn_type);
+    free(sym);
+    return fn;
 }
 
 LLVMValueRef avra_llvm_get_named_function(LLVMModuleRef m, const char* name) {
-    return LLVMGetNamedFunction(m, name);
+    char* sym = avra_mangle_symbol(name);
+    LLVMValueRef fn = LLVMGetNamedFunction(m, sym ? sym : name);
+    free(sym);
+    return fn;
 }
 
 LLVMValueRef avra_llvm_get_param(LLVMValueRef f, int index) {
@@ -197,7 +243,10 @@ LLVMTypeRef avra_llvm_fn_type_of(LLVMValueRef fn_val) {
 // ── Globals ──
 
 LLVMValueRef avra_llvm_add_global(LLVMModuleRef m, LLVMTypeRef ty, const char* name) {
-    return LLVMAddGlobal(m, ty, name);
+    char* sym = avra_mangle_symbol(name);
+    LLVMValueRef g = LLVMAddGlobal(m, ty, sym ? sym : name);
+    free(sym);
+    return g;
 }
 
 void avra_llvm_set_initializer(LLVMValueRef g, LLVMValueRef val) {
@@ -622,9 +671,19 @@ LLVMValueRef avra_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMType
 // performs a raw store — the caller MUST use store_field with an
 // explicit type for struct field stores.
 void avra_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef dest) {
-    LLVMTypeRef dest_ty = LLVMGetAllocatedType(dest);
-    if (dest_ty) {
-        val = avra_llvm_cast_to_type(b, val, dest_ty);
+    // LLVMGetAllocatedType is only defined for alloca instructions; on a
+    // non-alloca dest (e.g. a GEP) it reinterprets the value as an
+    // AllocaInst and returns a garbage type pointer rather than null, so
+    // the `if (dest_ty)` guard alone is unsound (it crashed LLVMGetTypeKind
+    // on Linux; macOS happened to return something benign). Gate on a real
+    // isa<AllocaInst> check and fall through to a raw store otherwise —
+    // matching this function's documented contract.
+    LLVMValueRef dest_alloca = LLVMIsAAllocaInst(dest);
+    if (dest_alloca) {
+        LLVMTypeRef dest_ty = LLVMGetAllocatedType(dest_alloca);
+        if (dest_ty) {
+            val = avra_llvm_cast_to_type(b, val, dest_ty);
+        }
     }
     tracked_store_or_raw(b, val, dest);
 }
@@ -941,9 +1000,14 @@ int64_t avra_llvm_emit_object(LLVMModuleRef module, const char* output_path) {
         return -1;
     }
 
+    // Emit position-independent code. macOS already defaults to PIC, but
+    // LLVMRelocDefault on Linux/x86-64 selects the static model, whose
+    // absolute relocations (R_X86_64_32) can't be linked into the PIE
+    // executables modern toolchains produce by default. PIC is correct on
+    // every supported target, so request it explicitly.
     LLVMTargetMachineRef tm = LLVMCreateTargetMachine(
         target, triple, "generic", "",
-        LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+        LLVMCodeGenLevelDefault, LLVMRelocPIC, LLVMCodeModelDefault);
     LLVMDisposeMessage(triple);
 
     if (LLVMTargetMachineEmitToFile(tm, module, (char*)output_path, LLVMObjectFile, &error)) {

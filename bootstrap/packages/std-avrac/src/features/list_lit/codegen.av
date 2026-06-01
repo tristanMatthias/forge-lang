@@ -133,6 +133,21 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             ctx.call("avra_array_insert", [list_val, idx_r.value, val_r.value])
             return ok_emit(list_val, list_ty)
         }
+        // ryvy: `xs.enumerate()` -> List<(int, T)>. Pairs each element
+        // with its zero-based index so `for (i, x) in xs.enumerate()`
+        // can destructure both. Each pair is a 2-slot tuple buffer.
+        "enumerate" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            return ok_emit(ctx.call("avra_array_enumerate", [list_val]), .List(.Tuple([.Int, elem_ty])))
+        }
+        // ryvy: `a.zip(b)` -> List<(A, B)>, truncated to the shorter
+        // input. Backs `for (x, y) in a.zip(b)` for parallel iteration.
+        "zip" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let other_elem = vtype_list_elem(arg_r.ty)
+            return ok_emit(ctx.call("avra_array_zip", [list_val, arg_r.value]), .List(.Tuple([elem_ty, other_elem])))
+        }
         "slice" -> return emit_list_slice(ctx, env, list_val, list_ty, args)
         "join" -> {
             let arg_r = emit_single_arg(ctx, env, args)?

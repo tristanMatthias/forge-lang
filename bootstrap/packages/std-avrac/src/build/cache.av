@@ -245,7 +245,7 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     if avra_selfhost_file_exists(real_o) == 1 { return real_o }
     let llvm_env = avra_process_env_get("LLVM_PREFIX")
     let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
-    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -filetype=obj '${ll}' -o '${real_o}' 2>/dev/null")
+    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${real_o}' 2>/dev/null")
     if rc != 0 { return "" }
     real_o
 }

@@ -1717,6 +1717,29 @@ impl Parser {
         null
     }
 
+    /// Parse a comma-separated destructure binding list `a, b, c`
+    /// (caller has already consumed the opening `(` and consumes the
+    /// closing `)`). Shared by `let (a, b) = …` and the for-in tuple
+    /// binding `for (a, b) in …`. A trailing comma is tolerated.
+    /// Each entry's type is left Unknown — inferred from the tuple
+    /// element types at type-check time.
+    fn parse_destructure_names(self) -> List<ParamEntry>? {
+        mut out: List<ParamEntry> = []
+        if self.check(Tk.RightParen) { return out }
+        mut keep_going = true
+        while keep_going {
+            let name = self.consume_identifier("expected variable name in destructure")?
+            out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightParen) { keep_going = false }
+            } else {
+                keep_going = false
+            }
+        }
+        out
+    }
+
     /// Lenient variant for field / method access positions
     /// (`task.await`, `expr?.field`): accepts reserved keywords
     /// because the dot disambiguates. Use only for `expr.<name>` /

@@ -19,6 +19,7 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_process_env_get(name: string) -> string
+extern fn avra_host_os() -> string
 
 /// Translate AVRA_LIB_OBJS (colon-separated .o paths) into a
 /// space-separated string for the cc command. When AVRA_USE_METADATA
@@ -47,7 +48,16 @@ fn run_capture(source: string) -> string {
     //
     let compile = avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
     let extra_objs = lib_objs_cc_args()
-    let link = avra_shell_exec("cc '${path}.ll' build/runtime.o build/llvm_wrapper.o ${extra_objs}-lLLVM -L/opt/homebrew/opt/llvm/lib -o '${path}.bin' 2>&1 || true")
+    // Platform-portable link: llc the .ll to a PIC object (gcc can't
+    // ingest .ll the way macOS clang can), then link with LLD +
+    // libstdc++ on Linux / default ld + libc++ on macOS.
+    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
+    let llvm_pfx = if llvm_prefix == "" { "/opt/homebrew/opt/llvm" } else { llvm_prefix }
+    let is_mac = avra_host_os() == "macos"
+    let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
+    let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
+    avra_shell_exec("${llvm_pfx}/bin/llc -relocation-model=pic -filetype=obj '${path}.ll' -o '${path}.o' 2>&1 || true")
+    let link = avra_shell_exec("cc '${path}.o' build/runtime.o build/llvm_wrapper.o ${extra_objs}${ld_sel} -L${llvm_pfx}/lib -lLLVM ${cxxlib} -o '${path}.bin' 2>&1 || true")
     let run = avra_shell_exec("'${path}.bin' 2>&1 || true")
     compile + "\n" + run
 }
