@@ -19,6 +19,7 @@ use core.{
     avra_selfhost_write_file,
     avra_mkdir_p,
     avra_file_mtime,
+    avra_remove_file,
 }
 use features.modules.{
     hoist_package_modules, HoistSplit,
@@ -449,19 +450,54 @@ export fn write_fixture_and_run_no_metadata(path: string, source: string) -> str
 /// different command shapes against the same fixture don't share a
 /// slot; everything else (toolchain fp + file hash + fixture path)
 /// matches cached_fixture_run's pre-existing scheme.
+///
+/// zp5b two-tier flake mitigation: the cache has three states.
+///   - canonical present  -> hot, return without running.
+///   - tentative present  -> run fresh; if matches tentative, promote
+///                           to canonical (next call is hot). If
+///                           differs (flake), overwrite tentative
+///                           with the new output and DO NOT
+///                           canonicalize.
+///   - neither            -> run fresh, write tentative.
+///
+/// A flaky fixture never reaches canonical because each fresh run
+/// produces different bytes than the prior tentative. Deterministic
+/// fixtures canonicalize after two consecutive matching runs and
+/// then serve from canonical forever (until the cache key changes
+/// via toolchain_fp or fixture content).
+///
+/// Cost: a flake costs ~2x normal warming on a fresh toolchain_fp
+/// (one tentative write + one promotion). Acceptable in exchange
+/// for never serving a stale FAIL.
 fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> string {
     let cache_dir = "build/cache/fixture_stdout"
     let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
     let fixture_h = sha256_file(fixture_path)
     let key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
-    let cache_path = "${cache_dir}/${key}.out"
-    if avra_selfhost_file_exists(cache_path) == 1 {
-        return avra_selfhost_read_file(cache_path)
+    let canonical_path = "${cache_dir}/${key}.canonical.out"
+    let tentative_path = "${cache_dir}/${key}.tentative.out"
+
+    if avra_selfhost_file_exists(canonical_path) == 1 {
+        return avra_selfhost_read_file(canonical_path)
     }
+
     let _ = avra_mkdir_p(cache_dir)
-    let out = avra_shell_exec(cmd)
-    let _ = avra_selfhost_write_file(cache_path, out)
-    out
+    let fresh = avra_shell_exec(cmd)
+
+    if avra_selfhost_file_exists(tentative_path) == 1 {
+        let tentative = avra_selfhost_read_file(tentative_path)
+        if tentative == fresh {
+            // Two consecutive identical runs — promote to canonical.
+            let _ = avra_selfhost_write_file(canonical_path, fresh)
+            let _ = avra_remove_file(tentative_path)
+            return fresh
+        }
+    }
+    // First run with this key, OR the tentative differs from this
+    // fresh output (flake). Either way: write the fresh output as
+    // the new tentative. Don't canonicalize.
+    let _ = avra_selfhost_write_file(tentative_path, fresh)
+    fresh
 }
 
 /// Memoised hash of (bs2, runtime.o, llvm_wrapper.o). Read from the
