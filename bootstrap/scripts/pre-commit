@@ -29,17 +29,27 @@ fi
 src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|bootstrap/packages/cli/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
 # Test-suite cache marker: same idea as diagnose.sh's `.fp_verified`.
-# When bs2 + every .av source + every test/fixture file is byte-
-# identical to the last successful verify, skip the suite entirely.
-# Pre-this-cache: back-to-back commits with only e.g. doc edits or
-# repeated test reruns still paid 90+s. With the cache, the second
-# commit is ~50ms (hashing the inputs). Set AVRA_FORCE_TESTS=1 to
-# bypass the cache when you suspect drift.
+# When every input that could affect test outcomes is byte-identical
+# to the last successful verify, skip the suite entirely. Set
+# AVRA_FORCE_TESTS=1 to bypass the cache when you suspect drift.
+#
+# Inputs (in addition to bs2 binary, every .av source/test/fixture,
+# runtime.c, llvm_wrapper.c — covered since the cache marker landed):
+#   - scripts/diagnose.sh — used by some fixtures via `diagnose.sh
+#     --run`; a change here can change fixture stdout without
+#     touching bs2 (5hyt).
+#   - seed/seed.ll — staged seed without rebuilt bs2 leaves the bs2
+#     hash old but the seed change real; rebuilds would then differ
+#     (5hyt).
+#   - bootstrap/Makefile — currently the test target just calls bs2
+#     directly, but covering it future-proofs against test-command
+#     changes (5hyt).
 TEST_MARKER="bootstrap/build/.tests_verified"
 TEST_INPUT_HASH=$(
   { shasum -a 256 bootstrap/build/bs2 2>/dev/null
     find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
     shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
+    shasum -a 256 bootstrap/scripts/diagnose.sh bootstrap/seed/seed.ll bootstrap/Makefile 2>/dev/null
   } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
 )
 TESTS_CACHED=0
