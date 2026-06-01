@@ -33,6 +33,7 @@ use core.{
 }
 use parse.{parser_new_with_file}
 use list_ops.{list_filter}
+use pathutil.{basename_no_ext}
 
 // ── Walker ──────────────────────────────────────────────────────────
 
@@ -275,11 +276,41 @@ export fn discover_tests(root: string) -> List<DiscoveredFile> {
 /// Lexicographic sort for path lists. Uses the language's string
 /// comparison so the result matches what `sort | uniq` would produce
 /// on the command line. O(N log N) via the runtime's qsort_r-backed
-/// `.sort()` codegen path (rlb4) — was a hand-rolled selection sort
-/// before `.sort()` existed.
+/// `.sort()` codegen path — was a hand-rolled selection sort before
+/// `.sort()` existed.
 fn sort_paths(paths: List<string>) -> List<string> {
     mut sorted: List<string> = []
     for p in paths { sorted.push(p) }
     sorted.sort((a: string, b: string) -> if a < b { -1 } else if a > b { 1 } else { 0 })
     sorted
+}
+
+// ── Filtering ───────────────────────────────────────────────────────
+
+/// Narrow a discovered set by a substring filter over basename. Empty
+/// filter is a no-op. Matches `bs2 test -f <substr>` semantics — the
+/// substring matches the file's basename without extension so a user
+/// can type `quote` and hit every `quote_*_test.av`.
+export fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List<DiscoveredFile> {
+    if filter == "" { return files }
+    list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(filter))
+}
+
+/// Scope the discovered set to a single positional path. Match
+/// strategy (first non-empty wins): (1) exact full-path equality;
+/// (2) path-suffix match — covers `bs2 test packages/x/tests/foo_test.av`
+/// from any CWD; (3) basename substring — covers `bs2 test foo` (same
+/// as -f filter but as a positional). Empty filter is a no-op.
+///
+/// Returning a List<DiscoveredFile> rather than a single Option lets
+/// the caller distinguish "the suffix matched two files" (ambiguous)
+/// from "exact match" (one file). Today the orchestrator runs all
+/// returned files; future UX could warn on ambiguity.
+export fn filter_by_path(files: List<DiscoveredFile>, path_filter: string) -> List<DiscoveredFile> {
+    if path_filter == "" { return files }
+    let exact = list_filter(files, (d: DiscoveredFile) -> d.path == path_filter)
+    if exact.length > 0 { return exact }
+    let suffix = list_filter(files, (d: DiscoveredFile) -> d.path.ends_with(path_filter))
+    if suffix.length > 0 { return suffix }
+    list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(path_filter))
 }

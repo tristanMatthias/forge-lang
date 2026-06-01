@@ -1,0 +1,113 @@
+// Unit tests for the post-discovery filters that the CLI uses to
+// narrow a set of DiscoveredFile to either a substring (-f) or a
+// positional path (the `bs2 test <path>` form). Synthetic inputs
+// only — no disk walk, no subprocess. Each spec runs in <1ms.
+//
+// Replaces three of the cases formerly exercised by
+// tests/cli_test_path_filter_test.av (which paid ~15s per case
+// because each shelled out to `bs2 test --list <path>` and made
+// the binary walk the whole project tree before applying the
+// filter that this code does in <1ms in-process).
+
+use @std.avrac.test_runner.{
+    DiscoveredFile, DiscoveredEntry,
+    filter_discovered, filter_by_path,
+}
+
+fn mk(path: string) -> DiscoveredFile {
+    let entries: List<DiscoveredEntry> = [DiscoveredEntry.Spec("\"only\"", 1)]
+    DiscoveredFile { path: path, entries: entries, has_top_main: false }
+}
+
+fn sample_files() -> List<DiscoveredFile> {
+    [
+        mk("packages/std-avrac/src/features/generics/tests/generics_test.av"),
+        mk("packages/std-avrac/src/features/generics/tests/generic_struct_test.av"),
+        mk("packages/std-avrac/src/features/null_safety/tests/null_safety_example_test.av"),
+        mk("tests/cli_test_path_filter_test.av"),
+    ]
+}
+
+fn names(files: List<DiscoveredFile>) -> List<string> {
+    mut out: List<string> = []
+    for f in files { out.push(f.path) }
+    out
+}
+
+spec "filter_by_path: exact match returns only the named file" {
+    then "exact path equality wins over suffix + substring" {
+        // generics_test.av's exact path matches one file. The
+        // suffix-fallback would also match generic_struct_test.av
+        // (no — `_test.av` ≠ `generics_test.av`), and the basename-
+        // substring fallback would NOT match "generic" against the
+        // full string "generics_test.av". So exact must short-circuit.
+        let files = sample_files()
+        let got = filter_by_path(files, "packages/std-avrac/src/features/generics/tests/generics_test.av")
+        got.length == 1
+            && got[0].path == "packages/std-avrac/src/features/generics/tests/generics_test.av"
+    }
+}
+
+spec "filter_by_path: path-suffix fallback when no exact match" {
+    then "trailing path segment matches the canonical file" {
+        // No file has the exact path "generics/tests/generics_test.av",
+        // but the std-avrac generics file ends with it. Suffix path
+        // is the cwd-independent shape the user types from any
+        // directory.
+        let files = sample_files()
+        let got = filter_by_path(files, "generics/tests/generics_test.av")
+        got.length == 1
+            && got[0].path.ends_with("generics/tests/generics_test.av")
+    }
+}
+
+spec "filter_by_path: basename-substring fallback when neither exact nor suffix matches" {
+    then "bare token matches any file whose basename contains it" {
+        // "null_safety" isn't a full path or a path suffix in the
+        // sample, but it IS a substring of one file's basename
+        // (null_safety_example_test). Falls through to the last
+        // match strategy.
+        let files = sample_files()
+        let got = filter_by_path(files, "null_safety")
+        got.length == 1
+            && got[0].path.contains("null_safety")
+    }
+}
+
+spec "filter_by_path: unknown path returns empty (CLI then renders the path-not-found error)" {
+    then "no exact + no suffix + no substring => empty" {
+        let files = sample_files()
+        let got = filter_by_path(files, "absolutely_not_a_test_file.av")
+        got.length == 0
+    }
+}
+
+spec "filter_by_path: empty filter is a no-op" {
+    then "every input file passes through" {
+        let files = sample_files()
+        let got = filter_by_path(files, "")
+        got.length == files.length
+    }
+}
+
+spec "filter_discovered: substring filter narrows by basename" {
+    then "matches every file whose basename contains the filter" {
+        let files = sample_files()
+        let got = filter_discovered(files, "generic")
+        // generics_test.av AND generic_struct_test.av both contain
+        // "generic" in their basename — both pass.
+        got.length == 2
+            && names(got).contains("packages/std-avrac/src/features/generics/tests/generics_test.av")
+            && names(got).contains("packages/std-avrac/src/features/generics/tests/generic_struct_test.av")
+    }
+    then "empty filter is a no-op" {
+        let files = sample_files()
+        let got = filter_discovered(files, "")
+        got.length == files.length
+    }
+    then "no-match filter returns empty" {
+        let files = sample_files()
+        let got = filter_discovered(files, "xyz_never_matches_anything_xyz")
+        got.length == 0
+    }
+}

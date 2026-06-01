@@ -59,7 +59,7 @@ use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path}
-use @std.avrac.test_runner.{discover_tests, DiscoveredFile, DiscoveredEntry}
+use @std.avrac.test_runner.{discover_tests, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -2207,26 +2207,11 @@ fn run_cache_command() {
 /// Filter matches against the file's basename — same semantics as the
 /// legacy `select_test_paths` filter so user CLI invocations work
 /// unchanged after the discovery swap. Empty-filter fast path skips
-/// the basename hashing/walk entirely.
-fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List<DiscoveredFile> {
-    if filter == "" { return files }
-    list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(filter))
-}
-
-/// so07.7.12: scope the discovered set to a single positional path.
-/// Match strategy (first-wins): (1) exact full-path equality;
-/// (2) path-suffix match (`d.path.ends_with(filter)` — covers
-/// `bs2 test packages/x/tests/foo_test.av` from any CWD); (3) basename
-/// substring (covers `bs2 test foo` — same as --filter but as a
-/// positional). Empty filter is a no-op.
-fn filter_by_path(files: List<DiscoveredFile>, path_filter: string) -> List<DiscoveredFile> {
-    if path_filter == "" { return files }
-    let exact = list_filter(files, (d: DiscoveredFile) -> d.path == path_filter)
-    if exact.length > 0 { return exact }
-    let suffix = list_filter(files, (d: DiscoveredFile) -> d.path.ends_with(path_filter))
-    if suffix.length > 0 { return suffix }
-    list_filter(files, (d: DiscoveredFile) -> basename_no_ext(d.path).contains(path_filter))
-}
+// filter_discovered + filter_by_path live in @std.avrac.test_runner
+// .discovery so spec tests can exercise them directly with synthetic
+// inputs (instead of shelling out to `bs2 test --list` per case).
+// Imported at the top of this file alongside the other discovery
+// types.
 
 /// hkms.4: render the structurally-discovered test set for `--list`.
 /// One line per entry, prefixed by file:line, so callers (IDEs,
