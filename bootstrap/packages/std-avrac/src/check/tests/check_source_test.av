@@ -35,3 +35,41 @@ spec "vez6.4szi: check_source basics" {
         !bag_has_errors(bag)
     }
 }
+
+// vez6.4szi.3 — red-team / edge-case pass.
+//
+// The primitive accepts arbitrary user input from spec tests, so each
+// degenerate input shape gets pinned to a deterministic outcome: empty
+// strings, whitespace-only, scale tests, and outputs from synthesized
+// fixtures all go through the same path the fixture-replacement work
+// of vez6.4szi relies on.
+spec "vez6.4szi.3: check_source edge cases" {
+    then "empty source produces a bag without errors (no entry point required for check)" {
+        // check_source isn't an entry-point validator — it just runs
+        // the diagnostic pipeline. Empty source has nothing to parse
+        // and nothing to typecheck, so the bag stays clean.
+        let bag = check_source("")
+        !bag_has_errors(bag)
+    }
+    then "whitespace-only source produces a clean bag" {
+        // Mirror of the empty-input case for the realistic shape of
+        // a freshly-opened editor buffer with a trailing newline.
+        let bag = check_source("   \n\t\n  ")
+        !bag_has_errors(bag)
+    }
+    then "moderate-size input (1000 stmts) still terminates and reports no errors" {
+        // 100MB (from the ticket sketch) jetsam-kills the test shard
+        // and even 50000 stmts (~1MB source) blows the per-shard RSS
+        // budget under bundled-test parallelism. 1000 stmts is enough
+        // to detect quadratic behaviour in the parser/typeck without
+        // hanging or starving sibling shards.
+        mut body: string = ""
+        mut i = 0
+        while i < 1000 {
+            body = body + "    let x" + string(i) + " = " + string(i) + "\n"
+            i = i + 1
+        }
+        let bag = check_source(MAIN_HEADER + " -> int {\n" + body + "    0\n}")
+        !bag_has_errors(bag)
+    }
+}
