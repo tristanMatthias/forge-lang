@@ -1277,6 +1277,20 @@ static void avra_map_grow(AvraHashMap* m) {
 // statics are the explicit carve-out for process-wide state).
 static AvraHashMap* g_lazy_comptime = NULL;
 
+// Linear-probe lookup over the global lazy-comptime map. Returns the
+// slot index where `qn` lives, or -1 when the map is uninitialised or
+// the key isn't present. Used by get/has; set re-probes after its
+// init+grow gate so it can insert into the post-grow capacity.
+static int64_t lazy_comptime_probe(const char* qn) {
+    if (!g_lazy_comptime) return -1;
+    uint64_t idx = avra_hash_str(qn) % g_lazy_comptime->cap;
+    while (g_lazy_comptime->keys[idx]) {
+        if (strcmp(g_lazy_comptime->keys[idx], qn) == 0) return (int64_t)idx;
+        idx = (idx + 1) % g_lazy_comptime->cap;
+    }
+    return -1;
+}
+
 void avra_lazy_comptime_set(const char* qn, const char* source) {
     if (!g_lazy_comptime) {
         g_lazy_comptime = (AvraHashMap*)avra_map_new_cstr();
@@ -1284,41 +1298,27 @@ void avra_lazy_comptime_set(const char* qn, const char* source) {
     if ((double)g_lazy_comptime->count / g_lazy_comptime->cap >= AVRA_MAP_LOAD_FACTOR) {
         avra_map_grow(g_lazy_comptime);
     }
-    uint64_t idx = avra_hash_str(qn) % g_lazy_comptime->cap;
-    while (g_lazy_comptime->keys[idx]) {
-        if (strcmp(g_lazy_comptime->keys[idx], qn) == 0) {
-            // Overwrite: free the previous source dup, replace.
-            free((char*)g_lazy_comptime->values[idx]);
-            g_lazy_comptime->values[idx] = (int64_t)strdup(source);
-            return;
-        }
-        idx = (idx + 1) % g_lazy_comptime->cap;
+    int64_t existing = lazy_comptime_probe(qn);
+    if (existing >= 0) {
+        // Overwrite: free the previous source dup, replace.
+        free((char*)g_lazy_comptime->values[existing]);
+        g_lazy_comptime->values[existing] = (int64_t)strdup(source);
+        return;
     }
+    uint64_t idx = avra_hash_str(qn) % g_lazy_comptime->cap;
+    while (g_lazy_comptime->keys[idx]) idx = (idx + 1) % g_lazy_comptime->cap;
     g_lazy_comptime->keys[idx] = strdup(qn);
     g_lazy_comptime->values[idx] = (int64_t)strdup(source);
     g_lazy_comptime->count++;
 }
 
 const char* avra_lazy_comptime_get(const char* qn) {
-    if (!g_lazy_comptime) return "";
-    uint64_t idx = avra_hash_str(qn) % g_lazy_comptime->cap;
-    while (g_lazy_comptime->keys[idx]) {
-        if (strcmp(g_lazy_comptime->keys[idx], qn) == 0) {
-            return (const char*)g_lazy_comptime->values[idx];
-        }
-        idx = (idx + 1) % g_lazy_comptime->cap;
-    }
-    return "";
+    int64_t i = lazy_comptime_probe(qn);
+    return i < 0 ? "" : (const char*)g_lazy_comptime->values[i];
 }
 
 int64_t avra_lazy_comptime_has(const char* qn) {
-    if (!g_lazy_comptime) return 0;
-    uint64_t idx = avra_hash_str(qn) % g_lazy_comptime->cap;
-    while (g_lazy_comptime->keys[idx]) {
-        if (strcmp(g_lazy_comptime->keys[idx], qn) == 0) return 1;
-        idx = (idx + 1) % g_lazy_comptime->cap;
-    }
-    return 0;
+    return lazy_comptime_probe(qn) >= 0 ? 1 : 0;
 }
 
 // ─── Int-keyed Map ────────────────────────────────────────────────

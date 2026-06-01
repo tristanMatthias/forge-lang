@@ -625,39 +625,22 @@ export fn tc_report(tc: TC, code: DiagCode, msg: string) -> TC {
     tc_report_at(tc, code, msg, tc.current_line, tc.current_col, 0)
 }
 
-/// Decorate the message half of a diagnostic with the TC's per-fn /
-/// macro context. so07.3 (T3 Phase 1): when `tc.current_fn` is in the
-/// macro origin table, prefix the message with `[from @expand(name)]`
-/// + the synthesised-fn footer so the user sees which @expand they
-/// authored produced the error. Bare per-fn footer when no origin
-/// matches.
-///
-/// Split from `tc_decorate_span` (vs. one helper returning
-/// `(string, Span)`) because returning a tuple containing the
-/// imported-struct `Span` triggers a typeck false-positive — id-stamp
-/// + bare-vs-FQN drift in nested tuple element comparison. Tracked
-/// separately; the duplication here is 1 macro_origin_lookup per call
-/// site (the list is tiny — every @expand macro contributes at most
-/// a handful of entries).
-fn tc_decorate_msg(tc: TC, msg: string) -> string {
+/// Decorate a diagnostic message + span with the TC's per-fn / macro
+/// context. so07.3 (T3 Phase 1): when `tc.current_fn` is in the macro
+/// origin table, swap the span to the `@expand` invocation site and
+/// prefix the message with the macro name — the caret then lands on
+/// the user's annotation rather than the synthesised body. Falls
+/// through to the bare per-fn decoration when no origin matches.
+fn tc_decorate_for_report(tc: TC, msg: string, fallback_sp: Span) -> (string, Span) {
     let origin = macro_origin_lookup(tc.macro_origins, tc.current_fn)
     if origin != null {
         let o = origin!
-        return "[from @expand(${o.macro_name})] ${msg} (in synthesized function `${tc.current_fn}`)"
+        return ("[from @expand(${o.macro_name})] ${msg} (in synthesized function `${tc.current_fn}`)", o.expand_site)
     }
     if tc.current_fn.length > 0 {
-        return "${msg} (in function `${tc.current_fn}`)"
+        return ("${msg} (in function `${tc.current_fn}`)", fallback_sp)
     }
-    msg
-}
-
-/// Span half of the decoration. When a macro origin matches, swap to
-/// the `@expand` invocation site so the caret lands on the user's
-/// annotation rather than the synthesised body.
-fn tc_decorate_span(tc: TC, fallback_sp: Span) -> Span {
-    let origin = macro_origin_lookup(tc.macro_origins, tc.current_fn)
-    if origin != null { return origin!.expand_site }
-    fallback_sp
+    (msg, fallback_sp)
 }
 
 /// Append a diagnostic at an explicit `(line, col, len)` span.
@@ -665,8 +648,8 @@ fn tc_decorate_span(tc: TC, fallback_sp: Span) -> Span {
 /// differs from the TC's "current" position.
 export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int, len: int) -> TC {
     let fallback = if line > 0 { span_new(0, len, line, col) } else { span_dummy() }
-    let sp = tc_decorate_span(tc, fallback)
-    tc with { bag: bag_report(tc.bag, diag_error(code, tc_decorate_msg(tc, msg), sp)) }
+    let (message, sp) = tc_decorate_for_report(tc, msg, fallback)
+    tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
 }
 
 /// Warning-severity sibling of `tc_report`. Goes through `bag_report`
@@ -674,16 +657,16 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
 /// strict-mode checks that want to surface signal without blocking
 /// the build (e.g. AVRA_STRICT_ARGS).
 export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
-    let sp = tc_decorate_span(tc, span_dummy())
-    tc with { bag: bag_report(tc.bag, diag_warning(code, tc_decorate_msg(tc, msg), sp)) }
+    let (message, sp) = tc_decorate_for_report(tc, msg, span_dummy())
+    tc with { bag: bag_report(tc.bag, diag_warning(code, message, sp)) }
 }
 
 /// Append a diagnostic with a dedicated cause message — surfaced
 /// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
     let fallback = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
-    let sp = tc_decorate_span(tc, fallback)
-    let primary = diag_error(code, tc_decorate_msg(tc, msg), sp)
+    let (message, sp) = tc_decorate_for_report(tc, msg, fallback)
+    let primary = diag_error(code, message, sp)
     let cause = diag_error(code, cause_msg, span_dummy())
     tc with { bag: bag_report(tc.bag, diag_with_cause(primary, cause)) }
 }

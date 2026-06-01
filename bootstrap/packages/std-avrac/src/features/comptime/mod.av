@@ -18,10 +18,10 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
+use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
-use parse.{parse_program_source}
+use parse.{parse_body_source}
 
 // String → int hashmap, same C-runtime primitive resolve/names + module_graph
 // use. Stores name → index-into-`reg.fns` so `comptime_lookup` is O(1) per
@@ -239,7 +239,7 @@ export fn comptime_lookup_lazy(reg: CompTimeRegistry, name: string) -> CompTimeF
     if avra_lazy_comptime_has(name) == 0 { return direct }
     let source = avra_lazy_comptime_get(name)
     if source == "" { return direct }
-    let body = parse_lazy_body(source)
+    let body = parse_body_source(source)
     if body.length == 0 { return direct }
     if avra_map_has_cstr(reg.name_index, name) == 0 { return direct }
     let idx = avra_map_get_cstr(reg.name_index, name)
@@ -260,27 +260,3 @@ export fn comptime_lookup_lazy(reg: CompTimeRegistry, name: string) -> CompTimeF
     rehydrated
 }
 
-// Parse just the fn body source that `metadata_extract` rendered with
-// `fmt_stmt_list`. The body parses inside a synthetic wrapper fn (so
-// the parser sees a complete program) and the wrapper's body is
-// returned. Mirrors `parse_body_source` in metadata_synthesize.av;
-// kept local to avoid a build cycle between features/comptime and
-// build/metadata_synthesize.
-fn parse_lazy_body(source: string) -> List<SStmt> {
-    let empty: List<SStmt> = []
-    if source == "" { return empty }
-    let wrapped = "fn __avra_lazy_comptime_wrapper() {\n" + source + "\n}"
-    let parsed = parse_program_source(wrapped)
-    if parsed.had_error == 1 { return empty }
-    if parsed.stmts == null { return empty }
-    extract_wrapper_body(parsed.stmts!)
-}
-
-fn extract_wrapper_body(stmts: List<SStmt>) -> List<SStmt> {
-    let empty: List<SStmt> = []
-    if stmts.length == 0 { return empty }
-    match stmt_unwrap(stmts[0].node) {
-        .Function(_, _, _, _, body) -> body
-        _ -> empty
-    }
-}

@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -142,6 +142,28 @@ export fn parse_program_source(source: string) -> ProgramParseResult {
 export fn parse_program_source_at(source: string, file: string) -> ProgramParseResult {
     mut parser = parser_new_with_file(source, file)
     parser.parse_file_program()
+}
+
+/// Parse a fn-body source rendered by `fmt_stmt_list`. The body is
+/// wrapped in a synthetic fn declaration so `parse_program_source`
+/// sees a complete program; the wrapper's body stmts are returned.
+/// Used by the metadata roundtrip (eager for generic bodies, lazy
+/// for @comptime bodies — both flow through here). Returns `[]` on
+/// any parse failure so callers treat the fn as body-less and
+/// surface a clearer error downstream.
+export fn parse_body_source(source: string) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if source == "" { return empty }
+    let wrapped = "fn __avra_body_source_wrapper() {\n" + source + "\n}"
+    let parsed = parse_program_source(wrapped)
+    if parsed.had_error == 1 { return empty }
+    if parsed.stmts == null { return empty }
+    let ss = parsed.stmts!
+    if ss.length == 0 { return empty }
+    match stmt_unwrap(ss[0].node) {
+        .Function(_, _, _, _, body) -> body
+        _ -> empty
+    }
 }
 
 /// Interleave header names and values into a flat alternating list:
