@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1095,7 +1095,7 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
             _ -> false
         }
         if mismatch {
-            let msg = "type mismatch: expected `${vtype_display(declared_ty)}`, got `${vtype_display(r.ty)}`"
+            let msg = "type mismatch: expected `${vtype_render_full(declared_ty)}`, got `${vtype_render_full(r.ty)}`"
             return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
         }
     }
@@ -1207,8 +1207,8 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
             // Allow concrete types to satisfy trait return types (auto-boxing at codegen)
             if declared is .Trait { return tc }
             if !vtype_eq(declared, body_ty) && !vtype_assignable(body_ty, declared) {
-                let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"
-                let cause = "declared return type is `${vtype_display(declared)}`"
+                let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but body produces `${vtype_render_full(body_ty)}`"
+                let cause = "declared return type is `${vtype_render_full(declared)}`"
                 return tc_report_with_cause(tc, DiagCode.TypeMismatch, msg, cause)
             }
             tc
@@ -1261,8 +1261,8 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
             // type instead of decaying to List<Unknown> / unresolved T.
             let r = check_expr_expected(tc, value, declared)
             if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
-                let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but return produces `${vtype_display(r.ty)}`"
-                let cause = "declared return type is `${vtype_display(declared)}`"
+                let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but return produces `${vtype_render_full(r.ty)}`"
+                let cause = "declared return type is `${vtype_render_full(declared)}`"
                 return tc_report_with_cause(r.tc, DiagCode.TypeMismatch, msg, cause)
             }
             r.tc

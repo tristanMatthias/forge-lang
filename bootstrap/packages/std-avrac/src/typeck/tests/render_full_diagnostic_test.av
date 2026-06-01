@@ -1,0 +1,34 @@
+// Diagnostic-detail polish: the three return / body / binding type-
+// mismatch messages used `vtype_display` (concise form) which prints
+// compound types as their kind name — `(tuple)`, `List`, `fn`. For a
+// user staring at "returns `(tuple)`, but return produces `(tuple)`"
+// the diagnostic is useless — both sides print identically when they
+// differ structurally. Swap to `vtype_render_full` so tuples render
+// their element types, lists their element type, fns their signature.
+//
+// Why this test observes the change: feed a fixture that mismatches
+// a (int, string) declared return against a returned (string, int).
+// Pre-fix the rendered error has `(tuple)` twice and tells the user
+// nothing. Post-fix the message identifies which side has which
+// element types — `(int, string)` vs `(string, int)`.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "typeck diagnostics use vtype_render_full for type-mismatch messages" {
+    then "tuple return mismatch shows element types, not bare `(tuple)`" {
+        let fixture = "/tmp/avra_render_full_diag_test.av"
+        write_fixture(fixture,
+            "fn returns_pair() -> (int, string) {\n" +
+            "    if true { return (\"a\", 5) }\n" +
+            "    (0, \"b\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        // Pre-fix message contained `(tuple)` for both sides.
+        // Post-fix should show the actual element types.
+        out.contains("(int, string)") && out.contains("(string, int)")
+            && !out.contains("returns `(tuple)`, but return produces `(tuple)`")
+    }
+}
