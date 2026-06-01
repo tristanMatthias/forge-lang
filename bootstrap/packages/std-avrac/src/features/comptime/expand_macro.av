@@ -43,7 +43,7 @@
 
 use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
-use features.comptime.{CompTimeRegistry, comptime_lookup, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
+use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, value_to_stmt, value_to_stmt_list, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
@@ -598,7 +598,15 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
 /// passes the already-unwrapped block as both stmt + original_stmt.
 fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string, original_stmt: Stmt) -> ExpandAttempt {
     let span = span_at(0, 0, line, col, file)
-    let lookup = comptime_lookup(reg, macro_name)
+    // 9p1d: metadata-shipped @comptime fns are empty-body stubs at
+    // this point. The eval runtime dispatches helper calls via its
+    // internal registry (no lazy hook in eval's Call path), so we
+    // drain every lazy @comptime in the registry before evaluating
+    // the body — derive_walker calls 30+ helper @comptime fns mid-
+    // eval and those have to be populated first. Idempotent +
+    // amortised: drains once on first @expand, no-op thereafter.
+    comptime_drain_lazy(reg)
+    let lookup = comptime_lookup_lazy(reg, macro_name)
     if lookup == null {
         return expand_fail(
             DiagCode.ExpandUnknownMacro,

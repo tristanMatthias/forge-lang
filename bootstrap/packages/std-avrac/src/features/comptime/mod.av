@@ -18,9 +18,10 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation}
+use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
+use parse.{parse_program_source}
 
 // String → int hashmap, same C-runtime primitive resolve/names + module_graph
 // use. Stores name → index-into-`reg.fns` so `comptime_lookup` is O(1) per
@@ -193,4 +194,93 @@ export fn comptime_lookup(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
 /// care about presence, not the fn body.
 export fn comptime_has(reg: CompTimeRegistry, name: string) -> bool {
     avra_map_has_cstr(reg.name_index, name) != 0
+}
+
+// 9p1d: the metadata-side counterpart to `avra_lazy_comptime_set` in
+// metadata_synthesize.av. When a consumer loads std-avrac (or any
+// package shipping @comptime fns) from `.meta.bin`, the synthesizer
+// stashes the body source string here keyed by the fn's qualified
+// name. The consumer's `collect_comptime_fns` finds the empty-body
+// stub (the metadata synthesizes `@comptime fn foo(...) {}`), and
+// the first `comptime_lookup_lazy` call rehydrates it from the
+// stash. Subsequent lookups hit the populated registry.
+//
+// Cost shape: package-level cost (parse + register every lazy
+// @comptime fn from this package) is paid ONCE per consumer that
+// actually invokes any @expand from the package. Consumers that
+// never @expand from this package pay zero parse cost.
+extern fn avra_lazy_comptime_get(qn: string) -> string
+extern fn avra_lazy_comptime_has(qn: string) -> int
+
+/// Rehydrate every empty-body stub in `reg.fns` that has a stash
+/// entry. Called once by `invoke_macro` before evaluating a macro
+/// body — the macro may call helper @comptime fns that the eval
+/// runtime dispatches internally (no lazy hook in eval's Call path),
+/// so they must all be populated before evaluation begins. Idempotent:
+/// already-rehydrated entries short-circuit in `comptime_lookup_lazy`.
+export fn comptime_drain_lazy(reg: CompTimeRegistry) {
+    for f in reg.fns {
+        if f.body.length == 0 && avra_lazy_comptime_has(f.name) != 0 {
+            let _ = comptime_lookup_lazy(reg, f.name)
+        }
+    }
+}
+
+/// Lookup that rehydrates lazy-shipped @comptime fns on demand. When
+/// `comptime_lookup` returns a stub (empty body) AND the lazy registry
+/// has source for the same name, parse the source, replace the stub
+/// in `reg.fns` in-place, register the body with `reg.runtime`, and
+/// return the rehydrated entry. Otherwise behaves like
+/// `comptime_lookup`. Used by `invoke_macro` so the @expand pipeline
+/// pays the parse cost ONLY for macros it actually invokes.
+export fn comptime_lookup_lazy(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
+    let direct = comptime_lookup(reg, name)
+    if direct != null && direct!.body.length > 0 { return direct }
+    if avra_lazy_comptime_has(name) == 0 { return direct }
+    let source = avra_lazy_comptime_get(name)
+    if source == "" { return direct }
+    let body = parse_lazy_body(source)
+    if body.length == 0 { return direct }
+    if avra_map_has_cstr(reg.name_index, name) == 0 { return direct }
+    let idx = avra_map_get_cstr(reg.name_index, name)
+    let stub = reg.fns[idx]
+    let rehydrated = CompTimeFn {
+        name: stub.name,
+        params: stub.params,
+        ret_ty: stub.ret_ty,
+        body: body,
+    }
+    // List/Runtime are heap-allocated reference shapes — mutating
+    // through a mut-bound alias updates the registry the caller holds.
+    mut fns = reg.fns
+    fns.set(idx, rehydrated)
+    let empty_tp: List<TypeParamEntry> = []
+    let fn_stmt = Stmt.Function(stub.name, empty_tp, stub.params, stub.ret_ty, body)
+    let _ = execute_stmt(reg.runtime, fn_stmt)
+    rehydrated
+}
+
+// Parse just the fn body source that `metadata_extract` rendered with
+// `fmt_stmt_list`. The body parses inside a synthetic wrapper fn (so
+// the parser sees a complete program) and the wrapper's body is
+// returned. Mirrors `parse_body_source` in metadata_synthesize.av;
+// kept local to avoid a build cycle between features/comptime and
+// build/metadata_synthesize.
+fn parse_lazy_body(source: string) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if source == "" { return empty }
+    let wrapped = "fn __avra_lazy_comptime_wrapper() {\n" + source + "\n}"
+    let parsed = parse_program_source(wrapped)
+    if parsed.had_error == 1 { return empty }
+    if parsed.stmts == null { return empty }
+    extract_wrapper_body(parsed.stmts!)
+}
+
+fn extract_wrapper_body(stmts: List<SStmt>) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if stmts.length == 0 { return empty }
+    match stmt_unwrap(stmts[0].node) {
+        .Function(_, _, _, _, body) -> body
+        _ -> empty
+    }
 }

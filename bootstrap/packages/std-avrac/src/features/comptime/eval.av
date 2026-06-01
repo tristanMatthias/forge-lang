@@ -11,7 +11,7 @@
 
 use core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, sstmt_dummy, ValueType, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair, Variant, Pattern, MatchArm}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
-use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup}
+use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
 use features.quote_expr.{construct_stmt}
 
 // ── Public API ──
@@ -37,7 +37,7 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
         .Call(callee, args) -> {
             match callee {
                 .Ident(name) -> {
-                    let fn_def = comptime_lookup(reg, name)?
+                    let fn_def = comptime_lookup_lazy(reg, name)?
                     let arg_values = literal_args_to_values(args)?
                     fold_call(reg, fn_def, arg_values)
                 }

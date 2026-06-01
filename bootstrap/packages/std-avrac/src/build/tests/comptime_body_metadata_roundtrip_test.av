@@ -1,0 +1,52 @@
+// 9p1d: @comptime fn body must survive the metadata roundtrip so
+// consumers can invoke macro fns at compile time after std-avrac is
+// loaded from `.meta.bin`.
+//
+// Pre-fix: FnDeclEntry had no `is_comptime` flag and the body-ship
+// gate was generic-only. @comptime fns lost their bodies on every
+// AVRA_USE_METADATA=1 reload — `try_fold_call` couldn't reduce a
+// known-pure @comptime call (`type_short_name("a::b")`) because the
+// registered fn had an empty body, leaving the fold path to bail
+// (returns null), and the consumer's binary kept the runtime call
+// instead of the folded literal.
+//
+// Why this test observes the fix: the fixture imports the std-
+// shipped `type_short_name` @comptime fn and uses its result in a
+// constant initializer. Pre-fix the rendered code at the call site
+// is `type_short_name("a::b::Span")`. Post-fix the comptime fold
+// reduces the call to its result string at compile time, and the
+// constant initializer becomes the literal `"Span"`.
+//
+// The lazy half is also load-bearing: a naive eager-parse fix
+// regressed every metadata-loaded consumer to 5+ min / 1.5 GB RSS
+// because the parser walked every @comptime fn body on every std-
+// avrac load. Post-fix the synthesizer stashes body source in a
+// runtime.c global; the consumer's @comptime registry rehydrates on
+// first lookup. Consumers that never @comptime-fold from this
+// package pay zero parse cost; consumers that do pay it ONCE per
+// build, not per fn.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn run_metadata(source: string) -> string {
+    write_fixture_and_run("/tmp/avra_9p1d_metadata_test.av", source)
+}
+
+spec "9p1d: @comptime body survives metadata roundtrip" {
+    then "type_short_name folds at compile time from metadata-loaded std-avrac" {
+        let out = run_metadata(
+            "use @std.avrac.core.{type_short_name}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(type_short_name(\"@std::avrac::diagnostics::Span\"))\n" +
+            "}\n")
+        // type_short_name strips up-to-and-including the last `::`,
+        // so input `@std::avrac::diagnostics::Span` returns `Span`.
+        // The literal "Span" must come from the @comptime fold — if
+        // the body wasn't preserved, the registered fn is empty,
+        // try_fold_call returns null, and the call survives as a
+        // runtime call... which fails because std-avrac's .o doesn't
+        // ship a callable type_short_name at runtime.
+        out.contains("Span")
+    }
+}

@@ -452,13 +452,30 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
         // already, so no extra @external_unit wrapping needed.
         return sstmt_dummy(wrap_export(Stmt.ExternFn(n, e.params, e.ret), e.exported))
     }
+    let body_source = lookup_generic_body(bodies, e.name)
+    if e.is_comptime && body_source != "" {
+        // 9p1d: stash source for lazy parse — the consumer's
+        // `@expand` pipeline (invoke_macro) parses + registers on
+        // first invocation. Synth an empty-body @comptime fn so it
+        // shows up in the AST + the @comptime registry without
+        // paying parse cost for the 30+ derive_walker bodies that
+        // consumers who never @expand from this package would
+        // otherwise eagerly parse. @external_unit gates codegen —
+        // the producer's .o already defines this symbol, so the
+        // consumer must not emit its own definition (duplicate
+        // symbol at link time otherwise).
+        avra_lazy_comptime_set(e.name, body_source)
+        let empty_body: List<SStmt> = []
+        let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, empty_body)
+        return sstmt_dummy(wrap_export(wrap_comptime(wrap_external_unit(fn_decl)), e.exported))
+    }
     // P5 library-mode: when this fn has a generic body in the
     // metadata, materialise it locally so the consumer's
     // monomorphizer can clone it per instantiation. The body parse
     // happens once per consume; cached metadata.bin loads stay
-    // cheap. Non-generic fns + missing-body cases fall through to
-    // the @external_unit stub path — linker resolves at link time.
-    let body_source = lookup_generic_body(bodies, e.name)
+    // cheap. Non-generic, non-@comptime fns + missing-body cases
+    // fall through to the @external_unit stub path — linker resolves
+    // at link time.
     if body_source != "" {
         let parsed_body = parse_body_source(body_source)
         let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, parsed_body)
@@ -470,6 +487,17 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
     let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, empty_body)
     sstmt_dummy(wrap_export(wrap_external_unit(fn_decl), e.exported))
 }
+
+// 9p1d: re-attach `@comptime` so `collect_comptime_fns` picks the
+// synthesized fn up. Body is empty at synth; `invoke_macro` lazy-
+// rehydrates from `avra_lazy_comptime_get(qn)` on first lookup.
+fn wrap_comptime(s: Stmt) -> Stmt {
+    let empty_args: List<SExpr> = []
+    let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args }]
+    Stmt.Annotated(annots, s)
+}
+
+extern fn avra_lazy_comptime_set(qn: string, source: string)
 
 // ── CONSTS ──
 
