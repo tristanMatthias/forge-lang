@@ -143,7 +143,23 @@ if [ -n "$TEST_PID" ]; then
   else
     echo "[pre-commit] spec test suite passed in ${TEST_ELAPSED}s"
     rm -f "$TEST_LOG"
-    echo "$TEST_INPUT_HASH" > "$TEST_MARKER"
+    # 0o8i: re-hash the inputs immediately before writing the marker.
+    # If the inputs drifted between the captured hash (taken at hook
+    # start) and now, refuse to write — the suite's result no longer
+    # describes the current source state. Mid-suite edits land in
+    # the NEXT commit's coverage, not this one's marker.
+    TEST_INPUT_HASH_NOW=$(
+      { shasum -a 256 bootstrap/build/bs2 2>/dev/null
+        find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
+        shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
+        shasum -a 256 bootstrap/scripts/diagnose.sh bootstrap/seed/seed.ll bootstrap/Makefile 2>/dev/null
+      } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+    )
+    if [ "$TEST_INPUT_HASH" = "$TEST_INPUT_HASH_NOW" ]; then
+      echo "$TEST_INPUT_HASH" > "$TEST_MARKER"
+    else
+      echo "[pre-commit] inputs drifted during suite — skipping marker write (next commit will re-run tests)"
+    fi
   fi
 fi
 
