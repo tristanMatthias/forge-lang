@@ -1065,10 +1065,69 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 
 /// Type-check every statement in a list, threading the TC.
 fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
-    mut cur = tc
+    mut cur = lint_index_loops(tc, stmts)
     for ss in stmts {
         let with_pos = cur with { current_line: ss.line, current_col: ss.col }
         cur = check_stmt(with_pos, ss.node)
+    }
+    cur
+}
+
+/// True when `e` is the integer literal 0 (the `mut i = 0` seed).
+fn lint_expr_is_zero(e: Expr) -> bool {
+    match e { .Number(v) -> v == "0", _ -> false }
+}
+
+/// If `cond` is `i < <coll>.length`, return the collection's name;
+/// otherwise "". Conservative — only the canonical index-loop guard.
+fn lint_index_guard_coll(cond: Expr) -> string {
+    match cond {
+        .Binary(left, op, right) -> match op {
+            .Lt -> match left {
+                .Ident(ln) -> if ln != "i" { "" } else {
+                    match right {
+                        .FieldAccess(obj, field) -> if field != "length" { "" } else {
+                            match obj { .Ident(n) -> n, _ -> "<collection>" }
+                        }
+                        _ -> ""
+                    }
+                }
+                _ -> ""
+            }
+            _ -> ""
+        }
+        _ -> ""
+    }
+}
+
+/// F9005 lint (opt-in via AVRA_LINT_LOOPS): flag the manual
+/// `mut i = 0` / `while i < xs.length { … }` index-loop antipattern,
+/// which should be a `for` loop. Structural AST match (not a string
+/// heuristic): a `Mut("i", _, 0)` immediately followed by a `While`
+/// whose guard is `i < <coll>.length`.
+fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
+    if avra_process_env_get("AVRA_LINT_LOOPS") == "" { return tc }
+    mut cur = tc
+    for (k, ss) in stmts.enumerate() {
+        if k + 1 < stmts.length {
+            match ss.node {
+                .Mut(name, _, init) -> {
+                    if name == "i" && lint_expr_is_zero(init) {
+                        match stmts[k + 1].node {
+                            .While(cond, _) -> {
+                                let coll = lint_index_guard_coll(cond)
+                                if coll != "" {
+                                    cur = tc_warn(cur, DiagCode.ManualIndexLoop,
+                                        "manual index loop over `${coll}` — prefer a `for` loop")
+                                }
+                            }
+                            _ -> {}
+                        }
+                    }
+                }
+                _ -> {}
+            }
+        }
     }
     cur
 }

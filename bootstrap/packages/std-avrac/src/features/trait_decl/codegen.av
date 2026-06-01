@@ -10,10 +10,8 @@ use features.fn_decl.{emit_first_arg}
 /// to convert a method name into a vtable slot index. Returns -1
 /// when the method isn't on the trait.
 export fn trait_method_idx(methods: List<TraitMethodMeta>, name: string) -> int {
-    mut i = 0
-    while i < methods.length {
-        if methods[i].name == name { return i }
-        i = i + 1
+    for (i, m) in methods.enumerate() {
+        if m.name == name { return i }
     }
     0 - 1
 }
