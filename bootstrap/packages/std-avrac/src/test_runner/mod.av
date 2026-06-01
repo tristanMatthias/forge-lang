@@ -31,6 +31,16 @@ use pathutil.{basename_no_ext}
 use list_ops.{list_concat}
 use @std.crypto.{sha256_hex, sha256_file}
 
+// 4szi.1: in-process memo for read_or_compute_toolchain_fp. The
+// toolchain fp doesn't change for the lifetime of a bs2 process —
+// the binary itself, runtime.o, llvm_wrapper.o, AND every
+// packages/std-avrac/src .av file are all stable. With the memo,
+// only the first cached_fixture_capture call per process does the
+// sidecar + find-newer dance; every subsequent call returns the
+// memoized string immediately, saving a fork+exec per call.
+extern fn avra_test_toolchain_fp_get() -> string
+extern fn avra_test_toolchain_fp_set(fp: string)
+
 /// Drop every `extern fn` declaration from the list.
 ///
 /// Test files re-import the extern declarations the runtime supplies
@@ -438,7 +448,26 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 /// otherwise. The sidecar is plain hex (64 chars), so an unrelated
 /// touch (e.g. `make clean` deleting the cache dir) just forces one
 /// recomputation, never a wrong hit.
+///
+/// 4szi.1: an in-process memo layered on top short-circuits the
+/// sidecar logic entirely after the first call per process. The
+/// sidecar's invariants imply that within a single bs2 invocation
+/// no input can change (the binary can't rebuild itself mid-run),
+/// so the first call's result holds for the whole process.
 fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
+    let memoed = avra_test_toolchain_fp_get()
+    if memoed != "" { return memoed }
+    let computed = compute_or_read_toolchain_fp_sidecar(cache_dir)
+    avra_test_toolchain_fp_set(computed)
+    computed
+}
+
+/// The cold-path sidecar logic. Computes the fingerprint from disk
+/// (or reads it from the cache directory's sidecar when valid).
+/// Carved out from `read_or_compute_toolchain_fp` so the memoised
+/// fast path stays a 2-line check that's obviously a no-op when
+/// the memo is warm.
+fn compute_or_read_toolchain_fp_sidecar(cache_dir: string) -> string {
     let sidecar = "${cache_dir}/.toolchain-fp"
     if avra_selfhost_file_exists(sidecar) == 1
         && sidecar_newer_than_inputs(sidecar) {

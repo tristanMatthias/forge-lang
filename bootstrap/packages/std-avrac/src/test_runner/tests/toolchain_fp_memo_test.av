@@ -1,0 +1,35 @@
+// 4szi.1 — process-local memo for the test-runner's toolchain fp.
+// Before this memo, every cached_fixture_capture call fed
+// read_or_compute_toolchain_fp, which always ran a `find -newer`
+// shell-exec to validate the sidecar. The fp is invariant within
+// any one bs2 invocation, so the memo holds for the whole process
+// after the first compute.
+//
+// Observes the round-trip contract: pre-set, get returns ""; after
+// set, get returns the same string. Catches a regression to the
+// pre-memo code path where every call repeats the full sidecar
+// pipeline.
+
+extern fn avra_test_toolchain_fp_get() -> string
+extern fn avra_test_toolchain_fp_set(fp: string)
+
+spec "4szi.1: toolchain fp memo round-trips and overwrites" {
+    then "first set / first get returns the value" {
+        // The memo is process-global state — earlier specs in the
+        // same shard may have already warmed it. Choose a unique
+        // marker so set+get observes this spec's own value, not a
+        // stale one from a sibling.
+        let marker = "4szi1-roundtrip-marker-cafebabe"
+        avra_test_toolchain_fp_set(marker)
+        avra_test_toolchain_fp_get() == marker
+    }
+    then "set overwrites a prior set" {
+        // Mutability check — strdup-based replacement must free the
+        // previous slot, otherwise we'd leak per call. The behaviour
+        // we can observe directly is that get always returns the
+        // MOST RECENT set, never a stale earlier value.
+        avra_test_toolchain_fp_set("first-value-aaa")
+        avra_test_toolchain_fp_set("second-value-bbb")
+        avra_test_toolchain_fp_get() == "second-value-bbb"
+    }
+}

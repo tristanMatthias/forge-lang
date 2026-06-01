@@ -1321,6 +1321,29 @@ int64_t avra_lazy_comptime_has(const char* qn) {
     return lazy_comptime_probe(qn) >= 0 ? 1 : 0;
 }
 
+// ─── 4szi.1 perf: in-process memo for the test_runner toolchain fp ──
+// The toolchain fp is invariant for the entire bs2-test-runner process
+// lifetime (the binary, its runtime, llvm_wrapper, AND std-avrac src
+// can't change while we're running). Before this memo, every
+// `cached_fixture_capture` call fed `read_or_compute_toolchain_fp`,
+// which always shell-exec'd `find packages -newer sidecar -print -quit`
+// to verify the sidecar — ~3-10ms of fork+exec per cache check, paid
+// 100s of times per shard. With the memo, the first call computes,
+// every later call returns the cached string in nanoseconds.
+//
+// Single-key memo (the fp is global to the process) — no hashmap
+// needed. Set is one strdup; get is a pointer dereference.
+static char* g_test_toolchain_fp_memo = NULL;
+
+void avra_test_toolchain_fp_set(const char* fp) {
+    if (g_test_toolchain_fp_memo) free(g_test_toolchain_fp_memo);
+    g_test_toolchain_fp_memo = strdup(fp);
+}
+
+const char* avra_test_toolchain_fp_get(void) {
+    return g_test_toolchain_fp_memo ? g_test_toolchain_fp_memo : "";
+}
+
 // ─── Int-keyed Map ────────────────────────────────────────────────
 // Flat array indexed by int key. Perfect for enum tag → handler
 // dispatch where keys are small sequential integers (0-63).
