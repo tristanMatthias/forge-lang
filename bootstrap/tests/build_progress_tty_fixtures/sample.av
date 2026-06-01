@@ -14,6 +14,7 @@ extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_host_os() -> string
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
@@ -55,15 +56,23 @@ fn main() -> int {
     // ── Case 2: TTY (forced via `script -q`). Progress bar must render. ──
     avra_shell_exec("rm -rf ${root}/dep1/build/cache/meta ${root}/dep2/build/cache/meta")
     let tty_log = "/tmp/avra_5gvp_tty.log"
-    // `script -q /dev/null sh -c '...'` allocates a PTY for stdout on
-    // both Linux and macOS (BSD `script` accepts the same arg shape).
-    // The trailing `sh -c` ensures the inner cmd uses /bin/sh.
-    let tty_cmd = "script -q ${tty_log} sh -c 'cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata' > /dev/null 2>&1"
+    // `script` allocates a PTY for stdout, but its CLI differs by platform:
+    // BSD/macOS takes the command positionally (`script -q FILE cmd…`),
+    // util-linux takes it via `-c` (`script -q -c "cmd" FILE`).
+    let inner = "cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata"
+    let tty_cmd = if avra_host_os() == "macos" {
+        "script -q ${tty_log} sh -c '${inner}' > /dev/null 2>&1"
+    } else {
+        "script -q -c '${inner}' ${tty_log} > /dev/null 2>&1"
+    }
     let rc_tty = avra_shell_exec_status(tty_cmd)
     probe("tty_build_rc_zero", rc_tty == 0)
     probe("tty_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1")) != 0)
     probe("tty_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2")) != 0)
-    let tty_has_esc = avra_shell_exec_status("grep -q $'\\x1b\\[' ${tty_log}")
+    // Portable ESC-`[` search: `$'…'` ANSI-C quoting is a bashism that
+    // breaks under dash (/bin/sh on many Linuxes). Generate the CSI bytes
+    // with printf and match them as a fixed string instead.
+    let tty_has_esc = avra_shell_exec_status("grep -qF \"$(printf '\\033[')\" ${tty_log}")
     probe("tty_log_has_escape_codes", tty_has_esc == 0)
     let tty_has_summary = avra_shell_exec_status("grep -q 'built 2 deps' ${tty_log}")
     probe("tty_log_has_summary_line", tty_has_summary == 0)

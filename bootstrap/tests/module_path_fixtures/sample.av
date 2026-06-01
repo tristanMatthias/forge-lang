@@ -33,10 +33,12 @@ fn main() -> int {
     let unq_ir = avra_shell_exec("grep -c '^define i64 @widget_make()' ${src}.ll").trim()
     probe("unqualified_widget_make_present", unq_ir == "1")
 
-    // With --module_path=widget: symbol becomes widget::widget_make.
+    // With --module_path=widget the logical symbol is widget::widget_make,
+    // which the object-file mangler escapes (`:` -> $3A) to the ELF-valid
+    // `widget$3A$3Awidget_make` (LLVM quotes names containing `$`).
     let rc2 = avra_shell_exec_status("${bs2} compile --module_path=widget ${src}")
     probe("compile_with_module_path", rc2 == 0)
-    let qual_ir = avra_shell_exec("grep -c '@\"widget::widget_make\"()' ${src}.ll").trim()
+    let qual_ir = avra_shell_exec("grep -c '@\"widget$3A$3Awidget_make\"()' ${src}.ll").trim()
     probe("qualified_widget_make_present", qual_ir == "1")
     let unq_after_qual = avra_shell_exec("grep -c '^define i64 @widget_make()' ${src}.ll").trim()
     probe("no_unqualified_form_when_module_path_set", unq_after_qual == "0")

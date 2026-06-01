@@ -33,13 +33,87 @@ CLI_SRC_DIR="$BOOTSTRAP_DIR/packages/cli/src"
 LIB_SRC_DIR="$BOOTSTRAP_DIR/packages/std-avrac/src"
 SRC_DIR="$CLI_SRC_DIR"
 
-LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm}"
+# Platform-portable LLVM discovery. On macOS the Homebrew prefix is the
+# default; on Linux (or any box lacking that path) fall back to whatever
+# `llvm-config` reports so the bootstrap builds without manual env setup.
+_default_llvm_prefix="/opt/homebrew/opt/llvm"
+if [ ! -d "$_default_llvm_prefix" ] && command -v llvm-config >/dev/null 2>&1; then
+  _default_llvm_prefix="$(llvm-config --prefix)"
+fi
+LLVM_PREFIX="${LLVM_PREFIX:-$_default_llvm_prefix}"
 LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
+
 # Use LLVM 20's llc for code generation. LLVM 21's -O2 miscompiles
 # certain functions on ARM64 (uses wrong register for parameters).
 # The runtime still links against the default LLVM's libLLVM.
+# Prefer the pinned LLVM 20 llc; fall back to the toolchain llc beside
+# LLVM_PREFIX, then to whatever `llc` is on PATH.
 LLC_PREFIX="${LLC_PREFIX:-/opt/homebrew/Cellar/llvm/20.1.5}"
-LLC="$LLC_PREFIX/bin/llc"
+if [ -x "$LLC_PREFIX/bin/llc" ]; then
+  LLC="${LLC:-$LLC_PREFIX/bin/llc}"
+elif [ -x "$LLVM_PREFIX/bin/llc" ]; then
+  LLC="${LLC:-$LLVM_PREFIX/bin/llc}"
+else
+  LLC="${LLC:-$(command -v llc 2>/dev/null || echo llc)}"
+fi
+
+# C++ runtime libLLVM was built against: libc++ on macOS, libstdc++ on a
+# typical Linux LLVM packaging. Used wherever the bootstrap links libLLVM.
+if [ "$(uname -s)" = "Darwin" ]; then
+  CXXLIB="${CXXLIB:--lc++}"
+else
+  CXXLIB="${CXXLIB:--lstdc++}"
+fi
+
+# Main-thread stack size. The bootstrap compiler recurses deeply
+# (recursive-descent parser, AST renderers). macOS pins a 32 MiB main
+# stack at link time via the ld64 `-stack_size` flag; on Linux the
+# main-thread stack derives from RLIMIT_STACK instead, so the flag is
+# macOS-only and we raise the soft limit for this process (and every
+# binary it spawns) here instead.
+if [ "$(uname -s)" = "Darwin" ]; then
+  STACK_LDFLAGS="${STACK_LDFLAGS:--Wl,-stack_size,0x2000000}"
+else
+  STACK_LDFLAGS="${STACK_LDFLAGS:-}"
+  ulimit -S -s 65536 2>/dev/null || true
+fi
+
+# Relocation model for llc-generated objects. macOS llc defaults to PIC;
+# Linux llc defaults to the static model, whose absolute relocations
+# (R_X86_64_32) are incompatible with the PIE executables modern Linux
+# toolchains link by default. Emit PIC on Linux to match macOS and link
+# cleanly into a PIE.
+if [ "$(uname -s)" = "Darwin" ]; then
+  LLC_RELOC="${LLC_RELOC:-}"
+else
+  LLC_RELOC="${LLC_RELOC:--relocation-model=pic}"
+fi
+
+# Portable SHA-256. macOS ships Perl's `shasum`; Linux ships coreutils'
+# `sha256sum`. Both accept file arguments and stdin and print the digest
+# as field 1, so one command string works in pipes and `find -exec` alike
+# (kept as an unquoted word-splitting variable, not a function, precisely
+# so `find … -exec $SHA256_CMD {} +` resolves to a real executable).
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA256_CMD="sha256sum"
+else
+  SHA256_CMD="shasum -a 256"
+fi
+
+# Linker selection. The bootstrap mangles symbols with a leading `@`
+# (e.g. `@std::avrac::core::Foo__bar`). GNU ld reads `@` as the
+# symbol-versioning separator and rejects the whole object
+# ("multiple definition of `no symbol'"); LLD treats `@` in defined
+# symbols literally. So on Linux link with LLD when it's available.
+# macOS uses its default ld64 (which has no such `@` semantics).
+if [ "$(uname -s)" = "Darwin" ]; then
+  LD_SELECT="${LD_SELECT:-}"
+elif command -v ld.lld >/dev/null 2>&1; then
+  LD_SELECT="${LD_SELECT:--fuse-ld=lld}"
+else
+  LD_SELECT="${LD_SELECT:-}"
+fi
+
 LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
 C_RED='\033[0;31m'
@@ -253,11 +327,11 @@ ensure_seed() {
     [ -f "$SEED_LL" ] || die "seed IR not found at $SEED_LL — repo is corrupt"
     log "building seed compiler from seed/seed.ll"
     mkdir -p "$BUILD_DIR"
-    "$LLC" -O2 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
+    "$LLC" -O2 $LLC_RELOC -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
       || die "seed llc failed"
     cc -o "${SEED_BIN}.tmp" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-      -Wl,-stack_size,0x2000000 \
-      -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/seed.link.log" \
+      $STACK_LDFLAGS \
+      $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$BUILD_DIR/seed.link.log" \
       || { rm -f "${SEED_BIN}.tmp"; cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
     mv "${SEED_BIN}.tmp" "$SEED_BIN"
     echo "$seed_hash" > "$seed_hash_file"
@@ -288,7 +362,7 @@ link_shared_fp() {
   # sidecar doesn't capture it.
   local libobjs_h=""
   if [ -n "${AVRA_LIB_OBJS:-}" ]; then
-    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | shasum -a 256 | cut -d' ' -f1)
+    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | $SHA256_CMD | cut -d' ' -f1)
   fi
   if [ -z "$libobjs_h" ] \
      && [ -f "$LINK_SHARED_FP_FILE" ] \
@@ -300,11 +374,11 @@ link_shared_fp() {
   fi
   mkdir -p "$LINK_CACHE_DIR"
   local bs2_h runtime_h wrapper_h composed
-  bs2_h=$(shasum -a 256 "$BS2" | cut -d' ' -f1)
-  runtime_h=$(shasum -a 256 "$RUNTIME_O" | cut -d' ' -f1)
-  wrapper_h=$(shasum -a 256 "$LLVM_WRAPPER_O" | cut -d' ' -f1)
+  bs2_h=$($SHA256_CMD "$BS2" | cut -d' ' -f1)
+  runtime_h=$($SHA256_CMD "$RUNTIME_O" | cut -d' ' -f1)
+  wrapper_h=$($SHA256_CMD "$LLVM_WRAPPER_O" | cut -d' ' -f1)
   composed=$(printf '%s:%s:%s:%s' "$bs2_h" "$runtime_h" "$wrapper_h" "$libobjs_h" \
-    | shasum -a 256 | cut -d' ' -f1)
+    | $SHA256_CMD | cut -d' ' -f1)
   # Don't persist when libobjs_h is set — it's per-invocation state,
   # and persisting would make the next call without LIB_OBJS hit
   # the stale cached value.
@@ -326,8 +400,8 @@ link_ll() {
   if [ -z "$coverage" ] && [ -f "$ll" ]; then
     local shared_fp ll_h fp
     shared_fp=$(link_shared_fp)
-    ll_h=$(shasum -a 256 "$ll" | cut -d' ' -f1)
-    fp=$(printf '%s:%s' "$shared_fp" "$ll_h" | shasum -a 256 | cut -d' ' -f1 | head -c 16)
+    ll_h=$($SHA256_CMD "$ll" | cut -d' ' -f1)
+    fp=$(printf '%s:%s' "$shared_fp" "$ll_h" | $SHA256_CMD | cut -d' ' -f1 | head -c 16)
     cached_bin="$LINK_CACHE_DIR/$fp.bin"
     if [ -f "$cached_bin" ]; then
       cp "$cached_bin" "$out"
@@ -344,7 +418,7 @@ link_ll() {
       || die "opt instrprof lowering failed for $ll"
     obj_ll="$lowered"
   fi
-  "$LLC" -O2 -filetype=obj "$obj_ll" -o "${out}.o" \
+  "$LLC" -O2 $LLC_RELOC -filetype=obj "$obj_ll" -o "${out}.o" \
     || die "llc failed for $ll"
   local extra_libs=""
   if [ "$coverage" = "coverage" ]; then
@@ -365,8 +439,8 @@ link_ll() {
   # this iteration alone), the previous $out remains intact instead
   # of being corrupted into a 2.2MB Mach-O that SIGKILLs on dyld load.
   cc -o "${out}.tmp" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
-    -Wl,-stack_size,0x2000000 \
-    -L"$LLVM_PREFIX/lib" -lLLVM -lc++ $extra_libs 2>"$logfile" \
+    $STACK_LDFLAGS \
+    $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB $extra_libs 2>"$logfile" \
     || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
   mv "${out}.tmp" "$out"
 
@@ -422,11 +496,11 @@ ensure_bs2() {
       # Seed crashed. Check if it's an LLVM -O2 miscompilation by
       # rebuilding the seed at -O0 and retrying.
       warn "seed crashed at -O2 — testing for LLVM optimization bug"
-      "$LLC" -O0 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed_o0.o" \
+      "$LLC" -O0 $LLC_RELOC -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed_o0.o" \
         || die "seed llc -O0 failed"
       cc -o "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-        -Wl,-stack_size,0x2000000 \
-        -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null \
+        $STACK_LDFLAGS \
+        $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null \
         || { rm -f "$BUILD_DIR/seed_o0.tmp"; die "seed -O0 link failed"; }
       mv "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0"
       if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
@@ -452,12 +526,12 @@ ensure_bs2() {
 # Link an LLVM IR file into an executable at -O0 (for debuggability).
 link_ll_O0() {
   local ll="$1" out="$2" logfile="$3"
-  "$LLC" -O0 -filetype=obj "$ll" -o "${out}.o" \
+  "$LLC" -O0 $LLC_RELOC -filetype=obj "$ll" -o "${out}.o" \
     || die "llc -O0 failed for $ll"
   # Atomic link via staging path (see link_ll for rationale).
   cc -g -o "${out}.tmp" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-    -Wl,-stack_size,0x2000000 \
-    -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$logfile" \
+    $STACK_LDFLAGS \
+    $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$logfile" \
     || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
   mv "${out}.tmp" "$out"
 }
@@ -503,7 +577,7 @@ ensure_bs2_asan() {
     log "linking $BS2_ASAN with -fsanitize=address"
     cc -fsanitize=address -g -o "$BS2_ASAN" \
        "$SRC_DIR/main.av.ll" "$RUNTIME_ASAN_O" "$LLVM_WRAPPER_O" \
-       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/bs2_asan.link.log" \
+       $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$BUILD_DIR/bs2_asan.link.log" \
       || { cat "$BUILD_DIR/bs2_asan.link.log" >&2; die "bs2_asan link failed"; }
     ok "built $BS2_ASAN"
   fi
@@ -609,10 +683,10 @@ mode_build_bs2() {
   # Auto-cycle didn't help. Before giving up, check if it's an LLVM
   # -O2 miscompilation: rebuild bs2 at -O0 and test self-compile.
   warn "auto-cycle failed — checking for LLVM -O2 miscompilation"
-  "$LLC" -O0 -filetype=obj "$SRC_DIR/main.av.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
+  "$LLC" -O0 $LLC_RELOC -filetype=obj "$SRC_DIR/main.av.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
   if cc -o "$BUILD_DIR/bs2_o0" "$BUILD_DIR/bs2_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-       -Wl,-stack_size,0x2000000 \
-       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null; then
+       $STACK_LDFLAGS \
+       $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null; then
     if "$BUILD_DIR/bs2_o0" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
       err ""
       err "LLVM OPTIMIZATION BUG DETECTED"
@@ -721,9 +795,9 @@ mode_check_fixedpoint() {
   local fp_marker="$BUILD_DIR/.fp_verified"
   local fp_input
   fp_input=$(
-    { shasum -a 256 "$BS2" "$BS3" 2>/dev/null
-      find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -type f -exec shasum -a 256 {} +
-    } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+    { $SHA256_CMD "$BS2" "$BS3" 2>/dev/null
+      find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -type f -exec $SHA256_CMD {} +
+    } | awk '{print $1}' | sort | $SHA256_CMD | awk '{print $1}'
   )
   if [ "${AVRA_FORCE_FP:-0}" != "1" ] && [ -f "$fp_marker" ] \
      && [ "$(cat "$fp_marker" 2>/dev/null)" = "$fp_input" ]; then
@@ -770,9 +844,9 @@ mode_check_fixedpoint() {
         # the next run's compare matches.
         local fp_post
         fp_post=$(
-          { shasum -a 256 "$BS2" "$BS3" 2>/dev/null
-            find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -type f -exec shasum -a 256 {} +
-          } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+          { $SHA256_CMD "$BS2" "$BS3" 2>/dev/null
+            find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -type f -exec $SHA256_CMD {} +
+          } | awk '{print $1}' | sort | $SHA256_CMD | awk '{print $1}'
         )
         echo "$fp_post" > "$fp_marker"
         return 0
@@ -1132,7 +1206,7 @@ mode_update_seed() {
   local commit timestamp src_hash
   commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  src_hash=$(find "$SRC_DIR" -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+  src_hash=$(find "$SRC_DIR" -name '*.av' -exec $SHA256_CMD {} + | $SHA256_CMD | cut -d' ' -f1)
 
   {
     printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
@@ -1409,7 +1483,7 @@ print(f'TOTAL:{total_changed}/{total_new}')
   local commit timestamp src_hash
   commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  src_hash=$(find "$SRC_DIR" -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+  src_hash=$(find "$SRC_DIR" -name '*.av' -exec $SHA256_CMD {} + | $SHA256_CMD | cut -d' ' -f1)
 
   {
     printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"

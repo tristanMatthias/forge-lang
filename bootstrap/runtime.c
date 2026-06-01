@@ -11,6 +11,14 @@
 // All functions use C-string (const char*) and i64 conventions
 // matching the bootstrap's everything-is-i64 value model.
 
+// glibc gates several extensions used below behind _GNU_SOURCE:
+// `Dl_info`/`dladdr` (<dlfcn.h>) and the `qsort_r` prototype. Must be
+// defined before any system header is pulled in. No-op on macOS/BSD,
+// which expose these unconditionally.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -721,9 +729,17 @@ static void avra_clear_spec_guard_in_child(void) {
 
 __attribute__((constructor))
 static void avra_install_signal_handlers(void) {
-    // Alternate signal stack so handler works during stack overflow
-    static char alt_stack[SIGSTKSZ + 65536];
-    stack_t ss = { .ss_sp = alt_stack, .ss_size = sizeof(alt_stack), .ss_flags = 0 };
+    // Alternate signal stack so the handler runs during stack overflow.
+    // SIGSTKSZ is a runtime value on modern glibc (>= 2.34) so it can't
+    // size a static array; allocate at install time from the runtime
+    // SIGSTKSZ with a 256 KiB floor (the handler's crash-report path is
+    // not trivial). The buffer lives for the process lifetime — never
+    // freed, by design.
+    size_t alt_stack_size = (size_t)SIGSTKSZ;
+    if (alt_stack_size < 256 * 1024) alt_stack_size = 256 * 1024;
+    static char* alt_stack = NULL;
+    if (!alt_stack) alt_stack = (char*)malloc(alt_stack_size);
+    stack_t ss = { .ss_sp = alt_stack, .ss_size = alt_stack_size, .ss_flags = 0 };
     sigaltstack(&ss, NULL);
 
     struct sigaction sa;
@@ -1986,10 +2002,13 @@ void avra_trace_ptr(const char* label, int64_t val) {
     const char* region = "unknown";
 
     // (Global bump arena removed — all allocations use RC or per-scope arenas)
-    // Check stack (rough heuristic — stack is near sp)
+    // Check stack (rough heuristic — stack is near sp). The address of a
+    // local is a portable approximation of the current stack pointer, so
+    // no arch-specific inline asm is needed (ARM64 `sp` isn't a valid
+    // x86-64 register name).
     {
-        uintptr_t sp;
-        __asm__ volatile("mov %0, sp" : "=r"(sp));
+        uintptr_t sp_anchor;
+        uintptr_t sp = (uintptr_t)&sp_anchor;
         if (p > sp - 1024*1024 && p < sp + 1024*1024) {
             region = "stack";
         }
@@ -3635,11 +3654,23 @@ void avra_process_env_unset(const char* key) {
     unsetenv(key);
 }
 
-/// Get the directory containing the current executable.
+/// Get the directory containing the current executable. The path to
+/// the running binary is resolved per-platform: `_NSGetExecutablePath`
+/// on macOS, the `/proc/self/exe` symlink on Linux.
 const char* avra_process_self_dir(void) {
     char path[4096];
+    int ok = 0;
+#if defined(__APPLE__)
     uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) == 0) {
+    ok = (_NSGetExecutablePath(path, &size) == 0);
+#else
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (n > 0) {
+        path[n] = '\0';
+        ok = 1;
+    }
+#endif
+    if (ok) {
         // Find last /
         char* last_slash = strrchr(path, '/');
         if (last_slash) {
@@ -3650,6 +3681,21 @@ const char* avra_process_self_dir(void) {
         }
     }
     return ".";
+}
+
+/// Host OS identifier, used by the linker step to pick platform-specific
+/// flags (ld64 `-stack_size` + libc++ on macOS vs LLD + libstdc++ on
+/// Linux). Returns a stable string literal — callers must not free it.
+const char* avra_host_os(void) {
+#if defined(__APPLE__)
+    return "macos";
+#elif defined(__linux__)
+    return "linux";
+#elif defined(_WIN32)
+    return "windows";
+#else
+    return "unknown";
+#endif
 }
 
 // ── Trait objects (dynamic dispatch) ──

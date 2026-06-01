@@ -180,7 +180,8 @@ else
 	@# seed records exactly what produced it.
 	@COMMIT=$$(git rev-parse --short HEAD); \
 	 TIMESTAMP=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
-	 SRC_HASH=$$(find $(CLI_SRC_DIR)/ $(LIB_SRC_DIR)/ -name '*.av' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
+	 SHA256=$$(command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256"); \
+	 SRC_HASH=$$(find $(CLI_SRC_DIR)/ $(LIB_SRC_DIR)/ -name '*.av' -exec $$SHA256 {} + | $$SHA256 | cut -d' ' -f1); \
 	 { printf '; seed built from commit %s at %s\n; source hash: %s\n' "$$COMMIT" "$$TIMESTAMP" "$$SRC_HASH"; cat seed/seed.ll; } > seed/seed.ll.tmp && \
 	 mv seed/seed.ll.tmp seed/seed.ll
 	@rm -rf build
