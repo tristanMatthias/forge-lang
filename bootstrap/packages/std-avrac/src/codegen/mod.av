@@ -172,8 +172,15 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.rc_release(val)
             }
         }
-        // Catch-all for non-RC types (includes Unknown sentinel).
-        _ -> {}
+        // Typeck sentinel — should not survive monomorphization, but
+        // codegen paths that fall through pre-resolve hit this when
+        // a value's type was never inferred. No-op is safe: rc_release
+        // checks the runtime magic word and skips non-RC pointers.
+        .Unknown -> {}
+        // Task — green-thread handle. Not RC-managed in v1.0 (spec
+        // Axis 18). The handle is owned by the scheduler and freed
+        // when the task is joined or the process exits.
+        .Task(_) -> {}
     }
 }
 
