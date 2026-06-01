@@ -969,6 +969,45 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
     return dst;
 }
 
+// Allocate a 2-slot i64 tuple buffer {a, b} matching the tuple memory
+// model (a tuple `(a, b)` is a heap buffer of i64 slots; slot 0 = a,
+// 1 = b), returned as an i64 handle. Shared by enumerate/zip.
+static int64_t avra_make_pair(int64_t a, int64_t b) {
+    int64_t* pair = (int64_t*)malloc(2 * sizeof(int64_t));
+    pair[0] = a;
+    pair[1] = b;
+    return (int64_t)(uintptr_t)pair;
+}
+
+// Pair the index with each element: List<T> -> List<(int, T)>.
+// Backs `xs.enumerate()` — the idiomatic replacement for the manual
+// `mut i = 0; while i < xs.length { let x = xs[i]; …; i += 1 }` loop.
+void* avra_array_enumerate(void* arr) {
+    void* dst = avra_array_new();
+    if (!arr) return dst;
+    AvraArray* src = (AvraArray*)arr;
+    for (int64_t i = 0; i < src->len; i++) {
+        avra_array_push(dst, avra_make_pair(i, src->data[i]));
+    }
+    return dst;
+}
+
+// Parallel iteration: List<A>, List<B> -> List<(A, B)>, truncated to
+// the shorter input (like Python's zip / Rust's Iterator::zip).
+// Backs `a.zip(b)` — the idiomatic replacement for the manual
+// `while i < min(a.length, b.length) { … a[i] … b[i] … }` loop.
+void* avra_array_zip(void* a_, void* b_) {
+    void* dst = avra_array_new();
+    if (!a_ || !b_) return dst;
+    AvraArray* a = (AvraArray*)a_;
+    AvraArray* b = (AvraArray*)b_;
+    int64_t n = a->len < b->len ? a->len : b->len;
+    for (int64_t i = 0; i < n; i++) {
+        avra_array_push(dst, avra_make_pair(a->data[i], b->data[i]));
+    }
+    return dst;
+}
+
 // ─── Filesystem APIs ─────────────────────────────────────────────
 // Native replacements for avra_shell_exec("find ...").
 
@@ -3724,6 +3763,12 @@ void* avra_trait_object_vtable(void* obj) {
 // Kept in C to avoid mutable globals in Avra source.
 static int64_t g_lambda_counter = 0;
 int64_t avra_next_lambda_id(void) { return g_lambda_counter++; }
+
+// General-purpose fresh-id source for synthetic names the parser/codegen
+// generate (e.g. the for-(a,b) loop temp). Process-wide and monotonic, so
+// every call yields a name that can never collide with another.
+static int64_t g_gensym_counter = 0;
+int64_t avra_gensym(void) { return g_gensym_counter++; }
 
 // ── Error trace support ──
 // Format a source location as "file:line" string for error traces.

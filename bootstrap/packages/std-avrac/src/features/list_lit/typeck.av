@@ -1,6 +1,6 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, SExpr, ValueType, vtype_list_elem}
+use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_pair_list}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
@@ -41,8 +41,22 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: List<
         "pop" or "get"                           -> tc_er(tc, elem)
         "filter"                                 -> tc_er(tc, .List(elem))
         "map"                                    -> tc_er(tc, .List(tc_infer_lambda_ret(tc, args, elem)))
+        // ryvy: enumerate -> List<(int, T)>; zip -> List<(T, U)> where
+        // U is the element type of the argument list.
+        "enumerate"                              -> tc_er(tc, vtype_pair_list(.Int, elem))
+        "zip"                                    -> check_zip(tc, elem, args)
         _                                        -> tc_er(tc, .Unknown)
     }
+}
+
+/// Result type for `a.zip(b)`: `List<(A, B)>`. Recovers B by
+/// type-checking the argument expression and reading its element
+/// type. With no argument, B is left Unknown (codegen reports the
+/// arity error).
+fn check_zip(tc: TC, elem: ValueType, args: List<SExpr>) -> ExprResult {
+    if args.length == 0 { return tc_er(tc, vtype_pair_list(elem, .Unknown)) }
+    let o = check_expr(tc, args[0].node)
+    tc_er(o.tc, vtype_pair_list(elem, vtype_list_elem(o.ty)))
 }
 
 /// Walk into a `map(lambda)` argument and recover the lambda's
