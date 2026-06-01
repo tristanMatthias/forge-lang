@@ -27,13 +27,11 @@ fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
         .Tuple(elements) -> {
             mut vals: List<Value> = []
             mut cur = rt
-            mut i = 0
-            while i < elements.length {
-                let r = eval_expr(cur, elements[i].node)
+            for el in elements {
+                let r = eval_expr(cur, el.node)
                 if r.had_error { return r }
                 cur = r.runtime
                 vals = vals.push(r.value)
-                i = i + 1
             }
             ok_result(cur, value_list(vals))
         }

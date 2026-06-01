@@ -106,11 +106,9 @@ fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
             }
             let payload = init.value.list_payload
             mut cur = init.runtime
-            mut i = 0
-            while i < names.length {
+            for (i, entry) in names.enumerate() {
                 let v = if i < payload.length { payload[i] } else { value_null() }
-                cur = define_binding(cur, names[i].name, false, v)
-                i = i + 1
+                cur = define_binding(cur, entry.name, false, v)
             }
             ok_result(cur, value_null())
         }
