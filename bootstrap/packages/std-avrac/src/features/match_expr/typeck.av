@@ -327,10 +327,9 @@ fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>, subject_ty: ValueType) -> T
 /// type `v` as the concrete `T` from `Result<int, E>` instead of
 /// the generic placeholder.
 ///
-/// Non-Self, non-substituted fields stay Unknown (pre-T5 behavior)
-/// — typing them directly with field.resolved would surface the
-/// bare-vs-qualified mismatch fixed properly by T6.
-/// Underscore names are skipped.
+/// Underscore names are skipped. Non-Self fields flow through
+/// `pattern_binding_type` which returns the resolved field type
+/// directly (Self fields get projected to subject_ty).
 fn tc_bind_pattern_params(tc: TC, variant_name: string, params: List<ParamEntry>, subject_ty: ValueType) -> TC {
     let subject_name = vtype_enum_name(subject_ty)
     let fields = variant_field_list(tc.enums, subject_name, variant_name)

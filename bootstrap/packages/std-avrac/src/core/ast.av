@@ -414,27 +414,6 @@ fn tel_to_type_list(tel: List<TypeExpr>) -> List<ValueType> {
     out
 }
 
-/// Compare two type names, accepting equality if their last
-/// `::`-segments match. Used as a fallback in `vtype_eq` when type
-/// ids aren't both populated — covers the case where a Module-
-/// wrapped test file has a param annotated with a qualified Enum
-/// name (`mymod::Foo`) but an inner EnumCtor literal still carries
-/// the bare name (`Foo`).
-fn vtype_names_match(a: string, b: string) -> bool {
-    if a == b { return true }
-    last_seg(a) == last_seg(b)
-}
-
-/// Strip the module prefix from a qualified path: `"mod::Foo" → "Foo"`.
-/// Local helper kept distinct from `type_short_name` because this one
-/// stays in core/ast.av's namespace (the type registry's copy lives
-/// at `core::type_registry::type_short_name`).
-fn last_seg(s: string) -> string {
-    if !s.contains("::") { return s }
-    let parts = s.split("::")
-    parts[parts.length - 1]
-}
-
 /// Strict ValueType equality. Two types are equal when they have
 /// the same shape AND the same identity for nominal kinds (matched
 /// by TypeRegistry id when both are non-zero, else by direct name
