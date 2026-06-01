@@ -12,6 +12,7 @@
 use @std.avrac.test_runner.{
     DiscoveredFile, DiscoveredEntry,
     filter_discovered, filter_by_path,
+    discover_one_file,
 }
 
 fn mk(path: string) -> DiscoveredFile {
@@ -109,5 +110,25 @@ spec "filter_discovered: substring filter narrows by basename" {
         let files = sample_files()
         let got = filter_discovered(files, "xyz_never_matches_anything_xyz")
         got.length == 0
+    }
+}
+
+spec "discover_one_file: short-circuit for the `bs2 test <literal>` path" {
+    then "empty path => empty list (caller falls back to discover_tests)" {
+        discover_one_file("").length == 0
+    }
+    then "non-existent path => empty list" {
+        discover_one_file("/absolutely_not_a_real_path/xyz_never.av").length == 0
+    }
+    then "existing test file with a spec block => single-element list" {
+        // This very file. By the time the spec executes, it's been
+        // both classified (it has a `spec` block, no `fn main`) AND
+        // read from disk (the test runner read it).
+        let path = "packages/std-avrac/src/test_runner/tests/discovery_filter_test.av"
+        let got = discover_one_file(path)
+        got.length == 1
+            && got[0].path == path
+            && got[0].entries.length > 0
+            && !got[0].has_top_main
     }
 }

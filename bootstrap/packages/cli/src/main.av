@@ -59,7 +59,7 @@ use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path}
-use @std.avrac.test_runner.{discover_tests, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
+use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -2203,15 +2203,22 @@ fn run_cache_command() {
 // `discover_tests` already returns results sorted lexicographically by
 // path so the canonical-input string is stable across machines.
 
-/// hkms.4: applies `--filter` to the structurally-discovered list.
-/// Filter matches against the file's basename — same semantics as the
-/// legacy `select_test_paths` filter so user CLI invocations work
-/// unchanged after the discovery swap. Empty-filter fast path skips
 // filter_discovered + filter_by_path live in @std.avrac.test_runner
 // .discovery so spec tests can exercise them directly with synthetic
 // inputs (instead of shelling out to `bs2 test --list` per case).
 // Imported at the top of this file alongside the other discovery
 // types.
+
+/// Discovery dispatch for run_test_command: when `path_filter` is
+/// an existing literal file, short-circuit to that one file (saves
+/// the whole-tree walk + ~450 token-classifications, ~15s on a
+/// realistic project). Otherwise fall through to discover_tests so
+/// suffix / basename-substring path filters still resolve.
+fn discover_with_path_shortcut(project_dir: string, path_filter: string) -> List<DiscoveredFile> {
+    let one = discover_one_file(path_filter)
+    if one.length > 0 { return one }
+    discover_tests(project_dir)
+}
 
 /// hkms.4: render the structurally-discovered test set for `--list`.
 /// One line per entry, prefixed by file:line, so callers (IDEs,
@@ -2939,18 +2946,27 @@ fn run_test_command() {
     let project_dir = avra_process_env_get("PWD")
     let args = parse_test_args()
 
-    // hkms.4: structural discovery via the @std.avrac.test_runner
-    // discovery module. Walks the project tree natively (no shell
-    // fork), classifies every `.av` source by tokens (so `spec` in a
+    // Structural discovery via the @std.avrac.test_runner discovery
+    // module. Walks the project tree natively (no shell fork),
+    // classifies every `.av` source by tokens (so `spec` in a
     // comment doesn't false-positive, and `*_test.av` naming is no
     // longer load-bearing). Filters out files declaring their own
     // `fn main(`. Result is sorted by path for stable iteration.
-    let discovered = discover_tests(project_dir)
+    //
+    // Path-filter short-circuit: when the user typed
+    // `bs2 test <some/literal/path.av>` and that path exists, skip
+    // the project-wide walk entirely and classify just that one
+    // file. Drops the dominant cost of `bs2 test --list <file>` and
+    // `bs2 test <file>` from ~15s (full tree walk + token-classify
+    // ~450 .av files) to <50ms (one read + classify). Suffix /
+    // substring forms fall through to the full walk because we
+    // don't know which file they meant until discovery sees the
+    // whole set.
+    let discovered = discover_with_path_shortcut(project_dir, args.path_filter)
     let after_filter = filter_discovered(discovered, args.filter)
-    // so07.7.12: scope discovery to a single file (or path-suffix
-    // match) when the user passed a positional path arg. Applied
-    // AFTER --filter so both can compose. Empty path_filter is a
-    // no-op fast path.
+    // Scope discovery to a single file (or path-suffix match) when
+    // the user passed a positional path arg. Applied AFTER --filter
+    // so both can compose. Empty path_filter is a no-op fast path.
     let accepted = filter_by_path(after_filter, args.path_filter)
 
     if discovered.length == 0 {

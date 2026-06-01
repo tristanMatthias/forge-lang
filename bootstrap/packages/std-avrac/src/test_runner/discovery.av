@@ -273,6 +273,28 @@ export fn discover_tests(root: string) -> List<DiscoveredFile> {
     list_filter(classified, (d: DiscoveredFile) -> !d.has_top_main && d.entries.length > 0)
 }
 
+/// Fast-path for `bs2 test <literal/path.av>`: when `path_filter` is
+/// an existing file, classify just that one file and return it (when
+/// it has test entries and no top-level `fn main(`). Skips the
+/// project-wide walk that `discover_tests` performs — orders of
+/// magnitude cheaper for CLI invocations that already name the file
+/// directly.
+///
+/// Returns the empty list when `path_filter` is empty, doesn't
+/// exist, or the named file fails the same "has tests, no top-level
+/// main" gate `discover_tests` applies. Callers should fall back to
+/// `discover_tests(root)` on empty — the suffix and basename-
+/// substring forms of `bs2 test <thing>` need the full set to do
+/// their matching.
+export fn discover_one_file(path_filter: string) -> List<DiscoveredFile> {
+    let empty: List<DiscoveredFile> = []
+    if path_filter == "" { return empty }
+    if avra_selfhost_file_exists(path_filter) == 0 { return empty }
+    let d = classify_av_source(path_filter, avra_selfhost_read_file(path_filter))
+    if d.has_top_main || d.entries.length == 0 { return empty }
+    [d]
+}
+
 /// Lexicographic sort for path lists. Uses the language's string
 /// comparison so the result matches what `sort | uniq` would produce
 /// on the command line. O(N log N) via the runtime's qsort_r-backed
