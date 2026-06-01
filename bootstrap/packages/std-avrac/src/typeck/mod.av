@@ -768,7 +768,7 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
 
-    let tc0 = tc_new(type_reg, macro_origins)
+    let tc0_pre = tc_new(type_reg, macro_origins)
     // Re-stamp registry ids on every nominal slot whose id=0.
     // Macro/comptime/monomorphizer-emitted AST nodes carry
     // parser-shape ValueTypes with id=0 even when the name IS
@@ -777,12 +777,17 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     // instead of the exact-name fallback. Residual id=0 nominals after
     // the stamp pass are type-param placeholders (T, U, S, …) —
     // legitimately id=0 because they aren't registered types.
-    //
-    // The stamp pass's correctness is asserted by
-    // `unstamped_registered_nominals` (called from spec tests via the
-    // in-process pipeline in @std.avrac.check.typecheck_source) — a
-    // leak means the helper returns a non-empty list.
     let stamped_stmts = stamp_ids_stmts(stmts, type_reg)
+    // Unconditional invariant assertion: any id=0 nominal whose name
+    // IS in the registry is a stamp-pass leak — codegen would fall
+    // back to slower name lookup AND id-based equality would
+    // mis-compare. Each leak surfaces as an F9999 (ICE) so a
+    // downstream regression of any nominal-construction site (e.g.
+    // resolve_vtype's Trait/Newtype branches, ctor-return synthesis,
+    // a future ValueType variant added without registry plumbing)
+    // fails compilation deterministically instead of corrupting
+    // codegen silently.
+    let tc0 = report_stamp_leaks(tc0_pre, stamped_stmts, type_reg)
     // Pass 1: collect declarations (types, enums, functions). The
     // single walk is order-sensitive — a Function whose return type
     // references an enum declared later in the AST will be registered
@@ -852,6 +857,31 @@ export fn unstamped_registered_nominals(stmts: List<SStmt>, reg: TypeRegistry) -
         i = i + 1
     }
     out
+}
+
+/// Append one F9999 (ICE) diagnostic per stamp-pass leak to `tc.bag`
+/// and return the updated TC. Empty result list = no leaks, TC
+/// unchanged. Used right after the typeck-entry stamp pass so any
+/// id=0 leak fails compilation deterministically — the alternative
+/// is silent codegen corruption (name-based fallback lookup) and
+/// id-based equality mis-comparison.
+fn report_stamp_leaks(tc: TC, stamped: List<SStmt>, reg: TypeRegistry) -> TC {
+    let leaks = unstamped_registered_nominals(stamped, reg)
+    if leaks.length == 0 { return tc }
+    mut cur = tc
+    mut i = 0
+    while i < leaks.length {
+        let name = leaks[i]
+        cur = tc_report(cur, DiagCode.ICE,
+            "typeck id-stamp pass leaked a registered nominal `${name}` (id=0 after stamp). "
+            + "Codegen would fall back to name-lookup and id-equality would mis-compare. "
+            + "Likely cause: a ValueType construction site (resolve_vtype Trait/Newtype, "
+            + "ctor-return synthesis, or a new variant added without registry plumbing) "
+            + "produced an id=0 nominal for a name that IS in the TypeRegistry. "
+            + "See `unstamped_registered_nominals` in @std.avrac.typeck.")
+        i = i + 1
+    }
+    cur
 }
 
 // ── Pass 1: Declaration collection ──
