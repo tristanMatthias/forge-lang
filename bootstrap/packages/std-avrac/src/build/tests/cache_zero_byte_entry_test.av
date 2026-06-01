@@ -1,0 +1,73 @@
+// 378k: cache_has must NOT report a 0-byte unit.ll as a valid hit.
+// Before this guard, a corrupted (0-byte) cached unit.ll — usually
+// from a killed-mid-compile event that survived cache_publish's
+// own empty-content check — would be served to callers as a HIT.
+// Consumers wrote the 0 bytes back to dest_ll, llc/clang found no
+// _main symbol, and 13+ test fixtures across the suite failed with
+// link errors that pointed nowhere near the actual culprit.
+//
+// Why this test observes the fix: we synthesize a cache entry on
+// disk by hand (mkdir + write a 0-byte unit.ll), then call
+// cache_has. Pre-fix returns true (file exists). Post-fix returns
+// false (file exists but is 0 bytes).
+//
+// Also exercises cache_publish's symmetric post-write size check:
+// publishing empty content returns the original guard's error;
+// publishing real content succeeds and cache_has finds it.
+
+use @std.avrac.build.{Cache, cache_for, cache_init, cache_has, cache_publish, entry_dir_for, entry_ll_path}
+use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_remove_file, avra_shell_exec}
+
+fn mk_fp(hex: string) -> Fingerprint {
+    Fingerprint { hex: hex }
+}
+
+fn mk_cache(slug: string) -> Cache {
+    let root = "/tmp/avra_378k_cache_test_${slug}"
+    avra_shell_exec("rm -rf '${root}'")
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+spec "378k: cache_has rejects 0-byte unit.ll" {
+    then "missing entry: cache_has returns false" {
+        let c = mk_cache("missing")
+        !cache_has(c, mk_fp("0000000000000000000000000000000000000000000000000000000000000000"))
+    }
+    then "0-byte unit.ll: cache_has returns false (the 378k fix)" {
+        let c = mk_cache("empty")
+        let fp = mk_fp("1111111111111111111111111111111111111111111111111111111111111111")
+        let dir = entry_dir_for(c, fp)
+        let _ = avra_mkdir_p(dir)
+        // Create unit.ll explicitly as 0 bytes.
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "")
+        // Pre-fix this would have returned true (file exists). Post-fix
+        // requires non-zero size.
+        !cache_has(c, fp)
+    }
+    then "non-empty unit.ll: cache_has returns true" {
+        let c = mk_cache("good")
+        let fp = mk_fp("2222222222222222222222222222222222222222222222222222222222222222")
+        let dir = entry_dir_for(c, fp)
+        let _ = avra_mkdir_p(dir)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "; mock ll content\n")
+        cache_has(c, fp)
+    }
+}
+
+spec "378k: cache_publish symmetrically refuses empty content" {
+    then "empty content fails the publish-time guard" {
+        let c = mk_cache("publish_empty")
+        let fp = mk_fp("3333333333333333333333333333333333333333333333333333333333333333")
+        let pr = cache_publish(c, fp, "", "", "metadata", "pid42")
+        !pr.success && pr.error.contains("empty")
+    }
+    then "non-empty content publishes and cache_has finds it" {
+        let c = mk_cache("publish_good")
+        let fp = mk_fp("4444444444444444444444444444444444444444444444444444444444444444")
+        let pr = cache_publish(c, fp, "; real ll content\n", "", "metadata", "pid42")
+        pr.success && cache_has(c, fp)
+    }
+}

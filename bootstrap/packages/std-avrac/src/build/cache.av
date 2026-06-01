@@ -26,6 +26,7 @@ use core.{
     avra_is_dir,
     avra_shell_exec_status,
     avra_process_env_get,
+    avra_file_size,
 }
 use build.fingerprint.{Fingerprint}
 
@@ -141,8 +142,19 @@ export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
 /// need or doesn't exist at all. Probing `unit.ll` (rather than the
 /// directory itself) avoids any race where the directory is created
 /// but `unit.ll` was not yet written.
+///
+/// 378k defense: ALSO require the .ll to be non-empty. A 0-byte
+/// cached unit.ll has been observed in the wild — most likely from
+/// a killed-mid-write or disk-full event that left the file behind
+/// despite cache_publish's empty-content guard. Returning true for
+/// a 0-byte entry caused mysterious "missing _main" link errors
+/// (consumers wrote the 0 bytes back to dest_ll and clang found
+/// nothing to link). Size > 0 is the same test the publish-side
+/// guard uses; this matches the read side to it.
 export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
-    avra_selfhost_file_exists(entry_ll_path(c, fp)) == 1
+    let ll_path = entry_ll_path(c, fp)
+    if avra_selfhost_file_exists(ll_path) == 0 { return false }
+    avra_file_size(ll_path) > 0
 }
 
 /// True when this cache has a published test binary for `fp`. Probes
@@ -198,6 +210,15 @@ export fn cache_publish(
 
     if avra_selfhost_write_file(staged_ll, ll_content) == 0 {
         return PublishResult { success: false, error: "write failed: " + staged_ll }
+    }
+    // 378k post-write check: even if write returned success, verify
+    // the on-disk size is non-zero. Disk-full or killed-mid-write
+    // conditions can leave the file shorter than intended; refuse to
+    // publish rather than index a partial entry that cache_has's
+    // own size check would also reject on read.
+    if avra_file_size(staged_ll) <= 0 {
+        let _ = avra_remove_file(staged_ll)
+        return PublishResult { success: false, error: "post-write size check failed (0 bytes): " + staged_ll }
     }
     // unit.o is no longer written — every historical caller passed
     // the .ll path as o_path_src, producing a bit-identical duplicate
