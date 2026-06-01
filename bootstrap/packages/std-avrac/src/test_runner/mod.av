@@ -413,6 +413,20 @@ export fn write_fixture_and_run(path: string, source: string) -> string {
     cached_fixture_run(path)
 }
 
+/// Content-keyed cache for `./build/bs2 check <path>` invocations
+/// with AVRA_USE_METADATA + AVRA_LIB_OBJS stripped. Used by spec
+/// tests that need to observe typeck-pipeline diagnostics from a
+/// fixture source that imports @std/avrac packages (and therefore
+/// can't run through in-process `check_source`, which skips
+/// file-based module loading). Warm reruns hit the cache and
+/// return the previously-captured stdout in ~10ms instead of
+/// paying a full bs2 startup + compile each time.
+export fn cached_fixture_check_no_metadata(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path,
+        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture_path}' 2>&1 || true",
+        "check-no-metadata")
+}
+
 /// Same as cached_fixture_run, but strips AVRA_USE_METADATA + AVRA_LIB_OBJS
 /// from the env so the fixture sees @comptime annotations + bodies
 /// (metadata mode strips them per 9p1d). Required by tests that
