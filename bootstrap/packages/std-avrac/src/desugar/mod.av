@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, vtype_list_elem, vtype_struct_name}
 use list_ops.{list_map, list_concat}
 
 // ListComp is no longer desugared at the AST level. The AST-rewrite
@@ -110,8 +110,15 @@ fn desugar_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
 fn desugar_stmt(stmt: Stmt) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(desugar_expr(e))
-        .Let(name, vt, init) -> .Let(name, vt, desugar_expr(init))
-        .Mut(name, vt, init) -> .Mut(name, vt, desugar_expr(init))
+        // Typed table-literal inference (forge-crafting-intepreters-c080):
+        // a `table { ... }` whose row type is omitted parses to a ListLit
+        // of anonymous StructLit("") rows. When the binding carries a
+        // `List<Row>` annotation, stamp `Row` onto each row so the rest of
+        // the pipeline sees an ordinary `List<Row>`. `table<Row> { ... }`
+        // already names its rows and is left untouched.
+        .Let(name, vt, init) -> .Let(name, vt, lower_table_rows(desugar_expr(init), vt))
+        .Mut(name, vt, init) -> .Mut(name, vt, lower_table_rows(desugar_expr(init), vt))
+        .Const(name, vt, init) -> .Const(name, vt, lower_table_rows(desugar_expr(init), vt))
         .Return(e) -> .Return(desugar_expr(e))
         .Block(body) -> .Block(desugar_stmt_list(body))
         .If(cond, then_b, else_b) -> {
@@ -125,7 +132,10 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .For(v, start, end, body) -> .For(v, desugar_expr(start), desugar_expr(end), desugar_stmt(body))
         .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll), desugar_stmt(body))
         .Match(subj, arms) -> .Match(desugar_expr(subj), desugar_match_arms(arms))
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, desugar_stmt_list(body))
+        // Function bodies: after desugaring, stamp the return type onto
+        // any context-free `table { ... }` in return / tail position so a
+        // `fn f() -> List<Row> { table { ... } }` infers `Row` per c080.
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_fn_returns(desugar_stmt_list(body), rvt))
         .Defer(body) -> .Defer(desugar_expr(body))
         .Errdefer(body) -> .Errdefer(desugar_expr(body))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body))
@@ -133,6 +143,137 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body))
         .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_list(body))
         .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr(cond))
+        _ -> stmt
+    }
+}
+
+// ── Typed table-literal row inference (c080) ──
+//
+// A `table { col | col\n v | v }` with no `<Row>` ascription parses to a
+// ListLit whose rows are anonymous `StructLit("", inits)`. The row type is
+// pinned from the surrounding context — a `let x: List<Row>`/`mut`/`const`
+// annotation or a fn return type. These helpers stamp that struct name
+// onto every anonymous row. Rows that already carry a name (the explicit
+// `table<Row> { ... }` form) are left untouched; rows that never get a
+// name stay anonymous and the typechecker reports the missing-row-type
+// error (F1042).
+
+/// If `expected` is `List<Struct>`, stamp the element struct's name onto
+/// every anonymous table row in `expr`. Recurses into block / if / match /
+/// when tail positions so a table inside a tail branch still resolves.
+/// Non-table expressions and non-`List<Struct>` expectations pass through.
+fn lower_table_rows(expr: Expr, expected: ValueType) -> Expr {
+    let sname = vtype_struct_name(vtype_list_elem(expected))
+    if sname == "" { return expr }
+    stamp_table_rows(expr, sname)
+}
+
+/// Recursively stamp `sname` onto anonymous table rows in value position.
+fn stamp_table_rows(expr: Expr, sname: string) -> Expr {
+    match expr {
+        .ListLit(rows) -> .ListLit(stamp_table_row_list(rows, sname))
+        .Block(body) -> .Block(stamp_block_tail(body, sname))
+        .IfExpr(c, t, e) -> .IfExpr(c, stamp_table_rows(t, sname), stamp_table_rows(e, sname))
+        .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(arms, sname))
+        .When(arms) -> .When(stamp_table_when_arms(arms, sname))
+        _ -> expr
+    }
+}
+
+/// Map the row-stamp over each `SExpr` row in a table's ListLit.
+fn stamp_table_row_list(rows: List<SExpr>, sname: string) -> List<SExpr> {
+    list_map(rows, (se: SExpr) -> sexpr(stamp_table_row(se.node, sname), se.line, se.col))
+}
+
+/// Stamp `sname` onto one anonymous `StructLit("")`; leave named rows
+/// (and any non-StructLit element) alone so this is safe to run over an
+/// ordinary list literal that merely happens to share the position.
+fn stamp_table_row(row: Expr, sname: string) -> Expr {
+    match row {
+        .StructLit(n, inits) -> if n == "" { Expr.StructLit(sname, inits) } else { row }
+        _ -> row
+    }
+}
+
+/// Stamp the tail (last) statement of a block when it is an expression.
+fn stamp_block_tail(body: List<SStmt>, sname: string) -> List<SStmt> {
+    let n = body.length
+    if n == 0 { return body }
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < n {
+        let ss = body[i]
+        if i == n - 1 {
+            match ss.node {
+                .Expr(e) -> out.push(sstmt_at(Stmt.Expr(stamp_table_rows(e, sname)), ss.line, ss.col, ss.file))
+                _ -> out.push(ss)
+            }
+        } else {
+            out.push(ss)
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Stamp each match-arm body (arms are in tail position when the match is).
+fn stamp_table_match_arms(arms: List<MatchArm>, sname: string) -> List<MatchArm> {
+    list_map(arms, (arm: MatchArm) -> MatchArm {
+        pattern: arm.pattern,
+        guard: arm.guard,
+        body: sexpr(stamp_table_rows(arm.body.node, sname), arm.body.line, arm.body.col),
+    })
+}
+
+/// Stamp each `when`-arm body.
+fn stamp_table_when_arms(arms: List<WhenArm>, sname: string) -> List<WhenArm> {
+    list_map(arms, (arm: WhenArm) -> WhenArm {
+        cond: arm.cond,
+        body: sexpr(stamp_table_rows(arm.body.node, sname), arm.body.line, arm.body.col),
+    })
+}
+
+/// Walk a function body stamping the return type onto tables in `return`
+/// statements (at any depth reachable through block / if) and in the
+/// body's tail expression.
+fn lower_fn_returns(stmts: List<SStmt>, rvt: ValueType) -> List<SStmt> {
+    let sname = vtype_struct_name(vtype_list_elem(rvt))
+    if sname == "" { return stmts }
+    lower_return_stmts(stmts, sname)
+}
+
+/// Apply return/tail stamping to a statement list; only the final
+/// statement is treated as a tail (implicit-return) position.
+fn lower_return_stmts(stmts: List<SStmt>, sname: string) -> List<SStmt> {
+    let n = stmts.length
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < n {
+        let ss = stmts[i]
+        let is_tail = i == n - 1
+        out.push(sstmt_at(lower_return_stmt(ss.node, sname, is_tail), ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Stamp tables in `return e` (always) and in a tail expression / tail
+/// match (only when `is_tail`). Recurses through block and if so a
+/// `return table { ... }` nested in those positions still resolves.
+fn lower_return_stmt(stmt: Stmt, sname: string, is_tail: bool) -> Stmt {
+    match stmt {
+        .Return(e) -> Stmt.Return(stamp_table_rows(e, sname))
+        .Expr(e) -> if is_tail { Stmt.Expr(stamp_table_rows(e, sname)) } else { stmt }
+        .Block(body) -> Stmt.Block(lower_return_stmts(body, sname))
+        .If(cond, then_b, else_b) -> {
+            let nt = lower_return_stmt(then_b, sname, is_tail)
+            if else_b != null {
+                Stmt.If(cond, nt, lower_return_stmt(else_b!, sname, is_tail))
+            } else {
+                Stmt.If(cond, nt, null)
+            }
+        }
+        .Match(subj, arms) -> if is_tail { Stmt.Match(subj, stamp_table_match_arms(arms, sname)) } else { stmt }
         _ -> stmt
     }
 }

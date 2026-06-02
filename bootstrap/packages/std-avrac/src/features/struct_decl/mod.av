@@ -5,7 +5,8 @@ use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
-use typeck.{check_expr, check_expr_list, tc_er}
+use typeck.{check_expr, check_expr_list, tc_er, tc_report}
+use diagnostics.{DiagCode}
 
 /// Register the `Foo { x: 1, y: 2 }` struct literal feature.
 export fn struct_lit_feature() -> Feature {
@@ -96,6 +97,14 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .StructLit(name, inits) -> {
             let checked = check_field_inits(tc, inits)
+            // An anonymous row (name == "") is a context-free `table { ... }`
+            // whose row type was never pinned (c080 Phase C). Desugar stamps
+            // the row type when the binding fixes it; anything reaching here
+            // had no such context. Report rather than silently producing an
+            // untyped value or an opaque `undefined struct ``` codegen ICE.
+            if name == "" {
+                return tc_er(tc_report(checked, DiagCode.TableRowTypeMissing, "table literal has no row type"), .Unknown)
+            }
             tc_er(checked, .Struct(name, 0))
         }
         _ -> tc_er(tc, .Unknown)

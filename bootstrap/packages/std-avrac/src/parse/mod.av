@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -600,21 +600,32 @@ impl Parser {
         out
     }
 
-    // Parse table literal: table { col1 | col2\n val1 | val2\n val3 | val4 }
-    // Desugars to ListLit of MapLit entries.
+    // Parse a typed table literal:
+    //   table<RowStruct> { col1 | col2\n v1a | v1b\n v2a | v2b }
+    //   table          { col1 | col2\n v1a | v1b\n v2a | v2b }   (row type inferred)
+    // The header row names struct fields; each data row becomes a
+    // `StructLit(RowStruct, { col1: v1a, col2: v1b })`. The whole table
+    // desugars to a `ListLit` of those StructLits — i.e. `List<RowStruct>`.
+    // When the row type is omitted it is left empty here and resolved
+    // from context (let/return/arg annotation) by the typechecker; an
+    // unresolved row type is a compile error (no weak List<Map> fallback).
     fn parse_table_literal(self) -> Expr? {
-        self.advance()  // consume `{`
-        // Parse header row: identifiers separated by `|`
-        mut headers: List<SExpr> = []
-        mut header_count = 0
+        // Optional `<RowStruct>` row-type ascription.
+        mut row_type = ""
+        if self.check(Tk.Less) {
+            self.advance()  // consume `<`
+            let rt = self.consume_identifier("expected row struct name after `table<`")?
+            row_type = rt
+            if !self.consume(Tk.Greater, "expected `>` after table row type") { return null }
+        }
+        if !self.consume(Tk.LeftBrace, "expected `{` to open table") { return null }
+        // Parse header row: field-name identifiers separated by `|`.
+        mut col_names: List<string> = []
         let header_line = self.current_line
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
             if self.check(Tk.Identifier) {
-                let col = self.current_lexeme
+                col_names.push(self.current_lexeme)
                 self.advance()
-                let quoted_col = "\"${col}\""
-                headers.push(sexpr_at(Expr.String(quoted_col), self.current_line, self.current_column, self.file))
-                header_count = header_count + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
@@ -622,32 +633,34 @@ impl Parser {
                 break
             }
         }
+        let header_count = col_names.length
         if header_count == 0 {
             if !self.consume(Tk.RightBrace, "expected `}` to close table") { return null }
             let empty: List<SExpr> = []
             return Expr.ListLit(empty)
         }
-        // headers are accumulated in source order (push); no reverse needed
-        let header_names = headers
-        // Parse data rows in source order
+        // Parse data rows in source order; each row is a StructLit whose
+        // field names come from the header and whose values come from
+        // the cells (left-to-right, one per column).
         mut rows: List<SExpr> = []
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
-            mut vals: List<SExpr> = []
+            mut inits: List<FieldInit> = []
             mut col_idx = 0
             while col_idx < header_count {
                 if self.check(Tk.RightBrace) { break }
-                // Use parse_bitwise_xor which stops before `|`
+                // parse_bitwise_xor stops before `|`, so the column
+                // separator is never swallowed as a bitwise-or operand.
                 let val = self.parse_bitwise_xor()?
-                vals.push(sexpr_at(val, self.current_line, self.current_column, self.file))
+                let sv = sexpr_at(val, self.current_line, self.current_column, self.file)
+                inits.push(FieldInit { name: col_names[col_idx], value: sv })
                 col_idx = col_idx + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
             if col_idx == header_count {
-                let map_entries = table_zip_entries(header_names, vals)
-                let row_map = Expr.MapLit(map_entries)
-                rows.push(sexpr_at(row_map, self.current_line, self.current_column, self.file))
+                let row = Expr.StructLit(row_type, inits)
+                rows.push(sexpr_at(row, self.current_line, self.current_column, self.file))
             }
         }
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
@@ -1301,9 +1314,9 @@ impl Parser {
         if self.check(Tk.Identifier) {
             let name = self.current_lexeme
             self.advance()
-            // Table literal: table { col1 | col2; val1 | val2 }
-            // Must check BEFORE struct literal since both start with ident + {
-            if name == "table" && self.check(Tk.LeftBrace) {
+            // Table literal: `table { ... }` or typed `table<Row> { ... }`.
+            // Must check BEFORE struct literal since both start with ident + {.
+            if name == "table" && (self.check(Tk.LeftBrace) || self.check(Tk.Less)) {
                 return self.parse_table_literal()
             }
             if self.allow_struct_lit && self.check(Tk.LeftBrace) {
