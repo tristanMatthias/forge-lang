@@ -67,13 +67,11 @@ fn workers_has_idle(ws: List<Worker>) -> bool {
 // the prior linked-list shape required.
 fn workers_dispatch(ws: List<Worker>, handle: int, started_idx: int) {
     mut local = ws
-    mut i = 0
-    while i < local.length {
-        if local[i].handle < 0 {
+    for (i, w) in local.enumerate() {
+        if w.handle < 0 {
             local.set(i, Worker { handle, started_idx })
             return
         }
-        i = i + 1
     }
 }
 
@@ -90,9 +88,7 @@ fn workers_reap(ws: List<Worker>) -> ReapResult {
     mut local = ws
     mut completed = 0
     mut max_rc = 0
-    mut i = 0
-    while i < local.length {
-        let w = local[i]
+    for (i, w) in local.enumerate() {
         if w.handle >= 0 && avra_process_is_alive(w.handle) == 0 {
             let json = avra_process_wait(w.handle)
             let rc = pool_extract_rc(json)
@@ -100,7 +96,6 @@ fn workers_reap(ws: List<Worker>) -> ReapResult {
             completed = completed + 1
             max_rc = pool_max_rc(max_rc, rc)
         }
-        i = i + 1
     }
     ReapResult { completed, max_rc }
 }
@@ -235,13 +230,11 @@ fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int,
 // O(N) cost is irrelevant.
 fn workers_record_slug(ws: List<Worker>, slugs_state: List<string>, handle: int, slug: string) {
     mut local = slugs_state
-    mut i = 0
-    while i < ws.length {
-        if ws[i].handle == handle {
+    for (i, w) in ws.enumerate() {
+        if w.handle == handle {
             local.set(i, slug)
             return
         }
-        i = i + 1
     }
 }
 
@@ -256,9 +249,7 @@ fn workers_reap_with_markers(ws: List<Worker>, slugs_state: List<string>, marker
     mut state = slugs_state
     mut completed = 0
     mut max_rc = 0
-    mut i = 0
-    while i < local.length {
-        let w = local[i]
+    for (i, w) in local.enumerate() {
         if w.handle >= 0 && avra_process_is_alive(w.handle) == 0 {
             let json = avra_process_wait(w.handle)
             let rc = pool_extract_rc(json)
@@ -271,7 +262,6 @@ fn workers_reap_with_markers(ws: List<Worker>, slugs_state: List<string>, marker
             completed = completed + 1
             max_rc = pool_max_rc(max_rc, rc)
         }
-        i = i + 1
     }
     ReapResult { completed, max_rc }
 }

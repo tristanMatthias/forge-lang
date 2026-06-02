@@ -724,14 +724,11 @@ fn schema_hint(schema: List<ChildrenSlot>, parent: string) -> string {
 
 fn join_slot_names(schema: List<ChildrenSlot>) -> string {
     mut out = ""
-    mut i = 0
-    while i < schema.length {
-        let entry = schema[i]
+    for (i, entry) in schema.enumerate() {
         let elem_part = vtype_elem_name(entry.child_ty)
         let elem_str = if elem_part == "" { "?" } else { elem_part }
         if i > 0 { out = out + ", " }
         out = out + "${elem_str} (${entry.slot_name})"
-        i = i + 1
     }
     out
 }

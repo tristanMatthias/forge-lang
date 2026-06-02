@@ -624,10 +624,8 @@ fn resolve_setup_vt_list(regs: TypeRegs, types: List<ValueType>) -> List<ValueTy
 /// Populate an LLVM type array with the lowered LLVM type of each
 /// field in `fields`. Used when calling `LLVMStructSetBody`.
 fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: List<FieldEntry>) {
-    mut i = 0
-    while i < fields.length {
-        avra_llvm_type_array_set(arr, i, llvm_type_for_full(i64t, i1t, dt, pt, fields[i].resolved))
-        i = i + 1
+    for (i, field) in fields.enumerate() {
+        avra_llvm_type_array_set(arr, i, llvm_type_for_full(i64t, i1t, dt, pt, field.resolved))
     }
 }
 
@@ -977,9 +975,7 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
 /// Each field is GEP'd, loaded, null-checked (skip on null), then
 /// passed through `emit_field_release` so the right teardown runs.
 fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: List<FieldEntry>) {
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
+    for (i, e) in fields.enumerate() {
         if vtype_is_ptr_type(e.resolved) {
             let st_ty = ctx.get_type(type_name)
             let fld_gep = avra_llvm_build_struct_gep2(ctx.builder, st_ty, obj, i, "rel_${e.name}_ptr")
@@ -994,7 +990,6 @@ fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: Lis
             avra_llvm_build_br(ctx.builder, then_bb)
             avra_llvm_position_at_end(ctx.builder, then_bb)
         }
-        i = i + 1
     }
 }
 
@@ -1076,9 +1071,7 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: List<FieldEntry>, is
 /// payload type (`%EnumName.VariantName`) rather than the outer
 /// enum struct.
 fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: List<FieldEntry>) {
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
+    for (i, e) in fields.enumerate() {
         if vtype_is_ptr_type(e.resolved) {
             let payload_type_name = variant_payload_name(enum_name, variant_name)
             let pay_ty = ctx.get_type(payload_type_name)
@@ -1095,7 +1088,6 @@ fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, varian
                 avra_llvm_position_at_end(ctx.builder, then_bb)
             }
         }
-        i = i + 1
     }
 }
 
@@ -1342,10 +1334,8 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 /// parameter in `params`. Used when emitting a function declaration
 /// so each param gets the right alloca/load type downstream.
 fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, params: List<ParamEntry>, idx: int) {
-    mut i = 0
-    while i < params.length {
-        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full(i64t, i1t, dt, pt, params[i].vtype))
-        i = i + 1
+    for (i, p) in params.enumerate() {
+        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full(i64t, i1t, dt, pt, p.vtype))
     }
 }
 
@@ -1356,10 +1346,8 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
 /// declare_functions; legacy fill_typed_param_array stays for
 /// callers without narrow type pointers.
 fn fill_typed_param_array_sized(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, params: List<ParamEntry>, idx: int) {
-    mut i = 0
-    while i < params.length {
-        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, params[i].vtype))
-        i = i + 1
+    for (i, p) in params.enumerate() {
+        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, p.vtype))
     }
 }
 

@@ -147,14 +147,11 @@ fn stmt_assigns(stmt: Stmt, target: string) -> bool {
 /// list in place via .set — there's no need for a fresh copy.
 fn mark_mutable_captures(captures: List<Capture>, body: Expr) {
     mut local = captures
-    mut i = 0
-    while i < local.length {
-        let c = local[i]
+    for (i, c) in local.enumerate() {
         let is_mut = expr_assigns(body, c.name)
         if is_mut != c.is_mut {
             local.set(i, c with { is_mut: is_mut })
         }
-        i = i + 1
     }
 }
 
@@ -652,9 +649,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
 /// param slot where captures begin.
 fn bind_captures_as_params(ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, fn_val: ptr, start_idx: int) -> List<VarBinding> {
     mut current_env = env
-    mut i = 0
-    while i < captures.length {
-        let c = captures[i]
+    for (i, c) in captures.enumerate() {
         let param_val = ctx.get_param(fn_val, start_idx + i)
         current_env = if c.is_mut {
             // Mutable capture: param is an alloca POINTER — use directly
@@ -664,7 +659,6 @@ fn bind_captures_as_params(ctx: Ctx, env: List<VarBinding>, captures: List<Captu
             // Immutable capture: param is a value — create local alloca
             ctx.bind(current_env, c.name, param_val, c.ty)
         }
-        i = i + 1
     }
     current_env
 }
@@ -861,11 +855,9 @@ export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr,
 /// arguments into the value array passed to
 /// `avra_closure_call_N`.
 fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
-    mut i = 0
-    while i < args.length {
-        let r = ctx.emit(env, args[i].node)?
+    for (i, arg) in args.enumerate() {
+        let r = ctx.emit(env, arg.node)?
         ctx.value_array_set(arr, idx + i, r.value)
-        i = i + 1
     }
     ok_emit(null_ptr_val(), .Void)
 }

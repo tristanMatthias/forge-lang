@@ -766,10 +766,8 @@ fn stamp_ids_params(params: List<ParamEntry>, reg: TypeRegistry) -> List<ParamEn
 /// length mismatch.
 fn type_lists_eq(a: List<ValueType>, b: List<ValueType>) -> bool {
     if a.length != b.length { return false }
-    mut i = 0
-    while i < a.length {
-        if !vtype_eq(a[i], b[i]) { return false }
-        i = i + 1
+    for (ta, tb) in a.zip(b) {
+        if !vtype_eq(ta, tb) { return false }
     }
     true
 }
@@ -1663,10 +1661,8 @@ export fn filter_fields_only(base: List<FieldEntry>, included: List<FieldEntry>)
 /// Zero-based index of `name` in `fields`, or -1 if absent. Used by
 /// codegen for GEP offsets.
 export fn field_index_of(fields: List<FieldEntry>, name: string) -> int {
-    mut i = 0
-    while i < fields.length {
-        if fields[i].name == name { return i }
-        i = i + 1
+    for (i, f) in fields.enumerate() {
+        if f.name == name { return i }
     }
     -1
 }

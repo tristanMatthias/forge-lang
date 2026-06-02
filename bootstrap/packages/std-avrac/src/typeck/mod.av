@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1076,10 +1076,241 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 
 /// Type-check every statement in a list, threading the TC.
 fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
-    mut cur = tc
+    mut cur = lint_index_loops(tc, stmts)
     for ss in stmts {
         let with_pos = cur with { current_line: ss.line, current_col: ss.col }
         cur = check_stmt(with_pos, ss.node)
+    }
+    cur
+}
+
+/// True when `e` is the integer literal 0 (the `mut i = 0` seed).
+fn lint_expr_is_zero(e: Expr) -> bool {
+    match e { .Number(v) -> v == "0", _ -> false }
+}
+
+/// If `cond` is `i < <coll>.length`, return the collection's name;
+/// otherwise "". Conservative — only the canonical index-loop guard.
+fn lint_index_guard_coll(cond: Expr) -> string {
+    match cond {
+        .Binary(left, op, right) -> match op {
+            .Lt -> match left {
+                .Ident(ln) -> if ln != "i" { "" } else {
+                    match right {
+                        .FieldAccess(obj, field) -> if field != "length" { "" } else {
+                            match obj { .Ident(n) -> n, _ -> "" }
+                        }
+                        _ -> ""
+                    }
+                }
+                _ -> ""
+            }
+            _ -> ""
+        }
+        _ -> ""
+    }
+}
+
+/// Two structural signals collected while walking a loop body for the
+/// F9005 index+element lint: whether `i` is used as a value (beyond a
+/// bare `coll[i]` subscript), and whether the body indexes the guarded
+/// collection as `coll[i]`. The antipattern requires BOTH — that's the
+/// shape `for (i, x) in coll.enumerate()` was built to replace. An
+/// element-only loop (no value-use of `i`) or a loop that never
+/// subscripts `coll` is deliberately left alone.
+type LintSig = { value_i: bool, elem: bool }
+
+fn lint_sig_none() -> LintSig { LintSig { value_i: false, elem: false } }
+
+fn lint_sig_or(a: LintSig, b: LintSig) -> LintSig {
+    LintSig { value_i: a.value_i || b.value_i, elem: a.elem || b.elem }
+}
+
+/// Fold the signals over a list of expressions (call args, tuple /
+/// list elements, …).
+fn lint_scan_sexprs(xs: List<SExpr>, coll: string) -> LintSig {
+    mut acc = lint_sig_none()
+    for x in xs { acc = lint_sig_or(acc, lint_scan_expr(x.node, coll)) }
+    acc
+}
+
+/// Fold the signals over a statement list (block body).
+fn lint_scan_sstmts(xs: List<SStmt>, coll: string) -> LintSig {
+    mut acc = lint_sig_none()
+    for x in xs { acc = lint_sig_or(acc, lint_scan_stmt(x.node, coll)) }
+    acc
+}
+
+/// Fold the signals over match arms (guard + body, both SExpr).
+fn lint_scan_arms(arms: List<MatchArm>, coll: string) -> LintSig {
+    mut acc = lint_sig_none()
+    for a in arms {
+        if a.guard != null { acc = lint_sig_or(acc, lint_scan_expr(a.guard!.node, coll)) }
+        acc = lint_sig_or(acc, lint_scan_expr(a.body.node, coll))
+    }
+    acc
+}
+
+/// Walk an expression collecting the two F9005 signals. The `coll[i]`
+/// Index node is special-cased: it sets `elem` but the `i` in the
+/// subscript does NOT count as a value-use (otherwise every element
+/// access would look like index+element).
+fn lint_scan_expr(e: Expr, coll: string) -> LintSig {
+    match e {
+        .Ident(n) -> LintSig { value_i: n == "i", elem: false }
+        .Index(obj, idx) -> {
+            let o = lint_scan_expr(obj, coll)
+            let obj_is_coll = match obj { .Ident(c) -> c == coll, _ -> false }
+            let idx_is_i = match idx { .Ident(x) -> x == "i", _ -> false }
+            if obj_is_coll && idx_is_i {
+                LintSig { value_i: o.value_i, elem: true }
+            } else {
+                lint_sig_or(o, lint_scan_expr(idx, coll))
+            }
+        }
+        .Assign(_, value) -> lint_scan_expr(value, coll)
+        .Grouping(inner) -> lint_scan_expr(inner, coll)
+        .Unary(_, right) -> lint_scan_expr(right, coll)
+        .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
+        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
+        .Call(callee, args) -> lint_sig_or(lint_scan_expr(callee, coll), lint_scan_sexprs(args, coll))
+        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(callee, coll), lint_scan_sexprs(args, coll))
+        .FieldAccess(obj, _) -> lint_scan_expr(obj, coll)
+        .EnumCtor(_, _, args) -> lint_scan_sexprs(args, coll)
+        .Block(body) -> lint_scan_sstmts(body, coll)
+        .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(subject, coll), lint_scan_arms(arms, coll))
+        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(obj, coll), lint_scan_expr(value, coll))
+        .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(c, coll), lint_sig_or(lint_scan_expr(t, coll), lint_scan_expr(el, coll)))
+        .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
+        .OptionalChain(obj, _) -> lint_scan_expr(obj, coll)
+        .Try(inner) -> lint_scan_expr(inner, coll)
+        .Tuple(els) -> lint_scan_sexprs(els, coll)
+        .TupleIndex(obj, _) -> lint_scan_expr(obj, coll)
+        .With(obj, _) -> lint_scan_expr(obj, coll)
+        .ListLit(els) -> lint_scan_sexprs(els, coll)
+        .Lambda(_, body) -> lint_scan_expr(body, coll)
+        .MapLit(entries) -> lint_scan_sexprs(entries, coll)
+        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(obj, coll), lint_sig_or(lint_scan_expr(start, coll), lint_scan_expr(end, coll)))
+        .IsCheck(subject, _) -> lint_scan_expr(subject, coll)
+        .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(needle, coll), lint_scan_sexprs(items, coll))
+        _ -> lint_sig_none()
+    }
+}
+
+/// Walk a statement collecting the two F9005 signals. The `i = …`
+/// increment is skipped entirely — its RHS reads `i` but that is the
+/// loop's own bookkeeping, not a value-use of the index.
+fn lint_scan_stmt(s: Stmt, coll: string) -> LintSig {
+    match s {
+        .Expr(inner) -> match inner {
+            .Assign(n, _) -> if n == "i" { lint_sig_none() } else { lint_scan_expr(inner, coll) }
+            _ -> lint_scan_expr(inner, coll)
+        }
+        .Let(_, _, init) -> lint_scan_expr(init, coll)
+        .Mut(_, _, init) -> lint_scan_expr(init, coll)
+        .Const(_, _, init) -> lint_scan_expr(init, coll)
+        .LetDestructure(_, init) -> lint_scan_expr(init, coll)
+        .Return(value) -> lint_scan_expr(value, coll)
+        .Block(body) -> lint_scan_sstmts(body, coll)
+        .If(c, t, el) -> {
+            let base = lint_sig_or(lint_scan_expr(c, coll), lint_scan_stmt(t, coll))
+            if el != null { lint_sig_or(base, lint_scan_stmt(el!, coll)) } else { base }
+        }
+        .While(c, body) -> lint_sig_or(lint_scan_expr(c, coll), lint_scan_stmt(body, coll))
+        .For(_, start, end, body) -> lint_sig_or(lint_sig_or(lint_scan_expr(start, coll), lint_scan_expr(end, coll)), lint_scan_stmt(body, coll))
+        .ForIn(_, c, body) -> lint_sig_or(lint_scan_expr(c, coll), lint_scan_stmt(body, coll))
+        .Match(subject, arms) -> lint_sig_or(lint_scan_expr(subject, coll), lint_scan_arms(arms, coll))
+        .Defer(body) -> lint_scan_expr(body, coll)
+        .Errdefer(body) -> lint_scan_expr(body, coll)
+        _ -> lint_sig_none()
+    }
+}
+
+/// How a loop steps `i`: `total` counts every `i = …` reassignment,
+/// `unit` counts only the canonical `i = i + 1`. The antipattern needs
+/// `total == 1 && unit == 1` — exactly one unit step. A stride-2 walk
+/// (`i = i + 2`, pairwise key/value scan) has total 1 / unit 0; a
+/// conditional double-step has total 2 — both are too subtle to
+/// mechanically rewrite as `enumerate()`, so the lint stays silent.
+type LintStep = { total: int, unit: int }
+
+fn lint_step_none() -> LintStep { LintStep { total: 0, unit: 0 } }
+
+fn lint_step_add(a: LintStep, b: LintStep) -> LintStep {
+    LintStep { total: a.total + b.total, unit: a.unit + b.unit }
+}
+
+/// True when `e` is `i + 1` (the unit-step RHS).
+fn lint_is_unit_step(e: Expr) -> bool {
+    match e {
+        .Binary(left, op, right) -> match op {
+            .Add -> {
+                let l_is_i = match left { .Ident(n) -> n == "i", _ -> false }
+                let r_is_one = match right { .Number(v) -> v == "1", _ -> false }
+                l_is_i && r_is_one
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+fn lint_step_count(s: Stmt) -> LintStep {
+    match s {
+        .Expr(inner) -> match inner {
+            .Assign(n, v) -> if n == "i" {
+                LintStep { total: 1, unit: if lint_is_unit_step(v) { 1 } else { 0 } }
+            } else { lint_step_none() }
+            _ -> lint_step_none()
+        }
+        .Block(body) -> {
+            mut c = lint_step_none()
+            for x in body { c = lint_step_add(c, lint_step_count(x.node)) }
+            c
+        }
+        .If(_, t, el) -> lint_step_add(lint_step_count(t), if el != null { lint_step_count(el!) } else { lint_step_none() })
+        .While(_, body) -> lint_step_count(body)
+        .For(_, _, _, body) -> lint_step_count(body)
+        .ForIn(_, _, body) -> lint_step_count(body)
+        _ -> lint_step_none()
+    }
+}
+
+/// F9005 lint: flag the manual `mut i = 0` / `while i < xs.length { … }`
+/// index-loop antipattern when it is genuinely an *index+element* loop
+/// over a `List`. To fire, the body must (1) read `i` as a value AND
+/// (2) subscript `xs[i]`, (3) step `i` exactly once by one, and (4) walk
+/// a `List` (the only thing `enumerate()` accepts — string scans index
+/// `s[i]` too but cannot use it). That is precisely the shape
+/// `for (i, x) in xs.enumerate()` replaces. Always on — a structural AST
+/// walk (not a string heuristic). Element-only loops, string scans,
+/// stride-N walks, and multi-step counters are deliberately untouched.
+fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
+    mut cur = tc
+    for (k, ss) in stmts.enumerate() {
+        if k + 1 < stmts.length {
+            match ss.node {
+                .Mut(name, _, init) -> {
+                    if name == "i" && lint_expr_is_zero(init) {
+                        match stmts[k + 1].node {
+                            .While(cond, body) -> {
+                                let coll = lint_index_guard_coll(cond)
+                                if coll != "" && vtype_is_list(type_lookup(cur.types, coll)) {
+                                    let sig = lint_scan_stmt(body, coll)
+                                    let step = lint_step_count(body)
+                                    if sig.value_i && sig.elem && step.total == 1 && step.unit == 1 {
+                                        cur = tc_warn(cur, DiagCode.ManualIndexLoop,
+                                            "manual index loop over `${coll}` — use `for (i, x) in ${coll}.enumerate()`")
+                                    }
+                                }
+                            }
+                            _ -> {}
+                        }
+                    }
+                }
+                _ -> {}
+            }
+        }
     }
     cur
 }

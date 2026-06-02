@@ -601,14 +601,11 @@ fn build_variant_arms(variants: List<Variant>) -> List<MatchArm> {
     // List<MatchArm>.push appends forward — walk source order, no
     // reversal needed.
     mut out: List<MatchArm> = []
-    mut i = 0
-    while i < variants.length {
-        let v = variants[i]
+    for (i, v) in variants.enumerate() {
         let bindings = field_list_to_param_list(v.fields)
         let pattern = Pattern.Variant(v.name, bindings)
         let chain = build_variant_write_chain(i, v.fields)
         out.push(MatchArm { pattern, guard: null, body: sexpr_dummy(chain) })
-        i = i + 1
     }
     out
 }

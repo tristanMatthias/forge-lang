@@ -255,6 +255,12 @@ export enum DiagCode {
     /// known gaps in component-expansion-synthesised bindings that
     /// would otherwise spam errors.
     ArgTypeMismatch
+    /// F9005 — a manual `mut i = 0; while i < xs.length { … }` index
+    /// loop that should be a `for` loop (`for x in xs`, or
+    /// `for (i, x) in xs.enumerate()` when the index is also used).
+    /// Style nudge — the structural `for` form is clearer and
+    /// bounds-safe.
+    ManualIndexLoop
     /// F9050 — `@expand` macro returned a `ResolvedDecls` whose
     /// `.introduces` lists a name that doesn't correspond to any decl
     /// in `.decls`. The name will not be registered; the warning
@@ -367,6 +373,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
         .ArgTypeMismatch     -> ErrorDef { code: "F9004", help: "call-site arg type differs from declared param — coerce explicitly or fix the binding's inferred type" }
+        .ManualIndexLoop     -> ErrorDef { code: "F9005", help: "rewrite as `for x in xs` (or `for (i, x) in xs.enumerate()` if the index is used)" }
         .ExpandIntroducesPhantom -> ErrorDef { code: "F9050", help: "the name in `.introduces` has no matching decl in `.decls` — drop the entry, or add the missing decl" }
         .ExpandRecursionLimit -> ErrorDef { code: "F4000", help: "a macro is likely emitting code that contains another @expand to itself — break the cycle or precompute the result" }
         .ExpandMissingMacroIdent -> ErrorDef { code: "F4001", help: "`@expand` needs a `@comptime` fn identifier as its first argument: `@expand(my_macro)`" }

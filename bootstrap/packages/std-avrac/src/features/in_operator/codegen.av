@@ -20,15 +20,13 @@ export fn emit_in_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<E
 fn emit_in_items(ctx: Ctx, env: List<VarBinding>, needle: Expr, items: List<SExpr>) -> Result<EmitValue, string> {
     if items.length == 0 { return ok_emit(ctx.i64(0), .Int) }
     mut acc = ctx.i64(0)
-    mut i = 0
-    while i < items.length {
-        let cmp = emit_binary(ctx, env, needle, BinOp.Eq, items[i].node)?
+    for (i, item) in items.enumerate() {
+        let cmp = emit_binary(ctx, env, needle, BinOp.Eq, item.node)?
         if i == 0 {
             acc = cmp.value
         } else {
             acc = ctx.bit_or(acc, cmp.value, "in_or")
         }
-        i = i + 1
     }
     ok_emit(acc, .Bool)
 }

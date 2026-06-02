@@ -565,14 +565,11 @@ fn decision_add_false(decs: List<Decision>, fn_name: string, line: int, branch: 
 /// single update.
 fn decision_update(decs: List<Decision>, fn_name: string, line: int, branch: int, t_inc: int, f_inc: int) {
     mut local = decs
-    mut i = 0
-    while i < local.length {
-        let d = local[i]
+    for (i, d) in local.enumerate() {
         if d.fn_name == fn_name && d.line == line && d.branch_id == branch {
             local.set(i, d with { true_count: d.true_count + t_inc, false_count: d.false_count + f_inc })
             return
         }
-        i = i + 1
     }
     local.push(Decision { fn_name, line, branch_id: branch, true_count: t_inc, false_count: f_inc })
 }
@@ -619,9 +616,7 @@ fn rollup_modules(stats: List<FnStats>) -> List<ModStats> {
 /// match. Mutates `acc` in place.
 fn mod_upsert(acc: List<ModStats>, name: string, tl: int, hl: int, tb: int, hb: int, entered: int) {
     mut local = acc
-    mut i = 0
-    while i < local.length {
-        let m = local[i]
+    for (i, m) in local.enumerate() {
         if m.module == name {
             local.set(i, m with {
                 total_lines: m.total_lines + tl,
@@ -633,7 +628,6 @@ fn mod_upsert(acc: List<ModStats>, name: string, tl: int, hl: int, tb: int, hb: 
             })
             return
         }
-        i = i + 1
     }
     local.push(ModStats {
         module: name,

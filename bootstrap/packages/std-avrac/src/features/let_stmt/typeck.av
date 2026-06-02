@@ -7,11 +7,9 @@ use typeck.{TC, tc_bind}
 /// pulling each element type from `tuple_ty` via `vtype_tuple_at`.
 export fn bind_destructure(tc: TC, names: List<ParamEntry>, tuple_ty: ValueType) -> TC {
     mut cur = tc
-    mut i = 0
-    while i < names.length {
+    for (i, name) in names.enumerate() {
         let elem_ty = vtype_tuple_at(tuple_ty, i)
-        cur = tc_bind(cur, names[i].name, elem_ty)
-        i = i + 1
+        cur = tc_bind(cur, name.name, elem_ty)
     }
     cur
 }

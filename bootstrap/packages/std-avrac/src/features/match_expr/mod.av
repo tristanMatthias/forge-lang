@@ -259,15 +259,13 @@ fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttemp
 /// are skipped — they're explicit "ignore this slot" markers.
 fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: List<Value>, idx: int) -> Runtime {
     mut cur = rt
-    mut i = 0
-    while i < bindings.length {
+    for (i, binding) in bindings.enumerate() {
         let slot = idx + i
         if slot >= payload.length { return cur }
-        let name = bindings[i].name
+        let name = binding.name
         if name != "_" {
             cur = define_binding(cur, name, false, payload[slot])
         }
-        i = i + 1
     }
     cur
 }
@@ -277,15 +275,13 @@ fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: Lis
 /// whole nested match fails.
 fn try_match_pattern_list(rt: Runtime, patterns: List<Pattern>, payload: List<Value>, idx: int) -> MatchAttempt {
     mut current_rt = rt
-    mut i = 0
-    while i < patterns.length {
+    for (i, pat) in patterns.enumerate() {
         if idx + i >= payload.length {
             return MatchAttempt { matched: false, runtime: current_rt }
         }
-        let attempt = try_match_pattern(current_rt, patterns[i], payload[idx + i])
+        let attempt = try_match_pattern(current_rt, pat, payload[idx + i])
         if !attempt.matched { return attempt }
         current_rt = attempt.runtime
-        i = i + 1
     }
     MatchAttempt { matched: true, runtime: current_rt }
 }
