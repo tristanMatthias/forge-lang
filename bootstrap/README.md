@@ -38,10 +38,10 @@ This gives us:
 
 On a fresh machine, run the environment bootstrapper once. It installs and
 verifies the whole toolchain — LLVM 20, a C/C++ compiler, `lld`, `make`, `git`,
-`python3`, plus the `bd` + `dolt` beads issue tracker the dev workflow runs on
-(it pulls in their own prerequisites: a Go toolchain for `bd`, `curl` for the
-`dolt` installer) — and prints the one env var the compiled binary can't
-reliably self-discover, `LLVM_PREFIX`:
+`python3`, plus the `bd` beads issue tracker the dev workflow runs on (it pulls
+in a Go toolchain to build `bd`; `bd` bundles an embedded dolt server, so no
+separate `dolt` binary is needed) — and prints the one env var the compiled
+binary can't reliably self-discover, `LLVM_PREFIX`:
 
 ```bash
 scripts/bootstrap.sh                 # detect + install what's missing, then verify

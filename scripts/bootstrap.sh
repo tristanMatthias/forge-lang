@@ -19,9 +19,10 @@
 #   sha256sum          (coreutils on Linux; shasum on macOS) — seed provenance hashing
 #   python3            seed-trap patcher + scripts/diagnose.sh helpers
 #
-# Also required: bd + dolt, the beads issue tracker the dev workflow runs on. The
-# script installs them unconditionally and brings their own prerequisites with them
-# (a Go toolchain to build bd; curl for the dolt installer).
+# Also required: bd, the beads issue tracker the dev workflow runs on. The script
+# installs it unconditionally and brings its own prerequisite with it (a Go toolchain
+# to build bd). bd bundles an embedded dolt server (`bd dolt ...`), so no separate
+# `dolt` binary is needed.
 #
 # Platforms: macOS (Homebrew), Debian/Ubuntu (apt), Fedora/RHEL (dnf/yum),
 #            Arch (pacman), openSUSE (zypper), Alpine (apk).
@@ -250,7 +251,7 @@ install_toolchain() {
     fi
   fi
 
-  # beads (bd + dolt) is mandatory — the dev workflow tracks all work in it.
+  # beads (bd) is mandatory — the dev workflow tracks all work in it.
   install_beads
 }
 
@@ -295,29 +296,7 @@ install_beads() {
       fi
     fi
   fi
-  # --- dolt: beads' storage backend (official installer needs curl) ---
-  if ! have dolt; then
-    if confirm "install dolt (beads storage backend — required)?"; then
-      if [ "$PM" = "brew" ]; then
-        brew install dolt || warn "dolt install failed — see https://github.com/dolthub/dolt"
-      else
-        if ! have curl; then
-          log "dolt installer needs curl — installing it first"
-          pm_install curl || warn "could not install curl automatically"
-        fi
-        if have curl; then
-          curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh | $SUDO bash \
-            || warn "dolt install failed — see https://github.com/dolthub/dolt"
-        elif have go; then
-          go install github.com/dolthub/dolt/go/cmd/dolt@latest \
-            || warn "dolt install via go failed — see https://github.com/dolthub/dolt"
-          case ":$PATH:" in *":$(go_bin_dir):"*) ;; *) export PATH="$PATH:$(go_bin_dir)" ;; esac
-        else
-          warn "need curl, brew or go to install dolt — see https://github.com/dolthub/dolt"
-        fi
-      fi
-    fi
-  fi
+  # No external `dolt` binary: bd ships an embedded dolt server (`bd dolt ...`).
 }
 
 # ----------------------------------------------------------------------------------
@@ -376,12 +355,12 @@ verify() {
     MISSING=$((MISSING + 1))
   fi
 
-  # beads — required: the dev workflow tracks all work in it.
-  # `go install` may have dropped bd/dolt under GOPATH/bin; make sure we look there.
+  # beads — required: the dev workflow tracks all work in it. (bd bundles an
+  # embedded dolt server, so no separate dolt binary is checked.)
+  # `go install` may have dropped bd under GOPATH/bin; make sure we look there.
   local gobin; gobin="$(go_bin_dir)"
   case ":$PATH:" in *":$gobin:"*) ;; *) [ -d "$gobin" ] && export PATH="$PATH:$gobin" ;; esac
   check_cmd "bd (beads)"  bd
-  check_cmd "dolt"        dolt
 }
 
 # ----------------------------------------------------------------------------------
