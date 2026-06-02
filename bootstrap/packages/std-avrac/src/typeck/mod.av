@@ -1888,19 +1888,15 @@ fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: L
 /// to whatever the arg's type is via tc_subst_generic_ret.
 fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
     if tp.length == 0 { return false }
-    match ty {
+    // A type "mentions" a param iff any node in its tree is a bare
+    // Struct naming one. derive_walker's ValueType.any tests that
+    // predicate on every node (self + all children), so it subsumes the
+    // hand-rolled List/Task/FnTyped/Enum recursion — and additionally
+    // reaches Union / Tuple / Newtype members the old walker skipped.
+    ty.any((t) -> match t {
         .Struct(n, _) -> type_param_has(tp, n)
-        .List(elem) -> vtype_mentions_typeparam(elem, tp)
-        .Task(payload) -> vtype_mentions_typeparam(payload, tp)
-        .FnTyped(ptypes, ret) -> {
-            if vtype_mentions_typeparam(ret, tp) { return true }
-            list_any(ptypes, (p: ValueType) -> vtype_mentions_typeparam(p, tp))
-        }
-        .Enum(_, type_args, _) -> {
-            list_any(type_args, (a: ValueType) -> vtype_mentions_typeparam(a, tp))
-        }
         _ -> false
-    }
+    })
 }
 
 /// Resolve a generic-fn call's return type. Walks params/args
