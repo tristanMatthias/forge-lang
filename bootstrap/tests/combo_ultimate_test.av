@@ -18,13 +18,14 @@ impl CuTask {
 
 fn cu_run() -> string {
     avra_test_capture_start()
-    let tasks = [
-        CuTask { title: "design", priority: 5, done: 1 },
-        CuTask { title: "implement", priority: 4, done: 0 },
-        CuTask { title: "test", priority: 3, done: 0 },
-        CuTask { title: "docs", priority: 1, done: 1 },
-        CuTask { title: "deploy", priority: 5, done: 0 },
-    ]
+    let tasks = table<CuTask> {
+        title       | priority | done
+        "design"    | 5        | 1
+        "implement" | 4        | 0
+        "test"      | 3        | 0
+        "docs"      | 1        | 1
+        "deploy"    | 5        | 0
+    }
     for t in tasks {
         if t.is_high_priority() && t.done == 0 {
             println(t.describe())

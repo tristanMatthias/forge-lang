@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name}
 use list_ops.{list_map, list_concat}
 
 // ListComp is no longer desugared at the AST level. The AST-rewrite
@@ -31,7 +31,98 @@ use list_ops.{list_map, list_concat}
 ///   parse → lower_quotes → desugar_program → resolve_module_files
 ///                                          → inject_intrinsics → ...
 export fn desugar_program(stmts: List<SStmt>) -> List<SStmt> {
-    desugar_stmt_list(stmts)
+    // Collect top-level / module fn signatures up front so call-argument
+    // table inference (`f(table { ... })`) can pin the row type from the
+    // matching parameter's declared `List<Row>` type. Param vtypes are
+    // already populated by the parser (type_expr_to_vtype), so this works
+    // pre-resolve. (c080 fn-arg inference.)
+    let sigs = collect_fn_sigs(stmts)
+    desugar_stmt_list(stmts, sigs)
+}
+
+/// A function's name paired with its declared parameter types. Used only
+/// for call-argument table-row inference.
+type FnSig = { name: string, params: List<ValueType> }
+
+/// Collect `(name, param-types)` for every `fn` reachable at the top
+/// level, inside modules, inside impls, and under annotations. Methods
+/// are keyed by their bare name; a same-named free fn would shadow, but
+/// table args to methods are rare and fall back to the explicit form.
+fn collect_fn_sigs(stmts: List<SStmt>) -> List<FnSig> {
+    mut out: List<FnSig> = []
+    mut i = 0
+    while i < stmts.length {
+        out = collect_fn_sigs_stmt(stmts[i].node, out)
+        i = i + 1
+    }
+    out
+}
+
+fn collect_fn_sigs_stmt(stmt: Stmt, acc: List<FnSig>) -> List<FnSig> {
+    match stmt {
+        .Function(name, _, params, _, _) -> {
+            mut a = acc
+            a.push(FnSig { name: name, params: list_map(params, (p: ParamEntry) -> p.vtype) })
+            a
+        }
+        .Annotated(_, inner) -> collect_fn_sigs_stmt(inner, acc)
+        .Module(_, body) -> {
+            mut a = acc
+            mut i = 0
+            while i < body.length {
+                a = collect_fn_sigs_stmt(body[i].node, a)
+                i = i + 1
+            }
+            a
+        }
+        .Impl(_, methods) -> {
+            mut a = acc
+            mut i = 0
+            while i < methods.length {
+                a = collect_fn_sigs_stmt(methods[i].node, a)
+                i = i + 1
+            }
+            a
+        }
+        _ -> acc
+    }
+}
+
+/// Find a function's parameter types by name, or null when unknown.
+fn sig_lookup(sigs: List<FnSig>, name: string) -> List<ValueType>? {
+    mut i = 0
+    while i < sigs.length {
+        if sigs[i].name == name { return sigs[i].params }
+        i = i + 1
+    }
+    null
+}
+
+/// Stamp anonymous table-row literals passed directly as call arguments
+/// using the callee's declared `List<Row>` parameter types. Non-table
+/// args and unknown callees pass through unchanged.
+fn stamp_call_arg_tables(callee: Expr, args: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
+    let name = match callee { .Ident(n) -> n, .QualifiedIdent(n) -> n, _ -> "" }
+    if name == "" { return args }
+    let params = sig_lookup(sigs, name)
+    if params == null { return args }
+    let ps = params!
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < args.length {
+        if i < ps.length {
+            let sname = vtype_struct_name(vtype_list_elem(ps[i]))
+            if sname != "" {
+                out.push(sexpr(stamp_table_rows(args[i].node, sname), args[i].line, args[i].col))
+            } else {
+                out.push(args[i])
+            }
+        } else {
+            out.push(args[i])
+        }
+        i = i + 1
+    }
+    out
 }
 
 // ── Intrinsic injection ──
@@ -99,40 +190,182 @@ fn program_declares_enum(stmts: List<SStmt>, target: string) -> bool {
 // ── Statement desugaring ──
 
 /// Map `desugar_stmt` over every element of a `List<SStmt>`, preserving
-/// span info on each rewritten node.
-fn desugar_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt_at(desugar_stmt(ss.node), ss.line, ss.col, ss.file))
+/// span info on each rewritten node. `sigs` threads fn signatures for
+/// call-argument table inference.
+fn desugar_stmt_list(stmts: List<SStmt>, sigs: List<FnSig>) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> sstmt_at(desugar_stmt(ss.node, sigs), ss.line, ss.col, ss.file))
 }
 
 /// Desugar a single statement. For control-flow / declaration
 /// statements we recurse into their expression and body fields;
 /// statements with no rewritable payload pass through unchanged.
-fn desugar_stmt(stmt: Stmt) -> Stmt {
+fn desugar_stmt(stmt: Stmt, sigs: List<FnSig>) -> Stmt {
     match stmt {
-        .Expr(e) -> .Expr(desugar_expr(e))
-        .Let(name, vt, init) -> .Let(name, vt, desugar_expr(init))
-        .Mut(name, vt, init) -> .Mut(name, vt, desugar_expr(init))
-        .Return(e) -> .Return(desugar_expr(e))
-        .Block(body) -> .Block(desugar_stmt_list(body))
+        .Expr(e) -> .Expr(desugar_expr(e, sigs))
+        // Typed table-literal inference (forge-crafting-intepreters-c080):
+        // a `table { ... }` whose row type is omitted parses to a ListLit
+        // of anonymous StructLit("") rows. When the binding carries a
+        // `List<Row>` annotation, stamp `Row` onto each row so the rest of
+        // the pipeline sees an ordinary `List<Row>`. `table<Row> { ... }`
+        // already names its rows and is left untouched.
+        .Let(name, vt, init) -> .Let(name, vt, lower_table_rows(desugar_expr(init, sigs), vt))
+        .Mut(name, vt, init) -> .Mut(name, vt, lower_table_rows(desugar_expr(init, sigs), vt))
+        .Const(name, vt, init) -> .Const(name, vt, lower_table_rows(desugar_expr(init, sigs), vt))
+        .Return(e) -> .Return(desugar_expr(e, sigs))
+        .Block(body) -> .Block(desugar_stmt_list(body, sigs))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(desugar_expr(cond), desugar_stmt(then_b), desugar_stmt(else_b!))
+                .If(desugar_expr(cond, sigs), desugar_stmt(then_b, sigs), desugar_stmt(else_b!, sigs))
             } else {
-                .If(desugar_expr(cond), desugar_stmt(then_b), null)
+                .If(desugar_expr(cond, sigs), desugar_stmt(then_b, sigs), null)
             }
         }
-        .While(cond, body) -> .While(desugar_expr(cond), desugar_stmt(body))
-        .For(v, start, end, body) -> .For(v, desugar_expr(start), desugar_expr(end), desugar_stmt(body))
-        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll), desugar_stmt(body))
-        .Match(subj, arms) -> .Match(desugar_expr(subj), desugar_match_arms(arms))
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, desugar_stmt_list(body))
-        .Defer(body) -> .Defer(desugar_expr(body))
-        .Errdefer(body) -> .Errdefer(desugar_expr(body))
-        .Module(name, body) -> .Module(name, desugar_stmt_list(body))
-        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
-        .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body))
-        .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_list(body))
-        .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr(cond))
+        .While(cond, body) -> .While(desugar_expr(cond, sigs), desugar_stmt(body, sigs))
+        .For(v, start, end, body) -> .For(v, desugar_expr(start, sigs), desugar_expr(end, sigs), desugar_stmt(body, sigs))
+        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll, sigs), desugar_stmt(body, sigs))
+        .Match(subj, arms) -> .Match(desugar_expr(subj, sigs), desugar_match_arms(arms, sigs))
+        // Function bodies: after desugaring, stamp the return type onto
+        // any context-free `table { ... }` in return / tail position so a
+        // `fn f() -> List<Row> { table { ... } }` infers `Row` per c080.
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_fn_returns(desugar_stmt_list(body, sigs), rvt))
+        .Defer(body) -> .Defer(desugar_expr(body, sigs))
+        .Errdefer(body) -> .Errdefer(desugar_expr(body, sigs))
+        .Module(name, body) -> .Module(name, desugar_stmt_list(body, sigs))
+        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner, sigs))
+        .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body, sigs))
+        .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_list(body, sigs))
+        .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr(cond, sigs))
+        _ -> stmt
+    }
+}
+
+// ── Typed table-literal row inference (c080) ──
+//
+// A `table { col | col\n v | v }` with no `<Row>` ascription parses to a
+// ListLit whose rows are anonymous `StructLit("", inits)`. The row type is
+// pinned from the surrounding context — a `let x: List<Row>`/`mut`/`const`
+// annotation or a fn return type. These helpers stamp that struct name
+// onto every anonymous row. Rows that already carry a name (the explicit
+// `table<Row> { ... }` form) are left untouched; rows that never get a
+// name stay anonymous and the typechecker reports the missing-row-type
+// error (F1042).
+
+/// If `expected` is `List<Struct>`, stamp the element struct's name onto
+/// every anonymous table row in `expr`. Recurses into block / if / match /
+/// when tail positions so a table inside a tail branch still resolves.
+/// Non-table expressions and non-`List<Struct>` expectations pass through.
+fn lower_table_rows(expr: Expr, expected: ValueType) -> Expr {
+    let sname = vtype_struct_name(vtype_list_elem(expected))
+    if sname == "" { return expr }
+    stamp_table_rows(expr, sname)
+}
+
+/// Recursively stamp `sname` onto anonymous table rows in value position.
+fn stamp_table_rows(expr: Expr, sname: string) -> Expr {
+    match expr {
+        .ListLit(rows) -> .ListLit(stamp_table_row_list(rows, sname))
+        .Block(body) -> .Block(stamp_block_tail(body, sname))
+        .IfExpr(c, t, e) -> .IfExpr(c, stamp_table_rows(t, sname), stamp_table_rows(e, sname))
+        .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(arms, sname))
+        .When(arms) -> .When(stamp_table_when_arms(arms, sname))
+        _ -> expr
+    }
+}
+
+/// Map the row-stamp over each `SExpr` row in a table's ListLit.
+fn stamp_table_row_list(rows: List<SExpr>, sname: string) -> List<SExpr> {
+    list_map(rows, (se: SExpr) -> sexpr(stamp_table_row(se.node, sname), se.line, se.col))
+}
+
+/// Stamp `sname` onto one anonymous `StructLit("")`; leave named rows
+/// (and any non-StructLit element) alone so this is safe to run over an
+/// ordinary list literal that merely happens to share the position.
+fn stamp_table_row(row: Expr, sname: string) -> Expr {
+    match row {
+        .StructLit(n, inits) -> if n == "" { Expr.StructLit(sname, inits) } else { row }
+        _ -> row
+    }
+}
+
+/// Stamp the tail (last) statement of a block when it is an expression.
+fn stamp_block_tail(body: List<SStmt>, sname: string) -> List<SStmt> {
+    let n = body.length
+    if n == 0 { return body }
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < n {
+        let ss = body[i]
+        if i == n - 1 {
+            match ss.node {
+                .Expr(e) -> out.push(sstmt_at(Stmt.Expr(stamp_table_rows(e, sname)), ss.line, ss.col, ss.file))
+                _ -> out.push(ss)
+            }
+        } else {
+            out.push(ss)
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Stamp each match-arm body (arms are in tail position when the match is).
+fn stamp_table_match_arms(arms: List<MatchArm>, sname: string) -> List<MatchArm> {
+    list_map(arms, (arm: MatchArm) -> MatchArm {
+        pattern: arm.pattern,
+        guard: arm.guard,
+        body: sexpr(stamp_table_rows(arm.body.node, sname), arm.body.line, arm.body.col),
+    })
+}
+
+/// Stamp each `when`-arm body.
+fn stamp_table_when_arms(arms: List<WhenArm>, sname: string) -> List<WhenArm> {
+    list_map(arms, (arm: WhenArm) -> WhenArm {
+        cond: arm.cond,
+        body: sexpr(stamp_table_rows(arm.body.node, sname), arm.body.line, arm.body.col),
+    })
+}
+
+/// Walk a function body stamping the return type onto tables in `return`
+/// statements (at any depth reachable through block / if) and in the
+/// body's tail expression.
+fn lower_fn_returns(stmts: List<SStmt>, rvt: ValueType) -> List<SStmt> {
+    let sname = vtype_struct_name(vtype_list_elem(rvt))
+    if sname == "" { return stmts }
+    lower_return_stmts(stmts, sname)
+}
+
+/// Apply return/tail stamping to a statement list; only the final
+/// statement is treated as a tail (implicit-return) position.
+fn lower_return_stmts(stmts: List<SStmt>, sname: string) -> List<SStmt> {
+    let n = stmts.length
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < n {
+        let ss = stmts[i]
+        let is_tail = i == n - 1
+        out.push(sstmt_at(lower_return_stmt(ss.node, sname, is_tail), ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Stamp tables in `return e` (always) and in a tail expression / tail
+/// match (only when `is_tail`). Recurses through block and if so a
+/// `return table { ... }` nested in those positions still resolves.
+fn lower_return_stmt(stmt: Stmt, sname: string, is_tail: bool) -> Stmt {
+    match stmt {
+        .Return(e) -> Stmt.Return(stamp_table_rows(e, sname))
+        .Expr(e) -> if is_tail { Stmt.Expr(stamp_table_rows(e, sname)) } else { stmt }
+        .Block(body) -> Stmt.Block(lower_return_stmts(body, sname))
+        .If(cond, then_b, else_b) -> {
+            let nt = lower_return_stmt(then_b, sname, is_tail)
+            if else_b != null {
+                Stmt.If(cond, nt, lower_return_stmt(else_b!, sname, is_tail))
+            } else {
+                Stmt.If(cond, nt, null)
+            }
+        }
+        .Match(subj, arms) -> if is_tail { Stmt.Match(subj, stamp_table_match_arms(arms, sname)) } else { stmt }
         _ -> stmt
     }
 }
@@ -143,9 +376,9 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
 /// node (`rewrite_expr`), then recurse into all sub-expressions
 /// (`walk_expr`). Local-then-recurse ordering means rewritten output
 /// gets desugared again — `assert(dbg(x))` works.
-fn desugar_expr(expr: Expr) -> Expr {
+fn desugar_expr(expr: Expr, sigs: List<FnSig>) -> Expr {
     let rewritten = rewrite_expr(expr)
-    walk_expr(rewritten)
+    walk_expr(rewritten, sigs)
 }
 
 /// Local rewrites that fire for one node only. Currently dispatches
@@ -272,95 +505,97 @@ fn desugar_min_max(args: List<SExpr>, is_min: int) -> Expr {
 /// of `expr`, applying `desugar_expr` (which itself runs
 /// `rewrite_expr` followed by `walk_expr`). Leaf expressions
 /// without sub-nodes pass through unchanged.
-fn walk_expr(expr: Expr) -> Expr {
+fn walk_expr(expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
-        .Binary(l, op, r) -> .Binary(desugar_expr(l), op, desugar_expr(r))
-        .Unary(op, r) -> .Unary(op, desugar_expr(r))
-        .Logical(l, op, r) -> .Logical(desugar_expr(l), op, desugar_expr(r))
-        .Call(callee, args) -> .Call(desugar_expr(callee), desugar_expr_list(args))
-        .Grouping(inner) -> .Grouping(desugar_expr(inner))
-        .Assign(name, val) -> .Assign(name, desugar_expr(val))
-        .Index(obj, idx) -> .Index(desugar_expr(obj), desugar_expr(idx))
-        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(obj), field)
-        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(obj), field, desugar_expr(val))
-        .IfExpr(c, t, e) -> .IfExpr(desugar_expr(c), desugar_expr(t), desugar_expr(e))
-        .Block(body) -> .Block(desugar_stmt_list(body))
-        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(l), desugar_expr(r))
-        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(obj), field)
-        .Try(inner) -> .Try(desugar_expr(inner))
-        .Tuple(elems) -> .Tuple(desugar_expr_list(elems))
-        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(obj), idx)
-        .ListLit(elems) -> .ListLit(desugar_expr_list(elems))
-        .MapLit(entries) -> .MapLit(desugar_expr_list(entries))
-        .Slice(obj, s, e) -> .Slice(desugar_expr(obj), desugar_expr(s), desugar_expr(e))
-        .With(obj, overrides) -> .With(desugar_expr(obj), desugar_field_inits(overrides))
-        .Lambda(params, body) -> .Lambda(params, desugar_expr(body))
-        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(subj), desugar_match_arms(arms))
-        .When(arms) -> .When(desugar_when_arms(arms))
-        .InCheck(needle, items) -> .InCheck(desugar_expr(needle), desugar_expr_list(items))
-        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(subj), variant)
+        .Binary(l, op, r) -> .Binary(desugar_expr(l, sigs), op, desugar_expr(r, sigs))
+        .Unary(op, r) -> .Unary(op, desugar_expr(r, sigs))
+        .Logical(l, op, r) -> .Logical(desugar_expr(l, sigs), op, desugar_expr(r, sigs))
+        // Call args: desugar each arg, then pin any anonymous table row
+        // to the callee's declared `List<Row>` parameter type (c080).
+        .Call(callee, args) -> .Call(desugar_expr(callee, sigs), stamp_call_arg_tables(callee, desugar_expr_list(args, sigs), sigs))
+        .Grouping(inner) -> .Grouping(desugar_expr(inner, sigs))
+        .Assign(name, val) -> .Assign(name, desugar_expr(val, sigs))
+        .Index(obj, idx) -> .Index(desugar_expr(obj, sigs), desugar_expr(idx, sigs))
+        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(obj, sigs), field)
+        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(obj, sigs), field, desugar_expr(val, sigs))
+        .IfExpr(c, t, e) -> .IfExpr(desugar_expr(c, sigs), desugar_expr(t, sigs), desugar_expr(e, sigs))
+        .Block(body) -> .Block(desugar_stmt_list(body, sigs))
+        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(l, sigs), desugar_expr(r, sigs))
+        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(obj, sigs), field)
+        .Try(inner) -> .Try(desugar_expr(inner, sigs))
+        .Tuple(elems) -> .Tuple(desugar_expr_list(elems, sigs))
+        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(obj, sigs), idx)
+        .ListLit(elems) -> .ListLit(desugar_expr_list(elems, sigs))
+        .MapLit(entries) -> .MapLit(desugar_expr_list(entries, sigs))
+        .Slice(obj, s, e) -> .Slice(desugar_expr(obj, sigs), desugar_expr(s, sigs), desugar_expr(e, sigs))
+        .With(obj, overrides) -> .With(desugar_expr(obj, sigs), desugar_field_inits(overrides, sigs))
+        .Lambda(params, body) -> .Lambda(params, desugar_expr(body, sigs))
+        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(subj, sigs), desugar_match_arms(arms, sigs))
+        .When(arms) -> .When(desugar_when_arms(arms, sigs))
+        .InCheck(needle, items) -> .InCheck(desugar_expr(needle, sigs), desugar_expr_list(items, sigs))
+        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(subj, sigs), variant)
         .ListComp(body, var, coll, filter) -> {
             // Recurse into body / coll / filter so sugar inside the
             // comprehension (assert, dbg, min, max, …) still gets
             // desugared. Without this, `[assert(x > 0) for x in xs]`
             // would leave the assert call intact.
-            let new_filter = if filter != null { desugar_expr(filter!) } else { null }
-            .ListComp(desugar_expr(body), var, desugar_expr(coll), new_filter)
+            let new_filter = if filter != null { desugar_expr(filter!, sigs) } else { null }
+            .ListComp(desugar_expr(body, sigs), var, desugar_expr(coll, sigs), new_filter)
         }
         // Forms that hold sub-expressions and were silently dropped
         // by the old `_ -> expr` fallthrough. Same root cause as the
         // mono + escape + closure walker bugs: sugar inside any of
         // these stayed as raw calls (e.g. `Foo { x: assert(p) }` left
         // `assert` as an unresolved fn name).
-        .StructLit(name, inits) -> .StructLit(name, desugar_field_inits(inits))
-        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(args))
-        .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(callee), type_args, desugar_expr_list(args))
-        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(inner), binding, desugar_expr(body), l, c)
-        .Spawn(body) -> .Spawn(desugar_expr(body))
-        .Isolated(body) -> .Isolated(desugar_expr(body))
-        .Quote(kind, body) -> .Quote(kind, desugar_expr(body))
-        .Splice(target) -> .Splice(desugar_expr(target))
+        .StructLit(name, inits) -> .StructLit(name, desugar_field_inits(inits, sigs))
+        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(args, sigs))
+        .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(callee, sigs), type_args, desugar_expr_list(args, sigs))
+        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(inner, sigs), binding, desugar_expr(body, sigs), l, c)
+        .Spawn(body) -> .Spawn(desugar_expr(body, sigs))
+        .Isolated(body) -> .Isolated(desugar_expr(body, sigs))
+        .Quote(kind, body) -> .Quote(kind, desugar_expr(body, sigs))
+        .Splice(target) -> .Splice(desugar_expr(target, sigs))
         _ -> expr
     }
 }
 
 /// Map `desugar_expr` over every element of a `List<SExpr>`,
 /// preserving span info on each rewritten node.
-fn desugar_expr_list(list: List<SExpr>) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(desugar_expr(se.node), se.line, se.col))
+fn desugar_expr_list(list: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
+    list_map(list, (se: SExpr) -> sexpr(desugar_expr(se.node, sigs), se.line, se.col))
 }
 
 /// Walk a `List<MatchArm>` desugaring each arm's guard (when
 /// present) and body. Patterns are not desugared — they're already
 /// in canonical form.
-fn desugar_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
+fn desugar_match_arms(arms: List<MatchArm>, sigs: List<FnSig>) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> {
         let new_guard = if arm.guard != null {
-            sexpr(desugar_expr(arm.guard!.node), arm.guard!.line, arm.guard!.col)
+            sexpr(desugar_expr(arm.guard!.node, sigs), arm.guard!.line, arm.guard!.col)
         } else { null }
         MatchArm {
             pattern: arm.pattern,
             guard: new_guard,
-            body: sexpr(desugar_expr(arm.body.node), arm.body.line, arm.body.col),
+            body: sexpr(desugar_expr(arm.body.node, sigs), arm.body.line, arm.body.col),
         }
     })
 }
 
 /// Walk a `when` arm list desugaring each arm's condition and body.
 /// `when` arms have an optional condition (the `else` arm is null).
-fn desugar_when_arms(arms: List<WhenArm>) -> List<WhenArm> {
+fn desugar_when_arms(arms: List<WhenArm>, sigs: List<FnSig>) -> List<WhenArm> {
     list_map(arms, (arm: WhenArm) -> WhenArm {
-        cond: if arm.cond != null { sexpr(desugar_expr(arm.cond!.node), arm.cond!.line, arm.cond!.col) } else { null },
-        body: sexpr(desugar_expr(arm.body.node), arm.body.line, arm.body.col),
+        cond: if arm.cond != null { sexpr(desugar_expr(arm.cond!.node, sigs), arm.cond!.line, arm.cond!.col) } else { null },
+        body: sexpr(desugar_expr(arm.body.node, sigs), arm.body.line, arm.body.col),
     })
 }
 
 /// Walk a `List<FieldInit>` (used by struct literals and `with`
 /// exprs) desugaring each value while keeping field name + span
 /// intact.
-fn desugar_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
+fn desugar_field_inits(inits: List<FieldInit>, sigs: List<FnSig>) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(desugar_expr(init.value.node), init.value.line, init.value.col),
+        value: sexpr(desugar_expr(init.value.node, sigs), init.value.line, init.value.col),
     })
 }

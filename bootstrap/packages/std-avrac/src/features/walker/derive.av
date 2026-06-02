@@ -64,33 +64,14 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     let map_mangled = "${view.name}__map"
     // Mangled `Type__method` names register so the introduces-
     // validation pass can find them in the spliced decl list.
-    let introduces: List<DeclSymbol> = [
-        DeclSymbol {
-            name: children_mangled,
-            kind: DeclKind.Method(view.name),
-            canonical_path: children_mangled,
-        },
-        DeclSymbol {
-            name: visit_mangled,
-            kind: DeclKind.Method(view.name),
-            canonical_path: visit_mangled,
-        },
-        DeclSymbol {
-            name: any_mangled,
-            kind: DeclKind.Method(view.name),
-            canonical_path: any_mangled,
-        },
-        DeclSymbol {
-            name: find_mangled,
-            kind: DeclKind.Method(view.name),
-            canonical_path: find_mangled,
-        },
-        DeclSymbol {
-            name: map_mangled,
-            kind: DeclKind.Method(view.name),
-            canonical_path: map_mangled,
-        },
-    ]
+    let introduces: List<DeclSymbol> = table<DeclSymbol> {
+        name             | kind                       | canonical_path
+        children_mangled | DeclKind.Method(view.name) | children_mangled
+        visit_mangled    | DeclKind.Method(view.name) | visit_mangled
+        any_mangled      | DeclKind.Method(view.name) | any_mangled
+        find_mangled     | DeclKind.Method(view.name) | find_mangled
+        map_mangled      | DeclKind.Method(view.name) | map_mangled
+    }
     let provenance = MacroProvenance {
         macro_name: "derive_walker",
         target_canonical: view.name,

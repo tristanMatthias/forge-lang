@@ -1,0 +1,119 @@
+// Typed table literals — red-team / adversarial coverage (c080).
+//
+// Pushes tables through complex cell expressions, wide/long shapes, and
+// every combinator context (loop, match, with, closure, pipe, nested),
+// and asserts that malformed tables fail with the RIGHT diagnostic
+// rather than a silent miscompile or codegen ICE.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+type RtPoint = { x: int, y: int }
+type RtRow = { p: RtPoint, tag: string, n: int }
+enum RtColor { Red, Green, Blue }
+type RtCell = { color: RtColor, score: int }
+
+fn rt_seven() -> int { 7 }
+
+// Complex cell expressions: arithmetic, interpolation, calls, nested
+// struct literals, enum ctors, field access.
+fn rt_complex() -> List<RtRow> {
+    let base = 10
+    table<RtRow> {
+        p                  | tag        | n
+        RtPoint { x: 1, y: 2 } | "a${base}"  | 1 + 2
+        RtPoint { x: 3, y: 4 } | "b"         | rt_seven()
+    }
+}
+
+fn rt_enum_rows() -> List<RtCell> {
+    table<RtCell> {
+        color          | score
+        RtColor.Red    | 1
+        RtColor.Green  | 2
+        RtColor.Blue   | 3
+    }
+}
+
+spec "table red-team — values & shapes" {
+    then "arithmetic / interpolation / call / nested-struct / field cells" {
+        let xs = rt_complex()
+        xs.length == 2
+            && xs[0].p.x == 1 && xs[0].tag == "a10" && xs[0].n == 3
+            && xs[1].p.y == 4 && xs[1].n == 7
+    }
+    then "enum-ctor cells" {
+        let cs = rt_enum_rows()
+        mut total = 0
+        for c in cs {
+            let bump = match c.color { .Red -> 100, .Green -> 200, .Blue -> 300 }
+            total = total + bump + c.score
+        }
+        total == 606
+    }
+    then "table drives enumerate + for-in destructuring" {
+        let xs = rt_enum_rows()
+        mut acc = 0
+        for (i, c) in xs.enumerate() { acc = acc + i * c.score }
+        acc == 0 * 1 + 1 * 2 + 2 * 3
+    }
+    then "table flows through map / filter" {
+        let cs = rt_enum_rows()
+        let scores = cs.map(it.score)
+        scores.filter((s) -> s > 1).length == 2
+    }
+    then "table row reused via with-expr" {
+        let xs = rt_complex()
+        let bumped = xs[0] with { n: 99 }
+        bumped.n == 99 && bumped.p.x == 1
+    }
+    then "single-column, many rows" {
+        let ns = table<RtPoint> {
+            x  | y
+            1  | 1
+            2  | 2
+            3  | 3
+            4  | 4
+            5  | 5
+        }
+        ns.length == 5 && ns[4].x == 5
+    }
+}
+
+// ── Compile-error red team: malformed tables must diagnose, not ICE ──
+
+const MAIN_HEADER: string = "fn " + "main()"
+const PRELUDE: string = "type Er = { a: int, b: int }\n"
+
+fn rt_compile(body: string) -> string {
+    let path = "/tmp/avra_table_redteam.av"
+    write_fixture(path, PRELUDE + "${MAIN_HEADER} {\n" + body + "\n}\n")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "table red-team — diagnostics" {
+    then "too few cells in a row → arity error, not a silent drop" {
+        let out = rt_compile("  let _ = table<Er> {\n    a | b\n    1\n  }")
+        out.contains("table row has 1 cell") && out.contains("2 column")
+    }
+    then "too many cells in a row → arity error, not silent truncation" {
+        let out = rt_compile("  let _ = table<Er> {\n    a | b\n    1 | 2 | 3\n  }")
+        out.contains("table row has 3 cell") && out.contains("2 column")
+    }
+    then "duplicate column → clean error" {
+        let out = rt_compile("  let _ = table<Er> {\n    a | a\n    1 | 2\n  }")
+        out.contains("duplicate table column")
+    }
+    then "column not a field → F1000, not a codegen ICE" {
+        let out = rt_compile("  let _ = table<Er> {\n    a | zzz\n    1 | 2\n  }")
+        out.contains("no field `zzz`") && !out.contains("F9999")
+    }
+    then "scalar cell type mismatch → F1000, not silently accepted" {
+        let out = rt_compile("  let _ = table<Er> {\n    a | b\n    \"hi\" | 2\n  }")
+        out.contains("F1000") && !out.contains(".av.ll")
+    }
+    then "context-free table → F1042" {
+        let out = rt_compile("  let _ = table {\n    a | b\n    1 | 2\n  }")
+        out.contains("F1042")
+    }
+}

@@ -10,12 +10,13 @@ impl ClmsUser {
 }
 
 fn clms_run() -> string {
-    let users = [
-        ClmsUser { name: "Alice", age: 30 },
-        ClmsUser { name: "Bob", age: 15 },
-        ClmsUser { name: "Charlie", age: 25 },
-        ClmsUser { name: "Diana", age: 12 }
-    ]
+    let users = table<ClmsUser> {
+        name      | age
+        "Alice"   | 30
+        "Bob"     | 15
+        "Charlie" | 25
+        "Diana"   | 12
+    }
 
     let names = users.map(it.name)
     let ages = users.map(it.age)

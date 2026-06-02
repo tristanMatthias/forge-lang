@@ -66,11 +66,12 @@ type MCollection = { tags: List<MTag>, total: int }
 spec "@marshal: List<NestedMarshalStruct> round-trip" {
     then "list of @marshal structs round-trips with all fields" {
         let c = MCollection {
-            tags: [
-                MTag { id: 10, name: "alpha" },
-                MTag { id: 20, name: "beta" },
-                MTag { id: 30, name: "gamma" },
-            ],
+            tags: table<MTag> {
+                id | name
+                10 | "alpha"
+                20 | "beta"
+                30 | "gamma"
+            },
             total: 3,
         }
         let c2 = from_bytes_MCollection(c.to_bytes())

@@ -100,7 +100,12 @@ spec "@marshal: enum with nested-struct + list-of-struct payloads" {
         shape_summary(from_bytes_MFigure(f.to_bytes())) == "seg:(1,2)-(3,4)"
     }
     then "variant with List<NestedStruct> payload" {
-        let pts = [MCoord { x: 0, y: 0 }, MCoord { x: 10, y: 10 }, MCoord { x: 20, y: 20 }]
+        let pts = table<MCoord> {
+            x  | y
+            0  | 0
+            10 | 10
+            20 | 20
+        }
         let f = MFigure.Path(pts)
         let f2 = from_bytes_MFigure(f.to_bytes())
         match f2 {

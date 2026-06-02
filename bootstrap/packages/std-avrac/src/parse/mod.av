@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
@@ -107,6 +107,12 @@ export type Parser = {
     // Disabled inside match-arm bodies so the next sibling pattern
     // (e.g. `.Variant(x)`) isn't gobbled into the previous body.
     mut allow_dot_postfix: int,
+    // When true, expression parsing is bounded to a single source line:
+    // a binary `+`/`-` or a `.`-postfix that begins on the *next* line
+    // does NOT continue the current expression. Set only while parsing
+    // table-literal cells, so a row ending in a value followed by a next
+    // row starting with `-` / `.Variant` doesn't merge across the newline.
+    mut cell_mode: bool,
     // When true, expressions containing `it` in arg lists are wrapped
     // in implicit lambdas. Set by method call parsing (.map, etc.),
     // NOT by regular function calls (prevents double-wrapping).
@@ -404,6 +410,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         error_message: "",
         allow_struct_lit: true,
         allow_dot_postfix: true,
+        cell_mode: false,
         allow_it_sugar: false,
         quote_depth: 0,
         current_start: 0,
@@ -600,21 +607,32 @@ impl Parser {
         out
     }
 
-    // Parse table literal: table { col1 | col2\n val1 | val2\n val3 | val4 }
-    // Desugars to ListLit of MapLit entries.
+    // Parse a typed table literal:
+    //   table<RowStruct> { col1 | col2\n v1a | v1b\n v2a | v2b }
+    //   table          { col1 | col2\n v1a | v1b\n v2a | v2b }   (row type inferred)
+    // The header row names struct fields; each data row becomes a
+    // `StructLit(RowStruct, { col1: v1a, col2: v1b })`. The whole table
+    // desugars to a `ListLit` of those StructLits — i.e. `List<RowStruct>`.
+    // When the row type is omitted it is left empty here and resolved
+    // from context (let/return/arg annotation) by the typechecker; an
+    // unresolved row type is a compile error (no weak List<Map> fallback).
     fn parse_table_literal(self) -> Expr? {
-        self.advance()  // consume `{`
-        // Parse header row: identifiers separated by `|`
-        mut headers: List<SExpr> = []
-        mut header_count = 0
+        // Optional `<RowStruct>` row-type ascription.
+        mut row_type = ""
+        if self.check(Tk.Less) {
+            self.advance()  // consume `<`
+            let rt = self.consume_identifier("expected row struct name after `table<`")?
+            row_type = rt
+            if !self.consume(Tk.Greater, "expected `>` after table row type") { return null }
+        }
+        if !self.consume(Tk.LeftBrace, "expected `{` to open table") { return null }
+        // Parse header row: field-name identifiers separated by `|`.
+        mut col_names: List<string> = []
         let header_line = self.current_line
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
             if self.check(Tk.Identifier) {
-                let col = self.current_lexeme
+                col_names.push(self.current_lexeme)
                 self.advance()
-                let quoted_col = "\"${col}\""
-                headers.push(sexpr_at(Expr.String(quoted_col), self.current_line, self.current_column, self.file))
-                header_count = header_count + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
@@ -622,34 +640,62 @@ impl Parser {
                 break
             }
         }
+        let header_count = col_names.length
         if header_count == 0 {
             if !self.consume(Tk.RightBrace, "expected `}` to close table") { return null }
             let empty: List<SExpr> = []
             return Expr.ListLit(empty)
         }
-        // headers are accumulated in source order (push); no reverse needed
-        let header_names = headers
-        // Parse data rows in source order
+        // Reject duplicate column names — they would silently collide on the
+        // same struct field.
+        mut di = 0
+        while di < header_count {
+            mut dj = di + 1
+            while dj < header_count {
+                if col_names[di] == col_names[dj] {
+                    self.set_error("duplicate table column `${col_names[di]}`")
+                    return null
+                }
+                dj = dj + 1
+            }
+            di = di + 1
+        }
+        // Parse data rows in source order; each row is a StructLit whose
+        // field names come from the header and whose values come from
+        // the cells (left-to-right, one per column). A row occupies a
+        // single source line; its cell count must match the header width.
         mut rows: List<SExpr> = []
+        // Bound each cell expression to its row's line so a value at the end
+        // of one row doesn't merge with a `-`/`.Variant` starting the next.
+        // Saved/restored to keep nested tables (a table cell) well-behaved.
+        let saved_cell_mode = self.cell_mode
+        self.cell_mode = true
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
-            mut vals: List<SExpr> = []
-            mut col_idx = 0
-            while col_idx < header_count {
-                if self.check(Tk.RightBrace) { break }
-                // Use parse_bitwise_xor which stops before `|`
+            let row_line = self.current_line
+            mut cells: List<SExpr> = []
+            while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
+                // parse_bitwise_xor stops before `|`, so the column
+                // separator is never swallowed as a bitwise-or operand.
                 let val = self.parse_bitwise_xor()?
-                vals.push(sexpr_at(val, self.current_line, self.current_column, self.file))
-                col_idx = col_idx + 1
+                cells.push(sexpr_at(val, self.current_line, self.current_column, self.file))
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
-            if col_idx == header_count {
-                let map_entries = table_zip_entries(header_names, vals)
-                let row_map = Expr.MapLit(map_entries)
-                rows.push(sexpr_at(row_map, self.current_line, self.current_column, self.file))
+            if cells.length != header_count {
+                self.cell_mode = saved_cell_mode
+                self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
+                return null
             }
+            mut inits: List<FieldInit> = []
+            mut ci = 0
+            while ci < header_count {
+                inits.push(FieldInit { name: col_names[ci], value: cells[ci] })
+                ci = ci + 1
+            }
+            rows.push(sexpr_at(Expr.StructLit(row_type, inits), row_line, 0, self.file))
         }
+        self.cell_mode = saved_cell_mode
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return null
         }
@@ -948,7 +994,9 @@ impl Parser {
         let left = self.parse_factor()?
 
         mut expr = left
-        while self.current_kind in [Tk.Plus, Tk.Minus] {
+        // In table-cell mode a `+`/`-` that starts the *next* line is the
+        // next row's value, not a continuation of this cell — stop here.
+        while self.current_kind in [Tk.Plus, Tk.Minus] && !(self.cell_mode && self.current_line != self.prev_line) {
             let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
@@ -1069,7 +1117,7 @@ impl Parser {
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
-        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
+        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result) && (!self.cell_mode || self.current_line == self.prev_line)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
@@ -1301,9 +1349,12 @@ impl Parser {
         if self.check(Tk.Identifier) {
             let name = self.current_lexeme
             self.advance()
-            // Table literal: table { col1 | col2; val1 | val2 }
-            // Must check BEFORE struct literal since both start with ident + {
-            if name == "table" && self.check(Tk.LeftBrace) {
+            // Table literal: `table { ... }` or typed `table<Row> { ... }`.
+            // Must check BEFORE struct literal since both start with ident + {.
+            // `table {` is always a table literal. `table<...>` is one only
+            // when the `<` is followed by `Ident > {` — otherwise it's a
+            // comparison on a variable named `table` (e.g. `table < 10`).
+            if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
                 return self.parse_table_literal()
             }
             if self.allow_struct_lit && self.check(Tk.LeftBrace) {
@@ -1631,6 +1682,44 @@ impl Parser {
             i = i + 1
         }
         false
+    }
+
+    // At the `<` token (just after `table`): does the raw source spell
+    // `< Ident > {` — i.e. a typed table literal `table<Row> { … }` — as
+    // opposed to a comparison like `table < 10`? Scans source without
+    // consuming. The `> {` suffix is what disambiguates the two.
+    fn peek_is_table_row_type(self) -> bool {
+        let n = self.source.length
+        mut i = self.current_start + 1   // skip the `<`
+        // skip whitespace
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        if i >= n { return false }
+        // identifier start
+        let c0 = self.source.substring(i, i + 1)
+        let is_alpha = (c0 >= "a" && c0 <= "z") || (c0 >= "A" && c0 <= "Z") || c0 == "_"
+        if !is_alpha { return false }
+        // consume identifier characters
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            let ok = (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
+            if ok { i = i + 1 } else { break }
+        }
+        // skip whitespace, expect `>`
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        if i >= n || self.source.substring(i, i + 1) != ">" { return false }
+        i = i + 1
+        // skip whitespace, expect `{`
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        i < n && self.source.substring(i, i + 1) == "{"
     }
 
     fn peek_after_ident_is_paren(self) -> bool {

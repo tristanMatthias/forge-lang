@@ -1,12 +1,13 @@
 type BdnNode = { value: int, label: string }
 
 fn bdn_run() -> string {
-    let nodes = [
-        BdnNode { value: 1, label: "a" },
-        BdnNode { value: 2, label: "b" },
-        BdnNode { value: 3, label: "c" },
-        BdnNode { value: 4, label: "d" },
-    ]
+    let nodes = table<BdnNode> {
+        value | label
+        1     | "a"
+        2     | "b"
+        3     | "c"
+        4     | "d"
+    }
 
     let result = nodes
         .filter((n) -> n.value > 1)
