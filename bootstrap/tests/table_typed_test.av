@@ -68,8 +68,15 @@ fn tt_compile(source: string) -> string {
 }
 
 spec "typed table literals — edges" {
-    then "table flows into a List<Row> parameter" {
+    then "explicit table<Row> flows into a List<Row> parameter" {
         tt_total(table<TtRow> {
+            name | qty
+            "a"  | 4
+            "b"  | 6
+        }) == 10
+    }
+    then "bare table arg infers row type from the parameter" {
+        tt_total(table {
             name | qty
             "a"  | 4
             "b"  | 6

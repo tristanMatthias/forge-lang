@@ -58,10 +58,14 @@ pattern-matchable, and assignable to any `List<Extern>` position.
   `[ Row { col0: v00, col1: v01, ... }, Row { col0: v10, ... }, ... ]`.
   Row order is preserved.
 - **Row-type inference:** when `<Row>` is omitted, the row type is taken
-  from the surrounding context — a `let`/`mut`/`const` `: List<Row>`
-  annotation, or the enclosing function's `-> List<Row>` return type
-  (including the tail expression, a `return`, and tail `if`/`match`/`when`
-  branches). The desugar pass stamps the inferred name onto each row.
+  from the surrounding context:
+  - a `let`/`mut`/`const` `: List<Row>` annotation;
+  - the enclosing function's `-> List<Row>` return type (the tail
+    expression, a `return`, and tail `if`/`match`/`when` branches);
+  - a call argument whose matching parameter is declared `List<Row>`
+    (e.g. `take_rows(table { ... })`).
+
+  The desugar pass stamps the inferred struct name onto each row.
 - **No weak fallback:** a `table { ... }` whose row type cannot be
   inferred is a compile error (`F1042`) rather than a weakly-typed
   `List<Map>`. The fix is to write `table<Row> { ... }` or annotate the
@@ -78,15 +82,6 @@ desugar → stamp the inferred row name onto anonymous StructLit("") rows
 resolve / typeck / codegen → ordinary List<Struct> handling
 typeck  → a surviving anonymous row reports F1042 (TableRowTypeMissing)
 ```
-
-## Limitations
-
-- **Not inside `@comptime` / `@expand` macro bodies.** The row inference
-  and `table → List<Struct>` lowering happen in the desugar pass; the
-  comptime evaluator interprets macro-body AST that bypasses that pass,
-  so a `table { ... }` evaluated at comptime surfaces as an undefined
-  `table` reference. Use an explicit `[ Row { ... }, ... ]` list literal
-  inside macro bodies.
 
 ## Spec reference
 
