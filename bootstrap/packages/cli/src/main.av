@@ -2322,8 +2322,12 @@ fn std_avra_listing(project_dir: string) -> List<string> {
     if listing_file != "" && avra_selfhost_file_exists(listing_file) != 0 {
         return read_listing_file_paths(listing_file)
     }
+    // EXCLUDES `**/tests/**` for the same reason as
+    // compute_std_listing_file: test sources don't compile into test
+    // binaries, so they shouldn't fold into the universe_fp. See that
+    // function for the full rationale.
     let std_root = find_packages_dir(project_dir) + "std-avrac/src"
-    let raw = avra_shell_exec("find ${std_root} -name '*.av' -type f 2>/dev/null | sort")
+    let raw = avra_shell_exec("find ${std_root} -name '*.av' -type f -not -path '*/tests/*' 2>/dev/null | sort")
     mut out: List<string> = []
     for p in raw.split("\n") {
         if p != "" { out.push(p) }
@@ -2785,10 +2789,20 @@ fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string, jobs: int
 /// Pre-compute the @std source listing ONCE. Each shard's
 /// `make_test_inputs()` otherwise forks `find` over the same ~275
 /// files — 7ms × 451 ≈ 3s of CPU saved.
+///
+/// EXCLUDES `**/tests/**` paths. Test sources under std-avrac/src
+/// are not compiled into the test binaries — they're test fixtures
+/// for the compiler itself. Including them in this listing folds
+/// their content into the universe_fp, which keys every test-shard
+/// binary cache entry. A single test-file edit would then invalidate
+/// every other test's cached binary, forcing a full ~400s cold
+/// recompile of all ~600 shards for what's semantically a one-test
+/// change. Excluding them turns "edit one test" from O(all_tests)
+/// into O(1) cache invalidation.
 fn compute_std_listing_file(project_dir: string, log_dir: string) -> string {
     let std_root = find_packages_dir(project_dir) + "std-avrac/src"
     let listing_file = "${log_dir}/std-listing.txt"
-    avra_shell_exec("find '${std_root}' -name '*.av' -type f 2>/dev/null | sort > '${listing_file}'")
+    avra_shell_exec("find '${std_root}' -name '*.av' -type f -not -path '*/tests/*' 2>/dev/null | sort > '${listing_file}'")
     listing_file
 }
 
