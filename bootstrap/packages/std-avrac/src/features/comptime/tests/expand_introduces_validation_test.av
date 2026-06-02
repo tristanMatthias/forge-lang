@@ -17,49 +17,18 @@
 //       decls → captured stdout contains the warning, fn is still
 //       callable because the warning is non-fatal.
 
-extern fn avra_shell_exec(cmd: string) -> string
-extern fn avra_process_env_get(name: string) -> string
-extern fn avra_host_os() -> string
+use @std.avrac.test_runner.{write_fixture, cached_fixture_compile_and_run}
 
-/// Translate AVRA_LIB_OBJS (colon-separated .o paths) into a
-/// space-separated string for the cc command. When AVRA_USE_METADATA
-/// is set, the compiler emits EXTERN references to std-avrac fns
-/// instead of inlining the bodies — those externs need their
-/// producing .o files at link time, which the orchestrator stashes
-/// in AVRA_LIB_OBJS. Without this the link silently fails on
-/// undefined symbols and the test's `run` step finds no binary.
-fn lib_objs_cc_args() -> string {
-    let raw = avra_process_env_get("AVRA_LIB_OBJS")
-    if raw == "" { return "" }
-    mut out = ""
-    for p in raw.split(":") {
-        if p != "" { out = out + p + " " }
-    }
-    out
-}
-
+// 6w6v: migrated off hand-rolled bs2 compile + llc + cc + run. The
+// cached_fixture_compile_and_run helper preserves the compile-stderr
+// concatenated-with-run-stdout shape this test needs (so we can still
+// assert on BOTH the phantom-name warning and the runtime println),
+// while caching the combined output content-keyed on toolchain_fp +
+// fixture hash. Cold: same ~14s. Warm: ~10ms instead of ~734ms.
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_expand_introduces_validation_test.av"
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-    // Direct bs2 compile + link + run with stderr captured at every
-    // stage. cached_fixture_run discards bs2 stderr on success, which
-    // hides our warning. Run the steps manually here.
-    //
-    let compile = avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
-    let extra_objs = lib_objs_cc_args()
-    // Platform-portable link: llc the .ll to a PIC object (gcc can't
-    // ingest .ll the way macOS clang can), then link with LLD +
-    // libstdc++ on Linux / default ld + libc++ on macOS.
-    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
-    let llvm_pfx = if llvm_prefix == "" { "/opt/homebrew/opt/llvm" } else { llvm_prefix }
-    let is_mac = avra_host_os() == "macos"
-    let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
-    let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
-    avra_shell_exec("${llvm_pfx}/bin/llc -relocation-model=pic -filetype=obj '${path}.ll' -o '${path}.o' 2>&1 || true")
-    let link = avra_shell_exec("cc '${path}.o' build/runtime.o build/llvm_wrapper.o ${extra_objs}${ld_sel} -L${llvm_pfx}/lib -lLLVM ${cxxlib} -o '${path}.bin' 2>&1 || true")
-    let run = avra_shell_exec("'${path}.bin' 2>&1 || true")
-    compile + "\n" + run
+    write_fixture(path, source)
+    cached_fixture_compile_and_run(path)
 }
 
 spec "@expand: introduces-vs-decls divergence emits a warning" {

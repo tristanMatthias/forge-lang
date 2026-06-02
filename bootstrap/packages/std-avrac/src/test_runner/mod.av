@@ -445,6 +445,43 @@ export fn write_fixture_and_run_no_metadata(path: string, source: string) -> str
     cached_fixture_run_no_metadata(path)
 }
 
+/// 6w6v: content-keyed cache for fixtures that need BOTH bs2 compile
+/// stderr (the warning bag) AND runtime stdout. The standard
+/// cached_fixture_run routes through diagnose.sh, which drops compile
+/// stderr on success — so any test that asserts on a compile-time
+/// warning (F9xxx, F0xxx informational) can't use it. Without a cached
+/// alternative, those tests fall back to hand-rolled shell-outs that
+/// pay full bs2 + llc + cc + run on every invocation (~734ms warm for
+/// expand_introduces_validation_test).
+///
+/// The script: bs2 compile + llc + cc + run, capturing combined
+/// stderr+stdout from compile and the run binary. AVRA_USE_METADATA
+/// and AVRA_LIB_OBJS are preserved (caller's responsibility — usually
+/// inherited from the test runner's env).
+///
+/// Returns concat of "compile\n + run". Same shape every hand-rolled
+/// run_capture has used for the warning-bag tests; lets the test stay
+/// a 1-line call with no shell escaping.
+export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
+    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
+    let llvm_pfx = if llvm_prefix == "" { "/opt/homebrew/opt/llvm" } else { llvm_prefix }
+    let is_mac = avra_host_os() == "macos"
+    let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
+    let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
+    // AVRA_LIB_OBJS is colon-separated; translate to a space-separated
+    // string in shell. Done inside the cache cmd so the cache key
+    // doesn't have to factor environment — toolchain_fp covers the
+    // bs2/runtime/wrapper hashes; AVRA_LIB_OBJS contents change only
+    // when those underlying .o files change.
+    let extra_objs_expr = "$(printf '%s\\n' \"$AVRA_LIB_OBJS\" | tr ':' ' ')"
+    let cmd = "out_c=$(./build/bs2 compile '${fixture_path}' 2>&1 || true)\n" +
+              "${llvm_pfx}/bin/llc -relocation-model=pic -filetype=obj '${fixture_path}.ll' -o '${fixture_path}.o' >/dev/null 2>&1 || true\n" +
+              "cc '${fixture_path}.o' build/runtime.o build/llvm_wrapper.o ${extra_objs_expr} ${ld_sel} -L${llvm_pfx}/lib -lLLVM ${cxxlib} -o '${fixture_path}.bin' >/dev/null 2>&1 || true\n" +
+              "out_r=$('${fixture_path}.bin' 2>&1 || true)\n" +
+              "printf '%s\\n%s' \"$out_c\" \"$out_r\""
+    cached_fixture_capture(fixture_path, cmd, "compile-and-run")
+}
+
 /// Shared helper. The verb is folded into the cache key so two
 /// different command shapes against the same fixture don't share a
 /// slot; everything else (toolchain fp + file hash + fixture path)
@@ -479,18 +516,39 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
     out
 }
 
-/// cbg3.1: classify the captured output as safe-to-cache or not.
-/// The patterns rejected here are environmental noise produced by the
-/// shell/kernel when diagnose.sh's compile step is interrupted — they
-/// are not legitimate fixture stdout, so caching them would freeze a
-/// transient failure into a permanent one. The cache layer then re-
-/// runs the fixture on the next call and gets a clean capture.
+/// cbg3.1 + zp5b: classify the captured output as safe-to-cache or
+/// not. The patterns rejected here are environmental noise produced by
+/// the shell/kernel/diagnose.sh when a fixture's bs2 invocation is
+/// interrupted or aborts unexpectedly — they are not legitimate
+/// fixture stdout, so caching them would freeze a transient failure
+/// into a permanent one (the historic zp5b incident). The cache layer
+/// then re-runs the fixture on the next call and gets a clean capture.
+///
+/// Each predicate matches a class of failure that is ALWAYS spurious
+/// from the fixture's perspective:
+///   - `scripts/diagnose.sh: line ` — bash trap line printed when the
+///     wrapper script's compile/run step is killed mid-flight.
+///   - `Killed: 9` / `Killed: 15` — macOS jetsam or external SIGKILL/
+///     SIGTERM of bs2; never an intentional test outcome.
+///   - `Bus error` / `Segmentation fault` — bs2 process crash.
+///   - `bs2 codegen failed` / `bs2 compile failed` — diagnose.sh's
+///     `die` markers (scripts/diagnose.sh:466,520,547,562,576). These
+///     fire ONLY when the fixture failed to build at all — no test in
+///     the suite intentionally asserts on these strings (grepped).
+///
+/// We deliberately do NOT filter generic "FAIL" or F-code (F0001 …
+/// F9999) tokens: many spec/typeck tests intentionally assert that a
+/// specific F-code fires, and rejecting them would force a re-run
+/// every time. Zero-cost on the happy path is the requirement zp5b
+/// reopened with.
 fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }
     if out.contains("Bus error") { return false }
     if out.contains("Segmentation fault") { return false }
+    if out.contains("bs2 codegen failed") { return false }
+    if out.contains("bs2 compile failed") { return false }
     true
 }
 
