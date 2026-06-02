@@ -107,6 +107,12 @@ export type Parser = {
     // Disabled inside match-arm bodies so the next sibling pattern
     // (e.g. `.Variant(x)`) isn't gobbled into the previous body.
     mut allow_dot_postfix: int,
+    // When true, expression parsing is bounded to a single source line:
+    // a binary `+`/`-` or a `.`-postfix that begins on the *next* line
+    // does NOT continue the current expression. Set only while parsing
+    // table-literal cells, so a row ending in a value followed by a next
+    // row starting with `-` / `.Variant` doesn't merge across the newline.
+    mut cell_mode: bool,
     // When true, expressions containing `it` in arg lists are wrapped
     // in implicit lambdas. Set by method call parsing (.map, etc.),
     // NOT by regular function calls (prevents double-wrapping).
@@ -404,6 +410,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         error_message: "",
         allow_struct_lit: true,
         allow_dot_postfix: true,
+        cell_mode: false,
         allow_it_sugar: false,
         quote_depth: 0,
         current_start: 0,
@@ -658,6 +665,11 @@ impl Parser {
         // the cells (left-to-right, one per column). A row occupies a
         // single source line; its cell count must match the header width.
         mut rows: List<SExpr> = []
+        // Bound each cell expression to its row's line so a value at the end
+        // of one row doesn't merge with a `-`/`.Variant` starting the next.
+        // Saved/restored to keep nested tables (a table cell) well-behaved.
+        let saved_cell_mode = self.cell_mode
+        self.cell_mode = true
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
             let row_line = self.current_line
             mut cells: List<SExpr> = []
@@ -671,6 +683,7 @@ impl Parser {
                 }
             }
             if cells.length != header_count {
+                self.cell_mode = saved_cell_mode
                 self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
                 return null
             }
@@ -682,6 +695,7 @@ impl Parser {
             }
             rows.push(sexpr_at(Expr.StructLit(row_type, inits), row_line, 0, self.file))
         }
+        self.cell_mode = saved_cell_mode
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return null
         }
@@ -980,7 +994,9 @@ impl Parser {
         let left = self.parse_factor()?
 
         mut expr = left
-        while self.current_kind in [Tk.Plus, Tk.Minus] {
+        // In table-cell mode a `+`/`-` that starts the *next* line is the
+        // next row's value, not a continuation of this cell — stop here.
+        while self.current_kind in [Tk.Plus, Tk.Minus] && !(self.cell_mode && self.current_line != self.prev_line) {
             let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
@@ -1101,7 +1117,7 @@ impl Parser {
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
-        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
+        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result) && (!self.cell_mode || self.current_line == self.prev_line)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {

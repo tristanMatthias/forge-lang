@@ -16,10 +16,19 @@ cell          = expression                              // parsed up to `|`
 ```
 
 - `field_name` is an identifier naming a field of the row struct.
-- A `cell` is any expression that does not contain a top-level `|`
-  (parsed with `parse_bitwise_xor`, which stops at the column separator).
+- A `cell` is an expression parsed up to **comparison** precedence
+  (`parse_bitwise_xor`), so the column separator `|` is never swallowed.
+  Arithmetic, bitwise/shift, comparisons, unary, calls, indexing, field
+  access, string interpolation, list/map/struct literals, and lambdas all
+  work as cells. Lower-precedence operators — `&&`, `||`, `??`, `|>`, the
+  `?` propagation operator, and ternary `if`-expressions — must be
+  **parenthesized**: `(y ?? 0)`, `(a || b)`, `(5 |> f)`.
+- A `|` inside a string/interpolation cell is part of the string, not a
+  separator (`"a|b|c"` is one cell).
 - The header occupies a single source line; each data row occupies a
-  single line with one cell per column.
+  single line and must have exactly one cell per column (a row with too
+  few or too many cells, or a duplicate column name, is a parse error).
+- A leading `|` (markdown-table style) is not accepted.
 
 ## Examples
 

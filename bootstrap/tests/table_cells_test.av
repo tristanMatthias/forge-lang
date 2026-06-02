@@ -1,0 +1,54 @@
+// Typed table literals — cell value integrity (c080).
+//
+// Pure behavioral specs (no compile-probe subprocesses) guarding the
+// separator/precedence handling: a `|` inside a string must not be read
+// as a column separator, comparison-expression cells must evaluate, and
+// low-precedence operators must work when parenthesized.
+
+type TcStr = { s: string, n: int }
+type TcBool = { ok: bool, v: int }
+type TcMix = { neg: int, flag: bool, xs: List<int> }
+
+fn tc_strings() -> List<TcStr> {
+    table<TcStr> {
+        s          | n
+        "a|b|c"    | 5
+        "x || y"   | 7
+        ""         | 0
+    }
+}
+
+spec "table cell value integrity" {
+    then "`|` inside a string cell is preserved, not treated as a separator" {
+        let r = tc_strings()
+        r.length == 3 && r[0].s == "a|b|c" && r[0].n == 5
+    }
+    then "`||` inside a string, and empty-string cells, survive verbatim" {
+        let r = tc_strings()
+        r[1].s == "x || y" && r[2].s == "" && r[2].n == 0
+    }
+    then "comparison-expression cells evaluate correctly" {
+        let bs = table<TcBool> {
+            ok      | v
+            1 < 2   | 10
+            3 < 2   | 20
+        }
+        bs[0].ok == true && bs[1].ok == false && bs[0].v == 10
+    }
+    then "negative, bool, and list-literal cells" {
+        let m = table<TcMix> {
+            neg | flag  | xs
+            -5  | true  | [1, 2, 3]
+            -9  | false | [4, 5]
+        }
+        m[0].neg == -5 && m[0].flag && m[0].xs.length == 3 && m[1].xs[0] == 4
+    }
+    then "low-precedence cells (||, ??) work when parenthesized" {
+        let y: int? = null
+        let m = table<TcBool> {
+            ok              | v
+            (true || false) | (y ?? 42)
+        }
+        m[0].ok == true && m[0].v == 42
+    }
+}
