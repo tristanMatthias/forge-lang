@@ -42,6 +42,17 @@ set -euo pipefail
 # --- required LLVM major version (see header) -------------------------------------
 LLVM_MAJOR=20
 
+# --- pinned beads (bd) version ----------------------------------------------------
+# bd is PINNED, not @latest. bd's storage is an embedded Dolt DB whose schema is
+# migrated forward by each bd release. The repo's checked-in DB (cloned from the
+# remote on first `bd` use) is at a specific schema; a newer bd will try to apply
+# migrations it doesn't have data for and abort — e.g. bd v1.0.5's migration
+# 0047_recompute_mixed_is_blocked fails with `table not found: wisps` /
+# `pending schema migrations alter pre-existing dirty tables`. v1.0.4 is the
+# last release compatible with the current DB schema. Bump this ONLY together
+# with a deliberate DB schema migration.
+BD_VERSION="v1.0.4"
+
 # --- locate the repo root (this script lives in <repo>/scripts) -------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -274,29 +285,75 @@ go_bin_dir() {
   else echo "$HOME/go/bin"; fi
 }
 
+# major.minor.patch reported by `bd version` (e.g. "1.0.5"), or empty.
+bd_installed_version() {
+  have bd || { echo ""; return; }
+  bd version 2>/dev/null | sed -n 's/.*version \([0-9][0-9.]*\).*/\1/p' | head -1
+}
+
 install_beads() {
-  # --- bd: built with the Go toolchain (bring it first if missing) ---
-  if ! have bd; then
-    if confirm "install bd (beads issue tracker — required by the dev workflow)?"; then
+  # --- bd: pinned to BD_VERSION. Install when missing OR when the present
+  # bd is a different (e.g. schema-incompatible @latest) build. ---
+  local want="${BD_VERSION#v}" have_ver
+  have_ver="$(bd_installed_version)"
+  if [ -n "$have_ver" ] && [ "$have_ver" != "$want" ]; then
+    warn "bd $have_ver is installed but this repo pins bd $want (schema compatibility) — reinstalling"
+  fi
+  if ! have bd || { [ -n "$have_ver" ] && [ "$have_ver" != "$want" ]; }; then
+    if confirm "install bd $want (beads issue tracker — required by the dev workflow)?"; then
       if ! have go && [ "$PM" != "brew" ]; then
         log "bd needs a Go toolchain to build — installing it first"
         # shellcheck disable=SC2046
         pm_install $(go_package) || warn "could not install a Go toolchain automatically"
       fi
       if have go; then
-        GOFLAGS="" go install github.com/steveyegge/beads/cmd/bd@latest \
+        # Pinned to $BD_VERSION (see BD_VERSION note above) — NOT @latest, whose
+        # newer Dolt-schema migrations break against the repo's checked-in DB.
+        GOFLAGS="" go install "github.com/steveyegge/beads/cmd/bd@${BD_VERSION}" \
           || warn "bd install via go failed — see https://github.com/steveyegge/beads"
         # `go install` lands in GOPATH/bin (or GOBIN); make it visible now and onward.
         case ":$PATH:" in *":$(go_bin_dir):"*) ;; *) export PATH="$PATH:$(go_bin_dir)" ;; esac
       elif [ "$PM" = "brew" ]; then
+        # Homebrew can't pin to the schema-compatible bd; prefer the pinned go install.
         brew install beads 2>/dev/null \
-          || warn "bd not available via brew — install with: go install github.com/steveyegge/beads/cmd/bd@latest"
+          || warn "bd not available via brew — install the pinned build: go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION}"
       else
-        warn "no Go toolchain available to build bd — install with: go install github.com/steveyegge/beads/cmd/bd@latest"
+        warn "no Go toolchain available to build bd — install with: go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION}"
       fi
     fi
   fi
   # No external `dolt` binary: bd ships an embedded dolt server (`bd dolt ...`).
+
+  # Build bd's LOCAL Dolt store from the committed issues.jsonl. This is the
+  # whole point of the offline setup: bd never clones from or pushes to the
+  # network. Issues sync through git-tracked .beads/issues.jsonl only.
+  init_beads_local
+}
+
+# Initialize a local, OFFLINE bd database from .beads/issues.jsonl.
+# Idempotent: skips when a local Dolt store already exists. Never touches
+# the network — no Dolt clone, no Dolt push.
+init_beads_local() {
+  have bd || return 0
+  local bd_dir="$REPO_ROOT/.beads"
+  [ -f "$bd_dir/issues.jsonl" ] || return 0
+  # Already have a local store? Nothing to do.
+  if [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; then
+    ok "bd local store present — offline, no network sync"
+    return 0
+  fi
+  log "building local bd store from issues.jsonl (offline; no Dolt clone/push)"
+  if ( cd "$REPO_ROOT" && bd init --from-jsonl --sandbox >/dev/null 2>&1 ); then
+    # `bd init` persists the git origin as `sync.remote`, which would make
+    # every subsequent write attempt a network Dolt push. Strip it so bd
+    # stays fully offline; the committed config.yaml keeps it commented out.
+    if grep -q '^sync\.remote:' "$bd_dir/config.yaml" 2>/dev/null; then
+      sed -i.bak '/^sync\.remote:/d' "$bd_dir/config.yaml" && rm -f "$bd_dir/config.yaml.bak"
+    fi
+    ok "bd initialized offline from issues.jsonl"
+  else
+    warn "bd init --from-jsonl failed — run it manually in the repo root: bd init --from-jsonl --sandbox"
+  fi
 }
 
 # ----------------------------------------------------------------------------------
@@ -361,6 +418,17 @@ verify() {
   local gobin; gobin="$(go_bin_dir)"
   case ":$PATH:" in *":$gobin:"*) ;; *) [ -d "$gobin" ] && export PATH="$PATH:$gobin" ;; esac
   check_cmd "bd (beads)"  bd
+  # bd must be the pinned, schema-compatible version (a newer @latest aborts
+  # opening the repo's Dolt DB). Flag a mismatch as a hard failure in --check.
+  if have bd; then
+    local want="${BD_VERSION#v}" have_ver; have_ver="$(bd_installed_version)"
+    if [ -n "$have_ver" ] && [ "$have_ver" != "$want" ]; then
+      err "bd version $have_ver != pinned $want — newer bd breaks against this repo's Dolt schema. Reinstall: go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION}"
+      MISSING=$((MISSING + 1))
+    elif [ -n "$have_ver" ]; then
+      ok "bd version $have_ver matches pin"
+    fi
+  fi
 }
 
 # ----------------------------------------------------------------------------------
