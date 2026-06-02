@@ -2855,56 +2855,29 @@ fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: strin
 // — that subprocess writes its own log file, so the spawn's return
 // value isn't load-bearing.
 //
-// Chunked dispatch trades the FIFO-semaphore any-finish-wakeup
-// behaviour for a slightly slower straggler tail. On the warm
-// suite (similar-sized shards, jobs=8) drift is negligible; a
-// proper bounded-channel queue is the right cure if heterogeneous
-// shards push the tail noticeably.
+// Continuous dispatch via @std.avrac.build.pool's `pool_run`. The
+// historic worry (hkms.1.1 comment) was its 50ms poll-sleep in
+// workers_reap costing more than the straggler tail saved for
+// uniformly-short ~80ms-per-shard workloads — but a cold suite
+// histogram (jdgo investigation, 2026-06-01) reveals shard times
+// are HIGHLY heterogeneous: p50 = 0ms, p90 = 434ms, p99 = 19.5s,
+// max = 79s (walker_valuetype_test). With chunked dispatch, one
+// 79s shard in a chunk of 8 pinned 7 workers idle for ~60s each —
+// cold wall 463s while sum(shard_times) = 464s, i.e. workers ran
+// almost completely serial-equivalent at 1.5 CPU usage on 8 cores.
 //
-// Attempted to swap in @std.avrac.build.pool's `pool_run` for a
-// proper any-finish-wakeup bounded queue in hkms.1.1, but its 50ms
-// poll-sleep in workers_reap costs more than the straggler tail
-// saves for these short ~80ms-per-shard workloads. The win would
-// need a no-sleep reap path (e.g. blocking wait on any-child via
-// signalfd / kqueue) — outside the iter scope.
+// Continuous dispatch via pool_run reclaims that idle time: any
+// worker grabs the next pending shard the moment it finishes. The
+// 50ms poll cost is bounded at ~28s aggregate worst-case
+// (562 shard finishes × 50ms each) which the wall-time floor
+// (max(shard) = 79s) absorbs without consequence.
+//
+// LJF ordering (cbg3) is preserved: callers still sort by source
+// size before invocation, so the biggest shards launch first and
+// the tail of cheap shards backfills workers continuously.
 fn dispatch_shards(shards: List<Shard>, jobs: int) {
-    mut start = 0
-    while start < shards.length {
-        let end = min_int(start + jobs, shards.length)
-        await_all(dispatch_chunk(shards, start, end))
-        start = end
-    }
-}
-
-/// Spawn one chunk of `[start, end)` shards in parallel. Returns the
-/// `Task` handles so the caller can decide when to await — useful for
-/// the jetsam-retry path which wants to inspect victims before
-/// joining.
-fn dispatch_chunk(shards: List<Shard>, start: int, end: int) -> List<int> {
-    mut handles: List<int> = []
-    mut k = start
-    while k < end {
-        let s = shards[k]
-        handles.push(spawn {
-            let _ = avra_shell_exec(s.cmd)
-            0
-        })
-        k = k + 1
-    }
-    handles
-}
-
-/// Drain a list of spawned task handles, discarding their return
-/// values. Each `spawn { … }` returns an int handle and `h.await`
-/// blocks until that task finishes.
-fn await_all(handles: List<int>) {
-    for h in handles { let _ = h.await }
-}
-
-/// Smaller of two ints — saves repeating
-/// `if a < b { a } else { b }` in the chunked-dispatch loop.
-fn min_int(a: int, b: int) -> int {
-    if a < b { a } else { b }
+    let cmds = list_map(shards, (s: Shard) -> s.cmd)
+    let _ = pool_run(cmds, jobs)
 }
 
 // Cold-rebuild jetsam recovery: any shard whose log is empty got

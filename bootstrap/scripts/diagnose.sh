@@ -434,15 +434,21 @@ link_ll() {
   if [ -n "${AVRA_LIB_OBJS:-}" ]; then
     lib_objs=$(printf '%s' "$AVRA_LIB_OBJS" | tr ':' ' ')
   fi
-  # Atomic link: cc writes to a .tmp sibling, then rename. If cc is
-  # killed mid-write (jetsam under memory pressure has done this 3x
-  # this iteration alone), the previous $out remains intact instead
-  # of being corrupted into a 2.2MB Mach-O that SIGKILLs on dyld load.
-  cc -o "${out}.tmp" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
+  # Atomic + race-safe link: cc writes to a PID-scoped .tmp sibling,
+  # then rename. The .tmp suffix carries `$$` so concurrent shards
+  # racing on the same fixture binary path (e.g. cbg3-era continuous
+  # dispatch under jdgo) can't clobber each other's intermediate file
+  # and trigger spurious `mv: rename ... : No such file or directory`
+  # errors that contaminate cached fixture stdout. If cc is killed
+  # mid-write (jetsam under memory pressure has done this 3x this
+  # iteration alone), the previous $out remains intact instead of
+  # being corrupted into a 2.2MB Mach-O that SIGKILLs on dyld load.
+  local tmp_out="${out}.tmp.$$"
+  cc -o "$tmp_out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
     $STACK_LDFLAGS \
     $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB $extra_libs 2>"$logfile" \
-    || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
-  mv "${out}.tmp" "$out"
+    || { rm -f "$tmp_out"; cat "$logfile" >&2; die "link failed for $out"; }
+  mv "$tmp_out" "$out"
 
   # rqwh: publish to cache on success. Atomic write via .tmp + mv so
   # parallel shards racing on the same cache slot can't observe a
@@ -528,12 +534,13 @@ link_ll_O0() {
   local ll="$1" out="$2" logfile="$3"
   "$LLC" -O0 $LLC_RELOC -filetype=obj "$ll" -o "${out}.o" \
     || die "llc -O0 failed for $ll"
-  # Atomic link via staging path (see link_ll for rationale).
-  cc -g -o "${out}.tmp" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+  # Atomic + race-safe link via PID-scoped staging path (see link_ll).
+  local tmp_out="${out}.tmp.$$"
+  cc -g -o "$tmp_out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
     $STACK_LDFLAGS \
     $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$logfile" \
-    || { rm -f "${out}.tmp"; cat "$logfile" >&2; die "link failed for $out"; }
-  mv "${out}.tmp" "$out"
+    || { rm -f "$tmp_out"; cat "$logfile" >&2; die "link failed for $out"; }
+  mv "$tmp_out" "$out"
 }
 
 # Build bs2 at -O0 for debuggability (lldb + breakpoints).
@@ -879,11 +886,21 @@ run_fg() {
     "$bin"
     return
   fi
-  if ! "$BS2" compile "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
-    cat "$BUILD_DIR/last_run.log" >&2
+  # jdgo: PID-scope the per-shard logs. Concurrent shards under
+  # continuous dispatch share BUILD_DIR; a non-PID-scoped log means
+  # shard A's bs2-compile output overwrites shard B's, so when B's
+  # compile fails and reads the log it surfaces A's content (or
+  # nothing) — contaminating the cached fixture stdout with the
+  # wrong error message. The $$ suffix isolates per-shard.
+  local run_log="$BUILD_DIR/last_run.log.$$"
+  local link_log="$BUILD_DIR/last_link.log.$$"
+  if ! "$BS2" compile "$fg" >"$run_log" 2>&1; then
+    cat "$run_log" >&2
+    rm -f "$run_log"
     die "bs2 codegen failed"
   fi
-  link_ll "$ll" "$bin" "$BUILD_DIR/last_link.log"
+  link_ll "$ll" "$bin" "$link_log"
+  rm -f "$run_log" "$link_log"
   "$bin"
 }
 

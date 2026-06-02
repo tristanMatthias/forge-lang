@@ -549,6 +549,18 @@ fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("Segmentation fault") { return false }
     if out.contains("bs2 codegen failed") { return false }
     if out.contains("bs2 compile failed") { return false }
+    // jdgo: continuous dispatch (cbg3 follow-up) increased concurrent
+    // diagnose.sh invocations. The shell script's `cc -o ${out}.tmp`
+    // followed by `mv ${out}.tmp $out` is not race-safe under high
+    // concurrency: when two shards' diagnose.sh stages write to /tmp
+    // simultaneously (e.g. per-shard temp paths colliding under heavy
+    // parallel cold load), the `mv` step prints `mv: rename ... : No
+    // such file or directory`. The rest of the captured output is
+    // typically the previous fixture's stale bin stdout — caching that
+    // freezes the wrong answer. Reject it so the next test invocation
+    // re-runs cleanly. Root-cause fix would isolate diagnose.sh's
+    // working artifacts per-shard, but that's a separate scope.
+    if out.contains("mv: rename ") { return false }
     true
 }
 
