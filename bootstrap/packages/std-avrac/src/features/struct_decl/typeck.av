@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, ValueType, SExpr, vtype_eq, vtype_is_list}
+use core.{Expr, FieldEntry, FieldInit, ValueType, SExpr, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, resolve_vtype}
 use diagnostics.{DiagCode}
 
@@ -57,6 +57,77 @@ export fn check_field_inits(tc: TC, inits: List<FieldInit>) -> TC {
         i = i + 1
     }
     acc
+}
+
+/// Type-check a struct literal's field initializers AND validate them
+/// against the named struct's declared fields: every field must exist,
+/// and a scalar field's value must be assignable to the field's type.
+/// When the struct isn't in the registry (generic param, forward ref,
+/// cross-module not-yet-resolved) field validation is skipped — only the
+/// value expressions are checked, preserving the prior lenient behavior.
+///
+/// This is the load-bearing check for typed table literals (c080): a
+/// `table<Row>` row is a StructLit(Row, …), so a header column that isn't
+/// a field of Row, or a cell whose type doesn't match the field, is
+/// reported here as F1000 instead of crashing codegen with an ICE.
+export fn check_struct_lit_fields(tc: TC, name: string, inits: List<FieldInit>) -> TC {
+    let fields = struct_type_lookup(tc.structs, name)
+    mut acc = tc
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let r = check_expr(acc, init.value.node)
+        acc = r.tc
+        if fields.length > 0 {
+            if !tc_field_exists(fields, init.name) {
+                acc = tc_report(acc, DiagCode.TypeMismatch, "no field `${init.name}` on type `${name}`")
+            } else {
+                let fty = field_type_in(acc, fields, init.name)
+                // Only flag a string↔non-string scalar mismatch. Both sides
+                // must be concrete scalars (so never a generic param, which
+                // surfaces as Struct(name)); and we deliberately tolerate
+                // numeric/bool interchange (the bootstrap stores bools in
+                // int fields), flagging only the clearly-wrong case of a
+                // string where a number/bool is expected or vice-versa.
+                let cross_str = vtype_is_string_like(fty) != vtype_is_string_like(r.ty)
+                if vtype_is_scalar(fty) && vtype_is_scalar(r.ty) && cross_str && !vtype_assignable(r.ty, fty) {
+                    acc = tc_report(acc, DiagCode.TypeMismatch, "field `${init.name}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(r.ty)}`")
+                }
+            }
+        }
+        i = i + 1
+    }
+    acc
+}
+
+/// True for the string-category scalars (`string` / `bytes`), which
+/// must not be confused with numeric/bool scalars.
+fn vtype_is_string_like(t: ValueType) -> bool {
+    match t {
+        .Str -> true
+        .Bytes -> true
+        _ -> false
+    }
+}
+
+/// True for concrete scalar types — the ones safe to compare a struct
+/// field against without tripping over generics or nominal coercions.
+fn vtype_is_scalar(t: ValueType) -> bool {
+    match t {
+        .Int -> true
+        .Str -> true
+        .Bool -> true
+        .Float -> true
+        .Bytes -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        _ -> false
+    }
 }
 
 /// Linear scan for a field by name. Used by `check_field_access`

@@ -639,29 +639,48 @@ impl Parser {
             let empty: List<SExpr> = []
             return Expr.ListLit(empty)
         }
+        // Reject duplicate column names — they would silently collide on the
+        // same struct field.
+        mut di = 0
+        while di < header_count {
+            mut dj = di + 1
+            while dj < header_count {
+                if col_names[di] == col_names[dj] {
+                    self.set_error("duplicate table column `${col_names[di]}`")
+                    return null
+                }
+                dj = dj + 1
+            }
+            di = di + 1
+        }
         // Parse data rows in source order; each row is a StructLit whose
         // field names come from the header and whose values come from
-        // the cells (left-to-right, one per column).
+        // the cells (left-to-right, one per column). A row occupies a
+        // single source line; its cell count must match the header width.
         mut rows: List<SExpr> = []
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
-            mut inits: List<FieldInit> = []
-            mut col_idx = 0
-            while col_idx < header_count {
-                if self.check(Tk.RightBrace) { break }
+            let row_line = self.current_line
+            mut cells: List<SExpr> = []
+            while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
                 // parse_bitwise_xor stops before `|`, so the column
                 // separator is never swallowed as a bitwise-or operand.
                 let val = self.parse_bitwise_xor()?
-                let sv = sexpr_at(val, self.current_line, self.current_column, self.file)
-                inits.push(FieldInit { name: col_names[col_idx], value: sv })
-                col_idx = col_idx + 1
+                cells.push(sexpr_at(val, self.current_line, self.current_column, self.file))
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
-            if col_idx == header_count {
-                let row = Expr.StructLit(row_type, inits)
-                rows.push(sexpr_at(row, self.current_line, self.current_column, self.file))
+            if cells.length != header_count {
+                self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
+                return null
             }
+            mut inits: List<FieldInit> = []
+            mut ci = 0
+            while ci < header_count {
+                inits.push(FieldInit { name: col_names[ci], value: cells[ci] })
+                ci = ci + 1
+            }
+            rows.push(sexpr_at(Expr.StructLit(row_type, inits), row_line, 0, self.file))
         }
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return null

@@ -96,16 +96,18 @@ fn struct_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .StructLit(name, inits) -> {
-            let checked = check_field_inits(tc, inits)
             // An anonymous row (name == "") is a context-free `table { ... }`
             // whose row type was never pinned (c080 Phase C). Desugar stamps
             // the row type when the binding fixes it; anything reaching here
             // had no such context. Report rather than silently producing an
             // untyped value or an opaque `undefined struct ``` codegen ICE.
             if name == "" {
+                let checked = check_field_inits(tc, inits)
                 return tc_er(tc_report(checked, DiagCode.TableRowTypeMissing, "table literal has no row type"), .Unknown)
             }
-            tc_er(checked, .Struct(name, 0))
+            // Validate field names + scalar cell types against the declared
+            // struct so a bad table column / cell is F1000, not a codegen ICE.
+            tc_er(check_struct_lit_fields(tc, name, inits), .Struct(name, 0))
         }
         _ -> tc_er(tc, .Unknown)
     }
