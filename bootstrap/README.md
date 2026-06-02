@@ -34,6 +34,23 @@ This gives us:
 - a working statement runner for `let`, `mut`, assignment, expression statements, and block scope
 - golden tests that catch scanner and parser regressions immediately
 
+## Setup
+
+On a fresh machine, run the environment bootstrapper once. It installs and
+verifies the whole toolchain (LLVM 20, a C/C++ compiler, `lld`, `make`, `git`,
+`python3`) and prints the one env var the compiled binary can't reliably
+self-discover, `LLVM_PREFIX`:
+
+```bash
+scripts/bootstrap.sh                 # detect + install what's missing, then verify
+scripts/bootstrap.sh --check         # verify only (CI gate; exits non-zero if a dep is missing)
+eval "$(scripts/bootstrap.sh --print-env)"   # export LLVM_PREFIX/LLC into this shell
+```
+
+It is platform-agnostic (macOS Homebrew; Debian/Ubuntu, Fedora/RHEL, Arch,
+openSUSE, Alpine). LLVM is pinned to 20 — LLVM 21's `-O2` miscompiles certain
+ARM64 functions.
+
 ## Usage
 
 The everyday entry point is the `Makefile`:
