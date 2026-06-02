@@ -525,7 +525,13 @@ fn enum_value_to_logicop(v: Value) -> LogicOp? {
 /// Decode an enum Value whose type is `@std::avrac::core::Stmt`
 /// back into a Stmt AST. Returns null when the variant isn't yet
 /// supported or the payload shape doesn't match.
+///
+/// so07.8 Phase A: short-circuits on the new kind="stmt" Value
+/// (unwraps stmt_payload directly — no decode). Phase B+ migrates
+/// macro return paths to produce that kind so the enum-decode
+/// fallback eventually deletes.
 export fn value_to_stmt(v: Value) -> Stmt? {
+    if v.kind == "stmt" { return v.stmt_payload }
     if v.kind != "enum" { return null }
     enum_value_to_stmt(v)
 }

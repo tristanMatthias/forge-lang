@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, ParamEntry, SExpr, SStmt, FieldInit, render_expr}
+use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
 
@@ -74,6 +74,24 @@ export fn struct_field(name: string, value: Value) -> StructField {
 ///      | "enum"     — enum_type / enum_variant / enum_payload set
 ///      | "list"     — list_payload set
 ///      | "struct"   — struct_type + struct_payload set
+///      | "stmt"     — stmt_payload carries a native Stmt AST node (so07.8 Phase A)
+///      | "expr"     — expr_payload carries a native Expr AST node (so07.8 Phase A)
+///      | "value_type" — value_type_payload carries a native ValueType (so07.8 Phase A)
+///
+/// so07.8 Phase A: the three trailing nullable AST slots make
+/// Stmt / Expr / ValueType first-class runtime values. Today's
+/// encode→eval→decode roundtrip (quote_expr/lower.av::construct_stmt
+/// → eval EnumCtor producing kind="enum" → comptime/eval.av::
+/// enum_value_to_stmt) loses information at every hop because every
+/// new variant must be mirrored across two dispatchers. The new kinds
+/// let macros emit native AST directly and let value_to_stmt /
+/// value_to_expr / value_to_value_type unwrap without a re-decode.
+/// Phase A is purely additive: all 10 existing constructors zero-
+/// initialise the new slots, the eval EnumCtor path still produces
+/// kind="enum" for back-compat, and value_to_* fall back to the
+/// enum decoder when the new slot is null. Phase B+ migrates callers
+/// to produce kind="stmt" / "expr" / "value_type" directly so the
+/// decoder side eventually deletes.
 export type Value = {
     kind: string,
     number_text: string,
@@ -85,6 +103,9 @@ export type Value = {
     list_payload: List<Value>,
     struct_type: string,
     struct_payload: List<StructField>,
+    stmt_payload: Stmt?,
+    expr_payload: Expr?,
+    value_type_payload: ValueType?,
 }
 
 /// Final result of an evaluation. `value` is null on failure;
@@ -244,6 +265,9 @@ export fn value_null() -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -431,6 +455,9 @@ export fn value_number(text: string) -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -447,6 +474,9 @@ export fn value_string(text: string) -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -463,6 +493,9 @@ export fn value_bool(flag: int) -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -1156,6 +1189,9 @@ fn value_function(name: string) -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -1173,6 +1209,9 @@ fn value_builtin(name: string) -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -1193,6 +1232,9 @@ export fn value_type_marker(path: string) -> Value {
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -1212,6 +1254,9 @@ export fn value_enum(type_name: string, variant: string, payload: List<Value>) -
         list_payload: [],
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -1230,6 +1275,9 @@ export fn value_list(items: List<Value>) -> Value {
         list_payload: items,
         struct_type: "",
         struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
     }
 }
 
@@ -1249,6 +1297,76 @@ export fn value_struct(type_name: string, fields: List<StructField>) -> Value {
         list_payload: [],
         struct_type: type_name,
         struct_payload: fields,
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// so07.8 Phase A: native Stmt Value. Carries a Stmt AST node
+/// directly in `stmt_payload` so consumers (value_to_stmt) can
+/// unwrap without re-decoding via the construct_stmt → eval
+/// EnumCtor → enum_value_to_stmt roundtrip. Phase B+ migrates
+/// macro return paths to use this constructor.
+export fn value_for_stmt(s: Stmt) -> Value {
+    Value {
+        kind: "stmt",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: s,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// so07.8 Phase A: native Expr Value. Same shape as value_for_stmt
+/// for the Expr AST type; replaces the
+/// construct_expr → eval EnumCtor → enum_value_to_expr roundtrip
+/// once callers migrate (Phase B+).
+export fn value_for_expr(e: Expr) -> Value {
+    Value {
+        kind: "expr",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: e,
+        value_type_payload: null,
+    }
+}
+
+/// so07.8 Phase A: native ValueType Value. Carries a ValueType AST
+/// node directly. Drives the y9y4.17 fix path — today's
+/// enum_value_to_value_type loses TypeId (sets id=0); the new path
+/// preserves it because the ValueType travels intact.
+export fn value_for_value_type(vt: ValueType) -> Value {
+    Value {
+        kind: "value_type",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: vt,
     }
 }
 

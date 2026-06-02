@@ -1,0 +1,136 @@
+// so07.8 Phase A — native Stmt/Expr/ValueType Value support.
+//
+// Phase A adds three new Value kinds ("stmt" / "expr" / "value_type")
+// that carry AST nodes directly in dedicated payload slots, plus the
+// constructors `value_for_stmt`, `value_for_expr`, `value_for_value_type`.
+// The exported `value_to_stmt` short-circuits on the new kind so
+// callers unwrap the native Stmt without re-decoding through
+// `enum_value_to_stmt`'s variant dispatch.
+//
+// What these specs assert (and what reverting Phase A flips):
+//   - value_for_stmt builds a Value with kind="stmt" and the supplied
+//     Stmt in stmt_payload. Reverting the constructor or removing the
+//     stmt_payload field fails the kind check.
+//   - value_to_stmt on a kind="stmt" Value returns the carried Stmt
+//     WITHOUT invoking the legacy enum-decode path. Reverting the
+//     short-circuit in value_to_stmt returns null (the value has no
+//     enum_type/variant set).
+//   - The other Value kinds (number/string/bool/enum/etc.) still
+//     produce stmt_payload=null on construction — proves the new
+//     field is purely additive and existing constructors zero-
+//     initialise it.
+
+use @std.avrac.core.{Stmt, Expr, ValueType}
+use @std.avrac.features.eval.{Value, value_for_stmt, value_for_expr, value_for_value_type, value_null, value_number, value_string, value_bool, value_enum}
+use @std.avrac.features.comptime.{value_to_stmt}
+
+spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the native Stmt" {
+    then "Stmt.NoOp round-trip: value_for_stmt → value_to_stmt unwraps the same variant" {
+        let v: Value = value_for_stmt(Stmt.NoOp)
+        let unwrapped = value_to_stmt(v)
+        // Two assertions:
+        //   1. The Value carries kind="stmt" (Phase A's new tag)
+        //   2. value_to_stmt's short-circuit hit — returned non-null
+        //      WITHOUT touching the enum-decode path (the Value's
+        //      enum_type and enum_variant are empty — pre-Phase-A
+        //      value_to_stmt would have returned null on that)
+        v.kind == "stmt"
+            && v.enum_type == ""
+            && v.enum_variant == ""
+            && unwrapped != null
+            && match unwrapped! {
+                .NoOp -> true
+                _ -> false
+            }
+    }
+    then "Stmt.Return(Expr.Number) round-trip carries the inner expr intact" {
+        // Build a Stmt.Return wrapping an Expr.Number, box it via
+        // value_for_stmt, unwrap via value_to_stmt, verify the Return
+        // shape AND the inner Expr.Number's text survived the round
+        // trip. If Phase A's stmt_payload slot were a copy-by-tag-
+        // only sham, the inner Expr.Number's text field would clear.
+        let inner = Expr.Number("42")
+        let v: Value = value_for_stmt(Stmt.Return(inner))
+        let unwrapped = value_to_stmt(v)
+        v.kind == "stmt"
+            && unwrapped != null
+            && match unwrapped! {
+                .Return(e) -> match e {
+                    .Number(n) -> n == "42"
+                    _ -> false
+                }
+                _ -> false
+            }
+    }
+}
+
+spec "so07.8 Phase A: value_for_expr and value_for_value_type follow the same shape" {
+    then "value_for_expr tags kind=expr and stashes the Expr in expr_payload" {
+        let v: Value = value_for_expr(Expr.Number("7"))
+        v.kind == "expr"
+            && v.expr_payload != null
+            && match v.expr_payload! {
+                .Number(n) -> n == "7"
+                _ -> false
+            }
+    }
+    then "value_for_value_type tags kind=value_type and stashes the ValueType" {
+        let v: Value = value_for_value_type(ValueType.Int)
+        v.kind == "value_type"
+            && v.value_type_payload != null
+            && match v.value_type_payload! {
+                .Int -> true
+                _ -> false
+            }
+    }
+}
+
+spec "so07.8 Phase A: existing Value constructors zero-initialise the new slots" {
+    // Pure additive-field check: every existing constructor leaves
+    // stmt_payload / expr_payload / value_type_payload null. If a
+    // future contributor forgets to thread the new fields through a
+    // new constructor, this spec catches the silent-leak path where
+    // a kind="number" Value would suddenly carry a stale stmt_payload
+    // from prior memory.
+    then "value_null: all three new slots are null" {
+        let v = value_null()
+        v.stmt_payload == null && v.expr_payload == null && v.value_type_payload == null
+    }
+    then "value_number: all three new slots are null" {
+        let v = value_number("42")
+        v.stmt_payload == null && v.expr_payload == null && v.value_type_payload == null
+    }
+    then "value_string: all three new slots are null" {
+        let v = value_string("hi")
+        v.stmt_payload == null && v.expr_payload == null && v.value_type_payload == null
+    }
+    then "value_bool: all three new slots are null" {
+        let v = value_bool(1)
+        v.stmt_payload == null && v.expr_payload == null && v.value_type_payload == null
+    }
+    then "value_enum: all three new slots are null" {
+        let empty: List<Value> = []
+        let v = value_enum("@std::avrac::core::Foo", "Bar", empty)
+        v.stmt_payload == null && v.expr_payload == null && v.value_type_payload == null
+    }
+}
+
+spec "so07.8 Phase A: value_to_stmt back-compat path still decodes kind=enum Values" {
+    // The historical decoder path (enum_value_to_stmt called via the
+    // kind=enum branch) MUST keep working — Phase A is additive, and
+    // unmigrated callers still produce kind=enum Stmt Values via the
+    // construct_stmt → eval EnumCtor flow. Reverting the
+    // `if v.kind != "enum"` line in value_to_stmt while keeping the
+    // new short-circuit would silently break every macro that hasn't
+    // migrated yet.
+    then "kind=enum NoOp Value still decodes through the legacy path" {
+        let empty: List<Value> = []
+        let v: Value = value_enum("@std::avrac::core::Stmt", "NoOp", empty)
+        let unwrapped = value_to_stmt(v)
+        unwrapped != null
+            && match unwrapped! {
+                .NoOp -> true
+                _ -> false
+            }
+    }
+}
