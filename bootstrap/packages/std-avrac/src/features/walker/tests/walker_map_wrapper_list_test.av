@@ -1,0 +1,64 @@
+// y9y4.9 — derive_walker's Type__map now descends into wrapper-list
+// fields (List<SExpr> / List<SStmt> / any List<W> where W projects to
+// the parent via `.node`). It applies f to each entry's `.node` and
+// rewraps with the original sibling fields via `map_node_list`'s `with`
+// update, so a one-level map reaches wrapper-list children WITHOUT the
+// parent losing the span info those wrappers carry.
+//
+// Observable: build a Branch holding a novel wrapper (node + extra),
+// map a leaf-bumping fn, and confirm (a) the inner node was transformed
+// and (b) the wrapper's `extra` sibling field survived untouched. If
+// map still passed wrapper-lists through unchanged the node value would
+// be stale; if the rewrap dropped siblings the extra would reset.
+//
+// Bypasses metadata mode (9p1d) so derive_walker + the novel wrapper's
+// struct decl are both visible to the @comptime discovery path.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: map descends into wrapper-list children, preserving siblings" {
+    then "Branch(kids: List<MyWrap>).map bumps every leaf and keeps `extra`" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_wrapper_list_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
+            "\n" +
+            "export type MyWrap = {\n" +
+            "    node: MyTree,\n" +
+            "    extra: int,\n" +
+            "}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum MyTree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Branch(kids: List<MyWrap>),\n" +
+            "}\n" +
+            "\n" +
+            "fn bump(t: MyTree) -> MyTree {\n" +
+            "    let t2 = match t {\n" +
+            "        .Leaf(v) -> MyTree.Leaf(v + 100)\n" +
+            "        _ -> t\n" +
+            "    }\n" +
+            "    t2.map(bump)\n" +
+            "}\n" +
+            "\n" +
+            "fn leaf_val(w: MyWrap) -> int {\n" +
+            "    match w.node { .Leaf(v) -> v, _ -> -1 }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let inner: List<MyWrap> = [\n" +
+            "        MyWrap { node: MyTree.Leaf(1), extra: 7 },\n" +
+            "        MyWrap { node: MyTree.Leaf(2), extra: 9 },\n" +
+            "    ]\n" +
+            "    let mapped = MyTree.Branch(inner).map(bump)\n" +
+            "    match mapped {\n" +
+            "        .Branch(kids) -> {\n" +
+            "            println(\"v0=\" + string(leaf_val(kids[0])) + \" e0=\" + string(kids[0].extra))\n" +
+            "            println(\"v1=\" + string(leaf_val(kids[1])) + \" e1=\" + string(kids[1].extra))\n" +
+            "        }\n" +
+            "        _ -> println(\"notbranch\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("v0=101 e0=7") && out.contains("v1=102 e1=9")
+    }
+}
