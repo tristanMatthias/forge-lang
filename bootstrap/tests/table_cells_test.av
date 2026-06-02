@@ -52,3 +52,14 @@ spec "table cell value integrity" {
         m[0].ok == true && m[0].v == 42
     }
 }
+
+spec "`table` is a contextual word, not a reserved keyword" {
+    then "a variable named `table` works in a comparison (table < 10)" {
+        let table = 5
+        (table < 10) && (table > 2) && !(table < 5)
+    }
+    then "a variable named `table` can be indexed and measured" {
+        let table = [10, 20, 30]
+        table[1] == 20 && table.length == 3
+    }
+}

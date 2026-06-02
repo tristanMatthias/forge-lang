@@ -1351,7 +1351,10 @@ impl Parser {
             self.advance()
             // Table literal: `table { ... }` or typed `table<Row> { ... }`.
             // Must check BEFORE struct literal since both start with ident + {.
-            if name == "table" && (self.check(Tk.LeftBrace) || self.check(Tk.Less)) {
+            // `table {` is always a table literal. `table<...>` is one only
+            // when the `<` is followed by `Ident > {` — otherwise it's a
+            // comparison on a variable named `table` (e.g. `table < 10`).
+            if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
                 return self.parse_table_literal()
             }
             if self.allow_struct_lit && self.check(Tk.LeftBrace) {
@@ -1679,6 +1682,44 @@ impl Parser {
             i = i + 1
         }
         false
+    }
+
+    // At the `<` token (just after `table`): does the raw source spell
+    // `< Ident > {` — i.e. a typed table literal `table<Row> { … }` — as
+    // opposed to a comparison like `table < 10`? Scans source without
+    // consuming. The `> {` suffix is what disambiguates the two.
+    fn peek_is_table_row_type(self) -> bool {
+        let n = self.source.length
+        mut i = self.current_start + 1   // skip the `<`
+        // skip whitespace
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        if i >= n { return false }
+        // identifier start
+        let c0 = self.source.substring(i, i + 1)
+        let is_alpha = (c0 >= "a" && c0 <= "z") || (c0 >= "A" && c0 <= "Z") || c0 == "_"
+        if !is_alpha { return false }
+        // consume identifier characters
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            let ok = (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
+            if ok { i = i + 1 } else { break }
+        }
+        // skip whitespace, expect `>`
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        if i >= n || self.source.substring(i, i + 1) != ">" { return false }
+        i = i + 1
+        // skip whitespace, expect `{`
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        i < n && self.source.substring(i, i + 1) == "{"
     }
 
     fn peek_after_ident_is_paren(self) -> bool {
