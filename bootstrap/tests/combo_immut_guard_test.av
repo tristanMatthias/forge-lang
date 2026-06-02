@@ -3,12 +3,13 @@ enum CigPriority { Low, Medium, High(level: int) }
 type CigTask = { name: string, priority: CigPriority, done: int }
 
 fn cig_run() -> string {
-    let tasks = [
-        CigTask { name: "design", priority: CigPriority.High(5), done: 0 },
-        CigTask { name: "code", priority: CigPriority.High(3), done: 1 },
-        CigTask { name: "test", priority: CigPriority.Medium, done: 0 },
-        CigTask { name: "docs", priority: CigPriority.Low, done: 0 },
-    ]
+    let tasks = table<CigTask> {
+        name     | priority             | done
+        "design" | CigPriority.High(5)  | 0
+        "code"   | CigPriority.High(3)  | 1
+        "test"   | CigPriority.Medium   | 0
+        "docs"   | CigPriority.Low      | 0
+    }
 
     mut urgent_count = 0
     avra_test_capture_start()

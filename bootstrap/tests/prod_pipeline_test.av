@@ -1,13 +1,14 @@
 type PplStudent = { name: string, score: int }
 
 fn ppl_run() -> string {
-    let data = [
-        PplStudent { name: "Alice", score: 95 },
-        PplStudent { name: "Bob", score: 82 },
-        PplStudent { name: "Carol", score: 91 },
-        PplStudent { name: "Dave", score: 67 },
-        PplStudent { name: "Eve", score: 88 },
-    ]
+    let data = table<PplStudent> {
+        name    | score
+        "Alice" | 95
+        "Bob"   | 82
+        "Carol" | 91
+        "Dave"  | 67
+        "Eve"   | 88
+    }
 
     mut high_count = 0
     mut total = 0

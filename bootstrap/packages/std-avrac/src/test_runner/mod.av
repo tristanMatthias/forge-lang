@@ -128,25 +128,27 @@ fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {
 ///     top-level `spec { ... }` block.
 fn test_runtime_externs() -> List<RuntimeExtern> {
     let empty_p: List<ParamEntry> = []
-    [
-        RuntimeExtern { name: "avra_test_summary",          params: empty_p, ret: ValueType.Int },
-        RuntimeExtern { name: "avra_test_flush",            params: empty_p, ret: ValueType.Void },
-        RuntimeExtern { name: "avra_test_capture_start",    params: empty_p, ret: ValueType.Void },
-        RuntimeExtern { name: "avra_test_capture_stop",     params: empty_p, ret: ValueType.Str },
-        RuntimeExtern { name: "avra_test_run_spec_guarded", params: guard_extern_params(), ret: ValueType.Int },
-    ]
+    table<RuntimeExtern> {
+        name                          | params                | ret
+        "avra_test_summary"           | empty_p               | ValueType.Int
+        "avra_test_flush"             | empty_p               | ValueType.Void
+        "avra_test_capture_start"     | empty_p               | ValueType.Void
+        "avra_test_capture_stop"      | empty_p               | ValueType.Str
+        "avra_test_run_spec_guarded"  | guard_extern_params() | ValueType.Int
+    }
 }
 
 /// Signature for the per-spec guard runtime fn. Named separately so
 /// the externs table reads cleanly without an inline list literal
 /// on one row.
 fn guard_extern_params() -> List<ParamEntry> {
-    param_list_from([
-        ParamSpec { name: "name", ty: ValueType.Str },
-        ParamSpec { name: "file", ty: ValueType.Str },
-        ParamSpec { name: "ln",   ty: ValueType.Int },
-        ParamSpec { name: "body", ty: ValueType.Fn(ValueType.Int) },
-    ])
+    param_list_from(table<ParamSpec> {
+        name   | ty
+        "name" | ValueType.Str
+        "file" | ValueType.Str
+        "ln"   | ValueType.Int
+        "body" | ValueType.Fn(ValueType.Int)
+    })
 }
 
 /// Cons-prepend the runtime extern table onto a freshly-assembled
