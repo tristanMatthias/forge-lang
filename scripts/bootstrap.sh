@@ -19,8 +19,9 @@
 #   sha256sum          (coreutils on Linux; shasum on macOS) — seed provenance hashing
 #   python3            seed-trap patcher + scripts/diagnose.sh helpers
 #
-# Optional (--with-beads): bd + dolt, the issue tracker the dev workflow uses. Not
-# needed to build or test the compiler.
+# Also required: bd + dolt, the beads issue tracker the dev workflow runs on. The
+# script installs them unconditionally and brings their own prerequisites with them
+# (a Go toolchain to build bd; curl for the dolt installer).
 #
 # Platforms: macOS (Homebrew), Debian/Ubuntu (apt), Fedora/RHEL (dnf/yum),
 #            Arch (pacman), openSUSE (zypper), Alpine (apk).
@@ -29,7 +30,6 @@
 #   scripts/bootstrap.sh                # detect, install what's missing, verify
 #   scripts/bootstrap.sh --check        # verify only, never install (exit 1 if a dep is missing)
 #   scripts/bootstrap.sh --yes          # non-interactive: assume "yes" to install prompts
-#   scripts/bootstrap.sh --with-beads   # also install bd + dolt
 #   scripts/bootstrap.sh --persist      # append the recommended env to your shell rc
 #   scripts/bootstrap.sh --print-env    # print the export lines and exit (no install)
 #
@@ -48,7 +48,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # --- options ----------------------------------------------------------------------
 DO_INSTALL=1      # --check turns this off
 ASSUME_YES=0      # --yes
-WITH_BEADS=0      # --with-beads
 PERSIST=0         # --persist
 PRINT_ENV_ONLY=0  # --print-env
 
@@ -56,7 +55,7 @@ for arg in "$@"; do
   case "$arg" in
     --check)      DO_INSTALL=0 ;;
     --yes|-y)     ASSUME_YES=1 ;;
-    --with-beads) WITH_BEADS=1 ;;
+    --with-beads) ;;  # deprecated no-op: beads is now always installed
     --persist)    PERSIST=1 ;;
     --print-env)  PRINT_ENV_ONLY=1 ;;
     -h|--help)
@@ -251,32 +250,71 @@ install_toolchain() {
     fi
   fi
 
-  if [ "$WITH_BEADS" -eq 1 ]; then
-    install_beads
-  fi
+  # beads (bd + dolt) is mandatory — the dev workflow tracks all work in it.
+  install_beads
+}
+
+# Package name for the Go toolchain (needed to build bd).
+go_package() {
+  case "$PM" in
+    brew)    echo "go" ;;
+    apt-get) echo "golang-go" ;;
+    dnf|yum) echo "golang" ;;
+    pacman)  echo "go" ;;
+    zypper)  echo "go" ;;
+    apk)     echo "go" ;;
+    *)       echo "" ;;
+  esac
+}
+
+# Where `go install` drops binaries — add it to PATH so verify() can see bd.
+go_bin_dir() {
+  if have go; then go env GOBIN 2>/dev/null | grep . || echo "$(go env GOPATH 2>/dev/null || echo "$HOME/go")/bin"
+  else echo "$HOME/go/bin"; fi
 }
 
 install_beads() {
+  # --- bd: built with the Go toolchain (bring it first if missing) ---
   if ! have bd; then
-    if confirm "install bd (beads issue tracker)?"; then
+    if confirm "install bd (beads issue tracker — required by the dev workflow)?"; then
+      if ! have go && [ "$PM" != "brew" ]; then
+        log "bd needs a Go toolchain to build — installing it first"
+        # shellcheck disable=SC2046
+        pm_install $(go_package) || warn "could not install a Go toolchain automatically"
+      fi
       if have go; then
-        go install github.com/steveyegge/beads/cmd/bd@latest || warn "bd install via go failed — see https://github.com/steveyegge/beads"
+        GOFLAGS="" go install github.com/steveyegge/beads/cmd/bd@latest \
+          || warn "bd install via go failed — see https://github.com/steveyegge/beads"
+        # `go install` lands in GOPATH/bin (or GOBIN); make it visible now and onward.
+        case ":$PATH:" in *":$(go_bin_dir):"*) ;; *) export PATH="$PATH:$(go_bin_dir)" ;; esac
       elif [ "$PM" = "brew" ]; then
-        brew install beads 2>/dev/null || warn "bd not available via brew — see https://github.com/steveyegge/beads"
+        brew install beads 2>/dev/null \
+          || warn "bd not available via brew — install with: go install github.com/steveyegge/beads/cmd/bd@latest"
       else
-        warn "no 'go' toolchain to build bd — install from https://github.com/steveyegge/beads"
+        warn "no Go toolchain available to build bd — install with: go install github.com/steveyegge/beads/cmd/bd@latest"
       fi
     fi
   fi
+  # --- dolt: beads' storage backend (official installer needs curl) ---
   if ! have dolt; then
-    if confirm "install dolt (beads storage backend)?"; then
+    if confirm "install dolt (beads storage backend — required)?"; then
       if [ "$PM" = "brew" ]; then
         brew install dolt || warn "dolt install failed — see https://github.com/dolthub/dolt"
-      elif have curl; then
-        curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh | $SUDO bash \
-          || warn "dolt install failed — see https://github.com/dolthub/dolt"
       else
-        warn "need curl (or brew) to install dolt — see https://github.com/dolthub/dolt"
+        if ! have curl; then
+          log "dolt installer needs curl — installing it first"
+          pm_install curl || warn "could not install curl automatically"
+        fi
+        if have curl; then
+          curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh | $SUDO bash \
+            || warn "dolt install failed — see https://github.com/dolthub/dolt"
+        elif have go; then
+          go install github.com/dolthub/dolt/go/cmd/dolt@latest \
+            || warn "dolt install via go failed — see https://github.com/dolthub/dolt"
+          case ":$PATH:" in *":$(go_bin_dir):"*) ;; *) export PATH="$PATH:$(go_bin_dir)" ;; esac
+        else
+          warn "need curl, brew or go to install dolt — see https://github.com/dolthub/dolt"
+        fi
       fi
     fi
   fi
@@ -338,9 +376,12 @@ verify() {
     MISSING=$((MISSING + 1))
   fi
 
-  # beads (optional, dev workflow only).
-  check_cmd "bd (beads)"  bd   optional
-  check_cmd "dolt"        dolt optional
+  # beads — required: the dev workflow tracks all work in it.
+  # `go install` may have dropped bd/dolt under GOPATH/bin; make sure we look there.
+  local gobin; gobin="$(go_bin_dir)"
+  case ":$PATH:" in *":$gobin:"*) ;; *) [ -d "$gobin" ] && export PATH="$PATH:$gobin" ;; esac
+  check_cmd "bd (beads)"  bd
+  check_cmd "dolt"        dolt
 }
 
 # ----------------------------------------------------------------------------------
@@ -353,6 +394,11 @@ recommended_env() {
   # Pin llc explicitly when an LLVM_MAJOR llc exists outside the prefix bin.
   if [ -x "$pfx/bin/llc" ]; then
     echo "export LLC=\"$pfx/bin/llc\""
+  fi
+  # If bd was built into GOPATH/bin and that's not already on PATH, surface it.
+  local gobin; gobin="$(go_bin_dir)"
+  if [ -x "$gobin/bd" ]; then
+    case ":$PATH:" in *":$gobin:"*) ;; *) echo "export PATH=\"\$PATH:$gobin\"" ;; esac
   fi
 }
 
