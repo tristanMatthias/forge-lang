@@ -449,6 +449,18 @@ export fn write_fixture_and_run_no_metadata(path: string, source: string) -> str
 /// different command shapes against the same fixture don't share a
 /// slot; everything else (toolchain fp + file hash + fixture path)
 /// matches cached_fixture_run's pre-existing scheme.
+///
+/// cbg3.1: captured output is rejected from the cache when it carries
+/// the signature of an aborted run (kernel kill notice, diagnose.sh
+/// shell trap line). When the suite runs in --per_file mode several
+/// `diagnose.sh --run` invocations share `$BUILD_DIR/last_run.log`;
+/// if one process is jetsam-killed mid-compile, the shell's "Killed: 9"
+/// message + the contents of the sibling process's last_run.log end
+/// up on this fixture's stdout. Without validation we'd cache that
+/// garbage forever — every later test hits a corrupted slot, fails
+/// with no diff in source, and only `make clean` clears it. Refusing
+/// to persist such outputs makes the next run re-execute the fixture
+/// and pick up a clean stdout.
 fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> string {
     let cache_dir = "build/cache/fixture_stdout"
     let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
@@ -460,8 +472,26 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
     }
     let _ = avra_mkdir_p(cache_dir)
     let out = avra_shell_exec(cmd)
+    if !fixture_output_is_publishable(out) {
+        return out
+    }
     let _ = avra_selfhost_write_file(cache_path, out)
     out
+}
+
+/// cbg3.1: classify the captured output as safe-to-cache or not.
+/// The patterns rejected here are environmental noise produced by the
+/// shell/kernel when diagnose.sh's compile step is interrupted — they
+/// are not legitimate fixture stdout, so caching them would freeze a
+/// transient failure into a permanent one. The cache layer then re-
+/// runs the fixture on the next call and gets a clean capture.
+fn fixture_output_is_publishable(out: string) -> bool {
+    if out.contains("scripts/diagnose.sh: line ") { return false }
+    if out.contains("Killed: 9") { return false }
+    if out.contains("Killed: 15") { return false }
+    if out.contains("Bus error") { return false }
+    if out.contains("Segmentation fault") { return false }
+    true
 }
 
 /// Memoised hash of (bs2, runtime.o, llvm_wrapper.o). Read from the

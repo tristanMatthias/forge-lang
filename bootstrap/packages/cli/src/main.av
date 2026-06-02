@@ -2551,12 +2551,40 @@ fn run_test_shard_command() {
 fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, args: TestArgs) -> int {
     let t_start = avra_uptime_ms()
     let cx = prepare_test_run(project_dir, args)
-    let shards = list_map(accepted_paths, (p: string) -> cx.shard_for(p))
+    // cbg3: longest-job-first heuristic. Sort accepted_paths by
+    // source file size descending so big shards (which tend to take
+    // longer to compile) start in the first chunk and complete while
+    // smaller shards backfill later chunks. dispatch_shards' fixed-
+    // chunked-await dispatcher waits for the slowest member of each
+    // chunk before starting the next; putting biggest first means
+    // the slowest member is concentrated in early chunks instead of
+    // straggling at the tail.
+    //
+    // Source file size is a coarse proxy for compile time but it's
+    // free (one stat per path) and directionally correct for std-
+    // avrac tests where typeck cost scales with source size.
+    let sorted_paths = sort_paths_by_size_desc(accepted_paths)
+    let shards = list_map(sorted_paths, (p: string) -> cx.shard_for(p))
 
     dispatch_shards(shards, cx.jobs)
     retry_jetsam_killed(shards)
 
     aggregate_shard_logs(shards, t_start)
+}
+
+/// cbg3 helper: longest-job-first ordering. Pulls each path's source-
+/// file size via stat and sorts descending so the biggest file lands
+/// in slot 0. Falls back to lexicographic order for any path whose
+/// size lookup fails (avra_file_size returns -1 on missing/error).
+fn sort_paths_by_size_desc(paths: List<string>) -> List<string> {
+    mut sized: List<string> = []
+    for p in paths { sized.push(p) }
+    sized.sort((a: string, b: string) -> {
+        let sa = avra_file_size(a)
+        let sb = avra_file_size(b)
+        if sa > sb { -1 } else if sa < sb { 1 } else if a < b { -1 } else if a > b { 1 } else { 0 }
+    })
+    sized
 }
 
 // One unit of test work. Built once during planning; every later
