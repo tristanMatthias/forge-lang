@@ -1035,7 +1035,7 @@ impl Parser {
         if self.check(Tk.Tilde) && self.quote_depth > 0 {
             self.advance()
             // `~Name { ... }` splices the *constructor name* of a struct
-            // literal (vez6.4.4), not the whole literal. The `~Name` tag
+            // literal, not the whole literal. The `~Name` tag
             // flows through name_or_splice in quote lowering. Without this
             // the greedy rule below would swallow the entire struct literal
             // as one spliced node carrying a hardcoded type name.
@@ -1700,7 +1700,7 @@ impl Parser {
 
     // Does the next non-whitespace char after the current identifier open
     // a `{` block? Distinguishes a struct literal `~Name { ... }` from a
-    // bare spliced identifier `~Name` in the quote splice path (vez6.4.4).
+    // bare spliced identifier `~Name` in the quote splice path.
     fn peek_after_ident_is_lbrace(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
@@ -1859,8 +1859,8 @@ impl Parser {
     }
 
     /// Consume an identifier in a declaration-name slot, honoring
-    /// `~ident` splice syntax inside a `quote { ... }` body (swgx +
-    /// vez6.4.4). Outside a quote it is a plain identifier. Inside one,
+    /// `~ident` splice syntax inside a `quote { ... }` body.
+    /// Outside a quote it is a plain identifier. Inside one,
     /// `~ident` defers the name to expansion time: the leading `~` is
     /// preserved as the sentinel the quote-lowering pass (`name_or_splice`
     /// in features/quote_expr/lower.av) decodes back into a live splice.

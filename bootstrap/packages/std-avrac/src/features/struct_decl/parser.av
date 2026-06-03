@@ -8,7 +8,7 @@ use core.{Tk}
 impl Parser {
     fn parse_type_declaration(self) -> Stmt? {
         self.advance()
-        // swgx: inside `quote { ... }`, accept `~ident` in the name slot.
+        // Inside `quote { ... }`, accept `~ident` in the name slot.
         // consume_name_or_splice preserves the leading `~` sentinel so the
         // lower pass (name_or_splice in quote_expr/lower.av) resolves it to
         // the macro local's value at expansion time.

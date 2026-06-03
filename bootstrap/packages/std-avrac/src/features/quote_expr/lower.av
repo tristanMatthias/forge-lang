@@ -927,9 +927,9 @@ fn string_lit_expr(s: string) -> Expr {
     Expr.String("\"${s}\"")
 }
 
-/// Identifier-position splice (swgx + vez6.4.4). The parser records a
-/// name slot that contained `~ident` by embedding `~ident` directly in
-/// the stored name string. This happens in four places:
+/// Identifier-position splice. The parser records a name slot that
+/// contained `~ident` by embedding `~ident` directly in the stored name
+/// string. This happens in four places:
 ///   - a type's name:            `type ~T = { ... }`     → `~T`
 ///   - an impl target:           `impl Tr for ~T { ... }`→ `Tr:~T`
 ///   - an impl method (mangled): the same impl's methods → `~T__method`
