@@ -66,7 +66,7 @@ fn any_quote_in_stmt(stmt: Stmt) -> bool {
         .ForIn(_, coll, body) -> any_quote_in_expr(coll) || any_quote_in_stmt(body)
         .Function(_, _, _, _, body) -> any_quote_in_stmt_list(body)
         .Impl(_, methods) -> any_quote_in_stmt_list(methods)
-        .Annotated(_, inner) -> any_quote_in_stmt(inner)
+        .Annotated(_, inner) -> any_quote_in_stmt(inner.node)
         .Module(_, body) -> any_quote_in_stmt_list(body)
         .ComponentDef(_, _, _, _, _, body) -> any_quote_in_stmt_list(body)
         .ComponentBlock(_, _, _, body) -> any_quote_in_stmt_list(body)
@@ -180,7 +180,7 @@ fn lower_stmt(stmt: Stmt) -> Stmt {
         .ForIn(v, coll, body) -> .ForIn(v, lower_expr(coll), lower_stmt(body))
         .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_stmt_list(body))
         .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(methods))
-        .Annotated(annots, inner) -> .Annotated(annots, lower_stmt(inner))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: lower_stmt(inner.node) })
         .Module(name, body) -> .Module(name, lower_stmt_list(body))
         .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, lower_stmt_list(body))
         .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, lower_stmt_list(body))
@@ -1165,7 +1165,7 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
         // roundtrip through quote construction so the outer expand
         // pass sees the new @expand site on the next fixpoint iter.
         .Annotated(annots, inner) -> stmt_ctor("Annotated",
-            two_args(construct_annotation_list(annots), construct_stmt(inner)))
+            two_args(construct_annotation_list(annots), construct_stmt(inner.node)))
         _ -> stmt_passthrough(stmt)
     }
 }

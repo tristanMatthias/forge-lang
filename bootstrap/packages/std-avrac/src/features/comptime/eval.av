@@ -650,7 +650,7 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             if p.length != 2 { return null }
             let annots = list_value_to_annotation_list(p[0])?
             let inner = enum_value_to_stmt(p[1])?
-            Stmt.Annotated(annots, inner)
+            Stmt.Annotated(annots, sstmt_dummy(inner))
         }
         // Bodyless control-flow keywords. Mirror `stmt_ctor("NoOp",
         // empty)` / Break / Continue in lower.av.

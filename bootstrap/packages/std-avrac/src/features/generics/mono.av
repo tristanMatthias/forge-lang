@@ -333,7 +333,7 @@ fn is_generic_decl(stmt: Stmt) -> bool {
         .Function(_, tp, _, _, _) if tp.length > 0 -> true
         .EnumDecl(_, tp, _) if tp.length > 0 -> true
         .TypeDecl(_, tp, _) if tp.length > 0 -> true
-        .Annotated(_, inner) -> is_generic_decl(inner)
+        .Annotated(_, inner) -> is_generic_decl(inner.node)
         _ -> false
     }
 }
@@ -863,7 +863,7 @@ fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
             regs with { structs }
         }
         .Module(_, body) -> collect_generics(body, regs)
-        .Annotated(_, inner) -> collect_generic_stmt(inner, regs)
+        .Annotated(_, inner) -> collect_generic_stmt(inner.node, regs)
         _ -> regs
     }
 }
@@ -933,7 +933,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .For(_, start, end, body) -> collect_inst_stmt(body, regs, collect_inst_expr(end, regs, collect_inst_expr(start, regs, st)))
         .ForIn(_, coll, body) -> collect_inst_stmt(body, regs, collect_inst_expr(coll, regs, st))
         .Match(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(subj, regs, st))
-        .Annotated(_, inner) -> collect_inst_stmt(inner, regs, st)
+        .Annotated(_, inner) -> collect_inst_stmt(inner.node, regs, st)
         .Impl(_, methods) -> collect_inst_stmts(methods, regs, st)
         .SpecBlock(_, body) -> collect_inst_stmts(body, regs, st)
         .GivenBlock(_, body) -> collect_inst_stmts(body, regs, st)
@@ -1252,7 +1252,7 @@ fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, b
     let empty_args: List<SExpr> = []
     mut annots: List<Annotation> = []
     annots.push(Annotation { name: "mono_spec", args: empty_args })
-    Stmt.Annotated(annots, fn_stmt)
+    Stmt.Annotated(annots, sstmt_dummy(fn_stmt))
 }
 
 /// Walk a substituted spec body and rewrite every self-recursive
@@ -1290,7 +1290,7 @@ fn rename_self_calls_stmt(stmt: Stmt, orig_name: string, mangled: string) -> Stm
         .ForIn(v, coll, body) -> .ForIn(v, rename_self_calls_expr(coll, orig_name, mangled), rename_self_calls_stmt(body, orig_name, mangled))
         .Match(subj, arms) -> .Match(rename_self_calls_expr(subj, orig_name, mangled), rename_self_calls_arms(arms, orig_name, mangled))
         .Defer(body) -> .Defer(rename_self_calls_expr(body, orig_name, mangled))
-        .Annotated(annots, inner) -> .Annotated(annots, rename_self_calls_stmt(inner, orig_name, mangled))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rename_self_calls_stmt(inner.node, orig_name, mangled) })
         _ -> stmt
     }
 }
@@ -1890,7 +1890,7 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
             .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(vtype_render_full(ret_vt), regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))
-        .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt(inner, regs, insts))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_stmt(inner.node, regs, insts) })
         .Impl(name, methods) -> .Impl(name, rewrite_stmts(methods, regs, insts))
         .Defer(body) -> .Defer(rewrite_expr(body, regs, insts))
         .Errdefer(body) -> .Errdefer(rewrite_expr(body, regs, insts))

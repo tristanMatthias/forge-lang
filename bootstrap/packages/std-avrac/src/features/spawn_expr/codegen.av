@@ -75,7 +75,7 @@ fn stmt_has_spawn(st: Stmt) -> bool {
         .For(_, start, end, body) -> expr_has_spawn(start) || expr_has_spawn(end) || stmt_has_spawn(body)
         .ForIn(_, coll, body) -> expr_has_spawn(coll) || stmt_has_spawn(body)
         .Match(subj, arms) -> expr_has_spawn(subj) || arms_have_spawn(arms)
-        .Annotated(_, inner) -> stmt_has_spawn(inner)
+        .Annotated(_, inner) -> stmt_has_spawn(inner.node)
         .Impl(_, methods) -> stmts_has_spawn(methods)
         .Parallel(body) -> stmts_has_spawn(body)
         _ -> false

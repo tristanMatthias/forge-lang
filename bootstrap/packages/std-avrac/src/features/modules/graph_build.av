@@ -155,7 +155,7 @@ fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: stri
         .Module(name, body) -> walk_mod_decl(g, name, body, parent_id, pkg_id, canon, dir, uses)
         .Use(path, names) -> walk_use_stmt(g, path, names, parent_id, pkg_id, dir, uses)
         .Annotated(_, inner) -> {
-            let wrapped = SStmt { node: inner, line: ss.line, col: ss.col }
+            let wrapped = inner
             walk_stmt(g, wrapped, parent_id, pkg_id, canon, dir, uses)
         }
         // Top-level decls register as items in this module so name
@@ -411,7 +411,7 @@ fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: 
         .Annotated(annots, inner) -> {
             let is_export = annotation_list_has_export(annots)
             let merged = if is_export { 1 } else { exported }
-            walk_ast_stmt_with_export(g, inner, parent_id, canon, merged)
+            walk_ast_stmt_with_export(g, inner.node, parent_id, canon, merged)
         }
         .Function(name, _, _, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
         // Extern fn keeps its bare C ABI name as the alias canonical;

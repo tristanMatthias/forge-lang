@@ -719,7 +719,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
-        .Annotated(_, inner) -> execute_stmt(runtime, inner)
+        .Annotated(_, inner) -> execute_stmt(runtime, inner.node)
         _ -> {
             let tag = avra_stmt_tag(stmt)
             let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)

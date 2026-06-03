@@ -106,7 +106,7 @@ fn derive_for(stmt: Stmt) -> List<SStmt> {
 
 fn peel_annotations(stmt: Stmt) -> Stmt {
     match stmt {
-        .Annotated(_, inner) -> peel_annotations(inner)
+        .Annotated(_, inner) -> peel_annotations(inner.node)
         _ -> stmt
     }
 }

@@ -348,7 +348,7 @@ fn find_captures_stmt_body(stmt: Stmt, params: List<ParamEntry>, env: List<VarBi
         .Errdefer(body) -> find_captures(body, params, env, captures)
         .Const(_, _, init) -> find_captures(init, params, env, captures)
         .LetDestructure(_, init) -> find_captures(init, params, env, captures)
-        .Annotated(_, inner) -> find_captures_stmt_body(inner, params, env, captures)
+        .Annotated(_, inner) -> find_captures_stmt_body(inner.node, params, env, captures)
         .Parallel(body) -> find_captures_stmts(body, params, env, captures)
         _ -> {}  // NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, etc.
     }
