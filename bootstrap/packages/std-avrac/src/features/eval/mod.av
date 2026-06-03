@@ -2103,6 +2103,20 @@ fn unquote_string(text: string) -> string {
 // because boxing happens bottom-up, a parent's children already carry
 // their native payload, so the parent decode is a shallow per-field
 // read rather than a deep re-decode.
+//
+// Complexity: boxing a node is O(its direct fields) because every child
+// is already boxed, so building the whole tree is O(total nodes), not
+// O(depth × size). On the hot path (the @expand consumer) value_to_stmt
+// is then an O(1) unwrap instead of re-decoding the subtree. The unwrap-
+// first routing is what keeps this linear — route a child decode through
+// the raw enum_value_to_* and you reintroduce the quadratic re-walk.
+//
+// Non-AST enums pay only the `match v.enum_type` dispatch + the `_ -> v`
+// fallthrough (constant), so user-enum-heavy comptime loops are unaffected.
+// Considered lazy boxing (decode only on first value_to_stmt) to skip the
+// decode for AST values that are matched but never spliced — rejected as
+// premature: it needs a mutable cache slot on the immutable Value, and the
+// only such values are small macro-input decls (one decode each).
 
 /// True when a Value carries an enum-shaped payload — either a plain
 /// runtime enum or an AST node boxed by box_ast_value (which keeps the
