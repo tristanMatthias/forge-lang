@@ -4,7 +4,7 @@
 // self-imports.
 use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
-use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy}
+use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy, value_is_enumish}
 use features.eval.{step_runtime, step_value, step_had_error, step_is_return, step_error_message}
 use core.{Pattern, MatchArm, ParamEntry, SExpr, Expr, Stmt}
 use core.{feature_new, Feature}
@@ -220,7 +220,7 @@ fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttemp
             }
         }
         .Variant(name, bindings) -> {
-            if value.kind != "enum" {
+            if !value_is_enumish(value) {
                 return MatchAttempt { matched: false, runtime: rt }
             }
             if value.enum_variant != name {
@@ -230,7 +230,7 @@ fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttemp
             MatchAttempt { matched: true, runtime: bound_rt }
         }
         .NestedVariant(name, sub_patterns) -> {
-            if value.kind != "enum" {
+            if !value_is_enumish(value) {
                 return MatchAttempt { matched: false, runtime: rt }
             }
             if value.enum_variant != name {

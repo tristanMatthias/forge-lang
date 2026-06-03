@@ -2,7 +2,7 @@
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
-use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value}
+use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value, value_is_enumish}
 use typeck.{check_expr, tc_er}
 
 /// Register the `is` operator feature. Used for runtime variant
@@ -55,7 +55,7 @@ fn is_eval(rt: Runtime, expr: Expr) -> StepResult {
             let s = eval_expr(rt, subject)
             if step_had_error(s) { return s }
             let v = step_value(s)
-            let matched = v.kind == "enum" && v.enum_variant == variant_name
+            let matched = value_is_enumish(v) && v.enum_variant == variant_name
             ok_result(step_runtime(s), value_bool(matched))
         }
         _ -> error_result(rt, "is_eval: expected IsCheck expression")

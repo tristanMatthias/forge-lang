@@ -3,9 +3,8 @@
 // returning `quote stmt { ... }` (which lowers to nested EnumCtors)
 // produces a runtime Stmt value the @expand pass can extract.
 
-use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt}
-use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value}
-use @std.avrac.features.comptime.{value_to_stmt, value_to_stmt_list}
+use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, ValueType}
+use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, value_to_stmt_list}
 
 fn empty_args() -> List<SExpr> {
     let e: List<SExpr> = []
@@ -20,17 +19,23 @@ fn two_args(a: Expr, b: Expr) -> List<SExpr> {
     [sexpr_dummy(a), sexpr_dummy(b)]
 }
 
-spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
-    then "no-payload variant" {
+spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact" {
+    // The eval boundary boxes AST nodes: an EnumCtor whose type is an
+    // AST node (Stmt / Expr / ValueType) is boxed natively, so the
+    // top-level kind is now "expr" / "stmt" / "value_type" rather than
+    // "enum". The enum_type / enum_variant / enum_payload fields stay
+    // populated (dual representation) so pattern-matching and the fold
+    // reconstructor keep working — these specs pin that contract.
+    then "no-payload variant (Expr.Null) boxes as kind=expr, enum_* intact" {
         let e = Expr.EnumCtor("@std::avrac::core::Expr", "Null", empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         let v: Value = r.value
-        v.kind == "enum"
+        v.kind == "expr"
             && v.enum_type == "@std::avrac::core::Expr"
             && v.enum_variant == "Null"
             && v.enum_payload.length == 0
     }
-    then "single-arg payload (Expr.Number)" {
+    then "single-arg payload (Expr.Number) boxes as kind=expr, payload preserved" {
         // Expr.Number(value: string) — pass a string literal arg.
         let e = Expr.EnumCtor(
             "@std::avrac::core::Expr",
@@ -39,15 +44,17 @@ spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
         let r: StepResult = eval_expr(runtime_new(), e)
         let v: Value = r.value
         let payload0: Value = v.enum_payload[0]
-        v.kind == "enum"
+        v.kind == "expr"
             && v.enum_variant == "Number"
             && v.enum_payload.length == 1
             && payload0.kind == "string"
             && payload0.text == "42"
     }
-    then "nested enum payloads recurse correctly" {
+    then "nested AST payloads recurse + box at every level, enum_* preserved" {
         // Outer EnumCtor whose first arg is itself an EnumCtor.
-        // Verifies eval_args_to_values recurses end-to-end.
+        // Verifies eval_args_to_values recurses end-to-end and that
+        // both levels box (Stmt outer → kind=stmt, Expr inner → kind=expr)
+        // while their enum_payload chains stay readable.
         let inner = Expr.EnumCtor(
             "@std::avrac::core::Expr",
             "Number",
@@ -60,10 +67,10 @@ spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
         let v: Value = r.value
         let p0: Value = v.enum_payload[0]
         let p0p0: Value = p0.enum_payload[0]
-        v.kind == "enum"
+        v.kind == "stmt"
             && v.enum_variant == "Return"
             && v.enum_payload.length == 1
-            && p0.kind == "enum"
+            && p0.kind == "expr"
             && p0.enum_variant == "Number"
             && p0p0.text == "7"
     }
@@ -167,5 +174,55 @@ spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
         let e = Expr.ListLit(empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         is_stmt_list_end(value_to_stmt_list(r.value))
+    }
+}
+
+// Fidelity: the reason boxing exists is that "each hop can lose
+// information" — the canonical example being a ValueType's TypeId getting
+// flattened to 0 across the encode->eval->decode roundtrip. With native
+// boxing at the eval boundary the ValueType travels intact, so a nonzero
+// TypeId in a Stmt.Let's declared type must survive eval -> value_to_stmt.
+// This pins that no-loss property on the boxed path so a future change
+// that re-introduces a lossy hop fails here.
+
+fn let_vtype_enum_id(s: Stmt?) -> int {
+    if s == null { return -1 }
+    match s! {
+        .Let(_, vt, _) -> match vt {
+            .Enum(_, _, id) -> id
+            _ -> -2
+        }
+        _ -> -3
+    }
+}
+
+spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
+    then "Stmt.Let's ValueType.Enum id (42) is preserved through eval-box -> value_to_stmt" {
+        // ValueType.Enum("Foo", [], 42) — the 42 is the TypeId slot.
+        let vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Enum",
+            three_args_se(Expr.String("\"Foo\""), Expr.ListLit(empty_args()), Expr.Number("42")))
+        let init = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
+        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
+            three_args_se(Expr.String("\"x\""), vt, init))
+        let r: StepResult = eval_expr(runtime_new(), e)
+        let_vtype_enum_id(value_to_stmt(r.value)) == 42
+    }
+}
+
+// is-check on a boxed AST value. derive_walker only uses `is` on the
+// plain FieldKind enum (kind="enum"), so the is-operator's comptime-eval
+// hook is otherwise never exercised against a boxed Stmt/Expr/ValueType
+// (kind="expr"/"stmt"/"value_type"). These pin that `x is .Variant`
+// reads the variant off a boxed value via value_is_enumish.
+spec "is-check matches a boxed AST value by variant (value_is_enumish path)" {
+    then "Expr.Number(\"1\") is .Number -> true" {
+        let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
+        let r: StepResult = eval_expr(runtime_new(), Expr.IsCheck(subj, "Number"))
+        r.value.kind == "bool" && r.value.bool_value == 1
+    }
+    then "Expr.Number(\"1\") is .Bool -> false (variant mismatch, still enumish)" {
+        let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
+        let r: StepResult = eval_expr(runtime_new(), Expr.IsCheck(subj, "Bool"))
+        r.value.kind == "bool" && r.value.bool_value == 0
     }
 }
