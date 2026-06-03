@@ -61,4 +61,3 @@ issue-prefix: "forge-crafting-intepreters"
 # builds a local Dolt store from issues.jsonl (`bd init --from-jsonl`) and
 # operates entirely offline. (scripts/bootstrap.sh strips the sync.remote
 # that `bd init` re-derives from the git origin, keeping bd offline.)
-sync.remote: "git+http://local_proxy@127.0.0.1:44015/git/tristanMatthias/forge-lang"
