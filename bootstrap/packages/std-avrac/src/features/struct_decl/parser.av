@@ -8,18 +8,11 @@ use core.{Tk}
 impl Parser {
     fn parse_type_declaration(self) -> Stmt? {
         self.advance()
-        // swgx: inside `quote stmt { ... }`, accept `~ident` in the name
-        // slot. The leading `~` is preserved as a sentinel so the lower
-        // pass (construct_stmt's TypeDecl arm) emits Expr.Ident(rest)
-        // instead of a string literal — at expansion time the splice
-        // resolves to the current value of the local `rest`.
-        let name = if self.quote_depth > 0 && self.check(Tk.Tilde) {
-            self.advance()
-            let var_name = self.consume_identifier("expected identifier after ~ in type name")?
-            "~" + var_name
-        } else {
-            self.consume_identifier("expected type name")?
-        }
+        // Inside `quote { ... }`, accept `~ident` in the name slot.
+        // consume_name_or_splice preserves the leading `~` sentinel so the
+        // lower pass (name_or_splice in quote_expr/lower.av) resolves it to
+        // the macro local's value at expansion time.
+        let name = self.consume_name_or_splice("expected type name")?
         // Optional generic parameters: type Foo<T, U> = { ... }
         let tp: List<TypeParamEntry> = if self.check(Tk.Less) {
             self.parse_type_params()

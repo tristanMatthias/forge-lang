@@ -1034,6 +1034,20 @@ impl Parser {
         // the spliced expression IS the whole quoted hole.
         if self.check(Tk.Tilde) && self.quote_depth > 0 {
             self.advance()
+            // `~Name { ... }` splices the *constructor name* of a struct
+            // literal, not the whole literal. The `~Name` tag
+            // flows through name_or_splice in quote lowering. Without this
+            // the greedy rule below would swallow the entire struct literal
+            // as one spliced node carrying a hardcoded type name.
+            if self.check(Tk.Identifier) && self.allow_struct_lit && self.peek_after_ident_is_lbrace() {
+                let var_name = self.take_lexeme()
+                self.advance()  // consume `{`
+                let inits = self.parse_field_init_list()?
+                if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
+                    return null
+                }
+                return Expr.StructLit("~" + var_name, inits)
+            }
             let target = self.parse_unary()?
             return Expr.Splice(target)
         }
@@ -1684,6 +1698,22 @@ impl Parser {
         false
     }
 
+    // Does the next non-whitespace char after the current identifier open
+    // a `{` block? Distinguishes a struct literal `~Name { ... }` from a
+    // bare spliced identifier `~Name` in the quote splice path.
+    fn peek_after_ident_is_lbrace(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "{"
+            }
+            i = i + 1
+        }
+        false
+    }
+
     // At the `<` token (just after `table`): does the raw source spell
     // `< Ident > {` — i.e. a typed table literal `table<Row> { … }` — as
     // opposed to a comparison like `table < 10`? Scans source without
@@ -1826,6 +1856,23 @@ impl Parser {
         if self.check(Tk.Identifier) { return self.take_lexeme() }
         self.set_error(message)
         null
+    }
+
+    /// Consume an identifier in a declaration-name slot, honoring
+    /// `~ident` splice syntax inside a `quote { ... }` body.
+    /// Outside a quote it is a plain identifier. Inside one,
+    /// `~ident` defers the name to expansion time: the leading `~` is
+    /// preserved as the sentinel the quote-lowering pass (`name_or_splice`
+    /// in features/quote_expr/lower.av) decodes back into a live splice.
+    /// Used by every name slot that can carry a splice — type names,
+    /// impl targets, and struct-literal constructors.
+    fn consume_name_or_splice(self, message: string) -> string? {
+        if self.quote_depth > 0 && self.check(Tk.Tilde) {
+            self.advance()
+            let var_name = self.consume_identifier("expected identifier after `~` in name position")?
+            return "~" + var_name
+        }
+        self.consume_identifier(message)
     }
 
     /// Parse a comma-separated destructure binding list `a, b, c`

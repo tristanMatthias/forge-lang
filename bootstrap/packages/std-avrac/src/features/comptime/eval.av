@@ -270,6 +270,16 @@ fn enum_value_to_expr(v: Value) -> Expr? {
             let entries = list_value_to_expr_list(head)?
             Expr.MapLit(entries)
         }
+        // `Foo { field: expr, ... }` — the name slot (head) is a string
+        // Value (a literal, or a spliced `~T` already resolved to its
+        // type name by name_or_splice); the second payload is a
+        // List<FieldInit>. Enables quote-constructed struct literals,
+        // e.g. macro-emitted `Command_build { name: "build", ... }`.
+        "StructLit" -> {
+            if p.length != 2 { return null }
+            let inits = list_value_to_field_init_list(p[1])?
+            Expr.StructLit(head.text, inits)
+        }
         "InCheck" -> {
             if p.length != 2 { return null }
             let needle = enum_value_to_expr(head)?
@@ -800,6 +810,30 @@ fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
 // Once Value grows list/struct support, the decoder can be
 // reintroduced — for now the dropped slot is documented at the
 // TypeDecl decode site.
+
+/// Decode a list-Value of FieldInit struct values back into a
+/// `List<FieldInit>`. Mirrors the CompConfigPair decoder: each entry is
+/// a struct `FieldInit { name: string, value: SExpr }`. The value slot
+/// was emitted through `sexpr_dummy`, which comptime eval treats as a
+/// pass-through, so `f.value` arrives as the bare inner Expr Value and
+/// decodes directly via `enum_value_to_expr`. Drives the StructLit
+/// decode path — `quote { Foo { field: expr } }` round-trips.
+fn list_value_to_field_init_list(v: Value) -> List<FieldInit>? {
+    if v.kind != "list" { return [] }
+    mut out: List<FieldInit> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let name = struct_field_string(entry, "name")
+        mut value_expr: Expr = Expr.Null
+        for f in entry.struct_payload {
+            if f.name == "value" {
+                value_expr = enum_value_to_expr(f.value)?
+            }
+        }
+        out.push(FieldInit { name, value: sexpr_dummy(value_expr) })
+    }
+    out
+}
 
 /// Decode a `List<TypeParamEntry>` from its evaluator-Value form
 /// (kind="list" of kind="struct" `TypeParamEntry {name, bounds}`).
