@@ -3,7 +3,7 @@
 // returning `quote stmt { ... }` (which lowers to nested EnumCtors)
 // produces a runtime Stmt value the @expand pass can extract.
 
-use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt}
+use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, ValueType}
 use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, value_to_stmt_list}
 
 fn empty_args() -> List<SExpr> {
@@ -174,5 +174,37 @@ spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
         let e = Expr.ListLit(empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         is_stmt_list_end(value_to_stmt_list(r.value))
+    }
+}
+
+// so07.8 fidelity: the reason the ticket exists is "each hop can lose
+// information" — the canonical example being a ValueType's TypeId getting
+// flattened to 0 across the encode->eval->decode roundtrip. With native
+// boxing at the eval boundary the ValueType travels intact, so a nonzero
+// TypeId in a Stmt.Let's declared type must survive eval -> value_to_stmt.
+// This pins that no-loss property on the boxed path so a future change
+// that re-introduces a lossy hop fails here.
+
+fn let_vtype_enum_id(s: Stmt?) -> int {
+    if s == null { return -1 }
+    match s! {
+        .Let(_, vt, _) -> match vt {
+            .Enum(_, _, id) -> id
+            _ -> -2
+        }
+        _ -> -3
+    }
+}
+
+spec "so07.8: ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
+    then "Stmt.Let's ValueType.Enum id (42) is preserved through eval-box -> value_to_stmt" {
+        // ValueType.Enum("Foo", [], 42) — the 42 is the TypeId slot.
+        let vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Enum",
+            three_args_se(Expr.String("\"Foo\""), Expr.ListLit(empty_args()), Expr.Number("42")))
+        let init = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
+        let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
+            three_args_se(Expr.String("\"x\""), vt, init))
+        let r: StepResult = eval_expr(runtime_new(), e)
+        let_vtype_enum_id(value_to_stmt(r.value)) == 42
     }
 }
