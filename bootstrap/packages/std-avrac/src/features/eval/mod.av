@@ -2170,7 +2170,6 @@ fn box_ast_value(v: Value) -> Value {
 /// return Values.
 export fn value_to_stmt(v: Value) -> Stmt? {
     if v.kind == "stmt" { return v.stmt_payload }
-    if !value_is_enumish(v) { return null }
     enum_value_to_stmt(v)
 }
 
@@ -2382,7 +2381,6 @@ fn value_to_match_arm(v: Value) -> MatchArm? {
 }
 
 fn value_to_pattern(v: Value) -> Pattern? {
-    if !value_is_enumish(v) { return null }
     if v.enum_type != "@std::avrac::core::Pattern" { return null }
     let p = v.enum_payload
     match v.enum_variant {
