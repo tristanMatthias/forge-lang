@@ -37,6 +37,15 @@
 # Exit status: 0 = environment is build-ready; non-zero = a required dep is missing
 # (in --check) or an install step failed.
 
+# Re-exec under bash if we were launched by a POSIX shell (e.g. `sh scripts/bootstrap.sh`).
+# In that case the `#!/usr/bin/env bash` shebang is bypassed and the script runs under
+# dash, which lacks bash-only features used below (`set -o pipefail`, BASH_SOURCE, arrays)
+# — dash aborts on the next line with "set: Illegal option -o pipefail". Guard must be
+# POSIX-compatible itself since it runs before we know which shell we're in.
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 # --- required LLVM major version (see header) -------------------------------------
