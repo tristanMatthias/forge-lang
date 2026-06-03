@@ -14,6 +14,7 @@ cannot regress silently.
 
 - **Multiple rounds, not one pass.** Each section below says "round 1 / round 2 / …" for a reason. One sweep finds the obvious stuff; the third sweep finds the bugs and the duplication that hide behind the obvious stuff. Do not collapse rounds.
 - **Zero tolerance for "good enough."** Every CLAUDE.md ABSOLUTE RULE applies here: no hack survives a commit (rule 14), no workaround (rule 4), no "known limitation" for a bug (rule 2), fix the foundation not the symptom (rule 16).
+- **No workarounds, no building on sand.** This is the load-bearing principle and it gets its own gate (Phase 1). If the layer beneath you is wrong, you fix *it* before building on top — you never route around it, special-case past it, or pile a second layer on a broken first one. A PR that ships a feature by stepping around a foundational gap is not ready, no matter how green the tests are.
 - **Fix-or-file, never skip.** Anything you find and don't fix in this PR becomes a `bd` ticket *now*, with a real priority. "I'll come back to it" is banned.
 - **Commit each pass separately.** Perf fixes, DRY consolidations, and red-team fixes each land as their own commit so a reviewer can verify them independently.
 - **The diff is the deliverable.** A reviewer reads the diff, not your intent. Every line must justify itself.
@@ -44,11 +45,38 @@ This skill drives toward a hard terminal state (Phase 9). You are done when ever
 
 ---
 
-## Phase 1 — Correctness red-team (the logic itself)
+## Phase 1 — Foundation & workaround audit, then correctness
 
-Before polishing, make sure it's *right*. Re-derive from the spec (`docs/2026_04_18_FULL_SPEC.md`) what the code should do, and verify it does.
+This is the gate that outranks all the others. A beautiful, well-tested, DRY
+feature built on top of a workaround is still a workaround. Do this before
+polishing anything.
 
-Hunt the project's documented **silent failure modes** (CLAUDE.md "Silent Failure Modes") across the diff:
+### 1a — No workarounds, no building on bad architecture
+
+Interrogate the diff with the assumption that you took a shortcut somewhere
+and have to find it. For **every** change, ask:
+
+- **Did I route around a problem instead of fixing it?** A special-case to dodge a failing path, a second code path that duplicates a broken first one, a value massaged into shape downstream because the upstream producer is wrong — all workarounds. Fix the producer.
+- **Did I build on a foundation I know is wrong?** Extending a string-typed registry, an `i64` fallback, an untyped/`Unknown`-typed slot, a stringly-matched dispatch, or any layer CLAUDE.md already calls debt (rule 16) — that is building on sand. If you leaned on a broken foundation, stop and fix the foundation *in this PR* (or, if genuinely out of scope, in a prerequisite PR that lands first — never "later").
+- **When I hit a missing feature mid-task, what did I do?** The rule (CLAUDE.md "Build What You Need", rule 16) is: STOP and implement the missing piece first. If instead you deferred, stubbed, or hacked a substitute, that substitute is the bug. (The canonical *good* example: hitting a quote-splice gap and fixing the splice foundation before writing the macro — not generating source strings to dodge it.)
+- **Did I add a C-side shim to bypass a codegen bug?** Banned (rule 6). Fix the codegen.
+
+Grep the diff for the tells, and treat each as guilty until proven innocent:
+```bash
+git diff $BASE..HEAD | grep -nEi 'hack|workaround|for now|temporar|kludge|bypass|good enough|figure (this|that) out|revisit|come back|hard-?cod'
+```
+Also hunt the structural tells (no keyword to grep — you have to read for them):
+- A `?? <default>` or `catch { … }` that masks a real failure instead of handling a real case.
+- An empty arm `_ -> {}` / `-> {}` silently swallowing behavior.
+- A name- or string-match heuristic standing in for a real type/structural check (rule: no brittle heuristics).
+- A new parameter / flag added solely to thread around an abstraction that should have been changed.
+- Duplicated logic created *because* the shared path was inconvenient to fix.
+
+**For each finding: fix the root cause now, or — only if truly out of scope — file a `bd` ticket AND make sure this PR does not silently depend on the unfixed gap.** "It works around it for now" is not an acceptable end state (rule 14: no hack survives a commit).
+
+### 1b — Correctness (the logic itself)
+
+Re-derive from the spec (`docs/2026_04_18_FULL_SPEC.md`) what the code should do, and verify it does. Then hunt the project's documented **silent failure modes** (CLAUDE.md "Silent Failure Modes") across the diff:
 - **Wrong return type** — `return r` returning the inner value instead of the `Result`/wrapper. Grep every `return` in refactored files.
 - **Dropped generic args** — parser consumed `<...>` without parsing inside. Render the AST and verify.
 - **Monomorphizer "first match wins"** ambiguity when multiple instantiations exist.
