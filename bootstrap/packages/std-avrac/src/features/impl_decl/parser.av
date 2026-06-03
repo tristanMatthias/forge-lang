@@ -13,7 +13,7 @@ impl Parser {
         if self.check(Tk.Less) {
             self.skip_angle_brackets()
         }
-        let type_name = self.consume_identifier("expected type name after `impl`")?
+        let type_name = self.consume_name_or_splice("expected type name after `impl`")?
         // Skip generic args on the type name: `impl Foo<T> { ... }`
         if self.check(Tk.Less) {
             self.skip_angle_brackets()
@@ -24,7 +24,7 @@ impl Parser {
         mut target_name = type_name
         if self.check(Tk.KwFor) {
             self.advance()
-            let for_type = self.consume_identifier("expected type name after `for`")?
+            let for_type = self.consume_name_or_splice("expected type name after `for`")?
             if self.check(Tk.Less) {
                 self.skip_angle_brackets()
             }

@@ -440,7 +440,7 @@ export fn construct_expr(e: Expr) -> Expr {
         .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
         .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(inner)))
         .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
-        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(string_lit_expr(name), construct_field_init_list(inits)))
+        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(name), construct_field_init_list(inits)))
         .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
         .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(entries)))
         .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr(subj), string_lit_expr(vname)))
@@ -792,7 +792,7 @@ fn construct_param_vtype(vt: ValueType) -> Expr {
         .Struct(name, id) -> {
             if is_splice_name(name) {
                 value_type_ctor_args("Struct",
-                    two_args(Expr.Ident(splice_target_name(name)), int_lit_expr(id)))
+                    two_args(name_or_splice(name), int_lit_expr(id)))
             } else {
                 construct_value_type_unknown()
             }
@@ -927,30 +927,87 @@ fn string_lit_expr(s: string) -> Expr {
     Expr.String("\"${s}\"")
 }
 
-/// swgx: identifier-position splice. When the parser tags a TypeDecl
-/// (or future Function / Impl / TraitDecl) name with a leading `~`,
-/// emit `Expr.Ident(rest)` instead of a string literal so that at
-/// expansion time the splice resolves to the live value of the
-/// surrounding local. Without the prefix it's a plain string literal.
+/// Identifier-position splice (swgx + vez6.4.4). The parser records a
+/// name slot that contained `~ident` by embedding `~ident` directly in
+/// the stored name string. This happens in four places:
+///   - a type's name:            `type ~T = { ... }`     → `~T`
+///   - an impl target:           `impl Tr for ~T { ... }`→ `Tr:~T`
+///   - an impl method (mangled): the same impl's methods → `~T__method`
+///   - a struct-literal ctor:    `~T { ... }`            → `~T`
+///
+/// At expansion time each `~ident` must resolve to the live value of the
+/// macro's local `ident`. This builds an Expr that, when evaluated,
+/// reconstructs the final name: literal chunks become string literals,
+/// each `~ident` becomes `Expr.Ident(ident)`, and the pieces are joined
+/// with `+`. A name with no `~` is a plain string literal (fast path).
+///
+/// Splice boundaries are unambiguous — an identifier ends at the first
+/// `__` (the method / variant mangling separator, which spec Axis 28
+/// forbids inside hand-written names) or at any non-identifier char
+/// (e.g. the `:` separating an impl's trait from its target). The `__`
+/// separator is a guaranteed delimiter, so this needs no heuristics.
 fn name_or_splice(name: string) -> Expr {
-    if is_splice_name(name) {
-        Expr.Ident(splice_target_name(name))
-    } else {
-        string_lit_expr(name)
+    if !is_splice_name(name) {
+        return string_lit_expr(name)
     }
+    let pieces = split_name_splices(name)
+    mut joined = pieces[0]
+    mut i = 1
+    while i < pieces.length {
+        joined = Expr.Binary(joined, BinOp.Add, pieces[i])
+        i = i + 1
+    }
+    joined
 }
 
-/// True when `name` carries the parser's leading-`~` splice marker.
-/// Centralises the `~`-prefix check used by every splice-aware
-/// construction site (TypeDecl name, ValueType.Struct name, etc).
+/// True when `name` carries a `~ident` splice marker anywhere.
 fn is_splice_name(name: string) -> bool {
-    name.length > 0 && name.substring(0, 1) == "~"
+    name.contains("~")
 }
 
-/// Strip the `~` prefix from a splice-marked name, leaving the
-/// runtime-resolved identifier.
-fn splice_target_name(name: string) -> string {
-    name.substring(1, name.length)
+/// Break a name into its alternating literal / `~ident`-splice pieces,
+/// each rendered as an Expr (a string literal, or `Expr.Ident` for a
+/// splice). Empty literal runs are dropped so the join reads as
+/// `literal + ident + literal + ...`.
+fn split_name_splices(name: string) -> List<Expr> {
+    mut pieces: List<Expr> = []
+    mut literal = ""
+    mut i = 0
+    let n = name.length
+    while i < n {
+        let ch = name.substring(i, i + 1)
+        if ch != "~" {
+            literal = literal + ch
+            i = i + 1
+            continue
+        }
+        // Flush the pending literal, then read the spliced identifier:
+        // ident chars up to the first `__` separator or non-ident char.
+        if literal.length > 0 {
+            pieces.push(string_lit_expr(literal))
+            literal = ""
+        }
+        mut ident = ""
+        mut j = i + 1
+        while j < n {
+            let c = name.substring(j, j + 1)
+            if !is_ident_char(c) { break }
+            if c == "_" && j + 1 < n && name.substring(j + 1, j + 2) == "_" { break }
+            ident = ident + c
+            j = j + 1
+        }
+        pieces.push(Expr.Ident(ident))
+        i = j
+    }
+    if literal.length > 0 {
+        pieces.push(string_lit_expr(literal))
+    }
+    pieces
+}
+
+/// A character that may appear inside an Avra identifier.
+fn is_ident_char(c: string) -> bool {
+    (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
 }
 
 /// Build an Expr that, when evaluated, produces a `List<SExpr>` AST
@@ -1081,11 +1138,11 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
                 stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), Expr.Null))
             }
         }
-        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(string_lit_expr(type_name), construct_stmt_list(methods)))
+        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_list(methods)))
         .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(methods)))
         .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(body)))
         .Function(name, tp, params, rvt, body) -> stmt_ctor("Function",
-            five_args(string_lit_expr(name),
+            five_args(name_or_splice(name),
                       construct_type_param_list(tp),
                       construct_param_list(params),
                       construct_value_type(rvt),
