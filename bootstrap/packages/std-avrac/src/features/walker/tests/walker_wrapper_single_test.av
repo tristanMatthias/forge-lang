@@ -1,0 +1,75 @@
+// 703y.1 — derive_walker recognises a single (non-list) wrapper field
+// `field: W` where `W` is a 1-hop `.node` wrapper around the parent
+// (SExpr → Expr, SStmt → Stmt ride this shape). This is the
+// `WrapperOfSelf` field kind: the single-field analogue of the existing
+// `WrapperListOfSelf` (List<W>) case.
+//
+//   - children() projects the one `.node` hop, so a single-wrapper field
+//     contributes exactly one child (like DirectSelf, with an unwrap).
+//   - map() descends one level through the wrapper via `map_node`,
+//     applying f to `.node` and rewrapping with the original sibling
+//     fields preserved (the wrapper's span survives untouched).
+//
+// This is the enabling infrastructure for the uniform-span migration:
+// once the walker handles a single spanned child, bare `Expr` / `Stmt`
+// AST positions can be migrated to `SExpr` / `SStmt` one variant at a
+// time and still walk/rewrite mechanically.
+//
+// Bypasses metadata mode (9p1d) so derive_walker + the wrapper struct
+// decl are both visible to the @comptime discovery path.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: single wrapper field is a WrapperOfSelf child" {
+    then "children() unwraps one `.node` hop; map descends + keeps siblings" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_wrapper_single_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list}\n" +
+            "\n" +
+            "export type SNode = {\n" +
+            "    node: Tree,\n" +
+            "    span: int,\n" +
+            "}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    One(child: SNode),\n" +
+            "    Pair(l: SNode, r: SNode),\n" +
+            "    Mix(tag: int, head: SNode, kids: List<SNode>),\n" +
+            "}\n" +
+            "\n" +
+            "fn sn(t: Tree) -> SNode {\n" +
+            "    SNode { node: t, span: 7 }\n" +
+            "}\n" +
+            "\n" +
+            "fn bump(t: Tree) -> Tree {\n" +
+            "    match t {\n" +
+            "        .Leaf(v) -> Tree.Leaf(v + 100)\n" +
+            "        _ -> t\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let leaf = Tree.Leaf(1)\n" +
+            "    println(\"leaf=\" + string(leaf.children().length))\n" +
+            "    println(\"one=\" + string(Tree.One(sn(Tree.Leaf(5))).children().length))\n" +
+            "    println(\"pair=\" + string(Tree.Pair(sn(Tree.Leaf(1)), sn(Tree.Leaf(2))).children().length))\n" +
+            "    let mix = Tree.Mix(9, sn(Tree.Leaf(1)), [sn(Tree.Leaf(2)), sn(Tree.Leaf(3))])\n" +
+            "    println(\"mix=\" + string(mix.children().length))\n" +
+            "\n" +
+            "    let mapped = Tree.One(sn(Tree.Leaf(5))).map(bump)\n" +
+            "    match mapped {\n" +
+            "        .One(child) -> {\n" +
+            "            match child.node {\n" +
+            "                .Leaf(v) -> println(\"mapped=\" + string(v) + \" span=\" + string(child.span))\n" +
+            "                _ -> println(\"mapped=?\")\n" +
+            "            }\n" +
+            "        }\n" +
+            "        _ -> println(\"notone\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("leaf=0") && out.contains("one=1") && out.contains("pair=2") &&
+            out.contains("mix=3") && out.contains("mapped=105 span=7")
+    }
+}
