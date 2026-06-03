@@ -2113,85 +2113,31 @@ export fn value_is_enumish(v: Value) -> bool {
     v.kind == "enum" || v.kind == "stmt" || v.kind == "expr" || v.kind == "value_type"
 }
 
-/// Box an AST EnumCtor Value into its native form. Returns the Value
-/// unchanged for non-AST enum types or when the decode fails (the
-/// enum_* representation then remains the source of truth and the
-/// downstream value_to_* fall back to the decoder).
+/// Box an AST EnumCtor Value into its native form. The native node is
+/// stashed in the matching payload slot and `kind` flips to the AST
+/// kind, while every other field — crucially enum_type / enum_variant /
+/// enum_payload — carries through via `with`, so the dual representation
+/// stays intact (matching + fold still read the enum form). Returns the
+/// Value unchanged for non-AST enum types or when the decode fails, so
+/// the downstream value_to_* fall back to the decoder.
 fn box_ast_value(v: Value) -> Value {
     match v.enum_type {
         "@std::avrac::core::Stmt" -> {
             let s = enum_value_to_stmt(v)
             if s == null { return v }
-            value_with_stmt(v, s!)
+            v with { kind: "stmt", stmt_payload: s }
         }
         "@std::avrac::core::Expr" -> {
             let e = enum_value_to_expr(v)
             if e == null { return v }
-            value_with_expr(v, e!)
+            v with { kind: "expr", expr_payload: e }
         }
         "@std::avrac::core::ValueType" -> {
             let t = enum_value_to_value_type(v)
             if t == null { return v }
-            value_with_value_type(v, t!)
+            v with { kind: "value_type", value_type_payload: t }
         }
         _ -> v
-    }
-}
-
-/// Copy `v` with kind="stmt" and the native Stmt stored. All other
-/// fields (including enum_type / enum_variant / enum_payload) carry
-/// through so the dual representation stays intact.
-fn value_with_stmt(v: Value, s: Stmt) -> Value {
-    Value {
-        kind: "stmt",
-        number_text: v.number_text,
-        text: v.text,
-        bool_value: v.bool_value,
-        enum_type: v.enum_type,
-        enum_variant: v.enum_variant,
-        enum_payload: v.enum_payload,
-        list_payload: v.list_payload,
-        struct_type: v.struct_type,
-        struct_payload: v.struct_payload,
-        stmt_payload: s,
-        expr_payload: v.expr_payload,
-        value_type_payload: v.value_type_payload,
-    }
-}
-
-fn value_with_expr(v: Value, e: Expr) -> Value {
-    Value {
-        kind: "expr",
-        number_text: v.number_text,
-        text: v.text,
-        bool_value: v.bool_value,
-        enum_type: v.enum_type,
-        enum_variant: v.enum_variant,
-        enum_payload: v.enum_payload,
-        list_payload: v.list_payload,
-        struct_type: v.struct_type,
-        struct_payload: v.struct_payload,
-        stmt_payload: v.stmt_payload,
-        expr_payload: e,
-        value_type_payload: v.value_type_payload,
-    }
-}
-
-fn value_with_value_type(v: Value, t: ValueType) -> Value {
-    Value {
-        kind: "value_type",
-        number_text: v.number_text,
-        text: v.text,
-        bool_value: v.bool_value,
-        enum_type: v.enum_type,
-        enum_variant: v.enum_variant,
-        enum_payload: v.enum_payload,
-        list_payload: v.list_payload,
-        struct_type: v.struct_type,
-        struct_payload: v.struct_payload,
-        stmt_payload: v.stmt_payload,
-        expr_payload: v.expr_payload,
-        value_type_payload: t,
     }
 }
 
