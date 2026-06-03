@@ -335,7 +335,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 19. NEVER close or defer a ticket without 100% of the work being done. "Partially done" is NOT done. "Deferred" is NOT done. "Acceptable for bootstrap" is NOT done. If a ticket says "implement X" and X is not fully implemented per the spec, the ticket stays OPEN. If you can't finish it now, leave it open and move to the next one — do NOT close it with excuses. The only valid close reason is "all work described in this ticket is complete, tested, and committed." Adding a test without implementing the feature is NOT closing the ticket. Adding scaffolding without the logic is NOT closing the ticket. Workarounds are NOT closing the ticket.
 20. NEVER close a parent ticket (epic) until ALL child tickets are genuinely closed with real completed work. "All sub-tasks resolved" means nothing if those sub-tasks were themselves closed without doing the work.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -349,13 +349,41 @@ bd update <id> --claim  # Claim work
 bd close <id>         # Complete work
 ```
 
+### Workflow Formulas
+
+Two beads formulas define the development process:
+
+**`ticket-inner`** — 9-step process for each ticket:
+1. Implement fully to spec
+2. Check work against spec (file bugs for gaps)
+3. Fix all bugs found
+4. Cleanup: hacks, workarounds, dead code
+5. Cleanup: DRY, centralize, architecture
+6. Cleanup: ridiculously aggressive (zero tolerance)
+7. Break it: aggressive red team tests
+8. Break it: outside the box (fuzzing, stress)
+9. Final cleanup: beautify and polish
+
+**`epic-outer`** — 4-step process for each epic:
+1. Select and claim the epic
+2. Work every ticket via ticket-inner (in priority order)
+3. Epic-level integration review
+4. Close the epic
+
+**Makefile commands:**
+```bash
+make next                    # Show next work item
+make work TICKET=<id> EPIC=<id>  # Start working a ticket
+make epic EPIC=<id>          # Show epic status + open items
+```
+
 ### Rules
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+- When working a ticket, follow the ticket-inner formula (all 9 steps, no skipping)
+- When working an epic, follow the epic-outer formula (all tickets, no cherry-picking)
 
 ## Session Completion
 
@@ -369,6 +397,7 @@ bd close <id>         # Complete work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
+   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
