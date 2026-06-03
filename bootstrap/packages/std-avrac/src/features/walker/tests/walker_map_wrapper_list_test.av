@@ -131,4 +131,40 @@ spec "derive_walker: map descends into wrapper-list children, preserving sibling
             "}\n")
         out.contains("wide=1000,1,1000") && out.contains("deep=1")
     }
+
+    then "combinatorial: a variant mixing DirectSelf + WrapperListOfSelf + Scalar maps each kind right; map result feeds an if-expr with a captured closure" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_wrapper_combo_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
+            "\n" +
+            "export type MyWrap = { node: MyTree, extra: int }\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum MyTree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Branch(kids: List<MyWrap>),\n" +
+            "    Mixed(direct: MyTree, wrapped: List<MyWrap>, label: string),\n" +
+            "}\n" +
+            "\n" +
+            "fn bump(t: MyTree) -> MyTree {\n" +
+            "    let t2 = match t { .Leaf(v) -> MyTree.Leaf(v + 100), _ -> t }\n" +
+            "    t2.map(bump)\n" +
+            "}\n" +
+            "\n" +
+            "fn lv(t: MyTree) -> int { match t { .Leaf(v) -> v, _ -> -1 } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let kids: List<MyWrap> = [ MyWrap { node: MyTree.Leaf(2), extra: 9 } ]\n" +
+            "    // map must hit direct (DirectSelf) + wrapped (WrapperListOfSelf), keep label + extra (Scalars)\n" +
+            "    match MyTree.Mixed(MyTree.Leaf(1), kids, \"tag\").map(bump) {\n" +
+            "        .Mixed(d, w, l) -> println(\"m=\" + string(lv(d)) + \",\" + string(lv(w[0].node)) + \",\" + l + \",\" + string(w[0].extra))\n" +
+            "        _ -> println(\"notmixed\")\n" +
+            "    }\n" +
+            "    // map result threaded through an if-expr with a captured closure\n" +
+            "    let by = 100\n" +
+            "    let add = (t: MyTree) -> match t { .Leaf(v) -> MyTree.Leaf(v + by), _ -> t.map(bump) }\n" +
+            "    println(\"if=\" + (if lv(add(MyTree.Leaf(5))) > 100 { \"big\" } else { \"small\" }))\n" +
+            "}\n")
+        out.contains("m=101,102,tag,9") && out.contains("if=big")
+    }
 }

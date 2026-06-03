@@ -1525,11 +1525,12 @@ fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
             let resolved = resolve_type_in_ctx(ctx, type_name)
             Pattern.TypePattern(resolved, binding)
         }
-        // Everything else just recurses into its Pattern children, which
-        // derive_walker's Pattern.map does uniformly — covering both
-        // NestedVariant's sub_patterns and Or's two branches (the latter
-        // the hand-rolled walker silently skipped, leaving type names in
-        // `int(n) | str(s)` arms unresolved).
+        // Everything else recurses into its Pattern children, which the
+        // derived Pattern.map does uniformly — NestedVariant sub-patterns,
+        // Or branches, etc. — so a new Pattern variant is walked without a
+        // new arm here. (Only TypePattern carries a resolvable name; the
+        // other patterns are structural, so the recursion is the point, not
+        // any per-variant resolution.)
         _ -> pattern.map((p) -> rewrite_pattern(ctx, p))
     }
 }
