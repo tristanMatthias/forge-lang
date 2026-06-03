@@ -808,7 +808,7 @@ fn construct_value_type_unknown() -> Expr {
 
 /// Build an Expr that, when evaluated, produces a `ValueType` Value
 /// matching `vt`. Sister to the decoder `enum_value_to_value_type` at
-/// the eval boundary (features/eval/mod.av, so07.8) — pin the
+/// the eval boundary (features/eval/mod.av) — pin the
 /// encoder/decoder contract for every declared ValueType variant so
 /// future quote-surface work can preserve typed positions without
 /// re-deriving the mapping.

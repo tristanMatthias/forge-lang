@@ -19,8 +19,8 @@ fn two_args(a: Expr, b: Expr) -> List<SExpr> {
     [sexpr_dummy(a), sexpr_dummy(b)]
 }
 
-spec "so07.8: eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact" {
-    // so07.8 changed the eval boundary: an EnumCtor whose type is an
+spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact" {
+    // The eval boundary boxes AST nodes: an EnumCtor whose type is an
     // AST node (Stmt / Expr / ValueType) is boxed natively, so the
     // top-level kind is now "expr" / "stmt" / "value_type" rather than
     // "enum". The enum_type / enum_variant / enum_payload fields stay
@@ -177,7 +177,7 @@ spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
     }
 }
 
-// so07.8 fidelity: the reason the ticket exists is "each hop can lose
+// Fidelity: the reason boxing exists is that "each hop can lose
 // information" — the canonical example being a ValueType's TypeId getting
 // flattened to 0 across the encode->eval->decode roundtrip. With native
 // boxing at the eval boundary the ValueType travels intact, so a nonzero
@@ -196,7 +196,7 @@ fn let_vtype_enum_id(s: Stmt?) -> int {
     }
 }
 
-spec "so07.8: ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
+spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
     then "Stmt.Let's ValueType.Enum id (42) is preserved through eval-box -> value_to_stmt" {
         // ValueType.Enum("Foo", [], 42) — the 42 is the TypeId slot.
         let vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Enum",

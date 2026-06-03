@@ -1845,7 +1845,7 @@ fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: Li
             error_message: evaluated.error_message,
         }
     }
-    // so07.8: collapse the encode→eval→decode roundtrip into this
+    // Collapse the encode→eval→decode roundtrip into this
     // boundary. An EnumCtor whose type is an AST node (Stmt / Expr /
     // ValueType) is decoded once into its native form here and stored
     // in the matching payload slot — value_to_stmt / value_to_expr_node
@@ -2081,7 +2081,7 @@ fn unquote_string(text: string) -> string {
     text.substring(1, text.length - 1)
 }
 
-// ── so07.8: AST node boxing at the eval boundary ──
+// ── AST node boxing at the eval boundary ──
 //
 // The Value↔AST decoder. Historically this lived in
 // features/comptime/eval.av and ran lazily when the @expand pass
@@ -2090,7 +2090,7 @@ fn unquote_string(text: string) -> string {
 // to mirror across an encoder (quote_expr/lower.av) AND a decoder,
 // with silent drift between the two.
 //
-// so07.8 collapses the decode into the eval boundary: eval_enum_ctor
+// This collapses the decode into the eval boundary: eval_enum_ctor
 // calls box_ast_value on every constructed enum Value. When the enum
 // type is an AST node type, the Value is decoded ONCE into its native
 // form and stored in stmt_payload / expr_payload / value_type_payload,

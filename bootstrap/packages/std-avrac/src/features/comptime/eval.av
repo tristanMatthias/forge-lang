@@ -9,7 +9,7 @@
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
 //
-// so07.8: the Value→AST decoder that used to live here (value_to_stmt
+// The Value→AST decoder that used to live here (value_to_stmt
 // / enum_value_to_stmt / enum_value_to_expr / enum_value_to_value_type
 // and their helpers) moved to the eval boundary in features/eval —
 // eval_enum_ctor boxes Stmt/Expr/ValueType natively so consumers
@@ -152,12 +152,12 @@ fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
 
 // ── Stmt → Value encoder ──
 //
-// vez6.8.4.A: the @expand pass boxes a wrapped Stmt as a Value before
+// The @expand pass boxes a wrapped Stmt as a Value before
 // invoking a 1-arg (or 2-arg) macro fn. Implementation reuses the
 // quote-lowering pipeline: `construct_stmt(s)` produces an
 // Expr.EnumCtor whose runtime evaluation builds the Value the macro
 // pattern-matches on. Because eval boxes AST EnumCtors natively
-// (so07.8), the resulting Value carries both the enum_* representation
+// the resulting Value carries both the enum_* representation
 // (for the macro's `match`) and the native node (for value_to_stmt).
 // Returns null when evaluation errors — caller falls back to a
 // zero-arg invocation.
