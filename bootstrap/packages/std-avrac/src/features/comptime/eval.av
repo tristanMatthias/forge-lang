@@ -18,7 +18,7 @@
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
 use core.{Expr, SExpr, sexpr_dummy, Stmt, FieldInit}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
 use features.quote_expr.{construct_stmt}
 
@@ -76,7 +76,7 @@ fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>)
 /// "value_type" but keep their enum_* fields populated, so the fold
 /// path treats them exactly like a plain "enum" Value.
 fn fold_kind(v: Value) -> string {
-    if v.kind == "stmt" || v.kind == "expr" || v.kind == "value_type" { return "enum" }
+    if is_boxed_ast_kind(v.kind) { return "enum" }
     v.kind
 }
 

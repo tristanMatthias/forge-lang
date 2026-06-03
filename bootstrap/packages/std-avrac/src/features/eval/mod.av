@@ -2123,8 +2123,16 @@ fn unquote_string(text: string) -> string {
 /// enum_* fields populated alongside the native payload). Pattern
 /// matching and `is` checks use this so a boxed Stmt/Expr/ValueType
 /// still matches `.Variant(...)` patterns.
+/// True for the Value kinds box_ast_value produces — the AST nodes
+/// (Stmt / Expr / ValueType) that carry a native payload alongside the
+/// enum_* fields. Single source of truth for "which kinds are boxed
+/// AST" so value_is_enumish and the comptime fold reconstructor agree.
+export fn is_boxed_ast_kind(kind: string) -> bool {
+    kind == "stmt" || kind == "expr" || kind == "value_type"
+}
+
 export fn value_is_enumish(v: Value) -> bool {
-    v.kind == "enum" || v.kind == "stmt" || v.kind == "expr" || v.kind == "value_type"
+    v.kind == "enum" || is_boxed_ast_kind(v.kind)
 }
 
 /// Box an AST EnumCtor Value into its native form. The native node is
