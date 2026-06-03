@@ -94,6 +94,30 @@ Pipeline: `seed/seed.ll → llc + cc → seed binary → compiles src/ → bs2 �
 
 Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analysis)
 
+### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
+
+This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
+`source_newer_than` uses macOS `stat -f %m` on Linux), NOT intended
+behavior — when those land, delete this note. Until then, be aware:
+after editing a **non-entry** source file (e.g. `parse/mod.av`,
+`desugar/mod.av`, `typeck/mod.av`), a plain `make build-quick` can re-link
+the **previous** `bs2` (the compile cache keys on the entry file's
+fingerprint, not transitive sources). Your edit then silently does
+nothing.
+
+So: if behavior doesn't change after a rebuild, do NOT conclude your code
+is wrong — first confirm the binary actually recompiled. Verified-needed
+force (keeps the seed binary, so ~60-90s, NOT the 3-min `make clean` seed
+cycle; clearing `build/bs2` alone is insufficient — the CLI unit cache
+must go too):
+
+```bash
+rm -rf packages/cli/src/build/cache && rm -f build/bs2 && make build-quick
+```
+
+This is narrow and deliberate (the CLI unit cache only) — it is NOT the
+blanket `find packages -name cache -exec rm` anti-pattern below.
+
 ## CRITICAL RULE: Test cycle hygiene
 
 The full `make test` is 360s today (umbrella: uzs9 — Test cycle speed, P0).
@@ -128,7 +152,7 @@ When any command fails with ENOSPC / "no space left on device" / similar disk-fu
 
 ### Phase 1: Plan
 1. Check the TRD (`docs/TRD_V1.md`) and beads (`bd ready`) for related tickets
-2. Identify seed impact — new keywords need a seed cycle. New enum VARIANTS on types the seed processes (ValueType, Expr, Stmt) DO need seed patching: run `make seed-patch-traps` before `make build` to convert the seed's match traps to safe fallthrough. Then `make update-seed` after the build succeeds. Adding fields to existing variants also needs this treatment.
+2. Identify seed impact — new keywords need a seed cycle. So does any **new surface syntax the current seed's parser cannot produce**, even when it reuses existing tokens (e.g. a new literal form like `table<Row> { … }`): the checked-in seed is an older compiler, so you must `make update-seed` BEFORE that syntax appears anywhere in compiler `src/` — otherwise `make build` fails parsing it (often as a misleading `undefined variable` / parse error). This is inherent to self-hosting, not a bug. Order: implement + land the feature without using it in `src/` → `make update-seed` → then dogfood the new syntax in `src/`. New enum VARIANTS on types the seed processes (ValueType, Expr, Stmt) DO need seed patching: run `make seed-patch-traps` before `make build` to convert the seed's match traps to safe fallthrough. Then `make update-seed` after the build succeeds. Adding fields to existing variants also needs this treatment.
 
 ### Phase 2: Two-Phase Bootstrap (only if adding new keywords)
 
