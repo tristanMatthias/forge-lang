@@ -208,3 +208,21 @@ spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
         let_vtype_enum_id(value_to_stmt(r.value)) == 42
     }
 }
+
+// is-check on a boxed AST value. derive_walker only uses `is` on the
+// plain FieldKind enum (kind="enum"), so the is-operator's comptime-eval
+// hook is otherwise never exercised against a boxed Stmt/Expr/ValueType
+// (kind="expr"/"stmt"/"value_type"). These pin that `x is .Variant`
+// reads the variant off a boxed value via value_is_enumish.
+spec "is-check matches a boxed AST value by variant (value_is_enumish path)" {
+    then "Expr.Number(\"1\") is .Number -> true" {
+        let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
+        let r: StepResult = eval_expr(runtime_new(), Expr.IsCheck(subj, "Number"))
+        r.value.kind == "bool" && r.value.bool_value == 1
+    }
+    then "Expr.Number(\"1\") is .Bool -> false (variant mismatch, still enumish)" {
+        let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
+        let r: StepResult = eval_expr(runtime_new(), Expr.IsCheck(subj, "Bool"))
+        r.value.kind == "bool" && r.value.bool_value == 0
+    }
+}
