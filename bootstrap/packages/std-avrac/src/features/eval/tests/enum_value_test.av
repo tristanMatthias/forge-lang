@@ -4,8 +4,7 @@
 // produces a runtime Stmt value the @expand pass can extract.
 
 use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt}
-use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value}
-use @std.avrac.features.comptime.{value_to_stmt, value_to_stmt_list}
+use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, value_to_stmt_list}
 
 fn empty_args() -> List<SExpr> {
     let e: List<SExpr> = []
@@ -20,17 +19,23 @@ fn two_args(a: Expr, b: Expr) -> List<SExpr> {
     [sexpr_dummy(a), sexpr_dummy(b)]
 }
 
-spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
-    then "no-payload variant" {
+spec "so07.8: eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact" {
+    // so07.8 changed the eval boundary: an EnumCtor whose type is an
+    // AST node (Stmt / Expr / ValueType) is boxed natively, so the
+    // top-level kind is now "expr" / "stmt" / "value_type" rather than
+    // "enum". The enum_type / enum_variant / enum_payload fields stay
+    // populated (dual representation) so pattern-matching and the fold
+    // reconstructor keep working — these specs pin that contract.
+    then "no-payload variant (Expr.Null) boxes as kind=expr, enum_* intact" {
         let e = Expr.EnumCtor("@std::avrac::core::Expr", "Null", empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         let v: Value = r.value
-        v.kind == "enum"
+        v.kind == "expr"
             && v.enum_type == "@std::avrac::core::Expr"
             && v.enum_variant == "Null"
             && v.enum_payload.length == 0
     }
-    then "single-arg payload (Expr.Number)" {
+    then "single-arg payload (Expr.Number) boxes as kind=expr, payload preserved" {
         // Expr.Number(value: string) — pass a string literal arg.
         let e = Expr.EnumCtor(
             "@std::avrac::core::Expr",
@@ -39,15 +44,17 @@ spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
         let r: StepResult = eval_expr(runtime_new(), e)
         let v: Value = r.value
         let payload0: Value = v.enum_payload[0]
-        v.kind == "enum"
+        v.kind == "expr"
             && v.enum_variant == "Number"
             && v.enum_payload.length == 1
             && payload0.kind == "string"
             && payload0.text == "42"
     }
-    then "nested enum payloads recurse correctly" {
+    then "nested AST payloads recurse + box at every level, enum_* preserved" {
         // Outer EnumCtor whose first arg is itself an EnumCtor.
-        // Verifies eval_args_to_values recurses end-to-end.
+        // Verifies eval_args_to_values recurses end-to-end and that
+        // both levels box (Stmt outer → kind=stmt, Expr inner → kind=expr)
+        // while their enum_payload chains stay readable.
         let inner = Expr.EnumCtor(
             "@std::avrac::core::Expr",
             "Number",
@@ -60,10 +67,10 @@ spec "vez6.6.4: eval EnumCtor produces a kind=enum Value" {
         let v: Value = r.value
         let p0: Value = v.enum_payload[0]
         let p0p0: Value = p0.enum_payload[0]
-        v.kind == "enum"
+        v.kind == "stmt"
             && v.enum_variant == "Return"
             && v.enum_payload.length == 1
-            && p0.kind == "enum"
+            && p0.kind == "expr"
             && p0.enum_variant == "Number"
             && p0p0.text == "7"
     }

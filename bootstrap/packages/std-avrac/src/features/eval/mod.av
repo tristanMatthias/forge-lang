@@ -2,6 +2,7 @@
 // evaluator lives in features/eval/mod.av.
 
 use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr}
+use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
 
@@ -1844,7 +1845,16 @@ fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: Li
             error_message: evaluated.error_message,
         }
     }
-    ok_result(evaluated.runtime, value_enum(type_name, variant, evaluated.values))
+    // so07.8: collapse the encode→eval→decode roundtrip into this
+    // boundary. An EnumCtor whose type is an AST node (Stmt / Expr /
+    // ValueType) is decoded once into its native form here and stored
+    // in the matching payload slot — value_to_stmt / value_to_expr_node
+    // / value_to_value_type_node then unwrap in O(1) instead of
+    // re-running the decoder downstream. The enum_* representation is
+    // kept intact so pattern-matching and the fold reconstructor still
+    // see variant/payload.
+    let boxed = box_ast_value(value_enum(type_name, variant, evaluated.values))
+    ok_result(evaluated.runtime, boxed)
 }
 
 type ArgEvalResult = {
@@ -2069,4 +2079,862 @@ fn unquote_string(text: string) -> string {
         return text
     }
     text.substring(1, text.length - 1)
+}
+
+// ── so07.8: AST node boxing at the eval boundary ──
+//
+// The Value↔AST decoder. Historically this lived in
+// features/comptime/eval.av and ran lazily when the @expand pass
+// consumed a macro's return Value (value_to_stmt → enum_value_to_stmt
+// → …). That made every Stmt/Expr/ValueType variant a thing you had
+// to mirror across an encoder (quote_expr/lower.av) AND a decoder,
+// with silent drift between the two.
+//
+// so07.8 collapses the decode into the eval boundary: eval_enum_ctor
+// calls box_ast_value on every constructed enum Value. When the enum
+// type is an AST node type, the Value is decoded ONCE into its native
+// form and stored in stmt_payload / expr_payload / value_type_payload,
+// while the enum_* fields are kept intact (so pattern-matching in
+// match_expr and the fold reconstructor in comptime/eval.av still
+// read variant/payload). value_to_stmt / value_to_expr_node /
+// value_to_value_type_node then unwrap in O(1).
+//
+// Child recursion routes through the unwrap-first value_to_* entries:
+// because boxing happens bottom-up, a parent's children already carry
+// their native payload, so the parent decode is a shallow per-field
+// read rather than a deep re-decode.
+
+/// True when a Value carries an enum-shaped payload — either a plain
+/// runtime enum or an AST node boxed by box_ast_value (which keeps the
+/// enum_* fields populated alongside the native payload). Pattern
+/// matching and `is` checks use this so a boxed Stmt/Expr/ValueType
+/// still matches `.Variant(...)` patterns.
+export fn value_is_enumish(v: Value) -> bool {
+    v.kind == "enum" || v.kind == "stmt" || v.kind == "expr" || v.kind == "value_type"
+}
+
+/// Box an AST EnumCtor Value into its native form. Returns the Value
+/// unchanged for non-AST enum types or when the decode fails (the
+/// enum_* representation then remains the source of truth and the
+/// downstream value_to_* fall back to the decoder).
+fn box_ast_value(v: Value) -> Value {
+    match v.enum_type {
+        "@std::avrac::core::Stmt" -> {
+            let s = enum_value_to_stmt(v)
+            if s == null { return v }
+            value_with_stmt(v, s!)
+        }
+        "@std::avrac::core::Expr" -> {
+            let e = enum_value_to_expr(v)
+            if e == null { return v }
+            value_with_expr(v, e!)
+        }
+        "@std::avrac::core::ValueType" -> {
+            let t = enum_value_to_value_type(v)
+            if t == null { return v }
+            value_with_value_type(v, t!)
+        }
+        _ -> v
+    }
+}
+
+/// Copy `v` with kind="stmt" and the native Stmt stored. All other
+/// fields (including enum_type / enum_variant / enum_payload) carry
+/// through so the dual representation stays intact.
+fn value_with_stmt(v: Value, s: Stmt) -> Value {
+    Value {
+        kind: "stmt",
+        number_text: v.number_text,
+        text: v.text,
+        bool_value: v.bool_value,
+        enum_type: v.enum_type,
+        enum_variant: v.enum_variant,
+        enum_payload: v.enum_payload,
+        list_payload: v.list_payload,
+        struct_type: v.struct_type,
+        struct_payload: v.struct_payload,
+        stmt_payload: s,
+        expr_payload: v.expr_payload,
+        value_type_payload: v.value_type_payload,
+    }
+}
+
+fn value_with_expr(v: Value, e: Expr) -> Value {
+    Value {
+        kind: "expr",
+        number_text: v.number_text,
+        text: v.text,
+        bool_value: v.bool_value,
+        enum_type: v.enum_type,
+        enum_variant: v.enum_variant,
+        enum_payload: v.enum_payload,
+        list_payload: v.list_payload,
+        struct_type: v.struct_type,
+        struct_payload: v.struct_payload,
+        stmt_payload: v.stmt_payload,
+        expr_payload: e,
+        value_type_payload: v.value_type_payload,
+    }
+}
+
+fn value_with_value_type(v: Value, t: ValueType) -> Value {
+    Value {
+        kind: "value_type",
+        number_text: v.number_text,
+        text: v.text,
+        bool_value: v.bool_value,
+        enum_type: v.enum_type,
+        enum_variant: v.enum_variant,
+        enum_payload: v.enum_payload,
+        list_payload: v.list_payload,
+        struct_type: v.struct_type,
+        struct_payload: v.struct_payload,
+        stmt_payload: v.stmt_payload,
+        expr_payload: v.expr_payload,
+        value_type_payload: t,
+    }
+}
+
+// ── Public unwrap-or-decode entry points ──
+
+/// Stmt from a Value: unwrap the boxed native node, else decode the
+/// enum representation. The @expand splice path calls this on macro
+/// return Values.
+export fn value_to_stmt(v: Value) -> Stmt? {
+    if v.kind == "stmt" { return v.stmt_payload }
+    if !value_is_enumish(v) { return null }
+    enum_value_to_stmt(v)
+}
+
+/// Expr from a Value — unwrap-first, mirroring value_to_stmt.
+fn value_to_expr_node(v: Value) -> Expr? {
+    if v.kind == "expr" { return v.expr_payload }
+    enum_value_to_expr(v)
+}
+
+/// ValueType from a Value — unwrap-first, mirroring value_to_stmt.
+fn value_to_value_type_node(v: Value) -> ValueType? {
+    if v.kind == "value_type" { return v.value_type_payload }
+    enum_value_to_value_type(v)
+}
+
+/// Decode a Value carrying a `List<SStmt>` back into a real
+/// `List<SStmt>` AST value.
+export fn value_to_stmt_list(v: Value) -> List<SStmt>? {
+    list_value_to_stmt_list(v)
+}
+
+// ── Expr decoder ──
+
+fn enum_value_to_expr(v: Value) -> Expr? {
+    if v.enum_type != "@std::avrac::core::Expr" { return null }
+    if v.enum_variant == "Null" { return Expr.Null }
+    let p = v.enum_payload
+    if p.length == 0 { return null }
+    let head: Value = p[0]
+    match v.enum_variant {
+        "Number"          -> Expr.Number(head.text)
+        "String"          -> Expr.String("\"${head.text}\"")
+        "Bool"            -> Expr.Bool(head.text)
+        "Ident"           -> Expr.Ident(head.text)
+        "QualifiedIdent"  -> Expr.QualifiedIdent(head.text)
+        "FloatLit"        -> Expr.FloatLit(head.text)
+        "Grouping"        -> {
+            let inner = value_to_expr_node(head)?
+            Expr.Grouping(inner)
+        }
+        "Unary" -> {
+            if p.length != 2 { return null }
+            let op = enum_value_to_unop(head)?
+            let right = value_to_expr_node(p[1])?
+            Expr.Unary(op, right)
+        }
+        "Binary" -> {
+            if p.length != 3 { return null }
+            let left = value_to_expr_node(head)?
+            let op = enum_value_to_binop(p[1])?
+            let right = value_to_expr_node(p[2])?
+            Expr.Binary(left, op, right)
+        }
+        "Logical" -> {
+            if p.length != 3 { return null }
+            let left = value_to_expr_node(head)?
+            let op = enum_value_to_logicop(p[1])?
+            let right = value_to_expr_node(p[2])?
+            Expr.Logical(left, op, right)
+        }
+        "Call" -> {
+            if p.length != 2 { return null }
+            let callee = value_to_expr_node(head)?
+            let args = list_value_to_expr_list(p[1])?
+            Expr.Call(callee, args)
+        }
+        "GenericCall" -> {
+            if p.length != 3 { return null }
+            let callee = value_to_expr_node(head)?
+            let type_args = list_value_to_string_list(p[1])?
+            let args = list_value_to_expr_list(p[2])?
+            Expr.GenericCall(callee, type_args, args)
+        }
+        "EnumCtor" -> {
+            if p.length != 3 { return null }
+            let variant_v: Value = p[1]
+            let args_v: Value = p[2]
+            let args = list_value_to_expr_list(args_v)?
+            Expr.EnumCtor(head.text, variant_v.text, args)
+        }
+        "Index" -> two_expr_decode(p, "Index")
+        "NullCoalesce" -> two_expr_decode(p, "NullCoalesce")
+        "Try" -> {
+            if p.length != 1 { return null }
+            let inner = value_to_expr_node(head)?
+            Expr.Try(inner)
+        }
+        "Spawn" -> {
+            if p.length != 1 { return null }
+            let inner = value_to_expr_node(head)?
+            Expr.Spawn(inner)
+        }
+        "FieldAccess" -> {
+            if p.length != 2 { return null }
+            let obj = value_to_expr_node(head)?
+            let field_v: Value = p[1]
+            Expr.FieldAccess(obj, field_v.text)
+        }
+        "OptionalChain" -> {
+            if p.length != 2 { return null }
+            let obj = value_to_expr_node(head)?
+            let field_v: Value = p[1]
+            Expr.OptionalChain(obj, field_v.text)
+        }
+        "IsCheck" -> {
+            if p.length != 2 { return null }
+            let subj = value_to_expr_node(head)?
+            let vname_v: Value = p[1]
+            Expr.IsCheck(subj, vname_v.text)
+        }
+        "Tuple" -> {
+            if p.length != 1 { return null }
+            let elems = list_value_to_expr_list(head)?
+            Expr.Tuple(elems)
+        }
+        "ListLit" -> {
+            if p.length != 1 { return null }
+            let elems = list_value_to_expr_list(head)?
+            Expr.ListLit(elems)
+        }
+        "MapLit" -> {
+            if p.length != 1 { return null }
+            let entries = list_value_to_expr_list(head)?
+            Expr.MapLit(entries)
+        }
+        "StructLit" -> {
+            if p.length != 2 { return null }
+            let inits = list_value_to_field_init_list(p[1])?
+            Expr.StructLit(head.text, inits)
+        }
+        "InCheck" -> {
+            if p.length != 2 { return null }
+            let needle = value_to_expr_node(head)?
+            let items = list_value_to_expr_list(p[1])?
+            Expr.InCheck(needle, items)
+        }
+        "IfExpr" -> {
+            if p.length != 3 { return null }
+            let c = value_to_expr_node(head)?
+            let t = value_to_expr_node(p[1])?
+            let e = value_to_expr_node(p[2])?
+            Expr.IfExpr(c, t, e)
+        }
+        "MatchExpr" -> {
+            if p.length != 2 { return null }
+            let subj = value_to_expr_node(head)?
+            let arms = list_value_to_match_arm_list(p[1])?
+            Expr.MatchExpr(subj, arms)
+        }
+        "Block" -> {
+            if p.length != 1 { return null }
+            let body = list_value_to_stmt_list(head)?
+            Expr.Block(body)
+        }
+        "Assign" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let value = value_to_expr_node(p[1])?
+            Expr.Assign(name_v.text, value)
+        }
+        _                 -> null
+    }
+}
+
+fn list_value_to_match_arm_list(v: Value) -> List<MatchArm>? {
+    if v.kind != "list" { return null }
+    mut out: List<MatchArm> = []
+    for entry in v.list_payload {
+        let arm = value_to_match_arm(entry)?
+        out.push(arm)
+    }
+    out
+}
+
+fn value_to_match_arm(v: Value) -> MatchArm? {
+    if v.kind != "struct" { return null }
+    mut pat_opt: Pattern? = null
+    mut guard_opt: SExpr? = null
+    mut body_opt: SExpr? = null
+    for f in v.struct_payload {
+        match f.name {
+            "pattern" -> {
+                let p = value_to_pattern(f.value)
+                if p != null { pat_opt = p }
+            }
+            "guard" -> {
+                let g_val = f.value
+                // Absent guards are encoded as the Expr.Null sentinel.
+                // Check the variant name (intact for both kind="enum"
+                // and a boxed kind="expr") rather than kind so a boxed
+                // Null still reads as "no guard".
+                if g_val.enum_variant == "Null" {
+                    guard_opt = null
+                } else {
+                    let g_expr = value_to_expr_node(g_val)
+                    if g_expr != null { guard_opt = sexpr_dummy(g_expr!) }
+                }
+            }
+            "body" -> {
+                let b_expr = value_to_expr_node(f.value)
+                if b_expr != null { body_opt = sexpr_dummy(b_expr!) }
+            }
+            _ -> { /* ignore unknown fields */ }
+        }
+    }
+    if pat_opt == null { return null }
+    if body_opt == null { return null }
+    MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt! }
+}
+
+fn value_to_pattern(v: Value) -> Pattern? {
+    if !value_is_enumish(v) { return null }
+    if v.enum_type != "@std::avrac::core::Pattern" { return null }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "Wildcard" -> Pattern.Wildcard
+        "Variant" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let bindings = list_value_to_param_list(p[1])?
+            Pattern.Variant(name_v.text, bindings)
+        }
+        "LitString" -> {
+            if p.length != 1 { return null }
+            let s_v: Value = p[0]
+            Pattern.LitString(s_v.text)
+        }
+        "LitInt" -> {
+            if p.length != 1 { return null }
+            let n_v: Value = p[0]
+            Pattern.LitInt(int(n_v.number_text))
+        }
+        "LitBool" -> {
+            if p.length != 1 { return null }
+            let b_v: Value = p[0]
+            Pattern.LitBool(int(b_v.number_text))
+        }
+        "LitFloat" -> {
+            if p.length != 1 { return null }
+            let f_v: Value = p[0]
+            Pattern.LitFloat(f_v.text)
+        }
+        "NestedVariant" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let subs = list_value_to_pattern_list(p[1])?
+            Pattern.NestedVariant(name_v.text, subs)
+        }
+        "Or" -> {
+            if p.length != 2 { return null }
+            let left = value_to_pattern(p[0])?
+            let right = value_to_pattern(p[1])?
+            Pattern.Or(left, right)
+        }
+        "TypePattern" -> {
+            if p.length != 2 { return null }
+            let tn_v: Value = p[0]
+            let bind_v: Value = p[1]
+            Pattern.TypePattern(tn_v.text, bind_v.text)
+        }
+        _ -> null
+    }
+}
+
+fn list_value_to_pattern_list(v: Value) -> List<Pattern>? {
+    if v.kind != "list" { return null }
+    mut out: List<Pattern> = []
+    for entry in v.list_payload {
+        let p = value_to_pattern(entry)?
+        out.push(p)
+    }
+    out
+}
+
+fn two_expr_decode(p: List<Value>, variant: string) -> Expr? {
+    if p.length != 2 { return null }
+    let l = value_to_expr_node(p[0])?
+    let r = value_to_expr_node(p[1])?
+    match variant {
+        "Index" -> Expr.Index(l, r)
+        "NullCoalesce" -> Expr.NullCoalesce(l, r)
+        _ -> null
+    }
+}
+
+fn list_value_to_expr_list(v: Value) -> List<SExpr>? {
+    if v.kind != "list" { return null }
+    list_value_to_expr_list_at(v.list_payload, 0)
+}
+
+fn list_value_to_string_list(v: Value) -> List<string>? {
+    if v.kind != "list" { return null }
+    mut out: List<string> = []
+    for entry in v.list_payload {
+        if entry.kind != "string" { return null }
+        out.push(entry.text)
+    }
+    out
+}
+
+fn list_value_to_expr_list_at(items: List<Value>, i: int) -> List<SExpr>? {
+    mut out: List<SExpr> = []
+    mut j = i
+    while j < items.length {
+        let inner = value_to_expr_node(items[j])?
+        out.push(sexpr_dummy(inner))
+        j = j + 1
+    }
+    out
+}
+
+fn enum_value_to_binop(v: Value) -> BinOp? {
+    if v.enum_type != "@std::avrac::core::BinOp" { return null }
+    match v.enum_variant {
+        "Add" -> BinOp.Add
+        "Sub" -> BinOp.Sub
+        "Mul" -> BinOp.Mul
+        "Div" -> BinOp.Div
+        "Mod" -> BinOp.Mod
+        "Eq"  -> BinOp.Eq
+        "Ne"  -> BinOp.Ne
+        "Lt"  -> BinOp.Lt
+        "Le"  -> BinOp.Le
+        "Gt"  -> BinOp.Gt
+        "Ge"  -> BinOp.Ge
+        _     -> null
+    }
+}
+
+fn enum_value_to_unop(v: Value) -> UnOp? {
+    if v.enum_type != "@std::avrac::core::UnOp" { return null }
+    match v.enum_variant {
+        "Neg" -> UnOp.Neg
+        "Not" -> UnOp.Not
+        _     -> null
+    }
+}
+
+fn enum_value_to_logicop(v: Value) -> LogicOp? {
+    if v.enum_type != "@std::avrac::core::LogicOp" { return null }
+    match v.enum_variant {
+        "And" -> LogicOp.And
+        "Or"  -> LogicOp.Or
+        _     -> null
+    }
+}
+
+// ── Stmt decoder ──
+
+fn enum_value_to_stmt(v: Value) -> Stmt? {
+    if v.enum_type != "@std::avrac::core::Stmt" { return null }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "ReturnEmpty" -> Stmt.ReturnEmpty
+        "Break"       -> Stmt.Break
+        "Continue"    -> Stmt.Continue
+        "NoOp"        -> Stmt.NoOp
+        "Expr" -> {
+            if p.length != 1 { return null }
+            let inner = value_to_expr_node(p[0])?
+            Stmt.Expr(inner)
+        }
+        "Return" -> {
+            if p.length != 1 { return null }
+            let inner = value_to_expr_node(p[0])?
+            Stmt.Return(inner)
+        }
+        "Let" -> binding_decode(p, "Let")
+        "Mut" -> binding_decode(p, "Mut")
+        "Const" -> binding_decode(p, "Const")
+        "Block" -> {
+            if p.length != 1 { return null }
+            let body = list_value_to_stmt_list(p[0])?
+            Stmt.Block(body)
+        }
+        "Impl" -> {
+            if p.length != 2 { return null }
+            let type_name_v: Value = p[0]
+            let methods = list_value_to_stmt_list(p[1])?
+            Stmt.Impl(type_name_v.text, methods)
+        }
+        "Function" -> {
+            if p.length != 5 { return null }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let params = list_value_to_param_list(p[2])?
+            let ret_vt = value_to_value_type_node(p[3])
+            let body = list_value_to_stmt_list(p[4])?
+            let resolved_rt = ret_vt ?? ValueType.Unknown
+            Stmt.Function(name_v.text, tp, params, resolved_rt, body)
+        }
+        "TypeDecl" -> {
+            if p.length != 3 { return null }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let fields = list_value_to_field_list(p[2])?
+            Stmt.TypeDecl(name_v.text, tp, fields)
+        }
+        "EnumDecl" -> {
+            if p.length != 3 { return null }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let variants = list_value_to_variant_list(p[2])?
+            Stmt.EnumDecl(name_v.text, tp, variants)
+        }
+        "ComponentBlock" -> {
+            if p.length != 4 { return null }
+            let comp_v: Value = p[0]
+            let inst_v: Value = p[1]
+            let config = list_value_to_comp_config_pair_list(p[2])?
+            let body = list_value_to_stmt_list(p[3])?
+            Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body)
+        }
+        "Annotated" -> {
+            if p.length != 2 { return null }
+            let annots = list_value_to_annotation_list(p[0])?
+            let inner = value_to_stmt(p[1])?
+            Stmt.Annotated(annots, inner)
+        }
+        "If" -> {
+            if p.length != 3 { return null }
+            let cond = value_to_expr_node(p[0])?
+            let then_b = value_to_stmt(p[1])?
+            let else_v: Value = p[2]
+            let else_b = if else_v.enum_variant == "Null" { null } else { value_to_stmt(else_v) }
+            Stmt.If(cond, then_b, else_b)
+        }
+        "While" -> {
+            if p.length != 2 { return null }
+            let cond = value_to_expr_node(p[0])?
+            let body = value_to_stmt(p[1])?
+            Stmt.While(cond, body)
+        }
+        "For" -> {
+            if p.length != 4 { return null }
+            let var_v: Value = p[0]
+            let start = value_to_expr_node(p[1])?
+            let end_e = value_to_expr_node(p[2])?
+            let body = value_to_stmt(p[3])?
+            Stmt.For(var_v.text, start, end_e, body)
+        }
+        "ForIn" -> {
+            if p.length != 3 { return null }
+            let var_v: Value = p[0]
+            let coll = value_to_expr_node(p[1])?
+            let body = value_to_stmt(p[2])?
+            Stmt.ForIn(var_v.text, coll, body)
+        }
+        "Defer" -> {
+            if p.length != 1 { return null }
+            let body = value_to_expr_node(p[0])?
+            Stmt.Defer(body)
+        }
+        "Errdefer" -> {
+            if p.length != 1 { return null }
+            let body = value_to_expr_node(p[0])?
+            Stmt.Errdefer(body)
+        }
+        "Parallel" -> {
+            if p.length != 1 { return null }
+            let body = list_value_to_stmt_list(p[0])?
+            Stmt.Parallel(body)
+        }
+        "TraitDecl" -> {
+            if p.length != 2 { return null }
+            let name_v: Value = p[0]
+            let methods = list_value_to_stmt_list(p[1])?
+            Stmt.TraitDecl(name_v.text, methods)
+        }
+        _ -> null
+    }
+}
+
+fn list_value_to_annotation_list(v: Value) -> List<Annotation>? {
+    if v.kind != "list" { return [] }
+    mut out: List<Annotation> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let name = struct_field_string(entry, "name")
+        let args = struct_field_expr_list(entry, "args") ?? []
+        out.push(Annotation { name, args })
+    }
+    out
+}
+
+fn struct_field_expr_list(v: Value, name: string) -> List<SExpr>? {
+    if v.kind != "struct" { return null }
+    for f in v.struct_payload {
+        if f.name == name { return list_value_to_expr_list(f.value) }
+    }
+    null
+}
+
+fn list_value_to_field_list(v: Value) -> List<FieldEntry>? {
+    if v.kind != "list" { return [] }
+    mut out: List<FieldEntry> = []
+    for entry in v.list_payload {
+        let name = struct_field_string(entry, "name")
+        let resolved = struct_field_value_type(entry, "resolved") ?? ValueType.Unknown
+        out.push(FieldEntry { name, resolved })
+    }
+    out
+}
+
+fn list_value_to_variant_list(v: Value) -> List<Variant>? {
+    if v.kind != "list" { return [] }
+    mut out: List<Variant> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let name = struct_field_string(entry, "name")
+        mut fields: List<FieldEntry> = []
+        for f in entry.struct_payload {
+            if f.name == "fields" {
+                fields = list_value_to_field_list(f.value) ?? []
+            }
+        }
+        out.push(Variant { name, fields })
+    }
+    out
+}
+
+fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
+    if v.kind != "list" { return [] }
+    mut out: List<CompConfigPair> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let key = struct_field_string(entry, "key")
+        mut value_expr: Expr = Expr.Null
+        for f in entry.struct_payload {
+            if f.name == "value" {
+                value_expr = value_to_expr_node(f.value)?
+            }
+        }
+        out.push(CompConfigPair { key, value: value_expr })
+    }
+    out
+}
+
+fn list_value_to_field_init_list(v: Value) -> List<FieldInit>? {
+    if v.kind != "list" { return [] }
+    mut out: List<FieldInit> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return null }
+        let name = struct_field_string(entry, "name")
+        mut value_expr: Expr = Expr.Null
+        for f in entry.struct_payload {
+            if f.name == "value" {
+                value_expr = value_to_expr_node(f.value)?
+            }
+        }
+        out.push(FieldInit { name, value: sexpr_dummy(value_expr) })
+    }
+    out
+}
+
+fn list_value_to_type_param_list(v: Value) -> List<TypeParamEntry>? {
+    if v.kind != "list" { return [] }
+    mut out: List<TypeParamEntry> = []
+    for entry in v.list_payload {
+        let name = struct_field_string(entry, "name")
+        let bounds = struct_field_string(entry, "bounds")
+        out.push(TypeParamEntry { name, bounds })
+    }
+    out
+}
+
+fn list_value_to_param_list(v: Value) -> List<ParamEntry>? {
+    if v.kind != "list" { return null }
+    mut out: List<ParamEntry> = []
+    for entry in v.list_payload {
+        let name = struct_field_string(entry, "name")
+        let resolved_vt = struct_field_value_type(entry, "vtype") ?? ValueType.Unknown
+        out.push(ParamEntry { name: name, vtype: resolved_vt })
+    }
+    out
+}
+
+fn struct_field_string(v: Value, name: string) -> string {
+    if v.kind != "struct" { return "" }
+    for f in v.struct_payload {
+        if f.name == name { return f.value.text }
+    }
+    ""
+}
+
+fn struct_field_value_type(v: Value, name: string) -> ValueType? {
+    if v.kind != "struct" { return null }
+    for f in v.struct_payload {
+        if f.name == name { return value_to_value_type_node(f.value) }
+    }
+    null
+}
+
+fn binding_decode(p: List<Value>, variant: string) -> Stmt? {
+    if p.length != 3 { return null }
+    let name_v: Value = p[0]
+    let init = value_to_expr_node(p[2])?
+    let resolved_vt = value_to_value_type_node(p[1]) ?? ValueType.Unknown
+    match variant {
+        "Let"   -> Stmt.Let(name_v.text, resolved_vt, init)
+        "Mut"   -> Stmt.Mut(name_v.text, resolved_vt, init)
+        "Const" -> Stmt.Const(name_v.text, resolved_vt, init)
+        _ -> null
+    }
+}
+
+// ── ValueType decoder ──
+
+fn enum_value_to_value_type(v: Value) -> ValueType? {
+    // Accept both fully-qualified and bare enum_type (inner positional
+    // ValueType args like `.List(.Int)` carry an empty enum_type for
+    // the `.Int`). The slot pins the type, so the variant name alone
+    // is unambiguous.
+    if v.enum_type != "@std::avrac::core::ValueType" && v.enum_type != "" {
+        return null
+    }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "Int"     -> ValueType.Int
+        "U8"      -> ValueType.U8
+        "U16"     -> ValueType.U16
+        "U32"     -> ValueType.U32
+        "U64"     -> ValueType.U64
+        "I8"      -> ValueType.I8
+        "I16"     -> ValueType.I16
+        "I32"     -> ValueType.I32
+        "Bool"    -> ValueType.Bool
+        "Float"   -> ValueType.Float
+        "Str"     -> ValueType.Str
+        "Bytes"   -> ValueType.Bytes
+        "Void"    -> ValueType.Void
+        "Ptr"     -> ValueType.Ptr
+        "Map"     -> ValueType.Map
+        "Unknown" -> ValueType.Unknown
+        "Struct" -> {
+            if p.length != 2 { return null }
+            let name = p[0].text
+            let id = number_value_to_int(p[1])
+            ValueType.Struct(name, id)
+        }
+        "Enum" -> {
+            if p.length != 3 { return null }
+            let name = p[0].text
+            let type_args = list_value_to_value_type_list(p[1])?
+            let id = number_value_to_int(p[2])
+            ValueType.Enum(name, type_args, id)
+        }
+        "Tuple" -> {
+            if p.length != 1 { return null }
+            let elements = list_value_to_value_type_list(p[0])?
+            ValueType.Tuple(elements)
+        }
+        "List" -> {
+            if p.length != 1 { return null }
+            let elem = value_to_value_type_node(p[0])?
+            ValueType.List(elem)
+        }
+        "Fn" -> {
+            if p.length != 1 { return null }
+            let ret = value_to_value_type_node(p[0])?
+            ValueType.Fn(ret)
+        }
+        "Closure" -> {
+            if p.length != 2 { return null }
+            let nc = number_value_to_int(p[0])
+            let ret = value_to_value_type_node(p[1])?
+            ValueType.Closure(nc, ret)
+        }
+        "FnTyped" -> {
+            if p.length != 2 { return null }
+            let params = list_value_to_value_type_list(p[0])?
+            let ret = value_to_value_type_node(p[1])?
+            ValueType.FnTyped(params, ret)
+        }
+        "Trait" -> {
+            if p.length != 2 { return null }
+            let name = p[0].text
+            let id = number_value_to_int(p[1])
+            ValueType.Trait(name, id)
+        }
+        "Union" -> {
+            if p.length != 1 { return null }
+            let types = list_value_to_value_type_list(p[0])?
+            ValueType.Union(types)
+        }
+        "Newtype" -> {
+            if p.length != 3 { return null }
+            let name = p[0].text
+            let inner = value_to_value_type_node(p[1])?
+            let id = number_value_to_int(p[2])
+            ValueType.Newtype(name, inner, id)
+        }
+        "NarrowedEnum" -> {
+            if p.length != 3 { return null }
+            let en = p[0].text
+            let vn = p[1].text
+            let id = number_value_to_int(p[2])
+            ValueType.NarrowedEnum(en, vn, id)
+        }
+        "Task" -> {
+            if p.length != 1 { return null }
+            let rt = value_to_value_type_node(p[0])?
+            ValueType.Task(rt)
+        }
+        _ -> null
+    }
+}
+
+fn list_value_to_value_type_list(v: Value) -> List<ValueType>? {
+    if v.kind != "list" { return [] }
+    mut out: List<ValueType> = []
+    for entry in v.list_payload {
+        let vt = value_to_value_type_node(entry) ?? ValueType.Unknown
+        out.push(vt)
+    }
+    out
+}
+
+/// Extract an int from a Value carrying a number literal. Non-number
+/// Values decode as 0 — the resolver re-runs over spliced decls and
+/// overwrites stale ids, so a zero default is safe for ids/slot counts.
+fn number_value_to_int(v: Value) -> int {
+    if v.kind != "number" { return 0 }
+    avra_selfhost_string_to_int(v.number_text)
+}
+
+fn list_value_to_stmt_list(v: Value) -> List<SStmt>? {
+    if v.kind != "list" { return null }
+    mut out: List<SStmt> = []
+    for entry in v.list_payload {
+        let inner = value_to_stmt(entry)?
+        out.push(sstmt_dummy(inner))
+    }
+    out
 }

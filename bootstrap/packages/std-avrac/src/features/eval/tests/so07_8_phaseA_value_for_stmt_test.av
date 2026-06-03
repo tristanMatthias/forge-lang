@@ -21,8 +21,7 @@
 //     initialise it.
 
 use @std.avrac.core.{Stmt, Expr, ValueType}
-use @std.avrac.features.eval.{Value, value_for_stmt, value_for_expr, value_for_value_type, value_null, value_number, value_string, value_bool, value_enum}
-use @std.avrac.features.comptime.{value_to_stmt}
+use @std.avrac.features.eval.{Value, value_for_stmt, value_for_expr, value_for_value_type, value_null, value_number, value_string, value_bool, value_enum, value_to_stmt}
 
 spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the native Stmt" {
     then "Stmt.NoOp round-trip: value_for_stmt → value_to_stmt unwraps the same variant" {
