@@ -79,6 +79,21 @@ export fn unwrap_node_list<W, T>(xs: List<W>) -> List<T> {
     out
 }
 
+/// Span-preserving sibling of `unwrap_node_list`: map `f` over each
+/// spanned wrapper's `.node` while keeping the wrapper's line/col/file
+/// intact via a `with` update. SExpr → SExpr, SStmt → SStmt ride this
+/// shape. `T` (the `.node` type) is inferred from `f`'s signature; `W`
+/// is the wrapper. derive_walker's generated `Type__map` emits calls to
+/// this for `List<SExpr>` / `List<SStmt>` payloads so a one-level map
+/// descends into wrapper-list children too — without losing the spans
+/// the parent context owns. Mirrors unwrap_node_list's generic `.node`
+/// projection (proven monomorphizable) plus a `with` rewrap.
+export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
+    mut out: List<W> = []
+    for x in xs { out.push(x with { node: f(x.node) }) }
+    out
+}
+
 export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
     unwrap_node_list(xs)
 }
