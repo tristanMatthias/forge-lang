@@ -584,16 +584,15 @@ fn build_find_fn(enum_name: string) -> Stmt {
 //       }
 //   }
 //
-// Wrapper-list fields (List<SStmt>, List<SExpr>) pass through
-// unchanged — re-wrapping a transformed Stmt back into an SStmt
-// would lose line/col span info, which the parent context owns.
-// The reachable inner Stmt remains visitable via the outer
-// `Stmt__visit` walk; map's invariant is just "rebuild the variant
-// constructor", not "rewrite the spans".
+// Wrapper-list fields (List<SStmt>, List<SExpr>) map through
+// `map_node_list`, which applies f to each entry's `.node` and rewraps
+// with the original span via `with` — so a one-level map descends into
+// wrapper-list children too without the parent losing line/col info.
+// Scalars still pass through untouched.
 
 /// Build one map arm: `.Variant(b1, b2, ...) -> .Variant(t1, t2, ...)`
 /// where ti = f(bi) for DirectSelf, list_map(bi, f) for ListOfSelf,
-/// bi unchanged for Scalar / WrapperListOfSelf.
+/// map_node_list(bi, f) for WrapperListOfSelf, bi unchanged for Scalar.
 @comptime
 fn build_map_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm {
     let bindings = classify_variant(v, parent_name, ctx)
@@ -648,6 +647,7 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
         let arg_expr = match b.kind {
             .DirectSelf -> map_call_on_field(bind_name)
             .ListOfSelf -> list_map_call(bind_name)
+            .WrapperListOfSelf(w) -> map_node_list_call(bind_name, w, parent_name)
             _ -> Expr.Ident(bind_name)
         }
         args.push(sexpr_dummy(arg_expr))
@@ -670,6 +670,18 @@ fn map_call_on_field(bind_name: string) -> Expr {
 fn list_map_call(bind_name: string) -> Expr {
     let lm_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name)), sexpr_dummy(Expr.Ident("f"))]
     Expr.Call(Expr.Ident("list_map"), lm_args)
+}
+
+/// `map_node_list::<Wrapper, Parent>(bind_name, f)` — span-preserving
+/// map of f over a wrapper-list (List<SExpr> / List<SStmt>). Mirrors
+/// the explicit type-args unwrap_call uses (so check_generic_call pins
+/// W + T unambiguously and mono inherits them); the extra `f` arg is
+/// the same per-node transform map threads everywhere else.
+@comptime
+fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("map_node_list"), type_args, args)
 }
 
 @comptime

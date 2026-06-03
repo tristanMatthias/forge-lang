@@ -1404,34 +1404,17 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
 /// container types.
 fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
     match vt {
+        // The only non-structural case: a bare `.Struct(name, _)` may be
+        // a type-param reference (`T`) to resolve against `ta`. Every
+        // other variant just recurses into its ValueType children — which
+        // the derive_walker-generated `ValueType.map` does for us,
+        // preserving scalar fields (nominal name + TypeId) untouched.
         .Struct(name, _) -> {
             let concrete = type_arg_lookup(ta, name)
             if !vtype_eq(concrete, vt) { concrete } else { vt }
         }
-        .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
-        .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
-        .FnTyped(params, ret) -> ValueType.FnTyped(substitute_vtype_list(params, ta), substitute_vtype(ret, ta))
-        // Preserve the type-registry id when rebuilding the nominal —
-        // substitution touches the inner T but the outer Foo / Result
-        // shell keeps the same TypeId.
-        .Newtype(name, inner, id) -> ValueType.Newtype(name, substitute_vtype(inner, ta), id)
-        .Enum(name, args, id) -> ValueType.Enum(name, substitute_vtype_list(args, ta), id)
-        .Tuple(elems) -> ValueType.Tuple(substitute_vtype_list(elems, ta))
-        .Fn(ret) -> ValueType.Fn(substitute_vtype(ret, ta))
-        .Closure(n, ret) -> ValueType.Closure(n, substitute_vtype(ret, ta))
-        _ -> vt
+        _ -> vt.map((c) -> substitute_vtype(c, ta))
     }
-}
-
-/// Map `substitute_vtype` over a `List<ValueType>`.
-fn substitute_vtype_list(types: List<ValueType>, ta: List<TypeArg>) -> List<ValueType> {
-    mut out: List<ValueType> = []
-    mut i = 0
-    while i < types.length {
-        out.push(substitute_vtype(types[i], ta))
-        i = i + 1
-    }
-    out
 }
 
 /// Substitute type-args into every param's declared type.

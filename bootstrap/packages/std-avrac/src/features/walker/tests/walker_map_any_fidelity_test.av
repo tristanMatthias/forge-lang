@@ -1,0 +1,82 @@
+// Fidelity of the two derived walkers the homogeneous dogfoods rely on
+// (substitute_vtype / tc_subst_vtype / vtype_mentions all ride
+// ValueType.map or .any). Covers every field-kind SHAPE a ValueType
+// variant can take, so a derive_walker regression that drops a scalar,
+// misorders a constructor, or skips a child is caught here even if no
+// real pass exercises that exact shape.
+//
+//   - map(identity) must reconstruct an identical value (scalars +
+//     self-children preserved, in order) for: niladic, scalar-only,
+//     single-self, list-self, scalar+self+scalar, scalar+list+scalar,
+//     scalar+self, list-self+self, and three-scalar variants.
+//   - any(pred) must reach every node (so a deeply-buried match is
+//     found) and return false when nothing matches.
+//
+// No-metadata so derive_walker + the enum are visible to @comptime.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: map/any fidelity across every variant shape" {
+    then "map(identity) reconstructs an identical value for all field-kind shapes" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_fidelity_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "@expand(derive_walker)\n" +
+            "export enum V {\n" +
+            "    Nil,\n" +
+            "    Sc(name: string, id: int),\n" +
+            "    One(elem: V),\n" +
+            "    Lst(items: List<V>),\n" +
+            "    Wrap(name: string, inner: V, id: int),\n" +
+            "    Many(name: string, args: List<V>, id: int),\n" +
+            "    Clo(n: int, ret: V),\n" +
+            "    FnT(params: List<V>, ret: V),\n" +
+            "    Three(a: string, b: string, id: int),\n" +
+            "}\n" +
+            "fn rl(xs: List<V>) -> string {\n" +
+            "    mut s = \"[\"\n" +
+            "    for x in xs { s = s + render(x) + \",\" }\n" +
+            "    s + \"]\"\n" +
+            "}\n" +
+            "fn render(v: V) -> string {\n" +
+            "    match v {\n" +
+            "        .Nil -> \"Nil\"\n" +
+            "        .Sc(n, id) -> \"Sc(\" + n + \",\" + string(id) + \")\"\n" +
+            "        .One(e) -> \"One(\" + render(e) + \")\"\n" +
+            "        .Lst(xs) -> \"Lst(\" + rl(xs) + \")\"\n" +
+            "        .Wrap(n, i, id) -> \"Wrap(\" + n + \",\" + render(i) + \",\" + string(id) + \")\"\n" +
+            "        .Many(n, a, id) -> \"Many(\" + n + \",\" + rl(a) + \",\" + string(id) + \")\"\n" +
+            "        .Clo(n, r) -> \"Clo(\" + string(n) + \",\" + render(r) + \")\"\n" +
+            "        .FnT(p, r) -> \"FnT(\" + rl(p) + \",\" + render(r) + \")\"\n" +
+            "        .Three(a, b, id) -> \"Three(\" + a + \",\" + b + \",\" + string(id) + \")\"\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let sample = V.FnT(\n" +
+            "        [ V.Wrap(\"w\", V.One(V.Nil), 5),\n" +
+            "          V.Many(\"m\", [V.Sc(\"s\", 1), V.Clo(3, V.Lst([V.Three(\"a\",\"b\",2)]))], 7) ],\n" +
+            "        V.Sc(\"ret\", 9))\n" +
+            "    println(\"eq=\" + string(render(sample) == render(sample.map((c) -> c))))\n" +
+            "}\n")
+        out.contains("eq=true")
+    }
+
+    then "any(pred) reaches deeply-buried nodes and returns false when absent" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_any_reach_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "@expand(derive_walker)\n" +
+            "export enum V {\n" +
+            "    Nil,\n" +
+            "    Sc(name: string, id: int),\n" +
+            "    Lst(items: List<V>),\n" +
+            "    Wrap(name: string, inner: V, id: int),\n" +
+            "    Clo(n: int, ret: V),\n" +
+            "    FnT(params: List<V>, ret: V),\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let sample = V.FnT([ V.Wrap(\"w\", V.Clo(3, V.Lst([V.Sc(\"deep\", 42)])), 5) ], V.Nil)\n" +
+            "    println(\"deep=\" + string(sample.any((t) -> match t { .Sc(n, _) -> n == \"deep\", _ -> false })))\n" +
+            "    println(\"absent=\" + string(sample.any((t) -> match t { .Sc(n, _) -> n == \"nope\", _ -> false })))\n" +
+            "}\n")
+        out.contains("deep=true") && out.contains("absent=false")
+    }
+}

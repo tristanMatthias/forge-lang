@@ -1888,19 +1888,15 @@ fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: L
 /// to whatever the arg's type is via tc_subst_generic_ret.
 fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
     if tp.length == 0 { return false }
-    match ty {
+    // A type "mentions" a param iff any node in its tree is a bare
+    // Struct naming one. derive_walker's ValueType.any tests that
+    // predicate on every node (self + all children), so it subsumes the
+    // hand-rolled List/Task/FnTyped/Enum recursion — and additionally
+    // reaches Union / Tuple / Newtype members the old walker skipped.
+    ty.any((t) -> match t {
         .Struct(n, _) -> type_param_has(tp, n)
-        .List(elem) -> vtype_mentions_typeparam(elem, tp)
-        .Task(payload) -> vtype_mentions_typeparam(payload, tp)
-        .FnTyped(ptypes, ret) -> {
-            if vtype_mentions_typeparam(ret, tp) { return true }
-            list_any(ptypes, (p: ValueType) -> vtype_mentions_typeparam(p, tp))
-        }
-        .Enum(_, type_args, _) -> {
-            list_any(type_args, (a: ValueType) -> vtype_mentions_typeparam(a, tp))
-        }
         _ -> false
-    }
+    })
 }
 
 /// Resolve a generic-fn call's return type. Walks params/args
@@ -2091,21 +2087,14 @@ fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
 /// constructors so a generic `Result<T, E>` returns the
 /// substituted shape.
 export fn tc_subst_vtype(ty: ValueType, bindings: List<TypeArg>) -> ValueType {
-    let name = vtype_display(ty)
-    let bound = tc_type_arg_lookup(bindings, name)
+    // A type whose display name is a bound param resolves to its binding;
+    // every other variant recurses structurally into its ValueType children
+    // via the derived ValueType.map — which covers the Tuple / Newtype
+    // members the hand-rolled match silently dropped (so a generic
+    // `(T, int)` return now substitutes T instead of leaking it downstream).
+    let bound = tc_type_arg_lookup(bindings, vtype_display(ty))
     if !vtype_is_unknown(bound) { return bound }
-    match ty {
-        .List(elem) -> ValueType.List(tc_subst_vtype(elem, bindings))
-        .Task(inner) -> ValueType.Task(tc_subst_vtype(inner, bindings))
-        .FnTyped(params, ret) -> ValueType.FnTyped(tc_subst_type_list(params, bindings), tc_subst_vtype(ret, bindings))
-        .Enum(en, args, id) -> ValueType.Enum(en, tc_subst_type_list(args, bindings), id)
-        .Union(types) -> ValueType.Union(tc_subst_type_list(types, bindings))
-        _ -> ty
-    }
-}
-
-fn tc_subst_type_list(types: List<ValueType>, bindings: List<TypeArg>) -> List<ValueType> {
-    list_map(types, (t: ValueType) -> tc_subst_vtype(t, bindings))
+    ty.map((c) -> tc_subst_vtype(c, bindings))
 }
 
 /// Lookup a binding by type-param name. Returns `Unknown` on miss

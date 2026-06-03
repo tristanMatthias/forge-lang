@@ -25,7 +25,7 @@ spec "so07.7.1: derive_walker discovers wrappers structurally" {
     then "novel wrapper struct (not SStmt/SExpr) is discovered + unwrapped" {
         let out = run_capture(
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{unwrap_node_list}\n" +
+            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
             "\n" +
             "// A new wrapper type the macro has never heard of.\n" +
             "export type MyWrap = {\n" +

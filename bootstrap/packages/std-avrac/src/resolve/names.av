@@ -1518,25 +1518,21 @@ fn is_primitive_type(name: string) -> bool {
 /// nested variant payloads). Bindings stay verbatim.
 fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
     match pattern {
+        // The only node carrying a name to resolve. No Pattern children,
+        // so it's a pure leaf transform.
         .TypePattern(type_name, binding) -> {
             if is_primitive_type(type_name) { return pattern }
             let resolved = resolve_type_in_ctx(ctx, type_name)
             Pattern.TypePattern(resolved, binding)
         }
-        .NestedVariant(name, sub_pats) -> Pattern.NestedVariant(name, rewrite_pattern_list(ctx, sub_pats))
-        _ -> pattern
+        // Everything else recurses into its Pattern children, which the
+        // derived Pattern.map does uniformly — NestedVariant sub-patterns,
+        // Or branches, etc. — so a new Pattern variant is walked without a
+        // new arm here. (Only TypePattern carries a resolvable name; the
+        // other patterns are structural, so the recursion is the point, not
+        // any per-variant resolution.)
+        _ -> pattern.map((p) -> rewrite_pattern(ctx, p))
     }
-}
-
-/// Map `rewrite_pattern` over a `List<Pattern>`.
-fn rewrite_pattern_list(ctx: NameCtx, pats: List<Pattern>) -> List<Pattern> {
-    mut out: List<Pattern> = []
-    mut i = 0
-    while i < pats.length {
-        out.push(rewrite_pattern(ctx, pats[i]))
-        i = i + 1
-    }
-    out
 }
 
 /// Walk a `when` arm list, rewriting each arm's cond + body.
