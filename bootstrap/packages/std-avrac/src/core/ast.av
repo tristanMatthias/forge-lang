@@ -94,6 +94,18 @@ export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
     out
 }
 
+/// Single-node sibling of `map_node_list`: apply `f` to one spanned
+/// wrapper's `.node` while preserving the wrapper's line/col/file via a
+/// `with` update. SExpr → SExpr, SStmt → SStmt ride this shape.
+/// derive_walker's generated `Type__map` emits calls to this for a
+/// single `SExpr` / `SStmt` payload (the `WrapperOfSelf` field kind), so
+/// a one-level map descends into single-wrapper children without the
+/// parent losing the span it owns. `T` (the `.node` type) is inferred
+/// from `f`'s signature; `W` is the wrapper.
+export fn map_node<W, T>(x: W, f: fn(T) -> T) -> W {
+    x with { node: f(x.node) }
+}
+
 export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
     unwrap_node_list(xs)
 }
