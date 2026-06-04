@@ -499,7 +499,7 @@ export fn synthesize_subdir_module_decls(dir: string) -> List<SStmt> {
 fn stmts_have_module_named(stmts: List<SStmt>, target_name: string) -> bool {
     list_any(stmts, (ss: SStmt) -> match ss.node {
         .Module(name, _) -> name == target_name
-        .Annotated(_, inner) -> match inner {
+        .Annotated(_, inner) -> match inner.node {
             .Module(name, _) -> name == target_name
             _ -> false
         }
@@ -535,7 +535,7 @@ fn path_basename(p: string) -> string {
 fn stmts_have_mod_decl(stmts: List<SStmt>) -> bool {
     list_any(stmts, (ss: SStmt) -> match ss.node {
         .Module(_, body) -> body.length == 0
-        .Annotated(_, inner) -> match inner {
+        .Annotated(_, inner) -> match inner.node {
             .Module(_, body) -> body.length == 0
             _ -> false
         }
@@ -784,7 +784,7 @@ fn qualify_inner_stmt(stmt: Stmt, pkg_qual: string) -> Stmt {
     match stmt {
         .Use(up, names) -> Stmt.Use(anchor_use_path(up, pkg_qual), names)
         .Module(name, body) -> Stmt.Module(name, qualify_uses_recursively(body, pkg_qual))
-        .Annotated(annots, inner) -> Stmt.Annotated(annots, qualify_inner_stmt(inner, pkg_qual))
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, inner with { node: qualify_inner_stmt(inner.node, pkg_qual) })
         _ -> stmt
     }
 }
@@ -812,7 +812,7 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
         // Unwrap Annotated wrappers (e.g., doc comments) to find Use statements
         let is_pkg = match ss.node {
             .Use(up, _) -> is_package_use(up)
-            .Annotated(_, inner) -> match inner {
+            .Annotated(_, inner) -> match inner.node {
                 .Use(up, _) -> is_package_use(up)
                 _ -> false
             }
@@ -866,7 +866,7 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
 export fn extract_use_path(stmt: Stmt) -> string {
     match stmt {
         .Use(up, _) -> up
-        .Annotated(_, inner) -> extract_use_path(inner)
+        .Annotated(_, inner) -> extract_use_path(inner.node)
         _ -> ""
     }
 }
@@ -1196,15 +1196,15 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             let final_stmt = if take_meta {
                 let ext_args: List<SExpr> = []
                 let ext_annots: List<Annotation> = [Annotation { name: "external_unit", args: ext_args }]
-                Stmt.Annotated(ext_annots, module_stmt)
+                Stmt.Annotated(ext_annots, sstmt_dummy(module_stmt))
             } else {
                 module_stmt
             }
             ModStmtResult { stmt: final_stmt, loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Annotated(annotations, inner) -> {
-            let r = resolve_module_stmt(inner, dir, loaded, stack)?
-            ModStmtResult { stmt: Stmt.Annotated(annotations, r.stmt), loaded: r.loaded, had_error: false, error_message: "" }
+            let r = resolve_module_stmt(inner.node, dir, loaded, stack)?
+            ModStmtResult { stmt: Stmt.Annotated(annotations, inner with { node: r.stmt }), loaded: r.loaded, had_error: false, error_message: "" }
         }
         _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
     }

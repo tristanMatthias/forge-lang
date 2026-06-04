@@ -149,9 +149,9 @@ fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
     match stmt {
         .Annotated(annots, inner) -> {
             if annotation_present(annots, "comptime") {
-                fn_payload(inner)
+                fn_payload(inner.node)
             } else {
-                comptime_fn_from_stmt(inner)
+                comptime_fn_from_stmt(inner.node)
             }
         }
         _ -> null
@@ -162,7 +162,7 @@ fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
 /// Function payload. Returns null if the underlying decl isn't a fn.
 fn fn_payload(stmt: Stmt) -> CompTimeFn? {
     match stmt {
-        .Annotated(_, inner) -> fn_payload(inner)
+        .Annotated(_, inner) -> fn_payload(inner.node)
         .Function(name, _, params, ret_ty, body) -> CompTimeFn { name, params, ret_ty, body }
         _ -> null
     }

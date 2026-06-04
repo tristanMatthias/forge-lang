@@ -139,7 +139,7 @@ export fn comp_name_has(list: List<string>, name: string) -> bool {
 /// + `@export` etc. don't hide a `ComponentDef` from collection.
 fn stmt_unwrap_deep(s: Stmt) -> Stmt {
     match s {
-        .Annotated(_, inner) -> stmt_unwrap_deep(inner)
+        .Annotated(_, inner) -> stmt_unwrap_deep(inner.node)
         _ -> s
     }
 }
@@ -939,7 +939,7 @@ fn expand_stmt(stmt: Stmt, reg: List<CompDefEntry>, nest: CompNestCtx) -> Stmt {
         .For(v, start, end, body) -> .For(v, start, end, expand_stmt(body, reg, nest))
         .ForIn(v, coll, body) -> .ForIn(v, coll, expand_stmt(body, reg, nest))
         .Module(name, body) -> .Module(name, expand_stmt_list(body, reg, nest))
-        .Annotated(annots, inner) -> .Annotated(annots, expand_stmt(inner, reg, nest))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: expand_stmt(inner.node, reg, nest) })
         _ -> stmt
     }
 }

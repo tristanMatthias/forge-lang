@@ -33,7 +33,7 @@ fn uft_is_external_module(ss: SStmt, expected_name: string) -> bool {
     match ss.node {
         .Annotated(annots, inner) -> {
             let has_ext = uft_annotation_has(annots, "external_unit")
-            let name_ok = match inner {
+            let name_ok = match inner.node {
                 .Module(n, _) -> n == expected_name
                 _ -> false
             }

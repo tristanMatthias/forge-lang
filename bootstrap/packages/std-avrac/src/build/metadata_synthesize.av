@@ -348,7 +348,7 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
     if exported {
         let empty_args: List<SExpr> = []
         let annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
-        Stmt.Annotated(annots, s)
+        Stmt.Annotated(annots, sstmt_dummy(s))
     } else {
         s
     }
@@ -363,7 +363,7 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
 fn wrap_external_unit(s: Stmt) -> Stmt {
     let empty_args: List<SExpr> = []
     let annots: List<Annotation> = [Annotation { name: "external_unit", args: empty_args }]
-    Stmt.Annotated(annots, s)
+    Stmt.Annotated(annots, sstmt_dummy(s))
 }
 
 // Recover the bare local name from a qualified name. The qualified
@@ -468,7 +468,7 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
 fn wrap_comptime(s: Stmt) -> Stmt {
     let empty_args: List<SExpr> = []
     let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args }]
-    Stmt.Annotated(annots, s)
+    Stmt.Annotated(annots, sstmt_dummy(s))
 }
 
 extern fn avra_lazy_comptime_set(qn: string, source: string)

@@ -61,7 +61,7 @@ fn rewrite_stmt(stmt: Stmt, reg: CompTimeRegistry) -> Stmt {
         .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(init, reg))
         .Defer(body) -> .Defer(rewrite_expr(body, reg))
         .Errdefer(body) -> .Errdefer(rewrite_expr(body, reg))
-        .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt(inner, reg))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_stmt(inner.node, reg) })
         .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(body, reg))
         .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(body, reg))
         .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(cond, reg))

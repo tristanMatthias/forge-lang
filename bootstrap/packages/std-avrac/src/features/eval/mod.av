@@ -720,7 +720,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
-        .Annotated(_, inner) -> execute_stmt(runtime, inner)
+        .Annotated(_, inner) -> execute_stmt(runtime, inner.node)
         _ -> {
             let tag = avra_stmt_tag(stmt)
             let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)
@@ -2586,7 +2586,9 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             if p.length != 2 { return null }
             let annots = list_value_to_annotation_list(p[0])?
             let inner = value_to_stmt(p[1])?
-            Stmt.Annotated(annots, inner)
+            // Annotated.inner is SStmt — wrap the decoded Stmt in a dummy span
+            // (the decoded AST has no source position of its own).
+            Stmt.Annotated(annots, sstmt_dummy(inner))
         }
         "If" -> {
             if p.length != 3 { return null }

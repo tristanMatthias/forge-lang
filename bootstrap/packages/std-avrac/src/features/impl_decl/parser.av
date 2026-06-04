@@ -77,7 +77,7 @@ impl Parser {
                 let wrapped = if has_pending_doc {
                     let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${pending_doc}\""))]
                     let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
-                    Stmt.Annotated(doc_annots, raw)
+                    Stmt.Annotated(doc_annots, sstmt(raw, line, col))
                 } else { raw }
                 out.push(sstmt(wrapped, line, col))
                 has_pending_doc = false
@@ -92,7 +92,7 @@ impl Parser {
             let wrapped = if has_pending_doc {
                 let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${pending_doc}\""))]
                 let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
-                Stmt.Annotated(doc_annots, method)
+                Stmt.Annotated(doc_annots, sstmt(method, self.current_line, self.current_column))
             } else { method }
             out.push(sstmt(wrapped, self.current_line, self.current_column))
             has_pending_doc = false

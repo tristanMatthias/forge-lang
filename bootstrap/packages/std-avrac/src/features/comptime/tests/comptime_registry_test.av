@@ -17,7 +17,7 @@ fn mk_annotated_fn(annot_name: string, fn_name: string) -> Stmt {
     let empty_body: List<SStmt> = []
     Stmt.Annotated(
         annots,
-        Stmt.Function(fn_name, empty_tp, mk_empty_params(), ValueType.Int, empty_body)
+        sstmt_dummy(Stmt.Function(fn_name, empty_tp, mk_empty_params(), ValueType.Int, empty_body))
     )
 }
 

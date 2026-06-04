@@ -1392,7 +1392,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             check_trait_conformance(after, impl_name, methods)
         }
         .Module(_, body) -> check_stmts(tc, body)
-        .Annotated(_, inner) -> check_stmt(tc, inner)
+        .Annotated(_, inner) -> check_stmt(tc, inner.node)
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,
         // while_check, for_check, for_in_check, defer_check,
@@ -1522,7 +1522,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         .For(_, _, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
         .ForIn(_, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
         .Match(_, arms) -> tc_check_match_arm_returns(tc, fn_name, declared, arms)
-        .Annotated(_, inner) -> tc_check_stmt_returns(tc, fn_name, declared, inner)
+        .Annotated(_, inner) -> tc_check_stmt_returns(tc, fn_name, declared, inner.node)
         .Defer(_) -> tc  // defer bodies should not contain return
         .Errdefer(_) -> tc
         .Parallel(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
@@ -2522,7 +2522,7 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
             .Function(name, tp, params, rvt, annotate_stmts(annotate_enter_fn(tc, params), body))
         .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
         .Module(name, body) -> .Module(name, annotate_stmts(tc, body))
-        .Annotated(annots, inner) -> .Annotated(annots, annotate_stmt(tc, inner))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: annotate_stmt(tc, inner.node) })
         .Impl(name, methods) -> .Impl(name, annotate_stmts(tc, methods))
         .Defer(body) -> .Defer(annotate_expr(tc, body))
         .LetDestructure(names, init) -> .LetDestructure(names, annotate_expr(tc, init))
@@ -2883,7 +2883,7 @@ fn check_naming_conventions(tc: TC, stmts: List<SStmt>) -> TC {
 /// traits, snake_case for fns/lets, SCREAMING_SNAKE for consts).
 fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Annotated(_, inner) -> check_naming_stmt(tc, inner)
+        .Annotated(_, inner) -> check_naming_stmt(tc, inner.node)
         .Function(name, _, _, _, body) -> {
             // Strip impl prefix (TypeName__method → check method part only)
             let check_name = if name.index_of("__") > 0 {
