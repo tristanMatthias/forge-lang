@@ -673,7 +673,7 @@ fn count_id_zero_nominals_stmt(stmt: Stmt) -> int {
         .Block(body) -> count_id_zero_nominals_stmts(body)
         .Module(_, body) -> count_id_zero_nominals_stmts(body)
         .Impl(_, methods) -> count_id_zero_nominals_stmts(methods)
-        .Annotated(_, inner) -> count_id_zero_nominals_stmt(inner)
+        .Annotated(_, inner) -> count_id_zero_nominals_stmt(inner.node)
         _ -> 0
     }
 }
@@ -723,7 +723,7 @@ fn collect_id_zero_names_stmt(stmt: Stmt, out: List<string>) -> List<string> {
         .Block(body) -> collect_id_zero_names_stmts(body, out)
         .Module(_, body) -> collect_id_zero_names_stmts(body, out)
         .Impl(_, methods) -> collect_id_zero_names_stmts(methods, out)
-        .Annotated(_, inner) -> collect_id_zero_names_stmt(inner, out)
+        .Annotated(_, inner) -> collect_id_zero_names_stmt(inner.node, out)
         _ -> out
     }
 }
@@ -773,7 +773,7 @@ fn stamp_ids_stmt(stmt: Stmt, reg: TypeRegistry) -> Stmt {
         .Block(body) -> .Block(stamp_ids_stmts(body, reg))
         .Module(name, body) -> .Module(name, stamp_ids_stmts(body, reg))
         .Impl(name, methods) -> .Impl(name, stamp_ids_stmts(methods, reg))
-        .Annotated(annots, inner) -> .Annotated(annots, stamp_ids_stmt(inner, reg))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: stamp_ids_stmt(inner.node, reg) })
         _ -> stmt
     }
 }
@@ -1433,7 +1433,7 @@ export enum Stmt {
     Errdefer(body: Expr)
     /// Annotation wrapper: `@annot stmt` — annotations live here so
     /// the inner stmt's match arms stay focused on the actual decl.
-    Annotated(annotations: List<Annotation>, inner: Stmt)
+    Annotated(annotations: List<Annotation>, inner: SStmt)
     /// Test outer block: `spec "name" { ... }`.
     SpecBlock(name: string, body: List<SStmt>)
     /// Test setup block: `given "name" { let setup = ...; then "..." }`.
@@ -1519,7 +1519,7 @@ export type ChildrenSlot = { slot_name: string, child_ty: ValueType }
 /// layers happen to wrap it.
 export fn stmt_unwrap(s: Stmt) -> Stmt {
     match s {
-        .Annotated(_, inner) -> stmt_unwrap(inner)
+        .Annotated(_, inner) -> stmt_unwrap(inner.node)
         _ -> s
     }
 }
@@ -1536,7 +1536,7 @@ export fn find_annotation(s: Stmt, name: string) -> Annotation? {
             if here != null {
                 return here
             }
-            find_annotation(inner, name)
+            find_annotation(inner.node, name)
         }
         _ -> null
     }
@@ -1892,7 +1892,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr(initializer)})"
         .Defer(body) -> "(defer ${render_expr(body)})"
         .Errdefer(body) -> "(errdefer ${render_expr(body)})"
-        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner)})"
+        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner.node)})"
         .SpecBlock(name, _) -> "(spec ${name} ...)"
         .GivenBlock(name, _) -> "(given ${name} ...)"
         .ThenBlock(name, cond) -> "(then ${name} ${render_expr(cond)})"

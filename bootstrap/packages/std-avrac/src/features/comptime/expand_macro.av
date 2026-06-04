@@ -361,7 +361,7 @@ fn component_def_name(stmt: Stmt) -> string {
 
 fn peel_annotations(stmt: Stmt) -> Stmt {
     match stmt {
-        .Annotated(_, inner) -> peel_annotations(inner)
+        .Annotated(_, inner) -> peel_annotations(inner.node)
         _ -> stmt
     }
 }
@@ -932,7 +932,7 @@ fn decl_name_of(stmt: Stmt) -> string {
         .TraitDecl(name, _) -> name
         .Impl(target, _) -> target
         .ComponentDef(name, _, _, _, _, _) -> name
-        .Annotated(_, inner) -> decl_name_of(inner)
+        .Annotated(_, inner) -> decl_name_of(inner.node)
         _ -> ""
     }
 }

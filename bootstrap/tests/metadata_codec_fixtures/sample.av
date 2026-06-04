@@ -724,7 +724,7 @@ fn main() -> int {
     let empty_body_fn: List<SStmt> = []
     let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, empty_body_fn)
     let exp_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
-    let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner))
+    let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, sstmt_dummy(s_fn_inner)))
 
     // const VERSION: string = "1.0"
     let s_const = sstmt_dummy(Stmt.Const("VERSION", ValueType.Str, Expr.String("\"1.0\"")))
@@ -885,7 +885,7 @@ fn main() -> int {
         sstmt_dummy(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
         sstmt_dummy(Stmt.Annotated(
             greet_annots,
-            Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body),
+            sstmt_dummy(Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body)),
         )),
         sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),
     ]

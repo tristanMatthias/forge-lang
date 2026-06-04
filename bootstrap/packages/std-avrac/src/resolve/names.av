@@ -250,7 +250,7 @@ fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> Mo
             // Add this module to the tree
             ModuleNode.Node(name, mod_path, items, children, tree)
         }
-        .Annotated(_, inner) -> build_tree_from_stmt(inner, parent_path, tree)
+        .Annotated(_, inner) -> build_tree_from_stmt(inner.node, parent_path, tree)
         _ -> tree
     }
 }
@@ -329,7 +329,7 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref:
             // Re-exports: `export use path.{name1, name2}` makes imported
             // names visible as exports of the current module.
             if is_export {
-                match inner {
+                match inner.node {
                     .Use(use_path, names) -> {
                         // The use path is relative to the current module, so
                         // prefix with the module path to get the canonical path.
@@ -341,7 +341,7 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref:
                     _ -> {}
                 }
             }
-            collect_item_from_stmt(inner, mod_path, is_export, out)
+            collect_item_from_stmt(inner.node, mod_path, is_export, out)
         }
         _ -> {}
     }
@@ -414,7 +414,7 @@ fn resolve_use_aliases_in(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGra
     while i >= 0 {
         let ss = stmts[i]
         let unwrapped = match ss.node {
-            .Annotated(_, inner) -> inner
+            .Annotated(_, inner) -> inner.node
             _ -> ss.node
         }
         acc = match unwrapped {
@@ -860,7 +860,7 @@ fn collect_macro_item_from_stmt(stmt: Stmt, mod_path: string, acc: List<GraphIte
             let canonical = type_qualified_name(mod_path, name)
             out.push(GraphItem { short_name: name, canonical, exported: false })
         }
-        .Annotated(_, inner) -> collect_macro_item_from_stmt(inner, mod_path, out)
+        .Annotated(_, inner) -> collect_macro_item_from_stmt(inner.node, mod_path, out)
         _ -> {}
     }
 }
@@ -1034,7 +1034,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         // cross-module @comptime fns are unreachable from the
         // @expand pass (the registry keys them under the qualified
         // path; the lookup uses whatever's in the annotation arg).
-        .Annotated(annotations, inner) -> .Annotated(rewrite_annotations(ctx, annotations), rewrite_stmt(ctx, inner))
+        .Annotated(annotations, inner) -> .Annotated(rewrite_annotations(ctx, annotations), inner with { node: rewrite_stmt(ctx, inner.node) })
         .Defer(body) -> .Defer(rewrite_expr(ctx, body))
         .Errdefer(body) -> .Errdefer(rewrite_expr(ctx, body))
         .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
@@ -1312,7 +1312,7 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
             let rp = rewrite_param_types(ctx, qualify_self_param(ctx, params, qualified_type))
             Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
         }
-        .Annotated(annots, inner) -> .Annotated(annots, rewrite_impl_method_stmt(ctx, qualified_type, inner))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_impl_method_stmt(ctx, qualified_type, inner.node) })
         _ -> rewrite_stmt(ctx, stmt)
     }
 }
@@ -1603,7 +1603,7 @@ fn collect_used_paths_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
         .Match(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
         .Module(_, body) -> collect_used_paths_stmts(body, acc)
         .Impl(_, methods) -> collect_used_paths_stmts(methods, acc)
-        .Annotated(_, inner) -> collect_used_paths_stmt(inner, acc)
+        .Annotated(_, inner) -> collect_used_paths_stmt(inner.node, acc)
         .Defer(body) -> collect_used_paths_expr(body, acc)
         .LetDestructure(_, init) -> collect_used_paths_expr(init, acc)
         _ -> acc

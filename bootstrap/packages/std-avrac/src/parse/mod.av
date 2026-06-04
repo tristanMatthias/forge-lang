@@ -518,10 +518,12 @@ impl Parser {
                 doc_text = doc_text + "\n" + self.current_lexeme
                 self.advance()
             }
+            let inner_l = self.current_line
+            let inner_c = self.current_column
             let inner = self.parse_declaration()?
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
-            return Stmt.Annotated(doc_annots, inner)
+            return Stmt.Annotated(doc_annots, sstmt_at(inner, inner_l, inner_c, self.file))
         }
         if self.check(Tk.ModDocComment) {
             mut doc_text = self.current_lexeme
@@ -533,14 +535,16 @@ impl Parser {
             // Module docs don't wrap a declaration — store as a NoOp with annotation
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let mdoc_annots: List<Annotation> = [Annotation { name: "module_doc", args: doc_arg }]
-            return Stmt.Annotated(mdoc_annots, Stmt.NoOp)
+            return Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file))
         }
 
         // Annotations: `@name` or `@name(args)` before a declaration.
         if self.check(Tk.At) {
             let annotations = self.parse_annotations()
+            let inner_l = self.current_line
+            let inner_c = self.current_column
             let inner = self.parse_declaration()?
-            return Stmt.Annotated(annotations, inner)
+            return Stmt.Annotated(annotations, sstmt_at(inner, inner_l, inner_c, self.file))
         }
 
         // `export` wraps the inner declaration in an @export annotation
@@ -548,6 +552,8 @@ impl Parser {
         // Only fn, type, enum, trait, and extern are exportable — no stacking.
         if self.check(Tk.KwExport) {
             self.advance()
+            let inner_l = self.current_line
+            let inner_c = self.current_column
             let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
             let inner_opt = if export_handler_raw != null {
                 let handler: fn(Parser) -> Stmt? = export_handler_raw!
@@ -559,7 +565,7 @@ impl Parser {
             let inner = inner_opt?
             let empty_args: List<SExpr> = []
             let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
-            return Stmt.Annotated(exp_annots, inner)
+            return Stmt.Annotated(exp_annots, sstmt_at(inner, inner_l, inner_c, self.file))
         }
 
         let decl_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))

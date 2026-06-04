@@ -24,7 +24,7 @@ fn mk_add_decl() -> Stmt {
         body)
     let empty_args: List<SExpr> = []
     let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args }]
-    Stmt.Annotated(annots, fn_decl)
+    Stmt.Annotated(annots, sstmt_dummy(fn_decl))
 }
 
 // Helpers to build call exprs.

@@ -133,7 +133,7 @@ fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported
         .Annotated(annots, inner) -> {
             let is_export = exported || annotation_has_export(annots)
             let is_comp = is_comptime || annotation_has(annots, "comptime")
-            let inner_ss = sstmt_at(inner, ss.line, ss.col, ss.file)
+            let inner_ss = inner
             walk_ss_for_file(acc, inner_ss, current_module, is_export, is_comp, target_file)
         }
         // Leaf decl: gate on file match.
@@ -287,7 +287,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             // .Function arm so the FnDeclEntry gets flagged and the
             // body ships via GenericBodyEntry.
             let is_comp = is_comptime || annotation_has(annots, "comptime")
-            walk_stmt(acc, inner, current_module, is_export, is_comp)
+            walk_stmt(acc, inner.node, current_module, is_export, is_comp)
         }
         .Module(name, body) -> {
             let sub_path = qualify(current_module, name)
@@ -668,7 +668,7 @@ fn walk_files(stmts: List<SStmt>, acc: List<string>) -> List<string> {
 fn walk_files_in_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
     match stmt {
         .Module(_, body) -> walk_files(body, acc)
-        .Annotated(_, inner) -> walk_files_in_stmt(inner, acc)
+        .Annotated(_, inner) -> walk_files_in_stmt(inner.node, acc)
         _ -> acc
     }
 }

@@ -150,7 +150,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(init)}"
         .Defer(body) -> "${ind}defer ${fmt_expr(body)}"
         .Errdefer(body) -> "${ind}errdefer ${fmt_expr(body)}"
-        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner, depth)}"
+        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner.node, depth)}"
         .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(cond)} }"

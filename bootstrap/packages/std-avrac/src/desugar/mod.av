@@ -65,7 +65,7 @@ fn collect_fn_sigs_stmt(stmt: Stmt, acc: List<FnSig>) -> List<FnSig> {
             a.push(FnSig { name: name, params: list_map(params, (p: ParamEntry) -> p.vtype) })
             a
         }
-        .Annotated(_, inner) -> collect_fn_sigs_stmt(inner, acc)
+        .Annotated(_, inner) -> collect_fn_sigs_stmt(inner.node, acc)
         .Module(_, body) -> {
             mut a = acc
             mut i = 0
@@ -231,7 +231,7 @@ fn desugar_stmt(stmt: Stmt, sigs: List<FnSig>) -> Stmt {
         .Defer(body) -> .Defer(desugar_expr(body, sigs))
         .Errdefer(body) -> .Errdefer(desugar_expr(body, sigs))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body, sigs))
-        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner, sigs))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: desugar_stmt(inner.node, sigs) })
         .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body, sigs))
         .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_list(body, sigs))
         .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr(cond, sigs))

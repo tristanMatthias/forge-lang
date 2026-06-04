@@ -113,7 +113,7 @@ fn single_pass_stmt(stmt: Stmt, set: List<string>) -> List<string> {
         .Match(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
         .Defer(body) -> remove_escaped_expr(body, set)
         .Errdefer(body) -> remove_escaped_expr(body, set)
-        .Annotated(_, inner) -> single_pass_stmt(inner, set)
+        .Annotated(_, inner) -> single_pass_stmt(inner.node, set)
         .LetDestructure(_, init) -> remove_escaped_expr(init, set)
         .Function(_, _, _, _, _) -> set
         .ReturnEmpty -> set
