@@ -121,6 +121,7 @@ enum FieldKind {
     Scalar,
     DirectSelf,
     ListOfSelf,
+    WrapperOfSelf(wrapper: string),
     WrapperListOfSelf(wrapper: string),
 }
 
@@ -193,6 +194,8 @@ fn classify_variant(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<B
 fn classify_field_kind(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> FieldKind {
     if is_self_type(vt, parent_name) { return FieldKind.DirectSelf }
     if is_list_of_self(vt, parent_name) { return FieldKind.ListOfSelf }
+    let single = single_wrapper_short_name_of(vt, parent_name, ctx)
+    if single != "" { return FieldKind.WrapperOfSelf(single) }
     let wrapper = wrapper_short_name_of(vt, parent_name, ctx)
     if wrapper != "" { return FieldKind.WrapperListOfSelf(wrapper) }
     FieldKind.Scalar
@@ -201,9 +204,20 @@ fn classify_field_kind(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> 
 @comptime
 fn wrapper_of(k: FieldKind) -> string {
     match k {
+        .WrapperOfSelf(w) -> w
         .WrapperListOfSelf(w) -> w
         _ -> ""
     }
+}
+
+/// True when this field kind contributes exactly one Self child — a bare
+/// `Self` field (DirectSelf) or a single 1-hop `.node` wrapper around
+/// Self (WrapperOfSelf). Both are emitted as a single element into the
+/// children list and reconstructed in-place by map; the only difference
+/// is whether a `.node` projection / rewrap is needed.
+@comptime
+fn is_single_child(k: FieldKind) -> bool {
+    (k is .DirectSelf) || (k is .WrapperOfSelf)
 }
 
 /// True when `vt` is `List<X>` where `X` is the parent type. Covers the
@@ -225,7 +239,27 @@ fn is_list_of_self(vt: ValueType, parent_name: string) -> bool {
 @comptime
 fn wrapper_short_name_of(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> string {
     let elem = list_elem_or_unknown(vt)
-    let wrapper = type_short_name(self_type_name(elem))
+    node_wrapper_name(type_short_name(self_type_name(elem)), parent_name, ctx)
+}
+
+/// When `vt` is itself a 1-hop wrapper `W` (a struct with a single
+/// `.node` field projecting to `parent_name`), return W's short name;
+/// else "". The single-field analogue of `wrapper_short_name_of` — same
+/// structural `.node`-projection discovery, no list unwrap. Drives the
+/// `WrapperOfSelf` classification so a bare `SExpr` / `SStmt` field is
+/// walked like a DirectSelf with one `.node` hop.
+@comptime
+fn single_wrapper_short_name_of(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> string {
+    node_wrapper_name(type_short_name(self_type_name(vt)), parent_name, ctx)
+}
+
+/// Shared tail of the wrapper classifiers: given a candidate wrapper
+/// short name, confirm it resolves to a type whose unwrap path to
+/// `parent_name` is exactly the single hop `.node`. Returns the name on
+/// match, "" otherwise. The 1-hop guard matches what `unwrap_node` /
+/// `map_node` assume (`x.node`); longer chains aren't yet supported.
+@comptime
+fn node_wrapper_name(wrapper: string, parent_name: string, ctx: ResolverCtx) -> string {
     if wrapper == "" { return "" }
     let resolved = ctx_lookup_type(ctx, wrapper)
     if resolved == null { return "" }
@@ -281,8 +315,8 @@ fn arm_body(bindings: List<Binding>, parent_name: string) -> Expr {
     if total_list == 0 {
         mut elems: List<SExpr> = []
         for b in bindings {
-            if b.kind is .DirectSelf {
-                elems.push(sexpr_dummy(Expr.Ident(b.binding_name)))
+            if is_single_child(b.kind) {
+                elems.push(sexpr_dummy(direct_child_expr(b)))
             }
         }
         return Expr.ListLit(elems)
@@ -296,6 +330,18 @@ fn arm_body(bindings: List<Binding>, parent_name: string) -> Expr {
     }
 
     block_expr_for_children(bindings, parent_name)
+}
+
+/// The Expr that yields a single-child binding's Self node. DirectSelf
+/// is the binding itself; WrapperOfSelf projects one `.node` hop. Single
+/// source of truth for the three children() sites that emit single
+/// children (the all-direct list literal and the mixed concat fold).
+@comptime
+fn direct_child_expr(b: Binding) -> Expr {
+    if b.kind is .WrapperOfSelf {
+        return Expr.FieldAccess(Expr.Ident(b.binding_name), "node")
+    }
+    Expr.Ident(b.binding_name)
 }
 
 /// Build `unwrap_node_list::<Wrapper, Parent>(field_name)` for a
@@ -323,7 +369,7 @@ fn empty_binding_name() -> string {
 @comptime
 fn count_direct(bindings: List<Binding>) -> int {
     mut n = 0
-    for b in bindings { if b.kind is .DirectSelf { n = n + 1 } }
+    for b in bindings { if is_single_child(b.kind) { n = n + 1 } }
     n
 }
 
@@ -355,8 +401,8 @@ fn count_wrap(bindings: List<Binding>) -> int {
 fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr {
     mut direct_elems: List<SExpr> = []
     for b in bindings {
-        if b.kind is .DirectSelf {
-            direct_elems.push(sexpr_dummy(Expr.Ident(b.binding_name)))
+        if is_single_child(b.kind) {
+            direct_elems.push(sexpr_dummy(direct_child_expr(b)))
         }
     }
     mut acc: Expr = Expr.ListLit(direct_elems)
@@ -647,6 +693,7 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
         let arg_expr = match b.kind {
             .DirectSelf -> map_call_on_field(bind_name)
             .ListOfSelf -> list_map_call(bind_name)
+            .WrapperOfSelf(w) -> map_node_call(bind_name, w, parent_name)
             .WrapperListOfSelf(w) -> map_node_list_call(bind_name, w, parent_name)
             _ -> Expr.Ident(bind_name)
         }
@@ -682,6 +729,17 @@ fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) 
     let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
     let type_args: List<string> = [wrapper, parent_name]
     Expr.GenericCall(Expr.Ident("map_node_list"), type_args, args)
+}
+
+/// `map_node::<Wrapper, Parent>(field_name, f)` — span-preserving map of
+/// f over a single wrapper field (one `SExpr` / `SStmt`). The single
+/// analogue of `map_node_list_call`; same explicit type-args so
+/// check_generic_call pins W + T unambiguously and mono inherits them.
+@comptime
+fn map_node_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("map_node"), type_args, args)
 }
 
 @comptime
