@@ -36,12 +36,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, var
     if !enum_l.found {
         return err_emit("undefined enum type `${resolved_name}`")
     }
-    mut v = variant_lookup(enum_l.variants, variant)
-    if !v.found && variant == "Null" {
-        // Transitional Null->None alias: a seed still emitting `Expr.Null`
-        // reconstructions resolves to the canonical `None` variant.
-        v = variant_lookup(enum_l.variants, "None")
-    }
+    let v = variant_lookup(enum_l.variants, variant)
     if !v.found {
         return err_emit("enum `${resolved_name}` has no variant `${variant}`")
     }
