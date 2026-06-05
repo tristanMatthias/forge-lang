@@ -102,6 +102,39 @@ export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
 /// a one-level map descends into single-wrapper children without the
 /// parent losing the span it owns. `T` (the `.node` type) is inferred
 /// from `f`'s signature; `W` is the wrapper.
+// ── Optional (`T?`) walker helpers (Nullability epic Phase 1) ──
+// derive_walker emits calls to these for nullable single children
+// (`Self?` and `Wrapper<Self>?`, e.g. `else_branch: SStmt?`). They are
+// none-guarded: an absent child contributes nothing to `children()` and
+// stays absent under `map()`; a present child is descended into. This is
+// what lets the spans epic migrate `If.else_branch` to `SStmt?`.
+
+/// `Self?` → 0-or-1-element child list. Absent ⇒ empty.
+export fn self_opt_to_list<T>(x: T?) -> List<T> {
+    mut out: List<T> = []
+    if x != none { out.push(x!) }
+    out
+}
+
+/// `Wrapper<Self>?` → 0-or-1-element child list of the unwrapped `.node`.
+export fn unwrap_node_opt<W, T>(x: W?) -> List<T> {
+    mut out: List<T> = []
+    if x != none { out.push(x!.node) }
+    out
+}
+
+/// Span-preserving none-guarded map over a `Self?` child: descend with
+/// `f` when present, leave `none` untouched.
+export fn map_self_opt<T>(x: T?, f: fn(T) -> T) -> T? {
+    if x != none { f(x!) } else { none }
+}
+
+/// Span-preserving none-guarded map over a `Wrapper<Self>?` child:
+/// rewrap `f(.node)` keeping the wrapper's span when present, else `none`.
+export fn map_node_opt<W, T>(x: W?, f: fn(T) -> T) -> W? {
+    if x != none { x! with { node: f(x!.node) } } else { none }
+}
+
 export fn map_node<W, T>(x: W, f: fn(T) -> T) -> W {
     x with { node: f(x.node) }
 }

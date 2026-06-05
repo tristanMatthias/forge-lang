@@ -2002,6 +2002,12 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
             .Task(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
             _ -> acc
         }
+        // Nullability epic: unify `T?` param against `U?` arg (inner-to-inner)
+        // or against a bare `U` arg (auto-widen — a present `U` satisfies `T?`).
+        .Optional(p_inner) -> match arg_ty {
+            .Optional(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
+            _ -> tc_unify(tp, p_inner, arg_ty, acc)
+        }
         .FnTyped(p_params, p_ret) -> match arg_ty {
             .FnTyped(a_params, a_ret) -> {
                 let acc1 = tc_unify(tp, p_ret, a_ret, acc)

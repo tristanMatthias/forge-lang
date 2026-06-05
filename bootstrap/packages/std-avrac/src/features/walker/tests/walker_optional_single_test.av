@@ -1,0 +1,61 @@
+// derive_walker recognises NULLABLE single children — `Self?`
+// (OptionalDirectSelf) and `Wrapper<Self>?` (OptionalWrapperOfSelf,
+// e.g. `else_branch: SStmt?`). Nullability epic Phase 1 (xm2g.2).
+//
+//   - children() none-guards: an absent (`none`) child contributes
+//     nothing; a present child contributes exactly one (projected
+//     through `.node` for the wrapper case).
+//   - map() none-guards: `none` stays `none`; a present child is
+//     descended into with f. Scalar siblings and the wrapper's span
+//     are preserved.
+//
+// This is the concrete proof for the spans-epic unblock: once the
+// walker handles a nullable single spanned child, `Stmt.If.else_branch`
+// can migrate to `SStmt?` and still walk/rewrite mechanically.
+//
+// Bypasses metadata mode so derive_walker + the wrapper struct decl are
+// both visible to the @comptime discovery path (mirrors
+// walker_wrapper_single_test.av).
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
+    then "children() omits none + includes present; map descends present + leaves none" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
+            "\n" +
+            "export type SNode = { node: Tree, span: int }\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    OptSelf(tag: int, child: Tree?),\n" +
+            "    OptWrap(w: SNode?),\n" +
+            "}\n" +
+            "\n" +
+            "fn sn(t: Tree) -> SNode { SNode { node: t, span: 7 } }\n" +
+            "fn bump(t: Tree) -> Tree { match t { .Leaf(v) -> Tree.Leaf(v + 100), _ -> t } }\n" +
+            "fn lv(t: Tree) -> int { match t { .Leaf(v) -> v, _ -> -1 } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let present = Tree.OptSelf(9, Tree.Leaf(1))\n" +
+            "    let absent = Tree.OptSelf(9, none)\n" +
+            "    println(\"present=\" + string(present.children().length))\n" +
+            "    println(\"absent=\" + string(absent.children().length))\n" +
+            "    let wp = Tree.OptWrap(sn(Tree.Leaf(2)))\n" +
+            "    let wa = Tree.OptWrap(none)\n" +
+            "    println(\"wp=\" + string(wp.children().length))\n" +
+            "    println(\"wa=\" + string(wa.children().length))\n" +
+            "    let mk = present.map(bump).children()\n" +
+            "    println(\"mapped=\" + string(lv(mk[0])))\n" +
+            "    println(\"mapped_absent=\" + string(absent.map(bump).children().length))\n" +
+            "    println(\"wmapped=\" + string(lv(wp.map(bump).children()[0])))\n" +
+            "    println(\"wmapped_absent=\" + string(wa.map(bump).children().length))\n" +
+            "}\n")
+        out.contains("present=1") && out.contains("absent=0") &&
+            out.contains("wp=1") && out.contains("wa=0") &&
+            out.contains("mapped=101") && out.contains("mapped_absent=0") &&
+            out.contains("wmapped=102") && out.contains("wmapped_absent=0")
+    }
+}
