@@ -249,7 +249,10 @@ export fn sym_id_for(qualified_name: string) -> int {
 // Magic bytes: ASCII "AVMD" in little-endian u32.
 export const METADATA_MAGIC: int = 0x444D5641
 export const METADATA_VERSION_MAJOR: int = 1
-export const METADATA_VERSION_MINOR: int = 1
+// Minor 2: added the VT_OPTIONAL type tag (`T?` ≡ Option<T>). Backward-
+// compatible additive change; the compiler-binary fingerprint already
+// invalidates stale caches, but the bump records the format evolution.
+export const METADATA_VERSION_MINOR: int = 2
 
 /// Stable section IDs. Kept in this enum so the byte values are
 /// pinned — adding a new section appends; never reorder or reuse a
