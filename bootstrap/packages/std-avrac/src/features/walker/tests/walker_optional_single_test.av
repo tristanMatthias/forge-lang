@@ -58,4 +58,40 @@ spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
             out.contains("mapped=101") && out.contains("mapped_absent=0") &&
             out.contains("wmapped=102") && out.contains("wmapped_absent=0")
     }
+
+    then "optional child mixed with list-of-self + scalar siblings; deep nesting descends without overflow" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_mixed_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Mix(n: int, opt: Tree?, kids: List<Tree>),\n" +
+            "}\n" +
+            "\n" +
+            "fn lv(t: Tree) -> int { match t { .Leaf(v) -> v, _ -> -1 } }\n" +
+            "fn bump(t: Tree) -> Tree { match t { .Leaf(v) -> Tree.Leaf(v + 100), _ -> t } }\n" +
+            "fn deep_bump(t: Tree) -> Tree {\n" +
+            "    let t2 = match t { .Leaf(v) -> Tree.Leaf(v + 1), _ -> t }\n" +
+            "    t2.map(deep_bump)\n" +
+            "}\n" +
+            "fn innermost(t: Tree) -> int { match t { .Leaf(v) -> v, .Mix(_, o, _) -> if o != none { innermost(o!) } else { -9 }, _ -> -1 } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let m = Tree.Mix(5, Tree.Leaf(1), [Tree.Leaf(2), Tree.Leaf(3)])\n" +
+            "    println(\"mix_kids=\" + string(m.children().length))\n" +     // opt(1) + kids(2) = 3
+            "    let ma = Tree.Mix(5, none, [Tree.Leaf(2)])\n" +
+            "    println(\"mix_absent_kids=\" + string(ma.children().length))\n" + // 0 + 1 = 1
+            "    match m.map(bump) {\n" +
+            "        .Mix(n, o, ks) -> println(\"mapped=\" + string(n) + \",\" + string(if o != none { lv(o!) } else { -9 }) + \",\" + string(lv(ks[0])) + \",\" + string(lv(ks[1]))),\n" +
+            "        _ -> println(\"notmix\")\n" +
+            "    }\n" +
+            "    mut deep = Tree.Leaf(0)\n" +
+            "    for i in 0..250 { deep = Tree.Mix(i, deep, []) }\n" +
+            "    println(\"deep=\" + string(innermost(deep.map(deep_bump))))\n" +  // 1
+            "}\n")
+        out.contains("mix_kids=3") && out.contains("mix_absent_kids=1") &&
+            out.contains("mapped=5,101,102,103") && out.contains("deep=1")
+    }
 }
