@@ -1,6 +1,6 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
-use core.{Expr, ValueType, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full}
+use core.{Expr, ValueType, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full, vtype_strip_optional}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 
 /// Codegen for `obj[idx]`. Dispatches by container type:
@@ -10,7 +10,10 @@ use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 ///   the single-character substring.
 /// Anything else is a codegen error.
 export fn emit_index(ctx: Ctx, env: List<VarBinding>, obj: Expr, idx: Expr) -> Result<EmitValue, string> {
-    let r = ctx.emit(env, obj)?
+    mut r = ctx.emit(env, obj)?
+    // Nullability epic Phase 1 (permissive, pointer-niche): index a `T?`
+    // as the inner `T`. Phase 4 gating requires explicit unwrap/narrow.
+    r = r with { ty: vtype_strip_optional(r.ty) }
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
     if vtype_eq(r.ty, .Ptr) {
         let i_r = ctx.emit(env, idx)?

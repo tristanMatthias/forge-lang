@@ -181,6 +181,15 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         // Axis 18). The handle is owned by the scheduler and freed
         // when the task is joined or the process exits.
         .Task(_) -> {}
+        // Optional (T?): pointer-niche repr — the value IS the inner repr
+        // (null pointer = none). For a pointer-backed inner, shallow-release
+        // the pointer (consistent with how List/Map containers are handled,
+        // and avoids referencing a deep `__release_Inner` that may be
+        // declared-only in a cross-unit shard). Value-inner optionals
+        // (int?/bool?/float?) are not RC — no-op. Nullability epic Phase 1.
+        .Optional(inner) -> {
+            if vtype_is_ptr_type(inner) { ctx.rc_release(val) }
+        }
     }
 }
 

@@ -372,6 +372,7 @@ const VT_FN: int = 0x33
 const VT_FN_TYPED: int = 0x34
 const VT_CLOSURE: int = 0x35
 const VT_TASK: int = 0x36
+const VT_OPTIONAL: int = 0x37
 
 impl BytesWriter {
     fn vtype(self, vt: ValueType) {
@@ -453,6 +454,10 @@ impl BytesWriter {
             .Task(rt) -> {
                 self.u8(VT_TASK)
                 self.vtype(rt)
+            }
+            .Optional(inner) -> {
+                self.u8(VT_OPTIONAL)
+                self.vtype(inner)
             }
         }
     }
@@ -644,6 +649,9 @@ impl BytesReader {
         }
         if tag == VT_TASK {
             return ValueType.Task(self.vtype())
+        }
+        if tag == VT_OPTIONAL {
+            return ValueType.Optional(self.vtype())
         }
         ValueType.Unknown
     }

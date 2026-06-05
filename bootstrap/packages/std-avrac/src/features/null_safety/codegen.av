@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup}
+use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.{emit_defers_on_error}
@@ -44,7 +44,10 @@ export fn emit_null_coalesce(ctx: Ctx, env: List<VarBinding>, left: Expr, right:
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "nc_val")
-    let merged_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
+    // `??` yields the guaranteed-present (non-optional) type — the
+    // fallback always provides a value, so strip any optional off the left.
+    let base_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
+    let merged_ty = vtype_strip_optional(base_ty)
     ok_emit(loaded, merged_ty)
 }
 
