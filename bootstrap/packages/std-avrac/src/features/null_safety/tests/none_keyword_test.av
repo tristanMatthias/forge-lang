@@ -1,10 +1,9 @@
-// WHY: Nullability epic Phase 0 (xm2g.1) — the `none` keyword is the
-// canonical absence literal, parsing to Expr.None. `null` is kept as a
-// deprecated alias producing the same node. Phase 0 is types-only: no
-// behaviour change, so `none` still routes through the legacy 0-backed
-// representation (the safe dual repr lands in later phases). These specs
-// pin that `none` lexes/parses and behaves identically to the `null`
-// alias today.
+// WHY: the `none` keyword is the canonical absence literal, parsing to
+// Expr.None. `null` is kept as a deprecated alias producing the same
+// node. Absence is still backed by the legacy 0/null representation
+// (the value-tagged dual repr lands later), so `none` behaves
+// identically to the `null` alias today. These specs pin that `none`
+// lexes/parses and that the two spellings are interchangeable.
 
 spec "none keyword: parse + legacy behaviour" {
     then "none on a pointer slot coalesces to the fallback" {

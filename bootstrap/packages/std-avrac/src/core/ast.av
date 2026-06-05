@@ -1275,7 +1275,7 @@ export enum Expr {
     /// Absence literal: the `none` keyword (canonical). `null` is a
     /// deprecated parser alias that produces this same node — both
     /// lower to `Option`'s absent case. Renamed from the historic
-    /// `Null` for spec/internal consistency (Nullability epic Phase 0).
+    /// `Null` for spec/internal consistency.
     None
     /// Identifier reference. Resolver replaces with QualifiedIdent
     /// when the name resolves to a top-level / module-qualified item.

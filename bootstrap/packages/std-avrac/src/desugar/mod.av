@@ -181,10 +181,10 @@ fn synthesize_result_enum() -> Stmt {
 
 /// Build the synthetic `enum Option<T> { Some(value: T), None }` AST
 /// node used by `inject_intrinsics`. This is the canonical type that
-/// `T?` desugars to (Nullability epic). Programmers write `T?` and
-/// `none`; they never write `.Some`/`.None` directly. Phase 0 defines
-/// the type only — behaviour still routes through the legacy null
-/// representation until later phases wire the dual repr.
+/// `T?` desugars to. Programmers write `T?` and `none`; they never
+/// write `.Some`/`.None` directly. This defines the type only —
+/// absence behaviour still routes through the legacy null representation
+/// until the dual (value-tagged) repr is wired.
 fn synthesize_option_enum() -> Stmt {
     let t = ValueType.Struct("T", 0)
     mut some_fields: List<FieldEntry> = []

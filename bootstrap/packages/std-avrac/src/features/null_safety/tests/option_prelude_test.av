@@ -1,10 +1,10 @@
-// WHY: Nullability epic Phase 0 (xm2g.1) — `Option<T>` is the canonical
-// type that `T?` desugars to. It is injected into every program by
-// `desugar.inject_intrinsics` (mirroring `Result<T, E>`), so user code
-// can name and pattern-match it without an import. Phase 0 only defines
-// the type; the `T?` <-> Option lowering and dual representation land in
-// later phases. These specs pin that the prelude type exists and that
-// its two variants construct and match.
+// WHY: `Option<T>` is the canonical type that `T?` desugars to. It is
+// injected into every program by `desugar.inject_intrinsics` (mirroring
+// `Result<T, E>`), so user code can name and pattern-match it without an
+// import. The `T?` <-> Option lowering and the value-tagged dual
+// representation are wired separately; this only defines the prelude
+// type. These specs pin that the type exists and that its two variants
+// construct and match.
 
 spec "Option prelude type" {
     then "Option.Some carries and unwraps its payload" {
