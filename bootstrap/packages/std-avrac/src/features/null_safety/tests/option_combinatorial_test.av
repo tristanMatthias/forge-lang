@@ -1,0 +1,47 @@
+// WHY: the injected `Option<T>` prelude must compose with the rest of
+// the language, not just stand alone. These specs cross `Option` with
+// closures, if-expr, function boundaries, guards, and nested match —
+// the combinations that surface representation/lowering bugs the
+// single-shape option_prelude_test would miss.
+
+fn unwrap_or(o: Option<int>, d: int) -> int {
+    match o {
+        .Some(n) -> n
+        .None -> d
+    }
+}
+
+fn pick_positive(n: int) -> Option<int> {
+    if n > 0 { Option.Some(n) } else { Option.None }
+}
+
+spec "Option composes with closures, if-expr, and nested match" {
+    then "closure returning Option, unwrapped through a function" {
+        let pick = (n: int) -> if n > 0 { Option.Some(n) } else { Option.None }
+        unwrap_or(pick(8), -1) == 8
+    }
+    then "closure returning the absent case falls back to the default" {
+        let pick = (n: int) -> if n > 0 { Option.Some(n) } else { Option.None }
+        unwrap_or(pick(-2), 99) == 99
+    }
+    then "Option as a function return threads through a guard miss" {
+        unwrap_or(pick_positive(-5), 0) == 0
+    }
+    then "match-expr on Option nests inside arithmetic" {
+        let o = Option.Some(4)
+        let c = (match o { .Some(n) -> n * 2, .None -> 0 }) + 1
+        c == 9
+    }
+    then "nested match: Option chosen by a boolean, then unwrapped" {
+        let present = true
+        let o = if present { Option.Some(7) } else { Option.None }
+        let v = match o {
+            .Some(n) -> match pick_positive(n) {
+                .Some(m) -> m + 1
+                .None -> 0
+            }
+            .None -> -1
+        }
+        v == 8
+    }
+}
