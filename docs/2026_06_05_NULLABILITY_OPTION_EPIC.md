@@ -1,6 +1,7 @@
 # Nullability / Option Epic — Implementation Handoff
 
 **Status:** design ratified, implementation not started.
+**Tracking:** beads epic **`forge-crafting-intepreters-xm2g`**, children `xm2g.1`–`xm2g.7` (one per phase, dependency-chained — `bd show forge-crafting-intepreters-xm2g`). Claim a phase with `bd update <id> --claim`; close only when its acceptance criteria are fully met (`bd close <id>`).
 **Audience:** an agent with **no prior context**. Read this top to bottom; it is self-contained.
 **Source of truth:** the language spec `docs/2026_04_18_FULL_SPEC.md` **Axis 10** (lines ~1793–1954) and **Axis 12** (error handling). Where this doc and the spec disagree, this doc *amends* the spec — see §1.4 — and you must update Axis 10 to match as part of the final phase.
 
@@ -120,7 +121,7 @@ Every build/read/none-check/unwrap of an optional consults `optional_repr(inner)
 
 > Each phase ends with: `make build` green → `make test` green → selfhost fixed point (`bs2` == `bs3`) → `make update-seed` if a seed-processed type changed → commit + push. See §7 for the seed/keyword/variant mechanics and §8 acceptance criteria.
 
-### Phase 0 — `none` keyword + `Option` prelude type (types only, no behavior change)
+### Phase 0 — `none` keyword + `Option` prelude type (types only, no behavior change) — `xm2g.1`
 New keyword ⇒ **two-phase bootstrap** + seed cycle (CLAUDE.md "Adding a Feature").
 1. `Tk` enum (`core/ast.av`): add `none` token kind.
 2. `p_keyword_kind` (`parse/mod.av`): map `"none"` → the token.
@@ -132,7 +133,7 @@ New keyword ⇒ **two-phase bootstrap** + seed cycle (CLAUDE.md "Adding a Featur
 
 *No semantic change yet — `none` behaves exactly like today's `null` (still `0`).*
 
-### Phase 1 — Track `Optional` in `ValueType` (permissive)
+### Phase 1 — Track `Optional` in `ValueType` (permissive) — `xm2g.2`
 New `ValueType` variant ⇒ `make seed-patch-traps` first.
 1. `ValueType` (`ast.av:252`): add `Optional(inner: ValueType)`.
 2. Stop erasing: `ast.av:368-370` and `:416` now produce `ValueType.Optional(inner)` (normalize `T??`→`T?`).
@@ -143,28 +144,28 @@ New `ValueType` variant ⇒ `make seed-patch-traps` first.
 7. **Walker unblock** (`features/walker/derive.av`): teach `classify_field_kind` to recognise `Optional(Self)` and `Optional(Wrapper-of-Self)`; emit **none-guarded** children (omit the child when `none`) and none-guarded `map` (return `none` unchanged; else descend). This is what lets the spans epic migrate `If.else_branch` to `SStmt?`.
 8. Seed-patch → build → fix → `make update-seed`.
 
-### Phase 2 — Real value-type codegen + operators + `?`-split
+### Phase 2 — Real value-type codegen + operators + `?`-split — `xm2g.3`
 1. Verify `int?`/`bool?`/`float?` round-trip: `none` ≠ `Some(0)` / `Some(false)` / `Some(0.0)`. Add tests (§5).
 2. Type `?.` and `??` against the representation (result types per §3).
 3. **Split `?`:** `?` on a `T?` becomes a compile error with remedy; `?` on `Result` unchanged. Audit compiler+stdlib for `?`-on-optional and migrate to `??`/`?.`/`match` **before** turning the error on (grep for `Try` usages and inspect operand types).
 4. Build → test → seed if needed.
 
-### Phase 3 — Flow narrowing (sugar)
+### Phase 3 — Flow narrowing (sugar) — `xm2g.4`
 1. Typeck: narrow `T?`→`T` after `!= none` guards, `== none { return/break/continue }` early exits, and within match arms that bind the present case.
 2. Keep it conservative and *additive only* — it must never *suppress* an error that gating would raise; it only avoids requiring an explicit unwrap where presence is proven.
 3. Tests for narrow/!narrow boundaries.
 
-### Phase 4 — Flip to gating (non-null by default) — the grind
+### Phase 4 — Flip to gating (non-null by default) — the grind — `xm2g.5`
 1. Typeck enforces the §3 "non-null-by-default" rules; emit the F-codes in §6 with remedies.
 2. Iterate: `make build`/`make test`, fix each surfaced violation across compiler + stdlib, until selfhost is byte-identical green. Expect many sites.
 3. Do **not** weaken a rule to make the build pass — fix the source (CLAUDE.md rules 1–4, 16).
 
-### Phase 5 — Finalize & cleanup
+### Phase 5 — Finalize & cleanup — `xm2g.6`
 1. Remove the `null` alias (Phase 0 step 4) — `none` only. Migrate remaining `null` occurrences.
 2. Finalize `?` (Result-only) typing per spec 10.5/12.x, minus the Option-propagation clause.
 3. **Update spec Axis 10** to reflect: `none` keyword, `?`-split (no `?`-means-absent), dual representation note, flow-narrowing-as-sugar.
 
-### Phase 6 — Diagnostics contract (cross-cutting; null-safety is the showcase)
+### Phase 6 — Diagnostics contract (cross-cutting; null-safety is the showcase) — `xm2g.7`
 1. Define the contract (centralize in `diagnostics/`): every `Diagnostic` has code, severity, precise span (start+end), message, `help` remedy, and an optional structured `suggested_edit { span, replacement }`.
 2. Add a structured output mode (e.g. `avra check --diagnostics=json`) emitting an array of those records — agents must not scrape prose.
 3. `avra explain F1xxx` worked example + canonical fix for each null F-code.
@@ -216,21 +217,21 @@ Final codes are the implementer's call; keep them contiguous, stable, and docume
 
 **Global (every phase):** `make build` passes; `make test` is green (no regressions); selfhost fixed point holds (`bs2` and `bs3` produce byte-identical IR); `seed/seed.ll` updated via `make update-seed` and committed whenever a seed-processed type changed; each phase committed + pushed separately; no `--no-verify`; no raw errors (everything via the diagnostics system).
 
-**Phase 0:** `none` lexes/parses; `Expr.None` replaces `Expr.Null` everywhere; `null` still works as an alias; `Option<T>` exists in the prelude; behavior unchanged (still `0`-backed). Build/test/selfhost green; seed updated.
+**Phase 0 (`xm2g.1`):** `none` lexes/parses; `Expr.None` replaces `Expr.Null` everywhere; `null` still works as an alias; `Option<T>` exists in the prelude; behavior unchanged (still `0`-backed). Build/test/selfhost green; seed updated.
 
-**Phase 1:** `T?` resolves to `ValueType.Optional(inner)` (verified by rendering/inspecting a resolved type); the erasure sites no longer drop `?`; all `ValueType` matches handle `.Optional`; typeck still permissive (existing code builds unchanged); the dual representation exists and `none`/operators route through `optional_repr`; the derive_walker handles `Optional(Self)`/`Optional(Wrapper)`. **Concrete proof:** the spans epic can now migrate `Stmt.If.else_branch` to `SStmt?` and the walker descends it without a none-deref (write that test). Build/test/selfhost green; seed updated.
+**Phase 1 (`xm2g.2`):** `T?` resolves to `ValueType.Optional(inner)` (verified by rendering/inspecting a resolved type); the erasure sites no longer drop `?`; all `ValueType` matches handle `.Optional`; typeck still permissive (existing code builds unchanged); the dual representation exists and `none`/operators route through `optional_repr`; the derive_walker handles `Optional(Self)`/`Optional(Wrapper)`. **Concrete proof:** the spans epic can now migrate `Stmt.If.else_branch` to `SStmt?` and the walker descends it without a none-deref (write that test). Build/test/selfhost green; seed updated.
 
-**Phase 2:** value-type optionals distinguish `none` from zero/false (tests pass); `?.` and `??` typed correctly; `?` on a `T?` is F1202 (test asserts the code); no `?`-on-optional remains in compiler/stdlib. Green; seed if needed.
+**Phase 2 (`xm2g.3`):** value-type optionals distinguish `none` from zero/false (tests pass); `?.` and `??` typed correctly; `?` on a `T?` is F1202 (test asserts the code); no `?`-on-optional remains in compiler/stdlib. Green; seed if needed.
 
-**Phase 3:** narrowing tests pass; the matching un-narrowed access is still an error (proving narrowing is non-load-bearing). Green.
+**Phase 3 (`xm2g.4`):** narrowing tests pass; the matching un-narrowed access is still an error (proving narrowing is non-load-bearing). Green.
 
-**Phase 4 (the gate):** non-null-by-default fully enforced — `let x: int = none` is F1201; un-handled `T?` use is F1200; both with remedies. Every existing violation fixed; **selfhost byte-identical green** with enforcement ON. This is the phase that makes the language actually safe. No rule weakened to pass.
+**Phase 4 (`xm2g.5`, the gate):** non-null-by-default fully enforced — `let x: int = none` is F1201; un-handled `T?` use is F1200; both with remedies. Every existing violation fixed; **selfhost byte-identical green** with enforcement ON. This is the phase that makes the language actually safe. No rule weakened to pass.
 
-**Phase 5:** `null` alias removed (grep clean); `?` finalized as Result-only; **spec Axis 10 updated** to match (none keyword, `?`-split, dual repr, narrowing-as-sugar). Green.
+**Phase 5 (`xm2g.6`):** `null` alias removed (grep clean); `?` finalized as Result-only; **spec Axis 10 updated** to match (none keyword, `?`-split, dual repr, narrowing-as-sugar). Green.
 
-**Phase 6:** diagnostics contract implemented and centralized; `--diagnostics=json` emits structured records (code, span start+end, message, help, optional suggested_edit); `avra explain` covers every null F-code; each null F-code's test asserts the remedy text is present; cascades suppressed for null errors. Green.
+**Phase 6 (`xm2g.7`):** diagnostics contract implemented and centralized; `--diagnostics=json` emits structured records (code, span start+end, message, help, optional suggested_edit); `avra explain` covers every null F-code; each null F-code's test asserts the remedy text is present; cascades suppressed for null errors. Green.
 
-**Epic done = all six phases meet their criteria, every change committed and pushed, spec updated, and selfhost green with non-null-by-default enforced.** Partial is not done (CLAUDE.md rule 19).
+**Epic (`forge-crafting-intepreters-xm2g`) done = all seven phase children (`xm2g.1`–`xm2g.7`) closed with their criteria met, every change committed and pushed, spec updated, and selfhost green with non-null-by-default enforced.** Partial is not done (CLAUDE.md rule 19); do not close the epic until every child is genuinely closed (rule 20).
 
 ---
 
@@ -240,4 +241,4 @@ Final codes are the implementer's call; keep them contiguous, stable, and docume
 - The broader typeck foundation bug (`cpvo`, type-param/type-name conflation) is a *separate* epic; don't fold it in.
 
 ## 10. First concrete step
-Phase 0, step 1–4: add the `none` keyword and rename `Expr.Null`→`Expr.None` (seed-patch-traps → build → fix → update-seed), keeping `null` as an alias. Then define `Option<T>` in the prelude. Commit, push, and proceed to Phase 1. Loop bodies of the spans epic (`While`/`For`/`ForIn`) can be migrated in parallel by another agent at any time — only `If.else_branch` depends on Phase 1.
+Claim `forge-crafting-intepreters-xm2g.1` (`bd update forge-crafting-intepreters-xm2g.1 --claim`). Phase 0, step 1–4: add the `none` keyword and rename `Expr.Null`→`Expr.None` (seed-patch-traps → build → fix → update-seed), keeping `null` as an alias. Then define `Option<T>` in the prelude. Commit, push, and proceed to Phase 1. Loop bodies of the spans epic (`While`/`For`/`ForIn`) can be migrated in parallel by another agent at any time — only `If.else_branch` depends on Phase 1.
