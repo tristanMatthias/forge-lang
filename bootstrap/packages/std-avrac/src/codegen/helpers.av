@@ -97,20 +97,20 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
 /// True when `e` is the `null` literal. Used by `emit_binary` to
 /// suppress string equality lowering (`"x" == null` should compare
 /// pointers, not call `strcmp`).
-export fn is_null_literal(e: Expr) -> bool { e is .Null }
+export fn is_null_literal(e: Expr) -> bool { e is .None }
 
 /// Walk to the last statement of a list and unwrap it as an Expr.
 /// `.Expr(e)` and `.Return(e)` both surface their payload; anything
-/// else becomes `.Null`. Used to extract the implicit return value
+/// else becomes `.None`. Used to extract the implicit return value
 /// of a function body during type-aware emit.
 export fn stmts_last_expr(stmts: List<SStmt>) -> Expr {
-    if stmts.length == 0 { return .Null }
+    if stmts.length == 0 { return .None }
     let ss = stmts[stmts.length - 1]
     let inner = stmt_unwrap(ss.node)
     match inner {
         .Expr(e) -> e
         .Return(e) -> e
-        _ -> .Null
+        _ -> .None
     }
 }
 

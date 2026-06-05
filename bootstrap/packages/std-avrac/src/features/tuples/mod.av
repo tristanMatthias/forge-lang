@@ -44,7 +44,7 @@ fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
 /// elements are positional.
 export fn tuple_index_feature() -> Feature {
     feature_new("tuple_index") with {
-        expr_tag: Expr.TupleIndex(Expr.Null, 0),
+        expr_tag: Expr.TupleIndex(Expr.None, 0),
         emit_expr: emit_tuple_index,
         resolve_expr: tuple_index_resolve,
         check_expr: tuple_index_check,

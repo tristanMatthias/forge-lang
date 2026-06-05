@@ -594,7 +594,7 @@ fn build_find_fn(enum_name: string) -> Stmt {
     let find_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
     let c_find_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "find"), find_args)
     let let_r = Stmt.Let("r", self_ty, c_find_call)
-    let r_not_null = Expr.Binary(Expr.Ident("r"), BinOp.Ne, Expr.Null)
+    let r_not_null = Expr.Binary(Expr.Ident("r"), BinOp.Ne, Expr.None)
     let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Ident("r")))]
     let return_r_block = Stmt.Block(return_r_stmts)
     let if_r_not_null = Stmt.If(r_not_null, return_r_block, null)
@@ -606,7 +606,7 @@ fn build_find_fn(enum_name: string) -> Stmt {
     let for_loop = Stmt.ForIn("c", children_call, for_body)
 
     // trailing `null` — no descendant matched
-    let null_return = Stmt.Return(Expr.Null)
+    let null_return = Stmt.Return(Expr.None)
 
     let body: List<SStmt> = [
         sstmt_dummy(if_pred_self),

@@ -1343,11 +1343,10 @@ impl Parser {
         }
 
         // `none` (canonical) and `null` (deprecated alias) both produce
-        // the absence literal. Phase 0 keeps the legacy `Expr.Null` node;
-        // the rename to `Expr.None` lands in a follow-up seed cycle.
+        // the absence literal `Expr.None`.
         if self.check(Tk.KwNull) || self.check(Tk.KwNone) {
             self.advance()
-            return Expr.Null
+            return Expr.None
         }
 
         // Contextual enum variant: `.Variant` or `.Variant(args)`
@@ -2101,7 +2100,7 @@ impl Parser {
     }
 
     /// Parse `{ pattern -> body }` for `quote arm { ... }`. Wraps the
-    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.Null, [arm])`
+    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.None, [arm])`
     /// so the existing Quote(kind, body) shape stays — the lowering
     /// pass picks the arm back out via its `arm` kind discriminator.
     fn parse_quote_arm_body(self) -> Expr? {
@@ -2121,7 +2120,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return null }
         let arm = MatchArm { pattern, guard, body: body_se }
         let arms: List<MatchArm> = [arm]
-        Expr.MatchExpr(sexpr(Expr.Null, self.current_line, self.current_column), arms)
+        Expr.MatchExpr(sexpr(Expr.None, self.current_line, self.current_column), arms)
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.

@@ -13,7 +13,7 @@ use typeck.{check_expr}
 /// Wires up resolver, typeck, codegen, and eval hooks.
 export fn let_destructure_feature() -> Feature {
     feature_new("let_destructure") with {
-        stmt_tag: Stmt.LetDestructure([], Expr.Null),
+        stmt_tag: Stmt.LetDestructure([], Expr.None),
         emit_stmt: let_destructure_emit_stmt,
         resolve_stmt: let_destructure_resolve_stmt,
         check_stmt: let_destructure_check_stmt,

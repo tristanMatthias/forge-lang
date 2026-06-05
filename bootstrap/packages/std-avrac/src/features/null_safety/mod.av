@@ -12,7 +12,7 @@ use typeck.{check_expr, tc_er}
 /// (`x ?? fallback`).
 export fn null_coalesce_feature() -> Feature {
     feature_new("null_coalesce") with {
-        expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
+        expr_tag: Expr.NullCoalesce(Expr.None, Expr.None),
         emit_expr: null_coalesce_emit_expr,
         resolve_expr: null_coalesce_resolve_expr,
         check_expr: check_null_coalesce,
@@ -24,7 +24,7 @@ export fn null_coalesce_feature() -> Feature {
 /// null.
 export fn optional_chain_feature() -> Feature {
     feature_new("optional_chain") with {
-        expr_tag: Expr.OptionalChain(Expr.Null, ""),
+        expr_tag: Expr.OptionalChain(Expr.None, ""),
         emit_expr: optional_chain_emit_expr,
         resolve_expr: optional_chain_resolve_expr,
         check_expr: optional_chain_check_expr,
@@ -35,7 +35,7 @@ export fn optional_chain_feature() -> Feature {
 /// `x`; propagates `Err(e)` to the enclosing fn (spec Axis 12).
 export fn try_feature() -> Feature {
     feature_new("try") with {
-        expr_tag: Expr.Try(Expr.Null),
+        expr_tag: Expr.Try(Expr.None),
         emit_expr: try_emit_expr,
         resolve_expr: try_resolve_expr,
         check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
@@ -47,7 +47,7 @@ export fn try_feature() -> Feature {
 /// recover an error path with a fallback value.
 export fn catch_feature() -> Feature {
     feature_new("catch") with {
-        expr_tag: Expr.Catch(Expr.Null, "", Expr.Null, 0, 0),
+        expr_tag: Expr.Catch(Expr.None, "", Expr.None, 0, 0),
         emit_expr: catch_emit_expr,
         resolve_expr: catch_resolve_expr,
         check_expr: check_catch,

@@ -83,8 +83,8 @@ fn main() -> int {
         sstmt_dummy(Stmt.Module("sub_b", empty_body)),
         sstmt_dummy(Stmt.Module("sub_c", empty_body)),
     ]
-    let none = synthesize_subdir_module_decls_filtered(root, existing_all)
-    probe("filtered_all_count_0", count_stmts(none) == 0)
+    let filtered_all = synthesize_subdir_module_decls_filtered(root, existing_all)
+    probe("filtered_all_count_0", count_stmts(filtered_all) == 0)
 
     // ── filtered: missing-dir is empty ─────────────────────────
     let empty_existing: List<SStmt> = []

@@ -23,7 +23,7 @@ export fn struct_lit_feature() -> Feature {
 /// upper-case ident — that case skips name resolution.
 export fn field_access_feature() -> Feature {
     feature_new("field_access") with {
-        expr_tag: Expr.FieldAccess(Expr.Null, ""),
+        expr_tag: Expr.FieldAccess(Expr.None, ""),
         emit_expr: field_access_emit_expr,
         resolve_expr: field_access_resolve_expr,
         check_expr: field_access_check_expr,
@@ -48,7 +48,7 @@ export fn enum_ctor_feature() -> Feature {
 /// pass-through.
 export fn field_assign_feature() -> Feature {
     feature_new("field_assign") with {
-        expr_tag: Expr.FieldAssign(Expr.Null, "", Expr.Null),
+        expr_tag: Expr.FieldAssign(Expr.None, "", Expr.None),
         emit_expr: field_assign_emit_expr,
         // FieldAssign resolution is handled directly in resolve/mod.av (deep immutability check)
         resolve_expr: field_assign_resolve_expr,

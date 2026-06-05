@@ -535,7 +535,7 @@ fn default_for(ty: ValueType) -> Expr {
     if ty is .List { return Expr.ListLit([]) }
     // Fallback — `null` covers nullable / reference shapes; gets
     // tightened as the codec table expands.
-    Expr.Null
+    Expr.None
 }
 
 /// True when `ty` is `List<NestedMarshalStruct>` — i.e. a list

@@ -50,7 +50,7 @@ fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// type-checker, codegen, and eval hooks via the feature registry.
 export fn while_feature() -> Feature {
     feature_new("while") with {
-        stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
+        stmt_tag: Stmt.While(Expr.None, Stmt.NoOp),
         stmt_keyword: "kw_while",
         parse_stmt: (p: Parser) -> p.parse_while_statement(),
         emit_stmt: emit_while,

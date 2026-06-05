@@ -8,7 +8,7 @@ use typeck.{check_expr, check_expr_list, tc_er}
 /// (`x in [1, 2, 3]` and `n in 0..10`). Returns Bool.
 export fn in_operator_feature() -> Feature {
     feature_new("in") with {
-        expr_tag: Expr.InCheck(Expr.Null, []),
+        expr_tag: Expr.InCheck(Expr.None, []),
         emit_expr: emit_in_check,
         resolve_expr: in_resolve,
         check_expr: in_check,

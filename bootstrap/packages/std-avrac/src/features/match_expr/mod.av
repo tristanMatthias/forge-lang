@@ -17,8 +17,8 @@ use typeck.{check_expr, tc_er}
 export fn match_feature() -> Feature {
     let empty_arms: List<MatchArm> = []
     feature_new("match") with {
-        expr_tag: Expr.MatchExpr(Expr.Null, empty_arms),
-        stmt_tag: Stmt.Match(Expr.Null, empty_arms),
+        expr_tag: Expr.MatchExpr(Expr.None, empty_arms),
+        stmt_tag: Stmt.Match(Expr.None, empty_arms),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
         resolve_stmt: match_resolve_stmt,

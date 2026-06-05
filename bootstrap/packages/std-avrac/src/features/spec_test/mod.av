@@ -37,7 +37,7 @@ export fn given_feature() -> Feature {
 /// reports PASS/FAIL per arm.
 export fn then_feature() -> Feature {
     feature_new("then") with {
-        stmt_tag: Stmt.ThenBlock("", Expr.Null),
+        stmt_tag: Stmt.ThenBlock("", Expr.None),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: then_resolve_stmt,
         eval_stmt: then_eval_stmt,

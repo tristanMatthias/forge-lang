@@ -32,7 +32,7 @@ export fn fmt_expr(se: Expr) -> string {
         .Number(v) -> v
         .String(v) -> v
         .Bool(v) -> v
-        .Null -> "null"
+        .None -> "none"
         .Ident(name) -> name
         .QualifiedIdent(path) -> path
         .Assign(name, value) -> "${name} = ${fmt_expr(value)}"

@@ -235,7 +235,7 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .FloatLit(_) -> set
         .String(_) -> set
         .Bool(_) -> set
-        .Null -> set
+        .None -> set
         .QualifiedIdent(_) -> set
     }
 }

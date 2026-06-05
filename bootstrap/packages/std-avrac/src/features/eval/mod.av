@@ -410,7 +410,7 @@ fn literal_expr_to_value(e: Expr) -> Value? {
         .Number(text) -> value_number(render_number(parse_num(text)))
         .String(text) -> value_string(unquote_string(text))
         .Bool(text) -> value_bool(text == "true")
-        .Null -> value_null()
+        .None -> value_null()
         _ -> null
     }
 }
@@ -832,7 +832,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .FloatLit(text) -> ok_result(runtime, value_number(text))
         .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
         .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
-        .Null -> ok_result(runtime, value_null())
+        .None -> ok_result(runtime, value_null())
         .EnumCtor(type_name, variant, args) -> eval_enum_ctor(runtime, type_name, variant, args)
         .Ident(name) -> {
             let result = lookup_binding(runtime.bindings, name)
@@ -2195,7 +2195,7 @@ export fn value_to_stmt_list(v: Value) -> List<SStmt>? {
 
 fn enum_value_to_expr(v: Value) -> Expr? {
     if v.enum_type != "@std::avrac::core::Expr" { return null }
-    if v.enum_variant == "Null" { return Expr.Null }
+    if v.enum_variant == "None" { return Expr.None }
     let p = v.enum_payload
     if p.length == 0 { return null }
     let head: Value = p[0]
@@ -2357,11 +2357,11 @@ fn value_to_match_arm(v: Value) -> MatchArm? {
             }
             "guard" -> {
                 let g_val = f.value
-                // Absent guards are encoded as the Expr.Null sentinel.
+                // Absent guards are encoded as the Expr.None sentinel.
                 // Check the variant name (intact for both kind="enum"
                 // and a boxed kind="expr") rather than kind so a boxed
                 // Null still reads as "no guard".
-                if g_val.enum_variant == "Null" {
+                if g_val.enum_variant == "None" {
                     guard_opt = null
                 } else {
                     let g_expr = value_to_expr_node(g_val)
@@ -2595,7 +2595,7 @@ fn enum_value_to_stmt(v: Value) -> Stmt? {
             let cond = value_to_expr_node(p[0])?
             let then_b = value_to_stmt(p[1])?
             let else_v: Value = p[2]
-            let else_b = if else_v.enum_variant == "Null" { null } else { value_to_stmt(else_v) }
+            let else_b = if else_v.enum_variant == "None" { null } else { value_to_stmt(else_v) }
             Stmt.If(cond, then_b, else_b)
         }
         "While" -> {
@@ -2698,7 +2698,7 @@ fn list_value_to_comp_config_pair_list(v: Value) -> List<CompConfigPair>? {
     for entry in v.list_payload {
         if entry.kind != "struct" { return null }
         let key = struct_field_string(entry, "key")
-        mut value_expr: Expr = Expr.Null
+        mut value_expr: Expr = Expr.None
         for f in entry.struct_payload {
             if f.name == "value" {
                 value_expr = value_to_expr_node(f.value)?
@@ -2715,7 +2715,7 @@ fn list_value_to_field_init_list(v: Value) -> List<FieldInit>? {
     for entry in v.list_payload {
         if entry.kind != "struct" { return null }
         let name = struct_field_string(entry, "name")
-        mut value_expr: Expr = Expr.Null
+        mut value_expr: Expr = Expr.None
         for f in entry.struct_payload {
             if f.name == "value" {
                 value_expr = value_to_expr_node(f.value)?

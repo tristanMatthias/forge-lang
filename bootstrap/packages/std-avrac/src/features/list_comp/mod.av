@@ -26,7 +26,7 @@ use typeck.{TC, ExprResult, tc_er, tc_bind, tc_enter, tc_exit, check_expr}
 /// the registry routes dispatch to the hooks defined below.
 export fn list_comp_feature() -> Feature {
     feature_new("list_comp") with {
-        expr_tag: Expr.ListComp(Expr.Null, "", Expr.Null, null),
+        expr_tag: Expr.ListComp(Expr.None, "", Expr.None, null),
         emit_expr: list_comp_emit_expr,
         resolve_expr: list_comp_resolve_expr,
         check_expr: list_comp_check_expr,

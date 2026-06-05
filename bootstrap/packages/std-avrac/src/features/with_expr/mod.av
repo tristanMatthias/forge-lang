@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_er}
 /// `point with { x: 5 }`. Spec axis 28.
 export fn with_expr_feature() -> Feature {
     feature_new("with") with {
-        expr_tag: Expr.With(Expr.Null, []),
+        expr_tag: Expr.With(Expr.None, []),
         emit_expr: emit_with,
         resolve_expr: with_resolve,
         check_expr: with_check,

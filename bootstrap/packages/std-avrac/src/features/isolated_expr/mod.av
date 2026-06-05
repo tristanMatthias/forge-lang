@@ -16,7 +16,7 @@ use typeck.{check_expr, tc_er}
 /// Register the `isolated { body }` expression feature.
 export fn isolated_expr_feature() -> Feature {
     feature_new("isolated") with {
-        expr_tag: Expr.Isolated(Expr.Null),
+        expr_tag: Expr.Isolated(Expr.None),
         emit_expr: isolated_emit_expr,
         resolve_expr: isolated_resolve,
         check_expr: isolated_check,

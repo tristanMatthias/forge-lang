@@ -15,8 +15,8 @@ use typeck.{check_expr, check_stmt, tc_er, tc_report}
 /// up resolver, type-checker, codegen, and eval hooks for each.
 export fn if_stmt_feature() -> Feature {
     feature_new("if") with {
-        expr_tag: Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null),
-        stmt_tag: Stmt.If(Expr.Null, Stmt.NoOp, null),
+        expr_tag: Expr.IfExpr(Expr.None, Expr.None, Expr.None),
+        stmt_tag: Stmt.If(Expr.None, Stmt.NoOp, null),
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
         resolve_stmt: if_resolve_stmt,

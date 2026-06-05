@@ -1322,7 +1322,7 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
 /// Rewrite an expression, qualifying name references to their
 /// canonical paths and recursing into sub-expressions.
 fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
-    if expr == null { return Expr.Null }
+    if expr == null { return Expr.None }
     match expr {
         .Ident(name) -> rewrite_ident(ctx, name, expr)
         .Call(callee, args) -> {
@@ -1353,7 +1353,7 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
 /// less-frequently-traversed Expr variants (StructLit, Lambda,
 /// Match, ListComp, etc.).
 fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
-    if expr == null { return Expr.Null }
+    if expr == null { return Expr.None }
     match expr {
         .FieldAccess(obj, field) -> {
             // Qualify uppercase Ident in FieldAccess (enum constructors: ValueType.Unknown)

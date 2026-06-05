@@ -451,7 +451,7 @@ fn desugar_assert(args: List<SExpr>) -> Expr {
     Expr.IfExpr(
         Expr.Unary(UnOp.Not, cond),
         Expr.Call(Expr.Ident("panic"), panic_args),
-        Expr.Null
+        Expr.None
     )
 }
 
