@@ -6,7 +6,7 @@
 // indexing/helpers/escape/cycles auto-load as siblings, surface flat at
 // `codegen.{...}`.
 
-use core.{Expr, Pattern, SExpr, SStmt, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use core.{Expr, Pattern, SExpr, SStmt, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
@@ -444,5 +444,15 @@ fn emit_name_lookup(ctx: Ctx, env: List<VarBinding>, name: string, label: string
 impl Ctx {
     fn emit(self, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
         emit_expr(self, env, expr)
+    }
+
+    /// Emit `expr` as a member-access receiver: a `T?` value is treated
+    /// as its inner `T` (pointer-niche — the value IS the inner repr, null
+    /// pointer = none), so field / index / method / `with` dispatch on the
+    /// inner type. Nullability epic Phase 1 (permissive); Phase 4 gating
+    /// will instead require an explicit unwrap / narrow here.
+    fn emit_member(self, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+        let r = emit_expr(self, env, expr)?
+        ok_emit(r.value, vtype_strip_optional(r.ty))
     }
 }

@@ -5,7 +5,7 @@
 // Implementation: malloc new struct, copy all fields from original,
 // then overwrite the specified fields with new values.
 
-use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_struct_name, vtype_render_full, vtype_strip_optional}
+use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_struct_name, vtype_render_full}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, vtype_is_ptr_type}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 
@@ -23,11 +23,7 @@ export fn emit_with(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
 /// spec 9.12), copy every field, then overwrite the named ones
 /// with their override expressions.
 fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<FieldInit>) -> Result<EmitValue, string> {
-    mut r = ctx.emit(env, obj)?
-    // Nullability epic Phase 1: `with` on a `T?` receiver (e.g. a
-    // force-unwrapped optional wrapper) updates the inner struct
-    // (pointer-niche — the value IS the struct).
-    r = r with { ty: vtype_strip_optional(r.ty) }
+    let r = ctx.emit_member(env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
