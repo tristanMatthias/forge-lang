@@ -2040,6 +2040,7 @@ export enum Tk {
     KwMut
     KwNot
     KwNull
+    KwNone
     KwOr
     KwParallel
     KwReturn
@@ -2102,6 +2103,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwMut -> "kw_mut"
         .KwNot -> "kw_not"
         .KwNull -> "kw_null"
+        .KwNone -> "kw_none"
         .KwOr -> "kw_or"
         .KwParallel -> "kw_parallel"
         .KwReturn -> "kw_return"

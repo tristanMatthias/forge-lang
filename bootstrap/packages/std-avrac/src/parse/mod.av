@@ -333,6 +333,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "mut"      -> Tk.KwMut
         "not"      -> Tk.KwNot
         "null"     -> Tk.KwNull
+        "none"     -> Tk.KwNone
         "or"       -> Tk.KwOr
         "return"   -> Tk.KwReturn
         "true"     -> Tk.KwTrue
@@ -1341,7 +1342,10 @@ impl Parser {
             return Expr.Bool(value)
         }
 
-        if self.check(Tk.KwNull) {
+        // `none` (canonical) and `null` (deprecated alias) both produce
+        // the absence literal. Phase 0 keeps the legacy `Expr.Null` node;
+        // the rename to `Expr.None` lands in a follow-up seed cycle.
+        if self.check(Tk.KwNull) || self.check(Tk.KwNone) {
             self.advance()
             return Expr.Null
         }
@@ -1798,7 +1802,7 @@ impl Parser {
         }
         let word = self.source.substring(i, j)
         // Exclude keywords that appear after identifiers in non-component contexts
-        if word == "true" || word == "false" || word == "null" { return false }
+        if word == "true" || word == "false" || word == "null" || word == "none" { return false }
         if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return false }
         if word == "with" || word == "match" || word == "if" || word == "else" { return false }
         if word == "while" || word == "for" || word == "fn" || word == "let" || word == "mut" { return false }

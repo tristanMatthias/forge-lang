@@ -1,0 +1,30 @@
+// WHY: Nullability epic Phase 0 (xm2g.1) — the `none` keyword is the
+// canonical absence literal, parsing to Expr.None. `null` is kept as a
+// deprecated alias producing the same node. Phase 0 is types-only: no
+// behaviour change, so `none` still routes through the legacy 0-backed
+// representation (the safe dual repr lands in later phases). These specs
+// pin that `none` lexes/parses and behaves identically to the `null`
+// alias today.
+
+spec "none keyword: parse + legacy behaviour" {
+    then "none on a pointer slot coalesces to the fallback" {
+        let x: ptr = none
+        let y = x ?? 42
+        y == 42
+    }
+    then "null alias still parses and behaves identically" {
+        let x: ptr = null
+        let y = x ?? 42
+        y == 42
+    }
+    then "present pointer keeps its value through ??" {
+        let z = 10 ?? 99
+        z == 10
+    }
+    then "none and null are interchangeable as the absence literal" {
+        let a: ptr = none
+        let b: ptr = null
+        let c = a ?? b ?? 7
+        c == 7
+    }
+}

@@ -1,0 +1,46 @@
+// WHY: Nullability epic Phase 0 (xm2g.1) — `Option<T>` is the canonical
+// type that `T?` desugars to. It is injected into every program by
+// `desugar.inject_intrinsics` (mirroring `Result<T, E>`), so user code
+// can name and pattern-match it without an import. Phase 0 only defines
+// the type; the `T?` <-> Option lowering and dual representation land in
+// later phases. These specs pin that the prelude type exists and that
+// its two variants construct and match.
+
+spec "Option prelude type" {
+    then "Option.Some carries and unwraps its payload" {
+        let o = Option.Some(5)
+        let v = match o {
+            .Some(n) -> n
+            .None -> 0
+        }
+        v == 5
+    }
+    then "Option.None matches the absent arm" {
+        let o: Option<int> = Option.None
+        let v = match o {
+            .Some(n) -> n
+            .None -> -1
+        }
+        v == -1
+    }
+    then "Option threads through a function return" {
+        let o = wrap_positive(7)
+        let v = match o {
+            .Some(n) -> n
+            .None -> 0
+        }
+        v == 7
+    }
+    then "Option returns the absent case for the guard miss" {
+        let o = wrap_positive(-3)
+        let v = match o {
+            .Some(n) -> n
+            .None -> 0
+        }
+        v == 0
+    }
+}
+
+fn wrap_positive(n: int) -> Option<int> {
+    if n > 0 { Option.Some(n) } else { Option.None }
+}
