@@ -738,7 +738,7 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
         // Optional (T?): resolve the inner so its nominal slot upgrades
         // (Struct shell -> Enum, id stamping). Without this the inner of a
         // `T?` annotation stays unresolved and false-positive type
-        // mismatches fire against the resolved body type. Nullability epic.
+        // mismatches fire against the resolved body type.
         .Optional(inner) -> ValueType.Optional(resolve_vtype(tc, inner))
         _ -> vt
     }
@@ -1563,8 +1563,8 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 /// element-type hint (so07.4); Call threads it to generic-fn
 /// inference (so07.7.15). Other expressions fall through unchanged.
 export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprResult {
-    // Auto-widen (Nullability epic): a value of type `T` satisfies an
-    // expected `T?`. Propagate the stripped (non-optional) type inward so
+    // Auto-widen: a value of type `T` satisfies an expected `T?`.
+    // Propagate the stripped (non-optional) type inward so
     // literal inference (empty lists, generic calls) pins the element /
     // return type instead of seeing `Optional` and decaying to Unknown.
     let exp = vtype_strip_optional(expected)
@@ -2002,8 +2002,8 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
             .Task(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
             _ -> acc
         }
-        // Nullability epic: unify `T?` param against `U?` arg (inner-to-inner)
-        // or against a bare `U` arg (auto-widen — a present `U` satisfies `T?`).
+        // Unify `T?` param against `U?` arg (inner-to-inner) or against a
+        // bare `U` arg (auto-widen — a present `U` satisfies `T?`).
         .Optional(p_inner) -> match arg_ty {
             .Optional(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
             _ -> tc_unify(tp, p_inner, arg_ty, acc)

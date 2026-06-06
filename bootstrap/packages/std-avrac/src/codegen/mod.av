@@ -186,7 +186,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         // the pointer (consistent with how List/Map containers are handled,
         // and avoids referencing a deep `__release_Inner` that may be
         // declared-only in a cross-unit shard). Value-inner optionals
-        // (int?/bool?/float?) are not RC — no-op. Nullability epic Phase 1.
+        // (int?/bool?/float?) are not RC — no-op.
         .Optional(inner) -> {
             if vtype_is_ptr_type(inner) { ctx.rc_release(val) }
         }
@@ -449,8 +449,8 @@ impl Ctx {
     /// Emit `expr` as a member-access receiver: a `T?` value is treated
     /// as its inner `T` (pointer-niche — the value IS the inner repr, null
     /// pointer = none), so field / index / method / `with` dispatch on the
-    /// inner type. Nullability epic Phase 1 (permissive); Phase 4 gating
-    /// will instead require an explicit unwrap / narrow here.
+    /// inner type (permissive nullability); strict gating, a later
+    /// milestone, will instead require an explicit unwrap / narrow here.
     fn emit_member(self, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
         let r = emit_expr(self, env, expr)?
         ok_emit(r.value, vtype_strip_optional(r.ty))

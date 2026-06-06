@@ -728,8 +728,8 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Unknown -> i64t
         .Task(_) -> i64t
         // Optional (T?): pointer-niche repr lowers to the inner type's LLVM
-        // type (null pointer = none). Value-inner optionals get a tagged
-        // struct in Phase 2; Phase 1 tracks the type permissively.
+        // type (null pointer = none). A value-tagged struct for value inner
+        // is not yet wired; for now the type is tracked permissively.
         .Optional(inner) -> llvm_type_for_full(i64t, i1t, dt, pt, inner)
     }
 }

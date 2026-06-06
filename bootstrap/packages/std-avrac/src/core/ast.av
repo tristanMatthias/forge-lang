@@ -102,12 +102,13 @@ export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
 /// a one-level map descends into single-wrapper children without the
 /// parent losing the span it owns. `T` (the `.node` type) is inferred
 /// from `f`'s signature; `W` is the wrapper.
-// ── Optional (`T?`) walker helpers (Nullability epic Phase 1) ──
+// ── Optional (`T?`) walker helpers ──
 // derive_walker emits calls to these for nullable single children
 // (`Self?` and `Wrapper<Self>?`, e.g. `else_branch: SStmt?`). They are
 // none-guarded: an absent child contributes nothing to `children()` and
 // stays absent under `map()`; a present child is descended into. This is
-// what lets the spans epic migrate `If.else_branch` to `SStmt?`.
+// what lets a nullable single spanned child (`If.else_branch` as `SStmt?`)
+// walk and rewrite mechanically.
 
 /// `Self?` → 0-or-1-element child list. Absent ⇒ empty.
 export fn self_opt_to_list<T>(x: T?) -> List<T> {
@@ -355,11 +356,13 @@ export enum ValueType {
     /// Task / future type from `spawn`: `result_ty` is what the task
     /// resolves to when awaited.
     Task(result_ty: ValueType),
-    /// Optional / nullable type: `T?` ≡ `Option<inner>` (Nullability epic
-    /// Axis 10). The absence literal `none` inhabits this; a present value
-    /// is the wrapped `inner`. Representation is chosen by `optional_repr`
-    /// (null-pointer niche for pointer-backed inner, tagged struct for
-    /// value inner). `T??` normalizes to `T?` — no double-optional.
+    /// Optional / nullable type: `T?` ≡ `Option<inner>` (spec Axis 10).
+    /// The absence literal `none` inhabits this; a present value is the
+    /// wrapped `inner`. Represented permissively as the inner type with a
+    /// null-pointer niche for pointer-backed inner (null pointer = none);
+    /// a value-tagged repr that distinguishes `none` from `0`/`false` for
+    /// value inner is not yet wired. `T??` normalizes to `T?` — no
+    /// double-optional.
     Optional(inner: ValueType),
 }
 
@@ -404,7 +407,7 @@ export enum TypeExpr {
 /// monomorphizer's `substitute_vtype`.
 export fn vtype_from_name(name: string) -> ValueType {
     // Handle nullable "T?" — track it as Optional(inner) instead of
-    // erasing the `?` (Nullability epic Phase 1). `T??` normalizes to `T?`.
+    // erasing the `?`. `T??` normalizes to `T?`.
     if name.ends_with("?") && name.length > 1 {
         return vtype_wrap_optional(vtype_from_name(name.substring(0, name.length - 1)))
     }
@@ -487,10 +490,10 @@ fn tel_to_type_list(tel: List<TypeExpr>) -> List<ValueType> {
 /// string). Use `vtype_assignable` for the broader "can A be passed
 /// where B is expected" check.
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
-    // Phase 1 (permissive): `T?` is interchangeable with `T`. Strip
+    // Permissive nullability: `T?` is interchangeable with `T`. Strip
     // optionals on both sides before structural comparison so existing
-    // code that mixes `T` and `T?` keeps type-checking. Phase 4 flips to
-    // gating, where the distinction becomes load-bearing.
+    // code that mixes `T` and `T?` keeps type-checking. Strict gating (a
+    // later milestone) makes the distinction load-bearing.
     if (a is .Optional) || (b is .Optional) {
         return vtype_eq(vtype_strip_optional(a), vtype_strip_optional(b))
     }
