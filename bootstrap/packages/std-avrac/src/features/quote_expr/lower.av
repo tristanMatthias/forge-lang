@@ -866,6 +866,8 @@ fn construct_value_type(vt: ValueType) -> Expr {
                        int_lit_expr(id)))
         .Task(result_ty) -> value_type_ctor_args("Task",
             one_arg(construct_value_type(result_ty)))
+        .Optional(inner) -> value_type_ctor_args("Optional",
+            one_arg(construct_value_type(inner)))
     }
 }
 

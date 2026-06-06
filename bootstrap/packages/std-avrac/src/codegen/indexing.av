@@ -10,7 +10,7 @@ use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 ///   the single-character substring.
 /// Anything else is a codegen error.
 export fn emit_index(ctx: Ctx, env: List<VarBinding>, obj: Expr, idx: Expr) -> Result<EmitValue, string> {
-    let r = ctx.emit(env, obj)?
+    let r = ctx.emit_member(env, obj)?
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
     if vtype_eq(r.ty, .Ptr) {
         let i_r = ctx.emit(env, idx)?

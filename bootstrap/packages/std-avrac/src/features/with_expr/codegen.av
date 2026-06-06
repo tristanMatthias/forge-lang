@@ -23,7 +23,7 @@ export fn emit_with(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
 /// spec 9.12), copy every field, then overwrite the named ones
 /// with their override expressions.
 fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<FieldInit>) -> Result<EmitValue, string> {
-    let r = ctx.emit(env, obj)?
+    let r = ctx.emit_member(env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {

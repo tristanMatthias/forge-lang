@@ -102,6 +102,40 @@ export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
 /// a one-level map descends into single-wrapper children without the
 /// parent losing the span it owns. `T` (the `.node` type) is inferred
 /// from `f`'s signature; `W` is the wrapper.
+// ── Optional (`T?`) walker helpers ──
+// derive_walker emits calls to these for nullable single children
+// (`Self?` and `Wrapper<Self>?`, e.g. `else_branch: SStmt?`). They are
+// none-guarded: an absent child contributes nothing to `children()` and
+// stays absent under `map()`; a present child is descended into. This is
+// what lets a nullable single spanned child (`If.else_branch` as `SStmt?`)
+// walk and rewrite mechanically.
+
+/// `Self?` → 0-or-1-element child list. Absent ⇒ empty.
+export fn self_opt_to_list<T>(x: T?) -> List<T> {
+    mut out: List<T> = []
+    if x != none { out.push(x!) }
+    out
+}
+
+/// `Wrapper<Self>?` → 0-or-1-element child list of the unwrapped `.node`.
+export fn unwrap_node_opt<W, T>(x: W?) -> List<T> {
+    mut out: List<T> = []
+    if x != none { out.push(x!.node) }
+    out
+}
+
+/// Span-preserving none-guarded map over a `Self?` child: descend with
+/// `f` when present, leave `none` untouched.
+export fn map_self_opt<T>(x: T?, f: fn(T) -> T) -> T? {
+    if x != none { f(x!) } else { none }
+}
+
+/// Span-preserving none-guarded map over a `Wrapper<Self>?` child:
+/// rewrap `f(.node)` keeping the wrapper's span when present, else `none`.
+export fn map_node_opt<W, T>(x: W?, f: fn(T) -> T) -> W? {
+    if x != none { x! with { node: f(x!.node) } } else { none }
+}
+
 export fn map_node<W, T>(x: W, f: fn(T) -> T) -> W {
     x with { node: f(x.node) }
 }
@@ -322,6 +356,14 @@ export enum ValueType {
     /// Task / future type from `spawn`: `result_ty` is what the task
     /// resolves to when awaited.
     Task(result_ty: ValueType),
+    /// Optional / nullable type: `T?` ≡ `Option<inner>` (spec Axis 10).
+    /// The absence literal `none` inhabits this; a present value is the
+    /// wrapped `inner`. Represented permissively as the inner type with a
+    /// null-pointer niche for pointer-backed inner (null pointer = none);
+    /// a value-tagged repr that distinguishes `none` from `0`/`false` for
+    /// value inner is not yet wired. `T??` normalizes to `T?` — no
+    /// double-optional.
+    Optional(inner: ValueType),
 }
 
 /// Structured type annotation as written in source. Pre-resolution
@@ -364,9 +406,10 @@ export enum TypeExpr {
 /// resolves the id. Used by `type_expr_to_vtype` and by the
 /// monomorphizer's `substitute_vtype`.
 export fn vtype_from_name(name: string) -> ValueType {
-    // Handle nullable "T?"
+    // Handle nullable "T?" — track it as Optional(inner) instead of
+    // erasing the `?`. `T??` normalizes to `T?`.
     if name.ends_with("?") && name.length > 1 {
-        return vtype_from_name(name.substring(0, name.length - 1))
+        return vtype_wrap_optional(vtype_from_name(name.substring(0, name.length - 1)))
     }
     // Handle union "A|B"
     let pipe = find_type_pipe(name)
@@ -413,7 +456,7 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
             let rt = type_expr_to_vtype(right)
             ValueType.Union(union_type_list_merge(lt, rt))
         }
-        .Optional(inner) -> type_expr_to_vtype(inner)
+        .Optional(inner) -> vtype_wrap_optional(type_expr_to_vtype(inner))
         .FnType(params, ret) -> ValueType.FnTyped(tel_to_type_list(params), type_expr_to_vtype(ret))
         .ListType(elem) -> ValueType.List(type_expr_to_vtype(elem))
         .Generic(base, args) -> {
@@ -447,6 +490,13 @@ fn tel_to_type_list(tel: List<TypeExpr>) -> List<ValueType> {
 /// string). Use `vtype_assignable` for the broader "can A be passed
 /// where B is expected" check.
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
+    // Permissive nullability: `T?` is interchangeable with `T`. Strip
+    // optionals on both sides before structural comparison so existing
+    // code that mixes `T` and `T?` keeps type-checking. Strict gating (a
+    // later milestone) makes the distinction load-bearing.
+    if (a is .Optional) || (b is .Optional) {
+        return vtype_eq(vtype_strip_optional(a), vtype_strip_optional(b))
+    }
     match a {
         .Int -> b is .Int
         .U8 -> b is .U8
@@ -535,6 +585,7 @@ export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
         .FnTyped(params, ret) -> ValueType.FnTyped(stamp_ids_vtypes(params, reg), stamp_ids_vtype(ret, reg))
         .Fn(ret) -> ValueType.Fn(stamp_ids_vtype(ret, reg))
         .Closure(n, ret) -> ValueType.Closure(n, stamp_ids_vtype(ret, reg))
+        .Optional(inner) -> ValueType.Optional(stamp_ids_vtype(inner, reg))
         _ -> t
     }
 }
@@ -882,6 +933,26 @@ fn narrowed_assignable_to(src: ValueType, dst: ValueType) -> bool {
 /// True iff `t` is the unresolved-type sentinel.
 export fn vtype_is_unknown(t: ValueType) -> bool { t is .Unknown }
 
+/// True iff `t` is an optional/nullable type (`T?`).
+export fn vtype_is_optional(t: ValueType) -> bool { t is .Optional }
+
+/// The inner type of an optional, or `t` unchanged when not optional.
+/// `vtype_strip_optional(T?) == T`; `vtype_strip_optional(T) == T`.
+export fn vtype_strip_optional(t: ValueType) -> ValueType {
+    match t {
+        .Optional(inner) -> inner
+        _ -> t
+    }
+}
+
+/// Wrap `t` in an optional, normalizing `T??` to `T?` (no double-optional).
+export fn vtype_wrap_optional(t: ValueType) -> ValueType {
+    match t {
+        .Optional(_) -> t
+        _ -> ValueType.Optional(t)
+    }
+}
+
 /// True iff `t` is the `string` type.
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
 
@@ -1006,6 +1077,7 @@ export fn vtype_display(t: ValueType) -> string {
         .NarrowedEnum(en, vn, _) -> "${en}.${vn}"
         .Unknown -> "<unknown>"
         .Task(r) -> "Task<${vtype_display(r)}>"
+        .Optional(inner) -> "${vtype_display(inner)}?"
     }
 }
 
@@ -1051,6 +1123,7 @@ export fn vtype_render_full(t: ValueType) -> string {
         .NarrowedEnum(en, vn, _) -> "${en}.${vn}"
         .Unknown -> ""
         .Task(r) -> "Task<${vtype_render_full(r)}>"
+        .Optional(inner) -> "${vtype_render_full(inner)}?"
     }
 }
 

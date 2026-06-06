@@ -123,6 +123,11 @@ enum FieldKind {
     ListOfSelf,
     WrapperOfSelf(wrapper: string),
     WrapperListOfSelf(wrapper: string),
+    // Nullable single children (`Self?` and `Wrapper<Self>?`, e.g.
+    // `else_branch: SStmt?`). None-guarded in children()/map() via the
+    // *_opt runtime helpers.
+    OptionalDirectSelf,
+    OptionalWrapperOfSelf(wrapper: string),
 }
 
 type Binding = { binding_name: string, kind: FieldKind }
@@ -192,6 +197,15 @@ fn classify_variant(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<B
 /// not from a hardcoded SStmt/SExpr table.
 @comptime
 fn classify_field_kind(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> FieldKind {
+    // A nullable single child (`Self?` / `Wrapper<Self>?`) is walked
+    // none-guarded. Optional of a non-self type stays a Scalar.
+    if vt_is_optional(vt) {
+        let inner = vt_optional_inner(vt)
+        if is_self_type(inner, parent_name) { return FieldKind.OptionalDirectSelf }
+        let ow = single_wrapper_short_name_of(inner, parent_name, ctx)
+        if ow != "" { return FieldKind.OptionalWrapperOfSelf(ow) }
+        return FieldKind.Scalar
+    }
     if is_self_type(vt, parent_name) { return FieldKind.DirectSelf }
     if is_list_of_self(vt, parent_name) { return FieldKind.ListOfSelf }
     let single = single_wrapper_short_name_of(vt, parent_name, ctx)
@@ -206,8 +220,16 @@ fn wrapper_of(k: FieldKind) -> string {
     match k {
         .WrapperOfSelf(w) -> w
         .WrapperListOfSelf(w) -> w
+        .OptionalWrapperOfSelf(w) -> w
         _ -> ""
     }
+}
+
+/// True for the nullable single-child kinds — contribute a 0-or-1
+/// element list to children() and a none-guarded map() reconstruction.
+@comptime
+fn is_optional_child(k: FieldKind) -> bool {
+    (k is .OptionalDirectSelf) || (k is .OptionalWrapperOfSelf)
 }
 
 /// True when this field kind contributes exactly one Self child — a bare
@@ -276,6 +298,24 @@ fn list_elem_or_unknown(vt: ValueType) -> ValueType {
     }
 }
 
+/// `@comptime` optional probes for classify_field_kind (value-returning
+/// arms, not an empty-block match — comptime can't eval a `_ -> {}` arm).
+@comptime
+fn vt_is_optional(vt: ValueType) -> bool {
+    match vt {
+        .Optional(_) -> true
+        _ -> false
+    }
+}
+
+@comptime
+fn vt_optional_inner(vt: ValueType) -> ValueType {
+    match vt {
+        .Optional(inner) -> inner
+        _ -> ValueType.Unknown
+    }
+}
+
 
 /// `.VariantName(b1, b2, b3)` pattern. Each binding becomes a
 /// ParamEntry — same shape the parser produces for the simple
@@ -306,7 +346,10 @@ fn arm_body(bindings: List<Binding>, parent_name: string) -> Expr {
     let direct_count = count_direct(bindings)
     let list_count = count_list(bindings)
     let wrap_count = count_wrap(bindings)
-    let total_list = list_count + wrap_count
+    let opt_count = count_opt(bindings)
+    // Optional children contribute a conditional (0-or-1) list, so they
+    // count toward the list total — forcing the concat-fold path.
+    let total_list = list_count + wrap_count + opt_count
 
     if direct_count == 0 && total_list == 0 {
         return Expr.Ident(empty_binding_name())
@@ -381,6 +424,13 @@ fn count_list(bindings: List<Binding>) -> int {
 }
 
 @comptime
+fn count_opt(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if is_optional_child(b.kind) { n = n + 1 } }
+    n
+}
+
+@comptime
 fn count_wrap(bindings: List<Binding>) -> int {
     mut n = 0
     for b in bindings { if b.kind is .WrapperListOfSelf { n = n + 1 } }
@@ -397,6 +447,13 @@ fn count_wrap(bindings: List<Binding>) -> int {
 /// list-child binding through `list_concat(acc, list_child)`. The result
 /// is a single Expr.Call (or Expr.ListLit when no list-children exist —
 /// handled upstream by the early-return in list_lit_of_direct_children).
+///
+/// The list-contributing kinds are dispatched with an `is`-chain rather
+/// than a `match`: this runs under `@comptime`, and the comptime
+/// interpreter can't evaluate a match whose non-contributing arms would
+/// be empty blocks (`-> {}`). The chain is therefore deliberate — when a
+/// new list-contributing FieldKind is added, add its branch here too (the
+/// expression-valued `map_arm_body` match stays the exhaustiveness guard).
 @comptime
 fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr {
     mut direct_elems: List<SExpr> = []
@@ -415,8 +472,37 @@ fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr
             let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(unwrap_call(b.binding_name, wrapper_of(b.kind), parent_name))]
             acc = Expr.Call(Expr.Ident("list_concat"), args)
         }
+        // Nullable single children contribute a 0-or-1 element list via
+        // the none-guarded *_opt helpers.
+        if b.kind is .OptionalDirectSelf {
+            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(self_opt_to_list_call(b.binding_name, parent_name))]
+            acc = Expr.Call(Expr.Ident("list_concat"), args)
+        }
+        if b.kind is .OptionalWrapperOfSelf {
+            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(unwrap_node_opt_call(b.binding_name, wrapper_of(b.kind), parent_name))]
+            acc = Expr.Call(Expr.Ident("list_concat"), args)
+        }
     }
     acc
+}
+
+/// `self_opt_to_list::<Parent>(field)` — a `Self?` child as a 0-or-1
+/// element list. Explicit type-arg (like unwrap_node_list) so the call
+/// type-checks without relying on optional-aware inference.
+@comptime
+fn self_opt_to_list_call(field_name: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let type_args: List<string> = [parent_name]
+    Expr.GenericCall(Expr.Ident("self_opt_to_list"), type_args, args)
+}
+
+/// `unwrap_node_opt::<W, Parent>(field)` — a `Wrapper<Self>?` child as a
+/// 0-or-1 element list of the unwrapped `.node`.
+@comptime
+fn unwrap_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("unwrap_node_opt"), type_args, args)
 }
 
 // ── children() fn builder ──
@@ -695,12 +781,36 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
             .ListOfSelf -> list_map_call(bind_name)
             .WrapperOfSelf(w) -> map_node_call(bind_name, w, parent_name)
             .WrapperListOfSelf(w) -> map_node_list_call(bind_name, w, parent_name)
-            _ -> Expr.Ident(bind_name)
+            // None-guarded map of nullable children.
+            .OptionalDirectSelf -> map_self_opt_call(bind_name, parent_name)
+            .OptionalWrapperOfSelf(w) -> map_node_opt_call(bind_name, w, parent_name)
+            // A scalar (non-Self) field is carried through unchanged. Named
+            // explicitly (not `_`) so a new FieldKind forces a compile error
+            // here rather than silently leaving its child unwalked.
+            .Scalar -> Expr.Ident(bind_name)
         }
         args.push(sexpr_dummy(arg_expr))
         idx = idx + 1
     }
     Expr.EnumCtor(parent_name, variant_name, args)
+}
+
+/// `map_self_opt::<Parent>(field, f)` — none-guarded map over a `Self?`
+/// child. Explicit type-arg so the call type-checks without inference.
+@comptime
+fn map_self_opt_call(field_name: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [parent_name]
+    Expr.GenericCall(Expr.Ident("map_self_opt"), type_args, args)
+}
+
+/// `map_node_opt::<W, Parent>(field, f)` — span-preserving none-guarded
+/// map over a `Wrapper<Self>?` child.
+@comptime
+fn map_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("map_node_opt"), type_args, args)
 }
 
 /// `f(bind_name)` — the per-field transform applied to a direct-Self.

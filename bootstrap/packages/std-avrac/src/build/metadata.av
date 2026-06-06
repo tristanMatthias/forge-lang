@@ -249,7 +249,10 @@ export fn sym_id_for(qualified_name: string) -> int {
 // Magic bytes: ASCII "AVMD" in little-endian u32.
 export const METADATA_MAGIC: int = 0x444D5641
 export const METADATA_VERSION_MAJOR: int = 1
-export const METADATA_VERSION_MINOR: int = 1
+// Minor 2: added the VT_OPTIONAL type tag (`T?` ≡ Option<T>). Backward-
+// compatible additive change; the compiler-binary fingerprint already
+// invalidates stale caches, but the bump records the format evolution.
+export const METADATA_VERSION_MINOR: int = 2
 
 /// Stable section IDs. Kept in this enum so the byte values are
 /// pinned — adding a new section appends; never reorder or reuse a
@@ -372,6 +375,7 @@ const VT_FN: int = 0x33
 const VT_FN_TYPED: int = 0x34
 const VT_CLOSURE: int = 0x35
 const VT_TASK: int = 0x36
+const VT_OPTIONAL: int = 0x37
 
 impl BytesWriter {
     fn vtype(self, vt: ValueType) {
@@ -453,6 +457,10 @@ impl BytesWriter {
             .Task(rt) -> {
                 self.u8(VT_TASK)
                 self.vtype(rt)
+            }
+            .Optional(inner) -> {
+                self.u8(VT_OPTIONAL)
+                self.vtype(inner)
             }
         }
     }
@@ -644,6 +652,9 @@ impl BytesReader {
         }
         if tag == VT_TASK {
             return ValueType.Task(self.vtype())
+        }
+        if tag == VT_OPTIONAL {
+            return ValueType.Optional(self.vtype())
         }
         ValueType.Unknown
     }

@@ -1,0 +1,29 @@
+// WHY: Phase 1 tracks `T?` permissively with a pointer-niche repr — a
+// member-access receiver of type `T?` is treated as its inner `T` (the
+// value IS the inner repr; null pointer = none). `Ctx.emit_member`
+// centralizes that strip for the four receiver sites: field access,
+// method call, indexing, and `with`-update. The walker test covers the
+// derive path; this pins the *codegen* receiver path directly so the
+// permissive behavior can't silently regress before strict gating lands.
+
+type OmPoint = { x: int, y: int }
+
+spec "member access on a permissive T? strips the optional" {
+    then "field access on a struct? reads the inner field" {
+        let p: OmPoint? = OmPoint { x: 3, y: 4 }
+        p.x == 3
+    }
+    then "method call on a string? dispatches on the inner string" {
+        let s: string? = "hello"
+        s.length == 5
+    }
+    then "index on a list? indexes the inner list" {
+        let xs: List<int>? = [10, 20, 30]
+        xs[1] == 20
+    }
+    then "with-update on a struct? produces the updated struct" {
+        let p: OmPoint? = OmPoint { x: 3, y: 4 }
+        let p2 = p with { x: 9 }
+        p2.x == 9 && p2.y == 4
+    }
+}

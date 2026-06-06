@@ -395,7 +395,7 @@ fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: st
 /// inherent-method call. Falls back to plain by-name call for
 /// unknown receivers.
 export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
-    let r = ctx.emit(env, obj)?
+    let r = ctx.emit_member(env, obj)?
     if vtype_is_str(r.ty) {
         return emit_string_method(ctx, env, r.value, method, args)
     }

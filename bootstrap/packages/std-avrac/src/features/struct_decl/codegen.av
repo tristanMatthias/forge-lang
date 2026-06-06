@@ -110,7 +110,7 @@ export fn emit_field_access(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
         }
     }
 
-    let r = ctx.emit(env, obj)?
+    let r = ctx.emit_member(env, obj)?
 
     // Task.await — join the thread and return its result with the Task's result type.
     if field == "await" {

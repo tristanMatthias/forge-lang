@@ -1206,6 +1206,7 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
         .Closure(n, ret) -> .Closure(n, rewrite_vtype(ctx, ret))
         .Union(types) -> .Union(rewrite_vtype_list(ctx, types))
         .Task(rt) -> .Task(rewrite_vtype(ctx, rt))
+        .Optional(inner) -> .Optional(rewrite_vtype(ctx, inner))
         // Tuple inner types need qualifying too — otherwise a fn
         // returning `(int, MyType)` keeps `MyType` bare, and methods
         // dispatched on a destructured tuple element fail with

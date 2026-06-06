@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -735,6 +735,11 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
         // and check_try saw `(tuple)` instead of
         // `(tuple List<int>, BytesReader)`.
         .Tuple(elems) -> ValueType.Tuple(resolve_vtype_list(tc, elems))
+        // Optional (T?): resolve the inner so its nominal slot upgrades
+        // (Struct shell -> Enum, id stamping). Without this the inner of a
+        // `T?` annotation stays unresolved and false-positive type
+        // mismatches fire against the resolved body type.
+        .Optional(inner) -> ValueType.Optional(resolve_vtype(tc, inner))
         _ -> vt
     }
 }
@@ -1558,9 +1563,14 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 /// element-type hint (so07.4); Call threads it to generic-fn
 /// inference (so07.7.15). Other expressions fall through unchanged.
 export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprResult {
+    // Auto-widen: a value of type `T` satisfies an expected `T?`.
+    // Propagate the stripped (non-optional) type inward so
+    // literal inference (empty lists, generic calls) pins the element /
+    // return type instead of seeing `Optional` and decaying to Unknown.
+    let exp = vtype_strip_optional(expected)
     match expr {
-        .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(expected))
-        .Call(callee, args) -> check_call_with_expected(tc, callee, args, expected)
+        .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
+        .Call(callee, args) -> check_call_with_expected(tc, callee, args, exp)
         _ -> check_expr(tc, expr)
     }
 }
@@ -1991,6 +2001,12 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
         .Task(p_inner) -> match arg_ty {
             .Task(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
             _ -> acc
+        }
+        // Unify `T?` param against `U?` arg (inner-to-inner) or against a
+        // bare `U` arg (auto-widen — a present `U` satisfies `T?`).
+        .Optional(p_inner) -> match arg_ty {
+            .Optional(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
+            _ -> tc_unify(tp, p_inner, arg_ty, acc)
         }
         .FnTyped(p_params, p_ret) -> match arg_ty {
             .FnTyped(a_params, a_ret) -> {

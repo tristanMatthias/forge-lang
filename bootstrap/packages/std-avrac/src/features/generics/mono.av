@@ -390,6 +390,10 @@ fn vtype_mangle_slug(t: ValueType) -> string {
         .Task(inner) -> "Task<${vtype_mangle_slug(inner)}>"
         .Tuple(elems) -> "Tuple<${mangle_arg_list(elems)}>"
         .NarrowedEnum(en, vn, _) -> "${type_short_name(en)}.${vn}"
+        // Permissive nullability: `T?` monomorphizes identically to `T`
+        // (pointer-niche), so the slug strips the optional — keeps
+        // call-site and instance mangled names in sync.
+        .Optional(inner) -> vtype_mangle_slug(inner)
         _ -> vtype_render_full(t)
     }
 }
