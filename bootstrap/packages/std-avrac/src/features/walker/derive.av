@@ -447,6 +447,13 @@ fn count_wrap(bindings: List<Binding>) -> int {
 /// list-child binding through `list_concat(acc, list_child)`. The result
 /// is a single Expr.Call (or Expr.ListLit when no list-children exist —
 /// handled upstream by the early-return in list_lit_of_direct_children).
+///
+/// The list-contributing kinds are dispatched with an `is`-chain rather
+/// than a `match`: this runs under `@comptime`, and the comptime
+/// interpreter can't evaluate a match whose non-contributing arms would
+/// be empty blocks (`-> {}`). The chain is therefore deliberate — when a
+/// new list-contributing FieldKind is added, add its branch here too (the
+/// expression-valued `map_arm_body` match stays the exhaustiveness guard).
 @comptime
 fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr {
     mut direct_elems: List<SExpr> = []
