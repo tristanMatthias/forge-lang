@@ -6,6 +6,7 @@ use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use features.closures.{emit_lambda_typed}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
+use features.null_safety.{emit_optional_coerce}
 
 /// Emit a single-argument call helper. Returns the first argument's
 /// EmitValue or an error when the list is empty. Used by built-in
@@ -82,6 +83,10 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
         let param_vt = param_type_vt_at(ptypes, slot)
         if !vtype_is_unknown(param_vt) {
             let param_ty = ctx.resolve_codegen_vtype(param_vt)
+            // Optional box/unbox: box a present value-inner arg into a `T?`
+            // param; unbox a `T?` arg passed to a non-optional param.
+            let oc = emit_optional_coerce(ctx, EmitValue { value: value, ty: r.ty }, param_ty)
+            value = oc.value
             if needs_union_wrap(r.ty, param_ty) {
                 let wrapped = emit_union_wrap(ctx, value, r.ty, param_ty)?
                 value = wrapped.value

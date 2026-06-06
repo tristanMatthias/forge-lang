@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional}
+use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.{emit_defers_on_error}
@@ -30,11 +30,24 @@ export fn emit_null_coalesce(ctx: Ctx, env: List<VarBinding>, left: Expr, right:
     } else {
         ctx.eq(l.value, ctx.i64(0), "nc_null")
     }
+    let present_bb = ctx.bb("nc_present")
     let then_bb = ctx.bb("nc_rhs")
     let merge_bb = ctx.bb("nc_end")
     let result_slot = ctx.alloca_i64("nc_result")
-    ctx.store(ctx.to_i64(l.value, "nc_lhs"), result_slot)
-    ctx.cond_br(is_null, then_bb, merge_bb)
+    ctx.cond_br(is_null, then_bb, present_bb)
+
+    // Present path (left is non-none): unwrap so `??` yields the inner
+    // value, not the box pointer (boxed value-inner repr). The unwrap MUST
+    // live here, not the entry block — unwrapping a `none` (null box) would
+    // load from a null pointer. Non-optional/niche left unwraps to itself.
+    ctx.position(present_bb)
+    let l_present = if vtype_is_optional(l.ty) {
+        emit_optional_unwrap(ctx, vtype_strip_optional(l.ty), l.value)
+    } else {
+        l.value
+    }
+    ctx.store(ctx.to_i64(l_present, "nc_lhs"), result_slot)
+    ctx.br(merge_bb)
 
     // Right-hand side: only evaluated when left is null.
     ctx.position(then_bb)

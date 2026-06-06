@@ -5,6 +5,7 @@ use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for}
 use features.enum_decl.{emit_enum_ctor}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
+use features.null_safety.{emit_optional_coerce}
 
 /// Codegen for `Foo { x: 1, y: 2 }`. Allocates the struct's
 /// LLVM type via the arena (or reuses a Copy-type stack slot when
@@ -48,9 +49,10 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
         let init = inits[i]
         let idx = field_index_of(fields, init.name)
         if idx < 0 { return err_emit("unknown field `${init.name}`") }
-        let r = ctx.emit(env, init.value.node)?
+        mut r = ctx.emit(env, init.value.node)?
         let fld_ty = ctx.resolve_field_type(fields, init.name)
         let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+        r = emit_optional_coerce(ctx, r, fld_ty)
         // Union wrapping: if field type is union and value is a concrete member
         if needs_union_wrap(r.ty, fld_ty) {
             let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
@@ -81,8 +83,9 @@ export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
     let st_ty = ctx.get_type(struct_name)
     let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
-    let v = ctx.emit(env, value)?
+    mut v = ctx.emit(env, value)?
     let fld_ty = ctx.resolve_field_type(lookup.fields, field)
+    v = emit_optional_coerce(ctx, v, fld_ty)
     if needs_union_wrap(v.ty, fld_ty) {
         let wrapped = emit_union_wrap(ctx, v.value, v.ty, fld_ty)?
         ctx.store_field(wrapped.value, gep, fld_ty)
