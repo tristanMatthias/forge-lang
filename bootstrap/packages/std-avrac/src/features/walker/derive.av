@@ -123,9 +123,9 @@ enum FieldKind {
     ListOfSelf,
     WrapperOfSelf(wrapper: string),
     WrapperListOfSelf(wrapper: string),
-    // Nullability epic Phase 1: nullable single children (`Self?` and
-    // `Wrapper<Self>?`, e.g. `else_branch: SStmt?`). None-guarded in
-    // children()/map() via the *_opt runtime helpers.
+    // Nullable single children (`Self?` and `Wrapper<Self>?`, e.g.
+    // `else_branch: SStmt?`). None-guarded in children()/map() via the
+    // *_opt runtime helpers.
     OptionalDirectSelf,
     OptionalWrapperOfSelf(wrapper: string),
 }
@@ -197,9 +197,8 @@ fn classify_variant(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<B
 /// not from a hardcoded SStmt/SExpr table.
 @comptime
 fn classify_field_kind(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> FieldKind {
-    // Nullability epic Phase 1: a nullable single child (`Self?` /
-    // `Wrapper<Self>?`) is walked none-guarded. Optional of a non-self
-    // type stays a Scalar.
+    // A nullable single child (`Self?` / `Wrapper<Self>?`) is walked
+    // none-guarded. Optional of a non-self type stays a Scalar.
     if vt_is_optional(vt) {
         let inner = vt_optional_inner(vt)
         if is_self_type(inner, parent_name) { return FieldKind.OptionalDirectSelf }
@@ -299,8 +298,8 @@ fn list_elem_or_unknown(vt: ValueType) -> ValueType {
     }
 }
 
-/// Nullability epic Phase 1 — `@comptime` optional probes for
-/// classify_field_kind (value-returning arms, no empty-block match).
+/// `@comptime` optional probes for classify_field_kind (value-returning
+/// arms, not an empty-block match — comptime can't eval a `_ -> {}` arm).
 @comptime
 fn vt_is_optional(vt: ValueType) -> bool {
     match vt {
@@ -466,8 +465,8 @@ fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr
             let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(unwrap_call(b.binding_name, wrapper_of(b.kind), parent_name))]
             acc = Expr.Call(Expr.Ident("list_concat"), args)
         }
-        // Nullability epic Phase 1: nullable single children contribute a
-        // 0-or-1 element list via the none-guarded *_opt helpers.
+        // Nullable single children contribute a 0-or-1 element list via
+        // the none-guarded *_opt helpers.
         if b.kind is .OptionalDirectSelf {
             let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(self_opt_to_list_call(b.binding_name, parent_name))]
             acc = Expr.Call(Expr.Ident("list_concat"), args)
@@ -775,10 +774,13 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
             .ListOfSelf -> list_map_call(bind_name)
             .WrapperOfSelf(w) -> map_node_call(bind_name, w, parent_name)
             .WrapperListOfSelf(w) -> map_node_list_call(bind_name, w, parent_name)
-            // Nullability epic Phase 1: none-guarded map of nullable children.
+            // None-guarded map of nullable children.
             .OptionalDirectSelf -> map_self_opt_call(bind_name, parent_name)
             .OptionalWrapperOfSelf(w) -> map_node_opt_call(bind_name, w, parent_name)
-            _ -> Expr.Ident(bind_name)
+            // A scalar (non-Self) field is carried through unchanged. Named
+            // explicitly (not `_`) so a new FieldKind forces a compile error
+            // here rather than silently leaving its child unwalked.
+            .Scalar -> Expr.Ident(bind_name)
         }
         args.push(sexpr_dummy(arg_expr))
         idx = idx + 1
