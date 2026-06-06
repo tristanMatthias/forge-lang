@@ -13,13 +13,28 @@
 // place (`optional_repr_tagged`).
 
 use core.{ValueType, vtype_strip_optional, vtype_is_optional}
-use codegen.{Ctx, EmitValue, vtype_is_ptr_type}
+use codegen.{Ctx, EmitValue}
 
-/// True when `inner` uses the BOXED (tagged) repr — i.e. it is a value type
-/// (int / bool / float / sized ints). Pointer-backed inners use the niche
-/// repr and need no box. This is the single classification point.
+/// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
+/// value type (int / bool / float / sized ints). Pointer-backed inners use
+/// the niche repr and need no box. `Unknown` / `Void` / unresolved inners are
+/// deliberately NOT tagged — they must never be boxed (an unresolved
+/// `Optional(Unknown)` boxed would mis-shape downstream type handling). This
+/// is the single classification point.
 export fn optional_repr_tagged(inner: ValueType) -> bool {
-    !vtype_is_ptr_type(inner)
+    match inner {
+        .Int -> true
+        .Bool -> true
+        .Float -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        _ -> false
+    }
 }
 
 /// The `none` value for any optional: a null pointer (`0`). Repr-independent
