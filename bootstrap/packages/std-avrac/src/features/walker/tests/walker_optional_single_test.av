@@ -1,6 +1,6 @@
 // derive_walker recognises NULLABLE single children — `Self?`
 // (OptionalDirectSelf) and `Wrapper<Self>?` (OptionalWrapperOfSelf,
-// e.g. `else_branch: SStmt?`). Nullability epic Phase 1 (xm2g.2).
+// e.g. `else_branch: SStmt?`).
 //
 //   - children() none-guards: an absent (`none`) child contributes
 //     nothing; a present child contributes exactly one (projected
@@ -9,9 +9,9 @@
 //     descended into with f. Scalar siblings and the wrapper's span
 //     are preserved.
 //
-// This is the concrete proof for the spans-epic unblock: once the
-// walker handles a nullable single spanned child, `Stmt.If.else_branch`
-// can migrate to `SStmt?` and still walk/rewrite mechanically.
+// Concrete proof that once the walker handles a nullable single spanned
+// child, a field like `Stmt.If.else_branch` can migrate to `SStmt?` and
+// still walk/rewrite mechanically.
 //
 // Bypasses metadata mode so derive_walker + the wrapper struct decl are
 // both visible to the @comptime discovery path (mirrors
@@ -93,5 +93,35 @@ spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
             "}\n")
         out.contains("mix_kids=3") && out.contains("mix_absent_kids=1") &&
             out.contains("mapped=5,101,102,103") && out.contains("deep=1")
+    }
+
+    then "optional of a non-Self type (int?) stays a Scalar — never walked as a child" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_scalar_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Mix(maybe_num: int?, child: Tree?),\n" +
+            "}\n" +
+            "\n" +
+            "fn bump(t: Tree) -> Tree { match t { .Leaf(v) -> Tree.Leaf(v + 100), _ -> t } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    // child (Tree?) is the only walkable child; maybe_num (int?) is a scalar.\n" +
+            "    let both = Tree.Mix(5, Tree.Leaf(1))\n" +
+            "    println(\"both=\" + string(both.children().length))\n" +       // 1
+            "    let no_num = Tree.Mix(none, Tree.Leaf(1))\n" +
+            "    println(\"no_num=\" + string(no_num.children().length))\n" +    // 1 — int? absent, child present
+            "    let no_child = Tree.Mix(5, none)\n" +
+            "    println(\"no_child=\" + string(no_child.children().length))\n" + // 0 — scalar-optional never a child
+            "    match both.map(bump) {\n" +
+            "        .Mix(mn, c) -> println(\"kept=\" + string(if mn != none { mn! } else { -1 })),\n" +
+            "        _ -> println(\"notmix\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("both=1") && out.contains("no_num=1") &&
+            out.contains("no_child=0") && out.contains("kept=5")
     }
 }
