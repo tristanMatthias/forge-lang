@@ -491,10 +491,11 @@ fn const_value_to_expr(e: ConstDeclEntry) -> Expr {
     if e.value_kind is .FloatValue {
         // Float literals carry source text rather than bits in the AST;
         // the bit-precise round-trip would need a printf %.17g layer.
-        // For now consumers see Null — the type still flows through.
-        return Expr.Null
+        // Until that exists, consumers see the absence literal `none` —
+        // the type still flows through.
+        return Expr.None
     }
-    Expr.Null
+    Expr.None
 }
 
 fn int_to_text(n: int) -> string {

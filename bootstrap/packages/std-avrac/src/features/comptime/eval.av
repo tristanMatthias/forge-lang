@@ -94,7 +94,7 @@ fn value_to_expr(v: Value) -> Expr? {
         "number" -> Expr.Number(v.number_text)
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
-        "null"   -> Expr.Null
+        "null"   -> Expr.None
         "enum"   -> value_to_construct_expr(v)
         _        -> null
     }
@@ -110,7 +110,7 @@ fn value_to_construct_expr(v: Value) -> Expr? {
         "number" -> Expr.Number(v.number_text)
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
-        "null"   -> Expr.Null
+        "null"   -> Expr.None
         "enum"   -> {
             let args = payload_to_args(v.enum_payload, 0)?
             Expr.EnumCtor(v.enum_type, v.enum_variant, args)

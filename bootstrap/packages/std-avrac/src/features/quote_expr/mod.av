@@ -16,6 +16,6 @@ use core.{feature_new, Feature, Expr}
 /// nodes with concrete AST-construction expressions.
 export fn quote_expr_feature() -> Feature {
     feature_new("quote") with {
-        expr_tag: Expr.Quote("expr", Expr.Null),
+        expr_tag: Expr.Quote("expr", Expr.None),
     }
 }

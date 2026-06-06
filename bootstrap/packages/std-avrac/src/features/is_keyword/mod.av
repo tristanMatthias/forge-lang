@@ -11,7 +11,7 @@ use typeck.{check_expr, tc_er}
 /// via the standard tag-based dispatch.
 export fn is_keyword_feature() -> Feature {
     feature_new("is") with {
-        expr_tag: Expr.IsCheck(Expr.Null, ""),
+        expr_tag: Expr.IsCheck(Expr.None, ""),
         emit_expr: emit_is_check,
         resolve_expr: is_resolve,
         check_expr: is_check,

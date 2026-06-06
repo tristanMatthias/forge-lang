@@ -333,6 +333,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "mut"      -> Tk.KwMut
         "not"      -> Tk.KwNot
         "null"     -> Tk.KwNull
+        "none"     -> Tk.KwNone
         "or"       -> Tk.KwOr
         "return"   -> Tk.KwReturn
         "true"     -> Tk.KwTrue
@@ -1341,9 +1342,11 @@ impl Parser {
             return Expr.Bool(value)
         }
 
-        if self.check(Tk.KwNull) {
+        // `none` (canonical) and `null` (deprecated alias) both produce
+        // the absence literal `Expr.None`.
+        if self.check(Tk.KwNull) || self.check(Tk.KwNone) {
             self.advance()
-            return Expr.Null
+            return Expr.None
         }
 
         // Contextual enum variant: `.Variant` or `.Variant(args)`
@@ -1798,7 +1801,7 @@ impl Parser {
         }
         let word = self.source.substring(i, j)
         // Exclude keywords that appear after identifiers in non-component contexts
-        if word == "true" || word == "false" || word == "null" { return false }
+        if word == "true" || word == "false" || word == "null" || word == "none" { return false }
         if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return false }
         if word == "with" || word == "match" || word == "if" || word == "else" { return false }
         if word == "while" || word == "for" || word == "fn" || word == "let" || word == "mut" { return false }
@@ -2097,7 +2100,7 @@ impl Parser {
     }
 
     /// Parse `{ pattern -> body }` for `quote arm { ... }`. Wraps the
-    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.Null, [arm])`
+    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.None, [arm])`
     /// so the existing Quote(kind, body) shape stays — the lowering
     /// pass picks the arm back out via its `arm` kind discriminator.
     fn parse_quote_arm_body(self) -> Expr? {
@@ -2117,7 +2120,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return null }
         let arm = MatchArm { pattern, guard, body: body_se }
         let arms: List<MatchArm> = [arm]
-        Expr.MatchExpr(sexpr(Expr.Null, self.current_line, self.current_column), arms)
+        Expr.MatchExpr(sexpr(Expr.None, self.current_line, self.current_column), arms)
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.

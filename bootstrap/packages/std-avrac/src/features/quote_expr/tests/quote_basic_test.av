@@ -17,9 +17,13 @@ spec "quote: literals" {
         let e = quote { true }
         render_expr(e) == "true"
     }
-    then "null literal" {
+    then "null literal renders canonically as none" {
         let e = quote { null }
-        render_expr(e) == "null"
+        render_expr(e) == "none"
+    }
+    then "none literal" {
+        let e = quote { none }
+        render_expr(e) == "none"
     }
 }
 

@@ -253,7 +253,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             // errdefer: detect error returns — Err(...) or null for nullable fns.
             let is_err_return = match value {
                 .EnumCtor(_, variant, _) -> variant == "Err"
-                .Null -> true
+                .None -> true
                 _ -> false
             }
             if is_err_return {
@@ -351,7 +351,7 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             }
             ok_emit(ctx.i64(0), .Bool)
         }
-        .Null -> ok_emit(ctx.i64(0), .Void)
+        .None -> ok_emit(ctx.i64(0), .Void)
         .String(text) -> {
             let inner = strip_quotes(text)
             let str_ptr = ctx.global_str(inner, ".str")

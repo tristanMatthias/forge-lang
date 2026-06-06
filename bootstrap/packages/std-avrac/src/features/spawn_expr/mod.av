@@ -12,7 +12,7 @@ use typeck.{check_expr, tc_er}
 /// Spec Axis 18 (concurrency).
 export fn spawn_expr_feature() -> Feature {
     feature_new("spawn") with {
-        expr_tag: Expr.Spawn(Expr.Null),
+        expr_tag: Expr.Spawn(Expr.None),
         emit_expr: spawn_emit_expr,
         resolve_expr: spawn_resolve,
         check_expr: spawn_check,

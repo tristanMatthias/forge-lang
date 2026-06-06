@@ -840,7 +840,7 @@ fn first_arg_ident(args: List<SExpr>) -> string {
 /// annotation on the original wrapped stmt — each arg encoded as an
 /// SExpr Value with Expr.Ident / Expr.QualifiedIdent / Expr.String
 /// payload. Other Expr kinds in the annotation args land as
-/// Expr.Null Values; the macro can match on the Expr.kind to
+/// Expr.None Values; the macro can match on the Expr.kind to
 /// dispatch. The args list is empty when the @expand call had no
 /// args (which the parser prevents for `@expand` — there's always
 /// at least the macro identifier).
@@ -899,14 +899,14 @@ fn build_arg_sexpr_value(e: Expr, runtime: Runtime) -> Value {
 /// runtime. construct_expr produces an Expr that, when evaluated,
 /// rebuilds the original — feeding it through eval_expr gives us the
 /// Value form for free. Covers every Expr variant construct_expr
-/// covers; falls back to Expr.Null on eval failure so the macro at
+/// covers; falls back to Expr.None on eval failure so the macro at
 /// least sees a well-typed marker.
 fn build_expr_value(e: Expr, runtime: Runtime) -> Value {
     let constructor = construct_expr(e)
     let result = eval_expr(runtime, constructor)
     if step_had_error(result) {
         let empty: List<Value> = []
-        return value_enum("@std::avrac::core::Expr", "Null", empty)
+        return value_enum("@std::avrac::core::Expr", "None", empty)
     }
     step_value(result)
 }

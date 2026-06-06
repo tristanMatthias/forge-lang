@@ -1,0 +1,33 @@
+// WHY: `none` is the canonical absence literal and therefore a reserved
+// keyword — it lexes to Tk.KwNone, not an identifier. A program that
+// tries to bind `none` as a variable name must be rejected at parse
+// time rather than silently shadowing the literal. This negative test
+// pins that reservation: `let none = ...` is an F0001 parse error. (The
+// sibling none_keyword_test pins the positive behaviour.)
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "none is a reserved keyword" {
+    then "`let none = 5` is rejected with F0001 (none cannot be a binding name)" {
+        let fixture = "/tmp/avra_none_reserved_binding_test.av"
+        write_fixture(fixture,
+            "fn main() -> int {\n" +
+            "    let none = 5\n" +
+            "    0\n" +
+            "}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        out.contains("F0001") && out.contains("expected variable name")
+    }
+
+    then "`none` in value position still parses and coalesces" {
+        let fixture = "/tmp/avra_none_value_ok_test.av"
+        write_fixture(fixture,
+            "fn main() -> int {\n" +
+            "    let x: ptr = none\n" +
+            "    x ?? 7\n" +
+            "}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        !out.contains("error") && !out.contains("F0001")
+    }
+}

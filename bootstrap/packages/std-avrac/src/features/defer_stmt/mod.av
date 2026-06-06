@@ -100,7 +100,7 @@ fn errdefer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// error). Spec Axis 9.4.
 export fn defer_feature() -> Feature {
     feature_new("defer") with {
-        stmt_tag: Stmt.Defer(Expr.Null),
+        stmt_tag: Stmt.Defer(Expr.None),
         stmt_keyword: "kw_defer",
         parse_stmt: (p: Parser) -> p.parse_defer_statement(),
         emit_stmt: defer_emit,
@@ -115,7 +115,7 @@ export fn defer_feature() -> Feature {
 /// returns (Err(...) / null nullable returns). Spec Axis 9.4.
 export fn errdefer_feature() -> Feature {
     feature_new("errdefer") with {
-        stmt_tag: Stmt.Errdefer(Expr.Null),
+        stmt_tag: Stmt.Errdefer(Expr.None),
         stmt_keyword: "kw_errdefer",
         parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
         emit_stmt: errdefer_emit,

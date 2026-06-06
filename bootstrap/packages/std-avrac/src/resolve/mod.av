@@ -412,7 +412,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .FloatLit(_) -> r
         .String(_) -> r
         .Bool(_) -> r
-        .Null -> r
+        .None -> r
         .Ident(name) -> {
             // Uppercase identifiers are treated as type names — the
             // resolver doesn't track them, codegen does.

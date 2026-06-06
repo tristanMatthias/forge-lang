@@ -1574,7 +1574,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .FloatLit(_) -> tc_er(tc, .Float)
         .String(_) -> tc_er(tc, .Str)
         .Bool(_) -> tc_er(tc, .Bool)
-        .Null -> tc_er(tc, .Void)
+        .None -> tc_er(tc, .Void)
         .Ident(name) -> {
             let ty = type_lookup(tc.types, name)
             // If not found in locals, check function registry
@@ -2639,7 +2639,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .FloatLit(_) -> ValueType.Float
         .String(_) -> ValueType.Str
         .Bool(_) -> ValueType.Bool
-        .Null -> ValueType.Void
+        .None -> ValueType.Void
         .Ident(name) -> type_lookup(tc.types, name)
         // Comparison operators always return Bool
         .Binary(_, op, _) if binop_is_comparison(op) -> ValueType.Bool
@@ -2755,7 +2755,7 @@ fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
         .FloatLit(_) -> ValueType.Float
         .String(_) -> ValueType.Str
         .Bool(_) -> ValueType.Bool
-        .Null -> ValueType.Void
+        .None -> ValueType.Void
         .Ident(name) -> type_lookup(tc.types, name)
         .InterpString(_) -> ValueType.Str
         .Range(_, _) -> ValueType.Int

@@ -320,8 +320,8 @@ fn extract_single_match_arm(body: Expr) -> MatchArm? {
 }
 
 fn construct_match_arm_null() -> Expr {
-    let no_guard = Expr.Null
-    let body_expr = Expr.Null
+    let no_guard = Expr.None
+    let body_expr = Expr.None
     construct_match_arm(MatchArm {
         pattern: Pattern.Wildcard,
         guard: null,
@@ -419,9 +419,9 @@ export fn construct_expr(e: Expr) -> Expr {
         .Number(v) -> expr_ctor("Number", string_arg(v))
         .String(v) -> expr_ctor("String", string_arg(v))
         .Bool(v) -> expr_ctor("Bool", string_arg(v))
-        .Null -> {
+        .None -> {
             let empty: List<SExpr> = []
-            expr_ctor("Null", empty)
+            expr_ctor("None", empty)
         }
         .Ident(name) -> expr_ctor("Ident", string_arg(name))
         .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
@@ -600,7 +600,7 @@ fn construct_pattern_list(patterns: List<Pattern>) -> Expr {
 /// constructed SExpr.
 fn construct_match_arm(arm: MatchArm) -> Expr {
     let pattern_expr = construct_pattern(arm.pattern)
-    let guard_expr = if arm.guard != null { construct_sexpr(arm.guard!) } else { Expr.Null }
+    let guard_expr = if arm.guard != null { construct_sexpr(arm.guard!) } else { Expr.None }
     let body_expr = construct_sexpr(arm.body)
     struct_lit_3("@std::avrac::core::MatchArm",
         "pattern", pattern_expr,
@@ -1129,14 +1129,14 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
         .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(cond), construct_stmt(body)))
         .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr(start), construct_expr(end), construct_stmt(body)))
         .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr(coll), construct_stmt(body)))
-        // If has a nullable else_branch — encode null as Expr.Null at
+        // If has a nullable else_branch — encode null as Expr.None at
         // the AST level so the constructed runtime gets back the
         // null-discriminant.
         .If(cond, then_b, else_b) -> {
             if else_b != null {
                 stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), construct_stmt(else_b!)))
             } else {
-                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), Expr.Null))
+                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), Expr.None))
             }
         }
         .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_list(methods)))

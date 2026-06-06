@@ -349,7 +349,7 @@ fn rw_tpl_expr_list(list: List<SExpr>, inst: string, uc: List<CompConfigPair>, s
 
 /// Resolve a `@cfg.field` reference: prefer the user's
 /// instantiation override, fall back to the schema's default,
-/// finally `Expr.Null` when neither exists.
+/// finally `Expr.None` when neither exists.
 export fn resolve_config_value(field: string, user_config: List<CompConfigPair>, schema: List<CompConfig>) -> Expr {
     mut i = 0
     while i < user_config.length {
@@ -403,7 +403,7 @@ fn config_to_fields(config: List<CompConfig>) -> List<FieldEntry> {
 fn config_to_factory_inits(config: List<CompConfig>) -> List<FieldInit> {
     list_map(config, (entry: CompConfig) -> FieldInit {
         name: entry.key,
-        value: sexpr(entry.default_val ?? Expr.Null, 0, 0),
+        value: sexpr(entry.default_val ?? Expr.None, 0, 0),
     })
 }
 

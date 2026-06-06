@@ -147,8 +147,18 @@ fn stamp_call_arg_tables(callee: Expr, args: List<SExpr>, sigs: List<FnSig>) -> 
 /// fixes ticket xks4 (resolver mis-qualification of `Result` inside
 /// trait impls).
 export fn inject_intrinsics(stmts: List<SStmt>) -> List<SStmt> {
-    if program_declares_enum(stmts, "Result") { return stmts }
-    list_concat([sstmt_dummy(synthesize_result_enum())], stmts)
+    mut out = stmts
+    // Inject each intrinsic enum the program doesn't already declare.
+    // Guarded independently so a program that declares one (e.g. the
+    // self-hosting compiler declares Result in error_propagation) still
+    // receives the other.
+    if !program_declares_enum(out, "Option") {
+        out = list_concat([sstmt_dummy(synthesize_option_enum())], out)
+    }
+    if !program_declares_enum(out, "Result") {
+        out = list_concat([sstmt_dummy(synthesize_result_enum())], out)
+    }
+    out
 }
 
 /// Build the synthetic `enum Result<T, E> { Ok(value: T), Err(error: E) }`
@@ -167,6 +177,25 @@ fn synthesize_result_enum() -> Stmt {
     type_params.push(TypeParamEntry { name: "T", bounds: "" })
     type_params.push(TypeParamEntry { name: "E", bounds: "" })
     Stmt.EnumDecl("Result", type_params, variants)
+}
+
+/// Build the synthetic `enum Option<T> { Some(value: T), None }` AST
+/// node used by `inject_intrinsics`. This is the canonical type that
+/// `T?` desugars to. Programmers write `T?` and `none`; they never
+/// write `.Some`/`.None` directly. This defines the type only —
+/// absence behaviour still routes through the legacy null representation
+/// until the dual (value-tagged) repr is wired.
+fn synthesize_option_enum() -> Stmt {
+    let t = ValueType.Struct("T", 0)
+    mut some_fields: List<FieldEntry> = []
+    some_fields.push(FieldEntry { name: "value", resolved: t })
+    mut none_fields: List<FieldEntry> = []
+    mut variants: List<Variant> = []
+    variants.push(Variant { name: "Some", fields: some_fields })
+    variants.push(Variant { name: "None", fields: none_fields })
+    mut type_params: List<TypeParamEntry> = []
+    type_params.push(TypeParamEntry { name: "T", bounds: "" })
+    Stmt.EnumDecl("Option", type_params, variants)
 }
 
 /// True when a top-level `EnumDecl` named `target` exists in the
@@ -422,7 +451,7 @@ fn desugar_assert(args: List<SExpr>) -> Expr {
     Expr.IfExpr(
         Expr.Unary(UnOp.Not, cond),
         Expr.Call(Expr.Ident("panic"), panic_args),
-        Expr.Null
+        Expr.None
     )
 }
 

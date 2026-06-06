@@ -26,13 +26,13 @@ spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact
     // "enum". The enum_type / enum_variant / enum_payload fields stay
     // populated (dual representation) so pattern-matching and the fold
     // reconstructor keep working — these specs pin that contract.
-    then "no-payload variant (Expr.Null) boxes as kind=expr, enum_* intact" {
-        let e = Expr.EnumCtor("@std::avrac::core::Expr", "Null", empty_args())
+    then "no-payload variant (Expr.None) boxes as kind=expr, enum_* intact" {
+        let e = Expr.EnumCtor("@std::avrac::core::Expr", "None", empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
         let v: Value = r.value
         v.kind == "expr"
             && v.enum_type == "@std::avrac::core::Expr"
-            && v.enum_variant == "Null"
+            && v.enum_variant == "None"
             && v.enum_payload.length == 0
     }
     then "single-arg payload (Expr.Number) boxes as kind=expr, payload preserved" {
@@ -78,8 +78,8 @@ spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact
 
 spec "vez6.6.4: value_enum constructor + render" {
     then "value_enum stores its tag fields" {
-        let v = value_enum("@std::avrac::core::Expr", "Null", [])
-        v.kind == "enum" && v.enum_type == "@std::avrac::core::Expr" && v.enum_variant == "Null"
+        let v = value_enum("@std::avrac::core::Expr", "None", [])
+        v.kind == "enum" && v.enum_type == "@std::avrac::core::Expr" && v.enum_variant == "None"
     }
     then "render_value on an enum value falls through to null-render" {
         // Enum values aren't user-facing scalar — render_value

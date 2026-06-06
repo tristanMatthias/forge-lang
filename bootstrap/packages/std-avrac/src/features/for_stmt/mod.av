@@ -103,7 +103,7 @@ fn for_in_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Register the `for i in start..end { body }` range loop.
 export fn for_feature() -> Feature {
     feature_new("for") with {
-        stmt_tag: Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp),
+        stmt_tag: Stmt.For("", Expr.None, Expr.None, Stmt.NoOp),
         stmt_keyword: "kw_for",
         parse_stmt: (p: Parser) -> p.parse_for_statement(),
         emit_stmt: emit_for,
@@ -118,7 +118,7 @@ export fn for_feature() -> Feature {
 /// the right hook.
 export fn for_in_feature() -> Feature {
     feature_new("for_in") with {
-        stmt_tag: Stmt.ForIn("", Expr.Null, Stmt.NoOp),
+        stmt_tag: Stmt.ForIn("", Expr.None, Stmt.NoOp),
         emit_stmt: emit_for_in,
         resolve_stmt: for_in_resolve,
         check_stmt: for_in_check,

@@ -1272,8 +1272,11 @@ export enum Expr {
     String(value: string)
     /// Boolean literal: `"true"` or `"false"` (text for renderer).
     Bool(value: string)
-    /// `null` keyword.
-    Null
+    /// Absence literal: the `none` keyword (canonical). `null` is a
+    /// deprecated parser alias that produces this same node — both
+    /// lower to `Option`'s absent case. Renamed from the historic
+    /// `Null` for spec/internal consistency.
+    None
     /// Identifier reference. Resolver replaces with QualifiedIdent
     /// when the name resolves to a top-level / module-qualified item.
     Ident(name: string)
@@ -1756,7 +1759,7 @@ export fn render_expr(expr: Expr) -> string {
         .Number(value) -> value
         .String(value) -> value
         .Bool(value) -> value
-        .Null -> "null"
+        .None -> "none"
         .Ident(name) -> name
         .Assign(name, value) -> "(assign ${name} ${render_expr(value)})"
         .Grouping(inner) -> "(group ${render_expr(inner)})"
@@ -2040,6 +2043,7 @@ export enum Tk {
     KwMut
     KwNot
     KwNull
+    KwNone
     KwOr
     KwParallel
     KwReturn
@@ -2102,6 +2106,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwMut -> "kw_mut"
         .KwNot -> "kw_not"
         .KwNull -> "kw_null"
+        .KwNone -> "kw_none"
         .KwOr -> "kw_or"
         .KwParallel -> "kw_parallel"
         .KwReturn -> "kw_return"

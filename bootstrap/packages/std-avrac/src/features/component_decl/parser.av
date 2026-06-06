@@ -275,7 +275,7 @@ impl Parser {
                     self.advance()
                     let v = self.parse_expression()?
                     v
-                } else { Expr.Null }
+                } else { Expr.None }
                 let stmt = Stmt.Let(field_name, vt, init)
                 out.push(sstmt(stmt, line, col))
                 continue

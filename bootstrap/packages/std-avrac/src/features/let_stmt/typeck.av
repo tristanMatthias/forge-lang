@@ -24,7 +24,7 @@ export fn is_const_expr(expr: Expr) -> bool {
         .FloatLit(_) -> true
         .String(_) -> true
         .Bool(_) -> true
-        .Null -> true
+        .None -> true
         .Unary(_, inner) -> is_const_expr(inner)
         .Binary(left, _, right) -> is_const_expr(left) && is_const_expr(right)
         .Grouping(inner) -> is_const_expr(inner)
