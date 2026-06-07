@@ -1,16 +1,15 @@
-// WHY: the `?`-split (spec Axis 10 §1.3) — `?` should be Result-only, and
-// applying it to an optional `T?` is reserved as F1202
-// (DiagCode.TryOnOptional, already wired in diagnostics + check_try). The
-// GATE is currently DEFERRED until the @comptime Value→AST decoder in
-// features/eval/mod.av migrates off `?`-on-optional to `Result`; until then
-// `?` on a `T?` stays permissive. This test pins the current contract and the
-// always-valid Result behaviour, and is flipped to assert F1202 when the gate
-// turns on.
+// WHY: the `?`-split (spec Axis 10 §1.3) — `?` should be Result-only, and `?`
+// on a `T?` is reserved as F1202 (DiagCode.TryOnOptional, wired in check_try).
+// GATING is DEFERRED: the @comptime decoder is migrated to `Result`, but the
+// recursive-descent parser still uses `?`-on-optional pervasively (~234 sites);
+// turning the gate on requires migrating the parser to `Result` first. This
+// test pins the always-valid Result behaviour and is flipped to assert F1202
+// when the gate turns on.
 
 use @std.avrac.test_runner.{write_fixture}
 use @std.avrac.core.{avra_shell_exec}
 
-spec "`?`-split contract (gate deferred)" {
+spec "`?`-split contract (gate deferred to parser migration)" {
     then "`?` on a Result is accepted (no F1202)" {
         let fixture = "/tmp/avra_null_try_on_result_test.av"
         write_fixture(fixture,

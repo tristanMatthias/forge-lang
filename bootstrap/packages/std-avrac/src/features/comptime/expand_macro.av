@@ -695,27 +695,29 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         return expand_ok(out, bag, macro_name, line, col, file)
     }
     // Try List<SStmt> — what `quote stmts { ... }` produces.
-    // value_to_stmt_list returns null when v isn't a list, so this is
+    // value_to_stmt_list returns Err when v isn't a list, so this is
     // the cheap dispatch.
-    let as_list = value_to_stmt_list(v)
-    if as_list != null {
-        mut out: List<SStmt> = []
-        for ss in as_list! {
-            out.push(sstmt_at(ss.node, line, col, file))
+    match value_to_stmt_list(v) {
+        .Ok(as_list) -> {
+            mut out: List<SStmt> = []
+            for ss in as_list {
+                out.push(sstmt_at(ss.node, line, col, file))
+            }
+            return expand_ok(out, bag_new(), macro_name, line, col, file)
         }
-        return expand_ok(out, bag_new(), macro_name, line, col, file)
+        .Err(_) -> {}
     }
     // Fall back to single Stmt — `quote stmt { ... }` macros.
-    let decoded = value_to_stmt(v)
-    if decoded == null {
-        return expand_fail(
+    let decoded = match value_to_stmt(v) {
+        .Ok(s) -> s
+        .Err(_) -> return expand_fail(
             DiagCode.ExpandUndecodableReturn,
             "@expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt, List<Stmt>, or ResolvedDecls (kind=${v.kind})",
             span
         )
     }
     mut single: List<SStmt> = []
-    single.push(sstmt_at(decoded!, line, col, file))
+    single.push(sstmt_at(decoded, line, col, file))
     expand_ok(single, bag_new(), macro_name, line, col, file)
 }
 
@@ -774,10 +776,12 @@ fn value_to_resolved_decls(v: Value) -> ResolvedDeclsPayload? {
         if f.name == "introduces" { introduces_v = f.value }
     }
     if decls_v == null { return null }
-    let decls = value_to_stmt_list(decls_v!)
-    if decls == null { return null }
+    let decls = match value_to_stmt_list(decls_v!) {
+        .Ok(d) -> d
+        .Err(_) -> return null
+    }
     let introduces = if introduces_v == null { [] } else { decl_symbol_names(introduces_v!) }
-    ResolvedDeclsPayload { decls: decls!, introduces }
+    ResolvedDeclsPayload { decls: decls, introduces }
 }
 
 /// Pull the `name` field off each DeclSymbol struct in the list

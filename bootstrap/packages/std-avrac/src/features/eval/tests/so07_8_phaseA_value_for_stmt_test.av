@@ -36,10 +36,12 @@ spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the nat
         v.kind == "stmt"
             && v.enum_type == ""
             && v.enum_variant == ""
-            && unwrapped != null
-            && match unwrapped! {
-                .NoOp -> true
-                _ -> false
+            && match unwrapped {
+                .Ok(s) -> match s {
+                    .NoOp -> true
+                    _ -> false
+                }
+                .Err(_) -> false
             }
     }
     then "Stmt.Return(Expr.Number) round-trip carries the inner expr intact" {
@@ -52,13 +54,15 @@ spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the nat
         let v: Value = value_for_stmt(Stmt.Return(inner))
         let unwrapped = value_to_stmt(v)
         v.kind == "stmt"
-            && unwrapped != null
-            && match unwrapped! {
-                .Return(e) -> match e {
-                    .Number(n) -> n == "42"
+            && match unwrapped {
+                .Ok(s) -> match s {
+                    .Return(e) -> match e {
+                        .Number(n) -> n == "42"
+                        _ -> false
+                    }
                     _ -> false
                 }
-                _ -> false
+                .Err(_) -> false
             }
     }
 }
@@ -126,10 +130,12 @@ spec "so07.8 Phase A: value_to_stmt back-compat path still decodes kind=enum Val
         let empty: List<Value> = []
         let v: Value = value_enum("@std::avrac::core::Stmt", "NoOp", empty)
         let unwrapped = value_to_stmt(v)
-        unwrapped != null
-            && match unwrapped! {
+        match unwrapped {
+            .Ok(s) -> match s {
                 .NoOp -> true
                 _ -> false
             }
+            .Err(_) -> false
+        }
     }
 }

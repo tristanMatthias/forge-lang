@@ -106,39 +106,47 @@ fn three_args_se(a: Expr, b: Expr, c: Expr) -> List<SExpr> {
 // Helpers — fold the optional + match-on-shape into one bool so the
 // spec body stays one expression deep (the test runner is happiest
 // when then-blocks return a single bool).
-fn is_return_empty_stmt(s: Stmt?) -> bool {
-    if s == null { return false }
-    match s! {
-        .ReturnEmpty -> true
-        _ -> false
+fn is_return_empty_stmt(s: Result<Stmt, string>) -> bool {
+    match s {
+        .Ok(stmt) -> match stmt {
+            .ReturnEmpty -> true
+            _ -> false
+        }
+        .Err(_) -> false
     }
 }
 
-fn return_number_text(s: Stmt?) -> string {
-    if s == null { return "" }
-    match s! {
-        .Return(e) -> match e {
-            .Number(n) -> n
+fn return_number_text(s: Result<Stmt, string>) -> string {
+    match s {
+        .Ok(stmt) -> match stmt {
+            .Return(e) -> match e {
+                .Number(n) -> n
+                _ -> ""
+            }
             _ -> ""
         }
-        _ -> ""
+        .Err(_) -> ""
     }
 }
 
-fn let_shape_text(s: Stmt?) -> string {
-    if s == null { return "" }
-    match s! {
-        .Let(name, _, init) -> match init {
-            .Number(n) -> "${name}=${n}"
+fn let_shape_text(s: Result<Stmt, string>) -> string {
+    match s {
+        .Ok(stmt) -> match stmt {
+            .Let(name, _, init) -> match init {
+                .Number(n) -> "${name}=${n}"
+                _ -> ""
+            }
             _ -> ""
         }
-        _ -> ""
+        .Err(_) -> ""
     }
 }
 
-fn is_stmt_list_end(sl: List<SStmt>?) -> bool {
-    if sl == null { return false }
-    sl!.length == 0
+fn is_stmt_list_end(v: Value) -> bool {
+    match value_to_stmt_list(v) {
+        .Ok(l) -> l.length == 0
+        .Err(_) -> false
+    }
 }
 
 spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
@@ -165,7 +173,7 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
         // value_number is private; use the eval result of a Number
         // literal expression instead.
         let r: StepResult = eval_expr(runtime_new(), Expr.Number("5"))
-        value_to_stmt(r.value) == null
+        value_to_stmt(r.value) is .Err
     }
 }
 
@@ -173,7 +181,7 @@ spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
     then "empty Expr.ListLit decodes to an empty List<SStmt>" {
         let e = Expr.ListLit(empty_args())
         let r: StepResult = eval_expr(runtime_new(), e)
-        is_stmt_list_end(value_to_stmt_list(r.value))
+        is_stmt_list_end(r.value)
     }
 }
 
@@ -185,14 +193,16 @@ spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
 // This pins that no-loss property on the boxed path so a future change
 // that re-introduces a lossy hop fails here.
 
-fn let_vtype_enum_id(s: Stmt?) -> int {
-    if s == null { return -1 }
-    match s! {
-        .Let(_, vt, _) -> match vt {
-            .Enum(_, _, id) -> id
-            _ -> -2
+fn let_vtype_enum_id(s: Result<Stmt, string>) -> int {
+    match s {
+        .Ok(stmt) -> match stmt {
+            .Let(_, vt, _) -> match vt {
+                .Enum(_, _, id) -> id
+                _ -> -2
+            }
+            _ -> -3
         }
-        _ -> -3
+        .Err(_) -> -1
     }
 }
 
