@@ -6,7 +6,7 @@ use diagnostics.{DiagCode}
 use core.{Tk}
 
 impl Parser {
-    fn parse_while_statement(self) -> Stmt? {
+    fn parse_while_statement(self) -> Result<Stmt, string> {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
@@ -16,11 +16,11 @@ impl Parser {
 
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after while condition")
-            return null
+            return .Err("parse error")
         }
 
         let body = self.parse_statement()?
 
-        Stmt.While(condition, body)
+        .Ok(Stmt.While(condition, body))
     }
 }

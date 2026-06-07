@@ -74,7 +74,7 @@ export fn wrap_in_it_lambda(expr: Expr) -> Expr {
 }
 
 impl Parser {
-    fn parse_lambda_body(self) -> Expr? {
+    fn parse_lambda_body(self) -> Result<Expr, string> {
         // Lambda body: either a block { ... } or a single expression.
         if self.check(Tk.LeftBrace) {
             return self.parse_block_expression()

@@ -31,7 +31,7 @@ fn merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: st
 }
 
 impl Parser {
-    fn parse_function_declaration(self) -> Stmt? {
+    fn parse_function_declaration(self) -> Result<Stmt, string> {
         self.advance()
         let name = self.consume_identifier("expected function name")?
         // Optional generic parameters: fn name<T, U>(...)
@@ -41,13 +41,13 @@ impl Parser {
             []
         }
         if !self.consume(Tk.LeftParen, "expected `(` after function name") {
-            return null
+            return .Err("parse error")
         }
 
         let params = self.parse_param_list()?
 
         if !self.consume(Tk.RightParen, "expected `)` after parameters") {
-            return null
+            return .Err("parse error")
         }
 
         // Optional return type annotation: `-> Type`.
@@ -64,22 +64,22 @@ impl Parser {
         }
 
         if !self.consume(Tk.LeftBrace, "expected `{` after function parameters") {
-            return null
+            return .Err("parse error")
         }
 
         let body = self.parse_statement_list(true)?
 
         if !self.consume(Tk.RightBrace, "expected `}` after function body") {
-            return null
+            return .Err("parse error")
         }
 
-        Stmt.Function(name, tp, params, ret_vtype, body)
+        .Ok(Stmt.Function(name, tp, params, ret_vtype, body))
     }
 
-    fn parse_param_list(self) -> List<ParamEntry>? {
+    fn parse_param_list(self) -> Result<List<ParamEntry>, string> {
         mut out: List<ParamEntry> = []
         if self.check(Tk.RightParen) {
-            return out
+            return .Ok(out)
         }
         mut keep_going = true
         while keep_going {
@@ -100,7 +100,7 @@ impl Parser {
                 keep_going = false
             }
         }
-        out
+        .Ok(out)
     }
 
     // Parse `where T: Trait1, U: Trait2` and merge bounds into existing List<TypeParamEntry>.

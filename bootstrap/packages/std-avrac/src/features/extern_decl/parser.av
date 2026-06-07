@@ -5,18 +5,18 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_extern_declaration(self) -> Stmt? {
+    fn parse_extern_declaration(self) -> Result<Stmt, string> {
         self.advance()
         if !self.consume(Tk.KwFn, "expected `fn` after `extern`") {
-            return null
+            return .Err("parse error")
         }
         let name = self.consume_identifier("expected extern fn name")?
         if !self.consume(Tk.LeftParen, "expected `(` after extern fn name") {
-            return null
+            return .Err("parse error")
         }
         let params = self.parse_param_list()?
         if !self.consume(Tk.RightParen, "expected `)` after parameters") {
-            return null
+            return .Err("parse error")
         }
         mut ret_vt = ValueType.Void
         if self.check(Tk.Arrow) {
@@ -24,6 +24,6 @@ impl Parser {
             let te = self.parse_type_expr("expected return type after `->`")?
             ret_vt = type_expr_to_vtype(te)
         }
-        Stmt.ExternFn(name, params, ret_vt)
+        .Ok(Stmt.ExternFn(name, params, ret_vt))
     }
 }

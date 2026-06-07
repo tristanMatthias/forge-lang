@@ -5,14 +5,14 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_return_statement(self) -> Stmt? {
+    fn parse_return_statement(self) -> Result<Stmt, string> {
         self.advance()
 
         if self.current_kind in [Tk.RightBrace, Tk.Eof] {
-            return Stmt.ReturnEmpty
+            return .Ok(Stmt.ReturnEmpty)
         }
 
         let value = self.parse_expression()?
-        Stmt.Return(value)
+        .Ok(Stmt.Return(value))
     }
 }

@@ -8,7 +8,7 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_trait_declaration(self) -> Stmt? {
+    fn parse_trait_declaration(self) -> Result<Stmt, string> {
         self.advance()  // consume `trait`
         let name = self.consume_identifier("expected trait name")?
         // Optional generic parameters: trait Name<T> { ... }
@@ -16,19 +16,19 @@ impl Parser {
             self.skip_angle_brackets()
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after trait name") {
-            return null
+            return .Err("parse error")
         }
         let methods = self.parse_trait_methods()?
         if !self.consume(Tk.RightBrace, "expected `}` after trait body") {
-            return null
+            return .Err("parse error")
         }
-        Stmt.TraitDecl(name, methods)
+        .Ok(Stmt.TraitDecl(name, methods))
     }
 
     // Parse method signatures and associated type declarations inside a trait body.
     // Methods are stored as ExternFn (name, params, ret_ty) — they have no body.
     // Associated types are stored as AssocType(name, "").
-    fn parse_trait_methods(self) -> List<SStmt>? {
+    fn parse_trait_methods(self) -> Result<List<SStmt>, string> {
         mut out: List<SStmt> = []
         while !self.check(Tk.RightBrace) {
             // Associated type declaration: `type Name`
@@ -43,12 +43,12 @@ impl Parser {
             let method = self.parse_trait_method_sig()?
             out.push(sstmt(method, self.current_line, self.current_column))
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_trait_method_sig(self) -> Stmt? {
+    fn parse_trait_method_sig(self) -> Result<Stmt, string> {
         if !self.consume(Tk.KwFn, "expected `fn` in trait method") {
-            return null
+            return .Err("parse error")
         }
         let name = self.consume_identifier("expected method name")?
         // Optional generic parameters on the method itself
@@ -56,11 +56,11 @@ impl Parser {
             self.skip_angle_brackets()
         }
         if !self.consume(Tk.LeftParen, "expected `(` after method name") {
-            return null
+            return .Err("parse error")
         }
         let params = self.parse_param_list()?
         if !self.consume(Tk.RightParen, "expected `)` after parameters") {
-            return null
+            return .Err("parse error")
         }
         mut ret_vtype = ValueType.Void
         if self.check(Tk.Arrow) {
@@ -74,11 +74,11 @@ impl Parser {
             self.advance()
             let body = self.parse_statement_list(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after default method body") {
-                return null
+                return .Err("parse error")
             }
             let empty_tp: List<TypeParamEntry> = []
-            return Stmt.Function(name, empty_tp, params, ret_vtype, body)
+            return .Ok(Stmt.Function(name, empty_tp, params, ret_vtype, body))
         }
-        Stmt.ExternFn(name, params, ret_vtype)
+        .Ok(Stmt.ExternFn(name, params, ret_vtype))
     }
 }
