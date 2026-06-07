@@ -9,7 +9,8 @@ use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirec
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use core.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use features.null_safety.{emit_optional_coerce}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap}
+use core.{vtype_strip_optional}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
 use codegen.{analyze_releasable}
@@ -158,20 +159,30 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
             emit_defers(br.ctx, br.env)
         }
         // Optional box/unbox of the implicit (fall-off-end) return value.
-        let rc = emit_optional_coerce(body_cg, EmitValue { value: br.value, ty: br.ty }, ret_ty)
+        // Guarded so the common path emits no extra call; plain-ptr primitives
+        // avoid constructing an EmitValue in this hot path.
+        mut ret_val = br.value
+        mut ret_vty = br.ty
+        if needs_optional_box(br.ty, ret_ty) {
+            ret_val = emit_optional_some(body_cg, vtype_strip_optional(ret_ty), br.value)
+            ret_vty = ret_ty
+        } else if needs_optional_unbox(br.ty, ret_ty) {
+            ret_vty = vtype_strip_optional(br.ty)
+            ret_val = emit_optional_unwrap(body_cg, ret_vty, br.value)
+        }
         // Union wrapping: if function returns a union, wrap the implicit return value
-        if needs_union_wrap(rc.ty, ret_ty) {
-            let wrapped = emit_union_wrap(body_cg, rc.value, rc.ty, ret_ty)?
+        if needs_union_wrap(ret_vty, ret_ty) {
+            let wrapped = emit_union_wrap(body_cg, ret_val, ret_vty, ret_ty)?
             ctx.ret(wrapped.value, ret_ty)
         } else {
             // Trait boxing: if function returns a trait, box the concrete value
             let trait_ret = vtype_trait_name(ret_ty)
-            let concrete_ret = resolve_concrete_type_name(rc.ty)
+            let concrete_ret = resolve_concrete_type_name(ret_vty)
             if trait_ret != "" && concrete_ret != "" && !trait_decl_has(br.ctx.trait_decls, concrete_ret) {
-                let boxed = box_for_trait(br.ctx, rc.value, trait_ret, concrete_ret)
+                let boxed = box_for_trait(br.ctx, ret_val, trait_ret, concrete_ret)
                 ctx.ret(boxed, ret_ty)
             } else {
-                ctx.ret(rc.value, ret_ty)
+                ctx.ret(ret_val, ret_ty)
             }
         }
     }

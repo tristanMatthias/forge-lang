@@ -8,7 +8,7 @@
 use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_struct_name, vtype_render_full}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, vtype_is_ptr_type}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use features.null_safety.{emit_optional_coerce}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_coerce}
 
 /// Codegen entry for `obj with { field: val, ... }`. Pattern-
 /// matches the `With` AST node and forwards to `emit_with_inner`.
@@ -125,7 +125,10 @@ fn apply_overrides(ctx: Ctx, env: List<VarBinding>, dst: ptr, struct_name: strin
             let st_ty = ctx.get_type(struct_name)
             let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
             let fld_ty = ctx.resolve_field_type(fields, ov.name)
-            r = emit_optional_coerce(ctx, r, fld_ty)
+            // Optional box/unbox into the field's slot (guarded).
+            if needs_optional_box(r.ty, fld_ty) || needs_optional_unbox(r.ty, fld_ty) {
+                r = emit_optional_coerce(ctx, r, fld_ty)
+            }
             // store_field truncates / casts to the field's LLVM type
             // (e.g. i64 → i1 for bool fields). Plain ctx.store would
             // write 8 bytes and clobber adjacent fields when the

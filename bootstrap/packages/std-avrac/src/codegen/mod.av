@@ -12,7 +12,7 @@ use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag,
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use features.null_safety.{emit_optional_coerce}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_coerce}
 use features.fn_decl.{emit_function_bodies}
 use features.let_stmt.{emit_var_decl}
 use features.if_stmt.{emit_if}
@@ -272,9 +272,12 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
                 emit_defers(ctx, env)
             }
             let fn_ret = ctx.current_fn_ret()
-            // Optional box/unbox: box a present value-inner T returned as T?,
-            // unbox a T? returned into a non-optional slot (permissive).
-            r = emit_optional_coerce(ctx, r, fn_ret)
+            // Optional box/unbox: box a present value-inner `T` returned as
+            // `T?`, unbox a `T?` returned into a non-optional slot. Guarded so
+            // the common (non-optional) path emits no extra call.
+            if needs_optional_box(r.ty, fn_ret) || needs_optional_unbox(r.ty, fn_ret) {
+                r = emit_optional_coerce(ctx, r, fn_ret)
+            }
             // Union wrapping: if function returns a union, wrap the concrete value
             if needs_union_wrap(r.ty, fn_ret) {
                 let wrapped = emit_union_wrap(ctx, r.value, r.ty, fn_ret)?
@@ -380,7 +383,10 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             mut r = emit_expr(ctx, env, value)?
             let local = env_lookup(env, name)
             if local.found {
-                r = emit_optional_coerce(ctx, r, local.ty)
+                // Optional box/unbox into the variable's slot (guarded).
+                if needs_optional_box(r.ty, local.ty) || needs_optional_unbox(r.ty, local.ty) {
+                    r = emit_optional_coerce(ctx, r, local.ty)
+                }
                 // Union wrapping: reassigning to a union-typed variable
                 if needs_union_wrap(r.ty, local.ty) {
                     let wrapped = emit_union_wrap(ctx, r.value, r.ty, local.ty)?
@@ -392,7 +398,9 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             }
             let g = ctx.lookup_toplevel(name)
             if g.found {
-                r = emit_optional_coerce(ctx, r, g.ty)
+                if needs_optional_box(r.ty, g.ty) || needs_optional_unbox(r.ty, g.ty) {
+                    r = emit_optional_coerce(ctx, r, g.ty)
+                }
                 if needs_union_wrap(r.ty, g.ty) {
                     let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
                     ctx.store(wrapped.value, g.llvm_global)

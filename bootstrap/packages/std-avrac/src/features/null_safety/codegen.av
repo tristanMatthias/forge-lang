@@ -12,6 +12,7 @@
 use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
+use codegen.{emit_optional_unwrap}
 use features.defer_stmt.{emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 

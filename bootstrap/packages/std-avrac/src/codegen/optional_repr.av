@@ -1,5 +1,13 @@
 // WHY: single source of truth for the `T?` runtime representation (spec Axis 10 §3).
 //
+// This lives in `codegen/` (NOT `features/null_safety/`) because it is a
+// codegen PRIMITIVE — the lowering of the optional representation — not a
+// feature dispatch. Keeping it here means `codegen` never imports a feature
+// (CLAUDE.md rule 16: features depend on codegen, never the reverse). The
+// inverse edge created a codegen⟷feature import cycle that perturbed
+// module/compilation order and surfaced as a null-`lc` Ctx during unrelated
+// function codegen.
+//
 // Both reprs use a NULL POINTER for `none`, so every `T?` lowers to `ptr`:
 //   - Pointer-backed inner (Str, Struct, List, Fn, …) → null-pointer NICHE:
 //     the value IS the inner pointer; `none` = null.
