@@ -1,32 +1,33 @@
-/// Test fixture: returns a greeting string for `"alice"` and
-/// null otherwise. Used as the operand for `?`.
+// `?`-split: none-guard + force-unwrap, then use the extracted value (the
+// post-`?`-split idiom; `?` is Result-only now).
+
+/// Test fixture: returns a greeting string for `"alice"` and none otherwise.
 fn nsto_find(name: string) -> string? {
     if name == "alice" {
         return "found alice"
     }
-    null
+    none
 }
 
-/// Test fixture: extract a value via `?` and concatenate with
-/// "hello " — verifies the extracted value flows naturally into
-/// further operations.
+/// Test fixture: extract the present value and concatenate with "hello ".
 fn nsto_greet(name: string) -> string? {
-    let found = nsto_find(name)?
-    "hello " + found
+    let found_o = nsto_find(name)
+    if found_o == none { return none }
+    "hello " + found_o!
 }
 
 spec "try operator" {
     then "found value returns greeting" {
         avra_test_capture_start()
         let r1 = nsto_greet("alice")
-        if r1 != null {
+        if r1 != none {
             println(r1!)
         }
         let out = avra_test_capture_stop()
         out == "hello found alice"
     }
-    then "missing value returns null" {
+    then "missing value returns none" {
         let r2 = nsto_greet("bob")
-        r2 == null
+        r2 == none
     }
 }

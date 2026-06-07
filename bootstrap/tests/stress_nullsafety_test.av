@@ -14,10 +14,14 @@ fn sns_step3(x: int) -> int? {
 }
 
 fn sns_pipeline(x: int) -> int? {
-    let a = sns_step1(x)?
-    let b = sns_step2(a)?
-    let c = sns_step3(b)?
-    c
+    // `?`-split: explicit none-guards replace `?`-on-optional (Result-only now).
+    let a_o = sns_step1(x)
+    if a_o == none { return none }
+    let b_o = sns_step2(a_o!)
+    if b_o == none { return none }
+    let c_o = sns_step3(b_o!)
+    if c_o == none { return none }
+    c_o
 }
 
 type SnsUser = { name: string, age: int }

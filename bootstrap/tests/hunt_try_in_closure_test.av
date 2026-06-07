@@ -1,13 +1,17 @@
+// `?`-split: none-propagation out of a loop, written with an explicit
+// none-guard + force-unwrap (the post-`?`-split idiom; `?` is Result-only).
+
 fn htic_safe_parse(s: string) -> int? {
-    if s == "" { return null }
+    if s == "" { return none }
     int(s)
 }
 
 fn htic_process_all(items: List) -> int? {
     mut total = 0
     for item in items {
-        let val = htic_safe_parse(item)?
-        total = total + val
+        let val = htic_safe_parse(item)
+        if val == none { return none }
+        total = total + val!
     }
     total
 }

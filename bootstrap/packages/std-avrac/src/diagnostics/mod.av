@@ -203,6 +203,11 @@ export enum DiagCode {
     /// declared type (`let xs: List<RowStruct> = ...`, a fn return type,
     /// etc.). Without either, the rows have no type.
     TableRowTypeMissing
+    /// F1202 — the `?` (try) operator was applied to an optional `T?`.
+    /// `?` is for error propagation on `Result`; absence is handled with
+    /// `??`, `?.`, force-unwrap `!`, or `match`. Part of the Zig-style
+    /// `?`-split (spec Axis 10 §1.3): `?` never means "absent".
+    TryOnOptional
     // ── Name resolution (F3000-3999) ────────────────────────────────
     /// F3000 — name not in scope. Either a typo, missing `use`, or
     /// reference to a private symbol.
@@ -367,6 +372,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
         .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
+        .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }
         .UndefinedVariable   -> ErrorDef { code: "F3000", help: "name not in scope — check spelling, add a `use` import, or declare it" }
         .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
         .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }

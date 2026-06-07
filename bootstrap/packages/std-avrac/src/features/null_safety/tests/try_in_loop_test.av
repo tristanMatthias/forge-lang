@@ -1,24 +1,26 @@
-/// Test fixture: returns null at n == 3, otherwise n*10. Used
-/// inside a loop to trigger early termination via `?`.
+// `?`-split: none-propagation out of a loop, written with an explicit
+// none-guard + force-unwrap (the post-`?`-split idiom; `?` is Result-only).
+
+/// Test fixture: returns none at n == 3, otherwise n*10.
 fn nstl_maybe(n: int) -> int? {
-    if n == 3 { return null }
+    if n == 3 { return none }
     n * 10
 }
 
-/// Test fixture: accumulate `nstl_maybe(i)?` for i in 0..5 —
-/// verifies the `?` operator propagates null out of a loop
-/// without leaving partially-computed state.
+/// Test fixture: accumulate `nstl_maybe(i)` for i in 0..5, propagating
+/// none out of the loop without leaving partially-computed state.
 fn nstl_sum_safe() -> int? {
     mut total = 0
     for i in 0..5 {
-        let v = nstl_maybe(i)?
-        total = total + v
+        let v = nstl_maybe(i)
+        if v == none { return none }
+        total = total + v!
     }
     total
 }
 
 spec "try in loop" {
-    then "fails when element is null" {
+    then "fails when element is none" {
         let r = nstl_sum_safe()
         r ?? -1 == -1
     }
