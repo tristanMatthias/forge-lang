@@ -311,7 +311,7 @@ fn template_split_format(s: string) -> FormatSplit {
 /// state isn't disturbed by the inner walk.
 fn parse_template_expr(source: string) -> Result<Expr, string> {
     mut p = parser_new(source)
-    .Ok(p.parse_expression())
+    p.parse_expression()
 }
 
 /// Map a source identifier to its keyword Tk variant. Returns
@@ -1615,7 +1615,7 @@ impl Parser {
                     let first_ch = fmt_spec[0]
                     let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
                     let fmt_args: List<SExpr> = [
-                        sexpr_dummy(parsed!),
+                        sexpr_dummy(parsed),
                         sexpr_dummy(Expr.String("\"${fmt_spec}\""))
                     ]
                     if is_float_fmt {
@@ -1626,7 +1626,7 @@ impl Parser {
                         Expr.Call(Expr.Ident("avra_format_int"), fmt_args)
                     }
                 } else {
-                    let str_args: List<SExpr> = [sexpr_dummy(parsed!)]
+                    let str_args: List<SExpr> = [sexpr_dummy(parsed)]
                     Expr.Call(Expr.Ident("string"), str_args)
                 }
                 if result == null {
