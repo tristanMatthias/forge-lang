@@ -142,11 +142,10 @@ impl Parser {
         mut out: List<FieldInit> = []
         while !self.check(Tk.RightBrace) {
             let name = self.consume_identifier("expected field name")?
-            let value = if self.check(Tk.Colon) {
+            mut value = Expr.Ident(name)
+            if self.check(Tk.Colon) {
                 self.advance()
-                self.parse_expression()?
-            } else {
-                Expr.Ident(name)
+                value = self.parse_expression()?
             }
             out.push(FieldInit { name, value: sexpr(value, self.current_line, self.current_column) })
             if self.check(Tk.Comma) { self.advance() }

@@ -560,14 +560,13 @@ impl Parser {
             let inner_l = self.current_line
             let inner_c = self.current_column
             let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
-            let inner_opt = if export_handler_raw != null {
-                let handler: fn(Parser) -> Result<Stmt, string> = export_handler_raw!
-                handler(self)
-            } else {
+            if export_handler_raw == null {
                 self.set_error("expected declaration after `export`")
-                Result.Err("expected declaration after `export`")
+                return .Err("expected declaration after `export`")
             }
-            let inner = inner_opt?
+            let handler: fn(Parser) -> Result<Stmt, string> = export_handler_raw!
+            let inner_res: Result<Stmt, string> = handler(self)
+            let inner = inner_res?
             let empty_args: List<SExpr> = []
             let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
             return .Ok(Stmt.Annotated(exp_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
@@ -906,10 +905,9 @@ impl Parser {
             if self.check(Tk.LeftBracket) {
                 // List membership: x in [a, b, c]
                 self.advance()
-                let items: List<SExpr> = if self.check(Tk.RightBracket) {
-                    []
-                } else {
-                    self.parse_arg_list_inner()?
+                mut items: List<SExpr> = []
+                if !self.check(Tk.RightBracket) {
+                    items = self.parse_arg_list_inner()?
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
                     return .Err("parse error")
@@ -1295,19 +1293,16 @@ impl Parser {
             // (method calls like .map/.filter set this, regular function
             // calls do not, preventing double-wrapping in `f(it)` inside
             // `.map(f(it))`).
-            let expr = if self.allow_it_sugar {
+            mut expr = raw_expr
+            if self.allow_it_sugar {
                 match raw_expr {
-                    .Lambda(_, _) -> raw_expr
+                    .Lambda(_, _) -> {}
                     _ -> {
                         if expr_contains_it(raw_expr) {
-                            wrap_in_it_lambda(raw_expr)
-                        } else {
-                            raw_expr
+                            expr = wrap_in_it_lambda(raw_expr)
                         }
                     }
                 }
-            } else {
-                raw_expr
             }
             out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
             if self.check(Tk.Comma) {
@@ -1602,10 +1597,9 @@ impl Parser {
                 let fmt_split = template_split_format(sub_source)
                 let expr_part = fmt_split.expr
                 let fmt_spec = fmt_split.fmt
-                let parsed = if template_is_simple_ident(expr_part) {
-                    Expr.Ident(expr_part)
-                } else {
-                    match parse_template_expr(expr_part) {
+                mut parsed = Expr.Ident(expr_part)
+                if !template_is_simple_ident(expr_part) {
+                    parsed = match parse_template_expr(expr_part) {
                         .Ok(sr) -> sr
                         .Err(_) -> {
                             self.set_error("invalid expression in template: ${expr_part}")
@@ -2117,12 +2111,11 @@ impl Parser {
     fn parse_quote_arm_body(self) -> Result<Expr, string> {
         if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
         let pattern = self.parse_pattern_or()?
-        let guard: SExpr? = if self.check(Tk.KwIf) {
+        mut guard: SExpr? = null
+        if self.check(Tk.KwIf) {
             self.advance()
             let g = self.parse_expression()?
-            sexpr(g, self.current_line, self.current_column)
-        } else {
-            null
+            guard = sexpr(g, self.current_line, self.current_column)
         }
         if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return .Err("parse error") }
         let body = self.parse_expression()?
@@ -2149,12 +2142,12 @@ impl Parser {
             // `_ -> body` or `else -> body` is the default arm (null condition)
             let line = self.current_line
             let col = self.current_column
-            let cond = if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
+            mut cond: SExpr? = null
+            if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
                 self.advance()
-                null
             } else {
                 let c = self.parse_expression()?
-                sexpr_at(c, line, col, self.file)
+                cond = sexpr_at(c, line, col, self.file)
             }
             if !self.consume(Tk.Arrow, "expected `->` after when condition") { return .Err("parse error") }
             let body_line = self.current_line

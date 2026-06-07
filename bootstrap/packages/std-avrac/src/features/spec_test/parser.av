@@ -28,10 +28,13 @@ impl Parser {
         while !(self.current_kind in [Tk.RightBrace, Tk.Eof]) {
             let line = self.current_line
             let col = self.current_column
-            let stmt_res = match {
-                self.check(Tk.KwGiven) -> self.parse_given_block()
-                self.check(Tk.KwThen)  -> self.parse_then_block()
-                _                      -> self.parse_declaration()
+            mut stmt_res: Result<Stmt, string> = .Err("")
+            if self.check(Tk.KwGiven) {
+                stmt_res = self.parse_given_block()
+            } else if self.check(Tk.KwThen) {
+                stmt_res = self.parse_then_block()
+            } else {
+                stmt_res = self.parse_declaration()
             }
             let stmt = match stmt_res {
                 .Ok(s) -> s

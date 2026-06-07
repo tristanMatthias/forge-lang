@@ -42,11 +42,10 @@ impl Parser {
         // between the component name and the body. Both definition
         // forms (`component name {` and `component name(params) {`)
         // accept it. The block / nested form does not.
-        let implements: List<string> = if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
+        mut implements: List<string> = []
+        if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
             self.advance()
-            self.parse_implements_list()?
-        } else {
-            []
+            implements = self.parse_implements_list()?
         }
 
         // Definition: `component name {` ...

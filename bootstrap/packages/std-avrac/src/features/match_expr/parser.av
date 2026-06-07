@@ -151,12 +151,11 @@ impl Parser {
             }
             let pattern = self.parse_pattern_or()?
             // Optional guard: `pattern if cond ->`
-            let guard: SExpr? = if self.check(Tk.KwIf) {
+            mut guard: SExpr? = null
+            if self.check(Tk.KwIf) {
                 self.advance()
                 let g = self.parse_expression()?
-                sexpr(g, self.current_line, self.current_column)
-            } else {
-                null
+                guard = sexpr(g, self.current_line, self.current_column)
             }
             if !self.consume(Tk.Arrow, "expected `->` after pattern") {
                 return .Err("parse error")
@@ -165,14 +164,15 @@ impl Parser {
             self.allow_dot_postfix = false
             // Allow `return expr` in bare match arm position by
             // wrapping it in a Block expression: `{ return expr }`.
-            let body_val = if self.check(Tk.KwReturn) {
+            mut body_val = Expr.None
+            if self.check(Tk.KwReturn) {
                 self.advance()
                 let rv = self.parse_expression()?
                 let ret_stmt = sstmt(Stmt.Return(rv), self.current_line, self.current_column)
                 let body_stmts: List<SStmt> = [ret_stmt]
-                Expr.Block(body_stmts)
+                body_val = Expr.Block(body_stmts)
             } else {
-                self.parse_expression()?
+                body_val = self.parse_expression()?
             }
             self.allow_dot_postfix = saved
             if self.check(Tk.Comma) { self.advance() }
@@ -325,12 +325,12 @@ impl Parser {
         mut out: List<WhenArm> = []
         while !self.check(Tk.RightBrace) {
             // `_` → else/wildcard arm (no condition)
-            let cond: SExpr? = if self.check(Tk.Identifier) && self.current_lexeme == "_" {
+            mut cond: SExpr? = null
+            if self.check(Tk.Identifier) && self.current_lexeme == "_" {
                 self.advance()
-                null
             } else {
                 let c = self.parse_expression()?
-                sexpr(c, self.current_line, self.current_column)
+                cond = sexpr(c, self.current_line, self.current_column)
             }
             if !self.consume(Tk.Arrow, "expected `->` in match arm") { return .Err("parse error") }
             let saved = self.allow_dot_postfix

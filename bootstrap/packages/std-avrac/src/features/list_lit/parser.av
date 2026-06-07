@@ -19,10 +19,11 @@ impl Parser {
             let var_name = self.consume_identifier("expected variable name after `for`")?
             if !self.consume(Tk.KwIn, "expected `in` after comprehension variable") { return .Err("parse error") }
             let collection = self.parse_expression()?
-            let filter: Expr? = if self.check(Tk.KwIf) {
+            mut filter: Expr? = null
+            if self.check(Tk.KwIf) {
                 self.advance()
-                self.parse_expression()?
-            } else { null }
+                filter = self.parse_expression()?
+            }
             let comp = Expr.ListComp(expr, var_name, collection, filter)
             out.push(sexpr(comp, self.current_line, self.current_column))
             return .Ok(out)
