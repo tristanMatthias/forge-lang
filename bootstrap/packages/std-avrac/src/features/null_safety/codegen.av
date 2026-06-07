@@ -12,7 +12,7 @@
 use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
-use codegen.{emit_optional_unwrap, emit_optional_some}
+use codegen.{emit_optional_unwrap, emit_optional_some, needs_optional_box}
 use core.{vtype_wrap_optional}
 use features.defer_stmt.{emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
@@ -38,32 +38,38 @@ export fn emit_null_coalesce(ctx: Ctx, env: List<VarBinding>, left: Expr, right:
     let result_slot = ctx.alloca_i64("nc_result")
     ctx.cond_br(is_null, then_bb, present_bb)
 
-    // Present path (left is non-none): unwrap so `??` yields the inner
-    // value, not the box pointer (boxed value-inner repr). The unwrap MUST
-    // live here, not the entry block — unwrapping a `none` (null box) would
-    // load from a null pointer. Non-optional/niche left unwraps to itself.
-    ctx.position(present_bb)
-    let l_present = if vtype_is_optional(l.ty) {
-        emit_optional_unwrap(ctx, vtype_strip_optional(l.ty), l.value)
-    } else {
-        l.value
-    }
-    ctx.store(ctx.to_i64(l_present, "nc_lhs"), result_slot)
-    ctx.br(merge_bb)
-
-    // Right-hand side: only evaluated when left is null.
+    // RHS (fallback) — emit FIRST so its type defines the `??` result type.
+    // The fallback type is what flows out: a plain `T` for `opt ?? value`, but
+    // an OPTIONAL `T?` for a chained `a ?? b ?? c` (the inner `a ?? b` must stay
+    // nullable so the outer `?? c` can still see `none`). Only executed when
+    // left is none.
     ctx.position(then_bb)
     let r = ctx.emit(env, right)?
-    ctx.store(ctx.to_i64(r.value, "nc_rhs"), result_slot)
+    let result_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { r.ty }
+    let r_final = if needs_optional_box(r.ty, result_ty) {
+        emit_optional_some(ctx, vtype_strip_optional(result_ty), r.value)
+    } else { r.value }
+    ctx.store(ctx.to_i64(r_final, "nc_rhs"), result_slot)
+    ctx.br(merge_bb)
+
+    // Present path (left is non-none): unwrap the box to the inner value (the
+    // unwrap MUST live here, not the entry block — unwrapping a `none` box
+    // would load from null), then RE-BOX when the result type is itself
+    // optional (chained `??`). Non-optional/niche left unwraps to itself.
+    ctx.position(present_bb)
+    let l_inner_val = if vtype_is_optional(l.ty) {
+        emit_optional_unwrap(ctx, vtype_strip_optional(l.ty), l.value)
+    } else { l.value }
+    let l_inner_ty = if vtype_is_optional(l.ty) { vtype_strip_optional(l.ty) } else { l.ty }
+    let l_final = if needs_optional_box(l_inner_ty, result_ty) {
+        emit_optional_some(ctx, vtype_strip_optional(result_ty), l_inner_val)
+    } else { l_inner_val }
+    ctx.store(ctx.to_i64(l_final, "nc_lhs"), result_slot)
     ctx.br(merge_bb)
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "nc_val")
-    // `??` yields the guaranteed-present (non-optional) type — the
-    // fallback always provides a value, so strip any optional off the left.
-    let base_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
-    let merged_ty = vtype_strip_optional(base_ty)
-    ok_emit(loaded, merged_ty)
+    ok_emit(loaded, result_ty)
 }
 
 /// Codegen for `obj?.field`. Null-checks the receiver: when null,

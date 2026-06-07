@@ -20,7 +20,7 @@
 // through these primitives so the niche-vs-boxed choice lives in exactly one
 // place (`optional_repr_tagged`).
 
-use core.{ValueType, vtype_strip_optional, vtype_is_optional}
+use core.{ValueType, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_eq}
 use codegen.{Ctx, EmitValue}
 
 /// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
@@ -126,4 +126,50 @@ export fn emit_optional_coerce(ctx: Ctx, v: EmitValue, slot_ty: ValueType) -> Em
     } else {
         v
     }
+}
+
+// ── if/match branch canonicalization to `T?` ──
+// When the two arms of a value-producing `if`/`if-expr` form a value-inner
+// optional mix — `{T, null}`, `{T, T?}`, `{T?, null}` for a tagged `T` — the
+// whole expression must canonicalise to `T?`: BOX the present value, keep
+// `none` as the null pointer. Without this, `if c { 6 } else { null }` yields a
+// bare `int` (6 or 0), so a present value boxes fine but `none` (0) ALSO boxes
+// (box(0) != none) once it flows through a `T?` slot/return.
+
+/// Return the tagged inner `T` when `(t_ty, e_ty)` is a value-inner optional
+/// mix that needs canonicalisation; `.Unknown` otherwise (pointer-inner niche
+/// optionals round-trip through the raw pointer and need no boxing).
+export fn if_optional_mix_inner(t_ty: ValueType, e_ty: ValueType) -> ValueType {
+    let ti = vtype_strip_optional(t_ty)
+    let ei = vtype_strip_optional(e_ty)
+    let t_void = t_ty is .Void
+    let e_void = e_ty is .Void
+    if e_void && !t_void && optional_repr_tagged(ti) { return ti }
+    if t_void && !e_void && optional_repr_tagged(ei) { return ei }
+    if !t_void && !e_void && (vtype_is_optional(t_ty) || vtype_is_optional(e_ty)) && optional_repr_tagged(ti) && vtype_eq(ti, ei) {
+        return ti
+    }
+    ValueType.Unknown
+}
+
+/// Post-merge canonicalisation for a value `if`. The two arms have already
+/// stored their RAW values into `result_slot` (typed `t_ty` / `e_ty`); this
+/// re-selects on `cond_i1` and boxes the present arm into `T?`, leaving `none`
+/// (Void/`null`) as the null pointer. Returns `null` when this is not a tagged
+/// optional mix — the caller then keeps its existing (raw) merge result.
+export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty: ValueType, e_ty: ValueType) -> EmitValue? {
+    let inner = if_optional_mix_inner(t_ty, e_ty)
+    if vtype_is_unknown(inner) { return null }
+    let opt_ty = ValueType.Optional(inner)
+    let raw_val = ctx.load_i64(result_slot, "ifopt_raw")
+    let obox_slot = ctx.alloca_i64("ifopt_slot")
+    let obox_merge = ctx.bb("ifopt_end")
+    let obox_else = ctx.if_true(cond_i1, "ifopt")
+    let t_box = if needs_optional_box(t_ty, opt_ty) { emit_optional_some(ctx, inner, raw_val) } else { raw_val }
+    ctx.store_br_if_open(ctx.to_i64(t_box, "ifopt_t"), obox_slot, obox_merge)
+    ctx.position(obox_else)
+    let e_box = if needs_optional_box(e_ty, opt_ty) { emit_optional_some(ctx, inner, raw_val) } else { raw_val }
+    ctx.store_br_if_open(ctx.to_i64(e_box, "ifopt_e"), obox_slot, obox_merge)
+    ctx.position(obox_merge)
+    EmitValue { value: ctx.load_i64(obox_slot, "ifopt_val"), ty: opt_ty }
 }

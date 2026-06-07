@@ -1642,13 +1642,12 @@ fn remove_insts_for(name: string, insts: List<Inst>) -> List<Inst> {
 /// turn rewritten / mangled annotations back into structured
 /// types for downstream codegen.
 fn vtype_from_type_string(ty: string) -> ValueType {
-    // Handle nullable "T?" — WRAP in Optional (don't erase). This round-trips
-    // through mono's rewrite_fn_ret (which renders a ValueType to string and
-    // parses it back); stripping the `?` here erased `?` from every fn's
-    // return type, so a `-> int?` registered as `int` and the boxed value-inner
-    // repr unboxed at return (none-deref). Preserve it (spec Axis 10).
+    // Handle nullable "T?" — strip the marker here. (Preserving `?` is done
+    // only in rewrite_fn_ret, the fn-RETURN-type context that needs it; wrapping
+    // it broadly in this general string→ValueType parser corrupts other
+    // round-trips, e.g. impl-name reconstruction → spurious F3104.)
     if ty.ends_with("?") && ty.length > 1 {
-        return ValueType.Optional(vtype_from_type_string(ty.substring(0, ty.length - 1)))
+        return vtype_from_type_string(ty.substring(0, ty.length - 1))
     }
     // Handle tuple type strings like "(int, string)" — produced by
     // `vtype_render_full(.Tuple(types))`. Without this, the round-
@@ -1767,8 +1766,42 @@ fn parse_type_args_to_list(args_str: string) -> List<ValueType> {
 
 /// Rewrite a fn's return-type annotation, replacing every
 /// generic reference with its mangled specialisation.
+/// True when an optional inner uses the BOXED (value-inner) repr — the only
+/// case whose `?` MUST survive the mono round-trip for the return boxing to be
+/// correct. Mirrors codegen's `optional_repr_tagged` (kept local to avoid a
+/// mono→codegen import).
+fn vt_is_tagged_optional_inner(vt: ValueType) -> bool {
+    match vt {
+        .Int -> true
+        .Bool -> true
+        .Float -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        _ -> false
+    }
+}
+
 fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType {
-    vtype_from_type_string(rewrite_type_name(ret_ty, regs, insts))
+    let rewritten = rewrite_type_name(ret_ty, regs, insts)
+    // Preserve a nullable return type `T?` as `Optional(T)` ONLY for value-inner
+    // (tagged/boxed) T — that is the case the boxed repr depends on (without it
+    // `-> int?` registered as `int` and the box was unboxed at the return, none-
+    // deref). Pointer-inner `T?` (Stmt?/Expr?/string? …) is a null-pointer niche:
+    // its value is identical whether typed `T` or `T?`, so it stays ERASED here,
+    // matching the long-standing behaviour the rest of the compiler relies on
+    // (preserving it broadly corrupted impl-name reconstruction → spurious
+    // F3104). vtype_from_type_string still strips `?` everywhere else.
+    if rewritten.ends_with("?") && rewritten.length > 1 {
+        let inner = vtype_from_type_string(rewritten.substring(0, rewritten.length - 1))
+        if vt_is_tagged_optional_inner(inner) { return ValueType.Optional(inner) }
+        return inner
+    }
+    vtype_from_type_string(rewritten)
 }
 
 /// Rewrite an entire fn declaration: param types, return
