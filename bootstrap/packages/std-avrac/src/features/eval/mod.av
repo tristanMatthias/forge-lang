@@ -396,8 +396,9 @@ export fn literal_args_to_values(args: List<SExpr>) -> List<Value>? {
     mut out: List<Value> = []
     mut i = 0
     while i < args.length {
-        let v = literal_expr_to_value(args[i].node)?
-        out.push(v)
+        let v_opt = literal_expr_to_value(args[i].node)
+        if v_opt == null { return null }
+        out.push(v_opt!)
         i = i + 1
     }
     out

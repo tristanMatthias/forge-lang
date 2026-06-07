@@ -45,9 +45,11 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
         .Call(callee, args) -> {
             match callee {
                 .Ident(name) -> {
-                    let fn_def = comptime_lookup_lazy(reg, name)?
-                    let arg_values = literal_args_to_values(args)?
-                    fold_call(reg, fn_def, arg_values)
+                    let fn_def_opt = comptime_lookup_lazy(reg, name)
+                    if fn_def_opt == null { return null }
+                    let arg_values_opt = literal_args_to_values(args)
+                    if arg_values_opt == null { return null }
+                    fold_call(reg, fn_def_opt!, arg_values_opt!)
                 }
                 _ -> null
             }
@@ -112,22 +114,25 @@ fn value_to_construct_expr(v: Value) -> Expr? {
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.None
         "enum"   -> {
-            let args = payload_to_args(v.enum_payload, 0)?
-            Expr.EnumCtor(v.enum_type, v.enum_variant, args)
+            let args_opt = payload_to_args(v.enum_payload, 0)
+            if args_opt == null { return null }
+            Expr.EnumCtor(v.enum_type, v.enum_variant, args_opt!)
         }
         // fwyx: a list Value reconstructs as Expr.ListLit, mirroring
         // the construct_expr_list output that produced it.
         "list" -> {
-            let elems = payload_to_args(v.list_payload, 0)?
-            Expr.ListLit(elems)
+            let elems_opt = payload_to_args(v.list_payload, 0)
+            if elems_opt == null { return null }
+            Expr.ListLit(elems_opt!)
         }
         // fwyx: a struct Value reconstructs as Expr.StructLit, mirroring
         // the struct_lit_2 output (every FieldInit recurses).
         "struct" -> {
             mut inits: List<FieldInit> = []
             for f in v.struct_payload {
-                let inner = value_to_construct_expr(f.value)?
-                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner) })
+                let inner_opt = value_to_construct_expr(f.value)
+                if inner_opt == null { return null }
+                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner_opt!) })
             }
             Expr.StructLit(v.struct_type, inits)
         }
@@ -143,8 +148,9 @@ fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
     mut out: List<SExpr> = []
     mut j = i
     while j < payload.length {
-        let inner = value_to_construct_expr(payload[j])?
-        out.push(sexpr_dummy(inner))
+        let inner_opt = value_to_construct_expr(payload[j])
+        if inner_opt == null { return null }
+        out.push(sexpr_dummy(inner_opt!))
         j = j + 1
     }
     out
