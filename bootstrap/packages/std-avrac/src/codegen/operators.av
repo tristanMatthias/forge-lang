@@ -1,10 +1,11 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
-use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int}
+use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int, vtype_is_optional, vtype_strip_optional}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use core.{avra_covmap_next_decision_id}
 use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.{is_null_literal}
+use codegen.{optional_repr_tagged, emit_optional_unwrap}
 use features.enum_decl.{emit_enum_tag_cmp}
 
 /// Codegen for unary operators (`-x`, `!x`, `~x`).
@@ -44,6 +45,21 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
 
     let right_result = ctx.emit(env, right)?
     mut rhs = right_result.value
+
+    // Optional unbox for mixed operands: when one side is a value-inner
+    // (tagged/boxed) optional and the other is a concrete non-`null` value,
+    // unbox the optional so the operator sees the inner value (e.g.
+    // `some_int_opt == 6`). `== null` / `!= null` are left as a none-check
+    // (the box is non-null, `none` is the null pointer). Permissive — Phase 4
+    // gating will require an explicit unwrap instead.
+    let l_opt = vtype_is_optional(left_result.ty)
+    let r_opt = vtype_is_optional(right_result.ty)
+    if l_opt && !r_opt && !is_null_literal(right) && optional_repr_tagged(vtype_strip_optional(left_result.ty)) {
+        lhs = emit_optional_unwrap(ctx, vtype_strip_optional(left_result.ty), lhs)
+    }
+    if r_opt && !l_opt && !is_null_literal(left) && optional_repr_tagged(vtype_strip_optional(right_result.ty)) {
+        rhs = emit_optional_unwrap(ctx, vtype_strip_optional(right_result.ty), rhs)
+    }
 
     // Normalize types for comparison: if one operand is ptr and the
     // other is i64 (e.g. null == 0), cast to match.
