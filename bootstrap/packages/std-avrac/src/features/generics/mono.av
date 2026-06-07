@@ -1642,9 +1642,13 @@ fn remove_insts_for(name: string, insts: List<Inst>) -> List<Inst> {
 /// turn rewritten / mangled annotations back into structured
 /// types for downstream codegen.
 fn vtype_from_type_string(ty: string) -> ValueType {
-    // Handle nullable "T?"
+    // Handle nullable "T?" — WRAP in Optional (don't erase). This round-trips
+    // through mono's rewrite_fn_ret (which renders a ValueType to string and
+    // parses it back); stripping the `?` here erased `?` from every fn's
+    // return type, so a `-> int?` registered as `int` and the boxed value-inner
+    // repr unboxed at return (none-deref). Preserve it (spec Axis 10).
     if ty.ends_with("?") && ty.length > 1 {
-        return vtype_from_type_string(ty.substring(0, ty.length - 1))
+        return ValueType.Optional(vtype_from_type_string(ty.substring(0, ty.length - 1)))
     }
     // Handle tuple type strings like "(int, string)" — produced by
     // `vtype_render_full(.Tuple(types))`. Without this, the round-

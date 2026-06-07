@@ -3,7 +3,7 @@
 // Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
 // without explicit self-imports.
 use codegen.{err_emit}
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er}
@@ -80,7 +80,14 @@ fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// same.
 fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
+        .OptionalChain(obj, field) -> {
+            // `obj?.field` short-circuits to `none` when `obj` is null → `U?`.
+            // Unknown/already-optional field types stay as-is (no double-wrap,
+            // no `Optional(Unknown)` rendered as a bare `?`).
+            let r = check_field_access(tc, obj, field)
+            if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
+            tc_er(r.tc, vtype_wrap_optional(r.ty))
+        }
         _ -> tc_er(tc, .Unknown)
     }
 }
