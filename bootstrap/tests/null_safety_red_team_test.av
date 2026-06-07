@@ -12,8 +12,9 @@ fn nsrt_get_config(valid: bool) -> NsrtConfig? {
 }
 
 fn nsrt_try_port(valid: bool) -> int? {
-    let cfg = nsrt_get_config(valid)?
-    cfg.port
+    let cfg = nsrt_get_config(valid)
+    if cfg == null { return null }
+    cfg!.port
 }
 
 spec "null safety red team" {
