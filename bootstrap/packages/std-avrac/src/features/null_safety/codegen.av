@@ -142,7 +142,13 @@ export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitV
 
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
-    let enum_name = vtype_enum_name(r.ty)
+    // Nominal name is read ACROSS kinds: a Result reached through a prior
+    // `?`-extraction can be classified `Struct("Result__T__E")` (the
+    // `vtype_from_name` default for an un-upgraded name) rather than Enum.
+    // Without the struct-name fallback, Mode 1 is skipped and the WHOLE
+    // Result leaks out unextracted (Mode 3), surfacing as a `Result.Ok`
+    // value where a plain `T` is expected.
+    let enum_name = vtype_enum_name(r.ty) + vtype_struct_name(r.ty)
     if is_result_shaped_enum(ctx.type_reg, enum_name) {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
