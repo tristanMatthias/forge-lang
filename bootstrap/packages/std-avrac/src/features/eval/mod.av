@@ -845,7 +845,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return ok_result(runtime, value_function(name))
             }
 
-            if name in ["println", "eprintln", "string"] {
+            if name in ["println", "eprintln", "string", "__avra_force_unwrap"] {
                 return ok_result(runtime, value_builtin(name))
             }
 
@@ -1389,6 +1389,15 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
             return error_result(runtime, "string() expects 1 argument")
         }
         return ok_result(runtime, value_string(render_value(args[0])))
+    }
+
+    // Force-unwrap (`expr!`): the interpreter represents a present optional
+    // as the inner value directly (no boxing), so this is a pass-through.
+    if name == "__avra_force_unwrap" {
+        if args.length == 0 {
+            return error_result(runtime, "__avra_force_unwrap expects 1 argument")
+        }
+        return ok_result(runtime, args[0])
     }
 
     error_result(runtime, "unknown builtin `${name}`")

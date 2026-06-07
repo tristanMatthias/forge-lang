@@ -3,7 +3,8 @@
 
 use core.{SExpr, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
-use core.{type_registry_id_for, variant_payload_name}
+use core.{type_registry_id_for, variant_payload_name, vtype_strip_optional}
+use codegen.{needs_optional_box, emit_optional_some}
 
 /// Codegen for `EnumName.Variant(args)` and the leading-dot
 /// shorthand `.Variant(args)`. Allocates the outer
@@ -83,7 +84,13 @@ fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: 
         let slot = idx + i
         let r = ctx.emit(env, arg.node)?
         let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
-        ctx.store_slot(payload_ptr, slot, r.value, fld_ty)
+        // Box a present value-inner arg into a `T?` field (guarded).
+        let v = if needs_optional_box(r.ty, fld_ty) {
+            emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)
+        } else {
+            r.value
+        }
+        ctx.store_slot(payload_ptr, slot, v, fld_ty)
     }
     ok_emit(null_ptr_val(), .Void)
 }
@@ -98,7 +105,13 @@ fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload
         let r = ctx.emit(env, arg.node)?
         let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
         let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
-        ctx.store_field(r.value, fld_gep, fld_ty)
+        // Box a present value-inner arg into a `T?` field (guarded).
+        let v = if needs_optional_box(r.ty, fld_ty) {
+            emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)
+        } else {
+            r.value
+        }
+        ctx.store_field(v, fld_gep, fld_ty)
     }
     ok_emit(null_ptr_val(), .Void)
 }

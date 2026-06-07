@@ -546,7 +546,7 @@ fn scope_has(scope: List<LocalBinding>, name: string) -> bool {
 /// bare so user shadowing of those names doesn't accidentally
 /// trigger unintended dispatch.
 fn is_builtin_name(name: string) -> bool {
-    name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self"]
+    name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self", "__avra_force_unwrap"]
 }
 
 // ── Name resolution context ──

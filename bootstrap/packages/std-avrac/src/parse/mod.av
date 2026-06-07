@@ -1139,10 +1139,17 @@ impl Parser {
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
         while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result) && (!self.cell_mode || self.current_line == self.prev_line)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
-            // Force-unwrap `expr!` is a no-op pass-through since we
-            // don't track nullability in the value tag.
+            // Force-unwrap `expr!`: desugar to the `__avra_force_unwrap`
+            // builtin so codegen can UNBOX a value-inner optional (int?/
+            // bool?/float?), where the present value is a heap box. For
+            // pointer-inner (niche) optionals the builtin is identity. Using
+            // an existing Call/Ident AST shape avoids a new Expr variant (no
+            // seed cycle); compiler `src/` contains no `!` so the selfhost
+            // fixed point is unaffected.
             while self.check(Tk.Bang) {
                 self.advance()
+                let fu_args: List<SExpr> = [sexpr_dummy(result)]
+                result = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
             }
             // Error propagation: `expr?` — if null, return null
             // from the enclosing function.

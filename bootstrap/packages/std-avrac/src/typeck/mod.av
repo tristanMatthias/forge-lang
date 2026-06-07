@@ -2181,6 +2181,12 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
                 let checked = display_check_arg(typed.tc, typed.types, args)
                 return tc_er(checked, .Str)
             }
+            // Force-unwrap builtin (`expr!`): yields the non-optional inner.
+            if name == "__avra_force_unwrap" {
+                let typed = check_expr_list_types(tc, args)
+                let arg_ty = if typed.types.length > 0 { typed.types[0] } else { ValueType.Unknown }
+                return tc_er(typed.tc, vtype_strip_optional(arg_ty))
+            }
             let checked = check_expr_list(tc, args)
             // Built-in functions
             match name {

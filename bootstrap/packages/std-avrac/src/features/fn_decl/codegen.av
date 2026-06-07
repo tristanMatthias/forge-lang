@@ -10,7 +10,7 @@ use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use core.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap}
-use core.{vtype_strip_optional}
+use core.{vtype_strip_optional, vtype_is_optional}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
 use codegen.{analyze_releasable}
@@ -522,6 +522,22 @@ export fn emit_first_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> 
 /// boxing` (so concrete args get wrapped for trait/union params),
 /// and calls via `ctx.call`. Result type comes from the function's
 /// declared return type.
+/// Codegen for the `expr!` force-unwrap builtin (`__avra_force_unwrap`).
+/// Yields the present inner value of an optional: for value-inner (tagged)
+/// optionals this UNBOXES the heap box; for pointer-inner (niche) optionals
+/// `emit_optional_unwrap` is identity (the value already IS the inner
+/// pointer). The result type is the non-optional inner. Caller is asserting
+/// non-`none` (Phase 4 gating / flow-narrowing will enforce this statically).
+fn emit_force_unwrap(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    let r = emit_single_arg(ctx, env, args)?
+    if vtype_is_optional(r.ty) {
+        let inner = vtype_strip_optional(r.ty)
+        return ok_emit(emit_optional_unwrap(ctx, inner, r.value), inner)
+    }
+    // Non-optional operand: `!` is a no-op non-null assertion.
+    ok_emit(r.value, r.ty)
+}
+
 export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
     // Built-in functions — dispatched by name.
     match name {
@@ -533,6 +549,7 @@ export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: L
         "int"                -> return emit_string_to_int(ctx, env, args)
         "float"              -> return emit_string_to_float(ctx, env, args)
         "panic"              -> return emit_panic(ctx, env, args)
+        "__avra_force_unwrap" -> return emit_force_unwrap(ctx, env, args)
         _ -> {}
     }
     // Newtype construction: UserId(value) → zero-cost, just retype the value

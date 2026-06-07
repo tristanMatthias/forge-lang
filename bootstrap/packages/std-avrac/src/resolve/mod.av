@@ -75,6 +75,7 @@ export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
     r = declare_function(r, "exit")
     r = declare_function(r, "avra_format_float")
     r = declare_function(r, "avra_format_int")
+    r = declare_function(r, "__avra_force_unwrap")
     r = declare_function(r, "self")
     r = collect_function_names(r, stmts)
     r = resolve_stmt_list(r, stmts)
