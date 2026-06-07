@@ -203,7 +203,13 @@ export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitV
         // over the enum registry's generic payload type — the
         // registry has Ok(value: T) before substitution, while
         // r.ty carries the substituted (concrete) T after typeck.
-        let ok_ty = ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty))
+        // Upgrade the resolved Ok type through the registry so a name that
+        // `resolve_ok_type` left as `Struct("E")` (the vtype_from_name default
+        // for an un-upgraded name) becomes `Enum("E")` when `E` is actually a
+        // registered enum. Without this, a `?`-extracted enum value is typed
+        // Struct, and a subsequent `match` on it emits struct-layout matching
+        // on an enum value — silently taking the wrong arm (lr34 class).
+        let ok_ty = ctx.resolve_codegen_vtype(ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty)))
         // Retain the extracted Ok value so it survives Result wrapper release.
         // The release function recursively releases inner fields; without
         // this retain, ptr-type Ok payloads are freed while still in use.

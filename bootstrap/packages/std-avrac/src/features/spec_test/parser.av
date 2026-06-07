@@ -73,7 +73,7 @@ impl Parser {
             return .Err("parse error")
         }
         // Parse as a block: multiple statements, last expression is the assertion
-        let body = self.parse_statement_list(true)
+        let body = self.parse_statement_list(true)?
         if !self.consume(Tk.RightBrace, "expected `}` to close then block") {
             return .Err("parse error")
         }

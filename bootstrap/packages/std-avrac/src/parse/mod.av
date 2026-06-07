@@ -1293,16 +1293,19 @@ impl Parser {
             // (method calls like .map/.filter set this, regular function
             // calls do not, preventing double-wrapping in `f(it)` inside
             // `.map(f(it))`).
-            mut expr = raw_expr
-            if self.allow_it_sugar {
+            let expr = if self.allow_it_sugar {
                 match raw_expr {
-                    .Lambda(_, _) -> {}
+                    .Lambda(_, _) -> raw_expr
                     _ -> {
                         if expr_contains_it(raw_expr) {
-                            expr = wrap_in_it_lambda(raw_expr)
+                            wrap_in_it_lambda(raw_expr)
+                        } else {
+                            raw_expr
                         }
                     }
                 }
+            } else {
+                raw_expr
             }
             out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
             if self.check(Tk.Comma) {
