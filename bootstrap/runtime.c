@@ -558,46 +558,111 @@ static const char* avra_signal_description(int sig) {
 
 // ─── Signal handler ───────────────────────────────────────────────
 
-// ── ICE breadcrumb (compile cursor) ──
-// The self-hosted compiler updates this as it walks the program (per
-// top-level item / per statement) so that an *internal* crash — a
-// segfault or null-deref while bs2 is compiling source — reports WHERE
-// it was instead of an un-symbolizable self-host backtrace. Process-wide
-// static, written only from non-signal context; read (only) from the
-// async-signal-safe crash handler. Acceptable under the same carve-out as
-// the rc/arena bookkeeping (one bs2 process; not threaded state).
-static char g_ice_phase[64]  = "";
-static char g_ice_detail[256] = "";
-static int64_t g_ice_line = 0;
+// ── ICE localization (compile cursor) ──
+// The self-hosted compiler maintains a "where am I" cursor as it walks the
+// program, so an *internal* crash — a segfault or null-deref while bs2 is
+// compiling source — reports the exact construct instead of an
+// un-symbolizable self-host backtrace. Three layers, each self-installing
+// at a central chokepoint so no feature can forget it:
+//
+//   phase    — resolve / typeck / codegen (one SET per pass)
+//   fn stack — nested function/closure/impl-method trail (push/pop)
+//   at       — current statement's file:line:col (one SET per statement)
+//
+// Everything is copied into fixed buffers (no dangling pointers into the
+// arena), so the async-signal-safe crash handler can read it even after
+// the heap is corrupt. Process-wide statics, written only from non-signal
+// context — same carve-out as the rc/arena bookkeeping (one bs2 process;
+// not threaded state). The fn-stack push/pop only needs to balance on the
+// *non-crash* path; an in-flight crash leaves the frame on the stack,
+// which is exactly what we want to print.
+#define ICE_FN_STACK_MAX 512
+#define ICE_NAME_MAX     128
+#define ICE_FILE_MAX     256
+static char    g_ice_phase[32]                         = "";
+static char    g_ice_fn_stack[ICE_FN_STACK_MAX][ICE_NAME_MAX];
+static int     g_ice_fn_depth                          = 0;
+static char    g_ice_at_file[ICE_FILE_MAX]             = "";
+static int64_t g_ice_at_line                           = 0;
+static int64_t g_ice_at_col                            = 0;
 
-// Called from compiled Avra (extern). `phase` is a short tag
-// ("typeck", "codegen", "resolve"); `detail` names the construct
-// (usually the current function); `line` is the source line (0 = none).
-void avra_ice_breadcrumb(const char* phase, const char* detail, int64_t line) {
-    if (phase)  { size_t i = 0; for (; phase[i]  && i < sizeof(g_ice_phase)  - 1; i++) g_ice_phase[i]  = phase[i];  g_ice_phase[i]  = 0; }
-    if (detail) { size_t i = 0; for (; detail[i] && i < sizeof(g_ice_detail) - 1; i++) g_ice_detail[i] = detail[i]; g_ice_detail[i] = 0; }
-    g_ice_line = line;
+static void ice_copy(char *dst, size_t cap, const char *src) {
+    if (cap == 0) return;
+    if (!src) { dst[0] = 0; return; }
+    size_t i = 0;
+    for (; src[i] && i < cap - 1; i++) dst[i] = src[i];
+    dst[i] = 0;
 }
 
-// Async-signal-safe: emit the last breadcrumb on a crash so an ICE is
-// localized to the construct the compiler was processing.
+// Set the current pass. Resets the fn stack + position — each pass
+// starts fresh so the trail reflects only the active phase.
+void avra_ice_phase(const char *phase) {
+    ice_copy(g_ice_phase, sizeof g_ice_phase, phase);
+    g_ice_fn_depth = 0;
+    g_ice_at_file[0] = 0;
+    g_ice_at_line = 0;
+    g_ice_at_col = 0;
+}
+
+// Enter a function / closure / impl-method body.
+void avra_ice_push_fn(const char *name) {
+    if (g_ice_fn_depth >= 0 && g_ice_fn_depth < ICE_FN_STACK_MAX)
+        ice_copy(g_ice_fn_stack[g_ice_fn_depth], ICE_NAME_MAX, name);
+    g_ice_fn_depth++;  // count past the cap so deep nesting still balances
+}
+
+void avra_ice_pop_fn(void) {
+    if (g_ice_fn_depth > 0) g_ice_fn_depth--;
+}
+
+// Mark the statement currently being processed (file:line:col).
+void avra_ice_at(const char *file, int64_t line, int64_t col) {
+    ice_copy(g_ice_at_file, sizeof g_ice_at_file, file);
+    g_ice_at_line = line;
+    g_ice_at_col = col;
+}
+
+// Back-compat shim for the original single-cursor API (phase + one name).
+void avra_ice_breadcrumb(const char *phase, const char *detail, int64_t line) {
+    ice_copy(g_ice_phase, sizeof g_ice_phase, phase);
+    g_ice_fn_depth = 0;
+    avra_ice_push_fn(detail);
+    g_ice_at_line = line;
+}
+
+// Async-signal-safe: emit the cursor on a crash, formatted like a
+// first-class diagnostic (F9999) so an internal crash reads like every
+// other error — phase, the nested-function trail, and the precise span.
 static void avra_print_ice_breadcrumb(void) {
-    if (!g_ice_phase[0] && !g_ice_detail[0]) return;
-    safe_write("\n  Compiler internal error (ICE) — last breadcrumb:\n");
-    safe_write("    phase: ");
-    safe_write(g_ice_phase[0] ? g_ice_phase : "(unknown)");
-    safe_write("\n");
-    if (g_ice_detail[0]) {
-        safe_write("    at:    ");
-        safe_write(g_ice_detail);
+    if (!g_ice_phase[0] && g_ice_fn_depth == 0 && !g_ice_at_file[0] && g_ice_at_line == 0)
+        return;
+    safe_write("\n  error[F9999]: internal compiler error — the compiler crashed, not your program\n");
+    if (g_ice_phase[0]) {
+        safe_write("    phase: ");
+        safe_write(g_ice_phase);
         safe_write("\n");
     }
-    if (g_ice_line > 0) {
-        char buf[48];
-        int len = snprintf(buf, sizeof(buf), "    line:  %lld\n", (long long)g_ice_line);
-        write(STDERR_FILENO, buf, len);
+    if (g_ice_fn_depth > 0) {
+        safe_write("    in:    ");
+        int n = g_ice_fn_depth < ICE_FN_STACK_MAX ? g_ice_fn_depth : ICE_FN_STACK_MAX;
+        for (int i = 0; i < n; i++) {
+            if (i) safe_write(" \xE2\x96\xB8 ");  // ▸
+            safe_write(g_ice_fn_stack[i][0] ? g_ice_fn_stack[i] : "?");
+        }
+        if (g_ice_fn_depth > ICE_FN_STACK_MAX) safe_write(" \xE2\x96\xB8 \xE2\x80\xA6");  // ▸ …
+        safe_write("\n");
     }
-    safe_write("  This is a compiler bug (the *compiler* crashed, not your program).\n");
+    if (g_ice_at_file[0] || g_ice_at_line > 0) {
+        safe_write("    at:    ");
+        if (g_ice_at_file[0]) safe_write(g_ice_at_file);
+        if (g_ice_at_line > 0) {
+            char buf[48];
+            int len = snprintf(buf, sizeof(buf), ":%lld:%lld", (long long)g_ice_at_line, (long long)g_ice_at_col);
+            write(STDERR_FILENO, buf, len);
+        }
+        safe_write("\n");
+    }
+    safe_write("    please report (include these lines): https://github.com/tristanMatthias/forge-lang/issues\n");
 }
 
 static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
@@ -714,7 +779,7 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
     safe_write("\n");
     safe_write("  Suggestions:\n");
     safe_write("    - Check for null values passed to functions\n");
-    safe_write("    - Recompile with --debug-null to find the exact null argument\n");
+    safe_write("    - Rebuild with `make build-debug` (enables --debug-null) to name the exact null argument + function\n");
     safe_write("    - Run with AVRA_CRASH_DETAIL=1 for the full technical dump\n");
     safe_write("\n");
 

@@ -61,10 +61,10 @@ type Resolver = {
 /// Top-level entry: resolve every name reference in `stmts`. Pre-
 /// declares the language's built-in fns so they resolve like normal
 /// declarations.
-extern fn avra_ice_breadcrumb(phase: string, detail: string, line: int)
+extern fn avra_ice_phase(phase: string)
 
 export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
-    avra_ice_breadcrumb("resolve", "program", 0)
+    avra_ice_phase("resolve")
     mut r = resolver_new()
     // Pre-declare builtins so they resolve like any other function
     r = declare_function(r, "println")

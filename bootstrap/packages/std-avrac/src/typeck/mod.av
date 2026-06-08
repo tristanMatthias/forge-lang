@@ -19,10 +19,14 @@ use list_ops.{list_push_copy, list_any, list_map}
 
 extern fn avra_uptime_ms() -> int
 
-// ICE breadcrumb: records "what the compiler is currently processing" so
-// an internal crash (segfault/null-deref while bs2 compiles source) is
-// localized to a construct instead of an un-symbolizable backtrace.
-extern fn avra_ice_breadcrumb(phase: string, detail: string, line: int)
+// ICE localization: records "what the compiler is currently processing"
+// so an internal crash (segfault/null-deref while bs2 compiles source) is
+// localized to a phase + function trail + span instead of an
+// un-symbolizable self-host backtrace. See runtime.c "ICE localization".
+extern fn avra_ice_phase(phase: string)
+extern fn avra_ice_push_fn(name: string)
+extern fn avra_ice_pop_fn()
+extern fn avra_ice_at(file: string, line: int, col: int)
 
 // ── Type environment ──
 
@@ -844,7 +848,7 @@ export type TypeCheckResult = {
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
 export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TypeCheckResult {
-    avra_ice_breadcrumb("typeck", "program", 0)
+    avra_ice_phase("typeck")
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
     // four typeck passes (collect / check / naming / annotate)
@@ -1162,6 +1166,7 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = lint_index_loops(tc, stmts)
     for ss in stmts {
+        avra_ice_at(ss.file, ss.line, ss.col)
         let with_pos = cur with { current_line: ss.line, current_col: ss.col }
         cur = check_stmt(with_pos, ss.node)
     }
@@ -1464,11 +1469,13 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             tc_exit(checked)
         }
         .Function(name, _, params, ret_vt, body) -> {
-            avra_ice_breadcrumb("typeck", name, tc.current_line)
+            avra_ice_push_fn(name)
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
-            tc_exit(checked)
+            let result = tc_exit(checked)
+            avra_ice_pop_fn()
+            result
         }
         .Impl(impl_name, methods) -> {
             let after = check_stmts(tc, methods)
@@ -2414,11 +2421,13 @@ fn check_block_stmts(tc: TC, stmts: List<SStmt>) -> ExprResult {
     mut i = 0
     let last = stmts.length - 1
     while i < last {
+        avra_ice_at(stmts[i].file, stmts[i].line, stmts[i].col)
         cur = check_stmt(cur, stmts[i].node)
         i = i + 1
     }
     // Last statement — its type is the block's type
     let ss = stmts[last]
+    avra_ice_at(ss.file, ss.line, ss.col)
     match ss.node {
         .Expr(e) -> check_expr(cur, e)
         _ -> {

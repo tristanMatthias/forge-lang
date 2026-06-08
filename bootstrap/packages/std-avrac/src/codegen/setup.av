@@ -3,6 +3,7 @@
 use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
+extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
@@ -52,6 +53,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// fns — and finally emits user function bodies and top-level
 /// statements.
 fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
