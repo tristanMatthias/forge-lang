@@ -680,9 +680,10 @@ export fn narrow_guard_of(cond: Expr) -> NarrowGuard {
 
 /// Narrow `name` from `T?` to `T` at the current depth when it is
 /// currently tracked as optional. A no-op for `""`, unknown, or
-/// already-non-optional bindings — so it is purely additive and can
-/// never introduce a type error.
-export fn tc_narrow_present(tc: TC, name: string) -> TC {
+/// already-non-optional bindings. Internal to the narrowing helpers
+/// (`tc_narrow_true_branch` / `tc_narrow_false_branch` / the
+/// continuation) — features narrow via those, not this directly.
+fn tc_narrow_present(tc: TC, name: string) -> TC {
     if name == "" { return tc }
     let ty = type_lookup(tc.types, name)
     if !vtype_is_optional(ty) { return tc }
