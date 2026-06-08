@@ -16,9 +16,9 @@
 //
 // Because a present value-inner optional is a *non-null* box, `Some(0)` /
 // `Some(false)` / `Some(0.0)` are all distinct from `none` (null) — the core
-// Phase 2 fix. Every build / read / none-check / unwrap of an optional routes
-// through these primitives so the niche-vs-boxed choice lives in exactly one
-// place (`optional_repr_tagged`).
+// correctness property for value-type optionals. Every build / read /
+// none-check / unwrap of an optional routes through these primitives so the
+// niche-vs-boxed choice lives in exactly one place (`optional_repr_tagged`).
 
 use core.{ValueType, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_eq}
 use codegen.{Ctx, EmitValue}
@@ -89,7 +89,8 @@ export fn emit_optional_unwrap(ctx: Ctx, inner: ValueType, opt: ptr) -> ptr {
 // ── Auto-coercion at assignment boundaries (mirrors union_type's wrap) ──
 // The same sites that auto-wrap a concrete value into a union slot must
 // box a present value into a value-inner `T?` slot, and (permissively, until
-// Phase 4 gating) unbox a boxed `T?` flowing into a non-optional slot.
+// non-null-by-default gating lands) unbox a boxed `T?` flowing into a
+// non-optional slot.
 
 /// True when a present value of type `val_ty` must be BOXED to land in a
 /// `slot_ty` optional slot: the slot is `T?` with a value-typed (tagged) `T`,
@@ -104,7 +105,7 @@ export fn needs_optional_box(val_ty: ValueType, slot_ty: ValueType) -> bool {
 
 /// True when a boxed (tagged) optional must be UNBOXED to land in a
 /// non-optional `slot_ty`. Permissive narrow — the implicit unwrap that
-/// keeps mixed `T`/`T?` code building before strict gating (Phase 4).
+/// keeps mixed `T`/`T?` code building until non-null-by-default gating lands.
 export fn needs_optional_unbox(val_ty: ValueType, slot_ty: ValueType) -> bool {
     if vtype_is_optional(slot_ty) { return false }
     match val_ty {

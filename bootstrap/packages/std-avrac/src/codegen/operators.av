@@ -50,8 +50,8 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     // (tagged/boxed) optional and the other is a concrete non-`null` value,
     // unbox the optional so the operator sees the inner value (e.g.
     // `some_int_opt == 6`). `== null` / `!= null` are left as a none-check
-    // (the box is non-null, `none` is the null pointer). Permissive — Phase 4
-    // gating will require an explicit unwrap instead.
+    // (the box is non-null, `none` is the null pointer). Permissive — strict
+    // non-null gating will require an explicit unwrap instead.
     let l_opt = vtype_is_optional(left_result.ty)
     let r_opt = vtype_is_optional(right_result.ty)
     if l_opt && !r_opt && !is_null_literal(right) && optional_repr_tagged(vtype_strip_optional(left_result.ty)) {

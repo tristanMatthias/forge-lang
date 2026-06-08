@@ -527,7 +527,7 @@ export fn emit_first_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> 
 /// optionals this UNBOXES the heap box; for pointer-inner (niche) optionals
 /// `emit_optional_unwrap` is identity (the value already IS the inner
 /// pointer). The result type is the non-optional inner. Caller is asserting
-/// non-`none` (Phase 4 gating / flow-narrowing will enforce this statically).
+/// non-`none` (strict non-null gating / flow-narrowing will enforce this statically).
 fn emit_force_unwrap(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
     let r = emit_single_arg(ctx, env, args)?
     if vtype_is_optional(r.ty) {
