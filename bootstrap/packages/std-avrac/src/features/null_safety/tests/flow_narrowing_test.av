@@ -157,4 +157,55 @@ spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
             "fn main() -> int { 0 }\n")
         !out.contains("F1202")
     }
+
+    // ── Combinatorial: narrowing crossed with other constructs ──
+
+    then "nested guards narrow independent variables in the inner scope" {
+        // `let`-bind the uses, not `return a? + b?` — narrowing isn't yet
+        // threaded into the return-type re-check pass (see ic8r).
+        let out = fn_check_out("/tmp/avra_narrow_nested.av",
+            "fn use_it(a: int?, b: int?) -> int {\n" +
+            "    if a != none {\n" +
+            "        if b != none {\n" +
+            "            let s = a? + b?\n" +
+            "            return s\n" +
+            "        }\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "narrowing is visible inside a `match` arm body within the guarded scope" {
+        let out = fn_check_out("/tmp/avra_narrow_match.av",
+            "fn use_it(x: int?, n: int) -> int {\n" +
+            "    if x != none {\n" +
+            "        let r = match n {\n" +
+            "            0 -> x?\n" +
+            "            _ -> x?\n" +
+            "        }\n" +
+            "        return r\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "continuation narrows when the present-side falls through and the else diverges" {
+        // `if x != none { … } else { return }` — reaching past the `if`
+        // means the then-branch ran, so `x` is present in the continuation.
+        let out = fn_check_out("/tmp/avra_narrow_elsediv.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "    } else {\n" +
+            "        return 0\n" +
+            "    }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
 }
