@@ -1,0 +1,124 @@
+// WHY: flow narrowing (spec Axis 10 §1.4 — xm2g.4 / Phase 3). After a
+// proven-present guard (`if x != none`, the `if x == none { return … }`
+// early-exit, an else-branch under `if x == none`, or `while x != none`),
+// the optional `x` is retyped from `T?` to `T` inside the proven scope.
+//
+// Narrowing is SUGAR, never load-bearing: it only removes the optionality
+// the compiler can prove, so the single optionality gate that exists at
+// this phase — F1202 (`?` is Result-only; applying it to a `T?` is an
+// error) — is the oracle. A `x?` on a narrowed `x` is NOT F1202 (it is no
+// longer optional); the same `x?` on an un-narrowed `x` still IS F1202.
+// That contrast proves both that narrowing fires AND that it is scoped /
+// non-load-bearing (the gate remains the backstop everywhere else).
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+/// Run `bs2 check` on a fixture and return its combined output.
+fn fn_check_out(fixture: string, src: string) -> string {
+    write_fixture(fixture, src)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+}
+
+spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
+    then "baseline: an un-narrowed `x?` is F1202 (the gate exists)" {
+        let out = fn_check_out("/tmp/avra_narrow_baseline.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "`if x != none { x? }` narrows — no F1202 in the then-branch" {
+        let out = fn_check_out("/tmp/avra_narrow_then.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "`if x == none { return } x?` narrows the continuation — no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_cont.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x == none { return 0 }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "`if x == none { … } else { x? }` narrows the else-branch — no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_else.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x == none {\n" +
+            "        return 0\n" +
+            "    } else {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "`while x != none { x? }` narrows the loop body — no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_while.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    while x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "narrowing is scoped: a `!= none` guard that falls through does NOT narrow the continuation" {
+        // The none-side (the implicit fall-through) does not diverge,
+        // so reaching the code after the `if` does NOT prove presence.
+        // `x` stays `int?` and the trailing `x?` is still F1202.
+        let out = fn_check_out("/tmp/avra_narrow_scope.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "narrowing does not leak past the then-branch — `x?` after the `if` body is still F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_noleak.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        let a = x ?? 0\n" +
+            "        return a\n" +
+            "    }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "if-expr narrows the present arm — `if x != none { x? } else { 0 }` has no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_ifexpr.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    let v = if x != none { x? } else { 0 }\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+}

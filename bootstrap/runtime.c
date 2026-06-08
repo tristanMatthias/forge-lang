@@ -558,6 +558,48 @@ static const char* avra_signal_description(int sig) {
 
 // ─── Signal handler ───────────────────────────────────────────────
 
+// ── ICE breadcrumb (compile cursor) ──
+// The self-hosted compiler updates this as it walks the program (per
+// top-level item / per statement) so that an *internal* crash — a
+// segfault or null-deref while bs2 is compiling source — reports WHERE
+// it was instead of an un-symbolizable self-host backtrace. Process-wide
+// static, written only from non-signal context; read (only) from the
+// async-signal-safe crash handler. Acceptable under the same carve-out as
+// the rc/arena bookkeeping (one bs2 process; not threaded state).
+static char g_ice_phase[64]  = "";
+static char g_ice_detail[256] = "";
+static int64_t g_ice_line = 0;
+
+// Called from compiled Avra (extern). `phase` is a short tag
+// ("typeck", "codegen", "resolve"); `detail` names the construct
+// (usually the current function); `line` is the source line (0 = none).
+void avra_ice_breadcrumb(const char* phase, const char* detail, int64_t line) {
+    if (phase)  { size_t i = 0; for (; phase[i]  && i < sizeof(g_ice_phase)  - 1; i++) g_ice_phase[i]  = phase[i];  g_ice_phase[i]  = 0; }
+    if (detail) { size_t i = 0; for (; detail[i] && i < sizeof(g_ice_detail) - 1; i++) g_ice_detail[i] = detail[i]; g_ice_detail[i] = 0; }
+    g_ice_line = line;
+}
+
+// Async-signal-safe: emit the last breadcrumb on a crash so an ICE is
+// localized to the construct the compiler was processing.
+static void avra_print_ice_breadcrumb(void) {
+    if (!g_ice_phase[0] && !g_ice_detail[0]) return;
+    safe_write("\n  Compiler internal error (ICE) — last breadcrumb:\n");
+    safe_write("    phase: ");
+    safe_write(g_ice_phase[0] ? g_ice_phase : "(unknown)");
+    safe_write("\n");
+    if (g_ice_detail[0]) {
+        safe_write("    at:    ");
+        safe_write(g_ice_detail);
+        safe_write("\n");
+    }
+    if (g_ice_line > 0) {
+        char buf[48];
+        int len = snprintf(buf, sizeof(buf), "    line:  %lld\n", (long long)g_ice_line);
+        write(STDERR_FILENO, buf, len);
+    }
+    safe_write("  This is a compiler bug (the *compiler* crashed, not your program).\n");
+}
+
 static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
     // Spec-guard fast path: a spec block is mid-flight and a fatal
     // signal arrived; jump back to the guarded call site so the
@@ -581,6 +623,7 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
             safe_write_ptr(si->si_addr);
             safe_write(")\n");
             safe_write("A value was null when a field access, method call, or dereference was attempted.\n");
+            avra_print_ice_breadcrumb();
             _exit(128 + sig);
         }
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
@@ -665,6 +708,8 @@ static void avra_signal_handler(int sig, siginfo_t *si, void *context) {
         safe_write(caller_fn);
         safe_write("\n");
     }
+
+    avra_print_ice_breadcrumb();
 
     safe_write("\n");
     safe_write("  Suggestions:\n");

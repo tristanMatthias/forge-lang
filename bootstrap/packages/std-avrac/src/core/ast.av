@@ -1610,6 +1610,49 @@ export fn stmt_unwrap(s: Stmt) -> Stmt {
     }
 }
 
+// ── Control-flow divergence ──
+// A statement *diverges* when it unconditionally leaves the current
+// flow (`return` / `break` / `continue`) so control never falls
+// through to the code after it. Pure AST predicates — used by match
+// arm type-unification (drop divergent arms) and by flow narrowing
+// (a guard whose none-side diverges proves presence in the
+// continuation). Centralised here so both consumers share one
+// definition.
+
+/// True when a statement list ends in a divergent statement.
+export fn stmts_diverges(stmts: List<SStmt>) -> bool {
+    if stmts.length == 0 { return false }
+    stmt_diverges(stmt_unwrap(stmts[stmts.length - 1].node))
+}
+
+/// Per-statement divergence test. An open-ended `if` (no `else`)
+/// always falls through; an `if`/`else` diverges only when both
+/// branches do.
+export fn stmt_diverges(stmt: Stmt) -> bool {
+    match stmt {
+        .Return(_) -> true
+        .ReturnEmpty -> true
+        .Break -> true
+        .Continue -> true
+        .Block(body) -> stmts_diverges(body)
+        .Expr(e) -> expr_diverges(e)
+        .If(_, then_b, else_b) -> {
+            if else_b == null { return false }
+            stmt_diverges(then_b) && stmt_diverges(else_b!)
+        }
+        _ -> false
+    }
+}
+
+/// True when an expression's evaluation always diverges (e.g. a
+/// `Block` ending in `return`).
+export fn expr_diverges(body: Expr) -> bool {
+    match body {
+        .Block(stmts) -> stmts_diverges(stmts)
+        _ -> false
+    }
+}
+
 /// Look up an annotation by name on a Stmt. Walks every Annotated
 /// layer (so `/// foo\n@inline\nfn bar()` finds @doc, @inline, etc.),
 /// returning the first occurrence. Returns the raw Annotation —

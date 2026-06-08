@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, stmt_diverges}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -18,6 +18,11 @@ use core.{avra_process_env_get}
 use list_ops.{list_push_copy, list_any, list_map}
 
 extern fn avra_uptime_ms() -> int
+
+// ICE breadcrumb: records "what the compiler is currently processing" so
+// an internal crash (segfault/null-deref while bs2 compiles source) is
+// localized to a construct instead of an un-symbolizable backtrace.
+extern fn avra_ice_breadcrumb(phase: string, detail: string, line: int)
 
 // ── Type environment ──
 
@@ -618,6 +623,79 @@ export fn tc_exit(tc: TC) -> TC {
 export fn tc_bind(tc: TC, name: string, ty: ValueType) -> TC {
     tc with { types: type_bind(tc.types, name, ty, tc.depth) }
 }
+
+// ── Flow narrowing (spec Axis 10 §1.4 — xm2g.4 / Phase 3) ──
+// Narrowing is ergonomic SUGAR, never load-bearing for safety: after
+// `if x != none { … }`, an `if x == none { return/break/continue }`
+// early-exit, or `while x != none { … }`, the proven-present `x` is
+// retyped from `T?` to `T` inside the proven scope so a use site
+// needn't repeat an unwrap. It is *additive* — `tc_narrow_present`
+// only ever strips an Optional, so it can never raise an error that
+// gating (Phase 4) wouldn't; it only suppresses the ceremony where
+// presence is already proven. Safety comes from gating, not from
+// narrowing (a use of an un-narrowed `T?` stays an error regardless).
+
+/// A nullability guard recovered from an `if`/`while` condition of
+/// the form `x == none` / `x != none`. `var` is the compared
+/// variable (`""` when the condition is not a recognised guard);
+/// `present_when_true` is `true` for `x != none` — the branch taken
+/// when the condition holds has `x` present.
+export type NarrowGuard = { var: string, present_when_true: bool }
+
+fn narrow_guard_none() -> NarrowGuard { NarrowGuard { var: "", present_when_true: false } }
+
+/// Recognise `x == none` / `x != none` (either operand order) and
+/// recover the variable plus its presence in the true-branch.
+/// Conservative: only a bare identifier compared directly to the
+/// `none` literal narrows — anything more complex is ignored so
+/// narrowing never fires on an expression it can't prove.
+export fn narrow_guard_of(cond: Expr) -> NarrowGuard {
+    match cond {
+        .Binary(left, op, right) -> {
+            let is_ne = op is .Ne
+            let is_eq = op is .Eq
+            if !is_ne && !is_eq { return narrow_guard_none() }
+            let lname = match left { .Ident(n) -> n, _ -> "" }
+            let rname = match right { .Ident(n) -> n, _ -> "" }
+            let l_is_none = left is .None
+            let r_is_none = right is .None
+            if lname != "" && r_is_none { return NarrowGuard { var: lname, present_when_true: is_ne } }
+            if rname != "" && l_is_none { return NarrowGuard { var: rname, present_when_true: is_ne } }
+            narrow_guard_none()
+        }
+        _ -> narrow_guard_none()
+    }
+}
+
+/// Narrow `name` from `T?` to `T` at the current depth when it is
+/// currently tracked as optional. A no-op for `""`, unknown, or
+/// already-non-optional bindings — so it is purely additive and can
+/// never introduce a type error.
+export fn tc_narrow_present(tc: TC, name: string) -> TC {
+    if name == "" { return tc }
+    let ty = type_lookup(tc.types, name)
+    if !vtype_is_optional(ty) { return tc }
+    tc_bind(tc, name, vtype_strip_optional(ty))
+}
+
+/// Apply *continuation* narrowing after an `if`. When the branch in
+/// which the guard variable is absent (its "none-side") diverges,
+/// reaching the code after the `if` proves the variable is present —
+/// so narrow it for the rest of the enclosing block. This is what
+/// makes the dominant `if x == none { return … }` guard retype `x`
+/// to `T` in everything that follows.
+export fn tc_narrow_after_if(tc: TC, guard: NarrowGuard, then_b: Stmt, else_b: Stmt?) -> TC {
+    if guard.var == "" { return tc }
+    let none_side_diverges = if guard.present_when_true {
+        // `x != none`: the none-side is the else-branch (a bare
+        // fall-through never diverges).
+        else_b != null && stmt_diverges(else_b!)
+    } else {
+        // `x == none`: the none-side is the then-branch.
+        stmt_diverges(then_b)
+    }
+    if none_side_diverges { tc_narrow_present(tc, guard.var) } else { tc }
+}
 /// Append a diagnostic at the TC's current line/col. Most call
 /// sites use this rather than `tc_report_at` because they're
 /// already tracking position via `current_line` / `current_col`.
@@ -766,6 +844,7 @@ export type TypeCheckResult = {
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
 export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TypeCheckResult {
+    avra_ice_breadcrumb("typeck", "program", 0)
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
     // four typeck passes (collect / check / naming / annotate)
@@ -1385,6 +1464,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             tc_exit(checked)
         }
         .Function(name, _, params, ret_vt, body) -> {
+            avra_ice_breadcrumb("typeck", name, tc.current_line)
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)

@@ -1,52 +1,11 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, SStmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, stmt_unwrap, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_render_full, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use core.{vtype_from_name}
-
-// ── Divergence detection ──
-// An arm that diverges (return/break/continue) never produces a value
-// for the enclosing expression context and should not participate in
-// match arm type unification.
-
-/// True when a statement list ends in a divergent statement
-/// (`return` / `break` / `continue` / unreachable). Used to
-/// drop divergent arms from match-result type unification.
-fn stmts_diverges(stmts: List<SStmt>) -> bool {
-    if stmts.length == 0 { return false }
-    stmt_diverges(stmt_unwrap(stmts[stmts.length - 1].node))
-}
-
-/// Per-statement divergence test. `if` is divergent only when
-/// both branches diverge — open-ended `if` without `else`
-/// always falls through.
-fn stmt_diverges(stmt: Stmt) -> bool {
-    match stmt {
-        .Return(_) -> true
-        .ReturnEmpty -> true
-        .Break -> true
-        .Continue -> true
-        .Block(body) -> stmts_diverges(body)
-        .Expr(e) -> expr_diverges(e)
-        .If(_, then_b, else_b) -> {
-            if else_b == null { return false }
-            stmt_diverges(then_b) && stmt_diverges(else_b!)
-        }
-        _ -> false
-    }
-}
-
-/// True when an expression's evaluation always diverges
-/// (e.g. a `Block` ending in `return`).
-fn expr_diverges(body: Expr) -> bool {
-    match body {
-        .Block(stmts) -> stmts_diverges(stmts)
-        _ -> false
-    }
-}
 
 // ── Arm type skip logic ──
 // An arm's inferred type should be skipped in type unification when:

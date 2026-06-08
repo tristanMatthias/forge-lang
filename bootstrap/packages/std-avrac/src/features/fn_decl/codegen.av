@@ -13,6 +13,8 @@ use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_
 use core.{vtype_strip_optional, vtype_is_optional}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
+
+extern fn avra_ice_breadcrumb(phase: string, detail: string, line: int)
 use codegen.{analyze_releasable}
 use features.spawn_expr.{stmts_has_spawn}
 
@@ -43,6 +45,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: List<SStmt>) -> Result<List<VarB
         let is_mono_spec = find_annotation(ss.node, "mono_spec") != null
         let inner = match stmt_unwrap(ss.node) {
             .Function(name, _, params, _, body) -> {
+                avra_ice_breadcrumb("codegen", name, ss.line)
                 if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
                     ok_stmt(empty_e)
                 } else {
