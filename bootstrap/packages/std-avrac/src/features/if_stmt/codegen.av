@@ -2,10 +2,10 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for, vtype_is_optional, vtype_strip_optional, vtype_is_unknown}
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
-use codegen.{needs_optional_box, emit_optional_some, optional_repr_tagged}
+use codegen.{emit_if_optional_canon}
 use core.{avra_covmap_next_branch_id}
 use features.union_type.{emit_union_wrap}
 
@@ -107,27 +107,6 @@ fn is_union_safe_type(ty: ValueType) -> bool {
     }
 }
 
-/// When an if-expr's two branch types form a value-inner (tagged) optional
-/// mix — `{T, null}`, `{T, T?}`, or `{T?, null}` where `T` is a boxed
-/// value type (int/bool/float/sized int) — return the inner `T` so the
-/// merge can canonicalise the result to `T?` (box present, keep `none`
-/// null). Returns `.Unknown` for every other shape (pointer-inner niche
-/// optionals need no boxing, and unrelated types fall through to the union
-/// path). Only tagged inners are handled; niche optionals already round-trip
-/// through the raw pointer value.
-fn if_expr_optional_inner(t: ValueType, e: ValueType) -> ValueType {
-    let ti = vtype_strip_optional(t)
-    let ei = vtype_strip_optional(e)
-    let t_void = t is .Void
-    let e_void = e is .Void
-    if e_void && !t_void && optional_repr_tagged(ti) { return ti }
-    if t_void && !e_void && optional_repr_tagged(ei) { return ei }
-    if !t_void && !e_void && (vtype_is_optional(t) || vtype_is_optional(e)) && optional_repr_tagged(ti) && vtype_eq(ti, ei) {
-        return ti
-    }
-    ValueType.Unknown
-}
-
 /// Codegen for `if cond { then } else { else }` in expression
 /// position. Emits both branches into a result slot, then merges.
 /// When both branches produce different but union-safe concrete
@@ -166,25 +145,10 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     // the other `null` (none) → canonicalise the whole if-expr to `T?` so a
     // present value is BOXED and `none` stays the null pointer. Without this,
     // `if c { 6 } else { null }` would yield a bare `int` (6 or 0), losing the
-    // none/Some(0) distinction once stored into a `T?` slot downstream.
-    let opt_inner = if_expr_optional_inner(t_ty, e_ty)
-    if !vtype_is_unknown(opt_inner) {
-        let opt_ty = ValueType.Optional(opt_inner)
-        let raw_val = ctx.load_i64(result_slot, "ife_raw")
-        let obox_slot = ctx.alloca_i64("ife_obox")
-        let obox_merge = ctx.bb("ife_obox_end")
-        let obox_else = ctx.if_true(emit_value_ptr(cond), "ife_obox")
-        // then (cond true): box the present value if its branch type needs it.
-        let t_box = if needs_optional_box(t_ty, opt_ty) { emit_optional_some(ctx, opt_inner, raw_val) } else { raw_val }
-        ctx.store_br_if_open(t_box, obox_slot, obox_merge)
-        // else (cond false): box if needed; `null`/Void stays the null pointer.
-        ctx.position(obox_else)
-        let e_box = if needs_optional_box(e_ty, opt_ty) { emit_optional_some(ctx, opt_inner, raw_val) } else { raw_val }
-        ctx.store_br_if_open(e_box, obox_slot, obox_merge)
-        ctx.position(obox_merge)
-        let result = ctx.load_i64(obox_slot, "ife_opt_val")
-        return ok_emit(result, opt_ty)
-    }
+    // none/Some(0) distinction once stored into a `T?` slot downstream. Shared
+    // with the statement-value `if` path (codegen/blocks.av) via optional_repr.
+    let canon = emit_if_optional_canon(ctx, emit_value_ptr(cond), result_slot, t_ty, e_ty)
+    if canon != null { return ok_emit(canon!.value, canon!.ty) }
 
     // Same type or non-union-safe: load raw value. Two values of the same
     // nominal enum/struct are the SAME type even when their type_args or
