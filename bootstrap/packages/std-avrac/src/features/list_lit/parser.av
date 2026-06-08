@@ -9,7 +9,7 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_list_elements(self) -> List<SExpr>? {
+    fn parse_list_elements(self) -> Result<List<SExpr>, string> {
         mut out: List<SExpr> = []
         let expr = self.parse_expression()?
 
@@ -17,25 +17,26 @@ impl Parser {
         if self.check(Tk.KwFor) {
             self.advance()
             let var_name = self.consume_identifier("expected variable name after `for`")?
-            if !self.consume(Tk.KwIn, "expected `in` after comprehension variable") { return null }
+            if !self.consume(Tk.KwIn, "expected `in` after comprehension variable") { return .Err("parse error") }
             let collection = self.parse_expression()?
-            let filter: Expr? = if self.check(Tk.KwIf) {
+            mut filter: Expr? = none
+            if self.check(Tk.KwIf) {
                 self.advance()
-                self.parse_expression()?
-            } else { null }
+                filter = self.parse_expression()?
+            }
             let comp = Expr.ListComp(expr, var_name, collection, filter)
             out.push(sexpr(comp, self.current_line, self.current_column))
-            return out
+            return .Ok(out)
         }
 
         out.push(sexpr(expr, self.current_line, self.current_column))
         // Regular list elements — accumulate in source order
         while self.check(Tk.Comma) {
             self.advance()
-            if self.check(Tk.RightBracket) { return out }
+            if self.check(Tk.RightBracket) { return .Ok(out) }
             let next_expr = self.parse_expression()?
             out.push(sexpr(next_expr, self.current_line, self.current_column))
         }
-        out
+        .Ok(out)
     }
 }

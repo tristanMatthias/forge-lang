@@ -1,32 +1,33 @@
-/// Test fixture: minimal config struct used by the `?`-on-method
-/// test. One numeric field so the test can assert on a primitive
-/// value after extraction.
+// `?`-split: none-guard + force-unwrap before a field access (the
+// post-`?`-split idiom; `?` is Result-only now).
+
+/// Test fixture: minimal config struct. One numeric field so the test can
+/// assert on a primitive value after extraction.
 ///
 /// @field port — TCP port to listen on.
 type NstmConfig = { port: int }
 
 /// Test fixture: stub config loader. Returns a real config for
-/// `"prod"` and null for everything else.
+/// `"prod"` and none for everything else.
 fn nstm_load_config(name: string) -> NstmConfig? {
     if name == "prod" {
         return NstmConfig { port: 8080 }
     }
-    null
+    none
 }
 
-/// Test fixture: chain `?` with a field access — verifies that
-/// `cfg.port` can run after `nstm_load_config(name)?` unwraps
-/// the optional config.
+/// Test fixture: guard the optional config, then read `cfg.port`.
 fn nstm_get_port(name: string) -> int? {
-    let cfg = nstm_load_config(name)?
-    cfg.port
+    let cfg_o = nstm_load_config(name)
+    if cfg_o == none { return none }
+    cfg_o!.port
 }
 
 spec "try method" {
     then "found config returns port" {
         nstm_get_port("prod") ?? 0 == 8080
     }
-    then "missing config returns null" {
+    then "missing config returns none" {
         nstm_get_port("dev") ?? 0 == 0
     }
 }

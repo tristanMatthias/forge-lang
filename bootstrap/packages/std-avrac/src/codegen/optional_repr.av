@@ -1,0 +1,176 @@
+// WHY: single source of truth for the `T?` runtime representation (spec Axis 10 §3).
+//
+// This lives in `codegen/` (NOT `features/null_safety/`) because it is a
+// codegen PRIMITIVE — the lowering of the optional representation — not a
+// feature dispatch. Keeping it here means `codegen` never imports a feature
+// (CLAUDE.md rule 16: features depend on codegen, never the reverse). The
+// inverse edge created a codegen⟷feature import cycle that perturbed
+// module/compilation order and surfaced as a null-`lc` Ctx during unrelated
+// function codegen.
+//
+// Both reprs use a NULL POINTER for `none`, so every `T?` lowers to `ptr`:
+//   - Pointer-backed inner (Str, Struct, List, Fn, …) → null-pointer NICHE:
+//     the value IS the inner pointer; `none` = null.
+//   - Value-backed inner (int / bool / float / sized ints) → BOXED (tagged):
+//     `Some(v)` = a heap box holding `v`; `none` = null pointer.
+//
+// Because a present value-inner optional is a *non-null* box, `Some(0)` /
+// `Some(false)` / `Some(0.0)` are all distinct from `none` (null) — the core
+// correctness property for value-type optionals. Every build / read /
+// none-check / unwrap of an optional routes through these primitives so the
+// niche-vs-boxed choice lives in exactly one place (`optional_repr_tagged`).
+
+use core.{ValueType, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_eq}
+use codegen.{Ctx, EmitValue}
+
+/// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
+/// value type (int / bool / float / sized ints). Pointer-backed inners use
+/// the niche repr and need no box. `Unknown` / `Void` / unresolved inners are
+/// deliberately NOT tagged — they must never be boxed (an unresolved
+/// `Optional(Unknown)` boxed would mis-shape downstream type handling). This
+/// is the single classification point.
+export fn optional_repr_tagged(inner: ValueType) -> bool {
+    match inner {
+        .Int -> true
+        .Bool -> true
+        .Float -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        _ -> false
+    }
+}
+
+/// The `none` value for any optional: a null pointer (`0`). Repr-independent
+/// (both niche and boxed use null for absence).
+export fn emit_optional_none(ctx: Ctx) -> ptr {
+    ctx.i64(0)
+}
+
+/// Wrap a present value `v` (LLVM value of type `inner`) as `Some(v)`.
+/// Niche: identity (the inner pointer already IS the optional). Boxed:
+/// allocate an 8-byte heap cell and store `v` into it — the non-null box
+/// pointer distinguishes `Some(v)` from `none` for every `v`, including 0.
+export fn emit_optional_some(ctx: Ctx, inner: ValueType, v: ptr) -> ptr {
+    if optional_repr_tagged(inner) {
+        let box = ctx.arena_alloc(ctx.i64(8))
+        ctx.store_slot(box, 0, v, inner)
+        box
+    } else {
+        v
+    }
+}
+
+/// 1 when `opt` is `none` (null pointer), else 0. Same test for both reprs
+/// (`none` is always null). Returns an `i1`-typed LLVM value.
+export fn emit_optional_is_none(ctx: Ctx, opt: ptr) -> ptr {
+    if ctx.is_ptr_value(opt) {
+        ctx.eq(opt, ctx.zero_for(ValueType.Str), "opt_is_none")
+    } else {
+        ctx.eq(opt, ctx.i64(0), "opt_is_none")
+    }
+}
+
+/// Extract the present value (caller must have proven non-`none`).
+/// Niche: identity. Boxed: load the value back out of the box.
+export fn emit_optional_unwrap(ctx: Ctx, inner: ValueType, opt: ptr) -> ptr {
+    if optional_repr_tagged(inner) {
+        let box = ctx.to_ptr(opt, "opt_box")
+        ctx.load_slot_typed(box, 0, inner, "opt_unwrap")
+    } else {
+        opt
+    }
+}
+
+// ── Auto-coercion at assignment boundaries (mirrors union_type's wrap) ──
+// The same sites that auto-wrap a concrete value into a union slot must
+// box a present value into a value-inner `T?` slot, and (permissively, until
+// non-null-by-default gating lands) unbox a boxed `T?` flowing into a
+// non-optional slot.
+
+/// True when a present value of type `val_ty` must be BOXED to land in a
+/// `slot_ty` optional slot: the slot is `T?` with a value-typed (tagged) `T`,
+/// and the value is neither already an optional nor the `none` literal
+/// (`.Void`, which stays the null pointer).
+export fn needs_optional_box(val_ty: ValueType, slot_ty: ValueType) -> bool {
+    match slot_ty {
+        .Optional(inner) -> optional_repr_tagged(inner) && !vtype_is_optional(val_ty) && !(val_ty is .Void)
+        _ -> false
+    }
+}
+
+/// True when a boxed (tagged) optional must be UNBOXED to land in a
+/// non-optional `slot_ty`. Permissive narrow — the implicit unwrap that
+/// keeps mixed `T`/`T?` code building until non-null-by-default gating lands.
+export fn needs_optional_unbox(val_ty: ValueType, slot_ty: ValueType) -> bool {
+    if vtype_is_optional(slot_ty) { return false }
+    match val_ty {
+        .Optional(inner) -> optional_repr_tagged(inner)
+        _ -> false
+    }
+}
+
+/// Apply optional box/unbox coercion when moving `v` into a `slot_ty` slot.
+/// Pass-through when neither applies (including all niche cases, which need
+/// no transformation). Returns the (possibly re-typed) value.
+export fn emit_optional_coerce(ctx: Ctx, v: EmitValue, slot_ty: ValueType) -> EmitValue {
+    if needs_optional_box(v.ty, slot_ty) {
+        let boxed = emit_optional_some(ctx, vtype_strip_optional(slot_ty), v.value)
+        EmitValue { value: boxed, ty: slot_ty }
+    } else if needs_optional_unbox(v.ty, slot_ty) {
+        let inner = vtype_strip_optional(v.ty)
+        EmitValue { value: emit_optional_unwrap(ctx, inner, v.value), ty: inner }
+    } else {
+        v
+    }
+}
+
+// ── if/match branch canonicalization to `T?` ──
+// When the two arms of a value-producing `if`/`if-expr` form a value-inner
+// optional mix — `{T, null}`, `{T, T?}`, `{T?, null}` for a tagged `T` — the
+// whole expression must canonicalise to `T?`: BOX the present value, keep
+// `none` as the null pointer. Without this, `if c { 6 } else { null }` yields a
+// bare `int` (6 or 0), so a present value boxes fine but `none` (0) ALSO boxes
+// (box(0) != none) once it flows through a `T?` slot/return.
+
+/// Return the tagged inner `T` when `(t_ty, e_ty)` is a value-inner optional
+/// mix that needs canonicalisation; `.Unknown` otherwise (pointer-inner niche
+/// optionals round-trip through the raw pointer and need no boxing).
+export fn if_optional_mix_inner(t_ty: ValueType, e_ty: ValueType) -> ValueType {
+    let ti = vtype_strip_optional(t_ty)
+    let ei = vtype_strip_optional(e_ty)
+    let t_void = t_ty is .Void
+    let e_void = e_ty is .Void
+    if e_void && !t_void && optional_repr_tagged(ti) { return ti }
+    if t_void && !e_void && optional_repr_tagged(ei) { return ei }
+    if !t_void && !e_void && (vtype_is_optional(t_ty) || vtype_is_optional(e_ty)) && optional_repr_tagged(ti) && vtype_eq(ti, ei) {
+        return ti
+    }
+    ValueType.Unknown
+}
+
+/// Post-merge canonicalisation for a value `if`. The two arms have already
+/// stored their RAW values into `result_slot` (typed `t_ty` / `e_ty`); this
+/// re-selects on `cond_i1` and boxes the present arm into `T?`, leaving `none`
+/// (Void/`none`) as the null pointer. Returns `none` when this is not a tagged
+/// optional mix — the caller then keeps its existing (raw) merge result.
+export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty: ValueType, e_ty: ValueType) -> EmitValue? {
+    let inner = if_optional_mix_inner(t_ty, e_ty)
+    if vtype_is_unknown(inner) { return none }
+    let opt_ty = ValueType.Optional(inner)
+    let raw_val = ctx.load_i64(result_slot, "ifopt_raw")
+    let obox_slot = ctx.alloca_i64("ifopt_slot")
+    let obox_merge = ctx.bb("ifopt_end")
+    let obox_else = ctx.if_true(cond_i1, "ifopt")
+    let t_box = if needs_optional_box(t_ty, opt_ty) { emit_optional_some(ctx, inner, raw_val) } else { raw_val }
+    ctx.store_br_if_open(ctx.to_i64(t_box, "ifopt_t"), obox_slot, obox_merge)
+    ctx.position(obox_else)
+    let e_box = if needs_optional_box(e_ty, opt_ty) { emit_optional_some(ctx, inner, raw_val) } else { raw_val }
+    ctx.store_br_if_open(ctx.to_i64(e_box, "ifopt_e"), obox_slot, obox_merge)
+    ctx.position(obox_merge)
+    EmitValue { value: ctx.load_i64(obox_slot, "ifopt_val"), ty: opt_ty }
+}

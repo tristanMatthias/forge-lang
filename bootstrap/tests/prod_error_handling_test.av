@@ -37,8 +37,10 @@ fn peh_step2(x: int) -> int? {
 }
 
 fn peh_pipeline(x: int) -> int? {
-    let a = peh_step1(x)?
-    let b = peh_step2(a)?
+    let a = peh_step1(x)
+    if a == none { return none }
+    let b = peh_step2(a!)
+    if b == none { return none }
     b
 }
 

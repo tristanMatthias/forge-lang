@@ -16,7 +16,7 @@ impl Parser {
     // Keyword-free instantiation: `comp_name inst_name { ... }`
     // Only called when the NEXT token after the component name is an identifier
     // (the instance name). If next is `{`, `(`, `=`, etc., we don't match.
-    fn parse_component_block_bare(self) -> Stmt? {
+    fn parse_component_block_bare(self) -> Result<Stmt, string> {
         let name = self.consume_identifier("expected component name")?
         // Require instance name (identifier) — this prevents false positives
         // like `command {` inside match expressions.
@@ -26,15 +26,15 @@ impl Parser {
             return self.parse_statement()
         }
         let instance = self.consume_identifier("expected instance name")?
-        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
+        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return .Err("parse error") }
         let config = self.parse_comp_config_pairs()?
         let body = self.parse_comp_block_body()?
-        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return null }
-        Stmt.ComponentBlock(name, instance, config, body)
+        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
+        .Ok(Stmt.ComponentBlock(name, instance, config, body))
     }
 
     // `component name { ... }` — always a definition (no parens)
-    fn parse_component_decl(self) -> Stmt? {
+    fn parse_component_decl(self) -> Result<Stmt, string> {
         self.advance()  // consume `component`
         let name = self.consume_identifier("expected component name")?
 
@@ -42,11 +42,10 @@ impl Parser {
         // between the component name and the body. Both definition
         // forms (`component name {` and `component name(params) {`)
         // accept it. The block / nested form does not.
-        let implements: List<string> = if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
+        mut implements: List<string> = []
+        if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
             self.advance()
-            self.parse_implements_list()?
-        } else {
-            []
+            implements = self.parse_implements_list()?
         }
 
         // Definition: `component name {` ...
@@ -58,19 +57,19 @@ impl Parser {
         if self.check(Tk.LeftParen) {
             self.advance()
             let params = self.parse_param_list()?
-            if !self.consume(Tk.RightParen, "expected `)` after component params") { return null }
-            if !self.consume(Tk.LeftBrace, "expected `{` after component header") { return null }
+            if !self.consume(Tk.RightParen, "expected `)` after component params") { return .Err("parse error") }
+            if !self.consume(Tk.LeftBrace, "expected `{` after component header") { return .Err("parse error") }
             let config: List<CompConfig> = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
                 self.advance()
-                if !self.consume(Tk.LeftBrace, "expected `{` after `config`") { return null }
+                if !self.consume(Tk.LeftBrace, "expected `{` after `config`") { return .Err("parse error") }
                 let c = self.parse_comp_config_schema()?
-                if !self.consume(Tk.RightBrace, "expected `}` after config entries") { return null }
+                if !self.consume(Tk.RightBrace, "expected `}` after config entries") { return .Err("parse error") }
                 c
             } else { [] }
             let body = self.parse_comp_def_body()?
-            if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return null }
+            if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return .Err("parse error") }
             register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-            return Stmt.ComponentDef(name, params, config, [], implements, body)
+            return .Ok(Stmt.ComponentDef(name, params, config, [], implements, body))
         }
 
         // Legacy: `component comp instance {` — block with keyword prefix.
@@ -86,19 +85,19 @@ impl Parser {
                 // as an instance name once the implements list
                 // ended at `Runnable`).
                 self.set_error("`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
-                return null
+                return .Err("parse error")
             }
             let instance = self.current_lexeme
             self.advance()
-            if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
+            if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return .Err("parse error") }
             let config = self.parse_comp_config_pairs()?
             let body = self.parse_comp_block_body()?
-            if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return null }
-            return Stmt.ComponentBlock(name, instance, config, body)
+            if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
+            return .Ok(Stmt.ComponentBlock(name, instance, config, body))
         }
 
         self.set_error("expected `{` after component name")
-        null
+        .Err("parse error")
     }
 
     /// Parse `TraitA, TraitB, ...` until `{` or `(`. Comma-separated,
@@ -109,7 +108,7 @@ impl Parser {
     /// trait name is required; an empty list (`implements {`) is a
     /// parse error (consume_identifier fails on the missing name and
     /// the `?` operator propagates null up to `parse_component_decl`).
-    fn parse_implements_list(self) -> List<string>? {
+    fn parse_implements_list(self) -> Result<List<string>, string> {
         mut out: List<string> = []
         let first = self.consume_identifier("expected trait name after `implements`")?
         out.push(first)
@@ -118,30 +117,30 @@ impl Parser {
             // Trailing comma: `implements A, B,` followed directly by
             // `{` or `(` — treat as legitimate end-of-list rather than
             // recursing and erroring on the missing identifier.
-            if self.check(Tk.LeftBrace) || self.check(Tk.LeftParen) { return out }
+            if self.check(Tk.LeftBrace) || self.check(Tk.LeftParen) { return .Ok(out) }
             let next = self.consume_identifier("expected trait name after `,`")?
             out.push(next)
         }
-        out
+        .Ok(out)
     }
 
     // ── Component Definition ──
 
-    fn parse_component_def(self, name: string, implements: List<string>) -> Stmt? {
+    fn parse_component_def(self, name: string, implements: List<string>) -> Result<Stmt, string> {
         // `component name {` — no parens, self.name is implicit.
         // `implements` was consumed by the caller (parse_component_decl)
         // so by the time we land here the next token is the opening `{`.
         if !self.consume(Tk.LeftBrace, "expected `{` after component name") {
-            return null
+            return .Err("parse error")
         }
         let config: List<CompConfig> = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after `config`") {
-                return null
+                return .Err("parse error")
             }
             let c = self.parse_comp_config_schema()?
             if !self.consume(Tk.RightBrace, "expected `}` after config entries") {
-                return null
+                return .Err("parse error")
             }
             c
         } else {
@@ -153,11 +152,11 @@ impl Parser {
         let children: List<ChildrenSlot> = if self.check(Tk.Identifier) && self.current_lexeme == "children" {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after `children`") {
-                return null
+                return .Err("parse error")
             }
             let c = self.parse_comp_children_schema()?
             if !self.consume(Tk.RightBrace, "expected `}` after children entries") {
-                return null
+                return .Err("parse error")
             }
             c
         } else {
@@ -165,12 +164,12 @@ impl Parser {
         }
         let body = self.parse_comp_def_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component") {
-            return null
+            return .Err("parse error")
         }
         // Register this component name for keyword-free instantiation
         register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
         let empty_p: List<ParamEntry> = []
-        Stmt.ComponentDef(name, empty_p, config, children, implements, body)
+        .Ok(Stmt.ComponentDef(name, empty_p, config, children, implements, body))
     }
 
     // ── Children Schema (definition) — vez6.7 ──
@@ -179,32 +178,32 @@ impl Parser {
     /// Each entry binds a slot name on the parent to the element type
     /// accepted in that slot. Trailing commas tolerated. Returns an
     /// empty list for an empty block.
-    fn parse_comp_children_schema(self) -> List<ChildrenSlot>? {
+    fn parse_comp_children_schema(self) -> Result<List<ChildrenSlot>, string> {
         mut out: List<ChildrenSlot> = []
-        if self.check(Tk.RightBrace) { return out }
+        if self.check(Tk.RightBrace) { return .Ok(out) }
         let first_slot = self.consume_identifier("expected child slot name")?
-        if !self.consume(Tk.Colon, "expected `:` after slot name") { return null }
+        if !self.consume(Tk.Colon, "expected `:` after slot name") { return .Err("parse error") }
         let first_te = self.parse_type_expr("expected slot type")?
         out.push(ChildrenSlot { slot_name: first_slot, child_ty: type_expr_to_vtype(first_te) })
         while self.check(Tk.Comma) {
             self.advance()
             // Trailing comma tolerated.
-            if self.check(Tk.RightBrace) { return out }
+            if self.check(Tk.RightBrace) { return .Ok(out) }
             let slot = self.consume_identifier("expected child slot name")?
-            if !self.consume(Tk.Colon, "expected `:` after slot name") { return null }
+            if !self.consume(Tk.Colon, "expected `:` after slot name") { return .Err("parse error") }
             let te = self.parse_type_expr("expected slot type")?
             out.push(ChildrenSlot { slot_name: slot, child_ty: type_expr_to_vtype(te) })
         }
-        out
+        .Ok(out)
     }
 
     // ── Config Schema (definition) ──
 
-    fn parse_comp_config_schema(self) -> List<CompConfig>? {
+    fn parse_comp_config_schema(self) -> Result<List<CompConfig>, string> {
         mut out: List<CompConfig> = []
         while !self.check(Tk.RightBrace) {
             let key = self.consume_identifier("expected config key")?
-            if !self.consume(Tk.Colon, "expected `:` after config key") { return null }
+            if !self.consume(Tk.Colon, "expected `:` after config key") { return .Err("parse error") }
             let te = self.parse_type_expr("expected config type")?
             let vt = type_expr_to_vtype(te)
             let default_val = if self.check(Tk.Equal) {
@@ -222,12 +221,12 @@ impl Parser {
             if self.check(Tk.Comma) { self.advance() }
             out.push(CompConfig { key, ty_vt: vt, default_val })
         }
-        out
+        .Ok(out)
     }
 
     // ── Definition Body ──
 
-    fn parse_comp_def_body(self) -> List<SStmt>? {
+    fn parse_comp_def_body(self) -> Result<List<SStmt>, string> {
         mut out: List<SStmt> = []
         while !self.check(Tk.RightBrace) {
             let line = self.current_line
@@ -237,9 +236,9 @@ impl Parser {
             if self.check(Tk.Identifier) && self.current_lexeme == "on" {
                 self.advance()
                 let event_name = self.consume_identifier("expected event name after `on`")?
-                if !self.consume(Tk.LeftBrace, "expected `{` after event name") { return null }
+                if !self.consume(Tk.LeftBrace, "expected `{` after event name") { return .Err("parse error") }
                 let body = self.parse_statement_list(true)?
-                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
+                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return .Err("parse error") }
                 let empty_tp: List<TypeParamEntry> = []
                 let empty_p: List<ParamEntry> = []
                 let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body)
@@ -254,7 +253,7 @@ impl Parser {
                 let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
                     self.advance()
                     let p = self.parse_param_list()?
-                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
+                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return .Err("parse error") }
                     p
                 } else { [] }
                 let empty_tp: List<TypeParamEntry> = []
@@ -268,7 +267,7 @@ impl Parser {
             if self.check(Tk.KwLet) {
                 self.advance()
                 let field_name = self.consume_identifier("expected field name")?
-                if !self.consume(Tk.Colon, "expected `:` after field name") { return null }
+                if !self.consume(Tk.Colon, "expected `:` after field name") { return .Err("parse error") }
                 let te = self.parse_type_expr("expected field type")?
                 let vt = type_expr_to_vtype(te)
                 let init = if self.check(Tk.Equal) {
@@ -285,24 +284,24 @@ impl Parser {
             let stmt = self.parse_declaration()?
             out.push(sstmt(stmt, line, col))
         }
-        out
+        .Ok(out)
     }
 
     // ── Component Block Body ──
 
     // Parse config pairs: `key value` where value is a literal.
     // Uses character-level peek to decide without consuming tokens.
-    fn parse_comp_config_pairs(self) -> List<CompConfigPair>? {
+    fn parse_comp_config_pairs(self) -> Result<List<CompConfigPair>, string> {
         mut out: List<CompConfigPair> = []
         mut keep_going = true
         while keep_going {
-            if self.check(Tk.RightBrace) { return out }
-            if self.check(Tk.KwFn) || self.check(Tk.KwComponent) || self.check(Tk.KwLet) { return out }
-            if !self.check(Tk.Identifier) { return out }
+            if self.check(Tk.RightBrace) { return .Ok(out) }
+            if self.check(Tk.KwFn) || self.check(Tk.KwComponent) || self.check(Tk.KwLet) { return .Ok(out) }
+            if !self.check(Tk.Identifier) { return .Ok(out) }
             let key = self.current_lexeme
-            if key == "on" { return out }
+            if key == "on" { return .Ok(out) }
             // Peek at what follows the identifier (without consuming)
-            if self.peek_after_ident_is_brace() { return out }  // nested block
+            if self.peek_after_ident_is_brace() { return .Ok(out) }  // nested block
             // Check if next char is a quote (string literal) or digit (number)
             if self.peek_after_ident_is_string() || self.peek_after_ident_is_number() {
                 self.advance()  // consume key
@@ -331,7 +330,7 @@ impl Parser {
             // Anything else (identifier, etc.) → end of config pairs
             keep_going = false
         }
-        out
+        .Ok(out)
     }
 
     fn peek_after_ident_is_string(self) -> bool {
@@ -441,7 +440,7 @@ impl Parser {
     }
 
     // Parse block body: nested blocks + on handlers + fn decls + statements
-    fn parse_comp_block_body(self) -> List<SStmt>? {
+    fn parse_comp_block_body(self) -> Result<List<SStmt>, string> {
         mut out: List<SStmt> = []
         while !self.check(Tk.RightBrace) {
             let line = self.current_line
@@ -454,12 +453,12 @@ impl Parser {
                 let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
                     self.advance()
                     let p = self.parse_param_list()?
-                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return null }
+                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return .Err("parse error") }
                     p
                 } else { [] }
-                if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return null }
+                if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return .Err("parse error") }
                 let body = self.parse_statement_list(true)?
-                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return null }
+                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return .Err("parse error") }
                 let empty_tp: List<TypeParamEntry> = []
                 let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body)
                 out.push(sstmt(stmt, line, col))
@@ -478,10 +477,10 @@ impl Parser {
                 let comp_name = self.current_lexeme
                 self.advance()
                 let inst_name = self.consume_identifier("expected instance name")?
-                if !self.consume(Tk.LeftBrace, "expected `{` after nested block name") { return null }
+                if !self.consume(Tk.LeftBrace, "expected `{` after nested block name") { return .Err("parse error") }
                 let nested_config = self.parse_comp_config_pairs()?
                 let nested_body = self.parse_comp_block_body()?
-                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return null }
+                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
                 let stmt = Stmt.ComponentBlock(comp_name, inst_name, nested_config, nested_body)
                 out.push(sstmt(stmt, line, col))
                 continue
@@ -493,7 +492,7 @@ impl Parser {
                 self.advance()  // consume {
                 let nested_config = self.parse_comp_config_pairs()?
                 let nested_body = self.parse_comp_block_body()?
-                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return null }
+                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
                 let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body)
                 out.push(sstmt(stmt, line, col))
                 continue
@@ -503,6 +502,6 @@ impl Parser {
             let stmt = self.parse_declaration()?
             out.push(sstmt(stmt, line, col))
         }
-        out
+        .Ok(out)
     }
 }

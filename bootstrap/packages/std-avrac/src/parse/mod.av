@@ -309,7 +309,7 @@ fn template_split_format(s: string) -> FormatSplit {
 /// Parse a sub-expression from a string. Used by template
 /// desugaring — creates its own parser instance so the parent's
 /// state isn't disturbed by the inner walk.
-fn parse_template_expr(source: string) -> Expr? {
+fn parse_template_expr(source: string) -> Result<Expr, string> {
     mut p = parser_new(source)
     p.parse_expression()
 }
@@ -424,20 +424,22 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
 
 impl Parser {
     fn parse_file_expression(self) -> ParseResult {
-        let expr = self.parse_expression()
-        if expr == null {
-            return ParseResult {
-                expr: null,
-                had_error: self.had_error,
-                error_message: self.error_message,
-                bag: self.bag,
+        let expr = match self.parse_expression() {
+            .Ok(e) -> e
+            .Err(_) -> {
+                return ParseResult {
+                    expr: none,
+                    had_error: self.had_error,
+                    error_message: self.error_message,
+                    bag: self.bag,
+                }
             }
         }
 
         if !self.check(Tk.Eof) {
             self.set_error("expected end of input")
             return ParseResult {
-                expr: null,
+                expr: none,
                 had_error: true,
                 error_message: self.error_message,
                 bag: self.bag,
@@ -453,9 +455,9 @@ impl Parser {
     }
 
     fn parse_file_program(self) -> ProgramParseResult {
-        let stmts = self.parse_statement_list(false)
-        if stmts == null {
-            return ProgramParseResult {
+        let stmts = match self.parse_statement_list(false) {
+            .Ok(s) -> s
+            .Err(_) -> return ProgramParseResult {
                 stmts: null,
                 had_error: self.had_error,
                 error_message: self.error_message,
@@ -481,11 +483,11 @@ impl Parser {
         }
     }
 
-    fn parse_statement_list(self, stop_at_right_brace: int) -> List<SStmt>? {
+    fn parse_statement_list(self, stop_at_right_brace: int) -> Result<List<SStmt>, string> {
         mut out: List<SStmt> = []
         while true {
-            if stop_at_right_brace && self.check(Tk.RightBrace) { return out }
-            if self.check(Tk.Eof) { return out }
+            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(out) }
+            if self.check(Tk.Eof) { return .Ok(out) }
             if !stop_at_right_brace && self.check(Tk.RightBrace) {
                 self.report(DiagCode.MismatchedBrace, "unexpected `}`")
                 self.advance()
@@ -493,21 +495,23 @@ impl Parser {
             }
             let stmt_line = self.current_line
             let stmt_col = self.current_column
-            let stmt = self.parse_declaration()
-            if stmt == null {
-                self.synchronize()
-                continue
+            let stmt = match self.parse_declaration() {
+                .Ok(s) -> s
+                .Err(_) -> {
+                    self.synchronize()
+                    continue
+                }
             }
-            out.push(sstmt_at(stmt!, stmt_line, stmt_col, self.file))
+            out.push(sstmt_at(stmt, stmt_line, stmt_col, self.file))
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_declaration(self) -> Stmt? {
+    fn parse_declaration(self) -> Result<Stmt, string> {
         // Reserved future keywords produce an error immediately.
         if self.check(Tk.KwReserved) {
             self.reject_reserved_keyword("yet")
-            return null
+            return .Err("parse error")
         }
 
         // Doc comments: /// and //! become @doc annotations.
@@ -524,7 +528,7 @@ impl Parser {
             let inner = self.parse_declaration()?
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
-            return Stmt.Annotated(doc_annots, sstmt_at(inner, inner_l, inner_c, self.file))
+            return .Ok(Stmt.Annotated(doc_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
         }
         if self.check(Tk.ModDocComment) {
             mut doc_text = self.current_lexeme
@@ -536,7 +540,7 @@ impl Parser {
             // Module docs don't wrap a declaration — store as a NoOp with annotation
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let mdoc_annots: List<Annotation> = [Annotation { name: "module_doc", args: doc_arg }]
-            return Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file))
+            return .Ok(Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file)))
         }
 
         // Annotations: `@name` or `@name(args)` before a declaration.
@@ -545,7 +549,7 @@ impl Parser {
             let inner_l = self.current_line
             let inner_c = self.current_column
             let inner = self.parse_declaration()?
-            return Stmt.Annotated(annotations, sstmt_at(inner, inner_l, inner_c, self.file))
+            return .Ok(Stmt.Annotated(annotations, sstmt_at(inner, inner_l, inner_c, self.file)))
         }
 
         // `export` wraps the inner declaration in an @export annotation
@@ -556,22 +560,21 @@ impl Parser {
             let inner_l = self.current_line
             let inner_c = self.current_column
             let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
-            let inner_opt = if export_handler_raw != null {
-                let handler: fn(Parser) -> Stmt? = export_handler_raw!
-                handler(self)
-            } else {
+            if export_handler_raw == none {
                 self.set_error("expected declaration after `export`")
-                null
+                return .Err("expected declaration after `export`")
             }
-            let inner = inner_opt?
+            let handler: fn(Parser) -> Result<Stmt, string> = export_handler_raw!
+            let inner_res: Result<Stmt, string> = handler(self)
+            let inner = inner_res?
             let empty_args: List<SExpr> = []
             let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
-            return Stmt.Annotated(exp_annots, sstmt_at(inner, inner_l, inner_c, self.file))
+            return .Ok(Stmt.Annotated(exp_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
         }
 
         let decl_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
         if decl_raw != null {
-            let handler: fn(Parser) -> Stmt? = decl_raw!
+            let handler: fn(Parser) -> Result<Stmt, string> = decl_raw!
             return handler(self)
         }
 
@@ -582,7 +585,7 @@ impl Parser {
         if self.check(Tk.Identifier) && self.peek_after_ident_is_ident_not_keyword() {
             let comp_raw = lookup_stmt_parser(self.features, self.current_lexeme)
             if comp_raw != null {
-                let handler: fn(Parser) -> Stmt? = comp_raw!
+                let handler: fn(Parser) -> Result<Stmt, string> = comp_raw!
                 return handler(self)
             }
         }
@@ -603,9 +606,12 @@ impl Parser {
             // Optional argument list
             let args: List<SExpr> = if self.check(Tk.LeftParen) {
                 self.advance()  // consume (
-                let a = self.parse_arg_list()
+                let a = match self.parse_arg_list() {
+                    .Ok(v) -> v
+                    .Err(_) -> []
+                }
                 if self.check(Tk.RightParen) { self.advance() }
-                a ?? []
+                a
             } else {
                 []
             }
@@ -623,16 +629,16 @@ impl Parser {
     // When the row type is omitted it is left empty here and resolved
     // from context (let/return/arg annotation) by the typechecker; an
     // unresolved row type is a compile error (no weak List<Map> fallback).
-    fn parse_table_literal(self) -> Expr? {
+    fn parse_table_literal(self) -> Result<Expr, string> {
         // Optional `<RowStruct>` row-type ascription.
         mut row_type = ""
         if self.check(Tk.Less) {
             self.advance()  // consume `<`
             let rt = self.consume_identifier("expected row struct name after `table<`")?
             row_type = rt
-            if !self.consume(Tk.Greater, "expected `>` after table row type") { return null }
+            if !self.consume(Tk.Greater, "expected `>` after table row type") { return .Err("parse error") }
         }
-        if !self.consume(Tk.LeftBrace, "expected `{` to open table") { return null }
+        if !self.consume(Tk.LeftBrace, "expected `{` to open table") { return .Err("parse error") }
         // Parse header row: field-name identifiers separated by `|`.
         mut col_names: List<string> = []
         let header_line = self.current_line
@@ -649,9 +655,9 @@ impl Parser {
         }
         let header_count = col_names.length
         if header_count == 0 {
-            if !self.consume(Tk.RightBrace, "expected `}` to close table") { return null }
+            if !self.consume(Tk.RightBrace, "expected `}` to close table") { return .Err("parse error") }
             let empty: List<SExpr> = []
-            return Expr.ListLit(empty)
+            return .Ok(Expr.ListLit(empty))
         }
         // Reject duplicate column names — they would silently collide on the
         // same struct field.
@@ -661,7 +667,7 @@ impl Parser {
             while dj < header_count {
                 if col_names[di] == col_names[dj] {
                     self.set_error("duplicate table column `${col_names[di]}`")
-                    return null
+                    return .Err("parse error")
                 }
                 dj = dj + 1
             }
@@ -692,7 +698,7 @@ impl Parser {
             if cells.length != header_count {
                 self.cell_mode = saved_cell_mode
                 self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
-                return null
+                return .Err("parse error")
             }
             mut inits: List<FieldInit> = []
             mut ci = 0
@@ -704,9 +710,9 @@ impl Parser {
         }
         self.cell_mode = saved_cell_mode
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
-            return null
+            return .Err("parse error")
         }
-        Expr.ListLit(rows)
+        .Ok(Expr.ListLit(rows))
     }
 
     // Module parser (parse_module_declaration, parse_use_declaration)
@@ -715,61 +721,61 @@ impl Parser {
     // Feature-specific parsers live in features/*/parser.av.
     // They extend Parser via `impl Parser { ... }` blocks.
 
-    fn parse_statement(self) -> Stmt? {
+    fn parse_statement(self) -> Result<Stmt, string> {
         if self.check(Tk.LeftBrace) {
             self.advance()
             let body = self.parse_statement_list(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after block") {
-                return null
+                return .Err("parse error")
             }
-            return Stmt.Block(body)
+            return .Ok(Stmt.Block(body))
         }
 
         if self.check(Tk.KwBreak) {
             self.advance()
-            return Stmt.Break
+            return .Ok(Stmt.Break)
         }
 
         if self.check(Tk.KwContinue) {
             self.advance()
-            return Stmt.Continue
+            return .Ok(Stmt.Continue)
         }
 
         let stmt_raw = lookup_stmt_parser(self.features, tk_keyword_str(self.current_kind))
         if stmt_raw != null {
-            let handler: fn(Parser) -> Stmt? = stmt_raw!
+            let handler: fn(Parser) -> Result<Stmt, string> = stmt_raw!
             return handler(self)
         }
 
         let expr = self.parse_expression()?
-        Stmt.Expr(expr)
+        .Ok(Stmt.Expr(expr))
     }
 
-    fn parse_expression(self) -> Expr? {
+    fn parse_expression(self) -> Result<Expr, string> {
         self.parse_assignment()
     }
 
-    fn parse_assignment(self) -> Expr? {
+    fn parse_assignment(self) -> Result<Expr, string> {
         let left = self.parse_pipe()?
 
         if !self.check(Tk.Equal) {
-            return left
+            return .Ok(left)
         }
 
         self.advance()
         let value = self.parse_assignment()?
 
         match left {
-            .Ident(name) -> Expr.Assign(name, value)
-            .FieldAccess(obj, field) -> Expr.FieldAssign(obj, field, value)
+            .Ident(name) -> .Ok(Expr.Assign(name, value))
+            .FieldAccess(obj, field) -> .Ok(Expr.FieldAssign(obj, field, value))
             _ -> {
                 self.set_error("invalid assignment target")
-                null
+                .Err("invalid assignment target")
             }
         }
     }
 
-    fn parse_pipe(self) -> Expr? {
+    fn parse_pipe(self) -> Result<Expr, string> {
         let left = self.parse_null_coalesce()?
 
         mut expr = left
@@ -804,7 +810,7 @@ impl Parser {
             }
         }
 
-        expr
+        .Ok(expr)
     }
 
 }
@@ -843,7 +849,7 @@ fn pipe_replace_placeholder(args: List<SExpr>, replacement: SExpr) -> List<SExpr
 }
 
 impl Parser {
-    fn parse_null_coalesce(self) -> Expr? {
+    fn parse_null_coalesce(self) -> Result<Expr, string> {
         let left = self.parse_or()?
 
         mut expr = left
@@ -853,10 +859,10 @@ impl Parser {
             expr = Expr.NullCoalesce(expr, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_or(self) -> Expr? {
+    fn parse_or(self) -> Result<Expr, string> {
         let left = self.parse_and()?
 
         mut expr = left
@@ -866,10 +872,10 @@ impl Parser {
             expr = Expr.Logical(expr, LogicOp.Or, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_and(self) -> Expr? {
+    fn parse_and(self) -> Result<Expr, string> {
         let left = self.parse_equality()?
 
         mut expr = left
@@ -879,19 +885,19 @@ impl Parser {
             expr = Expr.Logical(expr, LogicOp.And, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_equality(self) -> Expr? {
+    fn parse_equality(self) -> Result<Expr, string> {
         let left = self.parse_bitwise_or()?
 
         if self.check(Tk.KwIs) {
             self.advance()
             if !self.consume(Tk.Dot, "expected `.Variant` after `is`") {
-                return null
+                return .Err("parse error")
             }
             let vname = self.consume_identifier("expected variant name after `is .`")?
-            return Expr.IsCheck(left, vname)
+            return .Ok(Expr.IsCheck(left, vname))
         }
 
         if self.check(Tk.KwIn) {
@@ -899,27 +905,26 @@ impl Parser {
             if self.check(Tk.LeftBracket) {
                 // List membership: x in [a, b, c]
                 self.advance()
-                let items: List<SExpr> = if self.check(Tk.RightBracket) {
-                    []
-                } else {
-                    self.parse_arg_list_inner()?
+                mut items: List<SExpr> = []
+                if !self.check(Tk.RightBracket) {
+                    items = self.parse_arg_list_inner()?
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
-                    return null
+                    return .Err("parse error")
                 }
-                return Expr.InCheck(left, items)
+                return .Ok(Expr.InCheck(left, items))
             }
             // Range membership: x in start..end → x >= start && x <= end
             let start = self.parse_bitwise_or()?
             if !self.consume(Tk.DotDot, "expected `..` in range expression after `in`") {
-                return null
+                return .Err("parse error")
             }
             let end = self.parse_bitwise_or()?
-            return Expr.Logical(
+            return .Ok(Expr.Logical(
                 Expr.Binary(left, BinOp.Ge, start),
                 LogicOp.And,
                 Expr.Binary(left, BinOp.Le, end)
-            )
+            ))
         }
 
         mut expr = left
@@ -930,10 +935,10 @@ impl Parser {
             expr = Expr.Binary(expr, op, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_bitwise_or(self) -> Expr? {
+    fn parse_bitwise_or(self) -> Result<Expr, string> {
         let left = self.parse_bitwise_xor()?
         mut expr = left
         while self.check(Tk.Pipe) {
@@ -941,10 +946,10 @@ impl Parser {
             let right = self.parse_bitwise_xor()?
             expr = Expr.Binary(expr, BinOp.BitOr, right)
         }
-        expr
+        .Ok(expr)
     }
 
-    fn parse_bitwise_xor(self) -> Expr? {
+    fn parse_bitwise_xor(self) -> Result<Expr, string> {
         let left = self.parse_bitwise_and()?
         mut expr = left
         while self.check(Tk.Caret) {
@@ -952,10 +957,10 @@ impl Parser {
             let right = self.parse_bitwise_and()?
             expr = Expr.Binary(expr, BinOp.BitXor, right)
         }
-        expr
+        .Ok(expr)
     }
 
-    fn parse_bitwise_and(self) -> Expr? {
+    fn parse_bitwise_and(self) -> Result<Expr, string> {
         let left = self.parse_comparison()?
         mut expr = left
         while self.check(Tk.Amp) {
@@ -963,10 +968,10 @@ impl Parser {
             let right = self.parse_comparison()?
             expr = Expr.Binary(expr, BinOp.BitAnd, right)
         }
-        expr
+        .Ok(expr)
     }
 
-    fn parse_comparison(self) -> Expr? {
+    fn parse_comparison(self) -> Result<Expr, string> {
         let left = self.parse_shift()?
 
         mut expr = left
@@ -982,10 +987,10 @@ impl Parser {
             expr = Expr.Binary(expr, op, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_shift(self) -> Expr? {
+    fn parse_shift(self) -> Result<Expr, string> {
         let left = self.parse_term()?
         mut expr = left
         while self.current_kind in [Tk.Shl, Tk.Shr] {
@@ -994,10 +999,10 @@ impl Parser {
             let right = self.parse_term()?
             expr = Expr.Binary(expr, op, right)
         }
-        expr
+        .Ok(expr)
     }
 
-    fn parse_term(self) -> Expr? {
+    fn parse_term(self) -> Result<Expr, string> {
         let left = self.parse_factor()?
 
         mut expr = left
@@ -1010,10 +1015,10 @@ impl Parser {
             expr = Expr.Binary(expr, op, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_factor(self) -> Expr? {
+    fn parse_factor(self) -> Result<Expr, string> {
         let left = self.parse_unary()?
 
         mut expr = left
@@ -1028,10 +1033,10 @@ impl Parser {
             expr = Expr.Binary(expr, op, right)
         }
 
-        expr
+        .Ok(expr)
     }
 
-    fn parse_unary(self) -> Expr? {
+    fn parse_unary(self) -> Result<Expr, string> {
         // Splice `~target` inside a quote body — overloads the `~`
         // token. Splice is greedy: `~f(x)` parses as
         // `Splice(Call(f, [x]))`, splicing the entire call. Users
@@ -1051,12 +1056,12 @@ impl Parser {
                 self.advance()  // consume `{`
                 let inits = self.parse_field_init_list()?
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
-                    return null
+                    return .Err("parse error")
                 }
-                return Expr.StructLit("~" + var_name, inits)
+                return .Ok(Expr.StructLit("~" + var_name, inits))
             }
             let target = self.parse_unary()?
-            return Expr.Splice(target)
+            return .Ok(Expr.Splice(target))
         }
         if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
             let op = match {
@@ -1066,7 +1071,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_unary()?
-            return Expr.Unary(op, right)
+            return .Ok(Expr.Unary(op, right))
         }
 
         mut expr = self.parse_call()?
@@ -1074,15 +1079,15 @@ impl Parser {
         while self.check(Tk.KwWith) {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
-                return null
+                return .Err("parse error")
             }
             let overrides = self.parse_field_init_list()?
             if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
-                return null
+                return .Err("parse error")
             }
             expr = Expr.With(expr, overrides)
         }
-        expr
+        .Ok(expr)
     }
 
     // Peek at the source character immediately after the current
@@ -1132,7 +1137,7 @@ impl Parser {
         expr_is_upper_ident(result)
     }
 
-    fn parse_call(self) -> Expr? {
+    fn parse_call(self) -> Result<Expr, string> {
         let expr = self.parse_primary()?
 
         mut result = expr
@@ -1143,8 +1148,10 @@ impl Parser {
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
                 self.advance()
+                let fu_args: List<SExpr> = [sexpr_dummy(result)]
+                result = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
             }
-            // Error propagation: `expr?` — if null, return null
+            // Error propagation: `expr?` — if null, return .Err("parse error")
             // from the enclosing function.
             if self.check(Tk.Question) {
                 self.advance()
@@ -1160,14 +1167,14 @@ impl Parser {
                 if self.check(Tk.LeftParen) {
                     self.advance()
                     binding = self.consume_identifier("expected error binding name after `catch (`")?
-                    if !self.consume(Tk.RightParen, "expected `)` after catch binding") { return null }
+                    if !self.consume(Tk.RightParen, "expected `)` after catch binding") { return .Err("parse error") }
                 }
-                if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return null }
+                if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return .Err("parse error") }
                 let saved_dot = self.allow_dot_postfix
                 self.allow_dot_postfix = true
                 let body_stmts = self.parse_statement_list(true)?
                 self.allow_dot_postfix = saved_dot
-                if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return null }
+                if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
                 result = Expr.Catch(result, binding, Expr.Block(body_stmts), catch_line, catch_col)
                 continue
             }
@@ -1184,25 +1191,27 @@ impl Parser {
                     self.advance()
                     let end = self.parse_expression()?
                     if !self.consume(Tk.RightBracket, "expected `]` after slice") {
-                        return null
+                        return .Err("parse error")
                     }
                     result = Expr.Slice(result, idx, end)
                     continue
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after index") {
-                    return null
+                    return .Err("parse error")
                 }
                 result = Expr.Index(result, idx)
             } else if self.check(Tk.Less) && is_callable(result) {
                 // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
-                let generic = self.try_parse_generic_call(result)
-                if generic != null {
-                    result = generic!
-                    continue
+                match self.try_parse_generic_call(result) {
+                    .Ok(g) -> {
+                        result = g
+                        continue
+                    }
+                    .Err(_) -> {}
                 }
-                return result
+                return .Ok(result)
             } else if !self.check(Tk.LeftParen) && !self.check(Tk.Dot) {
-                return result
+                return .Ok(result)
             } else {
             if self.check(Tk.LeftParen) {
                 self.advance()
@@ -1219,7 +1228,7 @@ impl Parser {
                 let args = self.parse_arg_list()?
                 self.allow_it_sugar = saved_it
                 if !self.consume(Tk.RightParen, "expected `)` after arguments") {
-                    return null
+                    return .Err("parse error")
                 }
                 result = Expr.Call(result, args)
             } else {
@@ -1250,7 +1259,7 @@ impl Parser {
                     self.advance()
                     let args = self.parse_arg_list()?
                     if !self.consume(Tk.RightParen, "expected `)` after arguments") {
-                        return null
+                        return .Err("parse error")
                     }
                     result = Expr.EnumCtor(type_name, field, args)
                 } else {
@@ -1260,10 +1269,10 @@ impl Parser {
             }
         }
 
-        result
+        .Ok(result)
     }
 
-    fn parse_arg_list(self) -> List<SExpr>? {
+    fn parse_arg_list(self) -> Result<List<SExpr>, string> {
         // Inside a paren-bounded arg list we're unambiguously not
         // at a sibling pattern position, so re-enable `.field`
         // postfix consumption.
@@ -1274,10 +1283,10 @@ impl Parser {
         result
     }
 
-    fn parse_arg_list_inner(self) -> List<SExpr>? {
+    fn parse_arg_list_inner(self) -> Result<List<SExpr>, string> {
         mut out: List<SExpr> = []
         if self.check(Tk.RightParen) {
-            return out
+            return .Ok(out)
         }
         mut keep_going = true
         while keep_going {
@@ -1308,26 +1317,26 @@ impl Parser {
                 keep_going = false
             }
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_primary(self) -> Expr? {
+    fn parse_primary(self) -> Result<Expr, string> {
         if self.check(Tk.Number) {
             let value = self.current_lexeme
             self.advance()
-            return Expr.Number(value)
+            return .Ok(Expr.Number(value))
         }
 
         if self.check(Tk.Float) {
             let value = self.current_lexeme
             self.advance()
-            return Expr.FloatLit(value)
+            return .Ok(Expr.FloatLit(value))
         }
 
         if self.check(Tk.String) {
             let value = self.current_lexeme
             self.advance()
-            return Expr.String(value)
+            return .Ok(Expr.String(value))
         }
 
         if self.check(Tk.Template) {
@@ -1339,14 +1348,14 @@ impl Parser {
         if self.current_kind in [Tk.KwTrue, Tk.KwFalse] {
             let value = self.current_lexeme
             self.advance()
-            return Expr.Bool(value)
+            return .Ok(Expr.Bool(value))
         }
 
         // `none` (canonical) and `null` (deprecated alias) both produce
         // the absence literal `Expr.None`.
         if self.check(Tk.KwNull) || self.check(Tk.KwNone) {
             self.advance()
-            return Expr.None
+            return .Ok(Expr.None)
         }
 
         // Contextual enum variant: `.Variant` or `.Variant(args)`
@@ -1360,12 +1369,12 @@ impl Parser {
                     self.advance()
                     let args = self.parse_arg_list()?
                     if !self.consume(Tk.RightParen, "expected `)` after variant args") {
-                        return null
+                        return .Err("parse error")
                     }
-                    return Expr.EnumCtor("", variant, args)
+                    return .Ok(Expr.EnumCtor("", variant, args))
                 }
                 let empty: List<SExpr> = []
-                return Expr.EnumCtor("", variant, empty)
+                return .Ok(Expr.EnumCtor("", variant, empty))
             }
         }
 
@@ -1384,9 +1393,9 @@ impl Parser {
                 self.advance()
                 let inits = self.parse_field_init_list()?
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
-                    return null
+                    return .Err("parse error")
                 }
-                return Expr.StructLit(name, inits)
+                return .Ok(Expr.StructLit(name, inits))
             }
             // Tagged template: `tag`template with ${expr}`
             // Desugars to: tag(desugar_template(raw))
@@ -1395,9 +1404,9 @@ impl Parser {
                 self.advance()
                 let template_expr = self.desugar_template(raw)?
                 let args: List<SExpr> = [sexpr_at(template_expr, self.current_line, self.current_column, self.file)]
-                return Expr.Call(Expr.Ident(name), args)
+                return .Ok(Expr.Call(Expr.Ident(name), args))
             }
-            return Expr.Ident(name)
+            return .Ok(Expr.Ident(name))
         }
 
         if self.check(Tk.LeftParen) {
@@ -1413,10 +1422,10 @@ impl Parser {
                     self.advance()
                     let body = self.parse_lambda_body()?
                     let empty_ps: List<ParamEntry> = []
-                    return Expr.Lambda(empty_ps, body)
+                    return .Ok(Expr.Lambda(empty_ps, body))
                 }
                 let empty: List<SExpr> = []
-                return Expr.Tuple(empty)
+                return .Ok(Expr.Tuple(empty))
             }
             // Typed lambda: (x: int, y: string) -> body
             // Detect by peeking: if current is identifier and next non-ws is ':'
@@ -1424,13 +1433,13 @@ impl Parser {
                 self.allow_dot_postfix = saved
                 let params = self.parse_param_list()?
                 if !self.consume(Tk.RightParen, "expected `)` after typed parameters") {
-                    return null
+                    return .Err("parse error")
                 }
                 if !self.consume(Tk.Arrow, "expected `->` after typed lambda parameters") {
-                    return null
+                    return .Err("parse error")
                 }
                 let body = self.parse_lambda_body()?
-                return Expr.Lambda(params, body)
+                return .Ok(Expr.Lambda(params, body))
             }
             let expr_opt = self.parse_expression()
             self.allow_dot_postfix = saved
@@ -1440,7 +1449,7 @@ impl Parser {
                 self.advance()
                 let rest = self.parse_tuple_rest()?
                 if !self.consume(Tk.RightParen, "expected `)` after tuple") {
-                    return null
+                    return .Err("parse error")
                 }
                 // (a, b) -> expr  is a lambda
                 if self.check(Tk.Arrow) {
@@ -1453,7 +1462,7 @@ impl Parser {
                     }
                     let params = exprs_to_params(combined)
                     let body = self.parse_lambda_body()?
-                    return Expr.Lambda(params, body)
+                    return .Ok(Expr.Lambda(params, body))
                 }
                 mut tuple_elems: List<SExpr> = [sexpr_at(expr!, self.current_line, self.current_column, self.file)]
                 mut tj = 0
@@ -1461,10 +1470,10 @@ impl Parser {
                     tuple_elems.push(rest[tj])
                     tj = tj + 1
                 }
-                return Expr.Tuple(tuple_elems)
+                return .Ok(Expr.Tuple(tuple_elems))
             }
             if !self.consume(Tk.RightParen, "expected `)` after expression") {
-                return null
+                return .Err("parse error")
             }
             // (x) -> expr  is a single-param lambda
             if self.check(Tk.Arrow) {
@@ -1472,9 +1481,9 @@ impl Parser {
                 let one: List<SExpr> = [sexpr_at(expr!, self.current_line, self.current_column, self.file)]
                 let params = exprs_to_params(one)
                 let body = self.parse_lambda_body()?
-                return Expr.Lambda(params, body)
+                return .Ok(Expr.Lambda(params, body))
             }
-            return Expr.Grouping(expr!)
+            return .Ok(Expr.Grouping(expr!))
         }
 
         // List literal: [expr, expr, ...]
@@ -1483,11 +1492,11 @@ impl Parser {
             if self.check(Tk.RightBracket) {
                 self.advance()
                 let empty: List<SExpr> = []
-                return Expr.ListLit(empty)
+                return .Ok(Expr.ListLit(empty))
             }
             let elements = self.parse_list_elements()?
             if !self.consume(Tk.RightBracket, "expected `]` after list") {
-                return null
+                return .Err("parse error")
             }
             // `[body for v in coll if filter]` parses as a single-element
             // SExpr list wrapping `Expr.ListComp(...)`. Unwrap so the
@@ -1496,11 +1505,11 @@ impl Parser {
             // would have to special-case.
             if elements.length == 1 {
                 match elements[0].node {
-                    .ListComp(_, _, _, _) -> return elements[0].node
+                    .ListComp(_, _, _, _) -> return .Ok(elements[0].node)
                     _ -> {}
                 }
             }
-            return Expr.ListLit(elements)
+            return .Ok(Expr.ListLit(elements))
         }
 
         if self.check(Tk.KwMatch) {
@@ -1542,14 +1551,14 @@ impl Parser {
         } else {
             self.report(DiagCode.ExpectedExpression, "expected expression")
         }
-        null
+        .Err("parse error")
     }
 
     // Desugar `hello ${expr}!` into `"hello " + string(expr) + "!"`
     // The content between `${` and `}` is parsed as a full expression
     // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
     // `${string(x)}` all work.
-    fn desugar_template(self, raw: string) -> Expr? {
+    fn desugar_template(self, raw: string) -> Result<Expr, string> {
         mut result: Expr? = null
         mut i = 0
         let len = raw.length
@@ -1581,7 +1590,7 @@ impl Parser {
                 }
                 if j >= len {
                     self.set_error("unterminated template expression in string")
-                    return null
+                    return .Err("parse error")
                 }
                 // Parse the content between ${ and } as an expression.
                 // Simple identifiers become Expr.Ident directly. Complex
@@ -1593,15 +1602,15 @@ impl Parser {
                 let fmt_split = template_split_format(sub_source)
                 let expr_part = fmt_split.expr
                 let fmt_spec = fmt_split.fmt
-                let parsed = if template_is_simple_ident(expr_part) {
-                    Expr.Ident(expr_part)
-                } else {
-                    let sub_result = parse_template_expr(expr_part)
-                    if sub_result == null {
-                        self.set_error("invalid expression in template: ${expr_part}")
-                        return null
+                mut parsed = Expr.Ident(expr_part)
+                if !template_is_simple_ident(expr_part) {
+                    parsed = match parse_template_expr(expr_part) {
+                        .Ok(sr) -> sr
+                        .Err(_) -> {
+                            self.set_error("invalid expression in template: ${expr_part}")
+                            return .Err("parse error")
+                        }
                     }
-                    sub_result!
                 }
                 // If format spec exists, use avra_format_float/int; otherwise string().
                 let str_call = if fmt_spec.length > 0 {
@@ -1611,7 +1620,7 @@ impl Parser {
                     let first_ch = fmt_spec[0]
                     let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
                     let fmt_args: List<SExpr> = [
-                        sexpr_dummy(parsed!),
+                        sexpr_dummy(parsed),
                         sexpr_dummy(Expr.String("\"${fmt_spec}\""))
                     ]
                     if is_float_fmt {
@@ -1622,7 +1631,7 @@ impl Parser {
                         Expr.Call(Expr.Ident("avra_format_int"), fmt_args)
                     }
                 } else {
-                    let str_args: List<SExpr> = [sexpr_dummy(parsed!)]
+                    let str_args: List<SExpr> = [sexpr_dummy(parsed)]
                     Expr.Call(Expr.Ident("string"), str_args)
                 }
                 if result == null {
@@ -1649,10 +1658,10 @@ impl Parser {
         if result == null {
             result = Expr.String("\"\"")
         }
-        result
+        .Ok(result)
     }
 
-    fn parse_tuple_rest(self) -> List<SExpr>? {
+    fn parse_tuple_rest(self) -> Result<List<SExpr>, string> {
         // After the first comma in a tuple. Parse remaining elements.
         mut out: List<SExpr> = []
         mut keep_going = true
@@ -1669,10 +1678,10 @@ impl Parser {
                 }
             }
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_block_expression(self) -> Expr? {
+    fn parse_block_expression(self) -> Result<Expr, string> {
         self.advance()
         // A block expression's body is parsed as a regular statement
         // list. Re-enable `.field` postfix consumption inside —
@@ -1683,9 +1692,9 @@ impl Parser {
         self.allow_dot_postfix = saved_dot
         let body_val = body?
         if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
-            return null
+            return .Err("parse error")
         }
-        Expr.Block(body_val)
+        .Ok(Expr.Block(body_val))
     }
 
     fn check(self, kind: Tk) -> bool {
@@ -1857,14 +1866,14 @@ impl Parser {
     /// variant / field names). so07.2 / 1rzz — without this check
     /// the parser silently accepted `bare`, `await`, etc. as
     /// identifiers and the use site emitted a confusing F0001.
-    fn consume_identifier(self, message: string) -> string? {
+    fn consume_identifier(self, message: string) -> Result<string, string> {
         if self.check(Tk.KwReserved) {
             self.reject_reserved_keyword("as an identifier — rename the binding")
-            return null
+            return .Err("parse error")
         }
-        if self.check(Tk.Identifier) { return self.take_lexeme() }
+        if self.check(Tk.Identifier) { return .Ok(self.take_lexeme()) }
         self.set_error(message)
-        null
+        .Err("parse error")
     }
 
     /// Consume an identifier in a declaration-name slot, honoring
@@ -1875,11 +1884,11 @@ impl Parser {
     /// in features/quote_expr/lower.av) decodes back into a live splice.
     /// Used by every name slot that can carry a splice — type names,
     /// impl targets, and struct-literal constructors.
-    fn consume_name_or_splice(self, message: string) -> string? {
+    fn consume_name_or_splice(self, message: string) -> Result<string, string> {
         if self.quote_depth > 0 && self.check(Tk.Tilde) {
             self.advance()
             let var_name = self.consume_identifier("expected identifier after `~` in name position")?
-            return "~" + var_name
+            return .Ok("~" + var_name)
         }
         self.consume_identifier(message)
     }
@@ -1890,9 +1899,9 @@ impl Parser {
     /// binding `for (a, b) in …`. A trailing comma is tolerated.
     /// Each entry's type is left Unknown — inferred from the tuple
     /// element types at type-check time.
-    fn parse_destructure_names(self) -> List<ParamEntry>? {
+    fn parse_destructure_names(self) -> Result<List<ParamEntry>, string> {
         mut out: List<ParamEntry> = []
-        if self.check(Tk.RightParen) { return out }
+        if self.check(Tk.RightParen) { return .Ok(out) }
         mut keep_going = true
         while keep_going {
             let name = self.consume_identifier("expected variable name in destructure")?
@@ -1904,7 +1913,7 @@ impl Parser {
                 keep_going = false
             }
         }
-        out
+        .Ok(out)
     }
 
     /// Lenient variant for field / method access positions
@@ -1912,17 +1921,17 @@ impl Parser {
     /// because the dot disambiguates. Use only for `expr.<name>` /
     /// `expr?.<name>` sites — binding sites must call
     /// `consume_identifier` instead so reserved names are rejected.
-    fn consume_field_name(self, message: string) -> string? {
-        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) { return self.take_lexeme() }
+    fn consume_field_name(self, message: string) -> Result<string, string> {
+        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) { return .Ok(self.take_lexeme()) }
         self.set_error(message)
-        null
+        .Err("parse error")
     }
 
     // Consume a type reference: identifier optionally followed by
     // generic arguments `<A, B>` and/or nullable `?`.
     // Both generics and nullable are erased — we return the base name.
     // Parse a structured type expression. Returns TypeExpr AST node.
-    fn parse_type_expr(self, message: string) -> TypeExpr? {
+    fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
         let base = self.parse_type_atom(message)?
         // Union: A | B | C — lowest precedence in type position
         if self.check(Tk.Pipe) {
@@ -1932,13 +1941,13 @@ impl Parser {
                 let rhs = self.parse_type_atom("expected type after `|`")?
                 result = TypeExpr.Union(result, rhs)
             }
-            return result
+            return .Ok(result)
         }
-        base
+        .Ok(base)
     }
 
     // Parse a single type atom (everything except union |).
-    fn parse_type_atom(self, message: string) -> TypeExpr? {
+    fn parse_type_atom(self, message: string) -> Result<TypeExpr, string> {
         // qa6i probe 3: `~name` in type position splices a string-
         // valued local into a TypeExpr.Named at construction time.
         // The lowerer detects the leading `~` in the name field and
@@ -1949,27 +1958,27 @@ impl Parser {
             self.advance()
             if !self.check(Tk.Identifier) {
                 self.set_error("expected identifier after `~` in type position")
-                return null
+                return .Err("parse error")
             }
             let splice_name = self.current_lexeme
             self.advance()
-            return TypeExpr.Named("~" + splice_name)
+            return .Ok(TypeExpr.Named("~" + splice_name))
         }
         // dyn Trait — dynamic trait object
         if self.check(Tk.KwDyn) {
             self.advance()
             if !self.check(Tk.Identifier) {
                 self.set_error("expected trait name after `dyn`")
-                return null
+                return .Err("parse error")
             }
             let trait_name = self.current_lexeme
             self.advance()
             let te = TypeExpr.Named(trait_name)
             if self.check(Tk.Question) {
                 self.advance()
-                return TypeExpr.Optional(te)
+                return .Ok(TypeExpr.Optional(te))
             }
-            return te
+            return .Ok(te)
         }
         // fn(T, T) -> T
         if self.check(Tk.KwFn) {
@@ -1980,34 +1989,35 @@ impl Parser {
                 params = self.parse_type_expr_list()?
                 if self.check(Tk.RightParen) { self.advance() }
             }
-            let ret = if self.check(Tk.Arrow) {
+            mut ret = TypeExpr.Infer
+            if self.check(Tk.Arrow) {
                 self.advance()
-                self.parse_type_expr("expected return type after `->`")?
-            } else { TypeExpr.Infer }
-            return TypeExpr.FnType(params, ret)
+                ret = self.parse_type_expr("expected return type after `->`")?
+            }
+            return .Ok(TypeExpr.FnType(params, ret))
         }
         // (T, U) → Tuple type
         if self.check(Tk.LeftParen) {
             self.advance()
             let types = self.parse_type_expr_list()?
-            if !self.consume(Tk.RightParen, "expected `)` after tuple type") { return null }
+            if !self.consume(Tk.RightParen, "expected `)` after tuple type") { return .Err("parse error") }
             // Build a Generic("__tuple", [T, U, ...]) that type_expr_to_vtype converts to Tuple
             if types.length == 1 {
                 // Single-element parens: treat as grouping, not a 1-tuple
-                return types[0]
+                return .Ok(types[0])
             }
-            return TypeExpr.Generic("__tuple", types)
+            return .Ok(TypeExpr.Generic("__tuple", types))
         }
         // [T] → List type
         if self.check(Tk.LeftBracket) {
             self.advance()
             let inner = self.parse_type_expr("expected element type in `[T]`")?
-            if !self.consume(Tk.RightBracket, "expected `]` after list type") { return null }
-            return TypeExpr.ListType(inner)
+            if !self.consume(Tk.RightBracket, "expected `]` after list type") { return .Err("parse error") }
+            return .Ok(TypeExpr.ListType(inner))
         }
         if !self.check(Tk.Identifier) {
             self.set_error(message)
-            return null
+            return .Err("parse error")
         }
         mut name = self.current_lexeme
         self.advance()
@@ -2016,7 +2026,7 @@ impl Parser {
             self.advance()
             if !self.check(Tk.Identifier) {
                 self.set_error("expected identifier after '.' in type path")
-                return null
+                return .Err("parse error")
             }
             name = name + "." + self.current_lexeme
             self.advance()
@@ -2027,29 +2037,29 @@ impl Parser {
             let te = TypeExpr.Generic(name, args)
             if self.check(Tk.Question) {
                 self.advance()
-                return TypeExpr.Optional(te)
+                return .Ok(TypeExpr.Optional(te))
             }
-            return te
+            return .Ok(te)
         }
         let te = TypeExpr.Named(name)
         if self.check(Tk.Question) {
             self.advance()
-            return TypeExpr.Optional(te)
+            return .Ok(TypeExpr.Optional(te))
         }
-        te
+        .Ok(te)
     }
 
-    fn parse_type_expr_list(self) -> List<TypeExpr>? {
+    fn parse_type_expr_list(self) -> Result<List<TypeExpr>, string> {
         mut out: List<TypeExpr> = []
         while !self.check(Tk.RightParen) && !self.check(Tk.Eof) {
             let ty = self.parse_type_expr("expected type")?
             out.push(ty)
             if self.check(Tk.Comma) { self.advance() }
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_generic_type_args(self) -> List<TypeExpr>? {
+    fn parse_generic_type_args(self) -> Result<List<TypeExpr>, string> {
         self.advance()
         mut args: List<TypeExpr> = []
         mut first = true
@@ -2062,10 +2072,10 @@ impl Parser {
             args.push(ty)
         }
         if self.check(Tk.Greater) { self.advance() }
-        args
+        .Ok(args)
     }
 
-    fn parse_quote(self) -> Expr? {
+    fn parse_quote(self) -> Result<Expr, string> {
         self.advance()  // consume `quote`
         // Optional kind keyword: `stmt` / `stmts` / `type` / `decl` /
         // `arm` selects the result-type of the captured AST. Default
@@ -2077,11 +2087,11 @@ impl Parser {
         if kind == "arm" {
             let body = self.parse_quote_arm_body()?
             self.quote_depth = self.quote_depth - 1
-            return Expr.Quote(kind, body)
+            return .Ok(Expr.Quote(kind, body))
         }
         let body = self.parse_block_expression()?
         self.quote_depth = self.quote_depth - 1
-        Expr.Quote(kind, body)
+        .Ok(Expr.Quote(kind, body))
     }
 
     fn parse_quote_kind(self) -> string {
@@ -2103,56 +2113,55 @@ impl Parser {
     /// resulting arm in a single-armed `Expr.MatchExpr(Expr.None, [arm])`
     /// so the existing Quote(kind, body) shape stays — the lowering
     /// pass picks the arm back out via its `arm` kind discriminator.
-    fn parse_quote_arm_body(self) -> Expr? {
-        if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return null }
+    fn parse_quote_arm_body(self) -> Result<Expr, string> {
+        if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
         let pattern = self.parse_pattern_or()?
-        let guard: SExpr? = if self.check(Tk.KwIf) {
+        mut guard: SExpr? = none
+        if self.check(Tk.KwIf) {
             self.advance()
             let g = self.parse_expression()?
-            sexpr(g, self.current_line, self.current_column)
-        } else {
-            null
+            guard = sexpr(g, self.current_line, self.current_column)
         }
-        if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return null }
+        if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return .Err("parse error") }
         let body = self.parse_expression()?
         let body_se = sexpr(body, self.current_line, self.current_column)
         if self.check(Tk.Comma) { self.advance() }
-        if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return null }
+        if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return .Err("parse error") }
         let arm = MatchArm { pattern, guard, body: body_se }
         let arms: List<MatchArm> = [arm]
-        Expr.MatchExpr(sexpr(Expr.None, self.current_line, self.current_column), arms)
+        .Ok(Expr.MatchExpr(sexpr(Expr.None, self.current_line, self.current_column), arms))
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
-    fn parse_when_expression(self) -> Expr? {
+    fn parse_when_expression(self) -> Result<Expr, string> {
         self.advance()  // consume `when`
-        if !self.consume(Tk.LeftBrace, "expected `{` after `when`") { return null }
+        if !self.consume(Tk.LeftBrace, "expected `{` after `when`") { return .Err("parse error") }
         let arms = self.parse_when_arms()?
-        if !self.consume(Tk.RightBrace, "expected `}` after when arms") { return null }
-        Expr.When(arms)
+        if !self.consume(Tk.RightBrace, "expected `}` after when arms") { return .Err("parse error") }
+        .Ok(Expr.When(arms))
     }
 
-    fn parse_when_arms(self) -> List<WhenArm>? {
+    fn parse_when_arms(self) -> Result<List<WhenArm>, string> {
         mut out: List<WhenArm> = []
         while !self.check(Tk.RightBrace) {
             // `_ -> body` or `else -> body` is the default arm (null condition)
             let line = self.current_line
             let col = self.current_column
-            let cond = if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
+            mut cond: SExpr? = none
+            if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
                 self.advance()
-                null
             } else {
                 let c = self.parse_expression()?
-                sexpr_at(c, line, col, self.file)
+                cond = sexpr_at(c, line, col, self.file)
             }
-            if !self.consume(Tk.Arrow, "expected `->` after when condition") { return null }
+            if !self.consume(Tk.Arrow, "expected `->` after when condition") { return .Err("parse error") }
             let body_line = self.current_line
             let body_col = self.current_column
             let body = self.parse_expression()?
             let body_se = sexpr_at(body, body_line, body_col, self.file)
             out.push(WhenArm { cond, body: body_se })
         }
-        out
+        .Ok(out)
     }
 
     // ── Speculative parsing (backtracking) ──

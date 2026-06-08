@@ -1,24 +1,32 @@
-/// Test fixture: doubles positive ints, returns null for
-/// non-positive — first step of a `?`-chained pipeline.
+// `?`-split (spec Axis 10 §1.3): `?` is Result-only. Absence propagation
+// that used to be written `f(x)?` on a `T?` is now an explicit none-guard
+// plus force-unwrap. This test keeps the original chaining scenario under
+// the new idiom (see try_on_optional_is_f1202_test.av for the error itself).
+
+/// Test fixture: doubles positive ints, returns none for
+/// non-positive — first step of a none-propagating pipeline.
 fn nstc_step1(x: int) -> int? {
     if x > 0 { return x * 2 }
-    null
+    none
 }
 
-/// Test fixture: increments small ints, returns null for ≥100
-/// — second step of the `?`-chained pipeline.
+/// Test fixture: increments small ints, returns none for ≥100
+/// — second step of the pipeline.
 fn nstc_step2(x: int) -> int? {
     if x < 100 { return x + 1 }
-    null
+    none
 }
 
-/// Test fixture: chain `nstc_step1` and `nstc_step2` via `?`.
-/// Verifies that the unwrapped value from the first step flows
-/// directly into the second without manual null-checking.
+/// Test fixture: chain `nstc_step1` and `nstc_step2`, propagating
+/// `none` with an explicit guard + force-unwrap (the post-`?`-split
+/// idiom).
 fn nstc_pipeline(x: int) -> int? {
-    let a = nstc_step1(x)?
-    let b = nstc_step2(a)?
-    b
+    let a_o = nstc_step1(x)
+    if a_o == none { return none }
+    let a = a_o!
+    let b_o = nstc_step2(a)
+    if b_o == none { return none }
+    b_o
 }
 
 spec "try chain" {

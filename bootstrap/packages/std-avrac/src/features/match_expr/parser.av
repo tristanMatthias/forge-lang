@@ -11,14 +11,14 @@ use parse.{Parser, table_zip_entries}
 use core.{Tk}
 
 impl Parser {
-    fn parse_match_statement(self) -> Stmt? {
+    fn parse_match_statement(self) -> Result<Stmt, string> {
         self.advance()
         // Subjectless match at statement level: wrap result in Stmt.Expr(Expr.When(...))
         if self.check(Tk.LeftBrace) {
             self.advance()
             let arms = self.parse_when_arm_list()?
-            if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return null }
-            return Stmt.Expr(Expr.When(arms))
+            if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return .Err("parse error") }
+            return .Ok(Stmt.Expr(Expr.When(arms)))
         }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
@@ -28,24 +28,24 @@ impl Parser {
         // Match table: `match expr table { pattern | col | col; .A | v | v }`
         if self.check(Tk.Identifier) && self.current_lexeme == "table" {
             self.advance()  // consume `table`
-            if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return null }
+            if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return .Err("parse error") }
             let arms = self.parse_match_table_arms()?
-            if !self.consume(Tk.RightBrace, "expected `}` after match table") { return null }
-            return Stmt.Match(subject, arms)
+            if !self.consume(Tk.RightBrace, "expected `}` after match table") { return .Err("parse error") }
+            return .Ok(Stmt.Match(subject, arms))
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
-            return null
+            return .Err("parse error")
         }
         let arms = self.parse_match_arm_list()?
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
-            return null
+            return .Err("parse error")
         }
-        Stmt.Match(subject, arms)
+        .Ok(Stmt.Match(subject, arms))
     }
 
     // Parse match table: first row is headers, remaining rows are pattern | values.
     // Desugars each row to a match arm returning a MapLit.
-    fn parse_match_table_arms(self) -> List<MatchArm>? {
+    fn parse_match_table_arms(self) -> Result<List<MatchArm>, string> {
         // Parse header row: identifiers separated by |
         mut headers: List<SExpr> = []
         mut header_count = 0
@@ -64,7 +64,7 @@ impl Parser {
             }
         }
         let empty_arms: List<MatchArm> = []
-        if header_count < 2 { return empty_arms }
+        if header_count < 2 { return .Ok(empty_arms) }
         // Skip the first header (pattern column) by copying from index 1
         mut value_headers: List<SExpr> = []
         mut hi = 1
@@ -77,7 +77,7 @@ impl Parser {
         self.parse_match_table_rows(value_headers, value_count)
     }
 
-    fn parse_match_table_rows(self, headers: List<SExpr>, value_count: int) -> List<MatchArm>? {
+    fn parse_match_table_rows(self, headers: List<SExpr>, value_count: int) -> Result<List<MatchArm>, string> {
         // Source-order loop appending each row's match arm directly
         // into a growable `List<MatchArm>` — arm order matters
         // (first-match-wins).
@@ -109,21 +109,21 @@ impl Parser {
                 body: sexpr(body, self.current_line, self.current_column),
             })
         }
-        out
+        .Ok(out)
     }
 
     // Parse a pattern that may be an OR of alternatives: `pat or pat or pat`.
     // Only used in normal match arms — table rows use parse_pattern directly
     // so that `|` column separators are not consumed as part of OR patterns.
-    fn parse_pattern_or(self) -> Pattern? {
+    fn parse_pattern_or(self) -> Result<Pattern, string> {
         let left = self.parse_pattern()?
-        if !self.check(Tk.KwOr) { return left }
+        if !self.check(Tk.KwOr) { return .Ok(left) }
         self.advance()
         let right = self.parse_pattern_or()?
-        Pattern.Or(left, right)
+        .Ok(Pattern.Or(left, right))
     }
 
-    fn parse_match_arm_list(self) -> List<MatchArm>? {
+    fn parse_match_arm_list(self) -> Result<List<MatchArm>, string> {
         // Source-order loop: each iteration parses one arm and
         // pushes it into the growable list. First-match-wins arm
         // ordering is preserved by the natural forward push.
@@ -151,33 +151,30 @@ impl Parser {
             }
             let pattern = self.parse_pattern_or()?
             // Optional guard: `pattern if cond ->`
-            let guard: SExpr? = if self.check(Tk.KwIf) {
+            mut guard: SExpr? = none
+            if self.check(Tk.KwIf) {
                 self.advance()
                 let g = self.parse_expression()?
-                sexpr(g, self.current_line, self.current_column)
-            } else {
-                null
+                guard = sexpr(g, self.current_line, self.current_column)
             }
             if !self.consume(Tk.Arrow, "expected `->` after pattern") {
-                return null
+                return .Err("parse error")
             }
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = false
             // Allow `return expr` in bare match arm position by
             // wrapping it in a Block expression: `{ return expr }`.
-            let body = if self.check(Tk.KwReturn) {
+            mut body_val = Expr.None
+            if self.check(Tk.KwReturn) {
                 self.advance()
-                let ret_val = self.parse_expression()
-                if ret_val == null { null } else {
-                    let ret_stmt = sstmt(Stmt.Return(ret_val!), self.current_line, self.current_column)
-                    let body_stmts: List<SStmt> = [ret_stmt]
-                    Expr.Block(body_stmts)
-                }
+                let rv = self.parse_expression()?
+                let ret_stmt = sstmt(Stmt.Return(rv), self.current_line, self.current_column)
+                let body_stmts: List<SStmt> = [ret_stmt]
+                body_val = Expr.Block(body_stmts)
             } else {
-                self.parse_expression()
+                body_val = self.parse_expression()?
             }
             self.allow_dot_postfix = saved
-            let body_val = body?
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {
                 pattern,
@@ -185,13 +182,13 @@ impl Parser {
                 body: sexpr(body_val, self.current_line, self.current_column),
             })
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_pattern(self) -> Pattern? {
+    fn parse_pattern(self) -> Result<Pattern, string> {
         if self.check(Tk.Identifier) && self.current_lexeme == "_" {
             self.advance()
-            return Pattern.Wildcard
+            return .Ok(Pattern.Wildcard)
         }
         // Literal patterns: "string", 42, true, false
         if self.check(Tk.String) {
@@ -199,17 +196,17 @@ impl Parser {
             self.advance()
             // Strip surrounding quotes from the lexeme
             let content = raw.substring(1, raw.length - 1)
-            return Pattern.LitString(content)
+            return .Ok(Pattern.LitString(content))
         }
         if self.check(Tk.Number) {
             let val = int(self.current_lexeme)
             self.advance()
-            return Pattern.LitInt(val)
+            return .Ok(Pattern.LitInt(val))
         }
         if self.check(Tk.Float) {
             let val = self.current_lexeme
             self.advance()
-            return Pattern.LitFloat(val)
+            return .Ok(Pattern.LitFloat(val))
         }
         // Negative literal patterns: -42, -3.14
         if self.check(Tk.Minus) {
@@ -217,23 +214,23 @@ impl Parser {
             if self.check(Tk.Number) {
                 let val = int(self.current_lexeme)
                 self.advance()
-                return Pattern.LitInt(0 - val)
+                return .Ok(Pattern.LitInt(0 - val))
             }
             if self.check(Tk.Float) {
                 let val = "-${self.current_lexeme}"
                 self.advance()
-                return Pattern.LitFloat(val)
+                return .Ok(Pattern.LitFloat(val))
             }
             self.set_error("expected number after `-` in pattern")
-            return null
+            return .Err("parse error")
         }
         if self.check(Tk.KwTrue) {
             self.advance()
-            return Pattern.LitBool(true)
+            return .Ok(Pattern.LitBool(true))
         }
         if self.check(Tk.KwFalse) {
             self.advance()
-            return Pattern.LitBool(false)
+            return .Ok(Pattern.LitBool(false))
         }
         // Union type pattern: int(n), string(s), MyStruct(v)
         // Recognized when an identifier is followed by '(' — distinguishes from
@@ -241,20 +238,20 @@ impl Parser {
         if self.check(Tk.Identifier) && self.peek_after_ident_is_paren() {
             let type_name = self.current_lexeme
             self.advance()  // past type name identifier
-            if !self.consume(Tk.LeftParen, "expected `(` in type pattern") { return null }
+            if !self.consume(Tk.LeftParen, "expected `(` in type pattern") { return .Err("parse error") }
             let binding = self.consume_identifier("expected binding name in type pattern")?
             if !self.consume(Tk.RightParen, "expected `)` after type pattern binding") {
-                return null
+                return .Err("parse error")
             }
-            return Pattern.TypePattern(type_name, binding)
+            return .Ok(Pattern.TypePattern(type_name, binding))
         }
         if !self.consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start pattern") {
-            return null
+            return .Err("parse error")
         }
         let name = self.consume_identifier("expected variant name in pattern")?
         if !self.check(Tk.LeftParen) {
             let empty_b: List<ParamEntry> = []
-            return Pattern.Variant(name, empty_b)
+            return .Ok(Pattern.Variant(name, empty_b))
         }
         self.advance()
         // Detect nested patterns: if first token inside parens is `.`, `_`,
@@ -262,15 +259,15 @@ impl Parser {
         if self.is_pattern_start() {
             let sub = self.parse_pattern_list()?
             if !self.consume(Tk.RightParen, "expected `)` after nested patterns") {
-                return null
+                return .Err("parse error")
             }
-            return Pattern.NestedVariant(name, sub)
+            return .Ok(Pattern.NestedVariant(name, sub))
         }
         let bindings = self.parse_param_list()?
         if !self.consume(Tk.RightParen, "expected `)` after binding list") {
-            return null
+            return .Err("parse error")
         }
-        Pattern.Variant(name, bindings)
+        .Ok(Pattern.Variant(name, bindings))
     }
 
     fn is_pattern_start(self) -> bool {
@@ -281,24 +278,24 @@ impl Parser {
         self.check(Tk.Dot)
     }
 
-    fn parse_pattern_list(self) -> List<Pattern>? {
+    fn parse_pattern_list(self) -> Result<List<Pattern>, string> {
         mut out: List<Pattern> = []
         while !self.check(Tk.RightParen) {
             let p = self.parse_pattern()?
             out.push(p)
             if self.check(Tk.Comma) { self.advance() }
         }
-        out
+        .Ok(out)
     }
 
-    fn parse_match_expression(self) -> Expr? {
+    fn parse_match_expression(self) -> Result<Expr, string> {
         self.advance()
         // Subjectless match: `match { cond -> body ... _ -> fallback }`
         if self.check(Tk.LeftBrace) {
             self.advance()
             let arms = self.parse_when_arm_list()?
-            if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return null }
-            return Expr.When(arms)
+            if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return .Err("parse error") }
+            return .Ok(Expr.When(arms))
         }
         let saved_struct = self.allow_struct_lit
         self.allow_struct_lit = false
@@ -308,34 +305,34 @@ impl Parser {
         // Match table expression
         if self.check(Tk.Identifier) && self.current_lexeme == "table" {
             self.advance()
-            if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return null }
+            if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return .Err("parse error") }
             let arms = self.parse_match_table_arms()?
-            if !self.consume(Tk.RightBrace, "expected `}` after match table") { return null }
-            return Expr.MatchExpr(subject, arms)
+            if !self.consume(Tk.RightBrace, "expected `}` after match table") { return .Err("parse error") }
+            return .Ok(Expr.MatchExpr(subject, arms))
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
-            return null
+            return .Err("parse error")
         }
         let arms = self.parse_match_arm_list()?
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
-            return null
+            return .Err("parse error")
         }
-        Expr.MatchExpr(subject, arms)
+        .Ok(Expr.MatchExpr(subject, arms))
     }
 
     // Convert subjectless match arms to an if-else chain.
-    fn parse_when_arm_list(self) -> List<WhenArm>? {
+    fn parse_when_arm_list(self) -> Result<List<WhenArm>, string> {
         mut out: List<WhenArm> = []
         while !self.check(Tk.RightBrace) {
             // `_` → else/wildcard arm (no condition)
-            let cond: SExpr? = if self.check(Tk.Identifier) && self.current_lexeme == "_" {
+            mut cond: SExpr? = none
+            if self.check(Tk.Identifier) && self.current_lexeme == "_" {
                 self.advance()
-                null
             } else {
                 let c = self.parse_expression()?
-                sexpr(c, self.current_line, self.current_column)
+                cond = sexpr(c, self.current_line, self.current_column)
             }
-            if !self.consume(Tk.Arrow, "expected `->` in match arm") { return null }
+            if !self.consume(Tk.Arrow, "expected `->` in match arm") { return .Err("parse error") }
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = false
             let body_expr = self.parse_expression()?
@@ -343,6 +340,6 @@ impl Parser {
             if self.check(Tk.Comma) { self.advance() }
             out.push(WhenArm { cond, body: sexpr(body_expr, self.current_line, self.current_column) })
         }
-        out
+        .Ok(out)
     }
 }

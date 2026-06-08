@@ -9,6 +9,7 @@ use codegen.{analyze_releasable, analyze_copy_types}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
+use codegen.{emit_optional_coerce}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
@@ -1585,7 +1586,9 @@ fn emit_top_level_init(ctx: Ctx, env: List<VarBinding>, name: string, init: Expr
     if !g.found {
         return Result.Err("codegen error: global `${name}` not declared")
     }
-    let r = ctx.emit(env, init)?
+    mut r = ctx.emit(env, init)?
+    // box/unbox a value-inner optional into the global's slot (no-op otherwise)
+    r = emit_optional_coerce(ctx, r, g.ty)
     if needs_union_wrap(r.ty, g.ty) {
         let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
         ctx.store(wrapped.value, g.llvm_global)

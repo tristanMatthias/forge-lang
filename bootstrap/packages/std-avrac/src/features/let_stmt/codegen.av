@@ -7,6 +7,7 @@ use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
+use codegen.{emit_optional_coerce}
 use diagnostics.{DiagCode}
 
 /// Codegen for `let / mut / const name = init`. Handles four
@@ -28,13 +29,18 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
     } else {
         ctx
     }
-    let r = emit_ctx.emit(env, initializer)?
+    mut r = emit_ctx.emit(env, initializer)?
     // Use the type annotation when present, otherwise infer from initializer.
     let var_ty = if !vtype_is_unknown(ty_vt) {
         ctx.resolve_codegen_vtype(ty_vt)
     } else {
         r.ty
     }
+    // Optional box/unbox: a present value-inner `T` landing in a `T?` slot is
+    // boxed so `none` stays distinct from `Some(0)`; a boxed `T?` landing in a
+    // non-optional slot is unboxed (permissive narrow). `emit_optional_coerce`
+    // is a no-op when neither applies, so no guard is needed.
+    r = emit_optional_coerce(ctx, r, var_ty)
     // Trait boxing: `let d: Trait = concrete_value`
     let trait_name = vtype_trait_name(var_ty)
     if trait_name != "" {

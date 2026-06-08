@@ -5,7 +5,7 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_let_statement(self) -> Stmt? {
+    fn parse_let_statement(self) -> Result<Stmt, string> {
         self.advance()
         let is_mut = self.check(Tk.KwMut)
         if is_mut { self.advance() }
@@ -19,12 +19,12 @@ impl Parser {
             let te = self.parse_type_expr("expected type after `:`")?
             ty_vt = type_expr_to_vtype(te)
         }
-        if !self.consume(Tk.Equal, "expected `=` after variable name") { return null }
+        if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
         let initializer = self.parse_expression()?
-        if is_mut { Stmt.Mut(name, ty_vt, initializer) } else { Stmt.Let(name, ty_vt, initializer) }
+        if is_mut { .Ok(Stmt.Mut(name, ty_vt, initializer)) } else { .Ok(Stmt.Let(name, ty_vt, initializer)) }
     }
 
-    fn parse_mut_statement(self) -> Stmt? {
+    fn parse_mut_statement(self) -> Result<Stmt, string> {
         self.advance()
         let name = self.consume_identifier("expected variable name")?
         mut ty_vt = ValueType.Unknown
@@ -33,12 +33,12 @@ impl Parser {
             let te = self.parse_type_expr("expected type after `:`")?
             ty_vt = type_expr_to_vtype(te)
         }
-        if !self.consume(Tk.Equal, "expected `=` after variable name") { return null }
+        if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
         let initializer = self.parse_expression()?
-        Stmt.Mut(name, ty_vt, initializer)
+        .Ok(Stmt.Mut(name, ty_vt, initializer))
     }
 
-    fn parse_const_statement(self) -> Stmt? {
+    fn parse_const_statement(self) -> Result<Stmt, string> {
         self.advance()
         let name = self.consume_identifier("expected constant name")?
         mut ty_vt = ValueType.Unknown
@@ -47,17 +47,17 @@ impl Parser {
             let te = self.parse_type_expr("expected type after `:`")?
             ty_vt = type_expr_to_vtype(te)
         }
-        if !self.consume(Tk.Equal, "expected `=` after constant name") { return null }
+        if !self.consume(Tk.Equal, "expected `=` after constant name") { return .Err("parse error") }
         let initializer = self.parse_expression()?
-        Stmt.Const(name, ty_vt, initializer)
+        .Ok(Stmt.Const(name, ty_vt, initializer))
     }
 
-    fn parse_let_destructure(self) -> Stmt? {
+    fn parse_let_destructure(self) -> Result<Stmt, string> {
         self.advance()
         let names = self.parse_destructure_names()?
-        if !self.consume(Tk.RightParen, "expected `)` after destructure names") { return null }
-        if !self.consume(Tk.Equal, "expected `=` after destructure pattern") { return null }
+        if !self.consume(Tk.RightParen, "expected `)` after destructure names") { return .Err("parse error") }
+        if !self.consume(Tk.Equal, "expected `=` after destructure pattern") { return .Err("parse error") }
         let initializer = self.parse_expression()?
-        Stmt.LetDestructure(names, initializer)
+        .Ok(Stmt.LetDestructure(names, initializer))
     }
 }

@@ -9,9 +9,11 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional}
+use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_nominal_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
+use codegen.{emit_optional_unwrap, emit_optional_some, needs_optional_box}
+use core.{vtype_wrap_optional}
 use features.defer_stmt.{emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 
@@ -30,25 +32,44 @@ export fn emit_null_coalesce(ctx: Ctx, env: List<VarBinding>, left: Expr, right:
     } else {
         ctx.eq(l.value, ctx.i64(0), "nc_null")
     }
+    let present_bb = ctx.bb("nc_present")
     let then_bb = ctx.bb("nc_rhs")
     let merge_bb = ctx.bb("nc_end")
     let result_slot = ctx.alloca_i64("nc_result")
-    ctx.store(ctx.to_i64(l.value, "nc_lhs"), result_slot)
-    ctx.cond_br(is_null, then_bb, merge_bb)
+    ctx.cond_br(is_null, then_bb, present_bb)
 
-    // Right-hand side: only evaluated when left is null.
+    // RHS (fallback) — emit FIRST so its type defines the `??` result type.
+    // The fallback type is what flows out: a plain `T` for `opt ?? value`, but
+    // an OPTIONAL `T?` for a chained `a ?? b ?? c` (the inner `a ?? b` must stay
+    // nullable so the outer `?? c` can still see `none`). Only executed when
+    // left is none.
     ctx.position(then_bb)
     let r = ctx.emit(env, right)?
-    ctx.store(ctx.to_i64(r.value, "nc_rhs"), result_slot)
+    let result_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { r.ty }
+    let r_final = if needs_optional_box(r.ty, result_ty) {
+        emit_optional_some(ctx, vtype_strip_optional(result_ty), r.value)
+    } else { r.value }
+    ctx.store(ctx.to_i64(r_final, "nc_rhs"), result_slot)
+    ctx.br(merge_bb)
+
+    // Present path (left is non-none): unwrap the box to the inner value (the
+    // unwrap MUST live here, not the entry block — unwrapping a `none` box
+    // would load from null), then RE-BOX when the result type is itself
+    // optional (chained `??`). Non-optional/niche left unwraps to itself.
+    ctx.position(present_bb)
+    let l_inner_val = if vtype_is_optional(l.ty) {
+        emit_optional_unwrap(ctx, vtype_strip_optional(l.ty), l.value)
+    } else { l.value }
+    let l_inner_ty = if vtype_is_optional(l.ty) { vtype_strip_optional(l.ty) } else { l.ty }
+    let l_final = if needs_optional_box(l_inner_ty, result_ty) {
+        emit_optional_some(ctx, vtype_strip_optional(result_ty), l_inner_val)
+    } else { l_inner_val }
+    ctx.store(ctx.to_i64(l_final, "nc_lhs"), result_slot)
     ctx.br(merge_bb)
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "nc_val")
-    // `??` yields the guaranteed-present (non-optional) type — the
-    // fallback always provides a value, so strip any optional off the left.
-    let base_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
-    let merged_ty = vtype_strip_optional(base_ty)
-    ok_emit(loaded, merged_ty)
+    ok_emit(loaded, result_ty)
 }
 
 /// Codegen for `obj?.field`. Null-checks the receiver: when null,
@@ -70,18 +91,18 @@ export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field:
     ctx.store(ctx.i64(0), result_slot)
     ctx.cond_br(is_null, merge_bb, access_bb)
 
-    // Access the field (only reached when obj is non-null).
+    // Access the field (only reached when obj is non-null). Receiver may be
+    // `Struct?` (strip the optional — the niche value IS the inner pointer).
     ctx.position(access_bb)
-    let struct_name = vtype_struct_name(r.ty)
+    let recv_ty = vtype_strip_optional(r.ty)
+    let struct_name = vtype_struct_name(recv_ty)
     if struct_name == "" {
-        // For non-struct types (e.g. strings), fall back to
-        // returning the value itself. ?. on a non-struct is
-        // effectively a null-check passthrough.
-        ctx.store(r.value, result_slot)
+        // Non-struct receiver (e.g. string): wrap the value as the chain's `U?`.
+        ctx.store(ctx.to_i64(emit_optional_some(ctx, recv_ty, r.value), "oc_box"), result_slot)
         ctx.br(merge_bb)
         ctx.position(merge_bb)
         let loaded = ctx.load_i64(result_slot, "oc_val")
-        return ok_emit(loaded, r.ty)
+        return ok_emit(loaded, vtype_wrap_optional(recv_ty))
     }
     let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found {
@@ -91,17 +112,19 @@ export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field:
     if idx < 0 {
         return err_emit("unknown field `${field}` on struct `${struct_name}` in optional chain")
     }
+    let field_ty = ctx.resolve_field_type(lookup.fields, field)
     let st_ty = ctx.get_type(struct_name)
     let obj_ptr = ctx.to_ptr(r.value, "oc_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "oc_fld")
     let loaded_field = ctx.load_i64(gep, field)
-    ctx.store(loaded_field, result_slot)
+    // Wrap the present field value as `Some(field)` so the `U?` result
+    // distinguishes a present value from the null-receiver `none`.
+    ctx.store(ctx.to_i64(emit_optional_some(ctx, field_ty, loaded_field), "oc_box"), result_slot)
     ctx.br(merge_bb)
 
     ctx.position(merge_bb)
     let final_val = ctx.load_i64(result_slot, "oc_val")
-    let field_ty = ctx.resolve_field_type(lookup.fields, field)
-    ok_emit(final_val, field_ty)
+    ok_emit(final_val, vtype_wrap_optional(field_ty))
 }
 
 /// Codegen for the `?` try operator. Two modes based on the
@@ -119,7 +142,13 @@ export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitV
 
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
-    let enum_name = vtype_enum_name(r.ty)
+    // Nominal name is read ACROSS kinds: a Result reached through a prior
+    // `?`-extraction can be classified `Struct("Result__T__E")` (the
+    // `vtype_from_name` default for an un-upgraded name) rather than Enum.
+    // Without the kind-agnostic name, Mode 1 is skipped and the WHOLE
+    // Result leaks out unextracted (Mode 3), surfacing as a `Result.Ok`
+    // value where a plain `T` is expected.
+    let enum_name = vtype_nominal_name(r.ty)
     if is_result_shaped_enum(ctx.type_reg, enum_name) {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
@@ -174,7 +203,13 @@ export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitV
         // over the enum registry's generic payload type — the
         // registry has Ok(value: T) before substitution, while
         // r.ty carries the substituted (concrete) T after typeck.
-        let ok_ty = ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty))
+        // Upgrade the resolved Ok type through the registry so a name that
+        // `resolve_ok_type` left as `Struct("E")` (the vtype_from_name default
+        // for an un-upgraded name) becomes `Enum("E")` when `E` is actually a
+        // registered enum. Without this, a `?`-extracted enum value is typed
+        // Struct, and a subsequent `match` on it emits struct-layout matching
+        // on an enum value — silently taking the wrong arm.
+        let ok_ty = ctx.resolve_codegen_vtype(ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty)))
         // Retain the extracted Ok value so it survives Result wrapper release.
         // The release function recursively releases inner fields; without
         // this retain, ptr-type Ok payloads are freed while still in use.

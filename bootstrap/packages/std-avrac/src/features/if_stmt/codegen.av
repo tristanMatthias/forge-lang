@@ -2,9 +2,10 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, type_registry_id_for}
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
+use codegen.{emit_if_optional_canon}
 use core.{avra_covmap_next_branch_id}
 use features.union_type.{emit_union_wrap}
 
@@ -140,8 +141,30 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     // ── Merge ──
     ctx.position(merge_bb)
 
-    // Same type or non-union-safe: load raw value
-    if vtype_eq(t_ty, e_ty) || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
+    // Optional mix: one branch a value-inner (tagged) optional or its inner,
+    // the other `null` (none) → canonicalise the whole if-expr to `T?` so a
+    // present value is BOXED and `none` stays the null pointer. Without this,
+    // `if c { 6 } else { null }` would yield a bare `int` (6 or 0), losing the
+    // none/Some(0) distinction once stored into a `T?` slot downstream. Shared
+    // with the statement-value `if` path (codegen/blocks.av) via optional_repr.
+    let canon = emit_if_optional_canon(ctx, emit_value_ptr(cond), result_slot, t_ty, e_ty)
+    if canon != none { return ok_emit(canon!.value, canon!.ty) }
+
+    // Same type or non-union-safe: load raw value. Two values of the same
+    // nominal enum/struct are the SAME type even when their type_args or
+    // registry id differ superficially (e.g. a `?`-extracted `Ok` payload
+    // typed `E` vs a directly-constructed `E` carrying empty type_args) —
+    // forming `E | E` is meaningless, so never union-wrap that case. Without
+    // this, `let x = if c { E.B(..) } else { f()? }` spuriously boxes `x` in
+    // a `__union`, corrupting it downstream.
+    // Nominal name is compared ACROSS kinds: a `?`-extracted `Ok` payload is
+    // often resolved as `Struct("E")` (the `vtype_from_name` default for an
+    // un-upgraded name) while the directly-constructed value is `Enum("E")`.
+    // Same nominal name = same type, regardless of enum/struct classification.
+    let t_nom = vtype_nominal_name(t_ty)
+    let e_nom = vtype_nominal_name(e_ty)
+    let same_nominal = t_nom != "" && t_nom == e_nom
+    if vtype_eq(t_ty, e_ty) || same_nominal || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
         let result = ctx.load_i64(result_slot, "ife_val")
         return ok_emit(result, t_ty)
     }

@@ -2,6 +2,8 @@
 
 use core.{Expr, Stmt, ValueType, VarBinding, SStmt, stmt_unwrap}
 use codegen.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
+use codegen.{emit_if_optional_canon}
+use core.{ValueType}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.{emit_match_expr}
 use features.if_stmt.{narrow_env_for_is}
@@ -100,20 +102,28 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr
     let zero = ctx.i64(0)
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Unknown)?
+    let t_ty = emit_value_ty(t)
     ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     ctx.position(else_bb)
     ctx.cov_branch_else(branch_id)
+    mut e_ty = ValueType.Void
     if else_branch != null {
         let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Unknown)?
+        e_ty = emit_value_ty(e)
         ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
     } else {
         ctx.br(merge_bb)
     }
 
     ctx.position(merge_bb)
+    // Canonicalise a value-inner optional mix ({T, null} etc.) to `T?` so a
+    // present value is boxed and `none` stays the null pointer (e.g. an
+    // `if x > 0 { x } else { none }` function body returning `int?`).
+    let canon = emit_if_optional_canon(ctx, cond_i1, result_slot, t_ty, e_ty)
+    if canon != none { return ok_emit(canon!.value, canon!.ty) }
     let loaded = ctx.load_i64(result_slot, "sif_val")
-    ok_emit(loaded, emit_value_ty(t))
+    ok_emit(loaded, t_ty)
 }
 
 /// Workhorse loop for `emit_block_expr`. Walks the statement list:

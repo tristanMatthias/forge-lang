@@ -1,37 +1,43 @@
 // Test: errdefer — error-only cleanup with LIFO interleaving.
+// errdefer fires on `Result` error propagation (the `?`-split makes `?`
+// Result-only), so this exercises `?` on a `Result<string, string>`.
 
-fn ed_maybe_null(name: string) -> string? {
-    if name == "bad" { return null }
-    name
+fn ed_maybe_null(name: string) -> Result<string, string> {
+    if name == "bad" { return .Err("bad") }
+    .Ok(name)
 }
 
-fn ed_test_success() -> string? {
+fn ed_test_success() -> Result<string, string> {
     defer { println("A") }
     errdefer { println("B") }
     defer { println("C") }
     let x = ed_maybe_null("good")?
-    x
+    .Ok(x)
 }
 
-fn ed_test_error() -> string? {
+fn ed_test_error() -> Result<string, string> {
     defer { println("A") }
     errdefer { println("B") }
     defer { println("C") }
     let x = ed_maybe_null("bad")?
-    x
+    .Ok(x)
 }
 
 fn ed_run_success() -> string {
     avra_test_capture_start()
-    let r1 = ed_test_success()
-    if r1 != null { println(r1!) }
+    match ed_test_success() {
+        .Ok(r1) -> println(r1)
+        .Err(_) -> {}
+    }
     avra_test_capture_stop()
 }
 
 fn ed_run_error() -> string {
     avra_test_capture_start()
-    let r2 = ed_test_error()
-    if r2 == null { println("null") }
+    match ed_test_error() {
+        .Ok(_) -> {}
+        .Err(_) -> println("null")
+    }
     avra_test_capture_stop()
 }
 

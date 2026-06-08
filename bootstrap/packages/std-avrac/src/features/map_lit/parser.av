@@ -29,28 +29,28 @@ impl Parser {
         is_map
     }
 
-    fn parse_map_literal(self) -> Expr? {
+    fn parse_map_literal(self) -> Result<Expr, string> {
         self.advance()  // consume {
         if self.check(Tk.RightBrace) {
             self.advance()
             let empty: List<SExpr> = []
-            return Expr.MapLit(empty)
+            return .Ok(Expr.MapLit(empty))
         }
         let entries = self.parse_map_entries()?
         if !self.consume(Tk.RightBrace, "expected `}` after map") {
-            return null
+            return .Err("parse error")
         }
-        Expr.MapLit(entries)
+        .Ok(Expr.MapLit(entries))
     }
 
     // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
-    fn parse_map_entries(self) -> List<SExpr>? {
+    fn parse_map_entries(self) -> Result<List<SExpr>, string> {
         mut out: List<SExpr> = []
         mut keep_going = true
         while keep_going {
             let key = self.parse_expression()?
             if !self.consume(Tk.Colon, "expected `:` after map key") {
-                return null
+                return .Err("parse error")
             }
             let value = self.parse_expression()?
             out.push(sexpr(key, self.current_line, self.current_column))
@@ -62,6 +62,6 @@ impl Parser {
                 keep_going = false
             }
         }
-        out
+        .Ok(out)
     }
 }

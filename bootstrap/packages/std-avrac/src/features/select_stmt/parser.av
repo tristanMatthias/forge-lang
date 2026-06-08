@@ -5,16 +5,16 @@ use core.{Stmt, SelectArm}
 use core.{Tk}
 
 impl Parser {
-    fn parse_select_statement(self) -> Stmt? {
+    fn parse_select_statement(self) -> Result<Stmt, string> {
         self.advance()  // consume `select`
         if !self.consume(Tk.LeftBrace, "expected `{` after select") {
-            return null
+            return .Err("parse error")
         }
         let arms = self.parse_select_arm_list()
         if !self.consume(Tk.RightBrace, "expected `}` to close select") {
-            return null
+            return .Err("parse error")
         }
-        Stmt.Select(arms)
+        .Ok(Stmt.Select(arms))
     }
 
     fn parse_select_arm_list(self) -> List<SelectArm> {
@@ -28,8 +28,10 @@ impl Parser {
             if !self.check(Tk.LeftArrow) { return out }
             self.advance()  // consume <-
             // Parse channel expression
-            let channel = self.parse_expression()
-            if channel == null { return out }
+            let channel = match self.parse_expression() {
+                .Ok(c) -> c
+                .Err(_) -> return out
+            }
             // Expect `->`
             if !self.consume(Tk.Arrow, "expected `->` after channel in select arm") {
                 return out
@@ -38,12 +40,14 @@ impl Parser {
             if !self.consume(Tk.LeftBrace, "expected `{` for select arm body") {
                 return out
             }
-            let body = self.parse_statement_list(true)
-            if body == null { return out }
+            let body = match self.parse_statement_list(true) {
+                .Ok(b) -> b
+                .Err(_) -> return out
+            }
             if !self.consume(Tk.RightBrace, "expected `}` to close select arm") {
                 return out
             }
-            out.push(SelectArm { binding, channel: channel!, body: body! })
+            out.push(SelectArm { binding, channel: channel, body: body })
         }
         out
     }
