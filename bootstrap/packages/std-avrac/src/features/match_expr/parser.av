@@ -151,7 +151,7 @@ impl Parser {
             }
             let pattern = self.parse_pattern_or()?
             // Optional guard: `pattern if cond ->`
-            mut guard: SExpr? = null
+            mut guard: SExpr? = none
             if self.check(Tk.KwIf) {
                 self.advance()
                 let g = self.parse_expression()?
@@ -325,7 +325,7 @@ impl Parser {
         mut out: List<WhenArm> = []
         while !self.check(Tk.RightBrace) {
             // `_` → else/wildcard arm (no condition)
-            mut cond: SExpr? = null
+            mut cond: SExpr? = none
             if self.check(Tk.Identifier) && self.current_lexeme == "_" {
                 self.advance()
             } else {

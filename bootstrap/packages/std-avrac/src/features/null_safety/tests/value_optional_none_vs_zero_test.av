@@ -3,39 +3,39 @@
 // `false`, and `0.0`. Value-inner optionals (`int?` / `bool?` / `float?`)
 // box a present value into a non-null heap cell, so `none` (the null
 // pointer) can never collide with `Some(0)` / `Some(false)` / `Some(0.0)`.
-// Under the old everything-is-zero repr these all aliased to `null` and the
+// Under the old everything-is-zero repr these all aliased to absence and the
 // distinction was lost; this test is the regression oracle for that fix.
-// The load-bearing assertion is `present != null` for a zero payload — it
+// The load-bearing assertion is `present != none` for a zero payload — it
 // is TRUE only when the present value is boxed, FALSE under the old repr.
 
 fn int_opt(present: bool) -> int? {
-    if present { 0 } else { null }
+    if present { 0 } else { none }
 }
 
 fn bool_opt(present: bool) -> bool? {
-    if present { false } else { null }
+    if present { false } else { none }
 }
 
 fn float_opt(present: bool) -> float? {
-    if present { 0.0 } else { null }
+    if present { 0.0 } else { none }
 }
 
 spec "value-type optionals distinguish none from a zero payload" {
     then "Some(0) is present, not none" {
         let a: int? = 0
-        a != null
+        a != none
     }
     then "Some(0) unwraps to 0" {
         let a: int? = 0
         a! == 0
     }
     then "none int? is none" {
-        let n: int? = null
-        n == null
+        let n: int? = none
+        n == none
     }
     then "Some(false) is present, not none" {
         let b: bool? = false
-        b != null
+        b != none
     }
     then "Some(false) unwraps to false" {
         let b: bool? = false
@@ -43,26 +43,26 @@ spec "value-type optionals distinguish none from a zero payload" {
     }
     then "Some(0.0) is present, not none" {
         let f: float? = 0.0
-        f != null
+        f != none
     }
     then "Some(0.0) unwraps to 0.0" {
         let f: float? = 0.0
         f! == 0.0
     }
     then "a fn returning Some(0) is present, not none" {
-        int_opt(true) != null
+        int_opt(true) != none
     }
     then "a fn returning Some(0) unwraps to 0" {
         int_opt(true)! == 0
     }
     then "a fn returning none int? is none" {
-        int_opt(false) == null
+        int_opt(false) == none
     }
     then "a fn returning Some(false) is present, not none" {
-        bool_opt(true) != null
+        bool_opt(true) != none
     }
     then "a fn returning Some(0.0) is present, not none" {
-        float_opt(true) != null
+        float_opt(true) != none
     }
     then "?? keeps a present Some(0) (does not fall through to default)" {
         (int_opt(true) ?? 99) == 0

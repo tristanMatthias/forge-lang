@@ -146,7 +146,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
 // ── List / sub-structure helpers ──
 
 fn rewrite_opt_expr(opt: Expr?, reg: CompTimeRegistry) -> Expr? {
-    if opt == null { return null }
+    if opt == none { return none }
     rewrite_expr(opt!, reg)
 }
 

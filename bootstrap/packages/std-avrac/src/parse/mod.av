@@ -428,7 +428,7 @@ impl Parser {
             .Ok(e) -> e
             .Err(_) -> {
                 return ParseResult {
-                    expr: null,
+                    expr: none,
                     had_error: self.had_error,
                     error_message: self.error_message,
                     bag: self.bag,
@@ -439,7 +439,7 @@ impl Parser {
         if !self.check(Tk.Eof) {
             self.set_error("expected end of input")
             return ParseResult {
-                expr: null,
+                expr: none,
                 had_error: true,
                 error_message: self.error_message,
                 bag: self.bag,
@@ -560,7 +560,7 @@ impl Parser {
             let inner_l = self.current_line
             let inner_c = self.current_column
             let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
-            if export_handler_raw == null {
+            if export_handler_raw == none {
                 self.set_error("expected declaration after `export`")
                 return .Err("expected declaration after `export`")
             }
@@ -2116,7 +2116,7 @@ impl Parser {
     fn parse_quote_arm_body(self) -> Result<Expr, string> {
         if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
         let pattern = self.parse_pattern_or()?
-        mut guard: SExpr? = null
+        mut guard: SExpr? = none
         if self.check(Tk.KwIf) {
             self.advance()
             let g = self.parse_expression()?
@@ -2147,7 +2147,7 @@ impl Parser {
             // `_ -> body` or `else -> body` is the default arm (null condition)
             let line = self.current_line
             let col = self.current_column
-            mut cond: SExpr? = null
+            mut cond: SExpr? = none
             if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
                 self.advance()
             } else {

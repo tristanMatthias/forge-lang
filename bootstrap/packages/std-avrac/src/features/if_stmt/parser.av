@@ -27,7 +27,7 @@ impl Parser {
             return .Ok(Stmt.If(condition, then_branch, else_branch))
         }
 
-        .Ok(Stmt.If(condition, then_branch, null))
+        .Ok(Stmt.If(condition, then_branch, none))
     }
 
     fn parse_if_expression(self) -> Result<Expr, string> {

@@ -397,7 +397,7 @@ export fn literal_args_to_values(args: List<SExpr>) -> List<Value>? {
     mut i = 0
     while i < args.length {
         let v_opt = literal_expr_to_value(args[i].node)
-        if v_opt == null { return null }
+        if v_opt == none { return none }
         out.push(v_opt!)
         i = i + 1
     }
@@ -2404,8 +2404,8 @@ fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
             _ -> { /* ignore unknown fields */ }
         }
     }
-    if pat_opt == null { return .Err("decode: match arm missing pattern") }
-    if body_opt == null { return .Err("decode: match arm missing body") }
+    if pat_opt == none { return .Err("decode: match arm missing pattern") }
+    if body_opt == none { return .Err("decode: match arm missing body") }
     .Ok(MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt! })
 }
 
@@ -2623,8 +2623,8 @@ fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
             let cond = value_to_expr_node(p[0])?
             let then_b = value_to_stmt(p[1])?
             let else_v: Value = p[2]
-            let else_b = if else_v.enum_variant == "None" { null } else {
-                match value_to_stmt(else_v) { .Ok(s) -> s, .Err(_) -> null }
+            let else_b = if else_v.enum_variant == "None" { none } else {
+                match value_to_stmt(else_v) { .Ok(s) -> s, .Err(_) -> none }
             }
             .Ok(Stmt.If(cond, then_b, else_b))
         }

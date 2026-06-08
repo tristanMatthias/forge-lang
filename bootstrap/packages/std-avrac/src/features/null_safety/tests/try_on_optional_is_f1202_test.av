@@ -29,7 +29,7 @@ spec "`?`-split: `?` is Result-only (F1202 on optional)" {
         write_fixture(fixture,
             "fn maybe(x: int) -> int? {\n" +
             "    if x > 0 { return x }\n" +
-            "    null\n" +
+            "    none\n" +
             "}\n" +
             "fn use_it(x: int) -> int? {\n" +
             "    let v = maybe(x)?\n" +

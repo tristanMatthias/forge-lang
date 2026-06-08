@@ -156,11 +156,11 @@ export fn if_optional_mix_inner(t_ty: ValueType, e_ty: ValueType) -> ValueType {
 /// Post-merge canonicalisation for a value `if`. The two arms have already
 /// stored their RAW values into `result_slot` (typed `t_ty` / `e_ty`); this
 /// re-selects on `cond_i1` and boxes the present arm into `T?`, leaving `none`
-/// (Void/`null`) as the null pointer. Returns `null` when this is not a tagged
+/// (Void/`none`) as the null pointer. Returns `none` when this is not a tagged
 /// optional mix — the caller then keeps its existing (raw) merge result.
 export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty: ValueType, e_ty: ValueType) -> EmitValue? {
     let inner = if_optional_mix_inner(t_ty, e_ty)
-    if vtype_is_unknown(inner) { return null }
+    if vtype_is_unknown(inner) { return none }
     let opt_ty = ValueType.Optional(inner)
     let raw_val = ctx.load_i64(result_slot, "ifopt_raw")
     let obox_slot = ctx.alloca_i64("ifopt_slot")

@@ -148,7 +148,7 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     // none/Some(0) distinction once stored into a `T?` slot downstream. Shared
     // with the statement-value `if` path (codegen/blocks.av) via optional_repr.
     let canon = emit_if_optional_canon(ctx, emit_value_ptr(cond), result_slot, t_ty, e_ty)
-    if canon != null { return ok_emit(canon!.value, canon!.ty) }
+    if canon != none { return ok_emit(canon!.value, canon!.ty) }
 
     // Same type or non-union-safe: load raw value. Two values of the same
     // nominal enum/struct are the SAME type even when their type_args or

@@ -19,7 +19,7 @@ impl Parser {
             let var_name = self.consume_identifier("expected variable name after `for`")?
             if !self.consume(Tk.KwIn, "expected `in` after comprehension variable") { return .Err("parse error") }
             let collection = self.parse_expression()?
-            mut filter: Expr? = null
+            mut filter: Expr? = none
             if self.check(Tk.KwIf) {
                 self.advance()
                 filter = self.parse_expression()?
