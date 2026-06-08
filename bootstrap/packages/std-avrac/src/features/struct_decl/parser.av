@@ -34,44 +34,42 @@ impl Parser {
         // Non-brace RHS: type expressions, type operators, or aliases
         // Handles: type X = int | string, type X = Base without { f }, type X = OtherType
         if self.check(Tk.Identifier) || self.check(Tk.KwFn) || self.check(Tk.LeftBracket) {
-            if true {
-                let type_expr = self.parse_type_expr("expected type after `=`")?
-                // Union type alias: type X = int | string
-                // Match on the TypeExpr structure, not string content
-                match type_expr {
-                    .Union(_, _) -> {
-                        return .Ok(Stmt.UnionAliasDecl(name, type_expr_to_vtype(type_expr)))
-                    }
-                    _ -> {}
+            let type_expr = self.parse_type_expr("expected type after `=`")?
+            // Union type alias: type X = int | string
+            // Match on the TypeExpr structure, not string content
+            match type_expr {
+                .Union(_, _) -> {
+                    return .Ok(Stmt.UnionAliasDecl(name, type_expr_to_vtype(type_expr)))
                 }
-                // Type operators: type X = Base without { fields }
-                if self.check(Tk.Identifier) {
-                    let op = self.current_lexeme
-                    if op in ["without", "only"] {
-                        self.advance()
-                        if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return .Err("parse error") }
-                        let op_fields = self.parse_ident_list()
-                        if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return .Err("parse error") }
-                        // Synthetic FieldEntry list: a `__base` sentinel
-                        // carrying the underlying type, a `__without` /
-                        // `__only` marker, then the user-listed field
-                        // names. codegen/setup.av's `resolve_type_operator`
-                        // walks this exact shape, so the marker name needs
-                        // to be `__without` / `__only`, not `__op`.
-                        mut derived: List<FieldEntry> = []
-                        derived.push(FieldEntry { name: "__base", resolved: type_expr_to_vtype(type_expr) })
-                        derived.push(FieldEntry { name: "__" + op, resolved: ValueType.Str })
-                        mut k = 0
-                        while k < op_fields.length {
-                            derived.push(op_fields[k])
-                            k = k + 1
-                        }
-                        return .Ok(Stmt.TypeDecl(name, tp, derived))
-                    }
-                }
-                // Newtype wrapper: type UserId = string — nominal distinction
-                return .Ok(Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr)))
+                _ -> {}
             }
+            // Type operators: type X = Base without { fields }
+            if self.check(Tk.Identifier) {
+                let op = self.current_lexeme
+                if op in ["without", "only"] {
+                    self.advance()
+                    if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return .Err("parse error") }
+                    let op_fields = self.parse_ident_list()
+                    if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return .Err("parse error") }
+                    // Synthetic FieldEntry list: a `__base` sentinel
+                    // carrying the underlying type, a `__without` /
+                    // `__only` marker, then the user-listed field
+                    // names. codegen/setup.av's `resolve_type_operator`
+                    // walks this exact shape, so the marker name needs
+                    // to be `__without` / `__only`, not `__op`.
+                    mut derived: List<FieldEntry> = []
+                    derived.push(FieldEntry { name: "__base", resolved: type_expr_to_vtype(type_expr) })
+                    derived.push(FieldEntry { name: "__" + op, resolved: ValueType.Str })
+                    mut k = 0
+                    while k < op_fields.length {
+                        derived.push(op_fields[k])
+                        k = k + 1
+                    }
+                    return .Ok(Stmt.TypeDecl(name, tp, derived))
+                }
+            }
+            // Newtype wrapper: type UserId = string — nominal distinction
+            return .Ok(Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr)))
         }
         let empty: List<FieldEntry> = []
         .Ok(Stmt.TypeDecl(name, tp, empty))

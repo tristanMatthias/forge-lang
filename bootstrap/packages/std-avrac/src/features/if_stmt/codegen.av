@@ -2,7 +2,7 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_struct_name, type_registry_id_for, vtype_is_optional, vtype_strip_optional, vtype_is_unknown}
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for, vtype_is_optional, vtype_strip_optional, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
 use codegen.{needs_optional_box, emit_optional_some, optional_repr_tagged}
@@ -197,10 +197,8 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     // often resolved as `Struct("E")` (the `vtype_from_name` default for an
     // un-upgraded name) while the directly-constructed value is `Enum("E")`.
     // Same nominal name = same type, regardless of enum/struct classification.
-    // Exactly one of enum_name/struct_name is non-empty, so concatenation
-    // yields the bare nominal name.
-    let t_nom = vtype_enum_name(t_ty) + vtype_struct_name(t_ty)
-    let e_nom = vtype_enum_name(e_ty) + vtype_struct_name(e_ty)
+    let t_nom = vtype_nominal_name(t_ty)
+    let e_nom = vtype_nominal_name(e_ty)
     let same_nominal = t_nom != "" && t_nom == e_nom
     if vtype_eq(t_ty, e_ty) || same_nominal || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
         let result = ctx.load_i64(result_slot, "ife_val")

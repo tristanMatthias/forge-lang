@@ -1024,6 +1024,16 @@ export fn vtype_enum_name(t: ValueType) -> string {
     match t { .Enum(n, _, _) -> n, .NarrowedEnum(n, _, _) -> n, _ -> "" }
 }
 
+/// Bare nominal name of a type regardless of its enum/struct kind
+/// classification — the enum name if it has one, else the struct name,
+/// else "". Lets codegen compare two nominal types that the same source
+/// declares but that resolve to different kinds (e.g. a `?`-extracted
+/// `Ok` payload typed `Struct("E")` vs a directly-constructed `Enum("E")`).
+export fn vtype_nominal_name(t: ValueType) -> string {
+    let e = vtype_enum_name(t)
+    if e != "" { e } else { vtype_struct_name(t) }
+}
+
 /// Type arguments attached to an Enum ValueType — the concrete
 /// substitutions produced by monomorphization. Empty list for
 /// non-Enum types or unparameterised enums. Used by codegen sites

@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
+use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_nominal_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
 use core.{is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
 use codegen.{emit_optional_unwrap, emit_optional_some, needs_optional_box}
@@ -145,10 +145,10 @@ export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitV
     // Nominal name is read ACROSS kinds: a Result reached through a prior
     // `?`-extraction can be classified `Struct("Result__T__E")` (the
     // `vtype_from_name` default for an un-upgraded name) rather than Enum.
-    // Without the struct-name fallback, Mode 1 is skipped and the WHOLE
+    // Without the kind-agnostic name, Mode 1 is skipped and the WHOLE
     // Result leaks out unextracted (Mode 3), surfacing as a `Result.Ok`
     // value where a plain `T` is expected.
-    let enum_name = vtype_enum_name(r.ty) + vtype_struct_name(r.ty)
+    let enum_name = vtype_nominal_name(r.ty)
     if is_result_shaped_enum(ctx.type_reg, enum_name) {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
@@ -208,7 +208,7 @@ export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitV
         // for an un-upgraded name) becomes `Enum("E")` when `E` is actually a
         // registered enum. Without this, a `?`-extracted enum value is typed
         // Struct, and a subsequent `match` on it emits struct-layout matching
-        // on an enum value — silently taking the wrong arm (lr34 class).
+        // on an enum value — silently taking the wrong arm.
         let ok_ty = ctx.resolve_codegen_vtype(ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty)))
         // Retain the extracted Ok value so it survives Result wrapper release.
         // The release function recursively releases inner fields; without
