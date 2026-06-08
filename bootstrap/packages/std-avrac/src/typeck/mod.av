@@ -689,6 +689,20 @@ export fn tc_narrow_present(tc: TC, name: string) -> TC {
     tc_bind(tc, name, vtype_strip_optional(ty))
 }
 
+/// Narrow the guard variable in the branch entered when the condition
+/// is TRUE (the then-branch / loop body). A no-op unless the guard
+/// proves presence there (`x != none`).
+export fn tc_narrow_true_branch(tc: TC, guard: NarrowGuard) -> TC {
+    if guard.present_when_true { tc_narrow_present(tc, guard.var) } else { tc }
+}
+
+/// Narrow the guard variable in the branch entered when the condition
+/// is FALSE (the else-branch). A no-op unless the guard proves
+/// presence there (`x == none`).
+export fn tc_narrow_false_branch(tc: TC, guard: NarrowGuard) -> TC {
+    if guard.present_when_true { tc } else { tc_narrow_present(tc, guard.var) }
+}
+
 /// Apply *continuation* narrowing after an `if`. When the branch in
 /// which the guard variable is absent (its "none-side") diverges,
 /// reaching the code after the `if` proves the variable is present —

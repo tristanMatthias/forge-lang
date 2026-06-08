@@ -8,7 +8,7 @@ use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_erro
 use features.eval.{eval_expr, execute_stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
-use typeck.{check_expr, check_stmt, tc_er, tc_report, narrow_guard_of, tc_narrow_present, tc_narrow_after_if}
+use typeck.{check_expr, check_stmt, tc_er, tc_report, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if}
 
 /// Register the `if` feature for both statement (`if cond { ... }`)
 /// and expression (`let x = if cond a else b`) positions. Wires
@@ -119,19 +119,13 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
             let guard = narrow_guard_of(cond)
             let baseline = after_cond.types
 
-            // Then-branch: narrow when the guard proves presence on
-            // the true-branch (`x != none`).
-            let then_in = if guard.present_when_true { tc_narrow_present(after_cond, guard.var) } else { after_cond }
-            let after_then = check_stmt(then_in, then_branch)
+            let after_then = check_stmt(tc_narrow_true_branch(after_cond, guard), then_branch)
             // Drop the branch-local narrowing (reset env to baseline)
             // while preserving the diagnostics gathered so far.
             let post_then = after_then with { types: baseline }
 
             if else_branch != null {
-                // Else-branch: narrow when presence holds on the
-                // false-branch (`x == none`).
-                let else_in = if guard.present_when_true { post_then } else { tc_narrow_present(post_then, guard.var) }
-                let after_else = check_stmt(else_in, else_branch!)
+                let after_else = check_stmt(tc_narrow_false_branch(post_then, guard), else_branch!)
                 let post_else = after_else with { types: baseline }
                 return tc_narrow_after_if(post_else, guard, then_branch, else_branch)
             }
@@ -160,11 +154,9 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             // narrowing must not leak out of the branch it was proven in.
             let guard = narrow_guard_of(cond)
             let baseline = after_cond.types
-            let then_in = if guard.present_when_true { tc_narrow_present(after_cond, guard.var) } else { after_cond }
-            let t = check_expr(then_in, then_branch)
+            let t = check_expr(tc_narrow_true_branch(after_cond, guard), then_branch)
             let else_base = t.tc with { types: baseline }
-            let else_in = if guard.present_when_true { else_base } else { tc_narrow_present(else_base, guard.var) }
-            let e = check_expr(else_in, else_branch)
+            let e = check_expr(tc_narrow_false_branch(else_base, guard), else_branch)
             let after = e.tc with { types: baseline }
             if !vtype_eq(t.ty, e.ty) && !vtype_is_unknown(t.ty) && !vtype_is_unknown(e.ty) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
                 // Both branches have concrete different types — result is a union

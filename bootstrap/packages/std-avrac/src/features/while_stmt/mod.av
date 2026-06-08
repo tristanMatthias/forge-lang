@@ -5,7 +5,7 @@ use features.eval.{error_result}
 use features.eval.{execute_while}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
-use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_present}
+use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
 
 /// Resolver hook for `while`. Resolves the condition first, then
 /// the body in the post-condition scope so any names bound in the
@@ -40,8 +40,7 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
             // caveat.)
             let guard = narrow_guard_of(cond)
             let baseline = after_cond.types
-            let body_in = if guard.present_when_true { tc_narrow_present(after_cond, guard.var) } else { after_cond }
-            let after_body = check_stmt(body_in, body)
+            let after_body = check_stmt(tc_narrow_true_branch(after_cond, guard), body)
             after_body with { types: baseline }
         }
         _ -> tc
