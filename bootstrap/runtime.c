@@ -622,14 +622,6 @@ void avra_ice_at(const char *file, int64_t line, int64_t col) {
     g_ice_at_col = col;
 }
 
-// Back-compat shim for the original single-cursor API (phase + one name).
-void avra_ice_breadcrumb(const char *phase, const char *detail, int64_t line) {
-    ice_copy(g_ice_phase, sizeof g_ice_phase, phase);
-    g_ice_fn_depth = 0;
-    avra_ice_push_fn(detail);
-    g_ice_at_line = line;
-}
-
 // Async-signal-safe: emit the cursor on a crash, formatted like a
 // first-class diagnostic (F9999) so an internal crash reads like every
 // other error — phase, the nested-function trail, and the precise span.

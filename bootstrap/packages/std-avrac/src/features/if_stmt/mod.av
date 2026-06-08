@@ -99,15 +99,16 @@ fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 }
 
 /// Type-check hook for `If` statements. Condition must be Bool
-/// (Int accepted for compat). Applies optional flow-narrowing
-/// (xm2g.4 / Phase 3): a `x != none` / `x == none` guard retypes
-/// `x` from `T?` to `T` inside the proven-present branch, and — when
-/// the none-side diverges — in the continuation after the `if` (the
+/// (Int accepted for compat). Applies optional flow-narrowing: an
+/// `x != none` / `x == none` guard retypes `x` from `T?` to `T`
+/// inside the proven-present branch, and — when the none-side
+/// diverges — in the continuation after the `if` (the
 /// `if x == none { return … }` idiom). Branch-local narrowing is
 /// scoped by resetting the env to the pre-narrow baseline before the
-/// else / continuation, keeping accumulated diagnostics. Narrowing
-/// is additive sugar only (see `tc_narrow_present`); statements
-/// produce no value so no type-merging is needed.
+/// else / continuation, keeping accumulated diagnostics. (Permissive
+/// variable-narrowing — see the `tc_narrow_present` block in typeck
+/// for the soundness caveat; statements produce no value, so no
+/// type-merging is needed.)
 fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .If(cond, then_branch, else_branch) -> {
@@ -152,7 +153,7 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
-            // Optional flow-narrowing (xm2g.4 / Phase 3): retype the
+            // Optional flow-narrowing: retype the
             // guard variable to its present `T` inside whichever arm
             // proves presence. An if-expr has no continuation, so the
             // env is reset to the pre-narrow baseline after each arm —

@@ -1,15 +1,17 @@
-// WHY: flow narrowing (spec Axis 10 §1.4 — xm2g.4 / Phase 3). After a
-// proven-present guard (`if x != none`, the `if x == none { return … }`
-// early-exit, an else-branch under `if x == none`, or `while x != none`),
-// the optional `x` is retyped from `T?` to `T` inside the proven scope.
+// WHY: flow narrowing (spec Axis 10). After a proven-present guard
+// (`if x != none`, the `if x == none { return … }` early-exit, an
+// else-branch under `if x == none`, or `while x != none`), the optional
+// `x` is retyped from `T?` to `T` inside the proven scope.
 //
-// Narrowing is SUGAR, never load-bearing: it only removes the optionality
-// the compiler can prove, so the single optionality gate that exists at
-// this phase — F1202 (`?` is Result-only; applying it to a `T?` is an
-// error) — is the oracle. A `x?` on a narrowed `x` is NOT F1202 (it is no
-// longer optional); the same `x?` on an un-narrowed `x` still IS F1202.
-// That contrast proves both that narrowing fires AND that it is scoped /
-// non-load-bearing (the gate remains the backstop everywhere else).
+// The oracle is F1202 (`?` is Result-only; applying it to a `T?` is an
+// error) — the one optionality gate enabled today. A `x?` on a narrowed
+// `x` is NOT F1202 (it is no longer optional); the same `x?` on an
+// un-narrowed `x` still IS F1202. That contrast proves both that
+// narrowing fires AND that it is scoped (the gate remains the backstop
+// outside the proven region). NOTE: this exercises the permissive
+// variable-narrowing model; its unsoundness under reassignment is a
+// known, separately-tracked gap (sound bind-fresh narrowing supersedes
+// it per spec Axis 10).
 
 use @std.avrac.test_runner.{write_fixture}
 use @std.avrac.core.{avra_shell_exec}

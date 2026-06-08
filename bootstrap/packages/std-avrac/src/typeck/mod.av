@@ -628,16 +628,23 @@ export fn tc_bind(tc: TC, name: string, ty: ValueType) -> TC {
     tc with { types: type_bind(tc.types, name, ty, tc.depth) }
 }
 
-// ── Flow narrowing (spec Axis 10 §1.4 — xm2g.4 / Phase 3) ──
-// Narrowing is ergonomic SUGAR, never load-bearing for safety: after
-// `if x != none { … }`, an `if x == none { return/break/continue }`
-// early-exit, or `while x != none { … }`, the proven-present `x` is
-// retyped from `T?` to `T` inside the proven scope so a use site
-// needn't repeat an unwrap. It is *additive* — `tc_narrow_present`
-// only ever strips an Optional, so it can never raise an error that
-// gating (Phase 4) wouldn't; it only suppresses the ceremony where
-// presence is already proven. Safety comes from gating, not from
-// narrowing (a use of an un-narrowed `T?` stays an error regardless).
+// ── Flow narrowing (spec Axis 10) ──
+// Ergonomic narrowing: after `if x != none { … }`, an
+// `if x == none { return/break/continue }` early-exit, or
+// `while x != none { … }`, the proven-present `x` is retyped from
+// `T?` to `T` in the proven scope so a use site needn't repeat an
+// unwrap.
+//
+// CAVEAT — this is the permissive *variable-narrowing* model, and it
+// is NOT sound under reassignment: it retypes the variable in place,
+// so a later `x = <maybe-none>` in the same scope leaves `x` wrongly
+// typed `T` (it keeps the narrowed type instead of reverting). Spec
+// Axis 10 mandates the sound *bind-fresh* model — the unwrapped value
+// gets a fresh immutable name, so no mutable narrowed variable exists
+// for a write to invalidate. This is the staged permissive predecessor
+// of that; real safety must come from non-null enforcement deriving
+// presence from the binding, never from trusting this flow fact across
+// a reassignment or aliased mutation.
 
 /// A nullability guard recovered from an `if`/`while` condition of
 /// the form `x == none` / `x != none`. `var` is the compared
