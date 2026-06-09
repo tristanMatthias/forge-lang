@@ -1,0 +1,79 @@
+// WHY: a `T?` struct field must box its present value-type payload (int /
+// bool / float) the same way a `List<T?>` element or a local does — so a
+// `Some(0)` / `Some(false)` in a field stays a non-null cell, distinct from
+// `none` (the null pointer), and unwraps back to the original value. Struct
+// construction is a distinct codegen path from the list/local/return paths,
+// so it gets its own coverage: present value fidelity, the zero collision,
+// the niche (pointer-inner) repr, and `with`-update of an optional field.
+
+type Pair = { a: int?, b: int? }
+type Flag = { on: bool? }
+type Name = { s: str? }
+
+fn pair_a(p: Pair) -> int {
+    if let v = p.a { v } else { 0 - 1 }
+}
+fn pair_b(p: Pair) -> int {
+    if let v = p.b { v } else { 0 - 1 }
+}
+
+fn flag_present(f: Flag) -> bool {
+    if let v = f.on { true } else { false }
+}
+fn flag_value(f: Flag) -> bool {
+    if let v = f.on { v } else { true }
+}
+
+fn name_or(n: Name, dflt: str) -> str {
+    if let v = n.s { v } else { dflt }
+}
+
+spec "struct fields box a present value-type optional" {
+    then "a present int field unwraps to its value" {
+        pair_b(Pair { a: none, b: 42 }) == 42
+    }
+    then "a none int field takes the else branch" {
+        pair_a(Pair { a: none, b: 1 }) == 0 - 1
+    }
+    then "a present zero is NOT none (the Some(0)/none collision)" {
+        // a: 0 must be present (non-null box), not aliased to none
+        pair_a(Pair { a: 0, b: 1 }) == 0
+    }
+    then "mixed fields: each resolves independently" {
+        let p = Pair { a: none, b: 7 }
+        pair_a(p) == 0 - 1 && pair_b(p) == 7
+    }
+    then "a present bool false is NOT none" {
+        flag_present(Flag { on: false }) == true
+    }
+    then "a present bool false unwraps to false" {
+        flag_value(Flag { on: false }) == false
+    }
+    then "a none bool field is absent" {
+        flag_present(Flag { on: none }) == false
+    }
+    then "a present str field (niche repr) unwraps to its value" {
+        name_or(Name { s: "hi" }, "dflt") == "hi"
+    }
+    then "a none str field takes the default" {
+        name_or(Name { s: none }, "dflt") == "dflt"
+    }
+}
+
+spec "with-update of an optional struct field" {
+    then "setting a present value over none" {
+        let base = Pair { a: none, b: 1 }
+        let updated = base with { a: 9 }
+        pair_a(updated) == 9
+    }
+    then "setting a present zero over none stays present" {
+        let base = Pair { a: none, b: 1 }
+        let updated = base with { a: 0 }
+        pair_a(updated) == 0
+    }
+    then "clearing a present field to none" {
+        let base = Pair { a: 5, b: 1 }
+        let updated = base with { a: none }
+        pair_a(updated) == 0 - 1
+    }
+}
