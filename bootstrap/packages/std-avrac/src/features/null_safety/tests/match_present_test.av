@@ -7,6 +7,9 @@
 // present-test / unwrap the `?` and `??` operators emit. A `_` wildcard
 // covers the absent (or otherwise-unmatched) case.
 
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
 fn mp_pick(x: int?) -> int {
     match x {
         let u -> u + 100
@@ -120,5 +123,16 @@ spec "match on optional — present-bind surface" {
     }
     then "the none arm of a T?-returning match stays absent (not Some(0))" {
         mp_roundtrip(none) == -1
+    }
+}
+
+spec "present-bind on a non-optional subject is a clean F1000, not an ICE" {
+    then "`match (n: int) { let m -> … }` reports F1000 (not F9999)" {
+        let f = "/tmp/avra_mp_nonopt.av"
+        write_fixture(f,
+            "fn g(n: int) -> int { match n { let m -> m, none -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        out.contains("F1000") && !out.contains("F9999")
     }
 }

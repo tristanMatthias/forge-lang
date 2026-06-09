@@ -397,8 +397,48 @@ fn enter_arm_with_guard(acc: TC, arm: MatchArm, subject_ty: ValueType) -> TC {
 /// Statement-position arm checker. Type-checks every arm's
 /// guard + body within a fresh pattern-scope; doesn't do type
 /// unification (statements don't produce values).
-export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+/// True for a primitive SCALAR subject type — one that can never carry a
+/// variant pattern (no enum tag, no optional). Strings match via literal
+/// patterns, not variants, so they belong here too.
+fn scalar_match_subject(t: ValueType) -> bool {
+    match t {
+        .Int -> true
+        .Bool -> true
+        .Float -> true
+        .Str -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        _ -> false
+    }
+}
+
+/// Reject a variant / present-bind pattern (`.Some(x)`, or the `let x ->` /
+/// `none ->` surface that lowers to it) on a primitive scalar subject. It is
+/// only meaningful on an enum or optional; on a scalar the codegen would
+/// mis-handle it (treat it as a catch-all, leave the binding undefined →
+/// F9999 ICE), so we diagnose it here with a clear F1000 instead.
+fn tc_reject_variant_on_scalar(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    if !scalar_match_subject(subject_ty) { return tc }
     mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let vn = pattern_variant_names(arms[i].pattern)
+        if vn != "" {
+            let msg = "a variant pattern `.${vn}` needs an enum or optional subject, not `${vtype_display(subject_ty)}` — present-bind (`let x ->` / `none ->`) requires the subject to be an optional `T?`"
+            acc = tc_report(acc, DiagCode.TypeMismatch, msg)
+        }
+        i = i + 1
+    }
+    acc
+}
+
+export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
     mut i = 0
     while i < arms.length {
         let b = check_expr(enter_arm_with_guard(acc, arms[i], subject_ty), arms[i].body.node)
@@ -434,7 +474,7 @@ fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueTy
 /// `[]` and `[x]` literals inherit the list element type from the
 /// match's overall expected shape.
 export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
-    mut acc = tc
+    mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
     mut i = 0
     while i < arms.length {
         let arm = arms[i]

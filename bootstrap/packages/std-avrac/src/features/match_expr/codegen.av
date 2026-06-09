@@ -900,18 +900,26 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
             } else {
                 ctx.cond_br(cmp, body_bb, next_bb)
             }
-        } else if arm.guard != null {
-            // Guarded wildcard: if guard { body } else { next arm }.
-            match ctx.emit(env, arm.guard!.node) {
-                .Err(msg) -> return err_match_ty(msg)
-                .Ok(guard_r) -> {
-                    let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
-                    ctx.cond_br(guard_bool, body_bb, next_bb)
+        } else if arm.pattern is .Wildcard {
+            if arm.guard != null {
+                // Guarded wildcard: if guard { body } else { next arm }.
+                match ctx.emit(env, arm.guard!.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                        ctx.cond_br(guard_bool, body_bb, next_bb)
+                    }
                 }
+            } else {
+                // Unguarded wildcard: always matches (catch-all).
+                ctx.br(body_bb)
             }
         } else {
-            // Unguarded wildcard: always matches (catch-all).
-            ctx.br(body_bb)
+            // A variant pattern (`.Some(x)`, or the present-bind `let x ->` /
+            // `none ->` surface) on a primitive subject. Reject cleanly — the
+            // old code treated it as a catch-all, leaving the binding undefined
+            // and crashing codegen (F9999) rather than diagnosing the misuse.
+            return err_match_ty("a variant pattern like `.Some(x)` needs an enum or optional subject, not `${vtype_display(emit_value_ty(subj))}` — present-bind (`let x ->` / `none ->`) requires the subject to be an optional `T?`")
         }
 
         ctx.position(body_bb)
