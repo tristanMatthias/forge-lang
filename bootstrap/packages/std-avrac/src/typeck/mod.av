@@ -716,7 +716,7 @@ export fn narrow_guard_of(cond: Expr) -> NarrowGuard {
 /// resolver enforces this, F3001), so no later write can invalidate the
 /// narrowed type. A `mut` *can* be reassigned to a maybe-absent value,
 /// so the variable form is never narrowed for it — `mut`s use the
-/// bind-fresh `if let v? = x` form instead, where `v` is a fresh
+/// bind-fresh `if let v = x` form instead, where `v` is a fresh
 /// immutable binding that nothing can invalidate.
 fn tc_narrow_present(tc: TC, name: string) -> TC {
     if name == "" { return tc }

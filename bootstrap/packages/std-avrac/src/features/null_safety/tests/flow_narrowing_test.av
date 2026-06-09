@@ -242,7 +242,7 @@ spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
         !out.contains("F1202")
     }
 
-    // ── Soundness (xm2g.8): only immutable bindings narrow ──
+    // ── Soundness: only immutable bindings narrow ──
     // An immutable binding (let / param) cannot be reassigned (the
     // resolver enforces F3001), so narrowing it is always sound. A `mut`
     // can be reassigned to a maybe-absent value, so the variable form is
