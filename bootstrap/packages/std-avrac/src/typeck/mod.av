@@ -31,11 +31,18 @@ extern fn avra_ice_at(file: string, line: int, col: int)
 // ── Type environment ──
 
 /// Scope-stack entry for the type checker. Each binding records
-/// the variable's name, inferred type, and the depth at which it
-/// was declared (for scope-pop on block exit). The full env is
-/// `List<TypeEntry>` — most-recently-bound at the largest index;
-/// lookup walks tail-to-head so the innermost binding shadows.
-type TypeEntry = { name: string, ty: ValueType, depth: int }
+/// the variable's name, inferred type, the depth at which it was
+/// declared (for scope-pop on block exit), and whether it is a
+/// `mut` binding. The full env is `List<TypeEntry>` —
+/// most-recently-bound at the largest index; lookup walks
+/// tail-to-head so the innermost binding shadows.
+///
+/// `mutable` exists for flow narrowing: an immutable binding
+/// (`let` / param — the resolver forbids reassigning them, F3001)
+/// can never be invalidated by a later write, so narrowing it is
+/// always sound; a `mut` can be reassigned, so the variable form is
+/// not narrowed (use `if let` instead). See `tc_narrow_present`.
+type TypeEntry = { name: string, ty: ValueType, depth: int, mutable: bool }
 
 /// Walk the type-environment looking for `name`. Returns
 /// `ValueType.Unknown` when not bound — typecheck callers branch
@@ -50,11 +57,23 @@ fn type_lookup(env: List<TypeEntry>, name: string) -> ValueType {
     ValueType.Unknown
 }
 
+/// True when the innermost binding of `name` is a `mut`. Unbound or
+/// immutable names return false.
+fn type_is_mutable(env: List<TypeEntry>, name: string) -> bool {
+    mut i = env.length - 1
+    while i >= 0 {
+        let e = env[i]
+        if e.name == name { return e.mutable }
+        i = i - 1
+    }
+    false
+}
+
 /// Push a binding onto the type environment. Returns a fresh
 /// snapshot so sibling branches (then/else of an if etc.) keep
 /// the parent's env un-extended.
-fn type_bind(env: List<TypeEntry>, name: string, ty: ValueType, depth: int) -> List<TypeEntry> {
-    list_push_copy(env, TypeEntry { name, ty, depth })
+fn type_bind(env: List<TypeEntry>, name: string, ty: ValueType, depth: int, mutable: bool) -> List<TypeEntry> {
+    list_push_copy(env, TypeEntry { name, ty, depth, mutable })
 }
 
 /// Pop every entry whose declared depth is `>= depth`. Used on
@@ -622,10 +641,18 @@ export fn tc_enter(tc: TC) -> TC { tc with { depth: tc.depth + 1 } }
 export fn tc_exit(tc: TC) -> TC {
     tc with { types: type_pop_scope(tc.types, tc.depth), depth: tc.depth - 1 }
 }
-/// Register `name: ty` at the current depth — the typecheck
-/// equivalent of `let name: ty`.
+/// Register an immutable `name: ty` at the current depth — the
+/// typecheck equivalent of `let name: ty` (also params, which the
+/// resolver forbids reassigning).
 export fn tc_bind(tc: TC, name: string, ty: ValueType) -> TC {
-    tc with { types: type_bind(tc.types, name, ty, tc.depth) }
+    tc with { types: type_bind(tc.types, name, ty, tc.depth, false) }
+}
+
+/// Register a mutable `mut name: ty` at the current depth. The only
+/// difference from `tc_bind` is the `mutable` flag, which flow
+/// narrowing consults (it never narrows the variable form of a mut).
+export fn tc_bind_mut(tc: TC, name: string, ty: ValueType) -> TC {
+    tc with { types: type_bind(tc.types, name, ty, tc.depth, true) }
 }
 
 // ── Flow narrowing (spec Axis 10) ──
@@ -679,12 +706,21 @@ export fn narrow_guard_of(cond: Expr) -> NarrowGuard {
 }
 
 /// Narrow `name` from `T?` to `T` at the current depth when it is
-/// currently tracked as optional. A no-op for `""`, unknown, or
-/// already-non-optional bindings. Internal to the narrowing helpers
-/// (`tc_narrow_true_branch` / `tc_narrow_false_branch` / the
-/// continuation) — features narrow via those, not this directly.
+/// currently tracked as an *immutable* optional. A no-op for `""`,
+/// unknown, already-non-optional, or `mut` bindings. Internal to the
+/// narrowing helpers (`tc_narrow_true_branch` / `tc_narrow_false_branch`
+/// / the continuation) — features narrow via those, not this directly.
+///
+/// Soundness (spec Axis 10.4): only immutable bindings (`let` / params)
+/// are narrowed in the variable form. They cannot be reassigned (the
+/// resolver enforces this, F3001), so no later write can invalidate the
+/// narrowed type. A `mut` *can* be reassigned to a maybe-absent value,
+/// so the variable form is never narrowed for it — `mut`s use the
+/// bind-fresh `if let v = x` form instead, where `v` is a fresh
+/// immutable binding that nothing can invalidate.
 fn tc_narrow_present(tc: TC, name: string) -> TC {
     if name == "" { return tc }
+    if type_is_mutable(tc.types, name) { return tc }
     let ty = type_lookup(tc.types, name)
     if !vtype_is_optional(ty) { return tc }
     tc_bind(tc, name, vtype_strip_optional(ty))
@@ -1426,10 +1462,18 @@ fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
     cur
 }
 
+/// Bind a declaration, recording mutability so flow narrowing can
+/// tell `mut` (reassignable → not narrowed in the variable form)
+/// from `let`/`const`/params (immutable → safe to narrow).
+fn bind_decl(tc: TC, name: string, ty: ValueType, is_mut: bool) -> TC {
+    if is_mut { tc_bind_mut(tc, name, ty) } else { tc_bind(tc, name, ty) }
+}
+
 /// Type-check a `let` / `mut` / `const` binding: infer the
 /// initializer's type, verify it matches any declared annotation,
-/// and bind `name: type` into the env.
-fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
+/// and bind `name: type` into the env. `is_mut` distinguishes `mut`
+/// from `let`/`const` for narrowing.
+fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool, is_mut: bool) -> TC {
     let has_annotation = !vtype_is_unknown(ty_vt)
     // so07.4 (T4): resolve the annotation BEFORE checking the init so
     // we can thread it as the expected type for ListLit-style literals.
@@ -1450,22 +1494,22 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
         }
         if mismatch {
             let msg = "type mismatch: expected `${vtype_render_full(declared_ty)}`, got `${vtype_render_full(r.ty)}`"
-            return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+            return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
         }
     }
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
         let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
-        return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+        return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
     if is_const && !is_const_expr(init) {
         let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
-        return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+        return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
     // Shape subtyping: if declared type is a shape, check init value has required fields
     let after_shape = if has_annotation {
         tc_check_shape_compat(r.tc, vtype_struct_name(ty_vt), r.ty)
     } else { r.tc }
-    tc_bind(after_shape, name, declared_ty)
+    bind_decl(after_shape, name, declared_ty, is_mut)
 }
 
 /// Type-check a single statement. Each variant routes to the
@@ -1473,9 +1517,9 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
 /// recurse into their bodies and registries.
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
-        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
-        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, true)
+        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false, false)
+        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false, true)
+        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, true, false)
         .Expr(e) -> {
             let r = check_expr(tc, e)
             r.tc

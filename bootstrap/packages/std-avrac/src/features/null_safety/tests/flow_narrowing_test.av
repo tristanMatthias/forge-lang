@@ -241,4 +241,56 @@ spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
             "fn main() -> int { 0 }\n")
         !out.contains("F1202")
     }
+
+    // ── Soundness: only immutable bindings narrow ──
+    // An immutable binding (let / param) cannot be reassigned (the
+    // resolver enforces F3001), so narrowing it is always sound. A `mut`
+    // can be reassigned to a maybe-absent value, so the variable form is
+    // never narrowed for it — closing the proven reassignment hole.
+
+    then "SOUNDNESS: a reassigned mut is NOT narrowed — `if x != none { x = g(); x? }` stays F1202" {
+        // The proven hole from the Phase-3 audit. Were the mut narrowed,
+        // the post-reassignment `x?` would be wrongly accepted.
+        let out = fn_check_out("/tmp/avra_narrow_mut_reassign.av",
+            "fn g() -> int? { none }\n" +
+            "fn use_it() -> int {\n" +
+            "    mut x: int? = 5\n" +
+            "    if x != none {\n" +
+            "        x = g()\n" +
+            "        let y = x?\n" +
+            "        return y\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "an immutable `let` optional narrows (no reassignment possible → always sound)" {
+        let out = fn_check_out("/tmp/avra_narrow_let.av",
+            "fn use_it(n: int) -> int {\n" +
+            "    let x: int? = if n > 0 { n } else { none }\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "a `mut` optional is conservatively NOT narrowed in the variable form (use `if let`)" {
+        let out = fn_check_out("/tmp/avra_narrow_mut_plain.av",
+            "fn use_it(n: int) -> int {\n" +
+            "    mut x: int? = 5\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
 }
