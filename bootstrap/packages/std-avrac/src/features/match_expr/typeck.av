@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_render_full, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
@@ -147,6 +147,11 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm
     if vtype_is_union(subject_ty) {
         return tc_check_union_exhaustive(tc, subject_ty, arms)
     }
+    // Optional exhaustiveness: a `T?` match must cover BOTH present and
+    // absent, else the missing case traps at runtime (avra_match_unreachable).
+    if vtype_is_optional(subject_ty) {
+        return tc_check_optional_exhaustive(tc, subject_ty, arms)
+    }
     let enum_name = vtype_enum_name(subject_ty)
     if enum_name == "" { return tc }
     let variants = enum_type_variants(tc.enums, enum_name)
@@ -168,6 +173,35 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm
     }
     // No wildcard and missing variants = error (spec Axis 8.4)
     let msg = "non-exhaustive match on `${enum_name}` — missing: ${missing}"
+    tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
+}
+
+/// Exhaustiveness for an optional `T?` subject (spec Axis 8). The two cases
+/// are present (`let v ->`, lowered to `.Some`) and absent (`none ->`,
+/// lowered to `.None`). Both must be covered — a present catch-all alone
+/// leaves `none` to trap at runtime, and vice versa. A `_` wildcard covers
+/// whatever is left. Literal patterns match only specific present values, so
+/// they never satisfy the present case on their own (a `let v` / `_` is still
+/// required for the other present values).
+fn tc_check_optional_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    if arms_has_wildcard(arms) { return tc }
+    mut has_present = false
+    mut has_absent = false
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            .Variant(n, _) -> {
+                if n == "Some" { has_present = true }
+                if n == "None" { has_absent = true }
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    if has_present && has_absent { return tc }
+    if tc.current_line == 0 { return tc }
+    let missing = if !has_present { "the present case (`let <name> ->`)" } else { "the absent case (`none ->`)" }
+    let msg = "non-exhaustive match on `${vtype_render_full(subject_ty)}` — missing ${missing}; add it or a `_` wildcard"
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
 }
 
@@ -248,11 +282,33 @@ fn count_missing_union_members(types: List<ValueType>, matched: string) -> int {
 fn tc_bind_pattern(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
     match pattern {
         .Wildcard -> tc
-        .Variant(variant_name, bindings) -> tc_bind_pattern_params(tc, variant_name, bindings, subject_ty)
+        .Variant(variant_name, bindings) -> {
+            // An optional `T?` subject carries no enum tag, so the present-bind
+            // arm (`let v ->`, lowered to `.Some(v)`) has no variant field to
+            // read its type from. Bind `v` directly to the inner `T` — the same
+            // type codegen unwraps it to — instead of leaking Unknown.
+            if vtype_is_optional(subject_ty) {
+                tc_bind_optional_present(tc, variant_name, bindings, subject_ty)
+            } else {
+                tc_bind_pattern_params(tc, variant_name, bindings, subject_ty)
+            }
+        }
         .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats, subject_ty)
         .TypePattern(type_name, binding) -> tc_bind(tc, binding, resolve_vtype(tc, vtype_from_name(type_name)))
         _ -> tc  // LitString, LitInt, LitBool, LitFloat — no bindings
     }
+}
+
+/// Bind the present-bind capture of an optional `match` arm. The parser
+/// lowers `let v ->` to `.Some(v)` over a `T?` subject; bind `v` to the
+/// inner `T` (exactly what codegen unwraps to). `none ->` (`.None`) and a
+/// `_`-named or empty binding capture nothing.
+fn tc_bind_optional_present(tc: TC, variant_name: string, bindings: List<ParamEntry>, subject_ty: ValueType) -> TC {
+    if variant_name != "Some" { return tc }
+    if bindings.length == 0 { return tc }
+    let n = bindings[0].name
+    if n == "_" { return tc }
+    tc_bind(tc, n, vtype_strip_optional(subject_ty))
 }
 
 /// Open a fresh type-check scope for a pattern arm and bind
