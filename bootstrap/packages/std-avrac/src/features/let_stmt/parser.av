@@ -1,6 +1,10 @@
-// WHY: parses `let`, `mut`, and `const` variable bindings.
+// WHY: parses `let`, `mut`, and `const` variable bindings, plus the
+// bind-fresh guard form `let v = x else { … }` (spec Axis 10.4): bind the
+// present value of an optional for the rest of the scope, or run an
+// else-block that must diverge. Desugars to a block-expression initializer
+// so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, SExpr, sexpr_dummy, sstmt_dummy, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 
@@ -21,7 +25,38 @@ impl Parser {
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
         let initializer = self.parse_expression()?
+        // Guard form: `let v = x else { … }` (only on immutable `let`).
+        if !is_mut && self.check(Tk.KwElse) {
+            return self.build_let_else(name, ty_vt, initializer)
+        }
         if is_mut { .Ok(Stmt.Mut(name, ty_vt, initializer)) } else { .Ok(Stmt.Let(name, ty_vt, initializer)) }
+    }
+
+    // `let v = x else { ELSE }` desugars to a block-expression initializer:
+    //   let v = { let __t = x;  if __t == none { ELSE } else { __t! } }
+    // `v` stays at the outer scope (visible in the continuation); the
+    // subject is evaluated once via `__t`; `ELSE` must diverge (so the
+    // if-expr's then-branch is valueless and its type is the unwrapped T).
+    fn build_let_else(self, name: string, ty_vt: ValueType, subject: Expr) -> Result<Stmt, string> {
+        self.advance()
+        let else_stmt = self.parse_statement()?
+        let else_body = match else_stmt {
+            .Block(b) -> b
+            _ -> {
+                let one: List<SStmt> = [sstmt_dummy(else_stmt)]
+                one
+            }
+        }
+        let tmp = self.fresh("letelse")
+        let fu_args: List<SExpr> = [sexpr_dummy(Expr.Ident(tmp))]
+        let unwrap = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+        let cond = Expr.Binary(Expr.Ident(tmp), BinOp.Eq, Expr.None)
+        let guard = Expr.IfExpr(cond, Expr.Block(else_body), unwrap)
+        let block_body: List<SStmt> = [
+            sstmt_dummy(Stmt.Let(tmp, ValueType.Unknown, subject)),
+            sstmt_dummy(Stmt.Expr(guard)),
+        ]
+        .Ok(Stmt.Let(name, ty_vt, Expr.Block(block_body)))
     }
 
     fn parse_mut_statement(self) -> Result<Stmt, string> {

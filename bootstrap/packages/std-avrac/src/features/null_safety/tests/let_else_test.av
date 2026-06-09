@@ -1,0 +1,57 @@
+// WHY: bind-fresh guard `let v = x else { … }` (spec Axis 10.4, Rust
+// let-else — no `guard` keyword). Binds the present value of an optional
+// for the rest of the scope; the else-block must diverge. Desugars to a
+// block-expression initializer:
+//   let v = { let __t = x; if __t == none { ELSE } else { __t! } }
+// so `v` stays at the outer scope and the subject is evaluated once. Plus
+// the `ifnz` guard: an `if let` / comparison of a tagged-scalar
+// non-optional to `none` is a compile error.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+fn le_pick(x: int?) -> int {
+    let v = x else { return -1 }
+    v + 100
+}
+
+fn le_break(xs: List<int?>) -> int {
+    mut total = 0
+    for x in xs {
+        let v = x else { break }
+        total = total + v
+    }
+    total
+}
+
+spec "let-else — bind-fresh guard" {
+    then "binds the present value for the continuation" {
+        le_pick(7) == 107
+    }
+    then "runs the diverging else on none" {
+        le_pick(none) == -1
+    }
+    then "else can break out of a loop" {
+        // [1, 2, none, 4] -> 1 + 2, then break
+        le_break([1, 2, none, 4]) == 3
+    }
+}
+
+spec "ifnz — non-optional `none` comparison is rejected" {
+    then "`if let v = 5` (non-optional int) is F1000" {
+        let f = "/tmp/avra_ifnz_iflet.av"
+        write_fixture(f,
+            "fn u() -> int { if let v = 5 { v } else { 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        out.contains("F1000")
+    }
+    then "a real optional `if let` is accepted (no F1000)" {
+        let f = "/tmp/avra_ifnz_ok.av"
+        write_fixture(f,
+            "fn u(x: int?) -> int { if let v = x { v } else { 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        !out.contains("F1000")
+    }
+}
