@@ -4,9 +4,10 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, BinOp, ValueType, SStmt, SExpr, sexpr_dummy, sstmt_dummy, type_expr_to_vtype}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, SExpr, sexpr_dummy, sstmt_dummy, type_expr_to_vtype, stmts_diverges}
 use parse.{Parser}
 use core.{Tk}
+use diagnostics.{DiagCode}
 
 impl Parser {
     fn parse_let_statement(self) -> Result<Stmt, string> {
@@ -46,6 +47,12 @@ impl Parser {
                 let one: List<SStmt> = [sstmt_dummy(else_stmt)]
                 one
             }
+        }
+        // The else runs only on absence, so `v` can't be bound there — it
+        // MUST exit the scope. A non-diverging else would silently behave
+        // like `?? default`; require divergence so the two stay distinct.
+        if !stmts_diverges(else_body) {
+            self.report(DiagCode.LetElseMustDiverge, "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
         }
         let tmp = self.fresh("letelse")
         let fu_args: List<SExpr> = [sexpr_dummy(Expr.Ident(tmp))]
