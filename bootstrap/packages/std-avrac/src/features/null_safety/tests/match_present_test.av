@@ -136,3 +136,38 @@ spec "present-bind on a non-optional subject is a clean F1000, not an ICE" {
         out.contains("F1000") && !out.contains("F9999")
     }
 }
+
+spec "match on optional — exhaustiveness is enforced (spec Axis 8)" {
+    then "a present-only match (no `none`, no `_`) is non-exhaustive (F9001)" {
+        let f = "/tmp/avra_optmatch_nonexh.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { let v -> v } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        out.contains("F9001")
+    }
+    then "a `none`-only match (no present case) is non-exhaustive (F9001)" {
+        let f = "/tmp/avra_optmatch_noneonly.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { none -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        out.contains("F9001")
+    }
+    then "present + none arms are exhaustive (no F9001)" {
+        let f = "/tmp/avra_optmatch_exh.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { let v -> v\n none -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        !out.contains("F9001")
+    }
+    then "a `_` wildcard alone covers the absent case (no F9001)" {
+        let f = "/tmp/avra_optmatch_wild.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { let v -> v\n _ -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        !out.contains("F9001")
+    }
+}
