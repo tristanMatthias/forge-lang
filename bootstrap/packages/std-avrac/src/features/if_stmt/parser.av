@@ -1,8 +1,9 @@
 // WHY: parses `if` as both a statement and an expression form, plus the
-// bind-fresh `if let v = x { … } else { … }` sugar (spec Axis 10.4). It
-// desugars to an ordinary `if x != none` over a fresh temp, so the
-// subject is evaluated once and `v` is a fresh immutable binding nothing
-// can invalidate (the sound Rust/Zig model) — no new AST, no codegen.
+// bind-fresh `if let v = x { … } else { … }` sugar (spec Axis 10.4), in
+// BOTH positions. It desugars to an ordinary `if x != none` over a fresh
+// temp, so the subject is evaluated once and `v` is a fresh immutable
+// binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
+// no codegen.
 
 use core.{Stmt, Expr, BinOp, ValueType, SExpr, SStmt, sexpr_dummy, sstmt_dummy}
 use parse.{Parser}
@@ -63,21 +64,10 @@ impl Parser {
             self.advance()
             else_branch = self.parse_statement()?
         }
-        // let <binding> = __tmp!
-        let fu_args: List<SExpr> = [sexpr_dummy(Expr.Ident(tmp))]
-        let unwrap = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
-        let bind_stmt = sstmt_dummy(Stmt.Let(binding, ValueType.Unknown, unwrap))
+        let bind_stmt = self.iflet_bind_stmt(tmp, binding)
         // Prepend the unwrap-bind to the then-block.
         let new_then = match then_branch {
-            .Block(body) -> {
-                mut nb: List<SStmt> = [bind_stmt]
-                mut i = 0
-                while i < body.length {
-                    nb.push(body[i])
-                    i = i + 1
-                }
-                Stmt.Block(nb)
-            }
+            .Block(body) -> Stmt.Block(self.iflet_prepend(bind_stmt, body))
             _ -> {
                 let one: List<SStmt> = [bind_stmt, sstmt_dummy(then_branch)]
                 Stmt.Block(one)
@@ -89,8 +79,76 @@ impl Parser {
         .Ok(Stmt.Block(outer))
     }
 
+    // Expression-position `if let v = x { THEN } else { ELSE }`. Same
+    // bind-fresh desugar as the statement form, but lowered to a block
+    // EXPRESSION whose value is the inner `if`-expression:
+    //   { let __t = x;  if __t != none { let v = __t!;  THEN } else { ELSE } }
+    // `if` already consumed by `parse_if_expression`; `let` is current.
+    fn parse_if_let_expression(self) -> Result<Expr, string> {
+        let tmp = self.fresh("iflet")
+        self.advance()
+        let binding = self.consume_identifier("expected a binding name after `if let`")?
+        if !self.consume(Tk.Equal, "expected `=` after the `if let` binding") { return .Err("parse error") }
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let subject_opt = self.parse_expression()
+        self.allow_struct_lit = saved
+        let subject = subject_opt?
+        if !self.check(Tk.LeftBrace) {
+            self.report(DiagCode.ExpectedBlock, "expected `{` after the `if let` binding")
+            return .Err("parse error")
+        }
+        let then_expr = self.parse_block_expression()?
+        // Else mirrors `parse_if_expression`: block / `else if` / bare expr;
+        // a missing else yields the same `0` default a plain if-expr uses.
+        mut else_expr = Expr.Number("0")
+        if self.check(Tk.KwElse) {
+            self.advance()
+            if self.check(Tk.KwIf) {
+                else_expr = self.parse_if_expression()?
+            } else if self.check(Tk.LeftBrace) {
+                else_expr = self.parse_block_expression()?
+            } else {
+                else_expr = self.parse_expression()?
+            }
+        }
+        let bind_stmt = self.iflet_bind_stmt(tmp, binding)
+        let new_then = match then_expr {
+            .Block(body) -> Expr.Block(self.iflet_prepend(bind_stmt, body))
+            _ -> {
+                let one: List<SStmt> = [bind_stmt, sstmt_dummy(Stmt.Expr(then_expr))]
+                Expr.Block(one)
+            }
+        }
+        let cond = Expr.Binary(Expr.Ident(tmp), BinOp.Ne, Expr.None)
+        let inner_if = Expr.IfExpr(cond, new_then, else_expr)
+        let outer: List<SStmt> = [sstmt_dummy(Stmt.Let(tmp, ValueType.Unknown, subject)), sstmt_dummy(Stmt.Expr(inner_if))]
+        .Ok(Expr.Block(outer))
+    }
+
+    // The `let <binding> = __tmp!` statement shared by both if-let desugars:
+    // the present value, force-unwrapped (only reached on the present branch).
+    fn iflet_bind_stmt(self, tmp: string, binding: string) -> SStmt {
+        let fu_args: List<SExpr> = [sexpr_dummy(Expr.Ident(tmp))]
+        let unwrap = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+        sstmt_dummy(Stmt.Let(binding, ValueType.Unknown, unwrap))
+    }
+
+    // Prepend the unwrap-bind to a then-block's statement list.
+    fn iflet_prepend(self, bind: SStmt, body: List<SStmt>) -> List<SStmt> {
+        mut nb: List<SStmt> = [bind]
+        mut i = 0
+        while i < body.length {
+            nb.push(body[i])
+            i = i + 1
+        }
+        nb
+    }
+
     fn parse_if_expression(self) -> Result<Expr, string> {
         self.advance()
+        // Bind-fresh `if let v = x { … } else { … }` in expression position.
+        if self.check(Tk.KwLet) { return self.parse_if_let_expression() }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let condition_opt = self.parse_expression()
