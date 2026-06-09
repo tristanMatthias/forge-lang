@@ -1,0 +1,66 @@
+// WHY: match-on-optional present-bind surface (spec Axis 10.4). `T?` is the
+// dual niche/tagged optional — it has no enum tag — so a `match` over it
+// can't go through the normal enum dispatch. One rule everywhere: `let
+// <name>` binds the present value, mirroring `if let`; `none` matches
+// absence. The parser lowers `let u ->` to the present arm `.Some(u)` and
+// `none ->` to `.None`, and a dedicated 2-way codegen reuses the same
+// present-test / unwrap the `?` and `??` operators emit. A `_` wildcard
+// covers the absent (or otherwise-unmatched) case.
+
+fn mp_pick(x: int?) -> int {
+    match x {
+        let u -> u + 100
+        none -> -1
+    }
+}
+
+fn mp_label(x: string?) -> string {
+    match x {
+        let s -> "has:" + s
+        none -> "empty"
+    }
+}
+
+fn mp_wildcard(x: int?) -> int {
+    match x {
+        let u -> u
+        _ -> 0
+    }
+}
+
+fn mp_nested(a: int?, b: int?) -> int {
+    match a {
+        let x -> match b {
+            let y -> x + y
+            none -> x
+        }
+        none -> 0
+    }
+}
+
+spec "match on optional — present-bind surface" {
+    then "let binds the present value (tagged/int repr)" {
+        mp_pick(7) == 107
+    }
+    then "none matches absence" {
+        mp_pick(none) == -1
+    }
+    then "let binds the present value (niche/str repr)" {
+        mp_label("hi") == "has:hi"
+    }
+    then "none matches absence for niche repr" {
+        mp_label(none) == "empty"
+    }
+    then "a wildcard covers the absent case" {
+        mp_wildcard(none) == 0
+    }
+    then "a wildcard still binds nothing when present matches first" {
+        mp_wildcard(5) == 5
+    }
+    then "nested optional matches bind independent values" {
+        mp_nested(3, 4) == 7
+    }
+    then "nested falls through inner none" {
+        mp_nested(3, none) == 3
+    }
+}

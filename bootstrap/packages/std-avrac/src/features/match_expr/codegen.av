@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
-use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types, vtype_is_optional, vtype_strip_optional}
+use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type, emit_optional_is_none, emit_optional_unwrap}
 use core.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
 use features.union_type.{emit_union_tag, emit_union_extract}
@@ -47,6 +47,11 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
             if vtype_is_union(emit_value_ty(r)) {
                 return emit_union_match_expr(ctx, env, r, arms)
             }
+            // Optional subject: `T?` is not an enum (no tag), so route to
+            // the present/none dispatch that reuses the optional primitives.
+            if vtype_is_optional(emit_value_ty(r)) {
+                return emit_optional_match_expr(ctx, env, r, arms)
+            }
             mut enum_name = vtype_enum_name(emit_value_ty(r))
             // When subject type is Unknown, try to infer enum type from pattern variant names.
             // This handles cases where type resolution returns Unknown for generic params
@@ -75,6 +80,93 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
             ok_emit(loaded, result_ty)
         }
     }
+}
+
+// ── Optional match ──
+// `match (x: T?) { .Some(v) -> … , .None -> … }` (and the `let v ->` / `none`
+// surface that lowers to it). `T?` has no enum tag — it's the dual
+// niche/tagged optional repr — so the normal enum path can't dispatch it.
+// This is a simple present/absent branch that reuses the same present-test
+// (`emit_optional_is_none`) and unwrap (`emit_optional_unwrap`) the `?` /
+// `??` operators emit, binding the `.Some` payload like any variant arm.
+
+/// Index of the arm whose pattern is `.Variant(vname, …)`, else the index
+/// of a wildcard arm, else -1.
+fn opt_find_arm(arms: List<MatchArm>, vname: string) -> int {
+    mut i = 0
+    mut wild = 0 - 1
+    while i < arms.length {
+        match arms[i].pattern {
+            .Variant(n, _) -> { if n == vname { return i } }
+            .Wildcard -> { if wild < 0 { wild = i } }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    wild
+}
+
+/// The single bound name of a `.Some(v)` pattern (`""` if none).
+fn opt_some_binding(pattern: Pattern) -> string {
+    match pattern {
+        .Variant(_, binds) -> { if binds.length > 0 { binds[0].name } else { "" } }
+        _ -> ""
+    }
+}
+
+/// Shared present/absent emit: branch on the optional, bind `.Some`'s
+/// payload, run each arm body and store its value into `result_slot`.
+/// Returns the result type (the first producing arm's type).
+fn emit_optional_match_core(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    let inner = vtype_strip_optional(emit_value_ty(subj))
+    let opt = emit_value_ptr(subj)
+    let is_none = emit_optional_is_none(ctx, opt)
+    let some_bb = ctx.bb("optm_some")
+    let none_bb = ctx.bb("optm_none")
+    ctx.cond_br(is_none, none_bb, some_bb)
+    mut rty = ValueType.Unknown
+    // Present.
+    ctx.position(some_bb)
+    let si = opt_find_arm(arms, "Some")
+    if si >= 0 {
+        let bind = opt_some_binding(arms[si].pattern)
+        let unwrapped = emit_optional_unwrap(ctx, inner, opt)
+        let senv = if bind != "" { ctx.bind(env, bind, unwrapped, inner) } else { env }
+        let br = ctx.emit(senv, arms[si].body.node)?
+        ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+        rty = emit_value_ty(br)
+    } else {
+        ctx.store_br_if_open(ctx.i64(0), result_slot, merge_bb)
+    }
+    // Absent.
+    ctx.position(none_bb)
+    let ni = opt_find_arm(arms, "None")
+    if ni >= 0 {
+        let br = ctx.emit(env, arms[ni].body.node)?
+        ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+        if vtype_is_unknown(rty) { rty = emit_value_ty(br) }
+    } else {
+        ctx.store_br_if_open(ctx.i64(0), result_slot, merge_bb)
+    }
+    .Ok(rty)
+}
+
+fn emit_optional_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
+    let result_slot = ctx.alloca_i64("optm_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("optm_end")
+    let rty = emit_optional_match_core(ctx, env, subj, arms, result_slot, merge_bb)?
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(result_slot, "optm_val"), rty)
+}
+
+fn emit_optional_match_stmt(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
+    let result_slot = ctx.alloca_i64("optm_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("optm_end")
+    emit_optional_match_core(ctx, env, subj, arms, result_slot, merge_bb)?
+    ctx.position(merge_bb)
+    ok_sr(ctx, env)
 }
 
 // ── Union match expression ──
@@ -313,6 +405,10 @@ export fn emit_match(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: List<
             if vtype_is_union(emit_value_ty(r)) {
                 let ur = emit_union_match_expr(ctx, env, r, arms)?
                 return ok_sr(ctx, env)
+            }
+            // Optional subject: present/none dispatch (see emit_match_expr).
+            if vtype_is_optional(emit_value_ty(r)) {
+                return emit_optional_match_stmt(ctx, env, r, arms)
             }
             let enum_name = vtype_enum_name(emit_value_ty(r))
             if enum_name == "" {
