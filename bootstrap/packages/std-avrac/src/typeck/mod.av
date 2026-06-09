@@ -1750,7 +1750,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Binary(left, op, right) -> {
             let l = check_expr(tc, left)
             let r = check_expr(l.tc, right)
-            check_binary_type(r.tc, l.ty, op, r.ty)
+            let tc2 = check_none_compare(r.tc, left, op, l.ty, right, r.ty)
+            check_binary_type(tc2, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
             let r = check_expr(tc, right)
@@ -1942,6 +1943,39 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
 /// Type-check a binary operator. Most return Bool (comparisons) or
 /// the operand's type (arithmetic); union-arg cases dispatch to
 /// the appropriate concrete branch.
+/// ifnz: `x == none` / `x != none` where `x` is a concrete NON-optional
+/// *tagged value type* (`int` / `bool` / `float` / sized ints) is
+/// always-false / always-true — `none` only inhabits an optional `T?`,
+/// and for these types `T?` is a distinct tagged `{present, value}`
+/// struct, so the comparison is unambiguously a mistake (e.g. a bind-fresh
+/// `if let v = 5` / `let v = 5 else` on a non-optional, which silently
+/// mis-branches: `0 != none` is false). Flag it via F1000 with a remedy.
+///
+/// Deliberately scoped to the tagged-repr scalars: pointer-backed types
+/// (`ptr`/`str`/struct/enum/list/…) use a null-pointer niche where `none`
+/// and the raw value share bits, and the compiler's optional inference is
+/// not yet complete for them — flagging those produces false positives on
+/// the compiler's own derive-walker code. Widen once optional inference is
+/// sound (tracked in ifnz / the bidirectional-typing work).
+fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Expr, r_ty: ValueType) -> TC {
+    if !(op is .Eq) && !(op is .Ne) { return tc }
+    let l_none = left is .None
+    let r_none = right is .None
+    if l_none == r_none { return tc }   // need exactly one `none` operand
+    let other = if l_none { r_ty } else { l_ty }
+    if vtype_is_optional(other) { return tc }   // the intended case — fine
+    let tagged_scalar = match other {
+        .Int -> true
+        .Bool -> true
+        .Float -> true
+        _ -> false
+    }
+    if !tagged_scalar { return tc }
+    let always = if op is .Eq { "false" } else { "true" }
+    let msg = "comparing a non-optional `${vtype_render_full(other)}` to `none` is always ${always} — `none` only inhabits an optional `T?`. Make the type `T?`, or drop the comparison (an `if let` / `let-else` here needs an optional subject)."
+    tc_report(tc, DiagCode.TypeMismatch, msg)
+}
+
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
     // If either operand is Float, arithmetic produces Float.
     let arith_ty = if vtype_eq(left, .Float) || vtype_eq(right, .Float) { ValueType.Float } else { ValueType.Int }
