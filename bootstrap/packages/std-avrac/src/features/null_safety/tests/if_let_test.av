@@ -1,0 +1,55 @@
+// WHY: bind-fresh `if let v = x { … } else { … }` (spec Axis 10.4) — the
+// sound, canonical unwrap. `v` is a fresh immutable binding of the present
+// value; the original is never retyped, so nothing can invalidate it (the
+// Rust `if let Some(v)` / Zig `if (x) |v|` model). It desugars in the
+// parser to `{ let __t = x; if __t != none { let v = __t!; … } else { … } }`
+// — the subject is evaluated once, force-unwrap is only reached when
+// present. Works uniformly for let / mut / param: there is no narrowed
+// mutable to invalidate, so it's the sound path `mut`s use.
+
+fn ifl_pick(x: int?) -> int {
+    if let v = x { v + 100 } else { -1 }
+}
+
+fn ifl_mut(seed: int) -> int {
+    mut x: int? = seed
+    if let v = x { v + 1 } else { 0 }
+}
+
+fn ifl_no_else(x: int?) -> int {
+    mut s = -1
+    if let v = x { s = v }
+    s
+}
+
+fn ifl_nested(a: int?, b: int?) -> int {
+    if let x = a {
+        if let y = b { x + y } else { x }
+    } else {
+        0
+    }
+}
+
+spec "if let — bind-fresh unwrap" {
+    then "binds the present value in the then-branch" {
+        ifl_pick(7) == 107
+    }
+    then "takes the else branch on none" {
+        ifl_pick(none) == -1
+    }
+    then "unwraps a mut subject soundly (the path mut narrowing uses)" {
+        ifl_mut(5) == 6
+    }
+    then "no-else form runs the body only when present" {
+        ifl_no_else(9) == 9
+    }
+    then "no-else form skips the body on none" {
+        ifl_no_else(none) == -1
+    }
+    then "nested if-let binds independent values" {
+        ifl_nested(3, 4) == 7
+    }
+    then "nested if-let falls through inner else on inner none" {
+        ifl_nested(3, none) == 3
+    }
+}
