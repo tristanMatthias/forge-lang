@@ -5,7 +5,7 @@ use features.eval.{error_result}
 use features.eval.{execute_while}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
-use typeck.{check_expr, check_stmt, tc_report}
+use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
 
 /// Resolver hook for `while`. Resolves the condition first, then
 /// the body in the post-condition scope so any names bound in the
@@ -30,7 +30,19 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `${vtype_render_full(c.ty)}`")
             } else { c.tc }
-            check_stmt(after_cond, body)
+            let guard = narrow_guard_of(cond)
+            // Fast path: no `none`-guard → check the body directly.
+            if guard.var == "" { return check_stmt(after_cond, body) }
+            // Optional flow-narrowing: in `while x != none { … }` the body
+            // only runs while `x` is present, so narrow it to `T` for the
+            // body, then reset the env so the narrowing does not leak past
+            // the loop. Only `!= none` narrows — a `while x == none` body
+            // runs while `x` is absent. (Permissive variable-narrowing;
+            // see the `tc_narrow_present` block in typeck for the
+            // soundness caveat.)
+            let baseline = after_cond.types
+            let after_body = check_stmt(tc_narrow_true_branch(after_cond, guard), body)
+            after_body with { types: baseline }
         }
         _ -> tc
     }

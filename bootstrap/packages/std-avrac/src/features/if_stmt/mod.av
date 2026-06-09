@@ -8,7 +8,7 @@ use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_erro
 use features.eval.{eval_expr, execute_stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
-use typeck.{check_expr, check_stmt, tc_er, tc_report}
+use typeck.{check_expr, check_stmt, tc_er, tc_report, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if}
 
 /// Register the `if` feature for both statement (`if cond { ... }`)
 /// and expression (`let x = if cond a else b`) positions. Wires
@@ -99,8 +99,16 @@ fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 }
 
 /// Type-check hook for `If` statements. Condition must be Bool
-/// (Int accepted for compat). Both branches are checked but no
-/// type-merging is needed since statements don't produce values.
+/// (Int accepted for compat). Applies optional flow-narrowing: an
+/// `x != none` / `x == none` guard retypes `x` from `T?` to `T`
+/// inside the proven-present branch, and — when the none-side
+/// diverges — in the continuation after the `if` (the
+/// `if x == none { return … }` idiom). Branch-local narrowing is
+/// scoped by resetting the env to the pre-narrow baseline before the
+/// else / continuation, keeping accumulated diagnostics. (Permissive
+/// variable-narrowing — see the `tc_narrow_present` block in typeck
+/// for the soundness caveat; statements produce no value, so no
+/// type-merging is needed.)
 fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .If(cond, then_branch, else_branch) -> {
@@ -108,21 +116,51 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
-            let after_then = check_stmt(after_cond, then_branch)
-            if else_branch != null {
-                return check_stmt(after_then, else_branch!)
+            let guard = narrow_guard_of(cond)
+            // Fast path: no `none`-guard (the common case) → check the
+            // branches directly, with no env reconstruction.
+            if guard.var == "" {
+                let after_then = check_stmt(after_cond, then_branch)
+                if else_branch != null { return check_stmt(after_then, else_branch!) }
+                return after_then
             }
-            after_then
+            // Narrowing path: retype the guard var per branch, dropping
+            // the branch-local narrowing (reset env to `baseline`) before
+            // the else / continuation while keeping accumulated diagnostics.
+            let baseline = after_cond.types
+            let after_then = check_stmt(tc_narrow_true_branch(after_cond, guard), then_branch)
+            let post_then = after_then with { types: baseline }
+            if else_branch != null {
+                let after_else = check_stmt(tc_narrow_false_branch(post_then, guard), else_branch!)
+                return tc_narrow_after_if(after_else with { types: baseline }, guard, then_branch, else_branch)
+            }
+            tc_narrow_after_if(post_then, guard, then_branch, else_branch)
         }
         _ -> tc
     }
 }
 
-/// Type-check hook for `IfExpr`. Both branches must agree on a
-/// type, otherwise the result is widened to a `Union<Then, Else>`
-/// so callers can disambiguate via `match`. Void branches are
-/// treated as "doesn't constrain", matching expectation that an
-/// expression-position if can degrade to an effect-only expression.
+/// Result type of an if-expression: a `Union<Then, Else>` when both
+/// branches have concrete, differing types so callers can disambiguate
+/// via `match`; otherwise the then-type (`Void`/`Unknown` branches
+/// don't constrain — an expression-position `if` may degrade to an
+/// effect-only expression).
+fn if_expr_result_type(then_ty: ValueType, else_ty: ValueType) -> ValueType {
+    if !vtype_eq(then_ty, else_ty) && !vtype_is_unknown(then_ty) && !vtype_is_unknown(else_ty) && !vtype_eq(then_ty, .Void) && !vtype_eq(else_ty, .Void) {
+        mut members: List<ValueType> = []
+        members.push(then_ty)
+        members.push(else_ty)
+        return ValueType.Union(members)
+    }
+    then_ty
+}
+
+/// Type-check hook for `IfExpr`. The result type is computed by
+/// `if_expr_result_type` (a `Union` when the branches concretely
+/// differ). Applies the same optional flow-narrowing as `if_check_stmt`
+/// per arm, minus the continuation (an if-expr has none); the env is
+/// reset to the pre-narrow baseline after each arm so narrowing never
+/// leaks out of the branch it was proven in.
 fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IfExpr(cond, then_branch, else_branch) -> {
@@ -130,17 +168,20 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
-            let t = check_expr(after_cond, then_branch)
-            let e = check_expr(t.tc, else_branch)
-            if !vtype_eq(t.ty, e.ty) && !vtype_is_unknown(t.ty) && !vtype_is_unknown(e.ty) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
-                // Both branches have concrete different types — result is a union
-                mut union_members: List<ValueType> = []
-                union_members.push(t.ty)
-                union_members.push(e.ty)
-                let union_ty = ValueType.Union(union_members)
-                return tc_er(e.tc, union_ty)
+            let guard = narrow_guard_of(cond)
+            // Fast path: no `none`-guard → check both arms directly, no
+            // env reconstruction.
+            if guard.var == "" {
+                let t = check_expr(after_cond, then_branch)
+                let e = check_expr(t.tc, else_branch)
+                return tc_er(e.tc, if_expr_result_type(t.ty, e.ty))
             }
-            tc_er(e.tc, t.ty)
+            // Narrowing path: narrow the present arm, resetting the env
+            // to `baseline` after each so narrowing stays branch-local.
+            let baseline = after_cond.types
+            let t = check_expr(tc_narrow_true_branch(after_cond, guard), then_branch)
+            let e = check_expr(tc_narrow_false_branch(t.tc with { types: baseline }, guard), else_branch)
+            tc_er(e.tc with { types: baseline }, if_expr_result_type(t.ty, e.ty))
         }
         _ -> tc_er(tc, .Unknown)
     }
