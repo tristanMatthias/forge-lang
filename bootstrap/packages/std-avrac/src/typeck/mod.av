@@ -3071,11 +3071,14 @@ fn is_pascal_case(name: string) -> bool {
 }
 
 /// True iff `name` is snake_case: all lowercase / digits /
-/// underscores. Leading `_` allowed for private bindings.
+/// underscores. Leading `_` allowed for private bindings; a leading `$`
+/// marks a compiler-generated temp (parser desugar gensym), which the user
+/// never wrote, so the naming convention does not apply.
 fn is_snake_case(name: string) -> bool {
     if name.length == 0 { return true }
     let first = name[0]
     if first == "_" { return true }
+    if first == "$" { return true }
     if is_upper(first) { return false }
     mut i = 0
     while i < name.length {

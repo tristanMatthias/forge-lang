@@ -429,12 +429,16 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
 }
 
 impl Parser {
-    /// Mint a hygienic, guaranteed-unique temp name `__<tag>_<n>` for a
-    /// parser desugar (`if let` etc.). The monotonic counter makes it
-    /// collision-proof even under macro replication.
+    /// Mint a hygienic, collision-proof temp name `$<tag>$<n>` for a parser
+    /// desugar (`if let` / `let-else` etc.). The `$` is the key: the lexer
+    /// only admits letters / digits / `_` in identifiers, so user source can
+    /// NEVER produce a `$`-bearing name — the temp cannot shadow or be
+    /// shadowed by a user binding (e.g. a variable literally named
+    /// `__iflet_1`). The monotonic counter keeps temps distinct from each
+    /// other under nesting / macro replication.
     fn fresh(self, tag: string) -> string {
         self.gensym_seq = self.gensym_seq + 1
-        "__" + tag + "_" + string(self.gensym_seq)
+        "$" + tag + "$" + string(self.gensym_seq)
     }
 
     fn parse_file_expression(self) -> ParseResult {

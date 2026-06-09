@@ -47,6 +47,14 @@ fn ifle_in_expr(x: int?) -> int {
     100 + (if let v = x { v } else { 0 })
 }
 
+// Gensym hygiene: the desugar's temp uses a `$`-prefixed name the lexer can
+// never produce, so a user binding that mimics the old `__iflet_N` scheme
+// cannot shadow or be shadowed by it. (Before the fix this crashed.)
+fn ifl_hygiene(x: int?) -> int {
+    let __iflet_1 = 999
+    if let v = x { v + __iflet_1 } else { __iflet_1 }
+}
+
 spec "if let — bind-fresh unwrap" {
     then "binds the present value in the then-branch" {
         ifl_pick(7) == 107
@@ -83,5 +91,8 @@ spec "if let — bind-fresh unwrap" {
     }
     then "expression position: nested inside a larger expression" {
         ifle_in_expr(5) == 105 && ifle_in_expr(none) == 100
+    }
+    then "gensym hygiene: a user `__iflet_1` binding does not collide" {
+        ifl_hygiene(5) == 1004 && ifl_hygiene(none) == 999
     }
 }
