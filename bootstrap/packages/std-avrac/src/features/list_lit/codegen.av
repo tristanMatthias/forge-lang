@@ -114,7 +114,11 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
         "length" or "len" -> return ok_emit(ctx.array_len(list_val), .Int)
         "push" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            ctx.array_push(list_val, arg_r.value)
+            // Box a present scalar into the list's `T?` element type — a raw
+            // `xs.push(5)` into a `List<int?>` must store a non-null box, not a
+            // bare 0/value that a later unwrap would deref as a box pointer.
+            let pushed = emit_optional_coerce(ctx, arg_r, vtype_list_elem(list_ty))
+            ctx.array_push(list_val, pushed.value)
             return ok_emit(list_val, list_ty)
         }
         "pop" -> {
@@ -126,7 +130,7 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             let elem_ty = vtype_list_elem(list_ty)
             return ok_emit(ctx.array_get(list_val, arg_r.value), elem_ty)
         }
-        "set" -> return emit_list_set(ctx, env, list_val, args)
+        "set" -> return emit_list_set(ctx, env, list_val, list_ty, args)
         "map" -> {
             let elem_ty = vtype_list_elem(list_ty)
             mut map_param_types: List<ValueType> = []
@@ -185,7 +189,9 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             if args.length < 2 { return err_emit("list.insert expects 2 arguments: index and value") }
             let idx_r = ctx.emit(env, args[0].node)?
             let val_r = ctx.emit(env, args[1].node)?
-            ctx.call("avra_array_insert", [list_val, idx_r.value, val_r.value])
+            // Box a present scalar into the list's `T?` element type (see push).
+            let ins = emit_optional_coerce(ctx, val_r, elem_ty)
+            ctx.call("avra_array_insert", [list_val, idx_r.value, ins.value])
             return ok_emit(list_val, list_ty)
         }
         // ryvy: `xs.enumerate()` -> List<(int, T)>. Pairs each element
@@ -221,11 +227,13 @@ fn emit_list_slice(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueTyp
 }
 
 /// Codegen for `list.set(idx, val)`. Emits both args and forwards
-/// to `avra_array_set`. Returns the list (so the call chains).
-fn emit_list_set(ctx: Ctx, env: List<VarBinding>, list: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+/// to `avra_array_set`. Returns the list (so the call chains). The value is
+/// boxed into the list's `T?` element type (see push) before storing.
+fn emit_list_set(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueType, args: List<SExpr>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("list.set expects 2 arguments: index and value") }
     let idx_r = ctx.emit(env, args[0].node)?
     let val_r = ctx.emit(env, args[1].node)?
-    ctx.call("avra_array_set", [list, idx_r.value, val_r.value])
-    ok_emit(list, .List(.Unknown))
+    let stored = emit_optional_coerce(ctx, val_r, vtype_list_elem(list_ty))
+    ctx.call("avra_array_set", [list, idx_r.value, stored.value])
+    ok_emit(list, list_ty)
 }

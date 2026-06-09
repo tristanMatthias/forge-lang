@@ -29,6 +29,19 @@ fn annotated_sum() -> int {
     sum_present(xs)
 }
 
+// Mutating-method path: `.push` / `.insert` / `.set` of a raw scalar into a
+// `List<T?>` must box it (the same boundary the literal/arg paths cover).
+fn built_sum() -> int {
+    mut xs: List<int?> = []
+    xs.push(1)
+    xs.push(none)
+    xs.push(2)
+    xs.insert(0, 10)
+    xs.set(1, 100)     // overwrite the 1 with 100
+    // xs == [10, 100, none, 2]
+    sum_present(xs)
+}
+
 // Present-zero collision probes: a boxed `Some(0)` / `Some(false)` /
 // `Some(0.0)` must stay DISTINCT from `none` (the null pointer). Before the
 // fix, a present zero in a `List<T?>` aliased `none` (both read as 0).
@@ -92,5 +105,9 @@ spec "List<T?> boxes present elements in every construction context" {
     then "annotated [0.0]: a present float zero is NOT none" {
         let g: List<float?> = [0.0]
         is_present_f(g, 0) == true
+    }
+    then "push / insert / set box a raw scalar into a List<T?>" {
+        // [10, 100, none, 2] -> 10 + 100 + 2
+        built_sum() == 112
     }
 }
