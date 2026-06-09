@@ -58,6 +58,20 @@ fn mp_literal(x: int?) -> string {
     }
 }
 
+// `{T, none}` arm mix returning `T?`: the present arm must be BOXED and the
+// `none` arm must stay the null pointer (the same canonicalisation a value
+// `if`/`else` applies). Without it, `none` (a raw 0) gets re-boxed to
+// `Some(0)` at the return and reads as present downstream.
+fn mp_to_optional(x: int?) -> int? {
+    match x {
+        let v -> v + 1
+        none -> none
+    }
+}
+fn mp_roundtrip(x: int?) -> int {
+    if let v = mp_to_optional(x) { v } else { -1 }
+}
+
 spec "match on optional — present-bind surface" {
     then "let binds the present value (tagged/int repr)" {
         mp_pick(7) == 107
@@ -100,5 +114,11 @@ spec "match on optional — present-bind surface" {
     }
     then "none still matches absence alongside literal arms" {
         mp_literal(none) == "absent"
+    }
+    then "a `{T, none}` match returning T? boxes present and keeps none null" {
+        mp_roundtrip(5) == 6
+    }
+    then "the none arm of a T?-returning match stays absent (not Some(0))" {
+        mp_roundtrip(none) == -1
     }
 }
