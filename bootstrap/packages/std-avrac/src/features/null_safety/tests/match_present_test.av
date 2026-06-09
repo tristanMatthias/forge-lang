@@ -38,6 +38,26 @@ fn mp_nested(a: int?, b: int?) -> int {
     }
 }
 
+// A guard on a present-bind arm must be honoured — a false guard falls
+// through to the next arm, exactly as in an ordinary `match`.
+fn mp_guard(x: int?) -> int {
+    match x {
+        let v if v > 10 -> 1
+        let v -> 2
+        none -> 3
+    }
+}
+
+// A literal pattern matches the PRESENT value; `let v` then catches the
+// rest of the present cases; `none` the absent case.
+fn mp_literal(x: int?) -> string {
+    match x {
+        5 -> "five"
+        let v -> "other:" + string(v)
+        none -> "absent"
+    }
+}
+
 spec "match on optional — present-bind surface" {
     then "let binds the present value (tagged/int repr)" {
         mp_pick(7) == 107
@@ -62,5 +82,23 @@ spec "match on optional — present-bind surface" {
     }
     then "nested falls through inner none" {
         mp_nested(3, none) == 3
+    }
+    then "a guard on a present-bind arm is honoured (true)" {
+        mp_guard(20) == 1
+    }
+    then "a false present-arm guard falls through to the next arm" {
+        mp_guard(5) == 2
+    }
+    then "a present-arm guard does not affect the none arm" {
+        mp_guard(none) == 3
+    }
+    then "a literal pattern matches the present value" {
+        mp_literal(5) == "five"
+    }
+    then "a present-bind arm after a literal catches the rest" {
+        mp_literal(7) == "other:7"
+    }
+    then "none still matches absence alongside literal arms" {
+        mp_literal(none) == "absent"
     }
 }

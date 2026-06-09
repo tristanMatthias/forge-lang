@@ -29,9 +29,25 @@ match x {            // x : T?
 }
 ```
 
-A `_` wildcard covers the absent (or otherwise-unmatched) case. The
-dedicated 2-way codegen reuses the same present-test and unwrap the `?`
-and `??` operators emit, so it stays consistent with the rest of the
+A `_` wildcard covers the absent (or otherwise-unmatched) case. Arms are
+walked in order within each branch, so **guards** and **literal patterns**
+over the present value work exactly as in an ordinary `match`:
+
+```
+match x {            // x : int?
+    5      -> "five"        // literal: matches the present value 5
+    let v if v > 0 -> "pos" // present-bind + guard
+    let v  -> "other"       // present-bind catch-all
+    none   -> "absent"
+}
+```
+
+Structural patterns over the *inner* value (inner-enum variants, nested
+patterns, type patterns) are not supported directly on the optional —
+unwrap first (`if let v = x { match v { … } }`); doing so on the optional
+raises a clear error rather than silently dropping the arm. The dedicated
+present/absent codegen reuses the same present-test and unwrap the `?` and
+`??` operators emit, so it stays consistent with the rest of the
 null-safety surface.
 
 The arm body is parsed as an expression, but the parser temporarily

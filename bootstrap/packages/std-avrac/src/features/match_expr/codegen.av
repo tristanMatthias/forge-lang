@@ -83,30 +83,17 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
 }
 
 // ── Optional match ──
-// `match (x: T?) { .Some(v) -> … , .None -> … }` (and the `let v ->` / `none`
-// surface that lowers to it). `T?` has no enum tag — it's the dual
-// niche/tagged optional repr — so the normal enum path can't dispatch it.
-// This is a simple present/absent branch that reuses the same present-test
-// (`emit_optional_is_none`) and unwrap (`emit_optional_unwrap`) the `?` /
-// `??` operators emit, binding the `.Some` payload like any variant arm.
+// `match (x: T?) { let v -> … , none -> … }` — the parser lowers the
+// present-bind `let v` to `.Some(v)` and `none` to `.None`. `T?` has no
+// enum tag (it's the dual niche/tagged optional repr), so the normal enum
+// path can't dispatch it. We branch on present/absent — reusing the same
+// present-test (`emit_optional_is_none`) and unwrap (`emit_optional_unwrap`)
+// the `?` / `??` operators emit — then walk the arms IN ORDER within each
+// branch, so guards and literal patterns over the present value behave
+// exactly as they do in an ordinary primitive `match`.
 
-/// Index of the arm whose pattern is `.Variant(vname, …)`, else the index
-/// of a wildcard arm, else -1.
-fn opt_find_arm(arms: List<MatchArm>, vname: string) -> int {
-    mut i = 0
-    mut wild = 0 - 1
-    while i < arms.length {
-        match arms[i].pattern {
-            .Variant(n, _) -> { if n == vname { return i } }
-            .Wildcard -> { if wild < 0 { wild = i } }
-            _ -> {}
-        }
-        i = i + 1
-    }
-    wild
-}
-
-/// The single bound name of a `.Some(v)` pattern (`""` if none).
+/// The single bound name of a present-bind arm (`let v` → `.Some(v)`);
+/// `""` when the arm binds nothing.
 fn opt_some_binding(pattern: Pattern) -> string {
     match pattern {
         .Variant(_, binds) -> { if binds.length > 0 { binds[0].name } else { "" } }
@@ -114,9 +101,131 @@ fn opt_some_binding(pattern: Pattern) -> string {
     }
 }
 
-/// Shared present/absent emit: branch on the optional, bind `.Some`'s
-/// payload, run each arm body and store its value into `result_slot`.
-/// Returns the result type (the first producing arm's type).
+/// True for a present-bind arm `let v` (lowered to `.Variant("Some", …)`).
+fn opt_is_some_arm(pattern: Pattern) -> bool {
+    match pattern {
+        .Variant(n, _) -> n == "Some"
+        _ -> false
+    }
+}
+
+/// True for an absence arm `none` (lowered to `.Variant("None", …)`).
+fn opt_is_none_arm(pattern: Pattern) -> bool {
+    match pattern {
+        .Variant(n, _) -> n == "None"
+        _ -> false
+    }
+}
+
+/// Present-branch arm walk: the optional is known present and unwrapped to
+/// `v: inner`. Arms run IN ORDER — `let v` binds the value and is a
+/// (guard-aware) catch-all; literal patterns match the present value; `_`
+/// is a catch-all; `none` arms belong to the absent branch and are skipped.
+/// Structural patterns over the inner value (inner-enum variants, nested,
+/// type patterns) are not supported here — unwrap first with `if let` — and
+/// raise a clear error rather than silently dropping the arm. On no match
+/// (no catch-all), traps like any non-exhaustive primitive match.
+fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: ValueType, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    let subj = EmitValue { value: v, ty: inner }
+    mut first_ty: ValueType = ValueType.Unknown
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let p = arm.pattern
+        if !opt_is_none_arm(p) {
+            let body_bb = ctx.bb("optm_some_body")
+            let next_bb = ctx.bb("optm_some_next")
+            mut arm_env = env
+            mut is_catch_all = false
+            if opt_is_some_arm(p) {
+                let name = opt_some_binding(p)
+                arm_env = if name != "" { ctx.bind(env, name, v, inner) } else { env }
+                if arm.guard != null {
+                    let gr = ctx.emit(arm_env, arm.guard!.node)?
+                    ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_sg"), body_bb, next_bb)
+                } else {
+                    ctx.br(body_bb)
+                    is_catch_all = true
+                }
+            } else if p is .Wildcard {
+                if arm.guard != null {
+                    let gr = ctx.emit(env, arm.guard!.node)?
+                    ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_swg"), body_bb, next_bb)
+                } else {
+                    ctx.br(body_bb)
+                    is_catch_all = true
+                }
+            } else if is_literal_pattern(p) {
+                let cmp = emit_literal_cmp(ctx, subj, p)
+                if arm.guard != null {
+                    let lit_bb = ctx.bb("optm_lit")
+                    ctx.cond_br(cmp, lit_bb, next_bb)
+                    ctx.position(lit_bb)
+                    let gr = ctx.emit(env, arm.guard!.node)?
+                    ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_lg"), body_bb, next_bb)
+                } else {
+                    ctx.cond_br(cmp, body_bb, next_bb)
+                }
+            } else {
+                return err_match_ty("matching the inner value of an optional with this pattern isn't supported — unwrap first: `if let v = x { match v { … } }`. Optional `match` supports `let <name>` (present), `none` (absent), `_`, and literal patterns.")
+            }
+            ctx.position(body_bb)
+            let br = ctx.emit(arm_env, arm.body.node)?
+            ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+            if vtype_is_unknown(first_ty) { first_ty = emit_value_ty(br) }
+            ctx.position(next_bb)
+            if is_catch_all {
+                // Unguarded catch-all: the trailing block is unreachable.
+                ctx.br_if_open(merge_bb)
+                return ok_match_ty(first_ty)
+            }
+        }
+        i = i + 1
+    }
+    // Present value matched no arm — non-exhaustive (exhaustiveness is the
+    // typechecker's job, xm2g.5). Trap like a primitive match.
+    ctx.match_trap(ctx.i64(0 - 1))
+    ok_match_ty(first_ty)
+}
+
+/// Absent-branch arm walk: the optional is known `none`. Only `none` and
+/// `_` arms apply (guard-aware, in order); everything else is skipped. On
+/// no match, traps like any non-exhaustive match.
+fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    mut first_ty: ValueType = ValueType.Unknown
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let p = arm.pattern
+        if opt_is_none_arm(p) || (p is .Wildcard) {
+            let body_bb = ctx.bb("optm_none_body")
+            let next_bb = ctx.bb("optm_none_next")
+            mut is_catch_all = false
+            if arm.guard != null {
+                let gr = ctx.emit(env, arm.guard!.node)?
+                ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_ng"), body_bb, next_bb)
+            } else {
+                ctx.br(body_bb)
+                is_catch_all = true
+            }
+            ctx.position(body_bb)
+            let br = ctx.emit(env, arm.body.node)?
+            ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+            if vtype_is_unknown(first_ty) { first_ty = emit_value_ty(br) }
+            ctx.position(next_bb)
+            if is_catch_all {
+                ctx.br_if_open(merge_bb)
+                return ok_match_ty(first_ty)
+            }
+        }
+        i = i + 1
+    }
+    ctx.match_trap(ctx.i64(0 - 1))
+    ok_match_ty(first_ty)
+}
+
+/// Present/absent dispatch: branch on the optional, then walk the arms in
+/// each branch. Returns the result type (a producing arm's body type).
 fn emit_optional_match_core(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
     let inner = vtype_strip_optional(emit_value_ty(subj))
     let opt = emit_value_ptr(subj)
@@ -124,31 +233,12 @@ fn emit_optional_match_core(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
     let some_bb = ctx.bb("optm_some")
     let none_bb = ctx.bb("optm_none")
     ctx.cond_br(is_none, none_bb, some_bb)
-    mut rty = ValueType.Unknown
-    // Present.
     ctx.position(some_bb)
-    let si = opt_find_arm(arms, "Some")
-    if si >= 0 {
-        let bind = opt_some_binding(arms[si].pattern)
-        let unwrapped = emit_optional_unwrap(ctx, inner, opt)
-        let senv = if bind != "" { ctx.bind(env, bind, unwrapped, inner) } else { env }
-        let br = ctx.emit(senv, arms[si].body.node)?
-        ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
-        rty = emit_value_ty(br)
-    } else {
-        ctx.store_br_if_open(ctx.i64(0), result_slot, merge_bb)
-    }
-    // Absent.
+    let v = emit_optional_unwrap(ctx, inner, opt)
+    let some_ty = emit_optional_some_arms(ctx, env, v, inner, arms, result_slot, merge_bb)?
     ctx.position(none_bb)
-    let ni = opt_find_arm(arms, "None")
-    if ni >= 0 {
-        let br = ctx.emit(env, arms[ni].body.node)?
-        ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
-        if vtype_is_unknown(rty) { rty = emit_value_ty(br) }
-    } else {
-        ctx.store_br_if_open(ctx.i64(0), result_slot, merge_bb)
-    }
-    .Ok(rty)
+    let none_ty = emit_optional_none_arms(ctx, env, arms, result_slot, merge_bb)?
+    .Ok(if !vtype_is_unknown(some_ty) { some_ty } else { none_ty })
 }
 
 fn emit_optional_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
