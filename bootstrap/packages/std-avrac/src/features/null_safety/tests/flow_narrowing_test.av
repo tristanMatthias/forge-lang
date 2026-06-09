@@ -177,15 +177,16 @@ spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
         !out.contains("F1202")
     }
 
-    then "narrowing is visible inside a `match` arm body within the guarded scope" {
-        let out = fn_check_out("/tmp/avra_narrow_match.av",
-            "fn use_it(x: int?, n: int) -> int {\n" +
+    then "narrowing applies to a `?` used as a sub-expression, not only a let-initializer" {
+        // `x?` inside arithmetic is a valid two-sided oracle. (A `match`
+        // arm would not be: `?`-on-optional inside a match arm isn't
+        // F1202-gated today — tracked in ic9m — so it can't distinguish
+        // narrowed from un-narrowed.)
+        let out = fn_check_out("/tmp/avra_narrow_subexpr.av",
+            "fn use_it(x: int?) -> int {\n" +
             "    if x != none {\n" +
-            "        let r = match n {\n" +
-            "            0 -> x?\n" +
-            "            _ -> x?\n" +
-            "        }\n" +
-            "        return r\n" +
+            "        let v = x? + 1\n" +
+            "        return v\n" +
             "    }\n" +
             "    0\n" +
             "}\n" +
@@ -204,6 +205,38 @@ spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
             "    }\n" +
             "    let v = x?\n" +
             "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "the guard is recognised with `none` on the left (`none != x`), not just on the right" {
+        // Exercises the symmetric operand-order branch of narrow_guard_of.
+        let out = fn_check_out("/tmp/avra_narrow_sym.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if none != x {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "continuation narrows when the none-side diverges via `continue`" {
+        // Exercises the `.Continue` divergence arm (distinct from `break`
+        // and `return`).
+        let out = fn_check_out("/tmp/avra_narrow_continue.av",
+            "fn use_it(x: int?, n: int) -> int {\n" +
+            "    mut i = 0\n" +
+            "    while i < n {\n" +
+            "        i = i + 1\n" +
+            "        if x == none { continue }\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
             "}\n" +
             "fn main() -> int { 0 }\n")
         !out.contains("F1202")
