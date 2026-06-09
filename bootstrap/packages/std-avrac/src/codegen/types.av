@@ -1333,6 +1333,11 @@ impl Ctx {
             }
             .Enum(name, args, _) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args), type_registry_id_for(self.type_reg, name))
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
+            // Resolve the inner of a `T?` too — otherwise a local `let c: Color? = …`
+            // keeps an unresolved `.Struct("Color")` inner (the parser can't tell
+            // enum from struct), and unwrapping it (`c!` / `if let`) yields a value
+            // the enum `match` can't dispatch (F9999). Mirrors List/Union/FnTyped.
+            .Optional(inner) -> ValueType.Optional(self.resolve_codegen_vtype(inner))
             .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
             .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))
             _ -> vt
