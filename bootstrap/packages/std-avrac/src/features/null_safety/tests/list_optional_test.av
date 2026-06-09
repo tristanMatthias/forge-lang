@@ -29,6 +29,22 @@ fn annotated_sum() -> int {
     sum_present(xs)
 }
 
+// Present-zero collision probes: a boxed `Some(0)` / `Some(false)` /
+// `Some(0.0)` must stay DISTINCT from `none` (the null pointer). Before the
+// fix, a present zero in a `List<T?>` aliased `none` (both read as 0).
+fn is_present_i(xs: List<int?>, idx: int) -> bool {
+    let e = xs[idx]
+    if let v = e { true } else { false }
+}
+fn is_present_b(xs: List<bool?>, idx: int) -> bool {
+    let e = xs[idx]
+    if let v = e { true } else { false }
+}
+fn is_present_f(xs: List<float?>, idx: int) -> bool {
+    let e = xs[idx]
+    if let v = e { true } else { false }
+}
+
 spec "List<T?> boxes present elements in every construction context" {
     then "none-bearing literal arg: present elements unwrap, none is skipped" {
         // [1, 2, none, 4] -> 1 + 2 + 4
@@ -58,5 +74,23 @@ spec "List<T?> boxes present elements in every construction context" {
             total = total + v
         }
         total == 3
+    }
+    // The Some(0)/none collision (the core uyao repro): a present zero must
+    // box to a non-null cell, never alias `none`.
+    then "annotated [0]: a present int zero is NOT none" {
+        let a: List<int?> = [0]
+        is_present_i(a, 0) == true
+    }
+    then "[0, none]: present zero present, the none element absent" {
+        let c: List<int?> = [0, none]
+        is_present_i(c, 0) == true && is_present_i(c, 1) == false
+    }
+    then "annotated [false]: a present bool false is NOT none" {
+        let b: List<bool?> = [false]
+        is_present_b(b, 0) == true
+    }
+    then "annotated [0.0]: a present float zero is NOT none" {
+        let g: List<float?> = [0.0]
+        is_present_f(g, 0) == true
     }
 }
