@@ -62,6 +62,25 @@ spec "let-else — bind-fresh guard" {
     }
 }
 
+spec "let-else — a non-diverging else is rejected (F1203)" {
+    then "`let v = x else { 0 }` (no divergence) reports F1203" {
+        let f = "/tmp/avra_letelse_f1203.av"
+        write_fixture(f,
+            "fn u(x: int?) -> int { let v = x else { 0 }\n v }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        out.contains("F1203")
+    }
+    then "a diverging else (`return`) does NOT report F1203" {
+        let f = "/tmp/avra_letelse_ok.av"
+        write_fixture(f,
+            "fn u(x: int?) -> int { let v = x else { return -1 }\n v }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${f}' 2>&1 || true")
+        !out.contains("F1203")
+    }
+}
+
 spec "ifnz — non-optional `none` comparison is rejected" {
     then "`if let v = 5` (non-optional int) is F1000" {
         let f = "/tmp/avra_ifnz_iflet.av"
