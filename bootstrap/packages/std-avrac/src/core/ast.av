@@ -1644,11 +1644,22 @@ export fn stmt_diverges(stmt: Stmt) -> bool {
     }
 }
 
-/// True when an expression's evaluation always diverges (e.g. a
-/// `Block` ending in `return`).
+/// True when an expression's evaluation always diverges: a `Block`
+/// ending in a divergent statement, or the never-returning `panic`
+/// builtin (the canonical divergent expression — the other divergence
+/// forms `return` / `break` / `continue` are statements).
 export fn expr_diverges(body: Expr) -> bool {
     match body {
         .Block(stmts) -> stmts_diverges(stmts)
+        .Call(callee, _) -> expr_is_panic_callee(callee)
+        _ -> false
+    }
+}
+
+/// True when a call target is the never-returning `panic` builtin.
+fn expr_is_panic_callee(callee: Expr) -> bool {
+    match callee {
+        .Ident(name) -> name == "panic"
         _ -> false
     }
 }

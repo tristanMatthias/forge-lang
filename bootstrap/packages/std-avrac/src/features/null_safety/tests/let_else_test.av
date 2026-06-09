@@ -24,6 +24,13 @@ fn le_break(xs: List<int?>) -> int {
     total
 }
 
+// `panic(...)` is a divergence form (the F1203 help text promises it) — the
+// else must be accepted, not rejected.
+fn le_panic(x: int?) -> int {
+    let v = x else { panic("absent") }
+    v + 1
+}
+
 spec "let-else — bind-fresh guard" {
     then "binds the present value for the continuation" {
         le_pick(7) == 107
@@ -34,6 +41,9 @@ spec "let-else — bind-fresh guard" {
     then "else can break out of a loop" {
         // [1, 2, none, 4] -> 1 + 2, then break
         le_break([1, 2, none, 4]) == 3
+    }
+    then "a `panic` else is accepted (divergence) and runs the body when present" {
+        le_panic(6) == 7
     }
 }
 
