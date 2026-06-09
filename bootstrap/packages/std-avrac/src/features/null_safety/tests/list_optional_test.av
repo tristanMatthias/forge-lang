@@ -88,8 +88,8 @@ spec "List<T?> boxes present elements in every construction context" {
         }
         total == 3
     }
-    // The Some(0)/none collision (the core uyao repro): a present zero must
-    // box to a non-null cell, never alias `none`.
+    // The Some(0)/none collision: a present zero must box to a non-null
+    // cell, never alias `none` (which is the null pointer).
     then "annotated [0]: a present int zero is NOT none" {
         let a: List<int?> = [0]
         is_present_i(a, 0) == true

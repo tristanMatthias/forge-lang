@@ -182,8 +182,9 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
         }
         i = i + 1
     }
-    // Present value matched no arm — non-exhaustive (exhaustiveness is the
-    // typechecker's job, xm2g.5). Trap like a primitive match.
+    // Present value matched no arm — non-exhaustive. Exhaustiveness is the
+    // typechecker's job (it rejects this before codegen); trap here, as a
+    // primitive match does, in case codegen is reached without that gate.
     ctx.match_trap(ctx.i64(0 - 1))
     ok_match_ty(first_ty)
 }
