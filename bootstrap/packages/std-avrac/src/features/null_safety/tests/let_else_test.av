@@ -31,6 +31,15 @@ fn le_panic(x: int?) -> int {
     v + 1
 }
 
+// `mut v = x else { … }` binds a reassignable present value (Rust's
+// `let mut … else`). The fresh binding stays sound — nothing can invalidate
+// an already-unwrapped value.
+fn le_mut(x: int?) -> int {
+    mut v = x else { return -1 }
+    v = v + 10
+    v
+}
+
 spec "let-else — bind-fresh guard" {
     then "binds the present value for the continuation" {
         le_pick(7) == 107
@@ -44,6 +53,12 @@ spec "let-else — bind-fresh guard" {
     }
     then "a `panic` else is accepted (divergence) and runs the body when present" {
         le_panic(6) == 7
+    }
+    then "`mut v = x else` binds a reassignable present value" {
+        le_mut(5) == 15
+    }
+    then "`mut v = x else` takes the diverging else on none" {
+        le_mut(none) == -1
     }
 }
 
