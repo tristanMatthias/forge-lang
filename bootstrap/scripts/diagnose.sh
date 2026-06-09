@@ -33,24 +33,60 @@ CLI_SRC_DIR="$BOOTSTRAP_DIR/packages/cli/src"
 LIB_SRC_DIR="$BOOTSTRAP_DIR/packages/std-avrac/src"
 SRC_DIR="$CLI_SRC_DIR"
 
-# Platform-portable LLVM discovery. On macOS the Homebrew prefix is the
-# default; on Linux (or any box lacking that path) fall back to whatever
-# `llvm-config` reports so the bootstrap builds without manual env setup.
+# Pinned LLVM major. The compiler emits LLVM 19+ IR (`getelementptr inbounds
+# nuw …`), so the toolchain must be >= 19; LLVM 21's -O2 miscompiles certain
+# ARM64 functions — so 20 exactly. Kept in sync with scripts/bootstrap.sh.
+LLVM_MAJOR=20
+
+# Major version an `llvm-config` reports (e.g. "20"), or empty on failure.
+_llvm_major_of() { "$1" --version 2>/dev/null | cut -d. -f1; }
+
+# Echo a prefix whose toolchain reports the pinned major, or empty on miss.
+# Mirrors scripts/bootstrap.sh's find_llvm_prefix so `make` resolves the right
+# LLVM on Linux WITHOUT a manual LLVM_PREFIX export — otherwise the unversioned
+# `llvm-config`/`llc` (often llvm-18: runtime-only, no headers; rejects nuw GEP)
+# is picked and a cold build fails (missing llvm-c/Core.h, or llc "expected type").
+_find_llvm20_prefix() {
+  for cfg in "llvm-config-$LLVM_MAJOR" "llvm-config$LLVM_MAJOR"; do
+    if command -v "$cfg" >/dev/null 2>&1; then "$cfg" --prefix; return; fi
+  done
+  for pfx in \
+    "/usr/lib/llvm-$LLVM_MAJOR" "/usr/lib64/llvm$LLVM_MAJOR" \
+    "/usr/local/llvm-$LLVM_MAJOR" "/opt/llvm-$LLVM_MAJOR" \
+    "/opt/homebrew/opt/llvm@$LLVM_MAJOR" "/usr/local/opt/llvm@$LLVM_MAJOR"; do
+    if [ -x "$pfx/bin/llvm-config" ] && [ "$(_llvm_major_of "$pfx/bin/llvm-config")" = "$LLVM_MAJOR" ]; then
+      echo "$pfx"; return
+    fi
+  done
+}
+_llvm20_prefix="$(_find_llvm20_prefix)"
+
+# Platform-portable LLVM discovery (headers + libLLVM). On macOS the Homebrew
+# prefix is the default; otherwise prefer a pinned-major install, then fall
+# back to whatever `llvm-config` reports so the bootstrap builds without manual
+# env setup.
 _default_llvm_prefix="/opt/homebrew/opt/llvm"
-if [ ! -d "$_default_llvm_prefix" ] && command -v llvm-config >/dev/null 2>&1; then
-  _default_llvm_prefix="$(llvm-config --prefix)"
+if [ ! -d "$_default_llvm_prefix" ]; then
+  if [ -n "$_llvm20_prefix" ]; then
+    _default_llvm_prefix="$_llvm20_prefix"
+  elif command -v llvm-config >/dev/null 2>&1; then
+    _default_llvm_prefix="$(llvm-config --prefix)"
+  fi
 fi
 LLVM_PREFIX="${LLVM_PREFIX:-$_default_llvm_prefix}"
 LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
 
-# Use LLVM 20's llc for code generation. LLVM 21's -O2 miscompiles
-# certain functions on ARM64 (uses wrong register for parameters).
-# The runtime still links against the default LLVM's libLLVM.
-# Prefer the pinned LLVM 20 llc; fall back to the toolchain llc beside
-# LLVM_PREFIX, then to whatever `llc` is on PATH.
+# Use LLVM 20's llc for code generation (see LLVM_MAJOR above). The runtime
+# still links against the default LLVM's libLLVM. Prefer the macOS pinned
+# Cellar llc, then a probed pinned-major toolchain, then a version-suffixed
+# `llc-20` on PATH, then the llc beside LLVM_PREFIX, then bare `llc`.
 LLC_PREFIX="${LLC_PREFIX:-/opt/homebrew/Cellar/llvm/20.1.5}"
 if [ -x "$LLC_PREFIX/bin/llc" ]; then
   LLC="${LLC:-$LLC_PREFIX/bin/llc}"
+elif [ -n "$_llvm20_prefix" ] && [ -x "$_llvm20_prefix/bin/llc" ]; then
+  LLC="${LLC:-$_llvm20_prefix/bin/llc}"
+elif command -v "llc-$LLVM_MAJOR" >/dev/null 2>&1; then
+  LLC="${LLC:-$(command -v "llc-$LLVM_MAJOR")}"
 elif [ -x "$LLVM_PREFIX/bin/llc" ]; then
   LLC="${LLC:-$LLVM_PREFIX/bin/llc}"
 else
