@@ -2255,10 +2255,41 @@ fn tc_infer_lit_ty(e: Expr) -> ValueType {
     }
 }
 
+/// True when any element of a list literal is the `none` absence literal.
+/// Such a list is `List<T?>`, not `List<T>` — the codegen boxes its present
+/// elements into the tagged-optional repr, so the inferred type must agree.
+fn list_lit_has_none(elements: List<SExpr>) -> bool {
+    mut i = 0
+    while i < elements.length {
+        if elements[i].node is .None { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Wrap a known, non-optional element type in `Optional` when the literal
+/// mixes in a `none`. Keeps inference consistent with `emit_list_lit`.
+fn list_lit_optionalize(elements: List<SExpr>, base: ValueType) -> ValueType {
+    if vtype_is_unknown(base) { return base }
+    if vtype_is_optional(base) { return base }
+    if list_lit_has_none(elements) { ValueType.Optional(base) } else { base }
+}
+
 fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
-    let t = tc_infer_lit_ty(elements[0].node)
-    if vtype_is_unknown(t) { ValueType.Unknown } else { t }
+    // Pin the inner type from the first present element (a leading `none`
+    // carries no type), then re-wrap in `T?` when a `none` is present.
+    mut base = ValueType.Unknown
+    mut i = 0
+    while i < elements.length {
+        if !(elements[i].node is .None) {
+            base = tc_infer_lit_ty(elements[i].node)
+            i = elements.length
+        } else {
+            i = i + 1
+        }
+    }
+    list_lit_optionalize(elements, base)
 }
 
 fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
@@ -2277,12 +2308,14 @@ fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
 /// Inspect the first element of a list literal and return its
 /// inferred type; falls back to `Unknown` for an empty list.
 /// Used by `annotate_sexpr`'s ListLit fast-path so `[1, 2, 3]`
-/// types as `List<int>` instead of `List<unknown>`.
+/// types as `List<int>` instead of `List<unknown>`. A literal mixing in a
+/// `none` is `List<T?>` — re-wrap so the fast-path agrees with `emit_list_lit`.
 fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
     let first = elements[0]
     let r = check_expr(tc, first.node)
-    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
+    let base = if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
+    list_lit_optionalize(elements, base)
 }
 
 /// Substitute every T occurrence in `ty` with the binding from

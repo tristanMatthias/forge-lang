@@ -6,8 +6,8 @@ use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use features.closures.{emit_lambda_typed}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap}
-use core.{vtype_strip_optional}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, emit_optional_coerce}
+use core.{vtype_strip_optional, vtype_is_list, vtype_is_optional, vtype_list_elem}
 
 /// Emit a single-argument call helper. Returns the first argument's
 /// EmitValue or an error when the list is empty. Used by built-in
@@ -61,6 +61,29 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
                 let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
                 let lambda_types = vtype_fn_params(fn_vt)
                 r = emit_lambda_typed(ctx, env, params, body, lambda_types)?
+            }
+            // A list-literal arg for a `List<T?>` param must box each present
+            // element into the optional repr at construction, even with no
+            // `none` in the literal (`f([1, 2])` where `f(xs: List<int?>)`).
+            // Inlined (not delegated to features.list_lit) so `codegen` never
+            // imports a feature — that edge perturbs module order (see
+            // optional_repr.av) and crashes unrelated function codegen.
+            .ListLit(elements) -> {
+                let pvt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
+                if vtype_is_list(pvt) && vtype_is_optional(vtype_list_elem(pvt)) {
+                    let elem_opt = vtype_list_elem(pvt)
+                    let larr = ctx.array_new()
+                    mut j = 0
+                    while j < elements.length {
+                        let er = ctx.emit(env, elements[j].node)?
+                        let ec = emit_optional_coerce(ctx, er, elem_opt)
+                        ctx.array_push(larr, ec.value)
+                        j = j + 1
+                    }
+                    r = EmitValue { value: larr, ty: ValueType.List(elem_opt) }
+                } else {
+                    r = ctx.emit(env, se.node)?
+                }
             }
             _ -> {
                 r = ctx.emit(env, se.node)?

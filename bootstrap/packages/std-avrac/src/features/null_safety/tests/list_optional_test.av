@@ -1,0 +1,62 @@
+// WHY: `List<T?>` must box its present tagged-scalar elements (int / bool /
+// float) into the optional repr, in every construction context — otherwise a
+// later unwrap dereferences a raw scalar as a box pointer and segfaults.
+// Regression for the list-of-tagged-optional boxing gap: a list literal
+// inferred its element type from the first element only and pushed raw
+// values, so `[1, 2, none, 4]`, `let xs: List<int?> = [1, 2]`, and
+// `f([1, 2])` (param `List<int?>`) all crashed on unwrap. Boxing now happens
+// at construction for the `none`-bearing literal, the annotated binding, and
+// the call-argument path alike.
+
+// Function-argument path: a list literal flowing into a `List<int?>` param.
+fn sum_present(xs: List<int?>) -> int {
+    mut t = 0
+    for x in xs {
+        if let v = x { t = t + v }
+    }
+    t
+}
+
+// Indexing path: unwrap an element pulled out by index.
+fn first_or(xs: List<int?>, dflt: int) -> int {
+    let x = xs[0]
+    if let v = x { v } else { dflt }
+}
+
+// Annotated-binding path, no `none` in the literal.
+fn annotated_sum() -> int {
+    let xs: List<int?> = [10, 20, 30]
+    sum_present(xs)
+}
+
+spec "List<T?> boxes present elements in every construction context" {
+    then "none-bearing literal arg: present elements unwrap, none is skipped" {
+        // [1, 2, none, 4] -> 1 + 2 + 4
+        sum_present([1, 2, none, 4]) == 7
+    }
+    then "all-present literal arg (no none) still boxes" {
+        sum_present([1, 2, 3]) == 6
+    }
+    then "single-element present arg" {
+        sum_present([5]) == 5
+    }
+    then "indexing a present element unwraps it" {
+        first_or([9, none], 0) == 9
+    }
+    then "indexing a none element takes the default" {
+        first_or([none, 9], -1) == -1
+    }
+    then "annotated binding with no none boxes its elements" {
+        annotated_sum() == 60
+    }
+    then "let-else can break out of a loop over a List<int?>" {
+        // local helper inline: stop at the first none
+        let xs: List<int?> = [1, 2, none, 4]
+        mut total = 0
+        for x in xs {
+            let v = x else { break }
+            total = total + v
+        }
+        total == 3
+    }
+}

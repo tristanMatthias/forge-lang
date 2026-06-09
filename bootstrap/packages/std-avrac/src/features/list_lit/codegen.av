@@ -1,17 +1,55 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime avra_array_* functions.
 
-use core.{Expr, SExpr, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use core.{Expr, SExpr, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list, vtype_is_optional, vtype_is_unknown}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
 
+/// True when an element expression is the absence literal `none`.
+fn lit_is_none(e: Expr) -> bool { e is .None }
+
 /// Codegen for `[a, b, c]`. Allocates a fresh `avra_array_new` and
-/// pushes each element. The first element pins the inferred
-/// element type so the rest can be type-checked against it.
+/// pushes each element. The first element pins the inferred element type.
+///
+/// A literal that mixes `none` with present values is a `List<T?>`, not a
+/// `List<T>`: each present element must be coerced into the tagged-optional
+/// repr (boxed for `int?` / `bool?` / `float?`; identity for the
+/// pointer-niche reprs) so a later unwrap sees a real optional, not a raw
+/// scalar reinterpreted as a box pointer. `emit_optional_coerce` is a no-op
+/// for `none` (stays null) and for already-optional values (no double-box).
 export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> Result<EmitValue, string> {
     let arr = ctx.array_new()
     if elements.length == 0 { return ok_emit(arr, .List(.Unknown)) }
+    mut has_none = false
+    mut n = 0
+    while n < elements.length {
+        if lit_is_none(elements[n].node) { has_none = true }
+        n = n + 1
+    }
+    if has_none {
+        // Emit once in source order (elements may have side effects), pin the
+        // inner type from the first present, non-optional element, then box.
+        mut vals: List<EmitValue> = []
+        mut inner = ValueType.Unknown
+        mut i = 0
+        while i < elements.length {
+            let r = ctx.emit(env, elements[i].node)?
+            if vtype_is_unknown(inner) && !lit_is_none(elements[i].node) && !vtype_is_optional(r.ty) {
+                inner = r.ty
+            }
+            vals.push(r)
+            i = i + 1
+        }
+        let elem_opt = ValueType.Optional(inner)
+        mut k = 0
+        while k < vals.length {
+            let coerced = emit_optional_coerce(ctx, vals[k], elem_opt)
+            ctx.array_push(arr, coerced.value)
+            k = k + 1
+        }
+        return ok_emit(arr, .List(elem_opt))
+    }
     let first_r = ctx.emit(env, elements[0].node)?
     ctx.array_push(arr, first_r.value)
     let elem_ty = first_r.ty
@@ -22,6 +60,23 @@ export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) 
         i = i + 1
     }
     ok_emit(arr, .List(elem_ty))
+}
+
+/// Codegen for a list literal whose element type is known from context
+/// (e.g. an annotated binding `let xs: List<int?> = [1, 2, 3]`). Each
+/// element is coerced into `expected_elem` via `emit_optional_coerce`, so an
+/// all-present `List<int?>` literal boxes its scalars even with no `none` to
+/// trigger inference. A no-op when `expected_elem` is non-optional.
+export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, expected_elem: ValueType) -> Result<EmitValue, string> {
+    let arr = ctx.array_new()
+    mut i = 0
+    while i < elements.length {
+        let r = ctx.emit(env, elements[i].node)?
+        let coerced = emit_optional_coerce(ctx, r, expected_elem)
+        ctx.array_push(arr, coerced.value)
+        i = i + 1
+    }
+    ok_emit(arr, .List(expected_elem))
 }
 
 /// Codegen for `list.reduce(init, fn)`. Compiles the lambda
