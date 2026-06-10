@@ -17,6 +17,7 @@
 // channel is closed and drained.
 
 use codegen.{ok_emit, err_emit, EmitValue}
+use features.channels.{channel_methods_help}
 use codegen.{emit_optional_some, emit_optional_none}
 use codegen.{vtype_is_ptr_type}
 use core.{vtype_display}
@@ -76,7 +77,7 @@ export fn emit_channel_method_call(ctx: Ctx, env: List<VarBinding>, ch_val: ptr,
             ctx.call("avra_channel_close", [ch_val])
             ok_emit(ctx.i64(0), .Void)
         }
-        _ -> err_emit("Channel has no method `${method}` (available: .send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close())")
+        _ -> err_emit("Channel has no method `${method}` (available: ${channel_methods_help(elem)})")
     }
 }
 

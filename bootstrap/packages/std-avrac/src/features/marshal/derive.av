@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations}
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap}
 
 // ── Public entry ──
 
@@ -46,7 +46,7 @@ fn walk(stmts: List<SStmt>) -> List<SStmt> {
         // annotated module wrappers (e.g. the test assembler's
         // @deferred_init) stay transparent, and rebuild inside
         // the original annotation layers so the wrapper survives.
-        match peel_annotations(ss.node) {
+        match stmt_unwrap(ss.node) {
             .Module(name, body) -> {
                 let walked = walk(body)
                 let new_mod = rewrap_annotations(ss.node, Stmt.Module(name, walked))
@@ -74,7 +74,7 @@ fn any_marshal_annotation(stmts: List<SStmt>) -> bool {
     while i < stmts.length {
         let ss = stmts[i]
         if has_marshal(ss.node) { return true }
-        match peel_annotations(ss.node) {
+        match stmt_unwrap(ss.node) {
             .Module(_, body) -> {
                 if any_marshal_annotation(body) { return true }
             }
@@ -97,7 +97,7 @@ fn has_marshal(stmt: Stmt) -> bool {
 fn derive_for(stmt: Stmt) -> List<SStmt> {
     let empty: List<SStmt> = []
     if !has_marshal(stmt) { return empty }
-    let inner = peel_annotations(stmt)
+    let inner = stmt_unwrap(stmt)
     match inner {
         .TypeDecl(name, _, fields) -> derive_stmts(name, fields)
         .EnumDecl(name, _, variants) -> derive_enum_stmts(name, variants)
@@ -105,12 +105,6 @@ fn derive_for(stmt: Stmt) -> List<SStmt> {
     }
 }
 
-fn peel_annotations(stmt: Stmt) -> Stmt {
-    match stmt {
-        .Annotated(_, inner) -> peel_annotations(inner.node)
-        _ -> stmt
-    }
-}
 
 /// Build the synthesised stmts for a `@marshal type T = {...}`:
 ///   - `impl T { fn to_bytes(self) -> bytes { ... } }` (instance method)

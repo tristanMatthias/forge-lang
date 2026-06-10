@@ -4,7 +4,7 @@
 // (dir-as-module, g2eo.1); select integration lives in select_stmt
 // (which consumes the element type this feature establishes).
 
-use core.{feature_new, Feature, ValueType}
+use core.{feature_new, Feature, ValueType, vtype_display}
 use resolve.{resolve_expr}
 
 /// Register the typed-channel construction expression. Methods
@@ -18,6 +18,14 @@ export fn channels_feature() -> Feature {
         resolve_expr: channel_resolve,
         check_expr: channel_check,
     }
+}
+
+/// The Channel method surface, rendered for "no such method" help
+/// text. One definition — typeck and codegen both cite it, so the
+/// help can never drift between the two pipelines (the codegen copy
+/// is an ICE-grade backstop; typeck reports first in practice).
+export fn channel_methods_help(elem: ValueType) -> string {
+    ".send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close()"
 }
 
 /// Resolver hook: the capacity expression resolves in the enclosing

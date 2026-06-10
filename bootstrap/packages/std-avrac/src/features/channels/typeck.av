@@ -7,6 +7,7 @@
 //   - `ch.close()` → void, idempotent.
 
 use typeck.{check_expr, tc_er, tc_report}
+use features.channels.{channel_methods_help}
 use core.{vtype_eq, vtype_display}
 use diagnostics.{DiagCode}
 
@@ -58,7 +59,7 @@ export fn check_channel_method(tc: TC, elem: ValueType, method: string, args: Li
         "close" -> tc_er(tc, .Void)
         _ -> {
             let t1 = tc_report(tc, DiagCode.UnknownMethod,
-                "Channel has no method `${method}` — available: .send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close()")
+                "Channel has no method `${method}` — available: ${channel_methods_help(elem)}")
             tc_er(t1, .Unknown)
         }
     }
