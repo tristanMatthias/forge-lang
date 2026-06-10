@@ -1,0 +1,63 @@
+// WHY: `==` / `!=` on two tagged (boxed) optionals must compare VALUES,
+// not box pointers. Two equal present values live in distinct heap boxes,
+// so a raw pointer compare reads `Some(5) == Some(5)` as false — a silent
+// wrong answer, not a crash. The codegen three-ways it instead: both none →
+// equal; one none → unequal; both present → compare the unwrapped inners
+// (fcmp for float). Mixed `optional == bare` comparisons unbox the optional
+// side (the permissive coercion) and were already correct — locked here too.
+
+fn eq_ii(a: int?, b: int?) -> bool { a == b }
+fn ne_ii(a: int?, b: int?) -> bool { a != b }
+fn eq_ff(a: float?, b: float?) -> bool { a == b }
+fn eq_bb(a: bool?, b: bool?) -> bool { a == b }
+
+spec "optional == optional compares values, not box pointers" {
+    then "Some(5) == Some(5) is true (was the box-pointer bug)" {
+        eq_ii(5, 5) == true
+    }
+    then "Some(5) == Some(6) is false" {
+        eq_ii(5, 6) == false
+    }
+    then "Some(0) == Some(0) is true (zero payload, distinct boxes)" {
+        eq_ii(0, 0) == true
+    }
+    then "none == none is true" {
+        eq_ii(none, none) == true
+    }
+    then "Some(5) == none is false, both directions" {
+        eq_ii(5, none) == false && eq_ii(none, 5) == false
+    }
+    then "!= is the exact negation across the matrix" {
+        ne_ii(5, 5) == false && ne_ii(5, 6) == true && ne_ii(none, none) == false && ne_ii(5, none) == true
+    }
+    then "float? compares by value (fcmp on the inners)" {
+        eq_ff(1.5, 1.5) == true && eq_ff(1.5, 2.5) == false && eq_ff(none, none) == true
+    }
+    then "bool? compares by value — Some(false) == Some(false)" {
+        eq_bb(false, false) == true && eq_bb(false, true) == false && eq_bb(false, none) == false
+    }
+    then "locals (not just params) compare by value" {
+        let a: int? = 7
+        let b: int? = 7
+        a == b
+    }
+}
+
+spec "optional == bare value unboxes the optional side (mixed compare)" {
+    then "Some(5) == 5 is true" {
+        let v: int? = 5
+        v == 5
+    }
+    then "Some(5) != 7 is true" {
+        let v: int? = 5
+        v != 7
+    }
+    then "x == none stays the plain none-test (present → false)" {
+        let v: int? = 5
+        (v == none) == false
+    }
+    then "x == none on an absent optional is true" {
+        let v: int? = none
+        v == none
+    }
+}
