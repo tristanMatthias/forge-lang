@@ -2203,6 +2203,13 @@ fn run_cache_command() {
 /// realistic project). Otherwise fall through to discover_tests so
 /// suffix / basename-substring path filters still resolve.
 fn discover_with_path_shortcut(project_dir: string, path_filter: string) -> List<DiscoveredFile> {
+    // A directory argument scopes the discovery walk to that tree:
+    // `bs2 test fixtures/dir` runs every spec under it. (Previously a
+    // directory fell into the single-file classifier, which crashed
+    // on read_file(dir) — a null deref instead of a meaning.)
+    if path_filter != "" && avra_is_dir(path_filter) == 1 {
+        return discover_tests(path_filter)
+    }
     let one = discover_one_file(path_filter)
     if one.length > 0 { return one }
     discover_tests(project_dir)
