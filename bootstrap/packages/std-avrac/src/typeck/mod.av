@@ -177,6 +177,48 @@ type FnTypeFound = {
     ret_ty: ValueType,
 }
 
+/// True when an extern re-declaration is signature-identical to the
+/// registered one: same arity, same param types, same return type.
+/// Param NAMES are immaterial — only the types participate in the
+/// symbol contract.
+fn extern_sig_matches(prior: FnTypeFound, params: List<ParamEntry>, ret_ty: ValueType) -> bool {
+    if !vtype_eq(prior.ret_ty, ret_ty) { return false }
+    if prior.params.length != params.length { return false }
+    for (i, p) in params.enumerate() {
+        if !extern_param_compatible(prior.params[i].vtype, p.vtype) { return false }
+    }
+    true
+}
+
+/// Param-type compatibility for extern re-declarations. Structural
+/// equality, with one carve-out: the legacy `.Fn(ret)` shape encodes
+/// ONLY a return type (arity unknown), so it matches any fn-typed
+/// param with the same return — the two forms describe one symbol
+/// contract and lower to the same closure word.
+fn extern_param_compatible(a: ValueType, b: ValueType) -> bool {
+    if vtype_eq(a, b) { return true }
+    let ra = fn_shape_ret(a)
+    let rb = fn_shape_ret(b)
+    if ra == null || rb == null { return false }
+    vtype_eq(ra!, rb!)
+}
+
+/// The return type when `vt` is fn-shaped (`.Fn` or `.FnTyped`),
+/// null otherwise.
+fn fn_shape_ret(vt: ValueType) -> ValueType? {
+    match vt {
+        .Fn(r) -> r
+        .FnTyped(_, r) -> r
+        _ -> null
+    }
+}
+
+/// Render `(T1, T2) -> R` for the conflicting-extern diagnostic.
+fn render_extern_sig(params: List<ParamEntry>, ret_ty: ValueType) -> string {
+    let ps = [vtype_render_full(p.vtype) for p in params]
+    "(${ps.join(", ")}) -> ${vtype_render_full(ret_ty)}"
+}
+
 /// O(1) lookup via the FnTypeReg's index map. Returns `found=false`
 /// when the name is unregistered (params/ret_ty hold safe sentinels).
 fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
@@ -1140,7 +1182,21 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             .ExternFn(name, params, ret_vt) -> {
                 let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
-                cur with { fns: fn_type_reg_register(cur.fns, name, empty_type_params(), params, final_ret) }
+                // Re-declaring an extern with the SAME signature is
+                // normal (inlined support files and test modules each
+                // carry their own decls; they converge on one symbol).
+                // A CONFLICTING signature is a user error that must be
+                // reported here — left undiagnosed it reaches codegen's
+                // symbol table as two types for one name, which is an
+                // ICE-grade abort there.
+                let prior = fn_type_get(cur.fns, name)
+                if prior.found && !extern_sig_matches(prior, params, final_ret) {
+                    tc_report_at(cur, DiagCode.DuplicateDecl,
+                        "extern `${name}` redeclared with a conflicting signature: ${render_extern_sig(params, final_ret)} (previously ${render_extern_sig(prior.params, prior.ret_ty)})",
+                        ss.line, ss.col, name.length)
+                } else {
+                    cur with { fns: fn_type_reg_register(cur.fns, name, empty_type_params(), params, final_ret) }
+                }
             }
             .Impl(impl_name, methods) -> {
                 let colon_idx = find_trait_separator(impl_name)

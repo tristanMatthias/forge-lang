@@ -1,0 +1,50 @@
+// Conflicting extern re-declarations are a compile error (F3105),
+// not an ICE: before the diagnostic, two modules declaring the same
+// extern with different signatures sailed through typeck and died in
+// codegen's symbol table, which aborts on type mismatch by design
+// (its job is catching COMPILER bugs, not user errors). Identical
+// re-declarations stay legal — inlined support files and test
+// modules each carry their own copies of the runtime extern decls.
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+spec "extern redeclaration rules" {
+    given "two modules declaring one extern with different signatures" {
+        then "check reports F3105 with both signatures" {
+            let dir = "build/cache/_extern_conflict_fixture"
+            let _ = avra_mkdir_p(dir)
+            write_fixture("${dir}/sub.av",
+                "extern fn probe_conflict_fn(ms: string)\n" +
+                "export fn other() { probe_conflict_fn(\"x\") }\n")
+            write_fixture("${dir}/main.av",
+                "mod sub\n" +
+                "use sub.{other}\n" +
+                "extern fn probe_conflict_fn(ms: int)\n" +
+                "fn main() {\n" +
+                "    probe_conflict_fn(1)\n" +
+                "    other()\n" +
+                "}\n")
+            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            out.contains("F3105") && out.contains("conflicting signature")
+        }
+        then "an identical re-declaration is accepted" {
+            let dir = "build/cache/_extern_dup_ok_fixture"
+            let _ = avra_mkdir_p(dir)
+            write_fixture("${dir}/sub.av",
+                "extern fn probe_dup_ok_fn(ms: int)\n" +
+                "export fn other() { probe_dup_ok_fn(2) }\n")
+            write_fixture("${dir}/main.av",
+                "mod sub\n" +
+                "use sub.{other}\n" +
+                "extern fn probe_dup_ok_fn(ms: int)\n" +
+                "fn main() {\n" +
+                "    probe_dup_ok_fn(1)\n" +
+                "    other()\n" +
+                "}\n")
+            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            !out.contains("F3105")
+        }
+    }
+}
+
+extern fn avra_mkdir_p(path: string) -> int

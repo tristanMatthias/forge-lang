@@ -1238,6 +1238,22 @@ is independently actionable; none block d4jv's runner.
   fixture's fixed .ll/.o artifact paths. The `mv: rename` output-
   rejection heuristic this replaced is deleted (diagnose.sh's
   PID-scoped temp links had already root-fixed the producer side).
+  Red-team round hardened it further: the lock keys on the FIXTURE
+  PATH hash (same fixture × different verbs share .ll/.o and must
+  serialize; rewritten same-path fixtures too), and the crash guard
+  releases locks held by a dying spec (thread-local held-lock stack,
+  unwound beside the output sinks) so a crashed spec can't wedge
+  every sibling unit waiting on that fixture.
+- **Conflicting extern declarations: F3105, not an ICE.** Two
+  modules declaring one extern with different signatures previously
+  sailed through typeck and died at codegen's symbol table (whose
+  abort exists to catch COMPILER bugs). collect_decls now reports
+  DuplicateDecl with both rendered signatures and the source
+  location. Identical re-declarations stay legal (inlined support
+  files depend on them); the legacy `.Fn(ret)` shape is treated as
+  arity-wildcard against `FnTyped` forms with the same return — the
+  check immediately caught the assembler's own guard-extern decl
+  disagreeing with runner.av's parsed form.
 - **pdme.1 evidence.** A stale-bs2 unit cache slot served a
   double-running test binary after assembler changes (transitive
   fingerprint miss, then exact-hash collision on rebuilt-identical

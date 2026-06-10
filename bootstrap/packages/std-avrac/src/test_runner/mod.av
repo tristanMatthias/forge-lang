@@ -144,6 +144,14 @@ fn test_runtime_externs() -> List<RuntimeExtern> {
     }
 }
 
+/// `fn() -> int` as a structurally-typed param. The runner's source
+/// decl of the guard parses to FnTyped — the table must build the
+/// same shape or the two decls trip the conflicting-extern check.
+fn fn_int_param_type() -> ValueType {
+    let no_params: List<ValueType> = []
+    ValueType.FnTyped(no_params, ValueType.Int)
+}
+
 /// Signature for the per-spec guard runtime fn. Named separately so
 /// the externs table reads cleanly without an inline list literal
 /// on one row.
@@ -153,7 +161,7 @@ fn guard_extern_params() -> List<ParamEntry> {
         "name" | ValueType.Str
         "file" | ValueType.Str
         "ln"   | ValueType.Int
-        "body" | ValueType.Fn(ValueType.Int)
+        "body" | fn_int_param_type()
     })
 }
 
@@ -574,13 +582,15 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
         return avra_selfhost_read_file(cache_path)
     }
     let _ = avra_mkdir_p(cache_dir)
-    // Serialize cold-misses per cache slot. bs2 writes the fixture's
-    // .ll/.o at fixed sibling paths, so two concurrent runs of one
-    // fixture would race on those artifacts; the loser of that race
-    // historically produced garbage stdout. The lock makes the
-    // second runner WAIT, then take the winner's published result
-    // via the re-check instead of re-running at all.
-    let lock_fd = avra_file_lock_exclusive("${cache_path}.lock")
+    // Serialize cold-misses per FIXTURE (not per cache slot): bs2
+    // writes the fixture's .ll/.o at fixed sibling paths, so any two
+    // concurrent runs of one fixture — same verb or different verbs
+    // (run vs expand vs check share the same .ll!) — race on those
+    // artifacts, and the loser historically captured garbage stdout.
+    // The lock makes the second runner WAIT; for same-slot waiters
+    // the post-acquire re-check then reuses the winner's published
+    // result instead of re-running at all.
+    let lock_fd = avra_file_lock_exclusive("${cache_dir}/${sha256_hex(fixture_path)}.lock")
     if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
         let cached = avra_selfhost_read_file(cache_path)
         avra_file_unlock(lock_fd)

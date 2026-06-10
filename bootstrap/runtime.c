@@ -1393,6 +1393,17 @@ int64_t avra_mkdir_p(const char* path) {
 // the lock fd (>= 0) or -1 on failure; pass the fd to
 // avra_file_unlock to release. Locks are per-open-fd, so callers
 // must thread the handle rather than re-opening the path.
+// Held-lock bookkeeping mirrors the output-sink stack: a spec that
+// crashes between lock and unlock longjmps past the balancing
+// release, and a leaked flock would block every other unit touching
+// that fixture for the life of the process (the stall detector would
+// NAME the victims, but the suite still wedges). The crash guard
+// releases everything acquired inside the crashed spec via
+// avra_locks_unwind_to.
+#define AVRA_HELD_LOCKS_MAX 16
+static _Thread_local int64_t t_held_locks[AVRA_HELD_LOCKS_MAX];
+static _Thread_local int t_held_locks_n = 0;
+
 int64_t avra_file_lock_exclusive(const char* path) {
     int fd = open(path, O_CREAT | O_RDWR, 0644);
     if (fd < 0) return -1;
@@ -1400,13 +1411,35 @@ int64_t avra_file_lock_exclusive(const char* path) {
         close(fd);
         return -1;
     }
+    if (t_held_locks_n < AVRA_HELD_LOCKS_MAX) {
+        t_held_locks[t_held_locks_n++] = fd;
+    }
     return fd;
 }
 
 void avra_file_unlock(int64_t fd) {
     if (fd < 0) return;
+    for (int i = t_held_locks_n - 1; i >= 0; i--) {
+        if (t_held_locks[i] == fd) {
+            for (int j = i; j < t_held_locks_n - 1; j++) {
+                t_held_locks[j] = t_held_locks[j + 1];
+            }
+            t_held_locks_n--;
+            break;
+        }
+    }
     flock((int)fd, LOCK_UN);
     close((int)fd);
+}
+
+// Release every lock acquired above `depth` — the crash guard's
+// cleanup for specs that died inside a lock window.
+static void avra_locks_unwind_to(int depth) {
+    while (t_held_locks_n > depth) {
+        int64_t fd = t_held_locks[--t_held_locks_n];
+        flock((int)fd, LOCK_UN);
+        close((int)fd);
+    }
 }
 
 int64_t avra_rename(const char* src, const char* dst) {
@@ -4387,6 +4420,7 @@ int64_t avra_test_run_spec_guarded(const char* name, const char* file,
     sig_atomic_t saved_active = _spec_guard_active;
     AvraSinkFrame* sink_snapshot = t_sink;
 
+    int lock_snapshot = t_held_locks_n;
     int sig = sigsetjmp(_spec_guard_jmp, 1);
     if (sig == 0) {
         _spec_guard_active = 1;
@@ -4394,8 +4428,11 @@ int64_t avra_test_run_spec_guarded(const char* name, const char* file,
     } else {
         // The longjmp may have skipped balancing sink pops (spec died
         // inside a capture window) — reclaim orphan frames so the next
-        // spec's output isn't silently swallowed.
+        // spec's output isn't silently swallowed. Same for advisory
+        // file locks: a leaked flock would wedge every other unit
+        // waiting on that fixture.
         sink_unwind_to(sink_snapshot);
+        avra_locks_unwind_to(lock_snapshot);
         avra_test_record_crash(name, file, line, sig);
         char crash_line[512];
         snprintf(crash_line, sizeof(crash_line),
