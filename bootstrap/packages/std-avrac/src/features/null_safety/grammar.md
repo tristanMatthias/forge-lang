@@ -22,3 +22,9 @@ if a! < b! { … }              // unwrap (you assert both are present)
 if (a ?? 0) < (b ?? 0) { … }  // default the gap
 match (a, b) { … }            // handle every presence combination
 ```
+
+Value arithmetic (`+ - * / %`, bitwise `& | ^`, shifts `<< >>`) on an
+optional operand is likewise a compile error (**F1205**): a `none` has no
+value to compute with. Unwrap, default, or handle absence first — the same
+three remedies as ordering. (Inside an `if let` / `match` present arm the
+bound value is the non-optional inner, so it computes normally.)

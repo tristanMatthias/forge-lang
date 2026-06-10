@@ -1422,6 +1422,18 @@ export fn binop_is_ordering(op: BinOp) -> bool {
     }
 }
 
+/// True for the value-arithmetic binops (`+ - * / %`, bitwise `& | ^`,
+/// shifts `<< >>`) — everything that operates on an operand's VALUE rather
+/// than comparing. `none` has no value, so these are rejected on an optional
+/// operand (F1205), just like ordering.
+export fn binop_is_arithmetic(op: BinOp) -> bool {
+    match op {
+        .Add or .Sub or .Mul or .Div or .Mod -> true
+        .BitAnd or .BitOr or .BitXor or .Shl or .Shr -> true
+        _ -> false
+    }
+}
+
 /// Render a BinOp as its source-form operator (`+`, `==`, `<<`, …).
 export fn binop_str(op: BinOp) -> string {
     match op {

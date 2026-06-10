@@ -217,6 +217,10 @@ export enum DiagCode {
     /// to an optional `T?`. A `none` has no position in an ordering, so the
     /// result is undefined; unwrap, default, or compare presence explicitly.
     OrderOnOptional
+    /// F1205 — value arithmetic (`+ - * / %`, bitwise, shifts) was applied
+    /// to an optional `T?`. A `none` has no value, so the result is
+    /// undefined; unwrap, default, or handle absence first.
+    ArithOnOptional
     // ── Name resolution (F3000-3999) ────────────────────────────────
     /// F3000 — name not in scope. Either a typo, missing `use`, or
     /// reference to a private symbol.
@@ -384,6 +388,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }
         .LetElseMustDiverge  -> ErrorDef { code: "F1203", help: "a `let … else` block must exit the scope (`return` / `break` / `continue` / `panic`) — for a same-type fallback that continues, use `?? default`" }
         .OrderOnOptional     -> ErrorDef { code: "F1204", help: "a `none` has no position in an ordering — unwrap first (`a!`), default the gap (`a ?? 0`), or compare presence with `match` / `if let`" }
+        .ArithOnOptional     -> ErrorDef { code: "F1205", help: "a `none` has no value to compute with — unwrap first (`a!`), default the gap (`a ?? 0`), or handle absence with `match` / `if let`" }
         .UndefinedVariable   -> ErrorDef { code: "F3000", help: "name not in scope — check spelling, add a `use` import, or declare it" }
         .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
         .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }

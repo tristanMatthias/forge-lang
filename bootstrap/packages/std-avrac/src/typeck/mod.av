@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1752,7 +1752,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let r = check_expr(l.tc, right)
             let tc2 = check_none_compare(r.tc, left, op, l.ty, right, r.ty)
             let tc3 = check_optional_ordering(tc2, op, l.ty, r.ty)
-            check_binary_type(tc3, l.ty, op, r.ty)
+            let tc4 = check_optional_arithmetic(tc3, op, l.ty, r.ty)
+            check_binary_type(tc4, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
             let r = check_expr(tc, right)
@@ -1958,6 +1959,18 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
 /// not yet complete for them — flagging those produces false positives on
 /// the compiler's own derive-walker code. Widen once optional inference is
 /// sound (tracked in ifnz / the bidirectional-typing work).
+/// Reject value arithmetic (`+ - * / %`, bitwise, shifts) on an optional
+/// operand. A `none` has no value, so silently computing would corrupt
+/// (both-optional operates on box pointers; a none side traps). Sibling of
+/// check_optional_ordering; equality stays permissive.
+fn check_optional_arithmetic(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+    if !binop_is_arithmetic(op) { return tc }
+    if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
+    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let msg = "cannot do arithmetic on an optional `${which}` with `${binop_str(op)}` — a `none` has no value to compute with"
+    tc_report(tc, DiagCode.ArithOnOptional, msg)
+}
+
 /// Reject an ordering comparison (`<` `<=` `>` `>=`) on an optional operand.
 /// `none` has no position in an ordering, so silently answering would defeat
 /// the purpose of `T?` (and is where strict non-null-by-default is headed).
