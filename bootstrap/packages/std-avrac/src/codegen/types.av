@@ -727,6 +727,8 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Void -> i64t
         .Unknown -> i64t
         .Task(_) -> i64t
+        // Channel handle: opaque runtime ptr (AvraChannel*).
+        .Channel(_) -> pt
         // Optional (T?): always a pointer. Pointer-backed inner is the
         // null-pointer niche (the inner pointer IS the optional, none = null);
         // value-backed inner (int?/bool?/float?) is boxed (Some = heap box,

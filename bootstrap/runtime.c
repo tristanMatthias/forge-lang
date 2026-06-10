@@ -4641,61 +4641,209 @@ void avra_scheduler_run(void) {
     // v1.0: no-op — pthreads run independently
 }
 
-// ── Channels ──
-// Unbuffered channel: send blocks until recv, recv blocks until send.
+// ── Typed channels (spec Axis 18) ──
+// One channel implementation, three capacity semantics chosen at
+// construction:
+//   cap > 0   bounded — send blocks while the ring is full
+//   cap = 0   rendezvous — send blocks until a receiver has TAKEN
+//             the value (synchronous handoff)
+//   cap < 0   unbounded — send never blocks; the ring grows
+//
+// close() sets a flag and wakes every waiter — it NEVER frees (the
+// historic close-frees design made any post-close send/recv a
+// use-after-free). The handle is rc_alloc'd; codegen routes Channel
+// releases through avra_channel_release, which frees the ring when
+// the last reference drops. POSIX mutex/cond on our targets hold no
+// kernel resources, so skipping destroy on free is sound.
+//
+// Payload slots are i64 words. Element-type coercion (Bool zext,
+// Float bitcast, ptr identity) and RC retain/release discipline for
+// ptr-backed elements live in codegen — the runtime moves words.
 
 typedef struct {
-    int64_t value;
-    int has_value;
-    pthread_mutex_t mutex;
-    pthread_cond_t send_cond;
-    pthread_cond_t recv_cond;
+    int64_t* buf;
+    int64_t cap;        // <0 unbounded, 0 rendezvous, >0 bounded
+    int64_t alloc;      // allocated ring slots (max(cap,1) initially)
+    int64_t head;       // index of oldest element
+    int64_t count;      // live elements
+    int closed;
+    pthread_mutex_t mu;
+    pthread_cond_t can_send;
+    pthread_cond_t can_recv;
 } AvraChannel;
 
-void* avra_channel_new(void) {
-    AvraChannel* ch = (AvraChannel*)calloc(1, sizeof(AvraChannel));
-    pthread_mutex_init(&ch->mutex, NULL);
-    pthread_cond_init(&ch->send_cond, NULL);
-    pthread_cond_init(&ch->recv_cond, NULL);
+// Process-wide channel-activity condvar backing `select`. A selector
+// scans its channels under this mutex, then waits here; every send
+// and close signals it AFTER releasing the channel's own mutex, so
+// the lock order is strictly selector: activity → channel, sender:
+// channel, then activity — no cycle, and a send that lands between
+// a selector's scan and its wait cannot be missed (the signal needs
+// the activity mutex the selector still holds).
+static pthread_mutex_t g_chan_activity_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_chan_activity_cv = PTHREAD_COND_INITIALIZER;
+
+static void chan_activity_broadcast(void) {
+    pthread_mutex_lock(&g_chan_activity_mu);
+    pthread_cond_broadcast(&g_chan_activity_cv);
+    pthread_mutex_unlock(&g_chan_activity_mu);
+}
+
+void* avra_channel_new_cap(int64_t cap) {
+    AvraChannel* ch = (AvraChannel*)avra_rc_alloc(sizeof(AvraChannel));
+    memset(ch, 0, sizeof(AvraChannel));
+    ch->cap = cap;
+    ch->alloc = (cap > 0) ? cap : 1;
+    ch->buf = (int64_t*)malloc((size_t)ch->alloc * sizeof(int64_t));
+    pthread_mutex_init(&ch->mu, NULL);
+    pthread_cond_init(&ch->can_send, NULL);
+    pthread_cond_init(&ch->can_recv, NULL);
     return ch;
+}
+
+// Legacy constructor — 1-slot bounded, the semantics every pre-typed
+// caller (raw-extern tests) was written against.
+void* avra_channel_new(void) {
+    return avra_channel_new_cap(1);
+}
+
+// Free the ring when the LAST reference is being released. Safe
+// without the channel lock: refcount 1 means this thread is the only
+// owner left, so no concurrent send/recv can hold the mutex.
+void avra_channel_release(void* channel) {
+    if (!channel) return;
+    AvraChannel* ch = (AvraChannel*)channel;
+    RcHeader* hdr = rc_header(channel);
+    if (hdr->type_tag == RC_MAGIC && atomic_load(&hdr->refcount) == 1) {
+        free(ch->buf);
+        ch->buf = NULL;
+    }
+    avra_rc_release(channel);
+}
+
+static void chan_grow_locked(AvraChannel* ch) {
+    int64_t new_alloc = ch->alloc * 2;
+    int64_t* nb = (int64_t*)malloc((size_t)new_alloc * sizeof(int64_t));
+    for (int64_t i = 0; i < ch->count; i++) {
+        nb[i] = ch->buf[(ch->head + i) % ch->alloc];
+    }
+    free(ch->buf);
+    ch->buf = nb;
+    ch->alloc = new_alloc;
+    ch->head = 0;
 }
 
 void avra_channel_send(void* channel, int64_t value) {
     AvraChannel* ch = (AvraChannel*)channel;
-    pthread_mutex_lock(&ch->mutex);
-    while (ch->has_value) {
-        pthread_cond_wait(&ch->send_cond, &ch->mutex);
+    pthread_mutex_lock(&ch->mu);
+    if (ch->cap >= 0) {
+        // Bounded (rendezvous holds one in-flight slot): wait for room.
+        int64_t room = (ch->cap == 0) ? 1 : ch->cap;
+        while (!ch->closed && ch->count >= room) {
+            pthread_cond_wait(&ch->can_send, &ch->mu);
+        }
     }
-    ch->value = value;
-    ch->has_value = 1;
-    pthread_cond_signal(&ch->recv_cond);
-    pthread_mutex_unlock(&ch->mutex);
+    if (ch->closed) {
+        pthread_mutex_unlock(&ch->mu);
+        avra_runtime_errorf("send on closed channel");
+        exit(1);
+    }
+    // Only the unbounded form can be at capacity here (bounded waited
+    // for room above, and its alloc == cap).
+    if (ch->count >= ch->alloc) chan_grow_locked(ch);
+    ch->buf[(ch->head + ch->count) % ch->alloc] = value;
+    ch->count++;
+    pthread_cond_signal(&ch->can_recv);
+    if (ch->cap == 0) {
+        // Rendezvous: the hand-off completes when a receiver TAKES the
+        // value. If the channel closes while we wait, the value is
+        // already queued — a post-close drain can still receive it, so
+        // returning (rather than trapping) loses nothing.
+        while (!ch->closed && ch->count > 0) {
+            pthread_cond_wait(&ch->can_send, &ch->mu);
+        }
+    }
+    pthread_mutex_unlock(&ch->mu);
+    chan_activity_broadcast();
 }
 
-int64_t avra_channel_recv(void* channel) {
+// Pop one value. `ok_out` receives 1 on success, 0 when the channel
+// is closed AND drained (the typed `recv() -> T?` null case).
+int64_t avra_channel_recv_opt(void* channel, int64_t* ok_out) {
     AvraChannel* ch = (AvraChannel*)channel;
-    pthread_mutex_lock(&ch->mutex);
-    while (!ch->has_value) {
-        pthread_cond_wait(&ch->recv_cond, &ch->mutex);
+    pthread_mutex_lock(&ch->mu);
+    while (ch->count == 0 && !ch->closed) {
+        pthread_cond_wait(&ch->can_recv, &ch->mu);
     }
-    int64_t value = ch->value;
-    ch->has_value = 0;
-    pthread_cond_signal(&ch->send_cond);
-    pthread_mutex_unlock(&ch->mutex);
+    if (ch->count == 0) {
+        // closed and drained
+        pthread_mutex_unlock(&ch->mu);
+        if (ok_out) *ok_out = 0;
+        return 0;
+    }
+    int64_t value = ch->buf[ch->head];
+    ch->head = (ch->head + 1) % ch->alloc;
+    ch->count--;
+    pthread_cond_signal(&ch->can_send);
+    pthread_mutex_unlock(&ch->mu);
+    if (ok_out) *ok_out = 1;
     return value;
 }
 
-// Select: poll multiple channels, block until one has data.
-// channels is a AvraArray of channel pointers.
-// Returns: (index << 32) | (value & 0xFFFFFFFF) packed into i64.
-// Better approach: write index + value to out params.
+// Legacy blocking recv. Receiving from a closed-and-drained channel
+// is a hard error here (the pre-close-semantics API has no way to
+// express "no more values"); typed `recv()` returns null instead.
+int64_t avra_channel_recv(void* channel) {
+    int64_t ok = 0;
+    int64_t v = avra_channel_recv_opt(channel, &ok);
+    if (!ok) {
+        avra_runtime_errorf("recv on closed channel (use typed recv() -> T? to observe close)");
+        exit(1);
+    }
+    return v;
+}
+
+// Mark closed and wake everyone: blocked receivers drain then see
+// null; blocked senders trap (send on closed channel). Idempotent.
+void avra_channel_close(void* channel) {
+    AvraChannel* ch = (AvraChannel*)channel;
+    pthread_mutex_lock(&ch->mu);
+    ch->closed = 1;
+    pthread_cond_broadcast(&ch->can_recv);
+    pthread_cond_broadcast(&ch->can_send);
+    pthread_mutex_unlock(&ch->mu);
+    chan_activity_broadcast();
+}
+
+// ── select ──
+
 typedef struct {
     int64_t index;  // which channel fired
     int64_t value;  // the received value
 } AvraSelectResult;
 
-// Polls channels in round-robin until one has data.
-// Returns pointer to heap-allocated AvraSelectResult.
+// Try to pop from one channel without blocking. Returns 1 on value,
+// 0 when empty. `*closed_out` set when the channel is closed+drained.
+static int chan_try_take(AvraChannel* ch, int64_t* val_out, int* closed_out) {
+    pthread_mutex_lock(&ch->mu);
+    if (ch->count > 0) {
+        *val_out = ch->buf[ch->head];
+        ch->head = (ch->head + 1) % ch->alloc;
+        ch->count--;
+        pthread_cond_signal(&ch->can_send);
+        pthread_mutex_unlock(&ch->mu);
+        return 1;
+    }
+    if (ch->closed) *closed_out = 1;
+    pthread_mutex_unlock(&ch->mu);
+    return 0;
+}
+
+// Block until one of `count` channels has a value; pop and return
+// (index, value). Wait is condvar-based (no polling): the scan runs
+// under the activity mutex, so a send signaling after an empty scan
+// blocks until the selector reaches cond_wait — wakeups can't be
+// lost. When EVERY channel is closed and drained no value can ever
+// arrive; trap rather than block forever.
 void* avra_select(void* channel_array, int64_t count) {
     AvraSelectResult* result = (AvraSelectResult*)malloc(sizeof(AvraSelectResult));
     AvraArray* arr = (AvraArray*)(uintptr_t)channel_array;
@@ -4704,27 +4852,30 @@ void* avra_select(void* channel_array, int64_t count) {
         result->value = 0;
         return result;
     }
-    // Spin-poll with backoff until one channel has data.
-    // This is simple but correct. A production implementation
-    // would use condition variables or epoll.
+    pthread_mutex_lock(&g_chan_activity_mu);
     while (1) {
-        for (int64_t i = 0; i < arr->len && i < count; i++) {
+        int64_t n = (arr->len < count) ? arr->len : count;
+        int closed_drained = 0;
+        for (int64_t i = 0; i < n; i++) {
             AvraChannel* ch = (AvraChannel*)(uintptr_t)arr->data[i];
             if (!ch) continue;
-            pthread_mutex_lock(&ch->mutex);
-            if (ch->has_value) {
-                int64_t val = ch->value;
-                ch->has_value = 0;
-                pthread_cond_signal(&ch->send_cond);
-                pthread_mutex_unlock(&ch->mutex);
+            int closed = 0;
+            int64_t val = 0;
+            if (chan_try_take(ch, &val, &closed)) {
+                pthread_mutex_unlock(&g_chan_activity_mu);
                 result->index = i;
                 result->value = val;
                 return result;
             }
-            pthread_mutex_unlock(&ch->mutex);
+            if (closed) closed_drained++;
         }
-        // Brief sleep to avoid busy-waiting
-        usleep(100);  // 100 microseconds
+        if (closed_drained == n) {
+            pthread_mutex_unlock(&g_chan_activity_mu);
+            free(result);
+            avra_runtime_errorf("select: all channels closed and drained");
+            exit(1);
+        }
+        pthread_cond_wait(&g_chan_activity_cv, &g_chan_activity_mu);
     }
 }
 
@@ -4756,14 +4907,6 @@ void avra_parallel_run(void* closure_array) {
     }
     free(threads);
     free(args);
-}
-
-void avra_channel_close(void* channel) {
-    AvraChannel* ch = (AvraChannel*)channel;
-    pthread_mutex_destroy(&ch->mutex);
-    pthread_cond_destroy(&ch->send_cond);
-    pthread_cond_destroy(&ch->recv_cond);
-    free(ch);
 }
 
 // ── Debug: enum tag validation ──

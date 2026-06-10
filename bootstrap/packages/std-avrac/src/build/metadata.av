@@ -376,6 +376,7 @@ const VT_FN_TYPED: int = 0x34
 const VT_CLOSURE: int = 0x35
 const VT_TASK: int = 0x36
 const VT_OPTIONAL: int = 0x37
+const VT_CHANNEL: int = 0x38
 
 impl BytesWriter {
     fn vtype(self, vt: ValueType) {
@@ -457,6 +458,10 @@ impl BytesWriter {
             .Task(rt) -> {
                 self.u8(VT_TASK)
                 self.vtype(rt)
+            }
+            .Channel(elem) -> {
+                self.u8(VT_CHANNEL)
+                self.vtype(elem)
             }
             .Optional(inner) -> {
                 self.u8(VT_OPTIONAL)
@@ -652,6 +657,9 @@ impl BytesReader {
         }
         if tag == VT_TASK {
             return ValueType.Task(self.vtype())
+        }
+        if tag == VT_CHANNEL {
+            return ValueType.Channel(self.vtype())
         }
         if tag == VT_OPTIONAL {
             return ValueType.Optional(self.vtype())

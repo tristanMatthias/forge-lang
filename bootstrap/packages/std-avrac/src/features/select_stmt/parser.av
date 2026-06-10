@@ -28,7 +28,7 @@ impl Parser {
             if !self.check(Tk.LeftArrow) { return out }
             self.advance()  // consume <-
             // Parse channel expression
-            let channel = match self.parse_expression() {
+            let chan = match self.parse_expression() {
                 .Ok(c) -> c
                 .Err(_) -> return out
             }
@@ -47,7 +47,7 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` to close select arm") {
                 return out
             }
-            out.push(SelectArm { binding, channel: channel, body: body })
+            out.push(SelectArm { binding, chan: chan, body: body })
         }
         out
     }

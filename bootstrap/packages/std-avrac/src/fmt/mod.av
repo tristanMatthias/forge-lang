@@ -70,6 +70,13 @@ export fn fmt_expr(se: Expr) -> string {
         .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
         .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
         .Spawn(body) -> "spawn ${fmt_expr(body)}"
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null {
+                "channel<${vtype_render_full(elem)}>()"
+            } else {
+                "channel<${vtype_render_full(elem)}>(${fmt_expr(capacity!)})"
+            }
+        }
         .Isolated(body) -> "isolated ${fmt_expr(body)}"
         .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(body)}" } else { "quote ${kind} ${fmt_expr(body)}" }
         .Splice(target) -> "~${fmt_expr(target)}"

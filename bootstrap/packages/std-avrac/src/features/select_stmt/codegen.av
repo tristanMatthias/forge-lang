@@ -34,7 +34,7 @@ fn emit_select(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>) -> Result
 fn push_channels(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, arr: ptr) -> Result<int, string> {
     mut i = 0
     while i < arms.length {
-        let r = ctx.emit(env, arms[i].channel)?
+        let r = ctx.emit(env, arms[i].chan)?
         ctx.array_push(arr, ctx.to_i64(r.value, "ch_i64"))
         i = i + 1
     }

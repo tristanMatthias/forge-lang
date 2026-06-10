@@ -957,7 +957,7 @@ fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectSta
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let after_ch = collect_inst_expr(arm.channel, regs, cur)
+        let after_ch = collect_inst_expr(arm.chan, regs, cur)
         cur = collect_inst_stmts(arm.body, regs, after_ch)
         i = i + 1
     }
@@ -1954,7 +1954,7 @@ fn rewrite_select_arms_mono(arms: List<SelectArm>, regs: GenRegs, insts: List<In
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            channel: rewrite_expr(arm.channel, regs, insts),
+            chan: rewrite_expr(arm.chan, regs, insts),
             body: rewrite_stmts(arm.body, regs, insts),
         })
         i = i + 1

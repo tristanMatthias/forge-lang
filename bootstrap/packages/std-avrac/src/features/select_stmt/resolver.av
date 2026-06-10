@@ -13,7 +13,7 @@ export fn resolve_select_arms(r: Resolver, arms: List<SelectArm>) -> Resolver {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let after_ch = resolve_expr(cur, arm.channel)
+        let after_ch = resolve_expr(cur, arm.chan)
         let scoped = enter_resolve_scope(after_ch)
         let with_binding = declare_name(scoped, arm.binding)
         let defined = define_name(with_binding, arm.binding)

@@ -212,7 +212,7 @@ fn rewrite_select_arms(arms: List<SelectArm>, reg: CompTimeRegistry) -> List<Sel
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            channel: rewrite_expr(arm.channel, reg),
+            chan: rewrite_expr(arm.chan, reg),
             body: rewrite_stmt_list(arm.body, reg),
         })
         i = i + 1

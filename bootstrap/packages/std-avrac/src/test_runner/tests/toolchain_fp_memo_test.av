@@ -13,7 +13,7 @@
 extern fn avra_test_toolchain_fp_get() -> string
 extern fn avra_test_toolchain_fp_set(fp: string)
 
-spec "4szi.1: toolchain fp memo round-trips and overwrites" {
+spec "4szi.1: toolchain fp memo round-trips and publishes once" {
     then "first set / first get returns the value" {
         // The memo is process-global state — earlier specs in the
         // same shard may have already warmed it. Choose a unique
@@ -23,13 +23,17 @@ spec "4szi.1: toolchain fp memo round-trips and overwrites" {
         avra_test_toolchain_fp_set(marker)
         avra_test_toolchain_fp_get() == marker
     }
-    then "set overwrites a prior set" {
-        // Mutability check — strdup-based replacement must free the
-        // previous slot, otherwise we'd leak per call. The behaviour
-        // we can observe directly is that get always returns the
-        // MOST RECENT set, never a stale earlier value.
-        avra_test_toolchain_fp_set("first-value-aaa")
-        avra_test_toolchain_fp_set("second-value-bbb")
-        avra_test_toolchain_fp_get() == "second-value-bbb"
+    then "later sets are no-ops — first writer wins" {
+        // d4jv slice 1: the memo is WRITE-ONCE under a mutex. The fp
+        // is a pure function of process-stable inputs (bs2 binary,
+        // runtime.o, wrapper.o, @std sources), so every caller in one
+        // process computes the same value — a second set can only be
+        // a concurrent duplicate of the first. First-writer-wins lets
+        // concurrent getters hold the returned pointer without a
+        // free-behind-the-reader hazard (the historic strdup-replace
+        // implementation freed the prior slot WHILE other workers
+        // could still be reading it).
+        avra_test_toolchain_fp_set("later-set-must-not-stick")
+        avra_test_toolchain_fp_get() == "4szi1-roundtrip-marker-cafebabe"
     }
 }
