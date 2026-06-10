@@ -1,4 +1,4 @@
-// WHY: in-process parallel test runner (d4jv). Executes the test
+// WHY: in-process parallel test runner. Executes the test
 // bundle's @deferred_init units (one unit = one test file's
 // __init_<mod>) across worker threads, with per-unit output
 // grouping and crash isolation.
@@ -98,30 +98,22 @@ fn run_units_parallel(units: List<TestUnit>, jobs: int) {
     let work = channel<int>(units.length)
     let started = channel<int>()
     let results = channel<UnitDone>()
-    mut i = 0
-    while i < units.length {
+    for i in 0..units.length {
         work.send(i)
-        i = i + 1
     }
     work.close()
 
-    mut w = 0
-    while w < jobs {
+    for _ in 0..jobs {
         let _worker = spawn {
-            mut more = true
-            while more {
+            while true {
                 let next = work.recv()
-                if next == null {
-                    more = false
-                } else {
-                    let idx = next!
-                    started.send(idx)
-                    results.send(UnitDone { idx: idx, out: run_one_unit(units[idx]) })
-                }
+                if next == null { break }
+                let idx = next!
+                started.send(idx)
+                results.send(UnitDone { idx: idx, out: run_one_unit(units[idx]) })
             }
             0
         }
-        w = w + 1
     }
 
     collect_results(units, started, results)
@@ -167,11 +159,7 @@ fn collect_results(units: List<TestUnit>, started: Channel<int>, results: Channe
         0
     }
     mut in_flight: List<bool> = []
-    mut k = 0
-    while k < units.length {
-        in_flight.push(false)
-        k = k + 1
-    }
+    for _ in 0..units.length { in_flight.push(false) }
 
     mut done = 0
     mut last_progress = avra_uptime_ms()
@@ -199,10 +187,8 @@ fn collect_results(units: List<TestUnit>, started: Channel<int>, results: Channe
 
 fn render_stall(units: List<TestUnit>, in_flight: List<bool>) -> string {
     mut names: List<string> = []
-    mut i = 0
-    while i < units.length {
-        if in_flight[i] { names.push(units[i].name) }
-        i = i + 1
+    for (i, u) in units.enumerate() {
+        if in_flight[i] { names.push(u.name) }
     }
     "[test-runner] no unit completed in ${string(STALL_AFTER_MS / 1000)}s — still running: ${names.join(", ")}"
 }
