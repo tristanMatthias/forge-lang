@@ -20,7 +20,7 @@
 // none-check / unwrap of an optional routes through these primitives so the
 // niche-vs-boxed choice lives in exactly one place (`optional_repr_tagged`).
 
-use core.{ValueType, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_eq}
+use core.{ValueType, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_is_value_scalar, vtype_eq}
 use codegen.{Ctx, EmitValue}
 
 /// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
@@ -30,19 +30,7 @@ use codegen.{Ctx, EmitValue}
 /// `Optional(Unknown)` boxed would mis-shape downstream type handling). This
 /// is the single classification point.
 export fn optional_repr_tagged(inner: ValueType) -> bool {
-    match inner {
-        .Int -> true
-        .Bool -> true
-        .Float -> true
-        .U8 -> true
-        .U16 -> true
-        .U32 -> true
-        .U64 -> true
-        .I8 -> true
-        .I16 -> true
-        .I32 -> true
-        _ -> false
-    }
+    vtype_is_value_scalar(inner)
 }
 
 /// The `none` value for any optional: a null pointer (`0`). Repr-independent

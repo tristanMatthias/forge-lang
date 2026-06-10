@@ -5,7 +5,7 @@ use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
-use core.{vtype_from_name}
+use core.{vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
 
 // ── Arm type skip logic ──
 // An arm's inferred type should be skipped in type unification when:
@@ -190,11 +190,10 @@ fn tc_check_optional_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchA
     mut i = 0
     while i < arms.length {
         match arms[i].pattern {
-            .Variant(n, _) -> {
-                if n == "Some" { has_present = true }
-                if n == "None" { has_absent = true }
+            _ -> {
+                if pattern_is_optional_present(arms[i].pattern) { has_present = true }
+                if pattern_is_optional_absent(arms[i].pattern) { has_absent = true }
             }
-            _ -> {}
         }
         i = i + 1
     }
@@ -288,7 +287,7 @@ fn tc_bind_pattern(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
             // read its type from. Bind `v` directly to the inner `T` — the same
             // type codegen unwraps it to — instead of leaking Unknown.
             if vtype_is_optional(subject_ty) {
-                tc_bind_optional_present(tc, variant_name, bindings, subject_ty)
+                tc_bind_optional_present(tc, pattern, subject_ty)
             } else {
                 tc_bind_pattern_params(tc, variant_name, bindings, subject_ty)
             }
@@ -299,14 +298,14 @@ fn tc_bind_pattern(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
     }
 }
 
-/// Bind the present-bind capture of an optional `match` arm. The parser
-/// lowers `let v ->` to `.Some(v)` over a `T?` subject; bind `v` to the
-/// inner `T` (exactly what codegen unwraps to). `none ->` (`.None`) and a
-/// `_`-named or empty binding capture nothing.
-fn tc_bind_optional_present(tc: TC, variant_name: string, bindings: List<ParamEntry>, subject_ty: ValueType) -> TC {
-    if variant_name != "Some" { return tc }
-    if bindings.length == 0 { return tc }
-    let n = bindings[0].name
+/// Bind the present-bind capture of an optional `match` arm: `v` gets the
+/// inner `T` (exactly what codegen unwraps to). Absence arms and a
+/// `_`-named or empty binding capture nothing. Recognition goes through
+/// the core lowering-contract helpers — no variant-name strings here.
+fn tc_bind_optional_present(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
+    if !pattern_is_optional_present(pattern) { return tc }
+    let n = pattern_optional_binding(pattern)
+    if n == "" { return tc }
     if n == "_" { return tc }
     tc_bind(tc, n, vtype_strip_optional(subject_ty))
 }
@@ -457,20 +456,7 @@ fn enter_arm_with_guard(acc: TC, arm: MatchArm, subject_ty: ValueType) -> TC {
 /// variant pattern (no enum tag, no optional). Strings match via literal
 /// patterns, not variants, so they belong here too.
 fn scalar_match_subject(t: ValueType) -> bool {
-    match t {
-        .Int -> true
-        .Bool -> true
-        .Float -> true
-        .Str -> true
-        .U8 -> true
-        .U16 -> true
-        .U32 -> true
-        .U64 -> true
-        .I8 -> true
-        .I16 -> true
-        .I32 -> true
-        _ -> false
-    }
+    vtype_is_value_scalar(t) || (t is .Str)
 }
 
 /// Reject a variant / present-bind pattern (`.Some(x)`, or the `let x ->` /

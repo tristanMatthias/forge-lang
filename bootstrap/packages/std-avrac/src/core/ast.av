@@ -206,6 +206,60 @@ export enum Pattern {
     TypePattern(type_name: string, binding: string)
 }
 
+// ── Optional-match lowering contract ──
+// The parser lowers the optional-match surface to ordinary variant
+// patterns: `let v ->` becomes `.Some(v)` and `none ->` becomes `.None`.
+// These helpers are the ONE place that contract lives — the parser
+// constructs through them, and typeck (binding, exhaustiveness) and
+// codegen (present/absent dispatch) recognise through them. Never
+// string-match "Some"/"None" at a use site.
+
+/// Build the present-bind pattern the parser lowers `let <name> ->` to.
+export fn pattern_optional_present(bind_name: string) -> Pattern {
+    let binds: List<ParamEntry> = [ParamEntry { name: bind_name, vtype: ValueType.Unknown }]
+    Pattern.Variant("Some", binds)
+}
+
+/// Build the absence pattern the parser lowers `none ->` to.
+export fn pattern_optional_absent() -> Pattern {
+    let binds: List<ParamEntry> = []
+    Pattern.Variant("None", binds)
+}
+
+/// True for a present-bind arm (`let v ->`, lowered to `.Some(…)`).
+export fn pattern_is_optional_present(p: Pattern) -> bool {
+    match p {
+        .Variant(n, _) -> n == "Some"
+        _ -> false
+    }
+}
+
+/// True for an absence arm (`none ->`, lowered to `.None`).
+export fn pattern_is_optional_absent(p: Pattern) -> bool {
+    match p {
+        .Variant(n, _) -> n == "None"
+        _ -> false
+    }
+}
+
+/// The single bound name of a present-bind arm; `""` when the arm
+/// binds nothing (or isn't a present-bind arm).
+export fn pattern_optional_binding(p: Pattern) -> string {
+    match p {
+        .Variant(_, binds) -> { if binds.length > 0 { binds[0].name } else { "" } }
+        _ -> ""
+    }
+}
+
+/// Construct the desugar target of the postfix force-unwrap `!`. Every
+/// parser-side desugar that needs the present value (postfix `!`, `if let`,
+/// `let-else`) builds the call through here, so the builtin's shape lives
+/// in one place.
+export fn expr_force_unwrap(subject: Expr) -> Expr {
+    let fu_args: List<SExpr> = [sexpr_dummy(subject)]
+    Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+}
+
 // `List<MatchArm>` replaces the retired `enum MatchArmList`. Arm
 // order matters: match exhaustiveness uses first-match-wins, so
 // every walker iterates source-order. Body is an SExpr —
@@ -935,6 +989,30 @@ export fn vtype_is_unknown(t: ValueType) -> bool { t is .Unknown }
 
 /// True iff `t` is an optional/nullable type (`T?`).
 export fn vtype_is_optional(t: ValueType) -> bool { t is .Optional }
+
+/// True for the value-kind scalars (int / bool / float / sized ints).
+/// The single type-class behind three decisions that must stay in
+/// lock-step: which `T?` takes the BOXED (tagged) optional repr
+/// (codegen `optional_repr_tagged`), which `x == none` comparisons are
+/// always-false mistakes (typeck `check_none_compare`), and which match
+/// subjects can never carry a variant pattern. Pointer-backed types
+/// (str / struct / enum / list / fn / …) are NOT value scalars — their
+/// optionals use the null-pointer niche.
+export fn vtype_is_value_scalar(t: ValueType) -> bool {
+    match t {
+        .Int -> true
+        .Bool -> true
+        .Float -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        _ -> false
+    }
+}
 
 /// The inner type of an optional, or `t` unchanged when not optional.
 /// `vtype_strip_optional(T?) == T`; `vtype_strip_optional(T) == T`.

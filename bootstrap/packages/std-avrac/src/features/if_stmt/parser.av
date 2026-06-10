@@ -5,7 +5,7 @@
 // binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
 // no codegen.
 
-use core.{Stmt, Expr, BinOp, ValueType, SExpr, SStmt, sexpr_dummy, sstmt_dummy}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, expr_force_unwrap}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
@@ -129,8 +129,7 @@ impl Parser {
     // The `let <binding> = __tmp!` statement shared by both if-let desugars:
     // the present value, force-unwrapped (only reached on the present branch).
     fn iflet_bind_stmt(self, tmp: string, binding: string) -> SStmt {
-        let fu_args: List<SExpr> = [sexpr_dummy(Expr.Ident(tmp))]
-        let unwrap = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
         sstmt_dummy(Stmt.Let(binding, ValueType.Unknown, unwrap))
     }
 

@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, stmt_diverges}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1964,13 +1964,7 @@ fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Exp
     if l_none == r_none { return tc }   // need exactly one `none` operand
     let other = if l_none { r_ty } else { l_ty }
     if vtype_is_optional(other) { return tc }   // the intended case — fine
-    let tagged_scalar = match other {
-        .Int -> true
-        .Bool -> true
-        .Float -> true
-        _ -> false
-    }
-    if !tagged_scalar { return tc }
+    if !vtype_is_value_scalar(other) { return tc }
     let always = if op is .Eq { "false" } else { "true" }
     let msg = "comparing a non-optional `${vtype_render_full(other)}` to `none` is always ${always} — `none` only inhabits an optional `T?`. Make the type `T?`, or drop the comparison (an `if let` / `let-else` here needs an optional subject)."
     tc_report(tc, DiagCode.TypeMismatch, msg)

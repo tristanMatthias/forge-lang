@@ -1166,8 +1166,7 @@ impl Parser {
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
                 self.advance()
-                let fu_args: List<SExpr> = [sexpr_dummy(result)]
-                result = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+                result = expr_force_unwrap(result)
             }
             // Error propagation: `expr?` — if null, return .Err("parse error")
             // from the enclosing function.

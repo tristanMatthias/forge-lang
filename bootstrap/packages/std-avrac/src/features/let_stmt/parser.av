@@ -4,7 +4,7 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, BinOp, ValueType, SStmt, SExpr, sexpr_dummy, sstmt_dummy, type_expr_to_vtype, stmts_diverges}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmts_diverges, expr_force_unwrap}
 use parse.{Parser}
 use core.{Tk}
 use diagnostics.{DiagCode}
@@ -58,8 +58,7 @@ impl Parser {
             self.report(DiagCode.LetElseMustDiverge, "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
         }
         let tmp = self.fresh("letelse")
-        let fu_args: List<SExpr> = [sexpr_dummy(Expr.Ident(tmp))]
-        let unwrap = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
         let cond = Expr.Binary(Expr.Ident(tmp), BinOp.Eq, Expr.None)
         let guard = Expr.IfExpr(cond, Expr.Block(else_body), unwrap)
         let block_body: List<SStmt> = [
