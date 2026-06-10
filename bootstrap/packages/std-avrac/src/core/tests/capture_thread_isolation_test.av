@@ -1,0 +1,85 @@
+// d4jv slice 1: per-thread output sinks.
+//
+// The dup2-based capture this replaced redirected the process-wide
+// STDOUT_FILENO, so while ONE thread held a capture window open,
+// EVERY thread's println landed in that window's buffer. Sinks scope
+// each window to the thread that opened it, which is the contract
+// the in-process parallel test runner needs: a unit capturing its
+// own output never swallows a sibling unit's lines.
+//
+// The cross-thread window is held open by a channel handshake (no
+// sleeps, fully deterministic): the worker opens its capture, prints
+// its own marker, signals readiness, and only closes the window
+// after the main thread confirms it printed the must-not-leak line.
+
+extern fn avra_capture_stdout(closure: fn() -> void) -> string
+extern fn avra_channel_new() -> ptr
+extern fn avra_channel_send(ch: ptr, v: int)
+extern fn avra_channel_recv(ch: ptr) -> int
+extern fn avra_test_crash_count() -> int
+
+mut cti_captured: string = "?"
+mut cti_window_open: ptr = null
+mut cti_main_printed: ptr = null
+
+spec "d4jv: capture windows are per-thread" {
+    given "a worker thread holds a capture window open" {
+        then "the main thread's println does not leak into the worker's capture" {
+            cti_window_open = avra_channel_new()
+            cti_main_printed = avra_channel_new()
+            let h = spawn {
+                cti_captured = avra_capture_stdout(() -> {
+                    println("worker-own-line")
+                    avra_channel_send(cti_window_open, 1)
+                    let _ = avra_channel_recv(cti_main_printed)
+                })
+                0
+            }
+            let _ = avra_channel_recv(cti_window_open)
+            // Runs strictly inside the worker's capture window. Under
+            // process-wide dup2 capture this line was swallowed into
+            // the worker's buffer; under per-thread sinks it reaches
+            // the real stdout.
+            println("main-line-must-not-be-captured")
+            avra_channel_send(cti_main_printed, 1)
+            h.await
+            cti_captured.contains("worker-own-line")
+                && !cti_captured.contains("main-line-must-not-be-captured")
+        }
+    }
+}
+
+spec "d4jv: a crash inside a capture window is caught" {
+    given "the spec opens a capture and dies before the balancing stop" {
+        then "raising SIGABRT mid-capture does not kill the bundle" {
+            avra_test_capture_start()
+            println("doomed-window-line")
+            // The guard's longjmp skips avra_test_capture_stop; its
+            // sink unwinding must reclaim the orphan frame so later
+            // specs' output isn't silently buffered into it.
+            avra_test_raise_signal(SIGABRT)
+            true
+        }
+    }
+}
+
+spec "d4jv: capture still works after a crash unwound the stack" {
+    given "the previous spec leaked a capture frame into its crash" {
+        then "a fresh capture round-trips cleanly" {
+            avra_test_capture_start()
+            println("post-crash-capture")
+            let out = avra_test_capture_stop()
+            out == "post-crash-capture"
+        }
+        then "the doomed window's output did not bleed into this one" {
+            avra_test_capture_start()
+            println("second-round-trip")
+            let out = avra_test_capture_stop()
+            !out.contains("doomed-window-line") && out == "second-round-trip"
+        }
+        then "ack the deliberate crash so the suite exits green" {
+            avra_test_ack_expected_crash()
+            avra_test_crash_count() == 0
+        }
+    }
+}

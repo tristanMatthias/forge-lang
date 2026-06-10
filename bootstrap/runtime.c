@@ -1153,13 +1153,118 @@ int64_t avra_is_dir(const char* path) {
     return S_ISDIR(st.st_mode) ? 1 : 0;
 }
 
+// ── Per-thread output sinks ─────────────────────────────────────
+// Every byte of program stdout flows through avra_puts (codegen
+// lowers `println` here) or avra_stdout_write. A thread with no
+// sink installed writes straight to stdout — the only added cost
+// is one thread-local load.
+//
+// Sinks form a per-thread STACK so output-capture windows nest:
+// the spec runner pushes a frame around each test unit (grouping
+// that unit's output for atomic printing), and the test capture
+// API pushes a nested frame inside a spec. Capture isolation is
+// per-thread by construction — no dup2, no process-wide fd swaps,
+// no serializing mutex. The dup2-based predecessor redirected the
+// process-wide STDOUT_FILENO, so any concurrently-running thread's
+// output landed inside whichever capture window happened to be
+// open (d4jv slice 1 root fix).
+//
+// Deliberate semantics, pinned by spec tests:
+//   - Only the CURRENT thread's writes enter its sink. A thread
+//     spawned inside a capture window writes to the real stdout
+//     (fresh threads start sink-less), mirroring how subprocesses
+//     behave under popen-based avra_shell_exec.
+//   - stderr (avra_eprintln) is never sunk — diagnostics stay live.
+
+typedef struct AvraSinkFrame {
+    char* buf;
+    size_t len;
+    size_t cap;
+    struct AvraSinkFrame* prev;
+} AvraSinkFrame;
+
+static _Thread_local AvraSinkFrame* t_sink = NULL;
+
+static void sink_write(const char* s, size_t n) {
+    AvraSinkFrame* f = t_sink;
+    if (n == 0) return;
+    if (f->len + n + 1 > f->cap) {
+        size_t want = f->cap * 2;
+        while (want < f->len + n + 1) want *= 2;
+        f->buf = (char*)realloc(f->buf, want);
+        f->cap = want;
+    }
+    memcpy(f->buf + f->len, s, n);
+    f->len += n;
+    f->buf[f->len] = '\0';
+}
+
+// Install a fresh capture frame on the current thread.
+void avra_sink_push(void) {
+    AvraSinkFrame* f = (AvraSinkFrame*)malloc(sizeof(AvraSinkFrame));
+    f->cap = 4096;
+    f->len = 0;
+    f->buf = (char*)malloc(f->cap);
+    f->buf[0] = '\0';
+    f->prev = t_sink;
+    t_sink = f;
+}
+
+// Pop the current thread's top frame, returning everything written
+// while it was installed. Returns an rc string (same allocation
+// discipline as every other runtime-produced Avra string).
+const char* avra_sink_pop(void) {
+    AvraSinkFrame* f = t_sink;
+    if (!f) return "";
+    t_sink = f->prev;
+    char* out = (char*)avra_rc_alloc((int64_t)f->len + 1);
+    memcpy(out, f->buf, f->len + 1);
+    free(f->buf);
+    free(f);
+    return out;
+}
+
+// Discard frames until the stack matches `snapshot`. The crash
+// guard uses this so a spec that dies inside a capture window
+// doesn't leave orphan frames silently swallowing the next spec's
+// output (the longjmp skips the balancing pop).
+static void sink_unwind_to(AvraSinkFrame* snapshot) {
+    while (t_sink && t_sink != snapshot) {
+        AvraSinkFrame* f = t_sink;
+        t_sink = f->prev;
+        free(f->buf);
+        free(f);
+    }
+}
+
+// Shared writer: top sink frame when installed, else real stdout.
+// The unsinked path flushes so out-of-band writers (crash lines,
+// LSP framing) are never reordered behind stdio buffering.
+static void avra_output_write(const char* s) {
+    if (!s) return;
+    if (t_sink) { sink_write(s, strlen(s)); return; }
+    fputs(s, stdout);
+    fflush(stdout);
+}
+
+// `println` lowering target. Historically println compiled to libc
+// puts directly, which left the runtime no chokepoint over program
+// output — the reason stdout capture had to resort to fd games.
+// Same observable behavior as puts on the unsinked path.
+void avra_puts(const char* s) {
+    if (t_sink) {
+        if (s) sink_write(s, strlen(s));
+        sink_write("\n", 1);
+        return;
+    }
+    puts(s ? s : "");
+}
+
 // Write a string to stdout exactly as-is — no trailing newline,
 // no buffering tricks. Used by @std/lsp's JSON-RPC writer where the
 // framing protocol requires precise byte counts.
 void avra_stdout_write(const char* s) {
-    if (!s) return;
-    fputs(s, stdout);
-    fflush(stdout);
+    avra_output_write(s);
 }
 
 // Read up to `n` bytes from stdin, blocking until data arrives or
@@ -1489,16 +1594,25 @@ int64_t avra_lazy_comptime_has(const char* qn) {
 // every later call returns the cached string in nanoseconds.
 //
 // Single-key memo (the fp is global to the process) — no hashmap
-// needed. Set is one strdup; get is a pointer dereference.
+// needed. Write-once under a mutex: the fp is a pure function of
+// process-stable inputs, so the first writer wins and the pointer
+// is never freed after publish — concurrent getters (parallel test
+// units warming the fixture cache simultaneously) can safely hold
+// the returned pointer without copy or lock-on-read hazards.
 static char* g_test_toolchain_fp_memo = NULL;
+static pthread_mutex_t g_test_toolchain_fp_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void avra_test_toolchain_fp_set(const char* fp) {
-    if (g_test_toolchain_fp_memo) free(g_test_toolchain_fp_memo);
-    g_test_toolchain_fp_memo = strdup(fp);
+    pthread_mutex_lock(&g_test_toolchain_fp_mutex);
+    if (!g_test_toolchain_fp_memo) g_test_toolchain_fp_memo = strdup(fp);
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
 }
 
 const char* avra_test_toolchain_fp_get(void) {
-    return g_test_toolchain_fp_memo ? g_test_toolchain_fp_memo : "";
+    pthread_mutex_lock(&g_test_toolchain_fp_mutex);
+    const char* v = g_test_toolchain_fp_memo;
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
+    return v ? v : "";
 }
 
 // ─── Int-keyed Map ────────────────────────────────────────────────
@@ -3166,58 +3280,17 @@ int64_t avra_shell_exec_status(const char* cmd) {
     return (int64_t)((status >> 8) & 0xff);
 }
 
-// Forward declared so avra_capture_stdout (above) and the test
-// capture API (below) share the same recursive mutex. Body lives in
-// the spec-test section below.
-extern pthread_mutex_t _capture_mutex;
-
 // vez6.4szi: in-process stdout capture. Replaces fixture tests that
-// fork bs2 to grep stdout. Redirects stdout to a tmpfile across the
-// closure invocation, then reads the file back as a string. tmpfile
-// chosen over pipe to avoid the 64KB buffer-fill deadlock when the
-// closure produces more output than a pipe can hold without a reader.
-//
-// Thread safety: serialized via the recursive _capture_mutex so two
-// spawned threads can't race on dup2(STDOUT_FILENO). Nested same-
-// thread captures still work (recursive). Closure panics leak the
-// redirect AND the mutex; production code shouldn't capture stdout
-// this way.
+// fork bs2 to grep stdout. Built on the per-thread sink stack: the
+// closure's println traffic lands in a fresh frame, popped verbatim.
+// Nesting works because frames stack; concurrent captures on other
+// threads are isolated by construction (each thread has its own
+// stack). If the closure crashes under a spec guard, the guard's
+// sink_unwind_to reclaims the unbalanced frame.
 const char* avra_capture_stdout(int64_t closure) {
-    pthread_mutex_lock(&_capture_mutex);
-    fflush(stdout);
-    int saved = dup(STDOUT_FILENO);
-    if (saved < 0) { pthread_mutex_unlock(&_capture_mutex); return ""; }
-    FILE* tmp = tmpfile();
-    if (!tmp) {
-        close(saved);
-        pthread_mutex_unlock(&_capture_mutex);
-        return "";
-    }
-    if (dup2(fileno(tmp), STDOUT_FILENO) < 0) {
-        fclose(tmp);
-        close(saved);
-        pthread_mutex_unlock(&_capture_mutex);
-        return "";
-    }
-
+    avra_sink_push();
     avra_closure_call_0(closure);
-
-    fflush(stdout);
-    dup2(saved, STDOUT_FILENO);
-    close(saved);
-
-    if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-    long len = ftell(tmp);
-    if (len < 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-    if (fseek(tmp, 0, SEEK_SET) != 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-
-    char* buf = (char*)malloc((size_t)len + 1);
-    if (!buf) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-    size_t n = fread(buf, 1, (size_t)len, tmp);
-    buf[n] = '\0';
-    fclose(tmp);
-    pthread_mutex_unlock(&_capture_mutex);
-    return buf;
+    return avra_sink_pop();
 }
 
 // Stdout TTY check — gates the build progress bar so CI logs (which
@@ -3883,26 +3956,6 @@ const char* avra_format_location(const char* file, int64_t line) {
     return result;
 }
 
-// Forward declare capture state (used by test flush + capture).
-// Recursive so a thread can do nested avra_capture_stdout(closure)
-// calls (the spec/given/then capture_stdout_test exercises this).
-// Across threads it serializes — only one capture window at a time;
-// other threads block at the lock boundary rather than leaking their
-// stdout into the capturing thread's tmpfile.
-// Defined non-static so avra_capture_stdout (forward-declared above)
-// shares the same mutex.
-pthread_mutex_t _capture_mutex;
-static int _capture_fd_backup = -1;
-
-__attribute__((constructor))
-static void _capture_mutex_init(void) {
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&_capture_mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
-}
-
 // ── Spec test runtime: state primitives ──
 // Rendering moved to Avra (features/spec_test/reporter.av) — this
 // file only owns thread-safe counters + a failure-record linked list
@@ -4076,8 +4129,12 @@ int64_t     avra_test_failure_line (int64_t idx) { AVRA_RECORD_FIELD(AvraTestFai
 // to without threading state through every assertion. Single-
 // threaded test execution today; if parallel test runners land
 // these become per-thread or per-context refs.
-static const char* _current_spec = "";
-static const char* _current_given = "";
+// Thread-local: under the in-process parallel runner each worker
+// thread runs its own spec at any moment; failure records must
+// attribute to the spec running on the RECORDING thread, not to
+// whichever spec another worker started last.
+static _Thread_local const char* _current_spec = "";
+static _Thread_local const char* _current_given = "";
 
 void avra_test_set_current_spec(const char* name) {
     _current_spec = test_str_dup(name);
@@ -4212,21 +4269,40 @@ const char* avra_test_summary_to_bytes(int64_t pass, int64_t fail,
 // combined stdio is captured by the orchestrator.
 int64_t avra_test_run_spec_guarded(const char* name, const char* file,
                                    int64_t line, int64_t closure) {
+    // Nest-safe: save the enclosing guard's checkpoint. The in-process
+    // test runner wraps each whole test unit in this same guard, with
+    // per-spec guards nesting inside — a single TLS jmp_buf slot would
+    // leave the outer guard pointing at a dead stack frame once an
+    // inner spec returned.
+    sigjmp_buf saved_jmp;
+    memcpy(&saved_jmp, &_spec_guard_jmp, sizeof(sigjmp_buf));
+    sig_atomic_t saved_active = _spec_guard_active;
+    AvraSinkFrame* sink_snapshot = t_sink;
+
     int sig = sigsetjmp(_spec_guard_jmp, 1);
     if (sig == 0) {
         _spec_guard_active = 1;
         avra_closure_call_0(closure);
-        _spec_guard_active = 0;
-        return 0;
+    } else {
+        // The longjmp may have skipped balancing sink pops (spec died
+        // inside a capture window) — reclaim orphan frames so the next
+        // spec's output isn't silently swallowed.
+        sink_unwind_to(sink_snapshot);
+        avra_test_record_crash(name, file, line, sig);
+        char crash_line[512];
+        snprintf(crash_line, sizeof(crash_line),
+                 "    \x1b[31m✗ SPEC CRASHED\x1b[0m %s \x1b[2m(at %s:%lld — %s)\x1b[0m\n",
+                 name ? name : "<unknown>",
+                 file ? file : "<unknown>",
+                 (long long)line,
+                 avra_signal_label(sig));
+        // Through the sink router so the line lands inside the unit's
+        // buffered output (correctly attributed under concurrency)
+        // instead of interleaving on the shared terminal.
+        avra_output_write(crash_line);
     }
-    _spec_guard_active = 0;
-    avra_test_record_crash(name, file, line, sig);
-    printf("    \x1b[31m✗ SPEC CRASHED\x1b[0m %s \x1b[2m(at %s:%lld — %s)\x1b[0m\n",
-           name ? name : "<unknown>",
-           file ? file : "<unknown>",
-           (long long)line,
-           avra_signal_label(sig));
-    fflush(stdout);
+    _spec_guard_active = saved_active;
+    memcpy(&_spec_guard_jmp, &saved_jmp, sizeof(sigjmp_buf));
     return sig;
 }
 
@@ -4259,62 +4335,32 @@ int64_t avra_test_summary(void) {
     int64_t fail = atomic_load(&avra_test_fail_count);
     int64_t total = pass + fail;
     if (total == 0) return 0;
-    printf("\n%lld/%lld tests passed", pass, total);
-    if (fail > 0) printf(" (%lld failed)", fail);
+    printf("\n%lld/%lld tests passed", (long long)pass, (long long)total);
+    if (fail > 0) printf(" (%lld failed)", (long long)fail);
     printf("\n");
     return fail > 0 ? 1 : 0;
 }
 
 // ── Stdout capture (for testing output-producing code) ──
-// Thread-safe: uses a mutex so only one thread can capture at a time.
-// This is inherently serial (dup2 is process-wide) but prevents corruption.
-
-static char* _capture_buf = NULL;
-static size_t _capture_len = 0;
-static size_t _capture_cap = 0;
-// _capture_fd_backup declared earlier (forward declaration)
-static int _capture_pipe[2] = {-1, -1};
+// Thin wrappers over the per-thread sink stack. Concurrent captures
+// on different threads are independent windows; nesting on one
+// thread stacks. See the sink section for the full semantics.
 
 void avra_test_capture_start(void) {
-    // Flush our own output buffer before capturing
-    avra_test_flush();
-    pthread_mutex_lock(&_capture_mutex);
-    fflush(stdout);
-    _capture_fd_backup = dup(STDOUT_FILENO);
-    pipe(_capture_pipe);
-    dup2(_capture_pipe[1], STDOUT_FILENO);
-    close(_capture_pipe[1]);
-    _capture_cap = 4096;
-    _capture_buf = (char*)malloc(_capture_cap);
-    _capture_len = 0;
+    avra_sink_push();
 }
 
 const char* avra_test_capture_stop(void) {
-    fflush(stdout);
-    dup2(_capture_fd_backup, STDOUT_FILENO);
-    close(_capture_fd_backup);
-    _capture_fd_backup = -1;
-
-    // Read everything from the pipe
-    while (1) {
-        if (_capture_len >= _capture_cap - 1) {
-            _capture_cap *= 2;
-            _capture_buf = (char*)realloc(_capture_buf, _capture_cap);
-        }
-        struct pollfd pfd = {_capture_pipe[0], POLLIN, 0};
-        if (poll(&pfd, 1, 0) <= 0) break;
-        ssize_t n = read(_capture_pipe[0], _capture_buf + _capture_len, _capture_cap - _capture_len - 1);
-        if (n <= 0) break;
-        _capture_len += n;
+    AvraSinkFrame* f = t_sink;
+    if (!f) return "";
+    // Historical contract: strip ONE trailing newline (println adds
+    // one per line; tests assert `out == "value"` for single-line
+    // captures).
+    if (f->len > 0 && f->buf[f->len - 1] == '\n') {
+        f->len--;
+        f->buf[f->len] = '\0';
     }
-    close(_capture_pipe[0]);
-    _capture_buf[_capture_len] = '\0';
-    // Strip trailing newline (puts adds one)
-    if (_capture_len > 0 && _capture_buf[_capture_len - 1] == '\n') {
-        _capture_buf[_capture_len - 1] = '\0';
-    }
-    pthread_mutex_unlock(&_capture_mutex);
-    return _capture_buf;
+    return avra_sink_pop();
 }
 
 // ── Concurrency ──
