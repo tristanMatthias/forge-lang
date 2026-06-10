@@ -197,6 +197,9 @@ export enum DiagCode {
     /// Display — define the method or convert the value through one
     /// of the primitive types first.
     MissingDisplay
+    /// F1043 — method call on a receiver whose type has no such
+    /// method. The message lists the receiver's available methods.
+    UnknownMethod
     /// F1042 — a `table { ... }` literal whose row type can't be
     /// determined. Tables desugar to `List<RowStruct>`; the row struct
     /// must come from `table<RowStruct> { ... }` or from the binding's
@@ -371,6 +374,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .WrongArgCount       -> ErrorDef { code: "F1001", help: "check the function's declared arity against the call site" }
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
         .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
+        .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }
         .UndefinedVariable   -> ErrorDef { code: "F3000", help: "name not in scope — check spelling, add a `use` import, or declare it" }

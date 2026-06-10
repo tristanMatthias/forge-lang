@@ -281,6 +281,7 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: List<
 use codegen.{emit_concat, emit_substring, emit_str_replace}
 use codegen.{emit_println, emit_eprintln}
 use features.list_lit.{emit_list_method_call}
+use features.channels.{emit_channel_method_call}
 use features.map_lit.{emit_map_method_call}
 use features.trait_decl.{emit_trait_dispatch}
 use codegen.{emit_block_loop, emit_block_loop_ctx}
@@ -430,6 +431,13 @@ export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: s
     if vtype_is_map(r.ty) {
         let map_ptr = ctx.to_ptr(r.value, "map_ptr")
         return emit_map_method_call(ctx, env, map_ptr, method, args)
+    }
+    // Channel methods — dispatched to features/channels/codegen.av
+    match r.ty {
+        .Channel(elem) -> {
+            return emit_channel_method_call(ctx, env, ctx.to_ptr(r.value, "chan_ptr"), elem, method, args)
+        }
+        _ -> {}
     }
     // Task methods: .cancel()
     match r.ty {

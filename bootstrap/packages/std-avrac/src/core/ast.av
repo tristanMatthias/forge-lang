@@ -470,6 +470,10 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
                     ValueType.List(elem)
                 }
+                "Channel" -> {
+                    let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
+                    ValueType.Channel(elem)
+                }
                 "__tuple" -> ValueType.Tuple(tel_to_type_list(args))
                 _ -> ValueType.Enum(base, tel_to_type_list(args), 0)
             }
@@ -585,6 +589,7 @@ export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
             } else { t }
         }
         .List(elem) -> ValueType.List(stamp_ids_vtype(elem, reg))
+        .Channel(elem) -> ValueType.Channel(stamp_ids_vtype(elem, reg))
         .Task(r) -> ValueType.Task(stamp_ids_vtype(r, reg))
         .Tuple(types) -> ValueType.Tuple(stamp_ids_vtypes(types, reg))
         .Union(types) -> ValueType.Union(stamp_ids_vtypes(types, reg))

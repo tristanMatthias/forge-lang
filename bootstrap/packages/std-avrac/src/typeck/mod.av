@@ -8,6 +8,7 @@ use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_h
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
+use features.channels.{check_channel_method}
 use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method}
 use features.let_stmt.{is_const_expr, bind_destructure}
@@ -1221,7 +1222,7 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 // ── Pass 2: Statement checking ──
 
 /// Type-check every statement in a list, threading the TC.
-fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
+export fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = lint_index_loops(tc, stmts)
     for ss in stmts {
         avra_ice_at(ss.file, ss.line, ss.col)
@@ -2420,6 +2421,12 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> Ex
         return check_map_method(checked_args, method)
     }
 
+    // Channel methods — dispatched to features/channels/typeck.av
+    match o.ty {
+        .Channel(elem) -> return check_channel_method(checked_args, elem, method, args)
+        _ -> {}
+    }
+
     // Method lookup — look up in fn registry as TypeName__method.
     // Works for structs, enums, newtypes, and trait types.
     let type_name = match o.ty {
@@ -2752,6 +2759,9 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .When(arms) -> .When(annotate_when_arms(tc, arms))
         .Spawn(body) -> .Spawn(annotate_expr(tc, body))
         .Isolated(body) -> .Isolated(annotate_expr(tc, body))
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null { expr } else { .ChannelNew(elem, annotate_expr(tc, capacity!)) }
+        }
         _ -> expr  // Leaf expressions: Number, String, Bool, Null, Ident, FloatLit, QualifiedIdent
     }
 }

@@ -1,8 +1,12 @@
 // WHY: codegen for `select { binding <- channel -> { body } }`.
 // Builds an array of channel pointers, calls avra_select to block
-// until one has data, then dispatches to the matching arm.
+// until one has data, then dispatches to the matching arm. Typed
+// channels (Channel<elem>) give each arm's binding the element's
+// LLVM repr + static type; legacy raw-extern channels (ptr) keep
+// the historic untyped i64 binding.
 
 use features.error_propagation.{Result}
+use features.channels.{channel_slot_out}
 use codegen.{StmtResult}
 use codegen.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
@@ -20,31 +24,39 @@ export fn select_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Resul
 /// the matching arm via `emit_select_dispatch`.
 fn emit_select(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>) -> Result<StmtResult, string> {
     let channels = ctx.array_new()
-    push_channels(ctx, env, arms, channels)?
+    let elems = push_channels(ctx, env, arms, channels)?
 
     let result = ctx.call("avra_select", [channels, ctx.i64(arms.length)])
     let idx = ctx.call("avra_select_index", [result])
     let val = ctx.call("avra_select_value", [result])
 
-    emit_select_dispatch(ctx, env, arms, idx, val, 0)
+    emit_select_dispatch(ctx, env, arms, elems, idx, val, 0)
 }
 
-/// Walk the arms, emitting each channel expression and pushing
-/// its value into `arr`.
-fn push_channels(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, arr: ptr) -> Result<int, string> {
+/// Walk the arms, emitting each channel expression and pushing its
+/// handle into `arr`. Returns the per-arm element types (Unknown for
+/// non-Channel-typed expressions) so the dispatch can bind each
+/// arm's value with its element repr.
+fn push_channels(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, arr: ptr) -> Result<List<ValueType>, string> {
+    mut elems: List<ValueType> = []
     mut i = 0
     while i < arms.length {
         let r = ctx.emit(env, arms[i].chan)?
         ctx.array_push(arr, ctx.to_i64(r.value, "ch_i64"))
+        let elem = match r.ty {
+            .Channel(e) -> e
+            _ -> ValueType.Unknown
+        }
+        elems.push(elem)
         i = i + 1
     }
-    Result.Ok(arms.length)
+    Result.Ok(elems)
 }
 
 /// Emit a chained-if dispatch: compare the runtime arm index
 /// against each arm's static index, branch into the matching
 /// body with the received value bound, fall through otherwise.
-fn emit_select_dispatch(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, idx: ptr, val: ptr, arm_idx: int) -> Result<StmtResult, string> {
+fn emit_select_dispatch(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, elems: List<ValueType>, idx: ptr, val: ptr, arm_idx: int) -> Result<StmtResult, string> {
     if arm_idx >= arms.length { return ok_sr(ctx, env) }
     let arm = arms[arm_idx]
     let cmp = ctx.eq(idx, ctx.i64(arm_idx), "sel_cmp")
@@ -54,12 +66,18 @@ fn emit_select_dispatch(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, 
     ctx.cond_br(cmp, then_bb, else_bb)
 
     ctx.position(then_bb)
-    let body_env = ctx.bind(env, arm.binding, val, .Unknown)
+    // Typed arm: coerce the i64 wire slot to the element's repr and
+    // bind with its static type. Untyped (legacy) arm: raw i64.
+    let elem = elems[arm_idx]
+    let body_env = match elem {
+        .Unknown -> ctx.bind(env, arm.binding, val, .Unknown)
+        _ -> ctx.bind(env, arm.binding, channel_slot_out(ctx, val, elem), elem)
+    }
     emit_block_loop(ctx, body_env, arm.body, ctx.i64(0), .Unknown)?
     ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)
-    let next_r = emit_select_dispatch(ctx, env, arms, idx, val, arm_idx + 1)?
+    let next_r = emit_select_dispatch(ctx, env, arms, elems, idx, val, arm_idx + 1)?
     ctx.br_if_open(merge_bb)
 
     ctx.position(merge_bb)

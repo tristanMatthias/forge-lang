@@ -1,0 +1,113 @@
+// WHY: codegen for typed channels (spec Axis 18).
+//
+// Construction lowers to `avra_channel_new_cap(cap)` (-1 encodes the
+// unbounded form — the runtime treats any negative capacity as
+// "grow on demand"). The handle is an rc-allocated opaque ptr; its
+// release path is `avra_channel_release` (see emit_rc_release_typed).
+//
+// Slot discipline: the runtime moves i64 words. Element values cross
+// the boundary through `cast_to_type`-style coercions (Bool zext,
+// Float bitcast, ptr ↔ i64), centralised in `channel_slot_in` /
+// `channel_slot_out` so send, recv, and select's typed arm binding
+// share one definition of the wire repr.
+//
+// RC discipline: send retains ptr-backed elements (the value must
+// survive the sender's scope; the receiver's scope owns the +1 that
+// travels through the channel). recv returns `elem?` — null ⇔ the
+// channel is closed and drained.
+
+use codegen.{ok_emit, err_emit, EmitValue}
+use codegen.{emit_optional_some, emit_optional_none}
+use codegen.{vtype_is_ptr_type}
+use core.{vtype_display}
+
+/// Codegen entry for `channel<T>(cap)` — feature-registry hook.
+export fn channel_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .ChannelNew(elem, capacity) -> emit_channel_new(ctx, env, elem, capacity)
+        _ -> err_emit("channel_emit_expr: expected ChannelNew")
+    }
+}
+
+fn emit_channel_new(ctx: Ctx, env: List<VarBinding>, elem: ValueType, capacity: Expr?) -> Result<EmitValue, string> {
+    let cap_val = if capacity == null {
+        // Unbounded — the runtime takes any negative capacity.
+        ctx.i64(0 - 1)
+    } else {
+        let c = ctx.emit(env, capacity!)?
+        ctx.to_i64(c.value, "chan_cap")
+    }
+    let handle = ctx.call("avra_channel_new_cap", [cap_val])
+    ok_emit(handle, .Channel(elem))
+}
+
+/// Coerce an element value into the channel's i64 wire slot.
+/// `cast_to_type` covers every elem repr we admit: Int identity,
+/// Bool zext, Float bitcast (bit-preserving), ptr → ptrtoint.
+export fn channel_slot_in(ctx: Ctx, v: ptr) -> ptr {
+    ctx.to_i64(v, "chan_slot_in")
+}
+
+/// Coerce an i64 wire slot back to the element's LLVM repr —
+/// exact inverse of `channel_slot_in`.
+export fn channel_slot_out(ctx: Ctx, slot: ptr, elem: ValueType) -> ptr {
+    ctx.cast_to(slot, elem)
+}
+
+/// Method-call dispatch for a Channel<elem> receiver. Hooked from
+/// `emit_method_call` (mirrors the Task arm). `ch_val` is the
+/// emitted channel handle; `elem` its element type.
+export fn emit_channel_method_call(ctx: Ctx, env: List<VarBinding>, ch_val: ptr, elem: ValueType, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    match method {
+        "send" -> {
+            if args.length != 1 { return err_emit("channel send takes exactly one value") }
+            let a = ctx.emit(env, args[0].node)?
+            // Ownership: the value outlives the sender's scope — the
+            // receiver's scope owns this +1.
+            if vtype_is_ptr_type(a.ty) { let _ = ctx.rc_retain(a.value) }
+            ctx.call("avra_channel_send", [ch_val, channel_slot_in(ctx, a.value)])
+            ok_emit(ctx.i64(0), .Void)
+        }
+        "recv" -> emit_channel_recv(ctx, ch_val, elem)
+        "close" -> {
+            ctx.call("avra_channel_close", [ch_val])
+            ok_emit(ctx.i64(0), .Void)
+        }
+        _ -> err_emit("Channel has no method `${method}` (available: .send(value), .recv() -> ${vtype_display(elem)}?, .close())")
+    }
+}
+
+/// recv() -> elem?  Branches on the runtime's ok flag: ok=1 wraps
+/// the slot value as Some (identity for ptr-backed elems, boxed for
+/// value elems), ok=0 yields none. The two sides merge through a phi
+/// typed as the optional's repr.
+fn emit_channel_recv(ctx: Ctx, ch_val: ptr, elem: ValueType) -> Result<EmitValue, string> {
+    let ok_slot = ctx.alloca_i64("chan_recv_ok")
+    let raw = ctx.call("avra_channel_recv_opt", [ch_val, ok_slot])
+    let ok = ctx.load_i64(ok_slot, "chan_recv_ok_v")
+    let got = ctx.eq(ok, ctx.i64(1), "chan_recv_got")
+
+    let some_bb = ctx.bb("chan_recv_some")
+    let none_bb = ctx.bb("chan_recv_none")
+    let merge_bb = ctx.bb("chan_recv_merge")
+    ctx.cond_br(got, some_bb, none_bb)
+
+    // Both phi edges are coerced to the optional's canonical repr
+    // (llvm_type_for .Optional(_) is ptr; none is the null pointer).
+    let opt_ty = ValueType.Optional(elem)
+    ctx.position(some_bb)
+    let some_v = ctx.cast_to(emit_optional_some(ctx, elem, channel_slot_out(ctx, raw, elem)), opt_ty)
+    let some_end = ctx.current_bb()
+    ctx.br(merge_bb)
+
+    ctx.position(none_bb)
+    let none_v = ctx.cast_to(emit_optional_none(ctx), opt_ty)
+    let none_end = ctx.current_bb()
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    let phi = ctx.phi_for(opt_ty, "chan_recv_opt")
+    ctx.add_incoming(phi, some_v, some_end)
+    ctx.add_incoming(phi, none_v, none_end)
+    ok_emit(phi, .Optional(elem))
+}

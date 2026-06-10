@@ -1,0 +1,113 @@
+// d4jv slice 2: typed channel construction + send/recv round-trips.
+// Covers the three capacity forms and every element repr class
+// (int identity, string ptr, bool zext, float bitcast) so the
+// channel_slot_in/out coercions are pinned by behavior.
+
+spec "channel basics: construction and int round-trip" {
+    given "a bounded channel" {
+        then "send then recv returns the value" {
+            let ch = channel<int>(4)
+            ch.send(42)
+            ch.recv() == 42
+        }
+        then "values arrive in FIFO order" {
+            let ch = channel<int>(4)
+            ch.send(1)
+            ch.send(2)
+            ch.send(3)
+            let a = ch.recv()
+            let b = ch.recv()
+            let c = ch.recv()
+            a! == 1 && b! == 2 && c! == 3
+        }
+        then "bounded capacity admits cap sends without blocking" {
+            let ch = channel<int>(2)
+            ch.send(10)
+            ch.send(20)
+            ch.recv()! + ch.recv()! == 30
+        }
+    }
+    given "an unbounded channel" {
+        then "many sends never block and all drain in order" {
+            let ch = channel<int>()
+            mut i = 0
+            while i < 100 {
+                ch.send(i)
+                i = i + 1
+            }
+            mut sum = 0
+            mut j = 0
+            while j < 100 {
+                sum = sum + ch.recv()!
+                j = j + 1
+            }
+            sum == 4950
+        }
+    }
+}
+
+spec "channel basics: element repr coercions" {
+    given "non-int element types" {
+        then "string elements round-trip intact" {
+            let ch = channel<string>(1)
+            ch.send("hello channel")
+            ch.recv()! == "hello channel"
+        }
+        then "bool elements round-trip" {
+            let ch = channel<bool>(2)
+            ch.send(true)
+            ch.send(false)
+            ch.recv()! == true && ch.recv()! == false
+        }
+        then "float elements survive the bitcast round-trip" {
+            let ch = channel<float>(1)
+            ch.send(3.25)
+            ch.recv()! == 3.25
+        }
+    }
+}
+
+type ChanPayload = { tag: string, n: int }
+
+spec "channel basics: struct elements" {
+    given "a channel carrying a struct" {
+        then "fields arrive intact" {
+            let ch = channel<ChanPayload>(1)
+            ch.send(ChanPayload { tag: "x", n: 7 })
+            let got = ch.recv()!
+            got.tag == "x" && got.n == 7
+        }
+    }
+}
+
+type IntPipe = { ch: Channel<int>, label: string }
+
+spec "channel basics: Channel<T> as a type" {
+    given "a struct field holding a channel" {
+        then "the field round-trips a value" {
+            let p = IntPipe { ch: channel<int>(1), label: "pipe" }
+            p.ch.send(5)
+            p.ch.recv()! == 5 && p.label == "pipe"
+        }
+    }
+    given "a let annotation" {
+        then "Channel<int> annotates a binding" {
+            let ch: Channel<int> = channel<int>(1)
+            ch.send(9)
+            ch.recv()! == 9
+        }
+    }
+}
+
+fn chan_pump_one(ch: Channel<int>, v: int) -> int {
+    ch.send(v)
+    ch.recv()!
+}
+
+spec "channel basics: channels as fn params" {
+    given "a fn taking Channel<int>" {
+        then "the param round-trips" {
+            chan_pump_one(channel<int>(1), 33) == 33
+        }
+    }
+}

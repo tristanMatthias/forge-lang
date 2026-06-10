@@ -268,7 +268,7 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 
 ### Token Kinds
 Token kinds defined as `Tk` enum in `src/core/ast.av`. Keywords are mapped in `p_keyword_kind` in `src/parse/mod.av`.
-New keywords must be added to: (1) `Tk` enum in ast.av, (2) `p_keyword_kind` in parse/mod.av, (3) `avra_kind_id_for_keyword()` in runtime.c.
+New keywords must be added to: (1) `Tk` enum in ast.av, (2) `p_keyword_kind` in parse/mod.av. (`avra_kind_id_for_keyword()` in runtime.c no longer exists — the keyword table lives solely in the parser; verified 2026-06 while adding `channel`.)
 
 ## Silent Failure Modes
 

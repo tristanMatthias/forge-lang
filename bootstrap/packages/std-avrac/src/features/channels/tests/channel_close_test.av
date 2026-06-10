@@ -1,0 +1,55 @@
+// d4jv slice 2: close semantics. close marks the channel — it never
+// frees (the historic API freed on close, making post-close recv a
+// use-after-free). Buffered values stay receivable; recv() returns
+// null exactly when closed AND drained.
+
+spec "channel close: drain then null" {
+    given "a closed channel with buffered values" {
+        then "buffered values drain, then recv yields null" {
+            let ch = channel<int>(4)
+            ch.send(1)
+            ch.send(2)
+            ch.close()
+            let a = ch.recv()
+            let b = ch.recv()
+            let c = ch.recv()
+            a! == 1 && b! == 2 && c == null
+        }
+        then "every recv after the drain stays null" {
+            let ch = channel<int>(1)
+            ch.close()
+            ch.recv() == null && ch.recv() == null
+        }
+    }
+    given "close is idempotent" {
+        then "double close does not trap" {
+            let ch = channel<int>(1)
+            ch.close()
+            ch.close()
+            ch.recv() == null
+        }
+    }
+}
+
+spec "channel close: null signal drives a drain loop" {
+    given "the canonical worker shutdown shape" {
+        then "the loop consumes everything and exits on null" {
+            let work = channel<int>()
+            work.send(5)
+            work.send(6)
+            work.send(7)
+            work.close()
+            mut total = 0
+            mut more = true
+            while more {
+                let v = work.recv()
+                if v == null {
+                    more = false
+                } else {
+                    total = total + v!
+                }
+            }
+            total == 18
+        }
+    }
+}

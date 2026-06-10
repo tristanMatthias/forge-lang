@@ -73,6 +73,11 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     // ── libc ──
     decl(m, "puts", i32t, [pt])
     decl(m, "avra_puts", vt, [pt])
+    decl(m, "avra_channel_new_cap", pt, [i64t])
+    decl(m, "avra_channel_send", vt, [pt, i64t])
+    decl(m, "avra_channel_recv_opt", i64t, [pt, pt])
+    decl(m, "avra_channel_close", vt, [pt])
+    decl(m, "avra_channel_release", vt, [pt])
     decl(m, "avra_eprintln", vt, [pt])
     decl(m, "strlen", i64t, [pt])
     decl(m, "malloc", pt, [i64t])
