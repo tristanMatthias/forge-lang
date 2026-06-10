@@ -1411,6 +1411,17 @@ export fn binop_is_comparison(op: BinOp) -> bool {
     }
 }
 
+/// True for the four ORDERING comparisons (`<`, `<=`, `>`, `>=`) — the
+/// magnitude operators, as distinct from the equality pair `==`/`!=`.
+/// `none` has no position in an ordering, so these are rejected on an
+/// optional operand (F1204).
+export fn binop_is_ordering(op: BinOp) -> bool {
+    match op {
+        .Lt or .Le or .Gt or .Ge -> true
+        _ -> false
+    }
+}
+
 /// Render a BinOp as its source-form operator (`+`, `==`, `<<`, …).
 export fn binop_str(op: BinOp) -> string {
     match op {
