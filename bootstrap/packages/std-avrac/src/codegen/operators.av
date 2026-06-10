@@ -52,32 +52,34 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     let right_result = ctx.emit(env, right)?
     mut rhs = right_result.value
 
+    let l_opt = vtype_is_optional(left_result.ty)
+    let r_opt = vtype_is_optional(right_result.ty)
+
+    // Either side optional + `==`/`!=`: equality must be none-safe and
+    // inner-aware. Two equal present TAGGED values live in distinct boxes
+    // (a raw icmp reads "ne"); a present niche string must strcmp like a
+    // plain string; an `enum?` pair must tag-compare; and a `none` side
+    // must answer false/true — never unwrap (a blind unwrap loads the null
+    // box and traps). `x == none` literals keep the dedicated null-test
+    // path below.
+    if (l_opt || r_opt) && ((op is .Eq) || (op is .Ne)) && !is_null_literal(left) && !is_null_literal(right) {
+        let l_inner = vtype_strip_optional(left_result.ty)
+        if vtype_eq(l_inner, vtype_strip_optional(right_result.ty)) {
+            return emit_optional_eq(ctx, lhs, rhs, l_opt, r_opt, l_inner, op is .Ne)
+        }
+    }
+
     // Optional unbox for mixed operands: when one side is a value-inner
     // (tagged/boxed) optional and the other is a concrete non-`null` value,
     // unbox the optional so the operator sees the inner value (e.g.
-    // `some_int_opt == 6`). `== null` / `!= null` are left as a none-check
+    // `some_int_opt < 6`). `== null` / `!= null` are left as a none-check
     // (the box is non-null, `none` is the null pointer). Permissive — strict
     // non-null gating will require an explicit unwrap instead.
-    let l_opt = vtype_is_optional(left_result.ty)
-    let r_opt = vtype_is_optional(right_result.ty)
     if l_opt && !r_opt && !is_null_literal(right) && optional_repr_tagged(vtype_strip_optional(left_result.ty)) {
         lhs = emit_optional_unwrap(ctx, vtype_strip_optional(left_result.ty), lhs)
     }
     if r_opt && !l_opt && !is_null_literal(left) && optional_repr_tagged(vtype_strip_optional(right_result.ty)) {
         rhs = emit_optional_unwrap(ctx, vtype_strip_optional(right_result.ty), rhs)
-    }
-
-    // BOTH sides tagged (boxed) optionals + `==`/`!=`: compare VALUES, not
-    // box pointers — two equal present values live in distinct heap boxes,
-    // so a raw icmp reads `Some(5) == Some(5)` as false. Niche optionals
-    // (str?/struct?/…) never take this path: their value IS the pointer, so
-    // the existing pointer/strcmp semantics stay correct.
-    if l_opt && r_opt && ((op is .Eq) || (op is .Ne)) {
-        let l_inner = vtype_strip_optional(left_result.ty)
-        let r_inner = vtype_strip_optional(right_result.ty)
-        if optional_repr_tagged(l_inner) && vtype_eq(l_inner, r_inner) {
-            return emit_tagged_optional_eq(ctx, lhs, rhs, l_inner, op is .Ne)
-        }
     }
 
     // Normalize types for comparison: if one operand is ptr and the
@@ -215,14 +217,14 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     }
 }
 
-/// Value equality for two tagged (boxed) optionals of the same inner type.
-/// Three-way: when either side is `none`, equal iff both are; when both are
-/// present, unwrap and compare the inner values (fcmp for a float inner —
-/// only reached when both are non-null, so the unwrap loads never trap).
-/// `negate` flips the result for `!=`.
-fn emit_tagged_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, inner: ValueType, negate: bool) -> Result<EmitValue, string> {
-    let l_none = emit_optional_is_none(ctx, lhs)
-    let r_none = emit_optional_is_none(ctx, rhs)
+/// Value equality when either operand is an optional (`==` / `!=`).
+/// Three-way and none-safe: when either side is `none`, the result is
+/// "both none" (a non-optional side is never none), so no unwrap ever
+/// touches a null box. When both are present, the inners compare by KIND
+/// via `emit_inner_eq_i1`. `negate` flips the result for `!=`.
+fn emit_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, l_opt: bool, r_opt: bool, inner: ValueType, negate: bool) -> Result<EmitValue, string> {
+    let l_none = if l_opt { emit_optional_is_none(ctx, lhs) } else { ctx.const_i1(0) }
+    let r_none = if r_opt { emit_optional_is_none(ctx, rhs) } else { ctx.const_i1(0) }
     let slot = ctx.alloca_i64("opteq_slot")
     let merge_bb = ctx.bb("opteq_end")
     let present_bb = ctx.bb("opteq_present")
@@ -232,13 +234,9 @@ fn emit_tagged_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, inner: ValueType, negat
     let both_none = ctx.bit_and(l_none, r_none, "opteq_both_none")
     ctx.store_br_if_open(ctx.to_i64(both_none, "opteq_abs"), slot, merge_bb)
     ctx.position(present_bb)
-    let lv = emit_optional_unwrap(ctx, inner, lhs)
-    let rv = emit_optional_unwrap(ctx, inner, rhs)
-    let inner_eq = if vtype_eq(inner, .Float) {
-        ctx.fcmp(1, ctx.to_f64(lv, "opteq_lf"), ctx.to_f64(rv, "opteq_rf"), "opteq_feq")
-    } else {
-        ctx.icmp_eq(ctx.to_i64(lv, "opteq_li"), ctx.to_i64(rv, "opteq_ri"), "opteq_ieq")
-    }
+    let lv = if l_opt { emit_optional_unwrap(ctx, inner, lhs) } else { lhs }
+    let rv = if r_opt { emit_optional_unwrap(ctx, inner, rhs) } else { rhs }
+    let inner_eq = emit_inner_eq_i1(ctx, lv, rv, inner)?
     ctx.store_br_if_open(ctx.to_i64(inner_eq, "opteq_pres"), slot, merge_bb)
     ctx.position(merge_bb)
     let eq64 = ctx.load_i64(slot, "opteq_val")
@@ -247,6 +245,26 @@ fn emit_tagged_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, inner: ValueType, negat
     } else {
         ok_emit(ctx.icmp_ne(eq64, ctx.i64(0), "opteq_eq"), .Bool)
     }
+}
+
+/// Present-values equality as a raw `i1`, dispatched by inner KIND so an
+/// optional's `==` matches its non-optional counterpart: strings strcmp,
+/// enums tag-compare, floats fcmp; value scalars compare by value and the
+/// remaining reference types by pointer identity (both an integer icmp).
+fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr, string> {
+    if vtype_is_str(inner) {
+        let cmp = ctx.call("strcmp", [ctx.to_ptr(lv, "opteq_ls"), ctx.to_ptr(rv, "opteq_rs")])
+        let ext = ctx.sext(cmp, ctx.i64_type, "opteq_strcmp")
+        return .Ok(ctx.eq(ext, ctx.i64(0), "opteq_streq"))
+    }
+    if vtype_enum_name(inner) != "" {
+        let tag_eq = emit_enum_tag_cmp(ctx, lv, rv, inner, 32)?
+        return .Ok(ctx.truthy(tag_eq.value, "opteq_enumeq"))
+    }
+    if vtype_eq(inner, .Float) {
+        return .Ok(ctx.fcmp(1, ctx.to_f64(lv, "opteq_lf"), ctx.to_f64(rv, "opteq_rf"), "opteq_feq"))
+    }
+    .Ok(ctx.eq(ctx.to_i64(lv, "opteq_li"), ctx.to_i64(rv, "opteq_ri"), "opteq_ieq"))
 }
 
 /// True iff `ty` is any narrow sized-integer variant — used to

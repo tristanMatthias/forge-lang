@@ -6,6 +6,8 @@
 // (fcmp for float). Mixed `optional == bare` comparisons unbox the optional
 // side (the permissive coercion) and were already correct — locked here too.
 
+enum Light { Red, Green }
+
 fn eq_ii(a: int?, b: int?) -> bool { a == b }
 fn ne_ii(a: int?, b: int?) -> bool { a != b }
 fn eq_ff(a: float?, b: float?) -> bool { a == b }
@@ -40,6 +42,62 @@ spec "optional == optional compares values, not box pointers" {
         let a: int? = 7
         let b: int? = 7
         a == b
+    }
+}
+
+spec "niche optionals compare by inner value too" {
+    then "heap-built str? == str? compares contents, not pointers" {
+        let a: str? = "h" + "i"
+        let b: str? = "hi"
+        a == b
+    }
+    then "differing str? pair is ne; one-none str? pair is ne both ways" {
+        let a: str? = "hi"
+        let b: str? = "ho"
+        let n: str? = none
+        let ab = a == b
+        let an = a == n
+        let na = n == a
+        ab == false && an == false && na == false
+    }
+    then "none str? pair is eq" {
+        let a: str? = none
+        let b: str? = none
+        a == b
+    }
+    then "enum? pair compares by TAG: same variant eq, different ne" {
+        let lg1: Light? = Light.Green
+        let lg2: Light? = Light.Green
+        let lr: Light? = Light.Red
+        let same = lg1 == lg2
+        let diff = lg1 == lr
+        same == true && diff == false
+    }
+    then "enum? vs none-typed enum? is ne" {
+        let a: Light? = Light.Green
+        let n: Light? = none
+        let an = a == n
+        an == false
+    }
+}
+
+spec "a none side in a mixed compare answers, never traps" {
+    then "(none int?) == 5 is false (was a runtime null trap)" {
+        let v: int? = none
+        let r = v == 5
+        r == false
+    }
+    then "(none int?) != 5 is true (was a runtime null trap)" {
+        let v: int? = none
+        let r = v != 5
+        r == true
+    }
+    then "(none str?) == literal is false, present heap str? == literal is true" {
+        let n: str? = none
+        let s: str? = "h" + "i"
+        let nl = n == "hi"
+        let sl = s == "hi"
+        nl == false && sl == true
     }
 }
 
