@@ -5,7 +5,7 @@
 use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
-use codegen.{emit_if_optional_canon}
+use codegen.{emit_if_optional_canon, cond_if_true, emit_cond_truthy}
 use core.{avra_covmap_next_branch_id}
 use features.union_type.{emit_union_wrap}
 
@@ -72,7 +72,7 @@ export fn emit_if(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch:
     let branch_id = avra_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
     let merge_bb = ctx.bb("ifcont")
-    let else_bb = ctx.if_true(emit_value_ptr(cond), "if")
+    let else_bb = cond_if_true(ctx, emit_value_ptr(cond), emit_value_ty(cond), "if")
 
     ctx.cov_branch_then(branch_id)
     let then_env = narrow_env_for_is(ctx, env, condition)
@@ -118,7 +118,7 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     let cond = ctx.emit(env, condition)?
     let result_slot = ctx.alloca_i64("ife_result")
     let merge_bb = ctx.bb("ife_end")
-    let else_bb = ctx.if_true(emit_value_ptr(cond), "ife")
+    let else_bb = cond_if_true(ctx, emit_value_ptr(cond), emit_value_ty(cond), "ife")
 
     ctx.cov_branch_then(branch_id)
     let then_env = narrow_env_for_is(ctx, env, condition)
@@ -191,7 +191,7 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     // still valid here. This is NOT re-evaluation — it's reusing the same
     // i1 value computed earlier. No side effects, no redundant computation.
     let raw_val = ctx.load_i64(result_slot, "ife_raw")
-    let wrap_else = ctx.if_true(emit_value_ptr(cond), "ife_wrap")
+    let wrap_else = cond_if_true(ctx, emit_value_ptr(cond), emit_value_ty(cond), "ife_wrap")
 
     // Then-type wrap (condition was true)
     let t_wrapped = emit_union_wrap(ctx, raw_val, t_ty, union_ty)?

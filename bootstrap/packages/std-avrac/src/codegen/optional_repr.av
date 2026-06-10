@@ -129,6 +129,46 @@ export fn emit_optional_coerce(ctx: Ctx, v: EmitValue, slot_ty: ValueType) -> Em
     }
 }
 
+// ── Optional-aware condition truthiness ──
+// A bare optional condition (`if opt` / `while opt`) must read as
+// none → false, present → truthiness of the UNWRAPPED inner. Without the
+// unwrap, a tagged `Some(false)` / `Some(0)` is a non-null box pointer and
+// would silently take the then-branch. Permissive (strict non-null gating
+// will require an explicit unwrap); niche optionals reduce to the plain
+// non-null test their pointer value already is.
+
+/// Lower a condition value to an `i1`, unwrapping a tagged optional first.
+/// Non-optional types go straight through `ctx.truthy`.
+export fn emit_cond_truthy(ctx: Ctx, value: ptr, ty: ValueType, name: string) -> ptr {
+    if !vtype_is_optional(ty) { return ctx.truthy(value, name) }
+    let inner = vtype_strip_optional(ty)
+    if !optional_repr_tagged(inner) { return ctx.truthy(value, name) }
+    let slot = ctx.alloca_i64("${name}_optslot")
+    let merge_bb = ctx.bb("${name}_optend")
+    let present_bb = ctx.bb("${name}_optpresent")
+    let none_bb = ctx.bb("${name}_optnone")
+    ctx.cond_br(emit_optional_is_none(ctx, value), none_bb, present_bb)
+    ctx.position(none_bb)
+    ctx.store_br_if_open(ctx.i64(0), slot, merge_bb)
+    ctx.position(present_bb)
+    let inner_truthy = ctx.truthy(emit_optional_unwrap(ctx, inner, value), "${name}_inner")
+    ctx.store_br_if_open(ctx.to_i64(inner_truthy, "${name}_inner64"), slot, merge_bb)
+    ctx.position(merge_bb)
+    ctx.icmp_ne(ctx.load_i64(slot, "${name}_optval"), ctx.i64(0), name)
+}
+
+/// `ctx.if_true` with optional-aware truthiness: lowers the condition via
+/// `emit_cond_truthy`, opens then/else blocks, positions at then, and
+/// returns the else block — a drop-in replacement at `if` emit sites.
+export fn cond_if_true(ctx: Ctx, value: ptr, ty: ValueType, prefix: string) -> ptr {
+    let cond_i1 = emit_cond_truthy(ctx, value, ty, "${prefix}_cond")
+    let then_bb = ctx.bb("${prefix}_then")
+    let else_bb = ctx.bb("${prefix}_else")
+    ctx.cond_br(cond_i1, then_bb, else_bb)
+    ctx.position(then_bb)
+    else_bb
+}
+
 // ── if/match branch canonicalization to `T?` ──
 // When the two arms of a value-producing `if`/`if-expr` form a value-inner
 // optional mix — `{T, null}`, `{T, T?}`, `{T?, null}` for a tagged `T` — the

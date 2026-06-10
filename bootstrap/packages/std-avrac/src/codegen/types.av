@@ -1169,7 +1169,11 @@ impl Ctx {
     // ptr → null check, i64 → zero check, i1 → use directly, double → fcmp ne 0.0
     fn truthy(self, val: ptr, name: string) -> ptr {
         let kind = avra_llvm_type_kind(avra_llvm_typeof(val))
-        if kind == 14 { return avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_null(self.ptr_type), name) }
+        // LLVMPointerTypeKind is 12 (llvm-c TypeKind). This previously
+        // tested 14 (Metadata), so a bare pointer-typed condition fell into
+        // the integer branch and emitted a malformed `icmp ne ptr, i64 0`
+        // that llc rejects — latent until optionals made `if opt` reachable.
+        if kind == 12 { return avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_null(self.ptr_type), name) }
         if kind == 3 { return avra_llvm_build_fcmp(self.builder, 6, val, avra_llvm_const_null(self.double_type), name) }
         if kind == 8 && avra_llvm_int_type_width(avra_llvm_typeof(val)) == 1 { return val }
         avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_int(avra_llvm_typeof(val), 0, 0), name)
