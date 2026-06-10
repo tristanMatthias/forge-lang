@@ -116,7 +116,16 @@ export fn emit_field_access(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
     }
 
     let r = ctx.emit_member(env, obj)?
+    emit_field_on_value(ctx, r, obj, field)
+}
 
+/// Field/property access on an ALREADY-EMITTED receiver `r`. Split out of
+/// emit_field_access so the optional chain (`obj?.field`) can reuse the exact
+/// same dispatch on the UNWRAPPED receiver instead of re-stubbing it (which
+/// silently returned the receiver for non-struct targets). `obj` is kept only
+/// to render the error message. Covers `.await`, the str/bytes/list/map
+/// `.length` builtins, narrowed-enum payloads, and plain struct fields.
+export fn emit_field_on_value(ctx: Ctx, r: EmitValue, obj: Expr, field: string) -> Result<EmitValue, string> {
     // Task.await — join the thread and return its result with the Task's result type.
     if field == "await" {
         let result = ctx.call("avra_task_await", [r.value])
@@ -156,11 +165,7 @@ export fn emit_field_access(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
     if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
-    let st_ty = ctx.get_type(struct_name)
-    let obj_ptr = ctx.to_ptr(r.value, "obj_ptr")
-
     ctx.null_check(r.value, field, struct_name)
-
     let field_ty = ctx.resolve_field_type(lookup.fields, field)
     let loaded = ctx.field_typed(r.value, struct_name, idx, field_ty, field)
     ok_emit(loaded, field_ty)

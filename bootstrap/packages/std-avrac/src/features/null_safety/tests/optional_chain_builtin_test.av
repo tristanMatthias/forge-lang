@@ -1,0 +1,41 @@
+// WHY: `obj?.field` must access the field/property on the unwrapped receiver
+// the SAME way a plain `obj.field` does. The optional-chain codegen used to
+// stub non-struct receivers — it ignored the field and returned the receiver,
+// so `s?.length` yielded the string pointer (printed as garbage), not the
+// length. It now routes through the shared field accessor, so the str / list /
+// map `.length` builtins work through `?.` exactly as they do bare, while the
+// none-receiver still short-circuits to `none`.
+
+type Leaf = { v: int }
+type Mid = { c: Leaf }
+type Top = { b: Mid }
+
+spec "optional chain over a built-in property" {
+    then "str?.length on a present string is its length (was garbage)" {
+        let s: str? = "h" + "ello"
+        (s?.length ?? 0 - 1) == 5
+    }
+    then "str?.length on none short-circuits to none (?? default)" {
+        let s: str? = none
+        (s?.length ?? 0 - 1) == 0 - 1
+    }
+    then "List?.length on a present list is its length" {
+        let xs: List<int>? = [1, 2, 3]
+        (xs?.length ?? 0 - 1) == 3
+    }
+    then "List?.length on none short-circuits" {
+        let xs: List<int>? = none
+        (xs?.length ?? 0 - 1) == 0 - 1
+    }
+}
+
+spec "optional chain over struct fields still works (regression guard)" {
+    then "a?.b?.c?.v deep chain, all present" {
+        let a: Top? = Top { b: Mid { c: Leaf { v: 7 } } }
+        (a?.b?.c?.v ?? 0 - 1) == 7
+    }
+    then "a deep chain on a none receiver short-circuits" {
+        let a: Top? = none
+        (a?.b?.c?.v ?? 0 - 1) == 0 - 1
+    }
+}
