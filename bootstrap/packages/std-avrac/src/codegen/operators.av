@@ -5,7 +5,7 @@ use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use core.{avra_covmap_next_decision_id}
 use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.{is_null_literal}
-use codegen.{optional_repr_tagged, emit_optional_unwrap, emit_optional_is_none}
+use codegen.{optional_repr_tagged, emit_optional_unwrap, emit_optional_is_none, emit_cond_truthy}
 use features.enum_decl.{emit_enum_tag_cmp}
 
 /// Codegen for unary operators (`-x`, `!x`, `~x`).
@@ -25,7 +25,13 @@ export fn emit_unary(ctx: Ctx, env: List<VarBinding>, op: UnOp, right: Expr) -> 
             }
             ok_emit(ctx.sub(ctx.i64(0), r.value, "neg"), .Int)
         }
-        .Not -> ok_emit(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"), .Bool)
+        .Not -> {
+            // Negate the TRUTHINESS, not the raw bits: a tagged optional is a
+            // box pointer, so `!Some(false)` under a raw zero-compare read
+            // "non-null ⇒ false". emit_cond_truthy unwraps optionals first.
+            let t = emit_cond_truthy(ctx, r.value, r.ty, "not_in")
+            ok_emit(ctx.icmp_eq(ctx.to_i64(t, "not_t64"), ctx.i64(0), "not_cmp"), .Bool)
+        }
         .BitNot -> ok_emit(ctx.bit_not(r.value, "bnot"), .Int)
     }
 }
@@ -311,7 +317,7 @@ export fn emit_logical(ctx: Ctx, env: List<VarBinding>, left: Expr, op: LogicOp,
     let decision_id = avra_covmap_next_decision_id()
     let left_result = ctx.emit(env, left)?
 
-    let l_bool = ctx.truthy(left_result.value, "l_bool")
+    let l_bool = emit_cond_truthy(ctx, left_result.value, left_result.ty, "l_bool")
     let left_bb = ctx.current_bb()
 
     let rhs_bb = ctx.bb("sc_rhs")
@@ -338,7 +344,7 @@ export fn emit_logical(ctx: Ctx, env: List<VarBinding>, left: Expr, op: LogicOp,
         .Or -> ctx.cov_condition_false(decision_id)
     }
     let right_result = ctx.emit(env, right)?
-    let r_bool = ctx.truthy(right_result.value, "r_bool")
+    let r_bool = emit_cond_truthy(ctx, right_result.value, right_result.ty, "r_bool")
 
     // Right condition true/false counters
     let r_true_bb = ctx.bb("sc_r_true")

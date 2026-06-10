@@ -154,7 +154,11 @@ export fn emit_cond_truthy(ctx: Ctx, value: ptr, ty: ValueType, name: string) ->
     let inner_truthy = ctx.truthy(emit_optional_unwrap(ctx, inner, value), "${name}_inner")
     ctx.store_br_if_open(ctx.to_i64(inner_truthy, "${name}_inner64"), slot, merge_bb)
     ctx.position(merge_bb)
-    ctx.icmp_ne(ctx.load_i64(slot, "${name}_optval"), ctx.i64(0), name)
+    // ctx.truthy, NOT ctx.icmp_ne: the icmp helpers zext their result to
+    // i64 ("for value use, not branching"), and a `br` on that i64 is
+    // invalid IR — tolerated by the in-process object emitter the test
+    // runner uses, but rejected by textual llc. A condition must be raw i1.
+    ctx.truthy(ctx.load_i64(slot, "${name}_optval"), name)
 }
 
 /// `ctx.if_true` with optional-aware truthiness: lowers the condition via

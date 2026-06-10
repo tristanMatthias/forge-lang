@@ -44,6 +44,29 @@ spec "bare `if` on an optional: none → false, present → inner truthiness" {
     }
 }
 
+spec "logical ops and `!` use optional-aware truthiness too" {
+    then "Some(false) && true is false (no box-pointer truthiness)" {
+        let b: bool? = false
+        (b && true) == false
+    }
+    then "Some(true) && true is true; none && true is false" {
+        let t: bool? = true
+        let n: bool? = none
+        (t && true) == true && (n && true) == false
+    }
+    then "none || false is false; Some(true) || false is true" {
+        let t: bool? = true
+        let n: bool? = none
+        (n || false) == false && (t || false) == true
+    }
+    then "!Some(false) is true; !Some(true) is false; !none is true" {
+        let f: bool? = false
+        let t: bool? = true
+        let n: bool? = none
+        (!f) == true && (!t) == false && (!n) == true
+    }
+}
+
 spec "bare optional condition in while and if-expr positions" {
     then "while on a bool? stops when it goes none/false" {
         mut flag: bool? = true
