@@ -2207,6 +2207,7 @@ export type MonoResult = { stmts: List<SStmt>, bag: DiagnosticBag }
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
 export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>) -> MonoResult {
+    let pre0 = dbg_stmts_ok("zm77 pre-mono", stmts)
     let regs = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [] })
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
@@ -2229,8 +2230,12 @@ export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>) ->
     let initial_specs = generate_specializations(finalized.insts, regs)
     let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0, trait_impls)
 
+    let pre1 = dbg_stmts_ok("zm77 pre-rewrite-main", stmts)
     let rewritten = rewrite_stmts(stmts, regs, converged.all_insts)
+    let post1 = dbg_stmts_ok("zm77 post-rewrite-main", rewritten)
+    let pre2 = dbg_stmts_ok("zm77 pre-rewrite-specs", converged.all_specs)
     let rewritten_specs = rewrite_stmts(converged.all_specs, regs, converged.all_insts)
+    let post2 = dbg_stmts_ok("zm77 post-rewrite-specs", rewritten_specs)
     MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: converged.bag }
 }
 
@@ -2296,4 +2301,152 @@ fn prepend_stmts(prefix: List<SStmt>, rest: List<SStmt>) -> List<SStmt> {
         j = j + 1
     }
     out
+}
+
+// ── TEMP zm77 instrumentation: AST tag validator ───────────────────
+extern fn avra_dbg_expr_tag_ok(e: int) -> int
+extern fn avra_dbg_probe_node(label: string, e: int)
+
+fn dbg_expr_ok(wh: string, ex: Expr) -> bool {
+    if avra_dbg_expr_tag_ok(ex) == 0 {
+        avra_dbg_probe_node("corrupt @ ${wh}", ex)
+        return false
+    }
+    match ex {
+        .Assign(_, v) -> dbg_expr_ok(wh, v)
+        .Grouping(g) -> dbg_expr_ok(wh, g)
+        .Unary(_, r) -> dbg_expr_ok(wh, r)
+        .Binary(l, _, r) -> dbg_expr_ok(wh, l) && dbg_expr_ok(wh, r)
+        .Logical(l, _, r) -> dbg_expr_ok(wh, l) && dbg_expr_ok(wh, r)
+        .Call(c, ar) -> dbg_expr_ok(wh, c) && dbg_exprs_ok(wh, ar)
+        .GenericCall(c, _, ar) -> dbg_expr_ok(wh, c) && dbg_exprs_ok(wh, ar)
+        .StructLit(_, fi) -> dbg_inits_ok(wh, fi)
+        .FieldAccess(o, _) -> dbg_expr_ok(wh, o)
+        .EnumCtor(_, _, ar) -> dbg_exprs_ok(wh, ar)
+        .Index(o, ix) -> dbg_expr_ok(wh, o) && dbg_expr_ok(wh, ix)
+        .Block(bd) -> dbg_stmts_ok(wh, bd)
+        .MatchExpr(s2, am) -> dbg_expr_ok(wh, s2) && dbg_arms_ok(wh, am)
+        .FieldAssign(o, _, v) -> dbg_expr_ok(wh, o) && dbg_expr_ok(wh, v)
+        .IfExpr(c, t, e2) -> dbg_expr_ok(wh, c) && dbg_expr_ok(wh, t) && dbg_expr_ok(wh, e2)
+        .NullCoalesce(l, r) -> dbg_expr_ok(wh, l) && dbg_expr_ok(wh, r)
+        .OptionalChain(o, _) -> dbg_expr_ok(wh, o)
+        .OptionalMethodCall(o, _, ar) -> dbg_expr_ok(wh, o) && dbg_exprs_ok(wh, ar)
+        .Try(t2) -> dbg_expr_ok(wh, t2)
+        .Tuple(el) -> dbg_exprs_ok(wh, el)
+        .TupleIndex(o, _) -> dbg_expr_ok(wh, o)
+        .With(o, ov) -> dbg_expr_ok(wh, o) && dbg_inits_ok(wh, ov)
+        .ListLit(el) -> dbg_exprs_ok(wh, el)
+        .Lambda(_, b) -> dbg_expr_ok(wh, b)
+        .MapLit(en) -> dbg_exprs_ok(wh, en)
+        .Slice(o, s3, e3) -> dbg_expr_ok(wh, o) && dbg_expr_ok(wh, s3) && dbg_expr_ok(wh, e3)
+        .IsCheck(s4, _) -> dbg_expr_ok(wh, s4)
+        .InCheck(n2, it) -> dbg_expr_ok(wh, n2) && dbg_exprs_ok(wh, it)
+        .ListComp(b, _, cl, f) -> {
+            if !dbg_expr_ok(wh, b) { false }
+            else {
+                if !dbg_expr_ok(wh, cl) { false }
+                else {
+                    if f != null { dbg_expr_ok(wh, f!) } else { true }
+                }
+            }
+        }
+        .When(wa) -> dbg_when_ok(wh, wa)
+        .Catch(ic, _, b2, _, _) -> dbg_expr_ok(wh, ic) && dbg_expr_ok(wh, b2)
+        .Spawn(b3) -> dbg_expr_ok(wh, b3)
+        .Isolated(b4) -> dbg_expr_ok(wh, b4)
+        .Quote(_, b5) -> dbg_expr_ok(wh, b5)
+        .Splice(t3) -> dbg_expr_ok(wh, t3)
+        _ -> true
+    }
+}
+
+fn dbg_exprs_ok(wh: string, es: List<SExpr>) -> bool {
+    mut i = 0
+    while i < es.length {
+        let s5 = es[i]
+        if !dbg_expr_ok("${wh}@${string(s5.line)}:${string(s5.col)}", s5.node) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn dbg_inits_ok(wh: string, fi: List<FieldInit>) -> bool {
+    mut i = 0
+    while i < fi.length {
+        let f2 = fi[i]
+        if !dbg_expr_ok(wh, f2.value.node) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn dbg_arms_ok(wh: string, am: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < am.length {
+        let a2 = am[i]
+        if a2.guard != null {
+            if !dbg_expr_ok("${wh}/guard", a2.guard!.node) { return false }
+        }
+        if !dbg_expr_ok("${wh}/arm@${string(a2.body.line)}:${string(a2.body.col)}", a2.body.node) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn dbg_when_ok(wh: string, wa: List<WhenArm>) -> bool {
+    mut i = 0
+    while i < wa.length {
+        let w2 = wa[i]
+        if w2.cond != null {
+            if !dbg_expr_ok("${wh}/when-cond", w2.cond!.node) { return false }
+        }
+        if !dbg_expr_ok("${wh}/when-body", w2.body.node) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn dbg_stmt_ok(wh: string, st: Stmt) -> bool {
+    match st {
+        .Let(_, _, iz) -> dbg_expr_ok(wh, iz)
+        .Mut(_, _, iz) -> dbg_expr_ok(wh, iz)
+        .Const(_, _, iz) -> dbg_expr_ok(wh, iz)
+        .Expr(e5) -> dbg_expr_ok(wh, e5)
+        .Return(v2) -> dbg_expr_ok(wh, v2)
+        .Block(b6) -> dbg_stmts_ok(wh, b6)
+        .If(c2, t4, e6) -> {
+            if !dbg_expr_ok(wh, c2) { false }
+            else {
+                if !dbg_stmt_ok(wh, t4) { false }
+                else {
+                    if e6 != null { dbg_stmt_ok(wh, e6!) } else { true }
+                }
+            }
+        }
+        .While(c3, b7) -> dbg_expr_ok(wh, c3) && dbg_stmt_ok(wh, b7)
+        .For(_, s6, e7, b8) -> dbg_expr_ok(wh, s6) && dbg_expr_ok(wh, e7) && dbg_stmt_ok(wh, b8)
+        .ForIn(_, cl2, b9) -> dbg_expr_ok(wh, cl2) && dbg_stmt_ok(wh, b9)
+        .Function(fn2, _, _, _, bd2) -> dbg_stmts_ok("${wh}/fn ${fn2}", bd2)
+        .Match(sj, am2) -> dbg_expr_ok(wh, sj) && dbg_arms_ok(wh, am2)
+        .Module(mn, bd3) -> dbg_stmts_ok("${wh}/mod ${mn}", bd3)
+        .Annotated(_, in2) -> dbg_stmt_ok(wh, in2.node)
+        .Impl(_, ms) -> dbg_stmts_ok(wh, ms)
+        .Defer(d2) -> dbg_expr_ok(wh, d2)
+        .Errdefer(d3) -> dbg_expr_ok(wh, d3)
+        .SpecBlock(_, bs) -> dbg_stmts_ok(wh, bs)
+        .GivenBlock(_, bg) -> dbg_stmts_ok(wh, bg)
+        .ThenBlock(_, ct) -> dbg_expr_ok(wh, ct)
+        .Parallel(bp) -> dbg_stmts_ok(wh, bp)
+        _ -> true
+    }
+}
+
+export fn dbg_stmts_ok(wh: string, sl: List<SStmt>) -> bool {
+    mut i = 0
+    while i < sl.length {
+        let s7 = sl[i]
+        if !dbg_stmt_ok("${wh}@${string(s7.line)}", s7.node) { return false }
+        i = i + 1
+    }
+    true
 }
