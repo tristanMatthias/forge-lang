@@ -240,11 +240,9 @@ fn emit_optional_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
     emit_optional_match_core(ctx, env, subj, arms, result_slot, merge_bb)
 }
 
+/// Statement position is the expression emit with the value discarded.
 fn emit_optional_match_stmt(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
-    let result_slot = ctx.alloca_i64("optm_result")
-    ctx.store(ctx.i64(0), result_slot)
-    let merge_bb = ctx.bb("optm_end")
-    emit_optional_match_core(ctx, env, subj, arms, result_slot, merge_bb)?
+    emit_optional_match_expr(ctx, env, subj, arms)?
     ok_sr(ctx, env)
 }
 
