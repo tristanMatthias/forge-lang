@@ -551,6 +551,20 @@ fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("Segmentation fault") { return false }
     if out.contains("bs2 codegen failed") { return false }
     if out.contains("bs2 compile failed") { return false }
+    // 927f: a fixture that fails to LINK (duplicate/undefined symbols
+    // from a stale or inconsistent metadata/realobj state) emits the
+    // linker's error to stdout instead of its PROBE lines. Caching that
+    // freezes a transient build-state failure into a permanent one — the
+    // same hazard as the codegen/compile markers above. These strings are
+    // never legitimate fixture stdout (grepped: no test asserts on them),
+    // so reject them and let the next invocation re-capture once the build
+    // state is consistent.
+    if out.contains("ld.lld: error:") { return false }
+    if out.contains("duplicate symbol") { return false }
+    if out.contains("undefined symbol") { return false }
+    if out.contains("ld returned ") { return false }
+    if out.contains("collect2: error:") { return false }
+    if out.contains("shard compile failed") { return false }
     // jdgo: continuous dispatch (cbg3 follow-up) increased concurrent
     // diagnose.sh invocations. The shell script's `cc -o ${out}.tmp`
     // followed by `mv ${out}.tmp $out` is not race-safe under high
