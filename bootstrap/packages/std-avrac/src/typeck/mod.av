@@ -197,20 +197,7 @@ fn extern_sig_matches(prior: FnTypeFound, params: List<ParamEntry>, ret_ty: Valu
 /// contract and lower to the same closure word.
 fn extern_param_compatible(a: ValueType, b: ValueType) -> bool {
     if vtype_eq(a, b) { return true }
-    let ra = fn_shape_ret(a)
-    let rb = fn_shape_ret(b)
-    if ra == null || rb == null { return false }
-    vtype_eq(ra!, rb!)
-}
-
-/// The return type when `vt` is fn-shaped (`.Fn` or `.FnTyped`),
-/// null otherwise.
-fn fn_shape_ret(vt: ValueType) -> ValueType? {
-    match vt {
-        .Fn(r) -> r
-        .FnTyped(_, r) -> r
-        _ -> null
-    }
+    vtype_is_fn(a) && vtype_is_fn(b) && vtype_eq(vtype_fn_ret(a), vtype_fn_ret(b))
 }
 
 /// Render `(T1, T2) -> R` for the conflicting-extern diagnostic.

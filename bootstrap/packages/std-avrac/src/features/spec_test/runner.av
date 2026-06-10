@@ -58,24 +58,25 @@ type UnitDone = { idx: int, out: string }
 const STALL_AFTER_MS_DEFAULT: int = 60000
 
 fn stall_after_ms() -> int {
-    let env = avra_process_env_get("AVRA_TEST_STALL_MS")
+    env_int_or("AVRA_TEST_STALL_MS", STALL_AFTER_MS_DEFAULT)
+}
+
+/// Positive-int env override: the value when set and > 0, else the
+/// fallback. Both runner knobs (jobs, stall window) read this shape.
+fn env_int_or(name: string, fallback: int) -> int {
+    let env = avra_process_env_get(name)
     if env != "" {
         let n = avra_parse_int(env)
         if n > 0 { return n }
     }
-    STALL_AFTER_MS_DEFAULT
+    fallback
 }
 
 /// Worker count: AVRA_TEST_JOBS env wins (1 = sequential — the
 /// debugging / exact-coverage opt-out), else the machine's cores.
 fn test_jobs() -> int {
-    let env = avra_process_env_get("AVRA_TEST_JOBS")
-    if env != "" {
-        let n = avra_parse_int(env)
-        if n > 0 { return n }
-    }
     let cores = avra_cpu_count()
-    if cores > 0 { cores } else { 4 }
+    env_int_or("AVRA_TEST_JOBS", if cores > 0 { cores } else { 4 })
 }
 
 /// Entry point called by the synthesized test main.
