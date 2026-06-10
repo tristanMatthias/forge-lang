@@ -17,6 +17,9 @@
 !packages/std-avrac/src/build/**
 # Per-file cache fingerprints — re-exclude inside the whitelisted source dir
 packages/std-avrac/src/build/**/*.avra-sha256
+# Build cache artifacts created when running builds from inside the package
+# (e.g. `cd packages/std-avrac && bs2 build`) — NOT source, must stay ignored.
+packages/std-avrac/src/build/cache/
 dogfood_progress.csv
 
 # Generated language reference (rebuild with 'avra lang')
