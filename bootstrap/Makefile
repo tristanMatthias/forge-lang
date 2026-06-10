@@ -111,6 +111,15 @@ build-debug:
 # FILTER narrows BOTH which tests run AND which files get bundled into
 # the compile — substring-matched against test filename. Use when
 # iterating on a specific feature.
+#
+# Runner environment knobs (every assembled test binary reads these):
+#   AVRA_TEST_JOBS=N       worker threads per test binary running its
+#                          test-file units in parallel. 1 = sequential
+#                          (debugging / exact coverage). Default: cores.
+#   AVRA_TEST_STALL_MS=N   INTERNAL — shrinks the stall-detector window
+#                          (default 60000) so the detector itself is
+#                          testable. The detector names in-flight units
+#                          on stderr when nothing completes in-window.
 test:
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
 	@$(if $(SKIP_SELFHOST),,$(DIAG) --check-fixedpoint)

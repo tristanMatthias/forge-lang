@@ -7,7 +7,7 @@
 // codegen/escape.av's remove_escaped_expr arms for .MatchExpr and
 // .When now walk arm guards + cond + body so escaping uses register.
 
-extern fn avra_rc_live_count() -> int
+extern fn avra_rc_live_delta_local() -> int
 
 type EBox = { v: int, label: string }
 

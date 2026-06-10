@@ -167,7 +167,24 @@ static int rc_set_contains(void* ptr) {
     return found;
 }
 
+// Thread-local net-allocation accounting for single-threaded leak
+// probes. The global live count is process-wide, so under the
+// parallel test runner a sibling unit's allocations between a
+// spec's before/after reads produce spurious deltas. A spec whose
+// body allocates and drops on ONE thread gets an exact, isolation-
+// proof reading from the local delta instead. Frees are counted on
+// the thread that performs them — cross-thread hand-offs (channel
+// sends) intentionally skew the local view, which is why tests
+// asserting transfer semantics keep using the global count.
+static _Thread_local int64_t t_rc_allocs = 0;
+static _Thread_local int64_t t_rc_frees = 0;
+
+int64_t avra_rc_live_delta_local(void) {
+    return t_rc_allocs - t_rc_frees;
+}
+
 static void rc_set_remove(void* ptr) {
+    t_rc_frees++;
     pthread_mutex_lock(&rc_set_mutex);
     if (!rc_set_buckets) {
         pthread_mutex_unlock(&rc_set_mutex);
@@ -213,6 +230,7 @@ void* avra_rc_alloc(int64_t payload_size) {
     atomic_store(&hdr->refcount, 1);
     hdr->type_tag = RC_MAGIC;
     void* user_ptr = (char*)raw + RC_HEADER_SIZE;
+    t_rc_allocs++;
     rc_set_add(user_ptr);
     if (rc_trace) {
         fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1)\n", user_ptr, (long long)payload_size);

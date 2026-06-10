@@ -120,7 +120,8 @@ blanket `find packages -name cache -exec rm` anti-pattern below.
 
 ## CRITICAL RULE: Test cycle hygiene
 
-The full `make test` is 360s today (umbrella: uzs9 — Test cycle speed, P0).
+The full `make test` is ~60s warm (19s suite + selfhost check; cold
+after a compiler change ~390s — batched shard compiles dominate).
 Don't burn it on every failure. The pattern that wastes the most time is:
 **`make test` → `grep FAIL` → `make test` again to "see if it passes this time"**.
 Don't do this. Each round costs 6 minutes.

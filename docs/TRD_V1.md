@@ -1225,10 +1225,17 @@ is independently actionable; none block d4jv's runner.
   (resolve_codegen_vtype Enum-arm canonicalization + lambda
   expected-type resolution). Root fix remains structural ValueType
   end-to-end through mono.
-- **Test-binary batching.** Per-file mode pays fork+exec+link per
-  file; bundled mode pays one giant compile (OOM on 15GB at ~2750
-  specs). The end-game is K files per binary × in-process parallel
-  units — needs i7gw (parallel bundle compile) to be practical cold.
+- ~~**Test-binary batching.**~~ LANDED: shards hold K=8 files each
+  (striped over the size-sorted list), executed as parallel units by
+  the in-process runner. Full 2796-spec suite: warm 39s → 19s
+  (−51%), cold 471s → 334s (−29%) on 4 cores — the d4jv ≥30%
+  acceptance is met on the warm dev loop. Two compiler fixes fell
+  out: library-mode ownership is a colon-separated root SET
+  (a batch owns several modules), and metadata stubs are span-
+  stamped with their slot path so identical syntheses dedup across
+  members (dummy spans are exempt from dedup by design). Follow-up:
+  cost-aware striping — cold critical path is the heaviest fixture
+  batch (~224s), and source size is a poor proxy for fixture cost.
 - ~~**Fixture-cache write atomicity.**~~ LANDED: whole-file writes
   (`avra_selfhost_write_file{,_bytes}`) publish via temp+rename, the
   sha256 sidecar writes atomically, and fixture cold-misses

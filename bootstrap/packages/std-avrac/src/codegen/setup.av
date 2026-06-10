@@ -411,6 +411,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
         bag: bag_new(),
         type_reg,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        lib_pkg_roots: parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT")),
     }
 
     // Analyze which types are cycle-capable (can reference themselves
@@ -1168,10 +1169,30 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: List<Variant>, is_cy
 /// packages get a `declare` from phase 1 and their body links from
 /// the producer's .o.
 fn type_belongs_to_lib_pkg(ctx: Ctx, type_name: string) -> bool {
-    if ctx.lib_pkg_root == "" { return true }
+    if ctx.lib_pkg_roots.length == 0 { return true }
     if type_name.index_of("::") < 0 { return true }
-    let prefix = ctx.lib_pkg_root + "::"
-    type_name.starts_with(prefix)
+    for root in ctx.lib_pkg_roots {
+        if type_name.starts_with("${root}::") { return true }
+    }
+    false
+}
+
+/// Split the COMMA-separated AVRA_LIB_PKG_ROOT value into its root
+/// set, dropping empties so a plain single-root value parses to a
+/// one-element list. Comma, NOT colon: roots are qualified module
+/// names ("@std::cli") whose `::` separators a colon split would
+/// shred into bogus prefix roots — "@std" would then own the whole
+/// standard library and every producer unit would inline it
+/// (duplicate symbols at link). AVRA_LIB_OBJS keeps colons because
+/// its values are paths, a domain where colon is conventional and
+/// safe.
+fn parse_pkg_roots(raw: string) -> List<string> {
+    mut out: List<string> = []
+    if raw == "" { return out }
+    for part in raw.split(",") {
+        if part != "" { out.push(part) }
+    }
+    out
 }
 
 /// Phase 2 for structs: walk StructReg and emit each release fn's

@@ -2342,9 +2342,39 @@ fn compute_test_build_inputs(project_dir: string, accepted_paths: List<string>, 
 // 05yc: per-shard inputs. One test file → one cache slot keyed on
 // the file's basename so each shard's entry is stable across filter
 // invocations (filter doesn't enter the per-shard fingerprint).
-fn compute_test_shard_inputs(project_dir: string, test_path: string, args: TestArgs) -> BuildInputs {
+fn compute_test_shard_inputs(project_dir: string, test_paths: List<string>, args: TestArgs) -> BuildInputs {
     let cov_tag = if args.coverage { ":cov" } else { "" }
-    make_test_inputs(project_dir, [test_path], "test_shard:" + basename_no_ext(test_path) + cov_tag)
+    make_test_inputs(project_dir, test_paths, "test_shard:" + batch_slug(test_paths) + cov_tag)
+}
+
+/// Deterministic, filesystem-safe identity for a shard's file set.
+/// A single file keeps its historic basename slug (cache slots for
+/// existing per-file shards stay addressable); a batch combines the
+/// first file's slug, the count, and a content-independent digest of
+/// the joined paths so two batches sharing a first file can't
+/// collide.
+fn batch_slug(paths: List<string>) -> string {
+    if paths.length == 1 { return basename_no_ext(paths[0]) }
+    let joined = paths.join("\n")
+    let digest = sha256_hex(joined).substring(0, 12)
+    "${basename_no_ext(paths[0])}_x${string(paths.length)}_${digest}"
+}
+
+/// Positional paths of the `_test_shard` invocation: argv[2..] up to
+/// the first flag (orchestrator appends `--filter …` after paths).
+fn collect_shard_paths() -> List<string> {
+    mut paths: List<string> = []
+    mut i = 2
+    while i < avra_selfhost_argc() {
+        let a = avra_selfhost_get_arg_cstr(i)
+        if a.length > 0 && a[0] == "-" { break }
+        if !avra_selfhost_file_exists(a) {
+            fail("error: file not found: ${a}")
+        }
+        paths.push(a)
+        i = i + 1
+    }
+    paths
 }
 
 // Compile a test unit end-to-end and return the linked binary path.
@@ -2482,30 +2512,38 @@ fn extract_kv_int(line: string, key: string) -> int {
     avra_parse_int(line.substring(start, i))
 }
 
-// 05yc: internal `bs2 _test_shard <path>` subcommand. Compiles one
-// test file's shard binary (or recovers from cache) and execs it,
-// inheriting stdio. Designed to be forked in parallel by the
-// orchestrator — each child does its own compile + run + summary
-// emission, so a segfault in one shard doesn't take down the others
-// (process-level isolation, hkms.3 acceptance gained for free).
+// Internal `bs2 _test_shard <path> [path …]` subcommand. Compiles
+// one shard binary holding every listed test file (or recovers it
+// from cache) and execs it, inheriting stdio. Designed to be forked
+// in parallel by the orchestrator — each child does its own compile
+// + run + summary emission, so a segfault in one shard doesn't take
+// down the others. With several paths, the shard binary's in-process
+// runner executes them as parallel units — process isolation
+// BETWEEN batches, thread-level unit isolation WITHIN one.
 fn run_test_shard_command() {
     if avra_selfhost_argc() < 3 {
-        fail("usage: bs2 _test_shard <test_file.av>")
+        fail("usage: bs2 _test_shard <test_file.av> [more files…]")
     }
-    let path = avra_selfhost_get_arg_cstr(2)
-    if !avra_selfhost_file_exists(path) {
-        fail("error: file not found: ${path}")
+    let paths = collect_shard_paths()
+    if paths.length == 0 {
+        fail("usage: bs2 _test_shard <test_file.av> [more files…]")
     }
     let project_dir = avra_process_env_get("PWD")
+    // Batch attribution: the slug alone doesn't reveal membership;
+    // a compile/link failure in a batch needs its members listed to
+    // be debuggable from the log.
+    if paths.length > 1 {
+        eprintln("[batch] ${string(paths.length)} files: ${paths.join(" ")}")
+    }
     // Reuse the same TestArgs shape so coverage / per-file flags
     // propagate from the orchestrator's parent test invocation.
     let args = parse_test_args()
-    let inputs = compute_test_shard_inputs(project_dir, path, args)
-    let shard_id = basename_no_ext(path)
+    let inputs = compute_test_shard_inputs(project_dir, paths, args)
+    let shard_id = batch_slug(paths)
     let bin_path = match decide_build(inputs) {
         .Hit(_, cached_bin) -> cached_bin
         .Miss(fp, _, _) -> {
-            let built = match compile_test_unit_to(inputs, [path], args, shard_id) {
+            let built = match compile_test_unit_to(inputs, paths, args, shard_id) {
                 .Ok(b) -> b
                 .Err(e) -> { fail("shard compile failed: ${e}") }
             }
@@ -2571,12 +2609,50 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // free (one stat per path) and directionally correct for std-
     // avrac tests where typeck cost scales with source size.
     let sorted_paths = sort_paths_by_size_desc(accepted_paths)
-    let shards = list_map(sorted_paths, (p: string) -> cx.shard_for(p))
+    let shards = plan_shards(cx, sorted_paths)
 
     dispatch_shards(shards, cx.jobs)
     retry_jetsam_killed(shards)
 
     aggregate_shard_logs(shards, t_start)
+}
+
+/// Files per shard binary. 1 = the historic per-file mode: finest
+/// cache granularity (edit one file, recompile one shard) and
+/// process isolation per file. Larger batches amortize the per-shard
+/// fixed costs (bs2 startup, universe fingerprint, link, fork+exec)
+/// across K files while the in-process runner executes the K units
+/// in parallel threads; the cost is batch-wide cache invalidation
+/// when any member changes. Hard-wired policy, measured on the full
+/// suite — see the commit that set it for the numbers.
+const TEST_BATCH_FILES: int = 8
+
+/// Stripe the size-sorted paths into ceil(n/K) batches: path i joins
+/// batch i % nb, so each batch receives a balanced mix of large and
+/// small files (plain chunking would concentrate the biggest files
+/// in the first batch and serialize the tail behind it).
+fn plan_shards(cx: RunCtx, sorted_paths: List<string>) -> List<Shard> {
+    let k = TEST_BATCH_FILES
+    if k <= 1 {
+        return list_map(sorted_paths, (p: string) -> cx.shard_for([p]))
+    }
+    let n = sorted_paths.length
+    mut nb = n / k
+    if nb * k < n { nb = nb + 1 }
+    if nb == 0 { nb = 1 }
+    mut shards: List<Shard> = []
+    for b in 0..nb {
+        mut members: List<string> = []
+        mut i = b
+        while i < n {
+            members.push(sorted_paths[i])
+            i = i + nb
+        }
+        if members.length > 0 {
+            shards.push(cx.shard_for(members))
+        }
+    }
+    shards
 }
 
 /// cbg3 helper: longest-job-first ordering. Pulls each path's source-
@@ -2594,15 +2670,16 @@ fn sort_paths_by_size_desc(paths: List<string>) -> List<string> {
     sized
 }
 
-// One unit of test work. Built once during planning; every later
-// step (dispatch, retry, aggregate) reads from this struct only —
-// the orchestrator never re-derives slug/log paths.
+// One unit of test work — one shard binary holding one OR MORE test
+// files. Built once during planning; every later step (dispatch,
+// retry, aggregate) reads from this struct only — the orchestrator
+// never re-derives slug/log paths.
 type Shard = {
-    path: string,      // full path to the *_test.av source
-    slug: string,      // basename without extension; cache + log key
-    log_path: string,  // where the shard's stdout/stderr land
-    bin_path: string,  // nce6.1.F: where the shard writes @marshal TestResults
-    cmd: string,       // fully-formed `env … bs2 _test_shard … > log` line
+    paths: List<string>, // member *_test.av sources (1 = per-file mode)
+    slug: string,        // batch_slug of the members; cache + log key
+    log_path: string,    // where the shard's stdout/stderr land
+    bin_path: string,    // nce6.1.F: where the shard writes @marshal TestResults
+    cmd: string,         // fully-formed `env … bs2 _test_shard … > log` line
 }
 
 impl Shard {
@@ -2667,17 +2744,24 @@ impl RunCtx {
     /// ownership prefix — only the test's own __release_<Type> fns
     /// emit, @std/* fns belong to the pre-built producer .o files
     /// linked via AVRA_LIB_OBJS.
-    fn shard_for(self, path: string) -> Shard {
-        let slug = basename_no_ext(path)
+    fn shard_for(self, paths: List<string>) -> Shard {
+        let slug = batch_slug(paths)
         let log_path = "${self.log_dir}/${slug}.log"
         let bin_path = "${self.log_dir}/${slug}.bin"
-        let pkg_root = if self.want_meta { "AVRA_LIB_PKG_ROOT='${slug}' " } else { "" }
+        // Ownership covers EVERY member module — the codegen emits a
+        // fn body iff some root prefixes it, so each member's fns
+        // must be rooted or they'd be skipped as external (undefined
+        // symbols at link). Comma-separated: roots are qualified
+        // names whose `::` a colon split would shred.
+        let roots = list_map(paths, (p: string) -> basename_no_ext(p)).join(",")
+        let pkg_root = if self.want_meta { "AVRA_LIB_PKG_ROOT='${roots}' " } else { "" }
+        let quoted = list_map(paths, (p: string) -> "'${p}'")
         // nce6.1.F: propagate AVRA_TEST_RESULTS_BIN_PATH so the shard
         // reporter writes a @marshal-compatible TestResults file
         // alongside the text [shard-summary] line. Orchestrator
         // prefers the bin when present.
-        let cmd = "${self.env_prefix}${pkg_root}AVRA_TEST_RESULTS_BIN_PATH='${bin_path}' '${self.compiler_path}' _test_shard '${path}'${self.filter_arg} > '${log_path}' 2>&1"
-        Shard { path: path, slug: slug, log_path: log_path, bin_path: bin_path, cmd: cmd }
+        let cmd = "${self.env_prefix}${pkg_root}AVRA_TEST_RESULTS_BIN_PATH='${bin_path}' '${self.compiler_path}' _test_shard ${quoted.join(" ")}${self.filter_arg} > '${log_path}' 2>&1"
+        Shard { paths: paths, slug: slug, log_path: log_path, bin_path: bin_path, cmd: cmd }
     }
 }
 

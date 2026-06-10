@@ -11,7 +11,7 @@
 //      this, `let u = h with {...}` removed `h` from rc_releasable and
 //      __release_<Struct> never fired for h at scope exit.
 
-extern fn avra_rc_live_count() -> int
+extern fn avra_rc_live_delta_local() -> int
 
 type Holder = { a: string, b: string, c: string }
 
@@ -54,33 +54,33 @@ fn build_with_multi() {
 spec "with override on ptr field does not leak the replaced value" {
     given "a single override on the middle ptr field" {
         then "live RC count returns to baseline after the call" {
-            let before = avra_rc_live_count()
+            let before = avra_rc_live_delta_local()
             build_with_override()
-            avra_rc_live_count() == before
+            avra_rc_live_delta_local() == before
         }
     }
 
     given "chained overrides on the same ptr field" {
         then "every intermediate struct releases — no net leak" {
-            let before = avra_rc_live_count()
+            let before = avra_rc_live_delta_local()
             build_with_chain()
-            avra_rc_live_count() == before
+            avra_rc_live_delta_local() == before
         }
     }
 
     given "overrides on multiple different ptr fields" {
         then "no leak when the override list has >1 entry" {
-            let before = avra_rc_live_count()
+            let before = avra_rc_live_delta_local()
             build_with_multi()
-            avra_rc_live_count() == before
+            avra_rc_live_delta_local() == before
         }
     }
 
     given "baseline sanity check (holder with no with at all)" {
         then "construct-and-drop has zero net allocation delta" {
-            let before = avra_rc_live_count()
+            let before = avra_rc_live_delta_local()
             build_holder()
-            avra_rc_live_count() == before
+            avra_rc_live_delta_local() == before
         }
     }
 }

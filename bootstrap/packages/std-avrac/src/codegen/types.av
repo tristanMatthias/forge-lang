@@ -131,6 +131,11 @@ export type Ctx = {
     // That's today's default behaviour; library mode opt-in via
     // --lib-pkg-root=<qualifier>.
     lib_pkg_root: string,
+    // The same ownership as a parsed set: AVRA_LIB_PKG_ROOT is
+    // colon-separated (mirrors AVRA_LIB_OBJS) because a BATCHED test
+    // shard owns several test modules at once — a fn belongs to the
+    // unit when ANY root prefixes it. Empty list = whole-program.
+    lib_pkg_roots: List<string>,
 }
 
 /// Bundle of every type-resolution registry. Passed as a single
