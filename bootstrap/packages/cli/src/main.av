@@ -2608,8 +2608,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // Source file size is a coarse proxy for compile time but it's
     // free (one stat per path) and directionally correct for std-
     // avrac tests where typeck cost scales with source size.
-    let sorted_paths = sort_paths_by_size_desc(accepted_paths)
-    let shards = plan_shards(cx, sorted_paths)
+    let shards = plan_shards(cx, accepted_paths)
 
     dispatch_shards(shards, cx.jobs)
     retry_jetsam_killed(shards)
@@ -2627,32 +2626,61 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
 /// suite — see the commit that set it for the numbers.
 const TEST_BATCH_FILES: int = 8
 
-/// Stripe the size-sorted paths into ceil(n/K) batches: path i joins
-/// batch i % nb, so each batch receives a balanced mix of large and
-/// small files (plain chunking would concentrate the biggest files
-/// in the first batch and serialize the tail behind it).
-fn plan_shards(cx: RunCtx, sorted_paths: List<string>) -> List<Shard> {
+/// Plan the shard set. MEMBERSHIP stripes over the PATH-sorTED list
+/// — paths are stable across edits, so editing one file invalidates
+/// only its own batch's cache slot. (The first version striped over
+/// the SIZE-sorted list: a one-byte edit changed the file's size,
+/// reordered the sort, reshuffled EVERY batch's membership, and
+/// invalidated every batch cache — the opposite of the design
+/// intent.) DISPATCH order is longest-job-first by total member
+/// size, which is free to vary run-to-run because it never touches
+/// the cache key.
+fn plan_shards(cx: RunCtx, accepted_paths: List<string>) -> List<Shard> {
     let k = TEST_BATCH_FILES
     if k <= 1 {
-        return list_map(sorted_paths, (p: string) -> cx.shard_for([p]))
+        // Per-file: LJF dispatch ordering is the whole plan.
+        return list_map(sort_paths_by_size_desc(accepted_paths), (p: string) -> cx.shard_for([p]))
     }
-    let n = sorted_paths.length
+    let stable = sort_paths_lex(accepted_paths)
+    let n = stable.length
     mut nb = n / k
     if nb * k < n { nb = nb + 1 }
     if nb == 0 { nb = 1 }
-    mut shards: List<Shard> = []
+    mut batches: List<Batch> = []
     for b in 0..nb {
         mut members: List<string> = []
         mut i = b
         while i < n {
-            members.push(sorted_paths[i])
+            members.push(stable[i])
             i = i + nb
         }
         if members.length > 0 {
-            shards.push(cx.shard_for(members))
+            batches.push(Batch { members: members, total_size: batch_total_size(members) })
         }
     }
-    shards
+    batches.sort((a: Batch, b: Batch) -> {
+        if a.total_size > b.total_size { -1 } else if a.total_size < b.total_size { 1 } else { 0 }
+    })
+    list_map(batches, (b: Batch) -> cx.shard_for(b.members))
+}
+
+/// A planned shard's member set with its LJF dispatch weight.
+type Batch = { members: List<string>, total_size: int }
+
+/// Total on-disk source size of a batch's members — the LJF proxy
+/// for dispatch ordering.
+fn batch_total_size(paths: List<string>) -> int {
+    mut total = 0
+    for p in paths { total = total + avra_file_size(p) }
+    total
+}
+
+/// Lexicographic path order — the STABLE basis for batch membership.
+fn sort_paths_lex(paths: List<string>) -> List<string> {
+    mut sorted: List<string> = []
+    for p in paths { sorted.push(p) }
+    sorted.sort((a: string, b: string) -> if a < b { -1 } else if a > b { 1 } else { 0 })
+    sorted
 }
 
 /// cbg3 helper: longest-job-first ordering. Pulls each path's source-

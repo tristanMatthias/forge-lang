@@ -4929,6 +4929,18 @@ void avra_channel_send(void* channel, int64_t value) {
     chan_activity_broadcast();
 }
 
+// Pop the head value. Caller holds ch->mu and has verified
+// count > 0; signaling can_send here keeps every pop path waking
+// blocked senders identically (recv, try_recv, and select all
+// drain through this one definition).
+static int64_t chan_pop_locked(AvraChannel* ch) {
+    int64_t value = ch->buf[ch->head];
+    ch->head = (ch->head + 1) % ch->alloc;
+    ch->count--;
+    pthread_cond_signal(&ch->can_send);
+    return value;
+}
+
 // Pop one value. `ok_out` receives 1 on success, 0 when the channel
 // is closed AND drained (the typed `recv() -> T?` null case).
 int64_t avra_channel_recv_opt(void* channel, int64_t* ok_out) {
@@ -4943,10 +4955,7 @@ int64_t avra_channel_recv_opt(void* channel, int64_t* ok_out) {
         if (ok_out) *ok_out = 0;
         return 0;
     }
-    int64_t value = ch->buf[ch->head];
-    ch->head = (ch->head + 1) % ch->alloc;
-    ch->count--;
-    pthread_cond_signal(&ch->can_send);
+    int64_t value = chan_pop_locked(ch);
     pthread_mutex_unlock(&ch->mu);
     if (ok_out) *ok_out = 1;
     return value;
@@ -4966,10 +4975,7 @@ int64_t avra_channel_try_recv_opt(void* channel, int64_t* ok_out) {
         if (ok_out) *ok_out = 0;
         return 0;
     }
-    int64_t value = ch->buf[ch->head];
-    ch->head = (ch->head + 1) % ch->alloc;
-    ch->count--;
-    pthread_cond_signal(&ch->can_send);
+    int64_t value = chan_pop_locked(ch);
     pthread_mutex_unlock(&ch->mu);
     if (ok_out) *ok_out = 1;
     return value;
@@ -5012,10 +5018,7 @@ typedef struct {
 static int chan_try_take(AvraChannel* ch, int64_t* val_out, int* closed_out) {
     pthread_mutex_lock(&ch->mu);
     if (ch->count > 0) {
-        *val_out = ch->buf[ch->head];
-        ch->head = (ch->head + 1) % ch->alloc;
-        ch->count--;
-        pthread_cond_signal(&ch->can_send);
+        *val_out = chan_pop_locked(ch);
         pthread_mutex_unlock(&ch->mu);
         return 1;
     }
@@ -5545,3 +5548,64 @@ const char* avra_rd_type_field_type(int64_t type_id, int64_t idx) {
     return avra_rd_field_type_canonicals[avra_rd_type_field_starts[type_id] + idx];
 }
 
+
+// ─── Fork quiescing (multithreaded fork safety) ─────────────────
+//
+// `isolated_run` forks while the parallel test runner's worker and
+// ticker threads are live. A child forked from a multithreaded
+// process inherits every mutex IN ITS STATE AT THE FORK INSTANT —
+// one held by a sibling thread (which does not exist in the child)
+// stays locked forever. The first avra_rc_alloc in the child's
+// closure then deadlocks on rc_set_mutex (observed: child wedged in
+// rc_set_add, parent wedged reading the result pipe — the whole
+// batch hangs until the stall detector names it).
+//
+// The POSIX-correct pattern: prepare() locks every runtime
+// singleton mutex in a fixed order — which ALSO guarantees the
+// structures they guard are not mid-mutation in the fork's memory
+// snapshot (an rc_set mid-grow would be torn in the child) —
+// parent() unlocks them, and child() unlocks them (the forking
+// thread owns them in the child) and re-arms the channel condvar
+// (its waiters do not exist in the child).
+//
+// Boundary, stated honestly: PER-CHANNEL mutexes are dynamic and
+// cannot be enumerated here. An isolated closure that touches a
+// channel concurrently used by parent threads keeps the classic
+// fork+threads hazard. The universal allocation path — what every
+// closure hits — is what this covers. glibc quiesces malloc's own
+// locks with its internal atfork handlers.
+
+static void avra_fork_prepare(void) {
+    pthread_mutex_lock(&rc_set_mutex);
+    pthread_mutex_lock(&suspect_mutex);
+    pthread_mutex_lock(&g_test_toolchain_fp_mutex);
+    pthread_mutex_lock(&_failures.mutex);
+    pthread_mutex_lock(&_crashes.mutex);
+    pthread_mutex_lock(&g_chan_activity_mu);
+}
+
+static void avra_fork_parent(void) {
+    pthread_mutex_unlock(&g_chan_activity_mu);
+    pthread_mutex_unlock(&_crashes.mutex);
+    pthread_mutex_unlock(&_failures.mutex);
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
+    pthread_mutex_unlock(&suspect_mutex);
+    pthread_mutex_unlock(&rc_set_mutex);
+}
+
+static void avra_fork_child(void) {
+    pthread_mutex_unlock(&g_chan_activity_mu);
+    pthread_mutex_unlock(&_crashes.mutex);
+    pthread_mutex_unlock(&_failures.mutex);
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
+    pthread_mutex_unlock(&suspect_mutex);
+    pthread_mutex_unlock(&rc_set_mutex);
+    // No waiter survives into the child; re-arm so future waits
+    // start from clean futex state.
+    pthread_cond_init(&g_chan_activity_cv, NULL);
+}
+
+__attribute__((constructor))
+static void avra_install_fork_quiescing(void) {
+    pthread_atfork(avra_fork_prepare, avra_fork_parent, avra_fork_child);
+}
