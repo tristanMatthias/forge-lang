@@ -1501,7 +1501,7 @@ fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result
                 // compiled .o. Declare the init fn (so the call
                 // resolves at link time) but skip body emit.
                 let is_external = find_annotation(ss.node, "external_unit") != null
-                // d4jv: @deferred_init synthesizes __init_<name> but
+                // @deferred_init synthesizes __init_<name> but
                 // skips the top-level auto-call — an explicit caller
                 // (the in-process test runner dispatching units across
                 // worker threads) invokes it instead. Generic codegen
@@ -1566,7 +1566,7 @@ fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result
                     // For test binaries, this happens inside __bs_top_level
                     // which main() calls — unless the module is
                     // @deferred_init, in which case the explicit caller
-                    // owns the invocation (d4jv: the test runner's
+                    // owns the invocation (e.g. the test runner's
                     // worker threads).
                     if !is_deferred {
                         restored_ctx.call(init_name, [])

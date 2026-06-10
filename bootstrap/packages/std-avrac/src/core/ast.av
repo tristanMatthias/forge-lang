@@ -1681,7 +1681,8 @@ export fn expr_diverges(body: Expr) -> bool {
 /// `Annotated` layer of `orig`, preserving annotation payloads. A
 /// walker that pushes a bare rebuilt node instead silently strips
 /// the stmt's annotations (the @deferred_init-eating bug class fixed
-/// in d4jv — expand_stmt_list and derive_marshal both did this).
+/// — expand_stmt_list and derive_marshal both did this before
+/// this helper existed).
 export fn rewrap_annotations(orig: Stmt, new_inner: Stmt) -> Stmt {
     match orig {
         .Annotated(annots, inner) -> Stmt.Annotated(annots, inner with { node: rewrap_annotations(inner.node, new_inner) })

@@ -254,7 +254,7 @@ export fn test_reporter_path(project_dir: string) -> string {
 }
 
 /// Sibling of `test_reporter_path` for the in-process parallel
-/// runner (d4jv). Inlined into every test bundle the same way.
+/// runner. Inlined into every test bundle the same way.
 export fn test_runner_path(project_dir: string) -> string {
     find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/runner.av"
 }
@@ -310,7 +310,7 @@ fn load_reporter_stmts(project_dir: string) -> List<SStmt> {
     load_support_stmts(test_reporter_path(project_dir))
 }
 
-/// d4jv: the in-process parallel runner, inlined right after the
+/// The in-process parallel runner, inlined right after the
 /// reporter so the synthesized main's `run_test_suite` resolves.
 fn load_runner_stmts(project_dir: string) -> List<SStmt> {
     load_support_stmts(test_runner_path(project_dir))
@@ -329,7 +329,7 @@ fn load_support_stmts(path: string) -> List<SStmt> {
     rparsed.stmts!
 }
 
-/// Synthetic test-bundle entry point (d4jv):
+/// Synthetic test-bundle entry point:
 ///
 ///     fn main() -> int {
 ///         run_test_suite([TestUnit { name: "<mod>", run: __init_<mod> }, ...])
@@ -401,7 +401,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
     while i >= 0 {
         let a = assemble_one_test_file(test_paths[i])?
         for p in a.packages { packages.push(p) }
-        // d4jv: every test module is deferred — codegen synthesizes
+        // Every test module is deferred — codegen synthesizes
         // __init_<mod> without the top-level auto-call; the runner
         // invokes the units across worker threads.
         let deferred: List<Annotation> = [Annotation { name: "deferred_init", args: [] }]

@@ -1,4 +1,4 @@
-// d4jv slice 3: @deferred_init on a module synthesizes __init_<name>
+// @deferred_init on a module synthesizes __init_<name>
 // but skips the automatic top-level call — an explicit caller (via
 // `extern fn __init_<name>`) owns the invocation. This is the
 // mechanism the in-process test runner uses to dispatch test-file

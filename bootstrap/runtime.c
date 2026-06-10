@@ -1167,7 +1167,7 @@ int64_t avra_is_dir(const char* path) {
 // no serializing mutex. The dup2-based predecessor redirected the
 // process-wide STDOUT_FILENO, so any concurrently-running thread's
 // output landed inside whichever capture window happened to be
-// open (d4jv slice 1 root fix).
+// open. Per-thread sinks make that impossible by construction.
 //
 // Deliberate semantics, pinned by spec tests:
 //   - Only the CURRENT thread's writes enter its sink. A thread

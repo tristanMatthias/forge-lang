@@ -1,4 +1,4 @@
-// d4jv slice 1: per-thread output sinks.
+// Per-thread output sinks.
 //
 // The dup2-based capture this replaced redirected the process-wide
 // STDOUT_FILENO, so while ONE thread held a capture window open,
@@ -22,7 +22,7 @@ mut cti_captured: string = "?"
 mut cti_window_open: ptr = null
 mut cti_main_printed: ptr = null
 
-spec "d4jv: capture windows are per-thread" {
+spec "capture windows are per-thread" {
     given "a worker thread holds a capture window open" {
         then "the main thread's println does not leak into the worker's capture" {
             cti_window_open = avra_channel_new()
@@ -49,7 +49,7 @@ spec "d4jv: capture windows are per-thread" {
     }
 }
 
-spec "d4jv: a crash inside a capture window is caught" {
+spec "a crash inside a capture window is caught" {
     given "the spec opens a capture and dies before the balancing stop" {
         then "raising SIGABRT mid-capture does not kill the bundle" {
             avra_test_capture_start()
@@ -63,7 +63,7 @@ spec "d4jv: a crash inside a capture window is caught" {
     }
 }
 
-spec "d4jv: capture still works after a crash unwound the stack" {
+spec "capture still works after a crash unwound the stack" {
     given "the previous spec leaked a capture frame into its crash" {
         then "a fresh capture round-trips cleanly" {
             avra_test_capture_start()

@@ -1,4 +1,4 @@
-// d4jv: the runtime intmap silently DROPPED the 257th insert — its
+// The runtime intmap silently DROPPED the 257th insert — its
 // fixed 256-slot open-addressing table exhausted every probe slot
 // and returned without storing. The type registry's id→name reverse
 // map runs on this intmap, so the 257th registered TYPE in any

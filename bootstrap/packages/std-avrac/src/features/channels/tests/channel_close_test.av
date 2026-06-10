@@ -1,4 +1,4 @@
-// d4jv slice 2: close semantics. close marks the channel — it never
+// Close semantics: close marks the channel — it never
 // frees (the historic API freed on close, making post-close recv a
 // use-after-free). Buffered values stay receivable; recv() returns
 // null exactly when closed AND drained.

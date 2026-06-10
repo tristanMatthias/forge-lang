@@ -24,7 +24,7 @@ spec "4szi.1: toolchain fp memo round-trips and publishes once" {
         avra_test_toolchain_fp_get() == marker
     }
     then "later sets are no-ops — first writer wins" {
-        // d4jv slice 1: the memo is WRITE-ONCE under a mutex. The fp
+        // The memo is WRITE-ONCE under a mutex. The fp
         // is a pure function of process-stable inputs (bs2 binary,
         // runtime.o, wrapper.o, @std sources), so every caller in one
         // process computes the same value — a second set can only be

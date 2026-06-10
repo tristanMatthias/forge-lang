@@ -1,4 +1,4 @@
-// d4jv slice 2: channel type-check gates. Each fixture pins one
+// Channel type-check gates. Each fixture pins one
 // rejection path with its stable F-code: element mismatch on send
 // (F1000), non-int capacity (F1000), nullable element type (F1000),
 // unknown method (F1043).

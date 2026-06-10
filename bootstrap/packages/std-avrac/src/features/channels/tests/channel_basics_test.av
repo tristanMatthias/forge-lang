@@ -1,4 +1,4 @@
-// d4jv slice 2: typed channel construction + send/recv round-trips.
+// Typed channel construction + send/recv round-trips.
 // Covers the three capacity forms and every element repr class
 // (int identity, string ptr, bool zext, float bitcast) so the
 // channel_slot_in/out coercions are pinned by behavior.
