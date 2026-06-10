@@ -13,6 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
+use core.{gensym_name}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -438,7 +439,7 @@ impl Parser {
     /// other under nesting / macro replication.
     fn fresh(self, tag: string) -> string {
         self.gensym_seq = self.gensym_seq + 1
-        "$" + tag + "$" + string(self.gensym_seq)
+        gensym_name(tag, self.gensym_seq)
     }
 
     fn parse_file_expression(self) -> ParseResult {

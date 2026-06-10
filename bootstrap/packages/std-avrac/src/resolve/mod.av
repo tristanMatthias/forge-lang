@@ -6,7 +6,7 @@
 // dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
 // flat at `resolve.{...}`.
 
-use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap}
+use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -78,7 +78,7 @@ export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
     r = declare_function(r, "exit")
     r = declare_function(r, "avra_format_float")
     r = declare_function(r, "avra_format_int")
-    r = declare_function(r, "__avra_force_unwrap")
+    r = declare_function(r, FORCE_UNWRAP_FN)
     r = declare_function(r, "self")
     r = collect_function_names(r, stmts)
     r = resolve_stmt_list(r, stmts)

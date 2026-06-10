@@ -47,7 +47,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -546,7 +546,7 @@ fn scope_has(scope: List<LocalBinding>, name: string) -> bool {
 /// bare so user shadowing of those names doesn't accidentally
 /// trigger unintended dispatch.
 fn is_builtin_name(name: string) -> bool {
-    name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self", "__avra_force_unwrap"]
+    name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self", FORCE_UNWRAP_FN]
 }
 
 // ── Name resolution context ──

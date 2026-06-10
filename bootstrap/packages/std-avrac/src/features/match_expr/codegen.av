@@ -92,6 +92,18 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
 // branch, so guards and literal patterns over the present value behave
 // exactly as they do in an ordinary primitive `match`.
 
+/// Shared tail of an optional-match arm: emit the body into `body_bb`,
+/// store-and-branch its value to the merge, and reposition at `next_bb`.
+/// Returns the body's type (the walkers keep the FIRST as the match's
+/// result type).
+fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    ctx.position(body_bb)
+    let br = ctx.emit(env, arm.body.node)?
+    ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+    ctx.position(next_bb)
+    ok_match_ty(emit_value_ty(br))
+}
+
 /// Present-branch arm walk: the optional is known present and unwrapped to
 /// `v: inner`. Arms run IN ORDER — `let v` binds the value and is a
 /// (guard-aware) catch-all; literal patterns match the present value; `_`
@@ -144,11 +156,8 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
             } else {
                 return err_match_ty("matching the inner value of an optional with this pattern isn't supported — unwrap first: `if let v = x { match v { … } }`. Optional `match` supports `let <name>` (present), `none` (absent), `_`, and literal patterns.")
             }
-            ctx.position(body_bb)
-            let br = ctx.emit(arm_env, arm.body.node)?
-            ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
-            if vtype_is_unknown(first_ty) { first_ty = emit_value_ty(br) }
-            ctx.position(next_bb)
+            let body_ty = emit_optional_arm_body(ctx, arm_env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            if vtype_is_unknown(first_ty) { first_ty = body_ty }
             if is_catch_all {
                 // Unguarded catch-all: the trailing block is unreachable.
                 ctx.br_if_open(merge_bb)
@@ -184,11 +193,8 @@ fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>
                 ctx.br(body_bb)
                 is_catch_all = true
             }
-            ctx.position(body_bb)
-            let br = ctx.emit(env, arm.body.node)?
-            ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
-            if vtype_is_unknown(first_ty) { first_ty = emit_value_ty(br) }
-            ctx.position(next_bb)
+            let body_ty = emit_optional_arm_body(ctx, env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            if vtype_is_unknown(first_ty) { first_ty = body_ty }
             if is_catch_all {
                 ctx.br_if_open(merge_bb)
                 return ok_match_ty(first_ty)

@@ -251,13 +251,43 @@ export fn pattern_optional_binding(p: Pattern) -> string {
     }
 }
 
+/// The compiled-in name of the force-unwrap builtin (the `expr!` desugar
+/// target). The resolver, typeck, codegen dispatch, and the comptime
+/// interpreter all recognise the builtin through this one constant.
+/// (Literal match-arm patterns can't reference a const, so the builtin
+/// dispatch table in fn_decl keeps the literal — every == / membership /
+/// construction site uses the constant.)
+export const FORCE_UNWRAP_FN: string = "__avra_force_unwrap"
+
 /// Construct the desugar target of the postfix force-unwrap `!`. Every
 /// parser-side desugar that needs the present value (postfix `!`, `if let`,
 /// `let-else`) builds the call through here, so the builtin's shape lives
 /// in one place.
 export fn expr_force_unwrap(subject: Expr) -> Expr {
     let fu_args: List<SExpr> = [sexpr_dummy(subject)]
-    Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+    Expr.Call(Expr.Ident(FORCE_UNWRAP_FN), fu_args)
+}
+
+/// `<e> != none` / `<e> == none` — the present/absent tests every optional
+/// desugar (`if let`, `let-else`) branches on, built in one place.
+export fn expr_ne_none(e: Expr) -> Expr { Expr.Binary(e, BinOp.Ne, Expr.None) }
+export fn expr_eq_none(e: Expr) -> Expr { Expr.Binary(e, BinOp.Eq, Expr.None) }
+
+// ── Gensym contract ──
+// Compiler-minted temp names are `$tag$N`. The `$` prefix IS the contract:
+// the lexer never admits `$` in a user identifier, so a gensym can neither
+// shadow nor be shadowed by user code — and lints exempt it. The parser
+// mints through gensym_name; recognisers test through is_gensym_name.
+
+/// Format a compiler-generated temp name.
+export fn gensym_name(tag: string, n: int) -> string {
+    "$" + tag + "$" + string(n)
+}
+
+/// True for a compiler-minted gensym (see the contract above).
+export fn is_gensym_name(name: string) -> bool {
+    if name.length == 0 { return false }
+    name[0] == "$"
 }
 
 // `List<MatchArm>` replaces the retired `enum MatchArmList`. Arm
