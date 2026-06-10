@@ -416,6 +416,14 @@ fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: st
 /// unknown receivers.
 export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
     let r = ctx.emit_member(env, obj)?
+    emit_method_on_value(ctx, env, r, method, args)
+}
+
+/// Dispatch a method call on an ALREADY-EMITTED receiver `r`. Split out of
+/// emit_method_call so the optional method chain (`obj?.m(args)`) can call
+/// the method on the UNWRAPPED receiver through the same dispatch (str/bytes/
+/// list/map/Task/trait/newtype/struct/enum), instead of a `?.`-specific path.
+export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
     if vtype_is_str(r.ty) {
         return emit_string_method(ctx, env, r.value, method, args)
     }

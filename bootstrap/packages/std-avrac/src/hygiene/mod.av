@@ -292,6 +292,11 @@ fn rename_expr(ctx: HygieneCtx, e: Expr) -> RenameExprResult {
             let r = rename_expr(ctx, obj)
             RenameExprResult { expr: Expr.OptionalChain(r.expr, field), ctx: r.ctx }
         }
+        .OptionalMethodCall(obj, method, args) -> {
+            let ro = rename_expr(ctx, obj)
+            let ra = rename_expr_list(ro.ctx, args)
+            RenameExprResult { expr: Expr.OptionalMethodCall(ro.expr, method, ra.list), ctx: ra.ctx }
+        }
         .Try(inner) -> {
             let r = rename_expr(ctx, inner)
             RenameExprResult { expr: Expr.Try(r.expr), ctx: r.ctx }

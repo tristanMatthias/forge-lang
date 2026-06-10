@@ -551,6 +551,7 @@ fn walk_expr(expr: Expr, sigs: List<FnSig>) -> Expr {
         .Block(body) -> .Block(desugar_stmt_list(body, sigs))
         .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(l, sigs), desugar_expr(r, sigs))
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(obj, sigs), field)
+        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(obj, sigs), method, desugar_expr_list(args, sigs))
         .Try(inner) -> .Try(desugar_expr(inner, sigs))
         .Tuple(elems) -> .Tuple(desugar_expr_list(elems, sigs))
         .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(obj, sigs), idx)

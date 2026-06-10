@@ -2297,6 +2297,14 @@ fn enum_value_to_expr(v: Value) -> Result<Expr, string> {
             let field_v: Value = p[1]
             .Ok(Expr.OptionalChain(obj, field_v.text))
         }
+        "OptionalMethodCall" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_node(head)?
+            let method_v: Value = p[1]
+            let args_v: Value = p[2]
+            let args = list_value_to_expr_list(args_v)?
+            .Ok(Expr.OptionalMethodCall(obj, method_v.text, args))
+        }
         "IsCheck" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let subj = value_to_expr_node(head)?

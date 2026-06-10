@@ -233,6 +233,10 @@ fn find_captures(expr: Expr, params: List<ParamEntry>, env: List<VarBinding>, ca
             find_captures_list(items, params, env, captures)
         }
         .OptionalChain(obj, _) -> find_captures(obj, params, env, captures)
+        .OptionalMethodCall(obj, _, args) -> {
+            find_captures(obj, params, env, captures)
+            find_captures_list(args, params, env, captures)
+        }
         .TupleIndex(obj, _) -> find_captures(obj, params, env, captures)
         .ListComp(body, var, coll, filter) -> {
             // Collection is evaluated in the outer scope.

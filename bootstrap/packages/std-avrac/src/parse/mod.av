@@ -1215,11 +1215,7 @@ impl Parser {
                     let args = self.parse_arg_list()?
                     self.allow_it_sugar = saved_it
                     if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
-                    let tmp = self.fresh("optchain")
-                    let call = Expr.Call(Expr.FieldAccess(expr_force_unwrap(Expr.Ident(tmp)), field), args)
-                    let guarded = Expr.IfExpr(expr_ne_none(Expr.Ident(tmp)), call, Expr.None)
-                    let blk: List<SStmt> = [sstmt_dummy(Stmt.Let(tmp, ValueType.Unknown, result)), sstmt_dummy(Stmt.Expr(guarded))]
-                    result = Expr.Block(blk)
+                    result = Expr.OptionalMethodCall(result, field, args)
                 } else {
                     result = Expr.OptionalChain(result, field)
                 }

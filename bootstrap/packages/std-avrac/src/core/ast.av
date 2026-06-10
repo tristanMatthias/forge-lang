@@ -1529,6 +1529,12 @@ export enum Expr {
     /// Optional chain: `obj?.field` — null obj passes through, no
     /// deref on null.
     OptionalChain(obj: Expr, field: string)
+    /// Optional method call: `obj?.method(args)` — null obj short-circuits
+    /// to none, otherwise calls the method on the present receiver and wraps
+    /// the result. Sibling of OptionalChain for the call form (which needs to
+    /// carry args); a first-class node so `quote`/macros see `?.m()` the same
+    /// way they see `?.field`.
+    OptionalMethodCall(obj: Expr, method: string, args: List<SExpr>)
     /// Error / null propagate: `expr?` — bails the enclosing fn early
     /// if `expr` is Err / null.
     Try(expr: Expr)
@@ -2046,6 +2052,7 @@ export fn render_expr(expr: Expr) -> string {
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(c)} ${render_expr(t)} ${render_expr(e)})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(left)} ${render_expr(right)})"
         .OptionalChain(obj, field) -> "(?. ${render_expr(obj)} ${field})"
+        .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(obj)} ${method} ${render_expr_list(args)})"
         .Try(inner) -> "(? ${render_expr(inner)})"
         .Tuple(elements) -> "(tuple ${render_expr_list(elements)})"
         .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(obj)} ${string(idx)})"

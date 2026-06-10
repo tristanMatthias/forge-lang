@@ -52,6 +52,7 @@ export fn fmt_expr(se: Expr) -> string {
         .IfExpr(c, t, e) -> "if ${fmt_expr(c)} { ${fmt_expr(t)} } else { ${fmt_expr(e)} }"
         .NullCoalesce(left, right) -> "${fmt_expr(left)} ?? ${fmt_expr(right)}"
         .OptionalChain(obj, field) -> "${fmt_expr(obj)}?.${field}"
+        .OptionalMethodCall(obj, method, args) -> "${fmt_expr(obj)}?.${method}(${fmt_expr_list_comma(args)})"
         .Try(inner) -> "${fmt_expr(inner)}?"
         .Tuple(elements) -> "(${fmt_expr_list_comma(elements)})"
         .TupleIndex(obj, idx) -> "${fmt_expr(obj)}.${string(idx)}"

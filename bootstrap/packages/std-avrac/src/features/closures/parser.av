@@ -27,6 +27,7 @@ export fn expr_contains_it(expr: Expr) -> bool {
         .Assign(_, val) -> expr_contains_it(val)
         .NullCoalesce(l, r) -> expr_contains_it(l) || expr_contains_it(r)
         .OptionalChain(obj, _) -> expr_contains_it(obj)
+        .OptionalMethodCall(obj, _, args) -> expr_contains_it(obj) || expr_list_contains_it(args)
         .Try(inner) -> expr_contains_it(inner)
         .Tuple(elems) -> expr_list_contains_it(elems)
         .TupleIndex(obj, _) -> expr_contains_it(obj)

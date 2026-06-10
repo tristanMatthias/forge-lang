@@ -17,6 +17,7 @@ use core.{vtype_wrap_optional}
 use features.defer_stmt.{emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.struct_decl.{emit_field_on_value}
+use features.fn_decl.{emit_method_on_value}
 
 /// Codegen for `left ?? right`. Branch on whether `left` is
 /// null/zero, picking it when non-null or falling through to
@@ -121,6 +122,33 @@ export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field:
             ok_emit(ctx.load_i64(result_slot, "oc_val"), vtype_wrap_optional(recv_ty))
         }
     }
+}
+
+/// Codegen for `obj?.method(args)`. Same null-check-and-wrap scaffold as
+/// emit_optional_chain, but the present branch calls the method on the
+/// unwrapped receiver via the shared emit_method_on_value. None receiver
+/// short-circuits to `none`; the result wraps to the method return's `U?`.
+export fn emit_optional_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, obj)?
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "omc_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "omc_null")
+    }
+    let access_bb = ctx.bb("omc_access")
+    let merge_bb = ctx.bb("omc_end")
+    let result_slot = ctx.alloca_i64("omc_result")
+    ctx.store(ctx.i64(0), result_slot)
+    ctx.cond_br(is_null, merge_bb, access_bb)
+
+    ctx.position(access_bb)
+    let recv = EmitValue { value: r.value, ty: vtype_strip_optional(r.ty) }
+    let called = emit_method_on_value(ctx, env, recv, method, args)?
+    ctx.store(ctx.to_i64(emit_optional_some(ctx, called.ty, called.value), "omc_box"), result_slot)
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(result_slot, "omc_val"), vtype_wrap_optional(called.ty))
 }
 
 /// Codegen for the `?` try operator. Two modes based on the

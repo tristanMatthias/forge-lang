@@ -1330,6 +1330,7 @@ fn lint_scan_expr(e: Expr, coll: string) -> LintSig {
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(c, coll), lint_sig_or(lint_scan_expr(t, coll), lint_scan_expr(el, coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
         .OptionalChain(obj, _) -> lint_scan_expr(obj, coll)
+        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(obj, coll), lint_scan_sexprs(args, coll))
         .Try(inner) -> lint_scan_expr(inner, coll)
         .Tuple(els) -> lint_scan_sexprs(els, coll)
         .TupleIndex(obj, _) -> lint_scan_expr(obj, coll)
@@ -2469,7 +2470,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
 /// Type-check `obj.method(args)`: dispatch to type-specific
 /// method tables (List / Map built-ins) or fall back to user-
 /// defined impl blocks looked up by mangled name.
-fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
+export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
     let o = check_expr(tc, obj)
     let checked_args = check_expr_list(o.tc, args)
 
@@ -2835,6 +2836,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body), cl, cc)
         .OptionalChain(obj, f) -> .OptionalChain(annotate_expr(tc, obj), f)
+        .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr(tc, obj), m, annotate_expr_list(tc, args))
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
         .Spawn(body) -> .Spawn(annotate_expr(tc, body))
