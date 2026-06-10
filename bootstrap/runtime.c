@@ -3240,12 +3240,12 @@ int64_t avra_validate_range(int64_t value, int64_t min, int64_t max, const char*
     return value;
 }
 
-int64_t avra_validate_not_empty(const char* s, const char* name) {
+const char* avra_validate_not_empty(const char* s, const char* name) {
     if (!s || strlen(s) == 0) {
         avra_runtime_errorf("%s must not be empty", name);
         exit(1);
     }
-    return (int64_t)(uintptr_t)s;
+    return s;
 }
 
 int64_t avra_parse_int(const char* s) {
@@ -3298,6 +3298,13 @@ const char* avra_capture_stdout(int64_t closure) {
 // 1 if interactive, 0 if pipe/file. Mirrors POSIX isatty(STDOUT_FILENO).
 int64_t avra_isatty_stdout(void) {
     return isatty(STDOUT_FILENO) ? 1 : 0;
+}
+
+// Online core count — sizes the in-process test runner's default
+// worker pool. 0 on failure (callers fall back to a fixed default).
+int64_t avra_cpu_count(void) {
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return (n > 0) ? (int64_t)n : 0;
 }
 
 // Coarse-grained sleep, used by the progress-bar poll loop to render
