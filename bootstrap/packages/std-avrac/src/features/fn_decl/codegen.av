@@ -599,18 +599,6 @@ export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: L
 export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("string() expects 1 arg") }
     let r = ctx.emit(env, args[0].node)?
-    // A `T?` argument displays as the unwrapped inner, or the literal
-    // "none". Without this branch an optional fell into the integer path
-    // and printed its BOX POINTER (`string(Some(5))` → "94895026…") and an
-    // absent one printed "0" — both silent garbage. `"${v}"` interpolation
-    // desugars through this same emitter, so it is covered too.
-    if vtype_is_optional(r.ty) {
-        return emit_optional_to_string(ctx, r)
-    }
-    if vtype_is_str(r.ty) { return ok_emit(r.value, .Str) }
-    if vtype_eq(r.ty, .Bool) {
-        return ok_emit(ctx.call("avra_bool_to_string", [r.value]), .Str)
-    }
     let display_dispatch = emit_display_dispatch(ctx, r)
     if display_dispatch != null { return ok_emit(display_dispatch!, .Str) }
     let sname = vtype_struct_name(r.ty)
@@ -623,27 +611,31 @@ export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>)
     }
     if vtype_is_newtype(r.ty) {
         let inner = vtype_newtype_inner(r.ty)
-        if vtype_is_str(inner) { return ok_emit(r.value, .Str) }
-        return emit_int_to_string_inner(ctx, r.value, inner)
+        return emit_value_to_string(ctx, r.value, inner)
     }
     if r.ty is .Union {
         return err_emit("cannot convert union type to string directly — use `match` to extract the value first")
     }
-    if vtype_eq(r.ty, .Float) {
-        let str_ptr = ctx.call("avra_float_to_string", [r.value])
-        return ok_emit(str_ptr, .Str)
+    emit_value_to_string(ctx, r.value, r.ty)
+}
+
+/// THE value-level string converter — the single dispatch shared by the
+/// public `string()` emitter, the newtype path, and the optional present
+/// branch: str passthrough, bool words, float / sized-int / int formatting.
+/// A `T?` routes through `emit_optional_to_string` (mutually recursive), so
+/// nested optionals like `int??` display correctly at every depth.
+fn emit_value_to_string(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitValue, string> {
+    if vtype_is_optional(ty) {
+        return emit_optional_to_string(ctx, EmitValue { value: val, ty: ty })
     }
-    mut val = r.value
-    if vtype_is_unsigned_int(r.ty) {
-        val = ctx.zext(r.value, ctx.i64_type, "u2i")
+    if vtype_is_str(ty) { return ok_emit(val, .Str) }
+    if vtype_eq(ty, .Bool) {
+        return ok_emit(ctx.call("avra_bool_to_string", [val]), .Str)
     }
-    if vtype_is_signed_narrow_int(r.ty) {
-        val = ctx.sext(r.value, ctx.i64_type, "i2i")
-    }
-    let buf = ctx.rc_alloc(ctx.i64(32))
-    let fmt = ctx.global_str("%lld", ".i2s_fmt")
-    ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
-    ok_emit(buf, .Str)
+    mut v = val
+    if vtype_is_unsigned_int(ty) { v = ctx.zext(val, ctx.i64_type, "u2i") }
+    if vtype_is_signed_narrow_int(ty) { v = ctx.sext(val, ctx.i64_type, "i2i") }
+    emit_int_to_string_inner(ctx, v, ty)
 }
 
 /// Display for a `T?` value: branch at runtime — `none` → the literal
@@ -666,24 +658,10 @@ fn emit_optional_to_string(ctx: Ctx, r: EmitValue) -> Result<EmitValue, string> 
     ctx.store_br_if_open(ctx.to_i64(ctx.global_str("none", ".opt2s_none"), "opt2s_n"), slot, merge_bb)
     ctx.position(present_bb)
     let inner_val = emit_optional_unwrap(ctx, inner, r.value)
-    let conv = emit_present_inner_to_string(ctx, inner_val, inner)?
+    let conv = emit_value_to_string(ctx, inner_val, inner)?
     ctx.store_br_if_open(ctx.to_i64(conv.value, "opt2s_p"), slot, merge_bb)
     ctx.position(merge_bb)
     ok_emit(ctx.load_i64(slot, "opt2s_val"), .Str)
-}
-
-/// Convert an already-unwrapped optional inner to a string: str is the
-/// value itself (niche repr), bool prints its words, float / ints reuse
-/// the shared numeric formatter.
-fn emit_present_inner_to_string(ctx: Ctx, val: ptr, inner: ValueType) -> Result<EmitValue, string> {
-    if vtype_is_str(inner) { return ok_emit(val, .Str) }
-    if vtype_eq(inner, .Bool) {
-        return ok_emit(ctx.call("avra_bool_to_string", [val]), .Str)
-    }
-    mut v = val
-    if vtype_is_unsigned_int(inner) { v = ctx.zext(val, ctx.i64_type, "ou2i") }
-    if vtype_is_signed_narrow_int(inner) { v = ctx.sext(val, ctx.i64_type, "oi2i") }
-    emit_int_to_string_inner(ctx, v, inner)
 }
 
 /// Duck-typed Display dispatch: if `r.ty` is a user-defined Struct
