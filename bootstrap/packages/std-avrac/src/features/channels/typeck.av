@@ -54,10 +54,11 @@ export fn check_channel_method(tc: TC, elem: ValueType, method: string, args: Li
             tc_er(a.tc, .Void)
         }
         "recv" -> tc_er(tc, .Optional(elem))
+        "try_recv" -> tc_er(tc, .Optional(elem))
         "close" -> tc_er(tc, .Void)
         _ -> {
             let t1 = tc_report(tc, DiagCode.UnknownMethod,
-                "Channel has no method `${method}` — available: .send(value), .recv() -> ${vtype_display(elem)}?, .close()")
+                "Channel has no method `${method}` — available: .send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close()")
             tc_er(t1, .Unknown)
         }
     }

@@ -68,12 +68,15 @@ export fn emit_channel_method_call(ctx: Ctx, env: List<VarBinding>, ch_val: ptr,
             ctx.call("avra_channel_send", [ch_val, channel_slot_in(ctx, a.value)])
             ok_emit(ctx.i64(0), .Void)
         }
-        "recv" -> emit_channel_recv(ctx, ch_val, elem)
+        "recv" -> emit_channel_recv(ctx, ch_val, elem, "avra_channel_recv_opt")
+        // Non-blocking variant: null when nothing is available NOW
+        // (empty or closed — callers needing the distinction block).
+        "try_recv" -> emit_channel_recv(ctx, ch_val, elem, "avra_channel_try_recv_opt")
         "close" -> {
             ctx.call("avra_channel_close", [ch_val])
             ok_emit(ctx.i64(0), .Void)
         }
-        _ -> err_emit("Channel has no method `${method}` (available: .send(value), .recv() -> ${vtype_display(elem)}?, .close())")
+        _ -> err_emit("Channel has no method `${method}` (available: .send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close())")
     }
 }
 
@@ -81,9 +84,9 @@ export fn emit_channel_method_call(ctx: Ctx, env: List<VarBinding>, ch_val: ptr,
 /// the slot value as Some (identity for ptr-backed elems, boxed for
 /// value elems), ok=0 yields none. The two sides merge through a phi
 /// typed as the optional's repr.
-fn emit_channel_recv(ctx: Ctx, ch_val: ptr, elem: ValueType) -> Result<EmitValue, string> {
+fn emit_channel_recv(ctx: Ctx, ch_val: ptr, elem: ValueType, runtime_fn: string) -> Result<EmitValue, string> {
     let ok_slot = ctx.alloca_i64("chan_recv_ok")
-    let raw = ctx.call("avra_channel_recv_opt", [ch_val, ok_slot])
+    let raw = ctx.call(runtime_fn, [ch_val, ok_slot])
     let ok = ctx.load_i64(ok_slot, "chan_recv_ok_v")
     let got = ctx.eq(ok, ctx.i64(1), "chan_recv_got")
 

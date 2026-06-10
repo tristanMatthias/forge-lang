@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation}
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations}
 
 // ── Public entry ──
 
@@ -42,13 +42,14 @@ fn walk(stmts: List<SStmt>) -> List<SStmt> {
         let ss = stmts[i]
         // Module bodies host TypeDecls too — recurse so a
         // `@marshal type T` declared inside a submodule still
-        // gets its impl synthesised. Wrap the recursed body
-        // back into a Module so downstream stages see the
-        // same shape.
-        match ss.node {
+        // gets its impl synthesised. Match on the PEELED node so
+        // annotated module wrappers (e.g. the test assembler's
+        // @deferred_init) stay transparent, and rebuild inside
+        // the original annotation layers so the wrapper survives.
+        match peel_annotations(ss.node) {
             .Module(name, body) -> {
                 let walked = walk(body)
-                let new_mod = Stmt.Module(name, walked)
+                let new_mod = rewrap_annotations(ss.node, Stmt.Module(name, walked))
                 out.push(sstmt_dummy(new_mod))
             }
             _ -> {
@@ -73,7 +74,7 @@ fn any_marshal_annotation(stmts: List<SStmt>) -> bool {
     while i < stmts.length {
         let ss = stmts[i]
         if has_marshal(ss.node) { return true }
-        match ss.node {
+        match peel_annotations(ss.node) {
             .Module(_, body) -> {
                 if any_marshal_annotation(body) { return true }
             }

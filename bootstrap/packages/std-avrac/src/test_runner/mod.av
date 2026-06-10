@@ -10,7 +10,7 @@
 
 use core.{
     Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry,
-    Expr, SExpr,
+    Expr, SExpr, Annotation, FieldInit,
     sstmt_dummy, sstmt_at,
     sexpr_dummy,
     avra_shell_exec,
@@ -253,6 +253,12 @@ export fn test_reporter_path(project_dir: string) -> string {
     find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
 }
 
+/// Sibling of `test_reporter_path` for the in-process parallel
+/// runner (d4jv). Inlined into every test bundle the same way.
+export fn test_runner_path(project_dir: string) -> string {
+    find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/runner.av"
+}
+
 
 /// One test file's contribution to an assembled program. The body is
 /// already guard-wrapped; the @std/* packages are split out so the
@@ -301,27 +307,70 @@ fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
 /// "undefined name" diagnostics in the codegen pass, which is the
 /// signal we want when something is wrong with the install.
 fn load_reporter_stmts(project_dir: string) -> List<SStmt> {
-    let reporter_path = test_reporter_path(project_dir)
+    load_support_stmts(test_reporter_path(project_dir))
+}
+
+/// d4jv: the in-process parallel runner, inlined right after the
+/// reporter so the synthesized main's `run_test_suite` resolves.
+fn load_runner_stmts(project_dir: string) -> List<SStmt> {
+    load_support_stmts(test_runner_path(project_dir))
+}
+
+/// Load + parse one inlined support file (reporter, runner). An
+/// empty list on missing/parse-failure keeps the caller producing a
+/// (broken) program whose missing names surface as resolve
+/// diagnostics — the right signal for a damaged install.
+fn load_support_stmts(path: string) -> List<SStmt> {
     let empty: List<SStmt> = []
-    if avra_selfhost_file_exists(reporter_path) == 0 { return empty }
-    let rsrc = avra_selfhost_read_file(reporter_path)
-    let rparsed = parse_program_source_at(rsrc, reporter_path)
+    if avra_selfhost_file_exists(path) == 0 { return empty }
+    let rsrc = avra_selfhost_read_file(path)
+    let rparsed = parse_program_source_at(rsrc, path)
     if rparsed.had_error || rparsed.stmts == null { return empty }
     rparsed.stmts!
 }
 
-/// Synthetic `fn main() -> int { return test_render_summary() }` —
-/// the test bundle's program entry point. Cons-prepended onto the
-/// rest of the assembled program so its declaration lands first in
-/// the rendered AST.
-fn synth_test_main() -> SStmt {
+/// Synthetic test-bundle entry point (d4jv):
+///
+///     fn main() -> int {
+///         run_test_suite([TestUnit { name: "<mod>", run: __init_<mod> }, ...])
+///         return test_render_summary()
+///     }
+///
+/// Each test module is @deferred_init (its __init_<mod> exists but
+/// is not auto-called); the runner dispatches the units across
+/// worker threads. Cons-prepended onto the rest of the assembled
+/// program so the declaration lands first in the rendered AST.
+fn synth_test_main(mod_names: List<string>) -> SStmt {
     let empty_args: List<SExpr> = []
+    mut unit_lits: List<SExpr> = []
+    for mod_name in mod_names {
+        let inits: List<FieldInit> = [
+            FieldInit { name: "name", value: sexpr_dummy(Expr.String("\"${mod_name}\"")) },
+            FieldInit { name: "run", value: sexpr_dummy(Expr.Ident("__init_${mod_name}")) },
+        ]
+        unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
+    }
     let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("run_test_suite"),
+            [sexpr_dummy(Expr.ListLit(unit_lits))]))),
         sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
     ]
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
     sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
+}
+
+/// `extern fn __init_<mod>() -> int` rows for every deferred test
+/// module, so the synthesized main's TestUnit literals resolve. The
+/// declarations converge with the definitions codegen emits for the
+/// modules (avra_llvm_add_function is get-or-create by exact type).
+fn unit_init_externs(mod_names: List<string>) -> List<RuntimeExtern> {
+    mut out: List<RuntimeExtern> = []
+    for mod_name in mod_names {
+        let empty_p: List<ParamEntry> = []
+        out.push(RuntimeExtern { name: "__init_${mod_name}", params: empty_p, ret: ValueType.Int })
+    }
+    out
 }
 
 /// Assemble the test program for one action: parse each test file as
@@ -347,17 +396,26 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
     // bs2≡bs3 selfhost fixed point.
     mut packages: List<SStmt> = []
     mut modules: List<SStmt> = []
+    mut mod_names: List<string> = []
     mut i = test_paths.length - 1
     while i >= 0 {
         let a = assemble_one_test_file(test_paths[i])?
         for p in a.packages { packages.push(p) }
-        modules.push(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))
+        // d4jv: every test module is deferred — codegen synthesizes
+        // __init_<mod> without the top-level auto-call; the runner
+        // invokes the units across worker threads.
+        let deferred: List<Annotation> = [Annotation { name: "deferred_init", args: [] }]
+        modules.push(sstmt_dummy(Stmt.Annotated(deferred,
+            sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))))
+        mod_names.push(a.mod_name)
         i = i - 1
     }
 
     let body = list_concat(load_reporter_stmts(project_dir),
-               list_concat(dedup_modules(packages), modules))
-    let program = list_concat([synth_test_main()], prepend_test_externs(body))
+               list_concat(load_runner_stmts(project_dir),
+               list_concat(dedup_modules(packages), modules)))
+    let with_unit_externs = prepend_externs(prepend_test_externs(body), unit_init_externs(mod_names))
+    let program = list_concat([synth_test_main(mod_names)], with_unit_externs)
     Result.Ok(program)
 }
 

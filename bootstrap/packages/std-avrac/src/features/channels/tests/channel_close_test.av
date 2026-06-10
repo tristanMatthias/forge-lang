@@ -31,6 +31,28 @@ spec "channel close: drain then null" {
     }
 }
 
+spec "channel try_recv: non-blocking poll" {
+    given "an empty open channel" {
+        then "try_recv returns null instead of blocking" {
+            let ch = channel<int>(2)
+            ch.try_recv() == null
+        }
+        then "try_recv yields a queued value and then null again" {
+            let ch = channel<int>(2)
+            ch.send(9)
+            let a = ch.try_recv()
+            let b = ch.try_recv()
+            a! == 9 && b == null
+        }
+        then "try_recv on closed-and-drained stays null" {
+            let ch = channel<int>(1)
+            ch.send(5)
+            ch.close()
+            ch.try_recv()! == 5 && ch.try_recv() == null
+        }
+    }
+}
+
 spec "channel close: null signal drives a drain loop" {
     given "the canonical worker shutdown shape" {
         then "the loop consumes everything and exits on null" {

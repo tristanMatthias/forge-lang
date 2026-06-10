@@ -265,6 +265,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     decl(m, "avra_channel_send", i64t, [pt, i64t])
     decl(m, "avra_channel_recv", i64t, [pt])
     decl(m, "avra_channel_recv_opt", i64t, [pt, pt])
+    decl(m, "avra_channel_try_recv_opt", i64t, [pt, pt])
     decl(m, "avra_channel_close", i64t, [pt])
     decl(m, "avra_channel_release", i64t, [pt])
     decl(m, "avra_parallel_run", i64t, [pt])

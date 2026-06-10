@@ -1620,40 +1620,91 @@ const char* avra_test_toolchain_fp_get(void) {
 // dispatch where keys are small sequential integers (0-63).
 // Values are i64 (function pointers, struct pointers, etc.).
 
-#define AVRA_INTMAP_CAP 256
+// Growable open-addressing int→int map. The historic fixed 256-slot
+// table SILENTLY DROPPED the 257th insert (the probe loop exhausted
+// every slot and returned without storing) — the type registry's
+// id→name reverse map lost entries the moment a program registered
+// more than 256 types, surfacing as "unknown struct" codegen errors
+// for perfectly-registered types. Grows at 75% load; lookups stay
+// O(1) expected.
+
+#define AVRA_INTMAP_INITIAL_CAP 256
 
 typedef struct {
-    int64_t keys[AVRA_INTMAP_CAP];
-    int64_t values[AVRA_INTMAP_CAP];
-    int8_t  occupied[AVRA_INTMAP_CAP];
+    int64_t* keys;
+    int64_t* values;
+    int8_t*  occupied;
+    size_t   cap;
+    size_t   count;
 } AvraIntMap;
+
+static void intmap_alloc_slots(AvraIntMap* m, size_t cap) {
+    m->keys = (int64_t*)calloc(cap, sizeof(int64_t));
+    m->values = (int64_t*)calloc(cap, sizeof(int64_t));
+    m->occupied = (int8_t*)calloc(cap, sizeof(int8_t));
+    m->cap = cap;
+    m->count = 0;
+}
 
 void* avra_intmap_new(void) {
     AvraIntMap* m = (AvraIntMap*)calloc(1, sizeof(AvraIntMap));
+    intmap_alloc_slots(m, AVRA_INTMAP_INITIAL_CAP);
     return m;
+}
+
+static void intmap_insert_into(int64_t* keys, int64_t* values, int8_t* occupied,
+                               size_t cap, int64_t key, int64_t value) {
+    uint64_t slot = (uint64_t)key % cap;
+    while (occupied[slot] && keys[slot] != key) {
+        slot = (slot + 1) % cap;
+    }
+    if (!occupied[slot]) {
+        keys[slot] = key;
+        occupied[slot] = 1;
+    }
+    values[slot] = value;
+}
+
+static void intmap_grow(AvraIntMap* m) {
+    size_t new_cap = m->cap * 2;
+    int64_t* nk = (int64_t*)calloc(new_cap, sizeof(int64_t));
+    int64_t* nv = (int64_t*)calloc(new_cap, sizeof(int64_t));
+    int8_t* no = (int8_t*)calloc(new_cap, sizeof(int8_t));
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->occupied[i]) {
+            intmap_insert_into(nk, nv, no, new_cap, m->keys[i], m->values[i]);
+        }
+    }
+    free(m->keys);
+    free(m->values);
+    free(m->occupied);
+    m->keys = nk;
+    m->values = nv;
+    m->occupied = no;
+    m->cap = new_cap;
 }
 
 void avra_intmap_set(void* map, int64_t key, int64_t value) {
     AvraIntMap* m = (AvraIntMap*)map;
-    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
-    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
-        if (!m->occupied[slot] || m->keys[slot] == key) {
-            m->keys[slot] = key;
-            m->values[slot] = value;
-            m->occupied[slot] = 1;
-            return;
-        }
+    if ((m->count + 1) * 4 >= m->cap * 3) intmap_grow(m);
+    uint64_t slot = (uint64_t)key % m->cap;
+    while (m->occupied[slot] && m->keys[slot] != key) {
+        slot = (slot + 1) % m->cap;
     }
+    if (!m->occupied[slot]) {
+        m->keys[slot] = key;
+        m->occupied[slot] = 1;
+        m->count++;
+    }
+    m->values[slot] = value;
 }
 
 int64_t avra_intmap_get(void* map, int64_t key) {
     AvraIntMap* m = (AvraIntMap*)map;
-    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
-    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
-        if (!m->occupied[slot]) return 0;
+    uint64_t slot = (uint64_t)key % m->cap;
+    while (m->occupied[slot]) {
         if (m->keys[slot] == key) return m->values[slot];
+        slot = (slot + 1) % m->cap;
     }
     return 0;
 }
@@ -1672,11 +1723,10 @@ int64_t avra_intmap_inc(void* map, int64_t key) {
 
 int64_t avra_intmap_has(void* map, int64_t key) {
     AvraIntMap* m = (AvraIntMap*)map;
-    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
-    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
-        if (!m->occupied[slot]) return 0;
+    uint64_t slot = (uint64_t)key % m->cap;
+    while (m->occupied[slot]) {
         if (m->keys[slot] == key) return 1;
+        slot = (slot + 1) % m->cap;
     }
     return 0;
 }
@@ -4783,6 +4833,29 @@ int64_t avra_channel_recv_opt(void* channel, int64_t* ok_out) {
     }
     if (ch->count == 0) {
         // closed and drained
+        pthread_mutex_unlock(&ch->mu);
+        if (ok_out) *ok_out = 0;
+        return 0;
+    }
+    int64_t value = ch->buf[ch->head];
+    ch->head = (ch->head + 1) % ch->alloc;
+    ch->count--;
+    pthread_cond_signal(&ch->can_send);
+    pthread_mutex_unlock(&ch->mu);
+    if (ok_out) *ok_out = 1;
+    return value;
+}
+
+// Non-blocking pop. `ok_out` gets 1 with a value when one is
+// available NOW; 0 otherwise — whether the channel is merely empty
+// or closed (callers that need to distinguish use blocking recv,
+// whose null is unambiguous). Powers polling shapes like the test
+// runner's ticker shutdown check, where blocking would defeat the
+// point.
+int64_t avra_channel_try_recv_opt(void* channel, int64_t* ok_out) {
+    AvraChannel* ch = (AvraChannel*)channel;
+    pthread_mutex_lock(&ch->mu);
+    if (ch->count == 0) {
         pthread_mutex_unlock(&ch->mu);
         if (ok_out) *ok_out = 0;
         return 0;

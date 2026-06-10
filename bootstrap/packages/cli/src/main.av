@@ -3073,7 +3073,10 @@ fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
     let profraw = "${cov_dir}/_test.profraw"
     let profdata = "${cov_dir}/_test.profdata"
     avra_shell_exec("rm -f ${profraw}")
-    let run_rc = avra_process_forward(bin_path, "[]", "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\"}}")
+    // AVRA_TEST_JOBS=1: instrprof counters aren't atomic, so the
+    // coverage run pins the in-process runner to sequential execution
+    // for exact counts (d4jv).
+    let run_rc = avra_process_forward(bin_path, "[]", "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\",\"AVRA_TEST_JOBS\":\"1\"}}")
     if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
 
     let llvm_prefix = resolve_llvm_prefix()

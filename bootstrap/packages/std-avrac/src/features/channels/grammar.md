@@ -37,6 +37,11 @@ fn worker(work: Channel<string>) { ... }
   }
   ```
 
+- `ch.try_recv() -> T?` — non-blocking poll: a value when one is
+  available NOW, else `null` immediately — whether the channel is
+  merely empty or closed (block with `recv()` when the distinction
+  matters). Powers polling shapes like the test runner's ticker
+  shutdown, where blocking would defeat the point.
 - `ch.close()` — mark the channel closed and wake all waiters.
   Idempotent. Buffered values remain receivable after close; only
   the "no more values will arrive" promise is made.

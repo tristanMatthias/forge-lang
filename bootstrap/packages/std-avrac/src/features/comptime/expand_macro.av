@@ -41,7 +41,7 @@
 // mapping; each ComponentBlock instance routes through M with the
 // block as the Stmt arg.
 
-use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
+use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
@@ -343,6 +343,8 @@ fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
 /// If `stmt` is a ComponentDef wrapped in @expand(M), return M's
 /// name. Returns "" otherwise. Handles arbitrarily-nested
 /// Annotated wrappers (e.g. `///` doc + `@expand`).
+///
+
 fn comp_macro_for(stmt: Stmt) -> string {
     let inner = peel_annotations(stmt)
     match inner {
@@ -454,7 +456,12 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
                 origins = list_concat(origins, sub.origins)
-                let new_stmt = Stmt.Module(mod_name, sub.out)
+                // The match subject was peel_annotations(ss.node) —
+                // rebuild the module INSIDE the original Annotated
+                // layers, or a wrapped module (e.g. the test
+                // assembler's @deferred_init) silently loses its
+                // annotations here and codegen auto-runs its init.
+                let new_stmt = rewrap_annotations(ss.node, Stmt.Module(mod_name, sub.out))
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {
