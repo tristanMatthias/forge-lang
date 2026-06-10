@@ -1229,6 +1229,15 @@ is independently actionable; none block d4jv's runner.
   file; bundled mode pays one giant compile (OOM on 15GB at ~2750
   specs). The end-game is K files per binary × in-process parallel
   units — needs i7gw (parallel bundle compile) to be practical cold.
+- ~~**Fixture-cache write atomicity.**~~ LANDED: whole-file writes
+  (`avra_selfhost_write_file{,_bytes}`) publish via temp+rename, the
+  sha256 sidecar writes atomically, and fixture cold-misses
+  serialize per cache slot via the new flock-backed
+  `avra_file_lock_exclusive` — concurrent same-fixture runs wait and
+  reuse the winner's published stdout instead of racing on the
+  fixture's fixed .ll/.o artifact paths. The `mv: rename` output-
+  rejection heuristic this replaced is deleted (diagnose.sh's
+  PID-scoped temp links had already root-fixed the producer side).
 - **pdme.1 evidence.** A stale-bs2 unit cache slot served a
   double-running test binary after assembler changes (transitive
   fingerprint miss, then exact-hash collision on rebuilt-identical

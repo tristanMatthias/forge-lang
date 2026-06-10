@@ -40,6 +40,12 @@ use @std.crypto.{sha256_hex, sha256_file}
 // memoized string immediately, saving a fork+exec per call.
 extern fn avra_test_toolchain_fp_get() -> string
 extern fn avra_test_toolchain_fp_set(fp: string)
+// Advisory lock serializing concurrent cold-misses on one fixture:
+// bs2 emits the fixture's .ll/.o at fixed sibling paths, so two
+// simultaneous runs of the same fixture (parallel units or parallel
+// shards) would race on those artifacts. Lock fd in, fd out.
+extern fn avra_file_lock_exclusive(path: string) -> int
+extern fn avra_file_unlock(fd: int)
 
 /// Drop every `extern fn` declaration from the list.
 ///
@@ -568,11 +574,23 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
         return avra_selfhost_read_file(cache_path)
     }
     let _ = avra_mkdir_p(cache_dir)
-    let out = avra_shell_exec(cmd)
-    if !fixture_output_is_publishable(out) {
-        return out
+    // Serialize cold-misses per cache slot. bs2 writes the fixture's
+    // .ll/.o at fixed sibling paths, so two concurrent runs of one
+    // fixture would race on those artifacts; the loser of that race
+    // historically produced garbage stdout. The lock makes the
+    // second runner WAIT, then take the winner's published result
+    // via the re-check instead of re-running at all.
+    let lock_fd = avra_file_lock_exclusive("${cache_path}.lock")
+    if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
+        let cached = avra_selfhost_read_file(cache_path)
+        avra_file_unlock(lock_fd)
+        return cached
     }
-    let _ = avra_selfhost_write_file(cache_path, out)
+    let out = avra_shell_exec(cmd)
+    if fixture_output_is_publishable(out) {
+        let _ = avra_selfhost_write_file(cache_path, out)
+    }
+    avra_file_unlock(lock_fd)
     out
 }
 
@@ -609,18 +627,6 @@ fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("Segmentation fault") { return false }
     if out.contains("bs2 codegen failed") { return false }
     if out.contains("bs2 compile failed") { return false }
-    // jdgo: continuous dispatch (cbg3 follow-up) increased concurrent
-    // diagnose.sh invocations. The shell script's `cc -o ${out}.tmp`
-    // followed by `mv ${out}.tmp $out` is not race-safe under high
-    // concurrency: when two shards' diagnose.sh stages write to /tmp
-    // simultaneously (e.g. per-shard temp paths colliding under heavy
-    // parallel cold load), the `mv` step prints `mv: rename ... : No
-    // such file or directory`. The rest of the captured output is
-    // typically the previous fixture's stale bin stdout — caching that
-    // freezes the wrong answer. Reject it so the next test invocation
-    // re-runs cleanly. Root-cause fix would isolate diagnose.sh's
-    // working artifacts per-shard, but that's a separate scope.
-    if out.contains("mv: rename ") { return false }
     true
 }
 

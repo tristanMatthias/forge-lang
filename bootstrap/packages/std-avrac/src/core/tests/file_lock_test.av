@@ -1,0 +1,62 @@
+// Advisory exclusive file lock (flock-backed): the fixture-stdout
+// cache serializes concurrent cold-misses on one fixture with it,
+// because bs2 emits the fixture's .ll/.o at fixed sibling paths and
+// parallel runs of the same fixture would race on those artifacts.
+// The lock works across threads (separate fds contend) and across
+// processes (the file contends).
+
+extern fn avra_file_lock_exclusive(path: string) -> int
+extern fn avra_file_unlock(fd: int)
+extern fn avra_sleep_ms(ms: int)
+extern fn avra_remove_file(path: string) -> int
+
+mut fl_counter: int = 0
+
+spec "advisory file lock" {
+    given "a lock path" {
+        then "acquire returns a usable fd and release succeeds" {
+            let fd = avra_file_lock_exclusive("build/cache/_lock_probe.lock")
+            let ok = fd >= 0
+            avra_file_unlock(fd)
+            let _ = avra_remove_file("build/cache/_lock_probe.lock")
+            ok
+        }
+        then "unlock of a failed acquire (-1) is a safe no-op" {
+            avra_file_unlock(0 - 1)
+            true
+        }
+    }
+    given "two threads doing read-sleep-write under the lock" {
+        then "no update is lost (the critical section is exclusive)" {
+            fl_counter = 0
+            let lp = "build/cache/_lock_race.lock"
+            let t1 = spawn {
+                for _ in 0..25 {
+                    let fd = avra_file_lock_exclusive(lp)
+                    let v = fl_counter
+                    avra_sleep_ms(1)
+                    fl_counter = v + 1
+                    avra_file_unlock(fd)
+                }
+                0
+            }
+            let t2 = spawn {
+                for _ in 0..25 {
+                    let fd = avra_file_lock_exclusive(lp)
+                    let v = fl_counter
+                    avra_sleep_ms(1)
+                    fl_counter = v + 1
+                    avra_file_unlock(fd)
+                }
+                0
+            }
+            t1.await
+            t2.await
+            let _ = avra_remove_file(lp)
+            // With a non-exclusive section, the read-sleep-write
+            // interleaving makes lost updates near-certain; 50/50
+            // only holds when the lock truly serializes.
+            fl_counter == 50
+        }
+    }
+}

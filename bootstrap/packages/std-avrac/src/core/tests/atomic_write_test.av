@@ -1,0 +1,75 @@
+// Atomic whole-file writes: avra_selfhost_write_file publishes via a
+// same-directory temp + rename, so a reader racing a writer sees the
+// complete old content or the complete new content — never a
+// truncated or interleaved hybrid. Before this, the test runner's
+// parallel units could catch each other's fixture-cache writes
+// mid-truncation and fail on short reads.
+
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
+extern fn avra_int_to_bytes_le(n: int) -> bytes
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_remove_file(path: string) -> int
+
+mut aw_torn: int = 0
+mut aw_seen: int = 0
+
+spec "atomic file writes" {
+    given "a single writer" {
+        then "string content round-trips" {
+            let p = "build/cache/_atomic_write_probe.txt"
+            let _ = avra_selfhost_write_file(p, "hello atomic")
+            let back = avra_selfhost_read_file(p)
+            let _ = avra_remove_file(p)
+            back == "hello atomic"
+        }
+        then "bytes content round-trips through the same atomic path" {
+            let p = "build/cache/_atomic_write_probe.bin"
+            let _ = avra_selfhost_write_file_bytes(p, avra_int_to_bytes_le(123456789))
+            let back = avra_selfhost_read_file_bytes(p)
+            let _ = avra_remove_file(p)
+            avra_bytes_to_int_le(back, 0) == 123456789
+        }
+    }
+    given "two threads hammering one path with distinct 4KB payloads" {
+        then "every observed read is one complete payload, never a hybrid" {
+            aw_torn = 0
+            aw_seen = 0
+            let p = "build/cache/_atomic_write_race.txt"
+            let pay_a = "a".repeat(4096)
+            let pay_b = "b".repeat(4096)
+            let _ = avra_selfhost_write_file(p, pay_a)
+            let wa = spawn {
+                for _ in 0..60 {
+                    let _ = avra_selfhost_write_file(p, pay_a)
+                }
+                0
+            }
+            let wb = spawn {
+                for _ in 0..60 {
+                    let _ = avra_selfhost_write_file(p, pay_b)
+                }
+                0
+            }
+            let rd = spawn {
+                for _ in 0..200 {
+                    let got = avra_selfhost_read_file(p)
+                    aw_seen = aw_seen + 1
+                    if got.length != 4096 {
+                        aw_torn = aw_torn + 1
+                    } else if got != pay_a && got != pay_b {
+                        aw_torn = aw_torn + 1
+                    }
+                }
+                0
+            }
+            wa.await
+            wb.await
+            rd.await
+            let _ = avra_remove_file(p)
+            aw_torn == 0 && aw_seen == 200
+        }
+    }
+}

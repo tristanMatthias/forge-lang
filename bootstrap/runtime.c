@@ -34,6 +34,8 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <sys/wait.h>
+#include <sys/file.h>
+#include <fcntl.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -915,13 +917,38 @@ const char* avra_selfhost_read_file(const char* path) {
     return buf;
 }
 
-int64_t avra_selfhost_write_file(const char* path, const char* content) {
-    FILE* f = fopen(path, "wb");
+// Whole-file writes land via a same-directory temp file + rename(2),
+// so concurrent readers see the complete old content or the complete
+// new content — never a truncated/interleaved hybrid. The test
+// runner's parallel units share content-keyed cache files (fixture
+// stdout, fp sidecars, results sidecars); before this, a reader
+// overlapping a writer's fopen("wb") truncation window got a short
+// read and failed flakily. rename within one directory is atomic on
+// every platform we target.
+static int avra_write_file_atomic(const char* path, const char* data, size_t len) {
+    static _Atomic int64_t seq = 0;
+    char tmp[4096];
+    int64_t n = atomic_fetch_add(&seq, 1);
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp.%d.%lld", path, (int)getpid(), (long long)n)
+            >= (int)sizeof(tmp)) {
+        return 0;
+    }
+    FILE* f = fopen(tmp, "wb");
     if (!f) return 0;
-    size_t len = strlen(content);
-    fwrite(content, 1, len, f);
-    fclose(f);
+    size_t wrote = fwrite(data, 1, len, f);
+    if (fclose(f) != 0 || wrote != len) {
+        remove(tmp);
+        return 0;
+    }
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return 0;
+    }
     return 1;
+}
+
+int64_t avra_selfhost_write_file(const char* path, const char* content) {
+    return avra_write_file_atomic(path, content, strlen(content));
 }
 
 // Append-mode write — text-only, no embedded NULs. Used by the
@@ -963,13 +990,9 @@ const char* avra_selfhost_read_file_bytes(const char* path) {
 
 int64_t avra_selfhost_write_file_bytes(const char* path, const char* b) {
     if (!b) return 0;
-    FILE* f = fopen(path, "wb");
-    if (!f) return 0;
     int64_t len = *(int64_t*)b;
     if (len < 0) len = 0;
-    if (len > 0) fwrite(b + 8, 1, (size_t)len, f);
-    fclose(f);
-    return 1;
+    return avra_write_file_atomic(path, b + 8, (size_t)len);
 }
 
 // avra_selfhost_string_to_float is used by the bootstrap's float() builtin.
@@ -1361,6 +1384,31 @@ int64_t avra_mkdir_p(const char* path) {
 // to a tmp path under the cache dir, then rename into place so any
 // concurrent reader sees either the old or the new entry, never a
 // half-written one. Returns 1 on success, 0 on failure.
+// Advisory file lock for cross-thread AND cross-process critical
+// sections (flock is shared by both: threads contend via separate
+// fds, processes via the file). The fixture-stdout cache uses this
+// to serialize concurrent cold-misses on one fixture: bs2 emits the
+// fixture's .ll/.o at FIXED sibling paths, so two simultaneous
+// runs of the same fixture would race on those artifacts. Returns
+// the lock fd (>= 0) or -1 on failure; pass the fd to
+// avra_file_unlock to release. Locks are per-open-fd, so callers
+// must thread the handle rather than re-opening the path.
+int64_t avra_file_lock_exclusive(const char* path) {
+    int fd = open(path, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) return -1;
+    if (flock(fd, LOCK_EX) != 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+void avra_file_unlock(int64_t fd) {
+    if (fd < 0) return;
+    flock((int)fd, LOCK_UN);
+    close((int)fd);
+}
+
 int64_t avra_rename(const char* src, const char* dst) {
     if (!src || !dst) return 0;
     return rename(src, dst) == 0 ? 1 : 0;
@@ -3140,10 +3188,13 @@ const char* avra_sha256_file(const char* path) {
         fclose(sf);
     }
     const char* hex = avra_sha256_file_uncached(path);
-    FILE* wf = fopen(sidecar, "w");
-    if (wf) {
-        fprintf(wf, "%ld %ld\n%s\n", mtime, size, hex);
-        fclose(wf);
+    char rec[128];
+    int rl = snprintf(rec, sizeof(rec), "%ld %ld\n%s\n", mtime, size, hex);
+    if (rl > 0 && rl < (int)sizeof(rec)) {
+        // Atomic publish: a reader racing this write must validate
+        // against either the old record or the new one, never a torn
+        // hybrid that happens to scan as plausible.
+        avra_write_file_atomic(sidecar, rec, (size_t)rl);
     }
     return hex;
 }
