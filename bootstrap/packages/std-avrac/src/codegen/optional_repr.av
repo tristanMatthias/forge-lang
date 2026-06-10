@@ -21,7 +21,7 @@
 // niche-vs-boxed choice lives in exactly one place (`optional_repr_tagged`).
 
 use core.{ValueType, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_is_value_scalar, vtype_eq}
-use codegen.{Ctx, EmitValue}
+use codegen.{Ctx, EmitValue, ok_emit}
 
 /// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
 /// value type (int / bool / float / sized ints). Pointer-backed inners use
@@ -205,4 +205,41 @@ export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty:
     ctx.store_br_if_open(ctx.to_i64(e_box, "ifopt_e"), obox_slot, obox_merge)
     ctx.position(obox_merge)
     EmitValue { value: ctx.load_i64(obox_slot, "ifopt_val"), ty: opt_ty }
+}
+
+// ── List<T?> construction from emitted values (single box-loop) ──
+// `List<T?>` must box each present scalar element into the tagged-optional
+// repr (otherwise a later unwrap derefs a raw scalar as a box pointer and
+// segfaults). This is the ONE place that loop lives. It takes ALREADY-EMITTED
+// element values rather than expressions, so it stays a pure codegen
+// primitive (no `ctx.emit`, no feature import) — callable from both the list
+// feature and the shared arg-boxing path without a module cycle.
+
+/// Build a `List<T?>` from emitted element values, boxing each present scalar
+/// into `elem_opt`. When `elem_opt`'s inner is `Unknown` (an inferred literal
+/// like `[1, none]`), the inner is pinned from the first present, non-optional
+/// value. `none` values stay null; already-optional values are not re-boxed.
+export fn box_into_list(ctx: Ctx, vals: List<EmitValue>, elem_opt: ValueType) -> Result<EmitValue, string> {
+    mut inner = vtype_strip_optional(elem_opt)
+    if vtype_is_unknown(inner) {
+        mut i = 0
+        while i < vals.length {
+            let t = vals[i].ty
+            if !vtype_is_optional(t) && !vtype_is_unknown(t) && !(t is .Void) {
+                inner = t
+                i = vals.length
+            } else {
+                i = i + 1
+            }
+        }
+    }
+    let resolved = ValueType.Optional(inner)
+    let arr = ctx.array_new()
+    mut k = 0
+    while k < vals.length {
+        let coerced = emit_optional_coerce(ctx, vals[k], resolved)
+        ctx.array_push(arr, coerced.value)
+        k = k + 1
+    }
+    ok_emit(arr, ValueType.List(resolved))
 }
