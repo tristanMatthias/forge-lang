@@ -9,7 +9,7 @@ use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirec
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use core.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, emit_optional_is_none}
 use core.{vtype_strip_optional, vtype_is_optional}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
@@ -599,6 +599,14 @@ export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: L
 export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("string() expects 1 arg") }
     let r = ctx.emit(env, args[0].node)?
+    // A `T?` argument displays as the unwrapped inner, or the literal
+    // "none". Without this branch an optional fell into the integer path
+    // and printed its BOX POINTER (`string(Some(5))` → "94895026…") and an
+    // absent one printed "0" — both silent garbage. `"${v}"` interpolation
+    // desugars through this same emitter, so it is covered too.
+    if vtype_is_optional(r.ty) {
+        return emit_optional_to_string(ctx, r)
+    }
     if vtype_is_str(r.ty) { return ok_emit(r.value, .Str) }
     if vtype_eq(r.ty, .Bool) {
         return ok_emit(ctx.call("avra_bool_to_string", [r.value]), .Str)
@@ -636,6 +644,46 @@ export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>)
     let fmt = ctx.global_str("%lld", ".i2s_fmt")
     ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
     ok_emit(buf, .Str)
+}
+
+/// Display for a `T?` value: branch at runtime — `none` → the literal
+/// "none"; present → unwrap and convert the inner (str passthrough, bool
+/// words, float / int formatting). A struct/enum inner without a string
+/// form is rejected at compile time with the same remedy as the
+/// non-optional path, BEFORE any blocks are opened.
+fn emit_optional_to_string(ctx: Ctx, r: EmitValue) -> Result<EmitValue, string> {
+    let inner = vtype_strip_optional(r.ty)
+    let bad_owner = if vtype_struct_name(inner) != "" { vtype_struct_name(inner) } else { vtype_enum_name(inner) }
+    if bad_owner != "" {
+        return err_emit("type `${bad_owner}?` cannot be converted to string — unwrap it and define `fn display(self) -> string` on `${bad_owner}`")
+    }
+    let slot = ctx.alloca_i64("opt2s_slot")
+    let merge_bb = ctx.bb("opt2s_end")
+    let none_bb = ctx.bb("opt2s_none")
+    let present_bb = ctx.bb("opt2s_present")
+    ctx.cond_br(emit_optional_is_none(ctx, r.value), none_bb, present_bb)
+    ctx.position(none_bb)
+    ctx.store_br_if_open(ctx.to_i64(ctx.global_str("none", ".opt2s_none"), "opt2s_n"), slot, merge_bb)
+    ctx.position(present_bb)
+    let inner_val = emit_optional_unwrap(ctx, inner, r.value)
+    let conv = emit_present_inner_to_string(ctx, inner_val, inner)?
+    ctx.store_br_if_open(ctx.to_i64(conv.value, "opt2s_p"), slot, merge_bb)
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(slot, "opt2s_val"), .Str)
+}
+
+/// Convert an already-unwrapped optional inner to a string: str is the
+/// value itself (niche repr), bool prints its words, float / ints reuse
+/// the shared numeric formatter.
+fn emit_present_inner_to_string(ctx: Ctx, val: ptr, inner: ValueType) -> Result<EmitValue, string> {
+    if vtype_is_str(inner) { return ok_emit(val, .Str) }
+    if vtype_eq(inner, .Bool) {
+        return ok_emit(ctx.call("avra_bool_to_string", [val]), .Str)
+    }
+    mut v = val
+    if vtype_is_unsigned_int(inner) { v = ctx.zext(val, ctx.i64_type, "ou2i") }
+    if vtype_is_signed_narrow_int(inner) { v = ctx.sext(val, ctx.i64_type, "oi2i") }
+    emit_int_to_string_inner(ctx, v, inner)
 }
 
 /// Duck-typed Display dispatch: if `r.ty` is a user-defined Struct

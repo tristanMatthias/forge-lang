@@ -1,0 +1,43 @@
+// WHY: `string(x)` / `"${x}"` interpolation on a raw `T?` must display the
+// unwrapped inner for a present value and the literal "none" for an absent
+// one. Before this, a tagged optional fell into the integer formatting path
+// and printed its BOX POINTER (`string(Some(5))` → "94895026…"), and an
+// absent one printed "0" — silent garbage, not a crash. Interpolation
+// desugars through the same string() emitter, so both surfaces are locked.
+
+fn show_i(v: int?) -> str { string(v) }
+fn show_b(v: bool?) -> str { string(v) }
+fn show_f(v: float?) -> str { string(v) }
+fn show_s(v: str?) -> str { string(v) }
+
+spec "string() on a raw optional displays inner-or-none" {
+    then "string of a present 5 is the digit five (was the box-pointer bug)" {
+        show_i(5) == "5"
+    }
+    then "string of a present zero shows zero, not none" {
+        show_i(0) == "0"
+    }
+    then "string of an absent optional is the word none (was zero)" {
+        show_i(none) == "none"
+    }
+    then "bool? displays its words, including a present false" {
+        show_b(true) == "true" && show_b(false) == "false" && show_b(none) == "none"
+    }
+    then "float? displays the inner float" {
+        show_f(1.5) == "1.5" && show_f(none) == "none"
+    }
+    then "str? (niche) passes the present string through" {
+        show_s("hi") == "hi" && show_s(none) == "none"
+    }
+}
+
+spec "interpolation of a raw optional displays inner-or-none" {
+    then "interpolating a present int? yields the value" {
+        let v: int? = 7
+        "v=${v}" == "v=7"
+    }
+    then "interpolating an absent int? yields none" {
+        let v: int? = none
+        "v=${v}" == "v=none"
+    }
+}
