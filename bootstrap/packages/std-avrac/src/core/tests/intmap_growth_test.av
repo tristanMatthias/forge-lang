@@ -1,0 +1,57 @@
+// The runtime intmap silently DROPPED the 257th insert — its
+// fixed 256-slot open-addressing table exhausted every probe slot
+// and returned without storing. The type registry's id→name reverse
+// map runs on this intmap, so the 257th registered TYPE in any
+// program lost its reverse mapping: resolve_codegen_vtype could no
+// longer canonicalize the bare name, and codegen failed with
+// "unknown struct" for a perfectly-registered type. Surfaced when
+// the test runner's TestUnit/UnitDone decls pushed the bundled test
+// program's @std type count across the boundary.
+//
+// The map now grows at 75% load. This test pins the contract well
+// past the historic capacity.
+
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+spec "intmap: grows past the historic 256-slot capacity" {
+    given "a thousand sequential inserts" {
+        then "every key remains retrievable — including the 257th" {
+            let m = avra_intmap_new()
+            mut i = 1
+            while i <= 1000 {
+                avra_intmap_set(m, i, i * 7)
+                i = i + 1
+            }
+            mut ok = true
+            mut j = 1
+            while j <= 1000 {
+                if avra_intmap_get(m, j) != j * 7 { ok = false }
+                if avra_intmap_has(m, j) != 1 { ok = false }
+                j = j + 1
+            }
+            ok && avra_intmap_get(m, 257) == 257 * 7
+        }
+        then "absent keys still read as missing after growth" {
+            let m = avra_intmap_new()
+            mut i = 1
+            while i <= 600 {
+                avra_intmap_set(m, i * 2, i)
+                i = i + 1
+            }
+            avra_intmap_has(m, 999999) == 0 && avra_intmap_get(m, 1201) == 0
+        }
+        then "overwrites keep a single slot per key across growth" {
+            let m = avra_intmap_new()
+            mut i = 1
+            while i <= 400 {
+                avra_intmap_set(m, 42, i)
+                avra_intmap_set(m, i + 1000, i)
+                i = i + 1
+            }
+            avra_intmap_get(m, 42) == 400
+        }
+    }
+}

@@ -180,3 +180,34 @@ spec "discover_one_file: short-circuit for the `bs2 test <literal>` path" {
             && !got[0].has_top_main
     }
 }
+
+spec "positional directory scopes discovery" {
+    given "a directory passed as the path filter" {
+        then "every file under it is kept, others dropped" {
+            let files = [
+                DiscoveredFile { path: "fixtures/scoped/a_test.av", has_top_main: false, entries: mk_one_spec_entry() },
+                DiscoveredFile { path: "fixtures/scoped/deep/b_test.av", has_top_main: false, entries: mk_one_spec_entry() },
+                DiscoveredFile { path: "fixtures/other/c_test.av", has_top_main: false, entries: mk_one_spec_entry() },
+            ]
+            // A real directory is required for the is-dir probe; use
+            // one that always exists in the repo.
+            let kept = filter_by_path(files_rooted(files, "packages/std-avrac/src/test_runner"), "packages/std-avrac/src/test_runner")
+            kept.length == 2
+        }
+    }
+}
+
+/// Re-root the fixture paths under `dir` (first two entries) so the
+/// directory-prefix branch has something to keep; the third entry
+/// stays outside the scope.
+fn files_rooted(files: List<DiscoveredFile>, dir: string) -> List<DiscoveredFile> {
+    [
+        files[0] with { path: "${dir}/a_test.av" },
+        files[1] with { path: "${dir}/deep/b_test.av" },
+        files[2],
+    ]
+}
+
+fn mk_one_spec_entry() -> List<DiscoveredEntry> {
+    [DiscoveredEntry.Spec("\"probe\"", 1)]
+}

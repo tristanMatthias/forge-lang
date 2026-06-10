@@ -131,3 +131,18 @@ itself can complete — because every later pass needs the full
 AST. Subsequent passes (`expand_components`, `derive_marshal`,
 `resolve_names`, …) see a single flat tree with every module's
 body inlined under its `Stmt.Module` wrapper.
+
+## Module annotations
+
+- `@external_unit module m { … }` — the module's `__init_m` body
+  lives in a separately-compiled producer object; this unit declares
+  the init fn (so calls link) but does not emit its body.
+- `@deferred_init module m { … }` — codegen synthesizes `__init_m`
+  but does NOT auto-call it from the top-level wrapper; an explicit
+  caller owns the invocation. Declare `extern fn __init_m() -> int`
+  to call it by name. This is how the test runner turns each test
+  file into a dispatchable unit: every assembled test module is
+  deferred, and the runner invokes the inits from worker threads.
+  Initializer order caveats apply — anything the module's top-level
+  code depends on must already be initialized by the time the
+  explicit call happens.

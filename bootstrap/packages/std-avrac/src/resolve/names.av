@@ -1066,7 +1066,7 @@ fn rewrite_select_arms(ctx: NameCtx, arms: List<SelectArm>) -> List<SelectArm> {
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            channel: rewrite_expr(ctx, arm.channel),
+            chan: rewrite_expr(ctx, arm.chan),
             body: rewrite_stmt_list(ctx, arm.body),
         })
         i = i + 1
@@ -1201,6 +1201,7 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
             ValueType.NarrowedEnum(qn, v, type_registry_id_for(ctx.type_reg, qn))
         }
         .List(elem) -> .List(rewrite_vtype(ctx, elem))
+        .Channel(elem) -> .Channel(rewrite_vtype(ctx, elem))
         .Fn(ret) -> .Fn(rewrite_vtype(ctx, ret))
         .FnTyped(params, ret) -> .FnTyped(rewrite_vtype_list(ctx, params), rewrite_vtype(ctx, ret))
         .Closure(n, ret) -> .Closure(n, rewrite_vtype(ctx, ret))
@@ -1397,6 +1398,14 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             Expr.ListComp(rewrite_expr(inner, body), var, rewrite_expr(ctx, coll), new_filter)
         }
         .Spawn(body) -> .Spawn(rewrite_expr(ctx, body))
+        .ChannelNew(elem, capacity) -> {
+            // The element type is embedded in the expression — qualify
+            // nominal names exactly like Let/Mut annotations do, so
+            // `channel<Foo>(1)` inside a module resolves Foo to its
+            // module-qualified registry name.
+            let qelem = rewrite_vtype(ctx, elem)
+            if capacity == null { Expr.ChannelNew(qelem, null) } else { .ChannelNew(qelem, rewrite_expr(ctx, capacity!)) }
+        }
         .Isolated(body) -> .Isolated(rewrite_expr(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
@@ -1658,6 +1667,9 @@ fn collect_used_paths_expr(expr: Expr, acc_ref: List<string>) -> List<string> {
         .InCheck(needle, items) -> collect_used_paths_expr_list(items, collect_used_paths_expr(needle, acc))
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(body, collect_used_paths_expr(inner, acc))
         .Spawn(body) -> collect_used_paths_expr(body, acc)
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { acc } else { collect_used_paths_expr(capacity!, acc) }
+        }
         .Isolated(body) -> collect_used_paths_expr(body, acc)
         .Ident(name) -> {
             // PascalCase identifiers may be imported type/enum names.

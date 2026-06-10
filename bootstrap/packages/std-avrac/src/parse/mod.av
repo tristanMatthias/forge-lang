@@ -323,6 +323,7 @@ export fn p_keyword_kind(text: string) -> Tk {
     match text {
         "and"      -> Tk.KwAnd
         "catch"    -> Tk.KwCatch
+        "channel"  -> Tk.KwChannel
         "const"    -> Tk.KwConst
         "else"     -> Tk.KwElse
         "errdefer" -> Tk.KwErrdefer
@@ -1522,6 +1523,10 @@ impl Parser {
 
         if self.check(Tk.KwSpawn) {
             return self.parse_spawn_expression()
+        }
+
+        if self.check(Tk.KwChannel) {
+            return self.parse_channel_expression()
         }
 
         if self.check(Tk.KwIsolated) {

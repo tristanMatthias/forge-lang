@@ -208,6 +208,33 @@ LLVMValueRef avra_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeR
         abort();
     }
     char* sym = avra_mangle_symbol(name);
+    // Get-or-create. Raw LLVMAddFunction silently RENAMES on collision
+    // (`name.1`), so a forward declaration (extern fn) followed by the
+    // definition would split into two symbols — calls bind the empty
+    // declaration and the body lands in an orphan. That's a silent
+    // failure; the declare-then-define pattern (e.g. the test
+    // assembler's `extern fn __init_<mod>` + the module's emitted
+    // init) is legitimate and must converge on ONE function. A
+    // collision with a DIFFERENT type is a genuine bug — fail loudly
+    // instead of letting the rename hide it.
+    LLVMValueRef existing = LLVMGetNamedFunction(m, sym ? sym : name);
+    if (existing) {
+        LLVMTypeRef existing_ty = LLVMGlobalGetValueType(existing);
+        if (existing_ty != fn_type) {
+            char* have = LLVMPrintTypeToString(existing_ty);
+            char* want = LLVMPrintTypeToString(fn_type);
+            fprintf(stderr,
+                "[CRASH] avra_llvm_add_function: `%s` redeclared with a different type\n"
+                "        existing: %s\n"
+                "        new:      %s\n",
+                name, have ? have : "?", want ? want : "?");
+            LLVMDisposeMessage(have);
+            LLVMDisposeMessage(want);
+            abort();
+        }
+        free(sym);
+        return existing;
+    }
     LLVMValueRef fn = LLVMAddFunction(m, sym ? sym : name, fn_type);
     free(sym);
     return fn;
@@ -586,7 +613,7 @@ int avra_llvm_verify_module_print(LLVMModuleRef m) {
 
 // Verify a single function. Returns 0 if valid, 1 if invalid.
 // Prints the error to stderr with the function name for easy debugging.
-int avra_llvm_verify_function(LLVMValueRef fn_val) {
+int64_t avra_llvm_verify_function(LLVMValueRef fn_val) {
     int result = LLVMVerifyFunction(fn_val, LLVMPrintMessageAction);
     if (result) {
         const char* name = LLVMGetValueName(fn_val);
@@ -599,7 +626,7 @@ int avra_llvm_verify_function(LLVMValueRef fn_val) {
 
 // Returns 1 if the LLVM value's type is a pointer type, 0 otherwise.
 // Used by the codegen to avoid redundant ptrtoint/inttoptr casts.
-int avra_llvm_is_ptr_value(LLVMValueRef val) {
+int64_t avra_llvm_is_ptr_value(LLVMValueRef val) {
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMPointerTypeKind ? 1 : 0;
 }
 
@@ -609,7 +636,7 @@ LLVMTypeRef avra_llvm_typeof(LLVMValueRef val) {
 }
 
 // Returns 1 if the LLVM value has void type, 0 otherwise.
-int avra_llvm_is_void_value(LLVMValueRef val) {
+int64_t avra_llvm_is_void_value(LLVMValueRef val) {
     if (!val) return 1;
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMVoidTypeKind ? 1 : 0;
 }

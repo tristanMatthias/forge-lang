@@ -131,6 +131,11 @@ export type Ctx = {
     // That's today's default behaviour; library mode opt-in via
     // --lib-pkg-root=<qualifier>.
     lib_pkg_root: string,
+    // The same ownership as a parsed set: AVRA_LIB_PKG_ROOT is
+    // colon-separated (mirrors AVRA_LIB_OBJS) because a BATCHED test
+    // shard owns several test modules at once — a fn belongs to the
+    // unit when ANY root prefixes it. Empty list = whole-program.
+    lib_pkg_roots: List<string>,
 }
 
 /// Bundle of every type-resolution registry. Passed as a single
@@ -727,6 +732,8 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Void -> i64t
         .Unknown -> i64t
         .Task(_) -> i64t
+        // Channel handle: opaque runtime ptr (AvraChannel*).
+        .Channel(_) -> pt
         // Optional (T?): always a pointer. Pointer-backed inner is the
         // null-pointer niche (the inner pointer IS the optional, none = null);
         // value-backed inner (int?/bool?/float?) is boxed (Some = heap box,
@@ -1331,8 +1338,25 @@ impl Ctx {
                 if !vtype_is_unknown(ua_vt) { return self.resolve_codegen_vtype(ua_vt) }
                 vt
             }
-            .Enum(name, args, _) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args), type_registry_id_for(self.type_reg, name))
+            .Enum(name, args, _) -> {
+                // Mirror the Struct arm: canonicalize the name via the
+                // TypeRegistry (mono's string roundtrips produce BARE
+                // names; the registries index module-qualified ones)
+                // and correct the KIND — a bare name parsed as Enum may
+                // denote a struct, since the string form carries no
+                // struct/enum distinction.
+                let tid = type_registry_id_for(self.type_reg, name)
+                let cn = type_registry_name_for(self.type_reg, tid)
+                let rn = if cn != "" { cn } else { name }
+                let rid = if tid > 0 { tid } else { 0 }
+                if args.length == 0 {
+                    let s = struct_reg_lookup(self.structs, rn)
+                    if s.found { return ValueType.Struct(rn, rid) }
+                }
+                ValueType.Enum(rn, self.resolve_codegen_vtype_list(args), rid)
+            }
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
+            .Channel(elem) -> ValueType.Channel(self.resolve_codegen_vtype(elem))
             .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
             .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))
             _ -> vt

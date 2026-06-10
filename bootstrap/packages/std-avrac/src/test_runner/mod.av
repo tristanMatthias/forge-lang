@@ -10,7 +10,7 @@
 
 use core.{
     Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry,
-    Expr, SExpr,
+    Expr, SExpr, Annotation, FieldInit,
     sstmt_dummy, sstmt_at,
     sexpr_dummy,
     avra_shell_exec,
@@ -40,6 +40,12 @@ use @std.crypto.{sha256_hex, sha256_file}
 // memoized string immediately, saving a fork+exec per call.
 extern fn avra_test_toolchain_fp_get() -> string
 extern fn avra_test_toolchain_fp_set(fp: string)
+// Advisory lock serializing concurrent cold-misses on one fixture:
+// bs2 emits the fixture's .ll/.o at fixed sibling paths, so two
+// simultaneous runs of the same fixture (parallel units or parallel
+// shards) would race on those artifacts. Lock fd in, fd out.
+extern fn avra_file_lock_exclusive(path: string) -> int
+extern fn avra_file_unlock(fd: int)
 
 /// Drop every `extern fn` declaration from the list.
 ///
@@ -138,6 +144,14 @@ fn test_runtime_externs() -> List<RuntimeExtern> {
     }
 }
 
+/// `fn() -> int` as a structurally-typed param. The runner's source
+/// decl of the guard parses to FnTyped — the table must build the
+/// same shape or the two decls trip the conflicting-extern check.
+fn fn_int_param_type() -> ValueType {
+    let no_params: List<ValueType> = []
+    ValueType.FnTyped(no_params, ValueType.Int)
+}
+
 /// Signature for the per-spec guard runtime fn. Named separately so
 /// the externs table reads cleanly without an inline list literal
 /// on one row.
@@ -147,7 +161,7 @@ fn guard_extern_params() -> List<ParamEntry> {
         "name" | ValueType.Str
         "file" | ValueType.Str
         "ln"   | ValueType.Int
-        "body" | ValueType.Fn(ValueType.Int)
+        "body" | fn_int_param_type()
     })
 }
 
@@ -253,6 +267,12 @@ export fn test_reporter_path(project_dir: string) -> string {
     find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
 }
 
+/// Sibling of `test_reporter_path` for the in-process parallel
+/// runner. Inlined into every test bundle the same way.
+export fn test_runner_path(project_dir: string) -> string {
+    find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/runner.av"
+}
+
 
 /// One test file's contribution to an assembled program. The body is
 /// already guard-wrapped; the @std/* packages are split out so the
@@ -301,27 +321,70 @@ fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
 /// "undefined name" diagnostics in the codegen pass, which is the
 /// signal we want when something is wrong with the install.
 fn load_reporter_stmts(project_dir: string) -> List<SStmt> {
-    let reporter_path = test_reporter_path(project_dir)
+    load_support_stmts(test_reporter_path(project_dir))
+}
+
+/// The in-process parallel runner, inlined right after the
+/// reporter so the synthesized main's `run_test_suite` resolves.
+fn load_runner_stmts(project_dir: string) -> List<SStmt> {
+    load_support_stmts(test_runner_path(project_dir))
+}
+
+/// Load + parse one inlined support file (reporter, runner). An
+/// empty list on missing/parse-failure keeps the caller producing a
+/// (broken) program whose missing names surface as resolve
+/// diagnostics — the right signal for a damaged install.
+fn load_support_stmts(path: string) -> List<SStmt> {
     let empty: List<SStmt> = []
-    if avra_selfhost_file_exists(reporter_path) == 0 { return empty }
-    let rsrc = avra_selfhost_read_file(reporter_path)
-    let rparsed = parse_program_source_at(rsrc, reporter_path)
+    if avra_selfhost_file_exists(path) == 0 { return empty }
+    let rsrc = avra_selfhost_read_file(path)
+    let rparsed = parse_program_source_at(rsrc, path)
     if rparsed.had_error || rparsed.stmts == null { return empty }
     rparsed.stmts!
 }
 
-/// Synthetic `fn main() -> int { return test_render_summary() }` —
-/// the test bundle's program entry point. Cons-prepended onto the
-/// rest of the assembled program so its declaration lands first in
-/// the rendered AST.
-fn synth_test_main() -> SStmt {
+/// Synthetic test-bundle entry point:
+///
+///     fn main() -> int {
+///         run_test_suite([TestUnit { name: "<mod>", run: __init_<mod> }, ...])
+///         return test_render_summary()
+///     }
+///
+/// Each test module is @deferred_init (its __init_<mod> exists but
+/// is not auto-called); the runner dispatches the units across
+/// worker threads. Cons-prepended onto the rest of the assembled
+/// program so the declaration lands first in the rendered AST.
+fn synth_test_main(mod_names: List<string>) -> SStmt {
     let empty_args: List<SExpr> = []
+    mut unit_lits: List<SExpr> = []
+    for mod_name in mod_names {
+        let inits: List<FieldInit> = [
+            FieldInit { name: "name", value: sexpr_dummy(Expr.String("\"${mod_name}\"")) },
+            FieldInit { name: "run", value: sexpr_dummy(Expr.Ident("__init_${mod_name}")) },
+        ]
+        unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
+    }
     let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("run_test_suite"),
+            [sexpr_dummy(Expr.ListLit(unit_lits))]))),
         sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
     ]
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
     sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
+}
+
+/// `extern fn __init_<mod>() -> int` rows for every deferred test
+/// module, so the synthesized main's TestUnit literals resolve. The
+/// declarations converge with the definitions codegen emits for the
+/// modules (avra_llvm_add_function is get-or-create by exact type).
+fn unit_init_externs(mod_names: List<string>) -> List<RuntimeExtern> {
+    mut out: List<RuntimeExtern> = []
+    for mod_name in mod_names {
+        let empty_p: List<ParamEntry> = []
+        out.push(RuntimeExtern { name: "__init_${mod_name}", params: empty_p, ret: ValueType.Int })
+    }
+    out
 }
 
 /// Assemble the test program for one action: parse each test file as
@@ -347,17 +410,26 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
     // bs2≡bs3 selfhost fixed point.
     mut packages: List<SStmt> = []
     mut modules: List<SStmt> = []
+    mut mod_names: List<string> = []
     mut i = test_paths.length - 1
     while i >= 0 {
         let a = assemble_one_test_file(test_paths[i])?
         for p in a.packages { packages.push(p) }
-        modules.push(sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))
+        // Every test module is deferred — codegen synthesizes
+        // __init_<mod> without the top-level auto-call; the runner
+        // invokes the units across worker threads.
+        let deferred: List<Annotation> = [Annotation { name: "deferred_init", args: [] }]
+        modules.push(sstmt_dummy(Stmt.Annotated(deferred,
+            sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))))
+        mod_names.push(a.mod_name)
         i = i - 1
     }
 
     let body = list_concat(load_reporter_stmts(project_dir),
-               list_concat(dedup_modules(packages), modules))
-    let program = list_concat([synth_test_main()], prepend_test_externs(body))
+               list_concat(load_runner_stmts(project_dir),
+               list_concat(dedup_modules(packages), modules)))
+    let with_unit_externs = prepend_externs(prepend_test_externs(body), unit_init_externs(mod_names))
+    let program = list_concat([synth_test_main(mod_names)], with_unit_externs)
     Result.Ok(program)
 }
 
@@ -510,11 +582,25 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
         return avra_selfhost_read_file(cache_path)
     }
     let _ = avra_mkdir_p(cache_dir)
-    let out = avra_shell_exec(cmd)
-    if !fixture_output_is_publishable(out) {
-        return out
+    // Serialize cold-misses per FIXTURE (not per cache slot): bs2
+    // writes the fixture's .ll/.o at fixed sibling paths, so any two
+    // concurrent runs of one fixture — same verb or different verbs
+    // (run vs expand vs check share the same .ll!) — race on those
+    // artifacts, and the loser historically captured garbage stdout.
+    // The lock makes the second runner WAIT; for same-slot waiters
+    // the post-acquire re-check then reuses the winner's published
+    // result instead of re-running at all.
+    let lock_fd = avra_file_lock_exclusive("${cache_dir}/${sha256_hex(fixture_path)}.lock")
+    if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
+        let cached = avra_selfhost_read_file(cache_path)
+        avra_file_unlock(lock_fd)
+        return cached
     }
-    let _ = avra_selfhost_write_file(cache_path, out)
+    let out = avra_shell_exec(cmd)
+    if fixture_output_is_publishable(out) {
+        let _ = avra_selfhost_write_file(cache_path, out)
+    }
+    avra_file_unlock(lock_fd)
     out
 }
 
@@ -551,18 +637,6 @@ fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("Segmentation fault") { return false }
     if out.contains("bs2 codegen failed") { return false }
     if out.contains("bs2 compile failed") { return false }
-    // jdgo: continuous dispatch (cbg3 follow-up) increased concurrent
-    // diagnose.sh invocations. The shell script's `cc -o ${out}.tmp`
-    // followed by `mv ${out}.tmp $out` is not race-safe under high
-    // concurrency: when two shards' diagnose.sh stages write to /tmp
-    // simultaneously (e.g. per-shard temp paths colliding under heavy
-    // parallel cold load), the `mv` step prints `mv: rename ... : No
-    // such file or directory`. The rest of the captured output is
-    // typically the previous fixture's stale bin stdout — caching that
-    // freezes the wrong answer. Reject it so the next test invocation
-    // re-runs cleanly. Root-cause fix would isolate diagnose.sh's
-    // working artifacts per-shard, but that's a separate scope.
-    if out.contains("mv: rename ") { return false }
     true
 }
 

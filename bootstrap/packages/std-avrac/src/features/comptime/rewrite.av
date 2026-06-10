@@ -134,6 +134,9 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .When(arms) -> .When(rewrite_when_arms(arms, reg))
         .Catch(inner, binding, body, line, col) -> .Catch(rewrite_expr(inner, reg), binding, rewrite_expr(body, reg), line, col)
         .Spawn(body) -> .Spawn(rewrite_expr(body, reg))
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, reg)) }
+        }
         .Isolated(body) -> .Isolated(rewrite_expr(body, reg))
         .Quote(kind, body) -> .Quote(kind, rewrite_expr(body, reg))
         .Splice(target) -> .Splice(rewrite_expr(target, reg))
@@ -212,7 +215,7 @@ fn rewrite_select_arms(arms: List<SelectArm>, reg: CompTimeRegistry) -> List<Sel
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            channel: rewrite_expr(arm.channel, reg),
+            chan: rewrite_expr(arm.chan, reg),
             body: rewrite_stmt_list(arm.body, reg),
         })
         i = i + 1

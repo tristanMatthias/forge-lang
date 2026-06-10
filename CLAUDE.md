@@ -120,7 +120,8 @@ blanket `find packages -name cache -exec rm` anti-pattern below.
 
 ## CRITICAL RULE: Test cycle hygiene
 
-The full `make test` is 360s today (umbrella: uzs9 — Test cycle speed, P0).
+The full `make test` is ~60s warm (19s suite + selfhost check; cold
+after a compiler change ~390s — batched shard compiles dominate).
 Don't burn it on every failure. The pattern that wastes the most time is:
 **`make test` → `grep FAIL` → `make test` again to "see if it passes this time"**.
 Don't do this. Each round costs 6 minutes.
@@ -268,7 +269,7 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 
 ### Token Kinds
 Token kinds defined as `Tk` enum in `src/core/ast.av`. Keywords are mapped in `p_keyword_kind` in `src/parse/mod.av`.
-New keywords must be added to: (1) `Tk` enum in ast.av, (2) `p_keyword_kind` in parse/mod.av, (3) `avra_kind_id_for_keyword()` in runtime.c.
+New keywords must be added to: (1) `Tk` enum in ast.av, (2) `p_keyword_kind` in parse/mod.av. (`avra_kind_id_for_keyword()` in runtime.c no longer exists — the keyword table lives solely in the parser; verified 2026-06 while adding `channel`.)
 
 ## Silent Failure Modes
 
@@ -311,6 +312,9 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **Seed auto-cycling:** `make build` detects when bs2 can't self-compile and cycles the seed forward. Auto-cycle CAN'T help when adding new keywords the seed scanner doesn't recognize. `--seed-status` shows new/changed fns, `--seed-diff <fn>` diffs specific functions.
 - **render_list stack overflow:** DiagnosticList is a linked list, render is recursive. Limit is 10 (render_first_n). Fix the source producing too many errors, don't increase the limit.
 - **Empty match arms** like `.Break(s) -> {}` silently swallow behavior. Periodically grep for `-> {}` in codegen to find stubs needing real implementations.
+- **Walkers that rebuild stmts MUST preserve `Annotated` wrappers.** Match on `stmt_unwrap`/peeled nodes for dispatch, but emit rebuilt nodes via `rewrap_annotations` (core/ast.av) — pushing a bare rebuilt `Stmt.Module` silently strips the module's annotations (the @deferred_init-eating bug class, d4jv). `expand_stmt_list` + `derive_marshal` were both guilty.
+- **In-process test parallelism (d4jv):** every assembled test binary runs its test FILES as `@deferred_init` units across `AVRA_TEST_JOBS` worker threads (default: cpu count; coverage pins 1). Per-unit output is grouped via per-thread runtime sinks (`avra_sink_push/pop` — `println` lowers to `avra_puts`, NOT libc puts). Capture (`avra_test_capture_*`) is sink-based, per-thread, nestable — no dup2. Channel surface: `channel<T>(cap)`, `.send/.recv/.try_recv/.close`, recv → `T?` null ⇔ closed+drained. `AVRA_TEST_STALL_MS` shrinks the stall-detector window (testing). `bs2 test <dir>` scopes discovery to that directory.
+- **Test counts:** specs registered per spec/given/then live in atomic C counters; intmap-backed registries grow (the historic 256-slot intmap silently dropped insert #257 — see intmap_growth_test).
 
 ## ABSOLUTE RULES
 

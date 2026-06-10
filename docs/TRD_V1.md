@@ -1190,3 +1190,85 @@ Total tickets: **74**
 | 29.x | Events/Reactivity | Post-v1 | — |
 | 30.x | Annotations/Metadata | Post-v1 | — |
 | 31.x | Numerical types | ✓ | Verify existing |
+### Discovered work — d4jv session (2026-06-10)
+
+Filed from the in-process parallel test runner build-out. Each item
+is independently actionable; none block d4jv's runner.
+
+- **Void → LLVM void migration.** `llvm_type_for_full` lowers
+  `.Void` to i64; setup.av's runtime decls now document and follow
+  the same convention (callers discard a junk register). The honest
+  fix is lowering Void to LLVM `void` everywhere — signature-level
+  change across every fn emit site.
+- **select on closed channels.** v1 semantics: closed+drained
+  channels never fire their arm; all-closed-and-drained traps.
+  Go-style "closed arm fires with null" needs select to integrate
+  the recv() -> T? shape per arm.
+- **Task<T,E> typing.** `spawn { v }` types as `.Int` today
+  (spawn_check); `.await` is untyped pass-through. Wire the
+  ValueType.Task(result_ty) the codegen already carries through
+  typeck, and give Task .await/.cancel checked signatures.
+- **Green threads vs pthreads.** spawn_expr/parallel grammar docs
+  claim green threads; the runtime is pthread-per-spawn. Either land
+  the fiber scheduler (spec Axis 18 v1.0 language) or fix the docs —
+  currently they misinform.
+- **Channel element ownership.** send retains ptr-backed elements
+  (receiver's scope owns the +1). Conservative escape analysis means
+  a sender-constructed struct sent away may leak one refcount.
+  Formalize the transfer convention when the RC ownership model gets
+  its borrow rules.
+- **Coverage counters under parallelism.** instrprof counters are
+  non-atomic; the coverage path pins AVRA_TEST_JOBS=1. Atomic
+  counters (or per-thread counter pages) would un-pin it.
+- **mono string-roundtrip types (gvq3).** Two latent kind/name-loss
+  bugs fixed this session at the codegen boundary
+  (resolve_codegen_vtype Enum-arm canonicalization + lambda
+  expected-type resolution). Root fix remains structural ValueType
+  end-to-end through mono.
+- ~~**Test-binary batching.**~~ LANDED: shards hold K=8 files each
+  (striped over the size-sorted list), executed as parallel units by
+  the in-process runner. Full 2796-spec suite: warm 39s → 19s
+  (−51%), cold 471s → 334s (−29%) on 4 cores — the d4jv ≥30%
+  acceptance is met on the warm dev loop. Two compiler fixes fell
+  out: library-mode ownership is a colon-separated root SET
+  (a batch owns several modules), and metadata stubs are span-
+  stamped with their slot path so identical syntheses dedup across
+  members (dummy spans are exempt from dedup by design). Follow-up:
+  cost-aware striping — cold critical path is the heaviest fixture
+  batch (~224s), and source size is a poor proxy for fixture cost.
+- ~~**Fixture-cache write atomicity.**~~ LANDED: whole-file writes
+  (`avra_selfhost_write_file{,_bytes}`) publish via temp+rename, the
+  sha256 sidecar writes atomically, and fixture cold-misses
+  serialize per cache slot via the new flock-backed
+  `avra_file_lock_exclusive` — concurrent same-fixture runs wait and
+  reuse the winner's published stdout instead of racing on the
+  fixture's fixed .ll/.o artifact paths. The `mv: rename` output-
+  rejection heuristic this replaced is deleted (diagnose.sh's
+  PID-scoped temp links had already root-fixed the producer side).
+  Red-team round hardened it further: the lock keys on the FIXTURE
+  PATH hash (same fixture × different verbs share .ll/.o and must
+  serialize; rewritten same-path fixtures too), and the crash guard
+  releases locks held by a dying spec (thread-local held-lock stack,
+  unwound beside the output sinks) so a crashed spec can't wedge
+  every sibling unit waiting on that fixture.
+- **Conflicting extern declarations: F3105, not an ICE.** Two
+  modules declaring one extern with different signatures previously
+  sailed through typeck and died at codegen's symbol table (whose
+  abort exists to catch COMPILER bugs). collect_decls now reports
+  DuplicateDecl with both rendered signatures and the source
+  location. Identical re-declarations stay legal (inlined support
+  files depend on them); the legacy `.Fn(ret)` shape is treated as
+  arity-wildcard against `FnTyped` forms with the same return — the
+  check immediately caught the assembler's own guard-extern decl
+  disagreeing with runner.av's parsed form.
+- **pdme.1 evidence.** A stale-bs2 unit cache slot served a
+  double-running test binary after assembler changes (transitive
+  fingerprint miss, then exact-hash collision on rebuilt-identical
+  bs2). Purge + cold rebuild cleared it; instance documents the
+  false-HIT shape pdme.1 describes.
+- **List-comprehension iterable/binder gaps.** `[x for i in 0..n]`
+  fails to parse (ranges are valid for-statement iterables but not
+  comprehension iterables) and `[y for (i, x) in xs.enumerate()]`
+  rejects the tuple binder. Both forms read naturally and their
+  for-statement twins already work — the comprehension parser should
+  accept any for-statement header.

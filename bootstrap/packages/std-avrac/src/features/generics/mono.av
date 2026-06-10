@@ -388,6 +388,7 @@ fn vtype_mangle_slug(t: ValueType) -> string {
         }
         .List(elem) -> "List<${vtype_mangle_slug(elem)}>"
         .Task(inner) -> "Task<${vtype_mangle_slug(inner)}>"
+        .Channel(elem) -> "Channel<${vtype_mangle_slug(elem)}>"
         .Tuple(elems) -> "Tuple<${mangle_arg_list(elems)}>"
         .NarrowedEnum(en, vn, _) -> "${type_short_name(en)}.${vn}"
         // Permissive nullability: `T?` monomorphizes identically to `T`
@@ -455,6 +456,10 @@ fn unify_param(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType,
         }
         .Task(p_inner) -> match arg_ty {
             .Task(a_inner) -> unify_param(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        .Channel(p_inner) -> match arg_ty {
+            .Channel(a_inner) -> unify_param(tp, p_inner, a_inner, acc)
             _ -> acc
         }
         .FnTyped(p_params, p_ret) -> match arg_ty {
@@ -957,7 +962,7 @@ fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectSta
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let after_ch = collect_inst_expr(arm.channel, regs, cur)
+        let after_ch = collect_inst_expr(arm.chan, regs, cur)
         cur = collect_inst_stmts(arm.body, regs, after_ch)
         i = i + 1
     }
@@ -1102,6 +1107,9 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
         .OptionalChain(obj, _) -> collect_inst_expr(obj, regs, st)
         .Spawn(body) -> collect_inst_expr(body, regs, st)
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { st } else { collect_inst_expr(capacity!, regs, st) }
+        }
         .Isolated(body) -> collect_inst_expr(body, regs, st)
         .Quote(_, body) -> collect_inst_expr(body, regs, st)
         .Splice(target) -> collect_inst_expr(target, regs, st)
@@ -1541,6 +1549,10 @@ fn substitute_expr(expr: Expr, ta: List<TypeArg>) -> Expr {
         .InCheck(needle, items) -> .InCheck(substitute_expr(needle, ta), substitute_expr_list(items, ta))
         .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(obj, ta), f)
         .Spawn(body) -> .Spawn(substitute_expr(body, ta))
+        .ChannelNew(elem, capacity) -> {
+            let new_elem = substitute_vtype(elem, ta)
+            if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr(capacity!, ta)) }
+        }
         .Isolated(body) -> .Isolated(substitute_expr(body, ta))
         .Quote(k, body) -> .Quote(k, substitute_expr(body, ta))
         .Splice(target) -> .Splice(substitute_expr(target, ta))
@@ -1693,6 +1705,10 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         if base == "Task" {
             let inner = if args.length > 0 { args[0] } else { ValueType.Unknown }
             return ValueType.Task(inner)
+        }
+        if base == "Channel" {
+            let elem = if args.length > 0 { args[0] } else { ValueType.Unknown }
+            return ValueType.Channel(elem)
         }
         return ValueType.Enum(base, args, 0)
     }
@@ -1954,7 +1970,7 @@ fn rewrite_select_arms_mono(arms: List<SelectArm>, regs: GenRegs, insts: List<In
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            channel: rewrite_expr(arm.channel, regs, insts),
+            chan: rewrite_expr(arm.chan, regs, insts),
             body: rewrite_stmts(arm.body, regs, insts),
         })
         i = i + 1
@@ -2071,6 +2087,9 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))
         .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr(obj, regs, insts), f)
         .Spawn(body) -> .Spawn(rewrite_expr(body, regs, insts))
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, regs, insts)) }
+        }
         .Isolated(body) -> .Isolated(rewrite_expr(body, regs, insts))
         .Quote(k, body) -> .Quote(k, rewrite_expr(body, regs, insts))
         .Splice(target) -> .Splice(rewrite_expr(target, regs, insts))

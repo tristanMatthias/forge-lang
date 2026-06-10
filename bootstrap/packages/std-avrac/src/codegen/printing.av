@@ -33,7 +33,10 @@ export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> R
 }
 
 /// Codegen for `println(value)`. Mirrors `emit_eprintln` but writes
-/// to stdout via `puts`. Special-cases the `println("literal")`
+/// to stdout via `avra_puts` — the runtime's output chokepoint that
+/// routes through the current thread's output sink (test capture,
+/// per-unit buffering) and falls through to libc puts when no sink
+/// is installed. Special-cases the `println("literal")`
 /// shape: pulls the string text out in the inner match arm directly,
 /// because re-binding `text` through any extra layer clobbers the
 /// payload (see TECH_DEBT.md #11 — host miscompilation).
@@ -57,7 +60,7 @@ export fn emit_println(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Re
             }
         }
     }
-    ctx.call("puts", [print_ptr])
+    ctx.call("avra_puts", [print_ptr])
     ok_emit(ctx.i64(0), .Void)
 }
 
