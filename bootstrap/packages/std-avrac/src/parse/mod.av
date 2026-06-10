@@ -13,7 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
-use core.{gensym_name}
+use core.{gensym_name, expr_force_unwrap, expr_ne_none}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -1196,11 +1196,33 @@ impl Parser {
                 result = Expr.Catch(result, binding, Expr.Block(body_stmts), catch_line, catch_col)
                 continue
             }
-            // Optional chaining: `expr?.field`
+            // Optional chaining `expr?.field` / `expr?.method(args)`.
+            //   `?.field`  keeps the `OptionalChain` AST node — a clean node
+            //              macros/`quote` can see — codegen'd via the shared
+            //              field accessor (emit_field_on_value).
+            //   `?.method(args)` has no AST node (one would need a seed cycle),
+            //              so it desugars to the if-let shape, applying an
+            //              ORDINARY method call to the force-unwrapped receiver:
+            //              `{ let $t = recv; if $t != none { $t!.m(args) } else none }`.
+            //              Both routes ultimately reuse the normal access codegen.
             if self.check(Tk.QuestionDot) {
                 self.advance()
                 let field = self.consume_field_name("expected field name after `?.`")?
-                result = Expr.OptionalChain(result, field)
+                if self.check(Tk.LeftParen) && self.current_line == self.prev_line {
+                    self.advance()
+                    let saved_it = self.allow_it_sugar
+                    self.allow_it_sugar = true
+                    let args = self.parse_arg_list()?
+                    self.allow_it_sugar = saved_it
+                    if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
+                    let tmp = self.fresh("optchain")
+                    let call = Expr.Call(Expr.FieldAccess(expr_force_unwrap(Expr.Ident(tmp)), field), args)
+                    let guarded = Expr.IfExpr(expr_ne_none(Expr.Ident(tmp)), call, Expr.None)
+                    let blk: List<SStmt> = [sstmt_dummy(Stmt.Let(tmp, ValueType.Unknown, result)), sstmt_dummy(Stmt.Expr(guarded))]
+                    result = Expr.Block(blk)
+                } else {
+                    result = Expr.OptionalChain(result, field)
+                }
             } else if self.check(Tk.LeftBracket) {
                 self.advance()
                 let idx = self.parse_expression()?

@@ -39,3 +39,37 @@ spec "optional chain over struct fields still works (regression guard)" {
         (a?.b?.c?.v ?? 0 - 1) == 0 - 1
     }
 }
+
+// ── unified `?.`: methods reuse the SAME desugar as fields/properties ──
+// `recv?.m(args)` lowers to `{ let $t = recv; if $t != none { $t!.m(args) } else none }`,
+// so method calls go through ordinary method-call codegen with no `?.`-specific path.
+
+type Counter = { n: int }
+impl Counter {
+    fn dbl(self) -> int { self.n * 2 }
+    fn addk(self, k: int) -> int { self.n + k }
+    fn mk(self) -> Leaf { Leaf { v: self.n + 4 } }
+}
+
+spec "optional chain over a method call" {
+    then "?.method() no-arg on a present receiver" {
+        let c: Counter? = Counter { n: 5 }
+        (c?.dbl() ?? 0 - 1) == 10
+    }
+    then "?.method() on a none receiver short-circuits" {
+        let c: Counter? = none
+        (c?.dbl() ?? 0 - 1) == 0 - 1
+    }
+    then "?.method(arg) passes arguments through" {
+        let c: Counter? = Counter { n: 5 }
+        (c?.addk(7) ?? 0 - 1) == 12
+    }
+    then "method then field chains: c?.mk()?.v" {
+        let c: Counter? = Counter { n: 5 }
+        (c?.mk()?.v ?? 0 - 1) == 9
+    }
+    then "a none in the middle of a method+field chain short-circuits" {
+        let c: Counter? = none
+        (c?.mk()?.v ?? 0 - 1) == 0 - 1
+    }
+}
