@@ -1,4 +1,4 @@
-// d4jv slice 2: channels × spawn — the combination the in-process
+// Channels × spawn — the combination the in-process
 // test runner is built from. Producer/consumer across real threads,
 // rendezvous handoff, typed select arms, and a generic fn over
 // Channel<T> (exercises the mono unify arm for .Channel).
@@ -103,5 +103,81 @@ spec "channels × generics: Channel<T> params unify" {
             csp_pump(cs, "generic")
             ci.recv()! == 8 && cs.recv()! == "generic"
         }
+    }
+}
+
+// High-volume cross-thread stress: hundreds of sends through a small
+// bounded ring from competing producers, drained by competing
+// consumers. Exercises ring wraparound, blocking-send backpressure,
+// condvar wakeups under contention, and close-while-waiting — the
+// failure modes a single-value handshake test can never reach.
+spec "channel stress: 2 producers × 500 sends through a 4-slot ring" {
+    given "competing producers and consumers" {
+        then "every value arrives exactly once (sum check)" {
+            let work = channel<int>(4)
+            let sums = channel<int>(2)
+            let p1 = spawn {
+                mut i = 1
+                while i <= 500 {
+                    work.send(i)
+                    i = i + 1
+                }
+                0
+            }
+            let p2 = spawn {
+                mut i = 501
+                while i <= 1000 {
+                    work.send(i)
+                    i = i + 1
+                }
+                0
+            }
+            let c1 = spawn {
+                mut sum = 0
+                mut more = true
+                while more {
+                    let v = work.recv()
+                    if v == null { more = false } else { sum = sum + v! }
+                }
+                sums.send(sum)
+                0
+            }
+            let c2 = spawn {
+                mut sum = 0
+                mut more = true
+                while more {
+                    let v = work.recv()
+                    if v == null { more = false } else { sum = sum + v! }
+                }
+                sums.send(sum)
+                0
+            }
+            p1.await
+            p2.await
+            work.close()
+            let total = sums.recv()! + sums.recv()!
+            c1.await
+            c2.await
+            // 1 + 2 + … + 1000
+            total == 500500
+        }
+    }
+}
+
+spec "channel edge: negative capacity behaves as unbounded" {
+    then "500 sends complete without a receiver (no bounded blocking)" {
+        let ch = channel<int>(0 - 1)
+        mut i = 0
+        while i < 500 {
+            ch.send(i)
+            i = i + 1
+        }
+        ch.close()
+        mut n = 0
+        mut more = true
+        while more {
+            if ch.recv() == null { more = false } else { n = n + 1 }
+        }
+        n == 500
     }
 }

@@ -1234,3 +1234,9 @@ is independently actionable; none block d4jv's runner.
   fingerprint miss, then exact-hash collision on rebuilt-identical
   bs2). Purge + cold rebuild cleared it; instance documents the
   false-HIT shape pdme.1 describes.
+- **List-comprehension iterable/binder gaps.** `[x for i in 0..n]`
+  fails to parse (ranges are valid for-statement iterables but not
+  comprehension iterables) and `[y for (i, x) in xs.enumerate()]`
+  rejects the tuple binder. Both forms read naturally and their
+  for-statement twins already work — the comprehension parser should
+  accept any for-statement header.

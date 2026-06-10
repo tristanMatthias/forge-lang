@@ -20,6 +20,7 @@ fn worker(work: Channel<string>) { ... }
 | `channel<T>()`    | unbounded — send never blocks; the buffer grows        |
 | `channel<T>(0)`   | rendezvous — send blocks until a receiver takes the value |
 | `channel<T>(n)`   | bounded — send blocks while `n` values are in flight   |
+| `channel<T>(n<0)` | unbounded — negative selects the no-arg form's sentinel |
 
 ## Methods
 
