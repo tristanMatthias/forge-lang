@@ -134,23 +134,34 @@ fn run_units_parallel(units: List<TestUnit>, jobs: int) {
 /// Fan in exactly units.length completions. The ticker fiber feeds
 /// the select so a wedged unit surfaces by name instead of as a
 /// silent hang. Shutdown protocol: the collector sends on `stop`
-/// when the tally completes; the ticker polls it with try_recv
-/// every interval and exits, so the enclosing scope's task-group
-/// await (structured concurrency joins EVERY spawn at fn exit —
-/// an infinite ticker would deadlock the join) completes promptly.
-/// The tick channel is unbounded so the ticker never blocks on a
-/// busy collector.
+/// when the tally completes; the ticker polls it with try_recv and
+/// exits, so the enclosing scope's task-group await (structured
+/// concurrency joins EVERY spawn at fn exit — an infinite ticker
+/// would deadlock the join) completes promptly.
+///
+/// The ticker sleeps in 50ms slices, checking `stop` each slice and
+/// ticking once per 2s worth of slices. A single 2s sleep would put
+/// a 2-SECOND FLOOR on every multi-unit run: the suite finishes in
+/// microseconds, then the task-group join waits out the remainder
+/// of the ticker's nap (measured: 46ms sequential vs 2.0s parallel
+/// before slicing). The tick channel is unbounded so the ticker
+/// never blocks on a busy collector.
 fn collect_results(units: List<TestUnit>, started: Channel<int>, results: Channel<UnitDone>) {
     let tick = channel<int>()
     let stop = channel<int>(1)
     let _ticker = spawn {
         mut running = true
+        mut slices = 0
         while running {
-            avra_sleep_ms(2000)
+            avra_sleep_ms(50)
             if stop.try_recv() != null {
                 running = false
             } else {
-                tick.send(1)
+                slices = slices + 1
+                if slices >= 40 {
+                    slices = 0
+                    tick.send(1)
+                }
             }
         }
         0

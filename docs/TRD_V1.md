@@ -1190,3 +1190,47 @@ Total tickets: **74**
 | 29.x | Events/Reactivity | Post-v1 | — |
 | 30.x | Annotations/Metadata | Post-v1 | — |
 | 31.x | Numerical types | ✓ | Verify existing |
+### Discovered work — d4jv session (2026-06-10)
+
+Filed from the in-process parallel test runner build-out. Each item
+is independently actionable; none block d4jv's runner.
+
+- **Void → LLVM void migration.** `llvm_type_for_full` lowers
+  `.Void` to i64; setup.av's runtime decls now document and follow
+  the same convention (callers discard a junk register). The honest
+  fix is lowering Void to LLVM `void` everywhere — signature-level
+  change across every fn emit site.
+- **select on closed channels.** v1 semantics: closed+drained
+  channels never fire their arm; all-closed-and-drained traps.
+  Go-style "closed arm fires with null" needs select to integrate
+  the recv() -> T? shape per arm.
+- **Task<T,E> typing.** `spawn { v }` types as `.Int` today
+  (spawn_check); `.await` is untyped pass-through. Wire the
+  ValueType.Task(result_ty) the codegen already carries through
+  typeck, and give Task .await/.cancel checked signatures.
+- **Green threads vs pthreads.** spawn_expr/parallel grammar docs
+  claim green threads; the runtime is pthread-per-spawn. Either land
+  the fiber scheduler (spec Axis 18 v1.0 language) or fix the docs —
+  currently they misinform.
+- **Channel element ownership.** send retains ptr-backed elements
+  (receiver's scope owns the +1). Conservative escape analysis means
+  a sender-constructed struct sent away may leak one refcount.
+  Formalize the transfer convention when the RC ownership model gets
+  its borrow rules.
+- **Coverage counters under parallelism.** instrprof counters are
+  non-atomic; the coverage path pins AVRA_TEST_JOBS=1. Atomic
+  counters (or per-thread counter pages) would un-pin it.
+- **mono string-roundtrip types (gvq3).** Two latent kind/name-loss
+  bugs fixed this session at the codegen boundary
+  (resolve_codegen_vtype Enum-arm canonicalization + lambda
+  expected-type resolution). Root fix remains structural ValueType
+  end-to-end through mono.
+- **Test-binary batching.** Per-file mode pays fork+exec+link per
+  file; bundled mode pays one giant compile (OOM on 15GB at ~2750
+  specs). The end-game is K files per binary × in-process parallel
+  units — needs i7gw (parallel bundle compile) to be practical cold.
+- **pdme.1 evidence.** A stale-bs2 unit cache slot served a
+  double-running test binary after assembler changes (transitive
+  fingerprint miss, then exact-hash collision on rebuilt-identical
+  bs2). Purge + cold rebuild cleared it; instance documents the
+  false-HIT shape pdme.1 describes.

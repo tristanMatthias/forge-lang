@@ -311,6 +311,9 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **Seed auto-cycling:** `make build` detects when bs2 can't self-compile and cycles the seed forward. Auto-cycle CAN'T help when adding new keywords the seed scanner doesn't recognize. `--seed-status` shows new/changed fns, `--seed-diff <fn>` diffs specific functions.
 - **render_list stack overflow:** DiagnosticList is a linked list, render is recursive. Limit is 10 (render_first_n). Fix the source producing too many errors, don't increase the limit.
 - **Empty match arms** like `.Break(s) -> {}` silently swallow behavior. Periodically grep for `-> {}` in codegen to find stubs needing real implementations.
+- **Walkers that rebuild stmts MUST preserve `Annotated` wrappers.** Match on `stmt_unwrap`/peeled nodes for dispatch, but emit rebuilt nodes via `rewrap_annotations` (core/ast.av) — pushing a bare rebuilt `Stmt.Module` silently strips the module's annotations (the @deferred_init-eating bug class, d4jv). `expand_stmt_list` + `derive_marshal` were both guilty.
+- **In-process test parallelism (d4jv):** every assembled test binary runs its test FILES as `@deferred_init` units across `AVRA_TEST_JOBS` worker threads (default: cpu count; coverage pins 1). Per-unit output is grouped via per-thread runtime sinks (`avra_sink_push/pop` — `println` lowers to `avra_puts`, NOT libc puts). Capture (`avra_test_capture_*`) is sink-based, per-thread, nestable — no dup2. Channel surface: `channel<T>(cap)`, `.send/.recv/.try_recv/.close`, recv → `T?` null ⇔ closed+drained.
+- **Test counts:** specs registered per spec/given/then live in atomic C counters; intmap-backed registries grow (the historic 256-slot intmap silently dropped insert #257 — see intmap_growth_test).
 
 ## ABSOLUTE RULES
 
