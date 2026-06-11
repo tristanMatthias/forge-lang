@@ -1,0 +1,22 @@
+// bdira: `bs2 build <directory>` must produce a clean diagnostic, not
+// a raw null-deref. When the directory is a package root (has
+// avra.toml) the error should hint the package-build invocation.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "bdira: bs2 build with a directory argument" {
+    then "package dir → diagnostic with package-build hint, no crash" {
+        let out = avra_shell_exec("./build/bs2 build packages/std-json 2>&1; echo rc=$?")
+        out.contains("is a directory, not a source file")
+            && out.contains("cd packages/std-json && bs2 build --lib")
+            && !out.contains("unexpected runtime error")
+            && !out.contains("rc=0")
+    }
+    then "non-package dir → diagnostic with generic help, no crash" {
+        let out = avra_shell_exec("./build/bs2 build packages 2>&1; echo rc=$?")
+        out.contains("is a directory, not a source file")
+            && out.contains("avra.toml")
+            && !out.contains("unexpected runtime error")
+            && !out.contains("rc=0")
+    }
+}

@@ -1811,6 +1811,15 @@ fn run_build_command() {
         let needed = if args.lib { "[lib].path" } else { "[bin].path" }
         fail("error: bs2 build requires either a file argument or ${needed} in avra.toml")
     }
+    if avra_is_dir(entry_path) != 0 {
+        // bdira: a directory arg used to flow into source loading and
+        // die with a raw null-deref. Diagnose it properly — and DWIM-
+        // hint when the directory is a package root.
+        if avra_selfhost_file_exists("${entry_path}/avra.toml") != 0 {
+            fail("error: `${entry_path}` is a directory, not a source file\n  help: it looks like a package — run: cd ${entry_path} && bs2 build --lib --emit_metadata")
+        }
+        fail("error: `${entry_path}` is a directory, not a source file\n  help: pass a .av file, or run `bs2 build` from a package root containing avra.toml")
+    }
     if !file_exists(entry_path) {
         fail("error: file not found: ${entry_path}")
     }
