@@ -23,6 +23,7 @@
 use build.fingerprint.{
     Fingerprint, fp_for_unit, fp_eq, fp_short,
     compiler_hash_for, profile_key_of, strlist_length,
+    package_full_fingerprint,
 }
 use build.cache.{
     Cache, PublishResult, cache_for, cache_init, cache_has,
@@ -130,13 +131,21 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         inputs.coverage,
     )
     let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    // pdme.1: lib builds key on the FULL package fingerprint (own
+    // sources + transitive path-deps) in the dep_fps slot — the
+    // entry-file-only `sources` left producer slots stale when any
+    // non-entry or dep source changed (stale .o missing fresh exports,
+    // stale metadata against old dep shapes).
+    let dep_fps: List<string> = if inputs.kind == "lib" {
+        [package_full_fingerprint(inputs.project_root)]
+    } else { [] }
     let fp = fp_for_unit(
         inputs.unit_name,
         inputs.sources,
         compiler_hash,
         profile_key,
         inputs.target_triple,
-        [],
+        dep_fps,
     )
 
     if inputs.kind == "test" {

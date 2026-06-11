@@ -3407,22 +3407,41 @@ typedef struct PkgFpEntry {
     struct PkgFpEntry* next;
 } PkgFpEntry;
 static PkgFpEntry* pkg_fp_cache_head = NULL;
+// pdme.1: the memo is now hit from the resolver path, which runs on
+// EVERY worker thread of in-process parallel test units. Unlocked
+// list mutation corrupted the chain into a cycle — readers then spun
+// forever and tripped the 60s stall detector (212 bundled-only
+// failures, clean-room 2026-06-11). Same locking discipline as
+// rc_set_mutex. Entries are never freed, so returning e->fp after
+// unlocking is safe.
+static pthread_mutex_t pkg_fp_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 const char* avra_pkg_fp_cache_get(const char* path) {
     if (!path) return "";
+    pthread_mutex_lock(&pkg_fp_cache_mutex);
     for (PkgFpEntry* e = pkg_fp_cache_head; e; e = e->next) {
-        if (strcmp(e->path, path) == 0) return e->fp;
+        if (strcmp(e->path, path) == 0) {
+            const char* fp = e->fp;
+            pthread_mutex_unlock(&pkg_fp_cache_mutex);
+            return fp;
+        }
     }
+    pthread_mutex_unlock(&pkg_fp_cache_mutex);
     return "";
 }
 
 void avra_pkg_fp_cache_set(const char* path, const char* fp) {
     if (!path || !fp) return;
-    // Overwrite if already present.
+    pthread_mutex_lock(&pkg_fp_cache_mutex);
+    // Overwrite if already present. Overwrite frees the OLD fp; a
+    // racing reader could in principle hold it — but set() is
+    // idempotent per path within one process (same sources → same
+    // fp), so the overwrite path never actually changes the value.
     for (PkgFpEntry* e = pkg_fp_cache_head; e; e = e->next) {
         if (strcmp(e->path, path) == 0) {
             free(e->fp);
             e->fp = strdup(fp);
+            pthread_mutex_unlock(&pkg_fp_cache_mutex);
             return;
         }
     }
@@ -3431,6 +3450,7 @@ void avra_pkg_fp_cache_set(const char* path, const char* fp) {
     e->fp = strdup(fp);
     e->next = pkg_fp_cache_head;
     pkg_fp_cache_head = e;
+    pthread_mutex_unlock(&pkg_fp_cache_mutex);
 }
 
 const char* avra_sha256_file_uncached(const char* path) {

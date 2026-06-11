@@ -7,7 +7,7 @@ use core.{Stmt, SStmt, sstmt, sstmt_at, sstmt_dummy, Annotation, SExpr}
 use parse.{parse_program_source, parse_program_source_at}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, synthesize_unit_body, stamp_stub_spans}
-use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
+use build.{cache_for, entry_source_meta_path, Fingerprint, package_full_fingerprint}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 use list_ops.{list_concat, list_push_copy, list_any, list_map, list_contains_str}
@@ -88,7 +88,7 @@ fn source_meta_cache_path(pkg_file: string) -> string {
 fn package_meta_cache_path(pkg_file: string) -> string {
     let pkg_root = package_root_for_file(pkg_file)
     if pkg_root == "" { return "" }
-    let hex = package_source_fingerprint(pkg_root)
+    let hex = package_full_fingerprint(pkg_root)
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
@@ -228,7 +228,7 @@ export fn meta_cache_path_for_source(src_path: string) -> string {
 /// file's sha256.
 export fn package_meta_path_for(pkg_root: string) -> string {
     if pkg_root == "" { return "" }
-    let hex = package_source_fingerprint(pkg_root)
+    let hex = package_full_fingerprint(pkg_root)
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     entry_source_meta_path(cache, Fingerprint { hex })

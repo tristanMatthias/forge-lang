@@ -136,6 +136,13 @@ When a test fails, the loop is:
 3. If it doesn't reproduce in isolation, it's an ORDERING / GLOBAL-STATE bug. Don't re-run the bundled suite to confirm — file or fix the state leak.
 4. Fix the root cause. Then ONE bundled rerun before commit, via the pre-commit hook.
 
+OOM discipline (small containers): cold full-suite runs OOM above
+`AVRA_JOBS=2` on ~15GB boxes — and a binary built under OOM pressure can
+publish CORRUPT into the test-binary cache and poison every warm rerun
+(bead tbpc; symptom: a file fails wholesale bundled, passes isolated).
+After any run showing `Killed` lines: `rm -rf build/cache`, rerun at
+`AVRA_JOBS=2`, accept the ~2h cold cost once.
+
 Anti-patterns:
 - Bundled-test rerun-loops to "check if it flaked." Flakes are bugs; isolate them.
 - `make clean` between failed runs unless you have a concrete reason. The seed rebuild costs another 3 min on top.

@@ -19,6 +19,9 @@
 // cache shareable across machines and reproducible across runs.
 
 use @std.crypto.{sha256_hex, sha256_file}
+use build.graph.{build_graph}
+extern fn avra_readdir(path: string) -> List<string>
+extern fn avra_is_dir(path: string) -> int
 use core.{
     avra_selfhost_file_exists,
     avra_shell_exec,
@@ -183,6 +186,45 @@ export fn fp_short(fp: Fingerprint) -> string {
 /// slot, so consumers under AVRA_USE_METADATA=1 would synthesize stubs
 /// from the stale aggregated meta and fail to resolve the new symbol.
 ///
+/// pdme.1: FULL package fingerprint — own sources plus every
+/// transitive path-dep's sources, in topological order. This is the
+/// cargo/go composite key: editing any file in any dep changes every
+/// reverse-dependent's fingerprint, so stale producer bundles can
+/// never be served after a dep edit (previously fp_own(P) ignored dep
+/// changes entirely, and the entry-only unit fp ignored even P's own
+/// non-entry files — both observed serving stale slots 2026-06-11).
+///
+/// Graph errors (cycle, missing manifest) fall back to the own-source
+/// fingerprint with a one-line stderr warning: the build driver paths
+/// that consume the graph already halt loudly on the same errors, and
+/// a fingerprint helper has no Result channel to thread them through.
+/// Memoised per process under "<root>::full" (sources can't change
+/// mid-invocation — same argument as the own-fp memo).
+export fn package_full_fingerprint(pkg_root: string) -> string {
+    if pkg_root == "" { return "" }
+    let memo_key = pkg_root + "::full"
+    let cached = avra_pkg_fp_cache_get(memo_key)
+    if cached != "" { return cached }
+    let root_slash = if pkg_root.ends_with("/") { pkg_root } else { pkg_root + "/" }
+    let g = build_graph(root_slash)
+    if g.had_error {
+        eprintln("[fingerprint] dep-graph unavailable for ${pkg_root} (${g.error}) — falling back to own-source fp")
+        return package_source_fingerprint(pkg_root)
+    }
+    mut acc = "avra/pkg-full-fp v1
+"
+    mut i = 0
+    while i < g.units.length {
+        let u = g.units[i]
+        acc = acc + u.name + ":" + package_source_fingerprint(u.project_root) + "
+"
+        i = i + 1
+    }
+    let fp = sha256_hex(acc)
+    avra_pkg_fp_cache_set(memo_key, fp)
+    fp
+}
+
 /// Per-file metas (emit_per_file_metas) keep their per-file fingerprint
 /// scheme — each sub-mod has its own slot keyed on its own sha256.
 /// This function is exclusively for the package-aggregate slot.
@@ -197,16 +239,45 @@ export fn package_source_fingerprint(pkg_root: string) -> string {
     // state — orphaning meta.bin files keyed on the older fp.
     let cached = avra_pkg_fp_cache_get(pkg_root)
     if cached != "" { return cached }
+    // pdme.1: native readdir walk instead of `find | sort` via the
+    // shell. This fn now runs on worker THREADS of in-process parallel
+    // test units (the resolver consumer path) — fork()ing from a
+    // threaded process stalls (child inherits locked state), which
+    // tripped the runner's 60s stall detector across whole batches.
+    // Lexicographic sort over full paths keeps the canonical order
+    // `find | sort` produced.
     let src_dir = pkg_root + "/src"
-    let listing = avra_shell_exec("find ${src_dir} -name '*.av' -type f 2>/dev/null | sort")
+    mut files: List<string> = []
+    files = walk_av_files(src_dir, files)
+    files.sort((a: string, b: string) -> if a < b { -1 } else if a > b { 1 } else { 0 })
     mut acc = ""
-    for line in listing.split("\n") {
-        if line == "" { continue }
-        let hex = sha256_file(line)
-        acc = acc + line + ":" + hex + "\n"
+    mut i = 0
+    while i < files.length {
+        let f = files[i]
+        acc = acc + f + ":" + sha256_file(f) + "\n"
+        i = i + 1
     }
     let fp = sha256_hex(acc)
     avra_pkg_fp_cache_set(pkg_root, fp)
     fp
+}
+
+/// Recursive `.av` collector under `dir` — native readdir, no shell,
+/// no fork. Returns full paths (`dir`-prefixed). `.av.avra-sha256`
+/// sidecars are excluded by the exact `.av` suffix check.
+fn walk_av_files(dir: string, acc: List<string>) -> List<string> {
+    mut out = acc
+    let names: List<string> = avra_readdir(dir)
+    mut i = 0
+    while i < names.length {
+        let full = dir + "/" + names[i]
+        if avra_is_dir(full) != 0 {
+            out = walk_av_files(full, out)
+        } else {
+            if full.ends_with(".av") { out.push(full) }
+        }
+        i = i + 1
+    }
+    out
 }
 

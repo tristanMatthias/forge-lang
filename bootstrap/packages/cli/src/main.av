@@ -96,6 +96,7 @@ use @std.avrac.build.{
     cache_bin_path_for,
     CompileTarget, build_binary,
     package_source_fingerprint,
+    package_full_fingerprint,
     discover_llvm_prefix,
 }
 use @std.crypto.{sha256_hex, sha256_file}
@@ -1920,7 +1921,7 @@ fn run_build_command() {
                     if size_str != "" && size_str != "0" {
                         // 2wfp: source-keyed slot uses whole-package fp.
                         let pkg_root = package_root_for_file(entry_path)
-                        let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
+                        let source_fp = Fingerprint { hex: package_full_fingerprint(pkg_root) }
                         let pkg_cache = cache_for(pkg_root)
                         let _ = ensure_source_meta_dir(pkg_cache, source_fp)
                         let dest = entry_source_meta_path(pkg_cache, source_fp)
@@ -2016,7 +2017,7 @@ fn run_build_command() {
             if pr.success && args.emit_metadata {
                 // 2wfp: source-keyed slot uses whole-package fp.
                 let pkg_root = package_root_for_file(entry_path)
-                let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
+                let source_fp = Fingerprint { hex: package_full_fingerprint(pkg_root) }
                 let pkg_cache = cache_for(pkg_root)
                 let sidecar = entry_source_meta_path(pkg_cache, source_fp)
                 if file_exists(sidecar) != 0 {

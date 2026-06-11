@@ -1,0 +1,69 @@
+// pdme.1: the FULL package fingerprint must change when any
+// transitive path-dep's source changes — that's the composite cache
+// key that prevents stale producer slots (the fp_own(P) key ignored
+// dep edits entirely; the entry-only unit fp ignored even P's own
+// non-entry files).
+//
+// The fp is per-process memoised, so before/after computations run in
+// separate processes: a tiny probe binary (compiled once) prints the
+// fp for a path and is invoked per measurement.
+
+use @std.avrac.core.{avra_shell_exec}
+use @std.avrac.build.{package_full_fingerprint, package_source_fingerprint}
+use @std.avrac.test_runner.{write_fixture}
+
+fn pfp_setup() -> string {
+    avra_shell_exec("rm -rf /tmp/pdme_p /tmp/pdme_q && mkdir -p /tmp/pdme_p/src /tmp/pdme_q/src")
+    write_fixture("/tmp/pdme_q/avra.toml", "[package]\nname = \"@t/q\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"t-q\"\npath = \"src/q.av\"\n")
+    write_fixture("/tmp/pdme_q/src/q.av", "export fn q_one() -> int { 1 }\n")
+    write_fixture("/tmp/pdme_p/avra.toml", "[package]\nname = \"@t/p\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"t-p\"\npath = \"src/p.av\"\n\n[dependencies]\n\"@t/q\" = { path = \"../pdme_q\" }\n")
+    write_fixture("/tmp/pdme_p/src/p.av", "export fn p_two() -> int { 2 }\n")
+    "ok"
+}
+
+// Fresh-process fp probe: each measurement runs its own probe-binary
+// process, so the per-process memo can't mask source edits between
+// measurements. Compiled once (compile+llc+link — `bs2 run` mangles
+// @std-importing /tmp programs), then exec'd per call with the
+// target package as argv[1].
+fn pfp_probe_bin() -> string {
+    if avra_shell_exec("ls /tmp/pdme_probe.bin 2>/dev/null") != "" { return "/tmp/pdme_probe.bin" }
+    write_fixture("/tmp/pdme_probe.av", "
+use @std.avrac.build.{package_full_fingerprint}
+extern fn avra_selfhost_get_arg_cstr(i: int) -> string
+fn main() -> int {
+    println(package_full_fingerprint(avra_selfhost_get_arg_cstr(1)))
+    0
+}
+")
+    let llvm = avra_shell_exec("printf '%s' \"$LLVM_PREFIX\"")
+    let pfx = if llvm == "" { "/usr/lib/llvm-20" } else { llvm }
+    avra_shell_exec("./build/bs2 compile /tmp/pdme_probe.av >/dev/null 2>&1 && " +
+        "${pfx}/bin/llc -O0 -relocation-model=pic -filetype=obj /tmp/pdme_probe.av.ll -o /tmp/pdme_probe.o && " +
+        "cc /tmp/pdme_probe.o build/runtime.o build/llvm_wrapper.o -fuse-ld=lld -L${pfx}/lib -lLLVM -lstdc++ -o /tmp/pdme_probe.bin")
+    "/tmp/pdme_probe.bin"
+}
+
+fn pfp_of(pkg: string) -> string {
+    avra_shell_exec("'" + pfp_probe_bin() + "' " + pkg + " 2>/dev/null | tail -1").trim()
+}
+
+spec "pdme.1: full package fingerprint sees transitive dep edits" {
+    then "dep source edit changes the consumer's full fp (own fp blind to it)" {
+        let _ = pfp_setup()
+        let p_before = pfp_of("/tmp/pdme_p")
+        let own_before = package_source_fingerprint("/tmp/pdme_p")
+        write_fixture("/tmp/pdme_q/src/q.av", "export fn q_one() -> int { 111 }\n")
+        let p_after = pfp_of("/tmp/pdme_p")
+        let own_after = package_source_fingerprint("/tmp/pdme_p")
+        p_before != "" && p_after != "" && p_before != p_after && own_before == own_after
+    }
+    then "own-source edit (non-entry file) changes the full fp too" {
+        let _ = pfp_setup()
+        write_fixture("/tmp/pdme_p/src/extra.av", "export fn p_extra() -> int { 3 }\n")
+        let a = pfp_of("/tmp/pdme_p")
+        write_fixture("/tmp/pdme_p/src/extra.av", "export fn p_extra() -> int { 333 }\n")
+        let b = pfp_of("/tmp/pdme_p")
+        a != "" && b != "" && a != b
+    }
+}
