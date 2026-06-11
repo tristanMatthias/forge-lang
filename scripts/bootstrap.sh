@@ -294,6 +294,28 @@ go_bin_dir() {
   else echo "$HOME/go/bin"; fi
 }
 
+# Make bd resolvable in NON-login shells — Claude Code sessions and, critically,
+# the beads git hooks (.beads/hooks/* via core.hooksPath) and the SessionStart/
+# PreCompact `bd prime` hooks. Those hooks gate on `command -v bd`; if bd only
+# lives in GOPATH/bin (not on the default PATH), every hook SILENTLY no-ops —
+# which disables refs/dolt/data sync and DB hydration entirely. Symlink bd into
+# a directory that is always on PATH so the hook gate (`command -v bd`) passes.
+ensure_bd_on_path() {
+  local gobin; gobin="$(go_bin_dir)"
+  [ -x "$gobin/bd" ] || return 0
+  # Already resolvable via a real PATH dir (not just this script's transient
+  # PATH export)? A symlink we previously dropped counts. Then nothing to do.
+  for d in /usr/local/bin "$HOME/.local/bin"; do
+    [ -e "$d/bd" ] && return 0
+  done
+  for d in /usr/local/bin "$HOME/.local/bin"; do
+    if [ -d "$d" ] && [ -w "$d" ]; then
+      ln -sf "$gobin/bd" "$d/bd" && { ok "linked bd → $d/bd (PATH for sessions + git hooks)"; return 0; }
+    fi
+  done
+  warn "bd at $gobin/bd is not on a default PATH dir — beads git hooks may not run in fresh shells"
+}
+
 # major.minor.patch reported by `bd version` (e.g. "1.0.5"), or empty.
 bd_installed_version() {
   have bd || { echo ""; return; }
@@ -333,6 +355,10 @@ install_beads() {
   fi
   # No external `dolt` binary: bd ships an embedded dolt server (`bd dolt ...`).
 
+  # bd lands in GOPATH/bin which is NOT on a default shell PATH; link it onto
+  # PATH so the beads git hooks and session hooks can actually find it.
+  ensure_bd_on_path
+
   # Build bd's LOCAL Dolt store from the committed issues.jsonl. This is the
   # whole point of the offline setup: bd never clones from or pushes to the
   # network. Issues sync through git-tracked .beads/issues.jsonl only.
@@ -346,9 +372,19 @@ init_beads_local() {
   have bd || return 0
   local bd_dir="$REPO_ROOT/.beads"
   [ -f "$bd_dir/issues.jsonl" ] || return 0
-  # Already have a local store? Nothing to do.
+  # Already have a local store? Reconcile it with the committed issues.jsonl.
+  # The container's Dolt store is built once at create-time, but a later
+  # `git pull` (or a fresh checkout of an updated branch) brings a NEWER
+  # issues.jsonl — which, in Claude Code Web, IS the source of truth (the
+  # proxy blocks Dolt's remote sync). Without this re-import, `bd ready`
+  # serves a stale snapshot (the 902-vs-965 drift this repo hit). `bd import`
+  # is upsert-only — safe and non-destructive — so re-running it is cheap.
   if [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; then
-    ok "bd local store present — offline, no network sync"
+    if ( cd "$REPO_ROOT" && bd import .beads/issues.jsonl >/dev/null 2>&1 ); then
+      ok "bd store reconciled from issues.jsonl (latest committed state)"
+    else
+      ok "bd local store present — offline, no network sync"
+    fi
     return 0
   fi
   log "building local bd store from issues.jsonl (offline; no Dolt clone/push)"
