@@ -142,8 +142,8 @@ Anti-patterns:
 - `find packages -type d -name cache -exec rm -rf {} +` as a "fresh start." Same as above.
 - Running the suite without `FILTER=<x>` when you only need a feature area's tests.
 
-Per-file test runs are 15s each (uzs9.1 — cache miss bug). When debugging,
-isolate-and-iterate on ONE file. Don't bundle.
+Per-file test runs are sub-second when warm (binary cache; cold compile
+~5s). When debugging, isolate-and-iterate on ONE file. Don't bundle.
 
 ## CRITICAL RULE: Build What You Need
 
