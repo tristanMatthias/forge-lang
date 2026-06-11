@@ -94,6 +94,8 @@ Pipeline: `seed/seed.ll → llc + cc → seed binary → compiles src/ → bs2 �
 
 Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analysis)
 
+Seed merge conflicts: `seed/seed.ll` is `merge=binary` — never merge it textually. Pick a side, `make seed-patch-traps`, build, `make update-seed`. Full recipe + base-seed selection criteria: `bootstrap/docs/SEED_MERGES.md`.
+
 ### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
 
 This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
