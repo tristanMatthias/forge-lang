@@ -1285,17 +1285,12 @@ mode_check_seed_window() {
     $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB \
     || die "link failed on the integration seed"
   log "bootstrap-window: compiling this branch's main.av with it"
-  # NOTE: compile output + unit-cache entries from the window binary
-  # must not leak into real builds (the compile cache is not keyed on
-  # the producing compiler — see bead cmpk). Snapshot-restore the cli
-  # unit cache and discard the emitted .ll.
-  local cache_dir="$CLI_SRC_DIR/build/cache"
-  rm -rf "$cache_dir.window_bak"
-  [ -d "$cache_dir" ] && mv "$cache_dir" "$cache_dir.window_bak"
+  # Unit-cache entries publish under the window binary's own compiler
+  # hash (fp_for_unit keys on the producing compiler — verified by A/B
+  # test, bead cmpk), so real builds can't hit them. Only the emitted
+  # .ll needs discarding.
   local rc=0
   "$wdir/seed_bin" compile "$SRC_DIR/main.av" >"$wdir/compile.log" 2>&1 || rc=$?
-  rm -rf "$cache_dir"
-  [ -d "$cache_dir.window_bak" ] && mv "$cache_dir.window_bak" "$cache_dir"
   rm -f "$SRC_DIR/main.av.ll"
   if [ "$rc" != 0 ]; then
     tail -30 "$wdir/compile.log" >&2
