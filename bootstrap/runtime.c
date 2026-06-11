@@ -238,6 +238,134 @@ void* avra_rc_alloc(int64_t payload_size) {
     return user_ptr;
 }
 
+// ─── rcsf.3: strict allocator mode (AVRA_RC_STRICT=1) ──────────────
+//
+// Debug/CI mode that converts silent RC misuse into deterministic,
+// named aborts:
+//   - poison-on-free: freed payloads are filled with 0xDD, so any
+//     use-after-free READ sees poison (an AST node's tag becomes
+//     0xDDDD... -> immediate "unmatched tag", never layout-luck).
+//   - quarantine ring: freed blocks are held (not returned to malloc)
+//     until the ring evicts them; eviction verifies the poison is
+//     intact — a modified quarantined block = use-after-free WRITE,
+//     abort with backtrace.
+//   - freed-pointer tracking: retain/release/should_free on a
+//     quarantined pointer = double-release / release-after-free,
+//     abort with backtrace. (Releases of never-RC pointers stay
+//     no-ops even in strict mode: .Ptr-typed values legitimately
+//     carry foreign heap pointers, e.g. LLVM handles.)
+//
+// Zero cost when the env var is unset; modest cost when set (one
+// hash probe on the non-RC retain/release path, memset+verify per
+// free). CI should run the spec suite under AVRA_RC_STRICT=1.
+
+#include <malloc.h>   // malloc_usable_size
+
+static int rc_strict = 0;
+__attribute__((constructor))
+static void auto_enable_rc_strict(void) {
+    // Silent enable: a stderr banner pollutes every fixture that
+    // exact-matches `cmd 2>&1` output when the whole suite runs under
+    // make test-strict. The abort diagnostics are the signal.
+    if (getenv("AVRA_RC_STRICT")) rc_strict = 1;
+}
+
+static void rc_strict_abort(const char* what, void* ptr) {
+    fprintf(stderr, "[rc-strict] ABORT: %s: %p\n", what, ptr);
+    void* frames[32];
+    int nf = backtrace(frames, 32);
+    backtrace_symbols_fd(frames, nf, 2);
+    abort();
+}
+
+#define RC_QUAR_CAP 4096
+#define RC_QUAR_POISON 0xDD
+typedef struct { void* raw; void* user; size_t bytes; } RcQuarEntry;
+static RcQuarEntry rc_quar_ring[RC_QUAR_CAP];
+static size_t rc_quar_head = 0;   // oldest entry when full
+static size_t rc_quar_len = 0;
+// Open-addressing set of quarantined USER pointers (mirrors the ring;
+// cap = 2x ring so probes stay short, power of two for masking).
+#define RC_QUAR_SET_CAP 8192
+static void* rc_quar_set[RC_QUAR_SET_CAP];
+static pthread_mutex_t rc_quar_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static size_t rc_quar_hash(void* p) {
+    return (((uintptr_t)p) >> 4) * 2654435761u & (RC_QUAR_SET_CAP - 1);
+}
+
+static void rc_quar_set_add(void* p) {
+    size_t i = rc_quar_hash(p);
+    while (rc_quar_set[i]) i = (i + 1) & (RC_QUAR_SET_CAP - 1);
+    rc_quar_set[i] = p;
+}
+
+static int rc_quar_set_contains(void* p) {
+    size_t i = rc_quar_hash(p);
+    while (rc_quar_set[i]) {
+        if (rc_quar_set[i] == p) return 1;
+        i = (i + 1) & (RC_QUAR_SET_CAP - 1);
+    }
+    return 0;
+}
+
+// Tombstone-free removal via linear-probe re-insertion.
+static void rc_quar_set_remove(void* p) {
+    size_t i = rc_quar_hash(p);
+    while (rc_quar_set[i] != p) {
+        if (!rc_quar_set[i]) return;
+        i = (i + 1) & (RC_QUAR_SET_CAP - 1);
+    }
+    rc_quar_set[i] = NULL;
+    size_t j = (i + 1) & (RC_QUAR_SET_CAP - 1);
+    while (rc_quar_set[j]) {
+        void* moved = rc_quar_set[j];
+        rc_quar_set[j] = NULL;
+        size_t k = rc_quar_hash(moved);
+        while (rc_quar_set[k]) k = (k + 1) & (RC_QUAR_SET_CAP - 1);
+        rc_quar_set[k] = moved;
+        j = (j + 1) & (RC_QUAR_SET_CAP - 1);
+    }
+}
+
+// Called on the non-RC path of retain/release/should_free: a pointer
+// in the quarantine was an RC object that has been FREED — touching
+// it again is a definite double-release / release-after-free.
+static void rc_strict_check_freed(const char* op, void* ptr) {
+    pthread_mutex_lock(&rc_quar_mutex);
+    int freed = rc_quar_set_contains(ptr);
+    pthread_mutex_unlock(&rc_quar_mutex);
+    if (freed) rc_strict_abort(op, ptr);
+}
+
+// Strict-mode replacement for free(): poison + quarantine; really
+// free (after verifying the poison survived) only on ring eviction.
+static void rc_strict_quarantine(void* raw, void* user) {
+    size_t bytes = malloc_usable_size(raw);
+    memset(raw, RC_QUAR_POISON, bytes);
+    pthread_mutex_lock(&rc_quar_mutex);
+    if (rc_quar_len == RC_QUAR_CAP) {
+        RcQuarEntry ev = rc_quar_ring[rc_quar_head];
+        const unsigned char* b = (const unsigned char*)ev.raw;
+        for (size_t i = 0; i < ev.bytes; i++) {
+            if (b[i] != RC_QUAR_POISON) {
+                pthread_mutex_unlock(&rc_quar_mutex);
+                fprintf(stderr, "[rc-strict] quarantined block %p modified at +%zu\n", ev.user, i);
+                rc_strict_abort("use-after-free write", ev.user);
+            }
+        }
+        rc_quar_set_remove(ev.user);
+        free(ev.raw);
+        rc_quar_ring[rc_quar_head] = (RcQuarEntry){ raw, user, bytes };
+        rc_quar_head = (rc_quar_head + 1) % RC_QUAR_CAP;
+    } else {
+        rc_quar_ring[(rc_quar_head + rc_quar_len) % RC_QUAR_CAP] = (RcQuarEntry){ raw, user, bytes };
+        rc_quar_len++;
+    }
+    rc_quar_set_add(user);
+    pthread_mutex_unlock(&rc_quar_mutex);
+}
+
 // Check if a pointer is an RC-managed object using the pointer set.
 static inline int is_rc_managed(void* ptr) {
     return rc_set_contains(ptr);
@@ -246,7 +374,10 @@ static inline int is_rc_managed(void* ptr) {
 // Increment reference count.
 void avra_rc_retain(void* ptr) {
     if (!ptr) return;
-    if (!is_rc_managed(ptr)) return;
+    if (!is_rc_managed(ptr)) {
+        if (rc_strict) rc_strict_check_freed("retain of freed object", ptr);
+        return;
+    }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
     int32_t new_rc = atomic_fetch_add(&hdr->refcount, 1) + 1;
@@ -258,7 +389,10 @@ void avra_rc_retain(void* ptr) {
 // Decrement reference count. Frees the object when refcount reaches 0.
 void avra_rc_release(void* ptr) {
     if (!ptr) return;
-    if (!is_rc_managed(ptr)) return;
+    if (!is_rc_managed(ptr)) {
+        if (rc_strict) rc_strict_check_freed("release of freed object", ptr);
+        return;
+    }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
     int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
@@ -271,7 +405,8 @@ void avra_rc_release(void* ptr) {
         }
         hdr->type_tag = 0;  // Clear magic to prevent double-free
         rc_set_remove(ptr);
-        free((char*)ptr - RC_HEADER_SIZE);
+        if (rc_strict) rc_strict_quarantine((char*)ptr - RC_HEADER_SIZE, ptr);
+        else free((char*)ptr - RC_HEADER_SIZE);
     }
 }
 
@@ -281,7 +416,10 @@ void avra_rc_release(void* ptr) {
 // functions for recursive field release.
 int64_t avra_rc_should_free(void* ptr) {
     if (!ptr) return 0;
-    if (!is_rc_managed(ptr)) return 0;
+    if (!is_rc_managed(ptr)) {
+        if (rc_strict) rc_strict_check_freed("release of freed object (should_free)", ptr);
+        return 0;
+    }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return 0;
     int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
@@ -301,7 +439,8 @@ void avra_rc_free(void* ptr) {
     }
     hdr->type_tag = 0;  // Clear magic to prevent double-free
     rc_set_remove(ptr);
-    free((char*)ptr - RC_HEADER_SIZE);
+    if (rc_strict) rc_strict_quarantine((char*)ptr - RC_HEADER_SIZE, ptr);
+    else free((char*)ptr - RC_HEADER_SIZE);
 }
 
 // Introspection for spec tests / leak checks. Returns the number

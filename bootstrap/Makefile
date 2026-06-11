@@ -21,7 +21,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps check-seed-window next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test test-strict quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps check-seed-window next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -50,6 +50,7 @@ help:
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
 	@echo "  make seed-patch-traps  Patch seed match-traps when adding enum variants"
 	@echo "  make check-seed-window Bootstrap-window check: branch source must compile with the integration seed (run before PR)"
+	@echo "  make test-strict       Spec suite under AVRA_RC_STRICT=1 (poison/quarantine allocator — catches RC misuse)"
 	@echo "                         (run BEFORE 'make build' for new ValueType/Stmt/Expr)."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
@@ -124,6 +125,14 @@ build-debug:
 test:
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
 	@$(if $(SKIP_SELFHOST),,$(DIAG) --check-fixedpoint)
+
+# rcsf.3: full suite under the strict allocator (poison-on-free,
+# quarantine with UAF-write verification, abort on release-of-freed).
+# Slower than `make test`; run in CI / before releases. A failure here
+# with '[rc-strict] ABORT' is a real RC bug — see
+# docs/RC_MEMORY_RUNBOOK.md.
+test-strict:
+	@AVRA_RC_STRICT=1 $(BS2) test $(if $(FILTER),-f $(FILTER))
 
 # Inner-loop combo: rebuild bs2 + run tests (with optional FILTER).
 # Skips selfhost by default — run `make test` before committing.

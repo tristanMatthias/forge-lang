@@ -84,6 +84,7 @@ garbage — which post-guard means a stale binary or a new bypass.
 | Tool | What |
 |---|---|
 | `AVRA_VERIFY_RC=1` | IR verifier for the invariant (this doc, rcsf.2) |
+| `AVRA_RC_STRICT=1` / `make test-strict` | strict allocator (rcsf.3): poison-on-free (0xDD), quarantine ring verifying poison on eviction (UAF writes abort), abort on retain/release of a freed pointer. UAF reads see 0xDDDD… tags — deterministic, never layout-luck |
 | `AVRA_TRACK_STORES=1`, `AVRA_REDZONES=1`, `AVRA_PAGE_ALLOC=1` | runtime store-tracking / redzone / page-alloc modes (runtime.c) |
 | `avra_trace_ptr`, `avra_dump_stmt`, `avra_dump_function` | C-side tracing — never `eprintln` in hot paths |
 | `setarch -R` | ASLR off for stable addresses outside gdb |
@@ -94,8 +95,7 @@ garbage — which post-guard means a stale binary or a new bypass.
 - Post-mortem narrative: `927f_union_match_mono_bug.md` (zm77: phantom
   release of uninit cleanup slots froze a live AST node; fix evolved
   bind-level → universal alloca guard → this verifier).
-- Open hardening: beads epic `rcsf` — `.3` strict allocator mode
-  (poison-on-free, abort on foreign release), `.4` phase arenas for
+- Open hardening: beads epic `rcsf` — `.4` phase arenas for
   the AST, `.5` definite-init analysis + block-scoped cleanup (the
   principled replacement for the blanket guard), `.1` registration
   encapsulation (hygiene).

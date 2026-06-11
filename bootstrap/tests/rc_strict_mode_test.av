@@ -1,0 +1,76 @@
+// rcsf.3: AVRA_RC_STRICT=1 — strict allocator mode.
+//
+// Happy path: a normal program runs clean under strict mode (poison +
+// quarantine cause no false positives).
+//
+// Negative path: a deliberate double-release through the RC externs
+// must ABORT with the named diagnostic (release of freed object) —
+// under the default allocator this is a silent no-op that masks real
+// bugs (the zm77 class went unnoticed for exactly this reason).
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+fn rcs_build(name: string, body: string) -> string {
+    write_fixture("/tmp/rcs_${name}.av", body)
+    avra_shell_exec("./build/bs2 compile /tmp/rcs_${name}.av >/dev/null 2>&1 && " +
+        "${rcs_llc()} -O0 -relocation-model=pic -filetype=obj /tmp/rcs_${name}.av.ll -o /tmp/rcs_${name}.o && " +
+        "cc /tmp/rcs_${name}.o build/runtime.o build/llvm_wrapper.o -fuse-ld=lld -L${rcs_llvm()}/lib -lLLVM -lstdc++ -o /tmp/rcs_${name}.bin && echo built")
+}
+
+fn rcs_llvm() -> string {
+    let p = avra_shell_exec("printf '%s' \"$LLVM_PREFIX\"")
+    if p == "" { "/usr/lib/llvm-20" } else { p }
+}
+
+fn rcs_llc() -> string { "${rcs_llvm()}/bin/llc" }
+
+fn rcs_happy() -> string {
+    let b = rcs_build("happy", "
+fn make(xs: List<string>) -> string {
+    mut out = \"\"
+    mut i = 0
+    while i < xs.length {
+        out = out + xs[i]
+        i = i + 1
+    }
+    out
+}
+
+fn main() -> int {
+    let e: List<string> = []
+    if make(e) == \"\" && make([\"a\", \"b\"]) == \"ab\" { 0 } else { 1 }
+}
+")
+    if !b.contains("built") { return "build failed: " + b }
+    avra_shell_exec("AVRA_RC_STRICT=1 /tmp/rcs_happy.bin 2>&1; echo rc=$?")
+}
+
+fn rcs_double_release() -> string {
+    let b = rcs_build("dbl", "
+extern fn avra_rc_alloc(size: int) -> ptr
+extern fn avra_rc_release(p: ptr)
+
+fn main() -> int {
+    let p = avra_rc_alloc(64)
+    avra_rc_release(p)
+    avra_rc_release(p)
+    0
+}
+")
+    if !b.contains("built") { return "build failed: " + b }
+    avra_shell_exec("AVRA_RC_STRICT=1 /tmp/rcs_dbl.bin 2>&1; echo rc=$?")
+}
+
+spec "rcsf.3: AVRA_RC_STRICT strict allocator" {
+    then "clean program runs green under strict mode" {
+        rcs_happy().contains("rc=0")
+    }
+    then "double release aborts with a named diagnostic" {
+        let out = rcs_double_release()
+        out.contains("[rc-strict] ABORT: release of freed object") && !out.contains("rc=0")
+    }
+    then "double release is silent without strict mode (the gap this mode closes)" {
+        avra_shell_exec("env -u AVRA_RC_STRICT /tmp/rcs_dbl.bin 2>&1; echo rc=$?").contains("rc=0")
+    }
+}
