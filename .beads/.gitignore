@@ -71,3 +71,6 @@ bd.db
 # They would override fork protection in .git/info/exclude.
 # Config files (metadata.json, config.yaml) are tracked by git by default
 # since no pattern above ignores them.
+
+# Sync moved to Dolt refs/dolt/data (see scripts/bootstrap.sh setup_beads_sync); jsonl no longer committed.
+issues.jsonl
