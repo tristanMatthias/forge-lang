@@ -48,12 +48,24 @@ type-confused dump). This explains:
   after the mono output was validated clean — the earlier mono-pass
   conclusion was an artifact of probing only pass boundaries).
 
-## Fix
+## Fix (as it evolved — current state last)
 
-`avra_llvm_zero_init_local` (llvm_wrapper.c): stores `ConstNull` into
-the hoisted alloca **in the entry block**, called from `ctx.bind` for
-every cleanup-registered binding. A never-executed binding now releases
-null, which `avra_rc_should_free`/`avra_rc_release` treat as a no-op.
+1. First fix: `avra_llvm_zero_init_local`, called from `ctx.bind` for
+   cleanup-registered bindings. Initial placement (end of entry block)
+   was WRONG — it clobbered locals bound while the builder still sat in
+   the entry block (25 derive_walker failures); corrected to
+   immediately-after-the-alloca.
+2. **Current state** (merge 3f8798a9): the bind-level call was removed,
+   replaced by a universal guard inside `avra_llvm_build_alloca` itself
+   — EVERY pointer-typed alloca gets `store ptr null` right after
+   creation. The merged tree had surfaced garbage READS beyond RC
+   cleanup (uninit slots consumed as AST pointers), so the blanket
+   guard covers the whole class: a never-initialized slot reads null,
+   and releases of null are no-ops.
+3. `AVRA_VERIFY_RC=1` (rcsf.2) machine-checks the invariant on every
+   compiled module — each ptr alloca's next instruction must be its
+   null store; violations fail the compile naming fn+slot. diagnose.sh
+   runs it during the self-compile integrity check.
 
 Note: the fix lives in bs2's *codegen*, so it only takes effect in a
 binary compiled BY a fixed compiler — a seed cycle (`make update-seed`)

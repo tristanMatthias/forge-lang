@@ -483,6 +483,45 @@ LLVMValueRef avra_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const char
     return alloca;
 }
 
+// rcsf.2: machine-check the zero-init invariant on the finished module.
+// Every pointer-typed alloca's NEXT instruction must be a `store ptr
+// null` into it (all allocas route through avra_llvm_build_alloca,
+// which emits exactly that pair). If a future refactor bypasses the
+// guard, this catches it at compile time instead of as a
+// layout-sensitive use-of-garbage crash (zm77 class). Gated by
+// AVRA_VERIFY_RC=1 at the call site (codegen_program tail).
+// Returns the number of violations; prints each to stderr.
+int64_t avra_llvm_verify_rc_init(LLVMModuleRef m) {
+    int64_t checked = 0, bad = 0;
+    for (LLVMValueRef fn = LLVMGetFirstFunction(m); fn; fn = LLVMGetNextFunction(fn)) {
+        for (LLVMBasicBlockRef bb = LLVMGetFirstBasicBlock(fn); bb; bb = LLVMGetNextBasicBlock(bb)) {
+            for (LLVMValueRef in = LLVMGetFirstInstruction(bb); in; in = LLVMGetNextInstruction(in)) {
+                if (!LLVMIsAAllocaInst(in)) continue;
+                if (LLVMGetTypeKind(LLVMGetAllocatedType(in)) != LLVMPointerTypeKind) continue;
+                checked++;
+                int ok = 0;
+                LLVMValueRef next = LLVMGetNextInstruction(in);
+                if (next && LLVMIsAStoreInst(next)
+                    && LLVMGetOperand(next, 1) == in) {
+                    LLVMValueRef val = LLVMGetOperand(next, 0);
+                    if (LLVMIsConstant(val) && LLVMIsNull(val)) ok = 1;
+                }
+                if (!ok) {
+                    size_t fl, al;
+                    const char* fname = LLVMGetValueName2(fn, &fl);
+                    const char* aname = LLVMGetValueName2(in, &al);
+                    fprintf(stderr, "[verify-rc] VIOLATION: fn %.*s — alloca %%%.*s lacks an immediate null store\n",
+                            (int)fl, fname, (int)al, aname);
+                    bad++;
+                }
+            }
+        }
+    }
+    fprintf(stderr, "[verify-rc] %s — %lld ptr alloca(s) checked, %lld violation(s)\n",
+            bad ? "FAIL" : "ok", (long long)checked, (long long)bad);
+    return bad;
+}
+
 LLVMValueRef avra_llvm_build_load(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, const char* name) {
     if (!ty) {
         fprintf(stderr, "[CRASH] avra_llvm_build_load: ty is NULL (name=%s)\n", name);

@@ -483,6 +483,19 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     ctx.verify_module()
     if coverage { avra_covmap_end() }
 
+    // rcsf.2: machine-check the alloca zero-init invariant on the
+    // finished module (every ptr alloca must carry its entry null
+    // store — see avra_llvm_build_alloca). Debug/CI gate: a violation
+    // means the zm77 guard regressed; fail the compile loudly instead
+    // of shipping a binary with layout-sensitive garbage reads.
+    if avra_process_env_get("AVRA_VERIFY_RC") == "1" {
+        let rc_bad = avra_llvm_verify_rc_init(ctx.module)
+        if rc_bad != 0 {
+            ctx.dispose()
+            return Result.Err("verify-rc: ${string(rc_bad)} ptr alloca(s) lack the entry null store — zero-init guard regressed (rcsf.2)")
+        }
+    }
+
     // Return the Ctx with the compiled module
     Result.Ok(ctx)
 }

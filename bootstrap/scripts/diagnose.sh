@@ -288,6 +288,10 @@ SEED MANAGEMENT
 
 ENVIRONMENT
   LLVM_PREFIX  Override the LLVM install prefix.
+  AVRA_VERIFY_RC=1  Machine-check the alloca zero-init invariant (zm77
+               guard) on every compiled module; violations fail the build
+               naming fn+slot. Always on during --build-bs2's self-compile
+               integrity check.
                Default: /opt/homebrew/opt/llvm
 
 EXAMPLES
@@ -665,7 +669,11 @@ mode_build_bs2() {
   ensure_bs2
   # Verify bs2 can compile itself (bootstrap chain integrity).
   log "verifying bs2 can self-compile (bootstrap safety check)"
-  if "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
+  # rcsf.2: run the RC zero-init verifier during the integrity check so
+  # every commit-grade build machine-checks the zm77 guard on the
+  # compiler's own module (a violation fails the build with a named
+  # fn+slot diagnostic instead of shipping layout-sensitive UB).
+  if AVRA_VERIFY_RC=1 "$BS2" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
     ok "$BS2"
     return
   fi
