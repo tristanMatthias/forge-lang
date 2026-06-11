@@ -944,16 +944,20 @@ void avra_llvm_position_before(LLVMBuilderRef builder, LLVMValueRef instr) {
 // (zm77: a zero-trip arg loop's cleanup freed a live AST node). A null
 // store in the entry block makes the never-bound case release null,
 // which every release path treats as a no-op.
+//
+// Placement: immediately AFTER the alloca instruction (top of the
+// entry block). Anywhere later is wrong — when the binding itself is
+// emitted while the builder is still in the entry block, appending at
+// block end would put the null store AFTER the binding's value store
+// and clobber the local.
 void avra_llvm_zero_init_local(LLVMBuilderRef b, LLVMValueRef alloca_inst) {
-    LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(b);
-    LLVMValueRef fn = LLVMGetBasicBlockParent(current_bb);
-    LLVMBasicBlockRef entry = LLVMGetEntryBasicBlock(fn);
+    (void)b;
     LLVMBuilderRef eb = LLVMCreateBuilder();
-    LLVMValueRef term = LLVMGetBasicBlockTerminator(entry);
-    if (term) {
-        LLVMPositionBuilderBefore(eb, term);
+    LLVMValueRef next = LLVMGetNextInstruction(alloca_inst);
+    if (next) {
+        LLVMPositionBuilderBefore(eb, next);
     } else {
-        LLVMPositionBuilderAtEnd(eb, entry);
+        LLVMPositionBuilderAtEnd(eb, LLVMGetInstructionParent(alloca_inst));
     }
     LLVMTypeRef ty = LLVMGetAllocatedType(alloca_inst);
     LLVMBuildStore(eb, LLVMConstNull(ty), alloca_inst);
