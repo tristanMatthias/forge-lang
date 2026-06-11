@@ -290,6 +290,10 @@ export fn discover_one_file(path_filter: string) -> List<DiscoveredFile> {
     let empty: List<DiscoveredFile> = []
     if path_filter == "" { return empty }
     if avra_selfhost_file_exists(path_filter) == 0 { return empty }
+    // Directories are not classifiable sources — callers route them
+    // to a directory-scoped discovery walk instead. Without this
+    // guard, read_file(dir) yields null and the classifier crashes.
+    if avra_is_dir(path_filter) == 1 { return empty }
     let d = classify_av_source(path_filter, avra_selfhost_read_file(path_filter))
     if d.has_top_main || d.entries.length == 0 { return empty }
     [d]
@@ -319,9 +323,12 @@ export fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List
 }
 
 /// Scope the discovered set to a single positional path. Match
-/// strategy (first non-empty wins): (1) exact full-path equality;
-/// (2) path-suffix match — covers `bs2 test packages/x/tests/foo_test.av`
-/// from any CWD; (3) basename substring — covers `bs2 test foo` (same
+/// strategy (first non-empty wins): (1) directory prefix — a
+/// directory argument keeps every file under it (the discovery walk
+/// was already scoped there; this must agree or the scoped results
+/// get filtered straight back out); (2) exact full-path equality;
+/// (3) path-suffix match — covers `bs2 test packages/x/tests/foo_test.av`
+/// from any CWD; (4) basename substring — covers `bs2 test foo` (same
 /// as -f filter but as a positional). Empty filter is a no-op.
 ///
 /// Returning a List<DiscoveredFile> rather than a single Option lets
@@ -330,6 +337,9 @@ export fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List
 /// returned files; future UX could warn on ambiguity.
 export fn filter_by_path(files: List<DiscoveredFile>, path_filter: string) -> List<DiscoveredFile> {
     if path_filter == "" { return files }
+    if avra_is_dir(path_filter) == 1 {
+        return list_filter(files, (d: DiscoveredFile) -> d.path.starts_with(path_filter))
+    }
     let exact = list_filter(files, (d: DiscoveredFile) -> d.path == path_filter)
     if exact.length > 0 { return exact }
     let suffix = list_filter(files, (d: DiscoveredFile) -> d.path.ends_with(path_filter))

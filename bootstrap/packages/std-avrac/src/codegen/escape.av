@@ -219,6 +219,9 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
         .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
         .Spawn(body) -> remove_escaped_expr(body, set)
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { set } else { remove_escaped_expr(capacity!, set) }
+        }
         .Isolated(body) -> remove_escaped_expr(body, set)
         .Quote(_, body) -> remove_escaped_expr(body, set)
         .Splice(target) -> remove_escaped_expr(target, set)

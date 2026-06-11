@@ -182,6 +182,13 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         // Axis 18). The handle is owned by the scheduler and freed
         // when the task is joined or the process exits.
         .Task(_) -> {}
+        // Channel — rc-allocated runtime handle (AvraChannel). The
+        // runtime owns the handle's internals (ring buffer), so the
+        // runtime provides the release: avra_channel_release frees
+        // the buffer when this release drops the last reference,
+        // then forwards to avra_rc_release. Mirrors how Struct types
+        // route through their generated __release_TypeName.
+        .Channel(_) -> { ctx.call("avra_channel_release", [val]) }
         // Optional (T?): pointer-niche repr — the value IS the inner repr
         // (null pointer = none). For a pointer-backed inner, shallow-release
         // the pointer (consistent with how List/Map containers are handled,

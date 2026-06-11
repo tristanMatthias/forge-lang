@@ -68,45 +68,53 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     let pt = avra_llvm_pointer_type(lc)
 
     let i32t = avra_llvm_int32_type(lc)
-    let vt = avra_llvm_void_type(lc)
 
     // ── libc ──
+    // Return-type convention: C void helpers are declared i64 here,
+    // matching how Avra lowers `Void` returns (llvm_type_for_full:
+    // .Void -> i64) — extern fn decls in Avra source produce the
+    // i64 shape, and avra_llvm_add_function converges declarations
+    // by exact type, so both sides MUST agree. Callers discard the
+    // (junk) return register, same as every Avra-declared void
+    // extern has always done. The true `void` migration is the
+    // Void→LLVM-void value-model ticket.
     decl(m, "puts", i32t, [pt])
-    decl(m, "avra_eprintln", vt, [pt])
+    decl(m, "avra_puts", i64t, [pt])
+    decl(m, "avra_eprintln", i64t, [pt])
     decl(m, "strlen", i64t, [pt])
     decl(m, "malloc", pt, [i64t])
     decl(m, "avra_rc_alloc", pt, [i64t])
-    decl(m, "avra_rc_retain", vt, [pt])
-    decl(m, "avra_rc_release", vt, [pt])
+    decl(m, "avra_rc_retain", i64t, [pt])
+    decl(m, "avra_rc_release", i64t, [pt])
     decl(m, "avra_rc_should_free", i64t, [pt])
-    decl(m, "avra_rc_free", vt, [pt])
-    decl(m, "avra_rc_suspect", vt, [pt])
-    decl(m, "avra_rc_collect", vt, [])
+    decl(m, "avra_rc_free", i64t, [pt])
+    decl(m, "avra_rc_suspect", i64t, [pt])
+    decl(m, "avra_rc_collect", i64t, [])
     decl(m, "memcpy", pt, [pt, pt, i64t])
     decl(m, "strcmp", i32t, [pt, pt])
     decl_va(m, "snprintf", i32t, [pt, i64t, pt])
     decl(m, "atoi", i32t, [pt])
     decl(m, "avra_parse_int", i64t, [pt])
-    decl(m, "exit", vt, [i32t])
+    decl(m, "exit", i64t, [i64t])
 
     // ── null safety ──
-    decl(m, "avra_null_arg_check", vt, [pt, i64t, pt, i64t, i64t])
-    decl(m, "avra_null_deref_trap", vt, [pt, i64t, pt, i64t, i64t, pt, i64t, i64t])
-    decl(m, "avra_div_by_zero_trap", vt, [i64t, pt, i64t, i64t])
+    decl(m, "avra_null_arg_check", i64t, [pt, i64t, pt, i64t, i64t])
+    decl(m, "avra_null_deref_trap", i64t, [pt, i64t, pt, i64t, i64t, pt, i64t, i64t])
+    decl(m, "avra_div_by_zero_trap", i64t, [i64t, pt, i64t, i64t])
 
     // ── arrays ──
     decl(m, "avra_array_new", pt, [])
-    decl(m, "avra_array_push", vt, [pt, i64t])
+    decl(m, "avra_array_push", i64t, [pt, i64t])
     decl(m, "avra_array_get", i64t, [pt, i64t])
     decl(m, "avra_array_len", i64t, [pt])
-    decl(m, "avra_array_set", vt, [pt, i64t, i64t])
+    decl(m, "avra_array_set", i64t, [pt, i64t, i64t])
     decl(m, "avra_array_pop", i64t, [pt])
     decl(m, "avra_array_slice", pt, [pt, i64t, i64t])
 
     // ── closures ──
     decl(m, "avra_closure_get_fn", i64t, [i64t])
     decl(m, "avra_closure_num_captures", i64t, [i64t])
-    decl(m, "avra_closure_get_capture", i64t, [pt, i64t])
+    decl(m, "avra_closure_get_capture", i64t, [i64t, i64t])
     decl(m, "avra_closure_call_0", i64t, [i64t])
     decl(m, "avra_closure_call_1", i64t, [i64t, i64t])
     decl(m, "avra_closure_call_2", i64t, [i64t, i64t, i64t])
@@ -117,7 +125,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     // ── higher-order list ops ──
     decl(m, "avra_array_map", pt, [pt, i64t])
     decl(m, "avra_array_filter", pt, [pt, i64t])
-    decl(m, "avra_array_foreach", vt, [pt, i64t])
+    decl(m, "avra_array_foreach", i64t, [pt, i64t])
     decl(m, "avra_array_reduce", i64t, [pt, i64t, i64t])
     decl(m, "avra_array_contains", i64t, [pt, i64t])
     decl(m, "avra_array_index_of", i64t, [pt, i64t])
@@ -145,11 +153,11 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     decl(m, "avra_str_repeat", pt, [pt, i64t])
     decl(m, "avra_str_reverse", pt, [pt])
     decl(m, "avra_str_char_code", i64t, [pt, i64t])
-    decl(m, "avra_str_from_char_code", i64t, [i64t])
+    decl(m, "avra_str_from_char_code", pt, [i64t])
 
     // ── maps ──
     decl(m, "avra_map_new_cstr", pt, [])
-    decl(m, "avra_map_set_cstr", vt, [pt, pt, i64t])
+    decl(m, "avra_map_set_cstr", i64t, [pt, pt, i64t])
     decl(m, "avra_map_get_cstr", i64t, [pt, pt])
     decl(m, "avra_map_has_cstr", i64t, [pt, pt])
     decl(m, "avra_map_len_cstr", i64t, [pt])
@@ -162,131 +170,135 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
     decl(m, "avra_file_write", i64t, [pt, pt])
     decl(m, "avra_file_exists", i64t, [pt])
     decl(m, "avra_intmap_new", pt, [])
-    decl(m, "avra_intmap_set", vt, [pt, i64t, i64t])
+    decl(m, "avra_intmap_set", i64t, [pt, i64t, i64t])
     decl(m, "avra_intmap_get", i64t, [pt, i64t])
     decl(m, "avra_intmap_has", i64t, [pt, i64t])
 
     // ── float ──
     decl(m, "avra_float_parse", i64t, [pt])
-    decl(m, "avra_float_to_string", i64t, [i64t])
+    decl(m, "avra_float_to_string", pt, [i64t])
     decl(m, "avra_bool_to_string", pt, [i64t])
     decl(m, "avra_format_float", pt, [i64t, pt])
     decl(m, "avra_format_int", pt, [i64t, pt])
 
     // ── ptr ops ──
-    decl(m, "avra_ptr_store_byte", vt, [pt, i64t, i64t])
-    decl(m, "avra_string_from_ptr", i64t, [pt, i64t])
+    decl(m, "avra_ptr_store_byte", i64t, [pt, i64t, i64t])
+    decl(m, "avra_string_from_ptr", pt, [pt, i64t])
 
     // ── trait objects ──
-    decl(m, "avra_trait_object_new", i64t, [pt, i64t])
+    decl(m, "avra_trait_object_new", pt, [i64t, pt])
     decl(m, "avra_trait_object_value", i64t, [pt])
     decl(m, "avra_trait_object_vtable", pt, [pt])
 
     // ── datetime ──
     decl(m, "avra_datetime_now", i64t, [])
-    decl(m, "avra_datetime_format", i64t, [pt, i64t])
-    decl(m, "avra_datetime_year", i64t, [pt])
-    decl(m, "avra_datetime_month", i64t, [pt])
-    decl(m, "avra_datetime_day", i64t, [pt])
-    decl(m, "avra_datetime_hour", i64t, [pt])
-    decl(m, "avra_datetime_minute", i64t, [pt])
-    decl(m, "avra_datetime_second", i64t, [pt])
+    decl(m, "avra_datetime_format", pt, [i64t, pt])
+    decl(m, "avra_datetime_year", i64t, [i64t])
+    decl(m, "avra_datetime_month", i64t, [i64t])
+    decl(m, "avra_datetime_day", i64t, [i64t])
+    decl(m, "avra_datetime_hour", i64t, [i64t])
+    decl(m, "avra_datetime_minute", i64t, [i64t])
+    decl(m, "avra_datetime_second", i64t, [i64t])
 
     // ── json ──
-    decl(m, "avra_json_stringify_int", pt, [pt])
+    decl(m, "avra_json_stringify_int", pt, [i64t])
     decl(m, "avra_json_stringify_string", pt, [pt])
-    decl(m, "avra_json_stringify_bool", pt, [pt])
-    decl(m, "avra_json_get_int", i64t, [pt, i64t])
-    decl(m, "avra_json_get_string", i64t, [pt, i64t])
-    decl(m, "avra_json_get_bool", i64t, [pt, i64t])
+    decl(m, "avra_json_stringify_bool", pt, [i1t])
+    decl(m, "avra_json_get_int", i64t, [pt, pt])
+    decl(m, "avra_json_get_string", pt, [pt, pt])
+    decl(m, "avra_json_get_bool", i1t, [pt, pt])
 
     // ── semver ──
     decl(m, "avra_semver_major", i64t, [pt])
     decl(m, "avra_semver_minor", i64t, [pt])
     decl(m, "avra_semver_patch", i64t, [pt])
-    decl(m, "avra_semver_compare", i64t, [pt, i64t])
+    decl(m, "avra_semver_compare", i64t, [pt, pt])
 
     // ── validation ──
-    decl(m, "avra_validate_not_null", i64t, [pt, i64t])
-    decl(m, "avra_validate_positive", i64t, [pt, i64t])
-    decl(m, "avra_validate_not_empty", i64t, [pt, i64t])
+    decl(m, "avra_validate_not_null", i64t, [i64t, pt])
+    decl(m, "avra_validate_positive", i64t, [i64t, pt])
+    decl(m, "avra_validate_not_empty", pt, [pt, pt])
 
     // ── toml ──
-    decl(m, "avra_toml_get_string", i64t, [pt, i64t])
-    decl(m, "avra_toml_get_int", i64t, [pt, i64t])
-    decl(m, "avra_toml_get_bool", i64t, [pt, i64t])
-    decl(m, "avra_toml_get_section_string", i64t, [pt, i64t, i64t])
-    decl(m, "avra_toml_get_section_int", i64t, [pt, i64t, i64t, i64t])
-    decl(m, "avra_toml_get_section_bool", i64t, [pt, i64t, i64t, i64t])
-    decl(m, "avra_toml_has_section", i64t, [pt, i64t])
+    decl(m, "avra_toml_get_string", pt, [pt, pt])
+    decl(m, "avra_toml_get_int", i64t, [pt, pt])
+    decl(m, "avra_toml_get_bool", i1t, [pt, pt])
+    decl(m, "avra_toml_get_section_string", pt, [pt, pt, pt])
+    decl(m, "avra_toml_get_section_int", i64t, [pt, pt, pt, i64t])
+    decl(m, "avra_toml_get_section_bool", i64t, [pt, pt, pt, i64t])
+    decl(m, "avra_toml_has_section", i64t, [pt, pt])
 
     // ── crypto ──
-    decl(m, "avra_sha256_hex", i64t, [pt])
-    decl(m, "avra_sha256_file", i64t, [pt])
+    decl(m, "avra_sha256_hex", pt, [pt])
+    decl(m, "avra_sha256_file", pt, [pt])
 
     // ── 73r2 in-process pkg-fp cache ──
-    decl(m, "avra_pkg_fp_cache_get", i64t, [pt])
-    decl(m, "avra_pkg_fp_cache_set", vt, [pt, pt])
+    decl(m, "avra_pkg_fp_cache_get", pt, [pt])
+    decl(m, "avra_pkg_fp_cache_set", i64t, [pt, pt])
 
     // ── bytes ──
-    decl(m, "avra_bytes_from_string", i64t, [pt])
-    decl(m, "avra_string_from_bytes", i64t, [pt])
+    decl(m, "avra_bytes_from_string", pt, [pt])
+    decl(m, "avra_string_from_bytes", pt, [pt])
     decl(m, "avra_bytes_length", i64t, [pt])
     decl(m, "avra_bytes_byte", i64t, [pt, i64t])
-    decl(m, "avra_bytes_concat", i64t, [pt, pt])
-    decl(m, "avra_bytes_slice", i64t, [pt, i64t, i64t])
-    decl(m, "avra_bytes_empty", i64t, [])
-    decl(m, "avra_bytes_make", i64t, [i64t])
-    decl(m, "avra_bytes_set", vt, [pt, i64t, i64t])
-    decl(m, "avra_bytes_to_hex", i64t, [pt])
+    decl(m, "avra_bytes_concat", pt, [pt, pt])
+    decl(m, "avra_bytes_slice", pt, [pt, i64t, i64t])
+    decl(m, "avra_bytes_empty", pt, [])
+    decl(m, "avra_bytes_make", pt, [i64t])
+    decl(m, "avra_bytes_set", i64t, [pt, i64t, i64t])
+    decl(m, "avra_bytes_to_hex", pt, [pt])
 
     // ── concurrency ──
-    decl(m, "avra_spawn", i64t, [pt])
-    decl(m, "avra_task_await", i64t, [pt])
-    decl(m, "avra_thread_join", i32t, [pt])
+    decl(m, "avra_spawn", i64t, [i64t])
+    decl(m, "avra_task_await", i64t, [i64t])
+    decl(m, "avra_thread_join", i64t, [i64t])
     decl(m, "avra_isolated_run", pt, [pt])
     decl(m, "avra_int_to_bytes_le", pt, [i64t])
     decl(m, "avra_bytes_to_int_le", i64t, [pt, i64t])
-    decl(m, "avra_yield", vt, [])
-    decl(m, "avra_scheduler_run", vt, [])
+    decl(m, "avra_yield", i64t, [])
+    decl(m, "avra_scheduler_run", i64t, [])
     decl(m, "avra_task_group_new", pt, [])
-    decl(m, "avra_task_group_add", vt, [pt, pt])
-    decl(m, "avra_task_group_await_all", vt, [pt])
+    decl(m, "avra_task_group_add", i64t, [pt, i64t])
+    decl(m, "avra_task_group_await_all", i64t, [pt])
     decl(m, "avra_channel_new", pt, [])
-    decl(m, "avra_channel_send", vt, [pt, i64t])
+    decl(m, "avra_channel_new_cap", pt, [i64t])
+    decl(m, "avra_channel_send", i64t, [pt, i64t])
     decl(m, "avra_channel_recv", i64t, [pt])
-    decl(m, "avra_channel_close", i32t, [pt])
-    decl(m, "avra_parallel_run", i32t, [pt])
-    decl(m, "avra_select", i64t, [pt, i64t])
+    decl(m, "avra_channel_recv_opt", i64t, [pt, pt])
+    decl(m, "avra_channel_try_recv_opt", i64t, [pt, pt])
+    decl(m, "avra_channel_close", i64t, [pt])
+    decl(m, "avra_channel_release", i64t, [pt])
+    decl(m, "avra_parallel_run", i64t, [pt])
+    decl(m, "avra_select", pt, [pt, i64t])
     decl(m, "avra_select_index", i64t, [pt])
     decl(m, "avra_select_value", i64t, [pt])
 
     // ── spec tests ──
-    decl(m, "avra_test_start_spec", i32t, [pt])
-    decl(m, "avra_test_end_spec", i32t, [pt])
-    decl(m, "avra_test_start_given", i32t, [pt])
-    decl(m, "avra_test_end_given", i32t, [pt])
+    decl(m, "avra_test_start_spec", i64t, [pt])
+    decl(m, "avra_test_end_spec", i64t, [])
+    decl(m, "avra_test_start_given", i64t, [pt])
+    decl(m, "avra_test_end_given", i64t, [])
     decl(m, "avra_test_run_then", i64t, [pt, i64t])
-    decl(m, "avra_test_skip", i32t, [pt])
-    decl(m, "avra_test_todo", i32t, [pt])
-    decl(m, "avra_test_summary", i32t, [])
-    decl(m, "avra_test_flush", vt, [])
+    decl(m, "avra_test_skip", i64t, [pt])
+    decl(m, "avra_test_todo", i64t, [pt])
+    decl(m, "avra_test_summary", i64t, [])
+    decl(m, "avra_test_flush", i64t, [])
 
     // ── arenas (spec Axis 9.6) ──
     decl(m, "avra_arena_new", pt, [])
     decl(m, "avra_arena_alloc", pt, [pt, i64t])
-    decl(m, "avra_arena_destroy", vt, [pt])
+    decl(m, "avra_arena_destroy", i64t, [pt])
 
     // ── match trap ──
-    decl(m, "avra_match_unreachable", vt, [pt, i64t, pt, i64t])
+    decl(m, "avra_match_unreachable", i64t, [pt, i64t, pt, i64t])
 
     // ── type introspection ──
-    decl(m, "avra_llvm_is_ptr_value", i32t, [pt])
+    decl(m, "avra_llvm_is_ptr_value", i64t, [pt])
     decl(m, "avra_llvm_typeof", pt, [pt])
     decl(m, "avra_llvm_cast_to_type", pt, [pt, pt, pt])
-    decl(m, "avra_llvm_is_void_value", i32t, [pt])
-    decl(m, "avra_llvm_build_store_cast", vt, [pt, pt, pt])
-    decl(m, "avra_llvm_verify_function", i32t, [pt])
+    decl(m, "avra_llvm_is_void_value", i64t, [pt])
+    decl(m, "avra_llvm_build_store_cast", i64t, [pt, pt, pt])
+    decl(m, "avra_llvm_verify_function", i64t, [pt])
     decl(m, "avra_llvm_type_kind", i64t, [pt])
     decl(m, "avra_llvm_int_type_width", i64t, [pt])
     decl(m, "avra_llvm_build_call_coerce", pt, [pt, pt, pt, pt, i64t, pt])
@@ -399,6 +411,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
         bag: bag_new(),
         type_reg,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        lib_pkg_roots: parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT")),
     }
 
     // Analyze which types are cycle-capable (can reference themselves
@@ -1156,10 +1169,30 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: List<Variant>, is_cy
 /// packages get a `declare` from phase 1 and their body links from
 /// the producer's .o.
 fn type_belongs_to_lib_pkg(ctx: Ctx, type_name: string) -> bool {
-    if ctx.lib_pkg_root == "" { return true }
+    if ctx.lib_pkg_roots.length == 0 { return true }
     if type_name.index_of("::") < 0 { return true }
-    let prefix = ctx.lib_pkg_root + "::"
-    type_name.starts_with(prefix)
+    for root in ctx.lib_pkg_roots {
+        if type_name.starts_with("${root}::") { return true }
+    }
+    false
+}
+
+/// Split the COMMA-separated AVRA_LIB_PKG_ROOT value into its root
+/// set, dropping empties so a plain single-root value parses to a
+/// one-element list. Comma, NOT colon: roots are qualified module
+/// names ("@std::cli") whose `::` separators a colon split would
+/// shred into bogus prefix roots — "@std" would then own the whole
+/// standard library and every producer unit would inline it
+/// (duplicate symbols at link). AVRA_LIB_OBJS keeps colons because
+/// its values are paths, a domain where colon is conventional and
+/// safe.
+fn parse_pkg_roots(raw: string) -> List<string> {
+    mut out: List<string> = []
+    if raw == "" { return out }
+    for part in raw.split(",") {
+        if part != "" { out.push(part) }
+    }
+    out
 }
 
 /// Phase 2 for structs: walk StructReg and emit each release fn's
@@ -1489,13 +1522,21 @@ fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result
                 // compiled .o. Declare the init fn (so the call
                 // resolves at link time) but skip body emit.
                 let is_external = find_annotation(ss.node, "external_unit") != null
+                // @deferred_init synthesizes __init_<name> but
+                // skips the top-level auto-call — an explicit caller
+                // (the in-process test runner dispatching units across
+                // worker threads) invokes it instead. Generic codegen
+                // contract, same mechanism family as @external_unit.
+                let is_deferred = find_annotation(ss.node, "deferred_init") != null
                 let init_name = "__init_${name}"
                 if is_external {
                     let init_params = avra_llvm_type_array_new(0)
                     let init_type = avra_llvm_function_type(cur_ctx.i64_type, init_params, 0, 0)
                     avra_llvm_type_array_free(init_params)
                     avra_llvm_add_function(cur_ctx.module, init_name, init_type)
-                    cur_ctx.call(init_name, [])
+                    if !is_deferred {
+                        cur_ctx.call(init_name, [])
+                    }
                 } else {
                     let init_params = avra_llvm_type_array_new(0)
                     let init_type = avra_llvm_function_type(cur_ctx.i64_type, init_params, 0, 0)
@@ -1543,9 +1584,14 @@ fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result
                     let restored_ctx = cur_ctx with { current_fn: saved_fn, current_fn_name: saved_fn_name }
 
                     // Emit call to __init_<name>() in the caller's context.
-                    // For test binaries, this happens inside __bs_top_level which
-                    // main() calls. The test runner can override with Parallel blocks.
-                    restored_ctx.call(init_name, [])
+                    // For test binaries, this happens inside __bs_top_level
+                    // which main() calls — unless the module is
+                    // @deferred_init, in which case the explicit caller
+                    // owns the invocation (e.g. the test runner's
+                    // worker threads).
+                    if !is_deferred {
+                        restored_ctx.call(init_name, [])
+                    }
 
                     cur_ctx = restored_ctx
                     cur_env = new_env

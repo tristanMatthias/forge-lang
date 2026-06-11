@@ -78,7 +78,7 @@ export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
         return err_emit("field assignment on non-struct value (ty=${vtype_render_full(r.ty)})")
     }
     let lookup = ctx.lookup_struct(struct_name)
-    if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
+    if !lookup.found { return err_emit("unknown struct `${struct_name}` (emitting fn `${ctx.current_fn_name}`)") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
     let st_ty = ctx.get_type(struct_name)
@@ -162,7 +162,7 @@ export fn emit_field_on_value(ctx: Ctx, r: EmitValue, obj: Expr, field: string) 
         return err_emit("field access on non-struct value (ty=${vtype_render_full(r.ty)}, field=${field}, obj=${obj_repr}, at=${ctx.source_file}:${string(ctx.source_line)})")
     }
     let lookup = ctx.lookup_struct(struct_name)
-    if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
+    if !lookup.found { return err_emit("unknown struct `${struct_name}` (emitting fn `${ctx.current_fn_name}`)") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
     ctx.null_check(r.value, field, struct_name)

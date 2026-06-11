@@ -41,7 +41,7 @@
 // mapping; each ComponentBlock instance routes through M with the
 // block as the Stmt arg.
 
-use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, exit, type_qualified_name}
+use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
@@ -111,7 +111,7 @@ fn populate_resolver_data_into(state: ResolverState, stmts: List<SStmt>) {
 
 fn populate_type_fields(stmts: List<SStmt>, mod_path: string) {
     for ss in stmts {
-        // stmt_unwrap peels ONE layer of Annotated. Most type decls
+        // stmt_unwrap strips every Annotated layer. Most type decls
         // in std-avrac are `@export type Foo = {...}` so without the
         // unwrap they'd never reach the .TypeDecl arm. so07.7.1
         // root cause: SStmt / SExpr were silently absent from the
@@ -212,7 +212,7 @@ export fn plan_has_work(plan: ExpandPlan) -> bool {
 fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
     mut acc: List<ExpandTarget> = []
     for ss in stmts {
-        let inner = peel_annotations(ss.node)
+        let inner = stmt_unwrap(ss.node)
         match inner {
             .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(body))
             _ -> {
@@ -318,7 +318,7 @@ fn comp_macro_lookup(m: List<CompMacroEntry>, comp_name: string) -> string {
 fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
     mut acc: List<CompMacroEntry> = []
     for ss in stmts {
-        let inner = peel_annotations(ss.node)
+        let inner = stmt_unwrap(ss.node)
         // ComponentDefs can live inside Module wrappers (e.g.
         // `component command implements Runnable {}` declared
         // in @std/cli's cli.av lands wrapped under
@@ -344,7 +344,7 @@ fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
 /// name. Returns "" otherwise. Handles arbitrarily-nested
 /// Annotated wrappers (e.g. `///` doc + `@expand`).
 fn comp_macro_for(stmt: Stmt) -> string {
-    let inner = peel_annotations(stmt)
+    let inner = stmt_unwrap(stmt)
     match inner {
         .ComponentDef(_, _, _, _, _, _) -> expand_target_name(stmt)
         _ -> ""
@@ -352,19 +352,13 @@ fn comp_macro_for(stmt: Stmt) -> string {
 }
 
 fn component_def_name(stmt: Stmt) -> string {
-    let inner = peel_annotations(stmt)
+    let inner = stmt_unwrap(stmt)
     match inner {
         .ComponentDef(name, _, _, _, _, _) -> name
         _ -> ""
     }
 }
 
-fn peel_annotations(stmt: Stmt) -> Stmt {
-    match stmt {
-        .Annotated(_, inner) -> peel_annotations(inner.node)
-        _ -> stmt
-    }
-}
 
 // ── Fast-path presence scan ──
 
@@ -383,7 +377,7 @@ fn peel_annotations(stmt: Stmt) -> Stmt {
 export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
     for ss in stmts {
         if has_expand_annotation(ss.node) { return true }
-        match peel_annotations(ss.node) {
+        match stmt_unwrap(ss.node) {
             .Module(_, body) -> {
                 if any_expand_annotation(body) { return true }
             }
@@ -406,7 +400,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
     for ss in stmts {
-        let inner = peel_annotations(ss.node)
+        let inner = stmt_unwrap(ss.node)
         // vez6.8.5: a ComponentDef with @expand only REGISTERS
         // the macro for its instances. The def itself drops
         // out of the output — there's no template-style expansion
@@ -454,7 +448,12 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
                 origins = list_concat(origins, sub.origins)
-                let new_stmt = Stmt.Module(mod_name, sub.out)
+                // The match subject was stmt_unwrap(ss.node) —
+                // rebuild the module INSIDE the original Annotated
+                // layers, or a wrapped module (e.g. the test
+                // assembler's @deferred_init) silently loses its
+                // annotations here and codegen auto-runs its init.
+                let new_stmt = rewrap_annotations(ss.node, Stmt.Module(mod_name, sub.out))
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {

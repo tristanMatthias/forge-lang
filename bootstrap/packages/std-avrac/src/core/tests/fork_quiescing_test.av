@@ -1,0 +1,62 @@
+// isolated_run forks the test process. Under the parallel runner the
+// process is MULTITHREADED at fork time (workers + ticker + sibling
+// spec threads), and a forked child inherits every mutex in its
+// fork-instant state — one held by a thread that doesn't exist in
+// the child stays locked forever. Before the runtime's fork
+// quiescing (pthread_atfork: prepare locks the singleton mutexes,
+// child releases them), the child's first rc allocation deadlocked
+// on rc_set_mutex and the parent hung reading the result pipe.
+//
+// This spec recreates the hazard deliberately: hammer rc_set_mutex
+// from sibling threads while fork+isolate runs in a loop. On
+// regression this HANGS (the stall detector names this unit) rather
+// than failing an assertion — a fork deadlock has no failure value
+// to observe. The WHY is this comment.
+
+use @std.process.{isolated_int}
+
+extern fn avra_sleep_ms(ms: int)
+
+mut fq_hammer_running: bool = true
+mut fq_hammer_allocs: int = 0
+
+fn fq_hammer() -> int {
+    mut n = 0
+    while fq_hammer_running {
+        // Each iteration churns rc allocations so the fork snapshot
+        // frequently lands inside an rc_set_mutex hold window.
+        let s = "alloc-${string(n)}"
+        n = n + s.length
+    }
+    fq_hammer_allocs = n
+    0
+}
+
+spec "fork quiescing: isolated_run survives sibling allocation pressure" {
+    given "two threads churning rc allocations" {
+        then "20 fork+isolate round-trips all complete with correct results" {
+            fq_hammer_running = true
+            let h1 = spawn { fq_hammer() }
+            let h2 = spawn { fq_hammer() }
+            mut ok = true
+            mut i = 0
+            while i < 20 {
+                let r = isolated_int(() -> {
+                    // Allocate in the CHILD — the exact path that
+                    // deadlocked pre-quiescing.
+                    let s = "child-${string(i)}"
+                    s.length + i
+                })
+                match r {
+                    .Ok(v) -> { if v != "child-${string(i)}".length + i { ok = false } }
+                    .Err(_) -> ok = false
+                }
+                i = i + 1
+            }
+            fq_hammer_running = false
+            h1.await
+            h2.await
+            ok
+        }
+    }
+}

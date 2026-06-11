@@ -30,7 +30,7 @@
 // Tracked under forge-crafting-intepreters-xtvc.
 
 use core.{
-    Stmt, SStmt, sstmt_dummy, stmt_unwrap,
+    Stmt, SStmt, sstmt_dummy, sstmt_at, stmt_unwrap,
     Expr, SExpr,
     Annotation, ParamEntry, ValueType, FieldEntry, Variant, TypeParamEntry,
     sexpr_dummy,
@@ -55,6 +55,52 @@ use parse.{parse_body_source}
 /// unit prefix). A consumer's `use @std.avrac.diagnostics.render.X`
 /// then resolves through the same `diagnostics → render → X` chain
 /// the source-parse path would produce, instead of a flat dump.
+/// Result of a span-stamping walk: the restamped stmts plus the next
+/// sequence number, threaded so recursion into Module bodies keeps
+/// one program-wide ordering.
+type StampOut = { out: List<SStmt>, next: int }
+
+/// Give every synthesized stmt a REAL span identity: file = the
+/// metadata slot it came from, line = its deterministic position in
+/// the synthesis walk. Stubs default to dummy spans, and the module
+/// dedup pass deliberately exempts dummy spans (a dummy is not an
+/// identity — distinct stmts share it). Two consumers reading the
+/// same metadata slot synthesize byte-identical walks, so stamped
+/// stubs dedup naturally when a multi-file test batch pulls one
+/// package through several members' use-chains. Diagnostics also
+/// improve: a stub frame now cites the metadata slot instead of "".
+export fn stamp_stub_spans(stmts: List<SStmt>, meta_path: string) -> List<SStmt> {
+    stamp_list(stmts, meta_path, 1).out
+}
+
+fn stamp_list(stmts: List<SStmt>, file: string, start: int) -> StampOut {
+    mut out: List<SStmt> = []
+    mut next = start
+    for ss in stmts {
+        let restamped_node = match ss.node {
+            .Module(name, body) -> {
+                let sub = stamp_list(body, file, next + 1)
+                next = sub.next - 1
+                Stmt.Module(name, sub.out)
+            }
+            .Annotated(annots, inner) -> {
+                match inner.node {
+                    .Module(name, body) -> {
+                        let sub = stamp_list(body, file, next + 1)
+                        next = sub.next - 1
+                        Stmt.Annotated(annots, inner with { node: Stmt.Module(name, sub.out) })
+                    }
+                    _ -> ss.node
+                }
+            }
+            _ -> ss.node
+        }
+        out.push(sstmt_at(restamped_node, next, 0, file))
+        next = next + 1
+    }
+    StampOut { out: out, next: next }
+}
+
 export fn synthesize_unit_body(m: UnitMetadata) -> List<SStmt> {
     let empty_d: List<SStmt> = []
     let empty = SubMod { name: "", direct: empty_d, children: [] }

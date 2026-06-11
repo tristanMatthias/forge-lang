@@ -208,6 +208,33 @@ LLVMValueRef avra_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeR
         abort();
     }
     char* sym = avra_mangle_symbol(name);
+    // Get-or-create. Raw LLVMAddFunction silently RENAMES on collision
+    // (`name.1`), so a forward declaration (extern fn) followed by the
+    // definition would split into two symbols — calls bind the empty
+    // declaration and the body lands in an orphan. That's a silent
+    // failure; the declare-then-define pattern (e.g. the test
+    // assembler's `extern fn __init_<mod>` + the module's emitted
+    // init) is legitimate and must converge on ONE function. A
+    // collision with a DIFFERENT type is a genuine bug — fail loudly
+    // instead of letting the rename hide it.
+    LLVMValueRef existing = LLVMGetNamedFunction(m, sym ? sym : name);
+    if (existing) {
+        LLVMTypeRef existing_ty = LLVMGlobalGetValueType(existing);
+        if (existing_ty != fn_type) {
+            char* have = LLVMPrintTypeToString(existing_ty);
+            char* want = LLVMPrintTypeToString(fn_type);
+            fprintf(stderr,
+                "[CRASH] avra_llvm_add_function: `%s` redeclared with a different type\n"
+                "        existing: %s\n"
+                "        new:      %s\n",
+                name, have ? have : "?", want ? want : "?");
+            LLVMDisposeMessage(have);
+            LLVMDisposeMessage(want);
+            abort();
+        }
+        free(sym);
+        return existing;
+    }
     LLVMValueRef fn = LLVMAddFunction(m, sym ? sym : name, fn_type);
     free(sym);
     return fn;
@@ -438,6 +465,20 @@ LLVMValueRef avra_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const char
         LLVMPositionBuilderAtEnd(entry_builder, entry);
     }
     LLVMValueRef alloca = LLVMBuildAlloca(entry_builder, ty, name);
+    // Zero-init every pointer-typed local at creation (zm77 + merge
+    // follow-up). The declaration-site store may sit in a loop or
+    // conditional block that never executes at runtime; any later read
+    // of the slot (scope-exit RC cleanup, a binding consumed on a path
+    // that skipped its init) would otherwise see stack garbage — which
+    // surfaced as phantom releases freeing live AST nodes and as
+    // garbage pointers stored into AST fields (layout-sensitive
+    // "unmatched tag" crashes). The store lands immediately after the
+    // alloca at the top of the entry block, provably before every
+    // value store on every path. Definite-initialization analysis
+    // (rcsf.5) is the long-term replacement for this blanket guard.
+    if (LLVMGetTypeKind(ty) == LLVMPointerTypeKind) {
+        LLVMBuildStore(entry_builder, LLVMConstNull(ty), alloca);
+    }
     LLVMDisposeBuilder(entry_builder);
     return alloca;
 }
@@ -586,7 +627,7 @@ int avra_llvm_verify_module_print(LLVMModuleRef m) {
 
 // Verify a single function. Returns 0 if valid, 1 if invalid.
 // Prints the error to stderr with the function name for easy debugging.
-int avra_llvm_verify_function(LLVMValueRef fn_val) {
+int64_t avra_llvm_verify_function(LLVMValueRef fn_val) {
     int result = LLVMVerifyFunction(fn_val, LLVMPrintMessageAction);
     if (result) {
         const char* name = LLVMGetValueName(fn_val);
@@ -599,7 +640,7 @@ int avra_llvm_verify_function(LLVMValueRef fn_val) {
 
 // Returns 1 if the LLVM value's type is a pointer type, 0 otherwise.
 // Used by the codegen to avoid redundant ptrtoint/inttoptr casts.
-int avra_llvm_is_ptr_value(LLVMValueRef val) {
+int64_t avra_llvm_is_ptr_value(LLVMValueRef val) {
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMPointerTypeKind ? 1 : 0;
 }
 
@@ -609,7 +650,7 @@ LLVMTypeRef avra_llvm_typeof(LLVMValueRef val) {
 }
 
 // Returns 1 if the LLVM value has void type, 0 otherwise.
-int avra_llvm_is_void_value(LLVMValueRef val) {
+int64_t avra_llvm_is_void_value(LLVMValueRef val) {
     if (!val) return 1;
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMVoidTypeKind ? 1 : 0;
 }
@@ -933,35 +974,6 @@ LLVMValueRef avra_llvm_get_first_instruction(LLVMBasicBlockRef bb) {
 
 void avra_llvm_position_before(LLVMBuilderRef builder, LLVMValueRef instr) {
     LLVMPositionBuilderBefore(builder, instr);
-}
-
-// Zero-initialize a (entry-block-hoisted) alloca at function entry.
-// Required for every local registered for scope-exit RC cleanup: the
-// binding's initializing store sits at the declaration site, which may
-// be inside a loop or conditional block. If that block never executes,
-// the cleanup epilogue would load stack garbage and release it —
-// freeing whatever live allocation the garbage happens to point at
-// (zm77: a zero-trip arg loop's cleanup freed a live AST node). A null
-// store in the entry block makes the never-bound case release null,
-// which every release path treats as a no-op.
-//
-// Placement: immediately AFTER the alloca instruction (top of the
-// entry block). Anywhere later is wrong — when the binding itself is
-// emitted while the builder is still in the entry block, appending at
-// block end would put the null store AFTER the binding's value store
-// and clobber the local.
-void avra_llvm_zero_init_local(LLVMBuilderRef b, LLVMValueRef alloca_inst) {
-    (void)b;
-    LLVMBuilderRef eb = LLVMCreateBuilder();
-    LLVMValueRef next = LLVMGetNextInstruction(alloca_inst);
-    if (next) {
-        LLVMPositionBuilderBefore(eb, next);
-    } else {
-        LLVMPositionBuilderAtEnd(eb, LLVMGetInstructionParent(alloca_inst));
-    }
-    LLVMTypeRef ty = LLVMGetAllocatedType(alloca_inst);
-    LLVMBuildStore(eb, LLVMConstNull(ty), alloca_inst);
-    LLVMDisposeBuilder(eb);
 }
 
 void avra_llvm_build_call_void(LLVMBuilderRef builder, LLVMModuleRef mod, const char* fn_name, LLVMValueRef* args, int arg_count) {

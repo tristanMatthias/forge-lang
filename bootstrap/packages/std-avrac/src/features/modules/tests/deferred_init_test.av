@@ -1,0 +1,57 @@
+// @deferred_init on a module synthesizes __init_<name>
+// but skips the automatic top-level call — an explicit caller (via
+// `extern fn __init_<name>`) owns the invocation. This is the
+// mechanism the in-process test runner uses to dispatch test-file
+// units across worker threads instead of running them inline.
+//
+// The fixtures also pin the declare-then-define convergence: the
+// extern decl and the module's emitted init MUST land on one LLVM
+// symbol (avra_llvm_add_function is get-or-create; raw LLVM silently
+// renames on collision, splitting calls from the body).
+//
+// Module bodies live in sibling files (`mod name` is file-based —
+// there is no inline-body module surface syntax), so each scenario
+// writes its module file next to the main fixture in /tmp.
+
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
+
+spec "@deferred_init: module init does not auto-run" {
+    given "a deferred module and an explicit extern call" {
+        then "init output appears after main's first line, not before" {
+            write_fixture("/tmp/dfi_worker.av",
+                "println(\"worker-init-ran\")\n")
+            let out = write_fixture_and_run("/tmp/avra_deferred_init_explicit.av",
+                "@deferred_init\n" +
+                "mod dfi_worker\n" +
+                "extern fn __init_dfi_worker() -> int\n" +
+                "fn main() {\n" +
+                "    println(\"before\")\n" +
+                "    let _ = __init_dfi_worker()\n" +
+                "    println(\"after\")\n" +
+                "}\n")
+            out.index_of("before") < out.index_of("worker-init-ran")
+                && out.index_of("worker-init-ran") < out.index_of("after")
+        }
+        then "without the annotation the module init runs before main's body" {
+            write_fixture("/tmp/dfi_plain.av",
+                "println(\"plain-init-ran\")\n")
+            let out = write_fixture_and_run("/tmp/avra_deferred_init_control.av",
+                "mod dfi_plain\n" +
+                "fn main() {\n" +
+                "    println(\"main-body\")\n" +
+                "}\n")
+            out.index_of("plain-init-ran") < out.index_of("main-body")
+        }
+        then "a deferred module never invoked produces no output" {
+            write_fixture("/tmp/dfi_silent.av",
+                "println(\"must-not-print\")\n")
+            let out = write_fixture_and_run("/tmp/avra_deferred_init_uncalled.av",
+                "@deferred_init\n" +
+                "mod dfi_silent\n" +
+                "fn main() {\n" +
+                "    println(\"only-line\")\n" +
+                "}\n")
+            out.contains("only-line") && !out.contains("must-not-print")
+        }
+    }
+}

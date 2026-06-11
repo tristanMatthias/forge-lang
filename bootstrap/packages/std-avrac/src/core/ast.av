@@ -440,6 +440,11 @@ export enum ValueType {
     /// Task / future type from `spawn`: `result_ty` is what the task
     /// resolves to when awaited.
     Task(result_ty: ValueType),
+    /// Typed channel from `channel<T>(cap)`: `elem` is the element
+    /// type carried by send/recv (spec Axis 18). Runtime handle is a
+    /// ptr; send coerces `elem` into the slot, recv yields `elem?`
+    /// (null ⇔ closed and drained).
+    Channel(elem: ValueType),
     /// Optional / nullable type: `T?` ≡ `Option<inner>` (spec Axis 10).
     /// The absence literal `none` inhabits this; a present value is the
     /// wrapped `inner`. Represented permissively as the inner type with a
@@ -549,6 +554,10 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
                     ValueType.List(elem)
                 }
+                "Channel" -> {
+                    let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
+                    ValueType.Channel(elem)
+                }
                 "__tuple" -> ValueType.Tuple(tel_to_type_list(args))
                 _ -> ValueType.Enum(base, tel_to_type_list(args), 0)
             }
@@ -621,6 +630,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .NarrowedEnum(e1, v1, id1) -> match b { .NarrowedEnum(e2, v2, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { e1 == e2 }) && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
         .Task(ra) -> match b { .Task(rb) -> vtype_eq(ra, rb), _ -> false }
+        .Channel(ea) -> match b { .Channel(eb) -> vtype_eq(ea, eb), _ -> false }
         _ -> false
     }
 }
@@ -663,6 +673,7 @@ export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
             } else { t }
         }
         .List(elem) -> ValueType.List(stamp_ids_vtype(elem, reg))
+        .Channel(elem) -> ValueType.Channel(stamp_ids_vtype(elem, reg))
         .Task(r) -> ValueType.Task(stamp_ids_vtype(r, reg))
         .Tuple(types) -> ValueType.Tuple(stamp_ids_vtypes(types, reg))
         .Union(types) -> ValueType.Union(stamp_ids_vtypes(types, reg))
@@ -1195,6 +1206,7 @@ export fn vtype_display(t: ValueType) -> string {
         .NarrowedEnum(en, vn, _) -> "${en}.${vn}"
         .Unknown -> "<unknown>"
         .Task(r) -> "Task<${vtype_display(r)}>"
+        .Channel(elem) -> "Channel<${vtype_display(elem)}>"
         .Optional(inner) -> "${vtype_display(inner)}?"
     }
 }
@@ -1241,6 +1253,7 @@ export fn vtype_render_full(t: ValueType) -> string {
         .NarrowedEnum(en, vn, _) -> "${en}.${vn}"
         .Unknown -> ""
         .Task(r) -> "Task<${vtype_render_full(r)}>"
+        .Channel(elem) -> "Channel<${vtype_render_full(elem)}>"
         .Optional(inner) -> "${vtype_render_full(inner)}?"
     }
 }
@@ -1571,6 +1584,11 @@ export enum Expr {
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
     /// `spawn body` — start a green-thread Task running `body`.
     Spawn(body: Expr)
+    /// `channel<T>()` / `channel<T>(cap)` — construct a typed channel
+    /// (spec Axis 18). `capacity` is null for the unbounded form;
+    /// `channel<T>(0)` is a rendezvous channel (send blocks until a
+    /// receiver takes the value).
+    ChannelNew(elem: ValueType, capacity: Expr?)
     /// `isolated { body }` — run `body` in a forked subprocess; the
     /// child's bytes return value travels back through a pipe. Crash-
     /// safe sibling of `spawn { }`. Lowers to `avra_isolated_run` at
@@ -1695,7 +1713,7 @@ export type WhenArm = { cond: SExpr?, body: SExpr }
 ///
 /// `List<SelectArm>` replaces the retired `enum SelectArmList`.
 /// Used as `arms: List<SelectArm>` on Stmt.Select.
-export type SelectArm = { binding: string, channel: Expr, body: List<SStmt> }
+export type SelectArm = { binding: string, chan: Expr, body: List<SStmt> }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
 /// Args are stored as `List<SExpr>` for generality so any annotation
@@ -1806,6 +1824,20 @@ fn expr_is_panic_callee(callee: Expr) -> bool {
 /// returning the first occurrence. Returns the raw Annotation —
 /// the caller decides what shape it expects (single string for
 /// @doc, no args for @export, etc.).
+/// Inverse of `stmt_unwrap` for walkers that match on the unwrapped
+/// node but emit a REBUILT stmt: reconstruct `new_inner` inside every
+/// `Annotated` layer of `orig`, preserving annotation payloads. A
+/// walker that pushes a bare rebuilt node instead silently strips
+/// the stmt's annotations (the @deferred_init-eating bug class fixed
+/// — expand_stmt_list and derive_marshal both did this before
+/// this helper existed).
+export fn rewrap_annotations(orig: Stmt, new_inner: Stmt) -> Stmt {
+    match orig {
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, inner with { node: rewrap_annotations(inner.node, new_inner) })
+        _ -> new_inner
+    }
+}
+
 export fn find_annotation(s: Stmt, name: string) -> Annotation? {
     match s {
         .Annotated(annots, inner) -> {
@@ -2072,6 +2104,13 @@ export fn render_expr(expr: Expr) -> string {
         }
         .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
         .Spawn(body) -> "(spawn ${render_expr(body)})"
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null {
+                "(channel<${vtype_render_full(elem)}>)"
+            } else {
+                "(channel<${vtype_render_full(elem)}> ${render_expr(capacity!)})"
+            }
+        }
         .Isolated(body) -> "(isolated ${render_expr(body)})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr(body)})"
         .Splice(target) -> "(splice ${render_expr(target)})"
@@ -2296,6 +2335,7 @@ export enum Tk {
     KwAnd
     KwBreak
     KwCatch
+    KwChannel
     KwConst
     KwContinue
     KwDefer
@@ -2359,6 +2399,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwAnd -> "kw_and"
         .KwBreak -> "kw_break"
         .KwCatch -> "kw_catch"
+        .KwChannel -> "kw_channel"
         .KwConst -> "kw_const"
         .KwContinue -> "kw_continue"
         .KwDefer -> "kw_defer"

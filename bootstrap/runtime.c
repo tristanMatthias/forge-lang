@@ -34,6 +34,8 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <sys/wait.h>
+#include <sys/file.h>
+#include <fcntl.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -165,7 +167,24 @@ static int rc_set_contains(void* ptr) {
     return found;
 }
 
+// Thread-local net-allocation accounting for single-threaded leak
+// probes. The global live count is process-wide, so under the
+// parallel test runner a sibling unit's allocations between a
+// spec's before/after reads produce spurious deltas. A spec whose
+// body allocates and drops on ONE thread gets an exact, isolation-
+// proof reading from the local delta instead. Frees are counted on
+// the thread that performs them — cross-thread hand-offs (channel
+// sends) intentionally skew the local view, which is why tests
+// asserting transfer semantics keep using the global count.
+static _Thread_local int64_t t_rc_allocs = 0;
+static _Thread_local int64_t t_rc_frees = 0;
+
+int64_t avra_rc_live_delta_local(void) {
+    return t_rc_allocs - t_rc_frees;
+}
+
 static void rc_set_remove(void* ptr) {
+    t_rc_frees++;
     pthread_mutex_lock(&rc_set_mutex);
     if (!rc_set_buckets) {
         pthread_mutex_unlock(&rc_set_mutex);
@@ -211,6 +230,7 @@ void* avra_rc_alloc(int64_t payload_size) {
     atomic_store(&hdr->refcount, 1);
     hdr->type_tag = RC_MAGIC;
     void* user_ptr = (char*)raw + RC_HEADER_SIZE;
+    t_rc_allocs++;
     rc_set_add(user_ptr);
     if (rc_trace) {
         fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1)\n", user_ptr, (long long)payload_size);
@@ -915,13 +935,38 @@ const char* avra_selfhost_read_file(const char* path) {
     return buf;
 }
 
-int64_t avra_selfhost_write_file(const char* path, const char* content) {
-    FILE* f = fopen(path, "wb");
+// Whole-file writes land via a same-directory temp file + rename(2),
+// so concurrent readers see the complete old content or the complete
+// new content — never a truncated/interleaved hybrid. The test
+// runner's parallel units share content-keyed cache files (fixture
+// stdout, fp sidecars, results sidecars); before this, a reader
+// overlapping a writer's fopen("wb") truncation window got a short
+// read and failed flakily. rename within one directory is atomic on
+// every platform we target.
+static int avra_write_file_atomic(const char* path, const char* data, size_t len) {
+    static _Atomic int64_t seq = 0;
+    char tmp[4096];
+    int64_t n = atomic_fetch_add(&seq, 1);
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp.%d.%lld", path, (int)getpid(), (long long)n)
+            >= (int)sizeof(tmp)) {
+        return 0;
+    }
+    FILE* f = fopen(tmp, "wb");
     if (!f) return 0;
-    size_t len = strlen(content);
-    fwrite(content, 1, len, f);
-    fclose(f);
+    size_t wrote = fwrite(data, 1, len, f);
+    if (fclose(f) != 0 || wrote != len) {
+        remove(tmp);
+        return 0;
+    }
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return 0;
+    }
     return 1;
+}
+
+int64_t avra_selfhost_write_file(const char* path, const char* content) {
+    return avra_write_file_atomic(path, content, strlen(content));
 }
 
 // Append-mode write — text-only, no embedded NULs. Used by the
@@ -963,13 +1008,9 @@ const char* avra_selfhost_read_file_bytes(const char* path) {
 
 int64_t avra_selfhost_write_file_bytes(const char* path, const char* b) {
     if (!b) return 0;
-    FILE* f = fopen(path, "wb");
-    if (!f) return 0;
     int64_t len = *(int64_t*)b;
     if (len < 0) len = 0;
-    if (len > 0) fwrite(b + 8, 1, (size_t)len, f);
-    fclose(f);
-    return 1;
+    return avra_write_file_atomic(path, b + 8, (size_t)len);
 }
 
 // avra_selfhost_string_to_float is used by the bootstrap's float() builtin.
@@ -1153,13 +1194,118 @@ int64_t avra_is_dir(const char* path) {
     return S_ISDIR(st.st_mode) ? 1 : 0;
 }
 
+// ── Per-thread output sinks ─────────────────────────────────────
+// Every byte of program stdout flows through avra_puts (codegen
+// lowers `println` here) or avra_stdout_write. A thread with no
+// sink installed writes straight to stdout — the only added cost
+// is one thread-local load.
+//
+// Sinks form a per-thread STACK so output-capture windows nest:
+// the spec runner pushes a frame around each test unit (grouping
+// that unit's output for atomic printing), and the test capture
+// API pushes a nested frame inside a spec. Capture isolation is
+// per-thread by construction — no dup2, no process-wide fd swaps,
+// no serializing mutex. The dup2-based predecessor redirected the
+// process-wide STDOUT_FILENO, so any concurrently-running thread's
+// output landed inside whichever capture window happened to be
+// open. Per-thread sinks make that impossible by construction.
+//
+// Deliberate semantics, pinned by spec tests:
+//   - Only the CURRENT thread's writes enter its sink. A thread
+//     spawned inside a capture window writes to the real stdout
+//     (fresh threads start sink-less), mirroring how subprocesses
+//     behave under popen-based avra_shell_exec.
+//   - stderr (avra_eprintln) is never sunk — diagnostics stay live.
+
+typedef struct AvraSinkFrame {
+    char* buf;
+    size_t len;
+    size_t cap;
+    struct AvraSinkFrame* prev;
+} AvraSinkFrame;
+
+static _Thread_local AvraSinkFrame* t_sink = NULL;
+
+static void sink_write(const char* s, size_t n) {
+    AvraSinkFrame* f = t_sink;
+    if (n == 0) return;
+    if (f->len + n + 1 > f->cap) {
+        size_t want = f->cap * 2;
+        while (want < f->len + n + 1) want *= 2;
+        f->buf = (char*)realloc(f->buf, want);
+        f->cap = want;
+    }
+    memcpy(f->buf + f->len, s, n);
+    f->len += n;
+    f->buf[f->len] = '\0';
+}
+
+// Install a fresh capture frame on the current thread.
+void avra_sink_push(void) {
+    AvraSinkFrame* f = (AvraSinkFrame*)malloc(sizeof(AvraSinkFrame));
+    f->cap = 4096;
+    f->len = 0;
+    f->buf = (char*)malloc(f->cap);
+    f->buf[0] = '\0';
+    f->prev = t_sink;
+    t_sink = f;
+}
+
+// Pop the current thread's top frame, returning everything written
+// while it was installed. Returns an rc string (same allocation
+// discipline as every other runtime-produced Avra string).
+const char* avra_sink_pop(void) {
+    AvraSinkFrame* f = t_sink;
+    if (!f) return "";
+    t_sink = f->prev;
+    char* out = (char*)avra_rc_alloc((int64_t)f->len + 1);
+    memcpy(out, f->buf, f->len + 1);
+    free(f->buf);
+    free(f);
+    return out;
+}
+
+// Discard frames until the stack matches `snapshot`. The crash
+// guard uses this so a spec that dies inside a capture window
+// doesn't leave orphan frames silently swallowing the next spec's
+// output (the longjmp skips the balancing pop).
+static void sink_unwind_to(AvraSinkFrame* snapshot) {
+    while (t_sink && t_sink != snapshot) {
+        AvraSinkFrame* f = t_sink;
+        t_sink = f->prev;
+        free(f->buf);
+        free(f);
+    }
+}
+
+// Shared writer: top sink frame when installed, else real stdout.
+// The unsinked path flushes so out-of-band writers (crash lines,
+// LSP framing) are never reordered behind stdio buffering.
+static void avra_output_write(const char* s) {
+    if (!s) return;
+    if (t_sink) { sink_write(s, strlen(s)); return; }
+    fputs(s, stdout);
+    fflush(stdout);
+}
+
+// `println` lowering target. Historically println compiled to libc
+// puts directly, which left the runtime no chokepoint over program
+// output — the reason stdout capture had to resort to fd games.
+// Same observable behavior as puts on the unsinked path.
+void avra_puts(const char* s) {
+    if (t_sink) {
+        if (s) sink_write(s, strlen(s));
+        sink_write("\n", 1);
+        return;
+    }
+    puts(s ? s : "");
+}
+
 // Write a string to stdout exactly as-is — no trailing newline,
 // no buffering tricks. Used by @std/lsp's JSON-RPC writer where the
 // framing protocol requires precise byte counts.
 void avra_stdout_write(const char* s) {
-    if (!s) return;
-    fputs(s, stdout);
-    fflush(stdout);
+    avra_output_write(s);
 }
 
 // Read up to `n` bytes from stdin, blocking until data arrives or
@@ -1256,6 +1402,64 @@ int64_t avra_mkdir_p(const char* path) {
 // to a tmp path under the cache dir, then rename into place so any
 // concurrent reader sees either the old or the new entry, never a
 // half-written one. Returns 1 on success, 0 on failure.
+// Advisory file lock for cross-thread AND cross-process critical
+// sections (flock is shared by both: threads contend via separate
+// fds, processes via the file). The fixture-stdout cache uses this
+// to serialize concurrent cold-misses on one fixture: bs2 emits the
+// fixture's .ll/.o at FIXED sibling paths, so two simultaneous
+// runs of the same fixture would race on those artifacts. Returns
+// the lock fd (>= 0) or -1 on failure; pass the fd to
+// avra_file_unlock to release. Locks are per-open-fd, so callers
+// must thread the handle rather than re-opening the path.
+// Held-lock bookkeeping mirrors the output-sink stack: a spec that
+// crashes between lock and unlock longjmps past the balancing
+// release, and a leaked flock would block every other unit touching
+// that fixture for the life of the process (the stall detector would
+// NAME the victims, but the suite still wedges). The crash guard
+// releases everything acquired inside the crashed spec via
+// avra_locks_unwind_to.
+#define AVRA_HELD_LOCKS_MAX 16
+static _Thread_local int64_t t_held_locks[AVRA_HELD_LOCKS_MAX];
+static _Thread_local int t_held_locks_n = 0;
+
+int64_t avra_file_lock_exclusive(const char* path) {
+    int fd = open(path, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) return -1;
+    if (flock(fd, LOCK_EX) != 0) {
+        close(fd);
+        return -1;
+    }
+    if (t_held_locks_n < AVRA_HELD_LOCKS_MAX) {
+        t_held_locks[t_held_locks_n++] = fd;
+    }
+    return fd;
+}
+
+void avra_file_unlock(int64_t fd) {
+    if (fd < 0) return;
+    for (int i = t_held_locks_n - 1; i >= 0; i--) {
+        if (t_held_locks[i] == fd) {
+            for (int j = i; j < t_held_locks_n - 1; j++) {
+                t_held_locks[j] = t_held_locks[j + 1];
+            }
+            t_held_locks_n--;
+            break;
+        }
+    }
+    flock((int)fd, LOCK_UN);
+    close((int)fd);
+}
+
+// Release every lock acquired above `depth` — the crash guard's
+// cleanup for specs that died inside a lock window.
+static void avra_locks_unwind_to(int depth) {
+    while (t_held_locks_n > depth) {
+        int64_t fd = t_held_locks[--t_held_locks_n];
+        flock((int)fd, LOCK_UN);
+        close((int)fd);
+    }
+}
+
 int64_t avra_rename(const char* src, const char* dst) {
     if (!src || !dst) return 0;
     return rename(src, dst) == 0 ? 1 : 0;
@@ -1489,16 +1693,25 @@ int64_t avra_lazy_comptime_has(const char* qn) {
 // every later call returns the cached string in nanoseconds.
 //
 // Single-key memo (the fp is global to the process) — no hashmap
-// needed. Set is one strdup; get is a pointer dereference.
+// needed. Write-once under a mutex: the fp is a pure function of
+// process-stable inputs, so the first writer wins and the pointer
+// is never freed after publish — concurrent getters (parallel test
+// units warming the fixture cache simultaneously) can safely hold
+// the returned pointer without copy or lock-on-read hazards.
 static char* g_test_toolchain_fp_memo = NULL;
+static pthread_mutex_t g_test_toolchain_fp_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void avra_test_toolchain_fp_set(const char* fp) {
-    if (g_test_toolchain_fp_memo) free(g_test_toolchain_fp_memo);
-    g_test_toolchain_fp_memo = strdup(fp);
+    pthread_mutex_lock(&g_test_toolchain_fp_mutex);
+    if (!g_test_toolchain_fp_memo) g_test_toolchain_fp_memo = strdup(fp);
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
 }
 
 const char* avra_test_toolchain_fp_get(void) {
-    return g_test_toolchain_fp_memo ? g_test_toolchain_fp_memo : "";
+    pthread_mutex_lock(&g_test_toolchain_fp_mutex);
+    const char* v = g_test_toolchain_fp_memo;
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
+    return v ? v : "";
 }
 
 // ─── Int-keyed Map ────────────────────────────────────────────────
@@ -1506,40 +1719,91 @@ const char* avra_test_toolchain_fp_get(void) {
 // dispatch where keys are small sequential integers (0-63).
 // Values are i64 (function pointers, struct pointers, etc.).
 
-#define AVRA_INTMAP_CAP 256
+// Growable open-addressing int→int map. The historic fixed 256-slot
+// table SILENTLY DROPPED the 257th insert (the probe loop exhausted
+// every slot and returned without storing) — the type registry's
+// id→name reverse map lost entries the moment a program registered
+// more than 256 types, surfacing as "unknown struct" codegen errors
+// for perfectly-registered types. Grows at 75% load; lookups stay
+// O(1) expected.
+
+#define AVRA_INTMAP_INITIAL_CAP 256
 
 typedef struct {
-    int64_t keys[AVRA_INTMAP_CAP];
-    int64_t values[AVRA_INTMAP_CAP];
-    int8_t  occupied[AVRA_INTMAP_CAP];
+    int64_t* keys;
+    int64_t* values;
+    int8_t*  occupied;
+    size_t   cap;
+    size_t   count;
 } AvraIntMap;
+
+static void intmap_alloc_slots(AvraIntMap* m, size_t cap) {
+    m->keys = (int64_t*)calloc(cap, sizeof(int64_t));
+    m->values = (int64_t*)calloc(cap, sizeof(int64_t));
+    m->occupied = (int8_t*)calloc(cap, sizeof(int8_t));
+    m->cap = cap;
+    m->count = 0;
+}
 
 void* avra_intmap_new(void) {
     AvraIntMap* m = (AvraIntMap*)calloc(1, sizeof(AvraIntMap));
+    intmap_alloc_slots(m, AVRA_INTMAP_INITIAL_CAP);
     return m;
+}
+
+static void intmap_insert_into(int64_t* keys, int64_t* values, int8_t* occupied,
+                               size_t cap, int64_t key, int64_t value) {
+    uint64_t slot = (uint64_t)key % cap;
+    while (occupied[slot] && keys[slot] != key) {
+        slot = (slot + 1) % cap;
+    }
+    if (!occupied[slot]) {
+        keys[slot] = key;
+        occupied[slot] = 1;
+    }
+    values[slot] = value;
+}
+
+static void intmap_grow(AvraIntMap* m) {
+    size_t new_cap = m->cap * 2;
+    int64_t* nk = (int64_t*)calloc(new_cap, sizeof(int64_t));
+    int64_t* nv = (int64_t*)calloc(new_cap, sizeof(int64_t));
+    int8_t* no = (int8_t*)calloc(new_cap, sizeof(int8_t));
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->occupied[i]) {
+            intmap_insert_into(nk, nv, no, new_cap, m->keys[i], m->values[i]);
+        }
+    }
+    free(m->keys);
+    free(m->values);
+    free(m->occupied);
+    m->keys = nk;
+    m->values = nv;
+    m->occupied = no;
+    m->cap = new_cap;
 }
 
 void avra_intmap_set(void* map, int64_t key, int64_t value) {
     AvraIntMap* m = (AvraIntMap*)map;
-    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
-    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
-        if (!m->occupied[slot] || m->keys[slot] == key) {
-            m->keys[slot] = key;
-            m->values[slot] = value;
-            m->occupied[slot] = 1;
-            return;
-        }
+    if ((m->count + 1) * 4 >= m->cap * 3) intmap_grow(m);
+    uint64_t slot = (uint64_t)key % m->cap;
+    while (m->occupied[slot] && m->keys[slot] != key) {
+        slot = (slot + 1) % m->cap;
     }
+    if (!m->occupied[slot]) {
+        m->keys[slot] = key;
+        m->occupied[slot] = 1;
+        m->count++;
+    }
+    m->values[slot] = value;
 }
 
 int64_t avra_intmap_get(void* map, int64_t key) {
     AvraIntMap* m = (AvraIntMap*)map;
-    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
-    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
-        if (!m->occupied[slot]) return 0;
+    uint64_t slot = (uint64_t)key % m->cap;
+    while (m->occupied[slot]) {
         if (m->keys[slot] == key) return m->values[slot];
+        slot = (slot + 1) % m->cap;
     }
     return 0;
 }
@@ -1558,11 +1822,10 @@ int64_t avra_intmap_inc(void* map, int64_t key) {
 
 int64_t avra_intmap_has(void* map, int64_t key) {
     AvraIntMap* m = (AvraIntMap*)map;
-    uint64_t idx = (uint64_t)key % AVRA_INTMAP_CAP;
-    for (int i = 0; i < AVRA_INTMAP_CAP; i++) {
-        uint64_t slot = (idx + i) % AVRA_INTMAP_CAP;
-        if (!m->occupied[slot]) return 0;
+    uint64_t slot = (uint64_t)key % m->cap;
+    while (m->occupied[slot]) {
         if (m->keys[slot] == key) return 1;
+        slot = (slot + 1) % m->cap;
     }
     return 0;
 }
@@ -2214,6 +2477,7 @@ void avra_dump_stmt_list(const char* label, int64_t list_ptr) {
     // Dump the stmt
     avra_dump_stmt("  stmt", fields[0]);
 }
+
 
 // ── eprintln: write string + newline to stderr ──
 void avra_eprintln(const char* s) {
@@ -2976,10 +3240,13 @@ const char* avra_sha256_file(const char* path) {
         fclose(sf);
     }
     const char* hex = avra_sha256_file_uncached(path);
-    FILE* wf = fopen(sidecar, "w");
-    if (wf) {
-        fprintf(wf, "%ld %ld\n%s\n", mtime, size, hex);
-        fclose(wf);
+    char rec[128];
+    int rl = snprintf(rec, sizeof(rec), "%ld %ld\n%s\n", mtime, size, hex);
+    if (rl > 0 && rl < (int)sizeof(rec)) {
+        // Atomic publish: a reader racing this write must validate
+        // against either the old record or the new one, never a torn
+        // hybrid that happens to scan as plausible.
+        avra_write_file_atomic(sidecar, rec, (size_t)rl);
     }
     return hex;
 }
@@ -3126,12 +3393,12 @@ int64_t avra_validate_range(int64_t value, int64_t min, int64_t max, const char*
     return value;
 }
 
-int64_t avra_validate_not_empty(const char* s, const char* name) {
+const char* avra_validate_not_empty(const char* s, const char* name) {
     if (!s || strlen(s) == 0) {
         avra_runtime_errorf("%s must not be empty", name);
         exit(1);
     }
-    return (int64_t)(uintptr_t)s;
+    return s;
 }
 
 int64_t avra_parse_int(const char* s) {
@@ -3166,58 +3433,17 @@ int64_t avra_shell_exec_status(const char* cmd) {
     return (int64_t)((status >> 8) & 0xff);
 }
 
-// Forward declared so avra_capture_stdout (above) and the test
-// capture API (below) share the same recursive mutex. Body lives in
-// the spec-test section below.
-extern pthread_mutex_t _capture_mutex;
-
 // vez6.4szi: in-process stdout capture. Replaces fixture tests that
-// fork bs2 to grep stdout. Redirects stdout to a tmpfile across the
-// closure invocation, then reads the file back as a string. tmpfile
-// chosen over pipe to avoid the 64KB buffer-fill deadlock when the
-// closure produces more output than a pipe can hold without a reader.
-//
-// Thread safety: serialized via the recursive _capture_mutex so two
-// spawned threads can't race on dup2(STDOUT_FILENO). Nested same-
-// thread captures still work (recursive). Closure panics leak the
-// redirect AND the mutex; production code shouldn't capture stdout
-// this way.
+// fork bs2 to grep stdout. Built on the per-thread sink stack: the
+// closure's println traffic lands in a fresh frame, popped verbatim.
+// Nesting works because frames stack; concurrent captures on other
+// threads are isolated by construction (each thread has its own
+// stack). If the closure crashes under a spec guard, the guard's
+// sink_unwind_to reclaims the unbalanced frame.
 const char* avra_capture_stdout(int64_t closure) {
-    pthread_mutex_lock(&_capture_mutex);
-    fflush(stdout);
-    int saved = dup(STDOUT_FILENO);
-    if (saved < 0) { pthread_mutex_unlock(&_capture_mutex); return ""; }
-    FILE* tmp = tmpfile();
-    if (!tmp) {
-        close(saved);
-        pthread_mutex_unlock(&_capture_mutex);
-        return "";
-    }
-    if (dup2(fileno(tmp), STDOUT_FILENO) < 0) {
-        fclose(tmp);
-        close(saved);
-        pthread_mutex_unlock(&_capture_mutex);
-        return "";
-    }
-
+    avra_sink_push();
     avra_closure_call_0(closure);
-
-    fflush(stdout);
-    dup2(saved, STDOUT_FILENO);
-    close(saved);
-
-    if (fseek(tmp, 0, SEEK_END) != 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-    long len = ftell(tmp);
-    if (len < 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-    if (fseek(tmp, 0, SEEK_SET) != 0) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-
-    char* buf = (char*)malloc((size_t)len + 1);
-    if (!buf) { fclose(tmp); pthread_mutex_unlock(&_capture_mutex); return ""; }
-    size_t n = fread(buf, 1, (size_t)len, tmp);
-    buf[n] = '\0';
-    fclose(tmp);
-    pthread_mutex_unlock(&_capture_mutex);
-    return buf;
+    return avra_sink_pop();
 }
 
 // Stdout TTY check — gates the build progress bar so CI logs (which
@@ -3225,6 +3451,13 @@ const char* avra_capture_stdout(int64_t closure) {
 // 1 if interactive, 0 if pipe/file. Mirrors POSIX isatty(STDOUT_FILENO).
 int64_t avra_isatty_stdout(void) {
     return isatty(STDOUT_FILENO) ? 1 : 0;
+}
+
+// Online core count — sizes the in-process test runner's default
+// worker pool. 0 on failure (callers fall back to a fixed default).
+int64_t avra_cpu_count(void) {
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return (n > 0) ? (int64_t)n : 0;
 }
 
 // Coarse-grained sleep, used by the progress-bar poll loop to render
@@ -3883,26 +4116,6 @@ const char* avra_format_location(const char* file, int64_t line) {
     return result;
 }
 
-// Forward declare capture state (used by test flush + capture).
-// Recursive so a thread can do nested avra_capture_stdout(closure)
-// calls (the spec/given/then capture_stdout_test exercises this).
-// Across threads it serializes — only one capture window at a time;
-// other threads block at the lock boundary rather than leaking their
-// stdout into the capturing thread's tmpfile.
-// Defined non-static so avra_capture_stdout (forward-declared above)
-// shares the same mutex.
-pthread_mutex_t _capture_mutex;
-static int _capture_fd_backup = -1;
-
-__attribute__((constructor))
-static void _capture_mutex_init(void) {
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&_capture_mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
-}
-
 // ── Spec test runtime: state primitives ──
 // Rendering moved to Avra (features/spec_test/reporter.av) — this
 // file only owns thread-safe counters + a failure-record linked list
@@ -4076,8 +4289,12 @@ int64_t     avra_test_failure_line (int64_t idx) { AVRA_RECORD_FIELD(AvraTestFai
 // to without threading state through every assertion. Single-
 // threaded test execution today; if parallel test runners land
 // these become per-thread or per-context refs.
-static const char* _current_spec = "";
-static const char* _current_given = "";
+// Thread-local: under the in-process parallel runner each worker
+// thread runs its own spec at any moment; failure records must
+// attribute to the spec running on the RECORDING thread, not to
+// whichever spec another worker started last.
+static _Thread_local const char* _current_spec = "";
+static _Thread_local const char* _current_given = "";
 
 void avra_test_set_current_spec(const char* name) {
     _current_spec = test_str_dup(name);
@@ -4212,21 +4429,44 @@ const char* avra_test_summary_to_bytes(int64_t pass, int64_t fail,
 // combined stdio is captured by the orchestrator.
 int64_t avra_test_run_spec_guarded(const char* name, const char* file,
                                    int64_t line, int64_t closure) {
+    // Nest-safe: save the enclosing guard's checkpoint. The in-process
+    // test runner wraps each whole test unit in this same guard, with
+    // per-spec guards nesting inside — a single TLS jmp_buf slot would
+    // leave the outer guard pointing at a dead stack frame once an
+    // inner spec returned.
+    sigjmp_buf saved_jmp;
+    memcpy(&saved_jmp, &_spec_guard_jmp, sizeof(sigjmp_buf));
+    sig_atomic_t saved_active = _spec_guard_active;
+    AvraSinkFrame* sink_snapshot = t_sink;
+
+    int lock_snapshot = t_held_locks_n;
     int sig = sigsetjmp(_spec_guard_jmp, 1);
     if (sig == 0) {
         _spec_guard_active = 1;
         avra_closure_call_0(closure);
-        _spec_guard_active = 0;
-        return 0;
+    } else {
+        // The longjmp may have skipped balancing sink pops (spec died
+        // inside a capture window) — reclaim orphan frames so the next
+        // spec's output isn't silently swallowed. Same for advisory
+        // file locks: a leaked flock would wedge every other unit
+        // waiting on that fixture.
+        sink_unwind_to(sink_snapshot);
+        avra_locks_unwind_to(lock_snapshot);
+        avra_test_record_crash(name, file, line, sig);
+        char crash_line[512];
+        snprintf(crash_line, sizeof(crash_line),
+                 "    \x1b[31m✗ SPEC CRASHED\x1b[0m %s \x1b[2m(at %s:%lld — %s)\x1b[0m\n",
+                 name ? name : "<unknown>",
+                 file ? file : "<unknown>",
+                 (long long)line,
+                 avra_signal_label(sig));
+        // Through the sink router so the line lands inside the unit's
+        // buffered output (correctly attributed under concurrency)
+        // instead of interleaving on the shared terminal.
+        avra_output_write(crash_line);
     }
-    _spec_guard_active = 0;
-    avra_test_record_crash(name, file, line, sig);
-    printf("    \x1b[31m✗ SPEC CRASHED\x1b[0m %s \x1b[2m(at %s:%lld — %s)\x1b[0m\n",
-           name ? name : "<unknown>",
-           file ? file : "<unknown>",
-           (long long)line,
-           avra_signal_label(sig));
-    fflush(stdout);
+    _spec_guard_active = saved_active;
+    memcpy(&_spec_guard_jmp, &saved_jmp, sizeof(sigjmp_buf));
     return sig;
 }
 
@@ -4259,62 +4499,32 @@ int64_t avra_test_summary(void) {
     int64_t fail = atomic_load(&avra_test_fail_count);
     int64_t total = pass + fail;
     if (total == 0) return 0;
-    printf("\n%lld/%lld tests passed", pass, total);
-    if (fail > 0) printf(" (%lld failed)", fail);
+    printf("\n%lld/%lld tests passed", (long long)pass, (long long)total);
+    if (fail > 0) printf(" (%lld failed)", (long long)fail);
     printf("\n");
     return fail > 0 ? 1 : 0;
 }
 
 // ── Stdout capture (for testing output-producing code) ──
-// Thread-safe: uses a mutex so only one thread can capture at a time.
-// This is inherently serial (dup2 is process-wide) but prevents corruption.
-
-static char* _capture_buf = NULL;
-static size_t _capture_len = 0;
-static size_t _capture_cap = 0;
-// _capture_fd_backup declared earlier (forward declaration)
-static int _capture_pipe[2] = {-1, -1};
+// Thin wrappers over the per-thread sink stack. Concurrent captures
+// on different threads are independent windows; nesting on one
+// thread stacks. See the sink section for the full semantics.
 
 void avra_test_capture_start(void) {
-    // Flush our own output buffer before capturing
-    avra_test_flush();
-    pthread_mutex_lock(&_capture_mutex);
-    fflush(stdout);
-    _capture_fd_backup = dup(STDOUT_FILENO);
-    pipe(_capture_pipe);
-    dup2(_capture_pipe[1], STDOUT_FILENO);
-    close(_capture_pipe[1]);
-    _capture_cap = 4096;
-    _capture_buf = (char*)malloc(_capture_cap);
-    _capture_len = 0;
+    avra_sink_push();
 }
 
 const char* avra_test_capture_stop(void) {
-    fflush(stdout);
-    dup2(_capture_fd_backup, STDOUT_FILENO);
-    close(_capture_fd_backup);
-    _capture_fd_backup = -1;
-
-    // Read everything from the pipe
-    while (1) {
-        if (_capture_len >= _capture_cap - 1) {
-            _capture_cap *= 2;
-            _capture_buf = (char*)realloc(_capture_buf, _capture_cap);
-        }
-        struct pollfd pfd = {_capture_pipe[0], POLLIN, 0};
-        if (poll(&pfd, 1, 0) <= 0) break;
-        ssize_t n = read(_capture_pipe[0], _capture_buf + _capture_len, _capture_cap - _capture_len - 1);
-        if (n <= 0) break;
-        _capture_len += n;
+    AvraSinkFrame* f = t_sink;
+    if (!f) return "";
+    // Historical contract: strip ONE trailing newline (println adds
+    // one per line; tests assert `out == "value"` for single-line
+    // captures).
+    if (f->len > 0 && f->buf[f->len - 1] == '\n') {
+        f->len--;
+        f->buf[f->len] = '\0';
     }
-    close(_capture_pipe[0]);
-    _capture_buf[_capture_len] = '\0';
-    // Strip trailing newline (puts adds one)
-    if (_capture_len > 0 && _capture_buf[_capture_len - 1] == '\n') {
-        _capture_buf[_capture_len - 1] = '\0';
-    }
-    pthread_mutex_unlock(&_capture_mutex);
-    return _capture_buf;
+    return avra_sink_pop();
 }
 
 // ── Concurrency ──
@@ -4595,61 +4805,235 @@ void avra_scheduler_run(void) {
     // v1.0: no-op — pthreads run independently
 }
 
-// ── Channels ──
-// Unbuffered channel: send blocks until recv, recv blocks until send.
+// ── Typed channels (spec Axis 18) ──
+// One channel implementation, three capacity semantics chosen at
+// construction:
+//   cap > 0   bounded — send blocks while the ring is full
+//   cap = 0   rendezvous — send blocks until a receiver has TAKEN
+//             the value (synchronous handoff)
+//   cap < 0   unbounded — send never blocks; the ring grows
+//
+// close() sets a flag and wakes every waiter — it NEVER frees (the
+// historic close-frees design made any post-close send/recv a
+// use-after-free). The handle is rc_alloc'd; codegen routes Channel
+// releases through avra_channel_release, which frees the ring when
+// the last reference drops. POSIX mutex/cond on our targets hold no
+// kernel resources, so skipping destroy on free is sound.
+//
+// Payload slots are i64 words. Element-type coercion (Bool zext,
+// Float bitcast, ptr identity) and RC retain/release discipline for
+// ptr-backed elements live in codegen — the runtime moves words.
 
 typedef struct {
-    int64_t value;
-    int has_value;
-    pthread_mutex_t mutex;
-    pthread_cond_t send_cond;
-    pthread_cond_t recv_cond;
+    int64_t* buf;
+    int64_t cap;        // <0 unbounded, 0 rendezvous, >0 bounded
+    int64_t alloc;      // allocated ring slots (max(cap,1) initially)
+    int64_t head;       // index of oldest element
+    int64_t count;      // live elements
+    int closed;
+    pthread_mutex_t mu;
+    pthread_cond_t can_send;
+    pthread_cond_t can_recv;
 } AvraChannel;
 
-void* avra_channel_new(void) {
-    AvraChannel* ch = (AvraChannel*)calloc(1, sizeof(AvraChannel));
-    pthread_mutex_init(&ch->mutex, NULL);
-    pthread_cond_init(&ch->send_cond, NULL);
-    pthread_cond_init(&ch->recv_cond, NULL);
+// Process-wide channel-activity condvar backing `select`. A selector
+// scans its channels under this mutex, then waits here; every send
+// and close signals it AFTER releasing the channel's own mutex, so
+// the lock order is strictly selector: activity → channel, sender:
+// channel, then activity — no cycle, and a send that lands between
+// a selector's scan and its wait cannot be missed (the signal needs
+// the activity mutex the selector still holds).
+static pthread_mutex_t g_chan_activity_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_chan_activity_cv = PTHREAD_COND_INITIALIZER;
+
+static void chan_activity_broadcast(void) {
+    pthread_mutex_lock(&g_chan_activity_mu);
+    pthread_cond_broadcast(&g_chan_activity_cv);
+    pthread_mutex_unlock(&g_chan_activity_mu);
+}
+
+void* avra_channel_new_cap(int64_t cap) {
+    AvraChannel* ch = (AvraChannel*)avra_rc_alloc(sizeof(AvraChannel));
+    memset(ch, 0, sizeof(AvraChannel));
+    ch->cap = cap;
+    ch->alloc = (cap > 0) ? cap : 1;
+    ch->buf = (int64_t*)malloc((size_t)ch->alloc * sizeof(int64_t));
+    pthread_mutex_init(&ch->mu, NULL);
+    pthread_cond_init(&ch->can_send, NULL);
+    pthread_cond_init(&ch->can_recv, NULL);
     return ch;
+}
+
+// Legacy constructor — 1-slot bounded, the semantics every pre-typed
+// caller (raw-extern tests) was written against.
+void* avra_channel_new(void) {
+    return avra_channel_new_cap(1);
+}
+
+// Free the ring when the LAST reference is being released. Safe
+// without the channel lock: refcount 1 means this thread is the only
+// owner left, so no concurrent send/recv can hold the mutex.
+void avra_channel_release(void* channel) {
+    if (!channel) return;
+    AvraChannel* ch = (AvraChannel*)channel;
+    RcHeader* hdr = rc_header(channel);
+    if (hdr->type_tag == RC_MAGIC && atomic_load(&hdr->refcount) == 1) {
+        free(ch->buf);
+        ch->buf = NULL;
+    }
+    avra_rc_release(channel);
+}
+
+static void chan_grow_locked(AvraChannel* ch) {
+    int64_t new_alloc = ch->alloc * 2;
+    int64_t* nb = (int64_t*)malloc((size_t)new_alloc * sizeof(int64_t));
+    for (int64_t i = 0; i < ch->count; i++) {
+        nb[i] = ch->buf[(ch->head + i) % ch->alloc];
+    }
+    free(ch->buf);
+    ch->buf = nb;
+    ch->alloc = new_alloc;
+    ch->head = 0;
 }
 
 void avra_channel_send(void* channel, int64_t value) {
     AvraChannel* ch = (AvraChannel*)channel;
-    pthread_mutex_lock(&ch->mutex);
-    while (ch->has_value) {
-        pthread_cond_wait(&ch->send_cond, &ch->mutex);
+    pthread_mutex_lock(&ch->mu);
+    if (ch->cap >= 0) {
+        // Bounded (rendezvous holds one in-flight slot): wait for room.
+        int64_t room = (ch->cap == 0) ? 1 : ch->cap;
+        while (!ch->closed && ch->count >= room) {
+            pthread_cond_wait(&ch->can_send, &ch->mu);
+        }
     }
-    ch->value = value;
-    ch->has_value = 1;
-    pthread_cond_signal(&ch->recv_cond);
-    pthread_mutex_unlock(&ch->mutex);
+    if (ch->closed) {
+        pthread_mutex_unlock(&ch->mu);
+        avra_runtime_errorf("send on closed channel");
+        exit(1);
+    }
+    // Only the unbounded form can be at capacity here (bounded waited
+    // for room above, and its alloc == cap).
+    if (ch->count >= ch->alloc) chan_grow_locked(ch);
+    ch->buf[(ch->head + ch->count) % ch->alloc] = value;
+    ch->count++;
+    pthread_cond_signal(&ch->can_recv);
+    if (ch->cap == 0) {
+        // Rendezvous: the hand-off completes when a receiver TAKES the
+        // value. If the channel closes while we wait, the value is
+        // already queued — a post-close drain can still receive it, so
+        // returning (rather than trapping) loses nothing.
+        while (!ch->closed && ch->count > 0) {
+            pthread_cond_wait(&ch->can_send, &ch->mu);
+        }
+    }
+    pthread_mutex_unlock(&ch->mu);
+    chan_activity_broadcast();
 }
 
-int64_t avra_channel_recv(void* channel) {
-    AvraChannel* ch = (AvraChannel*)channel;
-    pthread_mutex_lock(&ch->mutex);
-    while (!ch->has_value) {
-        pthread_cond_wait(&ch->recv_cond, &ch->mutex);
-    }
-    int64_t value = ch->value;
-    ch->has_value = 0;
-    pthread_cond_signal(&ch->send_cond);
-    pthread_mutex_unlock(&ch->mutex);
+// Pop the head value. Caller holds ch->mu and has verified
+// count > 0; signaling can_send here keeps every pop path waking
+// blocked senders identically (recv, try_recv, and select all
+// drain through this one definition).
+static int64_t chan_pop_locked(AvraChannel* ch) {
+    int64_t value = ch->buf[ch->head];
+    ch->head = (ch->head + 1) % ch->alloc;
+    ch->count--;
+    pthread_cond_signal(&ch->can_send);
     return value;
 }
 
-// Select: poll multiple channels, block until one has data.
-// channels is a AvraArray of channel pointers.
-// Returns: (index << 32) | (value & 0xFFFFFFFF) packed into i64.
-// Better approach: write index + value to out params.
+// Pop one value. `ok_out` receives 1 on success, 0 when the channel
+// is closed AND drained (the typed `recv() -> T?` null case).
+int64_t avra_channel_recv_opt(void* channel, int64_t* ok_out) {
+    AvraChannel* ch = (AvraChannel*)channel;
+    pthread_mutex_lock(&ch->mu);
+    while (ch->count == 0 && !ch->closed) {
+        pthread_cond_wait(&ch->can_recv, &ch->mu);
+    }
+    if (ch->count == 0) {
+        // closed and drained
+        pthread_mutex_unlock(&ch->mu);
+        if (ok_out) *ok_out = 0;
+        return 0;
+    }
+    int64_t value = chan_pop_locked(ch);
+    pthread_mutex_unlock(&ch->mu);
+    if (ok_out) *ok_out = 1;
+    return value;
+}
+
+// Non-blocking pop. `ok_out` gets 1 with a value when one is
+// available NOW; 0 otherwise — whether the channel is merely empty
+// or closed (callers that need to distinguish use blocking recv,
+// whose null is unambiguous). Powers polling shapes like the test
+// runner's ticker shutdown check, where blocking would defeat the
+// point.
+int64_t avra_channel_try_recv_opt(void* channel, int64_t* ok_out) {
+    AvraChannel* ch = (AvraChannel*)channel;
+    pthread_mutex_lock(&ch->mu);
+    if (ch->count == 0) {
+        pthread_mutex_unlock(&ch->mu);
+        if (ok_out) *ok_out = 0;
+        return 0;
+    }
+    int64_t value = chan_pop_locked(ch);
+    pthread_mutex_unlock(&ch->mu);
+    if (ok_out) *ok_out = 1;
+    return value;
+}
+
+// Legacy blocking recv. Receiving from a closed-and-drained channel
+// is a hard error here (the pre-close-semantics API has no way to
+// express "no more values"); typed `recv()` returns null instead.
+int64_t avra_channel_recv(void* channel) {
+    int64_t ok = 0;
+    int64_t v = avra_channel_recv_opt(channel, &ok);
+    if (!ok) {
+        avra_runtime_errorf("recv on closed channel (use typed recv() -> T? to observe close)");
+        exit(1);
+    }
+    return v;
+}
+
+// Mark closed and wake everyone: blocked receivers drain then see
+// null; blocked senders trap (send on closed channel). Idempotent.
+void avra_channel_close(void* channel) {
+    AvraChannel* ch = (AvraChannel*)channel;
+    pthread_mutex_lock(&ch->mu);
+    ch->closed = 1;
+    pthread_cond_broadcast(&ch->can_recv);
+    pthread_cond_broadcast(&ch->can_send);
+    pthread_mutex_unlock(&ch->mu);
+    chan_activity_broadcast();
+}
+
+// ── select ──
+
 typedef struct {
     int64_t index;  // which channel fired
     int64_t value;  // the received value
 } AvraSelectResult;
 
-// Polls channels in round-robin until one has data.
-// Returns pointer to heap-allocated AvraSelectResult.
+// Try to pop from one channel without blocking. Returns 1 on value,
+// 0 when empty. `*closed_out` set when the channel is closed+drained.
+static int chan_try_take(AvraChannel* ch, int64_t* val_out, int* closed_out) {
+    pthread_mutex_lock(&ch->mu);
+    if (ch->count > 0) {
+        *val_out = chan_pop_locked(ch);
+        pthread_mutex_unlock(&ch->mu);
+        return 1;
+    }
+    if (ch->closed) *closed_out = 1;
+    pthread_mutex_unlock(&ch->mu);
+    return 0;
+}
+
+// Block until one of `count` channels has a value; pop and return
+// (index, value). Wait is condvar-based (no polling): the scan runs
+// under the activity mutex, so a send signaling after an empty scan
+// blocks until the selector reaches cond_wait — wakeups can't be
+// lost. When EVERY channel is closed and drained no value can ever
+// arrive; trap rather than block forever.
 void* avra_select(void* channel_array, int64_t count) {
     AvraSelectResult* result = (AvraSelectResult*)malloc(sizeof(AvraSelectResult));
     AvraArray* arr = (AvraArray*)(uintptr_t)channel_array;
@@ -4658,27 +5042,30 @@ void* avra_select(void* channel_array, int64_t count) {
         result->value = 0;
         return result;
     }
-    // Spin-poll with backoff until one channel has data.
-    // This is simple but correct. A production implementation
-    // would use condition variables or epoll.
+    pthread_mutex_lock(&g_chan_activity_mu);
     while (1) {
-        for (int64_t i = 0; i < arr->len && i < count; i++) {
+        int64_t n = (arr->len < count) ? arr->len : count;
+        int closed_drained = 0;
+        for (int64_t i = 0; i < n; i++) {
             AvraChannel* ch = (AvraChannel*)(uintptr_t)arr->data[i];
             if (!ch) continue;
-            pthread_mutex_lock(&ch->mutex);
-            if (ch->has_value) {
-                int64_t val = ch->value;
-                ch->has_value = 0;
-                pthread_cond_signal(&ch->send_cond);
-                pthread_mutex_unlock(&ch->mutex);
+            int closed = 0;
+            int64_t val = 0;
+            if (chan_try_take(ch, &val, &closed)) {
+                pthread_mutex_unlock(&g_chan_activity_mu);
                 result->index = i;
                 result->value = val;
                 return result;
             }
-            pthread_mutex_unlock(&ch->mutex);
+            if (closed) closed_drained++;
         }
-        // Brief sleep to avoid busy-waiting
-        usleep(100);  // 100 microseconds
+        if (closed_drained == n) {
+            pthread_mutex_unlock(&g_chan_activity_mu);
+            free(result);
+            avra_runtime_errorf("select: all channels closed and drained");
+            exit(1);
+        }
+        pthread_cond_wait(&g_chan_activity_cv, &g_chan_activity_mu);
     }
 }
 
@@ -4710,14 +5097,6 @@ void avra_parallel_run(void* closure_array) {
     }
     free(threads);
     free(args);
-}
-
-void avra_channel_close(void* channel) {
-    AvraChannel* ch = (AvraChannel*)channel;
-    pthread_mutex_destroy(&ch->mutex);
-    pthread_cond_destroy(&ch->send_cond);
-    pthread_cond_destroy(&ch->recv_cond);
-    free(ch);
 }
 
 // ── Debug: enum tag validation ──
@@ -5170,3 +5549,64 @@ const char* avra_rd_type_field_type(int64_t type_id, int64_t idx) {
     return avra_rd_field_type_canonicals[avra_rd_type_field_starts[type_id] + idx];
 }
 
+
+// ─── Fork quiescing (multithreaded fork safety) ─────────────────
+//
+// `isolated_run` forks while the parallel test runner's worker and
+// ticker threads are live. A child forked from a multithreaded
+// process inherits every mutex IN ITS STATE AT THE FORK INSTANT —
+// one held by a sibling thread (which does not exist in the child)
+// stays locked forever. The first avra_rc_alloc in the child's
+// closure then deadlocks on rc_set_mutex (observed: child wedged in
+// rc_set_add, parent wedged reading the result pipe — the whole
+// batch hangs until the stall detector names it).
+//
+// The POSIX-correct pattern: prepare() locks every runtime
+// singleton mutex in a fixed order — which ALSO guarantees the
+// structures they guard are not mid-mutation in the fork's memory
+// snapshot (an rc_set mid-grow would be torn in the child) —
+// parent() unlocks them, and child() unlocks them (the forking
+// thread owns them in the child) and re-arms the channel condvar
+// (its waiters do not exist in the child).
+//
+// Boundary, stated honestly: PER-CHANNEL mutexes are dynamic and
+// cannot be enumerated here. An isolated closure that touches a
+// channel concurrently used by parent threads keeps the classic
+// fork+threads hazard. The universal allocation path — what every
+// closure hits — is what this covers. glibc quiesces malloc's own
+// locks with its internal atfork handlers.
+
+static void avra_fork_prepare(void) {
+    pthread_mutex_lock(&rc_set_mutex);
+    pthread_mutex_lock(&suspect_mutex);
+    pthread_mutex_lock(&g_test_toolchain_fp_mutex);
+    pthread_mutex_lock(&_failures.mutex);
+    pthread_mutex_lock(&_crashes.mutex);
+    pthread_mutex_lock(&g_chan_activity_mu);
+}
+
+static void avra_fork_parent(void) {
+    pthread_mutex_unlock(&g_chan_activity_mu);
+    pthread_mutex_unlock(&_crashes.mutex);
+    pthread_mutex_unlock(&_failures.mutex);
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
+    pthread_mutex_unlock(&suspect_mutex);
+    pthread_mutex_unlock(&rc_set_mutex);
+}
+
+static void avra_fork_child(void) {
+    pthread_mutex_unlock(&g_chan_activity_mu);
+    pthread_mutex_unlock(&_crashes.mutex);
+    pthread_mutex_unlock(&_failures.mutex);
+    pthread_mutex_unlock(&g_test_toolchain_fp_mutex);
+    pthread_mutex_unlock(&suspect_mutex);
+    pthread_mutex_unlock(&rc_set_mutex);
+    // No waiter survives into the child; re-arm so future waits
+    // start from clean futex state.
+    pthread_cond_init(&g_chan_activity_cv, NULL);
+}
+
+__attribute__((constructor))
+static void avra_install_fork_quiescing(void) {
+    pthread_atfork(avra_fork_prepare, avra_fork_parent, avra_fork_child);
+}

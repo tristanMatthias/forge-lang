@@ -1,0 +1,66 @@
+// WHY: type checking for typed channels (spec Axis 18).
+//   - `channel<T>(cap)` → Channel<T>; cap must be int; T must be
+//     non-nullable (recv encodes "closed and drained" as null, so a
+//     nullable element would make that signal ambiguous).
+//   - `ch.send(v)` → void, v must be T.
+//   - `ch.recv()` → T? (null ⇔ closed and drained).
+//   - `ch.close()` → void, idempotent.
+
+use typeck.{check_expr, tc_er, tc_report}
+use features.channels.{channel_methods_help}
+use core.{vtype_eq, vtype_display}
+use diagnostics.{DiagCode}
+
+/// Feature hook for `Expr.ChannelNew`. Validates the capacity
+/// expression (must be int when present) and the element type
+/// (non-nullable), yielding `Channel<elem>`.
+export fn channel_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .ChannelNew(elem, capacity) -> {
+            if elem is .Optional {
+                let t1 = tc_report(tc, DiagCode.TypeMismatch,
+                    "channel element type cannot be nullable — `recv()` returns `T?` where null means closed-and-drained, which a nullable element would shadow")
+                return tc_er(t1, .Channel(elem))
+            }
+            if capacity == null { return tc_er(tc, .Channel(elem)) }
+            let c = check_expr(tc, capacity!)
+            if !vtype_eq(c.ty, .Int) {
+                let t1 = tc_report(c.tc, DiagCode.TypeMismatch,
+                    "channel capacity must be an int, got ${vtype_display(c.ty)} — absent = unbounded, 0 = rendezvous, N > 0 = bounded")
+                return tc_er(t1, .Channel(elem))
+            }
+            tc_er(c.tc, .Channel(elem))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// Method typing for a Channel<elem> receiver. Called from
+/// `check_method_call`'s receiver dispatch (mirrors how List routes
+/// to `check_list_method`).
+export fn check_channel_method(tc: TC, elem: ValueType, method: string, args: List<SExpr>) -> ExprResult {
+    match method {
+        "send" -> {
+            if args.length != 1 {
+                let t1 = tc_report(tc, DiagCode.WrongArgCount,
+                    "channel send takes exactly one value, got ${string(args.length)}")
+                return tc_er(t1, .Void)
+            }
+            let a = check_expr(tc, args[0].node)
+            if !vtype_eq(a.ty, elem) && !(a.ty is .Unknown) && !(elem is .Unknown) {
+                let t1 = tc_report(a.tc, DiagCode.TypeMismatch,
+                    "channel element type mismatch: this channel carries ${vtype_display(elem)}, got ${vtype_display(a.ty)}")
+                return tc_er(t1, .Void)
+            }
+            tc_er(a.tc, .Void)
+        }
+        "recv" -> tc_er(tc, .Optional(elem))
+        "try_recv" -> tc_er(tc, .Optional(elem))
+        "close" -> tc_er(tc, .Void)
+        _ -> {
+            let t1 = tc_report(tc, DiagCode.UnknownMethod,
+                "Channel has no method `${method}` — available: ${channel_methods_help(elem)}")
+            tc_er(t1, .Unknown)
+        }
+    }
+}

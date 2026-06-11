@@ -137,6 +137,11 @@ export type Ctx = {
     // That's today's default behaviour; library mode opt-in via
     // --lib-pkg-root=<qualifier>.
     lib_pkg_root: string,
+    // The same ownership as a parsed set: AVRA_LIB_PKG_ROOT is
+    // colon-separated (mirrors AVRA_LIB_OBJS) because a BATCHED test
+    // shard owns several test modules at once — a fn belongs to the
+    // unit when ANY root prefixes it. Empty list = whole-program.
+    lib_pkg_roots: List<string>,
 }
 
 /// Bundle of every type-resolution registry. Passed as a single
@@ -733,6 +738,8 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Void -> i64t
         .Unknown -> i64t
         .Task(_) -> i64t
+        // Channel handle: opaque runtime ptr (AvraChannel*).
+        .Channel(_) -> pt
         // Optional (T?): always a pointer. Pointer-backed inner is the
         // null-pointer niche (the inner pointer IS the optional, none = null);
         // value-backed inner (int?/bool?/float?) is boxed (Some = heap box,
@@ -1136,13 +1143,10 @@ impl Ctx {
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
-            // The initializing store above sits at the declaration site,
-            // which may be inside a loop/conditional that never executes
-            // at runtime. The scope-exit cleanup below loads this slot
-            // unconditionally, so it must be null until first bound —
-            // otherwise cleanup releases stack garbage (zm77: a zero-trip
-            // arg loop freed a live AST node through exactly this path).
-            avra_llvm_zero_init_local(self.builder, alloca)
+            // Scope-exit cleanup loads this slot unconditionally; the slot
+            // is guaranteed null until first bound because every ptr-typed
+            // alloca is zero-initialized at creation (avra_llvm_build_alloca,
+            // zm77) — otherwise cleanup would release stack garbage.
             self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
             // Push Release onto defers for LIFO interleaving with defer/errdefer
             self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))
@@ -1348,13 +1352,30 @@ impl Ctx {
                 if !vtype_is_unknown(ua_vt) { return self.resolve_codegen_vtype(ua_vt) }
                 vt
             }
-            .Enum(name, args, _) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args), type_registry_id_for(self.type_reg, name))
+            .Enum(name, args, _) -> {
+                // Mirror the Struct arm: canonicalize the name via the
+                // TypeRegistry (mono's string roundtrips produce BARE
+                // names; the registries index module-qualified ones)
+                // and correct the KIND — a bare name parsed as Enum may
+                // denote a struct, since the string form carries no
+                // struct/enum distinction.
+                let tid = type_registry_id_for(self.type_reg, name)
+                let cn = type_registry_name_for(self.type_reg, tid)
+                let rn = if cn != "" { cn } else { name }
+                let rid = if tid > 0 { tid } else { 0 }
+                if args.length == 0 {
+                    let s = struct_reg_lookup(self.structs, rn)
+                    if s.found { return ValueType.Struct(rn, rid) }
+                }
+                ValueType.Enum(rn, self.resolve_codegen_vtype_list(args), rid)
+            }
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
             // Resolve the inner of a `T?` too — otherwise a local `let c: Color? = …`
             // keeps an unresolved `.Struct("Color")` inner (the parser can't tell
             // enum from struct), and unwrapping it (`c!` / `if let`) yields a value
             // the enum `match` can't dispatch (F9999). Mirrors List/Union/FnTyped.
             .Optional(inner) -> ValueType.Optional(self.resolve_codegen_vtype(inner))
+            .Channel(elem) -> ValueType.Channel(self.resolve_codegen_vtype(elem))
             .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
             .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))
             _ -> vt

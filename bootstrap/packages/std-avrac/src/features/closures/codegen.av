@@ -879,7 +879,13 @@ fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: List<ParamE
         let p = params[pi]
         let param_val = ctx.get_param(fn_val, i)
         let ty = if type_idx < types.length {
-            types[type_idx]
+            // Canonicalize caller-provided expected types too: mono's
+            // string-roundtripped instantiation types can carry BARE
+            // nominal names (Struct("CompConfig", 0)); binding them
+            // unresolved makes every later field access miss the
+            // registry's module-qualified entry. resolve_codegen_vtype
+            // is idempotent on already-qualified types.
+            ctx.resolve_codegen_vtype(types[type_idx])
         } else if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
             ctx.resolve_codegen_vtype(p.vtype)
         } else {
