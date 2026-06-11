@@ -96,6 +96,7 @@ use @std.avrac.build.{
     cache_bin_path_for,
     CompileTarget, build_binary,
     package_source_fingerprint,
+    discover_llvm_prefix,
 }
 use @std.crypto.{sha256_hex, sha256_file}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -1056,7 +1057,7 @@ fn collect_workspace_lib_objs(project_dir: string) -> string {
     // Shell command kept simple (no shell parameter expansion) so
     // it doesn't tickle Avra's interpolation parser. The replacement
     // step uses sed instead of `${ll%.ll}.realobj.o`.
-    let llvm_pfx = if avra_process_env_get("LLVM_PREFIX") == "" { "/opt/homebrew/opt/llvm" } else { avra_process_env_get("LLVM_PREFIX") }
+    let llvm_pfx = discover_llvm_prefix()
     let mat_cmd = "for ll in '${project_dir}/packages'/std-*/build/cache/*/unit.ll; do o=`echo \"$ll\" | sed 's/.ll$/.realobj.o/'`; if [ -f \"$ll\" ] && [ ! -f \"$o\" ]; then '${llvm_pfx}/bin/llc' -O2 -relocation-model=pic -filetype=obj \"$ll\" -o \"$o\" 2>/dev/null; fi; done"
     avra_shell_exec(mat_cmd)
     let listing = avra_shell_exec("ls -t '${project_dir}/packages'/std-*/build/cache/*/unit.realobj.o 2>/dev/null")
@@ -1290,8 +1291,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // Resolve llc the same way the coverage path does: $LLVM_PREFIX
     // when set, otherwise the homebrew-on-arm install path. Plain
     // `llc` rarely sits on $PATH on macOS.
-    let llvm_env = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let llvm_prefix = discover_llvm_prefix()
     let llc_bin = "${llvm_prefix}/bin/llc"
     mut llc_cmds = []
     mut k = 0
@@ -3223,10 +3223,7 @@ fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
 
 /// LLVM toolchain prefix lookup. `LLVM_PREFIX` env wins; the default
 /// is the homebrew install path on the dev machines this targets.
-fn resolve_llvm_prefix() -> string {
-    let env = avra_process_env_get("LLVM_PREFIX")
-    if env == "" { "/opt/homebrew/opt/llvm" } else { env }
-}
+fn resolve_llvm_prefix() -> string { discover_llvm_prefix() }
 
 // Top-level dispatch for `avra docs`. Pulls argv via parse_docs_args,
 // loads the requested corpus, then routes to the matching renderer.

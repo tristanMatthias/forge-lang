@@ -1,0 +1,28 @@
+// llpx: LLVM-prefix discovery. `bs2`'s link/llc paths must work
+// without LLVM_PREFIX exported (previously the bare Homebrew default
+// made every shard link fail on Linux with `unable to find -lLLVM`).
+// discover_llvm_prefix (build/link.av) is the single source of truth:
+// env override → Homebrew dir → pinned llvm-config → /usr/lib/llvm-20
+// → unversioned llvm-config.
+
+use @std.avrac.build.{discover_llvm_prefix}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_file_exists, avra_process_env_get}
+use @std.avrac.test_runner.{write_fixture}
+
+spec "llpx: LLVM prefix discovery" {
+    then "discovered prefix contains bin/llc" {
+        let p = discover_llvm_prefix()
+        p != "" && avra_selfhost_file_exists("${p}/bin/llc") != 0
+    }
+    then "bs2 build links end-to-end with LLVM_PREFIX unset" {
+        // HERMETIC: run from /tmp so the nested build's project root —
+        // and therefore its caches, locks, and materialized artifacts —
+        // are /tmp-scoped. Running from bootstrap/ polluted the shared
+        // build/cache mid-suite and broke the build-flow tests'
+        // absence assertions (116 bundled-only failures).
+        write_fixture("/tmp/llpx_probe.av", "fn main() -> int { 0 }")
+        let bs2 = avra_process_env_get("PWD") + "/build/bs2"
+        let out = avra_shell_exec("cd /tmp && env -u LLVM_PREFIX '" + bs2 + "' build /tmp/llpx_probe.av 2>&1; echo rc=$?")
+        out.contains("rc=0") && !out.contains("unable to find")
+    }
+}

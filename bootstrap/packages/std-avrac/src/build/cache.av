@@ -29,6 +29,7 @@ use core.{
     avra_file_size,
 }
 use build.fingerprint.{Fingerprint}
+use build.link.{discover_llvm_prefix}
 
 /// Logical layout of the cache directory tree under a project's
 /// `<root>/build/`. The build driver passes the root path; the cache
@@ -264,8 +265,7 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     let entry = entry_dir_for(c, fp)
     let real_o = entry + "/unit.realobj.o"
     if avra_selfhost_file_exists(real_o) == 1 { return real_o }
-    let llvm_env = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let llvm_prefix = discover_llvm_prefix()
     let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${real_o}' 2>/dev/null")
     if rc != 0 { return "" }
     real_o

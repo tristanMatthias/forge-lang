@@ -29,6 +29,7 @@ use parse.{parse_program_source_at}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
 use list_ops.{list_concat}
+use build.{discover_llvm_prefix}
 use @std.crypto.{sha256_hex, sha256_file}
 
 // 4szi.1: in-process memo for read_or_compute_toolchain_fp. The
@@ -537,8 +538,7 @@ export fn write_fixture_and_run_no_metadata(path: string, source: string) -> str
 /// run_capture has used for the warning-bag tests; lets the test stay
 /// a 1-line call with no shell escaping.
 export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
-    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
-    let llvm_pfx = if llvm_prefix == "" { "/opt/homebrew/opt/llvm" } else { llvm_prefix }
+    let llvm_pfx = discover_llvm_prefix()
     let is_mac = avra_host_os() == "macos"
     let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
     let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
@@ -633,6 +633,13 @@ fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }
+    // Linux's OOM/SIGKILL shell notice is the bare word on its own
+    // line (no signal suffix like macOS). Without this, an OOM-killed
+    // fixture's garbage output is cacheable and the failure outlives
+    // the memory pressure that caused it (observed 2026-06-11: cold
+    // full-suite stampedes OOM-killing shards, poisoned captures
+    // persisting across reruns — fxfz class).
+    if out.contains("\nKilled") { return false }
     if out.contains("Bus error") { return false }
     if out.contains("Segmentation fault") { return false }
     if out.contains("bs2 codegen failed") { return false }
