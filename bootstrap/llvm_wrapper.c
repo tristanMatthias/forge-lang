@@ -935,6 +935,31 @@ void avra_llvm_position_before(LLVMBuilderRef builder, LLVMValueRef instr) {
     LLVMPositionBuilderBefore(builder, instr);
 }
 
+// Zero-initialize a (entry-block-hoisted) alloca at function entry.
+// Required for every local registered for scope-exit RC cleanup: the
+// binding's initializing store sits at the declaration site, which may
+// be inside a loop or conditional block. If that block never executes,
+// the cleanup epilogue would load stack garbage and release it —
+// freeing whatever live allocation the garbage happens to point at
+// (zm77: a zero-trip arg loop's cleanup freed a live AST node). A null
+// store in the entry block makes the never-bound case release null,
+// which every release path treats as a no-op.
+void avra_llvm_zero_init_local(LLVMBuilderRef b, LLVMValueRef alloca_inst) {
+    LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(b);
+    LLVMValueRef fn = LLVMGetBasicBlockParent(current_bb);
+    LLVMBasicBlockRef entry = LLVMGetEntryBasicBlock(fn);
+    LLVMBuilderRef eb = LLVMCreateBuilder();
+    LLVMValueRef term = LLVMGetBasicBlockTerminator(entry);
+    if (term) {
+        LLVMPositionBuilderBefore(eb, term);
+    } else {
+        LLVMPositionBuilderAtEnd(eb, entry);
+    }
+    LLVMTypeRef ty = LLVMGetAllocatedType(alloca_inst);
+    LLVMBuildStore(eb, LLVMConstNull(ty), alloca_inst);
+    LLVMDisposeBuilder(eb);
+}
+
 void avra_llvm_build_call_void(LLVMBuilderRef builder, LLVMModuleRef mod, const char* fn_name, LLVMValueRef* args, int arg_count) {
     LLVMValueRef fn = LLVMGetNamedFunction(mod, fn_name);
     if (!fn) return;

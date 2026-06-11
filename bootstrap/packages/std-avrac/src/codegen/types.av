@@ -1136,6 +1136,13 @@ impl Ctx {
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
+            // The initializing store above sits at the declaration site,
+            // which may be inside a loop/conditional that never executes
+            // at runtime. The scope-exit cleanup below loads this slot
+            // unconditionally, so it must be null until first bound —
+            // otherwise cleanup releases stack garbage (zm77: a zero-trip
+            // arg loop freed a live AST node through exactly this path).
+            avra_llvm_zero_init_local(self.builder, alloca)
             self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
             // Push Release onto defers for LIFO interleaving with defer/errdefer
             self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))

@@ -38,9 +38,6 @@ use core.{avra_tag_as_result}
 // the same as before; the helpers are thin wrappers over the
 // underlying C symbols.
 
-// TEMP zm77 probe
-extern fn avra_dbg_probe_node(label: string, e: int)
-
 // ── Public API ──
 
 
@@ -418,7 +415,6 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             if has_expr_emit(ctx.features, tag) {
                 return dispatch_expr_emit(ctx.features, tag, ctx, env, expr)
             }
-            avra_dbg_probe_node("unsupported-expr", expr)
             err_emit("unsupported expression type (tag=${string(tag)})")
         }
     }

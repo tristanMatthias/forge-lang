@@ -155,6 +155,7 @@ extern fn avra_covmap_counter_count() -> int
 extern fn avra_llvm_get_entry_basic_block(fn_val: ptr) -> ptr
 extern fn avra_llvm_get_first_instruction(bb: ptr) -> ptr
 extern fn avra_llvm_position_before(builder: ptr, instr: ptr)
+extern fn avra_llvm_zero_init_local(builder: ptr, alloca_inst: ptr)
 extern fn avra_llvm_build_call_void(builder: ptr, module: ptr, fn_name: string, args: ptr, arg_count: int)
 
 // ── Object emission ──

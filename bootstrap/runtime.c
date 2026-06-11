@@ -2215,63 +2215,6 @@ void avra_dump_stmt_list(const char* label, int64_t list_ptr) {
     avra_dump_stmt("  stmt", fields[0]);
 }
 
-// TEMP zm77 probe: dump the raw words of a suspect Expr node, plus a
-// shallow deref of every heap-looking word (raw words + ASCII preview)
-// so the misplaced structure can be identified by shape.
-static int dbg_heapish(int64_t v) {
-    uintptr_t p = (uintptr_t)v;
-    return p >= 0x100000000ULL && p < 0x700000000000ULL;
-}
-
-static void dbg_str_preview(const char* p, char* out, int cap) {
-    int n = 0;
-    while (n < cap - 1 && p[n] && p[n] >= 32 && p[n] < 127) { out[n] = p[n]; n++; }
-    out[n] = 0;
-}
-
-// TEMP zm77: whitelist check — is the first word of `expr` a valid
-// Expr variant tag (djb2 hash of a known variant name)?
-int64_t avra_variant_hash(const char* name);
-int64_t avra_dbg_expr_tag_ok(int64_t expr) {
-    static int64_t tags[64];
-    static int n = 0;
-    if (n == 0) {
-        const char* names[] = {
-            "Number","String","Bool","None","Ident","Assign","Grouping",
-            "Unary","Binary","Logical","Call","GenericCall","StructLit",
-            "FieldAccess","EnumCtor","Index","Block","MatchExpr",
-            "FieldAssign","IfExpr","NullCoalesce","OptionalChain",
-            "OptionalMethodCall","Try","Tuple","TupleIndex","With",
-            "ListLit","Lambda","MapLit","Slice","FloatLit","IsCheck",
-            "InCheck","ListComp","QualifiedIdent","When","Catch","Spawn",
-            "Isolated","Quote","Splice", NULL
-        };
-        for (int i = 0; names[i]; i++) tags[n++] = avra_variant_hash(names[i]);
-    }
-    if (expr == 0) return 0;
-    int64_t tag = *(int64_t*)(uintptr_t)expr;
-    for (int i = 0; i < n; i++) if (tags[i] == tag) return 1;
-    return 0;
-}
-
-void avra_dbg_probe_node(const char* label, int64_t node) {
-    fprintf(stderr, "[probe] %s node=%p\n", label, (void*)(uintptr_t)node);
-    if (node == 0) return;
-    int64_t* w = (int64_t*)(uintptr_t)node;
-    for (int i = 0; i < 8; i++) {
-        fprintf(stderr, "[probe]   w[%d] = 0x%llx (%lld)\n", i,
-            (unsigned long long)w[i], (long long)w[i]);
-        if (dbg_heapish(w[i])) {
-            char prev[48];
-            dbg_str_preview((const char*)(uintptr_t)w[i], prev, sizeof prev);
-            int64_t* t = (int64_t*)(uintptr_t)w[i];
-            fprintf(stderr, "[probe]      -> [0x%llx, 0x%llx, 0x%llx, 0x%llx] str=\"%s\"\n",
-                (unsigned long long)t[0], (unsigned long long)t[1],
-                (unsigned long long)t[2], (unsigned long long)t[3], prev);
-        }
-    }
-}
-
 // ── eprintln: write string + newline to stderr ──
 void avra_eprintln(const char* s) {
     fputs(s, stderr);
