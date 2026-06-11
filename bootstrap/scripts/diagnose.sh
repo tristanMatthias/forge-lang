@@ -270,6 +270,11 @@ SEED MANAGEMENT
                          verifies the resulting binary can also self-compile.
                          Prints OK or specific failure point. Use this to
                          check seed health before committing.
+  --check-seed-window    sdmg.2 bootstrap-window check: build THIS branch's
+                         source with the INTEGRATION branch's pristine seed
+                         (default origin/feat/crafting-intepreters; override
+                         with SEED_WINDOW_REF). Passing means any branch pair
+                         that also passes is seed-mergeable. Run before PR.
   --seed-patch           Incremental seed update. Compiles main.av with
                          bs2, diffs against seed/seed.ll per-function, copies
                          the new IR to seed, and reports exactly which
@@ -1251,8 +1256,55 @@ main() {
     --verify-seed)        mode_verify_seed "$@" ;;
     --seed-patch)         mode_seed_patch "$@" ;;
     --seed-sigs)          mode_seed_sigs "$@" ;;
+    --check-seed-window)  mode_check_seed_window "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
+}
+
+# sdmg.2 bootstrap-window check. Feature branches must stay compilable
+# by the INTEGRATION branch's seed — that is what makes any two passing
+# branches seed-mergeable by construction (see docs/SEED_MERGES.md,
+# "Prevention"). This mode fetches the integration seed, patches its
+# match traps (new enum VARIANTS are within the window; new KEYWORDS /
+# dogfooded syntax are not), builds it, and compiles this branch's
+# main.av with it.
+mode_check_seed_window() {
+  local ref="${SEED_WINDOW_REF:-origin/feat/crafting-intepreters}"
+  ensure_runtime
+  local wdir="$BUILD_DIR/seed_window"
+  mkdir -p "$wdir"
+  log "bootstrap-window: fetching seed from $ref"
+  if ! git -C "$BOOTSTRAP_DIR/.." show "$ref:bootstrap/seed/seed.ll" > "$wdir/seed.ll" 2>/dev/null; then
+    die "cannot read $ref:bootstrap/seed/seed.ll — git fetch origin first, or set SEED_WINDOW_REF"
+  fi
+  python3 scripts/patch-seed-traps.py "$wdir/seed.ll" >/dev/null
+  log "bootstrap-window: building integration seed binary"
+  "$LLC" -O0 $LLC_RELOC -filetype=obj "$wdir/seed.ll" -o "$wdir/seed.o" \
+    || die "llc failed on the integration seed"
+  cc -o "$wdir/seed_bin" "$wdir/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB \
+    || die "link failed on the integration seed"
+  log "bootstrap-window: compiling this branch's main.av with it"
+  # NOTE: compile output + unit-cache entries from the window binary
+  # must not leak into real builds (the compile cache is not keyed on
+  # the producing compiler — see bead cmpk). Snapshot-restore the cli
+  # unit cache and discard the emitted .ll.
+  local cache_dir="$CLI_SRC_DIR/build/cache"
+  rm -rf "$cache_dir.window_bak"
+  [ -d "$cache_dir" ] && mv "$cache_dir" "$cache_dir.window_bak"
+  local rc=0
+  "$wdir/seed_bin" compile "$SRC_DIR/main.av" >"$wdir/compile.log" 2>&1 || rc=$?
+  rm -rf "$cache_dir"
+  [ -d "$cache_dir.window_bak" ] && mv "$cache_dir.window_bak" "$cache_dir"
+  rm -f "$SRC_DIR/main.av.ll"
+  if [ "$rc" != 0 ]; then
+    tail -30 "$wdir/compile.log" >&2
+    err "bootstrap-window VIOLATION: this branch's source does not compile"
+    err "with $ref's seed. Either revert dogfooded post-seed syntax, or"
+    err "advance the integration seed FIRST (seed train — docs/SEED_MERGES.md)."
+    exit 1
+  fi
+  ok "bootstrap window holds — $ref's seed compiles this branch's source"
 }
 
 # Copy current bs2 IR output to seed/seed.ll with provenance metadata.

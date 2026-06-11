@@ -64,6 +64,12 @@ Per the sdmg epic:
 - Feature branches should NOT cycle the seed or dogfood new
   syntax/variants in compiler source; seed advancement happens on the
   integration branch as dedicated `chore(seed): cycle` commits
-  (sdmg.2 — bootstrap window + seed train, CI-enforced).
+  (sdmg.2 — bootstrap window + seed train).
+- **Check it mechanically: `make check-seed-window`** (or
+  `diagnose.sh --check-seed-window`; baseline override:
+  `SEED_WINDOW_REF=<ref>`). Builds the integration branch's seed
+  (traps auto-patched, so new enum variants are within the window)
+  and compiles this branch's `main.av` with it. Run before every PR;
+  CI enforcement is the remaining sdmg.2 work.
 - `.beads` ticket `sdmg.5` tracks automating this whole procedure as
   `diagnose.sh --seed-merge`.

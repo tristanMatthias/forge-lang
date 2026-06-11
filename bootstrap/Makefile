@@ -21,7 +21,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps check-seed-window next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -49,6 +49,7 @@ help:
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
 	@echo "  make seed-patch-traps  Patch seed match-traps when adding enum variants"
+	@echo "  make check-seed-window Bootstrap-window check: branch source must compile with the integration seed (run before PR)"
 	@echo "                         (run BEFORE 'make build' for new ValueType/Stmt/Expr)."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
@@ -206,6 +207,13 @@ endif
 # crash on unknown enum tags. Different workflow from `update-seed`:
 # this preps an existing seed for source that adds variants, before
 # bs2 can build at all; `update-seed` requires a working bs2.
+# sdmg.2: bootstrap-window check. Verifies THIS branch's source still
+# compiles with the integration branch's pristine seed — the invariant
+# that keeps any two passing branches seed-mergeable. Run before PR.
+# Override the baseline with SEED_WINDOW_REF=<ref>.
+check-seed-window:
+	@$(DIAG) --check-seed-window
+
 seed-patch-traps:
 	@python3 scripts/patch-seed-traps.py
 	@rm -f build/seed build/seed.o

@@ -5,11 +5,14 @@ When adding new enum variants, the seed's exhaustive matches crash on
 unknown tags. This script patches all avra_match_unreachable calls
 to return a safe default value instead of calling unreachable.
 
-Usage: python3 scripts/patch-seed-traps.py
+Usage: python3 scripts/patch-seed-traps.py [path/to/seed.ll]
+       (default: seed/seed.ll)
 """
 import re, sys
 
-with open('seed/seed.ll', 'r') as f:
+SEED_PATH = sys.argv[1] if len(sys.argv) > 1 else 'seed/seed.ll'
+
+with open(SEED_PATH, 'r') as f:
     content = f.read()
 
 count = 0
@@ -30,6 +33,6 @@ def replace_trap(m):
     return "ret void"
 
 content = re.sub(r'call void @avra_match_unreachable\([^)]+\)\n\s+unreachable', replace_trap, content)
-with open('seed/seed.ll', 'w') as f:
+with open(SEED_PATH, 'w') as f:
     f.write(content)
-print(f"Patched {count} match traps in seed.ll")
+print(f"Patched {count} match traps in {SEED_PATH}")

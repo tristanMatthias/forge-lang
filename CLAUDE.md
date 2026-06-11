@@ -96,6 +96,8 @@ Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analy
 
 Seed merge conflicts: `seed/seed.ll` is `merge=binary` — never merge it textually. Pick a side, `make seed-patch-traps`, build, `make update-seed`. Full recipe + base-seed selection criteria: `bootstrap/docs/SEED_MERGES.md`.
 
+Before opening/updating a PR: `make check-seed-window` — verifies this branch's source still compiles with the integration branch's pristine seed (the property that keeps branches seed-mergeable). If it fails, you dogfooded post-seed syntax in compiler src; revert the dogfooding or advance the integration seed first (seed-train policy: bead sdmg.2).
+
 ### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
 
 This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
