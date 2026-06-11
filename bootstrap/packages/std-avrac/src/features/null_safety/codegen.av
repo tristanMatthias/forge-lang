@@ -16,6 +16,8 @@ use codegen.{emit_optional_unwrap, emit_optional_some, needs_optional_box}
 use core.{vtype_wrap_optional}
 use features.defer_stmt.{emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
+use features.struct_decl.{emit_field_on_value}
+use features.fn_decl.{emit_method_on_value}
 
 /// Codegen for `left ?? right`. Branch on whether `left` is
 /// null/zero, picking it when non-null or falling through to
@@ -91,40 +93,62 @@ export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field:
     ctx.store(ctx.i64(0), result_slot)
     ctx.cond_br(is_null, merge_bb, access_bb)
 
-    // Access the field (only reached when obj is non-null). Receiver may be
-    // `Struct?` (strip the optional — the niche value IS the inner pointer).
+    // Access the field/property (only reached when obj is non-null). The
+    // niche `Struct?`/`str?`/… value IS the inner pointer, so emit the access
+    // on the UNWRAPPED receiver through the shared field accessor — the same
+    // dispatch a plain `.field` uses (struct GEP, str/list/map `.length`, …).
+    // Previously a non-struct receiver was stubbed: it ignored the field and
+    // returned the receiver, so `s?.length` yielded the string, not its length.
     ctx.position(access_bb)
     let recv_ty = vtype_strip_optional(r.ty)
-    let struct_name = vtype_struct_name(recv_ty)
-    if struct_name == "" {
-        // Non-struct receiver (e.g. string): wrap the value as the chain's `U?`.
-        ctx.store(ctx.to_i64(emit_optional_some(ctx, recv_ty, r.value), "oc_box"), result_slot)
-        ctx.br(merge_bb)
-        ctx.position(merge_bb)
-        let loaded = ctx.load_i64(result_slot, "oc_val")
-        return ok_emit(loaded, vtype_wrap_optional(recv_ty))
+    let recv = EmitValue { value: r.value, ty: recv_ty }
+    // Route a RESOLVABLE receiver (struct field, str/list/map `.length`, …)
+    // through the shared field accessor. When the receiver type can't resolve
+    // the field — a bare `ptr` of unknown layout, whose only sound `?.` use is
+    // the null short-circuit (this branch is then dead) — fall back to the
+    // legacy passthrough so such code keeps compiling rather than erroring on
+    // dead IR.
+    match emit_field_on_value(ctx, recv, obj, field) {
+        .Ok(accessed) -> {
+            ctx.store(ctx.to_i64(emit_optional_some(ctx, accessed.ty, accessed.value), "oc_box"), result_slot)
+            ctx.br(merge_bb)
+            ctx.position(merge_bb)
+            ok_emit(ctx.load_i64(result_slot, "oc_val"), vtype_wrap_optional(accessed.ty))
+        }
+        .Err(_) -> {
+            ctx.store(ctx.to_i64(emit_optional_some(ctx, recv_ty, r.value), "oc_box"), result_slot)
+            ctx.br(merge_bb)
+            ctx.position(merge_bb)
+            ok_emit(ctx.load_i64(result_slot, "oc_val"), vtype_wrap_optional(recv_ty))
+        }
     }
-    let lookup = ctx.lookup_struct(struct_name)
-    if !lookup.found {
-        return err_emit("unknown struct `${struct_name}` in optional chain")
+}
+
+/// Codegen for `obj?.method(args)`. Same null-check-and-wrap scaffold as
+/// emit_optional_chain, but the present branch calls the method on the
+/// unwrapped receiver via the shared emit_method_on_value. None receiver
+/// short-circuits to `none`; the result wraps to the method return's `U?`.
+export fn emit_optional_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, obj)?
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "omc_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "omc_null")
     }
-    let idx = field_index_of(lookup.fields, field)
-    if idx < 0 {
-        return err_emit("unknown field `${field}` on struct `${struct_name}` in optional chain")
-    }
-    let field_ty = ctx.resolve_field_type(lookup.fields, field)
-    let st_ty = ctx.get_type(struct_name)
-    let obj_ptr = ctx.to_ptr(r.value, "oc_ptr")
-    let gep = ctx.gep(st_ty, obj_ptr, idx, "oc_fld")
-    let loaded_field = ctx.load_i64(gep, field)
-    // Wrap the present field value as `Some(field)` so the `U?` result
-    // distinguishes a present value from the null-receiver `none`.
-    ctx.store(ctx.to_i64(emit_optional_some(ctx, field_ty, loaded_field), "oc_box"), result_slot)
+    let access_bb = ctx.bb("omc_access")
+    let merge_bb = ctx.bb("omc_end")
+    let result_slot = ctx.alloca_i64("omc_result")
+    ctx.store(ctx.i64(0), result_slot)
+    ctx.cond_br(is_null, merge_bb, access_bb)
+
+    ctx.position(access_bb)
+    let recv = EmitValue { value: r.value, ty: vtype_strip_optional(r.ty) }
+    let called = emit_method_on_value(ctx, env, recv, method, args)?
+    ctx.store(ctx.to_i64(emit_optional_some(ctx, called.ty, called.value), "omc_box"), result_slot)
     ctx.br(merge_bb)
 
     ctx.position(merge_bb)
-    let final_val = ctx.load_i64(result_slot, "oc_val")
-    ok_emit(final_val, vtype_wrap_optional(field_ty))
+    ok_emit(ctx.load_i64(result_slot, "omc_val"), vtype_wrap_optional(called.ty))
 }
 
 /// Codegen for the `?` try operator. Two modes based on the

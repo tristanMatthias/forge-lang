@@ -1,0 +1,50 @@
+// rcsf.2: the AVRA_VERIFY_RC=1 gate machine-checks the alloca
+// zero-init invariant (zm77 guard) on every compiled module: each
+// pointer-typed alloca's next instruction must be its `store ptr
+// null`. All allocas route through avra_llvm_build_alloca, which
+// emits exactly that pair — so a violation means the guard was
+// bypassed or regressed, and the compile fails loudly instead of
+// shipping a binary with layout-sensitive garbage reads.
+//
+// This test compiles a fixture that exercises the slot shapes the
+// zm77 class corrupted (RC struct locals inside zero-trip loops,
+// conditionally-bound locals) under the verifier and asserts the
+// verifier ran clean.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+fn vri_run() -> string {
+    write_fixture("/tmp/vri_fixture.av", "
+type VriPair = {
+    a: string,
+    b: string,
+}
+
+fn vri_concat(xs: List<string>) -> string {
+    mut out = \"\"
+    mut i = 0
+    while i < xs.length {
+        mut p = VriPair { a: xs[i], b: \"-\" }
+        out = out + p.a + p.b
+        i = i + 1
+    }
+    out
+}
+
+fn main() -> int {
+    let empty: List<string> = []
+    if vri_concat(empty) == \"\" && vri_concat([\"x\"]) == \"x-\" { 0 } else { 1 }
+}
+")
+    avra_shell_exec("AVRA_VERIFY_RC=1 ./build/bs2 compile /tmp/vri_fixture.av 2>&1")
+}
+
+spec "rcsf.2: AVRA_VERIFY_RC gate" {
+    then "verifier runs and reports zero violations" {
+        vri_run().contains("[verify-rc] ok")
+    }
+    then "compile under the verifier succeeds (emits IR)" {
+        avra_shell_exec("ls /tmp/vri_fixture.av.ll 2>/dev/null").contains("vri_fixture.av.ll")
+    }
+}

@@ -94,6 +94,8 @@ Pipeline: `seed/seed.ll → llc + cc → seed binary → compiles src/ → bs2 �
 
 Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analysis)
 
+Seed merge conflicts: `seed/seed.ll` is `merge=binary` — never merge it textually. Pick a side, `make seed-patch-traps`, build, `make update-seed`. Full recipe + base-seed selection criteria: `bootstrap/docs/SEED_MERGES.md`.
+
 ### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
 
 This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
@@ -310,6 +312,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **Struct methods use self-by-pointer** (ptr, not value) for mutation persistence.
 - **`llvm.type_of(param_val)`** for parameter allocas — not `resolve_type_to_llvm` (circular dependency).
 - **Seed auto-cycling:** `make build` detects when bs2 can't self-compile and cycles the seed forward. Auto-cycle CAN'T help when adding new keywords the seed scanner doesn't recognize. `--seed-status` shows new/changed fns, `--seed-diff <fn>` diffs specific functions.
+- **Memory corruption / RC symptoms** (`unmatched tag <heap ptr>`, phantom releases, null-where-object-expected): START at `docs/RC_MEMORY_RUNBOOK.md` — the invariant (`AVRA_VERIFY_RC=1`), symptom→action table, and the deterministic watchpoint-hunt recipe.
 - **render_list stack overflow:** DiagnosticList is a linked list, render is recursive. Limit is 10 (render_first_n). Fix the source producing too many errors, don't increase the limit.
 - **Empty match arms** like `.Break(s) -> {}` silently swallow behavior. Periodically grep for `-> {}` in codegen to find stubs needing real implementations.
 - **Walkers that rebuild stmts MUST preserve `Annotated` wrappers.** Match on `stmt_unwrap`/peeled nodes for dispatch, but emit rebuilt nodes via `rewrap_annotations` (core/ast.av) — pushing a bare rebuilt `Stmt.Module` silently strips the module's annotations (the @deferred_init-eating bug class, d4jv). `expand_stmt_list` + `derive_marshal` were both guilty.

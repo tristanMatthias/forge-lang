@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, stmt_diverges}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1374,6 +1374,7 @@ fn lint_scan_expr(e: Expr, coll: string) -> LintSig {
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(c, coll), lint_sig_or(lint_scan_expr(t, coll), lint_scan_expr(el, coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
         .OptionalChain(obj, _) -> lint_scan_expr(obj, coll)
+        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(obj, coll), lint_scan_sexprs(args, coll))
         .Try(inner) -> lint_scan_expr(inner, coll)
         .Tuple(els) -> lint_scan_sexprs(els, coll)
         .TupleIndex(obj, _) -> lint_scan_expr(obj, coll)
@@ -1794,7 +1795,10 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Binary(left, op, right) -> {
             let l = check_expr(tc, left)
             let r = check_expr(l.tc, right)
-            check_binary_type(r.tc, l.ty, op, r.ty)
+            let tc2 = check_none_compare(r.tc, left, op, l.ty, right, r.ty)
+            let tc3 = check_optional_ordering(tc2, op, l.ty, r.ty)
+            let tc4 = check_optional_arithmetic(tc3, op, l.ty, r.ty)
+            check_binary_type(tc4, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
             let r = check_expr(tc, right)
@@ -1986,6 +1990,57 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
 /// Type-check a binary operator. Most return Bool (comparisons) or
 /// the operand's type (arithmetic); union-arg cases dispatch to
 /// the appropriate concrete branch.
+/// ifnz: `x == none` / `x != none` where `x` is a concrete NON-optional
+/// *tagged value type* (`int` / `bool` / `float` / sized ints) is
+/// always-false / always-true — `none` only inhabits an optional `T?`,
+/// and for these types `T?` is a distinct tagged `{present, value}`
+/// struct, so the comparison is unambiguously a mistake (e.g. a bind-fresh
+/// `if let v = 5` / `let v = 5 else` on a non-optional, which silently
+/// mis-branches: `0 != none` is false). Flag it via F1000 with a remedy.
+///
+/// Deliberately scoped to the tagged-repr scalars: pointer-backed types
+/// (`ptr`/`str`/struct/enum/list/…) use a null-pointer niche where `none`
+/// and the raw value share bits, and the compiler's optional inference is
+/// not yet complete for them — flagging those produces false positives on
+/// the compiler's own derive-walker code. Widen once optional inference is
+/// sound (tracked in ifnz / the bidirectional-typing work).
+/// Reject value arithmetic (`+ - * / %`, bitwise, shifts) on an optional
+/// operand. A `none` has no value, so silently computing would corrupt
+/// (both-optional operates on box pointers; a none side traps). Sibling of
+/// check_optional_ordering; equality stays permissive.
+fn check_optional_arithmetic(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+    if !binop_is_arithmetic(op) { return tc }
+    if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
+    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let msg = "cannot do arithmetic on an optional `${which}` with `${binop_str(op)}` — a `none` has no value to compute with"
+    tc_report(tc, DiagCode.ArithOnOptional, msg)
+}
+
+/// Reject an ordering comparison (`<` `<=` `>` `>=`) on an optional operand.
+/// `none` has no position in an ordering, so silently answering would defeat
+/// the purpose of `T?` (and is where strict non-null-by-default is headed).
+/// Equality (`==`/`!=`) stays permissive — it IS well-defined on optionals.
+fn check_optional_ordering(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+    if !binop_is_ordering(op) { return tc }
+    if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
+    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let msg = "cannot order an optional `${which}` with `${binop_str(op)}` — a `none` has no position in an ordering"
+    tc_report(tc, DiagCode.OrderOnOptional, msg)
+}
+
+fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Expr, r_ty: ValueType) -> TC {
+    if !(op is .Eq) && !(op is .Ne) { return tc }
+    let l_none = left is .None
+    let r_none = right is .None
+    if l_none == r_none { return tc }   // need exactly one `none` operand
+    let other = if l_none { r_ty } else { l_ty }
+    if vtype_is_optional(other) { return tc }   // the intended case — fine
+    if !vtype_is_value_scalar(other) { return tc }
+    let always = if op is .Eq { "false" } else { "true" }
+    let msg = "comparing a non-optional `${vtype_render_full(other)}` to `none` is always ${always} — `none` only inhabits an optional `T?`. Make the type `T?`, or drop the comparison (an `if let` / `let-else` here needs an optional subject)."
+    tc_report(tc, DiagCode.TypeMismatch, msg)
+}
+
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
     // If either operand is Float, arithmetic produces Float.
     let arith_ty = if vtype_eq(left, .Float) || vtype_eq(right, .Float) { ValueType.Float } else { ValueType.Int }
@@ -2265,10 +2320,41 @@ fn tc_infer_lit_ty(e: Expr) -> ValueType {
     }
 }
 
+/// True when any element of a list literal is the `none` absence literal.
+/// Such a list is `List<T?>`, not `List<T>` — the codegen boxes its present
+/// elements into the tagged-optional repr, so the inferred type must agree.
+fn list_lit_has_none(elements: List<SExpr>) -> bool {
+    mut i = 0
+    while i < elements.length {
+        if elements[i].node is .None { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Wrap a known, non-optional element type in `Optional` when the literal
+/// mixes in a `none`. Keeps inference consistent with `emit_list_lit`.
+fn list_lit_optionalize(elements: List<SExpr>, base: ValueType) -> ValueType {
+    if vtype_is_unknown(base) { return base }
+    if vtype_is_optional(base) { return base }
+    if list_lit_has_none(elements) { ValueType.Optional(base) } else { base }
+}
+
 fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
-    let t = tc_infer_lit_ty(elements[0].node)
-    if vtype_is_unknown(t) { ValueType.Unknown } else { t }
+    // Pin the inner type from the first present element (a leading `none`
+    // carries no type), then re-wrap in `T?` when a `none` is present.
+    mut base = ValueType.Unknown
+    mut i = 0
+    while i < elements.length {
+        if !(elements[i].node is .None) {
+            base = tc_infer_lit_ty(elements[i].node)
+            i = elements.length
+        } else {
+            i = i + 1
+        }
+    }
+    list_lit_optionalize(elements, base)
 }
 
 fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
@@ -2287,12 +2373,14 @@ fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
 /// Inspect the first element of a list literal and return its
 /// inferred type; falls back to `Unknown` for an empty list.
 /// Used by `annotate_sexpr`'s ListLit fast-path so `[1, 2, 3]`
-/// types as `List<int>` instead of `List<unknown>`.
+/// types as `List<int>` instead of `List<unknown>`. A literal mixing in a
+/// `none` is `List<T?>` — re-wrap so the fast-path agrees with `emit_list_lit`.
 fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
     let first = elements[0]
     let r = check_expr(tc, first.node)
-    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
+    let base = if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
+    list_lit_optionalize(elements, base)
 }
 
 /// Substitute every T occurrence in `ty` with the binding from
@@ -2379,7 +2467,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
                 return tc_er(checked, .Str)
             }
             // Force-unwrap builtin (`expr!`): yields the non-optional inner.
-            if name == "__avra_force_unwrap" {
+            if name == FORCE_UNWRAP_FN {
                 let typed = check_expr_list_types(tc, args)
                 let arg_ty = if typed.types.length > 0 { typed.types[0] } else { ValueType.Unknown }
                 return tc_er(typed.tc, vtype_strip_optional(arg_ty))
@@ -2426,7 +2514,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
 /// Type-check `obj.method(args)`: dispatch to type-specific
 /// method tables (List / Map built-ins) or fall back to user-
 /// defined impl blocks looked up by mangled name.
-fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
+export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
     let o = check_expr(tc, obj)
     let checked_args = check_expr_list(o.tc, args)
 
@@ -2798,6 +2886,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body), cl, cc)
         .OptionalChain(obj, f) -> .OptionalChain(annotate_expr(tc, obj), f)
+        .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr(tc, obj), m, annotate_expr_list(tc, args))
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
         .Spawn(body) -> .Spawn(annotate_expr(tc, body))
@@ -3057,11 +3146,14 @@ fn is_pascal_case(name: string) -> bool {
 }
 
 /// True iff `name` is snake_case: all lowercase / digits /
-/// underscores. Leading `_` allowed for private bindings.
+/// underscores. Leading `_` allowed for private bindings; a leading `$`
+/// marks a compiler-generated temp (parser desugar gensym), which the user
+/// never wrote, so the naming convention does not apply.
 fn is_snake_case(name: string) -> bool {
     if name.length == 0 { return true }
     let first = name[0]
     if first == "_" { return true }
+    if is_gensym_name(name) { return true }
     if is_upper(first) { return false }
     mut i = 0
     while i < name.length {

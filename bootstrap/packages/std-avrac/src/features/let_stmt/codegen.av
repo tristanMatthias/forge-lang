@@ -2,11 +2,12 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list}
+use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
+use features.list_lit.{emit_list_lit_expected}
 use codegen.{emit_optional_coerce}
 use diagnostics.{DiagCode}
 
@@ -28,6 +29,23 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
         ctx with { copy_alloc_target: copy_target.alloca_ptr }
     } else {
         ctx
+    }
+    // Annotated `List<T?>` literal: box each element into the declared
+    // optional element type at construction. The generic `emit_list_lit`
+    // only boxes when the literal itself contains a `none`, so an
+    // all-present `let xs: List<int?> = [1, 2, 3]` would otherwise push raw
+    // scalars that crash on a later unwrap.
+    if !vtype_is_unknown(ty_vt) {
+        let decl = ctx.resolve_codegen_vtype(ty_vt)
+        if vtype_is_list(decl) && vtype_is_optional(vtype_list_elem(decl)) {
+            match initializer {
+                .ListLit(elements) -> {
+                    let boxed = emit_list_lit_expected(ctx, env, elements, vtype_list_elem(decl))?
+                    return ok_stmt(ctx.bind(env, name, boxed.value, decl))
+                }
+                _ -> {}
+            }
+        }
     }
     mut r = emit_ctx.emit(env, initializer)?
     // Use the type annotation when present, otherwise infer from initializer.

@@ -1,0 +1,7 @@
+# seed.ll is a generated compiler artifact (machine-emitted LLVM IR,
+# ~500k lines, version-locked to the source that produced it). Text
+# diffs are noise and text merges are always wrong — the only correct
+# conflict resolution is to pick one side as a bootstrap stepping
+# stone and regenerate from the merged source (make update-seed).
+# See bootstrap/docs/SEED_MERGES.md.
+bootstrap/seed/seed.ll -diff merge=binary

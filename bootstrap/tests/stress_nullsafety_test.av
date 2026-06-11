@@ -51,8 +51,8 @@ spec "stress nullsafety" {
         let u = SnsUser { name: "Alice", age: 30 }
         (u?.age) == 30
     }
-    then "optional chain on null" {
-        let n: ptr = null
+    then "optional chain on none short-circuits" {
+        let n: SnsUser? = none
         (n?.age ?? 0) == 0
     }
 }

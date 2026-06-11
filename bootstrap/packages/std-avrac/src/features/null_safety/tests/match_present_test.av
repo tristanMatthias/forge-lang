@@ -1,0 +1,172 @@
+// WHY: match-on-optional present-bind surface (spec Axis 10.4). `T?` is the
+// dual niche/tagged optional — it has no enum tag — so a `match` over it
+// can't go through the normal enum dispatch. One rule everywhere: `let
+// <name>` binds the present value, mirroring `if let`; `none` matches
+// absence. The parser lowers `let u ->` to the present arm `.Some(u)` and
+// `none ->` to `.None`, and a dedicated 2-way codegen reuses the same
+// present-test / unwrap the `?` and `??` operators emit. A `_` wildcard
+// covers the absent (or otherwise-unmatched) case.
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+fn mp_pick(x: int?) -> int {
+    match x {
+        let u -> u + 100
+        none -> -1
+    }
+}
+
+fn mp_label(x: string?) -> string {
+    match x {
+        let s -> "has:" + s
+        none -> "empty"
+    }
+}
+
+fn mp_wildcard(x: int?) -> int {
+    match x {
+        let u -> u
+        _ -> 0
+    }
+}
+
+fn mp_nested(a: int?, b: int?) -> int {
+    match a {
+        let x -> match b {
+            let y -> x + y
+            none -> x
+        }
+        none -> 0
+    }
+}
+
+// A guard on a present-bind arm must be honoured — a false guard falls
+// through to the next arm, exactly as in an ordinary `match`.
+fn mp_guard(x: int?) -> int {
+    match x {
+        let v if v > 10 -> 1
+        let v -> 2
+        none -> 3
+    }
+}
+
+// A literal pattern matches the PRESENT value; `let v` then catches the
+// rest of the present cases; `none` the absent case.
+fn mp_literal(x: int?) -> string {
+    match x {
+        5 -> "five"
+        let v -> "other:" + string(v)
+        none -> "absent"
+    }
+}
+
+// `{T, none}` arm mix returning `T?`: the present arm must be BOXED and the
+// `none` arm must stay the null pointer (the same canonicalisation a value
+// `if`/`else` applies). Without it, `none` (a raw 0) gets re-boxed to
+// `Some(0)` at the return and reads as present downstream.
+fn mp_to_optional(x: int?) -> int? {
+    match x {
+        let v -> v + 1
+        none -> none
+    }
+}
+fn mp_roundtrip(x: int?) -> int {
+    if let v = mp_to_optional(x) { v } else { -1 }
+}
+
+spec "match on optional — present-bind surface" {
+    then "let binds the present value (tagged/int repr)" {
+        mp_pick(7) == 107
+    }
+    then "none matches absence" {
+        mp_pick(none) == -1
+    }
+    then "let binds the present value (niche/str repr)" {
+        mp_label("hi") == "has:hi"
+    }
+    then "none matches absence for niche repr" {
+        mp_label(none) == "empty"
+    }
+    then "a wildcard covers the absent case" {
+        mp_wildcard(none) == 0
+    }
+    then "a wildcard still binds nothing when present matches first" {
+        mp_wildcard(5) == 5
+    }
+    then "nested optional matches bind independent values" {
+        mp_nested(3, 4) == 7
+    }
+    then "nested falls through inner none" {
+        mp_nested(3, none) == 3
+    }
+    then "a guard on a present-bind arm is honoured (true)" {
+        mp_guard(20) == 1
+    }
+    then "a false present-arm guard falls through to the next arm" {
+        mp_guard(5) == 2
+    }
+    then "a present-arm guard does not affect the none arm" {
+        mp_guard(none) == 3
+    }
+    then "a literal pattern matches the present value" {
+        mp_literal(5) == "five"
+    }
+    then "a present-bind arm after a literal catches the rest" {
+        mp_literal(7) == "other:7"
+    }
+    then "none still matches absence alongside literal arms" {
+        mp_literal(none) == "absent"
+    }
+    then "a `{T, none}` match returning T? boxes present and keeps none null" {
+        mp_roundtrip(5) == 6
+    }
+    then "the none arm of a T?-returning match stays absent (not Some(0))" {
+        mp_roundtrip(none) == -1
+    }
+}
+
+spec "present-bind on a non-optional subject is a clean F1000, not an ICE" {
+    then "`match (n: int) { let m -> … }` reports F1000 (not F9999)" {
+        let f = "/tmp/avra_mp_nonopt.av"
+        write_fixture(f,
+            "fn g(n: int) -> int { match n { let m -> m, none -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1000") && !out.contains("F9999")
+    }
+}
+
+spec "match on optional — exhaustiveness is enforced (spec Axis 8)" {
+    then "a present-only match (no `none`, no `_`) is non-exhaustive (F9001)" {
+        let f = "/tmp/avra_optmatch_nonexh.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { let v -> v } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F9001")
+    }
+    then "a `none`-only match (no present case) is non-exhaustive (F9001)" {
+        let f = "/tmp/avra_optmatch_noneonly.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { none -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F9001")
+    }
+    then "present + none arms are exhaustive (no F9001)" {
+        let f = "/tmp/avra_optmatch_exh.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { let v -> v\n none -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F9001")
+    }
+    then "a `_` wildcard alone covers the absent case (no F9001)" {
+        let f = "/tmp/avra_optmatch_wild.av"
+        write_fixture(f,
+            "fn g(x: int?) -> int { match x { let v -> v\n _ -> 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F9001")
+    }
+}

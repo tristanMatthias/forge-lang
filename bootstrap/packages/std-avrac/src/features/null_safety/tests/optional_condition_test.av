@@ -1,0 +1,89 @@
+// WHY: a bare optional condition (`if opt` / `while opt` / if-expr) must
+// read none → false and present → the truthiness of the UNWRAPPED inner.
+// Two bugs hid here: (1) ctx.truthy tested the wrong LLVMTypeKind for
+// pointers (14 = Metadata, not 12 = Pointer), so a pointer-typed condition
+// emitted a malformed `icmp ne ptr, i64 0` that llc rejected; (2) even with
+// valid IR, a tagged `Some(false)` / `Some(0)` is a non-null BOX pointer,
+// so a plain non-null test would silently take the then-branch. The
+// condition sites lower through emit_cond_truthy instead (the statement-if,
+// value-if, if-expr, and while paths all share it).
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+fn pick_b(b: bool?) -> str {
+    if b { "then" } else { "else" }
+}
+fn pick_i(v: int?) -> str {
+    if v { "then" } else { "else" }
+}
+
+spec "bare `if` on an optional: none → false, present → inner truthiness" {
+    then "bool? = true takes then" {
+        pick_b(true) == "then"
+    }
+    then "bool? = false takes ELSE (a present false is not 'non-null box')" {
+        pick_b(false) == "else"
+    }
+    then "bool? = none takes else" {
+        pick_b(none) == "else"
+    }
+    then "int? = 1 takes then; int? = 0 takes else (inner truthiness)" {
+        pick_i(1) == "then" && pick_i(0) == "else"
+    }
+    then "int? = none takes else" {
+        pick_i(none) == "else"
+    }
+    then "a bare `str?` condition is rejected (F1000), like a bare `str`" {
+        let f = "/tmp/avra_optcond_str.av"
+        write_fixture(f,
+            "fn pick(s: str?) -> int { if s { 1 } else { 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1000")
+    }
+}
+
+spec "logical ops and `!` use optional-aware truthiness too" {
+    then "Some(false) && true is false (no box-pointer truthiness)" {
+        let b: bool? = false
+        (b && true) == false
+    }
+    then "Some(true) && true is true; none && true is false" {
+        let t: bool? = true
+        let n: bool? = none
+        (t && true) == true && (n && true) == false
+    }
+    then "none || false is false; Some(true) || false is true" {
+        let t: bool? = true
+        let n: bool? = none
+        (n || false) == false && (t || false) == true
+    }
+    then "!Some(false) is true; !Some(true) is false; !none is true" {
+        let f: bool? = false
+        let t: bool? = true
+        let n: bool? = none
+        (!f) == true && (!t) == false && (!n) == true
+    }
+}
+
+spec "bare optional condition in while and if-expr positions" {
+    then "while on a bool? stops when it goes none/false" {
+        mut flag: bool? = true
+        mut spins = 0
+        while flag {
+            spins = spins + 1
+            flag = if spins < 3 { true } else { none }
+        }
+        spins == 3
+    }
+    then "if-expr on a bool? = false picks the else value" {
+        let b: bool? = false
+        let r = if b { 1 } else { 2 }
+        r == 2
+    }
+    then "if-expr on a bool? = true picks the then value" {
+        let b: bool? = true
+        let r = if b { 1 } else { 2 }
+        r == 1
+    }
+}

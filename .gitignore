@@ -34,3 +34,6 @@
 
 # sha256_file sidecar cache (mtime-keyed memo, runtime.c)
 *.avra-sha256
+
+# Gate/test logs (transient)
+.gt/

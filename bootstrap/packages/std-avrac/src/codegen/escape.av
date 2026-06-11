@@ -214,6 +214,7 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         .Catch(inner, _, body, _, _) -> remove_escaped_expr(body, remove_escaped_expr(inner, set))
         .NullCoalesce(left, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
         .OptionalChain(obj, _) -> remove_escaped_expr(obj, set)
+        .OptionalMethodCall(obj, _, args) -> remove_escaped_args(args, remove_escaped_expr(obj, set))
         .IsCheck(subj, _) -> remove_escaped_expr(subj, set)
         .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
         .EnumCtor(_, _, args) -> remove_escaped_args(args, set)

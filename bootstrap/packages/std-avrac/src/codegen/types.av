@@ -13,6 +13,12 @@
 //                                 or the dispatchers (codegen.av)
 
 use core.{Expr, SExpr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+
+// LLVMTypeKind values from llvm-c/Core.h (LLVM 20). Only the kinds the
+// value-dispatch helpers test; keep in sync with the pinned LLVM major.
+const LLVM_TYPEKIND_DOUBLE: int = 3
+const LLVM_TYPEKIND_INTEGER: int = 8
+const LLVM_TYPEKIND_POINTER: int = 12
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
@@ -1137,6 +1143,10 @@ impl Ctx {
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
+            // Scope-exit cleanup loads this slot unconditionally; the slot
+            // is guaranteed null until first bound because every ptr-typed
+            // alloca is zero-initialized at creation (avra_llvm_build_alloca,
+            // zm77) — otherwise cleanup would release stack garbage.
             self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
             // Push Release onto defers for LIFO interleaving with defer/errdefer
             self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))
@@ -1176,9 +1186,13 @@ impl Ctx {
     // ptr → null check, i64 → zero check, i1 → use directly, double → fcmp ne 0.0
     fn truthy(self, val: ptr, name: string) -> ptr {
         let kind = avra_llvm_type_kind(avra_llvm_typeof(val))
-        if kind == 14 { return avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_null(self.ptr_type), name) }
-        if kind == 3 { return avra_llvm_build_fcmp(self.builder, 6, val, avra_llvm_const_null(self.double_type), name) }
-        if kind == 8 && avra_llvm_int_type_width(avra_llvm_typeof(val)) == 1 { return val }
+        // Note: this previously tested 14 (Metadata) for pointers, so a bare
+        // pointer-typed condition fell into the integer branch and emitted a
+        // malformed `icmp ne ptr, i64 0` that llc rejects — latent until
+        // optionals made `if opt` reachable.
+        if kind == LLVM_TYPEKIND_POINTER { return avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_null(self.ptr_type), name) }
+        if kind == LLVM_TYPEKIND_DOUBLE { return avra_llvm_build_fcmp(self.builder, 6, val, avra_llvm_const_null(self.double_type), name) }
+        if kind == LLVM_TYPEKIND_INTEGER && avra_llvm_int_type_width(avra_llvm_typeof(val)) == 1 { return val }
         avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_int(avra_llvm_typeof(val), 0, 0), name)
     }
 
@@ -1356,6 +1370,11 @@ impl Ctx {
                 ValueType.Enum(rn, self.resolve_codegen_vtype_list(args), rid)
             }
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
+            // Resolve the inner of a `T?` too — otherwise a local `let c: Color? = …`
+            // keeps an unresolved `.Struct("Color")` inner (the parser can't tell
+            // enum from struct), and unwrapping it (`c!` / `if let`) yields a value
+            // the enum `match` can't dispatch (F9999). Mirrors List/Union/FnTyped.
+            .Optional(inner) -> ValueType.Optional(self.resolve_codegen_vtype(inner))
             .Channel(elem) -> ValueType.Channel(self.resolve_codegen_vtype(elem))
             .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
             .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))

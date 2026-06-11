@@ -1,0 +1,62 @@
+// WHY: a `T?` local binding must resolve its INNER nominal type the same way
+// a non-optional binding does. `resolve_codegen_vtype` upgrades a parser-level
+// `.Struct("Color")` to the registered `.Enum("Color")`; it must do so through
+// an `Optional` wrapper too. Otherwise `let c: Color? = …` keeps an unresolved
+// struct-shaped inner, and unwrapping it (`if let` / `c!`) yields a value the
+// enum `match` cannot dispatch — a F9999 ICE. These lock the unwrap-then-use
+// path for a local optional whose inner is an enum / struct / newtype.
+
+enum Color { Red, Green, Blue }
+type Point = { x: int, y: int }
+type Tag = int
+
+fn color_name(c: Color) -> str {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+// if-let unwrap of a LOCAL optional enum, then match the unwrapped enum.
+fn iflet_enum(c: Color?) -> str {
+    if let v = c { color_name(v) } else { "none" }
+}
+
+// force-unwrap of a local optional enum, then match.
+fn forced_enum(c: Color?) -> str {
+    color_name(c!)
+}
+
+spec "a local optional enum unwraps to a matchable enum (no F9999)" {
+    then "if-let on a local Color? then match the inner" {
+        let c: Color? = Color.Green
+        iflet_enum(c) == "green"
+    }
+    then "force-unwrap a local Color? then match the inner" {
+        let c: Color? = Color.Blue
+        forced_enum(c) == "blue"
+    }
+    then "the local binding round-trips every variant" {
+        let r: Color? = Color.Red
+        let g: Color? = Color.Green
+        let b: Color? = Color.Blue
+        iflet_enum(r) == "red" && iflet_enum(g) == "green" && iflet_enum(b) == "blue"
+    }
+    then "a none local optional enum takes the else branch" {
+        let c: Color? = none
+        iflet_enum(c) == "none"
+    }
+}
+
+spec "a local optional struct/newtype unwraps to its resolved inner" {
+    then "if-let on a local Point? reads the inner fields" {
+        let p: Point? = Point { x: 3, y: 4 }
+        let sum = if let v = p { v.x + v.y } else { 0 - 1 }
+        sum == 7
+    }
+    then "force-unwrap a local newtype optional yields the underlying value" {
+        let t: Tag? = 42
+        (t!) == 42
+    }
+}

@@ -5,7 +5,7 @@ use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use core.{avra_covmap_next_decision_id}
 use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.{is_null_literal}
-use codegen.{optional_repr_tagged, emit_optional_unwrap}
+use codegen.{optional_repr_tagged, emit_optional_unwrap, emit_optional_is_none, emit_cond_truthy}
 use features.enum_decl.{emit_enum_tag_cmp}
 
 /// Codegen for unary operators (`-x`, `!x`, `~x`).
@@ -25,7 +25,13 @@ export fn emit_unary(ctx: Ctx, env: List<VarBinding>, op: UnOp, right: Expr) -> 
             }
             ok_emit(ctx.sub(ctx.i64(0), r.value, "neg"), .Int)
         }
-        .Not -> ok_emit(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"), .Bool)
+        .Not -> {
+            // Negate the TRUTHINESS, not the raw bits: a tagged optional is a
+            // box pointer, so `!Some(false)` under a raw zero-compare read
+            // "non-null ⇒ false". emit_cond_truthy unwraps optionals first.
+            let t = emit_cond_truthy(ctx, r.value, r.ty, "not_in")
+            ok_emit(ctx.icmp_eq(ctx.to_i64(t, "not_t64"), ctx.i64(0), "not_cmp"), .Bool)
+        }
         .BitNot -> ok_emit(ctx.bit_not(r.value, "bnot"), .Int)
     }
 }
@@ -46,14 +52,29 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     let right_result = ctx.emit(env, right)?
     mut rhs = right_result.value
 
+    let l_opt = vtype_is_optional(left_result.ty)
+    let r_opt = vtype_is_optional(right_result.ty)
+
+    // Either side optional + `==`/`!=`: equality must be none-safe and
+    // inner-aware. Two equal present TAGGED values live in distinct boxes
+    // (a raw icmp reads "ne"); a present niche string must strcmp like a
+    // plain string; an `enum?` pair must tag-compare; and a `none` side
+    // must answer false/true — never unwrap (a blind unwrap loads the null
+    // box and traps). `x == none` literals keep the dedicated null-test
+    // path below.
+    if (l_opt || r_opt) && ((op is .Eq) || (op is .Ne)) && !is_null_literal(left) && !is_null_literal(right) {
+        let l_inner = vtype_strip_optional(left_result.ty)
+        if vtype_eq(l_inner, vtype_strip_optional(right_result.ty)) {
+            return emit_optional_eq(ctx, lhs, rhs, l_opt, r_opt, l_inner, op is .Ne)
+        }
+    }
+
     // Optional unbox for mixed operands: when one side is a value-inner
     // (tagged/boxed) optional and the other is a concrete non-`null` value,
     // unbox the optional so the operator sees the inner value (e.g.
-    // `some_int_opt == 6`). `== null` / `!= null` are left as a none-check
+    // `some_int_opt < 6`). `== null` / `!= null` are left as a none-check
     // (the box is non-null, `none` is the null pointer). Permissive — strict
     // non-null gating will require an explicit unwrap instead.
-    let l_opt = vtype_is_optional(left_result.ty)
-    let r_opt = vtype_is_optional(right_result.ty)
     if l_opt && !r_opt && !is_null_literal(right) && optional_repr_tagged(vtype_strip_optional(left_result.ty)) {
         lhs = emit_optional_unwrap(ctx, vtype_strip_optional(left_result.ty), lhs)
     }
@@ -196,6 +217,56 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     }
 }
 
+/// Value equality when either operand is an optional (`==` / `!=`).
+/// Three-way and none-safe: when either side is `none`, the result is
+/// "both none" (a non-optional side is never none), so no unwrap ever
+/// touches a null box. When both are present, the inners compare by KIND
+/// via `emit_inner_eq_i1`. `negate` flips the result for `!=`.
+fn emit_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, l_opt: bool, r_opt: bool, inner: ValueType, negate: bool) -> Result<EmitValue, string> {
+    let l_none = if l_opt { emit_optional_is_none(ctx, lhs) } else { ctx.const_i1(0) }
+    let r_none = if r_opt { emit_optional_is_none(ctx, rhs) } else { ctx.const_i1(0) }
+    let slot = ctx.alloca_i64("opteq_slot")
+    let merge_bb = ctx.bb("opteq_end")
+    let present_bb = ctx.bb("opteq_present")
+    let absent_bb = ctx.bb("opteq_absent")
+    ctx.cond_br(ctx.bit_or(l_none, r_none, "opteq_any_none"), absent_bb, present_bb)
+    ctx.position(absent_bb)
+    let both_none = ctx.bit_and(l_none, r_none, "opteq_both_none")
+    ctx.store_br_if_open(ctx.to_i64(both_none, "opteq_abs"), slot, merge_bb)
+    ctx.position(present_bb)
+    let lv = if l_opt { emit_optional_unwrap(ctx, inner, lhs) } else { lhs }
+    let rv = if r_opt { emit_optional_unwrap(ctx, inner, rhs) } else { rhs }
+    let inner_eq = emit_inner_eq_i1(ctx, lv, rv, inner)?
+    ctx.store_br_if_open(ctx.to_i64(inner_eq, "opteq_pres"), slot, merge_bb)
+    ctx.position(merge_bb)
+    let eq64 = ctx.load_i64(slot, "opteq_val")
+    if negate {
+        ok_emit(ctx.icmp_eq(eq64, ctx.i64(0), "opteq_ne"), .Bool)
+    } else {
+        ok_emit(ctx.icmp_ne(eq64, ctx.i64(0), "opteq_eq"), .Bool)
+    }
+}
+
+/// Present-values equality as a raw `i1`, dispatched by inner KIND so an
+/// optional's `==` matches its non-optional counterpart: strings strcmp,
+/// enums tag-compare, floats fcmp; value scalars compare by value and the
+/// remaining reference types by pointer identity (both an integer icmp).
+fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr, string> {
+    if vtype_is_str(inner) {
+        let cmp = ctx.call("strcmp", [ctx.to_ptr(lv, "opteq_ls"), ctx.to_ptr(rv, "opteq_rs")])
+        let ext = ctx.sext(cmp, ctx.i64_type, "opteq_strcmp")
+        return .Ok(ctx.eq(ext, ctx.i64(0), "opteq_streq"))
+    }
+    if vtype_enum_name(inner) != "" {
+        let tag_eq = emit_enum_tag_cmp(ctx, lv, rv, inner, 32)?
+        return .Ok(ctx.truthy(tag_eq.value, "opteq_enumeq"))
+    }
+    if vtype_eq(inner, .Float) {
+        return .Ok(ctx.fcmp(1, ctx.to_f64(lv, "opteq_lf"), ctx.to_f64(rv, "opteq_rf"), "opteq_feq"))
+    }
+    .Ok(ctx.eq(ctx.to_i64(lv, "opteq_li"), ctx.to_i64(rv, "opteq_ri"), "opteq_ieq"))
+}
+
 /// True iff `ty` is any narrow sized-integer variant — used to
 /// detect when a binary op needs width normalisation.
 fn is_narrow(ty: ValueType) -> bool {
@@ -264,7 +335,7 @@ export fn emit_logical(ctx: Ctx, env: List<VarBinding>, left: Expr, op: LogicOp,
     let decision_id = avra_covmap_next_decision_id()
     let left_result = ctx.emit(env, left)?
 
-    let l_bool = ctx.truthy(left_result.value, "l_bool")
+    let l_bool = emit_cond_truthy(ctx, left_result.value, left_result.ty, "l_bool")
     let left_bb = ctx.current_bb()
 
     let rhs_bb = ctx.bb("sc_rhs")
@@ -291,7 +362,7 @@ export fn emit_logical(ctx: Ctx, env: List<VarBinding>, left: Expr, op: LogicOp,
         .Or -> ctx.cov_condition_false(decision_id)
     }
     let right_result = ctx.emit(env, right)?
-    let r_bool = ctx.truthy(right_result.value, "r_bool")
+    let r_bool = emit_cond_truthy(ctx, right_result.value, right_result.ty, "r_bool")
 
     // Right condition true/false counters
     let r_true_bb = ctx.bb("sc_r_true")

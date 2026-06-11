@@ -1,13 +1,29 @@
-// WHY: parses `if` as both a statement and an expression form.
+// WHY: parses `if` as both a statement and an expression form, plus the
+// bind-fresh `if let v = x { … } else { … }` sugar (spec Axis 10.4), in
+// BOTH positions. It desugars to an ordinary `if x != none` over a fresh
+// temp, so the subject is evaluated once and `v` is a fresh immutable
+// binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
+// no codegen.
 
-use core.{Stmt, Expr}
+use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, expr_ne_none}
+use list_ops.{list_concat}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
 
+
+// The shared `if let <binding> = <subject>` prefix, in both positions:
+// mint the once-evaluated temp, consume the binding and `=`, parse the
+// subject with struct-literals disabled, and require the `{` that starts
+// the then-block.
+type IfLetHeader = { tmp: string, binding: string, subject: Expr }
+
 impl Parser {
+
     fn parse_if_statement(self) -> Result<Stmt, string> {
         self.advance()
+        // Bind-fresh `if let v = x { … }`: `let` right after `if`.
+        if self.check(Tk.KwLet) { return self.parse_if_let_statement() }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let condition_opt = self.parse_expression()
@@ -30,8 +46,105 @@ impl Parser {
         .Ok(Stmt.If(condition, then_branch, none))
     }
 
+    // `if let v = x { THEN } else { ELSE }` desugars to
+    //   { let __t = x;  if __t != none { let v = __t!;  THEN } else { ELSE } }
+    // The temp evaluates the subject exactly once; `v` is a fresh immutable
+    // binding of the unwrapped value (the force-unwrap is only reached when
+    // present, so it never traps). Block-scoped so the temp never leaks.
+    // Sound for let/mut/param uniformly — there is no narrowed mutable to
+    // invalidate. `if` already consumed by the caller; `let` is current.
+    fn parse_if_let_header(self) -> Result<IfLetHeader, string> {
+        let tmp = self.fresh("iflet")
+        self.advance()
+        let binding = self.consume_identifier("expected a binding name after `if let`")?
+        if !self.consume(Tk.Equal, "expected `=` after the `if let` binding") { return .Err("parse error") }
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let subject_opt = self.parse_expression()
+        self.allow_struct_lit = saved
+        let subject = subject_opt?
+        if !self.check(Tk.LeftBrace) {
+            self.report(DiagCode.ExpectedBlock, "expected `{` after the `if let` binding")
+            return .Err("parse error")
+        }
+        .Ok(IfLetHeader { tmp: tmp, binding: binding, subject: subject })
+    }
+
+    fn parse_if_let_statement(self) -> Result<Stmt, string> {
+        let h = self.parse_if_let_header()?
+        let then_branch = self.parse_statement()?
+        mut else_branch: Stmt? = none
+        if self.check(Tk.KwElse) {
+            self.advance()
+            else_branch = self.parse_statement()?
+        }
+        let bind_stmt = self.iflet_bind_stmt(h.tmp, h.binding)
+        // Prepend the unwrap-bind to the then-block.
+        let new_then = match then_branch {
+            .Block(body) -> Stmt.Block(self.iflet_prepend(bind_stmt, body))
+            _ -> {
+                let one: List<SStmt> = [bind_stmt, sstmt_dummy(then_branch)]
+                Stmt.Block(one)
+            }
+        }
+        let cond = expr_ne_none(Expr.Ident(h.tmp))
+        let inner_if = Stmt.If(cond, new_then, else_branch)
+        let outer: List<SStmt> = [sstmt_dummy(Stmt.Let(h.tmp, ValueType.Unknown, h.subject)), sstmt_dummy(inner_if)]
+        .Ok(Stmt.Block(outer))
+    }
+
+    // Expression-position `if let v = x { THEN } else { ELSE }`. Same
+    // bind-fresh desugar as the statement form, but lowered to a block
+    // EXPRESSION whose value is the inner `if`-expression:
+    //   { let __t = x;  if __t != none { let v = __t!;  THEN } else { ELSE } }
+    // `if` already consumed by `parse_if_expression`; `let` is current.
+    fn parse_if_let_expression(self) -> Result<Expr, string> {
+        let h = self.parse_if_let_header()?
+        let then_expr = self.parse_block_expression()?
+        // Else mirrors `parse_if_expression`: block / `else if` / bare expr;
+        // a missing else yields the same `0` default a plain if-expr uses.
+        mut else_expr = Expr.Number("0")
+        if self.check(Tk.KwElse) {
+            self.advance()
+            if self.check(Tk.KwIf) {
+                else_expr = self.parse_if_expression()?
+            } else if self.check(Tk.LeftBrace) {
+                else_expr = self.parse_block_expression()?
+            } else {
+                else_expr = self.parse_expression()?
+            }
+        }
+        let bind_stmt = self.iflet_bind_stmt(h.tmp, h.binding)
+        let new_then = match then_expr {
+            .Block(body) -> Expr.Block(self.iflet_prepend(bind_stmt, body))
+            _ -> {
+                let one: List<SStmt> = [bind_stmt, sstmt_dummy(Stmt.Expr(then_expr))]
+                Expr.Block(one)
+            }
+        }
+        let cond = expr_ne_none(Expr.Ident(h.tmp))
+        let inner_if = Expr.IfExpr(cond, new_then, else_expr)
+        let outer: List<SStmt> = [sstmt_dummy(Stmt.Let(h.tmp, ValueType.Unknown, h.subject)), sstmt_dummy(Stmt.Expr(inner_if))]
+        .Ok(Expr.Block(outer))
+    }
+
+    // The `let <binding> = __tmp!` statement shared by both if-let desugars:
+    // the present value, force-unwrapped (only reached on the present branch).
+    fn iflet_bind_stmt(self, tmp: string, binding: string) -> SStmt {
+        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
+        sstmt_dummy(Stmt.Let(binding, ValueType.Unknown, unwrap))
+    }
+
+    // Prepend the unwrap-bind to a then-block's statement list.
+    fn iflet_prepend(self, bind: SStmt, body: List<SStmt>) -> List<SStmt> {
+        let head: List<SStmt> = [bind]
+        list_concat(head, body)
+    }
+
     fn parse_if_expression(self) -> Result<Expr, string> {
         self.advance()
+        // Bind-fresh `if let v = x { … } else { … }` in expression position.
+        if self.check(Tk.KwLet) { return self.parse_if_let_expression() }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let condition_opt = self.parse_expression()

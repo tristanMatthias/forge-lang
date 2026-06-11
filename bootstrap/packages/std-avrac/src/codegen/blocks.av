@@ -2,7 +2,7 @@
 
 use core.{Expr, Stmt, ValueType, VarBinding, SStmt, stmt_unwrap}
 use codegen.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
-use codegen.{emit_if_optional_canon}
+use codegen.{emit_if_optional_canon, emit_cond_truthy}
 use core.{ValueType}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.{emit_match_expr}
@@ -89,7 +89,7 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val:
 export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
     let branch_id = avra_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
-    let cond_i1 = ctx.truthy(emit_value_ptr(cond), "sif_cond")
+    let cond_i1 = emit_cond_truthy(ctx, emit_value_ptr(cond), emit_value_ty(cond), "sif_cond")
     let then_bb = ctx.bb("sif_then")
     let else_bb = ctx.bb("sif_else")
     let merge_bb = ctx.bb("sif_end")

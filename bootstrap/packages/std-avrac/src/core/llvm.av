@@ -138,6 +138,7 @@ extern fn avra_llvm_build_call_coerce(b: ptr, fn_type: ptr, fn_val: ptr, args: p
 extern fn avra_llvm_print_module_to_file(m: ptr, path: string) -> int
 extern fn avra_llvm_verify_module_print(m: ptr) -> int
 extern fn avra_llvm_verify_function(fn_val: ptr) -> int
+extern fn avra_llvm_verify_rc_init(m: ptr) -> int
 
 // ── Coverage instrumentation ──
 extern fn avra_coverage_declare(m: ptr)

@@ -13,6 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
+use core.{gensym_name, expr_force_unwrap, expr_ne_none}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -123,6 +124,11 @@ export type Parser = {
     // by context — outside a quote, it stays the bitwise-NOT prefix.
     mut quote_depth: int,
     mut current_start: int,   // byte offset where current token started
+    // Monotonic counter for hygienic temp names in parser desugars
+    // (`if let` / `let-else` / `match` present-bind). Use `self.fresh(tag)`
+    // to mint a guaranteed-unique `__<tag>_<n>` — collision-proof under
+    // macro replication, unlike a source-position-derived name.
+    mut gensym_seq: int,
     mut bag: DiagnosticBag,
     features: Registry,
 }
@@ -416,6 +422,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         allow_it_sugar: false,
         quote_depth: 0,
         current_start: 0,
+        gensym_seq: 0,
         bag: bag_new(),
         features: build_registry(),
     }
@@ -424,6 +431,18 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
 }
 
 impl Parser {
+    /// Mint a hygienic, collision-proof temp name `$<tag>$<n>` for a parser
+    /// desugar (`if let` / `let-else` etc.). The `$` is the key: the lexer
+    /// only admits letters / digits / `_` in identifiers, so user source can
+    /// NEVER produce a `$`-bearing name — the temp cannot shadow or be
+    /// shadowed by a user binding (e.g. a variable literally named
+    /// `__iflet_1`). The monotonic counter keeps temps distinct from each
+    /// other under nesting / macro replication.
+    fn fresh(self, tag: string) -> string {
+        self.gensym_seq = self.gensym_seq + 1
+        gensym_name(tag, self.gensym_seq)
+    }
+
     fn parse_file_expression(self) -> ParseResult {
         let expr = match self.parse_expression() {
             .Ok(e) -> e
@@ -1149,8 +1168,7 @@ impl Parser {
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
                 self.advance()
-                let fu_args: List<SExpr> = [sexpr_dummy(result)]
-                result = Expr.Call(Expr.Ident("__avra_force_unwrap"), fu_args)
+                result = expr_force_unwrap(result)
             }
             // Error propagation: `expr?` — if null, return .Err("parse error")
             // from the enclosing function.
@@ -1179,11 +1197,29 @@ impl Parser {
                 result = Expr.Catch(result, binding, Expr.Block(body_stmts), catch_line, catch_col)
                 continue
             }
-            // Optional chaining: `expr?.field`
+            // Optional chaining `expr?.field` / `expr?.method(args)`.
+            //   `?.field`  keeps the `OptionalChain` AST node — a clean node
+            //              macros/`quote` can see — codegen'd via the shared
+            //              field accessor (emit_field_on_value).
+            //   `?.method(args)` has no AST node (one would need a seed cycle),
+            //              so it desugars to the if-let shape, applying an
+            //              ORDINARY method call to the force-unwrapped receiver:
+            //              `{ let $t = recv; if $t != none { $t!.m(args) } else none }`.
+            //              Both routes ultimately reuse the normal access codegen.
             if self.check(Tk.QuestionDot) {
                 self.advance()
                 let field = self.consume_field_name("expected field name after `?.`")?
-                result = Expr.OptionalChain(result, field)
+                if self.check(Tk.LeftParen) && self.current_line == self.prev_line {
+                    self.advance()
+                    let saved_it = self.allow_it_sugar
+                    self.allow_it_sugar = true
+                    let args = self.parse_arg_list()?
+                    self.allow_it_sugar = saved_it
+                    if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
+                    result = Expr.OptionalMethodCall(result, field, args)
+                } else {
+                    result = Expr.OptionalChain(result, field)
+                }
             } else if self.check(Tk.LeftBracket) {
                 self.advance()
                 let idx = self.parse_expression()?

@@ -2478,6 +2478,7 @@ void avra_dump_stmt_list(const char* label, int64_t list_ptr) {
     avra_dump_stmt("  stmt", fields[0]);
 }
 
+
 // ── eprintln: write string + newline to stderr ──
 void avra_eprintln(const char* s) {
     fputs(s, stderr);

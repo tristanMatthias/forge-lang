@@ -2,16 +2,36 @@
 // Lists are backed by the C-runtime avra_array_* functions.
 
 use core.{Expr, SExpr, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce, box_into_list}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
 
+/// True when an element expression is the absence literal `none`.
+fn lit_is_none(e: Expr) -> bool { e is .None }
+
 /// Codegen for `[a, b, c]`. Allocates a fresh `avra_array_new` and
-/// pushes each element. The first element pins the inferred
-/// element type so the rest can be type-checked against it.
+/// pushes each element. The first element pins the inferred element type.
+///
+/// A literal that mixes `none` with present values is a `List<T?>`, not a
+/// `List<T>`: each present element must be coerced into the tagged-optional
+/// repr (boxed for `int?` / `bool?` / `float?`; identity for the
+/// pointer-niche reprs) so a later unwrap sees a real optional, not a raw
+/// scalar reinterpreted as a box pointer. `emit_optional_coerce` is a no-op
+/// for `none` (stays null) and for already-optional values (no double-box).
 export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> Result<EmitValue, string> {
+    if elements.length == 0 { return ok_emit(ctx.array_new(), .List(.Unknown)) }
+    mut has_none = false
+    mut n = 0
+    while n < elements.length {
+        if lit_is_none(elements[n].node) { has_none = true }
+        n = n + 1
+    }
+    // A literal mixing `none` with present values is a `List<T?>`: emit all
+    // elements, then box via the shared `box_into_list` (inner inferred).
+    if has_none {
+        return emit_list_lit_expected(ctx, env, elements, .Optional(.Unknown))
+    }
     let arr = ctx.array_new()
-    if elements.length == 0 { return ok_emit(arr, .List(.Unknown)) }
     let first_r = ctx.emit(env, elements[0].node)?
     ctx.array_push(arr, first_r.value)
     let elem_ty = first_r.ty
@@ -22,6 +42,21 @@ export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) 
         i = i + 1
     }
     ok_emit(arr, .List(elem_ty))
+}
+
+/// Codegen for a list literal whose `T?` element type is known from context
+/// (an annotated `let xs: List<int?> = [1, 2, 3]`, a `List<T?>` call arg, or
+/// a `none`-bearing literal via `.Optional(.Unknown)`). Emits each element,
+/// then boxes via the shared `box_into_list` — the one list-of-optional box
+/// loop. `expected_elem` is the optional element type (`.Optional(inner)`).
+export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, expected_elem: ValueType) -> Result<EmitValue, string> {
+    mut vals: List<EmitValue> = []
+    mut i = 0
+    while i < elements.length {
+        vals.push(ctx.emit(env, elements[i].node)?)
+        i = i + 1
+    }
+    box_into_list(ctx, vals, expected_elem)
 }
 
 /// Codegen for `list.reduce(init, fn)`. Compiles the lambda
@@ -59,7 +94,11 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
         "length" or "len" -> return ok_emit(ctx.array_len(list_val), .Int)
         "push" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            ctx.array_push(list_val, arg_r.value)
+            // Box a present scalar into the list's `T?` element type — a raw
+            // `xs.push(5)` into a `List<int?>` must store a non-null box, not a
+            // bare 0/value that a later unwrap would deref as a box pointer.
+            let pushed = emit_optional_coerce(ctx, arg_r, vtype_list_elem(list_ty))
+            ctx.array_push(list_val, pushed.value)
             return ok_emit(list_val, list_ty)
         }
         "pop" -> {
@@ -71,7 +110,7 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             let elem_ty = vtype_list_elem(list_ty)
             return ok_emit(ctx.array_get(list_val, arg_r.value), elem_ty)
         }
-        "set" -> return emit_list_set(ctx, env, list_val, args)
+        "set" -> return emit_list_set(ctx, env, list_val, list_ty, args)
         "map" -> {
             let elem_ty = vtype_list_elem(list_ty)
             mut map_param_types: List<ValueType> = []
@@ -130,7 +169,9 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             if args.length < 2 { return err_emit("list.insert expects 2 arguments: index and value") }
             let idx_r = ctx.emit(env, args[0].node)?
             let val_r = ctx.emit(env, args[1].node)?
-            ctx.call("avra_array_insert", [list_val, idx_r.value, val_r.value])
+            // Box a present scalar into the list's `T?` element type (see push).
+            let ins = emit_optional_coerce(ctx, val_r, elem_ty)
+            ctx.call("avra_array_insert", [list_val, idx_r.value, ins.value])
             return ok_emit(list_val, list_ty)
         }
         // ryvy: `xs.enumerate()` -> List<(int, T)>. Pairs each element
@@ -166,11 +207,13 @@ fn emit_list_slice(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueTyp
 }
 
 /// Codegen for `list.set(idx, val)`. Emits both args and forwards
-/// to `avra_array_set`. Returns the list (so the call chains).
-fn emit_list_set(ctx: Ctx, env: List<VarBinding>, list: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+/// to `avra_array_set`. Returns the list (so the call chains). The value is
+/// boxed into the list's `T?` element type (see push) before storing.
+fn emit_list_set(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueType, args: List<SExpr>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("list.set expects 2 arguments: index and value") }
     let idx_r = ctx.emit(env, args[0].node)?
     let val_r = ctx.emit(env, args[1].node)?
-    ctx.call("avra_array_set", [list, idx_r.value, val_r.value])
-    ok_emit(list, .List(.Unknown))
+    let stored = emit_optional_coerce(ctx, val_r, vtype_list_elem(list_ty))
+    ctx.call("avra_array_set", [list, idx_r.value, stored.value])
+    ok_emit(list, list_ty)
 }

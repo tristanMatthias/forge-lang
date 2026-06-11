@@ -6,9 +6,9 @@ spec "optional chain" {
         let px = p?.x
         px == 10
     }
-    then "null field access returns zero" {
-        let n: ptr = null
+    then "none receiver short-circuits to none" {
+        let n: NsocPoint? = none
         let nx = n?.x
-        nx == 0
+        (nx ?? 0) == 0
     }
 }

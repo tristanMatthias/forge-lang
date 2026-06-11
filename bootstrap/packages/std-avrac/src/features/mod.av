@@ -21,7 +21,7 @@ use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
 use features.match_expr.{match_feature, when_feature}
 use features.modules.{mod_feature, use_feature}
-use features.null_safety.{null_coalesce_feature, optional_chain_feature, try_feature, catch_feature}
+use features.null_safety.{null_coalesce_feature, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
 use features.parallel_stmt.{parallel_feature}
 use features.spawn_expr.{spawn_expr_feature}
 use features.channels.{channels_feature}
@@ -73,6 +73,7 @@ export fn init_features(reg: Registry) {
     register(reg, map_lit_feature())
     register(reg, null_coalesce_feature())
     register(reg, optional_chain_feature())
+    register(reg, optional_method_call_feature())
     register(reg, try_feature())
     register(reg, catch_feature())
     register(reg, struct_lit_feature())

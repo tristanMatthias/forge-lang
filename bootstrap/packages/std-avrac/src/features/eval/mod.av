@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr}
+use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, FORCE_UNWRAP_FN}
 use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
@@ -846,7 +846,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return ok_result(runtime, value_function(name))
             }
 
-            if name in ["println", "eprintln", "string", "__avra_force_unwrap"] {
+            if name in ["println", "eprintln", "string", FORCE_UNWRAP_FN] {
                 return ok_result(runtime, value_builtin(name))
             }
 
@@ -1394,9 +1394,9 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
 
     // Force-unwrap (`expr!`): the interpreter represents a present optional
     // as the inner value directly (no boxing), so this is a pass-through.
-    if name == "__avra_force_unwrap" {
+    if name == FORCE_UNWRAP_FN {
         if args.length == 0 {
-            return error_result(runtime, "__avra_force_unwrap expects 1 argument")
+            return error_result(runtime, "${FORCE_UNWRAP_FN} expects 1 argument")
         }
         return ok_result(runtime, args[0])
     }
@@ -2296,6 +2296,14 @@ fn enum_value_to_expr(v: Value) -> Result<Expr, string> {
             let obj = value_to_expr_node(head)?
             let field_v: Value = p[1]
             .Ok(Expr.OptionalChain(obj, field_v.text))
+        }
+        "OptionalMethodCall" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_node(head)?
+            let method_v: Value = p[1]
+            let args_v: Value = p[2]
+            let args = list_value_to_expr_list(args_v)?
+            .Ok(Expr.OptionalMethodCall(obj, method_v.text, args))
         }
         "IsCheck" -> {
             if p.length != 2 { return .Err("decode: bad payload") }

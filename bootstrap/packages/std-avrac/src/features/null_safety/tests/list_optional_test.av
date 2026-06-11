@@ -1,0 +1,113 @@
+// WHY: `List<T?>` must box its present tagged-scalar elements (int / bool /
+// float) into the optional repr, in every construction context — otherwise a
+// later unwrap dereferences a raw scalar as a box pointer and segfaults.
+// Regression for the list-of-tagged-optional boxing gap: a list literal
+// inferred its element type from the first element only and pushed raw
+// values, so `[1, 2, none, 4]`, `let xs: List<int?> = [1, 2]`, and
+// `f([1, 2])` (param `List<int?>`) all crashed on unwrap. Boxing now happens
+// at construction for the `none`-bearing literal, the annotated binding, and
+// the call-argument path alike.
+
+// Function-argument path: a list literal flowing into a `List<int?>` param.
+fn sum_present(xs: List<int?>) -> int {
+    mut t = 0
+    for x in xs {
+        if let v = x { t = t + v }
+    }
+    t
+}
+
+// Indexing path: unwrap an element pulled out by index.
+fn first_or(xs: List<int?>, dflt: int) -> int {
+    let x = xs[0]
+    if let v = x { v } else { dflt }
+}
+
+// Annotated-binding path, no `none` in the literal.
+fn annotated_sum() -> int {
+    let xs: List<int?> = [10, 20, 30]
+    sum_present(xs)
+}
+
+// Mutating-method path: `.push` / `.insert` / `.set` of a raw scalar into a
+// `List<T?>` must box it (the same boundary the literal/arg paths cover).
+fn built_sum() -> int {
+    mut xs: List<int?> = []
+    xs.push(1)
+    xs.push(none)
+    xs.push(2)
+    xs.insert(0, 10)
+    xs.set(1, 100)     // overwrite the 1 with 100
+    // xs == [10, 100, none, 2]
+    sum_present(xs)
+}
+
+// Present-zero collision probes: a boxed `Some(0)` / `Some(false)` /
+// `Some(0.0)` must stay DISTINCT from `none` (the null pointer). Before the
+// fix, a present zero in a `List<T?>` aliased `none` (both read as 0).
+fn is_present_i(xs: List<int?>, idx: int) -> bool {
+    let e = xs[idx]
+    if let v = e { true } else { false }
+}
+fn is_present_b(xs: List<bool?>, idx: int) -> bool {
+    let e = xs[idx]
+    if let v = e { true } else { false }
+}
+fn is_present_f(xs: List<float?>, idx: int) -> bool {
+    let e = xs[idx]
+    if let v = e { true } else { false }
+}
+
+spec "List<T?> boxes present elements in every construction context" {
+    then "none-bearing literal arg: present elements unwrap, none is skipped" {
+        // [1, 2, none, 4] -> 1 + 2 + 4
+        sum_present([1, 2, none, 4]) == 7
+    }
+    then "all-present literal arg (no none) still boxes" {
+        sum_present([1, 2, 3]) == 6
+    }
+    then "single-element present arg" {
+        sum_present([5]) == 5
+    }
+    then "indexing a present element unwraps it" {
+        first_or([9, none], 0) == 9
+    }
+    then "indexing a none element takes the default" {
+        first_or([none, 9], -1) == -1
+    }
+    then "annotated binding with no none boxes its elements" {
+        annotated_sum() == 60
+    }
+    then "let-else can break out of a loop over a List<int?>" {
+        // local helper inline: stop at the first none
+        let xs: List<int?> = [1, 2, none, 4]
+        mut total = 0
+        for x in xs {
+            let v = x else { break }
+            total = total + v
+        }
+        total == 3
+    }
+    // The Some(0)/none collision: a present zero must box to a non-null
+    // cell, never alias `none` (which is the null pointer).
+    then "annotated [0]: a present int zero is NOT none" {
+        let a: List<int?> = [0]
+        is_present_i(a, 0) == true
+    }
+    then "[0, none]: present zero present, the none element absent" {
+        let c: List<int?> = [0, none]
+        is_present_i(c, 0) == true && is_present_i(c, 1) == false
+    }
+    then "annotated [false]: a present bool false is NOT none" {
+        let b: List<bool?> = [false]
+        is_present_b(b, 0) == true
+    }
+    then "annotated [0.0]: a present float zero is NOT none" {
+        let g: List<float?> = [0.0]
+        is_present_f(g, 0) == true
+    }
+    then "push / insert / set box a raw scalar into a List<T?>" {
+        // [10, 100, none, 2] -> 10 + 100 + 2
+        built_sum() == 112
+    }
+}

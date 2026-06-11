@@ -1106,6 +1106,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .IsCheck(subj, _) -> collect_inst_expr(subj, regs, st)
         .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
         .OptionalChain(obj, _) -> collect_inst_expr(obj, regs, st)
+        .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(args, regs, collect_inst_expr(obj, regs, st))
         .Spawn(body) -> collect_inst_expr(body, regs, st)
         .ChannelNew(_, capacity) -> {
             if capacity == null { st } else { collect_inst_expr(capacity!, regs, st) }
@@ -1548,6 +1549,7 @@ fn substitute_expr(expr: Expr, ta: List<TypeArg>) -> Expr {
         .IsCheck(subj, v) -> .IsCheck(substitute_expr(subj, ta), v)
         .InCheck(needle, items) -> .InCheck(substitute_expr(needle, ta), substitute_expr_list(items, ta))
         .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(obj, ta), f)
+        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(obj, ta), m, substitute_expr_list(a, ta))
         .Spawn(body) -> .Spawn(substitute_expr(body, ta))
         .ChannelNew(elem, capacity) -> {
             let new_elem = substitute_vtype(elem, ta)
@@ -2086,6 +2088,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .IsCheck(subj, v) -> .IsCheck(rewrite_expr(subj, regs, insts), v)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))
         .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr(obj, regs, insts), f)
+        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr(obj, regs, insts), m, rewrite_expr_list(a, regs, insts))
         .Spawn(body) -> .Spawn(rewrite_expr(body, regs, insts))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, regs, insts)) }

@@ -1,0 +1,98 @@
+// WHY: bind-fresh `if let v = x { … } else { … }` (spec Axis 10.4) — the
+// sound, canonical unwrap. `v` is a fresh immutable binding of the present
+// value; the original is never retyped, so nothing can invalidate it (the
+// Rust `if let Some(v)` / Zig `if (x) |v|` model). It desugars in the
+// parser to `{ let __t = x; if __t != none { let v = __t!; … } else { … } }`
+// — the subject is evaluated once, force-unwrap is only reached when
+// present. Works uniformly for let / mut / param: there is no narrowed
+// mutable to invalidate, so it's the sound path `mut`s use.
+
+fn ifl_pick(x: int?) -> int {
+    if let v = x { v + 100 } else { -1 }
+}
+
+fn ifl_mut(seed: int) -> int {
+    mut x: int? = seed
+    if let v = x { v + 1 } else { 0 }
+}
+
+fn ifl_no_else(x: int?) -> int {
+    mut s = -1
+    if let v = x { s = v }
+    s
+}
+
+fn ifl_nested(a: int?, b: int?) -> int {
+    if let x = a {
+        if let y = b { x + y } else { x }
+    } else {
+        0
+    }
+}
+
+// Expression position: `if let` produces a value, so it works as a `let`
+// initializer, a function tail, an `else if let` chain, and inside a larger
+// expression — exactly like a plain `if`-expression.
+fn ifle_init(x: int?) -> string {
+    let label = if let v = x { "got:" + string(v) } else { "none" }
+    label
+}
+fn ifle_tail(x: int?) -> int {
+    if let v = x { v * 2 } else { -1 }
+}
+fn ifle_chain(x: int?, y: int?) -> int {
+    if let a = x { a } else if let b = y { b + 100 } else { -1 }
+}
+fn ifle_in_expr(x: int?) -> int {
+    100 + (if let v = x { v } else { 0 })
+}
+
+// Gensym hygiene: the desugar's temp uses a `$`-prefixed name the lexer can
+// never produce, so a user binding that mimics the old `__iflet_N` scheme
+// cannot shadow or be shadowed by it. (Before the fix this crashed.)
+fn ifl_hygiene(x: int?) -> int {
+    let __iflet_1 = 999
+    if let v = x { v + __iflet_1 } else { __iflet_1 }
+}
+
+spec "if let — bind-fresh unwrap" {
+    then "binds the present value in the then-branch" {
+        ifl_pick(7) == 107
+    }
+    then "takes the else branch on none" {
+        ifl_pick(none) == -1
+    }
+    then "unwraps a mut subject soundly (the path mut narrowing uses)" {
+        ifl_mut(5) == 6
+    }
+    then "no-else form runs the body only when present" {
+        ifl_no_else(9) == 9
+    }
+    then "no-else form skips the body on none" {
+        ifl_no_else(none) == -1
+    }
+    then "nested if-let binds independent values" {
+        ifl_nested(3, 4) == 7
+    }
+    then "nested if-let falls through inner else on inner none" {
+        ifl_nested(3, none) == 3
+    }
+    then "expression position: as a `let` initializer (present)" {
+        ifle_init(5) == "got:5"
+    }
+    then "expression position: as a `let` initializer (absent)" {
+        ifle_init(none) == "none"
+    }
+    then "expression position: as a function tail" {
+        ifle_tail(5) == 10 && ifle_tail(none) == -1
+    }
+    then "expression position: `else if let` chain" {
+        ifle_chain(5, none) == 5 && ifle_chain(none, 7) == 107 && ifle_chain(none, none) == -1
+    }
+    then "expression position: nested inside a larger expression" {
+        ifle_in_expr(5) == 105 && ifle_in_expr(none) == 100
+    }
+    then "gensym hygiene: a user `__iflet_1` binding does not collide" {
+        ifl_hygiene(5) == 1004 && ifl_hygiene(none) == 999
+    }
+}

@@ -3954,31 +3954,17 @@ fn main() {
         // build — skip the synthetic main() wrapper so multiple
         // unit .o files can link together without _main collisions.
         let library_mode = module_path != ""
-        // Ticket t2w: ICE handler — wrap codegen errors in F9999.
-        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode) {
-            .Ok(_) -> {}
-            .Err(e) -> { fail_with_codegen_ice(e, ctx) }
-        }
-        let t_codegen = avra_uptime_ms()
-        // grgg: publish the freshly-compiled .ll into the per-project
-        // cache so the next invocation with byte-identical inputs can
-        // skip the entire pipeline. Best-effort — a publish failure
-        // doesn't affect this run; only the next one's speed.
-        if compile_publish_fp != null {
-            let fp = compile_publish_fp!
-            let ll_content = read_file(output)
-            let staging_id = "compile.${fp_short(fp)}"
-            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", staging_id)
-            if pr.success {
-                eprintln("[compile-cache] published ${fp_short(fp)}")
-            } else {
-                eprintln("[compile-cache] publish failed: ${pr.error}")
-            }
-        }
-        // xtvc: emit metadata.bin alongside the .ll when --emit_metadata
-        // is set. Walks the post-resolve List<SStmt> so qualified names
-        // are canonical; fingerprint is sha256 of the source (same key
-        // the cache uses for content addressing).
+        // xtvc: emit metadata.bin BEFORE codegen. The metadata walks
+        // `named.stmts` and its `extract_unit_metadata` holds references
+        // to the AST's ParamEntry/FieldEntry `ValueType` objects (no
+        // deep copy). `compile_program` below runs RC cleanup that frees
+        // ValueTypes shared with `named.stmts`, so serializing AFTER
+        // codegen reads freed param-vtype memory and crashes
+        // `BytesWriter__vtype` with a corrupt tag (927f, size-dependent
+        // use-after-free). Serializing here — while the ValueTypes are
+        // still live — is correct AND order-independent: the metadata is
+        // a pure function of the post-resolve `named.stmts`, needing
+        // nothing codegen produces.
         if emit_metadata {
             // unit_name has to be the canonical `::`-form (matching the
             // module_path the resolver wrapped the body in) — not the
@@ -4023,6 +4009,27 @@ fn main() {
             if per_file_metadata {
                 let files = collect_source_files(named.stmts)
                 emit_per_file_metas(files, named.stmts, unit_name, cpath)
+            }
+        }
+        // Ticket t2w: ICE handler — wrap codegen errors in F9999.
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode) {
+            .Ok(_) -> {}
+            .Err(e) -> { fail_with_codegen_ice(e, ctx) }
+        }
+        let t_codegen = avra_uptime_ms()
+        // grgg: publish the freshly-compiled .ll into the per-project
+        // cache so the next invocation with byte-identical inputs can
+        // skip the entire pipeline. Best-effort — a publish failure
+        // doesn't affect this run; only the next one's speed.
+        if compile_publish_fp != null {
+            let fp = compile_publish_fp!
+            let ll_content = read_file(output)
+            let staging_id = "compile.${fp_short(fp)}"
+            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", staging_id)
+            if pr.success {
+                eprintln("[compile-cache] published ${fp_short(fp)}")
+            } else {
+                eprintln("[compile-cache] publish failed: ${pr.error}")
             }
         }
         // g2eo: optionally write the resolved file list to a sidecar

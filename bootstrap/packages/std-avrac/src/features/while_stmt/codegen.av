@@ -2,7 +2,7 @@
 // support via the scoped loop stack in Ctx.
 
 use core.{Expr, Stmt, VarBinding}
-use codegen.{Ctx, LoopStackFrame, StmtResult,  ok_stmt, emit_value_ptr}
+use codegen.{Ctx, LoopStackFrame, StmtResult,  ok_stmt, emit_value_ptr, emit_value_ty, emit_cond_truthy}
 use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 use list_ops.{list_push_copy}
 
@@ -28,7 +28,7 @@ fn emit_while_inner(ctx: Ctx, env: List<VarBinding>, condition: Expr, body: Stmt
 
     ctx.position(cond_bb)
     let cond = ctx.emit(env, condition)?
-    let cond_i1 = ctx.truthy(emit_value_ptr(cond), "while_cond")
+    let cond_i1 = emit_cond_truthy(ctx, emit_value_ptr(cond), emit_value_ty(cond), "while_cond")
     ctx.cond_br(cond_i1, body_bb, exit_bb)
 
     // Scoped loop stack: snapshot ctx.loops + append this loop's

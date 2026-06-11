@@ -1,8 +1,13 @@
-// WHY: parses `let`, `mut`, and `const` variable bindings.
+// WHY: parses `let`, `mut`, and `const` variable bindings, plus the
+// bind-fresh guard form `let v = x else { … }` (spec Axis 10.4): bind the
+// present value of an optional for the rest of the scope, or run an
+// else-block that must diverge. Desugars to a block-expression initializer
+// so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmts_diverges, expr_force_unwrap, expr_eq_none}
 use parse.{Parser}
 use core.{Tk}
+use diagnostics.{DiagCode}
 
 impl Parser {
     fn parse_let_statement(self) -> Result<Stmt, string> {
@@ -21,7 +26,47 @@ impl Parser {
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
         let initializer = self.parse_expression()?
+        // Guard form: `let v = x else { … }` (also `let mut v = x else { … }`).
+        if self.check(Tk.KwElse) {
+            return self.build_let_else(name, ty_vt, initializer, is_mut)
+        }
         if is_mut { .Ok(Stmt.Mut(name, ty_vt, initializer)) } else { .Ok(Stmt.Let(name, ty_vt, initializer)) }
+    }
+
+    // `let v = x else { ELSE }` desugars to a block-expression initializer:
+    //   let v = { let __t = x;  if __t == none { ELSE } else { __t! } }
+    // `v` stays at the outer scope (visible in the continuation); the
+    // subject is evaluated once via `__t`; `ELSE` must diverge (so the
+    // if-expr's then-branch is valueless and its type is the unwrapped T).
+    // `is_mut` selects the outer binding (`let mut v = x else` / `mut v = x
+    // else` bind a reassignable `v`) — the fresh binding stays sound either
+    // way, since nothing can invalidate the already-unwrapped value.
+    fn build_let_else(self, name: string, ty_vt: ValueType, subject: Expr, is_mut: bool) -> Result<Stmt, string> {
+        self.advance()
+        let else_stmt = self.parse_statement()?
+        let else_body = match else_stmt {
+            .Block(b) -> b
+            _ -> {
+                let one: List<SStmt> = [sstmt_dummy(else_stmt)]
+                one
+            }
+        }
+        // The else runs only on absence, so `v` can't be bound there — it
+        // MUST exit the scope. A non-diverging else would silently behave
+        // like `?? default`; require divergence so the two stay distinct.
+        if !stmts_diverges(else_body) {
+            self.report(DiagCode.LetElseMustDiverge, "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
+        }
+        let tmp = self.fresh("letelse")
+        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
+        let cond = expr_eq_none(Expr.Ident(tmp))
+        let guard = Expr.IfExpr(cond, Expr.Block(else_body), unwrap)
+        let block_body: List<SStmt> = [
+            sstmt_dummy(Stmt.Let(tmp, ValueType.Unknown, subject)),
+            sstmt_dummy(Stmt.Expr(guard)),
+        ]
+        let init = Expr.Block(block_body)
+        if is_mut { .Ok(Stmt.Mut(name, ty_vt, init)) } else { .Ok(Stmt.Let(name, ty_vt, init)) }
     }
 
     fn parse_mut_statement(self) -> Result<Stmt, string> {
@@ -35,6 +80,10 @@ impl Parser {
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
         let initializer = self.parse_expression()?
+        // `mut v = x else { … }` — bind-fresh guard binding a reassignable `v`.
+        if self.check(Tk.KwElse) {
+            return self.build_let_else(name, ty_vt, initializer, true)
+        }
         .Ok(Stmt.Mut(name, ty_vt, initializer))
     }
 

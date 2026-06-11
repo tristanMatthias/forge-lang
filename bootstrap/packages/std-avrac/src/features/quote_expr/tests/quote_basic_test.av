@@ -130,6 +130,10 @@ spec "quote: null safety" {
         let e = quote { obj?.field }
         render_expr(e) == "(?. obj field)"
     }
+    then "optional method call (first-class node)" {
+        let e = quote { obj?.m(1) }
+        render_expr(e) == "(?.call obj m (1))"
+    }
     then "try propagation" {
         let e = quote { fallible? }
         render_expr(e) == "(? fallible)"
