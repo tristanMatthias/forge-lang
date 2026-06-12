@@ -40,8 +40,17 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     need_check=1
     continue
   fi
-  touched=$(git rev-list "$remote_sha..$local_sha" \
-    -- bootstrap/ .gitignore .gitattributes 2>/dev/null | head -1 || true)
+  # The pathspec is a deliberate SUPERSET of diagnose.sh's
+  # WINDOW_SRC_PATHS: over-triggering costs a cached sub-second verify,
+  # under-triggering would skip the gate. -n 1 avoids the head pipe (and
+  # its legitimate-SIGPIPE rc) so a real git failure can fail the push
+  # loudly instead of reading as "nothing touched".
+  if ! touched=$(git rev-list -n 1 "$remote_sha..$local_sha" \
+      -- bootstrap/ .gitignore .gitattributes 2>&1); then
+    echo >&2 "[pre-push] git rev-list failed for $remote_sha..$local_sha:"
+    echo >&2 "$touched"
+    exit 1
+  fi
   [ -n "$touched" ] && need_check=1
 done
 

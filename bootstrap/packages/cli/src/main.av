@@ -1056,18 +1056,28 @@ fn collect_workspace_lib_objs(project_dir: string) -> string {
     mut i = 0
     while i < pkg_dirs.length {
         let dir = pkg_dirs[i]
-        if dir != "" {
+        if dir != "" && avra_selfhost_file_exists("${dir}avra.toml") != 0 {
             let fp = sidecar_fp_for(dir)
+            mut o = ""
             if fp != "" {
                 let entry = "${dir}build/cache/${fp}"
-                let o = "${entry}/unit.realobj.o"
+                o = "${entry}/unit.realobj.o"
                 if avra_selfhost_file_exists(o) == 0 {
                     // Realobjs are materialised lazily from the slot's
                     // unit.ll on first consume — which is now, here.
                     avra_shell_exec("'${llvm_pfx}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${entry}/unit.ll' -o '${o}' 2>/dev/null")
                 }
-                if avra_selfhost_file_exists(o) != 0 { keep.push(o) }
             }
+            if fp == "" || avra_selfhost_file_exists(o) == 0 {
+                // ALL or NOTHING: a partial object set is worse than none.
+                // Shards resolve every @std/* package via metadata, so a
+                // missing producer .o surfaces later as undefined symbols
+                // at link. Returning "" drops to the documented degraded
+                // mode (no lib-objs env; legacy link path) instead.
+                eprintln("[per-file] no usable realobj for ${dir} — disabling the lib-objs fast path for this run")
+                return ""
+            }
+            keep.push(o)
         }
         i = i + 1
     }

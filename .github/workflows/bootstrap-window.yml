@@ -25,8 +25,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow is a trust gate.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Read-only workflow — never let the token outlive checkout.
+          persist-credentials: false
           # Full history: the check needs the merge-base with the
           # integration branch and that branch's seed blob.
           fetch-depth: 0
@@ -34,4 +38,8 @@ jobs:
       - uses: ./.github/actions/setup-llvm
 
       - name: Bootstrap-window check
-        run: bash bootstrap/scripts/diagnose.sh --check-bootstrap-window "origin/${{ github.base_ref }}"
+        env:
+          # Indirection keeps the ref out of shell parsing — branch
+          # names are validated by GitHub, but pass data as data.
+          BASE_REF: ${{ github.base_ref }}
+        run: bash bootstrap/scripts/diagnose.sh --check-bootstrap-window "origin/${BASE_REF}"

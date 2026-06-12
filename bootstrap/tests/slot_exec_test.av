@@ -32,8 +32,13 @@ spec "--slot-exec: bounded fixture-compile slots" {
         then "a slot leaked by a dead holder is reaped, not waited on forever" {
             let d = "build/cache/_slot_stale"
             avra_shell_exec("rm -rf ${d} && mkdir -p ${d}/slot.0 && echo 99999999 > ${d}/slot.0/pid")
-            // jobs=1 makes the stale slot the ONLY slot: success proves reaping.
-            let out = sh("AVRA_SLOT_DIR=${d} AVRA_FIXTURE_JOBS=1 timeout 20 bash scripts/diagnose.sh --slot-exec echo reaped")
+            // jobs=1 makes the stale slot the ONLY slot: success proves
+            // reaping. The watchdog (so a reaping regression fails fast
+            // instead of hanging) resolves portably: GNU timeout, brew
+            // coreutils gtimeout, or none (stock macOS — the stall
+            // detector still names a hung spec).
+            let tmo = avra_shell_exec("command -v timeout >/dev/null && echo 'timeout 20' || (command -v gtimeout >/dev/null && echo 'gtimeout 20' || echo '')").trim()
+            let out = sh("AVRA_SLOT_DIR=${d} AVRA_FIXTURE_JOBS=1 ${tmo} bash scripts/diagnose.sh --slot-exec echo reaped")
             out.contains("reaped") && out.contains("rc=0")
         }
     }

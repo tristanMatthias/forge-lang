@@ -27,7 +27,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to a commit (what @v4 resolves to at pin time). Credentials
+      # stay persisted on purpose: the train pushes the lock bump.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -44,6 +46,10 @@ jobs:
         run: bash bootstrap/scripts/diagnose.sh --seed-train
 
       - name: Commit the lock bump
+        env:
+          # The trigger constrains this to the integration branch; the
+          # indirection keeps the workflow correct if that ever changes.
+          TRAIN_BRANCH: ${{ github.ref_name }}
         run: |
           if git diff --quiet -- bootstrap/seed/seed.lock; then
             echo "pin unchanged — no train commit"
@@ -56,5 +62,5 @@ jobs:
           git commit -m "chore(seed): cycle to v${v}"
           # A merge can land while we built; rebase the one-file commit
           # rather than failing the train.
-          git pull --rebase origin feat/crafting-intepreters
-          git push origin HEAD:feat/crafting-intepreters
+          git pull --rebase origin "${TRAIN_BRANCH}"
+          git push origin "HEAD:${TRAIN_BRANCH}"

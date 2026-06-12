@@ -63,6 +63,16 @@ export fn llvm_prefix_dir() -> string {
     for c in candidates {
         if avra_selfhost_file_exists("${c}/bin/llvm-config") == 1 { return c }
     }
+    // Last probe before the macOS default: a toolchain whose bin dir is
+    // already on PATH (custom prefix the candidates don't know). The
+    // prefix is the bin dir's parent. Pinned-major candidates run FIRST
+    // so a stray older llvm-config on PATH cannot shadow a proper
+    // LLVM 20 install.
+    for entry in avra_process_env_get("PATH").split(":") {
+        if entry.ends_with("/bin") && avra_selfhost_file_exists("${entry}/llvm-config") == 1 {
+            return entry.substring(0, entry.length - 4)
+        }
+    }
     "/opt/homebrew/opt/llvm"
 }
 
