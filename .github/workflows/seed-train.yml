@@ -37,9 +37,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AVRA_SEED_REPO: ${{ github.repository }}
-          # 4-vCPU runners share the OOM profile that uncapped
-          # parallel fixture compiles can hit; run the suite at
-          # reduced width until the cross-process throttle lands.
+          # Belt and suspenders with the cross-process fixture-compile
+          # throttle (--slot-exec): 4-vCPU runners still benefit from
+          # reduced unit-thread width for the non-compile workload.
           AVRA_TEST_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train
 

@@ -1,0 +1,40 @@
+// WHY: spec for the fixture-compile throttle. Uncapped
+// parallel bs2 fixture compiles OOM-killed the suite on a 16GB box;
+// diagnose.sh --slot-exec bounds them with a cross-process counting
+// semaphore (mkdir slots + pid-file reaping — no flock(1) on macOS).
+// Hermetic via a private AVRA_SLOT_DIR namespace.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn sh(cmd: string) -> string {
+    avra_shell_exec("${cmd} 2>&1; echo rc=$?")
+}
+
+spec "--slot-exec: bounded fixture-compile slots" {
+    given "a private slot namespace" {
+        then "the wrapped command runs and its exit status propagates (success)" {
+            let d = "build/cache/_slot_ok"
+            avra_shell_exec("rm -rf ${d}")
+            let out = sh("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec echo slot-ran")
+            out.contains("slot-ran") && out.contains("rc=0")
+        }
+        then "the wrapped command's failure exit status propagates" {
+            let d = "build/cache/_slot_fail"
+            avra_shell_exec("rm -rf ${d}")
+            !sh("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec false").contains("rc=0")
+        }
+        then "the slot is released on exit — the namespace holds no slot dirs afterwards" {
+            let d = "build/cache/_slot_released"
+            avra_shell_exec("rm -rf ${d}")
+            avra_shell_exec("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec true")
+            avra_shell_exec("ls ${d} 2>/dev/null | wc -l").trim() == "0"
+        }
+        then "a slot leaked by a dead holder is reaped, not waited on forever" {
+            let d = "build/cache/_slot_stale"
+            avra_shell_exec("rm -rf ${d} && mkdir -p ${d}/slot.0 && echo 99999999 > ${d}/slot.0/pid")
+            // jobs=1 makes the stale slot the ONLY slot: success proves reaping.
+            let out = sh("AVRA_SLOT_DIR=${d} AVRA_FIXTURE_JOBS=1 timeout 20 bash scripts/diagnose.sh --slot-exec echo reaped")
+            out.contains("reaped") && out.contains("rc=0")
+        }
+    }
+}

@@ -358,6 +358,12 @@ SEED MANAGEMENT
                          seed-binary input fingerprint (seed IR + C
                          link inputs) that keys build/seed and the
                          window's reuse fast path.
+  --slot-exec <cmd...>   Run <cmd> while holding one of AVRA_FIXTURE_JOBS
+                         (default 2) cross-process compile slots — the
+                         OOM guard bounding concurrent bs2 fixture
+                         compiles during parallel test runs. --run takes
+                         a slot automatically; use this to wrap direct
+                         `bs2 compile` shell-outs.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -1285,6 +1291,62 @@ mode_check_fixedpoint() {
   fi
 }
 
+# ── Fixture-compile throttle ──
+#
+# A bs2 compile peaks 1-2GB RSS. The per_file test suite fans out
+# shard binaries × AVRA_TEST_JOBS threads, and any unit can shell out
+# a fixture compile — uncapped, the burst OOM-killed bs2 mid-suite
+# (Linux 16GB/4-core; same class as the documented macOS jetsam
+# mass-kill). Bound the SHELL-SPAWNED compiles with a cross-process
+# counting semaphore: N slot directories under build/, mkdir as the
+# atomic test-and-set (portable — macOS ships no flock(1)), a pid
+# file per slot so crashed holders get reaped instead of leaking the
+# slot forever.
+COMPILE_SLOT_DIR=""
+
+acquire_compile_slot() {
+  # AVRA_SLOT_DIR overrides the namespace — spec tests use a private
+  # one so they never contend with (or corrupt) a real suite's slots.
+  local n="${AVRA_FIXTURE_JOBS:-2}" base="${AVRA_SLOT_DIR:-$BUILD_DIR/compile_slots}" dir owner i
+  mkdir -p "$base"
+  while :; do
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      dir="$base/slot.$i"
+      if mkdir "$dir" 2>/dev/null; then
+        echo $$ > "$dir/pid"
+        COMPILE_SLOT_DIR="$dir"
+        return 0
+      fi
+      # Reap a slot whose owner died without releasing. The pid file
+      # is written right after mkdir; an empty read means the owner is
+      # mid-acquire — leave it alone.
+      owner=$(cat "$dir/pid" 2>/dev/null)
+      if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+        rm -rf "$dir" 2>/dev/null || :
+      fi
+      i=$((i + 1))
+    done
+    sleep 0.2
+  done
+}
+
+release_compile_slot() {
+  [ -n "$COMPILE_SLOT_DIR" ] && rm -rf "$COMPILE_SLOT_DIR" 2>/dev/null
+  COMPILE_SLOT_DIR=""
+}
+
+# Run an arbitrary command while holding a compile slot. The shell-out
+# surface for callers that can't share this script's functions (the
+# test runner's cached-fixture commands). The EXIT trap releases on
+# every path, including die/kill.
+mode_slot_exec() {
+  [ $# -ge 1 ] || die "--slot-exec needs a command to run"
+  acquire_compile_slot
+  trap release_compile_slot EXIT
+  "$@"
+}
+
 # Compile + link + run a .av with bs2 (or stage1).
 run_fg() {
   local fg="$1"
@@ -1312,11 +1374,16 @@ run_fg() {
   # wrong error message. The $$ suffix isolates per-shard.
   local run_log="$BUILD_DIR/last_run.log.$$"
   local link_log="$BUILD_DIR/last_link.log.$$"
+  # Slot-bounded: this is the per-unit fixture-compile path the test
+  # suite fans out — the OOM source on 4-core/16GB machines.
+  acquire_compile_slot
+  trap release_compile_slot EXIT
   if ! "$BS2" compile "$fg" >"$run_log" 2>&1; then
     cat "$run_log" >&2
     rm -f "$run_log"
     die "bs2 codegen failed"
   fi
+  release_compile_slot
   link_ll "$ll" "$bin" "$link_log"
   rm -f "$run_log" "$link_log"
   "$bin"
@@ -1635,6 +1702,7 @@ main() {
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
+    --slot-exec)          mode_slot_exec "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }
