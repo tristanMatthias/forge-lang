@@ -1,0 +1,78 @@
+// WHY: spec for the bootstrap/scripts/pre-push hook — the
+// bootstrap-window gate. The hook was added in sdmg.2 to enforce the
+// seed-train rule on every outgoing push. Three behaviours are
+// unit-testable without a live --check-bootstrap-window invocation:
+//
+//   1. AVRA_SKIP_WINDOW_CHECK=1 silences the gate and exits 0.
+//   2. Ref-deletion pushes (local_sha = all-zeros) are ignored.
+//   3. Pushes whose commits touch only non-bootstrap paths exit 0
+//      without invoking --check-bootstrap-window.
+//
+// These three cases cover the decision logic that runs unconditionally
+// on every push, before the expensive window build. The gate itself
+// (--check-bootstrap-window) has its own deeper spec; here we only
+// verify the pre-push filter layer.
+//
+// Note: cases that trigger need_check=1 and actually run the gate
+// require a full build environment; they are exercised by the CI
+// workflow (bootstrap-window.yml) rather than the unit suite.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+/// Run the pre-push hook with controlled stdin and optional env prefix.
+/// Captures both stdout and stderr (2>&1). Appends `rc=<N>` so each
+/// assertion can check the exit code alongside the output.
+fn run_hook(env_prefix: string, stdin_content: string) -> string {
+    // Use printf '%s\n' to ensure read -r in the hook's while loop
+    // sees a complete line even when stdin_content has no trailing newline.
+    avra_shell_exec("${env_prefix}printf '%s\\n' '${stdin_content}' | bash scripts/pre-push 2>&1; echo rc=$?")
+}
+
+spec "pre-push hook: gate skip and filtering" {
+    given "AVRA_SKIP_WINDOW_CHECK is set to 1" {
+        then "the hook exits 0 without running the gate" {
+            let out = run_hook("AVRA_SKIP_WINDOW_CHECK=1 ", "")
+            out.contains("[pre-push] AVRA_SKIP_WINDOW_CHECK=1") && out.contains("rc=0")
+        }
+        then "the skip message mentions the gate was skipped" {
+            run_hook("AVRA_SKIP_WINDOW_CHECK=1 ", "").contains("bootstrap-window gate skipped")
+        }
+    }
+
+    given "stdin is empty (no refs being pushed)" {
+        then "the hook exits 0 — nothing outgoing means no check needed" {
+            run_hook("", "").contains("rc=0")
+        }
+        then "the hook does NOT emit the bootstrap-window message" {
+            !run_hook("", "").contains("outgoing commits touch bootstrap")
+        }
+    }
+
+    given "a ref deletion push (local sha is all-zeros)" {
+        // git sends <local-ref> 000...000 <remote-ref> <remote-sha> for deletes.
+        // The hook must not treat a deletion as a reason to check the window —
+        // nothing is being pushed outgoing.
+        then "the hook exits 0 — ref deletion has nothing outgoing to verify" {
+            let zero = "0000000000000000000000000000000000000000"
+            let stdin = "refs/heads/feat/foo ${zero} refs/heads/feat/foo abc1234"
+            run_hook("", stdin).contains("rc=0")
+        }
+        then "no bootstrap-window message for a deletion" {
+            let zero = "0000000000000000000000000000000000000000"
+            let stdin = "refs/heads/feat/foo ${zero} refs/heads/feat/foo abc1234"
+            !run_hook("", stdin).contains("outgoing commits touch bootstrap")
+        }
+    }
+
+    given "the AVRA_SKIP_WINDOW_CHECK escape hatch is not exactly '1'" {
+        then "any other value does NOT skip the gate" {
+            // '0' is explicitly the disabled state — must not skip.
+            // We only verify the message is absent (not that the gate passes,
+            // since that depends on the build environment).
+            !run_hook("AVRA_SKIP_WINDOW_CHECK=0 ", "").contains("bootstrap-window gate skipped")
+        }
+        then "an unset variable does NOT skip the gate" {
+            !run_hook("", "").contains("bootstrap-window gate skipped")
+        }
+    }
+}

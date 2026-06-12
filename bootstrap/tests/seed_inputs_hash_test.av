@@ -1,0 +1,87 @@
+// WHY: regression spec for the three-input content fingerprint that
+// decides when build/seed must be rebuilt (seed_inputs_hash in
+// diagnose.sh). Before this PR only the seed IR was hashed (with md5);
+// editing runtime.c or llvm_wrapper.c left the cached seed binary stale
+// and its failures were misattributed downstream (ensure_bs2's
+// -O2-miscompile fallback fired for what was really an out-of-date
+// wrapper). The new hash covers all three inputs: seed.ll + runtime.c +
+// llvm_wrapper.c, and is path-independent so the same content
+// fingerprints identically from seed/seed.ll and from a window-extracted
+// copy.
+//
+// seed_inputs_hash is an internal shell function (not a CLI mode) so we
+// test its properties by running the same algorithm (sha256 of all
+// three file hashes combined) inline. The implementation in diagnose.sh
+// is:
+//
+//   seed_inputs_hash() {
+//     { $SHA256_CMD "$1" "${2:-$RUNTIME_C}" "${3:-$BOOTSTRAP_DIR/llvm_wrapper.c}" 2>/dev/null; }
+//       | awk '{print $1}' | $SHA256_CMD | awk '{print $1}'
+//   }
+//
+// By testing the published CONTRACT (three-input combination → single
+// hash) rather than calling the function, we avoid depending on the
+// shell function being directly invocable and the test stays hermetic.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn d() -> string { "build/cache/_seed_inputs_hash_test" }
+
+/// Compute the combined three-input hash inline, matching diagnose.sh's
+/// seed_inputs_hash contract: sha256 of all three files combined, then
+/// sha256 of the concatenated per-file hashes.
+fn combined_hash(seed_ll: string, runtime_c: string, wrapper_c: string) -> string {
+    avra_shell_exec("{ sha256sum '${seed_ll}' '${runtime_c}' '${wrapper_c}' 2>/dev/null || shasum -a 256 '${seed_ll}' '${runtime_c}' '${wrapper_c}' 2>/dev/null; } | awk '{print $1}' | { sha256sum 2>/dev/null || shasum -a 256; } | awk '{print $1}'").trim()
+}
+
+spec "seed_inputs_hash: three-input content fingerprint" {
+    given "three scratch files representing a seed IR and two C inputs" {
+        then "the hash is stable: same contents at the same paths → same hash" {
+            let base = d()
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            avra_shell_exec("printf 'define i64 @main() { ret i64 0 }\\n' > ${base}/seed.ll")
+            avra_shell_exec("printf '// runtime stub\\nint rt_init() { return 0; }\\n' > ${base}/runtime.c")
+            avra_shell_exec("printf '// wrapper stub\\n' > ${base}/wrapper.c")
+            let h1 = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            let h2 = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            h1 != "" && h1 == h2
+        }
+        then "changing the seed IR changes the hash" {
+            let base = d()
+            avra_shell_exec("printf 'define i64 @main() { ret i64 1 }\\n' > ${base}/seed_b.ll")
+            let h_a = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            let h_b = combined_hash("${base}/seed_b.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            h_a != "" && h_b != "" && h_a != h_b
+        }
+        then "changing runtime.c changes the hash (C edits must invalidate the seed binary)" {
+            let base = d()
+            avra_shell_exec("printf '// runtime EDITED\\nint rt_init() { return 42; }\\n' > ${base}/runtime_b.c")
+            let h_a = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            let h_b = combined_hash("${base}/seed.ll", "${base}/runtime_b.c", "${base}/wrapper.c")
+            h_a != "" && h_b != "" && h_a != h_b
+        }
+        then "changing llvm_wrapper.c changes the hash (wrapper edits must invalidate the seed binary)" {
+            let base = d()
+            avra_shell_exec("printf '// wrapper EDITED\\nvoid new_fn() {}\\n' > ${base}/wrapper_b.c")
+            let h_a = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            let h_b = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper_b.c")
+            h_a != "" && h_b != "" && h_a != h_b
+        }
+    }
+
+    given "files with identical content but at different paths" {
+        then "the hash is path-independent (same content → same hash regardless of path)" {
+            // The window gate builds seed from a copy of the tree, so the same
+            // seed content must fingerprint identically from seed/seed.ll and
+            // from build/window/seed.ll — or the gate would never reuse the dev
+            // build/seed and would always rebuild.
+            let base = d()
+            avra_shell_exec("cp ${base}/seed.ll ${base}/seed_copy.ll")
+            avra_shell_exec("cp ${base}/runtime.c ${base}/runtime_copy.c")
+            avra_shell_exec("cp ${base}/wrapper.c ${base}/wrapper_copy.c")
+            let h_orig = combined_hash("${base}/seed.ll", "${base}/runtime.c", "${base}/wrapper.c")
+            let h_copy = combined_hash("${base}/seed_copy.ll", "${base}/runtime_copy.c", "${base}/wrapper_copy.c")
+            h_orig != "" && h_orig == h_copy
+        }
+    }
+}

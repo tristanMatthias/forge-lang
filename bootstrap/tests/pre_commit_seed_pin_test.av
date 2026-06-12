@@ -1,0 +1,65 @@
+// WHY: regression spec for the pre-commit seed-pin check update.
+// Before sdmg.3 (pin-don't-vendor) the check required `seed/seed.ll`
+// to exist — which is now gitignored and no longer vendored. Fresh
+// clones only have `seed/seed.lock`. The change:
+//   before:  if [ ! -f bootstrap/seed/seed.ll ]
+//   after:   if [ ! -f bootstrap/seed/seed.lock ] && [ ! -f bootstrap/seed/seed.ll ]
+//
+// The observable contract:
+//   • neither file  → SEED PIN MISSING (blocked)
+//   • only seed.lock → pass (lock-era checkout — the normal state)
+//   • only seed.ll  → pass (dev with locally-materialized seed)
+//   • both present  → pass
+//
+// We exercise this by running the condition logic in isolation as a
+// small inline script rather than the full hook (which would also run
+// the spec suite and the fixed-point check, both requiring a live bs2).
+//
+// This mirrors the exact shell condition on lines 186–191 of
+// bootstrap/scripts/pre-commit.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+/// Run the extracted seed-pin condition in a temporary directory
+/// that controls which seed files exist. Returns the output of the
+/// inline check (including an rc=N suffix).
+fn check_seed_pin(has_lock: bool, has_ll: bool) -> string {
+    let d = "build/cache/_precommit_seedpin"
+    avra_shell_exec("rm -rf ${d} && mkdir -p ${d}/bootstrap/seed")
+    if has_lock { avra_shell_exec("touch ${d}/bootstrap/seed/seed.lock") }
+    if has_ll   { avra_shell_exec("touch ${d}/bootstrap/seed/seed.ll") }
+    // Inline the exact changed condition from scripts/pre-commit.
+    // cd into the temp dir so relative paths in the check resolve
+    // to the synthetic layout, not the real repo.
+    avra_shell_exec("(cd ${d} && if [ ! -f bootstrap/seed/seed.lock ] && [ ! -f bootstrap/seed/seed.ll ]; then echo 'SEED PIN MISSING'; exit 1; else echo 'SEED PIN OK'; exit 0; fi) 2>&1; echo rc=$?")
+}
+
+spec "pre-commit seed-pin check: lock OR ll is sufficient" {
+    given "neither seed.lock nor seed.ll is present" {
+        then "the check fails with SEED PIN MISSING" {
+            let out = check_seed_pin(false, false)
+            out.contains("SEED PIN MISSING") && !out.contains("rc=0")
+        }
+    }
+
+    given "only seed.lock is present (lock-era checkout — normal after sdmg.3)" {
+        then "the check passes — the lock alone is a valid pin" {
+            let out = check_seed_pin(true, false)
+            out.contains("SEED PIN OK") && out.contains("rc=0")
+        }
+    }
+
+    given "only seed.ll is present (dev machine with a locally-materialized seed)" {
+        then "the check passes — a materialized seed alone is acceptable" {
+            let out = check_seed_pin(false, true)
+            out.contains("SEED PIN OK") && out.contains("rc=0")
+        }
+    }
+
+    given "both seed.lock and seed.ll are present" {
+        then "the check passes — the normal post-materialization state" {
+            let out = check_seed_pin(true, true)
+            out.contains("SEED PIN OK") && out.contains("rc=0")
+        }
+    }
+}
