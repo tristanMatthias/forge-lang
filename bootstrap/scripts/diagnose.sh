@@ -302,6 +302,20 @@ SEED MANAGEMENT
                          integration seed + compiler sources; bypass with
                          AVRA_FORCE_WINDOW=1. Wired into the pre-push hook
                          and the bootstrap-window CI workflow.
+  --seed-merge [--base ours|theirs|<ref>]
+                         One-command seed-merge staging (sdmg.5). For a
+                         merge where seed/seed.ll conflicted: picks a base
+                         seed (default: tries ours, then theirs), patches
+                         match traps, builds stage1, compiles the merged
+                         source, links bs2, self-compile verifies, then
+                         regenerates the seed (--update-seed) and verifies
+                         the fixed point. On a stage failure it reports the
+                         failure class — parse / extern-guard / corruption —
+                         with next-step hints, and falls through to the next
+                         candidate. Recipe + taxonomy: docs/SEED_MERGES.md.
+  --seed-merge-classify <rc> <logfile>
+                         INTERNAL (spec-tested): print the --seed-merge
+                         failure class for a stage-compile exit code + log.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -1272,6 +1286,8 @@ main() {
     --seed-patch)         mode_seed_patch "$@" ;;
     --seed-sigs)          mode_seed_sigs "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
+    --seed-merge)         mode_seed_merge "$@" ;;
+    --seed-merge-classify) seed_merge_classify "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }
@@ -1939,6 +1955,209 @@ EOF
 
   printf '%s' "$fp" > "$marker"
   ok "bootstrap window holds — branch source builds + runs from $ref's pristine seed"
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Seed-merge staging (sdmg.5)
+# ─────────────────────────────────────────────────────────────────────
+
+# Classify a failed stage-compile of the merged source. Mirrors the
+# 2026-06-11 incident taxonomy (docs/SEED_MERGES.md "choosing a base"):
+#   corruption   — the stage binary died by signal / corrupted memory
+#                  while compiling: the base seed predates a
+#                  codegen-correctness fix present in the union (zm77
+#                  class). The side that HAS the fix should win.
+#   extern-guard — the base seed's baked predeclare table conflicts
+#                  with the merged source's extern signatures; the
+#                  side whose refactor it is should win (sdmg.4 tracks
+#                  a bootstrap-tolerant guard).
+#   parse        — the base seed's parser predates surface syntax in
+#                  the merged source. NOTE: new literal forms often
+#                  surface as `undefined variable`, not a parse error
+#                  — both classify here.
+#   unknown      — none of the known signatures matched; read the log.
+seed_merge_classify() {
+  local rc="$1" logfile="$2"
+  if [ "$rc" -ge 128 ] \
+     || grep -qiE 'segmentation fault|bus error|illegal instruction|unmatched tag|signal [0-9]+' "$logfile" 2>/dev/null; then
+    echo corruption; return
+  fi
+  if grep -q 'redeclared with a conflicting signature' "$logfile" 2>/dev/null; then
+    echo extern-guard; return
+  fi
+  if grep -qiE 'parse error|unterminated|F0001|F3100|undefined variable' "$logfile" 2>/dev/null; then
+    echo parse; return
+  fi
+  echo unknown
+}
+
+# Human next-step hints per failure class, with a log excerpt.
+seed_merge_hint() {
+  local cand="$1" cls="$2" logfile="$3"
+  err "[$cand] stage-compile failed — class: $cls"
+  case "$cls" in
+    parse)
+      err "  The '$cand' seed's parser predates syntax in the merged source (new"
+      err "  literal forms often surface as 'undefined variable'). The side that"
+      err "  HAS the parser for it should be the base. If BOTH sides land here,"
+      err "  the union dogfoods two branches' new syntax — the state the sdmg.2"
+      err "  bootstrap window forbids; stage via IR-level patching as a last"
+      err "  resort (docs/SEED_MERGES.md)."
+      ;;
+    extern-guard)
+      err "  The '$cand' seed's baked predeclare table conflicts with the merged"
+      err "  source's extern signatures. The side whose extern refactor it is"
+      err "  should be the base (its seed already matches the new signatures)."
+      ;;
+    corruption)
+      err "  The '$cand' stage binary corrupted while compiling the merged source"
+      err "  — it predates a codegen-correctness fix present in the union (the"
+      err "  zm77 class). Prefer the side that HAS the fix in its machine code."
+      err "  Forensics: AVRA_REDZONES=1, docs/RC_MEMORY_RUNBOOK.md."
+      ;;
+    *)
+      err "  No known failure signature matched — read the log."
+      ;;
+  esac
+  err "  log (tail): $logfile"
+  tail -6 "$logfile" >&2 2>/dev/null || :
+}
+
+# One-command seed-merge staging: encode the staging dance that
+# resolving a seed.ll merge conflict requires. The seed train (sdmg.2)
+# makes this rare — it's for merges INTO the integration branch, and
+# for histories that predate the gate.
+mode_seed_merge() {
+  local base=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base)   base="${2:?--base needs ours|theirs|<ref>}"; shift 2 ;;
+      --base=*) base="${1#--base=}"; shift ;;
+      *) die "--seed-merge: unknown argument '$1' (expected --base ours|theirs|<ref>)" ;;
+    esac
+  done
+
+  local mdir="$BUILD_DIR/seed_merge"
+  mkdir -p "$mdir"
+
+  local conflicted=""
+  [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll)" ] && conflicted=1
+
+  # Candidate base seeds, in attempt order.
+  local candidates=()
+  if [ -n "$conflicted" ]; then
+    case "$base" in
+      ours|theirs) candidates=("$base") ;;
+      "")          candidates=(ours theirs) ;;
+      *)           candidates=("$base") ;;
+    esac
+    log "seed/seed.ll is merge-conflicted — candidates: ${candidates[*]}"
+  else
+    case "$base" in
+      ours|theirs) die "--base $base needs an in-progress merge conflict on seed/seed.ll" ;;
+      "")          log "seed/seed.ll is not conflicted — staging from the current seed"
+                   candidates=(current) ;;
+      *)           candidates=("$base") ;;
+    esac
+  fi
+
+  [ -f "$SEED_LL" ] && cp "$SEED_LL" "$mdir/seed.orig.ll"
+
+  ensure_runtime
+  ensure_llvm_wrapper
+
+  local cand rc cls
+  for cand in "${candidates[@]}"; do
+    log "── attempt: base seed = $cand ──"
+    case "$cand" in
+      ours)    git -C "$REPO_DIR" show ":2:bootstrap/seed/seed.ll" > "$SEED_LL" \
+                 || die "cannot extract :2: (ours) from the index" ;;
+      theirs)  git -C "$REPO_DIR" show ":3:bootstrap/seed/seed.ll" > "$SEED_LL" \
+                 || die "cannot extract :3: (theirs) from the index" ;;
+      current) : ;;
+      *)       git -C "$REPO_DIR" show "$cand:bootstrap/seed/seed.ll" > "$SEED_LL" \
+                 || die "cannot extract bootstrap/seed/seed.ll from '$cand'" ;;
+    esac
+
+    # Tolerate the other side's new ValueType/Expr/Stmt variants.
+    log "[$cand] patching seed match traps"
+    (cd "$BOOTSTRAP_DIR" && python3 scripts/patch-seed-traps.py) >"$mdir/traps.$cand.log" 2>&1 \
+      || warn "[$cand] trap patch failed (see $mdir/traps.$cand.log) — continuing unpatched"
+
+    # Stage1 built off to the side: build/seed + the dev caches stay
+    # untouched until a candidate fully succeeds.
+    log "[$cand] building stage1 from this seed"
+    if ! "$LLC" -O2 $LLC_RELOC -filetype=obj "$SEED_LL" -o "$mdir/stage1.o" 2>"$mdir/stage1.$cand.llc.log"; then
+      err "[$cand] llc rejected the seed IR — corrupt seed artifact; log: $mdir/stage1.$cand.llc.log"
+      continue
+    fi
+    if ! cc -o "$mdir/stage1" "$mdir/stage1.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+         $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$mdir/stage1.$cand.link.log"; then
+      err "[$cand] stage1 link failed; log: $mdir/stage1.$cand.link.log"
+      continue
+    fi
+
+    log "[$cand] stage1 compiling the merged source"
+    rc=0
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
+      "$mdir/stage1" compile "$SRC_DIR/main.av" >"$mdir/compile.$cand.log" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      cls=$(seed_merge_classify "$rc" "$mdir/compile.$cand.log")
+      seed_merge_hint "$cand" "$cls" "$mdir/compile.$cand.log"
+      continue
+    fi
+
+    log "[$cand] linking bs2 from the stage1-compiled source"
+    if ! "$LLC" -O2 $LLC_RELOC -filetype=obj "$SRC_DIR/main.av.ll" -o "$mdir/bs2m.o" 2>"$mdir/bs2m.$cand.llc.log"; then
+      err "[$cand] llc rejected stage1's emitted IR (mis-codegen); log: $mdir/bs2m.$cand.llc.log"
+      continue
+    fi
+    if ! cc -o "$mdir/bs2m" "$mdir/bs2m.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+         $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$mdir/bs2m.$cand.link.log"; then
+      err "[$cand] bs2 link failed; log: $mdir/bs2m.$cand.link.log"
+      continue
+    fi
+
+    log "[$cand] self-compile verify (bs2 compiles its own source)"
+    rc=0
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
+      "$mdir/bs2m" compile "$SRC_DIR/main.av" >"$mdir/selfcompile.$cand.log" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      cls=$(seed_merge_classify "$rc" "$mdir/selfcompile.$cand.log")
+      seed_merge_hint "$cand" "$cls" "$mdir/selfcompile.$cand.log"
+      continue
+    fi
+
+    # Candidate survived the whole chain — commit to it. main.av.ll is
+    # now bs2's OWN output (generation 2); regenerate the seed from it
+    # with provenance, rebuild from the new seed, verify fixed point.
+    ok "[$cand] staging chain green — regenerating the seed from generation-2 IR"
+    cp "$mdir/bs2m" "$BS2"
+    mode_update_seed
+    rm -f "$BS3"
+    ensure_seed force
+    ensure_bs2 force
+    if ! mode_check_fixedpoint; then
+      err "[$cand] fixed point failed after seed regeneration — restoring the original seed"
+      [ -f "$mdir/seed.orig.ll" ] && cp "$mdir/seed.orig.ll" "$SEED_LL"
+      return 1
+    fi
+
+    ok "seed merge staged: base=$cand, seed regenerated, fixed point holds"
+    log "next: re-run 'make test', then stage the resolution:"
+    log "  git add bootstrap/seed/seed.ll"
+    return 0
+  done
+
+  err "NO candidate base seed could stage the merged source (tried: ${candidates[*]})"
+  err "Per-candidate classes + hints are above; logs live in $mdir/."
+  err "Last resort: IR-level patching of the intermediate main.av.ll —"
+  err "see docs/SEED_MERGES.md 'when NEITHER seed can compile the union'."
+  if [ -f "$mdir/seed.orig.ll" ]; then
+    cp "$mdir/seed.orig.ll" "$SEED_LL"
+    log "restored the original working-tree seed.ll"
+  fi
+  return 1
 }
 
 main "$@"

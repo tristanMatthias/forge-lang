@@ -5,6 +5,26 @@ emitted by `make update-seed`, version-locked to the source tree that
 produced it. **Never merge it textually.** `.gitattributes` marks it
 `merge=binary` so git presents it as pick-a-side.
 
+## One command (sdmg.5)
+
+With the merge in progress and `seed/seed.ll` conflicted:
+
+```bash
+bash bootstrap/scripts/diagnose.sh --seed-merge            # tries ours, then theirs
+bash bootstrap/scripts/diagnose.sh --seed-merge --base theirs   # pin a side
+```
+
+It runs the whole staging dance below — base seed → trap patch →
+stage1 → merged-source compile → bs2 link → self-compile verify →
+seed regeneration → fixed point — and on a stage failure reports the
+failure class (`parse` / `extern-guard` / `corruption`) with hints
+matching the "choosing a base" table, then falls through to the other
+candidate. On success the regenerated `seed/seed.ll` is the merge
+resolution: run `make test`, then `git add bootstrap/seed/seed.ll`.
+
+The manual recipe below is the same procedure, kept for when you need
+to intervene mid-way (e.g. the IR-level last resort).
+
 ## The rule
 
 The resolution is always: pick ONE side's seed as a disposable
@@ -78,5 +98,6 @@ integration branch). Green verifies are cached in
 `build/window/.window_verified`; force a re-check with
 `AVRA_FORCE_WINDOW=1`. See CLAUDE.md "Bootstrap window & seed train".
 
-`.beads` ticket `sdmg.5` tracks automating the staging recovery above
-as `diagnose.sh --seed-merge` for histories that predate the gate.
+For histories that predate the gate (and for merges into the
+integration branch itself), the staging recovery above is automated as
+`diagnose.sh --seed-merge` — see "One command" at the top.
