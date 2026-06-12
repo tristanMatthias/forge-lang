@@ -1,0 +1,59 @@
+// WHY: regression spec for the stdin-capture-and-relay added to
+// .beads/hooks/pre-push. When core.hooksPath=.beads/hooks is set,
+// git invokes .beads/hooks/pre-push instead of .git/hooks/pre-push;
+// the beads integration section then reads from stdin before the
+// repo hook can. Without the capture added in this PR, the pushed-
+// refs list would be consumed by the beads machinery and the repo hook
+// (bootstrap/scripts/pre-push) would see empty stdin, making every
+// push look like "nothing outgoing" and silently bypassing the gate.
+//
+// The relay is: `_push_refs=$(cat)` at the TOP of the hook (before the
+// beads block), then `printf '%s\n' "${_push_refs:-}" | repo_hook` at
+// the bottom. We run the actual .beads/hooks/pre-push and observe the
+// end-to-end result; bd is not installed in the test environment, so
+// the beads block is skipped, leaving only the capture+relay path.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn run_beads_hook(env_prefix: string, stdin_content: string) -> string {
+    // Tests run from bootstrap/; the .beads hooks are in the repo root.
+    avra_shell_exec("printf '%s\\n' '${stdin_content}' | ${env_prefix}bash ../.beads/hooks/pre-push 2>&1; echo rc=$?")
+}
+
+spec ".beads/hooks/pre-push: stdin capture and relay to the repo hook" {
+    given "AVRA_SKIP_WINDOW_CHECK=1 and any refs on stdin" {
+        then "the relay reaches the repo hook, which exits 0 with the skip message" {
+            let out = run_beads_hook("AVRA_SKIP_WINDOW_CHECK=1 ", "refs/heads/feat/x abc123 refs/heads/feat/x def456")
+            out.contains("bootstrap-window gate skipped") && out.contains("rc=0")
+        }
+    }
+
+    given "an empty ref list relayed to the repo hook" {
+        then "the repo hook exits 0 (nothing outgoing — no gate)" {
+            let out = run_beads_hook("", "")
+            out.contains("rc=0") && !out.contains("verifying the bootstrap window")
+        }
+    }
+
+    given "a ref-deletion push relayed (all-zero local sha)" {
+        then "the relay delivers the deletion marker and the repo hook skips the gate" {
+            let zero = "0000000000000000000000000000000000000000"
+            let out = run_beads_hook("", "refs/heads/feat/x ${zero} refs/heads/feat/x oldfeedbeef")
+            out.contains("rc=0") && !out.contains("verifying the bootstrap window")
+        }
+    }
+
+    given "refs that would trigger the gate, but bd is absent" {
+        then "the hook completes without failing due to missing bd" {
+            // When bd is not installed, the beads block is a no-op; the hook
+            // must not fail on 'command not found: bd'. An outgoing commit
+            // pointing to the all-zero sha (indicating deletion) reaches the
+            // repo hook which exits 0; the non-deletion case would run the
+            // actual gate. This case verifies the hook does not crash
+            // when the beads tool is absent.
+            let zero = "0000000000000000000000000000000000000000"
+            let out = run_beads_hook("AVRA_SKIP_WINDOW_CHECK=1 ", "refs/heads/feat/x abc1234abc1234abc1234abc1234abc1234abc1234 refs/heads/feat/x ${zero}")
+            !out.contains("bd: command not found") && !out.contains("bd: not found")
+        }
+    }
+}

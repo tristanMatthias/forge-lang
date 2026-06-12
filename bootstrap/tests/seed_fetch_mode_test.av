@@ -1,0 +1,52 @@
+// WHY: spec for --seed-fetch (mode_seed_fetch), the pin-don't-vendor
+// top-level entrypoint. Three properties matter:
+//
+//   1. When seed.ll is already present (local dev cycle), the mode
+//      is a no-op that returns 0 without overwriting it — a locally-
+//      cycled seed is never clobbered, not even when it is ahead of
+//      the pinned lock.
+//   2. When seed.ll is absent but seed.lock is present, the mode
+//      fetches + verifies the pinned artifact and installs it.
+//   3. The mode succeeds: seed.ll exists on disk after a successful
+//      call.
+//
+// The low-level fetch-and-verify machinery (--seed-fetch-from) is
+// covered by seed_lock_fetch_test.av; this spec focuses on the
+// wrapper's no-clobber short-circuit and the end-to-end observable
+// guarantee.
+//
+// Tests run from the bootstrap/ directory; all paths are relative to it.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn sh(cmd: string) -> string {
+    avra_shell_exec("${cmd} 2>&1; echo rc=$?")
+}
+
+fn sha_of(path: string) -> string {
+    avra_shell_exec("sha256sum '${path}' 2>/dev/null || shasum -a 256 '${path}'").substring(0, 64)
+}
+
+spec "--seed-fetch: no-clobber and materialization guarantee" {
+    given "seed.ll already exists on disk" {
+        then "the mode exits 0" {
+            // seed.ll may not exist yet on a fresh clone; run --seed-fetch
+            // first to ensure it is present, then test the no-clobber round.
+            let first = sh("bash scripts/diagnose.sh --seed-fetch")
+            first.contains("rc=0")
+        }
+        then "the mode does not change an existing seed.ll (no-clobber)" {
+            // Verify that a second back-to-back --seed-fetch call leaves the
+            // file byte-identical — the content-hash short-circuit in
+            // ensure_seed_materialized must fire.
+            let before = sha_of("seed/seed.ll")
+            let _ = sh("bash scripts/diagnose.sh --seed-fetch")
+            let after = sha_of("seed/seed.ll")
+            before != "" && before == after
+        }
+        then "seed.ll is present after the call" {
+            avra_selfhost_file_exists("seed/seed.ll") == 1
+        }
+    }
+}
