@@ -292,30 +292,32 @@ SEED MANAGEMENT
                          Catches the most common seed staleness issue:
                          parameter count changes that cause silent corruption.
   --check-bootstrap-window [ref]
-                         Enforce the sdmg.2 seed-train rule. Gate 1: no
-                         commits on this branch (since the merge-base with
-                         the integration branch) touch seed/seed.ll. Gate 2:
-                         the branch's compiler source builds from the
-                         integration branch's CURRENT pristine seed in an
-                         isolated tree (cold unit cache) and the produced
-                         compiler passes a smoke run. [ref] defaults to
-                         origin/$AVRA_INTEGRATION_BRANCH
+                         Enforce the seed-train rule. Gate 1: no commit on
+                         this branch (since the merge-base with the
+                         integration branch) CHANGES the pinned seed content
+                         (seed.lock bumps; seed.ll commits on pre-lock
+                         history). Gate 2: the branch's compiler source
+                         builds from the integration branch's CURRENT
+                         pristine seed in an isolated tree (cold unit cache)
+                         and the produced compiler passes a smoke run.
+                         [ref] defaults to origin/$AVRA_INTEGRATION_BRANCH
                          (feat/crafting-intepreters). Result is cached in
                          build/window/.window_verified keyed on the
                          integration seed + compiler sources; bypass with
                          AVRA_FORCE_WINDOW=1. Wired into the pre-push hook
                          and the bootstrap-window CI workflow.
   --seed-merge [--base ours|theirs|<ref>]
-                         One-command seed-merge staging (sdmg.5). For a
-                         merge where seed/seed.ll conflicted: picks a base
-                         seed (default: tries ours, then theirs), patches
-                         match traps, builds stage1, compiles the merged
-                         source, links bs2, self-compile verifies, then
-                         regenerates the seed (--update-seed) and verifies
-                         the fixed point. On a stage failure it reports the
-                         failure class — parse / extern-guard / corruption —
-                         with next-step hints, and falls through to the next
-                         candidate. Recipe + taxonomy: docs/SEED_MERGES.md.
+                         One-command seed-merge staging. For a merge where
+                         the seed pin conflicted (seed.lock, or seed.ll on
+                         pre-lock history): picks a base seed (default:
+                         tries ours, then theirs), patches match traps,
+                         builds stage1, compiles the merged source, links
+                         bs2, self-compile verifies, then regenerates the
+                         seed (--update-seed) and verifies the fixed point.
+                         On a stage failure it reports the failure class —
+                         parse / extern-guard / corruption — with next-step
+                         hints, and falls through to the next candidate.
+                         Recipe + taxonomy: docs/SEED_MERGES.md.
   --seed-merge-classify <rc> <logfile>
                          INTERNAL (spec-tested): print the --seed-merge
                          failure class for a stage-compile exit code + log.
@@ -402,9 +404,7 @@ ensure_llvm_wrapper() {
   fi
 }
 
-# Build the seed binary from seed/seed.ll (no Rust compiler needed).
-# The seed IR is checked into the repo and is the bootstrap's lifeline.
-# ── Seed lock: pin-don't-vendor (sdmg.3) ──
+# ── Seed lock: pin-don't-vendor ──
 #
 # The seed artifact is PINNED, not vendored (Rust stage0 model):
 # seed/seed.lock (tracked, a few lines) names a version, the sha256 of
@@ -423,14 +423,20 @@ seed_lock_field() {
 # Downloads the gz artifact (content-cached by sha under
 # build/cache/seed/), verifies the UNCOMPRESSED sha256, installs
 # atomically. An existing dest with the right hash short-circuits.
+#
+# Every failure RETURNS non-zero (with the reason on stderr) instead
+# of die-ing: callers decide severity — the build path aborts, while
+# --seed-merge falls through to its next candidate seed.
 fetch_seed_from_lock() {
+  [ $# -eq 2 ] || die "usage: fetch_seed_from_lock <lockfile> <dest.ll>"
   local lock="$1" dest="$2"
-  [ -f "$lock" ] || die "no seed lock at $lock"
+  [ -f "$lock" ] || { err "no seed lock at $lock"; return 1; }
   local want_sha url version
   want_sha=$(seed_lock_field "$lock" sha256)
   url=$(seed_lock_field "$lock" url)
   version=$(seed_lock_field "$lock" version)
-  [ -n "$want_sha" ] && [ -n "$url" ] || die "malformed seed lock $lock (need sha256 + url)"
+  [ -n "$want_sha" ] && [ -n "$url" ] \
+    || { err "malformed seed lock $lock (need sha256 + url)"; return 1; }
 
   if [ -f "$dest" ] \
      && [ "$($SHA256_CMD "$dest" | awk '{print $1}')" = "$want_sha" ]; then
@@ -454,13 +460,18 @@ fetch_seed_from_lock() {
       err "at $dest."
       return 1
     fi
-    gunzip -c "$gz" > "$cached.tmp.$$" || { rm -f "$gz" "$cached.tmp.$$"; die "seed artifact gunzip failed"; }
+    if ! gunzip -c "$gz" > "$cached.tmp.$$"; then
+      rm -f "$gz" "$cached.tmp.$$"
+      err "seed artifact gunzip failed (truncated download?)"
+      return 1
+    fi
     rm -f "$gz"
     local got_sha
     got_sha=$($SHA256_CMD "$cached.tmp.$$" | awk '{print $1}')
     if [ "$got_sha" != "$want_sha" ]; then
       rm -f "$cached.tmp.$$"
-      die "seed artifact hash mismatch: lock pins $want_sha, artifact is $got_sha — refusing"
+      err "seed artifact hash mismatch: lock pins $want_sha, artifact is $got_sha — refusing"
+      return 1
     fi
     mv "$cached.tmp.$$" "$cached"
   fi
@@ -475,7 +486,8 @@ fetch_seed_from_lock() {
 ensure_seed_materialized() {
   [ -f "$SEED_LL" ] && return 0
   [ -f "$SEED_LOCK" ] || die "neither seed/seed.ll nor seed/seed.lock exists — repo is corrupt"
-  fetch_seed_from_lock "$SEED_LOCK" "$SEED_LL"
+  fetch_seed_from_lock "$SEED_LOCK" "$SEED_LL" \
+    || die "could not materialize the pinned seed (reasons above)"
 }
 
 mode_seed_fetch() {
@@ -2091,7 +2103,10 @@ mode_check_bootstrap_window() {
     stage_bin="$SEED_BIN"
   else
     stage_bin="$win/seed_bin"
-    if [ "$(cat "$win/.seed_blob" 2>/dev/null)" = "$seed_blob" ] && [ -x "$stage_bin" ]; then
+    # Cache key = the same seed-IR + C-link-input fingerprint the dev
+    # seed uses: a runtime.c/llvm_wrapper.c edit must relink the
+    # window stage binary too, or it keeps the OLD C behaviour.
+    if [ "$(cat "$win/.stage_fp" 2>/dev/null)" = "$win_seed_fp" ] && [ -x "$stage_bin" ]; then
       log "window stage binary cached for integration seed ${seed_blob:0:12}"
     else
       log "building stage binary from the integration seed ($ref @ ${ref_sha:0:12})"
@@ -2104,7 +2119,7 @@ mode_check_bootstrap_window() {
         $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/seed.link.log" \
         || { rm -f "$stage_bin.tmp"; cat "$win/seed.link.log" >&2; die "window stage link failed"; }
       mv "$stage_bin.tmp" "$stage_bin"
-      printf '%s' "$seed_blob" > "$win/.seed_blob"
+      printf '%s' "$win_seed_fp" > "$win/.stage_fp"
     fi
   fi
 
@@ -2275,12 +2290,16 @@ mode_seed_merge() {
       "")          candidates=(ours theirs) ;;
       *)           candidates=("$base") ;;
     esac
-    log "seed/seed.ll is merge-conflicted — candidates: ${candidates[*]}"
+    log "the seed pin is merge-conflicted — candidates: ${candidates[*]}"
   else
     case "$base" in
-      ours|theirs) die "--base $base needs an in-progress merge conflict on seed/seed.ll" ;;
-      "")          log "seed/seed.ll is not conflicted — staging from the current seed"
-                   candidates=(current) ;;
+      ours|theirs) die "--base $base needs an in-progress merge conflict on the seed pin (seed.ll / seed.lock)" ;;
+      "")          log "the seed pin is not conflicted — staging from the current seed"
+                   candidates=(current)
+                   # "current" stages whatever seed the working tree
+                   # pins; on a fresh lock-era checkout that seed may
+                   # not be materialized yet.
+                   ensure_seed_materialized ;;
       *)           candidates=("$base") ;;
     esac
   fi
