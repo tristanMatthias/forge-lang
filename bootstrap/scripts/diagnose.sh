@@ -476,7 +476,7 @@ fetch_seed_from_lock() {
     # file, and shipping a credential to an attacker-controlled host is
     # how tokens leak. Release assets on this (public) repo download
     # anonymously; integrity comes from the sha256 pin, not the channel.
-    if ! curl -fsSL --retry 3 -o "$gz" "$url"; then
+    if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$gz" "$url"; then
       rm -f "$gz"
       err "seed fetch failed: $url"
       err "Offline? A previously materialized seed/seed.ll keeps working; otherwise"
@@ -484,9 +484,16 @@ fetch_seed_from_lock() {
       err "at $dest."
       return 1
     fi
-    if ! gunzip -c "$gz" > "$cached.tmp.$$"; then
+    # Cap the decompressed size: the hash pin stops SUBSTITUTION but
+    # not EXPANSION — a small gzip of endless zeros would fill the
+    # disk before verification ever ran. head truncates at the cap;
+    # a truncated legitimate artifact then fails the hash check.
+    # (AVRA_SEED_MAX_BYTES exists so the spec can exercise the cap
+    # without writing gigabytes.)
+    local max_bytes="${AVRA_SEED_MAX_BYTES:-2147483648}"
+    if ! gunzip -c "$gz" | head -c "$max_bytes" > "$cached.tmp.$$"; then
       rm -f "$gz" "$cached.tmp.$$"
-      err "seed artifact gunzip failed (truncated download?)"
+      err "seed artifact gunzip failed (truncated download, or larger than $max_bytes bytes)"
       return 1
     fi
     rm -f "$gz"
@@ -2188,6 +2195,14 @@ window_copy_tree() {
   git -C "$REPO_DIR" archive "$commit" -- "${WINDOW_SRC_PATHS[@]}" \
     | tar -xf - -C "$win/tree" \
     || die "source-tree copy failed"
+  # git archive preserves symlinks; one pointing outside the tree
+  # would make the compile read content that is NOT in HEAD, breaking
+  # the gate's whole claim. No legitimate compiler source is a
+  # symlink — refuse outright.
+  local links
+  links=$(find "$win/tree" -type l | head -5)
+  [ -z "$links" ] || die "symlinked compiler sources are not supported by the gate:
+$links"
 }
 
 # Compile HEAD's C runtime inputs from the copied tree into
@@ -2243,6 +2258,13 @@ window_stage_binary() {
 smoke_test_compiler() {
   local win="$1" bs2w="$2" runtime_o="${3:-}" wrapper_o="${4:-}"
   cat > "$win/smoke.av" <<'SMOKE'
+type Pair = { a: int, b: int }
+
+enum Shape {
+    Dot,
+    Wide(w: int),
+}
+
 fn add(a: int, b: int) -> int { a + b }
 
 fn main() -> int {
@@ -2250,7 +2272,13 @@ fn main() -> int {
     mut sum = 0
     for x in xs { sum = sum + x }
     let tag = if sum == 6 { "ok" } else { "bad" }
-    println("window-smoke ${tag} ${string(add(sum, 4))}")
+    let double = (n: int) -> n * 2
+    let p = Pair { a: double(sum), b: xs[1] }
+    let shape_w = match Shape.Wide(p.a + p.b) {
+        .Dot -> 0
+        .Wide(w) -> w
+    }
+    println("window-smoke ${tag} ${string(add(shape_w, 4))}")
     0
 }
 SMOKE
@@ -2261,10 +2289,10 @@ SMOKE
     || { cat "$win/smoke.build.log" >&2; die "smoke build failed"; }
   local smoke_out
   smoke_out=$("$win/smoke.bin")
-  if [ "$smoke_out" != "window-smoke ok 10" ]; then
+  if [ "$smoke_out" != "window-smoke ok 18" ]; then
     err "window-built compiler produced a broken binary — smoke output was:"
     printf '  %s\n' "$smoke_out" >&2
-    err "expected: window-smoke ok 10"
+    err "expected: window-smoke ok 18"
     return 1
   fi
 }
@@ -2296,6 +2324,32 @@ mode_check_bootstrap_window() {
   if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
      && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
     ok "bootstrap window cached — integration seed + compiler sources unchanged since last verify"
+    return 0
+  fi
+
+  # One window build at a time: a pre-push hook, a manual run and a
+  # local CI rehearsal share build/window/, and a concurrent rm -rf of
+  # the tree mid-compile produces garbage verdicts. mkdir is the
+  # atomic test-and-set (macOS ships no flock); a pid file lets a
+  # crashed holder's lock be reaped instead of wedging the gate.
+  local gate_lock="$win/.lock"
+  while ! mkdir "$gate_lock" 2>/dev/null; do
+    local owner; owner=$(cat "$gate_lock/pid" 2>/dev/null)
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$gate_lock"
+      continue
+    fi
+    log "another window verify is running (pid ${owner:-?}) — waiting"
+    sleep 2
+  done
+  echo $$ > "$gate_lock/pid"
+  trap 'rm -rf "$BUILD_DIR/window/.lock"' EXIT
+
+  # The wait may have outlasted the other run — its green marker is
+  # ours to reuse.
+  if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
+     && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
+    ok "bootstrap window cached — verified by a concurrent run"
     return 0
   fi
 
@@ -2439,6 +2493,9 @@ seed_merge_attempt() {
        return 1 ;;
   esac
 
+  # Unlike the window gate (which verifies HEAD), merge staging
+  # compiles the WORKING TREE on purpose: mid-merge there is no merged
+  # commit yet — the worktree IS the union being staged.
   log "[$cand] stage1 compiling the merged source"
   local rc=0 cls
   hermetic_compile_env "$mdir/stage1" compile "$SRC_DIR/main.av" >"$mdir/compile.$cand.log" 2>&1 || rc=$?

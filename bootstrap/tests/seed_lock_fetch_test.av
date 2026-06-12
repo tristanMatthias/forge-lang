@@ -104,6 +104,19 @@ spec "seed.lock fetch: pinned-artifact materialization" {
             !out.contains("rc=0") && out.contains("malformed seed lock")
         }
     }
+    given "an artifact that decompresses far beyond the expected size (a gzip bomb)" {
+        then "fetch truncates at the cap and refuses on the resulting hash mismatch" {
+            let dir = case_dir("bomb")
+            avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+            // 64KiB of zeros, gzipped tiny; a 4KiB cap forces truncation.
+            avra_shell_exec("dd if=/dev/zero bs=1024 count=64 2>/dev/null | gzip -9 > ${dir}/artifact.gz")
+            let sha = avra_shell_exec("gunzip -c ${dir}/artifact.gz | sha256sum 2>/dev/null || gunzip -c ${dir}/artifact.gz | shasum -a 256").substring(0, 64)
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            let out = sh("AVRA_SEED_MAX_BYTES=4096 bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0")
+                && avra_shell_exec("test -f ${dir}/out.ll && echo exists").trim() != "exists"
+        }
+    }
     given "the artifact is unreachable and nothing is cached" {
         then "fetch fails with the offline guidance" {
             let dir = case_dir("dead")
