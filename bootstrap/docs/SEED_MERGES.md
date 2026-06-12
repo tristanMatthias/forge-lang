@@ -1,26 +1,42 @@
-# Resolving seed.ll merge conflicts
+# Resolving seed merge conflicts
 
-`seed/seed.ll` is a generated artifact: the compiler's own LLVM IR,
-emitted by `make update-seed`, version-locked to the source tree that
-produced it. **Never merge it textually.** `.gitattributes` marks it
-`merge=binary` so git presents it as pick-a-side.
+Since sdmg.3 (pin-don't-vendor) the seed is PINNED, not vendored:
+`seed/seed.lock` (tracked, a few lines) names {version, sha256, url} on
+GitHub Releases, and `seed/seed.ll` is a gitignored local
+materialization the build fetches and hash-verifies. What conflicts in
+a merge depends on the history era:
+
+- **Lock era — `seed.lock` conflicts.** Two seed-train advances raced.
+  Artifacts are immutable and content-pinned, so the resolution is
+  mechanical: **take the HIGHER version line**. Only when the merged
+  SOURCE needs restaging (it uses features neither pinned seed knows)
+  run `diagnose.sh --seed-merge`, which fetches each side's pinned
+  artifact as a candidate; afterwards publish the regenerated seed
+  (`make seed-publish`) and commit the fresh lock bump.
+- **Pre-lock era — `seed.ll` conflicts.** The vendored-IR case the
+  rest of this document describes. `.gitattributes` marks it
+  `merge=binary` so git presents it as pick-a-side; **never merge it
+  textually.**
 
 ## One command (sdmg.5)
 
-With the merge in progress and `seed/seed.ll` conflicted:
+With the merge in progress and the seed pin conflicted:
 
 ```bash
 bash bootstrap/scripts/diagnose.sh --seed-merge            # tries ours, then theirs
 bash bootstrap/scripts/diagnose.sh --seed-merge --base theirs   # pin a side
 ```
 
-It runs the whole staging dance below — base seed → trap patch →
-stage1 → merged-source compile → bs2 link → self-compile verify →
-seed regeneration → fixed point — and on a stage failure reports the
+It runs the whole staging dance below — base seed (extracted from the
+index, or fetched per that side's lock) → trap patch → stage1 →
+merged-source compile → bs2 link → self-compile verify → seed
+regeneration → fixed point — and on a stage failure reports the
 failure class (`parse` / `extern-guard` / `corruption`) with hints
 matching the "choosing a base" table, then falls through to the other
 candidate. On success the regenerated `seed/seed.ll` is the merge
-resolution: run `make test`, then `git add bootstrap/seed/seed.ll`.
+resolution: run `make test`, then stage it (`git add seed.ll` on
+pre-lock history; `make seed-publish` + `git add seed.lock` on lock
+history).
 
 The manual recipe below is the same procedure, kept for when you need
 to intervene mid-way (e.g. the IR-level last resort).
@@ -85,8 +101,11 @@ in compiler source; seed advancement happens on the integration branch
 as dedicated `chore(seed): cycle` commits (the seed train). This is
 enforced by `diagnose.sh --check-bootstrap-window`:
 
-- **gate 1 (seed train):** rejects branches with `seed.ll` commits
-  since the merge-base with the integration branch;
+- **gate 1 (seed train):** rejects branches whose commits CHANGE the
+  pinned seed content (`seed.lock` bumps; `seed.ll` commits on
+  pre-lock history) since the merge-base with the integration branch.
+  Touches that keep the content identical — e.g. the vendored→pinned
+  migration itself — pass;
 - **gate 2 (window):** rebuilds the branch's compiler source from the
   integration branch's CURRENT pristine seed in an isolated tree with
   a cold unit cache, then smoke-runs the produced compiler.

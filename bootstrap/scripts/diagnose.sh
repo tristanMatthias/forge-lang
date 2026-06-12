@@ -17,6 +17,9 @@ REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
 FORGE_DIR="$REPO_DIR/avra"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
 SEED_LL="$BOOTSTRAP_DIR/seed/seed.ll"
+SEED_LOCK="$BOOTSTRAP_DIR/seed/seed.lock"
+SEED_FETCH_CACHE="$BUILD_DIR/cache/seed"
+SEED_REPO_SLUG="${AVRA_SEED_REPO:-tristanmatthias/forge-lang}"
 SEED_BIN="$BUILD_DIR/seed"
 RUNTIME_C="$BOOTSTRAP_DIR/runtime.c"
 RUNTIME_O="$BUILD_DIR/runtime.o"
@@ -316,6 +319,21 @@ SEED MANAGEMENT
   --seed-merge-classify <rc> <logfile>
                          INTERNAL (spec-tested): print the --seed-merge
                          failure class for a stage-compile exit code + log.
+  --seed-fetch           Materialize seed/seed.ll from seed/seed.lock
+                         (sdmg.3 pin-don't-vendor): download the pinned
+                         GitHub Releases artifact, verify its sha256,
+                         install it. No-op when seed.ll already exists —
+                         a locally cycled seed is never clobbered.
+  --seed-publish         Publish the local seed/seed.ll as a GitHub
+                         Releases artifact (tag seed/v<N>) and bump
+                         seed/seed.lock to pin it. Needs GH_TOKEN with
+                         Contents:write. Lock bumps belong on the
+                         integration branch (the sdmg.2 seed train) —
+                         gate 1 rejects them elsewhere at push time.
+  --seed-fetch-from <lock> <dest>
+                         INTERNAL (spec-tested): materialize+verify a
+                         seed from an arbitrary lock file (file:// URLs
+                         work, which is how the spec stays hermetic).
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -386,6 +404,164 @@ ensure_llvm_wrapper() {
 
 # Build the seed binary from seed/seed.ll (no Rust compiler needed).
 # The seed IR is checked into the repo and is the bootstrap's lifeline.
+# ── Seed lock: pin-don't-vendor (sdmg.3) ──
+#
+# The seed artifact is PINNED, not vendored (Rust stage0 model):
+# seed/seed.lock (tracked, a few lines) names a version, the sha256 of
+# the uncompressed seed IR, and a GitHub Releases download URL.
+# seed/seed.ll itself is a gitignored local materialization — fetched
+# on demand, or written locally by `make update-seed` during dev
+# iteration. The lock advances only on the integration branch (the
+# sdmg.2 seed train), published via --seed-publish.
+
+# Read one `key = value` field from a lock file ($1=file, $2=key).
+seed_lock_field() {
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | head -1
+}
+
+# Materialize a seed .ll from a lock file: $1=lockfile, $2=dest.ll.
+# Downloads the gz artifact (content-cached by sha under
+# build/cache/seed/), verifies the UNCOMPRESSED sha256, installs
+# atomically. An existing dest with the right hash short-circuits.
+fetch_seed_from_lock() {
+  local lock="$1" dest="$2"
+  [ -f "$lock" ] || die "no seed lock at $lock"
+  local want_sha url version
+  want_sha=$(seed_lock_field "$lock" sha256)
+  url=$(seed_lock_field "$lock" url)
+  version=$(seed_lock_field "$lock" version)
+  [ -n "$want_sha" ] && [ -n "$url" ] || die "malformed seed lock $lock (need sha256 + url)"
+
+  if [ -f "$dest" ] \
+     && [ "$($SHA256_CMD "$dest" | awk '{print $1}')" = "$want_sha" ]; then
+    return 0
+  fi
+
+  mkdir -p "$SEED_FETCH_CACHE"
+  local cached="$SEED_FETCH_CACHE/$want_sha.ll"
+  if [ ! -f "$cached" ]; then
+    log "fetching seed v${version:-?} from $url"
+    local gz="$SEED_FETCH_CACHE/$want_sha.ll.gz.tmp.$$"
+    # Deliberately NO Authorization header: the URL comes from the lock
+    # file, and shipping a credential to an attacker-controlled host is
+    # how tokens leak. Release assets on this (public) repo download
+    # anonymously; integrity comes from the sha256 pin, not the channel.
+    if ! curl -fsSL --retry 3 -o "$gz" "$url"; then
+      rm -f "$gz"
+      err "seed fetch failed: $url"
+      err "Offline? A previously materialized seed/seed.ll keeps working; otherwise"
+      err "obtain the artifact for lock v${version:-?} (sha256 $want_sha) and place it"
+      err "at $dest."
+      return 1
+    fi
+    gunzip -c "$gz" > "$cached.tmp.$$" || { rm -f "$gz" "$cached.tmp.$$"; die "seed artifact gunzip failed"; }
+    rm -f "$gz"
+    local got_sha
+    got_sha=$($SHA256_CMD "$cached.tmp.$$" | awk '{print $1}')
+    if [ "$got_sha" != "$want_sha" ]; then
+      rm -f "$cached.tmp.$$"
+      die "seed artifact hash mismatch: lock pins $want_sha, artifact is $got_sha — refusing"
+    fi
+    mv "$cached.tmp.$$" "$cached"
+  fi
+  mkdir -p "$(dirname "$dest")"
+  cp "$cached" "$dest.tmp.$$" && mv "$dest.tmp.$$" "$dest"
+  log "seed v${version:-?} materialized at $dest (sha256 verified)"
+}
+
+# Ensure seed/seed.ll exists locally: present = use as-is (it may
+# legitimately be AHEAD of the lock during dev iteration — never
+# clobber); missing = fetch per the lock (the fresh-clone path).
+ensure_seed_materialized() {
+  [ -f "$SEED_LL" ] && return 0
+  [ -f "$SEED_LOCK" ] || die "neither seed/seed.ll nor seed/seed.lock exists — repo is corrupt"
+  fetch_seed_from_lock "$SEED_LOCK" "$SEED_LL"
+}
+
+mode_seed_fetch() {
+  ensure_seed_materialized
+  ok "$SEED_LL"
+}
+
+# The sha256 of a ref's EFFECTIVE seed content: the tracked seed.ll
+# blob hashed directly (pre-lock history), or the lock's pinned sha256
+# (lock-era). Empty when the ref has neither. Lets gate 1 compare seed
+# SEMANTICS across the vendored→pinned transition instead of file
+# paths — the sdmg.3 migration commit touches both files without
+# changing the seed.
+ref_seed_sha256() {
+  local r="$1"
+  if git -C "$REPO_DIR" rev-parse --verify --quiet "$r:bootstrap/seed/seed.ll" >/dev/null; then
+    git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.ll" | $SHA256_CMD | awk '{print $1}'
+  elif git -C "$REPO_DIR" rev-parse --verify --quiet "$r:bootstrap/seed/seed.lock" >/dev/null; then
+    git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.lock" \
+      | sed -n 's/^[[:space:]]*sha256[[:space:]]*=[[:space:]]*//p' | head -1
+  fi
+}
+
+# Publish the CURRENT local seed/seed.ll as a release artifact and
+# bump seed/seed.lock to pin it. Seed-train discipline: lock bumps
+# belong on the integration branch only (gate 1 of the bootstrap
+# window rejects them elsewhere at push time).
+mode_seed_publish() {
+  [ -f "$SEED_LL" ] || die "no local seed at $SEED_LL — build one first (make update-seed)"
+  [ -n "${GH_TOKEN:-}" ] || die "--seed-publish needs GH_TOKEN (Contents:write on $SEED_REPO_SLUG)"
+  command -v python3 >/dev/null || die "--seed-publish needs python3 (JSON handling)"
+
+  local cur_branch
+  cur_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
+  if [ "$cur_branch" != "$INTEGRATION_BRANCH" ]; then
+    warn "publishing from '$cur_branch' (the lock normally advances on '$INTEGRATION_BRANCH' only)"
+  fi
+
+  local version=1
+  if [ -f "$SEED_LOCK" ]; then
+    local prev; prev=$(seed_lock_field "$SEED_LOCK" version)
+    [ -n "$prev" ] && version=$((prev + 1))
+  fi
+  local sha tag
+  sha=$($SHA256_CMD "$SEED_LL" | awk '{print $1}')
+  tag="seed/v$version"
+
+  local staging="$BUILD_DIR/seed_publish"
+  mkdir -p "$staging"
+  log "compressing seed.ll for upload"
+  gzip -9 -c "$SEED_LL" > "$staging/seed.ll.gz" || die "gzip failed"
+
+  local commit api="https://api.github.com/repos/$SEED_REPO_SLUG"
+  commit=$(git -C "$REPO_DIR" rev-parse HEAD)
+  log "creating release $tag on $SEED_REPO_SLUG (target $commit)"
+  local rel_json rel_id
+  rel_json=$(curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" \
+    -H "Content-Type: application/json" "$api/releases" \
+    -d "{\"tag_name\":\"$tag\",\"target_commitish\":\"$commit\",\"name\":\"bootstrap seed v$version\",\"body\":\"Avra bootstrap seed artifact, pinned by bootstrap/seed/seed.lock (sdmg.3 pin-don't-vendor).\\nsha256 (uncompressed): $sha\",\"prerelease\":true}") \
+    || die "release create failed for $tag (already exists? bump again or delete it)"
+  rel_id=$(printf '%s' "$rel_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') \
+    || die "could not parse release id"
+  log "uploading seed.ll.gz ($(du -h "$staging/seed.ll.gz" | cut -f1 | tr -d ' '))"
+  curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" \
+    -H "Content-Type: application/gzip" \
+    --data-binary @"$staging/seed.ll.gz" \
+    "https://uploads.github.com/repos/$SEED_REPO_SLUG/releases/$rel_id/assets?name=seed.ll.gz" \
+    >/dev/null || die "asset upload failed (release $tag id $rel_id left in place)"
+
+  cat > "$SEED_LOCK" <<EOF
+# Avra bootstrap seed lock — pin-don't-vendor (sdmg.3).
+# seed/seed.ll is NOT in git: the build fetches this pinned artifact and
+# verifies the sha256 of the uncompressed IR. The lock advances only on
+# the integration branch (sdmg.2 seed train) via:
+#   bash scripts/diagnose.sh --seed-publish
+# Merge conflict on this file = two train advances raced; take the
+# HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.
+version = $version
+sha256 = $sha
+url = https://github.com/$SEED_REPO_SLUG/releases/download/$tag/seed.ll.gz
+EOF
+  rm -f "$staging/seed.ll.gz"
+  ok "published $tag and pinned it in seed/seed.lock"
+  log "next: git add bootstrap/seed/seed.lock && commit (a 'chore(seed): cycle' train commit)"
+}
+
 # Content fingerprint for a seed binary's full input set: the seed IR
 # plus the C link inputs (runtime.c, llvm_wrapper.c) — build/seed
 # links runtime.o + llvm_wrapper.o, so editing either C file must
@@ -403,6 +579,7 @@ seed_inputs_hash() {
 ensure_seed() {
   ensure_llvm_wrapper
   ensure_runtime
+  ensure_seed_materialized
   # Use hash comparison (race-free) instead of `-nt` mtime check —
   # consistent with ensure_runtime / ensure_llvm_wrapper and immune
   # to the APFS second-granularity race source_newer_than was fixed
@@ -1300,6 +1477,9 @@ main() {
     --verify-seed)        mode_verify_seed "$@" ;;
     --seed-patch)         mode_seed_patch "$@" ;;
     --seed-sigs)          mode_seed_sigs "$@" ;;
+    --seed-fetch)         mode_seed_fetch "$@" ;;
+    --seed-fetch-from)    fetch_seed_from_lock "$@" ;;
+    --seed-publish)       mode_seed_publish "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
@@ -1813,32 +1993,56 @@ mode_check_bootstrap_window() {
     local mb offenders
     mb=$(git -C "$REPO_DIR" merge-base "$head_sha" "$ref_sha") \
       || die "no merge-base between HEAD and $ref — wrong integration branch?"
-    offenders=$(git -C "$REPO_DIR" log --format='  %h %s' "$mb..$head_sha" -- bootstrap/seed/seed.ll)
+    offenders=$(git -C "$REPO_DIR" log --format='  %h %s' "$mb..$head_sha" -- \
+      bootstrap/seed/seed.ll bootstrap/seed/seed.lock)
+    if [ -n "$offenders" ]; then
+      # File touches alone aren't the crime — the SEED CONTENT changing
+      # off-train is. The vendored→pinned migration (sdmg.3) deletes
+      # seed.ll and adds a lock pinning byte-identical content; compare
+      # effective seed sha256 across the range before rejecting.
+      local head_seed mb_seed
+      head_seed=$(ref_seed_sha256 "$head_sha")
+      mb_seed=$(ref_seed_sha256 "$mb")
+      if [ -n "$head_seed" ] && [ "$head_seed" = "$mb_seed" ]; then
+        log "seed pin commits found but the pinned content is unchanged (vendored→pinned migration)"
+        offenders=""
+      fi
+    fi
     if [ -n "$offenders" ]; then
       err "SEED-TRAIN VIOLATION — feature branches never cycle the seed"
-      err "commits touching bootstrap/seed/seed.ll since the merge-base with $ref:"
+      err "commits touching the seed pin (seed.ll / seed.lock) since the merge-base with $ref:"
       printf '%s\n' "$offenders" >&2
       err ""
       err "Fix: drop/revert the seed change and stop dogfooding post-seed features in"
       err "compiler src — seed advancement happens on '$INTEGRATION_BRANCH' only, as"
       err "dedicated 'chore(seed): cycle' commits after merges land. To restore:"
-      err "  git checkout $ref -- bootstrap/seed/seed.ll"
+      err "  git checkout $ref -- bootstrap/seed/seed.lock   # (seed.ll on pre-lock history)"
       err "(CLAUDE.md 'Bootstrap window & seed train'; bootstrap/docs/SEED_MERGES.md)"
       return 1
     fi
-    ok "seed-train gate — no seed commits on this branch"
-    if ! git -C "$REPO_DIR" diff --quiet HEAD -- bootstrap/seed/seed.ll 2>/dev/null; then
-      warn "working-tree seed/seed.ll differs from HEAD (auto-cycle debris?) — do NOT commit it;"
-      warn "restore with: git checkout HEAD -- bootstrap/seed/seed.ll"
+    ok "seed-train gate — no seed cycles on this branch"
+    if ! git -C "$REPO_DIR" diff --quiet HEAD -- bootstrap/seed/seed.lock bootstrap/seed/seed.ll 2>/dev/null; then
+      warn "working-tree seed pin differs from HEAD (auto-cycle debris?) — do NOT commit it;"
+      warn "restore with: git checkout HEAD -- bootstrap/seed/"
     fi
   fi
 
   # ── Gate 2: window build ──
   local win="$BUILD_DIR/window"
   mkdir -p "$win"
+  # Identity of the integration seed: the tracked blob's sha on
+  # pre-lock history, the lock's pinned sha256 on lock-era history
+  # (sdmg.3 — seed.ll itself is no longer tracked).
   local seed_blob
-  seed_blob=$(git -C "$REPO_DIR" rev-parse "$ref:bootstrap/seed/seed.ll") \
-    || die "$ref has no bootstrap/seed/seed.ll"
+  if seed_blob=$(git -C "$REPO_DIR" rev-parse --verify --quiet "$ref:bootstrap/seed/seed.ll"); then
+    :
+  elif git -C "$REPO_DIR" rev-parse --verify --quiet "$ref:bootstrap/seed/seed.lock" >/dev/null; then
+    git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.lock" > "$win/integration.seed.lock"
+    seed_blob=$(seed_lock_field "$win/integration.seed.lock" sha256)
+    [ -n "$seed_blob" ] || die "$ref's seed.lock has no sha256 field"
+  else
+    die "$ref has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
+  fi
 
   # Compiler-relevant working-tree inputs: tracked + untracked
   # (non-ignored) sources, minus test files — main.av's import graph
@@ -1871,8 +2075,13 @@ mode_check_bootstrap_window() {
   # build/seed (the common case for a well-behaved feature branch),
   # reuse that binary instead of re-running llc on 500k lines of IR.
   local stage_bin win_seed_fp
-  git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.ll" > "$win/seed.ll" \
-    || die "cannot extract integration seed"
+  if git -C "$REPO_DIR" rev-parse --verify --quiet "$ref:bootstrap/seed/seed.ll" >/dev/null; then
+    git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.ll" > "$win/seed.ll" \
+      || die "cannot extract integration seed"
+  else
+    fetch_seed_from_lock "$win/integration.seed.lock" "$win/seed.ll" \
+      || die "cannot materialize the integration seed from its lock"
+  fi
   # seed_inputs_hash is path-independent, so the integration seed's
   # fingerprint matches .seed_hash exactly when build/seed was built
   # from byte-identical seed IR + the same C link inputs.
@@ -2052,8 +2261,11 @@ mode_seed_merge() {
   local mdir="$BUILD_DIR/seed_merge"
   mkdir -p "$mdir"
 
+  # The conflicted artifact is seed.lock on lock-era history (sdmg.3),
+  # seed.ll on pre-lock history. Candidate materialization below
+  # handles either shape per side.
   local conflicted=""
-  [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll)" ] && conflicted=1
+  [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll bootstrap/seed/seed.lock)" ] && conflicted=1
 
   # Candidate base seeds, in attempt order.
   local candidates=()
@@ -2081,15 +2293,33 @@ mode_seed_merge() {
   local cand rc cls
   for cand in "${candidates[@]}"; do
     log "── attempt: base seed = $cand ──"
+    # Materialize the candidate's seed at $SEED_LL: prefer a tracked
+    # seed.ll blob (pre-lock history), else go through that side's
+    # seed.lock (sdmg.3 — fetch + sha-verify the pinned artifact).
+    local stage_no=""
     case "$cand" in
-      ours)    git -C "$REPO_DIR" show ":2:bootstrap/seed/seed.ll" > "$SEED_LL" \
-                 || die "cannot extract :2: (ours) from the index" ;;
-      theirs)  git -C "$REPO_DIR" show ":3:bootstrap/seed/seed.ll" > "$SEED_LL" \
-                 || die "cannot extract :3: (theirs) from the index" ;;
-      current) : ;;
-      *)       git -C "$REPO_DIR" show "$cand:bootstrap/seed/seed.ll" > "$SEED_LL" \
-                 || die "cannot extract bootstrap/seed/seed.ll from '$cand'" ;;
+      ours) stage_no=2 ;;
+      theirs) stage_no=3 ;;
     esac
+    if [ -n "$stage_no" ]; then
+      if git -C "$REPO_DIR" show ":$stage_no:bootstrap/seed/seed.ll" > "$SEED_LL" 2>/dev/null; then
+        :
+      elif git -C "$REPO_DIR" show ":$stage_no:bootstrap/seed/seed.lock" > "$mdir/cand.$cand.lock" 2>/dev/null; then
+        fetch_seed_from_lock "$mdir/cand.$cand.lock" "$SEED_LL" \
+          || { err "[$cand] could not materialize this side's pinned seed"; continue; }
+      else
+        die "cannot extract :$stage_no: ($cand) seed.ll/seed.lock from the index"
+      fi
+    elif [ "$cand" != "current" ]; then
+      if git -C "$REPO_DIR" show "$cand:bootstrap/seed/seed.ll" > "$SEED_LL" 2>/dev/null; then
+        :
+      elif git -C "$REPO_DIR" show "$cand:bootstrap/seed/seed.lock" > "$mdir/cand.ref.lock" 2>/dev/null; then
+        fetch_seed_from_lock "$mdir/cand.ref.lock" "$SEED_LL" \
+          || { err "[$cand] could not materialize the pinned seed"; continue; }
+      else
+        die "'$cand' has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
+      fi
+    fi
 
     # Tolerate the other side's new ValueType/Expr/Stmt variants.
     log "[$cand] patching seed match traps"
@@ -2156,8 +2386,16 @@ mode_seed_merge() {
     fi
 
     ok "seed merge staged: base=$cand, seed regenerated, fixed point holds"
-    log "next: re-run 'make test', then stage the resolution:"
-    log "  git add bootstrap/seed/seed.ll"
+    if [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.lock)" ]; then
+      log "next: re-run 'make test', publish the regenerated seed, and resolve the lock:"
+      log "  bash scripts/diagnose.sh --seed-publish && git add bootstrap/seed/seed.lock"
+    elif [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll)" ]; then
+      log "next: re-run 'make test', then stage the resolution:"
+      log "  git add bootstrap/seed/seed.ll"
+    else
+      log "next: re-run 'make test'; on lock-era history publish + commit the lock bump"
+      log "  (bash scripts/diagnose.sh --seed-publish)"
+    fi
     return 0
   done
 

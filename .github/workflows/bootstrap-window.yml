@@ -1,8 +1,9 @@
 # sdmg.2 — bootstrap-window gate.
 #
-# Every PR into the integration branch must (a) contain no seed.ll
-# commits (feature branches never cycle the seed — the seed train on
-# the integration branch does) and (b) build its compiler source from
+# Every PR into the integration branch must (a) not change the pinned
+# seed (no seed.lock bumps — feature branches never cycle the seed;
+# the seed train on the integration branch does) and (b) build its
+# compiler source from
 # the integration branch's CURRENT pristine seed, smoke-tested. Any
 # two branches that pass are compilable by the same seed by
 # construction, so the "no seed can compile the union" merge state is

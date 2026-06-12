@@ -50,6 +50,8 @@ help:
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
 	@echo "  make seed-patch-traps  Patch seed match-traps when adding enum variants"
 	@echo "                         (run BEFORE 'make build' for new ValueType/Stmt/Expr)."
+	@echo "  make seed-publish  Publish seed.ll as a release artifact + bump seed.lock"
+	@echo "                     (integration-branch seed-train operation; needs GH_TOKEN)."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
@@ -207,9 +209,15 @@ endif
 # this preps an existing seed for source that adds variants, before
 # bs2 can build at all; `update-seed` requires a working bs2.
 seed-patch-traps:
+	@$(DIAG) --seed-fetch
 	@python3 scripts/patch-seed-traps.py
 	@rm -f build/seed build/seed.o
 	@echo "seed patched — next 'make build' uses patched seed"
+
+# Publish the local seed as a pinned release artifact + bump seed.lock.
+# Integration-branch (seed train) operation — see CLAUDE.md.
+seed-publish:
+	@$(DIAG) --seed-publish
 
 # Verify bootstrap chain integrity (no auto-cycle on failure).
 # Builds seed → bs2 → verifies bs2 self-compiles → verifies bs3 self-compiles.

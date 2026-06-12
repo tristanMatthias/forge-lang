@@ -177,16 +177,18 @@ if [ $FP_RC -ne 0 ]; then
   exit 1
 fi
 
-# Verify the seed IR exists and hasn't been deleted.
-# This is our lifeline — without it we can't bootstrap from scratch.
+# Verify the seed pin exists and hasn't been deleted. This is our
+# lifeline — without it we can't bootstrap from scratch. Lock-era
+# (sdmg.3): seed/seed.lock is the tracked pin and seed/seed.ll is a
+# local materialization; either one present keeps us bootstrappable.
 seed_relevant=$(echo "$staged" | grep -E '^bootstrap/seed/' || true)
 if [ -n "$seed_relevant" ] || [ -n "$src_relevant" ]; then
-  if [ ! -f bootstrap/seed/seed.ll ]; then
+  if [ ! -f bootstrap/seed/seed.lock ] && [ ! -f bootstrap/seed/seed.ll ]; then
     echo
-    echo "[pre-commit] SEED IR MISSING — commit blocked"
-    echo "[pre-commit] bootstrap/seed/seed.ll is the bootstrap lifeline."
-    echo "[pre-commit] Without it, the project cannot be built from scratch."
-    echo "[pre-commit] Restore it before committing."
+    echo "[pre-commit] SEED PIN MISSING — commit blocked"
+    echo "[pre-commit] Neither bootstrap/seed/seed.lock nor bootstrap/seed/seed.ll exists."
+    echo "[pre-commit] The lock (or a checked-in seed) is the bootstrap lifeline —"
+    echo "[pre-commit] without it the project cannot be built from scratch. Restore it."
     exit 1
   fi
 fi

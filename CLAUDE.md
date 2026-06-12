@@ -8,7 +8,10 @@ The v1.0 TRD (gap analysis + tickets) lives in `docs/TRD_V1.md`.
 ## Project Structure
 
 The bootstrap compiler is fully self-hosted in `bootstrap/`. No external compiler needed.
-It builds from a checked-in LLVM IR seed (`bootstrap/seed/seed.ll`).
+It builds from a PINNED LLVM IR seed (sdmg.3 pin-don't-vendor): `bootstrap/seed/seed.lock`
+names {version, sha256, url} on GitHub Releases; the build fetches + hash-verifies it into
+`bootstrap/seed/seed.ll` (gitignored — a locally cycled seed.ll is normal during dev and is
+NEVER committed). Publish a new pin with `make seed-publish` (integration branch only).
 
 Features are self-contained modules in `bootstrap/packages/avrac/src/features/`.
 Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
@@ -94,22 +97,26 @@ Pipeline: `seed/seed.ll → llc + cc → seed binary → compiles src/ → bs2 �
 
 Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analysis)
 
-Seed merge conflicts: `seed/seed.ll` is `merge=binary` — never merge it textually. Pick a side, `make seed-patch-traps`, build, `make update-seed`. Full recipe + base-seed selection criteria: `bootstrap/docs/SEED_MERGES.md`.
+Seed merge conflicts: on lock-era history the conflict lands on `seed/seed.lock` — artifacts are immutable, so take the HIGHER version line (or run `diagnose.sh --seed-merge` when the source union needs restaging + a fresh publish). Pre-lock `seed/seed.ll` conflicts stay `merge=binary` — never merge textually. Full recipe + base-seed selection criteria: `bootstrap/docs/SEED_MERGES.md`.
 
 ## Bootstrap window & seed train (sdmg.2 — ENFORCED)
 
 The Rust stage0 rule, adopted: compiler source must ALWAYS build from the
-integration branch's pristine seed (`feat/crafting-intepreters`'s checked-in
-`seed/seed.ll`). Concretely:
+integration branch's pristine seed (`feat/crafting-intepreters`'s pinned
+`seed/seed.lock`, fetched + hash-verified into the gitignored `seed/seed.ll`).
+Concretely:
 
-- **Feature branches NEVER cycle the seed.** No `seed.ll` commits off the
-  integration branch — and therefore no dogfooding of new surface syntax /
-  enum variants in compiler `src/` until the integration seed has advanced
-  past them (the Phase A/B discipline below, promoted to an enforced
-  invariant). Implement the feature + tests on your branch; dogfood it in
-  compiler `src/` only AFTER it merges and the train advances.
+- **Feature branches NEVER cycle the seed.** No `seed.lock` bumps (or, on
+  pre-lock history, `seed.ll` commits) off the integration branch — and
+  therefore no dogfooding of new surface syntax / enum variants in compiler
+  `src/` until the integration seed has advanced past them (the Phase A/B
+  discipline below, promoted to an enforced invariant). Implement the
+  feature + tests on your branch; dogfood it in compiler `src/` only AFTER
+  it merges and the train advances.
 - **Seed advancement = the seed train.** Dedicated `chore(seed): cycle`
-  commits on the integration branch only, serialized after merges land.
+  commits on the integration branch only, serialized after merges land:
+  `make seed-publish` (uploads the artifact, bumps the lock), commit the
+  lock.
 - **Enforcement:** `diagnose.sh --check-bootstrap-window` — gate 1 rejects
   branches with seed commits since the merge-base; gate 2 rebuilds the
   branch's compiler source from the integration seed in an isolated tree
@@ -123,9 +130,10 @@ integration branch's pristine seed (`feat/crafting-intepreters`'s checked-in
 Any two branches that pass are compilable by the same seed BY CONSTRUCTION —
 the 2026-06-11 "neither seed can compile the union" merge state cannot
 happen. If `make build` auto-cycled your local seed (it does this when bs2
-can't self-compile), do NOT commit the changed `seed.ll`; restore it with
-`git checkout HEAD -- bootstrap/seed/seed.ll` and remove whatever post-seed
-feature use forced the cycle.
+can't self-compile), the cycled `seed.ll` is gitignored so it can't land by
+accident — but your build is now ahead of the pin. Restore the pinned seed
+with `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh
+--seed-fetch` and remove whatever post-seed feature use forced the cycle.
 
 ### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
 
