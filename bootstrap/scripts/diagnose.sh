@@ -155,7 +155,7 @@ fi
 
 LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
-# The integration branch the seed train runs on (sdmg.2). Feature
+# The integration branch the seed train runs on. Feature
 # branches never cycle the seed; --check-bootstrap-window verifies a
 # branch against this branch's pristine seed. Override per-repo or
 # per-invocation with AVRA_INTEGRATION_BRANCH.
@@ -322,7 +322,7 @@ SEED MANAGEMENT
                          INTERNAL (spec-tested): print the --seed-merge
                          failure class for a stage-compile exit code + log.
   --seed-fetch           Materialize seed/seed.ll from seed/seed.lock
-                         (sdmg.3 pin-don't-vendor): download the pinned
+                         (pin-don't-vendor): download the pinned
                          GitHub Releases artifact, verify its sha256,
                          install it. No-op when seed.ll already exists —
                          a locally cycled seed is never clobbered.
@@ -330,7 +330,7 @@ SEED MANAGEMENT
                          Releases artifact (tag seed/v<N>) and bump
                          seed/seed.lock to pin it. Needs GH_TOKEN with
                          Contents:write. Lock bumps belong on the
-                         integration branch (the sdmg.2 seed train) —
+                         integration branch (the seed train) —
                          gate 1 rejects them elsewhere at push time.
   --seed-fetch-from <lock> <dest>
                          INTERNAL (spec-tested): materialize+verify a
@@ -412,7 +412,7 @@ ensure_llvm_wrapper() {
 # seed/seed.ll itself is a gitignored local materialization — fetched
 # on demand, or written locally by `make update-seed` during dev
 # iteration. The lock advances only on the integration branch (the
-# sdmg.2 seed train), published via --seed-publish.
+# seed train), published via --seed-publish.
 
 # Read one `key = value` field from a lock file ($1=file, $2=key).
 seed_lock_field() {
@@ -499,7 +499,7 @@ mode_seed_fetch() {
 # blob hashed directly (pre-lock history), or the lock's pinned sha256
 # (lock-era). Empty when the ref has neither. Lets gate 1 compare seed
 # SEMANTICS across the vendored→pinned transition instead of file
-# paths — the sdmg.3 migration commit touches both files without
+# paths — the vendored→pinned migration commit touches both files without
 # changing the seed.
 ref_seed_sha256() {
   local r="$1"
@@ -548,7 +548,7 @@ mode_seed_publish() {
   local rel_json rel_id
   rel_json=$(curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" \
     -H "Content-Type: application/json" "$api/releases" \
-    -d "{\"tag_name\":\"$tag\",\"target_commitish\":\"$commit\",\"name\":\"bootstrap seed v$version\",\"body\":\"Avra bootstrap seed artifact, pinned by bootstrap/seed/seed.lock (sdmg.3 pin-don't-vendor).\\nsha256 (uncompressed): $sha\",\"prerelease\":true}") \
+    -d "{\"tag_name\":\"$tag\",\"target_commitish\":\"$commit\",\"name\":\"bootstrap seed v$version\",\"body\":\"Avra bootstrap seed artifact, pinned by bootstrap/seed/seed.lock.\\nsha256 (uncompressed): $sha\",\"prerelease\":true}") \
     || die "release create failed for $tag (already exists? bump again or delete it)"
   rel_id=$(printf '%s' "$rel_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') \
     || die "could not parse release id"
@@ -560,10 +560,10 @@ mode_seed_publish() {
     >/dev/null || die "asset upload failed (release $tag id $rel_id left in place)"
 
   cat > "$SEED_LOCK" <<EOF
-# Avra bootstrap seed lock — pin-don't-vendor (sdmg.3).
+# Avra bootstrap seed lock — pin-don't-vendor.
 # seed/seed.ll is NOT in git: the build fetches this pinned artifact and
 # verifies the sha256 of the uncompressed IR. The lock advances only on
-# the integration branch (sdmg.2 seed train) via:
+# the integration branch (the seed train) via:
 #   bash scripts/diagnose.sh --seed-publish
 # Merge conflict on this file = two train advances raced; take the
 # HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.

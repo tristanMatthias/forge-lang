@@ -1,5 +1,5 @@
-// WHY: spec for the bootstrap-tolerant extern-redeclare guard
-// (sdmg.4, tolerance half). During seed-merge staging a previous-
+// WHY: spec for the bootstrap-tolerant extern-redeclare guard.
+// During seed-merge staging a previous-
 // generation stage binary compiles newer source: its baked predeclare
 // table can disagree with the source's extern signatures (benign ABI
 // drift under opaque pointers — 2026-06-11). The guard in

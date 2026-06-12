@@ -1,4 +1,4 @@
-// Fixture: the extern-redeclare guard's bootstrap tolerance (sdmg.4).
+// Fixture: the extern-redeclare guard's bootstrap tolerance.
 // Models the stale-seed staging shape directly against the wrapper:
 // declare probe_drift as (i64)->i64 (the stage binary's baked
 // predeclare), emit a caller that USES that declaration, then re-add

@@ -1,5 +1,5 @@
 // Fixture: the extern-redeclare guard must STAY fatal when the
-// existing function has a body (sdmg.4 tolerance is for
+// existing function has a body (the tolerance is for
 // declaration-vs-declaration drift only). A declare-then-define
 // pattern diverging in type is a genuine compiler bug; tolerating it
 // would attach the body to the wrong ABI silently.

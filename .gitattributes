@@ -6,7 +6,8 @@
 # See bootstrap/docs/SEED_MERGES.md.
 bootstrap/seed/seed.ll -diff merge=binary
 
-# Since sdmg.3 seed.ll is fetched per seed/seed.lock and no longer
+# Since the pin-don't-vendor migration seed.ll is fetched per
+# seed/seed.lock and no longer
 # tracked; the entry above still protects pre-lock history during
 # merges/rebases. seed.lock conflicts mean two seed-train advances
 # raced: artifacts are immutable and content-pinned, so resolution is

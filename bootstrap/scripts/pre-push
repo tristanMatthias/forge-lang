@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap pre-push hook — the sdmg.2 bootstrap-window gate.
+# Bootstrap pre-push hook — the bootstrap-window gate.
 #
 # Runs `diagnose.sh --check-bootstrap-window` when any outgoing commit
 # touches bootstrap/. The check enforces the seed-train rule (feature

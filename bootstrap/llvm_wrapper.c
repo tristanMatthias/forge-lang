@@ -219,7 +219,7 @@ LLVMValueRef avra_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeR
     if (existing) {
         LLVMTypeRef existing_ty = LLVMGlobalGetValueType(existing);
         if (existing_ty != fn_type) {
-            // Bootstrap tolerance (sdmg.4): when the EXISTING function is a
+            // Bootstrap tolerance: when the EXISTING function is a
             // pure declaration (no body), the mismatch is declaration-vs-
             // declaration drift — in practice the stage binary's baked
             // predeclare table vs the (newer) source's extern decl, since

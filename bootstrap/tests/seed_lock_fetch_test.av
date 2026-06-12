@@ -1,11 +1,18 @@
-// WHY: spec for the seed.lock fetch machinery (sdmg.3 pin-don't-
-// vendor). seed/seed.ll is no longer vendored in git; builds
+// WHY: spec for the seed.lock fetch machinery (pin-don't-vendor).
+// seed/seed.ll is no longer vendored in git; builds
 // materialize it from a lock that pins {version, sha256, url}. The
 // security property is the pin: the artifact hash must verify after
 // download or the build refuses. Hermetic via file:// URLs — no
 // network, no GitHub dependency in the suite.
 
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(name: string) -> string
+
+/// Absolute scratch dir for one case — file:// URLs require absolute
+/// paths, and build/cache/ keeps the scratch inside `make clean`'s reach.
+fn case_dir(name: string) -> string {
+    "${avra_process_env_get("PWD")}/build/cache/_seed_lock_${name}"
+}
 
 fn sh(cmd: string) -> string {
     avra_shell_exec("${cmd} 2>&1; echo rc=$?")
@@ -25,7 +32,7 @@ fn write_lock(dir: string, sha: string, url: string) {
 spec "seed.lock fetch: pinned-artifact materialization" {
     given "a lock pinning a file:// artifact by its true sha256" {
         then "fetch materializes the seed and the content round-trips" {
-            let dir = "/tmp/avra_seed_lock_ok"
+            let dir = case_dir("ok")
             avra_shell_exec("rm -rf ${dir}")
             let sha = setup(dir, "fake seed IR alpha")
             write_lock(dir, sha, "file://${dir}/artifact.gz")
@@ -35,7 +42,7 @@ spec "seed.lock fetch: pinned-artifact materialization" {
     }
     given "a lock whose sha256 does not match the artifact" {
         then "fetch refuses with a hash-mismatch error and writes nothing" {
-            let dir = "/tmp/avra_seed_lock_bad"
+            let dir = case_dir("bad")
             avra_shell_exec("rm -rf ${dir}")
             let _ = setup(dir, "fake seed IR beta")
             write_lock(dir, "0000000000000000000000000000000000000000000000000000000000000000", "file://${dir}/artifact.gz")
@@ -46,7 +53,7 @@ spec "seed.lock fetch: pinned-artifact materialization" {
     }
     given "the destination already holds content matching the pin" {
         then "fetch is a no-op even when the artifact URL is dead (no clobber, no network)" {
-            let dir = "/tmp/avra_seed_lock_noop"
+            let dir = case_dir("noop")
             avra_shell_exec("rm -rf ${dir}")
             let sha = setup(dir, "fake seed IR gamma")
             avra_shell_exec("cp ${dir}/artifact ${dir}/out.ll && rm ${dir}/artifact.gz")
@@ -56,7 +63,7 @@ spec "seed.lock fetch: pinned-artifact materialization" {
     }
     given "the artifact is unreachable and nothing is cached" {
         then "fetch fails with the offline guidance" {
-            let dir = "/tmp/avra_seed_lock_dead"
+            let dir = case_dir("dead")
             avra_shell_exec("rm -rf ${dir}")
             let sha = setup(dir, "fake seed IR delta")
             avra_shell_exec("rm ${dir}/artifact.gz")

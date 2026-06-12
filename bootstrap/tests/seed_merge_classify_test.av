@@ -1,4 +1,4 @@
-// WHY: spec for the --seed-merge failure taxonomy (sdmg.5). The
+// WHY: spec for the --seed-merge failure taxonomy. The
 // classifier turns a stage-compile exit code + log into one of four
 // classes that decide the next staging step during a seed.ll merge
 // (docs/SEED_MERGES.md). Exercised through the public CLI surface
@@ -8,7 +8,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 
 fn classify(rc: int, log_body: string) -> string {
-    let path = "/tmp/avra_seed_merge_classify_test.log"
+    let path = "build/cache/_seed_merge_classify.log"
     avra_shell_exec("printf '%s\\n' \"${log_body}\" > ${path}")
     avra_shell_exec("bash scripts/diagnose.sh --seed-merge-classify ${string(rc)} ${path}").trim()
 }
