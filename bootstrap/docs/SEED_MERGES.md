@@ -58,12 +58,25 @@ defect at the IR level, relink, and continue the cycle. This is a
 last resort; sdmg.2's bootstrap-window rule exists to make this state
 unrepresentable.
 
-## Prevention (the actual fix)
+## Prevention (the actual fix — sdmg.2, ENFORCED)
 
-Per the sdmg epic:
-- Feature branches should NOT cycle the seed or dogfood new
-  syntax/variants in compiler source; seed advancement happens on the
-  integration branch as dedicated `chore(seed): cycle` commits
-  (sdmg.2 — bootstrap window + seed train, CI-enforced).
-- `.beads` ticket `sdmg.5` tracks automating this whole procedure as
-  `diagnose.sh --seed-merge`.
+Feature branches must NOT cycle the seed or dogfood new syntax/variants
+in compiler source; seed advancement happens on the integration branch
+as dedicated `chore(seed): cycle` commits (the seed train). This is
+enforced by `diagnose.sh --check-bootstrap-window`:
+
+- **gate 1 (seed train):** rejects branches with `seed.ll` commits
+  since the merge-base with the integration branch;
+- **gate 2 (window):** rebuilds the branch's compiler source from the
+  integration branch's CURRENT pristine seed in an isolated tree with
+  a cold unit cache, then smoke-runs the produced compiler.
+
+Wired into the pre-push hook (`scripts/pre-push`, chained from
+`.beads/hooks/pre-push` on hooksPath checkouts) and CI
+(`.github/workflows/bootstrap-window.yml`, every PR into the
+integration branch). Green verifies are cached in
+`build/window/.window_verified`; force a re-check with
+`AVRA_FORCE_WINDOW=1`. See CLAUDE.md "Bootstrap window & seed train".
+
+`.beads` ticket `sdmg.5` tracks automating the staging recovery above
+as `diagnose.sh --seed-merge` for histories that predate the gate.

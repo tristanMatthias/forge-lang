@@ -96,6 +96,37 @@ Diagnostics: `bash scripts/diagnose.sh --help` (single entry point for all analy
 
 Seed merge conflicts: `seed/seed.ll` is `merge=binary` — never merge it textually. Pick a side, `make seed-patch-traps`, build, `make update-seed`. Full recipe + base-seed selection criteria: `bootstrap/docs/SEED_MERGES.md`.
 
+## Bootstrap window & seed train (sdmg.2 — ENFORCED)
+
+The Rust stage0 rule, adopted: compiler source must ALWAYS build from the
+integration branch's pristine seed (`feat/crafting-intepreters`'s checked-in
+`seed/seed.ll`). Concretely:
+
+- **Feature branches NEVER cycle the seed.** No `seed.ll` commits off the
+  integration branch — and therefore no dogfooding of new surface syntax /
+  enum variants in compiler `src/` until the integration seed has advanced
+  past them (the Phase A/B discipline below, promoted to an enforced
+  invariant). Implement the feature + tests on your branch; dogfood it in
+  compiler `src/` only AFTER it merges and the train advances.
+- **Seed advancement = the seed train.** Dedicated `chore(seed): cycle`
+  commits on the integration branch only, serialized after merges land.
+- **Enforcement:** `diagnose.sh --check-bootstrap-window` — gate 1 rejects
+  branches with seed commits since the merge-base; gate 2 rebuilds the
+  branch's compiler source from the integration seed in an isolated tree
+  (cold unit cache) and smoke-runs the result. Wired into the pre-push hook
+  (`bootstrap/scripts/pre-push`, chained from `.beads/hooks/pre-push`) and
+  CI (`.github/workflows/bootstrap-window.yml`, every PR into the
+  integration branch). Green results are cached (keyed on integration seed
+  + compiler sources), so a clean push is seconds. Escape hatch for genuine
+  emergencies only: `AVRA_SKIP_WINDOW_CHECK=1 git push`.
+
+Any two branches that pass are compilable by the same seed BY CONSTRUCTION —
+the 2026-06-11 "neither seed can compile the union" merge state cannot
+happen. If `make build` auto-cycled your local seed (it does this when bs2
+can't self-compile), do NOT commit the changed `seed.ll`; restore it with
+`git checkout HEAD -- bootstrap/seed/seed.ll` and remove whatever post-seed
+feature use forced the cycle.
+
 ### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
 
 This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
