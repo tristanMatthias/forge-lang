@@ -296,8 +296,9 @@ SEED MANAGEMENT
                          this branch (since the merge-base with the
                          integration branch) CHANGES the pinned seed content
                          (seed.lock bumps; seed.ll commits on pre-lock
-                         history). Gate 2: the branch's compiler source
-                         builds from the integration branch's CURRENT
+                         history). Gate 2: HEAD's compiler source (what a
+                         push ships — untracked/uncommitted files don't
+                         count) builds from the integration branch's CURRENT
                          pristine seed in an isolated tree (cold unit cache)
                          and the produced compiler passes a smoke run.
                          [ref] defaults to origin/$AVRA_INTEGRATION_BRANCH
@@ -644,7 +645,9 @@ mode_seed_publish() {
 # downstream (ensure_bs2's -O2-miscompile fallback fired for what was
 # really an out-of-date wrapper).
 seed_inputs_hash() {
-  { $SHA256_CMD "$1" "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null; } \
+  # $2/$3 override the C inputs (the window gate fingerprints HEAD's
+  # copies); default to the dev tree's.
+  { $SHA256_CMD "$1" "${2:-$RUNTIME_C}" "${3:-$BOOTSTRAP_DIR/llvm_wrapper.c}" 2>/dev/null; } \
     | awk '{print $1}' | $SHA256_CMD | awk '{print $1}'
 }
 
@@ -2021,8 +2024,11 @@ mode_seed_sigs() {
 # own the user-facing message for each.
 llc_link_bin() {
   local ll="$1" obj="$2" out="$3" buildlog="$4"
+  # $5/$6 override the C runtime objects — the window gate links
+  # against objects compiled from HEAD's C sources, not the dev tree's.
+  local runtime_o="${5:-$RUNTIME_O}" wrapper_o="${6:-$LLVM_WRAPPER_O}"
   "$LLC" -O2 $LLC_RELOC -filetype=obj "$ll" -o "$obj" 2>"$buildlog" || return 1
-  cc -o "$out.tmp" "$obj" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+  cc -o "$out.tmp" "$obj" "$runtime_o" "$wrapper_o" \
     $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>>"$buildlog" \
     || { rm -f "$out.tmp"; return 2; }
   mv "$out.tmp" "$out"
@@ -2054,7 +2060,8 @@ materialize_treeish_seed() {
 # inherited producer objects could alias the very mismatch these
 # checks exist to surface.
 hermetic_compile_env() {
-  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_DIR_MODULE "$@"
+  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
+      -u AVRA_DIR_MODULE -u AVRA_COMPILER "$@"
 }
 
 # ─────────────────────────────────────────────────────────────────────
@@ -2143,39 +2150,67 @@ window_gate_seed_train() {
   fi
 }
 
-# Compiler-relevant working-tree inputs: tracked + untracked
-# (non-ignored) sources. Test files are excluded by the fingerprint
-# (not the copy) — main.av's import graph never reaches */tests/*, so
-# test-only edits must not bust the verify cache.
+# The gate verifies HEAD, not the working tree: a push ships commits,
+# so an untracked scratch file must not fail it and an uncommitted fix
+# must not green it (CI checks out exactly this state). One pathspec
+# drives the source list, the tree copy, and the dirty-tree warning.
+WINDOW_SRC_PATHS=(bootstrap/packages 'bootstrap/*.toml' bootstrap/runtime.c bootstrap/llvm_wrapper.c)
+
+# Echo "blob-sha path" lines for the compiler-relevant sources at
+# commit $1. Git already knows the blob hashes, so this is one
+# subprocess instead of re-hashing ~500 files.
 window_src_list() {
-  (cd "$REPO_DIR" && git ls-files -co --exclude-standard -- \
-      bootstrap/packages 'bootstrap/*.toml' bootstrap/runtime.c bootstrap/llvm_wrapper.c) \
+  git -C "$REPO_DIR" ls-tree -r "$1" --format='%(objectname) %(path)' -- \
+      "${WINDOW_SRC_PATHS[@]}" \
     | LC_ALL=C sort
 }
 
-# Echo the verify-cache fingerprint: integration seed identity + the
-# content of every compiler-relevant source. NUL-safe batching.
+# Echo the verify-cache fingerprint for commit $2: integration seed
+# identity + the blob-sha/path line of every compiler-relevant source.
+# Paths stay in the hash — a rename-only change alters module
+# resolution and must not reuse a stale PASS marker. Test files are
+# excluded: main.av's import graph never reaches */tests/*, so
+# test-only commits must not bust the cache.
 window_fingerprint() {
-  local seed_id="$1"
-  # Keep the "hash  path" lines whole: hashing content alone would
-  # let a rename-only change (which alters module resolution) reuse a
-  # stale PASS marker.
+  local seed_id="$1" commit="$2"
   { echo "seed:$seed_id"
-    window_src_list | grep -v '/tests/' \
-      | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$REPO_DIR/$f" || :; done \
-      | xargs -0 $SHA256_CMD 2>/dev/null
+    window_src_list "$commit" | grep -v '/tests/'
   } | $SHA256_CMD | awk '{print $1}'
 }
 
+# Copy the compiler sources AT COMMIT $2 into $1/tree so the window
+# compile sees exactly what a push ships, starts from a cold unit
+# cache, and writes nothing into the dev tree.
+window_copy_tree() {
+  local win="$1" commit="$2"
+  rm -rf "$win/tree"
+  mkdir -p "$win/tree"
+  git -C "$REPO_DIR" archive "$commit" -- "${WINDOW_SRC_PATHS[@]}" \
+    | tar -xf - -C "$win/tree" \
+    || die "source-tree copy failed"
+}
+
+# Compile HEAD's C runtime inputs from the copied tree into
+# window-local objects (flags mirror ensure_runtime /
+# ensure_llvm_wrapper). The gate must link the C code that ships, not
+# whatever the dev tree currently holds.
+window_c_objects() {
+  local win="$1"
+  cc -c -O0 -g -o "$win/runtime.o" "$win/tree/bootstrap/runtime.c" \
+    || die "window runtime.c compile failed"
+  cc -c -O2 -I"$LLVM_PREFIX/include" -o "$win/llvm_wrapper.o" "$win/tree/bootstrap/llvm_wrapper.c" \
+    || die "window llvm_wrapper.c compile failed"
+}
+
 # Echo the path of a stage binary built from the integration seed at
-# $2/seed.ll. Reuses the dev build/seed when its input fingerprint
-# matches; otherwise builds (and caches) a window-local one. The cache
-# key includes the C link inputs — a runtime.c/llvm_wrapper.c edit
-# must relink the stage binary too, or it keeps the OLD C behaviour.
+# $2/seed.ll, linked against the window-local C objects. Reuses the
+# dev build/seed when its full input fingerprint (seed IR + C inputs)
+# matches; otherwise builds (and caches) a window-local one.
 window_stage_binary() {
   local ref="$1" win="$2" ref_sha="$3"
   local win_seed_fp
-  win_seed_fp=$(seed_inputs_hash "$win/seed.ll")
+  win_seed_fp=$(seed_inputs_hash "$win/seed.ll" \
+    "$win/tree/bootstrap/runtime.c" "$win/tree/bootstrap/llvm_wrapper.c")
   if [ -x "$SEED_BIN" ] && [ "$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null)" = "$win_seed_fp" ]; then
     log "integration seed is byte-identical to the local build/seed — reusing it"
     echo "$SEED_BIN"
@@ -2188,7 +2223,8 @@ window_stage_binary() {
     return 0
   fi
   log "building stage binary from the integration seed ($ref @ ${ref_sha:0:12})"
-  case $(llc_link_bin "$win/seed.ll" "$win/seed.o" "$stage_bin" "$win/stage.build.log"; echo $?) in
+  case $(llc_link_bin "$win/seed.ll" "$win/seed.o" "$stage_bin" "$win/stage.build.log" \
+           "$win/runtime.o" "$win/llvm_wrapper.o"; echo $?) in
     0) : ;;
     1) err "llc rejected the INTEGRATION seed itself — integration-side problem,"
        err "not a window violation. Check $ref's seed health (make verify-seed there)."
@@ -2200,24 +2236,12 @@ window_stage_binary() {
   echo "$stage_bin"
 }
 
-# Copy the compiler sources into $1/tree so the window compile starts
-# from a cold unit cache and writes nothing into the dev tree.
-window_copy_tree() {
-  local win="$1"
-  rm -rf "$win/tree"
-  mkdir -p "$win/tree"
-  window_src_list \
-    | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$f" || :; done \
-    | (cd "$REPO_DIR" && tar --null -T - -cf -) | tar -C "$win/tree" -xf - \
-    || die "source-tree copy failed"
-}
-
 # Compile + run a small program with the compiler $2 (scratch dir $1)
 # and verify its output, proving the compiler is not garbage. Used by
 # the window gate on the window-built compiler and by --seed-publish
 # on the stage binary of the seed about to become the pin.
 smoke_test_compiler() {
-  local win="$1" bs2w="$2"
+  local win="$1" bs2w="$2" runtime_o="${3:-}" wrapper_o="${4:-}"
   cat > "$win/smoke.av" <<'SMOKE'
 fn add(a: int, b: int) -> int { a + b }
 
@@ -2233,6 +2257,7 @@ SMOKE
   hermetic_compile_env "$bs2w" compile "$win/smoke.av" >"$win/smoke.compile.log" 2>&1 \
     || { tail -10 "$win/smoke.compile.log" >&2; die "window-built compiler failed to compile the smoke program"; }
   llc_link_bin "$win/smoke.av.ll" "$win/smoke.o" "$win/smoke.bin" "$win/smoke.build.log" \
+      ${runtime_o:+"$runtime_o"} ${wrapper_o:+"$wrapper_o"} \
     || { cat "$win/smoke.build.log" >&2; die "smoke build failed"; }
   local smoke_out
   smoke_out=$("$win/smoke.bin")
@@ -2259,27 +2284,34 @@ mode_check_bootstrap_window() {
   seed_id=$(ref_seed_sha256 "$ref")
   [ -n "$seed_id" ] || die "$ref has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
 
+  # The gate verifies HEAD — what a push actually ships. Warn when the
+  # working tree diverges so a manual run isn't mistaken for a verdict
+  # on uncommitted work.
+  if [ -n "$(git -C "$REPO_DIR" status --porcelain -- "${WINDOW_SRC_PATHS[@]}" 2>/dev/null | head -1)" ]; then
+    warn "compiler sources in the working tree differ from HEAD — the gate verifies HEAD (commit first)"
+  fi
+
   local fp marker="$win/.window_verified"
-  fp=$(window_fingerprint "$seed_id")
+  fp=$(window_fingerprint "$seed_id" "$head_sha")
   if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
      && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
     ok "bootstrap window cached — integration seed + compiler sources unchanged since last verify"
     return 0
   fi
 
-  ensure_runtime
-  ensure_llvm_wrapper
   materialize_treeish_seed "$ref" "$win/seed.ll" "$win/integration.seed.lock" \
     || die "cannot materialize the integration seed"
+
+  log "copying HEAD's compiler sources into an isolated tree"
+  window_copy_tree "$win" "$head_sha"
+  local entry="$win/tree/bootstrap/packages/cli/src/main.av"
+  [ -f "$entry" ] || die "copied tree is missing $entry"
+  window_c_objects "$win"
+
   local stage_bin
   stage_bin=$(window_stage_binary "$ref" "$win" "$ref_sha") || return 1
 
-  log "copying compiler sources into an isolated tree"
-  window_copy_tree "$win"
-  local entry="$win/tree/bootstrap/packages/cli/src/main.av"
-  [ -f "$entry" ] || die "copied tree is missing $entry"
-
-  log "compiling branch compiler source with the integration seed"
+  log "compiling HEAD's compiler source with the integration seed"
   if ! hermetic_compile_env "$stage_bin" compile "$entry" >"$win/compile.log" 2>&1; then
     err "BOOTSTRAP WINDOW VIOLATION — compiler source does not build from the integration seed"
     err "The branch dogfoods syntax/enum-variants newer than '$INTEGRATION_BRANCH''s seed"
@@ -2295,13 +2327,14 @@ mode_check_bootstrap_window() {
 
   log "linking the window-built compiler"
   llc_link_bin "$entry.ll" "$win/bs2w.o" "$win/bs2w" "$win/bs2w.build.log" \
+      "$win/runtime.o" "$win/llvm_wrapper.o" \
     || { cat "$win/bs2w.build.log" >&2; die "window compiler build failed"; }
 
   log "smoke-testing the window-built compiler"
-  smoke_test_compiler "$win" "$win/bs2w" || return 1
+  smoke_test_compiler "$win" "$win/bs2w" "$win/runtime.o" "$win/llvm_wrapper.o" || return 1
 
   printf '%s' "$fp" > "$marker"
-  ok "bootstrap window holds — branch source builds + runs from $ref's pristine seed"
+  ok "bootstrap window holds — HEAD's source builds + runs from $ref's pristine seed"
 }
 
 # ─────────────────────────────────────────────────────────────────────

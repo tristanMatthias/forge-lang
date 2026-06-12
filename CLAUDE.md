@@ -119,8 +119,9 @@ Concretely:
   lock.
 - **Enforcement:** `diagnose.sh --check-bootstrap-window` — gate 1 rejects
   branches with seed commits since the merge-base; gate 2 rebuilds the
-  branch's compiler source from the integration seed in an isolated tree
-  (cold unit cache) and smoke-runs the result. Wired into the pre-push hook
+  branch's compiler source AT HEAD (what a push ships — untracked or
+  uncommitted files don't count; commit first) from the integration seed in
+  an isolated tree (cold unit cache) and smoke-runs the result. Wired into the pre-push hook
   (`bootstrap/scripts/pre-push`, chained from `.beads/hooks/pre-push`) and
   CI (`.github/workflows/bootstrap-window.yml`, every PR into the
   integration branch). Green results are cached (keyed on integration seed
