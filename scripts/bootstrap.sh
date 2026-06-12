@@ -415,7 +415,10 @@ setup_beads_sync() {
   # bd wrapper: scopes token-auth + signing-off to bd's Dolt git ops only, and
   # auto-pushes refs/dolt/data after a mutating command (beads doesn't auto-push
   # on write, and the GitHub proxy blocks pushing that ref, so we push direct).
-  # The inner `dolt push` calls the REAL bd (no recursion) and is best-effort.
+  # We `dolt commit` then `dolt push` explicitly so we never depend on a
+  # persisted `dolt.auto-commit` config (which would dirty the git-tracked
+  # .beads/config.yaml). Both inner calls hit the REAL bd (no recursion) and are
+  # best-effort. `dolt commit` is a no-op when the working set is already clean.
   cat > "$rt/bd" <<WRAP
 #!/bin/sh
 export GIT_ASKPASS="$rt/askpass.sh"
@@ -423,7 +426,9 @@ export GIT_CONFIG_GLOBAL="$rt/gitconfig"
 export GIT_TERMINAL_PROMPT=0
 "$real_bd" "\$@"; __rc=\$?
 case " create update close reopen delete dep defer supersede remember import mol " in
-  *" \${1:-} "*) "$real_bd" dolt push origin >/dev/null 2>&1 || true ;;
+  *" \${1:-} "*)
+    "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
+    "$real_bd" dolt push origin          >/dev/null 2>&1 || true ;;
 esac
 exit \$__rc
 WRAP
@@ -453,13 +458,22 @@ WRAP
 
   # PUSH remote = direct-to-github (token via askpass). Pull/hydrate above used
   # the proxy git origin; set the dolt remote AFTER so it doesn't redirect them.
+  # NOTE: `bd dolt remote add` auto-commits .beads/config.yaml ("bd: update
+  # sync.remote"), which would pollute the working branch in every fresh
+  # container. We capture HEAD first and drop any commit bd makes, then restore
+  # config.yaml — the dolt remote itself persists in the gitignored Dolt store
+  # (the source of truth for `dolt push`), so reverting the git-tracked config
+  # is safe. The wrapper above commits+pushes explicitly, so we no longer set
+  # `dolt.auto-commit`/`export.git-add` (those also dirtied config.yaml).
   ( cd "$REPO_ROOT"
+    before="$(git rev-parse HEAD 2>/dev/null)"
     "$bd" dolt remote remove origin >/dev/null 2>&1
     "$bd" dolt remote add origin "git+https://x-access-token@github.com/${slug}.git" >/dev/null 2>&1
-    # Commit each write locally (fast, no network); the Stop hook pushes at
-    # session end. Stop auto-staging the jsonl into git commits.
-    "$bd" config set dolt.auto-commit on   >/dev/null 2>&1
-    "$bd" config set export.git-add  false >/dev/null 2>&1 )
+    if [ -n "$before" ] && [ "$(git rev-parse HEAD 2>/dev/null)" != "$before" ]; then
+      git reset --soft "$before" >/dev/null 2>&1 || true
+    fi
+    git restore --staged --worktree .beads/config.yaml >/dev/null 2>&1 \
+      || git checkout -- .beads/config.yaml >/dev/null 2>&1 || true )
   ok "beads: Dolt sync ON — pull via proxy, push direct-to-github (no committed jsonl)"
 }
 
