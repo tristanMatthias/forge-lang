@@ -9,7 +9,9 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --claim  # Claim work atomically
 bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+# NOTE: sync is automatic on Claude Code Web — a bd wrapper auto-pushes after
+# create/update/close (see CLAUDE.md "Beads sync on Claude Code Web"). You do
+# NOT need to run `bd dolt push` manually. (Off the web, it pushes to refs/dolt/data.)
 ```
 
 ## Non-Interactive Shell Commands

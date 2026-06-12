@@ -389,3 +389,32 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+## Beads sync on Claude Code Web (this repo) — READ THIS
+
+This **overrides** the generic "issues.jsonl is a passive export" line in the
+bd-managed block above. On Claude Code Web, beads sync is automatic and you do
+**not** manage it manually:
+
+- **Just use beads normally** — `bd create` / `bd update` / `bd close`. A `bd`
+  wrapper (installed by `scripts/bootstrap.sh`) **auto-pushes** after every
+  mutating command, so changes reach GitHub with no manual `bd dolt push`.
+- **Source of truth is `refs/dolt/data`** (the Dolt DB ref), **not**
+  `.beads/issues.jsonl` — which is **gitignored here and no longer committed**.
+- On container start, `bootstrap.sh` hydrates the DB from `refs/dolt/data`.
+
+Why it's non-standard (three Claude-Code-Web constraints, handled in
+`bootstrap.sh::setup_beads_sync`):
+1. the GitHub proxy only allows pushing the *working branch*, so `refs/dolt/data`
+   is pushed **direct to github.com** via a fine-grained PAT in `$GH_TOKEN`
+   (Contents:write, this repo only); reads/hydration go through the proxy (no token);
+2. Dolt's data commits run with `commit.gpgsign=false` (the env's sign-server
+   rejects them) — scoped to bd only, so your *source* commits keep signing.
+
+Caveats: auto-push is **best-effort** — a failed push (network blip / expired
+token) leaves the write local until the next successful push. Requires `GH_TOKEN`
+in the environment; without it, beads is **read-only** (hydrate works, writes
+won't sync). The token is fed via `GIT_ASKPASS` and never stored on disk or in
+the repo. Beads' own general model is at
+https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md — this repo
+intentionally diverges from it for the reasons above.
