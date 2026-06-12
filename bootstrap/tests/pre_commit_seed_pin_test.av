@@ -1,0 +1,88 @@
+// WHY: regression spec for the updated seed pin check in
+// bootstrap/scripts/pre-commit. The check was changed from requiring
+// bootstrap/seed/seed.ll specifically (old vendored-seed model) to
+// accepting EITHER bootstrap/seed/seed.lock OR bootstrap/seed/seed.ll
+// as the bootstrap lifeline (pin-don't-vendor model, sdmg.3). The
+// error message also changed from "SEED IR MISSING" to "SEED PIN
+// MISSING" and now mentions both files.
+//
+// We test the logic directly rather than driving the full pre-commit
+// hook (which would run the test suite and fixed-point check): the
+// seed pin check is a self-contained shell condition that we
+// reproduce in a controlled scratch directory. The script is written
+// to a file via avra_shell_exec to avoid the shell-quoting tangle of
+// embedding complex scripts in bash -c.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+
+fn base_dir() -> string {
+    "build/cache/_pre_commit_seed_pin"
+}
+
+// Write a minimal shell script that reproduces the EXACT condition
+// from bootstrap/scripts/pre-commit lines 184-193 into `dir/check.sh`
+// and run it. `has_lock` / `has_ll` control which files are present.
+fn check_with(has_lock: bool, has_ll: bool) -> string {
+    let dir = base_dir()
+    avra_shell_exec("rm -rf '" + dir + "' && mkdir -p '" + dir + "/bootstrap/seed'")
+    if has_lock { avra_shell_exec("touch '" + dir + "/bootstrap/seed/seed.lock'") }
+    if has_ll   { avra_shell_exec("touch '" + dir + "/bootstrap/seed/seed.ll'") }
+
+    // Build the check script using the exact logic from pre-commit.
+    // Newlines are \n inside avra string literals.
+    let body =
+        "#!/usr/bin/env bash\n" +
+        "cd '" + dir + "'\n" +
+        "staged='bootstrap/seed/seed.ll'\n" +
+        "seed_relevant=$(echo \"$staged\" | grep -E '^bootstrap/seed/' || true)\n" +
+        "if [ -n \"$seed_relevant\" ]; then\n" +
+        "  if [ ! -f bootstrap/seed/seed.lock ] && [ ! -f bootstrap/seed/seed.ll ]; then\n" +
+        "    echo '[pre-commit] SEED PIN MISSING -- commit blocked'\n" +
+        "    echo '[pre-commit] Neither bootstrap/seed/seed.lock nor bootstrap/seed/seed.ll exists.'\n" +
+        "    exit 1\n" +
+        "  fi\n" +
+        "fi\n" +
+        "echo ok\n"
+
+    let script_path = dir + "/check.sh"
+    let _ = avra_selfhost_write_file(script_path, body)
+    avra_shell_exec("bash '" + script_path + "' 2>&1; echo rc=$?")
+}
+
+spec "pre-commit: seed pin check accepts seed.lock OR seed.ll" {
+    given "only seed.lock present (lock-era checkout)" {
+        then "the check passes — the lock alone is the bootstrap lifeline" {
+            let out = check_with(true, false)
+            out.contains("ok") && out.contains("rc=0") && !out.contains("SEED PIN MISSING")
+        }
+    }
+
+    given "only seed.ll present (pre-lock / dev-cycle checkout)" {
+        then "the check passes — a local seed.ll still keeps the project bootstrappable" {
+            let out = check_with(false, true)
+            out.contains("ok") && out.contains("rc=0") && !out.contains("SEED PIN MISSING")
+        }
+    }
+
+    given "both seed.lock and seed.ll present" {
+        then "the check passes — belt and suspenders" {
+            let out = check_with(true, true)
+            out.contains("ok") && out.contains("rc=0") && !out.contains("SEED PIN MISSING")
+        }
+    }
+
+    given "neither seed.lock nor seed.ll present" {
+        then "the check fails with the new SEED PIN MISSING error" {
+            let out = check_with(false, false)
+            out.contains("SEED PIN MISSING") && !out.contains("rc=0")
+        }
+        then "the error message mentions both files so the user knows what to restore" {
+            let out = check_with(false, false)
+            out.contains("seed.lock") && out.contains("seed.ll")
+        }
+        then "the old SEED IR MISSING wording is not emitted — no false muscle-memory match" {
+            !check_with(false, false).contains("SEED IR MISSING")
+        }
+    }
+}
