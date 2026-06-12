@@ -380,73 +380,70 @@ install_beads() {
 #      token) to bd ONLY via a wrapper, so the agent's own source commits keep
 #      their normal signing.
 #
-# Without GH_TOKEN we fall back to the offline jsonl import (old behavior).
+# The wrapper is installed UNCONDITIONALLY and decides at RUNTIME whether to push
+# (based on $GH_TOKEN), so a container that gains the token later starts syncing
+# with no re-bootstrap. Without a usable token bd stays read-only (hydrate works,
+# writes just don't push); jsonl is a last resort only if the ref is unavailable.
 setup_beads_sync() {
   have bd || return 0
   local bd_dir="$REPO_ROOT/.beads"
   local gobin; gobin="$(go_bin_dir)"
   local real_bd="$gobin/bd"; [ -x "$real_bd" ] || real_bd="$(command -v bd)"
 
-  if [ -z "${GH_TOKEN:-}" ]; then
-    # No token → READ-ONLY: hydrate from refs/dolt/data via the proxy (reads need
-    # no creds); bd writes just won't push until GH_TOKEN is set. jsonl is a last
-    # resort only if the remote ref is unavailable.
-    local rt0="$HOME/.bd-sync"; mkdir -p "$rt0"
-    printf '[include]\n\tpath = %s/.gitconfig\n[commit]\n\tgpgsign = false\n' "$HOME" > "$rt0/gitconfig"
-    if [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; then
-      ok "beads: local store present (GH_TOKEN unset — writes won't sync to refs/dolt/data)"
-    elif ( cd "$REPO_ROOT" && GIT_CONFIG_GLOBAL="$rt0/gitconfig" GIT_TERMINAL_PROMPT=0 \
-           BD_NON_INTERACTIVE=1 bd bootstrap --yes >/dev/null 2>&1 ) \
-         && { [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; }; then
-      warn "beads: READ-ONLY — hydrated from refs/dolt/data, but GH_TOKEN unset so writes won't sync. Set GH_TOKEN to enable push."
-    else
-      init_beads_local
-    fi
-    return 0
-  fi
-
   # Per-container runtime dir (recreated each bootstrap; never committed).
   local rt="$HOME/.bd-sync"; mkdir -p "$rt"
   # askpass: prints $GH_TOKEN at call time — token is never written to disk/argv.
   printf '#!/bin/sh\nprintf "%%s" "$GH_TOKEN"\n' > "$rt/askpass.sh"; chmod +x "$rt/askpass.sh"
-  # git config that inherits the real global config but turns signing OFF.
+  # git config that inherits the real global config but turns signing OFF — the
+  # container's sign-server rejects Dolt's data commits (needed for hydration
+  # commits too, so it's applied whether or not a token is present).
   printf '[include]\n\tpath = %s/.gitconfig\n[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n' \
     "$HOME" > "$rt/gitconfig"
-  # bd wrapper: scopes token-auth + signing-off to bd's Dolt git ops only, and
-  # auto-pushes refs/dolt/data after a mutating command (beads doesn't auto-push
-  # on write, and the GitHub proxy blocks pushing that ref, so we push direct).
-  # We `dolt commit` then `dolt push` explicitly so we never depend on a
-  # persisted `dolt.auto-commit` config (which would dirty the git-tracked
-  # .beads/config.yaml). Both inner calls hit the REAL bd (no recursion) and are
-  # best-effort. `dolt commit` is a no-op when the working set is already clean.
+
+  # The bd wrapper is the CANONICAL bd entrypoint — always installed, ahead of
+  # the raw bd on PATH, so it can never be silently bypassed. It checks $GH_TOKEN
+  # at RUNTIME (not install time): with a token it auto-pushes refs/dolt/data
+  # DIRECT to github after a mutating command (the proxy blocks that ref, and bd
+  # doesn't auto-push on write); without one it's a transparent passthrough. We
+  # `dolt commit` then `dolt push` explicitly so we never depend on a persisted
+  # `dolt.auto-commit` config (which would dirty the git-tracked config.yaml).
+  # Inner dolt calls hit the REAL bd (no recursion), are best-effort, and commit
+  # is a no-op on a clean working set.
   cat > "$rt/bd" <<WRAP
 #!/bin/sh
-export GIT_ASKPASS="$rt/askpass.sh"
 export GIT_CONFIG_GLOBAL="$rt/gitconfig"
 export GIT_TERMINAL_PROMPT=0
+[ -n "\${GH_TOKEN:-}" ] && export GIT_ASKPASS="$rt/askpass.sh"
 "$real_bd" "\$@"; __rc=\$?
-case " create update close reopen delete dep defer supersede remember import mol " in
-  *" \${1:-} "*)
-    "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
-    "$real_bd" dolt push origin          >/dev/null 2>&1 || true ;;
-esac
+if [ -n "\${GH_TOKEN:-}" ]; then
+  case " create update close reopen delete dep defer supersede remember import mol " in
+    *" \${1:-} "*)
+      "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
+      "$real_bd" dolt push origin          >/dev/null 2>&1 || true ;;
+  esac
+fi
 exit \$__rc
 WRAP
   chmod +x "$rt/bd"
-  # Put the wrapper FIRST on PATH (ahead of the raw bd) for sessions + git hooks.
+  # Install the wrapper into EVERY writable PATH bin dir (the last word, ahead of
+  # the raw bd that ensure_bd_on_path linked) so no shell or git hook resolves the
+  # raw bd by accident. No `break` — link all candidates. ensure_bd_on_path's
+  # early-return then protects this link from any later re-run.
+  local linked=0
   for d in /usr/local/bin "$HOME/.local/bin"; do
-    [ -d "$d" ] && ln -sf "$rt/bd" "$d/bd" 2>/dev/null && break
+    [ -d "$d" ] && [ -w "$d" ] && ln -sf "$rt/bd" "$d/bd" 2>/dev/null && linked=1
   done
+  [ "$linked" = 1 ] || warn "beads: could not install bd wrapper on PATH — auto-sync may not run"
   local bd="$rt/bd"
 
   local slug; slug="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null | sed -E 's#.*/git/##; s#\.git$##')"
   : "${slug:=tristanMatthias/forge-lang}"
 
-  # Hydrate: if no local store yet, `bd bootstrap` clones refs/dolt/data via the
-  # git origin (the proxy — read-only, no token). If a store exists, pull latest.
+  # Hydrate from refs/dolt/data via the git origin (the proxy — reads need no
+  # creds, works with or without a token). If a store exists, pull latest.
   if [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; then
     ( cd "$REPO_ROOT" && BD_NON_INTERACTIVE=1 "$bd" dolt pull origin >/dev/null 2>&1 ) \
-      && ok "beads: pulled latest from refs/dolt/data" || warn "beads: dolt pull failed (check GH_TOKEN)"
+      && ok "beads: pulled latest from refs/dolt/data" || warn "beads: dolt pull failed"
   else
     if ( cd "$REPO_ROOT" && BD_NON_INTERACTIVE=1 "$bd" bootstrap --yes >/dev/null 2>&1 ) \
        && { [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; }; then
@@ -456,15 +453,15 @@ WRAP
     fi
   fi
 
-  # PUSH remote = direct-to-github (token via askpass). Pull/hydrate above used
-  # the proxy git origin; set the dolt remote AFTER so it doesn't redirect them.
-  # NOTE: `bd dolt remote add` auto-commits .beads/config.yaml ("bd: update
-  # sync.remote"), which would pollute the working branch in every fresh
-  # container. We capture HEAD first and drop any commit bd makes, then restore
+  # Configure the PUSH remote = direct-to-github (token via askpass at push time).
+  # Hydration above used the proxy git origin; set the dolt remote AFTER so it
+  # doesn't redirect those reads. Harmless when GH_TOKEN is absent (the wrapper
+  # just won't push). NOTE: `bd dolt remote add` auto-commits .beads/config.yaml
+  # ("bd: update sync.remote"), which would pollute the working branch in every
+  # fresh container. We capture HEAD first, drop any commit bd makes, and restore
   # config.yaml — the dolt remote itself persists in the gitignored Dolt store
-  # (the source of truth for `dolt push`), so reverting the git-tracked config
-  # is safe. The wrapper above commits+pushes explicitly, so we no longer set
-  # `dolt.auto-commit`/`export.git-add` (those also dirtied config.yaml).
+  # (the source of truth for `dolt push`), so reverting the git-tracked config is
+  # safe.
   ( cd "$REPO_ROOT"
     before="$(git rev-parse HEAD 2>/dev/null)"
     "$bd" dolt remote remove origin >/dev/null 2>&1
@@ -474,7 +471,12 @@ WRAP
     fi
     git restore --staged --worktree .beads/config.yaml >/dev/null 2>&1 \
       || git checkout -- .beads/config.yaml >/dev/null 2>&1 || true )
-  ok "beads: Dolt sync ON — pull via proxy, push direct-to-github (no committed jsonl)"
+
+  if [ -n "${GH_TOKEN:-}" ]; then
+    ok "beads: Dolt sync ON — pull via proxy, push direct-to-github (no committed jsonl)"
+  else
+    warn "beads: READ-ONLY (GH_TOKEN unset) — hydrated from refs/dolt/data; writes sync automatically once GH_TOKEN is set"
+  fi
 }
 
 # Offline fallback: build bd's local Dolt store from the committed
