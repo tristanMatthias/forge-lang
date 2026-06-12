@@ -221,10 +221,15 @@ verify-seed:
 seed-sigs:
 	@$(DIAG) --seed-sigs
 
-# Install the pre-commit hook (idempotent).
+# Install the pre-commit + pre-push hooks (idempotent). Note: on
+# checkouts where beads set core.hooksPath=.beads/hooks, git ignores
+# .git/hooks entirely — the committed .beads/hooks/* chain to these
+# scripts instead, so both wirings stay live.
 install-hooks:
 	@ln -sf ../../bootstrap/scripts/pre-commit ../.git/hooks/pre-commit
+	@ln -sf ../../bootstrap/scripts/pre-push ../.git/hooks/pre-push
 	@echo "installed: .git/hooks/pre-commit -> bootstrap/scripts/pre-commit"
+	@echo "installed: .git/hooks/pre-push   -> bootstrap/scripts/pre-push"
 
 # Remove all build artifacts. Source and seed are preserved.
 #

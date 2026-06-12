@@ -152,6 +152,12 @@ fi
 
 LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
+# The integration branch the seed train runs on (sdmg.2). Feature
+# branches never cycle the seed; --check-bootstrap-window verifies a
+# branch against this branch's pristine seed. Override per-repo or
+# per-invocation with AVRA_INTEGRATION_BRANCH.
+INTEGRATION_BRANCH="${AVRA_INTEGRATION_BRANCH:-feat/crafting-intepreters}"
+
 C_RED='\033[0;31m'
 C_GREEN='\033[0;32m'
 C_YELLOW='\033[0;33m'
@@ -282,6 +288,20 @@ SEED MANAGEMENT
                          mismatches, new functions, and removed functions.
                          Catches the most common seed staleness issue:
                          parameter count changes that cause silent corruption.
+  --check-bootstrap-window [ref]
+                         Enforce the sdmg.2 seed-train rule. Gate 1: no
+                         commits on this branch (since the merge-base with
+                         the integration branch) touch seed/seed.ll. Gate 2:
+                         the branch's compiler source builds from the
+                         integration branch's CURRENT pristine seed in an
+                         isolated tree (cold unit cache) and the produced
+                         compiler passes a smoke run. [ref] defaults to
+                         origin/$AVRA_INTEGRATION_BRANCH
+                         (feat/crafting-intepreters). Result is cached in
+                         build/window/.window_verified keyed on the
+                         integration seed + compiler sources; bypass with
+                         AVRA_FORCE_WINDOW=1. Wired into the pre-push hook
+                         and the bootstrap-window CI workflow.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -1251,6 +1271,7 @@ main() {
     --verify-seed)        mode_verify_seed "$@" ;;
     --seed-patch)         mode_seed_patch "$@" ;;
     --seed-sigs)          mode_seed_sigs "$@" ;;
+    --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }
@@ -1704,6 +1725,220 @@ mode_seed_sigs() {
   else
     ok "no parameter count mismatches (new/removed functions are expected during development)"
   fi
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Bootstrap window (sdmg.2)
+# ─────────────────────────────────────────────────────────────────────
+
+# The seed-train rule: feature branches never cycle the seed — the
+# integration branch advances it in dedicated `chore(seed): cycle`
+# commits, serialized after merges land. Two gates enforce it:
+#
+#   1. seed-train — no commits on this branch (since the merge-base
+#      with the integration branch) touch seed/seed.ll.
+#   2. window     — the branch's compiler source builds from the
+#      integration branch's CURRENT pristine seed, in an isolated
+#      copy of the source tree with a cold unit cache, and the
+#      produced compiler passes a smoke compile+run.
+#
+# Any two branches that pass both gates are compilable by the same
+# seed BY CONSTRUCTION, so the 2026-06-11 "no seed can compile the
+# union" merge state becomes unrepresentable. See
+# docs/SEED_MERGES.md and CLAUDE.md "Bootstrap window & seed train".
+#
+# The window build is isolated on purpose: the dev unit cache keys
+# entries on (entry fingerprint + compiler hash) but not transitive
+# sources (pdme.1), so compiling in-tree could spuriously reuse a
+# cached main.av.ll and mask a real violation — and would poison the
+# dev caches with stage-binary artifacts. A cold tree has neither
+# problem.
+mode_check_bootstrap_window() {
+  local ref="${1:-}"
+
+  # Resolve the integration ref: explicit arg wins; otherwise refresh
+  # origin/<branch> (best-effort — offline falls back to the last
+  # fetched state) and prefer it over a local branch of the same name.
+  if [ -z "$ref" ]; then
+    git -C "$REPO_DIR" fetch --quiet origin "$INTEGRATION_BRANCH" 2>/dev/null || true
+    if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$INTEGRATION_BRANCH" >/dev/null; then
+      ref="origin/$INTEGRATION_BRANCH"
+    elif git -C "$REPO_DIR" rev-parse --verify --quiet "$INTEGRATION_BRANCH" >/dev/null; then
+      ref="$INTEGRATION_BRANCH"
+    else
+      die "cannot resolve integration branch '$INTEGRATION_BRANCH' (set AVRA_INTEGRATION_BRANCH or pass a ref)"
+    fi
+  fi
+  local head_sha ref_sha
+  head_sha=$(git -C "$REPO_DIR" rev-parse HEAD) || die "not a git checkout"
+  ref_sha=$(git -C "$REPO_DIR" rev-parse "$ref^{commit}") || die "cannot resolve ref '$ref'"
+
+  # ── Gate 1: seed-train ──
+  local cur_branch
+  cur_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
+  if [ "$cur_branch" = "$INTEGRATION_BRANCH" ] || [ "$head_sha" = "$ref_sha" ]; then
+    log "on the integration branch — seed-train gate not applicable (seed cycles live here)"
+  else
+    local mb offenders
+    mb=$(git -C "$REPO_DIR" merge-base "$head_sha" "$ref_sha") \
+      || die "no merge-base between HEAD and $ref — wrong integration branch?"
+    offenders=$(git -C "$REPO_DIR" log --format='  %h %s' "$mb..$head_sha" -- bootstrap/seed/seed.ll)
+    if [ -n "$offenders" ]; then
+      err "SEED-TRAIN VIOLATION — feature branches never cycle the seed"
+      err "commits touching bootstrap/seed/seed.ll since the merge-base with $ref:"
+      printf '%s\n' "$offenders" >&2
+      err ""
+      err "Fix: drop/revert the seed change and stop dogfooding post-seed features in"
+      err "compiler src — seed advancement happens on '$INTEGRATION_BRANCH' only, as"
+      err "dedicated 'chore(seed): cycle' commits after merges land. To restore:"
+      err "  git checkout $ref -- bootstrap/seed/seed.ll"
+      err "(CLAUDE.md 'Bootstrap window & seed train'; bootstrap/docs/SEED_MERGES.md)"
+      return 1
+    fi
+    ok "seed-train gate — no seed commits on this branch"
+    if ! git -C "$REPO_DIR" diff --quiet HEAD -- bootstrap/seed/seed.ll 2>/dev/null; then
+      warn "working-tree seed/seed.ll differs from HEAD (auto-cycle debris?) — do NOT commit it;"
+      warn "restore with: git checkout HEAD -- bootstrap/seed/seed.ll"
+    fi
+  fi
+
+  # ── Gate 2: window build ──
+  local win="$BUILD_DIR/window"
+  mkdir -p "$win"
+  local seed_blob
+  seed_blob=$(git -C "$REPO_DIR" rev-parse "$ref:bootstrap/seed/seed.ll") \
+    || die "$ref has no bootstrap/seed/seed.ll"
+
+  # Compiler-relevant working-tree inputs: tracked + untracked
+  # (non-ignored) sources, minus test files — main.av's import graph
+  # never reaches */tests/*, so test-only edits must not bust the
+  # cache. NUL-safe via sorted xargs batches.
+  window_src_list() {
+    (cd "$REPO_DIR" && git ls-files -co --exclude-standard -- \
+        bootstrap/packages 'bootstrap/*.toml' bootstrap/runtime.c bootstrap/llvm_wrapper.c) \
+      | LC_ALL=C sort
+  }
+  local fp marker="$win/.window_verified"
+  fp=$(
+    { echo "seed:$seed_blob"
+      window_src_list | grep -v '/tests/' \
+        | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$REPO_DIR/$f" || :; done \
+        | xargs -0 $SHA256_CMD 2>/dev/null | awk '{print $1}'
+    } | $SHA256_CMD | awk '{print $1}'
+  )
+  if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
+     && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
+    ok "bootstrap window cached — integration seed + compiler sources unchanged since last verify"
+    return 0
+  fi
+
+  ensure_runtime
+  ensure_llvm_wrapper
+
+  # Stage binary from the integration seed. When the integration seed
+  # is byte-identical to the local seed.ll already built into
+  # build/seed (the common case for a well-behaved feature branch),
+  # reuse that binary instead of re-running llc on 500k lines of IR.
+  local stage_bin win_seed_md5
+  git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.ll" > "$win/seed.ll" \
+    || die "cannot extract integration seed"
+  win_seed_md5=$(md5sum "$win/seed.ll" 2>/dev/null || md5 -q "$win/seed.ll" 2>/dev/null)
+  win_seed_md5=${win_seed_md5%% *}
+  # .seed_hash stores ensure_seed's raw `md5sum seed/seed.ll` line —
+  # compare hash fields only (the filename differs by construction).
+  local dev_seed_md5
+  dev_seed_md5=$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null || :)
+  dev_seed_md5=${dev_seed_md5%% *}
+  if [ -x "$SEED_BIN" ] && [ -n "$dev_seed_md5" ] && [ "$dev_seed_md5" = "$win_seed_md5" ]; then
+    log "integration seed is byte-identical to the local build/seed — reusing it"
+    stage_bin="$SEED_BIN"
+  else
+    stage_bin="$win/seed_bin"
+    if [ "$(cat "$win/.seed_blob" 2>/dev/null)" = "$seed_blob" ] && [ -x "$stage_bin" ]; then
+      log "window stage binary cached for integration seed ${seed_blob:0:12}"
+    else
+      log "building stage binary from the integration seed ($ref @ ${ref_sha:0:12})"
+      "$LLC" -O2 $LLC_RELOC -filetype=obj "$win/seed.ll" -o "$win/seed.o" || {
+        err "llc failed on the INTEGRATION seed itself — integration-side problem,"
+        err "not a window violation. Check $ref's seed health (make verify-seed there)."
+        return 1
+      }
+      cc -o "$stage_bin.tmp" "$win/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+        $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/seed.link.log" \
+        || { rm -f "$stage_bin.tmp"; cat "$win/seed.link.log" >&2; die "window stage link failed"; }
+      mv "$stage_bin.tmp" "$stage_bin"
+      printf '%s' "$seed_blob" > "$win/.seed_blob"
+    fi
+  fi
+
+  # Isolated source tree: working-tree sources copied fresh, so the
+  # compile starts from a cold unit cache and writes nothing into the
+  # dev tree.
+  log "copying compiler sources into an isolated tree"
+  rm -rf "$win/tree"
+  mkdir -p "$win/tree"
+  window_src_list \
+    | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$f" || :; done \
+    | (cd "$REPO_DIR" && tar --null -T - -cf -) | tar -C "$win/tree" -xf - \
+    || die "source-tree copy failed"
+
+  local entry="$win/tree/bootstrap/packages/cli/src/main.av"
+  [ -f "$entry" ] || die "copied tree is missing $entry"
+  log "compiling branch compiler source with the integration seed"
+  if ! env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
+       "$stage_bin" compile "$entry" >"$win/compile.log" 2>&1; then
+    err "BOOTSTRAP WINDOW VIOLATION — compiler source does not build from the integration seed"
+    err "The branch dogfoods syntax/enum-variants newer than '$INTEGRATION_BRANCH''s seed"
+    err "(or depends on a local seed cycle that never happened on the train)."
+    err ""
+    err "Fix: keep the new feature's implementation, but remove its USE from compiler"
+    err "src until the feature lands and the integration seed advances past it"
+    err "(CLAUDE.md Phase A/B discipline). Compile log (excerpt):"
+    tail -15 "$win/compile.log" >&2
+    err "full log: $win/compile.log"
+    return 1
+  fi
+
+  log "linking the window-built compiler"
+  "$LLC" -O2 $LLC_RELOC -filetype=obj "$entry.ll" -o "$win/bs2w.o" \
+    || die "llc failed on window-built IR ($entry.ll)"
+  cc -o "$win/bs2w.tmp" "$win/bs2w.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/bs2w.link.log" \
+    || { rm -f "$win/bs2w.tmp"; cat "$win/bs2w.link.log" >&2; die "window compiler link failed"; }
+  mv "$win/bs2w.tmp" "$win/bs2w"
+
+  log "smoke-testing the window-built compiler"
+  cat > "$win/smoke.av" <<'EOF'
+fn add(a: int, b: int) -> int { a + b }
+
+fn main() -> int {
+    let xs = [1, 2, 3]
+    mut sum = 0
+    for x in xs { sum = sum + x }
+    let tag = if sum == 6 { "ok" } else { "bad" }
+    println("window-smoke ${tag} ${string(add(sum, 4))}")
+    0
+}
+EOF
+  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
+    "$win/bs2w" compile "$win/smoke.av" >"$win/smoke.compile.log" 2>&1 \
+    || { tail -10 "$win/smoke.compile.log" >&2; die "window-built compiler failed to compile the smoke program"; }
+  "$LLC" -O2 $LLC_RELOC -filetype=obj "$win/smoke.av.ll" -o "$win/smoke.o" \
+    || die "llc failed on smoke IR"
+  cc -o "$win/smoke.bin" "$win/smoke.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/smoke.link.log" \
+    || { cat "$win/smoke.link.log" >&2; die "smoke link failed"; }
+  local smoke_out
+  smoke_out=$("$win/smoke.bin")
+  if [ "$smoke_out" != "window-smoke ok 10" ]; then
+    err "window-built compiler produced a broken binary — smoke output was:"
+    printf '  %s\n' "$smoke_out" >&2
+    err "expected: window-smoke ok 10"
+    return 1
+  fi
+
+  printf '%s' "$fp" > "$marker"
+  ok "bootstrap window holds — branch source builds + runs from $ref's pristine seed"
 }
 
 main "$@"
