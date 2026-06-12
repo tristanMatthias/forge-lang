@@ -353,6 +353,11 @@ SEED MANAGEMENT
                          INTERNAL (spec-tested): sha256 of a seed IR
                          with provenance comment lines stripped — the
                          train's "did the compiler change" identity.
+  --seed-inputs-hash <seed.ll> [runtime.c] [llvm_wrapper.c]
+                         INTERNAL (spec-tested): the path-independent
+                         seed-binary input fingerprint (seed IR + C
+                         link inputs) that keys build/seed and the
+                         window's reuse fast path.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -1626,6 +1631,7 @@ main() {
     --seed-publish)       mode_seed_publish "$@" ;;
     --seed-train)         mode_seed_train "$@" ;;
     --seed-canonical-sha) seed_canonical_sha "$@" ;;
+    --seed-inputs-hash)   seed_inputs_hash "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
