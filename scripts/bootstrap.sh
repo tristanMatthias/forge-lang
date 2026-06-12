@@ -403,20 +403,23 @@ setup_beads_sync() {
   # The bd wrapper is the CANONICAL bd entrypoint — always installed, ahead of
   # the raw bd on PATH, so it can never be silently bypassed. It checks $GH_TOKEN
   # at RUNTIME (not install time): with a token it auto-pushes refs/dolt/data
-  # DIRECT to github after any command that could have mutated the DB (the proxy
-  # blocks that ref, and bd doesn't auto-push on write); without one it's a
-  # transparent passthrough. We `dolt commit` then `dolt push` explicitly so we
-  # never depend on a persisted `dolt.auto-commit` config (which would dirty the
-  # git-tracked config.yaml). Inner dolt calls hit the REAL bd (no recursion),
-  # are best-effort, and commit is a no-op on a clean working set.
+  # DIRECT to github (the proxy blocks that ref, and bd doesn't auto-push on
+  # write); without one it's a transparent passthrough.
   #
-  # Sync is gated by a READ allowlist, not a write allowlist: anything NOT a
-  # known read-only command pushes. This way every current AND future mutating
-  # verb (update, close, delete, assign, comment, note, priority, label, tag,
-  # set-state, link, dep, defer, supersede, remember, import, mol, …) syncs by
-  # default — the bias is toward syncing, since a missed push is the costly bug
-  # and a redundant push on a clean set is a cheap no-op. `dolt` is excluded so
-  # explicit `bd dolt push/pull` don't recurse into another push.
+  # Sync is COMMAND-AGNOSTIC — there is NO allowlist of verbs to maintain. We
+  # fingerprint the Dolt store's root via its noms `manifest` file (a ~1ms read
+  # that changes on any write — commit OR working-set — and never on a read) and
+  # cache the last-synced fingerprint. After every command: if the fingerprint
+  # moved, `dolt commit` (flush any uncommitted working set; no-op if already
+  # committed) then `dolt push`, and cache the new fingerprint; otherwise do
+  # nothing. So a mutation by ANY verb (today's or a future one) syncs, a read
+  # pays only the file read (never the ~2s network push), and explicit
+  # `bd dolt commit/pull/push` is handled without special-casing. We commit
+  # explicitly rather than via a persisted `dolt.auto-commit` config (which would
+  # dirty the git-tracked config.yaml). Inner dolt calls hit the REAL bd (no
+  # recursion) and the push is best-effort (cache is only advanced on success, so
+  # a failed push retries on the next command). If the manifest can't be located
+  # we fall back to pushing (fail toward syncing, never silently drop a write).
   cat > "$rt/bd" <<WRAP
 #!/bin/sh
 export GIT_CONFIG_GLOBAL="$rt/gitconfig"
@@ -424,12 +427,14 @@ export GIT_TERMINAL_PROMPT=0
 [ -n "\${GH_TOKEN:-}" ] && export GIT_ASKPASS="$rt/askpass.sh"
 "$real_bd" "\$@"; __rc=\$?
 if [ -n "\${GH_TOKEN:-}" ]; then
-  case " \${1:-} " in
-    " ready "|" list "|" show "|" blocked "|" stats "|" status "|" search "|" memories "|" prime "|" version "|" help "|" doctor "|" lint "|" stale "|" orphans "|" preflight "|" human "|" completion "|" init-safety "|" dolt "|"  ") ;;
-    *)
-      "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
-      "$real_bd" dolt push origin          >/dev/null 2>&1 || true ;;
-  esac
+  __mani="\$(ls $REPO_ROOT/.beads/embeddeddolt/*/.dolt/noms/manifest 2>/dev/null | head -1)"
+  __fp="\$(cat "\$__mani" 2>/dev/null)"
+  if [ -z "\$__mani" ] || [ "\$__fp" != "\$(cat "$rt/last_synced" 2>/dev/null)" ]; then
+    "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
+    if "$real_bd" dolt push origin >/dev/null 2>&1; then
+      cat "\$__mani" 2>/dev/null > "$rt/last_synced" || true
+    fi
+  fi
 fi
 exit \$__rc
 WRAP
@@ -480,6 +485,11 @@ WRAP
     fi
     git restore --staged --worktree .beads/config.yaml >/dev/null 2>&1 \
       || git checkout -- .beads/config.yaml >/dev/null 2>&1 || true )
+
+  # Seed the wrapper's sync fingerprint to the just-hydrated state, so the first
+  # read in the session doesn't trigger a spurious push (only a real write will).
+  local mani; mani="$(ls "$REPO_ROOT"/.beads/embeddeddolt/*/.dolt/noms/manifest 2>/dev/null | head -1)"
+  [ -n "$mani" ] && cat "$mani" > "$rt/last_synced" 2>/dev/null || true
 
   if [ -n "${GH_TOKEN:-}" ]; then
     ok "beads: Dolt sync ON — pull via proxy, push direct-to-github (no committed jsonl)"
