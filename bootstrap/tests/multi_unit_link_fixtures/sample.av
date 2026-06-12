@@ -6,6 +6,8 @@
 // This is the smoking gun for 2f54: actual cross-unit incremental
 // build that produces a working binary.
 
+use @std.avrac.build.{llvm_prefix_dir}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_process_env_get(name: string) -> string
@@ -26,9 +28,9 @@ fn main() -> int {
 
     let pwd = avra_process_env_get("PWD")
     let bs2 = "${pwd}/build/bs2"
-    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
-    let llc = if llvm_prefix == "" { "/opt/homebrew/opt/llvm/bin/llc" } else { "${llvm_prefix}/bin/llc" }
-    let lib_dir = if llvm_prefix == "" { "/opt/homebrew/opt/llvm/lib" } else { "${llvm_prefix}/lib" }
+    let llvm_prefix = llvm_prefix_dir()
+    let llc = "${llvm_prefix}/bin/llc"
+    let lib_dir = "${llvm_prefix}/lib"
 
     // Platform-portable link flags: PIC objects everywhere; macOS uses
     // ld64 `-stack_size` + libc++, Linux uses LLD + libstdc++ (matching

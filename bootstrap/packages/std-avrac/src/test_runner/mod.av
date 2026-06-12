@@ -28,6 +28,7 @@ use features.modules.{
 use parse.{parse_program_source_at}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
+use build.{llvm_prefix_dir}
 use list_ops.{list_concat}
 use @std.crypto.{sha256_hex, sha256_file}
 
@@ -537,8 +538,7 @@ export fn write_fixture_and_run_no_metadata(path: string, source: string) -> str
 /// run_capture has used for the warning-bag tests; lets the test stay
 /// a 1-line call with no shell escaping.
 export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
-    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
-    let llvm_pfx = if llvm_prefix == "" { "/opt/homebrew/opt/llvm" } else { llvm_prefix }
+    let llvm_pfx = llvm_prefix_dir()
     let is_mac = avra_host_os() == "macos"
     let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
     let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }

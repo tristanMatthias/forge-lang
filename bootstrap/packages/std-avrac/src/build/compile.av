@@ -19,7 +19,7 @@ use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
 use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov}
-use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options}
+use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 
 /// Inputs for build_binary. The caller owns assembly (parse +
 /// resolve_module_files + any test-specific wrapping) and passes the
@@ -110,8 +110,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let cov_dir = "${build_dir}/coverage"
     avra_shell_exec("mkdir -p ${cov_dir}")
     let _ = codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${stem}.av")?
-    let llvm_env = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
+    let llvm_prefix = llvm_prefix_dir()
     let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
     if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
         return Result.Err("opt instrprof lowering failed")
