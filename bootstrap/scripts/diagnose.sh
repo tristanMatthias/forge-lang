@@ -341,6 +341,18 @@ SEED MANAGEMENT
                          INTERNAL (spec-tested): write a lock in the
                          exact format --seed-publish produces, so the
                          writer/parser round-trip is pinned by spec.
+  --seed-train           The automated train advance: build from the
+                         pin (no auto-cycle), verify the fixed point,
+                         run the spec suite, then publish + bump the
+                         lock ONLY when the compiler's output diverged
+                         from the pinned artifact (provenance aside).
+                         Run by .github/workflows/seed-train.yml on
+                         every integration push; `make seed-train`
+                         for manual advances.
+  --seed-canonical-sha <file>
+                         INTERNAL (spec-tested): sha256 of a seed IR
+                         with provenance comment lines stripped — the
+                         train's "did the compiler change" identity.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -640,6 +652,55 @@ mode_seed_publish() {
   rm -f "$staging/seed.ll.gz"
   ok "published $tag and pinned it in seed/seed.lock"
   log "next: git add bootstrap/seed/seed.lock && commit (a 'chore(seed): cycle' train commit)"
+}
+
+# Advance the seed train: after a merge lands on the integration
+# branch, decide whether the pinned seed is stale relative to the
+# merged compiler source and publish + pin the regenerated seed when
+# it is. Run by .github/workflows/seed-train.yml after every
+# integration push (or manually via `make seed-train`). With the
+# train automated, the full loop is: feature branches never cycle
+# (gate-enforced) → merge → CI advances the pin → everyone dogfoods
+# on rebase.
+mode_seed_train() {
+  # The train never papers over breakage: if the pinned seed cannot
+  # build the merged source, the window gate failed and a human needs
+  # to look — refuse to auto-cycle around it.
+  export NO_AUTOCYCLE=1
+
+  log "seed train: building from the current pin"
+  mode_build_bs2
+  mode_check_fixedpoint || die "fixed point broken on the train — refusing to publish"
+
+  log "seed train: running the spec suite"
+  ( cd "$BOOTSTRAP_DIR" && "$BS2" test ) || die "suite red on the train — refusing to publish"
+
+  # Publish only when the compiler's OUTPUT changed: compare the
+  # generation-2 IR against the pinned artifact, provenance aside.
+  # Doc-only / test-only merges advance nothing.
+  local candidate="$SRC_DIR/main.av.ll"
+  [ -f "$candidate" ] || die "no generated IR at $candidate after the fixed-point check"
+  local pinned="$BUILD_DIR/seed_train.pinned.ll"
+  fetch_seed_from_lock "$SEED_LOCK" "$pinned" \
+    || die "cannot fetch the pinned artifact (the train needs network to publish anyway)"
+  if [ "$(seed_canonical_sha "$pinned")" = "$(seed_canonical_sha "$candidate")" ]; then
+    ok "seed train: the pin already matches the compiler's output — nothing to publish"
+    return 0
+  fi
+
+  log "seed train: compiler output diverged from the pin — advancing"
+  mode_update_seed
+  mode_seed_publish
+  ok "seed train advanced — commit bootstrap/seed/seed.lock to complete the cycle"
+}
+
+# sha256 of a seed IR with comment lines stripped. update-seed stamps
+# provenance comments (commit, timestamp) into the artifact, so two
+# pins of byte-identical compiler OUTPUT differ textually; bs2's own
+# emitter never writes comment lines, so stripping `;` lines yields a
+# stable identity for "did the compiler actually change".
+seed_canonical_sha() {
+  grep -v '^;' "$1" | $SHA256_CMD | awk '{print $1}'
 }
 
 # Content fingerprint for a seed binary's full input set: the seed IR
@@ -1563,6 +1624,8 @@ main() {
     --seed-fetch-from)    fetch_seed_from_lock "$@" ;;
     --write-seed-lock)    write_seed_lock "$@" ;;
     --seed-publish)       mode_seed_publish "$@" ;;
+    --seed-train)         mode_seed_train "$@" ;;
+    --seed-canonical-sha) seed_canonical_sha "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;

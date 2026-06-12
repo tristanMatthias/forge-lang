@@ -1,0 +1,60 @@
+# The seed train: after a merge lands on the integration branch, CI —
+# not a human — advances the pinned seed so newly-landed features
+# become dogfoodable in compiler src on the next rebase. Feature
+# branches never cycle the seed (the bootstrap-window gate enforces
+# it); this workflow is the only writer of seed.lock. Logic lives in
+# bootstrap/scripts/diagnose.sh --seed-train; this workflow provisions
+# the toolchain, runs it, and commits the lock bump.
+name: seed-train
+
+on:
+  push:
+    branches: [feat/crafting-intepreters]
+    paths-ignore:
+      # The train's own lock commit must not re-trigger the train.
+      - 'bootstrap/seed/seed.lock'
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serialize advances; never cancel a publish mid-flight.
+  group: seed-train
+  cancel-in-progress: false
+
+jobs:
+  cycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      - name: Build from pin, verify, publish if diverged
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AVRA_SEED_REPO: ${{ github.repository }}
+          # 4-vCPU runners share the OOM profile that uncapped
+          # parallel fixture compiles can hit; run the suite at
+          # reduced width until the cross-process throttle lands.
+          AVRA_TEST_JOBS: "2"
+        run: bash bootstrap/scripts/diagnose.sh --seed-train
+
+      - name: Commit the lock bump
+        run: |
+          if git diff --quiet -- bootstrap/seed/seed.lock; then
+            echo "pin unchanged — no train commit"
+            exit 0
+          fi
+          git config user.name "seed-train[bot]"
+          git config user.email "seed-train[bot]@users.noreply.github.com"
+          git add bootstrap/seed/seed.lock
+          v=$(sed -n 's/^version = //p' bootstrap/seed/seed.lock)
+          git commit -m "chore(seed): cycle to v${v}"
+          # A merge can land while we built; rebase the one-file commit
+          # rather than failing the train.
+          git pull --rebase origin feat/crafting-intepreters
+          git push origin HEAD:feat/crafting-intepreters

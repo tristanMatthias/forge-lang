@@ -1,7 +1,8 @@
 # Bootstrap compiler — friendly Makefile.
 #
 # The bootstrap is FULLY SELF-HOSTED. No Rust compiler needed.
-# It builds from a checked-in LLVM IR seed (seed/seed.ll).
+# It builds from a PINNED LLVM IR seed: seed/seed.lock names the
+# artifact; the build fetches + verifies it into seed/seed.ll.
 #
 # Pipeline:
 #   seed/seed.ll → llc + cc → seed binary → compiles packages/cli/src/main.av → bs2
@@ -21,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -52,6 +53,8 @@ help:
 	@echo "                         (run BEFORE 'make build' for new ValueType/Stmt/Expr)."
 	@echo "  make seed-publish  Publish seed.ll as a release artifact + bump seed.lock"
 	@echo "                     (integration-branch seed-train operation; needs GH_TOKEN)."
+	@echo "  make seed-train    Automated train advance: build from pin + fixed point +"
+	@echo "                     suite, publish only if the compiler output diverged."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
@@ -218,6 +221,12 @@ seed-patch-traps:
 # Integration-branch (seed train) operation — see CLAUDE.md.
 seed-publish:
 	@$(DIAG) --seed-publish
+
+# The full automated train advance (build from pin, fixed point, suite,
+# publish-if-diverged). CI runs this on every integration push; use the
+# target for manual advances.
+seed-train:
+	@$(DIAG) --seed-train
 
 # Verify bootstrap chain integrity (no auto-cycle on failure).
 # Builds seed → bs2 → verifies bs2 self-compiles → verifies bs3 self-compiles.

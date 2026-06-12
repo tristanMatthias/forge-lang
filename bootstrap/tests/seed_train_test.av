@@ -1,0 +1,29 @@
+// WHY: spec for the seed train's "did the compiler change" identity.
+// update-seed stamps provenance comments (commit, timestamp) into the
+// pinned artifact, so byte-comparison would call every train run
+// "diverged" and republish identical compilers forever. The canonical
+// sha strips comment lines (bs2's emitter never writes any), making
+// provenance-only differences invisible and real IR changes loud.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn canon(path: string) -> string {
+    avra_shell_exec("bash scripts/diagnose.sh --seed-canonical-sha ${path}").trim()
+}
+
+spec "seed train: canonical seed identity" {
+    given "two seeds with identical IR but different provenance headers" {
+        then "they compare equal — the train has nothing to publish" {
+            let dir = "build/cache/_seed_train_canon"
+            avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+            avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @f() {\\n}\\n' > ${dir}/a.ll")
+            avra_shell_exec("printf '; built from commit bbb at t2\\n; source hash: zzz\\ndefine i64 @f() {\\n}\\n' > ${dir}/b.ll")
+            canon("${dir}/a.ll") == canon("${dir}/b.ll")
+        }
+        then "a real IR difference still compares different — the train advances" {
+            let dir = "build/cache/_seed_train_canon"
+            avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @g() {\\n}\\n' > ${dir}/c.ll")
+            canon("${dir}/a.ll") != canon("${dir}/c.ll")
+        }
+    }
+}

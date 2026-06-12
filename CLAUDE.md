@@ -114,9 +114,13 @@ Concretely:
   feature + tests on your branch; dogfood it in compiler `src/` only AFTER
   it merges and the train advances.
 - **Seed advancement = the seed train.** Dedicated `chore(seed): cycle`
-  commits on the integration branch only, serialized after merges land:
-  `make seed-publish` (uploads the artifact, bumps the lock), commit the
-  lock.
+  commits on the integration branch only, serialized after merges land —
+  automated by `.github/workflows/seed-train.yml`, which runs
+  `diagnose.sh --seed-train` on every integration push: build from the
+  pin (no auto-cycle), fixed point, full suite, then publish + lock-bump
+  ONLY when the compiler's output actually diverged from the pinned
+  artifact (doc/test-only merges advance nothing). `make seed-train`
+  does the same manually; `make seed-publish` is the raw publish step.
 - **Enforcement:** `diagnose.sh --check-bootstrap-window` — gate 1 rejects
   branches with seed commits since the merge-base; gate 2 rebuilds the
   branch's compiler source AT HEAD (what a push ships — untracked or
