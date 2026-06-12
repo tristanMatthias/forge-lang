@@ -506,8 +506,10 @@ ref_seed_sha256() {
   if git -C "$REPO_DIR" rev-parse --verify --quiet "$r:bootstrap/seed/seed.ll" >/dev/null; then
     git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.ll" | $SHA256_CMD | awk '{print $1}'
   elif git -C "$REPO_DIR" rev-parse --verify --quiet "$r:bootstrap/seed/seed.lock" >/dev/null; then
-    git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.lock" \
-      | sed -n 's/^[[:space:]]*sha256[[:space:]]*=[[:space:]]*//p' | head -1
+    local tmp; tmp=$(mktemp)
+    git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.lock" > "$tmp"
+    seed_lock_field "$tmp" sha256
+    rm -f "$tmp"
   fi
 }
 
@@ -1951,128 +1953,250 @@ mode_seed_sigs() {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Bootstrap window (sdmg.2)
+# Staging-pipeline helpers (shared by the bootstrap window + seed merge)
+# ─────────────────────────────────────────────────────────────────────
+
+# llc -O2 the IR at $1 into the object $2, link it with the C runtime
+# objects into the binary $3 (atomic .tmp+mv); all tool stderr goes to
+# the log $4. Returns 1 on llc failure, 2 on link failure — callers
+# own the user-facing message for each.
+llc_link_bin() {
+  local ll="$1" obj="$2" out="$3" buildlog="$4"
+  "$LLC" -O2 $LLC_RELOC -filetype=obj "$ll" -o "$obj" 2>"$buildlog" || return 1
+  cc -o "$out.tmp" "$obj" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>>"$buildlog" \
+    || { rm -f "$out.tmp"; return 2; }
+  mv "$out.tmp" "$out"
+}
+
+# Materialize the seed pinned by a git tree-ish at $2. $1 is a ref
+# ("origin/main", a sha) or an index stage (":2" / ":3"); $3 is
+# scratch space for an extracted lock file. Prefers a tracked seed.ll
+# blob (pre-lock history), else fetches + verifies per that tree's
+# seed.lock. Returns non-zero (dest removed) when the tree pins no
+# seed or the fetch fails.
+materialize_treeish_seed() {
+  local spec="$1" dest="$2" locktmp="$3"
+  if git -C "$REPO_DIR" show "$spec:bootstrap/seed/seed.ll" > "$dest" 2>/dev/null; then
+    return 0
+  fi
+  if git -C "$REPO_DIR" show "$spec:bootstrap/seed/seed.lock" > "$locktmp" 2>/dev/null; then
+    fetch_seed_from_lock "$locktmp" "$dest" && return 0
+    rm -f "$dest"
+    return 1
+  fi
+  rm -f "$dest"
+  err "'$spec' has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
+  return 1
+}
+
+# Run a compile with the test runner's metadata fast-path env stripped.
+# The staging pipelines must see the source as a fresh clone would —
+# inherited producer objects could alias the very mismatch these
+# checks exist to surface.
+hermetic_compile_env() {
+  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT "$@"
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Bootstrap window
 # ─────────────────────────────────────────────────────────────────────
 
 # The seed-train rule: feature branches never cycle the seed — the
 # integration branch advances it in dedicated `chore(seed): cycle`
 # commits, serialized after merges land. Two gates enforce it:
 #
-#   1. seed-train — no commits on this branch (since the merge-base
-#      with the integration branch) touch seed/seed.ll.
+#   1. seed-train — no commit on this branch (since the merge-base
+#      with the integration branch) CHANGES the pinned seed content.
 #   2. window     — the branch's compiler source builds from the
 #      integration branch's CURRENT pristine seed, in an isolated
 #      copy of the source tree with a cold unit cache, and the
 #      produced compiler passes a smoke compile+run.
 #
 # Any two branches that pass both gates are compilable by the same
-# seed BY CONSTRUCTION, so the 2026-06-11 "no seed can compile the
-# union" merge state becomes unrepresentable. See
+# seed BY CONSTRUCTION, so the "no seed can compile the union" merge
+# state (the 2026-06-11 incident) becomes unrepresentable. See
 # docs/SEED_MERGES.md and CLAUDE.md "Bootstrap window & seed train".
 #
 # The window build is isolated on purpose: the dev unit cache keys
 # entries on (entry fingerprint + compiler hash) but not transitive
-# sources (pdme.1), so compiling in-tree could spuriously reuse a
-# cached main.av.ll and mask a real violation — and would poison the
-# dev caches with stage-binary artifacts. A cold tree has neither
-# problem.
-mode_check_bootstrap_window() {
-  local ref="${1:-}"
+# sources, so compiling in-tree could spuriously reuse a cached
+# main.av.ll and mask a real violation — and would poison the dev
+# caches with stage-binary artifacts. A cold tree has neither problem.
 
-  # Resolve the integration ref: explicit arg wins; otherwise refresh
-  # origin/<branch> (best-effort — offline falls back to the last
-  # fetched state) and prefer it over a local branch of the same name.
-  if [ -z "$ref" ]; then
-    git -C "$REPO_DIR" fetch --quiet origin "$INTEGRATION_BRANCH" 2>/dev/null || true
-    if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$INTEGRATION_BRANCH" >/dev/null; then
-      ref="origin/$INTEGRATION_BRANCH"
-    elif git -C "$REPO_DIR" rev-parse --verify --quiet "$INTEGRATION_BRANCH" >/dev/null; then
-      ref="$INTEGRATION_BRANCH"
-    else
-      die "cannot resolve integration branch '$INTEGRATION_BRANCH' (set AVRA_INTEGRATION_BRANCH or pass a ref)"
-    fi
+# Echo the integration ref to verify against: refresh origin/<branch>
+# (best-effort — offline falls back to the last fetched state) and
+# prefer it over a local branch of the same name.
+window_resolve_integration_ref() {
+  git -C "$REPO_DIR" fetch --quiet origin "$INTEGRATION_BRANCH" 2>/dev/null || true
+  if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$INTEGRATION_BRANCH" >/dev/null; then
+    echo "origin/$INTEGRATION_BRANCH"
+  elif git -C "$REPO_DIR" rev-parse --verify --quiet "$INTEGRATION_BRANCH" >/dev/null; then
+    echo "$INTEGRATION_BRANCH"
+  else
+    die "cannot resolve integration branch '$INTEGRATION_BRANCH' (set AVRA_INTEGRATION_BRANCH or pass a ref)"
   fi
-  local head_sha ref_sha
-  head_sha=$(git -C "$REPO_DIR" rev-parse HEAD) || die "not a git checkout"
-  ref_sha=$(git -C "$REPO_DIR" rev-parse "$ref^{commit}") || die "cannot resolve ref '$ref'"
+}
 
-  # ── Gate 1: seed-train ──
+# Gate 1: no commit on this branch changes the pinned seed content.
+# File touches alone aren't the crime — the vendored→pinned migration
+# deletes seed.ll and adds a lock pinning byte-identical content, so
+# the effective seed sha256 is compared across the range before
+# rejecting. Returns 1 on a violation (message printed).
+window_gate_seed_train() {
+  local ref="$1" head_sha="$2" ref_sha="$3"
   local cur_branch
   cur_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
   if [ "$cur_branch" = "$INTEGRATION_BRANCH" ] || [ "$head_sha" = "$ref_sha" ]; then
     log "on the integration branch — seed-train gate not applicable (seed cycles live here)"
-  else
-    local mb offenders
-    mb=$(git -C "$REPO_DIR" merge-base "$head_sha" "$ref_sha") \
-      || die "no merge-base between HEAD and $ref — wrong integration branch?"
-    offenders=$(git -C "$REPO_DIR" log --format='  %h %s' "$mb..$head_sha" -- \
-      bootstrap/seed/seed.ll bootstrap/seed/seed.lock)
-    if [ -n "$offenders" ]; then
-      # File touches alone aren't the crime — the SEED CONTENT changing
-      # off-train is. The vendored→pinned migration (sdmg.3) deletes
-      # seed.ll and adds a lock pinning byte-identical content; compare
-      # effective seed sha256 across the range before rejecting.
-      local head_seed mb_seed
-      head_seed=$(ref_seed_sha256 "$head_sha")
-      mb_seed=$(ref_seed_sha256 "$mb")
-      if [ -n "$head_seed" ] && [ "$head_seed" = "$mb_seed" ]; then
-        log "seed pin commits found but the pinned content is unchanged (vendored→pinned migration)"
-        offenders=""
-      fi
-    fi
-    if [ -n "$offenders" ]; then
-      err "SEED-TRAIN VIOLATION — feature branches never cycle the seed"
-      err "commits touching the seed pin (seed.ll / seed.lock) since the merge-base with $ref:"
-      printf '%s\n' "$offenders" >&2
-      err ""
-      err "Fix: drop/revert the seed change and stop dogfooding post-seed features in"
-      err "compiler src — seed advancement happens on '$INTEGRATION_BRANCH' only, as"
-      err "dedicated 'chore(seed): cycle' commits after merges land. To restore:"
-      err "  git checkout $ref -- bootstrap/seed/seed.lock   # (seed.ll on pre-lock history)"
-      err "(CLAUDE.md 'Bootstrap window & seed train'; bootstrap/docs/SEED_MERGES.md)"
-      return 1
-    fi
-    ok "seed-train gate — no seed cycles on this branch"
-    if ! git -C "$REPO_DIR" diff --quiet HEAD -- bootstrap/seed/seed.lock bootstrap/seed/seed.ll 2>/dev/null; then
-      warn "working-tree seed pin differs from HEAD (auto-cycle debris?) — do NOT commit it;"
-      warn "restore with: git checkout HEAD -- bootstrap/seed/"
+    return 0
+  fi
+  local mb offenders
+  mb=$(git -C "$REPO_DIR" merge-base "$head_sha" "$ref_sha") \
+    || die "no merge-base between HEAD and $ref — wrong integration branch?"
+  offenders=$(git -C "$REPO_DIR" log --format='  %h %s' "$mb..$head_sha" -- \
+    bootstrap/seed/seed.ll bootstrap/seed/seed.lock)
+  if [ -n "$offenders" ]; then
+    local head_seed mb_seed
+    head_seed=$(ref_seed_sha256 "$head_sha")
+    mb_seed=$(ref_seed_sha256 "$mb")
+    if [ -n "$head_seed" ] && [ "$head_seed" = "$mb_seed" ]; then
+      log "seed pin commits found but the pinned content is unchanged (vendored→pinned migration)"
+      offenders=""
     fi
   fi
+  if [ -n "$offenders" ]; then
+    err "SEED-TRAIN VIOLATION — feature branches never cycle the seed"
+    err "commits changing the seed pin (seed.ll / seed.lock) since the merge-base with $ref:"
+    printf '%s\n' "$offenders" >&2
+    err ""
+    err "Fix: drop/revert the seed change and stop dogfooding post-seed features in"
+    err "compiler src — seed advancement happens on '$INTEGRATION_BRANCH' only, as"
+    err "dedicated 'chore(seed): cycle' commits after merges land. To restore:"
+    err "  git checkout $ref -- bootstrap/seed/seed.lock   # (seed.ll on pre-lock history)"
+    err "(CLAUDE.md 'Bootstrap window & seed train'; bootstrap/docs/SEED_MERGES.md)"
+    return 1
+  fi
+  ok "seed-train gate — no seed cycles on this branch"
+  if ! git -C "$REPO_DIR" diff --quiet HEAD -- bootstrap/seed/seed.lock bootstrap/seed/seed.ll 2>/dev/null; then
+    warn "working-tree seed pin differs from HEAD (auto-cycle debris?) — do NOT commit it;"
+    warn "restore with: git checkout HEAD -- bootstrap/seed/"
+  fi
+}
 
-  # ── Gate 2: window build ──
+# Compiler-relevant working-tree inputs: tracked + untracked
+# (non-ignored) sources. Test files are excluded by the fingerprint
+# (not the copy) — main.av's import graph never reaches */tests/*, so
+# test-only edits must not bust the verify cache.
+window_src_list() {
+  (cd "$REPO_DIR" && git ls-files -co --exclude-standard -- \
+      bootstrap/packages 'bootstrap/*.toml' bootstrap/runtime.c bootstrap/llvm_wrapper.c) \
+    | LC_ALL=C sort
+}
+
+# Echo the verify-cache fingerprint: integration seed identity + the
+# content of every compiler-relevant source. NUL-safe batching.
+window_fingerprint() {
+  local seed_id="$1"
+  { echo "seed:$seed_id"
+    window_src_list | grep -v '/tests/' \
+      | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$REPO_DIR/$f" || :; done \
+      | xargs -0 $SHA256_CMD 2>/dev/null | awk '{print $1}'
+  } | $SHA256_CMD | awk '{print $1}'
+}
+
+# Echo the path of a stage binary built from the integration seed at
+# $2/seed.ll. Reuses the dev build/seed when its input fingerprint
+# matches; otherwise builds (and caches) a window-local one. The cache
+# key includes the C link inputs — a runtime.c/llvm_wrapper.c edit
+# must relink the stage binary too, or it keeps the OLD C behaviour.
+window_stage_binary() {
+  local ref="$1" win="$2" ref_sha="$3"
+  local win_seed_fp
+  win_seed_fp=$(seed_inputs_hash "$win/seed.ll")
+  if [ -x "$SEED_BIN" ] && [ "$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null)" = "$win_seed_fp" ]; then
+    log "integration seed is byte-identical to the local build/seed — reusing it"
+    echo "$SEED_BIN"
+    return 0
+  fi
+  local stage_bin="$win/seed_bin"
+  if [ "$(cat "$win/.stage_fp" 2>/dev/null)" = "$win_seed_fp" ] && [ -x "$stage_bin" ]; then
+    log "window stage binary cached for this integration seed"
+    echo "$stage_bin"
+    return 0
+  fi
+  log "building stage binary from the integration seed ($ref @ ${ref_sha:0:12})"
+  case $(llc_link_bin "$win/seed.ll" "$win/seed.o" "$stage_bin" "$win/stage.build.log"; echo $?) in
+    0) : ;;
+    1) err "llc rejected the INTEGRATION seed itself — integration-side problem,"
+       err "not a window violation. Check $ref's seed health (make verify-seed there)."
+       tail -5 "$win/stage.build.log" >&2
+       return 1 ;;
+    *) cat "$win/stage.build.log" >&2; die "window stage link failed" ;;
+  esac
+  printf '%s' "$win_seed_fp" > "$win/.stage_fp"
+  echo "$stage_bin"
+}
+
+# Copy the compiler sources into $1/tree so the window compile starts
+# from a cold unit cache and writes nothing into the dev tree.
+window_copy_tree() {
+  local win="$1"
+  rm -rf "$win/tree"
+  mkdir -p "$win/tree"
+  window_src_list \
+    | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$f" || :; done \
+    | (cd "$REPO_DIR" && tar --null -T - -cf -) | tar -C "$win/tree" -xf - \
+    || die "source-tree copy failed"
+}
+
+# Compile + run a small program with the window-built compiler $2 and
+# verify its output, proving the produced compiler is not garbage.
+window_smoke_test() {
+  local win="$1" bs2w="$2"
+  cat > "$win/smoke.av" <<'SMOKE'
+fn add(a: int, b: int) -> int { a + b }
+
+fn main() -> int {
+    let xs = [1, 2, 3]
+    mut sum = 0
+    for x in xs { sum = sum + x }
+    let tag = if sum == 6 { "ok" } else { "bad" }
+    println("window-smoke ${tag} ${string(add(sum, 4))}")
+    0
+}
+SMOKE
+  hermetic_compile_env "$bs2w" compile "$win/smoke.av" >"$win/smoke.compile.log" 2>&1 \
+    || { tail -10 "$win/smoke.compile.log" >&2; die "window-built compiler failed to compile the smoke program"; }
+  llc_link_bin "$win/smoke.av.ll" "$win/smoke.o" "$win/smoke.bin" "$win/smoke.build.log" \
+    || { cat "$win/smoke.build.log" >&2; die "smoke build failed"; }
+  local smoke_out
+  smoke_out=$("$win/smoke.bin")
+  if [ "$smoke_out" != "window-smoke ok 10" ]; then
+    err "window-built compiler produced a broken binary — smoke output was:"
+    printf '  %s\n' "$smoke_out" >&2
+    err "expected: window-smoke ok 10"
+    return 1
+  fi
+}
+
+mode_check_bootstrap_window() {
+  local ref="${1:-}"
+  [ -n "$ref" ] || ref=$(window_resolve_integration_ref) || return 1
+  local head_sha ref_sha
+  head_sha=$(git -C "$REPO_DIR" rev-parse HEAD) || die "not a git checkout"
+  ref_sha=$(git -C "$REPO_DIR" rev-parse "$ref^{commit}") || die "cannot resolve ref '$ref'"
+
+  window_gate_seed_train "$ref" "$head_sha" "$ref_sha" || return 1
+
   local win="$BUILD_DIR/window"
   mkdir -p "$win"
-  # Identity of the integration seed: the tracked blob's sha on
-  # pre-lock history, the lock's pinned sha256 on lock-era history
-  # (sdmg.3 — seed.ll itself is no longer tracked).
-  local seed_blob
-  if seed_blob=$(git -C "$REPO_DIR" rev-parse --verify --quiet "$ref:bootstrap/seed/seed.ll"); then
-    :
-  elif git -C "$REPO_DIR" rev-parse --verify --quiet "$ref:bootstrap/seed/seed.lock" >/dev/null; then
-    git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.lock" > "$win/integration.seed.lock"
-    seed_blob=$(seed_lock_field "$win/integration.seed.lock" sha256)
-    [ -n "$seed_blob" ] || die "$ref's seed.lock has no sha256 field"
-  else
-    die "$ref has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
-  fi
+  local seed_id
+  seed_id=$(ref_seed_sha256 "$ref")
+  [ -n "$seed_id" ] || die "$ref has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
 
-  # Compiler-relevant working-tree inputs: tracked + untracked
-  # (non-ignored) sources, minus test files — main.av's import graph
-  # never reaches */tests/*, so test-only edits must not bust the
-  # cache. NUL-safe via sorted xargs batches.
-  window_src_list() {
-    (cd "$REPO_DIR" && git ls-files -co --exclude-standard -- \
-        bootstrap/packages 'bootstrap/*.toml' bootstrap/runtime.c bootstrap/llvm_wrapper.c) \
-      | LC_ALL=C sort
-  }
   local fp marker="$win/.window_verified"
-  fp=$(
-    { echo "seed:$seed_blob"
-      window_src_list | grep -v '/tests/' \
-        | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$REPO_DIR/$f" || :; done \
-        | xargs -0 $SHA256_CMD 2>/dev/null | awk '{print $1}'
-    } | $SHA256_CMD | awk '{print $1}'
-  )
+  fp=$(window_fingerprint "$seed_id")
   if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
      && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
     ok "bootstrap window cached — integration seed + compiler sources unchanged since last verify"
@@ -2081,64 +2205,18 @@ mode_check_bootstrap_window() {
 
   ensure_runtime
   ensure_llvm_wrapper
+  materialize_treeish_seed "$ref" "$win/seed.ll" "$win/integration.seed.lock" \
+    || die "cannot materialize the integration seed"
+  local stage_bin
+  stage_bin=$(window_stage_binary "$ref" "$win" "$ref_sha") || return 1
 
-  # Stage binary from the integration seed. When the integration seed
-  # is byte-identical to the local seed.ll already built into
-  # build/seed (the common case for a well-behaved feature branch),
-  # reuse that binary instead of re-running llc on 500k lines of IR.
-  local stage_bin win_seed_fp
-  if git -C "$REPO_DIR" rev-parse --verify --quiet "$ref:bootstrap/seed/seed.ll" >/dev/null; then
-    git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.ll" > "$win/seed.ll" \
-      || die "cannot extract integration seed"
-  else
-    fetch_seed_from_lock "$win/integration.seed.lock" "$win/seed.ll" \
-      || die "cannot materialize the integration seed from its lock"
-  fi
-  # seed_inputs_hash is path-independent, so the integration seed's
-  # fingerprint matches .seed_hash exactly when build/seed was built
-  # from byte-identical seed IR + the same C link inputs.
-  win_seed_fp=$(seed_inputs_hash "$win/seed.ll")
-  if [ -x "$SEED_BIN" ] && [ "$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null)" = "$win_seed_fp" ]; then
-    log "integration seed is byte-identical to the local build/seed — reusing it"
-    stage_bin="$SEED_BIN"
-  else
-    stage_bin="$win/seed_bin"
-    # Cache key = the same seed-IR + C-link-input fingerprint the dev
-    # seed uses: a runtime.c/llvm_wrapper.c edit must relink the
-    # window stage binary too, or it keeps the OLD C behaviour.
-    if [ "$(cat "$win/.stage_fp" 2>/dev/null)" = "$win_seed_fp" ] && [ -x "$stage_bin" ]; then
-      log "window stage binary cached for integration seed ${seed_blob:0:12}"
-    else
-      log "building stage binary from the integration seed ($ref @ ${ref_sha:0:12})"
-      "$LLC" -O2 $LLC_RELOC -filetype=obj "$win/seed.ll" -o "$win/seed.o" || {
-        err "llc failed on the INTEGRATION seed itself — integration-side problem,"
-        err "not a window violation. Check $ref's seed health (make verify-seed there)."
-        return 1
-      }
-      cc -o "$stage_bin.tmp" "$win/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-        $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/seed.link.log" \
-        || { rm -f "$stage_bin.tmp"; cat "$win/seed.link.log" >&2; die "window stage link failed"; }
-      mv "$stage_bin.tmp" "$stage_bin"
-      printf '%s' "$win_seed_fp" > "$win/.stage_fp"
-    fi
-  fi
-
-  # Isolated source tree: working-tree sources copied fresh, so the
-  # compile starts from a cold unit cache and writes nothing into the
-  # dev tree.
   log "copying compiler sources into an isolated tree"
-  rm -rf "$win/tree"
-  mkdir -p "$win/tree"
-  window_src_list \
-    | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$f" || :; done \
-    | (cd "$REPO_DIR" && tar --null -T - -cf -) | tar -C "$win/tree" -xf - \
-    || die "source-tree copy failed"
-
+  window_copy_tree "$win"
   local entry="$win/tree/bootstrap/packages/cli/src/main.av"
   [ -f "$entry" ] || die "copied tree is missing $entry"
+
   log "compiling branch compiler source with the integration seed"
-  if ! env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
-       "$stage_bin" compile "$entry" >"$win/compile.log" 2>&1; then
+  if ! hermetic_compile_env "$stage_bin" compile "$entry" >"$win/compile.log" 2>&1; then
     err "BOOTSTRAP WINDOW VIOLATION — compiler source does not build from the integration seed"
     err "The branch dogfoods syntax/enum-variants newer than '$INTEGRATION_BRANCH''s seed"
     err "(or depends on a local seed cycle that never happened on the train)."
@@ -2152,61 +2230,30 @@ mode_check_bootstrap_window() {
   fi
 
   log "linking the window-built compiler"
-  "$LLC" -O2 $LLC_RELOC -filetype=obj "$entry.ll" -o "$win/bs2w.o" \
-    || die "llc failed on window-built IR ($entry.ll)"
-  cc -o "$win/bs2w.tmp" "$win/bs2w.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/bs2w.link.log" \
-    || { rm -f "$win/bs2w.tmp"; cat "$win/bs2w.link.log" >&2; die "window compiler link failed"; }
-  mv "$win/bs2w.tmp" "$win/bs2w"
+  llc_link_bin "$entry.ll" "$win/bs2w.o" "$win/bs2w" "$win/bs2w.build.log" \
+    || { cat "$win/bs2w.build.log" >&2; die "window compiler build failed"; }
 
   log "smoke-testing the window-built compiler"
-  cat > "$win/smoke.av" <<'EOF'
-fn add(a: int, b: int) -> int { a + b }
-
-fn main() -> int {
-    let xs = [1, 2, 3]
-    mut sum = 0
-    for x in xs { sum = sum + x }
-    let tag = if sum == 6 { "ok" } else { "bad" }
-    println("window-smoke ${tag} ${string(add(sum, 4))}")
-    0
-}
-EOF
-  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
-    "$win/bs2w" compile "$win/smoke.av" >"$win/smoke.compile.log" 2>&1 \
-    || { tail -10 "$win/smoke.compile.log" >&2; die "window-built compiler failed to compile the smoke program"; }
-  "$LLC" -O2 $LLC_RELOC -filetype=obj "$win/smoke.av.ll" -o "$win/smoke.o" \
-    || die "llc failed on smoke IR"
-  cc -o "$win/smoke.bin" "$win/smoke.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$win/smoke.link.log" \
-    || { cat "$win/smoke.link.log" >&2; die "smoke link failed"; }
-  local smoke_out
-  smoke_out=$("$win/smoke.bin")
-  if [ "$smoke_out" != "window-smoke ok 10" ]; then
-    err "window-built compiler produced a broken binary — smoke output was:"
-    printf '  %s\n' "$smoke_out" >&2
-    err "expected: window-smoke ok 10"
-    return 1
-  fi
+  window_smoke_test "$win" "$win/bs2w" || return 1
 
   printf '%s' "$fp" > "$marker"
   ok "bootstrap window holds — branch source builds + runs from $ref's pristine seed"
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Seed-merge staging (sdmg.5)
+# Seed-merge staging
 # ─────────────────────────────────────────────────────────────────────
 
 # Classify a failed stage-compile of the merged source. Mirrors the
-# 2026-06-11 incident taxonomy (docs/SEED_MERGES.md "choosing a base"):
+# taxonomy of docs/SEED_MERGES.md "choosing a base":
 #   corruption   — the stage binary died by signal / corrupted memory
 #                  while compiling: the base seed predates a
-#                  codegen-correctness fix present in the union (zm77
-#                  class). The side that HAS the fix should win.
+#                  codegen-correctness fix present in the union (the
+#                  alloca zero-init class). The side that HAS the fix
+#                  should win.
 #   extern-guard — the base seed's baked predeclare table conflicts
 #                  with the merged source's extern signatures; the
-#                  side whose refactor it is should win (sdmg.4 tracks
-#                  a bootstrap-tolerant guard).
+#                  side whose refactor it is should win.
 #   parse        — the base seed's parser predates surface syntax in
 #                  the merged source. NOTE: new literal forms often
 #                  surface as `undefined variable`, not a parse error
@@ -2236,7 +2283,7 @@ seed_merge_hint() {
       err "  The '$cand' seed's parser predates syntax in the merged source (new"
       err "  literal forms often surface as 'undefined variable'). The side that"
       err "  HAS the parser for it should be the base. If BOTH sides land here,"
-      err "  the union dogfoods two branches' new syntax — the state the sdmg.2"
+      err "  the union dogfoods two branches' new syntax — the state the"
       err "  bootstrap window forbids; stage via IR-level patching as a last"
       err "  resort (docs/SEED_MERGES.md)."
       ;;
@@ -2247,8 +2294,8 @@ seed_merge_hint() {
       ;;
     corruption)
       err "  The '$cand' stage binary corrupted while compiling the merged source"
-      err "  — it predates a codegen-correctness fix present in the union (the"
-      err "  zm77 class). Prefer the side that HAS the fix in its machine code."
+      err "  — it predates a codegen-correctness fix present in the union."
+      err "  Prefer the side that HAS the fix in its machine code."
       err "  Forensics: AVRA_REDZONES=1, docs/RC_MEMORY_RUNBOOK.md."
       ;;
     *)
@@ -2259,10 +2306,89 @@ seed_merge_hint() {
   tail -6 "$logfile" >&2 2>/dev/null || :
 }
 
+# Try one candidate base seed end-to-end short of seed regeneration:
+# materialize it at seed/seed.ll, patch traps, build stage1 off to the
+# side (dev caches untouched), compile the merged source, link bs2,
+# self-compile verify. Returns non-zero when the candidate cannot
+# stage the union (class + hints printed) so the driver can fall
+# through to the next one. On success $mdir/bs2m is the verified
+# compiler for the merged source.
+seed_merge_attempt() {
+  local cand="$1" mdir="$2"
+  log "── attempt: base seed = $cand ──"
+  local spec=""
+  case "$cand" in
+    ours)    spec=":2" ;;
+    theirs)  spec=":3" ;;
+    current) : ;;
+    *)       spec="$cand" ;;
+  esac
+  if [ -n "$spec" ]; then
+    materialize_treeish_seed "$spec" "$SEED_LL" "$mdir/cand.$cand.lock" \
+      || { err "[$cand] could not materialize this side's pinned seed"; return 1; }
+  fi
+
+  # Tolerate the other side's new ValueType/Expr/Stmt variants.
+  log "[$cand] patching seed match traps"
+  (cd "$BOOTSTRAP_DIR" && python3 scripts/patch-seed-traps.py) >"$mdir/traps.$cand.log" 2>&1 \
+    || warn "[$cand] trap patch failed (see $mdir/traps.$cand.log) — continuing unpatched"
+
+  log "[$cand] building stage1 from this seed"
+  case $(llc_link_bin "$SEED_LL" "$mdir/stage1.o" "$mdir/stage1" "$mdir/stage1.$cand.log"; echo $?) in
+    0) : ;;
+    1) err "[$cand] llc rejected the seed IR — corrupt seed artifact; log: $mdir/stage1.$cand.log"
+       return 1 ;;
+    *) err "[$cand] stage1 link failed; log: $mdir/stage1.$cand.log"
+       return 1 ;;
+  esac
+
+  log "[$cand] stage1 compiling the merged source"
+  local rc=0 cls
+  hermetic_compile_env "$mdir/stage1" compile "$SRC_DIR/main.av" >"$mdir/compile.$cand.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    cls=$(seed_merge_classify "$rc" "$mdir/compile.$cand.log")
+    seed_merge_hint "$cand" "$cls" "$mdir/compile.$cand.log"
+    return 1
+  fi
+
+  log "[$cand] linking bs2 from the stage1-compiled source"
+  case $(llc_link_bin "$SRC_DIR/main.av.ll" "$mdir/bs2m.o" "$mdir/bs2m" "$mdir/bs2m.$cand.log"; echo $?) in
+    0) : ;;
+    1) err "[$cand] llc rejected stage1's emitted IR (mis-codegen); log: $mdir/bs2m.$cand.log"
+       return 1 ;;
+    *) err "[$cand] bs2 link failed; log: $mdir/bs2m.$cand.log"
+       return 1 ;;
+  esac
+
+  log "[$cand] self-compile verify (bs2 compiles its own source)"
+  rc=0
+  hermetic_compile_env "$mdir/bs2m" compile "$SRC_DIR/main.av" >"$mdir/selfcompile.$cand.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    cls=$(seed_merge_classify "$rc" "$mdir/selfcompile.$cand.log")
+    seed_merge_hint "$cand" "$cls" "$mdir/selfcompile.$cand.log"
+    return 1
+  fi
+}
+
+# Print how to stage the resolution once the merge is green — which
+# file to add depends on which pin shape actually conflicted.
+seed_merge_next_steps() {
+  if [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.lock)" ]; then
+    log "next: re-run 'make test', publish the regenerated seed, and resolve the lock:"
+    log "  bash scripts/diagnose.sh --seed-publish && git add bootstrap/seed/seed.lock"
+  elif [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll)" ]; then
+    log "next: re-run 'make test', then stage the resolution:"
+    log "  git add bootstrap/seed/seed.ll"
+  else
+    log "next: re-run 'make test'; on lock-era history publish + commit the lock bump"
+    log "  (bash scripts/diagnose.sh --seed-publish)"
+  fi
+}
+
 # One-command seed-merge staging: encode the staging dance that
-# resolving a seed.ll merge conflict requires. The seed train (sdmg.2)
-# makes this rare — it's for merges INTO the integration branch, and
-# for histories that predate the gate.
+# resolving a seed-pin merge conflict requires. The seed train makes
+# this rare — it's for merges INTO the integration branch, and for
+# histories that predate the gate.
 mode_seed_merge() {
   local base=""
   while [ $# -gt 0 ]; do
@@ -2276,13 +2402,11 @@ mode_seed_merge() {
   local mdir="$BUILD_DIR/seed_merge"
   mkdir -p "$mdir"
 
-  # The conflicted artifact is seed.lock on lock-era history (sdmg.3),
-  # seed.ll on pre-lock history. Candidate materialization below
-  # handles either shape per side.
+  # The conflicted artifact is seed.lock on lock-era history, seed.ll
+  # on pre-lock history; seed_merge_attempt handles either shape.
   local conflicted=""
   [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll bootstrap/seed/seed.lock)" ] && conflicted=1
 
-  # Candidate base seeds, in attempt order.
   local candidates=()
   if [ -n "$conflicted" ]; then
     case "$base" in
@@ -2305,89 +2429,12 @@ mode_seed_merge() {
   fi
 
   [ -f "$SEED_LL" ] && cp "$SEED_LL" "$mdir/seed.orig.ll"
-
   ensure_runtime
   ensure_llvm_wrapper
 
-  local cand rc cls
+  local cand
   for cand in "${candidates[@]}"; do
-    log "── attempt: base seed = $cand ──"
-    # Materialize the candidate's seed at $SEED_LL: prefer a tracked
-    # seed.ll blob (pre-lock history), else go through that side's
-    # seed.lock (sdmg.3 — fetch + sha-verify the pinned artifact).
-    local stage_no=""
-    case "$cand" in
-      ours) stage_no=2 ;;
-      theirs) stage_no=3 ;;
-    esac
-    if [ -n "$stage_no" ]; then
-      if git -C "$REPO_DIR" show ":$stage_no:bootstrap/seed/seed.ll" > "$SEED_LL" 2>/dev/null; then
-        :
-      elif git -C "$REPO_DIR" show ":$stage_no:bootstrap/seed/seed.lock" > "$mdir/cand.$cand.lock" 2>/dev/null; then
-        fetch_seed_from_lock "$mdir/cand.$cand.lock" "$SEED_LL" \
-          || { err "[$cand] could not materialize this side's pinned seed"; continue; }
-      else
-        die "cannot extract :$stage_no: ($cand) seed.ll/seed.lock from the index"
-      fi
-    elif [ "$cand" != "current" ]; then
-      if git -C "$REPO_DIR" show "$cand:bootstrap/seed/seed.ll" > "$SEED_LL" 2>/dev/null; then
-        :
-      elif git -C "$REPO_DIR" show "$cand:bootstrap/seed/seed.lock" > "$mdir/cand.ref.lock" 2>/dev/null; then
-        fetch_seed_from_lock "$mdir/cand.ref.lock" "$SEED_LL" \
-          || { err "[$cand] could not materialize the pinned seed"; continue; }
-      else
-        die "'$cand' has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
-      fi
-    fi
-
-    # Tolerate the other side's new ValueType/Expr/Stmt variants.
-    log "[$cand] patching seed match traps"
-    (cd "$BOOTSTRAP_DIR" && python3 scripts/patch-seed-traps.py) >"$mdir/traps.$cand.log" 2>&1 \
-      || warn "[$cand] trap patch failed (see $mdir/traps.$cand.log) — continuing unpatched"
-
-    # Stage1 built off to the side: build/seed + the dev caches stay
-    # untouched until a candidate fully succeeds.
-    log "[$cand] building stage1 from this seed"
-    if ! "$LLC" -O2 $LLC_RELOC -filetype=obj "$SEED_LL" -o "$mdir/stage1.o" 2>"$mdir/stage1.$cand.llc.log"; then
-      err "[$cand] llc rejected the seed IR — corrupt seed artifact; log: $mdir/stage1.$cand.llc.log"
-      continue
-    fi
-    if ! cc -o "$mdir/stage1" "$mdir/stage1.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-         $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$mdir/stage1.$cand.link.log"; then
-      err "[$cand] stage1 link failed; log: $mdir/stage1.$cand.link.log"
-      continue
-    fi
-
-    log "[$cand] stage1 compiling the merged source"
-    rc=0
-    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
-      "$mdir/stage1" compile "$SRC_DIR/main.av" >"$mdir/compile.$cand.log" 2>&1 || rc=$?
-    if [ "$rc" -ne 0 ]; then
-      cls=$(seed_merge_classify "$rc" "$mdir/compile.$cand.log")
-      seed_merge_hint "$cand" "$cls" "$mdir/compile.$cand.log"
-      continue
-    fi
-
-    log "[$cand] linking bs2 from the stage1-compiled source"
-    if ! "$LLC" -O2 $LLC_RELOC -filetype=obj "$SRC_DIR/main.av.ll" -o "$mdir/bs2m.o" 2>"$mdir/bs2m.$cand.llc.log"; then
-      err "[$cand] llc rejected stage1's emitted IR (mis-codegen); log: $mdir/bs2m.$cand.llc.log"
-      continue
-    fi
-    if ! cc -o "$mdir/bs2m" "$mdir/bs2m.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
-         $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$mdir/bs2m.$cand.link.log"; then
-      err "[$cand] bs2 link failed; log: $mdir/bs2m.$cand.link.log"
-      continue
-    fi
-
-    log "[$cand] self-compile verify (bs2 compiles its own source)"
-    rc=0
-    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
-      "$mdir/bs2m" compile "$SRC_DIR/main.av" >"$mdir/selfcompile.$cand.log" 2>&1 || rc=$?
-    if [ "$rc" -ne 0 ]; then
-      cls=$(seed_merge_classify "$rc" "$mdir/selfcompile.$cand.log")
-      seed_merge_hint "$cand" "$cls" "$mdir/selfcompile.$cand.log"
-      continue
-    fi
+    seed_merge_attempt "$cand" "$mdir" || continue
 
     # Candidate survived the whole chain — commit to it. main.av.ll is
     # now bs2's OWN output (generation 2); regenerate the seed from it
@@ -2405,16 +2452,7 @@ mode_seed_merge() {
     fi
 
     ok "seed merge staged: base=$cand, seed regenerated, fixed point holds"
-    if [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.lock)" ]; then
-      log "next: re-run 'make test', publish the regenerated seed, and resolve the lock:"
-      log "  bash scripts/diagnose.sh --seed-publish && git add bootstrap/seed/seed.lock"
-    elif [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll)" ]; then
-      log "next: re-run 'make test', then stage the resolution:"
-      log "  git add bootstrap/seed/seed.ll"
-    else
-      log "next: re-run 'make test'; on lock-era history publish + commit the lock bump"
-      log "  (bash scripts/diagnose.sh --seed-publish)"
-    fi
+    seed_merge_next_steps
     return 0
   done
 
