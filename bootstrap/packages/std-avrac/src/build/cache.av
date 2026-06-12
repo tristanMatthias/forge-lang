@@ -25,7 +25,6 @@ use core.{
     avra_remove_file,
     avra_is_dir,
     avra_shell_exec_status,
-    avra_process_env_get,
     avra_file_size,
 }
 use build.fingerprint.{Fingerprint}
