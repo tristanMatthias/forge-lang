@@ -34,6 +34,9 @@ spec "--seed-merge failure taxonomy" {
         // the signal/corruption evidence is the load-bearing fact.
         classify(139, "parse error at 1:1: expected expression") == "corruption"
     }
+    then "an empty log with a plain failure exit classifies as unknown" {
+        classify(1, "") == "unknown"
+    }
     then "no known signature classifies as unknown" {
         classify(1, "something else entirely") == "unknown"
     }

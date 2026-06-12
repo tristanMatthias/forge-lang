@@ -61,6 +61,39 @@ spec "seed.lock fetch: pinned-artifact materialization" {
             sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll").contains("rc=0")
         }
     }
+    given "a lock produced by the publisher's own writer" {
+        then "writer and parser round-trip: the generated lock fetches and verifies" {
+            let dir = case_dir("roundtrip")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR epsilon")
+            let _ = sh("bash scripts/diagnose.sh --write-seed-lock ${dir}/test.lock 7 ${sha} file://${dir}/artifact.gz")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            out.contains("seed v7 materialized") && out.contains("rc=0")
+                && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR epsilon")
+        }
+    }
+    given "a poisoned cache entry squats on the pinned name" {
+        then "fetch drops the corrupt entry and refetches clean bytes" {
+            let dir = case_dir("poison")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR eta")
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            avra_shell_exec("mkdir -p build/cache/seed && printf 'poison' > build/cache/seed/${sha}.ll")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            out.contains("dropping corrupt seed cache entry") && out.contains("rc=0")
+                && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR eta")
+        }
+    }
+    given "a lock missing its sha256 line" {
+        then "fetch refuses up front as malformed" {
+            let dir = case_dir("malformed")
+            avra_shell_exec("rm -rf ${dir}")
+            let _ = setup(dir, "fake seed IR zeta")
+            avra_shell_exec("printf 'version = 9\nurl = file://${dir}/artifact.gz\n' > ${dir}/test.lock")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("malformed seed lock")
+        }
+    }
     given "the artifact is unreachable and nothing is cached" {
         then "fetch fails with the offline guidance" {
             let dir = case_dir("dead")

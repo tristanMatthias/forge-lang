@@ -336,6 +336,10 @@ SEED MANAGEMENT
                          INTERNAL (spec-tested): materialize+verify a
                          seed from an arbitrary lock file (file:// URLs
                          work, which is how the spec stays hermetic).
+  --write-seed-lock <lock> <version> <sha256> <url>
+                         INTERNAL (spec-tested): write a lock in the
+                         exact format --seed-publish produces, so the
+                         writer/parser round-trip is pinned by spec.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -444,7 +448,17 @@ fetch_seed_from_lock() {
   fi
 
   mkdir -p "$SEED_FETCH_CACHE"
+  # The cache is content-addressed by the PINNED sha, but trust nothing:
+  # re-verify on the hit path too, so a truncated or tampered cache
+  # entry is dropped and refetched instead of installed. (A mutation
+  # test that disabled download-side verification poisoned this cache
+  # and the hit path happily served the poison — hence this check.)
   local cached="$SEED_FETCH_CACHE/$want_sha.ll"
+  if [ -f "$cached" ] \
+     && [ "$($SHA256_CMD "$cached" | awk '{print $1}')" != "$want_sha" ]; then
+    warn "dropping corrupt seed cache entry $cached (content does not match its name)"
+    rm -f "$cached"
+  fi
   if [ ! -f "$cached" ]; then
     log "fetching seed v${version:-?} from $url"
     local gz="$SEED_FETCH_CACHE/$want_sha.ll.gz.tmp.$$"
@@ -478,6 +492,26 @@ fetch_seed_from_lock() {
   mkdir -p "$(dirname "$dest")"
   cp "$cached" "$dest.tmp.$$" && mv "$dest.tmp.$$" "$dest"
   log "seed v${version:-?} materialized at $dest (sha256 verified)"
+}
+
+# Write a seed lock pinning one artifact: $1=lock path, $2=version,
+# $3=sha256 of the uncompressed IR, $4=download URL. The single
+# producer of the lock format seed_lock_field parses — spec-tested as
+# a round-trip so the two can never drift apart silently.
+write_seed_lock() {
+  local lock="$1" version="$2" sha="$3" url="$4"
+  cat > "$lock" <<EOF
+# Avra bootstrap seed lock — pin-don't-vendor.
+# seed/seed.ll is NOT in git: the build fetches this pinned artifact and
+# verifies the sha256 of the uncompressed IR. The lock advances only on
+# the integration branch (the seed train) via:
+#   bash scripts/diagnose.sh --seed-publish
+# Merge conflict on this file = two train advances raced; take the
+# HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.
+version = $version
+sha256 = $sha
+url = $url
+EOF
 }
 
 # Ensure seed/seed.ll exists locally: present = use as-is (it may
@@ -559,18 +593,8 @@ mode_seed_publish() {
     "https://uploads.github.com/repos/$SEED_REPO_SLUG/releases/$rel_id/assets?name=seed.ll.gz" \
     >/dev/null || die "asset upload failed (release $tag id $rel_id left in place)"
 
-  cat > "$SEED_LOCK" <<EOF
-# Avra bootstrap seed lock — pin-don't-vendor.
-# seed/seed.ll is NOT in git: the build fetches this pinned artifact and
-# verifies the sha256 of the uncompressed IR. The lock advances only on
-# the integration branch (the seed train) via:
-#   bash scripts/diagnose.sh --seed-publish
-# Merge conflict on this file = two train advances raced; take the
-# HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.
-version = $version
-sha256 = $sha
-url = https://github.com/$SEED_REPO_SLUG/releases/download/$tag/seed.ll.gz
-EOF
+  write_seed_lock "$SEED_LOCK" "$version" "$sha" \
+    "https://github.com/$SEED_REPO_SLUG/releases/download/$tag/seed.ll.gz"
   rm -f "$staging/seed.ll.gz"
   ok "published $tag and pinned it in seed/seed.lock"
   log "next: git add bootstrap/seed/seed.lock && commit (a 'chore(seed): cycle' train commit)"
@@ -1493,6 +1517,7 @@ main() {
     --seed-sigs)          mode_seed_sigs "$@" ;;
     --seed-fetch)         mode_seed_fetch "$@" ;;
     --seed-fetch-from)    fetch_seed_from_lock "$@" ;;
+    --write-seed-lock)    write_seed_lock "$@" ;;
     --seed-publish)       mode_seed_publish "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
