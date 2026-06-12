@@ -214,20 +214,60 @@ LLVMValueRef avra_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeR
     // declaration and the body lands in an orphan. That's a silent
     // failure; the declare-then-define pattern (e.g. the test
     // assembler's `extern fn __init_<mod>` + the module's emitted
-    // init) is legitimate and must converge on ONE function. A
-    // collision with a DIFFERENT type is a genuine bug — fail loudly
-    // instead of letting the rename hide it.
+    // init) is legitimate and must converge on ONE function.
     LLVMValueRef existing = LLVMGetNamedFunction(m, sym ? sym : name);
     if (existing) {
         LLVMTypeRef existing_ty = LLVMGlobalGetValueType(existing);
         if (existing_ty != fn_type) {
+            // Bootstrap tolerance (sdmg.4): when the EXISTING function is a
+            // pure declaration (no body), the mismatch is declaration-vs-
+            // declaration drift — in practice the stage binary's baked
+            // predeclare table vs the (newer) source's extern decl, since
+            // source-vs-source conflicts are rejected upstream by typeck
+            // (F3105) before codegen runs. Under opaque pointers this ABI
+            // drift is benign (proven 2026-06-11); aborting here is what
+            // forced manual IR surgery during seed merges. Warn and let the
+            // SOURCE's signature win: build the new declaration, repoint
+            // existing uses at it (functions are ptr-typed values, so RAUW
+            // is type-legal; already-emitted calls keep their own call-site
+            // fn types), drop the stale declaration, take over the name.
+            //
+            // A mismatch where the existing function HAS a body stays
+            // fatal: that's the declare-then-define pattern diverging,
+            // which is a genuine compiler bug. AVRA_STRICT_EXTERN_GUARD=1
+            // restores the abort for declaration drift too (forensics).
+            static int strict_guard = -1;
+            if (strict_guard < 0) {
+                const char* env = getenv("AVRA_STRICT_EXTERN_GUARD");
+                strict_guard = (env && env[0] == '1') ? 1 : 0;
+            }
+            int has_body = LLVMCountBasicBlocks(existing) > 0;
+            if (!has_body && !strict_guard) {
+                char* have = LLVMPrintTypeToString(existing_ty);
+                char* want = LLVMPrintTypeToString(fn_type);
+                fprintf(stderr,
+                    "[warn] avra_llvm_add_function: `%s` redeclared with a different type — "
+                    "tolerating declaration drift (stale predeclare vs source extern; "
+                    "expected while a previous-generation seed compiles newer source)\n"
+                    "       stale:  %s\n"
+                    "       source: %s\n",
+                    name, have ? have : "?", want ? want : "?");
+                LLVMDisposeMessage(have);
+                LLVMDisposeMessage(want);
+                LLVMValueRef neu = LLVMAddFunction(m, "__avra_redecl_staging", fn_type);
+                LLVMReplaceAllUsesWith(existing, neu);
+                LLVMDeleteFunction(existing);
+                LLVMSetValueName2(neu, sym ? sym : name, strlen(sym ? sym : name));
+                free(sym);
+                return neu;
+            }
             char* have = LLVMPrintTypeToString(existing_ty);
             char* want = LLVMPrintTypeToString(fn_type);
             fprintf(stderr,
                 "[CRASH] avra_llvm_add_function: `%s` redeclared with a different type\n"
-                "        existing: %s\n"
+                "        existing%s: %s\n"
                 "        new:      %s\n",
-                name, have ? have : "?", want ? want : "?");
+                name, has_body ? " (defined)" : "", have ? have : "?", want ? want : "?");
             LLVMDisposeMessage(have);
             LLVMDisposeMessage(want);
             abort();

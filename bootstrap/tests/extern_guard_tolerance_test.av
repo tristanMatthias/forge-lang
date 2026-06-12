@@ -1,0 +1,50 @@
+// WHY: spec for the bootstrap-tolerant extern-redeclare guard
+// (sdmg.4, tolerance half). During seed-merge staging a previous-
+// generation stage binary compiles newer source: its baked predeclare
+// table can disagree with the source's extern signatures (benign ABI
+// drift under opaque pointers — 2026-06-11). The guard in
+// llvm_wrapper.c avra_llvm_add_function must WARN and adopt the
+// source signature for declaration-vs-declaration drift, abort when
+// the existing function has a body, and go back to aborting under
+// AVRA_STRICT_EXTERN_GUARD=1. Source-vs-source extern conflicts stay
+// a compile error upstream (F3105 — extern_conflict_test.av).
+//
+// Not cached via cached_fixture_run on purpose: one variant runs the
+// fixture under an env override and one is EXPECTED to abort —
+// caching crash output is the zp5b freeze-a-transient-failure trap.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn run_fixture(env_prefix: string, name: string) -> string {
+    avra_shell_exec("${env_prefix}bash scripts/diagnose.sh --run tests/extern_guard_tolerance_fixtures/${name} 2>&1; echo rc=$?")
+}
+
+spec "extern-redeclare guard: bootstrap tolerance for declaration drift" {
+    given "a baked (i64)->i64 declaration with a live use, redeclared as (ptr)->ptr" {
+        then "the process survives with a drift warning instead of aborting" {
+            let out = run_fixture("", "drift.av")
+            out.contains("PROBE survived_redecl: ok")
+                && out.contains("tolerating declaration drift")
+                && out.contains("rc=0")
+        }
+        then "the source signature wins on the surviving declaration" {
+            run_fixture("", "drift.av").contains("PROBE source_signature_won: ok")
+        }
+        then "existing uses are repointed and still verify" {
+            run_fixture("", "drift.av").contains("PROBE caller_still_verifies: ok")
+        }
+        then "AVRA_STRICT_EXTERN_GUARD=1 restores the abort" {
+            let out = run_fixture("AVRA_STRICT_EXTERN_GUARD=1 ", "drift.av")
+            out.contains("[CRASH] avra_llvm_add_function") && !out.contains("rc=0")
+        }
+    }
+    given "the existing function has a BODY when the conflicting redeclare arrives" {
+        then "the guard still aborts — define-time drift is a compiler bug" {
+            let out = run_fixture("", "defined_abort.av")
+            out.contains("[CRASH] avra_llvm_add_function")
+                && out.contains("(defined)")
+                && !out.contains("PROBE survived_defined_redecl")
+                && !out.contains("rc=0")
+        }
+    }
+}
