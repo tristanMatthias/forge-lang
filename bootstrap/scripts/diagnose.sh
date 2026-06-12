@@ -435,6 +435,15 @@ fetch_seed_from_lock() {
   [ $# -eq 2 ] || die "usage: fetch_seed_from_lock <lockfile> <dest.ll>"
   local lock="$1" dest="$2"
   [ -f "$lock" ] || { err "no seed lock at $lock"; return 1; }
+  # An unresolved merge leaves conflict markers in the lock, and the
+  # field parser would silently serve the FIRST (ours) side as if the
+  # merge were resolved. Refuse: the resolution is taking the HIGHER
+  # version line, and it must be deliberate.
+  if grep -qE '^(<<<<<<< |=======$|>>>>>>> )' "$lock"; then
+    err "seed lock $lock contains merge-conflict markers — resolve the merge first"
+    err "(artifacts are immutable: take the HIGHER version line; docs/SEED_MERGES.md)"
+    return 1
+  fi
   local want_sha url version
   want_sha=$(seed_lock_field "$lock" sha256)
   url=$(seed_lock_field "$lock" url)
@@ -565,7 +574,12 @@ mode_seed_publish() {
   local version=1
   if [ -f "$SEED_LOCK" ]; then
     local prev; prev=$(seed_lock_field "$SEED_LOCK" version)
-    [ -n "$prev" ] && version=$((prev + 1))
+    if [ -n "$prev" ]; then
+      case "$prev" in
+        *[!0-9]*) die "seed lock version '$prev' is not a number — fix seed/seed.lock first" ;;
+      esac
+      version=$((prev + 1))
+    fi
   fi
   local sha tag
   sha=$($SHA256_CMD "$SEED_LL" | awk '{print $1}')
@@ -573,6 +587,20 @@ mode_seed_publish() {
 
   local staging="$BUILD_DIR/seed_publish"
   mkdir -p "$staging"
+
+  # A corrupt pin bricks every fresh clone until the next train
+  # advance, so prove the artifact is a working compiler before it
+  # becomes the pin: build a stage binary from it and smoke-run a
+  # compile. ~60-90s on a rare operation; AVRA_SKIP_PUBLISH_VERIFY=1
+  # for genuine emergencies only.
+  if [ "${AVRA_SKIP_PUBLISH_VERIFY:-0}" != "1" ]; then
+    ensure_runtime
+    ensure_llvm_wrapper
+    log "verifying the seed before publishing (stage build + smoke)"
+    llc_link_bin "$SEED_LL" "$staging/verify.o" "$staging/verify_bin" "$staging/verify.build.log"       || { cat "$staging/verify.build.log" >&2; die "seed fails to build — refusing to publish a broken artifact"; }
+    smoke_test_compiler "$staging" "$staging/verify_bin"       || die "seed binary fails the smoke run — refusing to publish a broken artifact"
+  fi
+
   log "compressing seed.ll for upload"
   gzip -9 -c "$SEED_LL" > "$staging/seed.ll.gz" || die "gzip failed"
 
@@ -591,7 +619,13 @@ mode_seed_publish() {
     -H "Content-Type: application/gzip" \
     --data-binary @"$staging/seed.ll.gz" \
     "https://uploads.github.com/repos/$SEED_REPO_SLUG/releases/$rel_id/assets?name=seed.ll.gz" \
-    >/dev/null || die "asset upload failed (release $tag id $rel_id left in place)"
+    >/dev/null || {
+      # Drop the asset-less release so a retry can recreate the same
+      # tag instead of dying on "already exists".
+      curl -fsS -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+        "$api/releases/$rel_id" >/dev/null 2>&1 || :
+      die "asset upload failed (release $tag rolled back — safe to retry)"
+    }
 
   write_seed_lock "$SEED_LOCK" "$version" "$sha" \
     "https://github.com/$SEED_REPO_SLUG/releases/download/$tag/seed.ll.gz"
@@ -2020,7 +2054,7 @@ materialize_treeish_seed() {
 # inherited producer objects could alias the very mismatch these
 # checks exist to surface.
 hermetic_compile_env() {
-  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT "$@"
+  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_DIR_MODULE "$@"
 }
 
 # ─────────────────────────────────────────────────────────────────────
@@ -2123,10 +2157,13 @@ window_src_list() {
 # content of every compiler-relevant source. NUL-safe batching.
 window_fingerprint() {
   local seed_id="$1"
+  # Keep the "hash  path" lines whole: hashing content alone would
+  # let a rename-only change (which alters module resolution) reuse a
+  # stale PASS marker.
   { echo "seed:$seed_id"
     window_src_list | grep -v '/tests/' \
       | while IFS= read -r f; do [ -f "$REPO_DIR/$f" ] && printf '%s\0' "$REPO_DIR/$f" || :; done \
-      | xargs -0 $SHA256_CMD 2>/dev/null | awk '{print $1}'
+      | xargs -0 $SHA256_CMD 2>/dev/null
   } | $SHA256_CMD | awk '{print $1}'
 }
 
@@ -2175,9 +2212,11 @@ window_copy_tree() {
     || die "source-tree copy failed"
 }
 
-# Compile + run a small program with the window-built compiler $2 and
-# verify its output, proving the produced compiler is not garbage.
-window_smoke_test() {
+# Compile + run a small program with the compiler $2 (scratch dir $1)
+# and verify its output, proving the compiler is not garbage. Used by
+# the window gate on the window-built compiler and by --seed-publish
+# on the stage binary of the seed about to become the pin.
+smoke_test_compiler() {
   local win="$1" bs2w="$2"
   cat > "$win/smoke.av" <<'SMOKE'
 fn add(a: int, b: int) -> int { a + b }
@@ -2259,7 +2298,7 @@ mode_check_bootstrap_window() {
     || { cat "$win/bs2w.build.log" >&2; die "window compiler build failed"; }
 
   log "smoke-testing the window-built compiler"
-  window_smoke_test "$win" "$win/bs2w" || return 1
+  smoke_test_compiler "$win" "$win/bs2w" || return 1
 
   printf '%s' "$fp" > "$marker"
   ok "bootstrap window holds — branch source builds + runs from $ref's pristine seed"

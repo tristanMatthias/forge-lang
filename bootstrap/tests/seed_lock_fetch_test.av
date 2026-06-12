@@ -84,6 +84,16 @@ spec "seed.lock fetch: pinned-artifact materialization" {
                 && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR eta")
         }
     }
+    given "a lock still carrying merge-conflict markers" {
+        then "fetch refuses instead of silently serving the ours side" {
+            let dir = case_dir("conflict")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR theta")
+            avra_shell_exec("printf '<<<<<<< HEAD\nversion = 3\n=======\nversion = 2\n>>>>>>> other\nsha256 = ${sha}\nurl = file://${dir}/artifact.gz\n' > ${dir}/test.lock")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("merge-conflict markers")
+        }
+    }
     given "a lock missing its sha256 line" {
         then "fetch refuses up front as malformed" {
             let dir = case_dir("malformed")
