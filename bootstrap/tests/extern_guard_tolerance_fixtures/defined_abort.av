@@ -1,0 +1,48 @@
+// Fixture: the extern-redeclare guard must STAY fatal when the
+// existing function has a body (sdmg.4 tolerance is for
+// declaration-vs-declaration drift only). A declare-then-define
+// pattern diverging in type is a genuine compiler bug; tolerating it
+// would attach the body to the wrong ABI silently.
+//
+// Expected: the second add_function call ABORTS — the survival probe
+// below must never print.
+
+extern fn avra_llvm_context_create() -> ptr
+extern fn avra_llvm_module_create(name: string, ctx: ptr) -> ptr
+extern fn avra_llvm_create_builder(ctx: ptr) -> ptr
+extern fn avra_llvm_int64_type(ctx: ptr) -> ptr
+extern fn avra_llvm_pointer_type(ctx: ptr) -> ptr
+extern fn avra_llvm_type_array_new(count: int) -> ptr
+extern fn avra_llvm_type_array_set(arr: ptr, idx: int, ty: ptr)
+extern fn avra_llvm_function_type(ret: ptr, params: ptr, count: int, is_var: int) -> ptr
+extern fn avra_llvm_add_function(m: ptr, name: string, fn_type: ptr) -> ptr
+extern fn avra_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
+extern fn avra_llvm_position_at_end(b: ptr, bb: ptr)
+extern fn avra_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn avra_llvm_build_ret(b: ptr, val: ptr) -> ptr
+
+fn main() -> int {
+    let ctx = avra_llvm_context_create()
+    let m = avra_llvm_module_create("defined", ctx)
+    let b = avra_llvm_create_builder(ctx)
+    let i64t = avra_llvm_int64_type(ctx)
+    let ptrt = avra_llvm_pointer_type(ctx)
+
+    // Define probe_defined(i64) -> i64 WITH a body.
+    let pa = avra_llvm_type_array_new(1)
+    avra_llvm_type_array_set(pa, 0, i64t)
+    let def_ty = avra_llvm_function_type(i64t, pa, 1, 0)
+    let f = avra_llvm_add_function(m, "probe_defined", def_ty)
+    let bb = avra_llvm_append_basic_block(ctx, f, "entry")
+    avra_llvm_position_at_end(b, bb)
+    avra_llvm_build_ret(b, avra_llvm_const_int(i64t, 1, 0))
+
+    // Re-add with a different type — must abort.
+    let pb = avra_llvm_type_array_new(1)
+    avra_llvm_type_array_set(pb, 0, ptrt)
+    let other_ty = avra_llvm_function_type(ptrt, pb, 1, 0)
+    let _ = avra_llvm_add_function(m, "probe_defined", other_ty)
+
+    println("PROBE survived_defined_redecl: FAIL")
+    0
+}

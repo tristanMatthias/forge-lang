@@ -386,6 +386,20 @@ ensure_llvm_wrapper() {
 
 # Build the seed binary from seed/seed.ll (no Rust compiler needed).
 # The seed IR is checked into the repo and is the bootstrap's lifeline.
+# Content fingerprint for a seed binary's full input set: the seed IR
+# plus the C link inputs (runtime.c, llvm_wrapper.c) — build/seed
+# links runtime.o + llvm_wrapper.o, so editing either C file must
+# relink it. Path-independent (hashes of content only), so the same
+# seed content fingerprints identically from seed/seed.ll and from a
+# window-extracted copy. Before the C inputs were keyed, a stale seed
+# kept the OLD C behaviour and its failures got misattributed
+# downstream (ensure_bs2's -O2-miscompile fallback fired for what was
+# really an out-of-date wrapper).
+seed_inputs_hash() {
+  { $SHA256_CMD "$1" "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null; } \
+    | awk '{print $1}' | $SHA256_CMD | awk '{print $1}'
+}
+
 ensure_seed() {
   ensure_llvm_wrapper
   ensure_runtime
@@ -393,8 +407,9 @@ ensure_seed() {
   # consistent with ensure_runtime / ensure_llvm_wrapper and immune
   # to the APFS second-granularity race source_newer_than was fixed
   # for. A change to seed/seed.ll (typically from `make update-seed`
-  # in the same shell session as a previous build) reliably invalidates.
-  local seed_hash; seed_hash=$(md5sum "$SEED_LL" 2>/dev/null || md5 -q "$SEED_LL" 2>/dev/null)
+  # in the same shell session as a previous build) — or to the C link
+  # inputs — reliably invalidates.
+  local seed_hash; seed_hash=$(seed_inputs_hash "$SEED_LL")
   local seed_hash_file="$BUILD_DIR/.seed_hash"
   local old_seed_hash; old_seed_hash=$(cat "$seed_hash_file" 2>/dev/null)
   if [ "${1:-}" = "force" ] || [ ! -x "$SEED_BIN" ] || [ "$seed_hash" != "$old_seed_hash" ]; then
@@ -1855,17 +1870,14 @@ mode_check_bootstrap_window() {
   # is byte-identical to the local seed.ll already built into
   # build/seed (the common case for a well-behaved feature branch),
   # reuse that binary instead of re-running llc on 500k lines of IR.
-  local stage_bin win_seed_md5
+  local stage_bin win_seed_fp
   git -C "$REPO_DIR" cat-file blob "$ref:bootstrap/seed/seed.ll" > "$win/seed.ll" \
     || die "cannot extract integration seed"
-  win_seed_md5=$(md5sum "$win/seed.ll" 2>/dev/null || md5 -q "$win/seed.ll" 2>/dev/null)
-  win_seed_md5=${win_seed_md5%% *}
-  # .seed_hash stores ensure_seed's raw `md5sum seed/seed.ll` line —
-  # compare hash fields only (the filename differs by construction).
-  local dev_seed_md5
-  dev_seed_md5=$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null || :)
-  dev_seed_md5=${dev_seed_md5%% *}
-  if [ -x "$SEED_BIN" ] && [ -n "$dev_seed_md5" ] && [ "$dev_seed_md5" = "$win_seed_md5" ]; then
+  # seed_inputs_hash is path-independent, so the integration seed's
+  # fingerprint matches .seed_hash exactly when build/seed was built
+  # from byte-identical seed IR + the same C link inputs.
+  win_seed_fp=$(seed_inputs_hash "$win/seed.ll")
+  if [ -x "$SEED_BIN" ] && [ "$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null)" = "$win_seed_fp" ]; then
     log "integration seed is byte-identical to the local build/seed — reusing it"
     stage_bin="$SEED_BIN"
   else
