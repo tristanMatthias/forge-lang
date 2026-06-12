@@ -403,12 +403,20 @@ setup_beads_sync() {
   # The bd wrapper is the CANONICAL bd entrypoint — always installed, ahead of
   # the raw bd on PATH, so it can never be silently bypassed. It checks $GH_TOKEN
   # at RUNTIME (not install time): with a token it auto-pushes refs/dolt/data
-  # DIRECT to github after a mutating command (the proxy blocks that ref, and bd
-  # doesn't auto-push on write); without one it's a transparent passthrough. We
-  # `dolt commit` then `dolt push` explicitly so we never depend on a persisted
-  # `dolt.auto-commit` config (which would dirty the git-tracked config.yaml).
-  # Inner dolt calls hit the REAL bd (no recursion), are best-effort, and commit
-  # is a no-op on a clean working set.
+  # DIRECT to github after any command that could have mutated the DB (the proxy
+  # blocks that ref, and bd doesn't auto-push on write); without one it's a
+  # transparent passthrough. We `dolt commit` then `dolt push` explicitly so we
+  # never depend on a persisted `dolt.auto-commit` config (which would dirty the
+  # git-tracked config.yaml). Inner dolt calls hit the REAL bd (no recursion),
+  # are best-effort, and commit is a no-op on a clean working set.
+  #
+  # Sync is gated by a READ allowlist, not a write allowlist: anything NOT a
+  # known read-only command pushes. This way every current AND future mutating
+  # verb (update, close, delete, assign, comment, note, priority, label, tag,
+  # set-state, link, dep, defer, supersede, remember, import, mol, …) syncs by
+  # default — the bias is toward syncing, since a missed push is the costly bug
+  # and a redundant push on a clean set is a cheap no-op. `dolt` is excluded so
+  # explicit `bd dolt push/pull` don't recurse into another push.
   cat > "$rt/bd" <<WRAP
 #!/bin/sh
 export GIT_CONFIG_GLOBAL="$rt/gitconfig"
@@ -416,8 +424,9 @@ export GIT_TERMINAL_PROMPT=0
 [ -n "\${GH_TOKEN:-}" ] && export GIT_ASKPASS="$rt/askpass.sh"
 "$real_bd" "\$@"; __rc=\$?
 if [ -n "\${GH_TOKEN:-}" ]; then
-  case " create update close reopen delete dep defer supersede remember import mol " in
-    *" \${1:-} "*)
+  case " \${1:-} " in
+    " ready "|" list "|" show "|" blocked "|" stats "|" status "|" search "|" memories "|" prime "|" version "|" help "|" doctor "|" lint "|" stale "|" orphans "|" preflight "|" human "|" completion "|" init-safety "|" dolt "|"  ") ;;
+    *)
       "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
       "$real_bd" dolt push origin          >/dev/null 2>&1 || true ;;
   esac
