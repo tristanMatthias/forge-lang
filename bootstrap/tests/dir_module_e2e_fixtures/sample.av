@@ -17,6 +17,8 @@
 //
 // Probes echo from this fixture; the parent test asserts on them.
 
+use @std.avrac.build.{llvm_prefix_dir}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_host_os() -> string
 extern fn avra_process_env_get(name: string) -> string
@@ -89,8 +91,7 @@ fn main() -> int {
 
     // Probe 4 — link + run, expect "s=5 p=20". PIC object + platform-aware
     // link (LLD + libstdc++ on Linux, default ld + libc++ on macOS).
-    let env_pfx = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if env_pfx != "" { env_pfx } else { avra_shell_exec("test -d /opt/homebrew/opt/llvm && echo /opt/homebrew/opt/llvm || which llc | xargs dirname | xargs dirname").trim() }
+    let llvm_prefix = llvm_prefix_dir()
     let is_mac = avra_host_os() == "macos"
     let link_flags = if is_mac { "-lc++" } else { "-fuse-ld=lld -lstdc++" }
     avra_shell_exec("'" + llvm_prefix + "/bin/llc' -relocation-model=pic -filetype=obj '" + root + "/main.av.ll' -o '" + root + "/main.o' 2>/dev/null")

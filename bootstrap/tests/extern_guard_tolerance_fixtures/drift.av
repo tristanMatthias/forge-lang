@@ -1,0 +1,70 @@
+// Fixture: the extern-redeclare guard's bootstrap tolerance.
+// Models the stale-seed staging shape directly against the wrapper:
+// declare probe_drift as (i64)->i64 (the stage binary's baked
+// predeclare), emit a caller that USES that declaration, then re-add
+// probe_drift as (ptr)->ptr (the newer source's extern decl).
+//
+// Expected: a [warn] on stderr (not an abort), the SOURCE signature
+// wins on the surviving declaration, existing uses are repointed
+// (RAUW), and the module still verifies.
+
+extern fn avra_llvm_context_create() -> ptr
+extern fn avra_llvm_module_create(name: string, ctx: ptr) -> ptr
+extern fn avra_llvm_create_builder(ctx: ptr) -> ptr
+extern fn avra_llvm_int64_type(ctx: ptr) -> ptr
+extern fn avra_llvm_pointer_type(ctx: ptr) -> ptr
+extern fn avra_llvm_type_array_new(count: int) -> ptr
+extern fn avra_llvm_type_array_set(arr: ptr, idx: int, ty: ptr)
+extern fn avra_llvm_function_type(ret: ptr, params: ptr, count: int, is_var: int) -> ptr
+extern fn avra_llvm_add_function(m: ptr, name: string, fn_type: ptr) -> ptr
+extern fn avra_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
+extern fn avra_llvm_position_at_end(b: ptr, bb: ptr)
+extern fn avra_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn avra_llvm_value_array_new(count: int) -> ptr
+extern fn avra_llvm_value_array_set(arr: ptr, idx: int, val: ptr)
+extern fn avra_llvm_build_call(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, count: int, name: string) -> ptr
+extern fn avra_llvm_build_ret(b: ptr, val: ptr) -> ptr
+extern fn avra_llvm_fn_type_of(fn_val: ptr) -> ptr
+extern fn avra_llvm_verify_function(fn_val: ptr) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let ctx = avra_llvm_context_create()
+    let m = avra_llvm_module_create("drift", ctx)
+    let b = avra_llvm_create_builder(ctx)
+    let i64t = avra_llvm_int64_type(ctx)
+    let ptrt = avra_llvm_pointer_type(ctx)
+
+    // The stage binary's baked view: probe_drift(i64) -> i64.
+    let pa = avra_llvm_type_array_new(1)
+    avra_llvm_type_array_set(pa, 0, i64t)
+    let stale_ty = avra_llvm_function_type(i64t, pa, 1, 0)
+    let stale = avra_llvm_add_function(m, "probe_drift", stale_ty)
+
+    // A live use of the stale declaration, so the redeclare path has
+    // to repoint real instructions, not just rename an unused symbol.
+    let caller_ty = avra_llvm_function_type(i64t, avra_llvm_type_array_new(0), 0, 0)
+    let caller = avra_llvm_add_function(m, "drift_caller", caller_ty)
+    let bb = avra_llvm_append_basic_block(ctx, caller, "entry")
+    avra_llvm_position_at_end(b, bb)
+    let args = avra_llvm_value_array_new(1)
+    avra_llvm_value_array_set(args, 0, avra_llvm_const_int(i64t, 7, 0))
+    let call = avra_llvm_build_call(b, stale_ty, stale, args, 1, "c")
+    avra_llvm_build_ret(b, call)
+
+    // The newer source's extern decl: probe_drift(ptr) -> ptr.
+    let pb = avra_llvm_type_array_new(1)
+    avra_llvm_type_array_set(pb, 0, ptrt)
+    let source_ty = avra_llvm_function_type(ptrt, pb, 1, 0)
+    let neu = avra_llvm_add_function(m, "probe_drift", source_ty)
+
+    // Reaching this line at all is the headline: no abort.
+    probe("survived_redecl", true)
+    probe("source_signature_won", avra_llvm_fn_type_of(neu) == source_ty)
+    probe("caller_still_verifies", avra_llvm_verify_function(caller) == 0)
+    0
+}

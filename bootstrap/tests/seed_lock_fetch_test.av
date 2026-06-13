@@ -1,0 +1,131 @@
+// WHY: spec for the seed.lock fetch machinery (pin-don't-vendor).
+// seed/seed.ll is no longer vendored in git; builds
+// materialize it from a lock that pins {version, sha256, url}. The
+// security property is the pin: the artifact hash must verify after
+// download or the build refuses. Hermetic via file:// URLs — no
+// network, no GitHub dependency in the suite.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(name: string) -> string
+
+/// Absolute scratch dir for one case — file:// URLs require absolute
+/// paths, and build/cache/ keeps the scratch inside `make clean`'s reach.
+fn case_dir(name: string) -> string {
+    "${avra_process_env_get("PWD")}/build/cache/_seed_lock_${name}"
+}
+
+fn sh(cmd: string) -> string {
+    avra_shell_exec("${cmd} 2>&1; echo rc=$?")
+}
+
+fn setup(dir: string, content: string) -> string {
+    // Returns the sha256 of the uncompressed content; leaves
+    // <dir>/artifact.gz on disk for the lock's file:// url.
+    avra_shell_exec("mkdir -p ${dir} && printf '%s\\n' '${content}' > ${dir}/artifact && gzip -9 -c ${dir}/artifact > ${dir}/artifact.gz")
+    avra_shell_exec("sha256sum ${dir}/artifact 2>/dev/null || shasum -a 256 ${dir}/artifact").substring(0, 64)
+}
+
+fn write_lock(dir: string, sha: string, url: string) {
+    avra_shell_exec("printf 'version = 9\\nsha256 = ${sha}\\nurl = ${url}\\n' > ${dir}/test.lock")
+}
+
+spec "seed.lock fetch: pinned-artifact materialization" {
+    given "a lock pinning a file:// artifact by its true sha256" {
+        then "fetch materializes the seed and the content round-trips" {
+            let dir = case_dir("ok")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR alpha")
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            out.contains("rc=0") && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR alpha")
+        }
+    }
+    given "a lock whose sha256 does not match the artifact" {
+        then "fetch refuses with a hash-mismatch error and writes nothing" {
+            let dir = case_dir("bad")
+            avra_shell_exec("rm -rf ${dir}")
+            let _ = setup(dir, "fake seed IR beta")
+            write_lock(dir, "0000000000000000000000000000000000000000000000000000000000000000", "file://${dir}/artifact.gz")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("hash mismatch")
+                && avra_shell_exec("test -f ${dir}/out.ll && echo exists").trim() != "exists"
+        }
+    }
+    given "the destination already holds content matching the pin" {
+        then "fetch is a no-op even when the artifact URL is dead (no clobber, no network)" {
+            let dir = case_dir("noop")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR gamma")
+            avra_shell_exec("cp ${dir}/artifact ${dir}/out.ll && rm ${dir}/artifact.gz")
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll").contains("rc=0")
+        }
+    }
+    given "a lock produced by the publisher's own writer" {
+        then "writer and parser round-trip: the generated lock fetches and verifies" {
+            let dir = case_dir("roundtrip")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR epsilon")
+            let _ = sh("bash scripts/diagnose.sh --write-seed-lock ${dir}/test.lock 7 ${sha} file://${dir}/artifact.gz")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            out.contains("seed v7 materialized") && out.contains("rc=0")
+                && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR epsilon")
+        }
+    }
+    given "a poisoned cache entry squats on the pinned name" {
+        then "fetch drops the corrupt entry and refetches clean bytes" {
+            let dir = case_dir("poison")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR eta")
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            avra_shell_exec("mkdir -p build/cache/seed && printf 'poison' > build/cache/seed/${sha}.ll")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            out.contains("dropping corrupt seed cache entry") && out.contains("rc=0")
+                && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR eta")
+        }
+    }
+    given "a lock still carrying merge-conflict markers" {
+        then "fetch refuses instead of silently serving the ours side" {
+            let dir = case_dir("conflict")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR theta")
+            avra_shell_exec("printf '<<<<<<< HEAD\nversion = 3\n=======\nversion = 2\n>>>>>>> other\nsha256 = ${sha}\nurl = file://${dir}/artifact.gz\n' > ${dir}/test.lock")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("merge-conflict markers")
+        }
+    }
+    given "a lock missing its sha256 line" {
+        then "fetch refuses up front as malformed" {
+            let dir = case_dir("malformed")
+            avra_shell_exec("rm -rf ${dir}")
+            let _ = setup(dir, "fake seed IR zeta")
+            avra_shell_exec("printf 'version = 9\nurl = file://${dir}/artifact.gz\n' > ${dir}/test.lock")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("malformed seed lock")
+        }
+    }
+    given "an artifact that decompresses far beyond the expected size (a gzip bomb)" {
+        then "fetch truncates at the cap and refuses on the resulting hash mismatch" {
+            let dir = case_dir("bomb")
+            avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+            // 64KiB of zeros, gzipped tiny; a 4KiB cap forces truncation.
+            avra_shell_exec("dd if=/dev/zero bs=1024 count=64 2>/dev/null | gzip -9 > ${dir}/artifact.gz")
+            let sha = avra_shell_exec("gunzip -c ${dir}/artifact.gz | sha256sum 2>/dev/null || gunzip -c ${dir}/artifact.gz | shasum -a 256").substring(0, 64)
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            let out = sh("AVRA_SEED_MAX_BYTES=4096 bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0")
+                && avra_shell_exec("test -f ${dir}/out.ll && echo exists").trim() != "exists"
+        }
+    }
+    given "the artifact is unreachable and nothing is cached" {
+        then "fetch fails with the offline guidance" {
+            let dir = case_dir("dead")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR delta")
+            avra_shell_exec("rm ${dir}/artifact.gz")
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            let out = sh("bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("seed fetch failed")
+        }
+    }
+}

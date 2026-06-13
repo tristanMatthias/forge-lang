@@ -1,0 +1,33 @@
+// WHY: spec for --seed-fetch (mode_seed_fetch), the pin-don't-vendor
+// top-level entry. The low-level fetch-and-verify machinery is
+// covered hermetically by seed_lock_fetch_test; this spec pins the
+// wrapper's observable guarantees against the REAL pin: idempotent,
+// never clobbers an existing (possibly locally-cycled) seed.ll, and
+// leaves the seed present on success. Safe in-suite: running the
+// suite requires bs2, and building bs2 already materialized the seed,
+// so the no-clobber short-circuit means no network is touched.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn sh(cmd: string) -> string {
+    avra_shell_exec("${cmd} 2>&1; echo rc=$?")
+}
+
+fn sha_of(path: string) -> string {
+    avra_shell_exec("sha256sum '${path}' 2>/dev/null || shasum -a 256 '${path}'").substring(0, 64)
+}
+
+spec "--seed-fetch: no-clobber and materialization guarantee" {
+    given "a checkout whose seed.ll is already materialized" {
+        then "the mode exits 0 and the seed is present" {
+            let out = sh("bash scripts/diagnose.sh --seed-fetch")
+            out.contains("rc=0") && avra_selfhost_file_exists("seed/seed.ll") == 1
+        }
+        then "back-to-back calls leave seed.ll byte-identical (no clobber)" {
+            let before = sha_of("seed/seed.ll")
+            let _ = sh("bash scripts/diagnose.sh --seed-fetch")
+            before != "" && before == sha_of("seed/seed.ll")
+        }
+    }
+}

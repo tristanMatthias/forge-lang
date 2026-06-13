@@ -1,0 +1,43 @@
+// WHY: spec for the --seed-merge failure taxonomy. The
+// classifier turns a stage-compile exit code + log into one of four
+// classes that decide the next staging step during a seed.ll merge
+// (docs/SEED_MERGES.md). Exercised through the public CLI surface
+// (diagnose.sh --seed-merge-classify) so the spec pins the exact
+// contract --seed-merge dispatches on.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn classify(rc: int, log_body: string) -> string {
+    let path = "build/cache/_seed_merge_classify.log"
+    avra_shell_exec("printf '%s\\n' \"${log_body}\" > ${path}")
+    avra_shell_exec("bash scripts/diagnose.sh --seed-merge-classify ${string(rc)} ${path}").trim()
+}
+
+spec "--seed-merge failure taxonomy" {
+    then "a parse error classifies as parse" {
+        classify(1, "parse error at 12:3: expected expression") == "parse"
+    }
+    then "undefined variable classifies as parse (new literal forms surface this way)" {
+        classify(1, "error[F3000]: undefined variable table") == "parse"
+    }
+    then "a predeclare-table conflict classifies as extern-guard" {
+        classify(1, "extern avra_foo redeclared with a conflicting signature: fn(i64) -> i64") == "extern-guard"
+    }
+    then "death by signal classifies as corruption regardless of log content" {
+        classify(139, "no recognisable text") == "corruption"
+    }
+    then "an unmatched-tag abort classifies as corruption" {
+        classify(1, "unmatched tag 0x14f00ab20") == "corruption"
+    }
+    then "corruption outranks parse when both signatures appear" {
+        // A crashing stage binary often emits partial diagnostics first;
+        // the signal/corruption evidence is the load-bearing fact.
+        classify(139, "parse error at 1:1: expected expression") == "corruption"
+    }
+    then "an empty log with a plain failure exit classifies as unknown" {
+        classify(1, "") == "unknown"
+    }
+    then "no known signature classifies as unknown" {
+        classify(1, "something else entirely") == "unknown"
+    }
+}

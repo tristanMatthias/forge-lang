@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Bootstrap pre-push hook — the bootstrap-window gate.
+#
+# Runs `diagnose.sh --check-bootstrap-window` when any outgoing commit
+# touches bootstrap/. The check enforces the seed-train rule (feature
+# branches never cycle the seed) and rebuilds the branch's compiler
+# source from the integration branch's pristine seed (cached — a green
+# verify is remembered until the integration seed or compiler sources
+# change). See CLAUDE.md "Bootstrap window & seed train".
+#
+# Install: ln -sf ../../bootstrap/scripts/pre-push .git/hooks/pre-push
+#          (or `make install-hooks` from bootstrap/). On checkouts with
+#          core.hooksPath=.beads/hooks, .beads/hooks/pre-push chains here.
+# Skip once: AVRA_SKIP_WINDOW_CHECK=1 git push   (or git push --no-verify)
+#            — use sparingly; an unmergeable seed state lands exactly this way.
+
+set -euo pipefail
+
+REPO_DIR=$(git rev-parse --show-toplevel)
+cd "$REPO_DIR"
+
+if [ "${AVRA_SKIP_WINDOW_CHECK:-0}" = "1" ]; then
+  echo "[pre-push] AVRA_SKIP_WINDOW_CHECK=1 — bootstrap-window gate skipped"
+  exit 0
+fi
+
+# stdin: one "<local-ref> <local-sha> <remote-ref> <remote-sha>" line
+# per ref being pushed. Decide whether anything outgoing could affect
+# the window: bootstrap/ plus the root ignore/attribute files that
+# shape what git (and therefore the gate) sees. Pushes elsewhere in
+# the repo stay instant. A brand-new remote branch always checks —
+# a green verify is cached, so the common case costs well under a
+# second.
+ZERO=0000000000000000000000000000000000000000
+need_check=0
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue   # ref deletion — nothing outgoing
+  if [ "$remote_sha" = "$ZERO" ]; then
+    need_check=1
+    continue
+  fi
+  # The pathspec is a deliberate SUPERSET of diagnose.sh's
+  # WINDOW_SRC_PATHS: over-triggering costs a cached sub-second verify,
+  # under-triggering would skip the gate. -n 1 avoids the head pipe (and
+  # its legitimate-SIGPIPE rc) so a real git failure can fail the push
+  # loudly instead of reading as "nothing touched".
+  if ! touched=$(git rev-list -n 1 "$remote_sha..$local_sha" \
+      -- bootstrap/ .gitignore .gitattributes 2>&1); then
+    echo >&2 "[pre-push] git rev-list failed for $remote_sha..$local_sha:"
+    echo >&2 "$touched"
+    exit 1
+  fi
+  [ -n "$touched" ] && need_check=1
+done
+
+if [ "$need_check" -eq 0 ]; then
+  exit 0
+fi
+
+echo "[pre-push] outgoing commits touch bootstrap/ — verifying the bootstrap window"
+bash bootstrap/scripts/diagnose.sh --check-bootstrap-window

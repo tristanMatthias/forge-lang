@@ -61,6 +61,7 @@ use @std.avrac.fmt.{fmt_stmt_list}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
+use @std.avrac.build.{llvm_prefix_dir}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
           show_search, show_llm, show_callers, show_module,
@@ -1028,86 +1029,74 @@ fn last_index_of(s: string, needle: string) -> int {
 }
 
 // 6owa library-mode: After pre_build_workspace_std_packages
-// populates each @std/* package's cache slot, find every package's
-// realobj.o on disk and join them into AVRA_LIB_OBJS.
+// populates each @std/* package's cache slot, resolve every
+// package's realobj.o and join them into AVRA_LIB_OBJS.
 //
-// Implementation discovers realobjs via shell glob rather than
-// recomputing the cache fingerprint — the build pipeline's fp uses
-// (compiler_hash + profile + target + sources + deps) which is
-// hard to replicate exactly from here, and a glob-walk is more
-// robust to future fp scheme changes. The per-package cache slot
-// is content-addressed so any realobj.o under it is by definition
-// the right binary for THAT source state. Each pre_build invocation
-// publishes a fresh entry; stale realobjs from older source states
-// stay reachable but harmlessly — the linker prefers the freshest
-// definition (later wins).
+// The slot is found via the per-unit `last/<pkg>.txt` sidecar the
+// build driver writes on every publish (write_last_inputs): its
+// `fp:` line names the exact content-addressed entry for the
+// CURRENT source + compiler state. The previous implementation
+// globbed `cache/*/unit.realobj.o` and picked the newest mtime per
+// package — but a stale slot whose realobj.o was lazily
+// materialised later (cache_entry_realobj_path llc's on first
+// read) carries a fresher mtime than the right slot, and shards
+// then linked against a producer .o missing newly-added @std
+// symbols (`undefined symbol: …llvm_prefix_dir` while landing the
+// linker-prefix probe was this exact failure).
 //
-// Returns "" when no realobjs exist (pre-build skipped, or every
-// package's slot is missing the .o). Caller treats this as "no
-// lib-objs env" — shards fall back to the legacy link path.
+// Returns "" when no package resolves a realobj (pre-build skipped,
+// or every slot is missing). Caller treats this as "no lib-objs
+// env" — shards fall back to the legacy link path.
 fn collect_workspace_lib_objs(project_dir: string) -> string {
-    // The cache_entry_realobj_path helper lazily generates the
-    // realobj.o from unit.ll on first request. We call it via a
-    // shell pass so every reachable cache slot's IR gets ll→o'd
-    // before the glob — without this step a freshly-published
-    // cache entry would still be missing its realobj.o until the
-    // FIRST consume (which is now, here, before the glob).
-    //
-    // Shell command kept simple (no shell parameter expansion) so
-    // it doesn't tickle Avra's interpolation parser. The replacement
-    // step uses sed instead of `${ll%.ll}.realobj.o`.
-    let llvm_pfx = if avra_process_env_get("LLVM_PREFIX") == "" { "/opt/homebrew/opt/llvm" } else { avra_process_env_get("LLVM_PREFIX") }
-    let mat_cmd = "for ll in '${project_dir}/packages'/std-*/build/cache/*/unit.ll; do o=`echo \"$ll\" | sed 's/.ll$/.realobj.o/'`; if [ -f \"$ll\" ] && [ ! -f \"$o\" ]; then '${llvm_pfx}/bin/llc' -O2 -relocation-model=pic -filetype=obj \"$ll\" -o \"$o\" 2>/dev/null; fi; done"
-    avra_shell_exec(mat_cmd)
-    let listing = avra_shell_exec("ls -t '${project_dir}/packages'/std-*/build/cache/*/unit.realobj.o 2>/dev/null")
+    let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
     if listing == "" { return "" }
-    let paths = split_by_newline(listing)
-    // Dedup by package: a stale slot's realobj.o would shadow the
-    // fresh one with `later wins` semantics, but we want the FIRST
-    // (most-recently-modified per ls -t) entry per package only.
-    mut seen_pkgs: List<string> = []
+    let pkg_dirs = split_by_newline(listing)
+    let llvm_pfx = resolve_llvm_prefix()
     mut keep: List<string> = []
     mut i = 0
-    while i < paths.length {
-        let p = paths[i]
-        if p != "" {
-            let pkg = extract_pkg_from_realobj(p)
-            if pkg != "" && !name_list_contains(seen_pkgs, pkg) {
-                seen_pkgs.push(pkg)
-                keep.push(p)
+    while i < pkg_dirs.length {
+        let dir = pkg_dirs[i]
+        if dir != "" && avra_selfhost_file_exists("${dir}avra.toml") != 0 {
+            let fp = sidecar_fp_for(dir)
+            mut o = ""
+            if fp != "" {
+                let entry = "${dir}build/cache/${fp}"
+                o = "${entry}/unit.realobj.o"
+                if avra_selfhost_file_exists(o) == 0 {
+                    // Realobjs are materialised lazily from the slot's
+                    // unit.ll on first consume — which is now, here.
+                    avra_shell_exec("'${llvm_pfx}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${entry}/unit.ll' -o '${o}' 2>/dev/null")
+                }
             }
+            if fp == "" || avra_selfhost_file_exists(o) == 0 {
+                // ALL or NOTHING: a partial object set is worse than none.
+                // Shards resolve every @std/* package via metadata, so a
+                // missing producer .o surfaces later as undefined symbols
+                // at link. Returning "" drops to the documented degraded
+                // mode (no lib-objs env; legacy link path) instead.
+                eprintln("[per-file] no usable realobj for ${dir} — disabling the lib-objs fast path for this run")
+                return ""
+            }
+            keep.push(o)
         }
         i = i + 1
     }
     join_with_colon(keep)
 }
 
-/// Extract the package-dir slug from a cached realobj path. The
-/// path shape is `<project>/packages/<pkg>/build/cache/<hex>/unit.realobj.o`;
-/// we want `<pkg>`. Returns "" when the path doesn't match.
-fn extract_pkg_from_realobj(p: string) -> string {
-    let marker = "/packages/"
-    let mi = p.index_of(marker)
-    if mi < 0 { return "" }
-    let after = mi + marker.length
-    // Find the next "/" so we slice exactly the package name.
-    mut j = after
-    while j < p.length {
-        if p.byte(j) == 0x2F { break }
-        j = j + 1
+/// Read the current lib-build fingerprint for a `packages/std-*/`
+/// dir from the driver's last-inputs sidecar. Returns "" when the
+/// sidecar is missing or has no `fp:` line (package never built —
+/// it then simply doesn't contribute to AVRA_LIB_OBJS).
+fn sidecar_fp_for(pkg_dir: string) -> string {
+    let pkg = subdir_basename(pkg_dir)
+    if pkg == "" { return "" }
+    let body = avra_selfhost_read_file("${pkg_dir}build/cache/last/${pkg}.txt")
+    if body == "" { return "" }
+    for line in body.split("\n") {
+        if line.starts_with("fp:") { return line.substring(3, line.length) }
     }
-    if j == after { return "" }
-    p.substring(after, j)
-}
-
-/// `name_list_contains` style helper for the dedup walk above.
-fn name_list_contains(xs: List<string>, target: string) -> bool {
-    mut i = 0
-    while i < xs.length {
-        if xs[i] == target { return true }
-        i = i + 1
-    }
-    false
+    ""
 }
 
 fn join_with_colon(xs: List<string>) -> string {
@@ -1288,11 +1277,9 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // object files (`link_objects` from k21v takes List<.o>), so
     // this is the final step before a multi-unit link.
     // Resolve llc the same way the coverage path does: $LLVM_PREFIX
-    // when set, otherwise the homebrew-on-arm install path. Plain
-    // `llc` rarely sits on $PATH on macOS.
-    let llvm_env = avra_process_env_get("LLVM_PREFIX")
-    let llvm_prefix = if llvm_env == "" { "/opt/homebrew/opt/llvm" } else { llvm_env }
-    let llc_bin = "${llvm_prefix}/bin/llc"
+    // when set, otherwise the probed platform install. Plain `llc`
+    // rarely sits on $PATH on macOS.
+    let llc_bin = "${resolve_llvm_prefix()}/bin/llc"
     mut llc_cmds = []
     mut k = 0
     while k < subdirs.length {
@@ -3212,11 +3199,11 @@ fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
     avra_process_exit(0)
 }
 
-/// LLVM toolchain prefix lookup. `LLVM_PREFIX` env wins; the default
-/// is the homebrew install path on the dev machines this targets.
+/// LLVM toolchain prefix lookup — delegates to the shared probe in
+/// @std.avrac.build.link so the CLI agrees with the library's linker
+/// about where the toolchain lives on every platform.
 fn resolve_llvm_prefix() -> string {
-    let env = avra_process_env_get("LLVM_PREFIX")
-    if env == "" { "/opt/homebrew/opt/llvm" } else { env }
+    llvm_prefix_dir()
 }
 
 // Top-level dispatch for `avra docs`. Pulls argv via parse_docs_args,

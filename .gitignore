@@ -37,3 +37,7 @@
 
 # Gate/test logs (transient)
 .gt/
+
+# Pin-don't-vendor: the seed artifact is fetched per seed/seed.lock,
+# not tracked. A locally cycled seed.ll must never be committed either.
+bootstrap/seed/seed.ll

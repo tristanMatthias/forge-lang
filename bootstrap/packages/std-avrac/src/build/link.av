@@ -9,6 +9,7 @@
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn avra_process_env_get(name: string) -> string
 extern fn avra_host_os() -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
 
 use @std.json.{json_array, json_str}
 
@@ -38,15 +39,53 @@ export fn default_link_options() -> LinkOptions {
     }
 }
 
-/// Resolve the LLVM install root. Honours an explicit `opts.llvm_prefix`
-/// first, then the `LLVM_PREFIX` env var, falling back to the macOS
-/// Homebrew default. Centralised so every linker call ends up with
-/// the same `-L` / runtime-library directory.
-fn resolve_llvm_prefix(opts: LinkOptions) -> string {
-    if opts.llvm_prefix != "" { return opts.llvm_prefix }
+/// Resolve the LLVM toolchain install root. The single source of
+/// truth for every Avra-side site that shells out to llc/opt/
+/// llvm-profdata or links against libLLVM — without this, each site
+/// grew its own env-or-homebrew fallback and `bs2 test` could not
+/// link shards on a Linux box where LLVM_PREFIX wasn't exported.
+///
+/// `LLVM_PREFIX` env wins; otherwise probe the platform install
+/// locations for the pinned LLVM major (20 — kept in sync with
+/// scripts/bootstrap.sh and diagnose.sh), then fall back to the macOS
+/// Homebrew default so behaviour on existing dev machines is unchanged.
+export fn llvm_prefix_dir() -> string {
     let env = avra_process_env_get("LLVM_PREFIX")
     if env != "" { return env }
+    // Pinned-major (llvm-20) prefixes only — the unversioned Homebrew
+    // path is the final fallback below, never a candidate, so a stray
+    // non-20 `/opt/homebrew/opt/llvm` can't shadow a real LLVM 20 install
+    // when both are present.
+    let candidates = [
+        "/usr/lib/llvm-20",
+        "/usr/lib64/llvm20",
+        "/usr/local/llvm-20",
+        "/opt/llvm-20",
+        "/usr/local/opt/llvm@20",
+    ]
+    for c in candidates {
+        if avra_selfhost_file_exists("${c}/bin/llvm-config") == 1 { return c }
+    }
+    // Last probe before the macOS default: a toolchain whose bin dir is
+    // already on PATH (custom prefix the candidates don't know). The
+    // prefix is the bin dir's parent. Pinned-major candidates run FIRST
+    // so a stray older llvm-config on PATH cannot shadow a proper
+    // LLVM 20 install.
+    for entry in avra_process_env_get("PATH").split(":") {
+        if entry.ends_with("/bin") && avra_selfhost_file_exists("${entry}/llvm-config") == 1 {
+            return entry.substring(0, entry.length - 4)
+        }
+    }
     "/opt/homebrew/opt/llvm"
+}
+
+/// Resolve the LLVM install root for one link. Honours an explicit
+/// `opts.llvm_prefix` first, then the shared `llvm_prefix_dir()`
+/// probe. Centralised so every linker call ends up with the same
+/// `-L` / runtime-library directory.
+fn resolve_llvm_prefix(opts: LinkOptions) -> string {
+    if opts.llvm_prefix != "" { return opts.llvm_prefix }
+    llvm_prefix_dir()
 }
 
 /// Build the JSON args array `cc` expects. Object files come first

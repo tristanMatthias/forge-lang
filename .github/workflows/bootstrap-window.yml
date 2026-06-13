@@ -1,0 +1,51 @@
+# sdmg.2 — bootstrap-window gate.
+#
+# Every PR into the integration branch must (a) not change the pinned
+# seed (no seed.lock bumps — feature branches never cycle the seed;
+# the seed train on the integration branch does) and (b) build its
+# compiler source from
+# the integration branch's CURRENT pristine seed, smoke-tested. Any
+# two branches that pass are compilable by the same seed by
+# construction, so the "no seed can compile the union" merge state is
+# unrepresentable. Logic lives in
+# bootstrap/scripts/diagnose.sh --check-bootstrap-window; this
+# workflow only provisions the toolchain and invokes it.
+name: bootstrap-window
+
+on:
+  pull_request:
+    branches: [feat/crafting-intepreters]
+
+# Least privilege: this is a trust gate that runs PR code — it only
+# reads the tree, never writes. Pin read-only so a repo-default change
+# can't silently hand this job a write-capable token.
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-window-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  window:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow is a trust gate.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Read-only workflow — never let the token outlive checkout.
+          persist-credentials: false
+          # Full history: the check needs the merge-base with the
+          # integration branch and that branch's seed blob.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      - name: Bootstrap-window check
+        env:
+          # Indirection keeps the ref out of shell parsing — branch
+          # names are validated by GitHub, but pass data as data.
+          BASE_REF: ${{ github.base_ref }}
+        run: bash bootstrap/scripts/diagnose.sh --check-bootstrap-window "origin/${BASE_REF}"

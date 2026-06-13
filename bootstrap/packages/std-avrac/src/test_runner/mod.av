@@ -28,6 +28,7 @@ use features.modules.{
 use parse.{parse_program_source_at}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
+use build.{llvm_prefix_dir}
 use list_ops.{list_concat}
 use @std.crypto.{sha256_hex, sha256_file}
 
@@ -537,8 +538,7 @@ export fn write_fixture_and_run_no_metadata(path: string, source: string) -> str
 /// run_capture has used for the warning-bag tests; lets the test stay
 /// a 1-line call with no shell escaping.
 export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
-    let llvm_prefix = avra_process_env_get("LLVM_PREFIX")
-    let llvm_pfx = if llvm_prefix == "" { "/opt/homebrew/opt/llvm" } else { llvm_prefix }
+    let llvm_pfx = llvm_prefix_dir()
     let is_mac = avra_host_os() == "macos"
     let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
     let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
@@ -548,7 +548,10 @@ export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
     // bs2/runtime/wrapper hashes; AVRA_LIB_OBJS contents change only
     // when those underlying .o files change.
     let extra_objs_expr = "$(printf '%s\\n' \"$AVRA_LIB_OBJS\" | tr ':' ' ')"
-    let cmd = "out_c=$(./build/bs2 compile '${fixture_path}' 2>&1 || true)\n" +
+    // The compile rides a cross-process slot (diagnose.sh --slot-exec):
+    // uncapped parallel bs2 fixture compiles OOM under the per_file
+    // suite's shard × jobs fan-out.
+    let cmd = "out_c=$(bash scripts/diagnose.sh --slot-exec ./build/bs2 compile '${fixture_path}' 2>&1 || true)\n" +
               "${llvm_pfx}/bin/llc -relocation-model=pic -filetype=obj '${fixture_path}.ll' -o '${fixture_path}.o' >/dev/null 2>&1 || true\n" +
               "cc '${fixture_path}.o' build/runtime.o build/llvm_wrapper.o ${extra_objs_expr} ${ld_sel} -L${llvm_pfx}/lib -lLLVM ${cxxlib} -o '${fixture_path}.bin' >/dev/null 2>&1 || true\n" +
               "out_r=$('${fixture_path}.bin' 2>&1 || true)\n" +

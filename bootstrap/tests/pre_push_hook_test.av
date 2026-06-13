@@ -1,0 +1,47 @@
+// WHY: spec for the pre-push hook's filter layer — the decision logic
+// that runs unconditionally on every push BEFORE the expensive window
+// build: the AVRA_SKIP_WINDOW_CHECK escape hatch (exact-match '1'
+// only), ref deletions (all-zero local sha = nothing outgoing), and
+// empty ref lists. The hook is invoked for real; only the cases that
+// reach the gate itself are left to the bootstrap-window CI workflow
+// and the gate's own live probes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+/// Run the real hook with controlled stdin and an optional env
+/// prefix applied to the HOOK side of the pipe (an assignment before
+/// printf would bind to printf and never reach the hook); capture
+/// combined output plus an rc=N suffix.
+fn run_hook(env_prefix: string, stdin_content: string) -> string {
+    avra_shell_exec("printf '%s\\n' '${stdin_content}' | ${env_prefix}bash scripts/pre-push 2>&1; echo rc=$?")
+}
+
+spec "pre-push hook: gate skip and ref filtering" {
+    given "AVRA_SKIP_WINDOW_CHECK=1" {
+        then "the hook exits 0 and says the gate was skipped" {
+            let out = run_hook("AVRA_SKIP_WINDOW_CHECK=1 ", "")
+            out.contains("bootstrap-window gate skipped") && out.contains("rc=0")
+        }
+    }
+    given "an empty ref list on stdin" {
+        then "the hook exits 0 without reaching the gate" {
+            let out = run_hook("", "")
+            out.contains("rc=0") && !out.contains("verifying the bootstrap window")
+        }
+    }
+    given "a ref-deletion push (all-zero local sha)" {
+        then "nothing outgoing means no gate run" {
+            let zero = "0000000000000000000000000000000000000000"
+            let out = run_hook("", "refs/heads/feat/foo ${zero} refs/heads/feat/foo abc1234")
+            out.contains("rc=0") && !out.contains("verifying the bootstrap window")
+        }
+    }
+    given "the escape hatch holds a value other than exactly '1'" {
+        then "'0' does not skip the gate" {
+            !run_hook("AVRA_SKIP_WINDOW_CHECK=0 ", "").contains("bootstrap-window gate skipped")
+        }
+        then "unset does not skip the gate" {
+            !run_hook("", "").contains("bootstrap-window gate skipped")
+        }
+    }
+}

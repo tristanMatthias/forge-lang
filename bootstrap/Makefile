@@ -1,7 +1,8 @@
 # Bootstrap compiler — friendly Makefile.
 #
 # The bootstrap is FULLY SELF-HOSTED. No Rust compiler needed.
-# It builds from a checked-in LLVM IR seed (seed/seed.ll).
+# It builds from a PINNED LLVM IR seed: seed/seed.lock names the
+# artifact; the build fetches + verifies it into seed/seed.ll.
 #
 # Pipeline:
 #   seed/seed.ll → llc + cc → seed binary → compiles packages/cli/src/main.av → bs2
@@ -21,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -50,6 +51,10 @@ help:
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
 	@echo "  make seed-patch-traps  Patch seed match-traps when adding enum variants"
 	@echo "                         (run BEFORE 'make build' for new ValueType/Stmt/Expr)."
+	@echo "  make seed-publish  Publish seed.ll as a release artifact + bump seed.lock"
+	@echo "                     (integration-branch seed-train operation; needs GH_TOKEN)."
+	@echo "  make seed-train    Automated train advance: build from pin + fixed point +"
+	@echo "                     suite, publish only if the compiler output diverged."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
@@ -207,9 +212,21 @@ endif
 # this preps an existing seed for source that adds variants, before
 # bs2 can build at all; `update-seed` requires a working bs2.
 seed-patch-traps:
+	@$(DIAG) --seed-fetch
 	@python3 scripts/patch-seed-traps.py
 	@rm -f build/seed build/seed.o
 	@echo "seed patched — next 'make build' uses patched seed"
+
+# Publish the local seed as a pinned release artifact + bump seed.lock.
+# Integration-branch (seed train) operation — see CLAUDE.md.
+seed-publish:
+	@$(DIAG) --seed-publish
+
+# The full automated train advance (build from pin, fixed point, suite,
+# publish-if-diverged). CI runs this on every integration push; use the
+# target for manual advances.
+seed-train:
+	@$(DIAG) --seed-train
 
 # Verify bootstrap chain integrity (no auto-cycle on failure).
 # Builds seed → bs2 → verifies bs2 self-compiles → verifies bs3 self-compiles.
@@ -221,10 +238,15 @@ verify-seed:
 seed-sigs:
 	@$(DIAG) --seed-sigs
 
-# Install the pre-commit hook (idempotent).
+# Install the pre-commit + pre-push hooks (idempotent). Note: on
+# checkouts where beads set core.hooksPath=.beads/hooks, git ignores
+# .git/hooks entirely — the committed .beads/hooks/* chain to these
+# scripts instead, so both wirings stay live.
 install-hooks:
 	@ln -sf ../../bootstrap/scripts/pre-commit ../.git/hooks/pre-commit
+	@ln -sf ../../bootstrap/scripts/pre-push ../.git/hooks/pre-push
 	@echo "installed: .git/hooks/pre-commit -> bootstrap/scripts/pre-commit"
+	@echo "installed: .git/hooks/pre-push   -> bootstrap/scripts/pre-push"
 
 # Remove all build artifacts. Source and seed are preserved.
 #

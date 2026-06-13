@@ -17,6 +17,9 @@ REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
 FORGE_DIR="$REPO_DIR/avra"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
 SEED_LL="$BOOTSTRAP_DIR/seed/seed.ll"
+SEED_LOCK="$BOOTSTRAP_DIR/seed/seed.lock"
+SEED_FETCH_CACHE="$BUILD_DIR/cache/seed"
+SEED_REPO_SLUG="${AVRA_SEED_REPO:-tristanmatthias/forge-lang}"
 SEED_BIN="$BUILD_DIR/seed"
 RUNTIME_C="$BOOTSTRAP_DIR/runtime.c"
 RUNTIME_O="$BUILD_DIR/runtime.o"
@@ -152,6 +155,12 @@ fi
 
 LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
+# The integration branch the seed train runs on. Feature
+# branches never cycle the seed; --check-bootstrap-window verifies a
+# branch against this branch's pristine seed. Override per-repo or
+# per-invocation with AVRA_INTEGRATION_BRANCH.
+INTEGRATION_BRANCH="${AVRA_INTEGRATION_BRANCH:-feat/crafting-intepreters}"
+
 C_RED='\033[0;31m'
 C_GREEN='\033[0;32m'
 C_YELLOW='\033[0;33m'
@@ -282,6 +291,79 @@ SEED MANAGEMENT
                          mismatches, new functions, and removed functions.
                          Catches the most common seed staleness issue:
                          parameter count changes that cause silent corruption.
+  --check-bootstrap-window [ref]
+                         Enforce the seed-train rule. Gate 1: no commit on
+                         this branch (since the merge-base with the
+                         integration branch) CHANGES the pinned seed content
+                         (seed.lock bumps; seed.ll commits on pre-lock
+                         history). Gate 2: HEAD's compiler source (what a
+                         push ships — untracked/uncommitted files don't
+                         count) builds from the integration branch's CURRENT
+                         pristine seed in an isolated tree (cold unit cache)
+                         and the produced compiler passes a smoke run.
+                         [ref] defaults to origin/$AVRA_INTEGRATION_BRANCH
+                         (feat/crafting-intepreters). Result is cached in
+                         build/window/.window_verified keyed on the
+                         integration seed + compiler sources; bypass with
+                         AVRA_FORCE_WINDOW=1. Wired into the pre-push hook
+                         and the bootstrap-window CI workflow.
+  --seed-merge [--base ours|theirs|<ref>]
+                         One-command seed-merge staging. For a merge where
+                         the seed pin conflicted (seed.lock, or seed.ll on
+                         pre-lock history): picks a base seed (default:
+                         tries ours, then theirs), patches match traps,
+                         builds stage1, compiles the merged source, links
+                         bs2, self-compile verifies, then regenerates the
+                         seed (--update-seed) and verifies the fixed point.
+                         On a stage failure it reports the failure class —
+                         parse / extern-guard / corruption — with next-step
+                         hints, and falls through to the next candidate.
+                         Recipe + taxonomy: docs/SEED_MERGES.md.
+  --seed-merge-classify <rc> <logfile>
+                         INTERNAL (spec-tested): print the --seed-merge
+                         failure class for a stage-compile exit code + log.
+  --seed-fetch           Materialize seed/seed.ll from seed/seed.lock
+                         (pin-don't-vendor): download the pinned
+                         GitHub Releases artifact, verify its sha256,
+                         install it. No-op when seed.ll already exists —
+                         a locally cycled seed is never clobbered.
+  --seed-publish         Publish the local seed/seed.ll as a GitHub
+                         Releases artifact (tag seed/v<N>) and bump
+                         seed/seed.lock to pin it. Needs GH_TOKEN with
+                         Contents:write. Lock bumps belong on the
+                         integration branch (the seed train) —
+                         gate 1 rejects them elsewhere at push time.
+  --seed-fetch-from <lock> <dest>
+                         INTERNAL (spec-tested): materialize+verify a
+                         seed from an arbitrary lock file (file:// URLs
+                         work, which is how the spec stays hermetic).
+  --write-seed-lock <lock> <version> <sha256> <url>
+                         INTERNAL (spec-tested): write a lock in the
+                         exact format --seed-publish produces, so the
+                         writer/parser round-trip is pinned by spec.
+  --seed-train           The automated train advance: build from the
+                         pin (no auto-cycle), verify the fixed point,
+                         run the spec suite, then publish + bump the
+                         lock ONLY when the compiler's output diverged
+                         from the pinned artifact (provenance aside).
+                         Run by .github/workflows/seed-train.yml on
+                         every integration push; `make seed-train`
+                         for manual advances.
+  --seed-canonical-sha <file>
+                         INTERNAL (spec-tested): sha256 of a seed IR
+                         with provenance comment lines stripped — the
+                         train's "did the compiler change" identity.
+  --seed-inputs-hash <seed.ll> [runtime.c] [llvm_wrapper.c]
+                         INTERNAL (spec-tested): the path-independent
+                         seed-binary input fingerprint (seed IR + C
+                         link inputs) that keys build/seed and the
+                         window's reuse fast path.
+  --slot-exec <cmd...>   Run <cmd> while holding one of AVRA_FIXTURE_JOBS
+                         (default 2) cross-process compile slots — the
+                         OOM guard bounding concurrent bs2 fixture
+                         compiles during parallel test runs. --run takes
+                         a slot automatically; use this to wrap direct
+                         `bs2 compile` shell-outs.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -350,17 +432,319 @@ ensure_llvm_wrapper() {
   fi
 }
 
-# Build the seed binary from seed/seed.ll (no Rust compiler needed).
-# The seed IR is checked into the repo and is the bootstrap's lifeline.
+# ── Seed lock: pin-don't-vendor ──
+#
+# The seed artifact is PINNED, not vendored (Rust stage0 model):
+# seed/seed.lock (tracked, a few lines) names a version, the sha256 of
+# the uncompressed seed IR, and a GitHub Releases download URL.
+# seed/seed.ll itself is a gitignored local materialization — fetched
+# on demand, or written locally by `make update-seed` during dev
+# iteration. The lock advances only on the integration branch (the
+# seed train), published via --seed-publish.
+
+# Read one `key = value` field from a lock file ($1=file, $2=key).
+seed_lock_field() {
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" 2>/dev/null | head -1
+}
+
+# Materialize a seed .ll from a lock file: $1=lockfile, $2=dest.ll.
+# Downloads the gz artifact (content-cached by sha under
+# build/cache/seed/), verifies the UNCOMPRESSED sha256, installs
+# atomically. An existing dest with the right hash short-circuits.
+#
+# Every failure RETURNS non-zero (with the reason on stderr) instead
+# of die-ing: callers decide severity — the build path aborts, while
+# --seed-merge falls through to its next candidate seed.
+fetch_seed_from_lock() {
+  [ $# -eq 2 ] || die "usage: fetch_seed_from_lock <lockfile> <dest.ll>"
+  local lock="$1" dest="$2"
+  [ -f "$lock" ] || { err "no seed lock at $lock"; return 1; }
+  # An unresolved merge leaves conflict markers in the lock, and the
+  # field parser would silently serve the FIRST (ours) side as if the
+  # merge were resolved. Refuse: the resolution is taking the HIGHER
+  # version line, and it must be deliberate.
+  if grep -qE '^(<<<<<<< |=======$|>>>>>>> )' "$lock"; then
+    err "seed lock $lock contains merge-conflict markers — resolve the merge first"
+    err "(artifacts are immutable: take the HIGHER version line; docs/SEED_MERGES.md)"
+    return 1
+  fi
+  local want_sha url version
+  want_sha=$(seed_lock_field "$lock" sha256)
+  url=$(seed_lock_field "$lock" url)
+  version=$(seed_lock_field "$lock" version)
+  [ -n "$want_sha" ] && [ -n "$url" ] \
+    || { err "malformed seed lock $lock (need sha256 + url)"; return 1; }
+
+  if [ -f "$dest" ] \
+     && [ "$($SHA256_CMD "$dest" | awk '{print $1}')" = "$want_sha" ]; then
+    return 0
+  fi
+
+  mkdir -p "$SEED_FETCH_CACHE"
+  # The cache is content-addressed by the PINNED sha, but trust nothing:
+  # re-verify on the hit path too, so a truncated or tampered cache
+  # entry is dropped and refetched instead of installed. (A mutation
+  # test that disabled download-side verification poisoned this cache
+  # and the hit path happily served the poison — hence this check.)
+  local cached="$SEED_FETCH_CACHE/$want_sha.ll"
+  if [ -f "$cached" ] \
+     && [ "$($SHA256_CMD "$cached" | awk '{print $1}')" != "$want_sha" ]; then
+    warn "dropping corrupt seed cache entry $cached (content does not match its name)"
+    rm -f "$cached"
+  fi
+  if [ ! -f "$cached" ]; then
+    log "fetching seed v${version:-?} from $url"
+    local gz="$SEED_FETCH_CACHE/$want_sha.ll.gz.tmp.$$"
+    # Deliberately NO Authorization header: the URL comes from the lock
+    # file, and shipping a credential to an attacker-controlled host is
+    # how tokens leak. Release assets on this (public) repo download
+    # anonymously; integrity comes from the sha256 pin, not the channel.
+    if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$gz" "$url"; then
+      rm -f "$gz"
+      err "seed fetch failed: $url"
+      err "Offline? A previously materialized seed/seed.ll keeps working; otherwise"
+      err "obtain the artifact for lock v${version:-?} (sha256 $want_sha) and place it"
+      err "at $dest."
+      return 1
+    fi
+    # Cap the decompressed size: the hash pin stops SUBSTITUTION but
+    # not EXPANSION — a small gzip of endless zeros would fill the
+    # disk before verification ever ran. head truncates at the cap;
+    # a truncated legitimate artifact then fails the hash check.
+    # (AVRA_SEED_MAX_BYTES exists so the spec can exercise the cap
+    # without writing gigabytes.)
+    local max_bytes="${AVRA_SEED_MAX_BYTES:-2147483648}"
+    if ! gunzip -c "$gz" | head -c "$max_bytes" > "$cached.tmp.$$"; then
+      rm -f "$gz" "$cached.tmp.$$"
+      err "seed artifact gunzip failed (truncated download, or larger than $max_bytes bytes)"
+      return 1
+    fi
+    rm -f "$gz"
+    local got_sha
+    got_sha=$($SHA256_CMD "$cached.tmp.$$" | awk '{print $1}')
+    if [ "$got_sha" != "$want_sha" ]; then
+      rm -f "$cached.tmp.$$"
+      err "seed artifact hash mismatch: lock pins $want_sha, artifact is $got_sha — refusing"
+      return 1
+    fi
+    mv "$cached.tmp.$$" "$cached"
+  fi
+  mkdir -p "$(dirname "$dest")"
+  if ! cp "$cached" "$dest.tmp.$$" || ! mv "$dest.tmp.$$" "$dest"; then
+    rm -f "$dest.tmp.$$"
+    err "failed to install materialized seed at $dest (cp/mv failed)"
+    return 1
+  fi
+  log "seed v${version:-?} materialized at $dest (sha256 verified)"
+}
+
+# Write a seed lock pinning one artifact: $1=lock path, $2=version,
+# $3=sha256 of the uncompressed IR, $4=download URL. The single
+# producer of the lock format seed_lock_field parses — spec-tested as
+# a round-trip so the two can never drift apart silently.
+write_seed_lock() {
+  local lock="$1" version="$2" sha="$3" url="$4"
+  cat > "$lock" <<EOF
+# Avra bootstrap seed lock — pin-don't-vendor.
+# seed/seed.ll is NOT in git: the build fetches this pinned artifact and
+# verifies the sha256 of the uncompressed IR. The lock advances only on
+# the integration branch (the seed train) via:
+#   bash scripts/diagnose.sh --seed-publish
+# Merge conflict on this file = two train advances raced; take the
+# HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.
+version = $version
+sha256 = $sha
+url = $url
+EOF
+}
+
+# Ensure seed/seed.ll exists locally: present = use as-is (it may
+# legitimately be AHEAD of the lock during dev iteration — never
+# clobber); missing = fetch per the lock (the fresh-clone path).
+ensure_seed_materialized() {
+  [ -f "$SEED_LL" ] && return 0
+  [ -f "$SEED_LOCK" ] || die "neither seed/seed.ll nor seed/seed.lock exists — repo is corrupt"
+  fetch_seed_from_lock "$SEED_LOCK" "$SEED_LL" \
+    || die "could not materialize the pinned seed (reasons above)"
+}
+
+mode_seed_fetch() {
+  ensure_seed_materialized
+  ok "$SEED_LL"
+}
+
+# The sha256 of a ref's EFFECTIVE seed content: the tracked seed.ll
+# blob hashed directly (pre-lock history), or the lock's pinned sha256
+# (lock-era). Empty when the ref has neither. Lets gate 1 compare seed
+# SEMANTICS across the vendored→pinned transition instead of file
+# paths — the vendored→pinned migration commit touches both files without
+# changing the seed.
+ref_seed_sha256() {
+  local r="$1"
+  if git -C "$REPO_DIR" rev-parse --verify --quiet "$r:bootstrap/seed/seed.ll" >/dev/null; then
+    git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.ll" | $SHA256_CMD | awk '{print $1}'
+  elif git -C "$REPO_DIR" rev-parse --verify --quiet "$r:bootstrap/seed/seed.lock" >/dev/null; then
+    local tmp; tmp=$(mktemp)
+    git -C "$REPO_DIR" cat-file blob "$r:bootstrap/seed/seed.lock" > "$tmp"
+    seed_lock_field "$tmp" sha256
+    rm -f "$tmp"
+  fi
+}
+
+# Publish the CURRENT local seed/seed.ll as a release artifact and
+# bump seed/seed.lock to pin it. Seed-train discipline: lock bumps
+# belong on the integration branch only (gate 1 of the bootstrap
+# window rejects them elsewhere at push time).
+mode_seed_publish() {
+  [ -f "$SEED_LL" ] || die "no local seed at $SEED_LL — build one first (make update-seed)"
+  [ -n "${GH_TOKEN:-}" ] || die "--seed-publish needs GH_TOKEN (Contents:write on $SEED_REPO_SLUG)"
+  command -v python3 >/dev/null || die "--seed-publish needs python3 (JSON handling)"
+
+  local cur_branch
+  cur_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
+  if [ "$cur_branch" != "$INTEGRATION_BRANCH" ]; then
+    warn "publishing from '$cur_branch' (the lock normally advances on '$INTEGRATION_BRANCH' only)"
+  fi
+
+  local version=1
+  if [ -f "$SEED_LOCK" ]; then
+    local prev; prev=$(seed_lock_field "$SEED_LOCK" version)
+    if [ -n "$prev" ]; then
+      case "$prev" in
+        *[!0-9]*) die "seed lock version '$prev' is not a number — fix seed/seed.lock first" ;;
+      esac
+      version=$((prev + 1))
+    fi
+  fi
+  local sha tag
+  sha=$($SHA256_CMD "$SEED_LL" | awk '{print $1}')
+  tag="seed/v$version"
+
+  local staging="$BUILD_DIR/seed_publish"
+  mkdir -p "$staging"
+
+  # A corrupt pin bricks every fresh clone until the next train
+  # advance, so prove the artifact is a working compiler before it
+  # becomes the pin: build a stage binary from it and smoke-run a
+  # compile. ~60-90s on a rare operation; AVRA_SKIP_PUBLISH_VERIFY=1
+  # for genuine emergencies only.
+  if [ "${AVRA_SKIP_PUBLISH_VERIFY:-0}" != "1" ]; then
+    ensure_runtime
+    ensure_llvm_wrapper
+    log "verifying the seed before publishing (stage build + smoke)"
+    llc_link_bin "$SEED_LL" "$staging/verify.o" "$staging/verify_bin" "$staging/verify.build.log"       || { cat "$staging/verify.build.log" >&2; die "seed fails to build — refusing to publish a broken artifact"; }
+    smoke_test_compiler "$staging" "$staging/verify_bin"       || die "seed binary fails the smoke run — refusing to publish a broken artifact"
+  fi
+
+  log "compressing seed.ll for upload"
+  gzip -9 -c "$SEED_LL" > "$staging/seed.ll.gz" || die "gzip failed"
+
+  local commit api="https://api.github.com/repos/$SEED_REPO_SLUG"
+  commit=$(git -C "$REPO_DIR" rev-parse HEAD)
+  log "creating release $tag on $SEED_REPO_SLUG (target $commit)"
+  local rel_json rel_id
+  rel_json=$(curl -fsS --connect-timeout 15 --max-time 180 --retry 3 -X POST -H "Authorization: Bearer $GH_TOKEN" \
+    -H "Content-Type: application/json" "$api/releases" \
+    -d "{\"tag_name\":\"$tag\",\"target_commitish\":\"$commit\",\"name\":\"bootstrap seed v$version\",\"body\":\"Avra bootstrap seed artifact, pinned by bootstrap/seed/seed.lock.\\nsha256 (uncompressed): $sha\",\"prerelease\":true}") \
+    || die "release create failed for $tag (already exists? bump again or delete it)"
+  rel_id=$(printf '%s' "$rel_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') \
+    || die "could not parse release id"
+  log "uploading seed.ll.gz ($(du -h "$staging/seed.ll.gz" | cut -f1 | tr -d ' '))"
+  curl -fsS --connect-timeout 15 --max-time 300 --retry 3 -X POST -H "Authorization: Bearer $GH_TOKEN" \
+    -H "Content-Type: application/gzip" \
+    --data-binary @"$staging/seed.ll.gz" \
+    "https://uploads.github.com/repos/$SEED_REPO_SLUG/releases/$rel_id/assets?name=seed.ll.gz" \
+    >/dev/null || {
+      # Drop the asset-less release so a retry can recreate the same
+      # tag instead of dying on "already exists".
+      curl -fsS --connect-timeout 15 --max-time 60 -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+        "$api/releases/$rel_id" >/dev/null 2>&1 || :
+      die "asset upload failed (release $tag rolled back — safe to retry)"
+    }
+
+  write_seed_lock "$SEED_LOCK" "$version" "$sha" \
+    "https://github.com/$SEED_REPO_SLUG/releases/download/$tag/seed.ll.gz"
+  rm -f "$staging/seed.ll.gz"
+  ok "published $tag and pinned it in seed/seed.lock"
+  log "next: git add bootstrap/seed/seed.lock && commit (a 'chore(seed): cycle' train commit)"
+}
+
+# Advance the seed train: after a merge lands on the integration
+# branch, decide whether the pinned seed is stale relative to the
+# merged compiler source and publish + pin the regenerated seed when
+# it is. Run by .github/workflows/seed-train.yml after every
+# integration push (or manually via `make seed-train`). With the
+# train automated, the full loop is: feature branches never cycle
+# (gate-enforced) → merge → CI advances the pin → everyone dogfoods
+# on rebase.
+mode_seed_train() {
+  # The train never papers over breakage: if the pinned seed cannot
+  # build the merged source, the window gate failed and a human needs
+  # to look — refuse to auto-cycle around it.
+  export NO_AUTOCYCLE=1
+
+  log "seed train: building from the current pin"
+  mode_build_bs2
+  mode_check_fixedpoint || die "fixed point broken on the train — refusing to publish"
+
+  log "seed train: running the spec suite"
+  ( cd "$BOOTSTRAP_DIR" && "$BS2" test ) || die "suite red on the train — refusing to publish"
+
+  # Publish only when the compiler's OUTPUT changed: compare the
+  # generation-2 IR against the pinned artifact, provenance aside.
+  # Doc-only / test-only merges advance nothing.
+  local candidate="$SRC_DIR/main.av.ll"
+  [ -f "$candidate" ] || die "no generated IR at $candidate after the fixed-point check"
+  local pinned="$BUILD_DIR/seed_train.pinned.ll"
+  fetch_seed_from_lock "$SEED_LOCK" "$pinned" \
+    || die "cannot fetch the pinned artifact (the train needs network to publish anyway)"
+  if [ "$(seed_canonical_sha "$pinned")" = "$(seed_canonical_sha "$candidate")" ]; then
+    ok "seed train: the pin already matches the compiler's output — nothing to publish"
+    return 0
+  fi
+
+  log "seed train: compiler output diverged from the pin — advancing"
+  mode_update_seed
+  mode_seed_publish
+  ok "seed train advanced — commit bootstrap/seed/seed.lock to complete the cycle"
+}
+
+# sha256 of a seed IR with comment lines stripped. update-seed stamps
+# provenance comments (commit, timestamp) into the artifact, so two
+# pins of byte-identical compiler OUTPUT differ textually; bs2's own
+# emitter never writes comment lines, so stripping `;` lines yields a
+# stable identity for "did the compiler actually change".
+seed_canonical_sha() {
+  grep -v '^;' "$1" | $SHA256_CMD | awk '{print $1}'
+}
+
+# Content fingerprint for a seed binary's full input set: the seed IR
+# plus the C link inputs (runtime.c, llvm_wrapper.c) — build/seed
+# links runtime.o + llvm_wrapper.o, so editing either C file must
+# relink it. Path-independent (hashes of content only), so the same
+# seed content fingerprints identically from seed/seed.ll and from a
+# window-extracted copy. Before the C inputs were keyed, a stale seed
+# kept the OLD C behaviour and its failures got misattributed
+# downstream (ensure_bs2's -O2-miscompile fallback fired for what was
+# really an out-of-date wrapper).
+seed_inputs_hash() {
+  # $2/$3 override the C inputs (the window gate fingerprints HEAD's
+  # copies); default to the dev tree's.
+  { $SHA256_CMD "$1" "${2:-$RUNTIME_C}" "${3:-$BOOTSTRAP_DIR/llvm_wrapper.c}" 2>/dev/null; } \
+    | awk '{print $1}' | $SHA256_CMD | awk '{print $1}'
+}
+
 ensure_seed() {
   ensure_llvm_wrapper
   ensure_runtime
+  ensure_seed_materialized
   # Use hash comparison (race-free) instead of `-nt` mtime check —
   # consistent with ensure_runtime / ensure_llvm_wrapper and immune
   # to the APFS second-granularity race source_newer_than was fixed
   # for. A change to seed/seed.ll (typically from `make update-seed`
-  # in the same shell session as a previous build) reliably invalidates.
-  local seed_hash; seed_hash=$(md5sum "$SEED_LL" 2>/dev/null || md5 -q "$SEED_LL" 2>/dev/null)
+  # in the same shell session as a previous build) — or to the C link
+  # inputs — reliably invalidates.
+  local seed_hash; seed_hash=$(seed_inputs_hash "$SEED_LL")
   local seed_hash_file="$BUILD_DIR/.seed_hash"
   local old_seed_hash; old_seed_hash=$(cat "$seed_hash_file" 2>/dev/null)
   if [ "${1:-}" = "force" ] || [ ! -x "$SEED_BIN" ] || [ "$seed_hash" != "$old_seed_hash" ]; then
@@ -868,6 +1252,16 @@ mode_check_fixedpoint() {
     ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR"
     echo "$fp_input" > "$fp_marker"
   else
+    # Strict callers (the seed train sets NO_AUTOCYCLE=1) must NOT have
+    # divergence papered over by an auto-cycle: a heal-then-pass here
+    # would publish a seed the pinned compiler couldn't reproduce. Fail
+    # loud and let a human look.
+    if [ "${NO_AUTOCYCLE:-0}" = "1" ]; then
+      err "FIXED POINT BROKEN — auto-cycle disabled (NO_AUTOCYCLE=1)"
+      err "  bs2 IR: $BUILD_DIR/fp_bs2.ll"
+      err "  bs3 IR: $BUILD_DIR/fp_bs3.ll"
+      return 1
+    fi
     # Auto-converge: cycle the seed up to 3 times to reach equilibrium.
     # This handles cases where adding new functions shifts allocator state.
     local max_cycles=3
@@ -911,6 +1305,62 @@ mode_check_fixedpoint() {
   fi
 }
 
+# ── Fixture-compile throttle ──
+#
+# A bs2 compile peaks 1-2GB RSS. The per_file test suite fans out
+# shard binaries × AVRA_TEST_JOBS threads, and any unit can shell out
+# a fixture compile — uncapped, the burst OOM-killed bs2 mid-suite
+# (Linux 16GB/4-core; same class as the documented macOS jetsam
+# mass-kill). Bound the SHELL-SPAWNED compiles with a cross-process
+# counting semaphore: N slot directories under build/, mkdir as the
+# atomic test-and-set (portable — macOS ships no flock(1)), a pid
+# file per slot so crashed holders get reaped instead of leaking the
+# slot forever.
+COMPILE_SLOT_DIR=""
+
+acquire_compile_slot() {
+  # AVRA_SLOT_DIR overrides the namespace — spec tests use a private
+  # one so they never contend with (or corrupt) a real suite's slots.
+  local n="${AVRA_FIXTURE_JOBS:-2}" base="${AVRA_SLOT_DIR:-$BUILD_DIR/compile_slots}" dir owner i
+  mkdir -p "$base"
+  while :; do
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      dir="$base/slot.$i"
+      if mkdir "$dir" 2>/dev/null; then
+        echo $$ > "$dir/pid"
+        COMPILE_SLOT_DIR="$dir"
+        return 0
+      fi
+      # Reap a slot whose owner died without releasing. The pid file
+      # is written right after mkdir; an empty read means the owner is
+      # mid-acquire — leave it alone.
+      owner=$(cat "$dir/pid" 2>/dev/null)
+      if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+        rm -rf "$dir" 2>/dev/null || :
+      fi
+      i=$((i + 1))
+    done
+    sleep 0.2
+  done
+}
+
+release_compile_slot() {
+  [ -n "$COMPILE_SLOT_DIR" ] && rm -rf "$COMPILE_SLOT_DIR" 2>/dev/null
+  COMPILE_SLOT_DIR=""
+}
+
+# Run an arbitrary command while holding a compile slot. The shell-out
+# surface for callers that can't share this script's functions (the
+# test runner's cached-fixture commands). The EXIT trap releases on
+# every path, including die/kill.
+mode_slot_exec() {
+  [ $# -ge 1 ] || die "--slot-exec needs a command to run"
+  acquire_compile_slot
+  trap release_compile_slot EXIT
+  "$@"
+}
+
 # Compile + link + run a .av with bs2 (or stage1).
 run_fg() {
   local fg="$1"
@@ -938,11 +1388,16 @@ run_fg() {
   # wrong error message. The $$ suffix isolates per-shard.
   local run_log="$BUILD_DIR/last_run.log.$$"
   local link_log="$BUILD_DIR/last_link.log.$$"
+  # Slot-bounded: this is the per-unit fixture-compile path the test
+  # suite fans out — the OOM source on 4-core/16GB machines.
+  acquire_compile_slot
+  trap release_compile_slot EXIT
   if ! "$BS2" compile "$fg" >"$run_log" 2>&1; then
     cat "$run_log" >&2
     rm -f "$run_log"
     die "bs2 codegen failed"
   fi
+  release_compile_slot
   link_ll "$ll" "$bin" "$link_log"
   rm -f "$run_log" "$link_log"
   "$bin"
@@ -1251,6 +1706,17 @@ main() {
     --verify-seed)        mode_verify_seed "$@" ;;
     --seed-patch)         mode_seed_patch "$@" ;;
     --seed-sigs)          mode_seed_sigs "$@" ;;
+    --seed-fetch)         mode_seed_fetch "$@" ;;
+    --seed-fetch-from)    fetch_seed_from_lock "$@" ;;
+    --write-seed-lock)    write_seed_lock "$@" ;;
+    --seed-publish)       mode_seed_publish "$@" ;;
+    --seed-train)         mode_seed_train "$@" ;;
+    --seed-canonical-sha) seed_canonical_sha "$@" ;;
+    --seed-inputs-hash)   seed_inputs_hash "$@" ;;
+    --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
+    --seed-merge)         mode_seed_merge "$@" ;;
+    --seed-merge-classify) seed_merge_classify "$@" ;;
+    --slot-exec)          mode_slot_exec "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }
@@ -1704,6 +2170,606 @@ mode_seed_sigs() {
   else
     ok "no parameter count mismatches (new/removed functions are expected during development)"
   fi
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Staging-pipeline helpers (shared by the bootstrap window + seed merge)
+# ─────────────────────────────────────────────────────────────────────
+
+# llc -O2 the IR at $1 into the object $2, link it with the C runtime
+# objects into the binary $3 (atomic .tmp+mv); all tool stderr goes to
+# the log $4. Returns 1 on llc failure, 2 on link failure — callers
+# own the user-facing message for each.
+llc_link_bin() {
+  local ll="$1" obj="$2" out="$3" buildlog="$4"
+  # $5/$6 override the C runtime objects — the window gate links
+  # against objects compiled from HEAD's C sources, not the dev tree's.
+  local runtime_o="${5:-$RUNTIME_O}" wrapper_o="${6:-$LLVM_WRAPPER_O}"
+  "$LLC" -O2 $LLC_RELOC -filetype=obj "$ll" -o "$obj" 2>"$buildlog" || return 1
+  cc -o "$out.tmp" "$obj" "$runtime_o" "$wrapper_o" \
+    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>>"$buildlog" \
+    || { rm -f "$out.tmp"; return 2; }
+  mv "$out.tmp" "$out"
+}
+
+# Materialize the seed pinned by a git tree-ish at $2. $1 is a ref
+# ("origin/main", a sha) or an index stage (":2" / ":3"); $3 is
+# scratch space for an extracted lock file. Prefers a tracked seed.ll
+# blob (pre-lock history), else fetches + verifies per that tree's
+# seed.lock. Returns non-zero (dest removed) when the tree pins no
+# seed or the fetch fails.
+materialize_treeish_seed() {
+  local spec="$1" dest="$2" locktmp="$3"
+  if git -C "$REPO_DIR" show "$spec:bootstrap/seed/seed.ll" > "$dest" 2>/dev/null; then
+    return 0
+  fi
+  if git -C "$REPO_DIR" show "$spec:bootstrap/seed/seed.lock" > "$locktmp" 2>/dev/null; then
+    fetch_seed_from_lock "$locktmp" "$dest" && return 0
+    rm -f "$dest"
+    return 1
+  fi
+  rm -f "$dest"
+  err "'$spec' has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
+  return 1
+}
+
+# Run a compile with the test runner's metadata fast-path env stripped.
+# The staging pipelines must see the source as a fresh clone would —
+# inherited producer objects could alias the very mismatch these
+# checks exist to surface.
+hermetic_compile_env() {
+  env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT \
+      -u AVRA_DIR_MODULE -u AVRA_COMPILER "$@"
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Bootstrap window
+# ─────────────────────────────────────────────────────────────────────
+
+# The seed-train rule: feature branches never cycle the seed — the
+# integration branch advances it in dedicated `chore(seed): cycle`
+# commits, serialized after merges land. Two gates enforce it:
+#
+#   1. seed-train — no commit on this branch (since the merge-base
+#      with the integration branch) CHANGES the pinned seed content.
+#   2. window     — the branch's compiler source builds from the
+#      integration branch's CURRENT pristine seed, in an isolated
+#      copy of the source tree with a cold unit cache, and the
+#      produced compiler passes a smoke compile+run.
+#
+# Any two branches that pass both gates are compilable by the same
+# seed BY CONSTRUCTION, so the "no seed can compile the union" merge
+# state (the 2026-06-11 incident) becomes unrepresentable. See
+# docs/SEED_MERGES.md and CLAUDE.md "Bootstrap window & seed train".
+#
+# The window build is isolated on purpose: the dev unit cache keys
+# entries on (entry fingerprint + compiler hash) but not transitive
+# sources, so compiling in-tree could spuriously reuse a cached
+# main.av.ll and mask a real violation — and would poison the dev
+# caches with stage-binary artifacts. A cold tree has neither problem.
+
+# Echo the integration ref to verify against: refresh origin/<branch>
+# (best-effort — offline falls back to the last fetched state) and
+# prefer it over a local branch of the same name.
+window_resolve_integration_ref() {
+  git -C "$REPO_DIR" fetch --quiet origin "$INTEGRATION_BRANCH" 2>/dev/null || true
+  if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$INTEGRATION_BRANCH" >/dev/null; then
+    echo "origin/$INTEGRATION_BRANCH"
+  elif git -C "$REPO_DIR" rev-parse --verify --quiet "$INTEGRATION_BRANCH" >/dev/null; then
+    echo "$INTEGRATION_BRANCH"
+  else
+    die "cannot resolve integration branch '$INTEGRATION_BRANCH' (set AVRA_INTEGRATION_BRANCH or pass a ref)"
+  fi
+}
+
+# Gate 1: no commit on this branch changes the pinned seed content.
+# File touches alone aren't the crime — the vendored→pinned migration
+# deletes seed.ll and adds a lock pinning byte-identical content, so
+# the effective seed sha256 is compared across the range before
+# rejecting. Returns 1 on a violation (message printed).
+window_gate_seed_train() {
+  local ref="$1" head_sha="$2" ref_sha="$3"
+  local cur_branch
+  cur_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
+  if [ "$cur_branch" = "$INTEGRATION_BRANCH" ] || [ "$head_sha" = "$ref_sha" ]; then
+    log "on the integration branch — seed-train gate not applicable (seed cycles live here)"
+    return 0
+  fi
+  local mb offenders
+  mb=$(git -C "$REPO_DIR" merge-base "$head_sha" "$ref_sha") \
+    || die "no merge-base between HEAD and $ref — wrong integration branch?"
+  offenders=$(git -C "$REPO_DIR" log --format='  %h %s' "$mb..$head_sha" -- \
+    bootstrap/seed/seed.ll bootstrap/seed/seed.lock)
+  if [ -n "$offenders" ]; then
+    local head_seed mb_seed
+    head_seed=$(ref_seed_sha256 "$head_sha")
+    mb_seed=$(ref_seed_sha256 "$mb")
+    if [ -n "$head_seed" ] && [ "$head_seed" = "$mb_seed" ]; then
+      log "seed pin commits found but the pinned content is unchanged (vendored→pinned migration)"
+      offenders=""
+    fi
+  fi
+  if [ -n "$offenders" ]; then
+    err "SEED-TRAIN VIOLATION — feature branches never cycle the seed"
+    err "commits changing the seed pin (seed.ll / seed.lock) since the merge-base with $ref:"
+    printf '%s\n' "$offenders" >&2
+    err ""
+    err "Fix: drop/revert the seed change and stop dogfooding post-seed features in"
+    err "compiler src — seed advancement happens on '$INTEGRATION_BRANCH' only, as"
+    err "dedicated 'chore(seed): cycle' commits after merges land. To restore:"
+    err "  git checkout $ref -- bootstrap/seed/seed.lock   # (seed.ll on pre-lock history)"
+    err "(CLAUDE.md 'Bootstrap window & seed train'; bootstrap/docs/SEED_MERGES.md)"
+    return 1
+  fi
+  ok "seed-train gate — no seed cycles on this branch"
+  if ! git -C "$REPO_DIR" diff --quiet HEAD -- bootstrap/seed/seed.lock bootstrap/seed/seed.ll 2>/dev/null; then
+    warn "working-tree seed pin differs from HEAD (auto-cycle debris?) — do NOT commit it;"
+    warn "restore with: git checkout HEAD -- bootstrap/seed/"
+  fi
+}
+
+# The gate verifies HEAD, not the working tree: a push ships commits,
+# so an untracked scratch file must not fail it and an uncommitted fix
+# must not green it (CI checks out exactly this state). One pathspec
+# drives the source list, the tree copy, and the dirty-tree warning.
+WINDOW_SRC_PATHS=(bootstrap/packages 'bootstrap/*.toml' bootstrap/runtime.c bootstrap/llvm_wrapper.c)
+
+# Echo "blob-sha path" lines for the compiler-relevant sources at
+# commit $1. Git already knows the blob hashes, so this is one
+# subprocess instead of re-hashing ~500 files.
+window_src_list() {
+  git -C "$REPO_DIR" ls-tree -r "$1" --format='%(objectname) %(path)' -- \
+      "${WINDOW_SRC_PATHS[@]}" \
+    | LC_ALL=C sort
+}
+
+# Echo the verify-cache fingerprint for commit $2: integration seed
+# identity + the blob-sha/path line of every compiler-relevant source.
+# Paths stay in the hash — a rename-only change alters module
+# resolution and must not reuse a stale PASS marker. Test files are
+# excluded: main.av's import graph never reaches */tests/*, so
+# test-only commits must not bust the cache.
+window_fingerprint() {
+  local seed_id="$1" commit="$2"
+  { echo "seed:$seed_id"
+    window_src_list "$commit" | grep -v '/tests/'
+  } | $SHA256_CMD | awk '{print $1}'
+}
+
+# Copy the compiler sources AT COMMIT $2 into $1/tree so the window
+# compile sees exactly what a push ships, starts from a cold unit
+# cache, and writes nothing into the dev tree.
+window_copy_tree() {
+  local win="$1" commit="$2"
+  rm -rf "$win/tree"
+  mkdir -p "$win/tree"
+  git -C "$REPO_DIR" archive "$commit" -- "${WINDOW_SRC_PATHS[@]}" \
+    | tar -xf - -C "$win/tree" \
+    || die "source-tree copy failed"
+  # git archive preserves symlinks; one pointing outside the tree
+  # would make the compile read content that is NOT in HEAD, breaking
+  # the gate's whole claim. No legitimate compiler source is a
+  # symlink — refuse outright.
+  local links
+  links=$(find "$win/tree" -type l | head -5)
+  [ -z "$links" ] || die "symlinked compiler sources are not supported by the gate:
+$links"
+}
+
+# Compile HEAD's C runtime inputs from the copied tree into
+# window-local objects (flags mirror ensure_runtime /
+# ensure_llvm_wrapper). The gate must link the C code that ships, not
+# whatever the dev tree currently holds.
+window_c_objects() {
+  local win="$1"
+  cc -c -O0 -g -o "$win/runtime.o" "$win/tree/bootstrap/runtime.c" \
+    || die "window runtime.c compile failed"
+  cc -c -O2 -I"$LLVM_PREFIX/include" -o "$win/llvm_wrapper.o" "$win/tree/bootstrap/llvm_wrapper.c" \
+    || die "window llvm_wrapper.c compile failed"
+}
+
+# Echo the path of a stage binary built from the integration seed at
+# $2/seed.ll, linked against the window-local C objects. Reuses the
+# dev build/seed when its full input fingerprint (seed IR + C inputs)
+# matches; otherwise builds (and caches) a window-local one.
+window_stage_binary() {
+  local ref="$1" win="$2" ref_sha="$3"
+  local win_seed_fp
+  win_seed_fp=$(seed_inputs_hash "$win/seed.ll" \
+    "$win/tree/bootstrap/runtime.c" "$win/tree/bootstrap/llvm_wrapper.c")
+  if [ -x "$SEED_BIN" ] && [ "$(cat "$BUILD_DIR/.seed_hash" 2>/dev/null)" = "$win_seed_fp" ]; then
+    log "integration seed is byte-identical to the local build/seed — reusing it"
+    echo "$SEED_BIN"
+    return 0
+  fi
+  local stage_bin="$win/seed_bin"
+  if [ "$(cat "$win/.stage_fp" 2>/dev/null)" = "$win_seed_fp" ] && [ -x "$stage_bin" ]; then
+    log "window stage binary cached for this integration seed"
+    echo "$stage_bin"
+    return 0
+  fi
+  log "building stage binary from the integration seed ($ref @ ${ref_sha:0:12})"
+  case $(llc_link_bin "$win/seed.ll" "$win/seed.o" "$stage_bin" "$win/stage.build.log" \
+           "$win/runtime.o" "$win/llvm_wrapper.o"; echo $?) in
+    0) : ;;
+    1) err "llc rejected the INTEGRATION seed itself — integration-side problem,"
+       err "not a window violation. Check $ref's seed health (make verify-seed there)."
+       tail -5 "$win/stage.build.log" >&2
+       return 1 ;;
+    *) cat "$win/stage.build.log" >&2; die "window stage link failed" ;;
+  esac
+  printf '%s' "$win_seed_fp" > "$win/.stage_fp"
+  echo "$stage_bin"
+}
+
+# Compile + run a small program with the compiler $2 (scratch dir $1)
+# and verify its output, proving the compiler is not garbage. Used by
+# the window gate on the window-built compiler and by --seed-publish
+# on the stage binary of the seed about to become the pin.
+smoke_test_compiler() {
+  local win="$1" bs2w="$2" runtime_o="${3:-}" wrapper_o="${4:-}"
+  cat > "$win/smoke.av" <<'SMOKE'
+type Pair = { a: int, b: int }
+
+enum Shape {
+    Dot,
+    Wide(w: int),
+}
+
+fn add(a: int, b: int) -> int { a + b }
+
+fn main() -> int {
+    let xs = [1, 2, 3]
+    mut sum = 0
+    for x in xs { sum = sum + x }
+    let tag = if sum == 6 { "ok" } else { "bad" }
+    let double = (n: int) -> n * 2
+    let p = Pair { a: double(sum), b: xs[1] }
+    let shape_w = match Shape.Wide(p.a + p.b) {
+        .Dot -> 0
+        .Wide(w) -> w
+    }
+    println("window-smoke ${tag} ${string(add(shape_w, 4))}")
+    0
+}
+SMOKE
+  hermetic_compile_env "$bs2w" compile "$win/smoke.av" >"$win/smoke.compile.log" 2>&1 \
+    || { tail -10 "$win/smoke.compile.log" >&2; die "window-built compiler failed to compile the smoke program"; }
+  llc_link_bin "$win/smoke.av.ll" "$win/smoke.o" "$win/smoke.bin" "$win/smoke.build.log" \
+      ${runtime_o:+"$runtime_o"} ${wrapper_o:+"$wrapper_o"} \
+    || { cat "$win/smoke.build.log" >&2; die "smoke build failed"; }
+  local smoke_out
+  smoke_out=$("$win/smoke.bin")
+  if [ "$smoke_out" != "window-smoke ok 18" ]; then
+    err "window-built compiler produced a broken binary — smoke output was:"
+    printf '  %s\n' "$smoke_out" >&2
+    err "expected: window-smoke ok 18"
+    return 1
+  fi
+}
+
+mode_check_bootstrap_window() {
+  local ref="${1:-}"
+  [ -n "$ref" ] || ref=$(window_resolve_integration_ref) || return 1
+  local head_sha ref_sha
+  head_sha=$(git -C "$REPO_DIR" rev-parse HEAD) || die "not a git checkout"
+  ref_sha=$(git -C "$REPO_DIR" rev-parse "$ref^{commit}") || die "cannot resolve ref '$ref'"
+
+  window_gate_seed_train "$ref" "$head_sha" "$ref_sha" || return 1
+
+  local win="$BUILD_DIR/window"
+  mkdir -p "$win"
+  local seed_id
+  seed_id=$(ref_seed_sha256 "$ref")
+  [ -n "$seed_id" ] || die "$ref has neither bootstrap/seed/seed.ll nor bootstrap/seed/seed.lock"
+
+  # The gate verifies HEAD — what a push actually ships. Warn when the
+  # working tree diverges so a manual run isn't mistaken for a verdict
+  # on uncommitted work.
+  if [ -n "$(git -C "$REPO_DIR" status --porcelain -- "${WINDOW_SRC_PATHS[@]}" 2>/dev/null | head -1)" ]; then
+    warn "compiler sources in the working tree differ from HEAD — the gate verifies HEAD (commit first)"
+  fi
+
+  local fp marker="$win/.window_verified"
+  fp=$(window_fingerprint "$seed_id" "$head_sha")
+  if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
+     && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
+    ok "bootstrap window cached — integration seed + compiler sources unchanged since last verify"
+    return 0
+  fi
+
+  # One window build at a time: a pre-push hook, a manual run and a
+  # local CI rehearsal share build/window/, and a concurrent rm -rf of
+  # the tree mid-compile produces garbage verdicts. mkdir is the
+  # atomic test-and-set (macOS ships no flock); a pid file lets a
+  # crashed holder's lock be reaped instead of wedging the gate.
+  local gate_lock="$win/.lock"
+  while ! mkdir "$gate_lock" 2>/dev/null; do
+    local owner; owner=$(cat "$gate_lock/pid" 2>/dev/null)
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$gate_lock"
+      continue
+    fi
+    log "another window verify is running (pid ${owner:-?}) — waiting"
+    sleep 2
+  done
+  echo $$ > "$gate_lock/pid"
+  trap 'rm -rf "$BUILD_DIR/window/.lock"' EXIT
+
+  # The wait may have outlasted the other run — its green marker is
+  # ours to reuse.
+  if [ "${AVRA_FORCE_WINDOW:-0}" != "1" ] && [ -f "$marker" ] \
+     && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
+    ok "bootstrap window cached — verified by a concurrent run"
+    return 0
+  fi
+
+  materialize_treeish_seed "$ref" "$win/seed.ll" "$win/integration.seed.lock" \
+    || die "cannot materialize the integration seed"
+
+  log "copying HEAD's compiler sources into an isolated tree"
+  window_copy_tree "$win" "$head_sha"
+  local entry="$win/tree/bootstrap/packages/cli/src/main.av"
+  [ -f "$entry" ] || die "copied tree is missing $entry"
+  window_c_objects "$win"
+
+  local stage_bin
+  stage_bin=$(window_stage_binary "$ref" "$win" "$ref_sha") || return 1
+
+  log "compiling HEAD's compiler source with the integration seed"
+  if ! hermetic_compile_env "$stage_bin" compile "$entry" >"$win/compile.log" 2>&1; then
+    err "BOOTSTRAP WINDOW VIOLATION — compiler source does not build from the integration seed"
+    err "The branch dogfoods syntax/enum-variants newer than '$INTEGRATION_BRANCH''s seed"
+    err "(or depends on a local seed cycle that never happened on the train)."
+    err ""
+    err "Fix: keep the new feature's implementation, but remove its USE from compiler"
+    err "src until the feature lands and the integration seed advances past it"
+    err "(CLAUDE.md Phase A/B discipline). Compile log (excerpt):"
+    tail -15 "$win/compile.log" >&2
+    err "full log: $win/compile.log"
+    return 1
+  fi
+
+  log "linking the window-built compiler"
+  llc_link_bin "$entry.ll" "$win/bs2w.o" "$win/bs2w" "$win/bs2w.build.log" \
+      "$win/runtime.o" "$win/llvm_wrapper.o" \
+    || { cat "$win/bs2w.build.log" >&2; die "window compiler build failed"; }
+
+  log "smoke-testing the window-built compiler"
+  smoke_test_compiler "$win" "$win/bs2w" "$win/runtime.o" "$win/llvm_wrapper.o" || return 1
+
+  printf '%s' "$fp" > "$marker"
+  ok "bootstrap window holds — HEAD's source builds + runs from $ref's pristine seed"
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Seed-merge staging
+# ─────────────────────────────────────────────────────────────────────
+
+# Classify a failed stage-compile of the merged source. Mirrors the
+# taxonomy of docs/SEED_MERGES.md "choosing a base":
+#   corruption   — the stage binary died by signal / corrupted memory
+#                  while compiling: the base seed predates a
+#                  codegen-correctness fix present in the union (the
+#                  alloca zero-init class). The side that HAS the fix
+#                  should win.
+#   extern-guard — the base seed's baked predeclare table conflicts
+#                  with the merged source's extern signatures; the
+#                  side whose refactor it is should win.
+#   parse        — the base seed's parser predates surface syntax in
+#                  the merged source. NOTE: new literal forms often
+#                  surface as `undefined variable`, not a parse error
+#                  — both classify here.
+#   unknown      — none of the known signatures matched; read the log.
+seed_merge_classify() {
+  local rc="$1" logfile="$2"
+  if [ "$rc" -ge 128 ] \
+     || grep -qiE 'segmentation fault|bus error|illegal instruction|unmatched tag|signal [0-9]+' "$logfile" 2>/dev/null; then
+    echo corruption; return
+  fi
+  if grep -q 'redeclared with a conflicting signature' "$logfile" 2>/dev/null; then
+    echo extern-guard; return
+  fi
+  if grep -qiE 'parse error|unterminated|F0001|F3100|undefined variable' "$logfile" 2>/dev/null; then
+    echo parse; return
+  fi
+  echo unknown
+}
+
+# Human next-step hints per failure class, with a log excerpt.
+seed_merge_hint() {
+  local cand="$1" cls="$2" logfile="$3"
+  err "[$cand] stage-compile failed — class: $cls"
+  case "$cls" in
+    parse)
+      err "  The '$cand' seed's parser predates syntax in the merged source (new"
+      err "  literal forms often surface as 'undefined variable'). The side that"
+      err "  HAS the parser for it should be the base. If BOTH sides land here,"
+      err "  the union dogfoods two branches' new syntax — the state the"
+      err "  bootstrap window forbids; stage via IR-level patching as a last"
+      err "  resort (docs/SEED_MERGES.md)."
+      ;;
+    extern-guard)
+      err "  The '$cand' seed's baked predeclare table conflicts with the merged"
+      err "  source's extern signatures. The side whose extern refactor it is"
+      err "  should be the base (its seed already matches the new signatures)."
+      ;;
+    corruption)
+      err "  The '$cand' stage binary corrupted while compiling the merged source"
+      err "  — it predates a codegen-correctness fix present in the union."
+      err "  Prefer the side that HAS the fix in its machine code."
+      err "  Forensics: AVRA_REDZONES=1, docs/RC_MEMORY_RUNBOOK.md."
+      ;;
+    *)
+      err "  No known failure signature matched — read the log."
+      ;;
+  esac
+  err "  log (tail): $logfile"
+  tail -6 "$logfile" >&2 2>/dev/null || :
+}
+
+# Try one candidate base seed end-to-end short of seed regeneration:
+# materialize it at seed/seed.ll, patch traps, build stage1 off to the
+# side (dev caches untouched), compile the merged source, link bs2,
+# self-compile verify. Returns non-zero when the candidate cannot
+# stage the union (class + hints printed) so the driver can fall
+# through to the next one. On success $mdir/bs2m is the verified
+# compiler for the merged source.
+seed_merge_attempt() {
+  local cand="$1" mdir="$2"
+  log "── attempt: base seed = $cand ──"
+  local spec=""
+  case "$cand" in
+    ours)    spec=":2" ;;
+    theirs)  spec=":3" ;;
+    current) : ;;
+    *)       spec="$cand" ;;
+  esac
+  if [ -n "$spec" ]; then
+    materialize_treeish_seed "$spec" "$SEED_LL" "$mdir/cand.$cand.lock" \
+      || { err "[$cand] could not materialize this side's pinned seed"; return 1; }
+  fi
+
+  # Tolerate the other side's new ValueType/Expr/Stmt variants.
+  log "[$cand] patching seed match traps"
+  (cd "$BOOTSTRAP_DIR" && python3 scripts/patch-seed-traps.py) >"$mdir/traps.$cand.log" 2>&1 \
+    || warn "[$cand] trap patch failed (see $mdir/traps.$cand.log) — continuing unpatched"
+
+  log "[$cand] building stage1 from this seed"
+  case $(llc_link_bin "$SEED_LL" "$mdir/stage1.o" "$mdir/stage1" "$mdir/stage1.$cand.log"; echo $?) in
+    0) : ;;
+    1) err "[$cand] llc rejected the seed IR — corrupt seed artifact; log: $mdir/stage1.$cand.log"
+       return 1 ;;
+    *) err "[$cand] stage1 link failed; log: $mdir/stage1.$cand.log"
+       return 1 ;;
+  esac
+
+  # Unlike the window gate (which verifies HEAD), merge staging
+  # compiles the WORKING TREE on purpose: mid-merge there is no merged
+  # commit yet — the worktree IS the union being staged.
+  log "[$cand] stage1 compiling the merged source"
+  local rc=0 cls
+  hermetic_compile_env "$mdir/stage1" compile "$SRC_DIR/main.av" >"$mdir/compile.$cand.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    cls=$(seed_merge_classify "$rc" "$mdir/compile.$cand.log")
+    seed_merge_hint "$cand" "$cls" "$mdir/compile.$cand.log"
+    return 1
+  fi
+
+  log "[$cand] linking bs2 from the stage1-compiled source"
+  case $(llc_link_bin "$SRC_DIR/main.av.ll" "$mdir/bs2m.o" "$mdir/bs2m" "$mdir/bs2m.$cand.log"; echo $?) in
+    0) : ;;
+    1) err "[$cand] llc rejected stage1's emitted IR (mis-codegen); log: $mdir/bs2m.$cand.log"
+       return 1 ;;
+    *) err "[$cand] bs2 link failed; log: $mdir/bs2m.$cand.log"
+       return 1 ;;
+  esac
+
+  log "[$cand] self-compile verify (bs2 compiles its own source)"
+  rc=0
+  hermetic_compile_env "$mdir/bs2m" compile "$SRC_DIR/main.av" >"$mdir/selfcompile.$cand.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    cls=$(seed_merge_classify "$rc" "$mdir/selfcompile.$cand.log")
+    seed_merge_hint "$cand" "$cls" "$mdir/selfcompile.$cand.log"
+    return 1
+  fi
+}
+
+# Print how to stage the resolution once the merge is green — which
+# file to add depends on which pin shape actually conflicted.
+seed_merge_next_steps() {
+  if [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.lock)" ]; then
+    log "next: re-run 'make test', publish the regenerated seed, and resolve the lock:"
+    log "  bash scripts/diagnose.sh --seed-publish && git add bootstrap/seed/seed.lock"
+  elif [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll)" ]; then
+    log "next: re-run 'make test', then stage the resolution:"
+    log "  git add bootstrap/seed/seed.ll"
+  else
+    log "next: re-run 'make test'; on lock-era history publish + commit the lock bump"
+    log "  (bash scripts/diagnose.sh --seed-publish)"
+  fi
+}
+
+# One-command seed-merge staging: encode the staging dance that
+# resolving a seed-pin merge conflict requires. The seed train makes
+# this rare — it's for merges INTO the integration branch, and for
+# histories that predate the gate.
+mode_seed_merge() {
+  local base=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base)   base="${2:?--base needs ours|theirs|<ref>}"; shift 2 ;;
+      --base=*) base="${1#--base=}"; shift ;;
+      *) die "--seed-merge: unknown argument '$1' (expected --base ours|theirs|<ref>)" ;;
+    esac
+  done
+
+  local mdir="$BUILD_DIR/seed_merge"
+  mkdir -p "$mdir"
+
+  # The conflicted artifact is seed.lock on lock-era history, seed.ll
+  # on pre-lock history; seed_merge_attempt handles either shape.
+  local conflicted=""
+  [ -n "$(git -C "$REPO_DIR" ls-files -u -- bootstrap/seed/seed.ll bootstrap/seed/seed.lock)" ] && conflicted=1
+
+  local candidates=()
+  if [ -n "$conflicted" ]; then
+    case "$base" in
+      ours|theirs) candidates=("$base") ;;
+      "")          candidates=(ours theirs) ;;
+      *)           candidates=("$base") ;;
+    esac
+    log "the seed pin is merge-conflicted — candidates: ${candidates[*]}"
+  else
+    case "$base" in
+      ours|theirs) die "--base $base needs an in-progress merge conflict on the seed pin (seed.ll / seed.lock)" ;;
+      "")          log "the seed pin is not conflicted — staging from the current seed"
+                   candidates=(current)
+                   # "current" stages whatever seed the working tree
+                   # pins; on a fresh lock-era checkout that seed may
+                   # not be materialized yet.
+                   ensure_seed_materialized ;;
+      *)           candidates=("$base") ;;
+    esac
+  fi
+
+  [ -f "$SEED_LL" ] && cp "$SEED_LL" "$mdir/seed.orig.ll"
+  ensure_runtime
+  ensure_llvm_wrapper
+
+  local cand
+  for cand in "${candidates[@]}"; do
+    seed_merge_attempt "$cand" "$mdir" || continue
+
+    # Candidate survived the whole chain — commit to it. main.av.ll is
+    # now bs2's OWN output (generation 2); regenerate the seed from it
+    # with provenance, rebuild from the new seed, verify fixed point.
+    ok "[$cand] staging chain green — regenerating the seed from generation-2 IR"
+    cp "$mdir/bs2m" "$BS2"
+    mode_update_seed
+    rm -f "$BS3"
+    ensure_seed force
+    ensure_bs2 force
+    if ! mode_check_fixedpoint; then
+      err "[$cand] fixed point failed after seed regeneration — restoring the original seed"
+      [ -f "$mdir/seed.orig.ll" ] && cp "$mdir/seed.orig.ll" "$SEED_LL"
+      return 1
+    fi
+
+    ok "seed merge staged: base=$cand, seed regenerated, fixed point holds"
+    seed_merge_next_steps
+    return 0
+  done
+
+  err "NO candidate base seed could stage the merged source (tried: ${candidates[*]})"
+  err "Per-candidate classes + hints are above; logs live in $mdir/."
+  err "Last resort: IR-level patching of the intermediate main.av.ll —"
+  err "see docs/SEED_MERGES.md 'when NEITHER seed can compile the union'."
+  if [ -f "$mdir/seed.orig.ll" ]; then
+    cp "$mdir/seed.orig.ll" "$SEED_LL"
+    log "restored the original working-tree seed.ll"
+  fi
+  return 1
 }
 
 main "$@"
