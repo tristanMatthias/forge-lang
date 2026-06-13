@@ -358,6 +358,11 @@ SEED MANAGEMENT
                          seed-binary input fingerprint (seed IR + C
                          link inputs) that keys build/seed and the
                          window's reuse fast path.
+  --seed-self-contained <seed.ll>
+                         INTERNAL (spec-tested): exit 0 iff the IR
+                         defines every @std symbol it uses (no extern
+                         declares) — the train's guard that a pin can
+                         bootstrap a fresh clone with no other objects.
   --slot-exec <cmd...>   Run <cmd> while holding one of AVRA_FIXTURE_JOBS
                          (default 2) cross-process compile slots — the
                          OOM guard bounding concurrent bs2 fixture
@@ -690,11 +695,28 @@ mode_seed_train() {
   log "seed train: running the spec suite"
   ( cd "$BOOTSTRAP_DIR" && "$BS2" test ) || die "suite red on the train — refusing to publish"
 
+  # The published seed MUST be self-contained: a fresh clone bootstraps
+  # it via seed.ll -> llc + cc -> seed binary with no other objects. The
+  # build above may have used the metadata fast-path (AVRA_USE_METADATA
+  # + AVRA_LIB_OBJS), which leaves @std symbols as EXTERN DECLARATIONS in
+  # main.av.ll rather than definitions — fine for an incremental link,
+  # fatal for a pin (the 2026-06-13 first-train failure: such a seed
+  # bricks every fresh clone with undefined @std symbols). Recompile
+  # hermetically (metadata fast-path stripped) so the candidate defines
+  # every symbol it references; this also makes the divergence compare
+  # below apples-to-apples against the (self-contained) pinned artifact.
+  log "seed train: regenerating a self-contained seed IR (hermetic compile)"
+  ( cd "$BOOTSTRAP_DIR" && hermetic_compile_env "$BS2" compile "$SRC_DIR/main.av" ) \
+    >"$BUILD_DIR/seed_train.hermetic.log" 2>&1 \
+    || { cat "$BUILD_DIR/seed_train.hermetic.log" >&2; die "hermetic recompile failed — cannot produce a self-contained seed"; }
+
   # Publish only when the compiler's OUTPUT changed: compare the
   # generation-2 IR against the pinned artifact, provenance aside.
   # Doc-only / test-only merges advance nothing.
   local candidate="$SRC_DIR/main.av.ll"
-  [ -f "$candidate" ] || die "no generated IR at $candidate after the fixed-point check"
+  [ -f "$candidate" ] || die "no generated IR at $candidate after the hermetic recompile"
+  seed_is_self_contained "$candidate" \
+    || die "regenerated seed still references extern @std symbols — refusing to pin a non-bootstrappable seed (see $BUILD_DIR/seed_train.hermetic.log)"
   local pinned="$BUILD_DIR/seed_train.pinned.ll"
   fetch_seed_from_lock "$SEED_LOCK" "$pinned" \
     || die "cannot fetch the pinned artifact (the train needs network to publish anyway)"
@@ -707,6 +729,18 @@ mode_seed_train() {
   mode_update_seed
   mode_seed_publish
   ok "seed train advanced — commit bootstrap/seed/seed.lock to complete the cycle"
+}
+
+# A seed IR MUST be self-contained: a fresh clone bootstraps it via
+# seed.ll -> llc + cc -> seed binary with no other objects, so every
+# @std package symbol it uses has to be DEFINED in the IR, never left
+# as an extern `declare` (the metadata fast-path emits externs and
+# resolves them from separate .o files — fine for an incremental build,
+# fatal for a pin). The mangled prefix for @std package symbols is
+# `$40std` (`@` escaped); C externs like @avra_alloc are unmangled and
+# don't match. True (0) iff the IR declares no @std externs. $1 = IR path.
+seed_is_self_contained() {
+  ! grep -qE '^declare .*\$40std' "$1"
 }
 
 # sha256 of a seed IR with comment lines stripped. update-seed stamps
@@ -1713,6 +1747,7 @@ main() {
     --seed-train)         mode_seed_train "$@" ;;
     --seed-canonical-sha) seed_canonical_sha "$@" ;;
     --seed-inputs-hash)   seed_inputs_hash "$@" ;;
+    --seed-self-contained) seed_is_self_contained "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
