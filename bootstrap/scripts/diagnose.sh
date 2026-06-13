@@ -740,7 +740,17 @@ mode_seed_train() {
 # `$40std` (`@` escaped); C externs like @avra_alloc are unmangled and
 # don't match. True (0) iff the IR declares no @std externs. $1 = IR path.
 seed_is_self_contained() {
-  ! grep -qE '^declare .*\$40std' "$1"
+  # An I/O failure must never read as "self-contained" — distinguish a
+  # clean no-extern result (0) from a missing/unreadable IR or a grep
+  # error (2), rather than collapsing every non-zero into success.
+  [ $# -eq 1 ] || die "usage: --seed-self-contained <seed.ll>"
+  [ -r "$1" ] || { err "cannot read IR: $1"; return 2; }
+  grep -qE '^declare .*\$40std' "$1"
+  case $? in
+    0) return 1 ;;  # an extern @std decl remains — NOT self-contained
+    1) return 0 ;;  # no extern @std decls — self-contained
+    *) err "failed to inspect IR: $1"; return 2 ;;
+  esac
 }
 
 # sha256 of a seed IR with comment lines stripped. update-seed stamps
