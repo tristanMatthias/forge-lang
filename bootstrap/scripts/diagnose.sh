@@ -360,9 +360,10 @@ SEED MANAGEMENT
                          window's reuse fast path.
   --seed-self-contained <seed.ll>
                          INTERNAL (spec-tested): exit 0 iff the IR
-                         defines every @std symbol it uses (no extern
-                         declares) — the train's guard that a pin can
-                         bootstrap a fresh clone with no other objects.
+                         defines every Avra-package symbol it uses (no
+                         mangled extern declares) — the train's guard
+                         that a pin can bootstrap a fresh clone with no
+                         other objects.
   --slot-exec <cmd...>   Run <cmd> while holding one of AVRA_FIXTURE_JOBS
                          (default 2) cross-process compile slots — the
                          OOM guard bounding concurrent bs2 fixture
@@ -715,8 +716,9 @@ mode_seed_train() {
   # Doc-only / test-only merges advance nothing.
   local candidate="$SRC_DIR/main.av.ll"
   [ -f "$candidate" ] || die "no generated IR at $candidate after the hermetic recompile"
-  seed_is_self_contained "$candidate" \
-    || die "regenerated seed still references extern @std symbols — refusing to pin a non-bootstrappable seed (see $BUILD_DIR/seed_train.hermetic.log)"
+  # Self-containment is enforced at the seed-writing chokepoint
+  # (mode_update_seed), so it holds for `make update-seed` too — not
+  # only this path.
   local pinned="$BUILD_DIR/seed_train.pinned.ll"
   fetch_seed_from_lock "$SEED_LOCK" "$pinned" \
     || die "cannot fetch the pinned artifact (the train needs network to publish anyway)"
@@ -733,22 +735,24 @@ mode_seed_train() {
 
 # A seed IR MUST be self-contained: a fresh clone bootstraps it via
 # seed.ll -> llc + cc -> seed binary with no other objects, so every
-# @std package symbol it uses has to be DEFINED in the IR, never left
+# Avra-package symbol it uses has to be DEFINED in the IR, never left
 # as an extern `declare` (the metadata fast-path emits externs and
 # resolves them from separate .o files — fine for an incremental build,
-# fatal for a pin). The mangled prefix for @std package symbols is
-# `$40std` (`@` escaped); C externs like @avra_alloc are unmangled and
-# don't match. True (0) iff the IR declares no @std externs. $1 = IR path.
+# fatal for a pin). Mangled package symbols carry the `$40` prefix
+# (`@` escaped, e.g. `$40std$3A$3A...`); C externs like @avra_alloc are
+# unmangled and don't match, so a `declare` of any `$40`-mangled symbol
+# is exactly an unresolved package reference. True (0) iff the IR
+# declares no such externs. $1 = IR path.
 seed_is_self_contained() {
   # An I/O failure must never read as "self-contained" — distinguish a
   # clean no-extern result (0) from a missing/unreadable IR or a grep
   # error (2), rather than collapsing every non-zero into success.
   [ $# -eq 1 ] || die "usage: --seed-self-contained <seed.ll>"
   [ -r "$1" ] || { err "cannot read IR: $1"; return 2; }
-  grep -qE '^declare .*\$40std' "$1"
+  grep -qE '^declare .*\$40' "$1"
   case $? in
-    0) return 1 ;;  # an extern @std decl remains — NOT self-contained
-    1) return 0 ;;  # no extern @std decls — self-contained
+    0) return 1 ;;  # a mangled package extern remains — NOT self-contained
+    1) return 0 ;;  # no mangled package externs — self-contained
     *) err "failed to inspect IR: $1"; return 2 ;;
   esac
 }
@@ -1785,6 +1789,13 @@ mode_update_seed() {
     printf '; source hash: %s\n' "$src_hash"
     cat "$SEED_LL"
   } > "${SEED_LL}.tmp" && mv "${SEED_LL}.tmp" "$SEED_LL"
+
+  # The chokepoint for every seed write (train, seed-merge, manual
+  # `make update-seed`): a seed that leaves package symbols as extern
+  # `declare`s (a metadata fast-path build) can't bootstrap a fresh
+  # clone. Refuse to write one rather than pin a brick downstream.
+  seed_is_self_contained "$SEED_LL" \
+    || die "refusing to write a non-self-contained seed: $SEED_LL references extern package symbols (rebuild with the metadata fast-path disabled — the seed must define every symbol it uses)"
 
   rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
   ok "seed/seed.ll updated ($(wc -l < "$SEED_LL" | tr -d ' ') lines)"

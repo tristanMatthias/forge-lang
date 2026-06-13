@@ -7,20 +7,21 @@
 // emitter never writes any), making provenance-only differences
 // invisible and real IR changes loud.
 //
-// (2) Self-containment — a published seed MUST define every @std
-// symbol it uses: a fresh clone bootstraps it via seed.ll -> llc + cc
-// -> seed binary with NO other objects, so an extern `declare` of an
-// @std symbol (`$40std...` mangled) is an unresolvable reference that
-// bricks the pin. This is exactly the 2026-06-13 first-train failure:
-// a metadata fast-path build leaked extern @std decls into the
-// candidate, the publish-verify link refused it, and the train must
-// now regenerate a self-contained IR before it can pin. C externs
-// (unmangled, e.g. @avra_alloc) are legitimate and must NOT trip it.
+// (2) Self-containment — a published seed MUST define every Avra-
+// package symbol it uses: a fresh clone bootstraps it via seed.ll ->
+// llc + cc -> seed binary with NO other objects, so an extern `declare`
+// of a mangled package symbol (`$40` prefix, e.g. `$40std$3A$3A...`) is
+// an unresolvable reference that bricks the pin. This is exactly the
+// 2026-06-13 first-train failure: a metadata fast-path build leaked
+// extern @std decls into the candidate, the publish-verify link refused
+// it, and the train must now regenerate a self-contained IR before it
+// can pin. C externs (unmangled, e.g. @avra_alloc) are legitimate and
+// must NOT trip it.
 //
 // These live together (not in a separate file) because adding a new
 // test FILE reshuffles the parallel runner's batch packing, which can
 // flip the deliberate-SIGABRT crash-containment test elsewhere in the
-// suite — a known runner fragility (d4jv) unrelated to this change.
+// suite — a known runner fragility unrelated to this change.
 
 extern fn avra_shell_exec(cmd: string) -> string
 
@@ -54,8 +55,8 @@ spec "seed train: canonical seed identity" {
     }
 }
 
-spec "seed_is_self_contained: a pin must define every @std symbol it uses" {
-    given "an IR that DEFINES its @std symbols (no externs)" {
+spec "seed_is_self_contained: a pin must define every package symbol it uses" {
+    given "an IR that DEFINES its package symbols (no externs)" {
         then "it is self-contained — rc=0" {
             let base = "build/cache/_seed_self_contained"
             avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
@@ -69,6 +70,14 @@ spec "seed_is_self_contained: a pin must define every @std symbol it uses" {
             avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
             avra_shell_exec("printf 'declare i64 @\"$40std$3A$3Abar\"()\\ndefine i64 @main() {\\nret i64 0\\n}\\n' > ${base}/bad.ll")
             sc("${base}/bad.ll").contains("rc=1")
+        }
+    }
+    given "an IR that DECLARES an extern NON-std package symbol" {
+        then "it is rejected too — the guard tracks any package, not just @std" {
+            let base = "build/cache/_seed_self_contained"
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            avra_shell_exec("printf 'declare i64 @\"$40mypkg$3A$3Aq\"()\\ndefine i64 @main() {\\nret i64 0\\n}\\n' > ${base}/pkg.ll")
+            sc("${base}/pkg.ll").contains("rc=1")
         }
     }
     given "an IR whose only externs are unmangled C symbols" {
