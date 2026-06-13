@@ -121,6 +121,14 @@ Concretely:
   ONLY when the compiler's output actually diverged from the pinned
   artifact (doc/test-only merges advance nothing). `make seed-train`
   does the same manually; `make seed-publish` is the raw publish step.
+  The train recompiles `main.av` hermetically (metadata fast-path
+  stripped) before pinning, because **the seed MUST be self-contained**
+  — a fresh clone bootstraps it via `seed.ll → llc + cc → seed binary`
+  with no other objects, so a fast-path build (which leaves `@`-package
+  symbols as extern `declare`s, mangled `$40…`) would brick every clone.
+  `mode_update_seed` enforces this at the seed-writing chokepoint (so
+  `make update-seed` is guarded too); `--seed-self-contained` is the
+  spec-tested check.
 - **Enforcement:** `diagnose.sh --check-bootstrap-window` — gate 1 rejects
   branches with seed commits since the merge-base; gate 2 rebuilds the
   branch's compiler source AT HEAD (what a push ships — untracked or
