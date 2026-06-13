@@ -80,10 +80,10 @@ spec "seed_is_self_contained: a pin must define every @std symbol it uses" {
         }
     }
     given "a missing IR path" {
-        then "an unreadable file is an error, never a silent pass — not rc=0" {
+        then "an unreadable file is the inspection-error class — rc=2, not a misclassified rc=0/rc=1" {
             let base = "build/cache/_seed_self_contained"
             avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
-            !sc("${base}/does_not_exist.ll").contains("rc=0")
+            sc("${base}/does_not_exist.ll").contains("rc=2")
         }
     }
 }
