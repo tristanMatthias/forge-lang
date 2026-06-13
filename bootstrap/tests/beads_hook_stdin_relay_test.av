@@ -40,10 +40,14 @@ spec ".beads/hooks/pre-push: stdin capture and relay to the repo hook" {
     }
     given "refs whose outgoing range touches bootstrap/" {
         then "the relayed refs make the gate FIRE — a broken relay cannot pass this" {
-            // HEAD~1..HEAD on this repo always touches bootstrap/; the
+            // Pick a commit that actually touched bootstrap/ and use its
+            // parent, so the tested range is stable across future history
+            // (HEAD~1..HEAD is not guaranteed to touch bootstrap/). The
+            // :(top) pathspec is repo-root-relative — the spec runs from
+            // bootstrap/, where a bare `bootstrap/` would mis-resolve. The
             // gate run itself is cheap (green verifies are cached).
-            let head = avra_shell_exec("git rev-parse HEAD").trim()
-            let prev = avra_shell_exec("git rev-parse HEAD~1").trim()
+            let head = avra_shell_exec("git rev-list -n 1 HEAD -- ':(top)bootstrap'").trim()
+            let prev = avra_shell_exec("git rev-parse ${head}^").trim()
             let out = run_beads_hook("", "refs/heads/x ${head} refs/heads/x ${prev}")
             out.contains("verifying the bootstrap window")
         }

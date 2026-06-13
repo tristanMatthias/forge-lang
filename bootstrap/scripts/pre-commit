@@ -183,10 +183,16 @@ fi
 # local materialization; either one present keeps us bootstrappable.
 seed_relevant=$(echo "$staged" | grep -E '^bootstrap/seed/' || true)
 if [ -n "$seed_relevant" ] || [ -n "$src_relevant" ]; then
-  if [ ! -f bootstrap/seed/seed.lock ] && [ ! -f bootstrap/seed/seed.ll ]; then
+  # Validate the git INDEX, not the working tree: an untracked local
+  # seed.ll must not mask a commit that deletes the tracked seed.lock.
+  # Either pin present in what's being committed keeps us bootstrappable.
+  has_seed_pin=0
+  if git cat-file -e :bootstrap/seed/seed.lock 2>/dev/null; then has_seed_pin=1; fi
+  if git cat-file -e :bootstrap/seed/seed.ll 2>/dev/null; then has_seed_pin=1; fi
+  if [ "$has_seed_pin" -eq 0 ]; then
     echo
     echo "[pre-commit] SEED PIN MISSING — commit blocked"
-    echo "[pre-commit] Neither bootstrap/seed/seed.lock nor bootstrap/seed/seed.ll exists."
+    echo "[pre-commit] Neither bootstrap/seed/seed.lock nor bootstrap/seed/seed.ll is in the index."
     echo "[pre-commit] The lock (or a checked-in seed) is the bootstrap lifeline —"
     echo "[pre-commit] without it the project cannot be built from scratch. Restore it."
     exit 1

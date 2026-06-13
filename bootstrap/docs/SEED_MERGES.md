@@ -34,9 +34,9 @@ regeneration → fixed point — and on a stage failure reports the
 failure class (`parse` / `extern-guard` / `corruption`) with hints
 matching the "choosing a base" table, then falls through to the other
 candidate. On success the regenerated `seed/seed.ll` is the merge
-resolution: run `make test`, then stage it (`git add seed.ll` on
-pre-lock history; `make seed-publish` + `git add seed.lock` on lock
-history).
+resolution: run `make test`, then stage it (`git add bootstrap/seed/seed.ll`
+on pre-lock history; `make seed-publish` + `git add bootstrap/seed/seed.lock`
+on lock history).
 
 The manual recipe below is the same procedure, kept for when you need
 to intervene mid-way (e.g. the IR-level last resort).

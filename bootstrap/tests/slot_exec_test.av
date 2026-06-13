@@ -18,15 +18,20 @@ spec "--slot-exec: bounded fixture-compile slots" {
             let out = sh("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec echo slot-ran")
             out.contains("slot-ran") && out.contains("rc=0")
         }
-        then "the wrapped command's failure exit status propagates" {
+        then "the wrapped command's failure exit status propagates (rc=1)" {
             let d = "build/cache/_slot_fail"
             avra_shell_exec("rm -rf ${d}")
-            !sh("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec false").contains("rc=0")
+            // Assert the exact code, not just "non-zero": a wrapper that
+            // died for its OWN reason would also be non-zero.
+            sh("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec false").contains("rc=1")
         }
         then "the slot is released on exit — the namespace holds no slot dirs afterwards" {
             let d = "build/cache/_slot_released"
             avra_shell_exec("rm -rf ${d}")
-            avra_shell_exec("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec true")
+            // Require the wrapped command itself to have succeeded (rc=0)
+            // before trusting the cleanup assertion below.
+            let out = sh("AVRA_SLOT_DIR=${d} bash scripts/diagnose.sh --slot-exec true")
+            out.contains("rc=0") &&
             avra_shell_exec("ls ${d} 2>/dev/null | wc -l").trim() == "0"
         }
         then "a slot leaked by a dead holder is reaped, not waited on forever" {

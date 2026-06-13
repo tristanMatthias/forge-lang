@@ -530,7 +530,11 @@ fetch_seed_from_lock() {
     mv "$cached.tmp.$$" "$cached"
   fi
   mkdir -p "$(dirname "$dest")"
-  cp "$cached" "$dest.tmp.$$" && mv "$dest.tmp.$$" "$dest"
+  if ! cp "$cached" "$dest.tmp.$$" || ! mv "$dest.tmp.$$" "$dest"; then
+    rm -f "$dest.tmp.$$"
+    err "failed to install materialized seed at $dest (cp/mv failed)"
+    return 1
+  fi
   log "seed v${version:-?} materialized at $dest (sha256 verified)"
 }
 
@@ -639,21 +643,21 @@ mode_seed_publish() {
   commit=$(git -C "$REPO_DIR" rev-parse HEAD)
   log "creating release $tag on $SEED_REPO_SLUG (target $commit)"
   local rel_json rel_id
-  rel_json=$(curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" \
+  rel_json=$(curl -fsS --connect-timeout 15 --max-time 180 --retry 3 -X POST -H "Authorization: Bearer $GH_TOKEN" \
     -H "Content-Type: application/json" "$api/releases" \
     -d "{\"tag_name\":\"$tag\",\"target_commitish\":\"$commit\",\"name\":\"bootstrap seed v$version\",\"body\":\"Avra bootstrap seed artifact, pinned by bootstrap/seed/seed.lock.\\nsha256 (uncompressed): $sha\",\"prerelease\":true}") \
     || die "release create failed for $tag (already exists? bump again or delete it)"
   rel_id=$(printf '%s' "$rel_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') \
     || die "could not parse release id"
   log "uploading seed.ll.gz ($(du -h "$staging/seed.ll.gz" | cut -f1 | tr -d ' '))"
-  curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" \
+  curl -fsS --connect-timeout 15 --max-time 300 --retry 3 -X POST -H "Authorization: Bearer $GH_TOKEN" \
     -H "Content-Type: application/gzip" \
     --data-binary @"$staging/seed.ll.gz" \
     "https://uploads.github.com/repos/$SEED_REPO_SLUG/releases/$rel_id/assets?name=seed.ll.gz" \
     >/dev/null || {
       # Drop the asset-less release so a retry can recreate the same
       # tag instead of dying on "already exists".
-      curl -fsS -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+      curl -fsS --connect-timeout 15 --max-time 60 -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
         "$api/releases/$rel_id" >/dev/null 2>&1 || :
       die "asset upload failed (release $tag rolled back — safe to retry)"
     }
@@ -1248,6 +1252,16 @@ mode_check_fixedpoint() {
     ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR"
     echo "$fp_input" > "$fp_marker"
   else
+    # Strict callers (the seed train sets NO_AUTOCYCLE=1) must NOT have
+    # divergence papered over by an auto-cycle: a heal-then-pass here
+    # would publish a seed the pinned compiler couldn't reproduce. Fail
+    # loud and let a human look.
+    if [ "${NO_AUTOCYCLE:-0}" = "1" ]; then
+      err "FIXED POINT BROKEN — auto-cycle disabled (NO_AUTOCYCLE=1)"
+      err "  bs2 IR: $BUILD_DIR/fp_bs2.ll"
+      err "  bs3 IR: $BUILD_DIR/fp_bs3.ll"
+      return 1
+    fi
     # Auto-converge: cycle the seed up to 3 times to reach equilibrium.
     # This handles cases where adding new functions shifts allocator state.
     local max_cycles=3

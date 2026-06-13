@@ -52,8 +52,11 @@ export fn default_link_options() -> LinkOptions {
 export fn llvm_prefix_dir() -> string {
     let env = avra_process_env_get("LLVM_PREFIX")
     if env != "" { return env }
+    // Pinned-major (llvm-20) prefixes only — the unversioned Homebrew
+    // path is the final fallback below, never a candidate, so a stray
+    // non-20 `/opt/homebrew/opt/llvm` can't shadow a real LLVM 20 install
+    // when both are present.
     let candidates = [
-        "/opt/homebrew/opt/llvm",
         "/usr/lib/llvm-20",
         "/usr/lib64/llvm20",
         "/usr/local/llvm-20",

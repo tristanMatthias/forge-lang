@@ -21,7 +21,12 @@ spec "seed train: canonical seed identity" {
             canon("${dir}/a.ll") == canon("${dir}/b.ll")
         }
         then "a real IR difference still compares different — the train advances" {
+            // Hermetic: write both operands in this block rather than
+            // leaning on a.ll from the previous `then` (isolation/order
+            // could change and silently break the comparison).
             let dir = "build/cache/_seed_train_canon"
+            avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+            avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @f() {\\n}\\n' > ${dir}/a.ll")
             avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @g() {\\n}\\n' > ${dir}/c.ll")
             canon("${dir}/a.ll") != canon("${dir}/c.ll")
         }

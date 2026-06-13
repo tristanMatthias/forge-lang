@@ -16,6 +16,12 @@ on:
   pull_request:
     branches: [feat/crafting-intepreters]
 
+# Least privilege: this is a trust gate that runs PR code — it only
+# reads the tree, never writes. Pin read-only so a repo-default change
+# can't silently hand this job a write-capable token.
+permissions:
+  contents: read
+
 concurrency:
   group: bootstrap-window-${{ github.ref }}
   cancel-in-progress: true
