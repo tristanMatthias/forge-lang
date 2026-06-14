@@ -168,6 +168,16 @@ Edit one fn → discard *only* the answers that depended on it, recompute *only*
 those; the other 10,000 fns keep their cached answers. = **O(what changed)**. The
 named framework is **Salsa** (the engine under rust-analyzer).
 
+**Early cutoff — the change-wave dies the moment it stops mattering.** When a
+recomputed query's *new answer equals its old answer*, recomputation **stops** —
+dependents aren't touched. Edit a fn's whitespace → its AST query reruns, but
+"type of fn?" returns the same type and the wave halts there; the 500 callers
+never recompute. (Mechanism: each answer stamps "last-changed" vs "last-verified";
+recompute only when an input changed since you verified, and on a matching
+recompute bump only "verified" — the *red-green* algorithm.) Most edits touch
+surface detail, not meaning, so the wave usually dies in a step or two. This is
+what turns *fast* into *instant*.
+
 **The four "wildly fast" levers — each a direct payoff of Layers 1+3:**
 1. **O(what changed), not O(program).** Demand-driven queries + content-addressed
    memoization: edit one fn, re-check *that* fn. (The rust-analyzer secret.)
