@@ -203,7 +203,7 @@ ratchet** — warning now, flip to error per-module as cleaned; Layer 4 erases
 most for free (derived code is exhaustive by construction), so `vndt`'s 2700+
 warnings shrink on their own. *Own epic — maps to existing `vndt`.*
 
-### Layer 6 — Compiler-as-query *(open — §9)*
+### Layer 6 — Compiler-as-query *(decided)*
 Make every derived fact a **memoized, incrementally-invalidated query** keyed by
 node-ID. Delivers incremental builds + LSP. Falls out of Layer 1's
 data-oriented substrate. This is `4apk`/`qvfb`.
@@ -377,6 +377,15 @@ delete the largest boilerplate/drift surface in the compiler.
 mandated strangler-fig ceremony, minimal migration scaffolding. The only hard
 floor is **bootstrap**: the compiler must still build itself at integration
 points (it's self-hosting).
+
+**Verification (the net that makes go-hard safe) — three gating guards:**
+1. **Differential testing — the old compiler is the oracle.** Old vs. new over
+   the corpus; outputs must match (byte-identical IR where applicable). Lets us
+   rip the foundation out and instantly catch behaviour drift, with no migration
+   scaffolding.
+2. **Selfhost fixed point** `bs2 == bs3` (already enforced).
+3. **Property tests on the derive framework** (shape-matrix / `decode(encode(x))
+   == x`) — drift *fails a test* by construction.
 
 ## 9. North stars & deferred work (decided)
 
