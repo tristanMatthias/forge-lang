@@ -29,6 +29,19 @@ content-addressed + derive treatment, so *codegen* is incremental/cached too
 (only changed functions re-emit; folds `re1b` + per-fn codegen). The spine is the
 whole representation, front to back.
 
+**Boundary — owns HOW, not WHAT.** This epic owns how the compiler *represents
+and processes* code; it does NOT own what the language *means* or what the syntax
+*is* (the foundation must never *preclude* those).
+- **IN:** node model, IR, typed identity, derive framework, parser *mechanism*,
+  type-checking-as-query, incrementality, the compiler's own memory/parallelism.
+- **OUT** (separate epics; must-not-preclude): the language's runtime memory
+  model (RC/Drop/arenas/escape *semantics*, Axis 9); concurrency (green
+  threads/Task/channels, Axis 18); surface-syntax *design* (sibling); BEYOND-V1
+  type *theory* (dependent/verified/cryptographic — `cxvp`). (`e5qo`/`wc5w`
+  content-addressed *identity* are IN at Layer 3; only the broader theory is out.)
+  Holds under stress: escape analysis is a *query* mechanically (IN) but its
+  *semantics* are language design (OUT).
+
 ## 2. Why now — the problem
 
 Today every operation over the AST is hand-written, one branch per variant, and
