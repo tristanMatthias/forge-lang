@@ -24,6 +24,11 @@ The payoff is the project's three goals at once:
 - **A killer language feature for users**: the very same machinery is
   `@derive(Json/Eq/Debug/...)` on *their* types (see §3, bet 1).
 
+**Scope:** the AST **and** the codegen **IR** — both get the same data-oriented +
+content-addressed + derive treatment, so *codegen* is incremental/cached too
+(only changed functions re-emit; folds `re1b` + per-fn codegen). The spine is the
+whole representation, front to back.
+
 ## 2. Why now — the problem
 
 Today every operation over the AST is hand-written, one branch per variant, and
@@ -73,6 +78,9 @@ on the node.
   when printing an error.
 - **No fat nodes**: small variants stop paying for the biggest variant
   (today every `Stmt` is padded to 112 bytes).
+- **Error-tolerant by construction**: explicit *error/missing* node variants;
+  the parser never bails — it yields a partial tree + *all* errors at once.
+  Required for the IDE/LLM story (the daemon needs a tree even for broken code).
 - *Why it's the keystone*: every derived operation walks the tree; a uniform
   tree makes the derived code clean. It also **is** the substrate bet 2 needs.
 
@@ -261,6 +269,9 @@ not aspirations.*
 - **One-off passes that bypass the framework** — a *rule*: AST passes go through
   Layer 4, or they reintroduce drift.
 - **Mutable globals** (already forbidden) — they break parallelism + incremental.
+- **Nondeterminism** — output must not depend on thread scheduling or machine,
+  or the caches lie.
+- **Unsandboxed comptime** — the JIT enforces resource limits + no ambient IO.
 
 ## 7. How the existing epics fold in
 
@@ -296,6 +307,11 @@ compiler `src/` only after the seed train advances).
 This is a multi-quarter program; the value is front-loaded — Layers 1–3 alone
 delete the largest boilerplate/drift surface in the compiler.
 
+**Migration stance: go hard.** Aggressive/big-bang rewrite is acceptable — no
+mandated strangler-fig ceremony, minimal migration scaffolding. The only hard
+floor is **bootstrap**: the compiler must still build itself at integration
+points (it's self-hosting).
+
 ## 9. North stars & deferred work (decided)
 
 - **Interpreter elimination — COMMITTED (Layer 2 goal, its own epic).** Build
@@ -304,3 +320,6 @@ delete the largest boilerplate/drift surface in the compiler.
   `Value`-cleanup interim and Layer 3's runtime-value half.
 - **`quote{}`:** rework its lowering onto Layer 2 native boxing — keep the
   feature, delete its private encoder. *Rework, not retire.*
+- **LLM-friendly *surface syntax*** — a **separate sibling epic**, not this
+  internals program. Carry these principles there: maximal regularity, low
+  ambiguity, few special cases, one obvious way to say a thing.
