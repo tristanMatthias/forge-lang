@@ -195,6 +195,45 @@ interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
   an extensible grammar framework. A hand-written escape hatch remains for the
   rare gnarly rule. Precedent: tree-sitter, ANTLR, Menhir/LALRPOP error infra.
 
+**Grammar DSL — concrete shape.** The notation is *Crafting Interpreters*'
+grammar metasyntax (Ch5 §5.1.2–3) made executable; lowering follows Nystrom's
+grammar→recursive-descent correspondence (Ch6: terminal → match/consume,
+nonterminal → call its fn, `|` → if/switch, `*`/`+` → loop, `?` → if), with
+panic-mode recovery (his `synchronize()`) lifted into `@recover`:
+
+```avra
+@grammar Expr {
+    expression = equality
+    equality   = comparison ( ("!=" | "==") comparison )*       -> Binary
+    comparison = term       ( ("<"|"<="|">"|">=") term )*       -> Binary
+    term       = factor     ( ("+" | "-")  factor )*            -> Binary
+    factor     = unary      ( ("*" | "/")  unary )*             -> Binary
+    unary      = ("!" | "-") unary -> Unary
+               | primary
+    primary    = NUMBER | STRING | "true" | "false"
+               | "(" expression ")" @expect(")", "expected ')' to close the group")
+                                     @recover(sync_to: ")")     -> Grouping
+}
+```
+
+Each rule lowers mechanically — the macro `quote`s out one function per rule,
+straight from the correspondence table. `factor` becomes:
+
+```avra
+fn parse_factor(p: Parser) -> ExprId {        // a rule → a function
+    mut left = parse_unary(p)                 //   nonterminal ref → call its fn
+    while p.match("*", "/") {                 //   ( ... )* → while loop
+        let op = p.previous()
+        let right = parse_unary(p)
+        left = p.node(Expr.Binary(left, op, right))
+    }
+    left                                       //   builds the node it's typed to
+}
+```
+
+This is the recursive-descent idea verbatim — the only difference from the book
+is that the by-hand translation (and by-hand `synchronize()`) is automated.
+
 ### Layer 5 — No-drift discipline *(decided)*
 A `_ ->` over a **declared enum** is an **error** — *except* a deliberate
 catch-all via an explicit, greppable keyword (e.g. `rest ->`): "forgot a case"
