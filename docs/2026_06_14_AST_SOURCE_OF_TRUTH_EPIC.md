@@ -168,6 +168,19 @@ interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
   `y9y4.18`/`93k3` — they are requirements of Layer 4, not separate gates.
 - **Bidirectional + proven**: codecs ship with the compile-time
   `decode(encode(x)) == x` guarantee.
+- **The parser is derived too** *(decided — collapses a false dichotomy)*. The
+  reflex "generated parsers have bad errors" is true only of LR/PEG, **not** of
+  generated *recursive descent*. So: a **legible grammar DSL** carries the error
+  messages + recovery points as first-class annotations —
+  `block = "{" stmt* "}" @expect("`}` to close this block") @recover(sync_to:"}")`
+  — and comptime lowers it to an **error-tolerant recursive-descent** parser.
+  This gives, from one source of truth, all at once: world-class errors (authored
+  in the grammar), **partial-tree recovery** (the `@recover` points *are* Layer
+  1's error-nodes), **incremental reparse** (Layer 6, tree-sitter-style), and
+  **grammar-as-data** (LLM/tooling). The DSL is itself an Avra macro (dedicated
+  notation, "just Avra" underneath), kept **small/fixed/seed-bootstrapped** — not
+  an extensible grammar framework. A hand-written escape hatch remains for the
+  rare gnarly rule. Precedent: tree-sitter, ANTLR, Menhir/LALRPOP error infra.
 
 ### Layer 5 — No-drift discipline *(decided)*
 A `_ ->` over a **declared enum** is an **error** — *except* a deliberate
