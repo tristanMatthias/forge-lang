@@ -183,17 +183,23 @@ interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
   `decode(encode(x)) == x` guarantee.
 - **The parser is derived too** *(decided — collapses a false dichotomy)*. The
   reflex "generated parsers have bad errors" is true only of LR/PEG, **not** of
-  generated *recursive descent*. So: a **legible grammar DSL** carries the error
-  messages + recovery points as first-class annotations —
-  `block = "{" stmt* "}" @expect("`}` to close this block") @recover(sync_to:"}")`
-  — and comptime lowers it to an **error-tolerant recursive-descent** parser.
-  This gives, from one source of truth, all at once: world-class errors (authored
-  in the grammar), **partial-tree recovery** (the `@recover` points *are* Layer
-  1's error-nodes), **incremental reparse** (Layer 6, tree-sitter-style), and
-  **grammar-as-data** (LLM/tooling). The DSL is itself an Avra macro (dedicated
-  notation, "just Avra" underneath), kept **small/fixed/seed-bootstrapped** — not
-  an extensible grammar framework. A hand-written escape hatch remains for the
-  rare gnarly rule. Precedent: tree-sitter, ANTLR, Menhir/LALRPOP error infra.
+  generated *recursive descent*. So we use a **small EBNF-style grammar DSL** —
+  Crafting Interpreters' notation (Ch5 §5.1.2–3) plus *captures* + *build* + the
+  `@expect`/`@recover` error annotations — lowered to an **error-tolerant
+  recursive-descent** parser via the Ch6 grammar→RD correspondence. From one
+  source of truth: world-class errors (authored in the grammar), **partial-tree
+  recovery** (the `@recover` points *are* Layer 1's error-nodes), **incremental
+  reparse** (Layer 6, tree-sitter-style), and **grammar-as-data** (LLM/tooling).
+  - **Small *notation*, big *grammar*.** The DSL is ~9 constructs / a ~200-line
+    hand-written seed parser; the *Avra grammar* written in it can be as large as
+    Avra needs (a tiny EBNF defines C/Java the same way). No bootstrap
+    circularity — the seed parser is hand-written once, like yacc/tree-sitter.
+  - **The gnarly 5% stays OUT of the DSL** (this is what keeps it lightweight):
+    string interpolation, newline-sensitivity, the `~` context-overload, and the
+    `<` generic-vs-less-than ambiguity live in the **lexer** (modes) or a
+    **hand-written escape-hatch rule** — they never grow the grammar notation.
+  - Worked proof slice (the expression grammar end-to-end): see
+    `docs/2026_06_14_GRAMMAR_DSL.md`. Precedent: tree-sitter, ANTLR, Menhir.
 
 **Grammar DSL — concrete shape.** The notation is *Crafting Interpreters*'
 grammar metasyntax (Ch5 §5.1.2–3) made executable; lowering follows Nystrom's
@@ -202,19 +208,21 @@ nonterminal → call its fn, `|` → if/switch, `*`/`+` → loop, `?` → if), w
 panic-mode recovery (his `synchronize()`) lifted into `@recover`:
 
 ```avra
-@grammar Expr {
+grammar Expr {
     expression = equality
-    equality   = comparison ( ("!=" | "==") comparison )*       -> Binary
-    comparison = term       ( ("<"|"<="|">"|">=") term )*       -> Binary
-    term       = factor     ( ("+" | "-")  factor )*            -> Binary
-    factor     = unary      ( ("*" | "/")  unary )*             -> Binary
-    unary      = ("!" | "-") unary -> Unary
+    equality   = l:comparison ( op:("!=" | "==") r:comparison )*        -> fold_binary(l, op, r)
+    comparison = l:term       ( op:("<"|"<="|">"|">=") r:term )*        -> fold_binary(l, op, r)
+    term       = l:factor     ( op:("+" | "-")  r:factor )*             -> fold_binary(l, op, r)
+    factor     = l:unary      ( op:("*" | "/")  r:unary )*              -> fold_binary(l, op, r)
+    unary      = op:("!" | "-") operand:unary                          -> Unary(op, operand)
                | primary
     primary    = NUMBER | STRING | "true" | "false"
-               | "(" expression ")" @expect(")", "expected ')' to close the group")
-                                     @recover(sync_to: ")")     -> Grouping
+               | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")")  -> e
 }
 ```
+(`l:`/`op:`/`r:` are **captures**; `-> …` is the **build** that constructs the
+AST node from them. `fold_binary` left-folds the repeated `(op rhs)*` into a
+left-associative `Expr.Binary` chain.)
 
 Each rule lowers mechanically — the macro `quote`s out one function per rule,
 straight from the correspondence table. `factor` becomes:
