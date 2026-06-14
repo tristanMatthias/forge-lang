@@ -194,6 +194,16 @@ Bonus (pure data-oriented payoff): **columnar passes** — SoA lets a pass strea
 one dense field-array (branch-predictor-friendly, SIMD-able), so *passes* get
 fast, not just storage.
 
+**Where it lives, and the IDE for free.** Answers must survive between compiles:
+either an on-disk content-addressed cache (simple) or a long-running **daemon**
+that keeps the question-graph warm in memory (instant). The daemon *is* an IDE
+language server — squiggles, autocomplete, go-to-def, find-refs are just queries
+("errors here?", "type at cursor?") the compiler already answers. So **one query
+engine = batch compiler + IDE**, no second drifting implementation (the
+rust-analyzer insight; the same "one system, not two" as Layer 4). And because
+LSP is a structured, machine-driven interface, it's also the natural surface an
+**LLM agent** drives — one daemon serves human editors and LLM agents alike.
+
 ### Cross-cutting — LLM-native *(open — §9)*
 Structured/actionable diagnostics, `--fix` patches, AST-as-data round-trip for
 external tools. Rides on Layers 3 (stable IDs) + 4 (serialization).
