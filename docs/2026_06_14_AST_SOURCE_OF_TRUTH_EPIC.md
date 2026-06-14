@@ -213,6 +213,12 @@ cache across edits to *other* items; cheap parsing stays **per-file**; never
 per-node (bookkeeping exceeds savings). Fine granularity is *unlocked by* Layer
 1+3's stable identities — the foundation is what makes the top layer fast.
 
+**Build-order (decided): daemon-ready design, in-process first.** Designed
+daemon-ready from day one (no per-process global state; persistent
+content-addressed cache), but the first implementation is in-process + on-disk
+cache (incremental speed early, low risk); grow into the warm daemon + LSP when
+justified.
+
 ### Cross-cutting — LLM-native *(decided)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
 1. **Structured + actionable diagnostics** — every error emits a machine form
@@ -282,8 +288,8 @@ delete the largest boilerplate/drift surface in the compiler.
 
 ## 9. Open decisions (still to work through)
 
-- **Layer 6 build-order:** start in-process (on-disk cache) then grow the
-  **daemon**, or design the daemon up front? *(Granularity decided: per-item,
-  content-addressed; never per-node.)*
+- **Interpreter elimination (Layer 2 north star):** is "compile-and-run
+  `@comptime` (JIT), delete the interpreter + `Value`" a committed (later) epic,
+  or a design-toward-don't-block aspiration?
 - **`quote{}`'s future:** rework its lowering onto Layer 2 native boxing (keep
   the feature, delete its private encoder). *Decided: rework, not retire.*
