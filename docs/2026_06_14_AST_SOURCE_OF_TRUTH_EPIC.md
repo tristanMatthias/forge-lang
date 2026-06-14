@@ -313,6 +313,17 @@ content-addressed cache), but the first implementation is in-process + on-disk
 cache (incremental speed early, low risk); grow into the warm daemon + LSP when
 justified.
 
+**Passes never mutate (decided) — the immutable-pass model.** No pass writes on a
+node. **Analysis** passes (resolver, typeck) record facts in **side-tables keyed
+by node-id** (the tree is read-only; notes live in a separate notebook).
+**Transform** passes (desugar, mono, rewrites) **produce a new immutable tree**,
+sharing unchanged subtrees via hash-consing, with each new node carrying
+**provenance** (L1) back to source so spans/diagnostics survive the rewrite. Both
+are memoized queries. This is what makes hash-consing, early-cutoff, and
+lock-free parallelism actually hold — and it restructures every existing
+(mutating) pass into either a side-table-producer or a tree-rewriter. (Cost is
+real; the differential-test harness is what makes the restructuring safe.)
+
 **Type-checking as a query (decided).** Type-checking is a per-item query;
 **inference is local to an item** — it reads the *signatures* of referenced
 items, never their *bodies* — which mandates **explicit signatures at item
