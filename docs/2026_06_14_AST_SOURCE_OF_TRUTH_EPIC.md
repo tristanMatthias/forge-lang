@@ -159,6 +159,15 @@ Make every derived fact a **memoized, incrementally-invalidated query** keyed by
 node-ID. Delivers incremental builds + LSP. Falls out of Layer 1's
 data-oriented substrate. This is `4apk`/`qvfb`.
 
+**Mental model — the compiler is a *spreadsheet*, not an assembly line.** Not
+parse→resolve→typeck→codegen over the whole program every time, but a graph of
+*questions* ("queries") that each **remember their answer**: "AST of file X?",
+"what does `foo` resolve to?", "type of `bar`?". Questions are built from other
+questions, forming a dependency graph (like spreadsheet cells referencing cells).
+Edit one fn → discard *only* the answers that depended on it, recompute *only*
+those; the other 10,000 fns keep their cached answers. = **O(what changed)**. The
+named framework is **Salsa** (the engine under rust-analyzer).
+
 **The four "wildly fast" levers — each a direct payoff of Layers 1+3:**
 1. **O(what changed), not O(program).** Demand-driven queries + content-addressed
    memoization: edit one fn, re-check *that* fn. (The rust-analyzer secret.)
