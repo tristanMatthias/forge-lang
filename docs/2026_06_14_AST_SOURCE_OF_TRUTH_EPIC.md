@@ -145,6 +145,9 @@ forever, keep the string only for printing. `so07.7` already did this for
 compile-time *types*. (The *runtime*-value half is **mooted by Layer 2's JIT** —
 compiled comptime uses real types — so Layer 3 is now compile-time **TypeId**
 interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
+- **Types are values too:** the type representation is itself hash-consed +
+  content-addressed (type-equality = id compare), spanning nominal types,
+  structural shapes, traits, and unions.
 - **Discipline (hard rule):** IDs are **opaque handles** — only *compared* or
   *looked-up*, **never inspected**. This lets us start with simple interning and
   drop in **content-addressing** (`wc5w`) later with **zero call-site churn**.
@@ -236,6 +239,14 @@ daemon-ready from day one (no per-process global state; persistent
 content-addressed cache), but the first implementation is in-process + on-disk
 cache (incremental speed early, low risk); grow into the warm daemon + LSP when
 justified.
+
+**Type-checking as a query (decided).** Type-checking is a per-item query;
+**inference is local to an item** — it reads the *signatures* of referenced
+items, never their *bodies* — which mandates **explicit signatures at item
+boundaries** (params + return types annotated). That rule keeps incremental
+type-checking tractable (a body edit can't silently change an item's type) and
+doubles as **LLM-friendliness** (no hidden cross-item inference to track). Avra
+already mostly requires it.
 
 ### Cross-cutting — LLM-native *(decided)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
