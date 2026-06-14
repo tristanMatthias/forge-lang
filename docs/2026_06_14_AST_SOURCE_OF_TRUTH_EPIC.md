@@ -269,6 +269,14 @@ compile-time calls depend on the body). Most edits bump only the body
 fingerprint → callers' type-checking is reused; only the edited item re-emits.
 (Rust HIR-vs-MIR / Salsa durability tiers.)
 
+**Generics (decided): mono default, `dyn` explicit, instances content-addressed.**
+Policy settled in design `86388`/`86308` — monomorphize by default for speed,
+explicit `dyn Trait` for heterogeneous, no auto mono-vs-dyn inference. New here:
+each mono instance is a **content-addressed cache unit** keyed by `(generic body
+fingerprint, type-arg fingerprints)` — a type change re-monomorphizes only the
+instances that *use* it, and identical-IR instances **collapse to one artifact**
+(IR-level hash-consing). That dedup is the explosion control.
+
 ### Cross-cutting — LLM-native *(decided)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
 1. **Structured + actionable diagnostics** — every error emits a machine form
