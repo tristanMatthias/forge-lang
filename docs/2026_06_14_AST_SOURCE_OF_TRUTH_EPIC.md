@@ -286,10 +286,10 @@ compiler `src/` only after the seed train advances).
 This is a multi-quarter program; the value is front-loaded — Layers 1–3 alone
 delete the largest boilerplate/drift surface in the compiler.
 
-## 9. Open decisions (still to work through)
+## 9. North stars & deferred work (decided)
 
-- **Interpreter elimination (Layer 2 north star):** is "compile-and-run
-  `@comptime` (JIT), delete the interpreter + `Value`" a committed (later) epic,
-  or a design-toward-don't-block aspiration?
-- **`quote{}`'s future:** rework its lowering onto Layer 2 native boxing (keep
-  the feature, delete its private encoder). *Decided: rework, not retire.*
+- **Interpreter elimination:** *design-toward now* — keep `@comptime` semantics
+  pure, don't foreclose the JIT path. Booked as a committed **future epic**:
+  compile-and-run `@comptime` (JIT + sandbox), delete the interpreter + `Value`.
+- **`quote{}`:** rework its lowering onto Layer 2 native boxing — keep the
+  feature, delete its private encoder. *Rework, not retire.*
