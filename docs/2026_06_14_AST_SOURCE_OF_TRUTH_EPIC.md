@@ -148,11 +148,13 @@ compile-time *types*; extend it to the runtime *value* model.
 - **Bidirectional + proven**: codecs ship with the compile-time
   `decode(encode(x)) == x` guarantee.
 
-### Layer 5 — No-drift discipline *(open — §9)*
-Exhaustiveness enforced; `_ ->` wildcards over declared enums eliminated
-(`vndt`'s 2700+ warnings). Largely **automatic** once Layer 4 lands, because the
-framework emits exhaustive code by construction. Open: how aggressive
-(hard error vs. typed-exhaustiveness vs. lint-then-gate).
+### Layer 5 — No-drift discipline *(decided)*
+A `_ ->` over a **declared enum** is an **error** — *except* a deliberate
+catch-all via an explicit, greppable keyword (e.g. `rest ->`): "forgot a case"
+is banned, "handle the remainder" is allowed and *visible*. **Migration:
+ratchet** — warning now, flip to error per-module as cleaned; Layer 4 erases
+most for free (derived code is exhaustive by construction), so `vndt`'s 2700+
+warnings shrink on their own. *Own epic — maps to existing `vndt`.*
 
 ### Layer 6 — Compiler-as-query *(open — §9)*
 Make every derived fact a **memoized, incrementally-invalidated query** keyed by
@@ -274,9 +276,6 @@ delete the largest boilerplate/drift surface in the compiler.
 
 ## 9. Open decisions (still to work through)
 
-- **Layer 5 aggressiveness:** hard-error on every enum wildcard, vs.
-  typed-exhaustiveness, vs. lint-then-gate. Migration of the 2700+ existing
-  warnings.
 - **Layer 6 build-order:** start in-process (on-disk cache) then grow the
   **daemon**, or design the daemon up front? *(Granularity decided: per-item,
   content-addressed; never per-node.)*
