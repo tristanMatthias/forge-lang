@@ -204,6 +204,13 @@ rust-analyzer insight; the same "one system, not two" as Layer 4). And because
 LSP is a structured, machine-driven interface, it's also the natural surface an
 **LLM agent** drives — one daemon serves human editors and LLM agents alike.
 
+**Granularity (decided): per-item, content-addressed.** A "question" is sized
+*per-query by cost*: expensive queries (typeck, codegen) are **per-item**
+(function/type), keyed by **content-addressed identity** so an item keeps its
+cache across edits to *other* items; cheap parsing stays **per-file**; never
+per-node (bookkeeping exceeds savings). Fine granularity is *unlocked by* Layer
+1+3's stable identities — the foundation is what makes the top layer fast.
+
 ### Cross-cutting — LLM-native *(open — §9)*
 Structured/actionable diagnostics, `--fix` patches, AST-as-data round-trip for
 external tools. Rides on Layers 3 (stable IDs) + 4 (serialization).
@@ -270,8 +277,9 @@ delete the largest boilerplate/drift surface in the compiler.
 - **Layer 5 aggressiveness:** hard-error on every enum wildcard, vs.
   typed-exhaustiveness, vs. lint-then-gate. Migration of the 2700+ existing
   warnings.
-- **Layer 6 shape:** what granularity of query/memoization; daemon vs.
-  in-process; how invalidation keys off node-IDs.
+- **Layer 6 build-order:** start in-process (on-disk cache) then grow the
+  **daemon**, or design the daemon up front? *(Granularity decided: per-item,
+  content-addressed; never per-node.)*
 - **LLM-native surface:** diagnostic schema (JSON?), `--fix` patch format, and
   whether AST-as-data is a stable public format.
 - **`quote{}`'s future:** rework its lowering onto Layer 2 native boxing (keep
