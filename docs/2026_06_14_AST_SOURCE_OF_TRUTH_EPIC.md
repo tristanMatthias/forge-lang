@@ -254,7 +254,20 @@ types** (`Result<T, IoError | ParseError>`, spec Axis 12.3) — *not* the inferr
 option (c) for these same reasons. `?` **auto-widens** a narrower error *into*
 the declared union — coercion into a declared type, not inference of it — so the
 boundary stays explicit; a body error outside the union is a *local* error, not
-a silent signature change.
+a silent signature change. The `Error` trait's `trace()`/`context()`
+**auto-accumulate via `?`** as errors propagate — errors bubble *and* gather
+context with zero boilerplate while keeping their declared type. (Validated
+against the foundational design session `33229b45` / Axis 12.3: "the genuinely
+novel part… as easy as exceptions but preserves the type information.")
+
+**Interface fingerprints (decided) — the incremental linchpin.** Each item
+carries **two** content-hashes: a **signature fingerprint** (name, param/return
+types incl. declared error union, generic bounds, visibility, effects —
+*body-independent*) driving *type-check* early-cutoff, and a **body
+fingerprint** driving *codegen + comptime* early-cutoff (inlining and
+compile-time calls depend on the body). Most edits bump only the body
+fingerprint → callers' type-checking is reused; only the edited item re-emits.
+(Rust HIR-vs-MIR / Salsa durability tiers.)
 
 ### Cross-cutting — LLM-native *(decided)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
