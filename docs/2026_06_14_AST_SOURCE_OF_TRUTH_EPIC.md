@@ -246,7 +246,15 @@ items, never their *bodies* — which mandates **explicit signatures at item
 boundaries** (params + return types annotated). That rule keeps incremental
 type-checking tractable (a body edit can't silently change an item's type) and
 doubles as **LLM-friendliness** (no hidden cross-item inference to track). Avra
-already mostly requires it.
+already mostly requires it (spec line 430 / P9: signatures are contracts).
+
+*Error types conform:* declared explicitly at the boundary as **union error
+types** (`Result<T, IoError | ParseError>`, spec Axis 12.3) — *not* the inferred
+`Result<T, _>` form, which the spec weighed (option d) and **rejected** for
+option (c) for these same reasons. `?` **auto-widens** a narrower error *into*
+the declared union — coercion into a declared type, not inference of it — so the
+boundary stays explicit; a body error outside the union is a *local* error, not
+a silent signature change.
 
 ### Cross-cutting — LLM-native *(decided)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
