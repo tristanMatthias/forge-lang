@@ -100,7 +100,11 @@ deliberately. Mitigated by good accessors + typed IDs.
   edits) is *why* we commit to **immutable + hash-consed** — never mutate, only
   append-and-share. The constraint confirms the better design, not fights it.
 
-### Layer 2 — First-class AST in the interpreter *(decided)*
+### Layer 2 — Compiled comptime: delete the interpreter *(decided)*
+*End-state: `@comptime` is JIT-compiled and run — no interpreter, no `Value`.
+First-class AST then comes free (compiled code holds real `AstNode`s). The
+"interim" path below is superseded by the JIT but explains what's being deleted.*
+
 The compile-time interpreter ("eval") currently shuttles a generic `Value` box
 and **converts** it to/from native AST nodes (`construct_stmt` /
 `enum_value_to_stmt`). Make the AST **first-class**: a `Value` holds a real
@@ -114,19 +118,25 @@ macro pipeline.
   fat struct with a `kind: "enum"` **string** + a dozen half-used payload fields.
   Its clean form is a plain enum: `enum Value { Int, Str, Bool, Node(AstNode),
   List, ... }` — tag = the (interned) variant, no strings, no nullable soup.
-- **North star — delete the interpreter entirely.** A `@comptime` fn *is* an
-  Avra fn; compile it and **run** it (JIT) instead of tree-walking it. Then
-  there is **no interpreter and no `Value`** — macros manipulate real, typed
-  `AstNode`s at native speed, in the full language. Today's interpreter is a
-  *second, partial copy of the language that drifts* — the same disease as the
-  hand-written walkers, just bigger. Needs JIT + sandbox infra, so: **design
-  toward it, don't block it.** (Zig's `comptime` model.)
+- **Compiled comptime (JIT) — COMMITTED, not deferred.** A `@comptime` fn *is*
+  an Avra fn; compile it and **run** it (JIT + sandbox) instead of tree-walking
+  it. End-state: **no interpreter and no `Value` at all** — macros manipulate
+  real, typed `AstNode`s at native speed, in the full language. Today's
+  interpreter is a *second, partial copy of the language that drifts* — same
+  disease as the hand-written walkers, bigger. (Zig's `comptime` model.)
+- **Ripple:** committing to the JIT means we **delete `Value`**, not clean it up
+  — so the "make `Value` a tidy enum" interim is *moot*, and Layer 3's
+  *runtime*-value half disappears too (compiled comptime uses real types; only
+  the compile-time **TypeId** interning, already done in `so07.7`, remains
+  relevant). Don't polish what we're deleting — aim straight at the JIT.
 
 ### Layer 3 — Typed identity *(decided)*
 Replace **string tags** (`kind = "enum"`, `"@std::...::Stmt"`) with **interned
 opaque IDs** — assign each type/variant a small integer once, compare integers
 forever, keep the string only for printing. `so07.7` already did this for
-compile-time *types*; extend it to the runtime *value* model.
+compile-time *types*. (The *runtime*-value half is **mooted by Layer 2's JIT** —
+compiled comptime uses real types — so Layer 3 is now compile-time **TypeId**
+interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
 - **Discipline (hard rule):** IDs are **opaque handles** — only *compared* or
   *looked-up*, **never inspected**. This lets us start with simple interning and
   drop in **content-addressing** (`wc5w`) later with **zero call-site churn**.
@@ -288,8 +298,9 @@ delete the largest boilerplate/drift surface in the compiler.
 
 ## 9. North stars & deferred work (decided)
 
-- **Interpreter elimination:** *design-toward now* — keep `@comptime` semantics
-  pure, don't foreclose the JIT path. Booked as a committed **future epic**:
-  compile-and-run `@comptime` (JIT + sandbox), delete the interpreter + `Value`.
+- **Interpreter elimination — COMMITTED (Layer 2 goal, its own epic).** Build
+  the JIT + sandbox, delete the interpreter + `Value`; `@comptime` becomes
+  compile-and-run. Sequenced within this program, not deferred. Mootes the
+  `Value`-cleanup interim and Layer 3's runtime-value half.
 - **`quote{}`:** rework its lowering onto Layer 2 native boxing — keep the
   feature, delete its private encoder. *Rework, not retire.*
