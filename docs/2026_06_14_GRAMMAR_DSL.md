@@ -36,6 +36,16 @@ is Crafting Interpreters Ch5 §5.1.2–3 verbatim.
 **Hard line (keeps it lightweight):** no inline semantic actions / arbitrary
 code in rules. Anything needing real logic drops to a hand-written rule (§5).
 
+**Capture / build semantics (decided, #7):**
+- A **capture** `name:x` binds a name to what `x` produced — a **nonterminal**
+  binds its **node**, a **terminal** binds its **token**. Inside `( … )*` captures
+  collect into **parallel lists**; scalars otherwise.
+- **build** (`-> …`) is restricted to **node construction + a small fixed set of
+  helpers** (`fold_binary` for left-assoc chains, `collect` for lists, …) — **no
+  conditionals / loops / arbitrary calls** (that's the hard line above). This is
+  what keeps a grammar reading like a grammar, not a program.
+- **No `->`** = **pass-through** of the single sub-result (`expression = equality`).
+
 ---
 
 ## 2. The grammar — Avra's expression slice
