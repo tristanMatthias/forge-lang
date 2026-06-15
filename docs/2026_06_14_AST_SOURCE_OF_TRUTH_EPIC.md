@@ -651,7 +651,7 @@ cache bits → L6.
 Def-of-Ready = a layer's design-doc ticket is closed. **Seed-gating tag** on the
 tickets that dogfood new surface in compiler `src/` (§10.A) — the only
 serialized work; most isn't gated. Agent-sized tickets w/ explicit acceptance.
-Success metrics gate L1/L2/L6. Assignees left open for farming; the DAG decides
+Success metrics (§13) gate L1/L2/L6. Assignees left open for farming; the DAG decides
 what's pickable.
 
 ## 12. Working the program (for agents)
@@ -687,3 +687,39 @@ decides what's pickable — don't touch blocked work.
   container start (NOT `sh`)**.
 - **Close a ticket only at 100%** of its acceptance criteria (CLAUDE.md rule 19);
   if a premise looks stale, check the ticket's PLAN-RECONCILE note first.
+
+## 13. Success metrics — the numbers that gate L1/L2/L6 *(ps3t.10, agreed 2026-06-15)*
+
+The program is justified by **O(what-changed) incrementality** (§3 bet 2, §4
+Layer 6). These are the concrete numbers that decide whether the rewrite
+delivered; a layer is "done" only when its gate metric holds *and* M3 does.
+
+**Baseline — current compiler (measured 2026-06-15):** a 1-line change triggers
+a *full* ~33s recompile (no function-level incrementality); cold/clean build
+~390s; `bs2 == bs3` selfhost byte-identical (enforced via `make selfhost` +
+`make diff-test`). Today a one-character edit costs ~33 seconds — the number the
+program exists to demolish.
+
+| # | Metric | Target | Gates |
+|---|---|---|---|
+| **M1** | Incremental rebuild: edit→artifact for a **1-line body change in a large module** (warm daemon) | **≤ 200 ms** (~165× vs today) | L6 (`ps3t.8`) |
+| **M2** | Cold (from-scratch) build | **≤ 1.0× the pre-rewrite compiler** (no regression) | L1 (`ps3t.3`), L2 (`ps3t.5`) |
+| **M3** | Selfhost byte-identical (`bs2 == bs3`) **and** HRN diff-test green | holds at **every** layer landing | all |
+| **M4** | Warm-daemon memory ceiling | **deferred** — define in `ps3t.8.1` when the daemon's shape + on-disk AST size are known | L6 |
+
+- **M1 (≤ 200 ms, aggressive)** effectively requires the in-memory daemon (§4
+  Layer 6 "warm question-graph") to clear the bar — deliberate: "instant" is
+  what makes the compiler a live tool (LSP, LLM-driven `--fix`). The
+  query/codegen portion should be ~sub-100ms; the budget leaves room for the
+  incremental link.
+- **M2 (no regression)** banks on SoA cache-efficiency, columnar passes, and
+  lock-free parallelism (§4 Layer 6 "four wildly fast levers") offsetting the new
+  arena / hash-cons / query overhead. The incremental win cannot be bought with a
+  slower from-scratch build.
+- **M3** is the merge gate, already enforced in CI (`diff-test.yml` +
+  `bootstrap-window.yml`, `make selfhost`).
+- **Measurement:** M2 = `time make` from clean vs the baseline above, re-checked
+  at each layer landing; M1 needs L6's query engine + warm daemon to exist (until
+  then it is the target the `ps3t.8.1` design builds toward, not a live gate); M3
+  runs every PR. Revisit a target only on a hard architectural constraint —
+  record the revision here.
