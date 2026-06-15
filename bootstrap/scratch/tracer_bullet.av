@@ -162,7 +162,7 @@ impl Emit {
 // ── Layer 4: grammar-DSL-style recursive-descent parser ────────────────
 // One method per grammar production. Tracks the byte offset (`pos`) so it
 // can hand the arena true byte-offset spans.
-type Parser = { src: bytes, n: int, pos: int }
+type Parser = { src: bytes, n: int, pos: int, ok: bool }
 
 impl Parser {
     fn cur(self) -> int {
@@ -190,6 +190,9 @@ impl Parser {
                 self.pos = self.pos + 1
             } else { go = false }
         }
+        // A factor must be at least one digit — reject "x" / "1 +" / EOF
+        // rather than silently fabricating IntLit(0).
+        if self.pos == lo { self.ok = false }
         a.alloc_int(v, lo, self.pos)
     }
 
@@ -228,7 +231,7 @@ impl Parser {
     }
 }
 
-type ParseOut = { arena: ExprArena, root: int }
+type ParseOut = { arena: ExprArena, root: int, ok: bool }
 
 fn new_arena() -> ExprArena {
     ExprArena { kind: [], ival: [], lhs: [], rhs: [], op: [], span_lo: [], span_hi: [] }
@@ -236,10 +239,13 @@ fn new_arena() -> ExprArena {
 
 fn parse_program(source: string) -> ParseOut {
     let b = avra_bytes_from_string(source)
-    let p = Parser { src: b, n: avra_bytes_length(b), pos: 0 }
+    mut p = Parser { src: b, n: avra_bytes_length(b), pos: 0, ok: true }
     let a = new_arena()
     let root = p.parse_expr(a)
-    ParseOut { arena: a, root: root }
+    // The whole input must be consumed — reject trailing garbage ("1 2").
+    p.skip_ws()
+    if p.pos != p.n { p.ok = false }
+    ParseOut { arena: a, root: root, ok: p.ok }
 }
 
 // ── Layer 6: red-green incremental DB ──────────────────────────────────
@@ -510,6 +516,18 @@ fn main() {
     println("[differential oracle @rev3]  incremental vs from-scratch")
     fails = fails + check("oracle: incremental type == from-scratch type", inc_type == fresh_type)
     fails = fails + check("oracle: incremental IR == from-scratch IR", inc_ir == fresh_ir)
+    println("")
+
+    // ── scenario 5: input validation (CodeRabbit review, PR #525) ──────
+    // A factor requires >=1 digit and the whole input must be consumed, so
+    // malformed input is rejected (ok == false) instead of silently
+    // fabricating IntLit(0) or ignoring trailing garbage. (This is basic
+    // hard-rejection, NOT the error-TOLERANT partial-tree recovery that
+    // remains an L1/L4 requirement — see the write-up.)
+    println("[input validation]")
+    fails = fails + check("valid input parses ok", parse_program(source).ok)
+    fails = fails + check("missing operand (\"1 +\") rejected", parse_program("1 +").ok == false)
+    fails = fails + check("trailing garbage (\"1 2\") rejected", parse_program("1 2").ok == false)
     println("")
 
     // ── perf baseline ──────────────────────────────────────────────────

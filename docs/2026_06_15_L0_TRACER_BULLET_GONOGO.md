@@ -150,11 +150,14 @@ architecture it validates is the one the doc decided — no contradictions:
    Scale (many node types, real types, multiple interdependent queries, item-level
    keys) is what L4 (`ps3t.6`) and L1 (`ps3t.3`) carry — the *shape* validated
    here is the one they extend.
-4. **Error-tolerance.** The tracer parses only well-formed input. The doc makes
-   error-tolerance a Layer-1 *requirement* (§4 L1: explicit error/missing nodes;
-   the parser never bails — needed for the daemon/LLM story) and folds the
-   recovery points into the grammar DSL (`@expect`/`@recover`). Unexercised here;
-   L1/L4 must build it in from the start.
+4. **Error-*tolerance*.** The parser now *hard-rejects* malformed input (a factor
+   requires ≥1 digit; the whole input must be consumed — scenario 5), so it no
+   longer silently fabricates `IntLit(0)` or ignores trailing garbage. But that is
+   fail-fast validation, **not** the error-*tolerance* the doc makes a Layer-1
+   *requirement* (§4 L1: explicit error/missing nodes; the parser never bails —
+   yields a partial tree + *all* errors at once, needed for the daemon/LLM story),
+   with the recovery points folded into the grammar DSL (`@expect`/`@recover`).
+   Partial-tree recovery is unexercised here; L1/L4 must build it in from the start.
 
 ## Recommendation
 
