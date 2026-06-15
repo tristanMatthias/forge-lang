@@ -723,3 +723,86 @@ program exists to demolish.
   then it is the target the `ps3t.8.1` design builds toward, not a live gate); M3
   runs every PR. Revisit a target only on a hard architectural constraint —
   record the revision here.
+
+## 14. L1 node model — detailed design *(ps3t.3.1)*
+
+Productionizes the Layer 1 decisions (§4 Layer 1, §10.E) — **validated
+end-to-end by the L0 tracer** (`ps3t.1.1`, `bootstrap/scratch/tracer_bullet.av`):
+per-type SoA arena + typed `ExprId` + byte-offset span side-table + content
+fingerprints already ran and produced byte-identical, correctly-cached output.
+L1 is "build that for real" over the live AST: **43 `Expr` + 38 `Stmt` + 9
+`Pattern` variants**, replacing the `SExpr`/`SStmt` wrappers and the **558
+`.node` / 138 `.line` / 112 `.col`** access sites. Migrate behind a compat shim,
+HRN-diff-test byte-identical (M3) at every step.
+
+*Spec basis (`docs/2026_04_18_FULL_SPEC.md`):* the immutable + hash-consed,
+append-only model is underwritten by the spec's **immutability-by-default**; and
+the spec's design — *"the compiler itself is a queryable service via LSP/MCP… it
+asks the compiler (which has the AST)"* — is precisely what this node model (with
+L6) makes possible. No conflict with the language spec; L1 is a compiler-internal
+representation, expressible in current Avra (the tracer proved it compiles).
+
+### 14.1 Per-type arena store + typed-id newtypes *(ps3t.3.2)*
+- One arena per level: `ExprArena`, `StmtArena`, `PatArena`. Each is an
+  append-only store indexed by a **typed-id newtype** (`ExprId`/`StmtId`/`PatId`,
+  newtypes over `int`) — the opaque-handle rule (§4 Layer 3) applied to nodes, so
+  `ExprId`↔`StmtId` mixups are a compile error. (Newtypes already exist —
+  `ValueType.Newtype`, typeck-distinct — so this needs no new language feature.)
+- Nodes lose their boxed children: `Binary(left: Expr, op, right: Expr)` becomes
+  `Binary(left: ExprId, op, right: ExprId)`. Recursion + cross-type refs are
+  **typed ids into an arena**, never owned sub-nodes. Lists become `List<ExprId>`.
+- **Array-of-nodes now; SoA-per-field later** (§10.E) — a transparent
+  optimization, the id stays an index (the tracer used SoA columns to prove the
+  layout). Accessor `arena.get(id) -> node` is the one ergonomic tax we pay.
+  Compact (e.g. `u32`) id packing is a further storage optimization for *after*
+  sized ints land — the spec permits `u32`, today's value model is `int`/i64.
+
+### 14.2 Byte-offset span side-table *(ps3t.3.3 — folds `703y.1`)*
+- Spans move **off the node** into a dense side-table keyed by id: parallel
+  `span_lo`/`span_hi` byte-offset arrays (every node has a span). `line`/`col` are
+  computed on demand from a per-file line-start index, **only when printing a
+  diagnostic** — retiring the 138 `.line` / 112 `.col` reads behind `span(id)` +
+  `to_linecol`. This *is* `703y.1` (uniform spans), now via the side-table rather
+  than a fat wrapper.
+
+### 14.3 Side-table infrastructure — dense vs sparse *(ps3t.3.6)*
+- Generic, id-keyed: `DenseTable<Id,V>` (array — facts most nodes have: span,
+  resolved type) and `SparseTable<Id,V>` (map — sparse facts: provenance,
+  name-resolution overrides). Analysis passes **write facts here**, never mutate
+  the node (the immutable-pass model, §4 Layer 6). `SExpr.ty` becomes a
+  `DenseTable<ExprId, ValueType>` owned by typeck; `SStmt.from_macro` →
+  `SparseTable<StmtId, Provenance>`.
+
+### 14.4 Hash-consing — intern whole nodes by content *(ps3t.3.5)*
+- `arena.alloc(node)` interns by content: a `content→id` map returns the existing
+  id for identical content (shared subtree). **Content = variant + literal
+  payloads + child ids** (the tracer's structural fingerprint; the §4 Layer 3
+  hashing scheme) — **excludes spans/provenance/analysis** (all side-table, keyed
+  by id), so reformatting or re-spanning never busts sharing. Buys O(1)
+  structural equality (compare ids) + automatic incremental (changed subtree → new
+  id; unchanged → same id) — the substrate L6 consumes. Immutable: transforms
+  append new nodes sharing unchanged children.
+
+### 14.5 Error/missing node variants + error-tolerant parse *(ps3t.3.4)*
+- Add explicit `Expr.Error`/`Stmt.Error` (+ `Missing` for required-but-absent
+  slots). On a syntax error the parser emits an error-node + diagnostic and
+  **resyncs** (panic-mode at the grammar-DSL `@recover` points, §4 Layer 4)
+  instead of bailing — a **partial tree + all errors at once**, required for the
+  daemon/LSP/LLM story (a tree even for broken code). The error node's diagnostic
+  + bad-span live in side-tables.
+
+### 14.6 Compat-shim migration order *(ps3t.3.7 — staged, never broken §10.A)*
+The keystone refactor touches every pass; migrate incrementally so the tree
+always builds and HRN stays byte-identical:
+1. Land arena + typed ids + side-table infra (`.3.2`, `.3.3`, `.3.6`) **alongside**
+   `SExpr`/`SStmt`; a shim converts at pass boundaries — zero behavior change.
+2. Migrate passes one at a time (parse → resolve → typeck → desugar → mono →
+   codegen) onto the arena + side-tables; the shim bridges the un-migrated rest.
+3. Add error-nodes (`.3.4`) once the parser is on the arena.
+4. Add hash-consing (`.3.5`) once allocation is centralized in `alloc`.
+5. Delete `SExpr`/`SStmt` + the shim when the last pass is migrated.
+
+Each step gated by **M3** (diff-test + selfhost byte-identical) and **M2** (cold
+build ≤ 1.0×). Foundation tickets (`.3.2`/`.3.3`/`.3.6`) are not seed-gated
+(internal refactor, §10.A); they land first, then the pass migration, then
+`.3.4`/`.3.5`, then shim deletion.
