@@ -653,3 +653,37 @@ tickets that dogfood new surface in compiler `src/` (§10.A) — the only
 serialized work; most isn't gated. Agent-sized tickets w/ explicit acceptance.
 Success metrics gate L1/L2/L6. Assignees left open for farming; the DAG decides
 what's pickable.
+
+## 12. Working the program (for agents)
+
+How an agent picks up and executes `ps3t` work.
+
+**Every session:** `bd ready` → claim (`bd update <id> --claim`) → read the
+ticket's **acceptance criteria** + the spine-doc sections it references. The DAG
+decides what's pickable — don't touch blocked work.
+
+**Wave order (the DAG enforces it):**
+1. **L0** tracer (`ps3t.1.1`) — *one* agent; validates the architecture. GATE.
+2. **Metrics** (`ps3t.10`) + **HRN** harness (`ps3t.2.1`) — set targets + build
+   the old-vs-new oracle.
+3. **Layer design docs** (`ps3t.N.1`) — each layer's Definition-of-Ready; *can*
+   parallelize. They decompose/refine that layer's impl tickets.
+4. **Impl fan-out** — L1 ∥ L3, then L2 ∥ L4 ∥ L6-engine; L5/LLM/MIR trail.
+
+**Hard rules (from the spec):**
+- **Design-doc-first:** a layer's impl tickets depend on its design-doc ticket —
+  write/read it before implementing.
+- **Differential-test gate (HRN):** every change keeps old-vs-new output
+  identical (or selfhost byte-identical). It's the merge gate — run before push.
+- **Bootstrap window is *narrow* (§10.A):** internal refactors (arenas, engine,
+  caches) are **not** seed-gated and build normally; only **dogfooding new
+  syntax/macros in compiler `src/`** needs a seed advance. Don't over-serialize.
+- **Staged, never broken (§10.A):** big changes (esp. L1) use the compat shim so
+  the tree always builds; "go hard" *within* a buildable step.
+- **Parallel coordination:** branch/worktree per agent (`bd worktree`); the
+  seed-train is serialized (one advance at a time); the harness catches conflicts.
+- **No destructive git** (`checkout --` / `reset --hard` / `clean`); commit +
+  push per change; beads auto-syncs — **requires `bash scripts/bootstrap.sh` at
+  container start (NOT `sh`)**.
+- **Close a ticket only at 100%** of its acceptance criteria (CLAUDE.md rule 19);
+  if a premise looks stale, check the ticket's PLAN-RECONCILE note first.
