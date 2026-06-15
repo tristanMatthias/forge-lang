@@ -1,0 +1,7 @@
+# Throwaway scratch space (e.g. the L0 tracer bullet, ps3t.1.1).
+# Track sources only — never the compiled artifacts.
+build/
+*.ll
+*.bin
+*.bin.o
+*.avra-sha256
