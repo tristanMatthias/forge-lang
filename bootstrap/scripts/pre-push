@@ -19,9 +19,12 @@ set -euo pipefail
 REPO_DIR=$(git rev-parse --show-toplevel)
 cd "$REPO_DIR"
 
+# The window gate and the diff-test are independently skippable
+# (AVRA_SKIP_WINDOW_CHECK / AVRA_SKIP_DIFFTEST); `git push --no-verify`
+# skips the hook entirely. Note the skip here but do NOT exit — that would
+# silently disable the diff-test too.
 if [ "${AVRA_SKIP_WINDOW_CHECK:-0}" = "1" ]; then
   echo "[pre-push] AVRA_SKIP_WINDOW_CHECK=1 — bootstrap-window gate skipped"
-  exit 0
 fi
 
 # stdin: one "<local-ref> <local-sha> <remote-ref> <remote-sha>" line
@@ -68,7 +71,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
   fi
 done
 
-if [ "$need_check" -eq 1 ]; then
+if [ "$need_check" -eq 1 ] && [ "${AVRA_SKIP_WINDOW_CHECK:-0}" != "1" ]; then
   echo "[pre-push] outgoing commits touch bootstrap/ — verifying the bootstrap window"
   bash bootstrap/scripts/diagnose.sh --check-bootstrap-window
 fi

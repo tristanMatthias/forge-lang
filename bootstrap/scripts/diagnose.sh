@@ -2686,6 +2686,10 @@ dt_compile_ir() {
   cp "$input.ll" "$out_ll"
 }
 
+# Entry point for `--diff-test` (see the section banner above). Builds the
+# OLD/oracle and NEW/candidate compilers, then asserts byte-identical IR
+# over the selfhost source + corpus; prints a readable diff and returns
+# non-zero on any divergence.
 mode_diff_test() {
   local base="" new="HEAD"
   while [ $# -gt 0 ]; do
@@ -2696,6 +2700,19 @@ mode_diff_test() {
     esac
   done
   [ -n "$base" ] || base="${AVRA_DIFFTEST_BASE:-$(window_resolve_integration_ref)}"
+
+  # The oracle model requires OLD and NEW to build from the SAME seed, so any
+  # IR difference is attributable to compiler SOURCE alone. The seed-train
+  # invariant guarantees this on a feature branch — but assert it rather than
+  # assume it: a seed-pin mismatch would make a divergence ambiguous (seed vs
+  # source). Fail fast, before the expensive builds.
+  local base_seed new_seed
+  base_seed=$(ref_seed_sha256 "$base") || true
+  new_seed=$(ref_seed_sha256 "$new")  || true
+  [ -n "$base_seed" ] && [ -n "$new_seed" ] \
+    || die "diff-test: base ($base) or new ($new) pins no seed (no seed.ll/seed.lock)"
+  [ "$base_seed" = "$new_seed" ] \
+    || die "diff-test: seed pin differs between OLD ($base) and NEW ($new) — a divergence would be ambiguous (seed vs source). Align the pins (feature branches must not cycle the seed; see --check-bootstrap-window)."
 
   local old="$DIFFTEST_DIR/old" newd="$DIFFTEST_DIR/new"
   log "diff-test: OLD/oracle=$base   NEW/candidate=$new"
