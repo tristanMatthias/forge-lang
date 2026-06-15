@@ -33,10 +33,20 @@ fi
 # second.
 ZERO=0000000000000000000000000000000000000000
 need_check=0
+# Separately track whether the COMPILER SOURCES changed (packages /
+# runtime.c / llvm_wrapper.c). Only those can alter emitted IR, so the
+# HRN differential test runs only then — a docs/scripts/tests push skips
+# it. Tests are corpus *inputs*, fed identically to both compilers, so a
+# test edit cannot itself cause a divergence.
+need_difftest=0
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ -z "${local_sha:-}" ] && continue
   [ "$local_sha" = "$ZERO" ] && continue   # ref deletion — nothing outgoing
   if [ "$remote_sha" = "$ZERO" ]; then
+    # New remote branch: no tip to diff against. Run the cheap (cached)
+    # window gate; leave the heavier diff-test to CI on the PR and to the
+    # next push (which has a remote tip to diff). Avoids building two
+    # compilers for a brand-new branch that may not touch compiler source.
     need_check=1
     continue
   fi
@@ -52,11 +62,22 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     exit 1
   fi
   [ -n "$touched" ] && need_check=1
+  if [ -n "$(git rev-list -n 1 "$remote_sha..$local_sha" \
+      -- bootstrap/packages bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null)" ]; then
+    need_difftest=1
+  fi
 done
 
-if [ "$need_check" -eq 0 ]; then
-  exit 0
+if [ "$need_check" -eq 1 ]; then
+  echo "[pre-push] outgoing commits touch bootstrap/ — verifying the bootstrap window"
+  bash bootstrap/scripts/diagnose.sh --check-bootstrap-window
 fi
 
-echo "[pre-push] outgoing commits touch bootstrap/ — verifying the bootstrap window"
-bash bootstrap/scripts/diagnose.sh --check-bootstrap-window
+# HRN differential test: quick (selfhost) IR-equality check
+# against the integration oracle when compiler sources changed. The full
+# corpus runs in CI (.github/workflows/diff-test.yml). Skip with
+# AVRA_SKIP_DIFFTEST=1 git push.
+if [ "$need_difftest" -eq 1 ] && [ "${AVRA_SKIP_DIFFTEST:-0}" != "1" ]; then
+  echo "[pre-push] compiler sources changed — quick differential test (selfhost IR)"
+  DIFF_TEST_QUICK=1 bash bootstrap/scripts/diagnose.sh --diff-test
+fi

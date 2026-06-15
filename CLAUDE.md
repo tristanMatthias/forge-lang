@@ -86,6 +86,7 @@ make                       # build the bootstrap compiler (produces build/bs2)
 make build-quick           # rebuild bs2, skip selfhost verify (inner loop)
 make test                  # spec suite + selfhost. Options: FILTER=<substr>, SKIP_SELFHOST=1
 make test FILTER=<substr>  # narrow tests (substring match against filename) — USE THIS for iteration
+make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-identical IR. QUICK=1 / BASE= / NEW= / CORPUS=
 make coverage              # run all spec tests with coverage instrumentation
 make run FILE=x            # compile and run a Avra program
 make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
@@ -171,6 +172,44 @@ rm -rf packages/cli/src/build/cache && rm -f build/bs2 && make build-quick
 
 This is narrow and deliberate (the CLI unit cache only) — it is NOT the
 blanket `find packages -name cache -exec rm` anti-pattern below.
+
+## Differential testing (HRN — the go-hard safety net)
+
+The `ps3t` "AST as the single source of truth" program rewrites the
+compiler's foundations. The net that makes a big-bang rewrite safe is the
+**HRN differential test** (spine doc §8): the OLD compiler is the oracle —
+OLD and NEW must emit **byte-identical IR** for the same inputs, so you can
+rip the foundation out and instantly catch behaviour drift.
+
+```bash
+make diff-test                 # OLD = integration branch, NEW = HEAD
+make diff-test BASE=<ref>      # override the oracle ref
+make diff-test QUICK=1         # selfhost differential only (fast)
+make diff-test CORPUS='tests/*.av'   # override the corpus glob
+```
+
+- Implemented as `diagnose.sh --diff-test` (centralized, per rule 10). It
+  builds the compiler at both refs **in isolation, from the SAME pinned
+  seed** (the seed-train invariant guarantees a feature branch's seed ==
+  the integration seed), so any IR difference is attributable to compiler
+  **source** alone, never the seed. Builds reuse the bootstrap-window
+  primitives and cache on a (seed + source) fingerprint.
+- **Inputs:** the selfhost source (the whole compiler — one compile each,
+  exercising ~all codegen; the decisive oracle) + a corpus of `.av`
+  programs. Files OLD can't compile standalone are skipped (the selfhost
+  pass covers those paths).
+- **Why IR equality is the oracle:** the toolchain is deterministic (the
+  selfhost fixed point already relies on it), so identical IR ⇒ identical
+  object ⇒ identical run-results. IR equality is the strict superset of the
+  "binary / test-results" checks. A *legitimate* IR change (e.g. an
+  intended codegen improvement) trips the gate by design — confirm
+  run-results match, then advance the oracle.
+- **Wired in:** CI (`.github/workflows/diff-test.yml`, full corpus, every
+  PR into the integration branch) and the pre-push hook (quick selfhost
+  check, only when compiler sources changed; `AVRA_SKIP_DIFFTEST=1` to
+  skip). This is the sibling of `--check-bootstrap-window`: the window gate
+  proves the source *builds* from the seed; diff-test proves it *behaves*
+  identically.
 
 ## CRITICAL RULE: Test cycle hygiene
 
