@@ -18,10 +18,12 @@
 //            (`type_of node N`) with revision tracking + early cutoff,
 //            and a codegen cache keyed by a body fingerprint.
 //
-// It then runs three scenarios — cold build, a NO-OP edit, and a real
-// value edit — and asserts (via instrumentation counters) that the query
-// and codegen are genuinely REUSED on the no-op edit and correctly
-// INVALIDATED on the value edit. Finally it records a perf baseline.
+// It then runs four scenarios — cold build, a NO-OP edit, a real value
+// edit, and a differential oracle — asserting (via instrumentation
+// counters) that the query and codegen are genuinely REUSED on the no-op
+// edit, correctly INVALIDATED on the value edit, and that the incrementally
+// maintained results EQUAL a from-scratch rebuild (spine doc §10.B: "the
+// engine's correctness oracle"). Finally it records a perf baseline.
 //
 // Grammar (precedence climbing):
 //   expr   := term (('+' | '-') term)*
@@ -492,6 +494,24 @@ fn main() {
     fails = fails + check("edit: eval is correct (=7)", val3 == 7)
     println("")
 
+    // ── scenario 4: differential oracle (spine doc §10.B) ──────────────
+    // "incremental result MUST equal from-scratch result" — the query
+    // engine's correctness oracle. The incremental DB has been carried
+    // across three revisions; a fresh DB recomputes everything cold. For
+    // the SAME (edited) program the type_of result AND the emitted IR must
+    // be identical, or the incremental machinery is lying.
+    let inc_type = db.t_val[pr3.root]
+    let inc_ir = db.codegen(pr3.arena, pr3.root)   // served from the incremental cache
+    mut fresh = new_db()
+    fresh.revision = 1
+    rebuild(fresh, pr3.arena, pr3.root)
+    let fresh_type = fresh.t_val[pr3.root]
+    let fresh_ir = fresh.codegen(pr3.arena, pr3.root)
+    println("[differential oracle @rev3]  incremental vs from-scratch")
+    fails = fails + check("oracle: incremental type == from-scratch type", inc_type == fresh_type)
+    fails = fails + check("oracle: incremental IR == from-scratch IR", inc_ir == fresh_ir)
+    println("")
+
     // ── perf baseline ──────────────────────────────────────────────────
     println("[perf baseline]  (avg over many iterations; CLOCK_MONOTONIC ms)")
     let iters = 60000
@@ -551,7 +571,7 @@ fn main() {
     println("")
 
     if fails == 0 {
-        println("RESULT: GO — all " + string(8) + " checks passed; layers compose end-to-end.")
+        println("RESULT: GO — all checks passed; layers compose end-to-end.")
     } else {
         println("RESULT: NO-GO — " + string(fails) + " check(s) failed.")
         avra_process_exit(1)
