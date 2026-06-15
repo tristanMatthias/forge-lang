@@ -57,14 +57,19 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
   # WINDOW_SRC_PATHS: over-triggering costs a cached sub-second verify,
   # under-triggering would skip the gate. -n 1 avoids the head pipe (and
   # its legitimate-SIGPIPE rc) so a real git failure can fail the push
-  # loudly instead of reading as "nothing touched".
-  if ! touched=$(git rev-list -n 1 "$remote_sha..$local_sha" \
-      -- bootstrap/ .gitignore .gitattributes 2>&1); then
-    echo >&2 "[pre-push] git rev-list failed for $remote_sha..$local_sha:"
-    echo >&2 "$touched"
-    exit 1
+  # loudly instead of reading as "nothing touched". This rev-list only
+  # decides whether to RUN the window check, which is itself skipped when
+  # AVRA_SKIP_WINDOW_CHECK=1 — so skip the computation too, lest a skipped
+  # push fail on the range (e.g. synthetic refs exercised by the hook spec).
+  if [ "${AVRA_SKIP_WINDOW_CHECK:-0}" != "1" ]; then
+    if ! touched=$(git rev-list -n 1 "$remote_sha..$local_sha" \
+        -- bootstrap/ .gitignore .gitattributes 2>&1); then
+      echo >&2 "[pre-push] git rev-list failed for $remote_sha..$local_sha:"
+      echo >&2 "$touched"
+      exit 1
+    fi
+    [ -n "$touched" ] && need_check=1
   fi
-  [ -n "$touched" ] && need_check=1
   if [ -n "$(git rev-list -n 1 "$remote_sha..$local_sha" \
       -- bootstrap/packages bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null)" ]; then
     need_difftest=1
