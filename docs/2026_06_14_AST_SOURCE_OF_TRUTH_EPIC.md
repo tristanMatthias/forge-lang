@@ -806,3 +806,68 @@ Each step gated by **M3** (diff-test + selfhost byte-identical) and **M2** (cold
 build ≤ 1.0×). Foundation tickets (`.3.2`/`.3.3`/`.3.6`) are not seed-gated
 (internal refactor, §10.A); they land first, then the pass migration, then
 `.3.4`/`.3.5`, then shim deletion.
+
+## 15. L3 typed identity — detailed design *(ps3t.4.1)*
+
+Productionizes Layer 3 (§4 Layer 3, §10.C). The seed is already in tree:
+**`so07.7` interned compile-time type ids** (`ValueType.Struct/Enum/Trait/
+Newtype/NarrowedEnum` each carry `id: int`; `vtype_eq` is id-first) and **`e5qo`**
+(dependent `Value<T>`) are *done*; **`wc5w`** (content-addressed `TypeId`) folds
+in here. L3 finishes the job: one identity for every type representation, ids as
+**opaque handles**, and the **content-addressed** hashing scheme — killing the
+**47** `name ==` / `kind ==` string-tag comparisons still on the hot path.
+
+**Scope (cross-layer, decided in §4 Layer 3):** the *runtime-`Value`* identity
+half is **mooted by L2's JIT** (which deletes `Value`, §4 Layer 2). So L3's
+durable work is **compile-time** type identity; the runtime-`Value` string
+interning (`ps3t.4.2`) is interim — do it only if the pre-JIT window demands it,
+not as polish on a type we're deleting.
+
+### 15.1 Interning — one opaque id per type representation *(extends `so07.7`)*
+- `so07.7` interns nominal ids; extend the `type_registry` so **structural
+  shapes, unions, and traits** are interned too — assigned once, compared as ints
+  forever, the string kept **only for printing**.
+- Retire the straddle in `vtype_eq` (id-compare *else* name-compare) → **id-only
+  equality** once every representation has an id. No more "two `foo`s compare by
+  name" ambiguity.
+
+### 15.2 The hashing scheme *(ps3t.4.3 — the §4 Layer 3 decision)*
+- **Structure only:** variant + literal payloads + child-hashes. **Excludes
+  spans, provenance, analysis facts** (side-table data, keyed by id) — the *same*
+  discipline as L1 hash-consing (§14.4): one hash story across nodes **and** types.
+- **Cycles → nominal-by-name:** a type refers to another by interned name/id, not
+  recursive content; trees hash bottom-up (acyclic).
+- **Deterministic:** canonical content, never addresses; canonical order for
+  unordered fields (struct fields, union members). Same content → same hash
+  everywhere (the distributed cache depends on it).
+- **Two tiers:** persistent/distributed = crypto-grade hash + version tag, cache
+  namespaced by `(compiler-version, hash-version)` (an algo change is a clean
+  miss, never a wrong hit); in-process = fast hash + content-compare on collision.
+
+### 15.3 Content-addressing *(folds `wc5w`)*
+- A type's identity **is** the §15.2 hash of its content. It drops in **behind the
+  opaque-handle rule** (§15.4) with zero call-site churn — interning's "assign the
+  next int" becomes "assign the content-hash." Buys cross-process cache stability
+  + reproducible builds (bet 4). This is `wc5w`.
+
+### 15.4 Opaque-handle enforcement *(ps3t.4.4 — the hard rule)*
+- IDs are **opaque handles**: only *compared* or *looked-up*, **never inspected**.
+  No `if name == "Stmt"`, no magic strings on the hot path (the 47 smells).
+  Dispatch is by-id / structural-via-registry. A lint flags string-literal
+  type-name comparisons + raw id inspection. This enforcement is *what makes*
+  §15.3's interning→content-addressing swap a zero-churn change.
+
+### 15.5 Symbol identity *(§10.C — bridges L3 ↔ L6 name resolution)*
+- A symbol's identity is its **definition site, not its name** (two `foo`s in
+  different scopes differ): **symbol id = content-hash of (qualified path + kind)**.
+  Resolution becomes a query (L6); a module's exported surface = its public items'
+  signature-fingerprints (§4 Layer 6), so private changes don't invalidate
+  importers. Same hashing scheme, applied to symbols.
+
+### 15.6 Order / impl tickets
+`so07.7` + `e5qo` (done) are the base. Order: **`ps3t.4.4`** (opaque-handle
+lint **first**, so the swap is safe) → extend interning to all reps + kill the
+`vtype_eq` name fallback → **`ps3t.4.3`** (hashing scheme) → **`wc5w`**
+(content-addressing drops in behind the handle rule). `ps3t.4.2`'s runtime-`Value`
+half is deferred/mooted per L2. Internal refactor (not seed-gated); each step
+gated by **M3** (diff-test + selfhost byte-identical).
