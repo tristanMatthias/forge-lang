@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -45,6 +45,8 @@ help:
 	@echo "  make quick         Inner-loop: rebuild bs2 + tests, skip selfhost. FILTER= supported."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
+	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
+	@echo "                     byte-identical IR. Options: BASE=, NEW=, QUICK=1, CORPUS=."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source. Add FAST=1"
 	@echo "                     for the inner-loop variant (per-fn diff, no verify)."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
@@ -141,6 +143,19 @@ quick:
 # Just the fixed-point check.
 selfhost:
 	@$(DIAG) --check-fixedpoint
+
+# Differential test (HRN): build the compiler at the base
+# (oracle) and at HEAD, then assert byte-identical IR over the selfhost
+# source + corpus. The go-hard safety net — a behaviour-preserving change
+# keeps every output identical; a divergence fails with a readable diff.
+#
+#   make diff-test                 # base = integration branch, new = HEAD
+#   make diff-test BASE=<ref>      # override the oracle ref
+#   make diff-test NEW=<ref>       # override the candidate ref
+#   make diff-test QUICK=1         # selfhost differential only (fast)
+#   make diff-test CORPUS='path/*.av'   # override the corpus glob
+diff-test:
+	@$(if $(QUICK),DIFF_TEST_QUICK=1 )$(if $(CORPUS),DIFF_TEST_CORPUS='$(CORPUS)' )$(DIAG) --diff-test $(if $(BASE),--base $(BASE)) $(if $(NEW),--new $(NEW))
 
 # Compile and run a single Avra file with the bootstrap compiler.
 run:

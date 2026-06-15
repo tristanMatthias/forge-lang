@@ -244,6 +244,13 @@ DIFF & ANALYSIS
   --diff-fn <file.av> <fn>
                        Same as --diff but only shows the body of one
                        function.
+  --diff-test [--base <ref>] [--new <ref>]
+                       Differential test (HRN): build the
+                       compiler at OLD (oracle, default integration branch)
+                       and NEW (default HEAD) and assert byte-identical IR
+                       over the selfhost source + corpus. The go-hard
+                       safety net. DIFF_TEST_QUICK=1 = selfhost only;
+                       DIFF_TEST_CORPUS=<glob> overrides the corpus.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -1742,6 +1749,7 @@ main() {
     --ll)                 mode_ll "$@" ;;
     --diff)               mode_diff "$@" ;;
     --diff-fn)            mode_diff_fn "$@" ;;
+    --diff-test)          mode_diff_test "$@" ;;
     --score)              mode_score "$@" ;;
     --rank)               mode_rank "$@" ;;
     --asan)               mode_asan "$@" ;;
@@ -2596,6 +2604,191 @@ mode_check_bootstrap_window() {
 
   printf '%s' "$fp" > "$marker"
   ok "bootstrap window holds — HEAD's source builds + runs from $ref's pristine seed"
+}
+
+# ─────────────────────────────────────────────────────────────────────
+# Differential-test harness (HRN) — old compiler is the oracle
+# ─────────────────────────────────────────────────────────────────────
+#
+# Build the compiler at TWO refs — OLD (the oracle baseline) and NEW (the
+# candidate) — and assert they emit BYTE-IDENTICAL IR for the same inputs:
+# the whole compiler source (the selfhost differential) plus a corpus of
+# .av programs. A behaviour-preserving change keeps every output identical;
+# a divergence prints a readable per-input diff and exits non-zero. This is
+# the go-hard safety net of spine doc sec 8: rip the foundation
+# out and instantly catch behaviour drift, with no migration scaffolding.
+#
+# Both compilers build from the SAME pinned seed — the seed-train invariant
+# (enforced by --check-bootstrap-window) guarantees a feature branch's seed
+# equals the integration seed — so any IR difference is attributable to
+# compiler SOURCE alone, never the seed. Builds are isolated (cold unit
+# cache, like the window gate) and cached on a (seed + compiler-source)
+# fingerprint, so a re-run with an unchanged base/HEAD is cheap.
+#
+# Why byte-identical IR is the oracle: the toolchain is deterministic (the
+# selfhost fixed point already relies on bs2 and bs3 emitting identical IR),
+# so identical IR ⇒ identical object ⇒ identical run-results by construction.
+# IR equality is therefore the strict superset of the "binary / test-results"
+# checks. When a future refactor changes IR *legitimately* (e.g. SSA
+# renumbering) the divergence surfaces here for a human to confirm against
+# results — exactly the "byte-identical IR where applicable" of sec 8.
+#
+# Usage / knobs:
+#   --base <ref>            OLD/oracle ref     (default: integration branch)
+#   --new  <ref>            NEW/candidate ref  (default: HEAD)
+#   DIFF_TEST_QUICK=1       selfhost differential only (skip the corpus)
+#   DIFF_TEST_CORPUS=<glob> corpus inputs      (default: bootstrap/tests/*.av)
+#   AVRA_FORCE_DIFFTEST=1   ignore the per-ref compiler build cache
+
+DIFFTEST_DIR="$BUILD_DIR/difftest"
+
+# Build the compiler from git ref $1 into dir $2 (isolated + cached),
+# reusing the bootstrap-window primitives. Produces $2/bs2 plus $2/tree
+# (the ref's compiler sources) and $2/{runtime,llvm_wrapper}.o.
+dt_build_compiler() {
+  local ref="$1" out="$2"
+  local ref_sha; ref_sha=$(git -C "$REPO_DIR" rev-parse "$ref^{commit}") \
+    || die "diff-test: cannot resolve ref '$ref'"
+  local seed_id; seed_id=$(ref_seed_sha256 "$ref") \
+    || die "diff-test: '$ref' pins no seed (no seed.ll or seed.lock)"
+  mkdir -p "$out"
+  local fp marker="$out/.dt_built"
+  fp=$(window_fingerprint "$seed_id" "$ref_sha")
+  if [ "${AVRA_FORCE_DIFFTEST:-0}" != "1" ] && [ -x "$out/bs2" ] \
+     && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
+    log "diff-test: compiler @ $ref (${ref_sha:0:12}) cached"
+    return 0
+  fi
+  log "diff-test: building compiler @ $ref (${ref_sha:0:12})"
+  materialize_treeish_seed "$ref" "$out/seed.ll" "$out/seed.lock" \
+    || die "diff-test: cannot materialize the seed pinned by $ref"
+  window_copy_tree "$out" "$ref_sha"
+  local entry="$out/tree/bootstrap/packages/cli/src/main.av"
+  [ -f "$entry" ] || die "diff-test: $ref's tree is missing $entry"
+  window_c_objects "$out"
+  local stage; stage=$(window_stage_binary "$ref" "$out" "$ref_sha") || return 1
+  if ! hermetic_compile_env "$stage" compile "$entry" >"$out/selfcompile.log" 2>&1; then
+    err "diff-test: $ref's compiler source failed to build from its seed"
+    tail -15 "$out/selfcompile.log" >&2
+    return 1
+  fi
+  llc_link_bin "$entry.ll" "$out/bs2.o" "$out/bs2" "$out/bs2.build.log" \
+      "$out/runtime.o" "$out/llvm_wrapper.o" \
+    || { cat "$out/bs2.build.log" >&2; die "diff-test: $ref compiler link failed"; }
+  printf '%s' "$fp" > "$marker"
+}
+
+# Compile $1 (an absolute .av path) with the compiler in dir $2; on
+# success copy its IR to $3. Echoes nothing; returns bs2's exit status.
+dt_compile_ir() {
+  local input="$1" cdir="$2" out_ll="$3"
+  hermetic_compile_env "$cdir/bs2" compile "$input" >"$cdir/last.compile.log" 2>&1 || return $?
+  cp "$input.ll" "$out_ll"
+}
+
+# Entry point for `--diff-test` (see the section banner above). Builds the
+# OLD/oracle and NEW/candidate compilers, then asserts byte-identical IR
+# over the selfhost source + corpus; prints a readable diff and returns
+# non-zero on any divergence.
+mode_diff_test() {
+  local base="" new="HEAD"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) base="${2:?--base needs a ref}"; shift 2 ;;
+      --new)  new="${2:?--new needs a ref}";  shift 2 ;;
+      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref>)" ;;
+    esac
+  done
+  [ -n "$base" ] || base="${AVRA_DIFFTEST_BASE:-$(window_resolve_integration_ref)}"
+
+  # The oracle model requires OLD and NEW to build from the SAME seed, so any
+  # IR difference is attributable to compiler SOURCE alone. The seed-train
+  # invariant guarantees this on a feature branch — but assert it rather than
+  # assume it: a seed-pin mismatch would make a divergence ambiguous (seed vs
+  # source). Fail fast, before the expensive builds.
+  local base_seed new_seed
+  base_seed=$(ref_seed_sha256 "$base") || true
+  new_seed=$(ref_seed_sha256 "$new")  || true
+  [ -n "$base_seed" ] && [ -n "$new_seed" ] \
+    || die "diff-test: base ($base) or new ($new) pins no seed (no seed.ll/seed.lock)"
+  [ "$base_seed" = "$new_seed" ] \
+    || die "diff-test: seed pin differs between OLD ($base) and NEW ($new) — a divergence would be ambiguous (seed vs source). Align the pins (feature branches must not cycle the seed; see --check-bootstrap-window)."
+
+  local old="$DIFFTEST_DIR/old" newd="$DIFFTEST_DIR/new"
+  log "diff-test: OLD/oracle=$base   NEW/candidate=$new"
+  dt_build_compiler "$base" "$old" || return 1
+  dt_build_compiler "$new"  "$newd" || return 1
+
+  local wd="$DIFFTEST_DIR/work"; rm -rf "$wd"; mkdir -p "$wd"
+  local fails=0 checked=0 skipped=0
+
+  # ── Selfhost differential: compile the OLD compiler's OWN source with
+  # BOTH compilers. OLD parses it by construction; a behaviour-preserving
+  # NEW must emit identical IR. This single input exercises ~all codegen.
+  log "diff-test: selfhost differential — both compilers compile the compiler"
+  local self="$old/tree/bootstrap/packages/cli/src/main.av"
+  if ! dt_compile_ir "$self" "$old" "$wd/self.old.ll"; then
+    cat "$old/last.compile.log" >&2; die "diff-test: OLD failed its own selfhost compile (oracle broken)"
+  fi
+  checked=$((checked+1))
+  if ! dt_compile_ir "$self" "$newd" "$wd/self.new.ll"; then
+    err "diff-test: NEW failed to compile the compiler source that OLD compiles — regression"
+    tail -15 "$newd/last.compile.log" >&2
+    fails=$((fails+1))
+  elif diff -q "$wd/self.old.ll" "$wd/self.new.ll" >/dev/null 2>&1; then
+    ok "diff-test: selfhost IR byte-identical ($(wc -l <"$wd/self.old.ll" | tr -d ' ') lines)"
+  else
+    err "diff-test: SELFHOST IR DIVERGED — the compiler compiles itself differently"
+    err "  full IR: $wd/self.old.ll  vs  $wd/self.new.ll"
+    diff -u "$wd/self.old.ll" "$wd/self.new.ll" | head -80 >&2
+    fails=$((fails+1))
+  fi
+
+  # ── Corpus differential: same .av inputs through both compilers.
+  if [ "${DIFF_TEST_QUICK:-0}" = "1" ]; then
+    log "diff-test: DIFF_TEST_QUICK=1 — skipping the corpus"
+  else
+    local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/*.av}"
+    log "diff-test: corpus differential — $glob"
+    local divergent=() input name cwd
+    for input in $glob; do
+      [ -f "$input" ] || continue
+      name=$(basename "$input")
+      cwd="$wd/corpus/$name"; mkdir -p "$cwd"
+      cp "$input" "$cwd/in.av"
+      # OLD is the oracle: a file it can't compile standalone (needs the
+      # test-harness link, sibling imports, …) is out of corpus scope —
+      # the selfhost pass already covers those codegen paths. Skip it.
+      if ! dt_compile_ir "$cwd/in.av" "$old" "$cwd/old.ll"; then
+        skipped=$((skipped+1)); rm -rf "$cwd"; continue
+      fi
+      checked=$((checked+1))
+      if ! dt_compile_ir "$cwd/in.av" "$newd" "$cwd/new.ll"; then
+        err "diff-test: NEW failed to compile '$name' that OLD compiled — regression"
+        divergent+=("$name"); fails=$((fails+1)); continue
+      fi
+      if diff -q "$cwd/old.ll" "$cwd/new.ll" >/dev/null 2>&1; then
+        rm -rf "$cwd"   # keep only divergent artifacts for inspection
+      else
+        divergent+=("$name"); fails=$((fails+1))
+      fi
+    done
+    if [ ${#divergent[@]} -gt 0 ]; then
+      err "diff-test: ${#divergent[@]} corpus input(s) diverged:"
+      printf '  %s\n' "${divergent[@]}" >&2
+      err "first divergence (${divergent[0]}):"
+      diff -u "$wd/corpus/${divergent[0]}/old.ll" "$wd/corpus/${divergent[0]}/new.ll" | head -80 >&2
+    fi
+  fi
+
+  log "diff-test: compared $checked input(s), skipped $skipped (not standalone-compilable)"
+  if [ "$fails" -eq 0 ]; then
+    ok "DIFF-TEST PASS — OLD ($base) and NEW ($new) emit byte-identical IR"
+    return 0
+  fi
+  err "DIFF-TEST FAIL — $fails divergence(s); the change is NOT behaviour-preserving"
+  err "(if the IR change is intentional, confirm run-results match and update the oracle)"
+  return 1
 }
 
 # ─────────────────────────────────────────────────────────────────────
