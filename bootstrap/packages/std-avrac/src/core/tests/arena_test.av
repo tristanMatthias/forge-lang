@@ -1,0 +1,21 @@
+// WHY: integration spec for the L1 arena (ps3t.3.2 + ingest shim ps3t.3.7 /
+// spine §14.1, §14.6). The arena store is WIRED into parse_or_fail behind
+// AVRA_L1_INGEST: enabling it ingests every top-level statement into a
+// StmtArena. We test the real wired path end-to-end (shelling out to bs2,
+// the established pattern for compiler-behaviour specs) rather than a
+// cross-package unit re-link. Flag-off is a no-op, so the diff-test stays
+// byte-identical.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+fn l1_ingest_output() -> string {
+    let fixture = "build/_l1_arena_fixture.av"
+    let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
+    avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "L1 arena ingest (wired)" {
+    then "parse_or_fail ingests every top-level stmt into a StmtArena" {
+        l1_ingest_output().contains("[l1-ingest] StmtArena holds 3 top-level stmts")
+    }
+}

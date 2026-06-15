@@ -76,6 +76,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
+use @std.avrac.core.{StmtArena, ingest_stmts}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -227,7 +228,17 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
         }
         fail(parsed.error_message)
     }
-    parsed.stmts!
+    let stmts = parsed.stmts!
+    // L1 (ps3t.3.2/.3.7): exercise the per-type arena store on the real
+    // parse output. Gated off by default — a no-op for normal builds, so
+    // the diff-test stays byte-identical — while keeping the arena code
+    // reachable (emitted + linkable). Flip AVRA_L1_INGEST=1 to verify the
+    // SStmt-list -> StmtArena ingest as the pass migration proceeds.
+    if avra_process_env_get("AVRA_L1_INGEST") == "1" {
+        let arena = ingest_stmts(stmts)
+        println("[l1-ingest] StmtArena holds ${string(arena.count())} top-level stmts")
+    }
+    stmts
 }
 
 /// Same shape as parse_or_fail but for the expression parser.

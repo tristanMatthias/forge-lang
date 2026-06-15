@@ -1,0 +1,71 @@
+// WHY: L1 node-model foundation (ps3t.3.2 + the ingest half of the shim
+// ps3t.3.7 / spine §14.1, §14.6). Per-type arena stores + typed-id
+// newtypes, plus the SStmt-list -> StmtArena ingest that gives the store a
+// REAL, reachable use (wired into parse_or_fail behind AVRA_L1_INGEST).
+//
+// ADDITIVE: lands alongside the existing SExpr/SStmt; changes no variant,
+// so it builds on the current pinned seed (bootstrap window). The arenas
+// store today's boxed nodes; the data-oriented win — nodes holding child
+// *ids* (Binary(ExprId,op,ExprId)) — is the seed-gated next increment.
+//
+// Typed ids are OPAQUE HANDLES (compare / look up, never inspect): typeck
+// keeps ExprId / StmtId / PatId nominally distinct (passing a StmtId where
+// an ExprId is wanted is an F1000 error). Construct `StmtId(i)`, peel with
+// `.raw()` inside this module only.
+
+use core.{Expr, Stmt, Pattern, SStmt}
+
+/// Index into the Expr arena — nominally distinct from StmtId/PatId/int.
+export type ExprId = int
+/// Index into the Stmt arena.
+export type StmtId = int
+/// Index into the Pattern arena.
+export type PatId = int
+
+/// Append-only arena of `Expr` nodes, addressed by `ExprId`.
+export type ExprArena = { nodes: List<Expr> }
+impl ExprArena {
+    fn alloc(self, node: Expr) -> ExprId {
+        let id = self.nodes.length
+        self.nodes.push(node)
+        ExprId(id)
+    }
+    fn get(self, id: ExprId) -> Expr { self.nodes[id.raw()] }
+    fn count(self) -> int { self.nodes.length }
+}
+
+/// Append-only arena of `Stmt` nodes, addressed by `StmtId`.
+export type StmtArena = { nodes: List<Stmt> }
+impl StmtArena {
+    fn alloc(self, node: Stmt) -> StmtId {
+        let id = self.nodes.length
+        self.nodes.push(node)
+        StmtId(id)
+    }
+    fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw()] }
+    fn count(self) -> int { self.nodes.length }
+}
+
+/// Append-only arena of `Pattern` nodes, addressed by `PatId`.
+export type PatArena = { nodes: List<Pattern> }
+impl PatArena {
+    fn alloc(self, node: Pattern) -> PatId {
+        let id = self.nodes.length
+        self.nodes.push(node)
+        PatId(id)
+    }
+    fn get(self, id: PatId) -> Pattern { self.nodes[id.raw()] }
+    fn count(self) -> int { self.nodes.length }
+}
+
+/// Compat shim (ingest direction, ps3t.3.7): drop a parsed statement list
+/// into a StmtArena, one handle per top-level statement. The first real,
+/// reachable consumer of the arena store — later increments migrate passes
+/// to read from it instead of the SStmt list.
+export fn ingest_stmts(stmts: List<SStmt>) -> StmtArena {
+    let arena = StmtArena { nodes: [] }
+    for s in stmts {
+        let _ = arena.alloc(s.node)
+    }
+    arena
+}
