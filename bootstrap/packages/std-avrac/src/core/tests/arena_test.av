@@ -1,21 +1,84 @@
 // WHY: integration spec for the L1 arena (ps3t.3.2 + ingest shim ps3t.3.7 /
 // spine §14.1, §14.6). The arena store is WIRED into parse_or_fail behind
-// AVRA_L1_INGEST: enabling it ingests every top-level statement into a
-// StmtArena. We test the real wired path end-to-end (shelling out to bs2,
-// the established pattern for compiler-behaviour specs) rather than a
+// AVRA_L1_INGEST: enabling it recursively flattens the parsed statement
+// pointer-tree into a StmtArena (every nested statement gets a typed id).
+// We test the real wired path end-to-end (shelling out to bs2, the
+// established pattern for compiler-behaviour specs) rather than a
 // cross-package unit re-link. Flag-off is a no-op, so the diff-test stays
 // byte-identical.
+//
+// Two acceptance facets are covered: (1) the recursive id-based ingest
+// produces MORE nodes than top-level statements (proving nested stmts are
+// flattened into the arena, not just the top level); (2) the typed ids are
+// nominally distinct — passing a StmtId where an ExprId is wanted is an
+// F1000 type error ("type system rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+use @std.avrac.core.{ExprArena, PatArena, TypeArena, Expr, Pattern, ValueType}
 
 fn l1_ingest_output() -> string {
+    // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
+    // bodies are flattened recursively (3 fn decls + 3 body stmts).
     let fixture = "build/_l1_arena_fixture.av"
     let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
     avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
 }
 
+fn l1_mixup_output() -> string {
+    // Misuse: pass a StmtId where an ExprId is expected. The arena's typed
+    // ids are nominally distinct, so typeck must reject this (F1000).
+    let fixture = "build/_l1_arena_mixup.av"
+    let src = "use @std.avrac.core.{ExprId, StmtId}\n" +
+        "fn want_expr(e: ExprId) -> int { e.raw() }\n" +
+        "fn main() {\n" +
+        "    let s = StmtId(0)\n" +
+        "    let _ = want_expr(s)\n" +
+        "}\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
 spec "L1 arena ingest (wired)" {
-    then "parse_or_fail ingests every top-level stmt into a StmtArena" {
-        l1_ingest_output().contains("[l1-ingest] StmtArena holds 3 top-level stmts")
+    then "parse_or_fail recursively flattens stmts into a StmtArena" {
+        l1_ingest_output().contains("[l1-ingest] NodeStore: 6 stmt nodes")
+    }
+}
+
+spec "L1 typed ids reject wrong-arena use" {
+    then "passing a StmtId where an ExprId is wanted is an F1000 type error" {
+        let out = l1_mixup_output()
+        out.contains("F1000") && out.contains("expects") && out.contains("ExprId")
+    }
+}
+
+// All four node kinds get their own dense arena (acceptance: "Expr/Stmt/
+// Pattern/ValueType each in its own dense arena"). Exercise Expr/Pattern/
+// ValueType in-process here (same package, no cross-package re-link); the
+// StmtArena is covered by the wired ingest spec above. Each ingest is
+// recursive and id-based: the count is the FULL flattened node total, so a
+// non-leaf tree yields more than one node — proof the children() recursion
+// runs and edges are recorded.
+spec "L1 ExprArena ingests recursively" {
+    then "Grouping(Number) flattens to 2 expr nodes" {
+        let ea = ExprArena { nodes: [], edges: [] }
+        let root = ea.ingest(Expr.Grouping(Expr.Number("5")))
+        // root is the parent (Grouping); it has exactly one child edge.
+        ea.count() == 2 && ea.children_of(root).length == 1
+    }
+}
+
+spec "L1 PatArena ingests recursively" {
+    then "Or(Wildcard, Wildcard) flattens to 3 pattern nodes" {
+        let pa = PatArena { nodes: [], edges: [] }
+        let root = pa.ingest(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard))
+        pa.count() == 3 && pa.children_of(root).length == 2
+    }
+}
+
+spec "L1 TypeArena ingests recursively" {
+    then "List(Int) flattens to 2 type nodes" {
+        let ta = TypeArena { nodes: [], edges: [] }
+        let root = ta.ingest(ValueType.List(ValueType.Int))
+        ta.count() == 2 && ta.children_of(root).length == 1
     }
 }
