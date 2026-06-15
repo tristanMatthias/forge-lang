@@ -598,3 +598,58 @@ is a **versioned public contract**. LSP/rustc-shaped → familiar to LLMs.
 - **Daemon memory:** LRU eviction of cold memoized results; specifics deferred.
 - **`Value`-deletion ripple:** audit std/user exposure of `Value` before L2
   deletes it (tracked under `g18a`).
+
+## 11. Execution DAG (beads structure)
+
+The beads refactor that makes `bd ready` show *exactly* the right work. 241
+non-closed issues triaged: **spine** (re-parented into the layer epics) vs **out**
+(stays under its own epic).
+
+### Track-epics under `ps3t`
+| Epic | Track | Folds in |
+|---|---|---|
+| `ps3t.1` | **L0** Tracer bullet *(gate)* | — |
+| `ps3t.2` | **HRN** Differential-test harness *(gate)* | — |
+| `ps3t.3` | **L1** Node model | `703y.1` (uniform spans, *in flight*) |
+| `ps3t.4` | **L3** Typed identity | `wc5w`, `e5qo` (`so07.7` done) |
+| `ps3t.5` | **L2** Compiled comptime / JIT | `so07`/`so07.8`, `g18a` |
+| `ps3t.6` | **L4** Derive framework + grammar DSL | `y9y4`, `s80z` (+`epkx`/`sl6c`/`cyxs`/`jw6v`/`x7be`), `93k3`† |
+| `ps3t.7` | **L5** No-drift | `vndt` (+`.1`/`.2`) |
+| `ps3t.8` | **L6** Compiler-as-query | `4apk`, `qvfb`, `ggkh`, `re1b`, `pdme`, `jg5z` |
+| `ps3t.9` | **LLM** native | `jg5z.7` + new |
+| `1n1v` | MIR *(deferred)* | — |
+
+† `93k3` superseded by L4.
+
+### Dependency DAG (drives `bd ready`)
+```
+L0 ──▶ HRN ──▶ ┌ L1 ┐
+               └ L3 ┘ ──▶ L2 ──▶ L4 ──▶ L5
+                    L1 ──────────▶ L6
+                    L3, L4 ──────▶ LLM
+                    L4, L6 ──────▶ MIR
+```
+Gates serial (`L0 → HRN → all`); then **L1 ∥ L3**; then **L2 ∥ L4** + L6-engine;
+L5 / LLM / MIR trail. `bd ready` surfaces L0 → HRN → L1+L3 → fan-out.
+
+### New tickets (from §10 + de-risking)
+Each layer's **first child is a design-doc ticket** (Definition-of-Ready). Plus:
+L0 tracer slice + metric baseline; HRN harness; L1 arena/typed-id/hash-cons; L2
+ORC JIT/sandbox/purity-check; L3 interning + hashing; L4 derive engine +
+grammar-DSL + seed parser; L6 query engine + name-res + fingerprints; LLM
+diagnostic schema/`--fix`/AST-as-data; `ps3t` success-metrics.
+
+### Out of spine (stay under their own epics — not pulled in)
+Nullability (`xm2g.*` ~18), RC memory (`rcsf.*` ~5), test-runner/cache
+(`uzs9`/`pdme`/… ~30), Components V2 (`vez6.*` ~16, *feeds* L4), language features
+(~14), general bugs (~40), CLI (`y4n1.*` ~4), isolated/channels (`nce6.*` ~5),
+bd/infra (`8nza`, `87al`, … ~4). **Cross-linked inputs (not moved):** `rcsf.4`
+(AST phase arenas) → L1; `y4n1.8` (module-graph name-res) → L6; content-addressed
+cache bits → L6.
+
+### "How" beyond the DAG
+Def-of-Ready = a layer's design-doc ticket is closed. **Seed-gating tag** on the
+tickets that dogfood new surface in compiler `src/` (§10.A) — the only
+serialized work; most isn't gated. Agent-sized tickets w/ explicit acceptance.
+Success metrics gate L1/L2/L6. Assignees left open for farming; the DAG decides
+what's pickable.
