@@ -169,6 +169,20 @@ interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
   `if name == "Stmt"`, no magic strings on the hot path. Dispatch is structural
   / by-id, so the compiler is a no-brainer to extend: add a variant, and the
   type system points at every place that must change.
+- **Hashing scheme (decided)** — a node/type's identity *is* the hash of its
+  content; getting this right is what makes caches correct, not just fast:
+  - **Structure only** — `variant + literal payloads + child-hashes`. **Excludes
+    spans, provenance, analysis facts** (those are side-table data keyed by the
+    id) — so reformatting never busts the cache.
+  - **Cycles** broken by **nominal-by-name** references: a type refers to another
+    by interned name/id, not recursive content. Trees hash bottom-up (acyclic).
+  - **Deterministic** — canonical content, never addresses; canonical order for
+    unordered fields. Same content → same hash everywhere (the distributed cache
+    depends on it).
+  - **Two tiers:** persistent/distributed = crypto-grade hash + version tag,
+    cache namespaced by `(compiler-version, hash-version)` (an algo change is a
+    clean miss, never a wrong hit); in-process hash-consing = fast hash with
+    content-compare on collision.
 
 ### Layer 4 — The derive framework *(decided)*
 **One** toolkit, reading the enum decls, emitting per-variant code for
