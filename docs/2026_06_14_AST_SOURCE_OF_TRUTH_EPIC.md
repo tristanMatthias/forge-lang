@@ -24,10 +24,13 @@ The payoff is the project's three goals at once:
 - **A killer language feature for users**: the very same machinery is
   `@derive(Json/Eq/Debug/...)` on *their* types (see §3, bet 1).
 
-**Scope:** the AST **and** the codegen **IR** — both get the same data-oriented +
-content-addressed + derive treatment, so *codegen* is incremental/cached too
-(only changed functions re-emit; folds `re1b` + per-fn codegen). The spine is the
-whole representation, front to back.
+**Scope:** the AST **and** the codegen **IR** — front to back. The AST gets the
+full data-oriented + content-addressed + **derive** treatment. The codegen IR
+gets **content-addressed per-function caching + exhaustive dispatch** — but *not*
+derivation: lowering is bespoke per-variant *logic* (emitting a `Binary` ≠ a
+`Call`), so it stays hand-written; only its *dispatch* is exhaustive-by-
+construction (L5) and its *output* is cached. One fn edit → only that fn re-emits
+(folds `re1b` + per-fn codegen).
 
 **Boundary — owns HOW, not WHAT.** This epic owns how the compiler *represents
 and processes* code; it does NOT own what the language *means* or what the syntax
@@ -390,6 +393,17 @@ each mono instance is a **content-addressed cache unit** keyed by `(generic body
 fingerprint, type-arg fingerprints)` — a type change re-monomorphizes only the
 instances that *use* it, and identical-IR instances **collapse to one artifact**
 (IR-level hash-consing). That dedup is the explosion control.
+
+**Codegen (decided): cached, not derived.** Lowering is **bespoke per-variant
+logic** (emitting a `Binary` ≠ emitting a `Call`) — *not* mechanical, so it stays
+**hand-written**; only its dispatch is exhaustive-by-construction (L5). What it
+gets from this program: **per-function, content-addressed caching** keyed by the
+body fingerprint (edit one fn → only it re-emits).
+- **Now (a):** cache **LLVM bitcode per function** behind an *abstract* cache
+  unit (so the next item can slot in without re-plumbing).
+- **Deferred (b):** an **own mid-level IR (MIR)** between AST and LLVM — a stable,
+  compact, content-addressed cache unit + a home for language-level analysis/opt
+  + backend independence. Booked as epic `1n1v`.
 
 ### Cross-cutting — LLM-native *(decided)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
