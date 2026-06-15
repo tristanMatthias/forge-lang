@@ -84,7 +84,7 @@ epic consolidates them into one coherent program.
 
 ## 4. The architecture — six-layer spine (foundation up)
 
-### Layer 1 — Node model *(decided)*
+### Layer 1 — Node model *(decided · epic `ps3t.3`; folds `703y.1`)*
 Collapse the `Expr`/`SExpr` and `Stmt`/`SStmt` two-type split into **one node
 type per level**, each carrying its own location. Aim at the **data-oriented**
 design: nodes live in a flat **numbered array**; per-node facts (span, resolved
@@ -124,7 +124,7 @@ deliberately. Mitigated by good accessors + typed IDs.
   edits) is *why* we commit to **immutable + hash-consed** — never mutate, only
   append-and-share. The constraint confirms the better design, not fights it.
 
-### Layer 2 — Compiled comptime: delete the interpreter *(decided)*
+### Layer 2 — Compiled comptime: delete the interpreter *(decided · epic `ps3t.5`; folds `so07`, `g18a`)*
 *End-state: `@comptime` is JIT-compiled and run — no interpreter, no `Value`.
 First-class AST then comes free (compiled code holds real `AstNode`s). The
 "interim" path below is superseded by the JIT but explains what's being deleted.*
@@ -170,7 +170,7 @@ macro pipeline.
 - **Caching:** comptime results are **content-addressed, memoized queries** (same
   fn + same args → cached) — falls out of the #4 hash scheme + L6.
 
-### Layer 3 — Typed identity *(decided)*
+### Layer 3 — Typed identity *(decided · epic `ps3t.4`; folds `wc5w`, `e5qo`)*
 Replace **string tags** (`kind = "enum"`, `"@std::...::Stmt"`) with **interned
 opaque IDs** — assign each type/variant a small integer once, compare integers
 forever, keep the string only for printing. `so07.7` already did this for
@@ -203,7 +203,7 @@ interning + content-addressing, mostly already seeded by `so07.7`/`wc5w`.)
     clean miss, never a wrong hit); in-process hash-consing = fast hash with
     content-compare on collision.
 
-### Layer 4 — The derive framework *(decided)*
+### Layer 4 — The derive framework *(decided · epic `ps3t.6`; folds `y9y4`, `s80z`, `93k3`†)*
 **One** toolkit, reading the enum decls, emitting per-variant code for
 **traverse / transform / serialize / render / dispatch** — replacing
 `derive_walker`, `@codec`, and the hand-written walkers with a single engine.
@@ -275,7 +275,7 @@ fn parse_factor(p: Parser) -> ExprId {        // a rule → a function
 This is the recursive-descent idea verbatim — the only difference from the book
 is that the by-hand translation (and by-hand `synchronize()`) is automated.
 
-### Layer 5 — No-drift discipline *(decided)*
+### Layer 5 — No-drift discipline *(decided · epic `ps3t.7`; folds `vndt`)*
 A `_ ->` over a **declared enum** is an **error** — *except* a deliberate
 catch-all via an explicit, greppable keyword (e.g. `rest ->`): "forgot a case"
 is banned, "handle the remainder" is allowed and *visible*. **Migration:
@@ -283,7 +283,7 @@ ratchet** — warning now, flip to error per-module as cleaned; Layer 4 erases
 most for free (derived code is exhaustive by construction), so `vndt`'s 2700+
 warnings shrink on their own. *Own epic — maps to existing `vndt`.*
 
-### Layer 6 — Compiler-as-query *(decided)*
+### Layer 6 — Compiler-as-query *(decided · epic `ps3t.8`; folds `4apk`, `qvfb`, `ggkh`, `re1b`, `pdme`, `jg5z`)*
 Make every derived fact a **memoized, incrementally-invalidated query** keyed by
 node-ID. Delivers incremental builds + LSP. Falls out of Layer 1's
 data-oriented substrate. This is `4apk`/`qvfb`.
@@ -405,7 +405,7 @@ body fingerprint (edit one fn → only it re-emits).
   compact, content-addressed cache unit + a home for language-level analysis/opt
   + backend independence. Booked as epic `1n1v`.
 
-### Cross-cutting — LLM-native *(decided)*
+### Cross-cutting — LLM-native *(decided · epic `ps3t.9`; folds `jg5z.7`)*
 Rides on Layers 3 (stable IDs) + 4 (serialization).
 1. **Structured + actionable diagnostics** — every error emits a machine form
    (code, span, message) + a suggested fix as a structured edit, beside the
