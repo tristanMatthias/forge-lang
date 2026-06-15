@@ -151,6 +151,22 @@ macro pipeline.
   the compile-time **TypeId** interning, already done in `so07.7`, remains
   relevant). Don't polish what we're deleting — aim straight at the JIT.
 
+**JIT specifics (decided).**
+- **Mechanism:** in-process **LLVM ORC JIT** — compile the `@comptime` fn's IR to
+  machine code in memory and call it directly (the target). A temp-`.so` +
+  `dlopen` path is an acceptable bootstrap stage-1 if ORC bindings are fiddly.
+- **Capability surface:** **pure by default + a tiny explicit read-only
+  allowlist** (`@embed`-style file read for codegen-from-data) — no other IO,
+  syscalls, or ambient access.
+- **Enforcement:** a **static** comptime-purity check (reuse `@pure`) rejects
+  banned calls *before* running; **runtime traps + resource limits** backstop the
+  uncatchable cases (infinite loops, memory).
+- **Migration:** the JIT replaces the interpreter, but the interpreter **stays as
+  a fallback during cutover** so the compiler always works. Removal tracked in
+  bead `g18a`.
+- **Caching:** comptime results are **content-addressed, memoized queries** (same
+  fn + same args → cached) — falls out of the #4 hash scheme + L6.
+
 ### Layer 3 — Typed identity *(decided)*
 Replace **string tags** (`kind = "enum"`, `"@std::...::Stmt"`) with **interned
 opaque IDs** — assign each type/variant a small integer once, compare integers
