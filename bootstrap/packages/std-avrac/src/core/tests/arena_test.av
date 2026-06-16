@@ -16,6 +16,7 @@
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 use @std.avrac.core.{ExprArena, PatArena, TypeArena, Expr, Pattern, ValueType}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
+use @std.avrac.core.{ingest_program, sstmt_at, Stmt, SStmt, StmtId}
 
 fn l1_ingest_output() -> string {
     // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
@@ -89,6 +90,29 @@ spec "L1 TypeArena ingests recursively" {
         let ta = TypeArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
         let root = ta.ingest(ValueType.List(ValueType.Int), byte_span_none())
         ta.count() == 2 && ta.children_of(root).length == 1
+    }
+}
+
+// ingest_program lifts each top-level statement's preserved (line, col) into
+// a real byte-offset span, computed in-process (no shell) so the lo/hi math
+// is asserted directly. Two leaf NoOp statements over "x\ny\n": the first
+// spans [0, 2) (up to the next statement's start), the second [2, 4) (to end
+// of source); line/col round-trips back through the LineIndex.
+spec "ingest_program records real statement spans" {
+    then "consecutive statements get adjacent byte-offset spans + correct line/col" {
+        let stmts = [sstmt_at(Stmt.NoOp, 1, 1, ""), sstmt_at(Stmt.NoOp, 2, 1, "")]
+        let store = ingest_program(stmts, "x\ny\n")
+        let s0 = store.stmts.span_of(StmtId(0))
+        let s1 = store.stmts.span_of(StmtId(1))
+        let lc1 = store.stmt_linecol(StmtId(1))
+        store.stmts.count() == 2 && s0.lo == 0 && s0.hi == 2 && s1.lo == 2 && s1.hi == 4 && lc1.line == 2 && lc1.col == 1
+    }
+}
+
+spec "ingest_program handles an empty program" {
+    then "no statements means an empty StmtArena" {
+        let stmts: List<SStmt> = []
+        ingest_program(stmts, "").stmts.count() == 0
     }
 }
 
