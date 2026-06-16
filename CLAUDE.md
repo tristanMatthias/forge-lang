@@ -173,6 +173,22 @@ rm -rf packages/cli/src/build/cache && rm -f build/bs2 && make build-quick
 This is narrow and deliberate (the CLI unit cache only) — it is NOT the
 blanket `find packages -name cache -exec rm` anti-pattern below.
 
+**Mutation-testing corollary (a stale cache can mask your REVERT).** When you
+deliberately build broken code to prove a test fails (the prepare-pr mutation
+check), then revert, the broken-source artifacts can outlive the revert and
+make `bs2 test <file>` keep reporting the *broken* result. The CLI-cache recipe
+above does NOT reach them. The objects that persist are: the edited package's
+own cache `packages/<pkg>/build/cache`, that package's whole-unit IR
+`packages/std-avrac/src/avrac.av.ll`, and — the one that bit hardest — the
+**test-runner compile cache at top-level `build/cache`**. So after a
+mutation→revert cycle, if tests still fail against known-good source, clear
+those too (scoped, not the blanket nuke):
+
+```bash
+rm -rf packages/std-avrac/build/cache packages/cli/src/build/cache build/cache \
+  && rm -f build/bs2 packages/std-avrac/src/avrac.av.ll && make build-quick
+```
+
 ## Differential testing (HRN — the go-hard safety net)
 
 The `ps3t` "AST as the single source of truth" program rewrites the
