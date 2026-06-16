@@ -218,10 +218,16 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
             let lo = lines.offset_of(s.line, s.col)
             // The precise end-of-statement byte arrives with the parser
             // migration (per-production offset tracking, the tracer's model).
-            // Until then use a conservative real-position-derived extent: up
-            // to the next source-bearing statement's start, else end of file.
-            let hi = if k + 1 < stmts.length && stmts[k + 1].line >= 1 {
-                lines.offset_of(stmts[k + 1].line, stmts[k + 1].col)
+            // Until then use a conservative real-position-derived extent: up to
+            // the next SOURCE-BEARING statement's start, else end of file.
+            // Skip any interspersed synthesised statements (line < 1) — a
+            // synthesised neighbour must not stretch this span to EOF.
+            let mut next = k + 1
+            while next < stmts.length && stmts[next].line < 1 {
+                next = next + 1
+            }
+            let hi = if next < stmts.length {
+                lines.offset_of(stmts[next].line, stmts[next].col)
             } else {
                 source.length
             }

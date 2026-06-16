@@ -128,6 +128,19 @@ spec "ingest_program: a synthesised statement has no source position" {
     }
 }
 
+// A real statement followed by a synthesised one must end at the next REAL
+// statement, not stretch to EOF: the hi-bound search skips synthesised
+// (line < 1) neighbours. Source "a\nb\nc\n" -> real(line1), synth, real(line3);
+// the first real statement spans [0, 4) (line 3's start), not [0, 6) (EOF).
+spec "ingest_program: hi skips synthesised statements to the next real one" {
+    then "an interspersed synthesised statement does not stretch the span to EOF" {
+        let stmts = [sstmt_at(Stmt.NoOp, 1, 1, ""), sstmt_at(Stmt.NoOp, 0, 0, ""), sstmt_at(Stmt.NoOp, 3, 1, "")]
+        let store = ingest_program(stmts, "a\nb\nc\n")
+        let s0 = store.stmts.span_of(StmtId(0))
+        s0.lo == 0 && s0.hi == 4
+    }
+}
+
 // The byte-offset SPAN side-table: a node ingested with a real span reports
 // it back via span_of (a side-table lookup, not a field on the
 // node); children reached through the bare children() recursion carry the
