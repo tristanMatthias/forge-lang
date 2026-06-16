@@ -208,9 +208,7 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
 export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
     let lines = build_line_index(source)
     let store = new_node_store(lines)
-    let mut k = 0
-    while k < stmts.length {
-        let s = stmts[k]
+    for (k, s) in stmts.enumerate() {
         // A synthesised top-level statement (line == 0, e.g. injected
         // intrinsics) has no source position — record the sentinel, never a
         // fabricated offset.
@@ -230,7 +228,6 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
             byte_span(lo, hi)
         }
         let _ = store.stmts.ingest(s.node, sp)
-        k = k + 1
     }
     store
 }

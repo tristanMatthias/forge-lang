@@ -51,12 +51,10 @@ export type LineIndex = { line_starts: List<int> }
 /// back through `to_linecol` reproduces the lexer's (line, col) exactly.
 export fn build_line_index(source: string) -> LineIndex {
     let mut starts: List<int> = [0]
-    let mut i = 0
-    while i < source.length {
+    for i in 0..source.length {
         if source[i] == "\n" {
             starts.push(i + 1)
         }
-        i = i + 1
     }
     LineIndex { line_starts: starts }
 }
