@@ -1,21 +1,156 @@
 // WHY: integration spec for the L1 arena (ps3t.3.2 + ingest shim ps3t.3.7 /
 // spine §14.1, §14.6). The arena store is WIRED into parse_or_fail behind
-// AVRA_L1_INGEST: enabling it ingests every top-level statement into a
-// StmtArena. We test the real wired path end-to-end (shelling out to bs2,
-// the established pattern for compiler-behaviour specs) rather than a
+// AVRA_L1_INGEST: enabling it recursively flattens the parsed statement
+// pointer-tree into a StmtArena (every nested statement gets a typed id).
+// We test the real wired path end-to-end (shelling out to bs2, the
+// established pattern for compiler-behaviour specs) rather than a
 // cross-package unit re-link. Flag-off is a no-op, so the diff-test stays
 // byte-identical.
+//
+// Two acceptance facets are covered: (1) the recursive id-based ingest
+// produces MORE nodes than top-level statements (proving nested stmts are
+// flattened into the arena, not just the top level); (2) the typed ids are
+// nominally distinct — passing a StmtId where an ExprId is wanted is an
+// F1000 type error ("type system rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+use @std.avrac.core.{ExprArena, PatArena, TypeArena, Expr, Pattern, ValueType}
+use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
+use @std.avrac.core.{ingest_program, sstmt_at, Stmt, SStmt, StmtId}
 
 fn l1_ingest_output() -> string {
+    // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
+    // bodies are flattened recursively (3 fn decls + 3 body stmts).
     let fixture = "build/_l1_arena_fixture.av"
     let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
     avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
 }
 
+fn l1_mixup_output() -> string {
+    // Misuse: pass a StmtId where an ExprId is expected. The arena's typed
+    // ids are nominally distinct, so typeck must reject this (F1000).
+    let fixture = "build/_l1_arena_mixup.av"
+    let src = "use @std.avrac.core.{ExprId, StmtId}\n" +
+        "fn want_expr(e: ExprId) -> int { e.raw() }\n" +
+        "fn main() {\n" +
+        "    let s = StmtId(0)\n" +
+        "    let _ = want_expr(s)\n" +
+        "}\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
 spec "L1 arena ingest (wired)" {
-    then "parse_or_fail ingests every top-level stmt into a StmtArena" {
-        l1_ingest_output().contains("[l1-ingest] StmtArena holds 3 top-level stmts")
+    then "parse_or_fail recursively flattens stmts into a StmtArena" {
+        l1_ingest_output().contains("[l1-ingest] NodeStore: 6 stmt nodes")
+    }
+    // The last top-level statement (`fn c`, the third line of the fixture)
+    // gets a REAL byte-offset span, and its (line, col) is recomputed
+    // on demand from that span as line 3 col 1 — never read off the node.
+    // (Ingest is post-order, so the last appended node is a top-level root.)
+    then "the last stmt carries a real byte-offset span; line/col recomputed from it" {
+        let out = l1_ingest_output()
+        out.contains("[l1-ingest] last stmt span [40,") && out.contains("line 3 col 1")
+    }
+}
+
+spec "L1 typed ids reject wrong-arena use" {
+    then "passing a StmtId where an ExprId is wanted is an F1000 type error" {
+        let out = l1_mixup_output()
+        out.contains("F1000") && out.contains("expects") && out.contains("ExprId")
+    }
+}
+
+// All four node kinds get their own dense arena (acceptance: "Expr/Stmt/
+// Pattern/ValueType each in its own dense arena"). Exercise Expr/Pattern/
+// ValueType in-process here (same package, no cross-package re-link); the
+// StmtArena is covered by the wired ingest spec above. Each ingest is
+// recursive and id-based: the count is the FULL flattened node total, so a
+// non-leaf tree yields more than one node — proof the children() recursion
+// runs and edges are recorded.
+spec "L1 ExprArena ingests recursively" {
+    then "Grouping(Number) flattens to 2 expr nodes" {
+        let ea = ExprArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span_none())
+        // root is the parent (Grouping); it has exactly one child edge.
+        ea.count() == 2 && ea.children_of(root).length == 1
+    }
+}
+
+spec "L1 PatArena ingests recursively" {
+    then "Or(Wildcard, Wildcard) flattens to 3 pattern nodes" {
+        let pa = PatArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = pa.ingest(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
+        pa.count() == 3 && pa.children_of(root).length == 2
+    }
+}
+
+spec "L1 TypeArena ingests recursively" {
+    then "List(Int) flattens to 2 type nodes" {
+        let ta = TypeArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = ta.ingest(ValueType.List(ValueType.Int), byte_span_none())
+        ta.count() == 2 && ta.children_of(root).length == 1
+    }
+}
+
+// ingest_program lifts each top-level statement's preserved (line, col) into
+// a real byte-offset span, computed in-process (no shell) so the lo/hi math
+// is asserted directly. Two leaf NoOp statements over "x\ny\n": the first
+// spans [0, 2) (up to the next statement's start), the second [2, 4) (to end
+// of source); line/col round-trips back through the LineIndex.
+spec "ingest_program records real statement spans" {
+    then "consecutive statements get adjacent byte-offset spans + correct line/col" {
+        let stmts = [sstmt_at(Stmt.NoOp, 1, 1, ""), sstmt_at(Stmt.NoOp, 2, 1, "")]
+        let store = ingest_program(stmts, "x\ny\n")
+        let s0 = store.stmts.span_of(StmtId(0))
+        let s1 = store.stmts.span_of(StmtId(1))
+        let lc1 = store.stmt_linecol(StmtId(1))
+        store.stmts.count() == 2 && s0.lo == 0 && s0.hi == 2 && s1.lo == 2 && s1.hi == 4 && lc1.line == 2 && lc1.col == 1
+    }
+}
+
+spec "ingest_program handles an empty program" {
+    then "no statements means an empty StmtArena" {
+        let stmts: List<SStmt> = []
+        ingest_program(stmts, "").stmts.count() == 0
+    }
+}
+
+// A synthesised statement (line 0, e.g. an injected intrinsic) has no source
+// position: ingest records span_none, and stmt_linecol maps it to (0, 0) —
+// the "no attribution" coordinate, not a misleading line 1.
+spec "ingest_program: a synthesised statement has no source position" {
+    then "a line-0 statement gets span_none and (0,0) line/col" {
+        let stmts = [sstmt_at(Stmt.NoOp, 0, 0, "")]
+        let store = ingest_program(stmts, "")
+        let lc = store.stmt_linecol(StmtId(0))
+        byte_span_is_none(store.stmts.span_of(StmtId(0))) && lc.line == 0 && lc.col == 0
+    }
+}
+
+// A real statement followed by a synthesised one must end at the next REAL
+// statement, not stretch to EOF: the hi-bound search skips synthesised
+// (line < 1) neighbours. Source "a\nb\nc\n" -> real(line1), synth, real(line3);
+// the first real statement spans [0, 4) (line 3's start), not [0, 6) (EOF).
+spec "ingest_program: hi skips synthesised statements to the next real one" {
+    then "an interspersed synthesised statement does not stretch the span to EOF" {
+        let stmts = [sstmt_at(Stmt.NoOp, 1, 1, ""), sstmt_at(Stmt.NoOp, 0, 0, ""), sstmt_at(Stmt.NoOp, 3, 1, "")]
+        let store = ingest_program(stmts, "a\nb\nc\n")
+        let s0 = store.stmts.span_of(StmtId(0))
+        s0.lo == 0 && s0.hi == 4
+    }
+}
+
+// The byte-offset SPAN side-table: a node ingested with a real span reports
+// it back via span_of (a side-table lookup, not a field on the
+// node); children reached through the bare children() recursion carry the
+// byte_span_none() sentinel until the parser migration threads precise spans.
+spec "L1 ExprArena records the node's span" {
+    then "the ingested root keeps its span; the recursed child is byte_span_none" {
+        let ea = ExprArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
+        let child = ea.children_of(root)[0]
+        let rs = ea.span_of(root)
+        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(ea.span_of(child))
     }
 }
