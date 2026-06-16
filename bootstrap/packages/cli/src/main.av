@@ -238,7 +238,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
         let store = ingest_program(stmts, source)
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
-        // ps3t.3.3: prove the byte-offset SPAN side-table holds REAL spans
+        // Prove the byte-offset SPAN side-table holds REAL spans
         // for statement nodes, and that (line, col) is recomputed on demand
         // from the span via the LineIndex (never stored on the node). Ingest
         // is post-order, so the LAST appended node is the last top-level

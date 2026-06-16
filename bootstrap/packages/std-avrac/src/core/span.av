@@ -11,7 +11,7 @@
 // ADDITIVE (bootstrap window, §14.6 step 1): new types only — no node-rep
 // change, no new surface syntax, no seed cycle — so it builds on the pinned
 // seed and lands ALONGSIDE the existing SExpr/SStmt line/col fields. Wiring
-// the compiler's diagnostics onto span(id) + to_linecol, and deleting the
+// the compiler's diagnostics onto span_of(id) + to_linecol, and deleting the
 // on-node line/col, is the seed-gated pass migration (§14.6 step 2), tracked
 // separately — NOT done here.
 

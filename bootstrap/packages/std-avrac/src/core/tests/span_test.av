@@ -50,6 +50,21 @@ spec "empty source still has one line" {
     }
 }
 
+spec "to_linecol past the last line-start stays on the last line" {
+    then "an offset inside the final line resolves there, not off the end" {
+        let li = build_line_index(idx3())
+        let lc = li.to_linecol(8)
+        lc.line == 3 && lc.col == 2
+    }
+}
+
+spec "offset_of clamps an out-of-range line to the last line" {
+    then "a line number past the index does not read out of bounds" {
+        let li = build_line_index(idx3())
+        li.offset_of(99, 1) == 7
+    }
+}
+
 spec "the synthesised-node sentinel is distinct from a real byte-0 span" {
     then "span(0,0) is NOT none, byte_span_none() is" {
         !byte_span_is_none(byte_span(0, 0)) && byte_span_is_none(byte_span_none())

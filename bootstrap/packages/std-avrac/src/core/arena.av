@@ -15,7 +15,7 @@
 // span columns record each node's byte offsets. The data-oriented end-state —
 // nodes literally holding child *ids* (Binary(ExprId,op,ExprId)), the compiler
 // PASSES reading from here instead of the pointer-tree, and diagnostics
-// rendering via byte_span(id) + to_linecol (retiring the on-node .line/.col) — is
+// rendering via span_of(id) + to_linecol (retiring the on-node .line/.col) — is
 // the seed-gated pass migration that §14.6 stages AFTER this foundation
 // (tickets ps3t.3.7 + per-pass work). Concretely for §14.2: this foundation
 // records REAL byte-offset spans for the statement nodes (whose source

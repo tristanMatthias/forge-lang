@@ -43,8 +43,8 @@ spec "L1 arena ingest (wired)" {
     then "parse_or_fail recursively flattens stmts into a StmtArena" {
         l1_ingest_output().contains("[l1-ingest] NodeStore: 6 stmt nodes")
     }
-    // ps3t.3.3: the last top-level statement (`fn c`, the third line of the
-    // fixture) gets a REAL byte-offset span, and its (line, col) is recomputed
+    // The last top-level statement (`fn c`, the third line of the fixture)
+    // gets a REAL byte-offset span, and its (line, col) is recomputed
     // on demand from that span as line 3 col 1 — never read off the node.
     // (Ingest is post-order, so the last appended node is a top-level root.)
     then "the last stmt carries a real byte-offset span; line/col recomputed from it" {
@@ -92,8 +92,8 @@ spec "L1 TypeArena ingests recursively" {
     }
 }
 
-// ps3t.3.3: the byte-offset SPAN side-table. A node ingested with a real
-// span reports it back via span_of (a side-table lookup, not a field on the
+// The byte-offset SPAN side-table: a node ingested with a real span reports
+// it back via span_of (a side-table lookup, not a field on the
 // node); children reached through the bare children() recursion carry the
 // byte_span_none() sentinel until the parser migration threads precise spans.
 spec "L1 ExprArena records the node's span" {
