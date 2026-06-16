@@ -1,18 +1,28 @@
 // WHY: L1 node-model foundation (ps3t.3.2 + the ingest half of the shim
-// ps3t.3.7 / spine §14.1, §14.6). Per-type arena stores + typed-id
-// newtypes for ALL FOUR node kinds (Expr/Stmt/Pattern/ValueType), plus a
-// RECURSIVE, id-based ingest that flattens the live pointer-tree into the
-// arenas — child/cross references become typed ids (the array-of-nodes-now
-// form, §14.1), proving "pointer-tree access removed" within the store.
+// ps3t.3.7 / spine §14.1, §14.6) plus the byte-offset SPAN side-table
+// (ps3t.3.3 / spine §14.2). Per-type arena stores + typed-id newtypes for
+// ALL FOUR node kinds (Expr/Stmt/Pattern/ValueType), a RECURSIVE, id-based
+// ingest that flattens the live pointer-tree into the arenas (child/cross
+// references become typed ids — the array-of-nodes-now form, §14.1), and a
+// dense per-node SPAN column keyed by the same id (§14.2: spans live OFF the
+// node, in a side-table; line/col are recomputed on demand from a LineIndex,
+// never stored — see core/span.av).
 //
 // ADDITIVE (bootstrap window, §14.6 step 1): lands ALONGSIDE the existing
-// SExpr/SStmt; changes no variant, so it builds on the current pinned seed.
-// The arenas store today's boxed nodes addressed by index, and a parallel
-// child-id side-table records the typed-id edges between them. The
-// data-oriented end-state — nodes literally holding child *ids*
-// (Binary(ExprId,op,ExprId)) and the compiler PASSES reading from here
-// instead of the pointer-tree — is the seed-gated pass migration that
-// §14.6 stages AFTER this foundation (tickets ps3t.3.7 + per-pass work).
+// SExpr/SStmt; changes no variant and adds no surface syntax, so it builds on
+// the current pinned seed. The arenas store today's boxed nodes addressed by
+// index, a parallel child-id side-table records the typed-id edges, and the
+// span columns record each node's byte offsets. The data-oriented end-state —
+// nodes literally holding child *ids* (Binary(ExprId,op,ExprId)), the compiler
+// PASSES reading from here instead of the pointer-tree, and diagnostics
+// rendering via byte_span(id) + to_linecol (retiring the on-node .line/.col) — is
+// the seed-gated pass migration that §14.6 stages AFTER this foundation
+// (tickets ps3t.3.7 + per-pass work). Concretely for §14.2: this foundation
+// records REAL byte-offset spans for the statement nodes (whose source
+// position the parser preserves on the SStmt wrapper); nodes reached through
+// the bare children() recursion carry the byte_span_none() sentinel until the
+// parser migration threads a precise span through every production (the
+// tracer's model, scratch/tracer_bullet.av).
 //
 // Typed ids are OPAQUE HANDLES (compare / look up, never inspect): typeck
 // keeps ExprId / StmtId / PatId / TypeId nominally distinct (passing a
@@ -28,6 +38,7 @@
 // additive equivalent.
 
 use core.{Expr, Stmt, Pattern, ValueType, SStmt}
+use core.{ByteSpan, byte_span, byte_span_none, LineIndex, LineCol, build_line_index}
 
 /// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
 export type ExprId = int
@@ -49,63 +60,75 @@ export type TypeEdges = { ids: List<TypeId> }
 
 /// Append-only arena of `Expr` nodes, addressed by `ExprId`. `nodes[i]` is
 /// the boxed node (array-of-nodes-now, §14.1); `edges[i]` is the dense
-/// side-table of that node's direct child `ExprId`s — the typed-id edges
-/// that replace pointer-tree navigation inside the store.
-export type ExprArena = { nodes: List<Expr>, edges: List<ExprEdges> }
+/// side-table of that node's direct child `ExprId`s; `span_lo[i]`/`span_hi[i]`
+/// are the node's byte-offset SPAN (§14.2) — parallel columns keyed by the
+/// same id, so a span is a lookup, never a field on the node.
+export type ExprArena = { nodes: List<Expr>, edges: List<ExprEdges>, span_lo: List<int>, span_hi: List<int> }
 impl ExprArena {
     /// Recursively ingest `node` (post-order: children first so their ids
-    /// exist before the parent records them), returning the parent's id.
-    /// allocate = append; cross references are typed `ExprId`s, never
-    /// owned sub-nodes.
-    fn ingest(self, node: Expr) -> ExprId {
+    /// exist before the parent records them), recording `sp` as the parent's
+    /// span. Children reached via the bare children() recursion have no
+    /// source position in today's tree, so they ingest with byte_span_none()
+    /// until the parser migration supplies precise spans (§14.2).
+    fn ingest(self, node: Expr, sp: ByteSpan) -> ExprId {
         let mut kid_ids: List<ExprId> = []
         for c in node.children() {
-            kid_ids.push(self.ingest(c))
+            kid_ids.push(self.ingest(c, byte_span_none()))
         }
         let id = self.nodes.length
         self.nodes.push(node)
         self.edges.push(ExprEdges { ids: kid_ids })
+        self.span_lo.push(sp.lo)
+        self.span_hi.push(sp.hi)
         ExprId(id)
     }
     fn get(self, id: ExprId) -> Expr { self.nodes[id.raw()] }
     /// Navigate by id, not by pointer — the L1 access discipline.
     fn children_of(self, id: ExprId) -> List<ExprId> { self.edges[id.raw()].ids }
+    /// The node's byte-offset span (§14.2) — a side-table lookup.
+    fn span_of(self, id: ExprId) -> ByteSpan { byte_span(self.span_lo[id.raw()], self.span_hi[id.raw()]) }
     fn count(self) -> int { self.nodes.length }
 }
 
 /// Append-only arena of `Stmt` nodes, addressed by `StmtId`.
-export type StmtArena = { nodes: List<Stmt>, edges: List<StmtEdges> }
+export type StmtArena = { nodes: List<Stmt>, edges: List<StmtEdges>, span_lo: List<int>, span_hi: List<int> }
 impl StmtArena {
-    fn ingest(self, node: Stmt) -> StmtId {
+    fn ingest(self, node: Stmt, sp: ByteSpan) -> StmtId {
         let mut kid_ids: List<StmtId> = []
         for c in node.children() {
-            kid_ids.push(self.ingest(c))
+            kid_ids.push(self.ingest(c, byte_span_none()))
         }
         let id = self.nodes.length
         self.nodes.push(node)
         self.edges.push(StmtEdges { ids: kid_ids })
+        self.span_lo.push(sp.lo)
+        self.span_hi.push(sp.hi)
         StmtId(id)
     }
     fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw()] }
     fn children_of(self, id: StmtId) -> List<StmtId> { self.edges[id.raw()].ids }
+    fn span_of(self, id: StmtId) -> ByteSpan { byte_span(self.span_lo[id.raw()], self.span_hi[id.raw()]) }
     fn count(self) -> int { self.nodes.length }
 }
 
 /// Append-only arena of `Pattern` nodes, addressed by `PatId`.
-export type PatArena = { nodes: List<Pattern>, edges: List<PatEdges> }
+export type PatArena = { nodes: List<Pattern>, edges: List<PatEdges>, span_lo: List<int>, span_hi: List<int> }
 impl PatArena {
-    fn ingest(self, node: Pattern) -> PatId {
+    fn ingest(self, node: Pattern, sp: ByteSpan) -> PatId {
         let mut kid_ids: List<PatId> = []
         for c in node.children() {
-            kid_ids.push(self.ingest(c))
+            kid_ids.push(self.ingest(c, byte_span_none()))
         }
         let id = self.nodes.length
         self.nodes.push(node)
         self.edges.push(PatEdges { ids: kid_ids })
+        self.span_lo.push(sp.lo)
+        self.span_hi.push(sp.hi)
         PatId(id)
     }
     fn get(self, id: PatId) -> Pattern { self.nodes[id.raw()] }
     fn children_of(self, id: PatId) -> List<PatId> { self.edges[id.raw()].ids }
+    fn span_of(self, id: PatId) -> ByteSpan { byte_span(self.span_lo[id.raw()], self.span_hi[id.raw()]) }
     fn count(self) -> int { self.nodes.length }
 }
 
@@ -113,57 +136,94 @@ impl PatArena {
 /// fourth node kind (§14.1: "Expr/Stmt/Pattern/ValueType, each in its own
 /// dense arena"). Type trees flatten the same way (e.g. `List<T>`'s element
 /// type becomes a child `TypeId`).
-export type TypeArena = { nodes: List<ValueType>, edges: List<TypeEdges> }
+export type TypeArena = { nodes: List<ValueType>, edges: List<TypeEdges>, span_lo: List<int>, span_hi: List<int> }
 impl TypeArena {
-    fn ingest(self, node: ValueType) -> TypeId {
+    fn ingest(self, node: ValueType, sp: ByteSpan) -> TypeId {
         let mut kid_ids: List<TypeId> = []
         for c in node.children() {
-            kid_ids.push(self.ingest(c))
+            kid_ids.push(self.ingest(c, byte_span_none()))
         }
         let id = self.nodes.length
         self.nodes.push(node)
         self.edges.push(TypeEdges { ids: kid_ids })
+        self.span_lo.push(sp.lo)
+        self.span_hi.push(sp.hi)
         TypeId(id)
     }
     fn get(self, id: TypeId) -> ValueType { self.nodes[id.raw()] }
     fn children_of(self, id: TypeId) -> List<TypeId> { self.edges[id.raw()].ids }
+    fn span_of(self, id: TypeId) -> ByteSpan { byte_span(self.span_lo[id.raw()], self.span_hi[id.raw()]) }
     fn count(self) -> int { self.nodes.length }
 }
 
 /// The L1 store: one dense arena per node kind, the data-oriented
-/// replacement for the boxed pointer-tree. Built by `ingest_program`.
+/// replacement for the boxed pointer-tree, plus the file's `LineIndex` so a
+/// node's (line, col) can be recomputed on demand from its span (§14.2) —
+/// the only place line/col is derived once the pass migration lands. Built
+/// by `ingest_program`.
 export type NodeStore = {
     exprs: ExprArena,
     stmts: StmtArena,
     pats: PatArena,
     types: TypeArena,
+    lines: LineIndex,
 }
 
-/// Construct an empty store with all four arenas.
-export fn new_node_store() -> NodeStore {
+impl NodeStore {
+    /// Recompute a statement node's 1-based (line, col) from its span —
+    /// the on-demand conversion that §14.2 says happens only at
+    /// diagnostic-render time, never from a stored field.
+    fn stmt_linecol(self, id: StmtId) -> LineCol {
+        self.lines.to_linecol(self.stmts.span_of(id).lo)
+    }
+}
+
+/// Construct an empty store carrying `lines` (the per-file LineIndex used to
+/// turn spans back into line/col on demand).
+export fn new_node_store(lines: LineIndex) -> NodeStore {
     NodeStore {
-        exprs: ExprArena { nodes: [], edges: [] },
-        stmts: StmtArena { nodes: [], edges: [] },
-        pats: PatArena { nodes: [], edges: [] },
-        types: TypeArena { nodes: [], edges: [] },
+        exprs: ExprArena { nodes: [], edges: [], span_lo: [], span_hi: [] },
+        stmts: StmtArena { nodes: [], edges: [], span_lo: [], span_hi: [] },
+        pats: PatArena { nodes: [], edges: [], span_lo: [], span_hi: [] },
+        types: TypeArena { nodes: [], edges: [], span_lo: [], span_hi: [] },
+        lines,
     }
 }
 
 /// Compat shim (ingest direction, ps3t.3.7): flatten a parsed statement
 /// list into the store's StmtArena, recursively (every nested statement
-/// gets an id, edges recorded as typed StmtIds). The first real, reachable
-/// consumer of the arena store; later increments migrate passes to read
-/// from it instead of the SStmt pointer-tree.
-export fn ingest_program(stmts: List<SStmt>) -> NodeStore {
-    let store = new_node_store()
-    for s in stmts {
-        let _ = store.stmts.ingest(s.node)
+/// gets an id, edges recorded as typed StmtIds). The first reachable
+/// consumer of the arena store is the gated AVRA_L1_INGEST probe in
+/// parse_or_fail (main.av); later increments migrate passes to read from it
+/// instead of the SStmt pointer-tree. `source` builds the LineIndex and lifts
+/// each top-level statement's preserved (line, col) into a REAL byte-offset
+/// span (§14.2); nested nodes carry byte_span_none() until the parser migration.
+export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
+    let lines = build_line_index(source)
+    let store = new_node_store(lines)
+    let mut k = 0
+    while k < stmts.length {
+        let s = stmts[k]
+        // A synthesised top-level statement (line == 0, e.g. injected
+        // intrinsics) has no source position — record the sentinel, never a
+        // fabricated offset.
+        let sp = if s.line < 1 {
+            byte_span_none()
+        } else {
+            let lo = lines.offset_of(s.line, s.col)
+            // The precise end-of-statement byte arrives with the parser
+            // migration (per-production offset tracking, the tracer's model).
+            // Until then use a conservative real-position-derived extent: up
+            // to the next source-bearing statement's start, else end of file.
+            let hi = if k + 1 < stmts.length && stmts[k + 1].line >= 1 {
+                lines.offset_of(stmts[k + 1].line, stmts[k + 1].col)
+            } else {
+                source.length
+            }
+            byte_span(lo, hi)
+        }
+        let _ = store.stmts.ingest(s.node, sp)
+        k = k + 1
     }
     store
-}
-
-/// Back-compat thin wrapper (the original ingest entry): just the stmt
-/// arena of a fully ingested program.
-export fn ingest_stmts(stmts: List<SStmt>) -> StmtArena {
-    ingest_program(stmts).stmts
 }

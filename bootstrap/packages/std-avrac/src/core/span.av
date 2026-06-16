@@ -1,0 +1,97 @@
+// WHY: L1 byte-offset span infrastructure (ps3t.3.3 / spine §14.2). Spans
+// move OFF the node into a side-table keyed by node-id (the columns live in
+// core/arena.av): every node carries a (lo, hi) byte-offset span. line/col
+// are NOT stored anywhere — they are computed on demand from a per-file
+// LineIndex, ONLY when rendering a diagnostic (the §14.2 requirement that
+// retires the .line/.col reads). This file is the reusable substrate: the
+// ByteSpan value, the LineIndex, and the two conversions (byte offset <-> 1-based
+// line/col) that agree EXACTLY with the lexer's accounting in
+// parse/lexer.av (advance_char: line++ / column=1 on '\n', column 1-based).
+//
+// ADDITIVE (bootstrap window, §14.6 step 1): new types only — no node-rep
+// change, no new surface syntax, no seed cycle — so it builds on the pinned
+// seed and lands ALONGSIDE the existing SExpr/SStmt line/col fields. Wiring
+// the compiler's diagnostics onto span(id) + to_linecol, and deleting the
+// on-node line/col, is the seed-gated pass migration (§14.6 step 2), tracked
+// separately — NOT done here.
+
+/// A source span: byte offsets into the originating file. `lo` is the first
+/// byte (inclusive), `hi` the byte just past the last (exclusive) — the
+/// half-open [lo, hi) convention the lexer's `substring(start, current)`
+/// already uses. A negative span (lo < 0) is the "no source position"
+/// sentinel for synthesised nodes (the byte-offset analogue of line/col == 0
+/// that `sexpr_dummy` / `sstmt_dummy` produce). The sentinel is negative, not
+/// (0, 0), so it never collides with a real node that legitimately starts at
+/// byte 0 (the first token in a file).
+export type ByteSpan = { lo: int, hi: int }
+
+/// Construct a span from byte offsets.
+export fn byte_span(lo: int, hi: int) -> ByteSpan { ByteSpan { lo, hi } }
+
+/// The synthesised-node sentinel (no real source position).
+export fn byte_span_none() -> ByteSpan { ByteSpan { lo: -1, hi: -1 } }
+
+/// True iff this is the synthesised-node sentinel (no real source position).
+export fn byte_span_is_none(s: ByteSpan) -> bool { s.lo < 0 }
+
+/// 1-based source coordinate, computed on demand from a ByteSpan + LineIndex.
+/// Deliberately never stored on a node — recomputing it from the byte
+/// offset only at diagnostic-render time is the whole point of §14.2.
+export type LineCol = { line: int, col: int }
+
+/// Per-file index of line-start byte offsets. `line_starts[i]` is the byte
+/// offset where line (i+1) begins; line 1 always starts at offset 0. Built
+/// once per file from the source text — the only thing needed to turn a
+/// byte offset into a (line, col) for diagnostics.
+export type LineIndex = { line_starts: List<int> }
+
+/// Build the line-start index from source text. Line 1 starts at byte 0;
+/// each '\n' opens the next line at the following byte. This mirrors the
+/// lexer's advance_char (line + 1 / column = 1 on '\n'), so an offset run
+/// back through `to_linecol` reproduces the lexer's (line, col) exactly.
+export fn build_line_index(source: string) -> LineIndex {
+    let mut starts: List<int> = [0]
+    let mut i = 0
+    while i < source.length {
+        if source[i] == "\n" {
+            starts.push(i + 1)
+        }
+        i = i + 1
+    }
+    LineIndex { line_starts: starts }
+}
+
+impl LineIndex {
+    /// Byte offset of a 1-based (line, col) — the inverse of `to_linecol`,
+    /// used to lift the (line, col)-only wrappers we still ingest from into
+    /// real byte-offset spans. An out-of-range line clamps to the last
+    /// known line (best effort; the parser never emits such positions).
+    fn offset_of(self, line: int, col: int) -> int {
+        if line < 1 { return 0 }
+        let mut idx = line - 1
+        if idx >= self.line_starts.length {
+            idx = self.line_starts.length - 1
+        }
+        self.line_starts[idx] + (col - 1)
+    }
+
+    /// 1-based (line, col) of a byte offset — computed ONLY when rendering a
+    /// diagnostic (§14.2). Binary search for the greatest line-start that is
+    /// <= offset; the column is the remaining byte delta (1-based).
+    fn to_linecol(self, offset: int) -> LineCol {
+        let mut lo = 0
+        let mut hi = self.line_starts.length - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if self.line_starts[mid] <= offset {
+                lo = mid
+            } else {
+                hi = mid - 1
+            }
+        }
+        LineCol { line: lo + 1, col: offset - self.line_starts[lo] + 1 }
+    }
+
+    /// Number of lines indexed (>= 1 for any source, even empty).
+    fn line_count(self) -> int { self.line_starts.length }
+}

@@ -1,0 +1,57 @@
+// WHY: unit spec for the L1 byte-offset span infrastructure (ps3t.3.3 /
+// spine §14.2). Proves the LineIndex conversions agree with the lexer's
+// 1-based line/column accounting (parse/lexer.av advance_char) and round-trip
+// cleanly, and that the synthesised-node sentinel is distinct from a real
+// span at byte 0. These are in-process unit checks (same package, no shell
+// out) — the span value + LineIndex are pure functions of the source text.
+
+use @std.avrac.core.{build_line_index, byte_span, byte_span_none, byte_span_is_none}
+
+// Fixture: "ab\ncde\nf" — line starts at bytes 0, 3, 7.
+fn idx3() -> string { "ab\ncde\nf" }
+
+spec "LineIndex maps lines to start offsets" {
+    then "three lines, starting at 0 / 3 / 7" {
+        let li = build_line_index(idx3())
+        li.line_count() == 3 && li.line_starts[0] == 0 && li.line_starts[1] == 3 && li.line_starts[2] == 7
+    }
+}
+
+spec "offset_of lifts 1-based (line, col) to a byte offset" {
+    then "matches the lexer's first-char positions" {
+        let li = build_line_index(idx3())
+        li.offset_of(1, 1) == 0 && li.offset_of(2, 1) == 3 && li.offset_of(2, 2) == 4 && li.offset_of(3, 1) == 7
+    }
+}
+
+spec "to_linecol recomputes (line, col) from a byte offset" {
+    then "binary search lands on the right line and column" {
+        let li = build_line_index(idx3())
+        let a = li.to_linecol(0)
+        let b = li.to_linecol(4)
+        let c = li.to_linecol(7)
+        a.line == 1 && a.col == 1 && b.line == 2 && b.col == 2 && c.line == 3 && c.col == 1
+    }
+}
+
+spec "offset_of and to_linecol round-trip" {
+    then "to_linecol(offset_of(l, c)) == (l, c) for interior positions" {
+        let li = build_line_index(idx3())
+        let rt = li.to_linecol(li.offset_of(2, 3))
+        rt.line == 2 && rt.col == 3
+    }
+}
+
+spec "empty source still has one line" {
+    then "line_count is 1 and offset 0 is line 1 col 1" {
+        let li = build_line_index("")
+        let lc = li.to_linecol(0)
+        li.line_count() == 1 && lc.line == 1 && lc.col == 1
+    }
+}
+
+spec "the synthesised-node sentinel is distinct from a real byte-0 span" {
+    then "span(0,0) is NOT none, byte_span_none() is" {
+        !byte_span_is_none(byte_span(0, 0)) && byte_span_is_none(byte_span_none())
+    }
+}

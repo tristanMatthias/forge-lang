@@ -15,6 +15,7 @@
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 use @std.avrac.core.{ExprArena, PatArena, TypeArena, Expr, Pattern, ValueType}
+use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
 
 fn l1_ingest_output() -> string {
     // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
@@ -42,6 +43,14 @@ spec "L1 arena ingest (wired)" {
     then "parse_or_fail recursively flattens stmts into a StmtArena" {
         l1_ingest_output().contains("[l1-ingest] NodeStore: 6 stmt nodes")
     }
+    // ps3t.3.3: the last top-level statement (`fn c`, the third line of the
+    // fixture) gets a REAL byte-offset span, and its (line, col) is recomputed
+    // on demand from that span as line 3 col 1 — never read off the node.
+    // (Ingest is post-order, so the last appended node is a top-level root.)
+    then "the last stmt carries a real byte-offset span; line/col recomputed from it" {
+        let out = l1_ingest_output()
+        out.contains("[l1-ingest] last stmt span [40,") && out.contains("line 3 col 1")
+    }
 }
 
 spec "L1 typed ids reject wrong-arena use" {
@@ -60,8 +69,8 @@ spec "L1 typed ids reject wrong-arena use" {
 // runs and edges are recorded.
 spec "L1 ExprArena ingests recursively" {
     then "Grouping(Number) flattens to 2 expr nodes" {
-        let ea = ExprArena { nodes: [], edges: [] }
-        let root = ea.ingest(Expr.Grouping(Expr.Number("5")))
+        let ea = ExprArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span_none())
         // root is the parent (Grouping); it has exactly one child edge.
         ea.count() == 2 && ea.children_of(root).length == 1
     }
@@ -69,16 +78,30 @@ spec "L1 ExprArena ingests recursively" {
 
 spec "L1 PatArena ingests recursively" {
     then "Or(Wildcard, Wildcard) flattens to 3 pattern nodes" {
-        let pa = PatArena { nodes: [], edges: [] }
-        let root = pa.ingest(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard))
+        let pa = PatArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = pa.ingest(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
         pa.count() == 3 && pa.children_of(root).length == 2
     }
 }
 
 spec "L1 TypeArena ingests recursively" {
     then "List(Int) flattens to 2 type nodes" {
-        let ta = TypeArena { nodes: [], edges: [] }
-        let root = ta.ingest(ValueType.List(ValueType.Int))
+        let ta = TypeArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = ta.ingest(ValueType.List(ValueType.Int), byte_span_none())
         ta.count() == 2 && ta.children_of(root).length == 1
+    }
+}
+
+// ps3t.3.3: the byte-offset SPAN side-table. A node ingested with a real
+// span reports it back via span_of (a side-table lookup, not a field on the
+// node); children reached through the bare children() recursion carry the
+// byte_span_none() sentinel until the parser migration threads precise spans.
+spec "L1 ExprArena records the node's span" {
+    then "the ingested root keeps its span; the recursed child is byte_span_none" {
+        let ea = ExprArena { nodes: [], edges: [], span_lo: [], span_hi: [] }
+        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
+        let child = ea.children_of(root)[0]
+        let rs = ea.span_of(root)
+        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(ea.span_of(child))
     }
 }

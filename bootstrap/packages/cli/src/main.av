@@ -76,7 +76,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, ingest_program}
+use @std.avrac.core.{NodeStore, ingest_program, StmtId}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -236,8 +236,20 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
     // recursive, id-based ingest as the pass migration proceeds: every
     // nested statement is flattened into the StmtArena with typed-id edges.
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
-        let store = ingest_program(stmts)
+        let store = ingest_program(stmts, source)
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
+        // ps3t.3.3: prove the byte-offset SPAN side-table holds REAL spans
+        // for statement nodes, and that (line, col) is recomputed on demand
+        // from the span via the LineIndex (never stored on the node). Ingest
+        // is post-order, so the LAST appended node is the last top-level
+        // statement's root (its children took the earlier ids) — the node
+        // that carries a real source span rather than the span_none sentinel.
+        if store.stmts.count() > 0 {
+            let last = StmtId(store.stmts.count() - 1)
+            let sp = store.stmts.span_of(last)
+            let lc = store.stmt_linecol(last)
+            println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")
+        }
     }
     stmts
 }

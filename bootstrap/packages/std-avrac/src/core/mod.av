@@ -1,5 +1,6 @@
-// Core types: AST definitions, LLVM externs, feature registry.
+// Core types: AST definitions, LLVM externs, feature registry, the L1
+// node-model arena store, and the byte-offset span infrastructure.
 //
 // dir-as-module (g2eo.1): ast.av + llvm.av + registry.av +
-// type_registry.av + runtime.av + module_graph.av auto-load as
-// siblings, surface flat at `core.{...}`.
+// type_registry.av + runtime.av + module_graph.av + ast_introspect.av +
+// arena.av + span.av auto-load as siblings, surface flat at `core.{...}`.
