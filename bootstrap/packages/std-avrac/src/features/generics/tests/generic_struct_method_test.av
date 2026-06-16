@@ -1,0 +1,65 @@
+// WHY: acceptance matrix for generic-struct method monomorphization (mkwc).
+// Methods on a generic struct must be specialized PER concrete instantiation,
+// so `self.field` resolves against the monomorphized struct type. Before the
+// fix, any `impl GBox<T> { fn m(self) ... self.field }` failed codegen with
+// "field access on non-struct value (ty=GBox__)" — self's type carried an
+// empty type-arg slug because the method wasn't specialized.
+//
+// The matrix deliberately uses MULTIPLE instantiations of each generic struct
+// to catch the monomorphizer "first match wins" hazard (CLAUDE.md silent
+// failure modes): each instantiation must dispatch to its own specialized
+// method, not the first one emitted.
+
+// One type param, read a field — the minimal case.
+type GsmBox<T> = { value: T }
+impl GsmBox<T> {
+    fn read(self) -> T { self.value }
+}
+
+// Two type params — both used in fields and method returns.
+type GsmPair<A, B> = { first: A, second: B }
+impl GsmPair<A, B> {
+    fn left(self) -> A { self.first }
+    fn right(self) -> B { self.second }
+}
+
+// A method that calls a sibling method on self (intra-struct dispatch).
+type GsmWrap<T> = { inner: T }
+impl GsmWrap<T> {
+    fn get(self) -> T { self.inner }
+    fn get_twice_eq(self, other: T) -> bool { self.get() == other }
+}
+
+spec "generic struct method: single param, two instantiations" {
+    then "GsmBox<int> reads its int field" {
+        let bi = GsmBox { value: 42 }
+        bi.read() == 42
+    }
+    then "GsmBox<string> reads its string field (distinct instantiation)" {
+        let bs = GsmBox { value: "hi" }
+        bs.read() == "hi"
+    }
+}
+
+spec "generic struct method: two type params" {
+    then "GsmPair<int,string> returns each field with the right type" {
+        let p = GsmPair { first: 7, second: "x" }
+        p.left() == 7 && p.right() == "x"
+    }
+    then "GsmPair<string,int> (swapped instantiation) stays distinct" {
+        let q = GsmPair { first: "y", second: 9 }
+        q.left() == "y" && q.right() == 9
+    }
+}
+
+spec "generic struct method: method calls a sibling method" {
+    then "get_twice_eq uses self.get() internally" {
+        let w = GsmWrap { inner: 5 }
+        w.get_twice_eq(5) && !w.get_twice_eq(6)
+    }
+}
+
+// NOTE: a generic struct with a List<T> field + List-backed methods (the
+// arena's `nodes: List<N>` shape) additionally needs construction-type
+// inference through containers + empty literals (qcvb) — covered there once
+// that lands, not here.
