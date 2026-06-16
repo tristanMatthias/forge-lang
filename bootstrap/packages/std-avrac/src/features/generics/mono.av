@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, method_mangled_name, method_from_mangled}
@@ -611,42 +611,21 @@ fn infer_from_params_with_expected(tp: List<TypeParamEntry>, params: List<ParamE
     if vtype_is_unknown(expected) { arg_ta } else { unify_param(tp, ret_vt, expected, arg_ta) }
 }
 
-/// Infer type-args from a struct literal's field initializers
-/// by matching each init against its declared field type.
+/// Infer type-args from a struct literal's field initializers by
+/// structurally unifying each field's DECLARED type against the init's
+/// ACTUAL type — reusing `unify_param`, the same unifier function-argument
+/// inference uses. This binds params nested in a container (`items: List<T>`
+/// binds `T` from a `List<int>` init), which the old `vtype_display` string
+/// check could never do (it compared "List<T>" against the param "T"). When
+/// the init's type is Unknown (e.g. construction in an un-annotated context,
+/// or an empty `[]`), `unify_param` binds the param to Unknown — preserving
+/// the pre-existing pass-through behavior rather than failing inference.
 fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, inits: List<FieldInit>, acc: List<TypeArg>) -> List<TypeArg> {
     mut out_acc = acc
-    mut i = 0
-    while i < inits.length {
-        let init = inits[i]
-        let field_ty = field_type_for(fields, init.name)
-        if type_param_has(tp, field_ty) {
-            // Cons-prepend: most-recent binding lives at the head so
-            // `type_arg_lookup` finds it first. Match the prior
-            // recursion's ordering: head = first init that bound.
-            mut prepended: List<TypeArg> = []
-            prepended.push(TypeArg { param_name: field_ty, concrete_vt: init.value.ty })
-            mut j = 0
-            while j < out_acc.length {
-                prepended.push(out_acc[j])
-                j = j + 1
-            }
-            out_acc = prepended
-        }
-        i = i + 1
+    for init in inits {
+        out_acc = unify_param(tp, field_vtype_of(fields, init.name), init.value.ty, out_acc)
     }
     out_acc
-}
-
-/// Look up a field's declared type-name (as a string) by
-/// field name. Returns "" when not found.
-fn field_type_for(fields: List<FieldEntry>, name: string) -> string {
-    mut i = 0
-    while i < fields.length {
-        let e = fields[i]
-        if e.name == name { return vtype_display(e.resolved) }
-        i = i + 1
-    }
-    ""
 }
 
 // Validate that all type params are resolved. Emit F1002 for each missing one.
