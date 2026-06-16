@@ -6,7 +6,7 @@
 use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
-use core.{mangle_join, type_short_name}
+use core.{mangle_join, type_short_name, method_mangled_name, method_from_mangled}
 
 // ── Registries ──
 
@@ -16,10 +16,13 @@ use core.{mangle_join, type_short_name}
 /// @field fns     — generic-fn registry.
 /// @field enums   — generic-enum registry.
 /// @field structs — generic-struct registry.
+/// @field impls   — impl blocks, so a generic struct's methods can be
+///                  specialised once per instantiation (mkwc).
 type GenRegs = {
     fns: List<GenericFnEntry>,
     enums: List<GenericEnumEntry>,
     structs: List<GenericStructEntry>,
+    impls: List<GenericImplEntry>,
 }
 
 /// One entry in the generic-fn registry. Pairs the name with the
@@ -43,6 +46,13 @@ type GenericStructEntry = {
     name: string,
     tp: List<TypeParamEntry>,
     fields: List<FieldEntry>,
+}
+/// One impl block. Methods are pre-mangled (`Type__method`) with `self`
+/// typed as the generic struct; per instantiation they get re-specialised
+/// onto the monomorphised struct (see `specialize_impl_methods`).
+type GenericImplEntry = {
+    type_name: string,
+    methods: List<SStmt>,
 }
 
 /// Find a generic fn by name. Returns the matching entry, or
@@ -77,6 +87,18 @@ fn generic_struct_lookup(reg: List<GenericStructEntry>, name: string) -> Generic
         i = i - 1
     }
     null
+}
+
+/// Collect every impl block targeting `type_name` (a type may have more
+/// than one impl block). Used to specialise a generic struct's methods.
+fn generic_impls_for(reg: List<GenericImplEntry>, type_name: string) -> List<GenericImplEntry> {
+    mut out: List<GenericImplEntry> = []
+    mut i = 0
+    while i < reg.length {
+        if reg[i].type_name == type_name { out.push(reg[i]) }
+        i = i + 1
+    }
+    out
 }
 
 // ── Type arguments ──
@@ -334,6 +356,19 @@ fn is_generic_decl(stmt: Stmt) -> bool {
         .EnumDecl(_, tp, _) if tp.length > 0 -> true
         .TypeDecl(_, tp, _) if tp.length > 0 -> true
         .Annotated(_, inner) -> is_generic_decl(inner.node)
+        _ -> false
+    }
+}
+
+/// True for an impl block whose target is a generic struct. Such impls are
+/// dropped from the rewritten program (mkwc): their methods are emitted
+/// per-instantiation by `specialize_impl_methods`, so the un-specialised
+/// `OrigType__method` (with `self: OrigType`, a type that never gets a
+/// concrete struct) must not reach codegen.
+fn is_generic_impl(stmt: Stmt, regs: GenRegs) -> bool {
+    match stmt {
+        .Impl(type_name, _) -> generic_struct_lookup(regs.structs, type_name) != null
+        .Annotated(_, inner) -> is_generic_impl(inner.node, regs)
         _ -> false
     }
 }
@@ -871,6 +906,14 @@ fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
             structs.push(GenericStructEntry { name, tp, fields })
             regs with { structs }
         }
+        // Every impl is recorded; only those targeting a generic struct are
+        // actually specialised (a struct Inst drives the lookup), so a plain
+        // non-generic impl in the registry is inert.
+        .Impl(type_name, methods) -> {
+            mut impls = regs.impls
+            impls.push(GenericImplEntry { type_name, methods })
+            regs with { impls }
+        }
         .Module(_, body) -> collect_generics(body, regs)
         .Annotated(_, inner) -> collect_generic_stmt(inner.node, regs)
         _ -> regs
@@ -1376,6 +1419,58 @@ fn specialize_struct(mangled: string, fields: List<FieldEntry>, ta: List<TypeArg
     Stmt.TypeDecl(mangled, empty_tp, substitute_fields(fields, ta))
 }
 
+/// Specialise one impl method for a concrete struct instantiation (mkwc).
+/// The method is pre-mangled as `OrigType__method` with `self: OrigType`;
+/// emit `MangledType__method` with `self: MangledType` and every type
+/// param substituted. `ta_ext` already carries BOTH the struct's type-arg
+/// bindings AND a synthetic `OrigType -> Struct(MangledType)` entry, so the
+/// ordinary substitution machinery rewrites `self` (and any body annotation
+/// naming the struct) in the same pass that turns `T` into its concrete type.
+fn specialize_method(mangled_type: string, method: Stmt, ta_ext: List<TypeArg>) -> Stmt {
+    match method {
+        .Function(name, mtp, params, ret_vt, body) -> {
+            let new_name = method_mangled_name(mangled_type, method_from_mangled(name))
+            let fn_stmt = Stmt.Function(new_name, mtp, substitute_params(params, ta_ext), substitute_vtype(ret_vt, ta_ext), substitute_stmts(body, ta_ext))
+            // @mono_spec → linkonce_odr, exactly as specialize_fn: the same
+            // method may be monomorphized in multiple consuming packages.
+            let empty_args: List<SExpr> = []
+            mut annots: List<Annotation> = []
+            annots.push(Annotation { name: "mono_spec", args: empty_args })
+            Stmt.Annotated(annots, sstmt_dummy(fn_stmt))
+        }
+        .Annotated(_, inner) -> specialize_method(mangled_type, inner.node, ta_ext)
+        _ -> method
+    }
+}
+
+/// Specialise every method of every impl targeting `orig_type` for one
+/// instantiation, producing `MangledType__method` functions. Builds the
+/// extended type-args once: the struct's own bindings (`ta`) plus the
+/// synthetic struct-name binding that rewrites `self`/struct references.
+fn specialize_impl_methods(impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<SStmt> {
+    let entries = generic_impls_for(impls, orig_type)
+    if entries.length == 0 { return [] }
+    // Copy `ta` (don't mutate the shared inst bindings) and append the
+    // struct-name rewrite: `Struct(orig_type)` -> `Struct(mangled_type)`.
+    mut ta_ext: List<TypeArg> = []
+    mut a = 0
+    while a < ta.length { ta_ext.push(ta[a])  a = a + 1 }
+    ta_ext.push(TypeArg { param_name: orig_type, concrete_vt: ValueType.Struct(mangled_type, 0) })
+
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < entries.length {
+        let methods = entries[i].methods
+        mut m = 0
+        while m < methods.length {
+            out.push(sstmt_dummy(specialize_method(mangled_type, methods[m].node, ta_ext)))
+            m = m + 1
+        }
+        i = i + 1
+    }
+    out
+}
+
 /// Generate one specialised AST node for each fully-resolved
 /// inst in `insts`. Calls `specialize_fn` / `specialize_enum`
 /// / `specialize_struct` based on which registry the inst's
@@ -1400,6 +1495,12 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
                 let struct_e = generic_struct_lookup(regs.structs, name)
                 if struct_e != null {
                     out.push(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0))
+                    // Also emit each of the struct's impl methods, specialised
+                    // onto this instantiation (mkwc) — otherwise `value.method()`
+                    // has no concrete `MangledType__method` to dispatch to.
+                    let methods = specialize_impl_methods(regs.impls, name, mangled, ta)
+                    mut mi = 0
+                    while mi < methods.length { out.push(methods[mi])  mi = mi + 1 }
                 }
             }
         }
@@ -1905,7 +2006,7 @@ fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<S
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        if !is_generic_decl(ss.node) {
+        if !is_generic_decl(ss.node) && !is_generic_impl(ss.node, regs) {
             out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
         }
         i = i + 1
@@ -2226,7 +2327,7 @@ export type MonoResult = { stmts: List<SStmt>, bag: DiagnosticBag }
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
 export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>) -> MonoResult {
-    let regs = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [] })
+    let regs = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [], impls: [] })
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
     // Pass 2: collect partial type args (enums merge across constructors)
