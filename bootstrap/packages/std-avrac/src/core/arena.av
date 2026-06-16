@@ -38,7 +38,7 @@
 // additive equivalent.
 
 use core.{Expr, Stmt, Pattern, ValueType, SStmt}
-use core.{ByteSpan, byte_span, byte_span_none, LineIndex, LineCol, build_line_index}
+use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
 
 /// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
 export type ExprId = int
@@ -172,9 +172,16 @@ export type NodeStore = {
 impl NodeStore {
     /// Recompute a statement node's 1-based (line, col) from its span —
     /// the on-demand conversion that §14.2 says happens only at
-    /// diagnostic-render time, never from a stored field.
+    /// diagnostic-render time, never from a stored field. A synthesised node
+    /// (span_none) has no source position, so it maps to (0, 0) — the same
+    /// "no attribution" coordinate `span_dummy` uses, which the renderer
+    /// treats as "skip the caret".
     fn stmt_linecol(self, id: StmtId) -> LineCol {
-        self.lines.to_linecol(self.stmts.span_of(id).lo)
+        let sp = self.stmts.span_of(id)
+        if byte_span_is_none(sp) {
+            return LineCol { line: 0, col: 0 }
+        }
+        self.lines.to_linecol(sp.lo)
     }
 }
 

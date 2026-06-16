@@ -116,6 +116,18 @@ spec "ingest_program handles an empty program" {
     }
 }
 
+// A synthesised statement (line 0, e.g. an injected intrinsic) has no source
+// position: ingest records span_none, and stmt_linecol maps it to (0, 0) —
+// the "no attribution" coordinate, not a misleading line 1.
+spec "ingest_program: a synthesised statement has no source position" {
+    then "a line-0 statement gets span_none and (0,0) line/col" {
+        let stmts = [sstmt_at(Stmt.NoOp, 0, 0, "")]
+        let store = ingest_program(stmts, "")
+        let lc = store.stmt_linecol(StmtId(0))
+        byte_span_is_none(store.stmts.span_of(StmtId(0))) && lc.line == 0 && lc.col == 0
+    }
+}
+
 // The byte-offset SPAN side-table: a node ingested with a real span reports
 // it back via span_of (a side-table lookup, not a field on the
 // node); children reached through the bare children() recursion carry the
