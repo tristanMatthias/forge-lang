@@ -2,7 +2,7 @@
 
 use core.{Expr, ValueType, vtype_eq, vtype_render_full, vtype_assignable, vtype_is_optional, vtype_strip_optional}
 use core.{is_result_enum_name}
-use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_report_at, tc_report}
+use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_result_ok_payload, tc_report_at, tc_report}
 use diagnostics.{DiagCode}
 
 /// Type-check a `expr() catch { fallback }`. The catch body must
@@ -70,6 +70,17 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
                 let maybe_ok = tc_catch_ok_type(r.tc, inner)
                 if maybe_ok != null {
                     return tc_er(r.tc, maybe_ok!)
+                }
+            }
+            // User-defined Result-shaped enums (Ok+Err variants, no
+            // type_args — the Ok payload lives in the variant declaration,
+            // not type_args): peel the Ok variant's payload type so
+            // `let x = userResult()?` types x as the success type, matching
+            // codegen's runtime unwrap.
+            if inner_name != "" {
+                let ok_payload = tc_result_ok_payload(r.tc, inner_name)
+                if ok_payload != null {
+                    return tc_er(r.tc, ok_payload!)
                 }
             }
             // For enums, nullable types, and Unknown — pass through (? is valid)
