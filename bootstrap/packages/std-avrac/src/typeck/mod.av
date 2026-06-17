@@ -267,6 +267,23 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     }
 }
 
+/// The `Ok`-variant payload type of a user-defined Result-shaped enum
+/// (one declaring both `Ok` and `Err` variants), or null when `ename`
+/// isn't Result-shaped. Lets the `?` operator unwrap user Result-likes
+/// (TrResult, MyResult) to their success type at typeck time — codegen
+/// already unwraps them at runtime, so without this the binding
+/// `let x = userResult()?` mis-typed `x` as the whole enum instead of
+/// the `Ok` payload. An `Ok` with no payload yields Void.
+export fn tc_result_ok_payload(tc: TC, ename: string) -> ValueType? {
+    if !enum_type_has(tc.enums, ename) { return null }
+    let variants = enum_type_variants(tc.enums, ename)
+    if variant_find(variants, "Ok") == null { return null }
+    if variant_find(variants, "Err") == null { return null }
+    let okv = variant_find(variants, "Ok")!
+    if okv.fields.length == 0 { return ValueType.Void }
+    resolve_vtype(tc, okv.fields[0].resolved)
+}
+
 // ── Struct/Enum registries ──
 
 /// One struct's metadata in StructTypeReg's `ord` list.
@@ -1842,11 +1859,12 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         // string()-strictness) see the typed value instead of
         // falling through to Unknown. Mirrors how StructLit is
         // handled by the struct_decl feature hook.
-        .EnumCtor(tn, _, args) -> {
+        .EnumCtor(tn, variant, args) -> {
             let after_args = check_expr_list(tc, args)
             if tn == "" { return tc_er(after_args, .Unknown) }
+            let gated = tc_check_enum_ctor_args(after_args, tn, variant, args)
             let empty_args: List<ValueType> = []
-            tc_er(after_args, ValueType.Enum(tn, empty_args, 0))
+            tc_er(gated, ValueType.Enum(tn, empty_args, 0))
         }
         // Parens-less `EnumType.Variant` parses as
         // FieldAccess(Ident(EnumType), Variant). When the head is a
@@ -1925,6 +1943,50 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
 fn tc_first_arg_type(tc: TC, args: List<SExpr>) -> ValueType {
     if args.length == 0 { return ValueType.Void }
     check_expr(tc, args[0].node).ty
+}
+
+/// Gate an enum constructor's payload types against the variant's declared
+/// field types (pyly). A wrong-typed payload — e.g. `Holder.One(42)` where
+/// the field is a struct, or `Stmt.Annotated(annots, bareStmt)` where the
+/// field is `SStmt` — otherwise compiles and corrupts memory at runtime (a
+/// 112-byte enum value stored where a ptr is expected → SIGSEGV). Skips
+/// fields whose declared type mentions one of the enum's type params (those
+/// bind via inference) and Unknown types on either side. Mirrors
+/// tc_check_newtype_ctor's safe predicate.
+fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr>) -> TC {
+    if !enum_type_has(tc.enums, tn) { return tc }
+    let v = variant_find(enum_type_variants(tc.enums, tn), variant)
+    if v == null { return tc }
+    let fields = v!.fields
+    let tp = enum_type_params(tc.enums, tn)
+    mut cur = tc
+    mut i = 0
+    let limit = if fields.length < args.length { fields.length } else { args.length }
+    while i < limit {
+        let fty = resolve_vtype(cur, fields[i].resolved)
+        let aty = check_expr(cur, args[i].node).ty
+        let skip = vtype_is_unknown(fty) || vtype_is_unknown(aty) || vtype_mentions_typeparam(fty, tp)
+        if !skip {
+            // Representation-class check: a value scalar (int/bool/float)
+            // stored where a pointer-represented field is declared — or the
+            // reverse — writes the wrong kind of bits into the payload slot
+            // (an i64 where a ptr is expected) and dereferences to a SIGSEGV
+            // at runtime (pyly: `Holder.One(42)` where the field is a struct).
+            // Optionals are stripped first so a `T?` field accepts a bare `T`.
+            // Nominal ptr-vs-ptr mismatches (e.g. Stmt vs SStmt) need sound
+            // cross-package type identity (wc5w) and are NOT gated here —
+            // vtype_eq currently trusts diverging registry ids for identical
+            // FQN nominals, so a strict nominal check false-positives.
+            let f0 = vtype_strip_optional(fty)
+            let a0 = vtype_strip_optional(aty)
+            if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) {
+                let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}`"
+                cur = tc_report(cur, DiagCode.TypeMismatch, msg)
+            }
+        }
+        i = i + 1
+    }
+    cur
 }
 
 // Check newtype constructor argument matches the inner type
