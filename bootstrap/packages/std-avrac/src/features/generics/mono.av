@@ -557,9 +557,27 @@ fn unify_type_lists(tp: List<TypeParamEntry>, params: List<ValueType>, args: Lis
 // so monomorphization can still resolve generic type parameters.
 /// Best-effort static type inference for an argument
 /// expression. Used during type-arg inference at call sites.
-fn arg_concrete_ty(arg: SExpr) -> ValueType {
-    if !vtype_is_unknown(arg.ty) { return arg.ty }
-    infer_lit_ty(arg.node)
+fn arg_concrete_ty(regs: GenRegs, arg: SExpr) -> ValueType {
+    if !vtype_is_unknown(arg.ty) {
+        // A generic enum-ctor literal is stamped `Enum(name, [], 0)` by
+        // typeck (empty type-arg list), so its inner type params never bind
+        // through unify_param. Re-infer its type args structurally from the
+        // ctor payload (zuzv). Same handling for a parenthesised ctor.
+        match arg.node {
+            .EnumCtor(tn, _, _) if tn != "" -> {
+                let lit = infer_lit_ty(regs, arg.node)
+                if !vtype_is_unknown(lit) { return lit }
+                return arg.ty
+            }
+            .Grouping(_) -> {
+                let lit = infer_lit_ty(regs, arg.node)
+                if !vtype_is_unknown(lit) { return lit }
+                return arg.ty
+            }
+            _ -> return arg.ty
+        }
+    }
+    infer_lit_ty(regs, arg.node)
 }
 
 /// Map a literal expression to its ValueType (Int / Bool /
@@ -568,30 +586,55 @@ fn arg_concrete_ty(arg: SExpr) -> ValueType {
 /// `[a, b, c]` (taking the first element's inferred type) and
 /// `(x: T) -> body` (synthesising `fn(T) -> Unknown` so
 /// `unify_param` can still bind T).
-fn infer_lit_ty(e: Expr) -> ValueType {
+fn infer_lit_ty(regs: GenRegs, e: Expr) -> ValueType {
     match e {
         .Number(_) -> ValueType.Int
         .FloatLit(_) -> ValueType.Float
         .String(_) -> ValueType.Str
         .Bool(_) -> ValueType.Bool
         .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
-        .EnumCtor(tn, _, _) if tn != "" -> {
-            let empty: List<ValueType> = []
-            ValueType.Enum(tn, empty, 0)
+        .EnumCtor(tn, variant, ctor_args) if tn != "" -> {
+            // Infer the enum's own type args from the ctor payload (zuzv),
+            // so a type param reachable only through this enum binds via
+            // unify_param's Enum arm. Non-generic / unknown enums keep the
+            // empty-arg shape (harmless — nothing to unify).
+            let ee = generic_enum_lookup(regs.enums, tn)
+            if ee == null {
+                let empty: List<ValueType> = []
+                ValueType.Enum(tn, empty, 0)
+            } else {
+                let ta = resolve_enum_type_args(ee!.tp, ee!.variants, variant, ctor_args)
+                ValueType.Enum(tn, type_args_in_order(ee!.tp, ta), 0)
+            }
         }
-        .Grouping(inner) -> infer_lit_ty(inner)
-        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(elements))
+        .Grouping(inner) -> infer_lit_ty(regs, inner)
+        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, elements))
         .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
 }
 
+/// Project a `List<TypeArg>` onto the declared type-param order, yielding
+/// the concrete `ValueType` per param (the `Struct(pname, 0)` sentinel from
+/// `type_arg_lookup` for any param that stayed unbound). Used to fill an
+/// inferred enum literal's `.Enum(_, type_args, _)` slot in declaration
+/// order so it lines up with the param side during unification.
+fn type_args_in_order(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < tp.length {
+        out.push(type_arg_lookup(ta, tp[i].name))
+        i = i + 1
+    }
+    out
+}
+
 /// Pick the first element's inferred type as the list's element
 /// type. Empty / all-unknown lists fall back to Unknown — the
 /// monomorphizer then reports F1002 and the user adds a turbofish.
-fn infer_list_elem_ty(elements: List<SExpr>) -> ValueType {
+fn infer_list_elem_ty(regs: GenRegs, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
-    let t = arg_concrete_ty(elements[0])
+    let t = arg_concrete_ty(regs, elements[0])
     if vtype_is_unknown(t) { ValueType.Unknown } else { t }
 }
 
@@ -613,12 +656,12 @@ fn param_types(params: List<ParamEntry>) -> List<ValueType> {
 /// generic constructors (`List<T>`, `Task<T>`, `fn(T) -> U`) so
 /// type params nested inside them are bound from the call's
 /// concrete arg types.
-fn infer_from_params(tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_params(regs: GenRegs, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
     mut out = acc
     mut i = 0
     let n = if params.length < args.length { params.length } else { args.length }
     while i < n {
-        out = unify_param(tp, params[i].vtype, arg_concrete_ty(args[i]), out)
+        out = unify_param(tp, params[i].vtype, arg_concrete_ty(regs, args[i]), out)
         i = i + 1
     }
     out
@@ -630,8 +673,8 @@ fn infer_from_params(tp: List<TypeParamEntry>, params: List<ParamEntry>, args: L
 /// in the return position. so07.7.16 — both mono passes
 /// (collect + rewrite) share this helper so the mangled name
 /// matches the instantiation registered earlier.
-fn infer_from_params_with_expected(tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
-    let arg_ta = infer_from_params(tp, params, args, acc)
+fn infer_from_params_with_expected(regs: GenRegs, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+    let arg_ta = infer_from_params(regs, tp, params, args, acc)
     if vtype_is_unknown(expected) { arg_ta } else { unify_param(tp, ret_vt, expected, arg_ta) }
 }
 
@@ -1058,11 +1101,11 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
             match callee {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, s) } else { s }
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, regs, s) } else { s }
                 }
                 .QualifiedIdent(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, s) } else { s }
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, regs, s) } else { s }
                 }
                 _ -> collect_inst_expr(callee, regs, s)
             }
@@ -1253,9 +1296,9 @@ fn add_resolved_inst(name: string, tp: List<TypeParamEntry>, ta: List<TypeArg>, 
 /// Add (or merge) a generic-fn instantiation inferred from
 /// the call args. Falls back to `merge_partial` so partial
 /// info from one call site can complete another's bindings.
-fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, st: CollectState) -> CollectState {
+fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, regs: GenRegs, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
-    add_resolved_inst(name, tp, infer_from_params(tp, params, args, empty_ta), st)
+    add_resolved_inst(name, tp, infer_from_params(regs, tp, params, args, empty_ta), st)
 }
 
 /// Variant of `try_add_fn_inst` that takes the call site's
@@ -1264,9 +1307,9 @@ fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEnt
 /// `expected` to harvest extra bindings for type params that
 /// only appear in the return position. Mirror of the typeck-side
 /// `tc_subst_generic_ret_with_expected` (so07.7.15).
-fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, st: CollectState) -> CollectState {
+fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
-    add_resolved_inst(name, tp, infer_from_params_with_expected(tp, params, args, ret_vt, expected, empty_ta), st)
+    add_resolved_inst(name, tp, infer_from_params_with_expected(regs, tp, params, args, ret_vt, expected, empty_ta), st)
 }
 
 /// Add (or merge) a generic-enum instantiation inferred from
@@ -1978,7 +2021,7 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta))), new_args)
+                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -1987,7 +2030,7 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta))), new_args)
+                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2097,7 +2140,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(fe.tp, fe.params, args, empty_ta))), new_args)
+                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, args, empty_ta))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2106,7 +2149,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(fe.tp, fe.params, args, empty_ta))), new_args)
+                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, args, empty_ta))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
