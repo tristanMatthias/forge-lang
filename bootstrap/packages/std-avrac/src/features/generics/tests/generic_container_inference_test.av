@@ -17,10 +17,10 @@ fn ci_fn_tuple_swapped_ok() -> bool { ci_snd(("y", 9)) == 9 }
 fn ci_fn_optional_ok() -> bool { ci_or(5, 0) == 5 }
 
 // Enum-args: T reachable ONLY through a generic enum argument. unify_param's
-// Enum arm binds T from the arg's `.Enum(_, type_args, _)` shape. (Inferring
-// those type_args from a BARE `CiEnum.Some(5)` literal — rather than a typed
-// binding — is the separate enum-literal type-arg inference gap, tracked apart
-// from unify_param.)
+// Enum arm binds T from the arg's `.Enum(_, type_args, _)` shape, AND the bare
+// ctor literal `CiEnum.CiSome(5)` now carries those inferred type args (zuzv:
+// arg_concrete_ty/infer_lit_ty re-infer them from the ctor payload), so no type
+// annotation is needed at the call site.
 enum CiEnum<T> {
     CiNone,
     CiSome(value: T),
@@ -31,10 +31,7 @@ fn ci_present<T>(m: CiEnum<T>) -> bool {
         .CiNone -> false
     }
 }
-fn ci_fn_enum_ok() -> bool {
-    let m: CiEnum<int> = CiEnum.CiSome(5)
-    ci_present(m)
-}
+fn ci_fn_enum_ok() -> bool { ci_present(CiEnum.CiSome(5)) }
 
 // ── generic-struct construction inference ──
 
