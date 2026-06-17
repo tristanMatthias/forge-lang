@@ -511,6 +511,30 @@ fn unify_param(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType,
             .Fn(a_ret) -> unify_param(tp, p_ret, a_ret, acc)
             _ -> acc
         }
+        .Optional(p_inner) -> match arg_ty {
+            .Optional(a_inner) -> unify_param(tp, p_inner, a_inner, acc)
+            // A nullable param/field given a bare value unwraps to the inner
+            // param (e.g. `x: T?` called with `5` binds T=int); a `null`
+            // (Void) tells us nothing about T, so it binds nothing.
+            .Void -> acc
+            _ -> unify_param(tp, p_inner, arg_ty, acc)
+        }
+        .Tuple(p_elems) -> match arg_ty {
+            .Tuple(a_elems) -> unify_type_lists(tp, p_elems, a_elems, acc)
+            _ -> acc
+        }
+        .Union(p_types) -> match arg_ty {
+            .Union(a_types) -> unify_type_lists(tp, p_types, a_types, acc)
+            _ -> acc
+        }
+        .Enum(_, p_args, _) -> match arg_ty {
+            .Enum(_, a_args, _) -> unify_type_lists(tp, p_args, a_args, acc)
+            _ -> acc
+        }
+        .Newtype(_, p_inner, _) -> match arg_ty {
+            .Newtype(_, a_inner, _) -> unify_param(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
         _ -> acc
     }
 }
