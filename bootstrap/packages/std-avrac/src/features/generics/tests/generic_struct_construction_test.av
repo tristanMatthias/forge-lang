@@ -1,0 +1,57 @@
+// WHY: acceptance for structural type-arg inference on generic-struct
+// construction. Constructing a generic struct must infer its type params by
+// structurally unifying each field's declared type against the init's actual
+// type — including params nested in a container (`items: List<T>` binds `T`
+// from a `List<int>` init), not just a bare `value: T`.
+//
+// The constructions live in top-level helper fns (function bodies are
+// type-annotated, which is what construction inference reads) and the helpers
+// return `bool` (a comparison), so they never depend on a generic-struct
+// member typing as its concrete instance type — that's a separate, tracked
+// gap — keeping this test focused on construction inference.
+
+// Container field: T is reachable only THROUGH List<T>. This is the case the
+// old string-based check missed (it compared the field type "List<T>" to the
+// param "T" and never matched); the structural unifier binds it.
+type GcStack<T> = { items: List<T> }
+impl GcStack<T> {
+    fn push_one(self, x: T) { self.items.push(x) }
+    fn count(self) -> int { self.items.length }
+    fn at(self, i: int) -> T { self.items[i] }
+}
+
+// Two type params, both bare fields.
+type GcPair<A, B> = { first: A, second: B }
+impl GcPair<A, B> {
+    fn left(self) -> A { self.first }
+    fn right(self) -> B { self.second }
+}
+
+fn gc_stack_int_ok() -> bool {
+    let s = GcStack { items: [10] }
+    s.push_one(20)
+    s.count() == 2 && s.at(0) == 10 && s.at(1) == 20
+}
+fn gc_stack_str_ok() -> bool {
+    let t = GcStack { items: ["a"] }
+    t.push_one("b")
+    t.count() == 2 && t.at(0) == "a" && t.at(1) == "b"
+}
+fn gc_pair_ok() -> bool {
+    let p = GcPair { first: 7, second: "x" }
+    p.left() == 7 && p.right() == "x"
+}
+fn gc_pair_swapped_ok() -> bool {
+    let q = GcPair { first: "y", second: 9 }
+    q.left() == "y" && q.right() == 9
+}
+
+spec "generic-struct construction: container-field type inference" {
+    then "GcStack<int>: T bound through List<int>" { gc_stack_int_ok() }
+    then "GcStack<string>: distinct instantiation" { gc_stack_str_ok() }
+}
+
+spec "generic-struct construction: two type params" {
+    then "GcPair<int,string>" { gc_pair_ok() }
+    then "GcPair<string,int> (swapped) stays distinct" { gc_pair_swapped_ok() }
+}
