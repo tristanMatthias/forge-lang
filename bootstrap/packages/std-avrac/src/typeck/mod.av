@@ -2987,10 +2987,11 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         }
         .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
         .MapLit(_) -> ValueType.Map
-        .Tuple(_) -> {
-            let empty_elems: List<ValueType> = []
-            ValueType.Tuple(empty_elems)
-        }
+        // Build the tuple type from the already-annotated elements'
+        // stamped `.ty` (annotate_expr recursed into them). Typing the
+        // literal as an empty Tuple lost the element types, which broke
+        // structural type-param inference through a tuple-typed param/field.
+        .Tuple(elems) -> ValueType.Tuple(list_map(elems, (e: SExpr) -> e.ty))
         // Lambda body type needs a real check — fall through. Cheap
         // because annotate_expr already walked the body recursively.
         .Lambda(params, body) -> ValueType.FnTyped(tc_param_types(params), check_expr(tc, body).ty)
