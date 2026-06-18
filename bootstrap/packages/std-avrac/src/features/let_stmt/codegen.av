@@ -2,7 +2,7 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional}
+use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
@@ -141,7 +141,7 @@ fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) 
     let n: ptr = null
     let drop_fn = ctx.get_fn(method_mangled_name(sname, "drop"))
     if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
-    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { ValueType.Struct(sname, type_registry_id_for(ctx.type_reg, sname)) }
+    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { vtype_struct(sname, type_registry_id_for(ctx.type_reg, sname)) }
     if vtype_is_copy(var_ty, ctx.copy_types) {
         let st_ty = ctx.get_type(sname)
         if st_ty != null {

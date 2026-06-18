@@ -792,10 +792,12 @@ fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
 /// re-resolves through the normal pipeline).
 fn construct_param_vtype(vt: ValueType) -> Expr {
     match vt {
-        .Struct(name, id) -> {
+        .Struct(name, type_args, id) -> {
             if is_splice_name(name) {
                 value_type_ctor_args("Struct",
-                    two_args(name_or_splice(name), int_lit_expr(id)))
+                    three_args(name_or_splice(name),
+                               construct_value_type_list(type_args),
+                               int_lit_expr(id)))
             } else {
                 construct_value_type_unknown()
             }
@@ -838,8 +840,10 @@ fn construct_value_type(vt: ValueType) -> Expr {
         .Ptr     -> value_type_ctor("Ptr")
         .Map     -> value_type_ctor("Map")
         .Unknown -> value_type_ctor("Unknown")
-        .Struct(name, id) -> value_type_ctor_args("Struct",
-            two_args(name_or_splice(name), int_lit_expr(id)))
+        .Struct(name, type_args, id) -> value_type_ctor_args("Struct",
+            three_args(name_or_splice(name),
+                       construct_value_type_list(type_args),
+                       int_lit_expr(id)))
         .Enum(name, type_args, id) -> value_type_ctor_args("Enum",
             three_args(string_lit_expr(name),
                        construct_value_type_list(type_args),

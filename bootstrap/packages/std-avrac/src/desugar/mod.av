@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
 use list_ops.{list_map, list_concat}
 
 // ListComp is no longer desugared at the AST level. The AST-rewrite
@@ -164,8 +164,8 @@ export fn inject_intrinsics(stmts: List<SStmt>) -> List<SStmt> {
 /// Build the synthetic `enum Result<T, E> { Ok(value: T), Err(error: E) }`
 /// AST node used by `inject_intrinsics`.
 fn synthesize_result_enum() -> Stmt {
-    let t = ValueType.Struct("T", 0)
-    let e = ValueType.Struct("E", 0)
+    let t = vtype_struct("T", 0)
+    let e = vtype_struct("E", 0)
     mut ok_fields: List<FieldEntry> = []
     ok_fields.push(FieldEntry { name: "value", resolved: t })
     mut err_fields: List<FieldEntry> = []
@@ -186,7 +186,7 @@ fn synthesize_result_enum() -> Stmt {
 /// absence behaviour still routes through the legacy null representation
 /// until the dual (value-tagged) repr is wired.
 fn synthesize_option_enum() -> Stmt {
-    let t = ValueType.Struct("T", 0)
+    let t = vtype_struct("T", 0)
     mut some_fields: List<FieldEntry> = []
     some_fields.push(FieldEntry { name: "value", resolved: t })
     mut none_fields: List<FieldEntry> = []

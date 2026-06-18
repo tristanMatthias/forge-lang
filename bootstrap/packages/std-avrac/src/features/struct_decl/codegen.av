@@ -2,7 +2,7 @@
 
 use core.{Expr, SExpr, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_struct_name, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup, render_expr}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
-use core.{type_registry_id_for}
+use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
@@ -23,7 +23,7 @@ export fn emit_struct_lit(ctx: Ctx, env: List<VarBinding>, name: string, inits: 
     let buf = malloc_struct_bytes(ctx, name, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
-    ok_emit(as_i64, .Struct(name, type_registry_id_for(ctx.type_reg, name)))
+    ok_emit(as_i64, vtype_struct(name, type_registry_id_for(ctx.type_reg, name)))
 }
 
 /// Allocate `count * 8` bytes for a struct via the arena

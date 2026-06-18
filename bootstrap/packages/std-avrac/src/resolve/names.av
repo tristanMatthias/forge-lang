@@ -47,7 +47,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, FORCE_UNWRAP_FN}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
@@ -1168,7 +1168,7 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
 /// compound shapes (List, Union, Tuple, FnTyped, ...).
 fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name, _) if name != "" -> {
+        .Struct(name, args, _) if name != "" -> {
             // qa6i probe 3: a `~ident` splice in type position lowers
             // to ValueType.Struct(spliced_name, 0). The spliced name
             // may be a primitive ("int", "string", ...) — re-run
@@ -1176,10 +1176,10 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
             // ValueType variant rather than staying as Struct.
             let builtin = vtype_from_name(name)
             match builtin {
-                .Struct(_, _) -> {
+                .Struct(_, _, _) -> {
                     // Genuinely a struct name; resolve through aliases.
                     let qn = resolve_type_in_ctx(ctx, name)
-                    ValueType.Struct(qn, type_registry_id_for(ctx.type_reg, qn))
+                    ValueType.Struct(qn, rewrite_vtype_list(ctx, args), type_registry_id_for(ctx.type_reg, qn))
                 }
                 _ -> builtin
             }
@@ -1274,7 +1274,7 @@ fn qualify_self_param(ctx: NameCtx, params: List<ParamEntry>, qualified_type: st
         let p = params[i]
         if p.name == "self" {
             let tid = type_registry_id_for(ctx.type_reg, qualified_type)
-            out.push(ParamEntry { name: "self", vtype: ValueType.Struct(qualified_type, tid) })
+            out.push(ParamEntry { name: "self", vtype: vtype_struct(qualified_type, tid) })
         } else {
             out.push(p)
         }

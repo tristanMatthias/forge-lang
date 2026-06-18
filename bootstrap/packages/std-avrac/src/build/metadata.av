@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry}
+use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry, vtype_struct}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -401,7 +401,7 @@ impl BytesWriter {
             // already have the local TypeRegistry can rebuild id from
             // the name; cross-unit decoders use sym_id to follow the
             // cross-reference.
-            .Struct(name, _) -> {
+            .Struct(name, _, _) -> {
                 self.u8(VT_STRUCT)
                 self.string(name)
                 self.u64_le(sym_id_for(name))
@@ -609,7 +609,7 @@ impl BytesReader {
         if tag == VT_STRUCT {
             let name = self.string()
             let _id = self.u64_le()
-            return ValueType.Struct(name, 0)
+            return vtype_struct(name, 0)
         }
         if tag == VT_ENUM {
             let name = self.string()

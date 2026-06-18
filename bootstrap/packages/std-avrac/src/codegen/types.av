@@ -485,7 +485,7 @@ export fn vtype_is_copy(vt: ValueType, copies: List<string>) -> bool {
         .Float -> true
         .Bool -> true
         .Void -> true
-        .Struct(name, _) -> copy_set_has(copies, name)
+        .Struct(name, _, _) -> copy_set_has(copies, name)
         .Enum(name, _, _) -> copy_set_has(copies, name)
         .Newtype(_, inner, _) -> vtype_is_copy(inner, copies)
         _ -> false
@@ -723,7 +723,7 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Str -> pt
         .Bytes -> pt
         .Ptr -> pt
-        .Struct(_, _) -> pt
+        .Struct(_, _, _) -> pt
         .Enum(_, _, _) -> pt
         .List(_) -> pt
         .Map -> pt
@@ -1331,7 +1331,7 @@ impl Ctx {
     // Uses canonical names from registries to ensure downstream lookups match.
     fn resolve_codegen_vtype(self, vt: ValueType) -> ValueType {
         match vt {
-            .Struct(name, _) -> {
+            .Struct(name, args, _) -> {
                 // Resolve via TypeRegistry first for canonical name
                 let tid = type_registry_id_for(self.type_reg, name)
                 let cn = type_registry_name_for(self.type_reg, tid)
@@ -1344,7 +1344,7 @@ impl Ctx {
                     return ValueType.Enum(rn, empty_args, rid)
                 }
                 let s = struct_reg_lookup(self.structs, rn)
-                if s.found { return ValueType.Struct(rn, rid) }
+                if s.found { return ValueType.Struct(rn, self.resolve_codegen_vtype_list(args), rid) }
                 if trait_decl_has(self.trait_decls, rn) { return ValueType.Trait(rn, rid) }
                 let nt_vt = cg_newtype_vtype_lookup(self.newtypes, rn)
                 if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(rn, self.resolve_codegen_vtype(nt_vt), rid) }
@@ -1363,10 +1363,13 @@ impl Ctx {
                 let cn = type_registry_name_for(self.type_reg, tid)
                 let rn = if cn != "" { cn } else { name }
                 let rid = if tid > 0 { tid } else { 0 }
-                if args.length == 0 {
-                    let s = struct_reg_lookup(self.structs, rn)
-                    if s.found { return ValueType.Struct(rn, rid) }
-                }
+                // A generic struct annotation (`Box<string>`) lowers to Enum
+                // at parse time and monomorphizes to a bare-named struct
+                // (`Box__string`); reclassify to Struct whenever the (resolved)
+                // name is a registered struct — regardless of carried args —
+                // so field access sees a Struct, not an Enum (2px2).
+                let s = struct_reg_lookup(self.structs, rn)
+                if s.found { return ValueType.Struct(rn, self.resolve_codegen_vtype_list(args), rid) }
                 ValueType.Enum(rn, self.resolve_codegen_vtype_list(args), rid)
             }
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))

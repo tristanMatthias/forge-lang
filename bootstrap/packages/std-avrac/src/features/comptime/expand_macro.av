@@ -161,7 +161,7 @@ fn vtype_canonical_name(vt: ValueType) -> string {
         .Bytes -> "bytes"
         .Void -> "void"
         .Ptr -> "ptr"
-        .Struct(name, _) -> name
+        .Struct(name, _, _) -> name
         .Enum(name, _, _) -> name
         .Newtype(name, _, _) -> name
         .Trait(name, _) -> name

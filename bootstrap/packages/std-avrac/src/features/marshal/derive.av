@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap}
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct}
 
 // ── Public entry ──
 
@@ -130,7 +130,7 @@ fn derive_stmts(type_name: string, fields: List<FieldEntry>) -> List<SStmt> {
     // Marshal trait — unblocks `fn f<T: Marshal>(...)` bounds.
     let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_from_bytes_fn(type_name, fields)
-    let isolated_fn = build_isolated_fn(type_name, ValueType.Struct(type_name, 0))
+    let isolated_fn = build_isolated_fn(type_name, vtype_struct(type_name, 0))
     [sstmt_dummy(impl_stmt), sstmt_dummy(from_bytes_fn), sstmt_dummy(isolated_fn)]
 }
 
@@ -327,7 +327,7 @@ fn build_from_bytes_fn(type_name: string, fields: List<FieldEntry>) -> Stmt {
     let fn_name = "from_bytes_" + type_name
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(fn_name, empty_tp, params,
-        ValueType.Struct(type_name, 0), body)
+        vtype_struct(type_name, 0), body)
 }
 
 /// Builds the per-field read sequence followed by the final
@@ -358,7 +358,7 @@ fn build_reads(fields: List<FieldEntry>) -> List<SStmt> {
         //   r = __r_<n>
         //   let <n> = from_bytes_<InnerT>(__nested_<n>)
         let per_field = match ty {
-            .Struct(inner_name, _) -> {
+            .Struct(inner_name, _, _) -> {
                 let stmts = read_then_reassign(name, "__nested_" + name, "read_bytes")
                 let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
                     [sexpr_dummy(Expr.Ident("__nested_" + name))])
@@ -421,7 +421,7 @@ fn read_then_reassign(field_name: string, value_name: string, reader: string) ->
 /// `<Inner>` is read off the .Struct(name, _) of the elem type.
 fn list_of_struct_reads(field_name: string, elem: ValueType) -> List<SStmt> {
     let inner_name = match elem {
-        .Struct(n, _) -> n
+        .Struct(n, _, _) -> n
         _ -> ""
     }
     let cname = "__count_" + field_name
@@ -436,7 +436,7 @@ fn list_of_struct_reads(field_name: string, elem: ValueType) -> List<SStmt> {
 
     // mut __acc: List<Inner> = []
     let acc_init = Expr.ListLit([])
-    let acc_stmt = Stmt.Mut(aname, ValueType.List(ValueType.Struct(inner_name, 0)), acc_init)
+    let acc_stmt = Stmt.Mut(aname, ValueType.List(vtype_struct(inner_name, 0)), acc_init)
 
     // mut __i = 0
     let i_stmt = Stmt.Mut(iname, ValueType.Int, Expr.Number("0"))

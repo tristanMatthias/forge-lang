@@ -99,7 +99,7 @@ fn is_union_safe_type(ty: ValueType) -> bool {
         .Str -> true
         .Bool -> true
         .Float -> true
-        .Struct(_, _) -> true
+        .Struct(_, _, _) -> true
         .Enum(_, _, _) -> true
         .Union(_) -> true
         .Newtype(_, _, _) -> true

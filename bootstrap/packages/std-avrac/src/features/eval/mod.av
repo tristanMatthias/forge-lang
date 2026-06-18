@@ -2844,10 +2844,11 @@ fn enum_value_to_value_type(v: Value) -> Result<ValueType, string> {
         "Map"     -> .Ok(ValueType.Map)
         "Unknown" -> .Ok(ValueType.Unknown)
         "Struct" -> {
-            if p.length != 2 { return .Err("decode: bad payload") }
+            if p.length != 3 { return .Err("decode: bad payload") }
             let name = p[0].text
-            let id = number_value_to_int(p[1])
-            .Ok(ValueType.Struct(name, id))
+            let type_args = list_value_to_value_type_list(p[1])?
+            let id = number_value_to_int(p[2])
+            .Ok(ValueType.Struct(name, type_args, id))
         }
         "Enum" -> {
             if p.length != 3 { return .Err("decode: bad payload") }

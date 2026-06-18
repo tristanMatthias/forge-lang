@@ -12,12 +12,12 @@
 // distinct (unregistered) nominal. Restoring the helper would
 // flip the assertions back to passing.
 
-use @std.avrac.core.{vtype_eq, ValueType}
+use @std.avrac.core.{vtype_eq, ValueType, vtype_struct}
 
 spec "T6.D: vtype_eq drops bare-vs-FQN tolerance" {
     then "Struct bare name and FQN at id=0 are NOT equal" {
-        let short =ValueType.Struct("SStmt", 0)
-        let fqn = ValueType.Struct("@std::avrac::core::SStmt", 0)
+        let short =vtype_struct("SStmt", 0)
+        let fqn = vtype_struct("@std::avrac::core::SStmt", 0)
         !vtype_eq(short, fqn)
     }
     then "Trait bare name and FQN at id=0 are NOT equal" {

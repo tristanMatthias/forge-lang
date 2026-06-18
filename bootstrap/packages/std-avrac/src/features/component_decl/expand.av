@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation, vtype_struct}
 use core.{has_fn, find_fn_body}
 use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, bag_merge, diag_error, span_at}
 use list_ops.{list_concat, list_map}
@@ -514,7 +514,7 @@ export fn splice_component_def(name: string, params: List<ParamEntry>, config: L
     }
     let struct_lit = Expr.StructLit(type_name, name_init)
     let factory_body: List<SStmt> = [sstmt(Stmt.Return(struct_lit), 0, 0)]
-    let factory = Stmt.Function("${name}_new", empty_tp, name_param, ValueType.Struct(type_name, 0), factory_body)
+    let factory = Stmt.Function("${name}_new", empty_tp, name_param, vtype_struct(type_name, 0), factory_body)
 
     let methods = extract_methods(body, name)
 
@@ -704,7 +704,7 @@ fn vtype_elem_name(vt: ValueType) -> string {
     match vt {
         .List(elem) -> {
             match elem {
-                .Struct(n, _) -> n
+                .Struct(n, _, _) -> n
                 .Enum(n, _, _) -> n
                 _ -> ""
             }

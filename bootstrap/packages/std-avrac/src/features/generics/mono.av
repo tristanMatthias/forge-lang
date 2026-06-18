@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, method_mangled_name, method_from_mangled}
@@ -121,7 +121,7 @@ fn type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
         if entry.param_name == name { return entry.concrete_vt }
         i = i + 1
     }
-    ValueType.Struct(name, 0)
+    vtype_struct(name, 0)
 }
 
 /// One specialisation request: original name, mangled name, and
@@ -250,7 +250,7 @@ fn adds_new_info(existing: List<TypeArg>, partial: List<TypeArg>) -> bool {
     mut i = 0
     while i < partial.length {
         let name = partial[i].param_name
-        if vtype_eq(type_arg_lookup(existing, name), ValueType.Struct(name, 0)) { return true }
+        if vtype_eq(type_arg_lookup(existing, name), vtype_struct(name, 0)) { return true }
         i = i + 1
     }
     false
@@ -264,7 +264,7 @@ fn type_args_compatible(a: List<TypeArg>, b: List<TypeArg>) -> bool {
     while i < b.length {
         let entry = b[i]
         let a_ty = type_arg_lookup(a, entry.param_name)
-        if !vtype_eq(a_ty, ValueType.Struct(entry.param_name, 0)) && !vtype_eq(a_ty, entry.concrete_vt) { return false }
+        if !vtype_eq(a_ty, vtype_struct(entry.param_name, 0)) && !vtype_eq(a_ty, entry.concrete_vt) { return false }
         i = i + 1
     }
     true
@@ -279,7 +279,7 @@ fn merge_type_args(a: List<TypeArg>, b: List<TypeArg>) -> List<TypeArg> {
     mut i = 0
     while i < b.length {
         let entry = b[i]
-        if vtype_eq(type_arg_lookup(out, entry.param_name), ValueType.Struct(entry.param_name, 0)) {
+        if vtype_eq(type_arg_lookup(out, entry.param_name), vtype_struct(entry.param_name, 0)) {
             mut prepended: List<TypeArg> = []
             prepended.push(entry)
             mut j = 0
@@ -414,7 +414,7 @@ fn mangle_ordered(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> string {
 /// qualified or unqualified Struct names.
 fn vtype_mangle_slug(t: ValueType) -> string {
     match t {
-        .Struct(n, _) -> type_short_name(n)
+        .Struct(n, _, _) -> type_short_name(n)
         .Newtype(n, _, _) -> type_short_name(n)
         .Trait(n, _) -> "dyn ${type_short_name(n)}"
         .Enum(n, args, _) -> {
@@ -550,7 +550,7 @@ fn infer_lit_ty(e: Expr) -> ValueType {
         .FloatLit(_) -> ValueType.Float
         .String(_) -> ValueType.Str
         .Bool(_) -> ValueType.Bool
-        .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
+        .StructLit(name, _) if name != "" -> vtype_struct(name, 0)
         .EnumCtor(tn, _, _) if tn != "" -> {
             let empty: List<ValueType> = []
             ValueType.Enum(tn, empty, 0)
@@ -641,7 +641,7 @@ fn check_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>, name: string, lin
         let bounds = tp[i].bounds
         let concrete = type_arg_lookup(ta, pname)
         let concrete_str = vtype_render_full(concrete)
-        acc = if vtype_eq(concrete, ValueType.Struct(pname, 0)) {
+        acc = if vtype_eq(concrete, vtype_struct(pname, 0)) {
             bag_report(acc, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
         } else if bounds != "" {
             // Check trait bounds: "T: Display + Debug" → check each bound
@@ -720,7 +720,7 @@ fn all_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> bool {
     mut i = 0
     while i < tp.length {
         let pname = tp[i].name
-        if vtype_eq(type_arg_lookup(ta, pname), ValueType.Struct(pname, 0)) { return false }
+        if vtype_eq(type_arg_lookup(ta, pname), vtype_struct(pname, 0)) { return false }
         i = i + 1
     }
     true
@@ -1434,7 +1434,7 @@ fn specialize_impl_methods(impls: List<GenericImplEntry>, orig_type: string, man
     mut ta_ext: List<TypeArg> = []
     mut a = 0
     while a < ta.length { ta_ext.push(ta[a])  a = a + 1 }
-    ta_ext.push(TypeArg { param_name: orig_type, concrete_vt: ValueType.Struct(mangled_type, 0) })
+    ta_ext.push(TypeArg { param_name: orig_type, concrete_vt: vtype_struct(mangled_type, 0) })
 
     mut out: List<SStmt> = []
     mut i = 0
@@ -1502,9 +1502,9 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
         // other variant just recurses into its ValueType children — which
         // the derive_walker-generated `ValueType.map` does for us,
         // preserving scalar fields (nominal name + TypeId) untouched.
-        .Struct(name, _) -> {
+        .Struct(name, _, _) -> {
             let concrete = type_arg_lookup(ta, name)
-            if !vtype_eq(concrete, vt) { concrete } else { vt }
+            if !vtype_eq(concrete, vt) { concrete } else { vt.map((c) -> substitute_vtype(c, ta)) }
         }
         _ -> vt.map((c) -> substitute_vtype(c, ta))
     }

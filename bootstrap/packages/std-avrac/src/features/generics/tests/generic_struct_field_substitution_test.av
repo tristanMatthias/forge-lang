@@ -1,0 +1,47 @@
+// WHY: 2px2 — accessing a field of a generic struct instance must type as
+// the INSTANTIATION's concrete type, not the unsubstituted type-param.
+// `let b = Box<int> { val: 5 }; b.val` must type as `int`, so a strict
+// context (a fn returning `int`, or `string(b.val)`) type-checks instead of
+// failing F1000/F1003 with "produces T".
+//
+// The fix carries type args on a generic struct instance
+// (`ValueType.Struct(name, type_args, id)`, mirroring Enum): construction
+// infers them from the field initializers (or a `let b: Box<int>` annotation),
+// and field-access typing substitutes the struct's declared type-params with
+// those args. The helpers return `bool` (a comparison) so each test exercises
+// the substituted field type in a STRICT position without depending on any
+// other generic-system gap.
+
+type Box<T> = { val: T }
+type Pair<A, B> = { first: A, second: B }
+type Stack<T> = { items: List<T> }
+
+// Single param in a strict return position — the original repro.
+fn box_int() -> int { let b = Box { val: 5 }  b.val }
+fn box_str() -> string { let b = Box { val: "hi" }  b.val }
+
+// Two params: each field specialises to its own arg, and a swapped
+// instantiation stays distinct (no monomorphizer first-match bleed).
+fn pair_first() -> int { let p = Pair { first: 7, second: "x" }  p.first }
+fn pair_second() -> string { let p = Pair { first: 7, second: "x" }  p.second }
+fn pair_swap_first() -> string { let q = Pair { first: "y", second: 9 }  q.first }
+fn pair_swap_second() -> int { let q = Pair { first: "y", second: 9 }  q.second }
+
+// Container field: the type-param is reachable only THROUGH List<T>, so the
+// element type must substitute through the container.
+fn stack_elem() -> int { let s = Stack { items: [10, 20] }  s.items[0] }
+
+// Annotated binding (`let b: Box<string>`): the args come from the
+// annotation, and `string(b.val)` is the F1003 path from the ticket.
+fn box_annot() -> string { let b: Box<string> = Box { val: "z" }  string(b.val) }
+
+spec "2px2: generic struct field access types as the instantiation" {
+    then "Box<int>.val in a fn returning int" { box_int() == 5 }
+    then "Box<string>.val in a fn returning string" { box_str() == "hi" }
+    then "Pair<int,string> first → int" { pair_first() == 7 }
+    then "Pair<int,string> second → string" { pair_second() == "x" }
+    then "Pair<string,int> (swapped) first → string" { pair_swap_first() == "y" }
+    then "Pair<string,int> (swapped) second → int" { pair_swap_second() == 9 }
+    then "Stack<int> element substitutes through List<T>" { stack_elem() == 10 }
+    then "Box<string> annotated binding + string(b.val)" { box_annot() == "z" }
+}

@@ -175,7 +175,7 @@ fn is_self_type(vt: ValueType, parent_name: string) -> bool {
 fn self_type_name(vt: ValueType) -> string {
     match vt {
         .Enum(name, _, _) -> name
-        .Struct(name, _) -> name
+        .Struct(name, _, _) -> name
         .NarrowedEnum(name, _, _) -> name
         _ -> ""
     }

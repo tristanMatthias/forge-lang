@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -269,8 +269,12 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
 
 // ── Struct/Enum registries ──
 
-/// One struct's metadata in StructTypeReg's `ord` list.
-type StructTypeMeta = { name: string, fields: List<FieldEntry> }
+/// One struct's metadata in StructTypeReg's `ord` list. `tp` carries
+/// the struct's declared type parameters (empty for non-generic
+/// structs / shapes) so field-access typing can map a generic
+/// instance's `type_args` back onto the field's declared `T` (2px2),
+/// mirroring EnumTypeMeta.
+type StructTypeMeta = { name: string, tp: List<TypeParamEntry>, fields: List<FieldEntry> }
 
 /// Struct-name → `List<FieldEntry>` table. Populated during the
 /// `collect_decls` pre-pass; consulted by struct-literal and
@@ -286,12 +290,24 @@ fn struct_type_reg_new() -> StructTypeReg {
     StructTypeReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-fn struct_type_reg_register(reg: StructTypeReg, name: string, fields: List<FieldEntry>) -> StructTypeReg {
+fn struct_type_reg_register(reg: StructTypeReg, name: string, tp: List<TypeParamEntry>, fields: List<FieldEntry>) -> StructTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(StructTypeMeta { name, fields })
+    ord.push(StructTypeMeta { name, tp, fields })
     avra_map_set_cstr(reg.idx, name, new_idx)
     StructTypeReg { ord, idx: reg.idx }
+}
+
+/// Look up a struct's type-param list by name. Empty when the struct
+/// isn't registered or has no generics — callers short-circuit
+/// substitution in that case. Mirrors `enum_type_params`.
+export fn struct_type_params(reg: StructTypeReg, name: string) -> List<TypeParamEntry> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<TypeParamEntry> = []
+        return empty
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].tp
 }
 
 /// Look up a single field's resolved type within a field list.
@@ -867,7 +883,7 @@ export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 /// twice produces the same result.
 export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name, _) -> {
+        .Struct(name, args, _) -> {
             // Associated type: "TypeName.AssocType" → resolve to concrete type
             let dot = name.index_of(".")
             if dot >= 0 {
@@ -885,14 +901,18 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             if !vtype_is_unknown(ua_vt) { return resolve_vtype(tc, ua_vt) }
             let nt_vt = newtype_vtype_lookup(tc.newtypes, name)
             if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt), type_registry_id_for(tc.type_reg, name)) }
-            if struct_type_has(tc.structs, name) { return ValueType.Struct(name, 0) }
+            if struct_type_has(tc.structs, name) { return ValueType.Struct(name, resolve_vtype_list(tc, args), 0) }
             if trait_has(tc.traits, name) { return ValueType.Trait(name, type_registry_id_for(tc.type_reg, name)) }
             vt
         }
         .Enum(name, args, _) -> {
             let resolved_args = resolve_vtype_list(tc, args)
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, resolved_args, 0) }
-            if struct_type_has(tc.structs, name) { return ValueType.Struct(name, 0) }
+            // A bare generic annotation like `Box<int>` lowers to Enum at
+            // parse time (the parser can't tell struct from enum); reclassify
+            // to a generic struct instance, carrying the type args so field
+            // access can substitute them (2px2).
+            if struct_type_has(tc.structs, name) { return ValueType.Struct(name, resolved_args, 0) }
             ValueType.Enum(name, resolved_args, 0)
         }
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
@@ -1123,12 +1143,12 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = tc
     for ss in stmts {
         cur = match stmt_unwrap(ss.node) {
-            .TypeDecl(name, _, fields) -> {
+            .TypeDecl(name, tp, fields) -> {
                 if is_duplicate_decl(cur.structs.idx, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
                     let resolved = tc_resolve_type_operator(fields, cur.structs)
-                    cur with { structs: struct_type_reg_register(cur.structs, name, resolved) }
+                    cur with { structs: struct_type_reg_register(cur.structs, name, tp, resolved) }
                 }
             }
             .NewtypeDecl(name, inner_vt) -> {
@@ -1151,7 +1171,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
                     cur with {
-                        structs: struct_type_reg_register(cur.structs, name, fields),
+                        structs: struct_type_reg_register(cur.structs, name, empty_type_params(), fields),
                         shapes: list_push_copy(cur.shapes, name),
                     }
                 }
@@ -1953,7 +1973,7 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
     let shape_fields = struct_type_lookup(tc.structs, param_ty_str)
     // Get the argument's actual fields
     let arg_name = match arg_ty {
-        .Struct(n, _) -> n
+        .Struct(n, _, _) -> n
         _ -> ""
     }
     if arg_name == "" { return tc }
@@ -2156,7 +2176,7 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
     // hand-rolled List/Task/FnTyped/Enum recursion — and additionally
     // reaches Union / Tuple / Newtype members the old walker skipped.
     ty.any((t) -> match t {
-        .Struct(n, _) -> type_param_has(tp, n)
+        .Struct(n, _, _) -> type_param_has(tp, n)
         _ -> false
     })
 }
@@ -2308,7 +2328,7 @@ fn tc_infer_lit_ty(e: Expr) -> ValueType {
         .FloatLit(_) -> ValueType.Float
         .String(_) -> ValueType.Str
         .Bool(_) -> ValueType.Bool
-        .StructLit(name, _) if name != "" -> ValueType.Struct(name, 0)
+        .StructLit(name, _) if name != "" -> vtype_struct(name, 0)
         .EnumCtor(tn, _, _) if tn != "" -> {
             let empty_args: List<ValueType> = []
             ValueType.Enum(tn, empty_args, 0)
@@ -2407,6 +2427,41 @@ fn tc_type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
         if entry.param_name == name { return entry.concrete_vt }
     }
     ValueType.Unknown
+}
+
+/// Infer a generic struct construction's type args by unifying each
+/// field's declared type against its initializer's actual type (2px2 —
+/// the typeck-side mirror of mono's qcvb inference). Returns empty for
+/// non-generic structs (so the common case stays a single cheap
+/// registry probe). Bindings come back in declared type-param order;
+/// an unbound param yields Unknown so the positional zip with the
+/// params stays aligned at field-access time.
+export fn tc_infer_struct_type_args(tc: TC, name: string, inits: List<FieldInit>) -> List<ValueType> {
+    let tps = struct_type_params(tc.structs, name)
+    let empty: List<ValueType> = []
+    if tps.length == 0 { return empty }
+    let fields = struct_type_lookup(tc.structs, name)
+    if fields.length == 0 { return empty }
+    mut acc: List<TypeArg> = []
+    for init in inits {
+        let fdecl = resolve_vtype(tc, field_type_lookup(fields, init.name))
+        if !vtype_is_unknown(fdecl) {
+            let vty = tc_arg_concrete_ty(tc, init.value)
+            acc = tc_unify(tps, fdecl, vty, acc)
+        }
+    }
+    mut out: List<ValueType> = []
+    for p in tps {
+        out.push(tc_type_arg_lookup(acc, p.name))
+    }
+    out
+}
+
+/// The ValueType of a non-anonymous struct literal `Name { inits }`.
+/// A generic struct carries its inferred type args (2px2); a
+/// non-generic one is the bare `Struct(name, [], 0)`.
+export fn tc_struct_lit_vtype(tc: TC, name: string, inits: List<FieldInit>) -> ValueType {
+    ValueType.Struct(name, tc_infer_struct_type_args(tc, name, inits), 0)
 }
 
 /// Type-check a `Call` expression. Routes to `check_method_call`
@@ -2561,7 +2616,7 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
     // Method lookup — look up in fn registry as TypeName__method.
     // Works for structs, enums, newtypes, and trait types.
     let type_name = match o.ty {
-        .Struct(n, _) -> n
+        .Struct(n, _, _) -> n
         .Enum(n, _, _) -> n
         .Newtype(n, _, _) -> n
         .Trait(n, _) -> n
@@ -2591,7 +2646,7 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
     // Methods always win over fields: we only reach this branch if
     // the impl-method lookup above missed.
     match o.ty {
-        .Struct(struct_name, _) -> {
+        .Struct(struct_name, _, _) -> {
             let fields = struct_type_lookup(checked_args.structs, struct_name)
             let field_ty = field_type_lookup(fields, method)
             if vtype_is_fn(field_ty) {
@@ -2681,7 +2736,7 @@ fn infer_arg_for_display(tc: TC, expr: Expr) -> ValueType {
             let empty_args: List<ValueType> = []
             ValueType.Enum(tn, empty_args, 0)
         } else { ValueType.Unknown }
-        .StructLit(name, _) -> if name != "" { ValueType.Struct(name, 0) } else { ValueType.Unknown }
+        .StructLit(name, inits) -> if name != "" { tc_struct_lit_vtype(tc, name, inits) } else { ValueType.Unknown }
         // Shortcut #4 typeck-side: parens-less `EnumType.Variant`
         // parses as FieldAccess(Ident, "Variant"). If the head
         // Ident is a registered enum name, the access is the
@@ -2921,7 +2976,7 @@ fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
         .FieldAccess(obj, method) -> {
             let o = check_expr(tc, obj)
             let type_name = match o.ty {
-                .Struct(n, _) -> n
+                .Struct(n, _, _) -> n
                 .Enum(n, _, _) -> n
                 .Newtype(n, _, _) -> n
                 _ -> ""
@@ -2977,8 +3032,10 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
             }
             _ -> check_expr(tc, se.node).ty
         }
-        // Struct/Enum constructors
-        .StructLit(name, _) -> ValueType.Struct(name, 0)
+        // Struct/Enum constructors. A generic struct literal carries
+        // its inferred type args (2px2) so a downstream `s.value`
+        // specialises `T` to the instance arg.
+        .StructLit(name, inits) -> if name != "" { tc_struct_lit_vtype(tc, name, inits) } else { vtype_struct(name, 0) }
         .EnumCtor(name, _, _) -> {
             if name != "" {
                 let empty_args: List<ValueType> = []
@@ -3034,7 +3091,21 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                     if vtype_is_unknown(field_ty) {
                         check_expr(tc, se.node).ty
                     } else {
-                        field_ty
+                        // 2px2: specialise a generic field type to the
+                        // receiver instance's type args (`Box<int>.val` → int).
+                        let ta = match base_ty {
+                            .Struct(_, a, _) -> a
+                            _ -> {
+                                let e: List<ValueType> = []
+                                e
+                            }
+                        }
+                        let tps = struct_type_params(tc.structs, sname)
+                        if ta.length > 0 && tps.length > 0 {
+                            vtype_subst_params(field_ty, tps, ta)
+                        } else {
+                            field_ty
+                        }
                     }
                 }
             }

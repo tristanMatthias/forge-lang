@@ -529,7 +529,7 @@ fn vtype_is_copy_in_set(vt: ValueType, candidates: List<string>) -> bool {
         .Fn(_) -> false
         .FnTyped(_, _) -> false
         .Closure(_, _) -> false
-        .Struct(name, _) -> copy_set_has(candidates, name)
+        .Struct(name, _, _) -> copy_set_has(candidates, name)
         .Enum(name, _, _) -> copy_set_has(candidates, name)
         .Newtype(name, _, _) -> copy_set_has(candidates, name)
         .Trait(_, _) -> false

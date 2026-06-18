@@ -610,14 +610,14 @@ fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
 /// name isn't registered.
 fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name, _) -> {
+        .Struct(name, args, _) -> {
             let e = enum_reg_lookup(regs.enums, name)
             if e.found {
                 let empty_args: List<ValueType> = []
                 return ValueType.Enum(name, empty_args, 0)
             }
             let s = struct_reg_lookup(regs.structs, name)
-            if s.found { return ValueType.Struct(name, 0) }
+            if s.found { return ValueType.Struct(name, resolve_setup_vt_list(regs, args), 0) }
             // Forward reference — the named type isn't yet in the
             // registry because this declaration was reached before
             // the referent's decl. Keep the name so downstream
@@ -628,7 +628,7 @@ fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
             // through forward-referenced structs (#6, e.g.
             // `type Outer = { items: List<Item> }` with Item
             // declared AFTER Outer).
-            ValueType.Struct(name, 0)
+            ValueType.Struct(name, resolve_setup_vt_list(regs, args), 0)
         }
         .List(elem) -> ValueType.List(resolve_setup_vt(regs, elem))
         .Union(types) -> ValueType.Union(resolve_setup_vt_list(regs, types))
@@ -980,7 +980,7 @@ fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
 /// ptr-typed fields: plain `avra_rc_release`.
 fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
     match ty {
-        .Struct(sn, _) -> {
+        .Struct(sn, _, _) -> {
             let rfn = ctx.get_fn("__release_${sn}")
             if rfn != null {
                 ctx.call("__release_${sn}", [val])
@@ -1422,7 +1422,7 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: Li
         }
     }
     // Check if it's a trait name (use original rvt in case resolution lost the name)
-    let sn = match base { .Struct(n, _) -> n, _ -> match rvt { .Struct(n, _) -> n, _ -> "" } }
+    let sn = match base { .Struct(n, _, _) -> n, _ -> match rvt { .Struct(n, _, _) -> n, _ -> "" } }
     if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn, type_registry_id_for(type_reg, sn)) }
     let last = stmts_last_expr(body)
     match last {

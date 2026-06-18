@@ -24,7 +24,7 @@ use @std.avrac.build.{
 use @std.avrac.core.{
     Stmt, SStmt, Expr, SExpr, TypeParamEntry,
     ValueType, FieldEntry, Variant, ParamEntry,
-    Annotation, vtype_eq, sstmt_dummy, stmt_unwrap, find_annotation,
+    Annotation, vtype_eq, vtype_struct, sstmt_dummy, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
 use @std.avrac.build.{synthesize_unit_stmts}
@@ -225,7 +225,7 @@ fn main() -> int {
     vt_roundtrip("i8", ValueType.I8)
     vt_roundtrip("i16", ValueType.I16)
     vt_roundtrip("i32", ValueType.I32)
-    vt_roundtrip("struct", ValueType.Struct("@std::cache::Cache", 0))
+    vt_roundtrip("struct", vtype_struct("@std::cache::Cache", 0))
     vt_roundtrip("trait", ValueType.Trait("@std::io::Reader", 0))
     vt_roundtrip("list_int", ValueType.List(ValueType.Int))
     vt_roundtrip("list_str", ValueType.List(ValueType.Str))
@@ -418,7 +418,7 @@ fn main() -> int {
         type_params: [],
         exported: true,
         is_extern: false,
-        params: [ParamEntry { name: "c", vtype: ValueType.Struct("@test::e2e::Cell", 0) }],
+        params: [ParamEntry { name: "c", vtype: vtype_struct("@test::e2e::Cell", 0) }],
         ret: ValueType.Int,
     }
     let e2e_fns_body_w = writer_new()
@@ -524,7 +524,7 @@ fn main() -> int {
     probe("const_int_value", mr_decoded.int_value == 42)
 
     // TraitDecl: trait Display { fn show(self) -> string }
-    let show_method_params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Struct("Self", 0) }]
+    let show_method_params: List<ParamEntry> = [ParamEntry { name: "self", vtype: vtype_struct("Self", 0) }]
     mut display_methods: List<MetaTraitMethod> = []
     display_methods.push(MetaTraitMethod { name: "show", params: show_method_params, ret: ValueType.Str })
     let display_entry = TypeDeclEntry {
@@ -626,7 +626,7 @@ fn main() -> int {
         type_params: [],
         exported: true,
         is_extern: false,
-        params: [ParamEntry { name: "u", vtype: ValueType.Struct("@unit::User", 0) }],
+        params: [ParamEntry { name: "u", vtype: vtype_struct("@unit::User", 0) }],
         ret: ValueType.Str,
     }
     let unit_const_entry = ConstDeclEntry {
@@ -784,8 +784,8 @@ fn main() -> int {
         exported: true,
         is_extern: false,
         type_params: gen_fn_tps,
-        params: [ParamEntry { name: "x", vtype: ValueType.Struct("T", 0) }],
-        ret: ValueType.Struct("T", 0),
+        params: [ParamEntry { name: "x", vtype: vtype_struct("T", 0) }],
+        ret: vtype_struct("T", 0),
     }
     let wgen = writer_new()
     wgen.fn_decl(gen_fn_entry)
@@ -799,8 +799,8 @@ fn main() -> int {
     gen_type_tps.push(TypeParamEntry { name: "K", bounds: "" })
     gen_type_tps.push(TypeParamEntry { name: "V", bounds: "Display" })
     mut gen_pair_fields: List<FieldEntry> = []
-    gen_pair_fields.push(FieldEntry { name: "k", resolved: ValueType.Struct("K", 0) })
-    gen_pair_fields.push(FieldEntry { name: "v", resolved: ValueType.Struct("V", 0) })
+    gen_pair_fields.push(FieldEntry { name: "k", resolved: vtype_struct("K", 0) })
+    gen_pair_fields.push(FieldEntry { name: "v", resolved: vtype_struct("V", 0) })
     let gen_type_entry = TypeDeclEntry {
         sym_id: sym_id_for("@gen::Pair"),
         kind: TypeDeclKind.StructDecl,

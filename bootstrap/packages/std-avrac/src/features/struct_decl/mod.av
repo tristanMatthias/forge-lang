@@ -5,7 +5,7 @@ use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
-use typeck.{check_expr, check_expr_list, tc_er, tc_report}
+use typeck.{check_expr, check_expr_list, tc_er, tc_report, tc_struct_lit_vtype}
 use diagnostics.{DiagCode}
 
 /// Register the `Foo { x: 1, y: 2 }` struct literal feature.
@@ -107,7 +107,8 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
             }
             // Validate field names + scalar cell types against the declared
             // struct so a bad table column / cell is F1000, not a codegen ICE.
-            tc_er(check_struct_lit_fields(tc, name, inits), .Struct(name, 0))
+            // A generic struct literal carries its inferred type args (2px2).
+            tc_er(check_struct_lit_fields(tc, name, inits), tc_struct_lit_vtype(tc, name, inits))
         }
         _ -> tc_er(tc, .Unknown)
     }

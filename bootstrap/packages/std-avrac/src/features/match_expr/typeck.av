@@ -22,7 +22,7 @@ fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
     if vtype_eq(ty, .Void) { return true }
     if vtype_is_unknown(ty) { return true }
     match ty {
-        .Struct(name, _) -> name == ""
+        .Struct(name, _, _) -> name == ""
         .Enum(name, _, _) -> name == ""
         _ -> false
     }
@@ -401,7 +401,7 @@ fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name
         .Unknown -> ValueType.Unknown
         // .Struct("T", 0) is the unresolved-generic shape — also a
         // wildcard for downstream typeck.
-        .Struct(_, id) if id == 0 -> ValueType.Unknown
+        .Struct(_, _, id) if id == 0 -> ValueType.Unknown
         // Everything else (primitives, fully-resolved nominals,
         // Tuples, FnTyped, Newtype, Enum, etc.) flows through as-is.
         _ -> field_ty
@@ -411,7 +411,7 @@ fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name
 /// Nominal name from `.Struct` / `.Enum`; `""` for other shapes.
 fn nominal_name(t: ValueType) -> string {
     match t {
-        .Struct(n, _) -> n
+        .Struct(n, _, _) -> n
         .Enum(n, _, _) -> n
         _ -> ""
     }

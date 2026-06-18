@@ -230,7 +230,7 @@ fn should_null_check_vt(vt: ValueType) -> bool {
     match vt {
         .Str -> true
         .Ptr -> true
-        .Struct(_, _) -> true
+        .Struct(_, _, _) -> true
         .Enum(_, _, _) -> true
         .List(_) -> true
         .Map -> true
@@ -489,7 +489,7 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     mut fn_val = ctx.get_fn(mangled)
     // Fallback: resolve via TypeRegistry using TypeId
     if fn_val == null {
-        let tid = match r.ty { .Struct(_, id) -> id, .Enum(_, _, id) -> id, _ -> 0 }
+        let tid = match r.ty { .Struct(_, _, id) -> id, .Enum(_, _, id) -> id, _ -> 0 }
         let canonical = type_registry_name_for(ctx.type_reg, tid)
         if canonical != "" {
             fn_val = ctx.get_fn(method_mangled_name(canonical, method))

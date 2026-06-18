@@ -340,6 +340,40 @@ export fn type_param_has(params: List<TypeParamEntry>, name: string) -> bool {
     list_any(params, (p: TypeParamEntry) -> p.name == name)
 }
 
+/// Index of `name` in a `List<TypeParamEntry>`, or -1 when absent.
+/// Used to zip a declared type-param against the positionally
+/// matching concrete type-arg.
+export fn type_param_index(params: List<TypeParamEntry>, name: string) -> int {
+    mut i = 0
+    while i < params.length {
+        if params[i].name == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+/// Specialise a type by substituting type-param placeholders with
+/// concrete args. A `Struct(name, …)` whose `name` is the i-th entry
+/// of `tp` is replaced by `args[i]` (bare type-params lower to
+/// `Struct("T", [], 0)`); every other variant recurses into its
+/// ValueType children via the derive_walker `map`, so `List<T>`,
+/// `T?`, `(T, U)`, and generic-struct args all substitute correctly.
+/// Used by field-access typing to resolve a generic struct field's
+/// declared `T` to the instance's concrete type-arg (2px2).
+export fn vtype_subst_params(vt: ValueType, tp: List<TypeParamEntry>, args: List<ValueType>) -> ValueType {
+    match vt {
+        .Struct(name, _, _) -> {
+            let idx = type_param_index(tp, name)
+            if idx >= 0 && idx < args.length {
+                args[idx]
+            } else {
+                vt.map((c) -> vtype_subst_params(c, tp, args))
+            }
+        }
+        _ -> vt.map((c) -> vtype_subst_params(c, tp, args))
+    }
+}
+
 /// Render a `List<TypeParamEntry>` back to source-form: `T, U: Display`.
 export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
     list_map(params, (p: TypeParamEntry) -> if p.bounds == "" { p.name } else { "${p.name}: ${p.bounds}" }).join(", ")
@@ -396,8 +430,13 @@ export enum ValueType {
     /// Opaque pointer — used for FFI and runtime handles.
     Ptr,
     /// Nominal struct: `name` is fully qualified, `id` is the
-    /// TypeRegistry id (0 before resolve runs).
-    Struct(name: string, id: int),
+    /// TypeRegistry id (0 before resolve runs). `type_args` is
+    /// populated for generic instances (`Box<int>` carries Int)
+    /// so field-access typing can substitute the struct's type
+    /// params with the instance's concrete args (mirrors Enum).
+    /// Empty for non-generic structs and for bare type-param
+    /// placeholders (`T` ≡ `Struct("T", [], 0)`).
+    Struct(name: string, type_args: List<ValueType>, id: int),
     /// Enum (sum type). `type_args` populated for generic instances
     /// (`Result<int, string>` carries Int + Str in type_args).
     Enum(name: string, type_args: List<ValueType>, id: int),
@@ -488,6 +527,16 @@ export enum TypeExpr {
 // Convert a TypeExpr to a ValueType at parse time. Only resolves primitives
 // and structural types (List, Union, Fn, Map). Named types that require
 // registry lookups (structs, enums, traits, newtypes) resolve to Int —
+/// Construct a non-generic `ValueType.Struct` (empty `type_args`).
+/// The overwhelming majority of struct vtypes carry no type args
+/// (non-generic structs + bare type-param placeholders); this keeps
+/// those call sites from each spelling out an empty `List<ValueType>`.
+/// Generic instances build `ValueType.Struct(name, args, id)` directly.
+export fn vtype_struct(name: string, id: int) -> ValueType {
+    let empty: List<ValueType> = []
+    ValueType.Struct(name, empty, id)
+}
+
 /// Map a concrete type-name string to a ValueType. Handles primitives
 /// (`int`, `string`, `bool`, `ptr`, `void`, `float`, `Map`, `List`),
 /// nullable suffix (`T?`), and pipe-unions (`A | B`). Named types
@@ -528,7 +577,7 @@ export fn vtype_from_name(name: string) -> ValueType {
         "List" -> ValueType.List(ValueType.Unknown)
         "void" -> ValueType.Void
         "fn" -> ValueType.Fn(ValueType.Unknown)
-        _ -> ValueType.Struct(name, 0)
+        _ -> vtype_struct(name, 0)
     }
 }
 
@@ -606,7 +655,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List(ea) -> match b { .List(eb) -> vtype_eq(ea, eb), _ -> false }
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1, id1) -> match b { .Struct(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
+        .Struct(n1, _, id1) -> match b { .Struct(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
@@ -644,11 +693,10 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
 /// tolerance helper — names are exact-match now).
 export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
     match t {
-        .Struct(n, id) -> {
-            if id == 0 && n != "" {
-                let new_id = type_registry_id_for(reg, n)
-                if new_id != 0 { ValueType.Struct(n, new_id) } else { t }
-            } else { t }
+        .Struct(n, args, id) -> {
+            let new_args = stamp_ids_vtypes(args, reg)
+            let new_id = if id == 0 && n != "" { type_registry_id_for(reg, n) } else { id }
+            ValueType.Struct(n, new_args, new_id)
         }
         .Enum(n, args, id) -> {
             let new_args = stamp_ids_vtypes(args, reg)
@@ -701,7 +749,10 @@ fn stamp_ids_vtypes(ts: List<ValueType>, reg: TypeRegistry) -> List<ValueType> {
 /// into containers so `List<Foo>` / `fn(Foo) -> Bar` are walked.
 export fn count_id_zero_in_vtype(t: ValueType) -> int {
     match t {
-        .Struct(_, id) -> if id == 0 { 1 } else { 0 }
+        .Struct(_, args, id) -> {
+            let here = if id == 0 { 1 } else { 0 }
+            here + count_id_zero_in_vtypes(args)
+        }
         .Enum(_, args, id) -> {
             let here = if id == 0 { 1 } else { 0 }
             here + count_id_zero_in_vtypes(args)
@@ -742,9 +793,9 @@ fn count_id_zero_in_vtypes(ts: List<ValueType>) -> int {
 export fn collect_id_zero_names_vtype(t: ValueType, out: List<string>) -> List<string> {
     mut acc = out
     match t {
-        .Struct(n, id) -> {
+        .Struct(n, args, id) -> {
             if id == 0 { acc.push(n) }
-            acc
+            collect_id_zero_names_vtypes(args, acc)
         }
         .Enum(n, args, id) -> {
             if id == 0 { acc.push(n) }
@@ -1135,7 +1186,7 @@ export fn vtype_is_closure(t: ValueType) -> bool { t is .Closure }
 /// Name of a Struct type, or "" for non-Struct. Cheap accessor used
 /// pervasively by codegen for GEPs.
 export fn vtype_struct_name(t: ValueType) -> string {
-    match t { .Struct(n, _) -> n, _ -> "" }
+    match t { .Struct(n, _, _) -> n, _ -> "" }
 }
 
 /// Name of an Enum (or its NarrowedEnum form), or "" otherwise.
@@ -1191,7 +1242,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Bytes -> "bytes"
         .Bool -> "bool"
         .Ptr -> "ptr"
-        .Struct(n, _) -> n
+        .Struct(n, _, _) -> n
         .Enum(n, _, _) -> n
         .Tuple(_) -> "(tuple)"
         .List(_) -> "List"
@@ -1235,7 +1286,10 @@ export fn vtype_render_full(t: ValueType) -> string {
         .Bytes -> "bytes"
         .Bool -> "bool"
         .Ptr -> "ptr"
-        .Struct(n, _) -> n
+        .Struct(n, args, _) -> {
+            let args_str = render_type_list_full(args)
+            if args_str == "" { n } else { "${n}<${args_str}>" }
+        }
         .Enum(n, args, _) -> {
             let args_str = render_type_list_full(args)
             if args_str == "" { n } else { "${n}<${args_str}>" }

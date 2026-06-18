@@ -105,7 +105,7 @@ fn emit_rc_stack(ctx: Ctx, stack: List<RcCleanupEntry>) {
 /// FnTyped, Unknown) are no-ops.
 export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
     match ty {
-        .Struct(name, _) -> {
+        .Struct(name, _, _) -> {
             let release_fn = ctx.get_fn("__release_${name}")
             if release_fn != null {
                 ctx.call("__release_${name}", [val])
