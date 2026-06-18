@@ -643,7 +643,7 @@ fn fixture_output_is_publishable(out: string) -> bool {
     // a transient out-of-memory failure into a permanent one (the fxfz
     // hazard): a heavy fixture that got OOM-killed once would fail forever
     // even after the pressure clears. Reject so the next run re-captures.
-    if out.contains("\nKilled\n") || out.starts_with("Killed\n") || out == "Killed" { return false }
+    if out.contains("\nKilled\n") || out.starts_with("Killed\n") || out.ends_with("\nKilled") || out == "Killed" { return false }
     if out.contains("compile produced no IR") { return false }
     if out.contains("Out of memory") { return false }
     if out.contains("Bus error") { return false }
