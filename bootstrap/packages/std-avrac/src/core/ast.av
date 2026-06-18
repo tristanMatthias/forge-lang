@@ -359,7 +359,7 @@ export fn type_param_index(params: List<TypeParamEntry>, name: string) -> int {
 /// ValueType children via the derive_walker `map`, so `List<T>`,
 /// `T?`, `(T, U)`, and generic-struct args all substitute correctly.
 /// Used by field-access typing to resolve a generic struct field's
-/// declared `T` to the instance's concrete type-arg (2px2).
+/// declared `T` to the instance's concrete type-arg.
 export fn vtype_subst_params(vt: ValueType, tp: List<TypeParamEntry>, args: List<ValueType>) -> ValueType {
     match vt {
         .Struct(name, _, _) -> {
@@ -1187,6 +1187,20 @@ export fn vtype_is_closure(t: ValueType) -> bool { t is .Closure }
 /// pervasively by codegen for GEPs.
 export fn vtype_struct_name(t: ValueType) -> string {
     match t { .Struct(n, _, _) -> n, _ -> "" }
+}
+
+/// The generic type-args of a Struct or Enum instance (empty for any
+/// other variant). The two nominal kinds that carry args; used where a
+/// caller needs the instantiation's args without re-spelling the match.
+export fn vtype_type_args(t: ValueType) -> List<ValueType> {
+    match t {
+        .Struct(_, args, _) -> args
+        .Enum(_, args, _) -> args
+        _ -> {
+            let empty: List<ValueType> = []
+            empty
+        }
+    }
 }
 
 /// Name of an Enum (or its NarrowedEnum form), or "" otherwise.

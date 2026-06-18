@@ -1,6 +1,6 @@
-// WHY: 2px2 — accessing a field of a generic struct instance must type as
+// WHY: accessing a field of a generic struct instance must type as
 // the INSTANTIATION's concrete type, not the unsubstituted type-param.
-// `let b = Box<int> { val: 5 }; b.val` must type as `int`, so a strict
+// `let b = Box { val: 5 }; b.val` must type as `int` (Box<int> inferred), so a strict
 // context (a fn returning `int`, or `string(b.val)`) type-checks instead of
 // failing F1000/F1003 with "produces T".
 //
@@ -35,7 +35,7 @@ fn stack_elem() -> int { let s = Stack { items: [10, 20] }  s.items[0] }
 // annotation, and `string(b.val)` is the F1003 path from the ticket.
 fn box_annot() -> string { let b: Box<string> = Box { val: "z" }  string(b.val) }
 
-spec "2px2: generic struct field access types as the instantiation" {
+spec "generic struct field access types as the instantiation" {
     then "Box<int>.val in a fn returning int" { box_int() == 5 }
     then "Box<string>.val in a fn returning string" { box_str() == "hi" }
     then "Pair<int,string> first → int" { pair_first() == 7 }
