@@ -2,8 +2,8 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, TypeParamEntry, ValueType, SExpr, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full, vtype_subst_params}
-use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_params, resolve_vtype}
+use core.{Expr, FieldEntry, FieldInit, ValueType, SExpr, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full}
+use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype}
 use diagnostics.{DiagCode}
 
 /// Type-check a `obj.field` access. Recognises `.length` on Str
@@ -30,13 +30,6 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
         .Struct(n, _, _) -> n
         _ -> ""
     }
-    let type_args = match o.ty {
-        .Struct(_, ta, _) -> ta
-        _ -> {
-            let empty: List<ValueType> = []
-            empty
-        }
-    }
     if struct_name.length > 0 {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         // Skip field check for generic type parameters (not in struct registry)
@@ -46,18 +39,9 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
             return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), .Unknown)
         }
         let field_ty = field_type_in(o.tc, fields, field)
-        // 2px2: when the receiver is a generic struct instance
-        // (`Box<int>` carries Int in type_args), specialise the
-        // field's declared type — `T` becomes the concrete arg —
-        // by zipping the struct's declared type-params with the
-        // instance's args.
-        let tps = struct_type_params(o.tc.structs, struct_name)
-        let result_ty = if type_args.length > 0 && tps.length > 0 {
-            vtype_subst_params(field_ty, tps, type_args)
-        } else {
-            field_ty
-        }
-        return tc_er(o.tc, result_ty)
+        // When the receiver is a generic struct instance (`Box<int>`),
+        // specialise the field's declared `T` to the instance's arg.
+        return tc_er(o.tc, tc_specialize_field_ty(o.tc.structs, o.ty, field_ty))
     }
     // Map .get is handled in method call
     tc_er(o.tc, .Unknown)

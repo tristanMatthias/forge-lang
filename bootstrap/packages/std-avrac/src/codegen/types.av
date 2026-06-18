@@ -1367,7 +1367,7 @@ impl Ctx {
                 // at parse time and monomorphizes to a bare-named struct
                 // (`Box__string`); reclassify to Struct whenever the (resolved)
                 // name is a registered struct — regardless of carried args —
-                // so field access sees a Struct, not an Enum (2px2).
+                // so field access sees a Struct, not an Enum.
                 let s = struct_reg_lookup(self.structs, rn)
                 if s.found { return ValueType.Struct(rn, self.resolve_codegen_vtype_list(args), rid) }
                 ValueType.Enum(rn, self.resolve_codegen_vtype_list(args), rid)
