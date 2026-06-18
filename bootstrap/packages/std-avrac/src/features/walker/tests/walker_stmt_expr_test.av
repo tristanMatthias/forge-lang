@@ -23,7 +23,7 @@ spec "derive_walker: Stmt enum carries .children()" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt, Expr}\n" +
             "fn main() {\n" +
-            "    let w = Stmt.While(Expr.Bool(true), Stmt.Break)\n" +
+            "    let w = Stmt.While(Expr.Bool(\"true\"), Stmt.Break)\n" +
             "    let kids = w.children()\n" +
             "    println(\"matches_one=\" + string(kids.length == 1))\n" +
             "}\n")

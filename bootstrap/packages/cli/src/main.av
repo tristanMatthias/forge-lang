@@ -956,7 +956,7 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
 // build. Caller decides whether a non-zero rc disables the metadata
 // fast-path or hard-fails — we soft-fail so a single broken
 // package can't take down the whole test run.
-fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, jobs: int) -> int {
+fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string) -> int {
     let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
     if listing == "" { return 0 }
     let pkg_dirs = split_by_newline(listing)
@@ -986,18 +986,27 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string, 
                 let lib_root = derive_lib_root_for(dir)
                 // 70zy: opt into the metadata fast-path so each pkg's build
                 // reads its dep packages' meta.bin stubs instead of re-parsing
-                // their full source. std-avrac is alphabetically first and
-                // has no deps that benefit (it IS the bulk of @std), so it
-                // still pays the full ~12s. Every other std-* pkg has the
-                // implicit @std/avrac dep and goes from 9s → 0.4s — 22x
-                // faster. Net: pre-build phase 24s → 14s on cold rebuild.
-                cmds.push("cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+                // their full source. std-avrac is alphabetically first and has
+                // no deps that benefit (it IS the bulk of @std), so it pays the
+                // full ~12s; every other std-* pkg has the implicit @std/avrac
+                // dep and goes 9s → 0.4s. Output goes to a per-package log
+                // (not /dev/null) so a failed pre-build — which silently
+                // disables the whole metadata fast-path (08ro) — is
+                // diagnosable instead of vanishing.
+                cmds.push("cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${dir}build/prebuild.log\" 2>&1")
             }
         }
         i = i + 1
     }
     if cmds.length == 0 { return 0 }
-    pool_run(cmds, jobs)
+    // SERIAL (jobs=1): the dirs are alphabetical so std-avrac (the base every
+    // other std-* reads via the AVRA_USE_METADATA fast-path) builds first, and
+    // each dependent in turn sub-builds its deps. Running these in parallel
+    // raced on the shared per-dep cache slot / an absent std-avrac meta.bin —
+    // the pre-build failed (rc=1), the fast-path got disabled, and shards fell
+    // back to whole-program compiles that OOM-killed ~40 shards (08ro). The
+    // serial cost is ~2s (12s base + 6×0.4s deps) vs the racy parallel path.
+    pool_run(cmds, 1)
 }
 
 /// Translate a `packages/std-NAME/` or `../std-NAME` (relative)
@@ -2885,7 +2894,7 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
-    let lib = maybe_prebuild_std_libs(project_dir, compiler_path, jobs)
+    let lib = maybe_prebuild_std_libs(project_dir, compiler_path)
     let listing_file = compute_std_listing_file(project_dir, log_dir)
     let universe_fp = compute_test_universe_fp(listing_file, test_reporter_path(project_dir),
                                                "${project_dir}/build/runtime.o",
@@ -2920,16 +2929,30 @@ type LibMode = { want_meta: bool, lib_objs: string }
 /// Serial (jobs=1 implied by the helper) because workspace packages
 /// with [dependencies] sub-build their own deps; concurrent
 /// outer+inner runs would race on the same per-dep cache slot.
-fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string, jobs: int) -> LibMode {
-    let want_meta = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
+fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string) -> LibMode {
+    // The metadata fast-path has TWO coupled halves: shards built with
+    // AVRA_USE_METADATA=1 STUB every @std/* symbol as an extern, and
+    // AVRA_LIB_OBJS supplies the producer .o's that DEFINE them at link.
+    // Enabling the stub half without the producer half leaves those externs
+    // undefined — which bricked ~76 shards (08ro). So `want_meta` here is
+    // only ever true when we actually have producer objects; every degraded
+    // path falls fully back to whole-program shards (slower, but it links).
+    let off = LibMode { want_meta: false, lib_objs: "" }
+    let want_meta_req = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
     let skip = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
-    if !want_meta || skip { return LibMode { want_meta, lib_objs: "" } }
-    let rc = pre_build_workspace_std_packages(project_dir, compiler_path, jobs)
+    if !want_meta_req || skip { return off }
+    let rc = pre_build_workspace_std_packages(project_dir, compiler_path)
     if rc != 0 {
         eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(rc)}) — disabling metadata fast-path for this run")
-        return LibMode { want_meta, lib_objs: "" }
+        let diag = avra_shell_exec("grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null; tail -n 8 $(grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null | head -1) 2>/dev/null")
+        if diag != "" { eprintln("[per-file] pre-build failure detail:\n${diag}") }
+        return off
     }
-    LibMode { want_meta, lib_objs: collect_workspace_lib_objs(project_dir) }
+    let objs = collect_workspace_lib_objs(project_dir)
+    // collect returns "" (and logs) when any package's realobj is missing —
+    // its all-or-nothing rule. Without producer .o's, stubbing is unsound.
+    if objs == "" { return off }
+    LibMode { want_meta: true, lib_objs: objs }
 }
 
 /// Pre-compute the @std source listing ONCE. Each shard's

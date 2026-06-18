@@ -1,0 +1,62 @@
+// WHY: structural type-arg inference must recurse through every container
+// type, not just List. unify_param (shared by function-argument inference AND
+// generic-struct construction inference) now unwraps Tuple, Optional, Union,
+// Enum type-args, and Newtype to bind a type param reachable only through
+// them. Before this, a param like `(A, B)` or `T?` never bound and the call /
+// construction failed with F1002.
+
+// ── function-argument inference (the shared unify_param path) ──
+
+// Tuple param: A and B reachable only through the tuple.
+fn ci_snd<A, B>(p: (A, B)) -> B { p.1 }
+// Optional param given a BARE value unwraps to the inner param.
+fn ci_or<T>(x: T?, d: T) -> T { x ?? d }
+
+fn ci_fn_tuple_ok() -> bool { ci_snd((1, "x")) == "x" }
+fn ci_fn_tuple_swapped_ok() -> bool { ci_snd(("y", 9)) == 9 }
+fn ci_fn_optional_ok() -> bool { ci_or(5, 0) == 5 }
+
+// Enum-args: T reachable ONLY through a generic enum argument. unify_param's
+// Enum arm binds T from the arg's `.Enum(_, type_args, _)` shape, AND the bare
+// ctor literal `CiEnum.CiSome(5)` now carries those inferred type args (zuzv:
+// arg_concrete_ty/infer_lit_ty re-infer them from the ctor payload), so no type
+// annotation is needed at the call site.
+enum CiEnum<T> {
+    CiNone,
+    CiSome(value: T),
+}
+fn ci_present<T>(m: CiEnum<T>) -> bool {
+    match m {
+        .CiSome(_) -> true
+        .CiNone -> false
+    }
+}
+fn ci_fn_enum_ok() -> bool { ci_present(CiEnum.CiSome(5)) }
+
+// ── generic-struct construction inference ──
+
+// Tuple-typed field: A/B bind from the (int, string) initializer.
+type CiTup<A, B> = { pair: (A, B) }
+// Optional-typed field initialized with a bare value: T binds from it.
+type CiMaybe<T> = { v: T? }
+
+fn ci_struct_tuple_ok() -> bool {
+    let s = CiTup { pair: (1, "x") }
+    s.pair.0 == 1 && s.pair.1 == "x"
+}
+fn ci_struct_optional_ok() -> bool {
+    let m = CiMaybe { v: 7 }
+    (m.v ?? 0) == 7
+}
+
+spec "container inference: function arguments" {
+    then "Tuple param binds both type params" { ci_fn_tuple_ok() }
+    then "Tuple param, swapped instantiation, stays distinct" { ci_fn_tuple_swapped_ok() }
+    then "Optional param binds T from a bare value" { ci_fn_optional_ok() }
+    then "Enum-args param binds T through CiEnum<T>" { ci_fn_enum_ok() }
+}
+
+spec "container inference: struct construction" {
+    then "Tuple field binds A/B from the initializer" { ci_struct_tuple_ok() }
+    then "Optional field binds T from a bare value" { ci_struct_optional_ok() }
+}

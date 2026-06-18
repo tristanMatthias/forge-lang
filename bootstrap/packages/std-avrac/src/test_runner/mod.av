@@ -632,10 +632,20 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 /// specific F-code fires, and rejecting them would force a re-run
 /// every time. Zero-cost on the happy path is the requirement zp5b
 /// reopened with.
-fn fixture_output_is_publishable(out: string) -> bool {
+export fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }
+    // An OOM kill (or any SIGKILL) shows up as a BARE `Killed` line from
+    // the shell — no signal number — when a sub-build is reaped under
+    // memory pressure, and bs2 then reports `compile produced no IR`.
+    // Neither is ever legitimate fixture stdout, and caching them freezes
+    // a transient out-of-memory failure into a permanent one (the fxfz
+    // hazard): a heavy fixture that got OOM-killed once would fail forever
+    // even after the pressure clears. Reject so the next run re-captures.
+    if out.contains("\nKilled\n") || out.starts_with("Killed\n") || out.ends_with("\nKilled") || out == "Killed" { return false }
+    if out.contains("compile produced no IR") { return false }
+    if out.contains("Out of memory") { return false }
     if out.contains("Bus error") { return false }
     if out.contains("Segmentation fault") { return false }
     if out.contains("bs2 codegen failed") { return false }
