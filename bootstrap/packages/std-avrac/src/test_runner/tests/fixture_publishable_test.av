@@ -1,0 +1,48 @@
+// WHY: the fixture-stdout cache must never freeze a TRANSIENT build-state
+// failure into a permanent one (the fxfz/927f hazard). A heavy fixture that
+// gets OOM-killed (bare `Killed` + `compile produced no IR`), hits a linker
+// error from an inconsistent realobj state, or races diagnose.sh's temp files
+// would otherwise have that failure cached and replayed forever. These cases
+// are never legitimate fixture stdout, so `fixture_output_is_publishable`
+// rejects them and lets the next run re-capture once the environment recovers.
+// This pins that contract so a future edit can't silently re-open the freeze.
+
+use @std.avrac.test_runner.{fixture_output_is_publishable}
+
+spec "fixture cache: legitimate output is publishable" {
+    then "normal PROBE output caches" {
+        fixture_output_is_publishable("PROBE thing: ok\nmore output\n")
+    }
+    then "empty output caches" {
+        fixture_output_is_publishable("")
+    }
+    then "output mentioning a signal IN PROSE still caches" {
+        // A test that legitimately prints the word in running text must not
+        // be rejected — only the line-anchored crash reports are.
+        fixture_output_is_publishable("the handler logged: process was reaped\n")
+    }
+}
+
+spec "fixture cache: transient build-state failures are rejected" {
+    then "OOM bare `Killed` mid-output is rejected" {
+        !fixture_output_is_publishable("compiling...\nKilled\n")
+    }
+    then "OOM bare `Killed` at end-of-output (no trailing newline) is rejected" {
+        !fixture_output_is_publishable("compiling...\nKilled")
+    }
+    then "an exactly-`Killed` capture is rejected" {
+        !fixture_output_is_publishable("Killed")
+    }
+    then "`compile produced no IR` (build killed before emit) is rejected" {
+        !fixture_output_is_publishable("error: compile produced no IR (looked for src/x.ll)")
+    }
+    then "`Out of memory` is rejected" {
+        !fixture_output_is_publishable("Out of memory: cannot allocate\n")
+    }
+    then "an undefined-symbol link error is rejected" {
+        !fixture_output_is_publishable("ld.lld: error: undefined symbol: foo\n")
+    }
+    then "a segfault is rejected" {
+        !fixture_output_is_publishable("Segmentation fault\n")
+    }
+}

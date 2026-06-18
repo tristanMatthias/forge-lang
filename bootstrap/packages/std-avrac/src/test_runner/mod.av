@@ -632,7 +632,7 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 /// specific F-code fires, and rejecting them would force a re-run
 /// every time. Zero-cost on the happy path is the requirement zp5b
 /// reopened with.
-fn fixture_output_is_publishable(out: string) -> bool {
+export fn fixture_output_is_publishable(out: string) -> bool {
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }
