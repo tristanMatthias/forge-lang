@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_type_args, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, method_mangled_name, method_from_mangled}
@@ -256,32 +256,10 @@ fn adds_new_info(existing: List<TypeArg>, partial: List<TypeArg>) -> bool {
     false
 }
 
-/// Structural type equality INCLUDING generic type-args. The global
-/// `vtype_eq` deliberately ignores Struct/Enum type-args (many typeck
-/// sites compare a bare `Result` against a `Result<T,E>` and rely on
-/// that leniency — tightening it globally breaks self-compile; tracked
-/// as the 5idg representation cleanup). But the monomorphizer MUST
-/// distinguish `Box<int>` from `Box<string>`, so it compares the args
-/// here recursively. `vtype_type_args` yields the args of a Struct OR
-/// Enum (the parser lowers struct annotations to Enum form), so this
-/// matches a declaration-form arg against an instance-form arg.
-fn vtype_eq_with_args(a: ValueType, b: ValueType) -> bool {
-    if !vtype_eq(a, b) { return false }
-    let aa = vtype_type_args(a)
-    let ba = vtype_type_args(b)
-    if aa.length != ba.length { return false }
-    mut i = 0
-    while i < aa.length {
-        if !vtype_eq_with_args(aa[i], ba[i]) { return false }
-        i = i + 1
-    }
-    true
-}
-
 /// Two type-arg lists are compatible when every shared param
 /// name maps to the same concrete type (or one side leaves it
 /// unbound). Used by `has_compatible_entry`. The concrete-type
-/// comparison is arg-aware (`vtype_eq_with_args`) so two fully
+/// comparison is arg-aware (`vtype_eq_deep`) so two fully
 /// resolved but DIFFERENT instantiations of the same generic
 /// (`Box<int>` vs `Box<string>`) are NOT merged into one inst.
 fn type_args_compatible(a: List<TypeArg>, b: List<TypeArg>) -> bool {
@@ -289,7 +267,7 @@ fn type_args_compatible(a: List<TypeArg>, b: List<TypeArg>) -> bool {
     while i < b.length {
         let entry = b[i]
         let a_ty = type_arg_lookup(a, entry.param_name)
-        if !vtype_eq(a_ty, vtype_struct(entry.param_name, 0)) && !vtype_eq_with_args(a_ty, entry.concrete_vt) { return false }
+        if !vtype_eq(a_ty, vtype_struct(entry.param_name, 0)) && !vtype_eq_deep(a_ty, entry.concrete_vt) { return false }
         i = i + 1
     }
     true
@@ -1879,32 +1857,87 @@ fn scope_insts_for_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> List
     }
     let ta = split_annotation_args(tp, args_str, regs, insts)
     let mangled = mangle_name_ordered(base, tp, ta)
-    // Prepend the fresh scoped inst so subsequent merge/lookup
-    // passes see it first — mirrors the cons-list head ordering
-    // the old code relied on.
-    let filtered = remove_insts_for(base, insts)
+    // Drop the per-fn entries for `base` that this return type supersedes: the
+    // UNDER-RESOLVED partial (e.g. a fn returning `Result<T,E>` that only
+    // constructs `Err`, so `T` never got bound) AND any INCOMPLETE instance
+    // whose own type-arg is a bare generic name with no args of its own — the
+    // `Maybe<Maybe>` shadow a not-yet-fully-inferred inner ctor leaves behind.
+    // Fully-resolved DISTINCT instantiations must survive: a
+    // `mk() -> Maybe<Maybe<int>>` body constructing `Maybe.Just(Maybe.Just(3))`
+    // legitimately collects the inner `Maybe<int>` too, and blanket-removing
+    // every `Maybe` inst would leave the inner match with no `Maybe__int`.
+    let filtered = remove_superseded_insts_for(base, tp, regs, insts)
     mut out: List<Inst> = []
     out.push(Inst { orig_name: base, mangled, type_args: ta })
     mut i = 0
     while i < filtered.length {
-        out.push(filtered[i])
+        // The return-type inst is prepended above; skip an exact duplicate of it.
+        if filtered[i].mangled != mangled { out.push(filtered[i]) }
         i = i + 1
     }
     out
 }
 
-/// Remove every entry from `insts` matching `name`. Used by
-/// `scope_insts_for_ret` to swap out per-fn entries when
-/// adopting a more-specific return-type-derived inst.
-fn remove_insts_for(name: string, insts: List<Inst>) -> List<Inst> {
+/// Keep an inst unless it's an entry for `name` that this scope's return type
+/// supersedes — i.e. under-resolved (a param still the `Struct(pname, 0)`
+/// sentinel) OR not fully concrete (a type-arg is `Unknown`, an empty-named
+/// nominal, or a bare generic with no args of its own — none of which is a real
+/// instantiation). Every genuinely distinct, fully-concrete instantiation of the
+/// same base survives; the partial / placeholder ones the return type refines
+/// are dropped (matching the old blanket behaviour for those, without losing the
+/// legitimate distinct ones).
+fn remove_superseded_insts_for(name: string, tp: List<TypeParamEntry>, regs: GenRegs, insts: List<Inst>) -> List<Inst> {
     mut out: List<Inst> = []
     mut i = 0
     while i < insts.length {
         let e = insts[i]
-        if e.orig_name != name { out.push(e) }
+        let superseded = e.orig_name == name && (!all_resolved(tp, e.type_args) || ta_has_nonconcrete_arg(e.type_args, regs))
+        if !superseded { out.push(e) }
         i = i + 1
     }
     out
+}
+
+/// True when any binding in `ta` is not a fully concrete type.
+fn ta_has_nonconcrete_arg(ta: List<TypeArg>, regs: GenRegs) -> bool {
+    mut i = 0
+    while i < ta.length {
+        if vtype_is_nonconcrete(ta[i].concrete_vt, regs) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// True when `vt` is not a fully concrete type — `Unknown`, an empty-named
+/// nominal, or a registered GENERIC nominal carrying no type-args of its own
+/// (a bare `Maybe` where `Maybe<T>` is generic). Recurses through container and
+/// nominal type-args so a wrapped placeholder (`List<Maybe>`, `Tuple<int, ?>`)
+/// is caught too. A non-generic nominal with empty args (a plain `Color`) is
+/// concrete. Used to drop placeholder instances that aren't real specialisations.
+fn vtype_is_nonconcrete(vt: ValueType, regs: GenRegs) -> bool {
+    match vt {
+        .Unknown -> true
+        .Enum(n, args, _) -> n == "" || (args.length == 0 && generic_enum_lookup(regs.enums, n) != null) || ta_vtypes_nonconcrete(args, regs)
+        .Struct(n, args, _) -> n == "" || (args.length == 0 && generic_struct_lookup(regs.structs, n) != null) || ta_vtypes_nonconcrete(args, regs)
+        .List(elem) -> vtype_is_nonconcrete(elem, regs)
+        .Optional(inner) -> vtype_is_nonconcrete(inner, regs)
+        .Task(inner) -> vtype_is_nonconcrete(inner, regs)
+        .Channel(elem) -> vtype_is_nonconcrete(elem, regs)
+        .Tuple(elems) -> ta_vtypes_nonconcrete(elems, regs)
+        .Union(types) -> ta_vtypes_nonconcrete(types, regs)
+        .Newtype(_, inner, _) -> vtype_is_nonconcrete(inner, regs)
+        _ -> false
+    }
+}
+
+/// True when any element of a `List<ValueType>` is non-concrete.
+fn ta_vtypes_nonconcrete(types: List<ValueType>, regs: GenRegs) -> bool {
+    mut i = 0
+    while i < types.length {
+        if vtype_is_nonconcrete(types[i], regs) { return true }
+        i = i + 1
+    }
+    false
 }
 
 /// Parse a type-name string back into a ValueType. Used to
