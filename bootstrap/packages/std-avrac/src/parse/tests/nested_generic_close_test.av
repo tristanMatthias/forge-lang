@@ -1,0 +1,24 @@
+// WHY: a nested generic close like `List<List<int>>` ends in `>>`, which the
+// lexer tokenizes as a single right-shift token (`Tk.Shr`) — not two `>`. In a
+// generic-type-arg context the inner `>` closes the inner list and the outer
+// `>` must remain for the enclosing list, so the parser splits the `>>` token
+// (re-pointing the cursor at the second `>` and re-lexing the remainder, which
+// re-forms `>>` for `>>>`). This is the classic C++/Rust nested-generic-close
+// handling. These specs pin that `>>` / `>>>` closes parse AND that the real
+// right-shift operator (outside any angle brackets) is left untouched.
+
+fn ll() -> List<List<int>> { [[5]] }
+fn lll() -> List<List<List<int>>> { [[[7]]] }
+fn lls() -> List<List<string>> { [["hi"]] }
+fn let_nested() -> int { let xs: List<List<int>> = [[3], [4]]  xs[1][0] }
+fn shift() -> int { 256 >> 2 }
+fn chained_shift() -> int { 1024 >> 1 >> 1 }
+
+spec "nested generic close `>>` parses (ntcb)" {
+    then "two-level List<List<int>> in a return type" { ll()[0][0] == 5 }
+    then "three-level List<List<List<int>>> closes via `>>>`" { lll()[0][0][0] == 7 }
+    then "two-level with a string leaf" { lls()[0][0] == "hi" }
+    then "nested annotation on a `let` binding" { let_nested() == 4 }
+    then "the real `>>` shift operator is unaffected" { shift() == 64 }
+    then "chained `>>` shifts still parse left-assoc" { chained_shift() == 256 }
+}
