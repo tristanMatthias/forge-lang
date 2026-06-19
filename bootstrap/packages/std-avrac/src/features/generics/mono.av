@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_type_args, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, method_mangled_name, method_from_mangled}
@@ -256,15 +256,40 @@ fn adds_new_info(existing: List<TypeArg>, partial: List<TypeArg>) -> bool {
     false
 }
 
+/// Structural type equality INCLUDING generic type-args. The global
+/// `vtype_eq` deliberately ignores Struct/Enum type-args (many typeck
+/// sites compare a bare `Result` against a `Result<T,E>` and rely on
+/// that leniency — tightening it globally breaks self-compile; tracked
+/// as the 5idg representation cleanup). But the monomorphizer MUST
+/// distinguish `Box<int>` from `Box<string>`, so it compares the args
+/// here recursively. `vtype_type_args` yields the args of a Struct OR
+/// Enum (the parser lowers struct annotations to Enum form), so this
+/// matches a declaration-form arg against an instance-form arg.
+fn vtype_eq_with_args(a: ValueType, b: ValueType) -> bool {
+    if !vtype_eq(a, b) { return false }
+    let aa = vtype_type_args(a)
+    let ba = vtype_type_args(b)
+    if aa.length != ba.length { return false }
+    mut i = 0
+    while i < aa.length {
+        if !vtype_eq_with_args(aa[i], ba[i]) { return false }
+        i = i + 1
+    }
+    true
+}
+
 /// Two type-arg lists are compatible when every shared param
 /// name maps to the same concrete type (or one side leaves it
-/// unbound). Used by `has_compatible_entry`.
+/// unbound). Used by `has_compatible_entry`. The concrete-type
+/// comparison is arg-aware (`vtype_eq_with_args`) so two fully
+/// resolved but DIFFERENT instantiations of the same generic
+/// (`Box<int>` vs `Box<string>`) are NOT merged into one inst.
 fn type_args_compatible(a: List<TypeArg>, b: List<TypeArg>) -> bool {
     mut i = 0
     while i < b.length {
         let entry = b[i]
         let a_ty = type_arg_lookup(a, entry.param_name)
-        if !vtype_eq(a_ty, vtype_struct(entry.param_name, 0)) && !vtype_eq(a_ty, entry.concrete_vt) { return false }
+        if !vtype_eq(a_ty, vtype_struct(entry.param_name, 0)) && !vtype_eq_with_args(a_ty, entry.concrete_vt) { return false }
         i = i + 1
     }
     true
@@ -414,13 +439,19 @@ fn mangle_ordered(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> string {
 /// qualified or unqualified Struct names.
 fn vtype_mangle_slug(t: ValueType) -> string {
     match t {
-        .Struct(n, _, _) -> type_short_name(n)
+        // A generic struct/enum INSTANCE carries type-args (post-2px2). Its slug
+        // MUST equal the name `mangle_name_ordered` gives the specialized decl,
+        // which flattens base + args with `__` (`Box<int>` → `Box__int`). So the
+        // slug flattens identically: `Box<Box<int>>` → `Box__Box__int`. Using an
+        // angle-bracket slug here (`Box__Box<int>`) would diverge from the flat
+        // decl name and codegen would abort F9999 "non-struct value". The flat
+        // form is recovered correctly because (a) the decl-name and field-rewrite
+        // paths both flatten the same way, and (b) `mangle_slug_named` does not
+        // re-flatten an already-mangled inner name (the double-encode guard).
+        .Struct(n, args, _) -> mangle_slug_named(n, args)
         .Newtype(n, _, _) -> type_short_name(n)
         .Trait(n, _) -> "dyn ${type_short_name(n)}"
-        .Enum(n, args, _) -> {
-            let short = type_short_name(n)
-            if args.length == 0 { short } else { "${short}<${mangle_arg_list(args)}>" }
-        }
+        .Enum(n, args, _) -> mangle_slug_named(n, args)
         .List(elem) -> "List<${vtype_mangle_slug(elem)}>"
         .Task(inner) -> "Task<${vtype_mangle_slug(inner)}>"
         .Channel(elem) -> "Channel<${vtype_mangle_slug(elem)}>"
@@ -432,6 +463,30 @@ fn vtype_mangle_slug(t: ValueType) -> string {
         .Optional(inner) -> vtype_mangle_slug(inner)
         _ -> vtype_render_full(t)
     }
+}
+
+/// Slug for a named generic instance (`Box<int>` → `Box__int`), matching the
+/// flat `base__arg…` name `mangle_name_ordered` gives the specialized decl.
+/// Two guards keep the flat form well-formed:
+///  - no type-args → just the short name (a plain or already-resolved type);
+///  - a name that ALREADY contains the mangle separator `__` is a fully
+///    monomorphized instance (e.g. `Box__int`, produced when the field-rewrite
+///    round-trips a nesting through `vtype_from_type_string`, which re-attaches
+///    the dunder-parsed args). Its args are already baked into the name, so
+///    re-flattening them would double-encode (`Box__int__int`) and diverge from
+///    the decl name; return the name as-is. (`__` can't occur in a user type
+///    name — it's the reserved mangle separator.)
+fn mangle_slug_named(n: string, args: List<ValueType>) -> string {
+    let short = type_short_name(n)
+    if args.length == 0 || find_dunder(short) >= 0 { return short }
+    mut joined = ""
+    mut i = 0
+    while i < args.length {
+        let part = vtype_mangle_slug(args[i])
+        if joined == "" { joined = part } else { joined = mangle_join(joined, part) }
+        i = i + 1
+    }
+    mangle_join(short, joined)
 }
 
 fn mangle_arg_list(args: List<ValueType>) -> string {
@@ -527,10 +582,17 @@ fn unify_param(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType,
             .Union(a_types) -> unify_type_lists(tp, p_types, a_types, acc)
             _ -> acc
         }
-        .Enum(_, p_args, _) -> match arg_ty {
-            .Enum(_, a_args, _) -> unify_type_lists(tp, p_args, a_args, acc)
-            _ -> acc
-        }
+        // A generic name's DECLARATION form is Enum (the parser lowers every
+        // `Foo<...>` annotation to Enum — it can't tell struct from enum), but
+        // its INSTANCE form is Struct (typeck reclassifies struct literals).
+        // So a field `inner: Box<T>` is Enum-form while its `Box{...}`
+        // initializer is Struct-form — both arms must cross-match by pulling
+        // the arg list from EITHER representation via `vtype_type_args`, then
+        // unify positionally to bind a param reachable only through that field.
+        // (The bare-type-param `Enum/Struct("T", [], 0)` case is already
+        // handled by the type_param_has check above.)
+        .Enum(_, p_args, _) -> unify_type_lists(tp, p_args, vtype_type_args(arg_ty), acc)
+        .Struct(_, p_args, _) -> unify_type_lists(tp, p_args, vtype_type_args(arg_ty), acc)
         .Newtype(_, p_inner, _) -> match arg_ty {
             .Newtype(_, a_inner, _) -> unify_param(tp, p_inner, a_inner, acc)
             _ -> acc
@@ -913,6 +975,31 @@ fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst
             if rewritten != ty_name { vtype_from_type_string(rewritten) } else { p.vtype }
         }
         out.push(ParamEntry { name: p.name, vtype: vt })
+        i = i + 1
+    }
+    out
+}
+
+/// Rewrite generic-instance references in a specialised struct's field types
+/// to their monomorphized names — `val: Box<int>` becomes `val: Box__int`.
+/// A specialised struct (`Box__Box__int`) has its `T` already substituted to
+/// the concrete `Box<int>`, but with the BARE generic name; without mangling
+/// it here codegen looks up `Box` and fails ("unknown struct Box"). Mirrors
+/// rewrite_param_types, but renders with `vtype_render_full` so a Struct
+/// instance's type-args survive into the lookup (vtype_display drops them).
+/// Only round-trips a field whose render actually mangled, leaving every
+/// other field's ValueType untouched.
+fn rewrite_field_types(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst>) -> List<FieldEntry> {
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        let vt = if vtype_is_unknown(e.resolved) { e.resolved } else {
+            let ty_name = vtype_render_full(e.resolved)
+            let rewritten = rewrite_type_name(ty_name, regs, insts)
+            if rewritten != ty_name { vtype_from_type_string(rewritten) } else { e.resolved }
+        }
+        out.push(FieldEntry { name: e.name, resolved: vt })
         i = i + 1
     }
     out
@@ -2096,6 +2183,10 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
             .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(vtype_render_full(ret_vt), regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))
+        // A specialised struct (tp already emptied) may carry generic-instance
+        // field types (`val: Box<int>`) that still need their monomorphized
+        // names; mangle them so codegen resolves a concrete struct.
+        .TypeDecl(name, tp, fields) -> .TypeDecl(name, tp, rewrite_field_types(fields, regs, insts))
         .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_stmt(inner.node, regs, insts) })
         .Impl(name, methods) -> .Impl(name, rewrite_stmts(methods, regs, insts))
         .Defer(body) -> .Defer(rewrite_expr(body, regs, insts))

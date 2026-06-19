@@ -1,0 +1,40 @@
+// WHY: wpqd — a generic struct instantiated with ANOTHER generic-struct
+// instance (Box<Box<int>>) must monomorphize the inner instance too. Three
+// things had to line up:
+//   1. instance dedup must keep DISTINCT instantiations distinct: the merge
+//      compatibility check (`type_args_compatible`) compares concrete args with
+//      `vtype_eq_with_args`, so Box<Box<int>> and Box<Box<string>> are not
+//      collapsed into one inst (the global `vtype_eq` ignores generic args);
+//   2. the specialized outer struct's field `val: Box<int>` must be MANGLED to
+//      the monomorphized name (`Box__int`) via rewrite_field_types — otherwise
+//      codegen looks up a bare `Box` and aborts F9999;
+//   3. the mangled slug (`vtype_mangle_slug`) must match the specialized decl
+//      name at every nesting depth, flattening `Box<Box<int>>` to
+//      `Box__Box__int` without double-encoding an already-mangled inner name.
+// (Nested generic *type annotations* like `Box<Box<int>>` are blocked by a
+// separate lexer `>>` limitation — ntcb/6oan — so these cases construct via
+// struct literals, which exercise the same monomorphization paths.)
+
+type Box<T> = { val: T }
+type Pair<A, B> = { first: A, second: B }
+
+// Nested instance, read through both levels.
+fn nested_int() -> int { let b = Box { val: Box { val: 9 } }  b.val.val }
+// A different inner instantiation must stay distinct (no first-match collision).
+fn nested_str() -> string { let b = Box { val: Box { val: "hi" } }  b.val.val }
+// A generic struct whose FIELD type is itself a generic struct instance.
+fn wrapped_field() -> int { let w = Pair { first: Box { val: 7 }, second: 2 }  w.first.val + w.second }
+// Three levels deep — exercises the flatten-without-double-encode guard.
+fn triple_int() -> int { let b = Box { val: Box { val: Box { val: 5 } } }  b.val.val.val }
+fn triple_str() -> string { let b = Box { val: Box { val: Box { val: "z" } } }  b.val.val.val }
+// `with` on a struct holding a nested generic field.
+fn with_nested() -> int { let b = Box { val: Box { val: 1 } }  let c = b with { val: Box { val: 8 } }  c.val.val }
+
+spec "wpqd: nested generic struct monomorphization" {
+    then "Box<Box<int>> reads through both levels" { nested_int() == 9 }
+    then "Box<Box<string>> stays a distinct instantiation" { nested_str() == "hi" }
+    then "a generic struct with a generic-struct field" { wrapped_field() == 9 }
+    then "Box<Box<Box<int>>> reads through three levels" { triple_int() == 5 }
+    then "Box<Box<Box<string>>> is a distinct deep instantiation" { triple_str() == "z" }
+    then "`with` overriding a nested-generic field" { with_nested() == 8 }
+}

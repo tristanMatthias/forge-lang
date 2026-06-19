@@ -21,7 +21,13 @@ export fn emit_struct_lit(ctx: Ctx, env: List<VarBinding>, name: string, inits: 
         return err_emit("LLVM struct type `${name}` not declared")
     }
     let buf = malloc_struct_bytes(ctx, name, lookup.fields)
-    let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
+    // The copy stack target (if any) was just consumed for THIS struct's
+    // buffer. Clear it before filling fields so a nested struct literal in a
+    // field initializer (`Outer { val: Inner { .. } }`) allocates its OWN
+    // storage instead of re-grabbing our slot — otherwise both structs write
+    // into one alloca and the outer's self-pointer clobbers the inner's data.
+    let fill_ctx = ctx with { copy_alloc_target: null }
+    let fill = fill_struct_fields(fill_ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
     ok_emit(as_i64, vtype_struct(name, type_registry_id_for(ctx.type_reg, name)))
 }
