@@ -8,8 +8,8 @@
 // now reclassifies the receiver through the codegen type resolver (which fixes
 // the kind by registry lookup) before giving up, so field access works on
 // returned / bound / passed generic-struct values, not only on freshly built
-// struct literals. (fyzs — the struct half; nested generic ENUM match and the
-// then-block inline-literal collection gap are tracked separately.)
+// struct literals. (This covers generic STRUCT values; nested generic ENUM
+// match and a generic literal inline in a then-block are separate gaps.)
 
 type Box<T> = { val: T }
 type Pair<A, B> = { first: A, second: B }
@@ -33,8 +33,10 @@ fn roundtrip() -> int { unwrap2(make2()) }
 // field ASSIGNMENT on an annotation-typed generic struct (the write path)
 fn assign_ret() -> int { mut b = make1()  b.val = 7  b.val }
 fn assign_nested() -> int { mut b = make2()  b.val.val = 8  b.val.val }
+// `with` update on an annotation-typed generic struct (the with path)
+fn with_ret() -> int { let b = make1() with { val: 9 }  b.val }
 
-spec "field access on annotation-typed generic struct values (fyzs)" {
+spec "field access on annotation-typed generic struct values" {
     then "single-level return, direct field access" { ret_direct() == 3 }
     then "nested return, field access via a let binding" { ret_via_let() == 5 }
     then "single-level param" { param1() == 9 }
@@ -43,4 +45,33 @@ spec "field access on annotation-typed generic struct values (fyzs)" {
     then "a return value fed into a param" { roundtrip() == 5 }
     then "field assignment on a returned generic struct" { assign_ret() == 7 }
     then "nested field assignment on a returned generic struct" { assign_nested() == 8 }
+    then "`with` update on a returned generic struct" { with_ret() == 9 }
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Built at runtime so the test-runner discovery glob doesn't treat THIS file
+// (which embeds a fixture with an entry point) as a compiled program.
+const ENTRY: string = "fn " + "main()"
+
+fn compile_out(source: string) -> string {
+    let path = "/tmp/avra_generic_struct_annotation_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+// The reclassification only rescues an Enum-FORM name that is a REGISTERED
+// struct. A genuine non-struct (a scalar, a real enum) must still be rejected —
+// the fallback must not start accepting field access on anything.
+spec "field access still rejects genuine non-struct values" {
+    then "field access on an int still errors" {
+        let out = compile_out("${ENTRY} { let x = 5  let y = x.val }")
+        out.contains("non-struct value")
+    }
+    then "field access on a real enum value still errors" {
+        let out = compile_out("enum Color { Red, Green }
+${ENTRY} { let c = Color.Red  let y = c.val }")
+        out.contains("non-struct value")
+    }
 }

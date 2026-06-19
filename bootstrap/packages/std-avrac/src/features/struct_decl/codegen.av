@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, SExpr, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_struct_name, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup, render_expr}
+use core.{Expr, SExpr, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup, render_expr}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
@@ -79,14 +79,7 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
 /// so chains like `a.b = c.d = ...` work.
 export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
-    mut struct_name = vtype_struct_name(r.ty)
-    if struct_name == "" {
-        // Same reclassification as the read path (emit_field_on_value): a value
-        // typed by a return/let/param annotation carries an Enum-form mangled
-        // generic name that may actually name a registered struct. Resolve the
-        // kind via the codegen type resolver before rejecting the assignment.
-        struct_name = vtype_struct_name(ctx.resolve_codegen_vtype(r.ty))
-    }
+    let struct_name = ctx.resolved_struct_name(r.ty)
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=${vtype_render_full(r.ty)})")
     }
@@ -169,17 +162,7 @@ export fn emit_field_on_value(ctx: Ctx, r: EmitValue, obj: Expr, field: string) 
         return emit_narrowed_field(ctx, r, field, narrowed_vname)
     }
 
-    mut struct_name = vtype_struct_name(r.ty)
-    if struct_name == "" {
-        // A value typed by a return annotation or `let` binding can carry an
-        // Enum-form mangled generic name (`Box__int`) that actually names a
-        // registered STRUCT — the parser / mangle round-trip can't tell struct
-        // from enum, so `vtype_struct_name` sees an Enum and returns "". Reclassify
-        // through the codegen type resolver (which corrects the kind by registry
-        // lookup) before giving up, so field access works on returned/bound
-        // generic-struct values, not only freshly-constructed literals.
-        struct_name = vtype_struct_name(ctx.resolve_codegen_vtype(r.ty))
-    }
+    let struct_name = ctx.resolved_struct_name(r.ty)
     if struct_name == "" {
         let obj_repr = render_expr(obj)
         return err_emit("field access on non-struct value (ty=${vtype_render_full(r.ty)}, field=${field}, obj=${obj_repr}, at=${ctx.source_file}:${string(ctx.source_line)})")
