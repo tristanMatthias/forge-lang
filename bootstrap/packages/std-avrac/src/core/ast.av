@@ -1203,6 +1203,25 @@ export fn vtype_type_args(t: ValueType) -> List<ValueType> {
     }
 }
 
+/// Structural type equality INCLUDING generic type-args. The plain `vtype_eq`
+/// deliberately ignores Struct/Enum type-args (many sites compare a bare
+/// `Result` against a `Result<T,E>` and rely on that leniency — tightening it
+/// globally breaks self-compile). Callers that MUST distinguish instantiations
+/// — `Box<int>` vs `Box<string>`, `Maybe<int>` vs `Maybe<Maybe<int>>` — use
+/// this, which adds a recursive type-arg comparison on top of `vtype_eq`.
+export fn vtype_eq_deep(a: ValueType, b: ValueType) -> bool {
+    if !vtype_eq(a, b) { return false }
+    let aa = vtype_type_args(a)
+    let ba = vtype_type_args(b)
+    if aa.length != ba.length { return false }
+    mut i = 0
+    while i < aa.length {
+        if !vtype_eq_deep(aa[i], ba[i]) { return false }
+        i = i + 1
+    }
+    true
+}
+
 /// Name of an Enum (or its NarrowedEnum form), or "" otherwise.
 export fn vtype_enum_name(t: ValueType) -> string {
     match t { .Enum(n, _, _) -> n, .NarrowedEnum(n, _, _) -> n, _ -> "" }

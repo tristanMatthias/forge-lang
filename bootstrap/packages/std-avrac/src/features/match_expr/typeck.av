@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
@@ -389,7 +389,14 @@ fn enum_generic_bindings(reg: EnumTypeReg, enum_name: string, subject_ty: ValueT
 /// "type-param never substituted".
 fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
     if subject_name == "" { return ValueType.Unknown }
-    if nominal_name(field_ty) == subject_name { return subject_ty }
+    // A genuinely self-recursive field (`tail: List<T>` in a `List<T>` subject)
+    // prefers `subject_ty`'s canonical form to dodge bare-vs-qualified name
+    // fallout. But "same nominal" is NOT enough: a `Maybe<int>` field inside a
+    // `Maybe<Maybe<int>>` subject shares the nominal `Maybe` yet is a DIFFERENT
+    // instantiation — binding it to `subject_ty` would type the payload one
+    // level too deep (the nested-enum-match arm-type mismatch). Require the
+    // type-args to match too, so the shortcut fires only for true self-reference.
+    if nominal_name(field_ty) == subject_name && same_instantiation(field_ty, subject_ty) { return subject_ty }
     match field_ty {
         // Self-recursive list-of-Self projects subject_ty into the elem
         // slot so generic-call inference inside the arm body can pin
@@ -406,6 +413,22 @@ fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name
         // Tuples, FnTyped, Newtype, Enum, etc.) flows through as-is.
         _ -> field_ty
     }
+}
+
+/// True when `field_ty` and `subject_ty` are the SAME generic instantiation —
+/// same number of type-args, each deep-equal. The outer nominal name is checked
+/// by the caller (tolerant of bare-vs-qualified); this guards the type-args so
+/// `Maybe<int>` is not treated as the same instantiation as `Maybe<Maybe<int>>`.
+fn same_instantiation(field_ty: ValueType, subject_ty: ValueType) -> bool {
+    let fa = vtype_type_args(field_ty)
+    let sa = vtype_type_args(subject_ty)
+    if fa.length != sa.length { return false }
+    mut i = 0
+    while i < fa.length {
+        if !vtype_eq_deep(fa[i], sa[i]) { return false }
+        i = i + 1
+    }
+    true
 }
 
 /// Nominal name from `.Struct` / `.Enum`; `""` for other shapes.
