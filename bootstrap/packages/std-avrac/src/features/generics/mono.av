@@ -1860,8 +1860,8 @@ fn scope_insts_for_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> List
     // Drop the per-fn entries for `base` that this return type supersedes: the
     // UNDER-RESOLVED partial (e.g. a fn returning `Result<T,E>` that only
     // constructs `Err`, so `T` never got bound) AND any INCOMPLETE instance
-    // whose own type-arg is a bare generic name with no args of its own (a
-    // `Maybe<Maybe>` shadow that the bare-typed inner ctor produces — see ebs1).
+    // whose own type-arg is a bare generic name with no args of its own — the
+    // `Maybe<Maybe>` shadow a not-yet-fully-inferred inner ctor leaves behind.
     // Fully-resolved DISTINCT instantiations must survive: a
     // `mk() -> Maybe<Maybe<int>>` body constructing `Maybe.Just(Maybe.Just(3))`
     // legitimately collects the inner `Maybe<int>` too, and blanket-removing
