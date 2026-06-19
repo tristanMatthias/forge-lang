@@ -1,0 +1,101 @@
+// WHY: regression for forge-crafting-intepreters-qcvb — a generic struct
+// whose type params CAN'T be pinned down from its field initializers must
+// still construct when the EXPECTED type (a `let`/return annotation) supplies
+// them. Two cases the literal alone can't solve:
+//   * a PHANTOM param — appears in no field (only in method sigs / as a
+//     newtype-style tag), so no initializer can ever bind it;
+//   * an EMPTY-COLLECTION field — `nodes: []` carries no element type, so the
+//     param behind `List<N>` stays Unknown.
+// Before the fix both raised `F1002: cannot infer type parameter`, which
+// blocked expressing the L1 single generic `Arena<N, Id>` / `DenseTable<Id, V>`
+// (ps3t.3.6 / agcv).
+//
+// Root cause in features/generics/mono.av: struct-literal inference
+// (try_add_struct_inst / rewrite_struct_lit) only unified each field's
+// declared type against its initializer — it never looked at the construction's
+// expected type. The fix threads `expected` through the SAME two-pass channel
+// the fn-side already uses for return-position type params (so07.7.16):
+// collect_inst_expr_with_expected + rewrite_expr_with_expected now have a
+// `.StructLit` arm that unifies the struct's own `Name<tp…>` against the
+// annotation (infer_from_field_inits_with_expected). Both passes share the
+// worker, so the mangled name matches the registered instantiation.
+//
+// These `then` blocks run the constructed values, so a regression fails at
+// compile time (F1002 returns) OR at runtime (a wrong field value), never
+// silently.
+
+// A param behind an empty-collection field (N) AND a phantom param (Id, in no
+// field) — the exact shape of the L1 arena that motivated qcvb.
+type EiArena<N, Id> = { nodes: List<N>, count: int }
+
+// Phantom param used in a method signature: `first_or` makes `V` load-bearing
+// while `Id` appears in no field — the canonical "wholly uninferrable from the
+// literal" param.
+type EiTab<Id, V> = { vals: List<V>, n: int }
+impl EiTab<Id, V> {
+    fn first_or(self, d: V) -> V {
+        if self.vals.length > 0 { self.vals[0] } else { d }
+    }
+}
+
+// A param fully determined by a NON-empty field — the no-annotation path that
+// must keep working. Constructed in normal fn context (below) where the
+// annotate pass populates each initializer's type.
+type EiBox<T> = { val: T }
+
+// Return-position annotation: the tail expression is a bare struct literal
+// whose params come only from the declared return type.
+fn ei_make_arena() -> EiArena<int, string> {
+    EiArena { nodes: [], count: 42 }
+}
+
+fn ei_make_tab() -> EiTab<int, string> {
+    EiTab { vals: [], n: 0 }
+}
+
+// No annotation anywhere — T binds purely from the non-empty initializer. This
+// is the pre-existing field-inference path; it must not regress. (Done in a
+// normal fn, not a `then` block, because spec-body initializers aren't
+// type-annotated — the annotation-free path needs the annotate pass.)
+fn ei_box_from_field() -> int {
+    let b = EiBox { val: 9 }
+    b.val
+}
+
+spec "generic struct infers type params from the expected type" {
+    given "an empty-collection field plus a phantom param" {
+        then "a let annotation drives construction (empty field, phantom Id)" {
+            let a: EiArena<int, int> = EiArena { nodes: [], count: 7 }
+            a.count == 7 && a.nodes.length == 0
+        }
+        then "distinct phantom and value params both bind from the annotation" {
+            let t: EiTab<int, string> = EiTab { vals: [], n: 5 }
+            t.n == 5 && t.vals.length == 0
+        }
+    }
+    given "a return-type annotation" {
+        then "the tail struct literal binds params from the return type" {
+            let a = ei_make_arena()
+            a.count == 42 && a.nodes.length == 0
+        }
+        then "a phantom-param struct returns from an annotated fn" {
+            let t = ei_make_tab()
+            t.n == 0 && t.vals.length == 0
+        }
+    }
+    given "the annotation-free field-inference path" {
+        then "a non-empty field still infers WITHOUT an annotation (no regression)" {
+            ei_box_from_field() == 9
+        }
+    }
+    given "a phantom param exercised through a method" {
+        then "the method body type-checks and runs on the inferred instance" {
+            let t: EiTab<int, string> = EiTab { vals: ["a", "b"], n: 2 }
+            t.first_or("z") == "a"
+        }
+        then "the same instance falls back when the collection is empty" {
+            let t: EiTab<int, string> = EiTab { vals: [], n: 0 }
+            t.first_or("z") == "z"
+        }
+    }
+}

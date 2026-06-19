@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, method_mangled_name, method_from_mangled}
@@ -735,6 +735,36 @@ fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, in
     out_acc
 }
 
+/// Each type param as a bare-name ValueType (`N` → `Struct("N", 0)`),
+/// in declaration order — the param side of the `expected`-type unify in
+/// `infer_from_field_inits_with_expected`. `vtype_display` renders a bare
+/// `Struct(name)` back to `name`, so `unify_param`'s `type_param_has` check
+/// re-binds it positionally against the expected type's args.
+fn tp_param_vtypes(tp: List<TypeParamEntry>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    for p in tp {
+        out.push(vtype_struct(p.name, 0))
+    }
+    out
+}
+
+/// Variant of `infer_from_field_inits` that ALSO unifies the struct's own
+/// `Name<tp…>` type against the construction's `expected` type (a `let`/return
+/// annotation). The struct-literal alone can't bind a param that appears in no
+/// field (a phantom `Id`) or only behind an empty-collection field (`nodes: []`
+/// can't pin `N`) — the annotation supplies those. Mirror of the fn-side
+/// `infer_from_params_with_expected` (so07.7.16): field inference first, the
+/// `expected` unify last so its concrete args win over an empty field's
+/// `Unknown` (cons-prepend → head, and `type_arg_lookup` is head-first).
+/// Guarded on `expected` naming THIS struct, so an unrelated/`Unknown`
+/// annotation can never mis-bind.
+fn infer_from_field_inits_with_expected(tp: List<TypeParamEntry>, fields: List<FieldEntry>, name: string, inits: List<FieldInit>, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+    let from_fields = infer_from_field_inits(tp, fields, inits, acc)
+    if vtype_is_unknown(expected) { return from_fields }
+    if vtype_nominal_name(expected) != name { return from_fields }
+    unify_type_lists(tp, tp_param_vtypes(tp), vtype_type_args(expected), from_fields)
+}
+
 // Validate that all type params are resolved. Emit F1002 for each missing one.
 /// Verify every type param in `tp` got bound and that every
 /// concrete arg satisfies the param's trait bounds. Emits
@@ -1198,6 +1228,12 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
         }
         .Grouping(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
         .Try(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
+        // A struct literal in expected-type position (let/return annotation):
+        // thread the annotation in so a phantom or empty-collection-only param
+        // binds from it. Recurse into the field inits first (matching the
+        // unexpected `.StructLit` arm in collect_inst_expr_inner).
+        .StructLit(name, inits) ->
+            try_add_struct_inst_with_expected(name, inits, expected, regs, collect_inst_field_inits(inits, regs, st))
         _ -> collect_inst_expr_inner(expr, regs, st)
     }
 }
@@ -1416,6 +1452,19 @@ fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: 
     let entry = e!
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, entry.tp, infer_from_field_inits(entry.tp, entry.fields, inits, empty_ta), st)
+}
+
+/// Variant of `try_add_struct_inst` that takes the construction's expected
+/// type (a `let`/return annotation). Inference adds the annotation's args for
+/// params the fields can't pin down (phantom params, empty-collection fields),
+/// so `Arena<int,int> = Arena { nodes: [], … }` resolves instead of raising
+/// F1002. Mirror of `try_add_fn_inst_with_expected` (qcvb).
+fn try_add_struct_inst_with_expected(name: string, inits: List<FieldInit>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    let e = generic_struct_lookup(regs.structs, name)
+    if e == null { return st }
+    let entry = e!
+    let empty_ta: List<TypeArg> = []
+    add_resolved_inst(name, entry.tp, infer_from_field_inits_with_expected(entry.tp, entry.fields, name, inits, expected, empty_ta), st)
 }
 
 // ── Pass 3: Generate concrete specializations ──
@@ -2181,6 +2230,7 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
         }
         .Grouping(e) -> Expr.Grouping(rewrite_expr_with_expected(e, expected, regs, insts))
         .Try(e) -> Expr.Try(rewrite_expr_with_expected(e, expected, regs, insts))
+        .StructLit(name, inits) -> rewrite_struct_lit_with_expected(name, inits, expected, regs, insts)
         _ -> rewrite_expr(expr, regs, insts)
     }
 }
@@ -2500,6 +2550,19 @@ fn rewrite_struct_lit(name: string, inits: List<FieldInit>, regs: GenRegs, insts
     let entry = e!
     let empty_ta: List<TypeArg> = []
     Expr.StructLit(mangle_name_ordered(name, entry.tp, infer_from_field_inits(entry.tp, entry.fields, inits, empty_ta)), new_inits)
+}
+
+/// Variant of `rewrite_struct_lit` that mangles using the construction's
+/// expected type — must compute the SAME type args as the collect-side
+/// `try_add_struct_inst_with_expected` so the mangled name matches the
+/// registered instantiation (else codegen references an unspecialised name).
+fn rewrite_struct_lit_with_expected(name: string, inits: List<FieldInit>, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
+    let new_inits = rewrite_field_inits(inits, regs, insts)
+    let e = generic_struct_lookup(regs.structs, name)
+    if e == null { return Expr.StructLit(name, new_inits) }
+    let entry = e!
+    let empty_ta: List<TypeArg> = []
+    Expr.StructLit(mangle_name_ordered(name, entry.tp, infer_from_field_inits_with_expected(entry.tp, entry.fields, name, inits, expected, empty_ta)), new_inits)
 }
 
 // ── Entry point ──
