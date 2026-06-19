@@ -44,16 +44,21 @@ fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<F
         ctx.arena_alloc(ctx.i64(lookup.fields.length * 8))
     }
     let src_ptr = ctx.to_ptr(r.value, "with_src")
+    // The copy stack target (if any) was just consumed for `new_buf`. Clear it
+    // before emitting override expressions so a nested struct literal in an
+    // override (`base with { val: Inner { .. } }`) allocates its own storage
+    // rather than re-grabbing our slot (the shared-target bug).
+    let inner_ctx = ctx with { copy_alloc_target: null }
 
     // Copy all fields from original — retains every ptr field NOT
     // about to be overridden. (Retaining overridden fields would leak
     // them, since apply_overrides immediately stomps the slot and
     // nothing decrements the dangling retain.)
     let override_names = collect_override_names(overrides)
-    copy_struct_fields(ctx, src_ptr, new_buf, struct_name, lookup.fields, override_names)
+    copy_struct_fields(inner_ctx, src_ptr, new_buf, struct_name, lookup.fields, override_names)
 
     // Override specified fields
-    apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)?
+    apply_overrides(inner_ctx, env, new_buf, struct_name, lookup.fields, overrides)?
 
     ok_emit(ctx.to_i64(new_buf, "with_result"), r.ty)
 }
