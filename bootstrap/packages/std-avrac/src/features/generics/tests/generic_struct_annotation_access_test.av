@@ -1,0 +1,41 @@
+// WHY: a value whose type comes from an explicit generic-struct ANNOTATION —
+// a function return type, a `let` binding, or a parameter — flows through codegen
+// as an Enum-FORM mangled name (`Box__int`), because the parser / mangle
+// round-trip can't tell a struct from an enum and `vtype_from_type_string`
+// defaults to Enum. Field access then saw an Enum, `vtype_struct_name` returned
+// "", and codegen aborted F9999 "field access on non-struct value" — even for a
+// plain single-level `Box<int>` returned from a function. emit_field_on_value
+// now reclassifies the receiver through the codegen type resolver (which fixes
+// the kind by registry lookup) before giving up, so field access works on
+// returned / bound / passed generic-struct values, not only on freshly built
+// struct literals. (fyzs — the struct half; nested generic ENUM match and the
+// then-block inline-literal collection gap are tracked separately.)
+
+type Box<T> = { val: T }
+type Pair<A, B> = { first: A, second: B }
+
+fn make1() -> Box<int> { Box { val: 3 } }
+fn make2() -> Box<Box<int>> { Box { val: Box { val: 5 } } }
+fn unwrap1(b: Box<int>) -> int { b.val }
+fn unwrap2(b: Box<Box<int>>) -> int { b.val.val }
+fn pair_box(p: Pair<Box<int>, int>) -> int { p.first.val + p.second }
+
+// return annotation, accessed directly and via a let
+fn ret_direct() -> int { make1().val }
+fn ret_via_let() -> int { let b = make2()  b.val.val }
+// param annotation (single + nested)
+fn param1() -> int { unwrap1(Box { val: 9 }) }
+fn param2() -> int { unwrap2(Box { val: Box { val: 4 } }) }
+// nested arg inside a two-param generic
+fn pair_case() -> int { pair_box(Pair { first: Box { val: 8 }, second: 2 }) }
+// return feeds param
+fn roundtrip() -> int { unwrap2(make2()) }
+
+spec "field access on annotation-typed generic struct values (fyzs)" {
+    then "single-level return, direct field access" { ret_direct() == 3 }
+    then "nested return, field access via a let binding" { ret_via_let() == 5 }
+    then "single-level param" { param1() == 9 }
+    then "nested param Box<Box<int>>" { param2() == 4 }
+    then "nested arg in a two-param generic param" { pair_case() == 10 }
+    then "a return value fed into a param" { roundtrip() == 5 }
+}

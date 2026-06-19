@@ -969,37 +969,50 @@ fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst
     mut i = 0
     while i < params.length {
         let p = params[i]
-        let vt = if vtype_is_unknown(p.vtype) { p.vtype } else {
-            let ty_name = vtype_display(p.vtype)
-            let rewritten = rewrite_type_name(ty_name, regs, insts)
-            if rewritten != ty_name { vtype_from_type_string(rewritten) } else { p.vtype }
-        }
-        out.push(ParamEntry { name: p.name, vtype: vt })
+        out.push(ParamEntry { name: p.name, vtype: rewrite_instance_vtype(p.vtype, regs, insts) })
         i = i + 1
     }
     out
+}
+
+/// Rewrite a single declared ValueType so any generic-instance name it
+/// references (`Box<int>`, `Box<Box<int>>`) becomes its monomorphized name
+/// (`Box__int`, `Box__Box__int`).
+///
+/// Prefer the FULL render (`vtype_render_full`) so nested / multi-arg instances
+/// disambiguate — `vtype_display` drops type-args, leaving `rewrite_type_name`
+/// to pick a bare `Box` by first-match, which mis-resolves a `Box<Box<int>>`
+/// param to `Box__int` once more than one `Box__…` inst exists. BUT only trust
+/// the full mangle when it names a real collected instance: a param vtype can be
+/// incomplete (e.g. a compiler `Result<E>` whose `T` was never threaded), and
+/// full-rendering that mangles to a phantom `Result__E` codegen can't find. When
+/// the full mangle isn't a known inst, fall back to the historic bare-name path
+/// (`vtype_display` → `inst_mangled`) those incomplete vtypes rely on. A type
+/// naming no generic instance (Unknown, scalars, fn / optional types) is returned
+/// untouched, so the string round-trip never corrupts a non-generic type.
+fn rewrite_instance_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueType {
+    if vtype_is_unknown(vt) { return vt }
+    let full = vtype_render_full(vt)
+    let full_mangled = rewrite_type_name(full, regs, insts)
+    if full_mangled != full && inst_has(insts, full_mangled) {
+        return vtype_from_type_string(full_mangled)
+    }
+    let disp = vtype_display(vt)
+    let disp_mangled = rewrite_type_name(disp, regs, insts)
+    if disp_mangled != disp { vtype_from_type_string(disp_mangled) } else { vt }
 }
 
 /// Rewrite generic-instance references in a specialised struct's field types
 /// to their monomorphized names — `val: Box<int>` becomes `val: Box__int`.
 /// A specialised struct (`Box__Box__int`) has its `T` already substituted to
 /// the concrete `Box<int>`, but with the BARE generic name; without mangling
-/// it here codegen looks up `Box` and fails ("unknown struct Box"). Mirrors
-/// rewrite_param_types, but renders with `vtype_render_full` so a Struct
-/// instance's type-args survive into the lookup (vtype_display drops them).
-/// Only round-trips a field whose render actually mangled, leaving every
-/// other field's ValueType untouched.
+/// it here codegen looks up `Box` and fails ("unknown struct Box").
 fn rewrite_field_types(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst>) -> List<FieldEntry> {
     mut out: List<FieldEntry> = []
     mut i = 0
     while i < fields.length {
         let e = fields[i]
-        let vt = if vtype_is_unknown(e.resolved) { e.resolved } else {
-            let ty_name = vtype_render_full(e.resolved)
-            let rewritten = rewrite_type_name(ty_name, regs, insts)
-            if rewritten != ty_name { vtype_from_type_string(rewritten) } else { e.resolved }
-        }
-        out.push(FieldEntry { name: e.name, resolved: vt })
+        out.push(FieldEntry { name: e.name, resolved: rewrite_instance_vtype(e.resolved, regs, insts) })
         i = i + 1
     }
     out

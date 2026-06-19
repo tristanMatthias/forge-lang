@@ -162,7 +162,17 @@ export fn emit_field_on_value(ctx: Ctx, r: EmitValue, obj: Expr, field: string) 
         return emit_narrowed_field(ctx, r, field, narrowed_vname)
     }
 
-    let struct_name = vtype_struct_name(r.ty)
+    mut struct_name = vtype_struct_name(r.ty)
+    if struct_name == "" {
+        // A value typed by a return annotation or `let` binding can carry an
+        // Enum-form mangled generic name (`Box__int`) that actually names a
+        // registered STRUCT — the parser / mangle round-trip can't tell struct
+        // from enum, so `vtype_struct_name` sees an Enum and returns "". Reclassify
+        // through the codegen type resolver (which corrects the kind by registry
+        // lookup) before giving up, so field access works on returned/bound
+        // generic-struct values, not only freshly-constructed literals.
+        struct_name = vtype_struct_name(ctx.resolve_codegen_vtype(r.ty))
+    }
     if struct_name == "" {
         let obj_repr = render_expr(obj)
         return err_emit("field access on non-struct value (ty=${vtype_render_full(r.ty)}, field=${field}, obj=${obj_repr}, at=${ctx.source_file}:${string(ctx.source_line)})")
