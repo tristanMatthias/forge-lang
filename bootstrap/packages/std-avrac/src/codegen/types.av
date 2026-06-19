@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.{Expr, SExpr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe, vtype_struct_name}
 
 // LLVMTypeKind values from llvm-c/Core.h (LLVM 20). Only the kinds the
 // value-dispatch helpers test; keep in sync with the pinned LLVM major.
@@ -1398,6 +1398,20 @@ impl Ctx {
     fn resolve_field_type(self, fields: List<FieldEntry>, name: string) -> ValueType {
         let vt = field_vtype_of(fields, name)
         self.resolve_codegen_vtype(vt)
+    }
+
+    /// Struct name of a value's type, reclassifying first when needed. A value
+    /// typed by a return / `let` / param annotation carries an Enum-FORM mangled
+    /// generic name (`Box__int`) that may actually name a registered struct (the
+    /// parser / mangle round-trip can't tell struct from enum). `vtype_struct_name`
+    /// alone returns "" for that Enum shape; this falls back to the codegen type
+    /// resolver, which corrects the kind by registry lookup. Returns "" for a
+    /// genuine non-struct (a real enum, a scalar), so field access/assign still
+    /// reject those. Both the field-read and field-write paths share this.
+    fn resolved_struct_name(self, ty: ValueType) -> string {
+        let direct = vtype_struct_name(ty)
+        if direct != "" { return direct }
+        vtype_struct_name(self.resolve_codegen_vtype(ty))
     }
 
     // ── Registry lookups ──
