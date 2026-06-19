@@ -1891,8 +1891,8 @@ impl Parser {
     // remainder — which re-forms a `>>` for `>>>` (`List<List<List<int>>>`),
     // letting each enclosing close peel one `>` in turn. Mirrors the C++/Rust
     // nested-generic close handling. No-op unless the current token is `>>`,
-    // so it's only ever called from the generic-close sites (annotation args,
-    // turbofish collection, angle skipping) and never disturbs a real `>>`
+    // so it's only ever called from the generic-close sites (type-arg parsing
+    // and `impl`/`trait`-header angle skipping) and never disturbs a real `>>`
     // shift operator, which is parsed outside any angle-bracket context.
     fn maybe_split_shr(self) {
         if self.current_kind == Tk.Shr {
@@ -2279,7 +2279,6 @@ impl Parser {
         mut result = "<"
         mut depth = 1
         while depth > 0 && !self.check(Tk.Eof) {
-            self.maybe_split_shr()   // a nested `>>` close contributes one `>` per iteration
             if self.check(Tk.Less) {
                 depth = depth + 1
                 result = "${result}<"

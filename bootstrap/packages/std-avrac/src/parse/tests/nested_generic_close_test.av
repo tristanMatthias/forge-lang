@@ -14,11 +14,23 @@ fn let_nested() -> int { let xs: List<List<int>> = [[3], [4]]  xs[1][0] }
 fn shift() -> int { 256 >> 2 }
 fn chained_shift() -> int { 1024 >> 1 >> 1 }
 
+// The `impl`-header path is a SECOND generic-close site (`skip_angle_brackets`):
+// the header `impl Wrap<Box<int>>` ends in `>>`, so the same token split must
+// fire while skipping the (unparsed) type args. Exercise it end-to-end via a
+// method on a concrete nested-generic target.
+type Box<T> = { val: T }
+type Wrap<T> = { inner: T }
+impl Wrap<Box<int>> {
+    fn unwrap(self) -> int { self.inner.val }
+}
+fn impl_nested() -> int { let w = Wrap { inner: Box { val: 6 } }  w.unwrap() }
+
 spec "nested generic close `>>` parses (ntcb)" {
     then "two-level List<List<int>> in a return type" { ll()[0][0] == 5 }
     then "three-level List<List<List<int>>> closes via `>>>`" { lll()[0][0][0] == 7 }
     then "two-level with a string leaf" { lls()[0][0] == "hi" }
     then "nested annotation on a `let` binding" { let_nested() == 4 }
+    then "nested `>>` in an `impl` header (skip_angle_brackets)" { impl_nested() == 6 }
     then "the real `>>` shift operator is unaffected" { shift() == 64 }
     then "chained `>>` shifts still parse left-assoc" { chained_shift() == 256 }
 }
