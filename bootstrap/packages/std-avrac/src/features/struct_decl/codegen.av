@@ -79,7 +79,14 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
 /// so chains like `a.b = c.d = ...` work.
 export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
-    let struct_name = vtype_struct_name(r.ty)
+    mut struct_name = vtype_struct_name(r.ty)
+    if struct_name == "" {
+        // Same reclassification as the read path (emit_field_on_value): a value
+        // typed by a return/let/param annotation carries an Enum-form mangled
+        // generic name that may actually name a registered struct. Resolve the
+        // kind via the codegen type resolver before rejecting the assignment.
+        struct_name = vtype_struct_name(ctx.resolve_codegen_vtype(r.ty))
+    }
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=${vtype_render_full(r.ty)})")
     }

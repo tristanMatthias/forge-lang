@@ -30,6 +30,9 @@ fn param2() -> int { unwrap2(Box { val: Box { val: 4 } }) }
 fn pair_case() -> int { pair_box(Pair { first: Box { val: 8 }, second: 2 }) }
 // return feeds param
 fn roundtrip() -> int { unwrap2(make2()) }
+// field ASSIGNMENT on an annotation-typed generic struct (the write path)
+fn assign_ret() -> int { mut b = make1()  b.val = 7  b.val }
+fn assign_nested() -> int { mut b = make2()  b.val.val = 8  b.val.val }
 
 spec "field access on annotation-typed generic struct values (fyzs)" {
     then "single-level return, direct field access" { ret_direct() == 3 }
@@ -38,4 +41,6 @@ spec "field access on annotation-typed generic struct values (fyzs)" {
     then "nested param Box<Box<int>>" { param2() == 4 }
     then "nested arg in a two-param generic param" { pair_case() == 10 }
     then "a return value fed into a param" { roundtrip() == 5 }
+    then "field assignment on a returned generic struct" { assign_ret() == 7 }
+    then "nested field assignment on a returned generic struct" { assign_nested() == 8 }
 }
