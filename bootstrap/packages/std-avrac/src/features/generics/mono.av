@@ -1880,43 +1880,64 @@ fn scope_insts_for_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> List
 
 /// Keep an inst unless it's an entry for `name` that this scope's return type
 /// supersedes — i.e. under-resolved (a param still the `Struct(pname, 0)`
-/// sentinel) OR incomplete (a type-arg is a bare generic name carrying no args
-/// of its own, which is not a real concrete instantiation). Every genuinely
-/// distinct, fully-concrete instantiation of the same base survives.
+/// sentinel) OR not fully concrete (a type-arg is `Unknown`, an empty-named
+/// nominal, or a bare generic with no args of its own — none of which is a real
+/// instantiation). Every genuinely distinct, fully-concrete instantiation of the
+/// same base survives; the partial / placeholder ones the return type refines
+/// are dropped (matching the old blanket behaviour for those, without losing the
+/// legitimate distinct ones).
 fn remove_superseded_insts_for(name: string, tp: List<TypeParamEntry>, regs: GenRegs, insts: List<Inst>) -> List<Inst> {
     mut out: List<Inst> = []
     mut i = 0
     while i < insts.length {
         let e = insts[i]
-        let superseded = e.orig_name == name && (!all_resolved(tp, e.type_args) || ta_has_incomplete_generic(e.type_args, regs))
+        let superseded = e.orig_name == name && (!all_resolved(tp, e.type_args) || ta_has_nonconcrete_arg(e.type_args, regs))
         if !superseded { out.push(e) }
         i = i + 1
     }
     out
 }
 
-/// True when any binding in `ta` is an INCOMPLETE generic instance: a Struct or
-/// Enum whose name is a registered generic yet carries no type-args of its own
-/// (e.g. a bare `Maybe` where `Maybe<T>` is generic). Such a binding is not a
-/// real concrete type — it's the artifact of an under-inferred inner ctor.
-fn ta_has_incomplete_generic(ta: List<TypeArg>, regs: GenRegs) -> bool {
+/// True when any binding in `ta` is not a fully concrete type.
+fn ta_has_nonconcrete_arg(ta: List<TypeArg>, regs: GenRegs) -> bool {
     mut i = 0
     while i < ta.length {
-        if vtype_is_incomplete_generic(ta[i].concrete_vt, regs) { return true }
+        if vtype_is_nonconcrete(ta[i].concrete_vt, regs) { return true }
         i = i + 1
     }
     false
 }
 
-/// A Struct/Enum naming a registered GENERIC but carrying empty type-args. A
-/// non-generic nominal with empty args (e.g. a plain `Color`) is complete and
-/// returns false.
-fn vtype_is_incomplete_generic(vt: ValueType, regs: GenRegs) -> bool {
+/// True when `vt` is not a fully concrete type — `Unknown`, an empty-named
+/// nominal, or a registered GENERIC nominal carrying no type-args of its own
+/// (a bare `Maybe` where `Maybe<T>` is generic). Recurses through container and
+/// nominal type-args so a wrapped placeholder (`List<Maybe>`, `Tuple<int, ?>`)
+/// is caught too. A non-generic nominal with empty args (a plain `Color`) is
+/// concrete. Used to drop placeholder instances that aren't real specialisations.
+fn vtype_is_nonconcrete(vt: ValueType, regs: GenRegs) -> bool {
     match vt {
-        .Enum(n, args, _) -> args.length == 0 && generic_enum_lookup(regs.enums, n) != null
-        .Struct(n, args, _) -> args.length == 0 && generic_struct_lookup(regs.structs, n) != null
+        .Unknown -> true
+        .Enum(n, args, _) -> n == "" || (args.length == 0 && generic_enum_lookup(regs.enums, n) != null) || ta_vtypes_nonconcrete(args, regs)
+        .Struct(n, args, _) -> n == "" || (args.length == 0 && generic_struct_lookup(regs.structs, n) != null) || ta_vtypes_nonconcrete(args, regs)
+        .List(elem) -> vtype_is_nonconcrete(elem, regs)
+        .Optional(inner) -> vtype_is_nonconcrete(inner, regs)
+        .Task(inner) -> vtype_is_nonconcrete(inner, regs)
+        .Channel(elem) -> vtype_is_nonconcrete(elem, regs)
+        .Tuple(elems) -> ta_vtypes_nonconcrete(elems, regs)
+        .Union(types) -> ta_vtypes_nonconcrete(types, regs)
+        .Newtype(_, inner, _) -> vtype_is_nonconcrete(inner, regs)
         _ -> false
     }
+}
+
+/// True when any element of a `List<ValueType>` is non-concrete.
+fn ta_vtypes_nonconcrete(types: List<ValueType>, regs: GenRegs) -> bool {
+    mut i = 0
+    while i < types.length {
+        if vtype_is_nonconcrete(types[i], regs) { return true }
+        i = i + 1
+    }
+    false
 }
 
 /// Parse a type-name string back into a ValueType. Used to
