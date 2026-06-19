@@ -1883,6 +1883,26 @@ impl Parser {
         false
     }
 
+    // A nested generic close (`>>`, e.g. `List<List<int>>`) lexes as a SINGLE
+    // right-shift token, but in a generic-type-arg context the first `>` closes
+    // the inner list and the rest must remain for the enclosing list(s). Split
+    // it: re-point the byte cursor back onto the second `>` and re-stamp the
+    // current token as a single `>`, so the NEXT `advance()` re-lexes the
+    // remainder — which re-forms a `>>` for `>>>` (`List<List<List<int>>>`),
+    // letting each enclosing close peel one `>` in turn. Mirrors the C++/Rust
+    // nested-generic close handling. No-op unless the current token is `>>`,
+    // so it's only ever called from the generic-close sites (type-arg parsing
+    // and `impl`/`trait`-header angle skipping) and never disturbs a real `>>`
+    // shift operator, which is parsed outside any angle-bracket context.
+    fn maybe_split_shr(self) {
+        if self.current_kind == Tk.Shr {
+            self.current = self.current - 1
+            self.column = self.column - 1
+            self.current_kind = Tk.Greater
+            self.current_lexeme = ">"
+        }
+    }
+
     /// Consume the current token's lexeme + advance. Caller is
     /// expected to have already checked the token kind.
     fn take_lexeme(self) -> string {
@@ -2111,6 +2131,9 @@ impl Parser {
             first = false
             let ty = self.parse_type_expr("expected generic type argument")?
             args.push(ty)
+            // After an arg, a `>>`/`>>>` closer lexed as one shift token — peel
+            // a single `>` so this list closes and the rest stays for the parent.
+            self.maybe_split_shr()
         }
         if self.check(Tk.Greater) { self.advance() }
         .Ok(args)
@@ -2240,6 +2263,7 @@ impl Parser {
         self.advance()  // consume `<`
         mut depth = 1
         while depth > 0 && !self.check(Tk.Eof) {
+            self.maybe_split_shr()   // a nested `>>` close counts as one `>` here
             if self.check(Tk.Less) {
                 depth = depth + 1
             } else if self.check(Tk.Greater) {
