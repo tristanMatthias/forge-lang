@@ -993,7 +993,16 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string) 
                 // (not /dev/null) so a failed pre-build — which silently
                 // disables the whole metadata fast-path (08ro) — is
                 // diagnosable instead of vanishing.
-                cmds.push("cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${dir}build/prebuild.log\" 2>&1")
+                //
+                // mkdir the log dir FIRST. A package that `make build` never
+                // produces (std-process, std-test — only the compiler + cli are
+                // built) has no `build/` dir on a cold tree, so the shell can't
+                // open the `> build/prebuild.log` redirect: the command fails
+                // BEFORE bs2 runs (rc=1, no log written), the whole pre-build is
+                // declared failed, and every shard degrades to the whole-program
+                // @std path (snw0). Creating the dir keeps the redirect — and so
+                // the fast-path — alive on a cold tree.
+                cmds.push("mkdir -p \"${dir}build\" && cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${dir}build/prebuild.log\" 2>&1")
             }
         }
         i = i + 1
