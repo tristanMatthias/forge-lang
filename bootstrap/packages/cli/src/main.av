@@ -2890,11 +2890,20 @@ fn read_listing_file_paths(listing_file: string) -> List<string> {
 // AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt out.
 fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let compiler_path = resolve_compiler_path(project_dir)
-    let jobs = parse_jobs_env(8)
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
     let lib = maybe_prebuild_std_libs(project_dir, compiler_path)
+    // Concurrency is memory-bound, not CPU-bound, and the two shard modes have
+    // wildly different footprints. A metadata fast-path shard STUBS @std/* (a
+    // few hundred lines) and links pre-built producer .o's — cheap, so the full
+    // 8-wide fan-out fits. A whole-program FALLBACK shard (the path taken
+    // whenever the pre-build can't supply producer objs) instead inlines ALL of
+    // @std/* and llc-optimises it — ~2-3GB RSS EACH. Eight of those at once
+    // OOM-kills shards mid-compile on a 15-16GB box (the symptom this guards).
+    // So cap the fallback width to keep N×~3GB under a tight box's RAM; AVRA_JOBS
+    // still overrides either default for hosts that know their headroom.
+    let jobs = if lib.want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
     let listing_file = compute_std_listing_file(project_dir, log_dir)
     let universe_fp = compute_test_universe_fp(listing_file, test_reporter_path(project_dir),
                                                "${project_dir}/build/runtime.o",
