@@ -82,6 +82,14 @@ export type BuildInputs = {
     debug: bool,
     overflow_checks: bool,
     coverage: bool,
+    // AVRA_LIB_PKG_ROOT for this build. Library mode (a non-empty root)
+    // EMITS ONLY the symbols qualified under that root (fn_belongs_to_lib /
+    // type_belongs), so the same sources compiled under two different roots
+    // produce DIFFERENT objects. It must therefore key the cache — otherwise
+    // a build under root A silently reuses a build under root B's filtered
+    // `.ll` (e.g. a whole-program "" build, or a mistyped root, poisons the
+    // lib slot). "" for whole-program builds.
+    lib_pkg_root: string,
 }
 
 /// Outcome of consulting the cache for a unit.
@@ -136,6 +144,7 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         compiler_hash,
         profile_key,
         inputs.target_triple,
+        inputs.lib_pkg_root,
         [],
     )
 

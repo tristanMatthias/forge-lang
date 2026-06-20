@@ -1860,6 +1860,7 @@ fn run_build_command() {
         debug: profile.debug,
         overflow_checks: profile.overflow_checks,
         coverage: profile.coverage,
+        lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
     }
 
     // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE
@@ -2295,6 +2296,7 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         debug: true,
         overflow_checks: true,
         coverage: false,
+        lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
     }
 }
 
@@ -3865,6 +3867,7 @@ fn main() {
             debug: true,
             overflow_checks: true,
             coverage: false,
+            lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
         }
         let mut compile_publish_fp: Fingerprint? = null
         if cache_eligible {
