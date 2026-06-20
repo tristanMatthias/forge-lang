@@ -1447,18 +1447,17 @@ fn try_add_enum_inst(tn: string, variant: string, args: List<SExpr>, regs: GenRe
 /// Add (or merge) a generic-struct instantiation inferred
 /// from a struct literal's field initializers.
 fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: CollectState) -> CollectState {
-    let e = generic_struct_lookup(regs.structs, name)
-    if e == null { return st }
-    let entry = e!
-    let empty_ta: List<TypeArg> = []
-    add_resolved_inst(name, entry.tp, infer_from_field_inits(entry.tp, entry.fields, inits, empty_ta), st)
+    // No expected type → infer from the field initializers alone.
+    try_add_struct_inst_with_expected(name, inits, ValueType.Unknown, regs, st)
 }
 
-/// Variant of `try_add_struct_inst` that takes the construction's expected
-/// type (a `let`/return annotation). Inference adds the annotation's args for
-/// params the fields can't pin down (phantom params, empty-collection fields),
-/// so `Arena<int,int> = Arena { nodes: [], … }` resolves instead of raising
-/// F1002. Mirror of `try_add_fn_inst_with_expected` (qcvb).
+/// Add (or merge) a generic-struct instantiation, optionally constrained by the
+/// construction's expected type (a `let`/return annotation). The annotation
+/// supplies args for params the field initializers can't pin down — a phantom
+/// param, or one behind an empty-collection field — so `Arena<int,int> =
+/// Arena { nodes: [], … }` resolves instead of raising F1002. With
+/// `expected = Unknown` it reduces to pure field inference. Mirror of
+/// `try_add_fn_inst` / `_with_expected` (qcvb).
 fn try_add_struct_inst_with_expected(name: string, inits: List<FieldInit>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let e = generic_struct_lookup(regs.structs, name)
     if e == null { return st }
@@ -2544,18 +2543,15 @@ fn inst_mangled_compatible(insts: List<Inst>, name: string, partial: List<TypeAr
 /// struct name with its mangled specialisation. Recurses
 /// through every initialiser to rewrite nested generic refs.
 fn rewrite_struct_lit(name: string, inits: List<FieldInit>, regs: GenRegs, insts: List<Inst>) -> Expr {
-    let new_inits = rewrite_field_inits(inits, regs, insts)
-    let e = generic_struct_lookup(regs.structs, name)
-    if e == null { return Expr.StructLit(name, new_inits) }
-    let entry = e!
-    let empty_ta: List<TypeArg> = []
-    Expr.StructLit(mangle_name_ordered(name, entry.tp, infer_from_field_inits(entry.tp, entry.fields, inits, empty_ta)), new_inits)
+    // No expected type → mangle from the field initializers alone.
+    rewrite_struct_lit_with_expected(name, inits, ValueType.Unknown, regs, insts)
 }
 
-/// Variant of `rewrite_struct_lit` that mangles using the construction's
-/// expected type — must compute the SAME type args as the collect-side
-/// `try_add_struct_inst_with_expected` so the mangled name matches the
-/// registered instantiation (else codegen references an unspecialised name).
+/// Rewrite a generic struct literal to its mangled specialisation, optionally
+/// constrained by the construction's expected type. Must compute the SAME type
+/// args as the collect-side `try_add_struct_inst_with_expected` so the mangled
+/// name matches the registered instantiation (else codegen references an
+/// unspecialised name). With `expected = Unknown` it mangles from fields alone.
 fn rewrite_struct_lit_with_expected(name: string, inits: List<FieldInit>, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
     let new_inits = rewrite_field_inits(inits, regs, insts)
     let e = generic_struct_lookup(regs.structs, name)
