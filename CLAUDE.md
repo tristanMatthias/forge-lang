@@ -391,6 +391,7 @@ These bugs build successfully but corrupt memory at runtime.
 - **Wrong return type:** `return r` where r is inner value instead of Result wrapper. Grep all `return` in refactored files.
 - **Dropped generic args:** parser consumed `<...>` without parsing inside. Render AST and verify.
 - **Monomorphizer ambiguity:** "first match wins" when multiple instantiations exist. Use `scope_insts_for_ret` to pin by return type.
+- **Expected-type generic inference must FILL gaps, never OVERRIDE a concrete binding.** When mono threads a `let`/return annotation into a generic struct/fn (`infer_from_field_inits_with_expected`, `infer_from_params_with_expected`), the annotation may bind ONLY the params the fields/args left unresolved (a phantom, or one behind an empty collection — bound to `Unknown`). Letting it override a param a field/arg bound concretely turns a wrong annotation (`Box<string> = { val: 9 }`) into a layout swap: mono stamps the `int` field as a `string`/ptr slot and codegen emits `store ptr inttoptr (i64 9 to ptr)` — int stored as a wild pointer. Fill-only is byte-identical to override on every VALID program (they differ only on a conflict, which is an invalid program), so diff-test stays green; typeck (`check_binding` → `generic_struct_annotation_conflict`) rejects the conflict as F1000. The fn-side still overrides (26ql).
 - **-O0 works, -O2 crashes:** alignment mismatch. Check LLVM type consistency.
 - **Seed contamination:** auto-cycle overwrote seed.ll. Default `NO_AUTOCYCLE=1` is set.
 
