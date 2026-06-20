@@ -216,4 +216,42 @@ fn make() -> Box<int> { Box { val: 9 } }
 fn main() { let b = make() }")
         !out.contains("F1000")
     }
+    // The conflict reaches mono — and codegen — from MANY positions, not just
+    // let/return. Each of these otherwise lets a Box<int> flow into a Box<string>
+    // slot a reader derefs unsafely. (Coverage via check_expr_expected +
+    // per-site generic_args_layout_conflict; see typeck/mod.av.)
+    then "a nested struct field with a conflicting generic type is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+type Outer = { inner: Box<string> }
+fn main() { let o: Outer = Outer { inner: Box { val: 9 } } }")
+        out.contains("F1000")
+    }
+    then "a struct literal passed as a conflicting call argument is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn want(b: Box<string>) { }
+fn main() { want(Box { val: 9 }) }")
+        out.contains("F1000")
+    }
+    then "a conflicting generic struct as a collection element is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() { let xs: List<Box<string>> = [Box { val: 9 }] }")
+        out.contains("F1000")
+    }
+    then "a conflict nested inside a List-typed field is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+type Holder = { items: List<Box<string>> }
+fn main() { let h: Holder = Holder { items: [Box { val: 9 }] } }")
+        out.contains("F1000")
+    }
+    then "matching generic args in all those positions still compile (control)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+type Outer = { inner: Box<string> }
+fn want(b: Box<string>) { }
+fn main() {
+    let o: Outer = Outer { inner: Box { val: \"a\" } }
+    want(Box { val: \"b\" })
+    let xs: List<Box<string>> = [Box { val: \"c\" }]
+}")
+        !out.contains("F1000")
+    }
 }

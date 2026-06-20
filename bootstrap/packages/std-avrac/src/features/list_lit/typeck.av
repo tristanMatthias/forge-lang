@@ -1,7 +1,8 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_pair_list}
-use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
+use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
+use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list, tc_report, generic_args_layout_conflict}
+use diagnostics.{DiagCode}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
 /// (caller infers from context); non-empty literals pin the element
@@ -19,7 +20,15 @@ export fn check_list_lit_with_expected(tc: TC, elements: List<SExpr>, expected_e
     if elements.length == 0 { return tc_er(tc, .List(expected_elem)) }
     let r = check_expr(tc, elements[0].node)
     let checked = check_expr_list(r.tc, elements)
-    tc_er(checked, .List(r.ty))
+    // A generic struct-literal element whose args are layout-incompatible with
+    // the expected element type (`[Box { val: 9 }]` for `List<Box<string>>`) must
+    // be rejected — `vtype_eq` ignores generic args, so the element-type
+    // unification above lets it pass into a layout-mismatched slot. Flag the
+    // first element's conflict (homogeneous lists share an element type).
+    let after = if generic_args_layout_conflict(r.ty, expected_elem) {
+        tc_report(checked, DiagCode.TypeMismatch, "list element of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(expected_elem)}` (generic argument layout conflict)")
+    } else { checked }
+    tc_er(after, .List(r.ty))
 }
 
 /// Map a List method name to its result ValueType. `map` is

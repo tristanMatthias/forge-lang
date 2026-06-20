@@ -600,6 +600,14 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
         let arm = arms[i]
         match arm.body.node {
             .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, stmts)
+            // A non-block arm body is checked in the normal arm pass (where the
+            // arm's pattern bindings are in scope). Re-checking it here, in the
+            // return-check context that LACKS those bindings, mis-resolves pattern
+            // vars — so a generic-struct-literal conflict in a non-block match arm
+            // (`match c { _ -> Box { val: 9 } }` vs `-> Box<string>`) is NOT caught
+            // here. Covered for block arms via tc_check_explicit_returns; the
+            // non-block case is tracked in 26ql (needs threading during the normal
+            // arm-type pass, not a stale re-check).
             _ -> {}
         }
         i = i + 1
