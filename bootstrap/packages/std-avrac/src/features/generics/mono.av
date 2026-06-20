@@ -735,34 +735,53 @@ fn infer_from_field_inits(tp: List<TypeParamEntry>, fields: List<FieldEntry>, in
     out_acc
 }
 
-/// Each type param as a bare-name ValueType (`N` → `Struct("N", 0)`),
-/// in declaration order — the param side of the `expected`-type unify in
-/// `infer_from_field_inits_with_expected`. `vtype_display` renders a bare
-/// `Struct(name)` back to `name`, so `unify_param`'s `type_param_has` check
-/// re-binds it positionally against the expected type's args.
-fn tp_param_vtypes(tp: List<TypeParamEntry>) -> List<ValueType> {
-    mut out: List<ValueType> = []
-    for p in tp {
-        out.push(vtype_struct(p.name, 0))
+/// True when the field initializers left `pname` UNRESOLVED — either no field
+/// mentions it (a phantom param → `type_arg_lookup` returns the bare-name
+/// placeholder `Struct(pname)`), or only an empty-collection field does (which
+/// `infer_from_field_inits` binds to `Unknown`). These are exactly the params
+/// the `expected` type is allowed to supply.
+fn param_unresolved_by_fields(from_fields: List<TypeArg>, pname: string) -> bool {
+    let bound = type_arg_lookup(from_fields, pname)
+    vtype_is_unknown(bound) || vtype_display(bound) == pname
+}
+
+/// Fill ONLY the params the field initializers couldn't pin down — a phantom
+/// param (in no field), or one behind an empty-collection field — from the
+/// `expected` type's positional args. A param a field bound CONCRETELY is ground
+/// truth and is NEVER overridden: `expected` is a fallback for the unresolvable
+/// params, not an override. (Overriding a concrete binding mis-mangles the
+/// construction — e.g. `Box<string> = { val: 9 }` would stamp the `int` field as
+/// a `string`/ptr slot and codegen would store `9` as a wild pointer. That
+/// conflict is an invalid program typeck must reject; mono must not turn it into
+/// a memory-unsafe store.) Positional, matching the type-param ↔ type-arg
+/// correspondence used everywhere else in mono.
+fn fill_unresolved_from_expected(tp: List<TypeParamEntry>, exp_args: List<ValueType>, from_fields: List<TypeArg>) -> List<TypeArg> {
+    mut out = from_fields
+    let n = if tp.length < exp_args.length { tp.length } else { exp_args.length }
+    mut i = 0
+    while i < n {
+        let pname = tp[i].name
+        if param_unresolved_by_fields(from_fields, pname) {
+            out = unify_param(tp, vtype_struct(pname, 0), exp_args[i], out)
+        }
+        i = i + 1
     }
     out
 }
 
-/// Variant of `infer_from_field_inits` that ALSO unifies the struct's own
-/// `Name<tp…>` type against the construction's `expected` type (a `let`/return
-/// annotation). The struct-literal alone can't bind a param that appears in no
-/// field (a phantom `Id`) or only behind an empty-collection field (`nodes: []`
-/// can't pin `N`) — the annotation supplies those. Mirror of the fn-side
-/// `infer_from_params_with_expected` (so07.7.16): field inference first, the
-/// `expected` unify last so its concrete args win over an empty field's
-/// `Unknown` (cons-prepend → head, and `type_arg_lookup` is head-first).
-/// Guarded on `expected` naming THIS struct, so an unrelated/`Unknown`
-/// annotation can never mis-bind.
+/// Variant of `infer_from_field_inits` that ALSO consults the construction's
+/// `expected` type (a `let`/return annotation) — but ONLY to supply params the
+/// field initializers left unresolved: a param in no field (a phantom `Id`), or
+/// one behind an empty-collection field (`nodes: []` can't pin `N`). The
+/// annotation is a fallback for those, never an override of a param a field
+/// already bound concretely (see `fill_unresolved_from_expected`). Mirror of the
+/// fn-side `infer_from_params_with_expected` (so07.7.16). Guarded on `expected`
+/// naming THIS struct, so an unrelated/`Unknown` annotation can never mis-bind.
 fn infer_from_field_inits_with_expected(tp: List<TypeParamEntry>, fields: List<FieldEntry>, name: string, inits: List<FieldInit>, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
     let from_fields = infer_from_field_inits(tp, fields, inits, acc)
     if vtype_is_unknown(expected) { return from_fields }
     if vtype_nominal_name(expected) != name { return from_fields }
-    unify_type_lists(tp, tp_param_vtypes(tp), vtype_type_args(expected), from_fields)
+    fill_unresolved_from_expected(tp, vtype_type_args(expected), from_fields)
 }
 
 // Validate that all type params are resolved. Emit F1002 for each missing one.

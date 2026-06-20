@@ -168,3 +168,22 @@ fn main() { let a: Arena<int, int> = Arena { nodes: [], count: 7 } }")
         !out.contains("F1002")
     }
 }
+
+// Memory-safety guard: the expected-type channel resolves params the FIELDS
+// can't, but it must never OVERRIDE a param a field bound concretely. An
+// annotation whose generic arg is layout-incompatible with a field's value
+// (`Box<string>` with an `int` field) is an invalid program — it must be a clean
+// F1000, NOT a construction that stamps the int field as a string/ptr slot and
+// stores `9` as a wild `inttoptr` pointer (the regression this locks out).
+spec "a generic-struct annotation that conflicts with a field type is rejected" {
+    then "Box<string> with an int field is F1000, not a wild-pointer store" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() { let b: Box<string> = Box { val: 9 } }")
+        out.contains("F1000")
+    }
+    then "the layout-matching annotation Box<int> still compiles (positive control)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() { let b: Box<int> = Box { val: 9 } }")
+        !out.contains("F1000")
+    }
+}

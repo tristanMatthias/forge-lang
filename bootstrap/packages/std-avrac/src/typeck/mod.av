@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -1568,6 +1568,67 @@ fn bind_decl(tc: TC, name: string, ty: ValueType, is_mut: bool) -> TC {
     if is_mut { tc_bind_mut(tc, name, ty) } else { tc_bind(tc, name, ty) }
 }
 
+/// String-category scalar (`string` / `bytes`) — a ptr in LLVM, as opposed to
+/// the i64/double scalars. The distinction is what makes a string↔number swap
+/// memory-unsafe rather than a benign reinterpret.
+fn vtype_is_str_like(t: ValueType) -> bool {
+    match t {
+        .Str -> true
+        .Bytes -> true
+        _ -> false
+    }
+}
+
+/// A layout-incompatible scalar conflict: exactly one side is string-like (a
+/// ptr) and the OTHER is a value-scalar (an i64/double — `Int`/`Bool`/`Float`/
+/// sized ints). This is the case that becomes a wild `inttoptr` store if it
+/// reaches codegen. Numeric/bool interchange (same i64 slot) is deliberately
+/// tolerated; an `Unknown` (an unresolved generic param, e.g. behind an empty
+/// collection) or a non-scalar (`List`/`Struct`) on the other side is not a
+/// conflict — `vtype_is_value_scalar` excludes those.
+fn scalar_str_conflict(a: ValueType, b: ValueType) -> bool {
+    let a_str = vtype_is_str_like(a)
+    let b_str = vtype_is_str_like(b)
+    if a_str == b_str { return false }
+    let other = if a_str { b } else { a }
+    vtype_is_value_scalar(other)
+}
+
+/// When `init` is a generic struct literal `Name { … }` and `declared` is an
+/// annotation `Name<args>`, return the literal's field-inferred type (so the
+/// caller can render `Name<int>` vs the annotation) IF a field's value type
+/// conflicts — layout-incompatibly — with the annotation's generic argument.
+/// Otherwise null.
+///
+/// Without this gate, `let b: Box<string> = Box { val: 9 }` slips past typeck:
+/// the literal infers `Box<int>` from its field, but generic structs were never
+/// checked against the annotation (only non-generic ones were). The
+/// monomorphizer then trusts the annotation, stamps `val` as a `string` (ptr)
+/// slot, and codegen stores `9` as a wild pointer. Catching it here turns a
+/// silent memory-safety hole into a clean F1000 before mono ever runs.
+fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, init: Expr) -> ValueType? {
+    match init {
+        .StructLit(name, inits) if name != "" -> {
+            // A generic annotation `Box<string>` lowers to Enum form, while the
+            // literal is Struct form — `vtype_nominal_name` reads the name from
+            // either, and `vtype_type_args` the args from either.
+            if vtype_nominal_name(declared) != name { return null }
+            let inferred = tc_infer_struct_type_args(tc, name, inits)
+            let ann = vtype_type_args(declared)
+            let n = if inferred.length < ann.length { inferred.length } else { ann.length }
+            mut i = 0
+            while i < n {
+                if scalar_str_conflict(inferred[i], ann[i]) {
+                    return tc_struct_lit_vtype(tc, name, inits)
+                }
+                i = i + 1
+            }
+            null
+        }
+        _ -> null
+    }
+}
+
 /// Type-check a `let` / `mut` / `const` binding: infer the
 /// initializer's type, verify it matches any declared annotation,
 /// and bind `name: type` into the env. `is_mut` distinguishes `mut`
@@ -1593,6 +1654,18 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
         }
         if mismatch {
             let msg = "type mismatch: expected `${vtype_render_full(declared_ty)}`, got `${vtype_render_full(r.ty)}`"
+            return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
+        }
+    }
+    // Generic struct literal whose field type conflicts with the annotation's
+    // type argument (`let b: Box<string> = Box { val: 9 }`). Non-generic structs
+    // are field-checked in check_struct_lit_fields; generic ones were not, so
+    // this layout-incompatible conflict would otherwise reach the monomorphizer
+    // and codegen a wild-pointer store. Flag it as F1000 here.
+    if has_annotation {
+        let conflict = generic_struct_annotation_conflict(r.tc, declared_ty, init)
+        if conflict != null {
+            let msg = "value of type `${vtype_render_full(conflict!)}` can't be bound to `${vtype_render_full(declared_ty)}` — a field's type conflicts with the generic argument"
             return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
         }
     }
