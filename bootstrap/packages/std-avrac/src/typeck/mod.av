@@ -1568,46 +1568,53 @@ fn bind_decl(tc: TC, name: string, ty: ValueType, is_mut: bool) -> TC {
     if is_mut { tc_bind_mut(tc, name, ty) } else { tc_bind(tc, name, ty) }
 }
 
-/// String-category scalar (`string` / `bytes`) — a ptr in LLVM, as opposed to
-/// the i64/double scalars. The distinction is what makes a string↔number swap
-/// memory-unsafe rather than a benign reinterpret.
-fn vtype_is_str_like(t: ValueType) -> bool {
+/// True when `t`'s LLVM layout is a pointer (a heap reference) rather than an
+/// i64/double value scalar. A `Newtype` takes its underlying type's layout
+/// (`type Id = int` is i64, not a ptr). `Unknown` / `Void` have no settled
+/// layout — callers treat them as "no conflict". Mirrors the value model in
+/// CLAUDE.md: `Int` / `Bool` / `Float` / sized ints are scalars; everything else
+/// (`Str`, `Struct`, `Enum`, `List`, `Map`, `Optional`, …) is a ptr.
+fn vtype_is_ptr_layout(t: ValueType) -> bool {
     match t {
-        .Str -> true
-        .Bytes -> true
-        _ -> false
+        .Newtype(_, inner, _) -> vtype_is_ptr_layout(inner)
+        .Int or .Bool or .Float or .U8 or .U16 or .U32 or .U64 or .I8 or .I16 or .I32 or .Unknown or .Void -> false
+        _ -> true
     }
 }
 
-/// A layout-incompatible scalar conflict: exactly one side is string-like (a
-/// ptr) and the OTHER is a value-scalar (an i64/double — `Int`/`Bool`/`Float`/
-/// sized ints). This is the case that becomes a wild `inttoptr` store if it
-/// reaches codegen. Numeric/bool interchange (same i64 slot) is deliberately
-/// tolerated; an `Unknown` (an unresolved generic param, e.g. behind an empty
-/// collection) or a non-scalar (`List`/`Struct`) on the other side is not a
-/// conflict — `vtype_is_value_scalar` excludes those.
-fn scalar_str_conflict(a: ValueType, b: ValueType) -> bool {
-    let a_str = vtype_is_str_like(a)
-    let b_str = vtype_is_str_like(b)
-    if a_str == b_str { return false }
-    let other = if a_str { b } else { a }
-    vtype_is_value_scalar(other)
+/// A layout-incompatible conflict: the two types land on opposite sides of the
+/// scalar/pointer divide (one an i64/double, the other a heap ref). THIS is the
+/// memory-unsafe case — codegen reads a scalar through a pointer slot (a wild
+/// `inttoptr` deref) or a pointer through a scalar slot. `Unknown` (an
+/// unresolved generic param, e.g. behind an empty collection) and `Void`
+/// (`null`) are never a conflict; same-side mismatches (int↔bool, or two
+/// different structs) share a layout and are tolerated here — a wrong nominal
+/// type that shares a layout is caught downstream and can never wild-deref.
+fn layout_conflict(a: ValueType, b: ValueType) -> bool {
+    if vtype_is_unknown(a) || vtype_is_unknown(b) { return false }
+    if (a is .Void) || (b is .Void) { return false }
+    vtype_is_ptr_layout(a) != vtype_is_ptr_layout(b)
 }
 
-/// When `init` is a generic struct literal `Name { … }` and `declared` is an
-/// annotation `Name<args>`, return the literal's field-inferred type (so the
-/// caller can render `Name<int>` vs the annotation) IF a field's value type
+/// When `expr` is a generic struct literal `Name { … }` and `declared` is an
+/// annotation `Name<args>` (a `let`/`mut`/`const` binding OR a function's
+/// declared return type), return the literal's field-inferred type (so the
+/// caller can render `Name<int>` against the annotation) IF a field's value type
 /// conflicts — layout-incompatibly — with the annotation's generic argument.
 /// Otherwise null.
 ///
-/// Without this gate, `let b: Box<string> = Box { val: 9 }` slips past typeck:
-/// the literal infers `Box<int>` from its field, but generic structs were never
-/// checked against the annotation (only non-generic ones were). The
-/// monomorphizer then trusts the annotation, stamps `val` as a `string` (ptr)
-/// slot, and codegen stores `9` as a wild pointer. Catching it here turns a
-/// silent memory-safety hole into a clean F1000 before mono ever runs.
-fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, init: Expr) -> ValueType? {
-    match init {
+/// Generic structs were never checked against their annotation (only
+/// non-generic ones were, in `check_struct_lit_fields`) because `vtype_assignable`
+/// doesn't compare generic-struct type args. So `let b: Box<string> = Box { val:
+/// 9 }` — or `fn f() -> Box<string> { Box { val: 9 } }` — slips past typeck: the
+/// literal infers `Box<int>`. Monomorphization then builds a layout-consistent
+/// `Box<int>` value while the annotation/signature claims `Box<string>`, and a
+/// reader of `b.val` loads the int through a string (ptr) slot — a wild pointer.
+/// Catching the layout conflict here, at the universal expected-type entry
+/// (`check_expr_expected`), turns that silent hole into a clean F1000 in EVERY
+/// annotated position before mono runs.
+fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, expr: Expr) -> ValueType? {
+    match expr {
         .StructLit(name, inits) if name != "" -> {
             // A generic annotation `Box<string>` lowers to Enum form, while the
             // literal is Struct form — `vtype_nominal_name` reads the name from
@@ -1618,7 +1625,7 @@ fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, init: Expr) -
             let n = if inferred.length < ann.length { inferred.length } else { ann.length }
             mut i = 0
             while i < n {
-                if scalar_str_conflict(inferred[i], ann[i]) {
+                if layout_conflict(inferred[i], ann[i]) {
                     return tc_struct_lit_vtype(tc, name, inits)
                 }
                 i = i + 1
@@ -1657,18 +1664,10 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
             return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
         }
     }
-    // Generic struct literal whose field type conflicts with the annotation's
-    // type argument (`let b: Box<string> = Box { val: 9 }`). Non-generic structs
-    // are field-checked in check_struct_lit_fields; generic ones were not, so
-    // this layout-incompatible conflict would otherwise reach the monomorphizer
-    // and codegen a wild-pointer store. Flag it as F1000 here.
-    if has_annotation {
-        let conflict = generic_struct_annotation_conflict(r.tc, declared_ty, init)
-        if conflict != null {
-            let msg = "value of type `${vtype_render_full(conflict!)}` can't be bound to `${vtype_render_full(declared_ty)}` — a field's type conflicts with the generic argument"
-            return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
-        }
-    }
+    // Note: a generic-struct-literal annotation conflict (`let b: Box<string> =
+    // Box { val: 9 }`) is rejected centrally in `check_expr_expected` — the
+    // `check_expr_expected(init, pre_declared)` call above already reported it
+    // into `r.tc`, covering returns too (not just this binding site).
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
         let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
@@ -1774,6 +1773,23 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     let body_ty = tc_body_tail_type(tc, declared, stmts)
     // Skip when either side is Unknown (fallback/unreliable) or Void (no value).
     if vtype_is_unknown(declared) { return tc }
+    // A generic-struct-literal tail whose field-inferred args are layout-
+    // incompatible with the declared return type is a memory-safety hole (the
+    // signature lie propagates to callers, who deref a scalar as a pointer).
+    // check_expr_expected reports this, but tc_body_tail_type is a type-only
+    // query that drops its tc — so surface it here, where the tc is kept. (The
+    // let/mut/const + explicit-return paths keep check_expr_expected's tc, so
+    // they're already covered.)
+    let tail = tc_tail_expr(stmts)
+    if tail != null {
+        // Strip a nullable return (`-> Box<string>?`) to its inner type, matching
+        // check_expr_expected, so the conflict is seen through the Optional.
+        let conflict = generic_struct_annotation_conflict(tc, vtype_strip_optional(declared), tail!)
+        if conflict != null {
+            let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but the tail literal produces `${vtype_render_full(conflict!)}` (a field's type doesn't match the generic argument)"
+            return tc_report(tc, DiagCode.TypeMismatch, msg)
+        }
+    }
     match body_ty {
         .Void or .Unknown -> tc
         _ -> {
@@ -1805,6 +1821,17 @@ fn tc_body_tail_type(tc: TC, expected: ValueType, stmts: List<SStmt>) -> ValueTy
         .Return(_) -> ValueType.Void  // explicit return — handled elsewhere
         .ReturnEmpty -> ValueType.Void
         _ -> ValueType.Void
+    }
+}
+
+/// The block's tail expression, if its last statement is an implicit-return
+/// `.Expr` (not a `return` / loop / decl). Lets a caller run a node-level check
+/// on the tail that `tc_body_tail_type` (which yields only a type) can't.
+fn tc_tail_expr(stmts: List<SStmt>) -> Expr? {
+    if stmts.length == 0 { return null }
+    match stmts[stmts.length - 1].node {
+        .Expr(e) -> e
+        _ -> null
     }
 }
 
@@ -1896,6 +1923,22 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
     match expr {
         .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
         .Call(callee, args) -> check_call_with_expected(tc, callee, args, exp)
+        // A generic struct literal whose field-inferred type args are layout-
+        // incompatible with the annotation (`let`/return `Name<args>`) is a
+        // memory-safety hole — mono builds a layout-consistent value the
+        // annotation lies about, and a later read derefs a scalar as a pointer.
+        // Reject it here, the universal expected-type entry, so EVERY annotated
+        // position (let/mut/const + implicit/explicit return) is covered.
+        .StructLit(name, _) if name != "" -> {
+            let r = check_expr(tc, expr)
+            let conflict = generic_struct_annotation_conflict(r.tc, exp, expr)
+            if conflict != null {
+                let msg = "`${name}` literal of type `${vtype_render_full(conflict!)}` conflicts with expected `${vtype_render_full(exp)}` (a field's type doesn't match the generic argument)"
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
+            } else {
+                r
+            }
+        }
         _ -> check_expr(tc, expr)
     }
 }

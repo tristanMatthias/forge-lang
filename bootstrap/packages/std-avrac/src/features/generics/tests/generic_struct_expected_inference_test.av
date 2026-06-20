@@ -186,4 +186,34 @@ fn main() { let b: Box<string> = Box { val: 9 } }")
 fn main() { let b: Box<int> = Box { val: 9 } }")
         !out.contains("F1000")
     }
+    // The conflict is layout-incompatibility (scalar vs pointer), not just
+    // string: a STRUCT or LIST annotation over an int field is the same wild
+    // deref and must also be rejected, not only string↔int.
+    then "a struct-typed annotation over an int field is F1000" {
+        let out = ei_compile_out("type Thing = { x: int }
+type Box<T> = { val: T }
+fn main() { let b: Box<Thing> = Box { val: 9 } }")
+        out.contains("F1000")
+    }
+    then "a List-typed annotation over an int field is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() { let b: Box<List<int>> = Box { val: 9 } }")
+        out.contains("F1000")
+    }
+    // The conflict must be caught in EVERY annotated position, not just let —
+    // a function whose return signature lies about the value it builds is the
+    // most dangerous case (the lie propagates to callers, who deref a scalar as
+    // a pointer with no construction-site error to catch it).
+    then "a return-type signature that lies about a generic struct is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn make() -> Box<string> { Box { val: 9 } }
+fn main() { let b = make() }")
+        out.contains("F1000")
+    }
+    then "a matching return signature still compiles (positive control)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn make() -> Box<int> { Box { val: 9 } }
+fn main() { let b = make() }")
+        !out.contains("F1000")
+    }
 }
