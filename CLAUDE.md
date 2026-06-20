@@ -363,6 +363,7 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 6. Only then read IR
 
 ### Memory / OOM measurement (READ before diagnosing an OOM)
+
 **Session-accumulated pressure masquerades as a code bug.** A killed `make test` leaves `bs2`/`llc` procs + page cache resident, so the NEXT memory reading is inflated — a whole session was once spent concluding the std-avrac lib build needs ~15GB (it's ~140MB; the rest was session pressure, which `snw0` already documented and warned about). Before trusting ANY memory number: `free` shows recovered avail AND `pgrep -f 'bs2 build|llc'` is empty. Measure whole-tree/cgroup RSS, not `ps --ppid` (misses the `llc` grandchild that does the heavy lifting). Kill stray runs by PID — `pkill -f '<pat>'` self-matches your own shell command (exit 144). The full-suite OOM on a ≤16GB box is a KNOWN, scoped issue (`snw0`) — don't re-diagnose from scratch.
 
 ### C-side debug tools (runtime.c)

@@ -154,6 +154,15 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         }
     } else {
         if cache_has(cache, fp) {
+            // Refresh the `last` sidecar even on a HIT. collect_workspace_lib_objs
+            // resolves a package's producer .o through this unit's `last` fp, and the
+            // fingerprint is now root-aware (lib_pkg_root) — but `last` was written only
+            // on publish. Without this, a hit after a DIFFERENT-root build leaves `last`
+            // pointing at the wrong-root slot, so collect links a producer .o missing this
+            // root's symbols (`undefined symbol` at link). bin/lib only: the `test` last
+            // isn't a producer-obj source, and `compiler_hash_for` re-sha256s the binary,
+            // so refreshing it per test-shard hit isn't worth the cost.
+            let _ = write_last_inputs(cache, inputs, fp)
             return BuildOutcome.Hit(fp, entry_ll_path(cache, fp))
         }
     }
@@ -186,6 +195,10 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
     let prev_target = read_field(prior, "target:")
     if prev_target != "" && prev_target != inputs.target_triple {
         return "target triple changed (" + prev_target + " → " + inputs.target_triple + ")"
+    }
+    let prev_lib_root = read_field(prior, "lib_root:")
+    if prev_lib_root != "" && prev_lib_root != inputs.lib_pkg_root {
+        return "library root changed (" + prev_lib_root + " → " + inputs.lib_pkg_root + ")"
     }
     if inputs.sources.length == 1 {
         let entry_digest = sha256_file(inputs.sources[0])
@@ -305,6 +318,7 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
         + "compiler:" + compiler_hash + "\n"
         + "profile:" + profile_key + "\n"
         + "target:" + inputs.target_triple + "\n"
+        + "lib_root:" + inputs.lib_pkg_root + "\n"
         + "kind:" + inputs.kind + "\n"
         + "src_count:" + string(inputs.sources.length) + "\n"
     if inputs.sources.length == 1 {
