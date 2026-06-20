@@ -49,6 +49,19 @@ type EiBox<T> = { val: T }
 // ps3t.3.6 needs.
 type EiNodeId = int
 
+// Two params, BOTH behind empty-collection fields, so NEITHER can bind from the
+// literal — the annotation must supply both, positionally (A→xs, B→ys). The
+// `first_x_or` method is typed by A: a positional swap (B landing in A's slot)
+// would make it take `string`, so `first_x_or(7)` would fail to type-check —
+// turning a mis-ordered unify into a loud compile error rather than a silent
+// mismatch.
+type EiPair<A, B> = { xs: List<A>, ys: List<B> }
+impl EiPair<A, B> {
+    fn first_x_or(self, d: A) -> A {
+        if self.xs.length > 0 { self.xs[0] } else { d }
+    }
+}
+
 // Return-position annotation: the tail expression is a bare struct literal
 // whose params come only from the declared return type.
 fn ei_make_arena() -> EiArena<int, string> {
@@ -110,6 +123,17 @@ spec "generic struct infers type params from the expected type" {
             t.n == 9 && t.vals.length == 0
         }
     }
+    given "a mut binding and two params both supplied by the annotation" {
+        then "a mut binding threads its annotation exactly like let (collect .Mut arm)" {
+            mut a: EiArena<int, int> = EiArena { nodes: [], count: 3 }
+            a.count = a.count + 1
+            a.count == 4 && a.nodes.length == 0
+        }
+        then "two empty-collection params bind positionally from the annotation" {
+            let p: EiPair<int, string> = EiPair { xs: [], ys: [] }
+            p.first_x_or(7) == 7 && p.ys.length == 0
+        }
+    }
 }
 
 // Precision guard: the expected-type channel may only RESOLVE a real
@@ -120,11 +144,12 @@ spec "generic struct infers type params from the expected type" {
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
 
-// Built by concatenation so the test-runner's program-discovery glob doesn't
-// mistake this spec file for an entry-point program (a literal `fn main` in the
-// embedded fixture would trip it).
-const ENTRY: string = "fn " + "main()"
-
+// Shell out to a fresh bs2 so the construction is compiled in a child process
+// whose failure we can observe: capture its combined output and assert on the
+// rendered F-code. `|| true` keeps the non-zero compile exit from aborting the
+// capture. (The `fn main` in each fixture lives inside a string literal, so the
+// discovery classifier — which only flags a top-level `fn` *token* — never sees
+// it; no need to obfuscate the entry point.)
 fn ei_compile_out(source: string) -> string {
     let path = "/tmp/avra_ei_phantom_neg.av"
     write_fixture(path, source)
@@ -134,12 +159,12 @@ fn ei_compile_out(source: string) -> string {
 spec "an unconstrained phantom param without an annotation still errors" {
     then "no annotation + empty field + phantom Id is F1002" {
         let out = ei_compile_out("type Arena<N, Id> = { nodes: List<N>, count: int }
-${ENTRY} { let a = Arena { nodes: [], count: 7 } }")
+fn main() { let a = Arena { nodes: [], count: 7 } }")
         out.contains("F1002") && out.contains("Id")
     }
     then "the SAME construction with an annotation compiles (positive control)" {
         let out = ei_compile_out("type Arena<N, Id> = { nodes: List<N>, count: int }
-${ENTRY} { let a: Arena<int, int> = Arena { nodes: [], count: 7 } }")
+fn main() { let a: Arena<int, int> = Arena { nodes: [], count: 7 } }")
         !out.contains("F1002")
     }
 }
