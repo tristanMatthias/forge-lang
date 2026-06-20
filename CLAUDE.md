@@ -362,6 +362,9 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 5. **Redzones:** `AVRA_REDZONES=1` / `AVRA_PAGE_ALLOC=1` catches cross-allocation writes
 6. Only then read IR
 
+### Memory / OOM measurement (READ before diagnosing an OOM)
+**Session-accumulated pressure masquerades as a code bug.** A killed `make test` leaves `bs2`/`llc` procs + page cache resident, so the NEXT memory reading is inflated — a whole session was once spent concluding the std-avrac lib build needs ~15GB (it's ~140MB; the rest was session pressure, which `snw0` already documented and warned about). Before trusting ANY memory number: `free` shows recovered avail AND `pgrep -f 'bs2 build|llc'` is empty. Measure whole-tree/cgroup RSS, not `ps --ppid` (misses the `llc` grandchild that does the heavy lifting). Kill stray runs by PID — `pkill -f '<pat>'` self-matches your own shell command (exit 144). The full-suite OOM on a ≤16GB box is a KNOWN, scoped issue (`snw0`) — don't re-diagnose from scratch.
+
 ### C-side debug tools (runtime.c)
 - `avra_trace_i64(v1, v2)` / `avra_trace_ptr(label, val)` — safe tracing (no string alloc)
 - `avra_dump_stmt(label, stmt)` / `avra_dump_stmt_list(label, list)`
@@ -425,6 +428,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **Walkers that rebuild stmts MUST preserve `Annotated` wrappers.** Match on `stmt_unwrap`/peeled nodes for dispatch, but emit rebuilt nodes via `rewrap_annotations` (core/ast.av) — pushing a bare rebuilt `Stmt.Module` silently strips the module's annotations (the @deferred_init-eating bug class, d4jv). `expand_stmt_list` + `derive_marshal` were both guilty.
 - **In-process test parallelism (d4jv):** every assembled test binary runs its test FILES as `@deferred_init` units across `AVRA_TEST_JOBS` worker threads (default: cpu count; coverage pins 1). Per-unit output is grouped via per-thread runtime sinks (`avra_sink_push/pop` — `println` lowers to `avra_puts`, NOT libc puts). Capture (`avra_test_capture_*`) is sink-based, per-thread, nestable — no dup2. Channel surface: `channel<T>(cap)`, `.send/.recv/.try_recv/.close`, recv → `T?` null ⇔ closed+drained. `AVRA_TEST_STALL_MS` shrinks the stall-detector window (testing). `bs2 test <dir>` scopes discovery to that directory.
 - **Test counts:** specs registered per spec/given/then live in atomic C counters; intmap-backed registries grow (the historic 256-slot intmap silently dropped insert #257 — see intmap_growth_test).
+- **Test-suite OOM / @std metadata fast-path (snw0, 08ro, pdme — don't refile):** the per-file runner pre-builds each `@std/*` package into a producer `.o` + `meta.bin`; shards then STUB `@std` and link the producer obj (lightweight). When the pre-build fails it DEGRADES to whole-program shards that each inline ALL of `@std` (~10GiB) → parallel OOM on a ≤16GB box. Three gotchas that disable the fast-path: (1) the pre-build's `> ${pkg}build/prebuild.log` redirect needs the pkg `build/` dir, which std-process/std-test lack on a cold tree (`mkdir -p` first); (2) the lib-build unit cache MUST key on `AVRA_LIB_PKG_ROOT` (a wrong root — `@std.avrac` vs the correct `@std::avrac` from `derive_lib_root_for` — caches a symbol-less `.ll` that poisons a later correct-root consumer → `undefined symbol` at link); (3) degraded-shard compile concurrency is capped (`prepare_test_run`: jobs=2 when `!lib.want_meta`) so the fallback can't OOM.
 
 ## ABSOLUTE RULES
 
@@ -468,6 +472,7 @@ bd close <id>         # Complete work
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- **SEARCH before you FILE.** Before opening a ticket for a perf / test-runner / compiler-memory / OOM symptom, `bd search` it and skim the epics `4apk` (COMPILER-FAST) and `uzs9` (test cycle speed) — that area is already densely scoped (`snw0`, `08ro`, `pdme.*`, `i7gw`, `05yc`). Filing parallel tickets (and re-diagnosing what they already document) burns a session; the existing ones often already hold the answer + a warning you're about to ignore.
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
