@@ -21,8 +21,8 @@ fn main() -> int {
     let key = profile_key_of("dev", 0, true, true, false)
 
     // Probe 1: deterministic across calls.
-    let a = fp_for_unit("u", empty_strs(), "h", key, "t", empty_strs())
-    let b = fp_for_unit("u", empty_strs(), "h", key, "t", empty_strs())
+    let a = fp_for_unit("u", empty_strs(), "h", key, "t", "", empty_strs())
+    let b = fp_for_unit("u", empty_strs(), "h", key, "t", "", empty_strs())
     if fp_eq(a, b) {
         println("PROBE deterministic: ok")
     } else {
@@ -31,7 +31,7 @@ fn main() -> int {
 
     // Probe 2: every input axis perturbs the digest. We change just
     // the unit name and confirm the digest moves.
-    let c = fp_for_unit("OTHER", empty_strs(), "h", key, "t", empty_strs())
+    let c = fp_for_unit("OTHER", empty_strs(), "h", key, "t", "", empty_strs())
     if !fp_eq(a, c) {
         println("PROBE sensitive_unit: ok")
     } else {
@@ -73,12 +73,25 @@ fn main() -> int {
 
     // Probe 7: dep fingerprints participate. Two units differ only in
     // dep_fps and must produce different digests.
-    let with_dep_a = fp_for_unit("u", empty_strs(), "h", key, "t", one("dep_a"))
-    let with_dep_b = fp_for_unit("u", empty_strs(), "h", key, "t", one("dep_b"))
+    let with_dep_a = fp_for_unit("u", empty_strs(), "h", key, "t", "", one("dep_a"))
+    let with_dep_b = fp_for_unit("u", empty_strs(), "h", key, "t", "", one("dep_b"))
     if !fp_eq(with_dep_a, with_dep_b) {
         println("PROBE dep_sensitive: ok")
     } else {
         println("PROBE dep_sensitive: FAIL")
+    }
+
+    // Probe 8: lib_root participates. Two units differing only in lib_root
+    // must produce different digests — a unit built for one library root
+    // (e.g. `@std`) must not collide in the cache with the same unit built
+    // for another (`@std::avrac`), since library mode emits only the symbols
+    // owned by that root.
+    let lib_a = fp_for_unit("u", empty_strs(), "h", key, "t", "@std", empty_strs())
+    let lib_b = fp_for_unit("u", empty_strs(), "h", key, "t", "@std::avrac", empty_strs())
+    if !fp_eq(lib_a, lib_b) {
+        println("PROBE lib_root_sensitive: ok")
+    } else {
+        println("PROBE lib_root_sensitive: FAIL")
     }
 
     0
