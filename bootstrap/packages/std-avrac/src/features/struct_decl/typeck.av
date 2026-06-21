@@ -96,7 +96,7 @@ export fn check_struct_lit_fields(tc: TC, name: string, inits: List<FieldInit>) 
                 // where `inner: Box<string>`): vtype_eq ignores generic args, so the
                 // scalar check (Box is not scalar) misses it, but a Box<int> in a
                 // Box<string> slot lets a reader deref an int as a pointer.
-                if generic_args_layout_conflict(r.ty, fty) {
+                if generic_args_layout_conflict(acc, r.ty, fty) {
                     acc = tc_report(acc, DiagCode.TypeMismatch, "field `${init.name}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(r.ty)}` (generic argument layout conflict)")
                 }
             }

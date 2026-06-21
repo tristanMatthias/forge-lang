@@ -150,10 +150,13 @@ use @std.avrac.test_runner.{write_fixture}
 // capture. (The `fn main` in each fixture lives inside a string literal, so the
 // discovery classifier — which only flags a top-level `fn` *token* — never sees
 // it; no need to obfuscate the entry point.)
+// Emit a success sentinel ONLY on a clean (exit-0) compile, so positive controls
+// can assert real success — not merely the absence of one F-code (a syntax error,
+// ICE, or different type error would otherwise slip a positive control through).
 fn ei_compile_out(source: string) -> string {
     let path = "/tmp/avra_ei_phantom_neg.av"
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
 }
 
 spec "an unconstrained phantom param without an annotation still errors" {
@@ -165,7 +168,7 @@ fn main() { let a = Arena { nodes: [], count: 7 } }")
     then "the SAME construction with an annotation compiles (positive control)" {
         let out = ei_compile_out("type Arena<N, Id> = { nodes: List<N>, count: int }
 fn main() { let a: Arena<int, int> = Arena { nodes: [], count: 7 } }")
-        !out.contains("F1002")
+        out.contains("__AVRA_COMPILE_OK__")
     }
 }
 
@@ -184,7 +187,7 @@ fn main() { let b: Box<string> = Box { val: 9 } }")
     then "the layout-matching annotation Box<int> still compiles (positive control)" {
         let out = ei_compile_out("type Box<T> = { val: T }
 fn main() { let b: Box<int> = Box { val: 9 } }")
-        !out.contains("F1000")
+        out.contains("__AVRA_COMPILE_OK__")
     }
     // The conflict is layout-incompatibility (scalar vs pointer), not just
     // string: a STRUCT or LIST annotation over an int field is the same wild
@@ -214,7 +217,7 @@ fn main() { let b = make() }")
         let out = ei_compile_out("type Box<T> = { val: T }
 fn make() -> Box<int> { Box { val: 9 } }
 fn main() { let b = make() }")
-        !out.contains("F1000")
+        out.contains("__AVRA_COMPILE_OK__")
     }
     // The conflict reaches mono — and codegen — from MANY positions, not just
     // let/return. Each of these otherwise lets a Box<int> flow into a Box<string>
@@ -252,6 +255,55 @@ fn main() {
     want(Box { val: \"b\" })
     let xs: List<Box<string>> = [Box { val: \"c\" }]
 }")
-        !out.contains("F1000")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    // The conflict reaches MANY more expression positions than a bare struct
+    // literal. Each below otherwise lets a Box<int> flow into a Box<string> slot.
+    then "a non-first list element that conflicts is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() { let xs: List<Box<string>> = [Box { val: \"ok\" }, Box { val: 9 }] }")
+        out.contains("F1000")
+    }
+    then "an implicit-return tail list literal that conflicts is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn f() -> List<Box<string>> { [Box { val: 9 }] }
+fn main() { let xs = f() }")
+        out.contains("F1000")
+    }
+    then "a parenthesized conflicting struct literal is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() { let b: Box<string> = (Box { val: 9 }) }")
+        out.contains("F1000")
+    }
+    then "a call returning a conflicting generic instance is F1000 (fn-side)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn mk() -> Box<int> { Box { val: 9 } }
+fn main() { let b: Box<string> = mk() }")
+        out.contains("F1000")
+    }
+    then "an ident rebound to a conflicting annotation is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn main() {
+    let a: Box<int> = Box { val: 9 }
+    let b: Box<string> = a
+}")
+        out.contains("F1000")
+    }
+    // CRITICAL false-positive guards: valid generic code where a type parameter
+    // (not a concrete type) sits opposite a concrete arg must NOT be rejected —
+    // `T` surfaces as a nominal that looks pointer-shaped, but it has no settled
+    // layout yet. These regressed once; they must stay green.
+    then "a generic fn with a Box<T> param accepts a concrete Box (no false F1000)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn id<T>(b: Box<T>) -> Box<T> { b }
+fn main() { let x = id(Box { val: 9 }) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a generic struct field holding a type param compiles (no false F1000)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+type Wrap<T> = { inner: Box<T> }
+fn mk<T>(b: Box<T>) -> Wrap<T> { Wrap { inner: b } }
+fn main() { let w = mk(Box { val: 9 }) }")
+        out.contains("__AVRA_COMPILE_OK__")
     }
 }
