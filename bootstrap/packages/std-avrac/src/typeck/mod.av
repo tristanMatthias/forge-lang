@@ -2502,11 +2502,51 @@ fn tc_subst_generic_method_ret(tc: TC, tp: List<TypeParamEntry>, params: List<Pa
 /// arg types alone don't pin T, but the let annotation does.
 /// so07.7.15. `expected = Unknown` (the default for non-bidirectional
 /// callers) is a no-op via tc_unify's Unknown wildcard.
+/// Fill-only merge: keep every binding `base` already has (from the ARGS) and add
+/// a binding from `fill` (derived from the expected type) ONLY for params the args
+/// left unresolved. NEVER overrides an arg-bound param — overriding turns a wrong
+/// annotation into a layout lie: `let y: string = id(9)` would type `id(9)` as
+/// `string`, hiding the int↔string mismatch the let-binding check would otherwise
+/// catch (and mono would then store the int 9 as a wild string pointer). 26ql;
+/// mirrors the struct-side fill_unresolved_from_expected.
+fn tc_fill_unresolved_typeargs(tp: List<TypeParamEntry>, base: List<TypeArg>, fill: List<TypeArg>) -> List<TypeArg> {
+    mut out = base
+    mut i = 0
+    while i < tp.length {
+        let pname = tp[i].name
+        if vtype_is_unknown(tc_type_arg_lookup(base, pname)) {
+            let fv = tc_type_arg_lookup(fill, pname)
+            if !vtype_is_unknown(fv) {
+                mut next: List<TypeArg> = []
+                next.push(TypeArg { param_name: pname, concrete_vt: fv })
+                mut j = 0
+                while j < out.length {
+                    next.push(out[j])
+                    j = j + 1
+                }
+                out = next
+            }
+        }
+        i = i + 1
+    }
+    out
+}
+
 fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType, expected: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
     let arg_bindings = tc_infer_type_args(tc, tp, params, args, empty)
-    let ret_bindings = if vtype_is_unknown(expected) { arg_bindings } else { tc_unify(tp, ret_ty, expected, arg_bindings) }
+    // Fill-only (26ql): the expected return type may only resolve params the ARGS
+    // left unresolved (the so07.7.15 gap-fill, e.g. `let xs: List<int> = empty()`),
+    // never override an arg-bound one. Unify ret_ty against expected into a FRESH
+    // acc, then fill only the gaps — so `id(9)` stays `int` and the let/return
+    // mismatch surfaces, instead of being papered over to `string`.
+    let ret_bindings = if vtype_is_unknown(expected) {
+        arg_bindings
+    } else {
+        let exp_only = tc_unify(tp, ret_ty, expected, empty)
+        tc_fill_unresolved_typeargs(tp, arg_bindings, exp_only)
+    }
     tc_subst_vtype(ret_ty, ret_bindings)
 }
 
