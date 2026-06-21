@@ -1713,6 +1713,16 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
     let r = if has_annotation { check_expr_expected(tc, init, pre_declared) } else { check_expr(tc, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
+    // An int (or int literal) bound to a STRING annotation is always a type error.
+    // The everything-is-i64 leniency the `.Int` skip below preserves for numeric
+    // coercion (`let x: u8 = 5`, `let x: float = 5`) must NOT extend to strings:
+    // `let y: string = id(9)` would otherwise store the int 9 as a wild string
+    // pointer (ry1a). The return path already rejects this (vtype_assignable);
+    // mirror it for the `let` site.
+    if has_annotation && (r.ty is .Int) && (declared_ty is .Str) {
+        let msg = "type mismatch: expected `${vtype_render_full(declared_ty)}`, got `${vtype_render_full(r.ty)}`"
+        return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
+    }
     // Type annotation mismatch: flag clear mismatches between primitive types.
     // Skip when RHS is Void (null), Int (unresolved inference), or Unknown.
     if has_annotation && !vtype_is_unknown(r.ty) && !vtype_is_unknown(declared_ty) && !(r.ty is .Void) && !(r.ty is .Int) {
@@ -2079,6 +2089,14 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Assign(name, value) -> {
             let v = check_expr(tc, value)
+            // Reassigning an int into a string-typed variable is the wild-pointer
+            // hole (ry1a): the var's slot is a pointer, the int isn't. (int→numeric
+            // stays lenient, matching the let site.)
+            let var_ty = type_lookup(v.tc.types, name)
+            if (var_ty is .Str) && (v.ty is .Int) {
+                let amsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}`"
+                return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, amsg), v.ty)
+            }
             tc_er(v.tc, v.ty)
         }
         .QualifiedIdent(path) -> {
@@ -2169,6 +2187,14 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
         if generic_args_layout_conflict(cur, arg_ty, param_ty) {
             let cmsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}` (generic argument layout conflict)"
             cur = tc_report(cur, DiagCode.TypeMismatch, cmsg)
+        }
+        // An int (literal) passed where a string param is expected is the same
+        // wild-pointer hole as the let site (ry1a) — the callee derefs the int as
+        // a string. The default arg path otherwise type-checks only Newtype/shape
+        // params, so scalar↔string slips through. (int→numeric stays lenient.)
+        if (param_ty is .Str) && (arg_ty is .Int) {
+            let smsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
+            cur = tc_report(cur, DiagCode.TypeMismatch, smsg)
         }
         i = i + 1
     }
