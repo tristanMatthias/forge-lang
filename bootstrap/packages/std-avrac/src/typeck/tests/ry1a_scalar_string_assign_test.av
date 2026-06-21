@@ -1,0 +1,136 @@
+// WHY: regression for forge-crafting-intepreters-ry1a — an int (or int literal)
+// bound to a STRING slot is a wild-pointer hole: the slot is a pointer, the int
+// is not, so a reader derefs the int as a string. The canonical trigger is a
+// generic fn returning a bare type param from a scalar literal:
+//   let y: string = id(9)   // id<T>(x: T) -> T  =>  returns int 9, typed string
+// which at runtime printed `null` (int 9 read as a string pointer).
+//
+// The fix tightens int→string assignability in the positions that were lenient
+// (let binding, call argument, reassignment); field + return already rejected it.
+// int→NUMERIC coercion (`let x: u8 = 5`, `let x: float = 5`) stays lenient — only
+// the scalar↔pointer (int→string) case is rejected.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Emit a success sentinel ONLY on a clean compile, so positive controls assert
+// real success rather than the mere absence of an F-code.
+fn ry1a_out(source: string) -> string {
+    let path = "/tmp/avra_ry1a_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "int bound to a string slot is rejected in every position (ry1a)" {
+    then "let: a bare int literal into a string annotation is F1000" {
+        let out = ry1a_out("fn main() { let y: string = 9 }")
+        out.contains("F1000")
+    }
+    then "let: a generic fn returning int into a string annotation is F1000 (id(9))" {
+        let out = ry1a_out("fn id<T>(x: T) -> T { x }
+fn main() { let y: string = id(9) }")
+        out.contains("F1000")
+    }
+    then "arg: an int passed to a string parameter is F1000" {
+        let out = ry1a_out("fn want(s: string) { }
+fn main() { want(9) }")
+        out.contains("F1000")
+    }
+    then "arg: id(9) passed to a string parameter is F1000" {
+        let out = ry1a_out("fn id<T>(x: T) -> T { x }
+fn want(s: string) { }
+fn main() { want(id(9)) }")
+        out.contains("F1000")
+    }
+    then "reassign: assigning an int to a string variable is F1000" {
+        let out = ry1a_out("fn main() {
+    mut s: string = \"x\"
+    s = 9
+}")
+        out.contains("F1000")
+    }
+    then "return: an int tail into a string return type is F1000" {
+        let out = ry1a_out("fn f() -> string { 9 }
+fn main() { let x = f() }")
+        out.contains("F1000")
+    }
+    then "field: an int into a string field is F1000" {
+        let out = ry1a_out("type Foo = { s: string }
+fn main() { let f = Foo { s: 9 } }")
+        out.contains("F1000")
+    }
+    then "let: an int into a NULLABLE string slot is F1000 (Optional stripped)" {
+        let out = ry1a_out("fn main() { let x: string? = 9 }")
+        out.contains("F1000")
+    }
+    then "a nullable INT slot still accepts an int (no false positive)" {
+        let out = ry1a_out("fn main() { let x: int? = 9 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    // Precision: int→NUMERIC coercion must STILL compile — the tightening is
+    // scalar↔pointer (string) only, not a blanket int-literal lockdown.
+    then "int literal still coerces to numeric annotations (no false positive)" {
+        let out = ry1a_out("fn main() {
+    let a: float = 5
+    let b: u8 = 3
+    let c: int = 9
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a real string still binds/passes/returns fine (no false positive)" {
+        let out = ry1a_out("fn want(s: string) -> string { s }
+fn main() {
+    let y: string = \"ok\"
+    want(y)
+    mut m: string = \"a\"
+    m = \"b\"
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+// The same scalar↔pointer hole, in the positions the first cut left uncovered:
+// a list element, a tail-`match` arm, and a `bytes` slot. Each negative has a
+// matching positive control proving the guard is layout-scoped, not a blanket
+// int-literal lockdown.
+spec "int into a pointer slot is rejected in list-element, match-tail, and bytes positions (ry1a)" {
+    then "list element: a bare int literal in a List<string> is F1000" {
+        let out = ry1a_out("fn main() { let xs: List<string> = [9] }")
+        out.contains("F1000")
+    }
+    then "list element: a later int among strings is F1000 (every element checked)" {
+        let out = ry1a_out("fn main() { let xs: List<string> = [\"ok\", 9] }")
+        out.contains("F1000")
+    }
+    then "list element: List<int> = [9] still compiles (no false positive)" {
+        let out = ry1a_out("fn main() { let xs: List<int> = [9] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "list element: int into List<int?> still compiles (nullable widening, not a conflict)" {
+        let out = ry1a_out("fn main() { let xs: List<int?> = [1, 2, 3] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "list element: string into List<int?> is still F1000 (real base conflict)" {
+        let out = ry1a_out("fn main() { let xs: List<int?> = [\"a\"] }")
+        out.contains("F1000")
+    }
+    then "match tail: an int arm into a string return type is F1000" {
+        let out = ry1a_out("fn f(c: bool) -> string { match c { _ -> 9 } }
+fn main() { let x = f(true) }")
+        out.contains("F1000")
+    }
+    then "match tail: string arms into a string return type still compile (int|bool exemption intact)" {
+        let out = ry1a_out("fn f(c: bool) -> string { match c { true -> \"y\", _ -> \"n\" } }
+fn main() { let x = f(true) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "bytes: a bare int literal into a bytes annotation is F1000" {
+        let out = ry1a_out("fn main() { let b: bytes = 9 }")
+        out.contains("F1000")
+    }
+    then "bytes: an int passed to a bytes parameter is F1000" {
+        let out = ry1a_out("fn want(b: bytes) { }
+fn main() { want(9) }")
+        out.contains("F1000")
+    }
+}

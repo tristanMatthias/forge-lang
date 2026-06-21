@@ -59,6 +59,7 @@ export fn fp_for_unit(
     compiler_hash: string,
     profile_key: string,
     target_triple: string,
+    lib_root: string,
     dep_fps: List<string>,
 ) -> Fingerprint {
     // Compose a canonical input. Each section is prefixed with its
@@ -71,6 +72,10 @@ export fn fp_for_unit(
     composed = composed + "compiler:" + compiler_hash + "\n"
     composed = composed + "profile:" + profile_key + "\n"
     composed = composed + "target:" + target_triple + "\n"
+    // Library mode emits ONLY symbols owned by `lib_root`, so it's a build
+    // input: the same sources under root A vs B (or "" whole-program) yield
+    // different objects and must not share a cache slot.
+    composed = composed + "lib_root:" + lib_root + "\n"
 
     composed = composed + "sources:\n"
     composed = composed + each_with_count(sources, "src")

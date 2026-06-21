@@ -993,7 +993,16 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string) 
                 // (not /dev/null) so a failed pre-build — which silently
                 // disables the whole metadata fast-path (08ro) — is
                 // diagnosable instead of vanishing.
-                cmds.push("cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${dir}build/prebuild.log\" 2>&1")
+                //
+                // mkdir the log dir FIRST. A package that `make build` never
+                // produces (std-process, std-test — only the compiler + cli are
+                // built) has no `build/` dir on a cold tree, so the shell can't
+                // open the `> build/prebuild.log` redirect: the command fails
+                // BEFORE bs2 runs (rc=1, no log written), the whole pre-build is
+                // declared failed, and every shard degrades to the whole-program
+                // @std path (snw0). Creating the dir keeps the redirect — and so
+                // the fast-path — alive on a cold tree.
+                cmds.push("mkdir -p \"${dir}build\" && cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${dir}build/prebuild.log\" 2>&1")
             }
         }
         i = i + 1
@@ -1860,6 +1869,7 @@ fn run_build_command() {
         debug: profile.debug,
         overflow_checks: profile.overflow_checks,
         coverage: profile.coverage,
+        lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
     }
 
     // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE
@@ -2295,6 +2305,7 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         debug: true,
         overflow_checks: true,
         coverage: false,
+        lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
     }
 }
 
@@ -2890,11 +2901,20 @@ fn read_listing_file_paths(listing_file: string) -> List<string> {
 // AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt out.
 fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let compiler_path = resolve_compiler_path(project_dir)
-    let jobs = parse_jobs_env(8)
     let log_dir = "${project_dir}/build/test_shards"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
     let lib = maybe_prebuild_std_libs(project_dir, compiler_path)
+    // Concurrency is memory-bound, not CPU-bound, and the two shard modes have
+    // wildly different footprints. A metadata fast-path shard STUBS @std/* (a
+    // few hundred lines) and links pre-built producer .o's — cheap, so the full
+    // 8-wide fan-out fits. A whole-program FALLBACK shard (the path taken
+    // whenever the pre-build can't supply producer objs) instead inlines ALL of
+    // @std/* and llc-optimises it — ~2-3GB RSS EACH. Eight of those at once
+    // OOM-kills shards mid-compile on a 15-16GB box (the symptom this guards).
+    // So cap the fallback width to keep N×~3GB under a tight box's RAM; AVRA_JOBS
+    // still overrides either default for hosts that know their headroom.
+    let jobs = if lib.want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
     let listing_file = compute_std_listing_file(project_dir, log_dir)
     let universe_fp = compute_test_universe_fp(listing_file, test_reporter_path(project_dir),
                                                "${project_dir}/build/runtime.o",
@@ -3856,6 +3876,7 @@ fn main() {
             debug: true,
             overflow_checks: true,
             coverage: false,
+            lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
         }
         let mut compile_publish_fp: Fingerprint? = null
         if cache_eligible {

@@ -58,6 +58,9 @@ spec "fingerprint: end-to-end via bs2 run" {
     then "PROBE dep_sensitive — different dep_fps diverge" {
         run_fixture().contains("PROBE dep_sensitive: ok")
     }
+    then "PROBE lib_root_sensitive — different lib roots diverge" {
+        run_fixture().contains("PROBE lib_root_sensitive: ok")
+    }
     then "no probe failed" {
         !run_fixture().contains(": FAIL")
     }

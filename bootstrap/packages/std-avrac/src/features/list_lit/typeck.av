@@ -1,7 +1,8 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_pair_list}
-use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
+use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
+use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list_types, tc_report, generic_args_layout_conflict}
+use diagnostics.{DiagCode}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
 /// (caller infers from context); non-empty literals pin the element
@@ -17,9 +18,26 @@ export fn check_list_lit(tc: TC, elements: List<SExpr>) -> ExprResult {
 /// so07.4 (T4).
 export fn check_list_lit_with_expected(tc: TC, elements: List<SExpr>, expected_elem: ValueType) -> ExprResult {
     if elements.length == 0 { return tc_er(tc, .List(expected_elem)) }
-    let r = check_expr(tc, elements[0].node)
-    let checked = check_expr_list(r.tc, elements)
-    tc_er(checked, .List(r.ty))
+    let lr = check_expr_list_types(tc, elements)
+    // An element whose layout is incompatible with the expected element type must
+    // be rejected: BOTH the bare scalar↔ptr case (`[9]` for `List<string>`) and a
+    // generic struct-literal element whose args mismatch (`[Box { val: 9 }]` for
+    // `List<Box<string>>`). `vtype_eq` ignores generic args and the element-type
+    // unification lets either slip into a layout-mismatched slot. Wrapping both
+    // sides in a `List` shell routes through `generic_args_layout_conflict`'s List
+    // branch, which applies the scalar↔ptr `layout_conflict` to the elements
+    // (Unknown `expected_elem` — a non-annotated literal — is never a conflict).
+    // Check EVERY element, not just the first (`[Box { val: "ok" }, Box { val: 9 }]`
+    // must still flag the second).
+    mut after = lr.tc
+    mut i = 0
+    while i < lr.types.length {
+        if generic_args_layout_conflict(after, ValueType.List(lr.types[i]), ValueType.List(expected_elem)) {
+            after = tc_report(after, DiagCode.TypeMismatch, "list element of type `${vtype_render_full(lr.types[i])}` conflicts with expected `${vtype_render_full(expected_elem)}` (generic argument layout conflict)")
+        }
+        i = i + 1
+    }
+    tc_er(after, .List(lr.types[0]))
 }
 
 /// Map a List method name to its result ValueType. `map` is
