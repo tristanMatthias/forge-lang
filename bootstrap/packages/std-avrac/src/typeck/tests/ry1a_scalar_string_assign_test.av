@@ -88,3 +88,49 @@ fn main() {
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
+
+// The same scalar↔pointer hole, in the positions the first cut left uncovered:
+// a list element, a tail-`match` arm, and a `bytes` slot. Each negative has a
+// matching positive control proving the guard is layout-scoped, not a blanket
+// int-literal lockdown.
+spec "int into a pointer slot is rejected in list-element, match-tail, and bytes positions (ry1a)" {
+    then "list element: a bare int literal in a List<string> is F1000" {
+        let out = ry1a_out("fn main() { let xs: List<string> = [9] }")
+        out.contains("F1000")
+    }
+    then "list element: a later int among strings is F1000 (every element checked)" {
+        let out = ry1a_out("fn main() { let xs: List<string> = [\"ok\", 9] }")
+        out.contains("F1000")
+    }
+    then "list element: List<int> = [9] still compiles (no false positive)" {
+        let out = ry1a_out("fn main() { let xs: List<int> = [9] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "list element: int into List<int?> still compiles (nullable widening, not a conflict)" {
+        let out = ry1a_out("fn main() { let xs: List<int?> = [1, 2, 3] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "list element: string into List<int?> is still F1000 (real base conflict)" {
+        let out = ry1a_out("fn main() { let xs: List<int?> = [\"a\"] }")
+        out.contains("F1000")
+    }
+    then "match tail: an int arm into a string return type is F1000" {
+        let out = ry1a_out("fn f(c: bool) -> string { match c { _ -> 9 } }
+fn main() { let x = f(true) }")
+        out.contains("F1000")
+    }
+    then "match tail: string arms into a string return type still compile (int|bool exemption intact)" {
+        let out = ry1a_out("fn f(c: bool) -> string { match c { true -> \"y\", _ -> \"n\" } }
+fn main() { let x = f(true) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "bytes: a bare int literal into a bytes annotation is F1000" {
+        let out = ry1a_out("fn main() { let b: bytes = 9 }")
+        out.contains("F1000")
+    }
+    then "bytes: an int passed to a bytes parameter is F1000" {
+        let out = ry1a_out("fn want(b: bytes) { }
+fn main() { want(9) }")
+        out.contains("F1000")
+    }
+}
