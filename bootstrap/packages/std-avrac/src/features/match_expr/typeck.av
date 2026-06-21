@@ -601,13 +601,18 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
         match arm.body.node {
             .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, stmts)
             // A non-block arm body is checked in the normal arm pass (where the
-            // arm's pattern bindings are in scope). Re-checking it here, in the
-            // return-check context that LACKS those bindings, mis-resolves pattern
-            // vars — so a generic-struct-literal conflict in a non-block match arm
-            // (`match c { _ -> Box { val: 9 } }` vs `-> Box<string>`) is NOT caught
-            // here. Covered for block arms via tc_check_explicit_returns; the
-            // non-block case is tracked in 26ql (needs threading during the normal
-            // arm-type pass, not a stale re-check).
+            // arm's pattern bindings are in scope). It CANNOT be re-checked here:
+            // this return-check context lacks those bindings, so typing an arm body
+            // that references a pattern var (e.g. `@std`'s own `check_stmt` has
+            // `.Annotated(_, inner) -> … inner.node`) mis-resolves it and surfaces a
+            // spurious error — and tc diagnostics are side-effected, so discarding
+            // the probe's tc does NOT suppress them (verified: breaks
+            // pry2_return_local_binding three different ways). The implicit-tail
+            // non-block-arm conflict (`match c { _ -> Box { val: 9 } }` vs
+            // `-> Box<string>`) is therefore left to 26ql — it needs the expected
+            // type threaded into the match feature's normal arm-type pass, not a
+            // re-check here. Explicit `return match`, block arms, and match-in-let
+            // are all already covered (centralized check_expr_expected).
             _ -> {}
         }
         i = i + 1
