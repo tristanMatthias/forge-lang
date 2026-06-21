@@ -6,7 +6,7 @@
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
-use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive}
+use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
 use features.channels.{check_channel_method}
 use features.list_lit.{check_list_method, check_list_lit_with_expected}
@@ -1841,8 +1841,18 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     // type-only query (the old tc_body_tail_type) silently dropped those.
     let tail = tc_tail_expr(stmts)
     let tr = if tail != null { check_expr_expected(tc, tail!, declared) } else { tc_er(tc, ValueType.Void) }
-    let after = tr.tc
+    mut after = tr.tc
     let body_ty = tr.ty
+    // A tail `match` STATEMENT carries the fn's return value in its expression
+    // arms. Conflict-check them against `declared` via the match feature, which
+    // binds the arm patterns correctly and skips arm-unification (26ql) — the
+    // non-block-arm case the explicit-return pass leaves uncovered.
+    if stmts.length > 0 {
+        match stmts[stmts.length - 1].node {
+            .Match(subject, arms) -> after = tc_check_match_tail_conflict(after, fn_name, subject, arms, declared)
+            _ -> {}
+        }
+    }
     match body_ty {
         .Void or .Unknown -> after
         _ -> {

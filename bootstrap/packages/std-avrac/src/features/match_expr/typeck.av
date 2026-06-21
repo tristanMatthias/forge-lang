@@ -4,7 +4,7 @@
 use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
-use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, generic_args_layout_conflict, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use core.{vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
 
 // ── Arm type skip logic ──
@@ -513,6 +513,39 @@ export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) 
     acc
 }
 
+/// Conflict-only check for a tail `match` STATEMENT used as an implicit return
+/// (`fn f() -> Box<string> { match c { _ -> Box { val: 9 } } }`). For each
+/// EXPRESSION-bodied arm: bind the arm's pattern in a fresh scope — the SAME
+/// `enter_arm_with_guard` the normal statement pass uses, so pattern vars resolve
+/// correctly (a binding-less re-walk mis-resolves them and breaks pry2) — type
+/// the body, then flag ONLY a generic-arg layout conflict against `declared`.
+/// Deliberately NO arm-type unification: a statement-match is exempt from it
+/// (`is_truthy` returns `int | bool`), and running the full expression check would
+/// wrongly reject that. Block arms carry their own `return`s (validated by
+/// tc_check_explicit_returns) and are skipped. Re-typing the arm bodies is
+/// redundant work but produces no new diagnostics on valid code, so it can't
+/// double-report. 26ql.
+export fn tc_check_match_tail_conflict(tc: TC, fn_name: string, subject: Expr, arms: List<MatchArm>, declared: ValueType) -> TC {
+    let subject_ty = check_expr(tc, subject).ty
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        match arm.body.node {
+            .Block(_) -> {}
+            _ -> {
+                let br = check_expr(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node)
+                acc = tc_exit(br.tc)
+                if generic_args_layout_conflict(acc, br.ty, declared) {
+                    acc = tc_report(acc, DiagCode.TypeMismatch, "`${fn_name}` returns `${vtype_render_full(declared)}`, but a match arm produces `${vtype_render_full(br.ty)}` (generic argument layout conflict)")
+                }
+            }
+        }
+        i = i + 1
+    }
+    acc
+}
+
 // ── Match expression type inference ──
 
 /// Unify a single arm's type against the running seed. Skipping
@@ -600,19 +633,17 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
         let arm = arms[i]
         match arm.body.node {
             .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, stmts)
-            // A non-block arm body is checked in the normal arm pass (where the
-            // arm's pattern bindings are in scope). It CANNOT be re-checked here:
-            // this return-check context lacks those bindings, so typing an arm body
+            // A non-block arm body's generic-arg conflict against the return type
+            // is handled by `tc_check_match_tail_conflict` (called from
+            // tc_check_implicit_return) — it binds the arm pattern correctly and
+            // skips arm-unification. It must NOT be re-checked HERE: this
+            // return-check context lacks the arm's bindings, so typing an arm body
             // that references a pattern var (e.g. `@std`'s own `check_stmt` has
             // `.Annotated(_, inner) -> … inner.node`) mis-resolves it and surfaces a
             // spurious error — and tc diagnostics are side-effected, so discarding
             // the probe's tc does NOT suppress them (verified: breaks
-            // pry2_return_local_binding three different ways). The implicit-tail
-            // non-block-arm conflict (`match c { _ -> Box { val: 9 } }` vs
-            // `-> Box<string>`) is therefore left to 26ql — it needs the expected
-            // type threaded into the match feature's normal arm-type pass, not a
-            // re-check here. Explicit `return match`, block arms, and match-in-let
-            // are all already covered (centralized check_expr_expected).
+            // pry2_return_local_binding three different ways). So this arm stays a
+            // no-op; the conflict for it is reported by tc_check_match_tail_conflict.
             _ -> {}
         }
         i = i + 1

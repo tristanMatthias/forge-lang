@@ -306,4 +306,26 @@ fn mk<T>(b: Box<T>) -> Wrap<T> { Wrap { inner: b } }
 fn main() { let w = mk(Box { val: 9 }) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
+    // Implicit-tail `match` STATEMENT in return position — the hardest position
+    // (tc_check_match_tail_conflict binds arm patterns correctly + skips
+    // arm-unification). Explicit `return match` and block-arm matches were
+    // already covered; these are the non-block implicit-tail arms.
+    then "a conflicting wildcard-arm match tail is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn f(c: bool) -> Box<string> { match c { _ -> Box { val: 9 } } }
+fn main() { let b = f(true) }")
+        out.contains("F1000")
+    }
+    then "a conflicting multi-arm match tail is F1000" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn f(c: bool) -> Box<string> { match c { true -> Box { val: 9 }, false -> Box { val: 8 } } }
+fn main() { let b = f(true) }")
+        out.contains("F1000")
+    }
+    then "a matching match tail still compiles (control)" {
+        let out = ei_compile_out("type Box<T> = { val: T }
+fn f(c: bool) -> Box<int> { match c { true -> Box { val: 9 }, false -> Box { val: 8 } } }
+fn main() { let b = f(true) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
 }
