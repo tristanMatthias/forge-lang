@@ -1700,6 +1700,27 @@ fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, expr: Expr) -
     }
 }
 
+/// An int value bound to a STRING slot is a wild store — the slot holds a pointer,
+/// the int does not, so a reader derefs the int (ry1a: `let y: string = id(9)`).
+/// Strips Optional so `let x: int? = 9` (inner int) is fine while `let x: string? =
+/// 9` (inner string) is flagged; an unresolved type param (`fn id<T>(x: T)`) is
+/// excluded (no settled layout). int → numeric/bool stays lenient.
+///
+/// SCOPED TO STRING on purpose. Generalizing `inner is .Str` to the full
+/// `vtype_is_ptr_layout(inner)` (struct / list / map) false-positives ~140× on the
+/// compiler's own source — NOT real wild stores but INFERENCE ARTIFACTS: typeck
+/// returns `.Int` as a fallback for expressions that are actually `List<int>` /
+/// `FnStats` / fn-typed (the "Int = unresolved inference" the check_binding skip
+/// guards). Those land in non-string ptr slots, so string was clean. Closing
+/// int→struct/list (w0kt) requires first making inference return `.Unknown`
+/// (not `.Int`) for unresolved cases.
+fn int_into_pointer_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
+    if !(arg_ty is .Int) { return false }
+    let inner = vtype_strip_optional(declared)
+    if vtype_mentions_unresolved(tc, inner) { return false }
+    inner is .Str
+}
+
 /// Type-check a `let` / `mut` / `const` binding: infer the
 /// initializer's type, verify it matches any declared annotation,
 /// and bind `name: type` into the env. `is_mut` distinguishes `mut`
@@ -1713,13 +1734,12 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
     let r = if has_annotation { check_expr_expected(tc, init, pre_declared) } else { check_expr(tc, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
-    // An int (or int literal) bound to a STRING annotation is always a type error.
-    // The everything-is-i64 leniency the `.Int` skip below preserves for numeric
-    // coercion (`let x: u8 = 5`, `let x: float = 5`) must NOT extend to strings:
-    // `let y: string = id(9)` would otherwise store the int 9 as a wild string
-    // pointer (ry1a). The return path already rejects this (vtype_assignable);
-    // mirror it for the `let` site.
-    if has_annotation && (r.ty is .Int) && (declared_ty is .Str) {
+    // An int bound to a pointer-layout annotation is a wild store (ry1a/w0kt; see
+    // int_into_pointer_slot). The everything-is-i64 leniency the `.Int` skip below
+    // preserves for numeric coercion (`let x: u8 = 5`, `let x: float = 5`) must NOT
+    // extend to string/struct/list slots. The return path already rejects this
+    // (vtype_assignable); mirror it for the `let` site.
+    if has_annotation && int_into_pointer_slot(r.tc, r.ty, declared_ty) {
         let msg = "type mismatch: expected `${vtype_render_full(declared_ty)}`, got `${vtype_render_full(r.ty)}`"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
@@ -2089,11 +2109,11 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Assign(name, value) -> {
             let v = check_expr(tc, value)
-            // Reassigning an int into a string-typed variable is the wild-pointer
-            // hole (ry1a): the var's slot is a pointer, the int isn't. (int→numeric
-            // stays lenient, matching the let site.)
+            // Reassigning an int into a pointer-layout variable is the wild-pointer
+            // hole (ry1a/w0kt): the var's slot is a pointer, the int isn't.
+            // (int→numeric stays lenient, matching the let site.)
             let var_ty = type_lookup(v.tc.types, name)
-            if (var_ty is .Str) && (v.ty is .Int) {
+            if int_into_pointer_slot(v.tc, v.ty, var_ty) {
                 let amsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}`"
                 return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, amsg), v.ty)
             }
@@ -2188,11 +2208,12 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
             let cmsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}` (generic argument layout conflict)"
             cur = tc_report(cur, DiagCode.TypeMismatch, cmsg)
         }
-        // An int (literal) passed where a string param is expected is the same
-        // wild-pointer hole as the let site (ry1a) — the callee derefs the int as
-        // a string. The default arg path otherwise type-checks only Newtype/shape
-        // params, so scalar↔string slips through. (int→numeric stays lenient.)
-        if (param_ty is .Str) && (arg_ty is .Int) {
+        // An int passed where a pointer-layout param is expected is the same
+        // wild-pointer hole as the let site (ry1a/w0kt) — the callee derefs the int.
+        // The default arg path otherwise type-checks only Newtype/shape params, so
+        // scalar↔pointer slips through. (int→numeric stays lenient; type-param and
+        // ptr/trait params are excluded inside int_into_pointer_slot.)
+        if int_into_pointer_slot(cur, arg_ty, param_ty) {
             let smsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
             cur = tc_report(cur, DiagCode.TypeMismatch, smsg)
         }

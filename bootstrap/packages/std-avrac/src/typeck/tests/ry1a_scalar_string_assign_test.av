@@ -59,6 +59,14 @@ fn main() { let x = f() }")
 fn main() { let f = Foo { s: 9 } }")
         out.contains("F1000")
     }
+    then "let: an int into a NULLABLE string slot is F1000 (Optional stripped)" {
+        let out = ry1a_out("fn main() { let x: string? = 9 }")
+        out.contains("F1000")
+    }
+    then "a nullable INT slot still accepts an int (no false positive)" {
+        let out = ry1a_out("fn main() { let x: int? = 9 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
     // Precision: int→NUMERIC coercion must STILL compile — the tightening is
     // scalar↔pointer (string) only, not a blanket int-literal lockdown.
     then "int literal still coerces to numeric annotations (no false positive)" {
