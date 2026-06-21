@@ -1701,7 +1701,7 @@ fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, expr: Expr) -
 }
 
 /// An int value bound to a STRING slot is a wild store — the slot holds a pointer,
-/// the int does not, so a reader derefs the int (ry1a: `let y: string = id(9)`).
+/// the int does not, so a reader derefs the int (e.g. `let y: string = id(9)`).
 /// Strips Optional so `let x: int? = 9` (inner int) is fine while `let x: string? =
 /// 9` (inner string) is flagged; an unresolved type param (`fn id<T>(x: T)`) is
 /// excluded (no settled layout). int → numeric/bool stays lenient.
@@ -1875,7 +1875,7 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     let body_ty = tr.ty
     // A tail `match` STATEMENT carries the fn's return value in its expression
     // arms. Conflict-check them against `declared` via the match feature, which
-    // binds the arm patterns correctly and skips arm-unification (26ql) — the
+    // binds the arm patterns correctly and skips arm-unification — the
     // non-block-arm case the explicit-return pass leaves uncovered.
     if stmts.length > 0 {
         match stmts[stmts.length - 1].node {
@@ -2554,25 +2554,19 @@ fn tc_subst_generic_method_ret(tc: TC, tp: List<TypeParamEntry>, params: List<Pa
 /// left unresolved. NEVER overrides an arg-bound param — overriding turns a wrong
 /// annotation into a layout lie: `let y: string = id(9)` would type `id(9)` as
 /// `string`, hiding the int↔string mismatch the let-binding check would otherwise
-/// catch (and mono would then store the int 9 as a wild string pointer). 26ql;
-/// mirrors the struct-side fill_unresolved_from_expected.
+/// catch (and mono would then store the int 9 as a wild string pointer). Mirrors
+/// the struct-side fill_unresolved_from_expected.
 fn tc_fill_unresolved_typeargs(tp: List<TypeParamEntry>, base: List<TypeArg>, fill: List<TypeArg>) -> List<TypeArg> {
     mut out = base
     mut i = 0
     while i < tp.length {
         let pname = tp[i].name
-        if vtype_is_unknown(tc_type_arg_lookup(base, pname)) {
-            let fv = tc_type_arg_lookup(fill, pname)
-            if !vtype_is_unknown(fv) {
-                mut next: List<TypeArg> = []
-                next.push(TypeArg { param_name: pname, concrete_vt: fv })
-                mut j = 0
-                while j < out.length {
-                    next.push(out[j])
-                    j = j + 1
-                }
-                out = next
-            }
+        let fv = tc_type_arg_lookup(fill, pname)
+        // Fill from `fill` only when the args left this param unresolved and the
+        // expected side actually bound it. tc_unify cons-prepends the binding (the
+        // mono twin does the same via unify_param).
+        if vtype_is_unknown(tc_type_arg_lookup(base, pname)) && !vtype_is_unknown(fv) {
+            out = tc_unify(tp, vtype_struct(pname, 0), fv, out)
         }
         i = i + 1
     }
@@ -2583,7 +2577,7 @@ fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: 
     if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
     let arg_bindings = tc_infer_type_args(tc, tp, params, args, empty)
-    // Fill-only (26ql): the expected return type may only resolve params the ARGS
+    // Fill-only: the expected return type may only resolve params the ARGS
     // left unresolved (the so07.7.15 gap-fill, e.g. `let xs: List<int> = empty()`),
     // never override an arg-bound one. Unify ret_ty against expected into a FRESH
     // acc, then fill only the gaps — so `id(9)` stays `int` and the let/return

@@ -524,7 +524,7 @@ export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) 
 /// wrongly reject that. Block arms carry their own `return`s (validated by
 /// tc_check_explicit_returns) and are skipped. Re-typing the arm bodies is
 /// redundant work but produces no new diagnostics on valid code, so it can't
-/// double-report. 26ql.
+/// double-report.
 export fn tc_check_match_tail_conflict(tc: TC, fn_name: string, subject: Expr, arms: List<MatchArm>, declared: ValueType) -> TC {
     let subject_ty = check_expr(tc, subject).ty
     mut acc = tc

@@ -715,7 +715,7 @@ fn infer_from_params(regs: GenRegs, tp: List<TypeParamEntry>, params: List<Param
 /// matches the instantiation registered earlier.
 /// Fill-only merge for the fn side: keep every param `base` bound from the ARGS,
 /// add an expected-derived binding from `fill` ONLY for params the args left
-/// unresolved. Never overrides an arg-bound param (26ql) — the mono twin of the
+/// unresolved. Never overrides an arg-bound param — the mono twin of the
 /// typeck-side tc_fill_unresolved_typeargs and the struct-side
 /// fill_unresolved_from_expected. (Moot for safety now that typeck rejects the
 /// conflict before mono, but kept consistent + byte-identical on valid programs.)
@@ -737,7 +737,7 @@ fn infer_from_params_with_expected(regs: GenRegs, tp: List<TypeParamEntry>, para
     if vtype_is_unknown(expected) { return arg_ta }
     // Fill-only: unify ret_vt against expected into a fresh acc, then fill only the
     // params the args left unresolved (the so07.7.16 return-position gap-fill)
-    // without overriding an arg-bound one. 26ql.
+    // without overriding an arg-bound one.
     let empty: List<TypeArg> = []
     let exp_only = unify_param(tp, ret_vt, expected, empty)
     fill_unresolved_typeargs(tp, arg_ta, exp_only)
