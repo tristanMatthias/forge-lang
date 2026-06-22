@@ -2129,6 +2129,13 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
             if generic_args_layout_conflict(r.tc, r.ty, exp) {
                 let msg = "expression of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(exp)}` (generic argument layout conflict)"
                 tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
+            } else if collection_into_value_scalar_slot(r.tc, r.ty, exp) {
+                // A `List`/`Map` VALUE (not just a literal) into a value-scalar
+                // slot is a wild store — `let x: int = xs` stores a list ptr in
+                // an int cell. The .ListLit/.MapLit arms cover the literal form;
+                // this covers idents, calls, and any other collection-typed expr.
+                let msg = "a ${if r.ty is .List { "list" } else { "map" }} value cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
             } else {
                 r
             }
@@ -2206,7 +2213,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
                 let gmsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}` (generic argument layout conflict)"
                 return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, gmsg), v.ty)
             }
-            if int_into_pointer_slot(v.tc, v.ty, var_ty) {
+            if int_into_pointer_slot(v.tc, v.ty, var_ty) || collection_into_value_scalar_slot(v.tc, v.ty, var_ty) {
                 let amsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}`"
                 return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, amsg), v.ty)
             }
@@ -3070,8 +3077,11 @@ fn check_collection_value_arg(tc: TC, arg_types: List<ValueType>, method: string
     let idx = if method == "push" { 0 } else if (method == "set") || (method == "insert") { 1 } else { -1 }
     if idx < 0 || idx >= arg_types.length { return tc }
     let vt = arg_types[idx]
-    if generic_args_layout_conflict(tc, vt, elem) || int_into_pointer_slot(tc, vt, elem) || collection_into_value_scalar_slot(tc, vt, elem) {
+    if generic_args_layout_conflict(tc, vt, elem) {
         return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (generic argument layout conflict)")
+    }
+    if int_into_pointer_slot(tc, vt, elem) || collection_into_value_scalar_slot(tc, vt, elem) {
+        return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (scalar/pointer layout conflict)")
     }
     tc
 }

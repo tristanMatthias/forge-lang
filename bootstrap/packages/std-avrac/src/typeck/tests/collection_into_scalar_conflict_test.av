@@ -32,6 +32,18 @@ spec "a collection/map literal into a value-scalar slot is rejected (a85d)" {
         let out = cs_out("fn main() { let b: bool = {\"k\": 1} }")
         out.contains("F1000")
     }
+    then "a list VARIABLE into an int slot is F1000 (non-literal path)" {
+        let out = cs_out("fn main() { let xs: List<int> = [1]  let x: int = xs }")
+        out.contains("F1000")
+    }
+    then "a map VARIABLE into an int slot is F1000 (non-literal path)" {
+        let out = cs_out("fn main() { let m: Map<string, int> = {\"a\": 1}  let x: int = m }")
+        out.contains("F1000")
+    }
+    then "reassigning a list literal into an int var is F1000" {
+        let out = cs_out("fn main() { mut x: int = 0  x = [1] }")
+        out.contains("F1000")
+    }
 }
 
 spec "valid collection bindings still compile (a85d — no false positives)" {
@@ -49,6 +61,14 @@ spec "valid collection bindings still compile (a85d — no false positives)" {
     }
     then "a nested list-of-lists compiles (inner lists aren't scalar slots)" {
         let out = cs_out("fn main() { let xs: List<List<int>> = [[1], [2]] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list variable into a List slot compiles (no false positive on the non-literal path)" {
+        let out = cs_out("fn main() { let xs: List<int> = [1]  let ys: List<int> = xs }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "reassigning an int var to an int compiles (no false positive)" {
+        let out = cs_out("fn main() { mut x: int = 0  x = 5 }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
