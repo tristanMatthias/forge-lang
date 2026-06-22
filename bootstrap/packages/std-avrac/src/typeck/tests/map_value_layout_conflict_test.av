@@ -46,6 +46,12 @@ fn main() { let m = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: 9 }} }")
 fn main() { let m: Map<string, Box<int>> = {\"k\": Box { val: \"x\" }} }")
         out.contains("F1000")
     }
+    then "a conflict hidden behind a map-value type ALIAS is caught (resolve_vtype recurses into Map)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+type Email = string
+fn main() { let m: Map<string, Box<Email>> = {\"k\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
     then "a conflict nested in a List-typed map value is caught (recursion through Map then List)" {
         let out = m63wu_out("type Box<T> = { val: T }
 fn main() { let m: Map<string, List<Box<string>>> = {\"k\": [Box { val: 9 }]} }")

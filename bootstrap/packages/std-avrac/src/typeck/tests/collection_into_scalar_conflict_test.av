@@ -59,12 +59,6 @@ fn main() { let s = S { n: [1] } }")
 fn main() { mut s = S { n: 0 }  s.n = [1] }")
         out.contains("F1000")
     }
-    then "a conflict hidden behind a Map value ALIAS is caught (resolve_vtype Map)" {
-        let out = cs_out("type Box<T> = { val: T }
-type Email = string
-fn main() { let m: Map<string, Box<Email>> = {\"k\": Box { val: 9 }} }")
-        out.contains("F1000")
-    }
 }
 
 spec "valid collection bindings still compile (a85d — no false positives)" {
