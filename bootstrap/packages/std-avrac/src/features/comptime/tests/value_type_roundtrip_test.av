@@ -81,6 +81,7 @@ spec "ValueType.Map(.Str, .Int) survives quote roundtrip" {
             MAIN_HEADER + " {\n" +
             "}\n")
         out.contains("fn _gen_map")
+            && out.contains("-> Map<string, int>")
             && !out.contains("_gen_map() -> <unknown>")
     }
 }
