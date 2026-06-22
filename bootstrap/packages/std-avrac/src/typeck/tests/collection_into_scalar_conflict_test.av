@@ -1,0 +1,54 @@
+// WHY: regression for a85d — a list/map literal (always a pointer) assigned to a
+// VALUE-SCALAR slot (int/float/bool/…) was silently accepted: `let x: int =
+// [1,2]` / `let x: int = {"k":1}` stored a pointer in a scalar cell — the
+// inverse of the ry1a scalar→ptr hole. check_expr_expected's .ListLit/.MapLit
+// arms now reject a value-scalar expected type. Non-scalar pointer slots (e.g.
+// `string`) are a nominal mismatch handled elsewhere, so only value scalars are
+// gated here — which is what keeps the check free of false positives.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn cs_out(source: string) -> string {
+    let path = "/tmp/avra_collection_into_scalar.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a collection/map literal into a value-scalar slot is rejected (a85d)" {
+    then "a list literal into an int slot is F1000" {
+        let out = cs_out("fn main() { let x: int = [1, 2] }")
+        out.contains("F1000")
+    }
+    then "a map literal into an int slot is F1000" {
+        let out = cs_out("fn main() { let x: int = {\"k\": 1} }")
+        out.contains("F1000")
+    }
+    then "a list literal into a float slot is F1000" {
+        let out = cs_out("fn main() { let x: float = [1] }")
+        out.contains("F1000")
+    }
+    then "a map literal into a bool slot is F1000" {
+        let out = cs_out("fn main() { let b: bool = {\"k\": 1} }")
+        out.contains("F1000")
+    }
+}
+
+spec "valid collection bindings still compile (a85d — no false positives)" {
+    then "a list literal into a List slot compiles" {
+        let out = cs_out("fn main() { let xs: List<int> = [1, 2] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a map literal into a Map slot compiles" {
+        let out = cs_out("fn main() { let m: Map<string, int> = {\"k\": 1} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an unannotated list literal compiles" {
+        let out = cs_out("fn main() { let x = [1, 2]  let _ = x.length }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a nested list-of-lists compiles (inner lists aren't scalar slots)" {
+        let out = cs_out("fn main() { let xs: List<List<int>> = [[1], [2]] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

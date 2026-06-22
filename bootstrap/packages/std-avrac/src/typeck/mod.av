@@ -2050,8 +2050,24 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
     // return type instead of seeing `Optional` and decaying to Unknown.
     let exp = vtype_strip_optional(expected)
     match expr {
-        .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
-        .MapLit(entries) -> check_map_lit_with_expected(tc, entries, vtype_map_value(exp))
+        // A list/map literal (always a pointer) meeting a VALUE-SCALAR expected
+        // type (int/float/bool/…) is the inverse of the ry1a scalar→ptr hole:
+        // a pointer stored in a scalar slot. `let x: int = [1,2]` / `{"k":1}`
+        // were silently accepted (a85d). Still check the elements first so
+        // errors inside the literal surface too. (Non-scalar pointer slots like
+        // `string` are a nominal mismatch handled elsewhere, not a layout one.)
+        .ListLit(elements) -> {
+            let r = check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
+            if vtype_is_value_scalar(exp) {
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a list literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
+            } else { r }
+        }
+        .MapLit(entries) -> {
+            let r = check_map_lit_with_expected(tc, entries, vtype_map_value(exp))
+            if vtype_is_value_scalar(exp) {
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a map literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
+            } else { r }
+        }
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, callee, args, exp)
             // A call returning a concrete generic instance that conflicts with the
