@@ -84,26 +84,41 @@ export fn check_struct_lit_fields(tc: TC, name: string, inits: List<FieldInit>) 
             if !tc_field_exists(fields, init.name) {
                 acc = tc_report(acc, DiagCode.TypeMismatch, "no field `${init.name}` on type `${name}`")
             } else {
-                let fty = field_type_in(acc, fields, init.name)
-                // Only flag a string↔non-string scalar mismatch (numeric/bool
-                // interchange is deliberately tolerated — the bootstrap stores
-                // bools in int fields).
-                let cross_str = vtype_is_string_like(fty) != vtype_is_string_like(r.ty)
-                if vtype_is_scalar(fty) && vtype_is_scalar(r.ty) && cross_str && !vtype_assignable(r.ty, fty) {
-                    acc = tc_report(acc, DiagCode.TypeMismatch, "field `${init.name}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(r.ty)}`")
-                }
-                // Layout-incompatible generic field (`Outer { inner: Box { val: 9 } }`
-                // where `inner: Box<string>`): vtype_eq ignores generic args, so the
-                // scalar check (Box is not scalar) misses it, but a Box<int> in a
-                // Box<string> slot lets a reader deref an int as a pointer.
-                if generic_args_layout_conflict(acc, r.ty, fty) {
-                    acc = tc_report(acc, DiagCode.TypeMismatch, "field `${init.name}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(r.ty)}` (generic argument layout conflict)")
-                }
+                acc = check_one_field_ty(acc, name, fields, init.name, r.ty)
             }
         }
         i = i + 1
     }
     acc
+}
+
+/// Validate ONE field's value against its declared type: a string↔non-string
+/// scalar mismatch (numeric/bool interchange tolerated — the bootstrap stores
+/// bools in int fields) OR a generic-arg layout conflict (`Box<int>` into a
+/// `Box<string>` field — vtype_eq ignores generic args, so a reader would deref
+/// the int as a pointer). Assumes the field exists (callers gate that). Shared
+/// by struct-literal fields and direct field assignment (tokv).
+export fn check_one_field_ty(tc: TC, name: string, fields: List<FieldEntry>, field: string, value_ty: ValueType) -> TC {
+    let fty = field_type_in(tc, fields, field)
+    mut acc = tc
+    let cross_str = vtype_is_string_like(fty) != vtype_is_string_like(value_ty)
+    if vtype_is_scalar(fty) && vtype_is_scalar(value_ty) && cross_str && !vtype_assignable(value_ty, fty) {
+        acc = tc_report(acc, DiagCode.TypeMismatch, "field `${field}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(value_ty)}`")
+    }
+    if generic_args_layout_conflict(acc, value_ty, fty) {
+        acc = tc_report(acc, DiagCode.TypeMismatch, "field `${field}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(value_ty)}` (generic argument layout conflict)")
+    }
+    acc
+}
+
+/// Validate a direct field assignment `obj.field = value` (tokv) — the single-
+/// field analog of check_struct_lit_fields. Skips when the struct/field isn't
+/// resolved (unknown-field assignment is reported on the resolve/access path).
+export fn check_field_assign_ty(tc: TC, name: string, field: string, value_ty: ValueType) -> TC {
+    let fields = struct_type_lookup(tc.structs, name)
+    if fields.length == 0 { return tc }
+    if !tc_field_exists(fields, field) { return tc }
+    check_one_field_ty(tc, name, fields, field, value_ty)
 }
 
 /// True for the string-category scalars (`string` / `bytes`), which

@@ -1,0 +1,56 @@
+// WHY: regression for tokv — a direct field assignment `obj.field = value` did
+// not typecheck the value against the field's declared type. field_assign_check_expr
+// checked obj + value but never compared them (it even destructured the field
+// name away as `_`), so `s.b = Box{val:9}` on `b: Box<string>` (or `s.name = 9`
+// on a string field) stored the wrong layout in the slot — a wild store, the
+// direct-assignment twin of with-update (lb81) and struct-literal field checking.
+// It now routes through check_field_assign_ty → check_one_field_ty, the shared
+// single-field check extracted from check_struct_lit_fields.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn fa_out(source: string) -> string {
+    let path = "/tmp/avra_field_assign_conflict.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "field assignment validates the value against the field type (tokv)" {
+    then "a generic-arg conflict (Box<int> into a Box<string> field) is F1000" {
+        let out = fa_out("type Box<T> = { val: T }
+type S = { b: Box<string> }
+fn main() { mut s = S { b: Box { val: \"ok\" } }  s.b = Box { val: 9 } }")
+        out.contains("F1000")
+    }
+    then "a scalar string mismatch (int into a string field) is F1000" {
+        let out = fa_out("type S = { name: string, n: int }
+fn main() { mut s = S { name: \"a\", n: 1 }  s.name = 9 }")
+        out.contains("F1000")
+    }
+    then "a conflict in a List-typed field is F1000" {
+        let out = fa_out("type Box<T> = { val: T }
+type S = { xs: List<Box<string>> }
+fn main() { mut s = S { xs: [Box { val: \"ok\" }] }  s.xs = [Box { val: 9 }] }")
+        out.contains("F1000")
+    }
+}
+
+spec "valid field assignments still compile (tokv — no false positives)" {
+    then "a matching generic value compiles" {
+        let out = fa_out("type Box<T> = { val: T }
+type S = { b: Box<string> }
+fn main() { mut s = S { b: Box { val: \"ok\" } }  s.b = Box { val: \"y\" } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a matching string value compiles" {
+        let out = fa_out("type S = { name: string }
+fn main() { mut s = S { name: \"a\" }  s.name = \"b\" }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "numeric interchange into an int field is tolerated" {
+        let out = fa_out("type S = { n: int }
+fn main() { mut s = S { n: 1 }  s.n = 5 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
