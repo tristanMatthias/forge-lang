@@ -19,14 +19,19 @@ export fn emit_map_lit(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>) ->
 /// produced malformed input).
 fn insert_map_entries(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>, map: ptr) -> Result<EmitValue, string> {
     mut i = 0
+    mut val_ty: ValueType = .Unknown
     while i < entries.length {
         let key_r = ctx.emit(env, entries[i].node)?
         if i + 1 >= entries.length { return err_emit("map literal has key without value") }
         let val_r = ctx.emit(env, entries[i + 1].node)?
+        // Pin the literal's value type from the FIRST entry, matching the
+        // type checker (map_lit_check_expr) so the emitted Map<string, V>
+        // type agrees across phases.
+        if i == 0 { val_ty = val_r.ty }
         ctx.call("avra_map_set_cstr", [map, ctx.to_ptr(key_r.value, "map_key"), val_r.value])
         i = i + 2
     }
-    ok_emit(map, .Map)
+    ok_emit(map, .Map(.Str, val_ty))
 }
 
 /// Dispatch a method call on a Map value. Maps method names to
@@ -63,5 +68,5 @@ fn emit_map_set(ctx: Ctx, env: List<VarBinding>, map: ptr, args: List<SExpr>) ->
     let val_r = ctx.emit(env, args[1].node)?
     let key_ptr = ctx.to_ptr(key_r.value, "set_key")
     ctx.call("avra_map_set_cstr", [map, key_ptr, val_r.value])
-    ok_emit(map, .Map)
+    ok_emit(map, .Map(.Str, val_r.ty))
 }

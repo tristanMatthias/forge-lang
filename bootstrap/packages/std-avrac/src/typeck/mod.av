@@ -3,14 +3,14 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
 use features.channels.{check_channel_method}
 use features.list_lit.{check_list_method, check_list_lit_with_expected}
-use features.map_lit.{check_map_method}
+use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts}
@@ -950,6 +950,11 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             ValueType.Enum(name, resolved_args, 0)
         }
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
+        // Resolve a Map's key + value (mirrors List/Tuple/Optional): without
+        // this a `Map<string, Email>` value stays an unresolved nominal shell,
+        // so the map-value layout check compares against `Unknown` and SKIPS a
+        // real conflict (`Map<string, Box<Email>> = {Box<int>}` slipped).
+        .Map(key, value) -> ValueType.Map(resolve_vtype(tc, key), resolve_vtype(tc, value))
         .Union(types) -> ValueType.Union(resolve_vtype_list(tc, types))
         .FnTyped(params, ret) -> ValueType.FnTyped(resolve_vtype_list(tc, params), resolve_vtype(tc, ret))
         // Shortcut #6: recurse into Tuple element types. Without
@@ -1650,15 +1655,47 @@ export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bo
         let eb = vtype_list_elem(b)
         return settled_layout_conflict(tc, ea, eb) || generic_args_layout_conflict(tc, ea, eb)
     }
-    if (a is .Optional) && (b is .Optional) {
+    // Maps carry key+value types that `vtype_type_args` doesn't expose either, so
+    // recurse through a matching `Map` shell — catches a conflict nested in a map
+    // value (`Map<string, Box<int>>` vs `Map<string, Box<string>>`, 63wu) the same
+    // way the List branch handles list elements.
+    if (a is .Map) && (b is .Map) {
+        let ka = vtype_map_key(a)
+        let kb = vtype_map_key(b)
+        let va = vtype_map_value(a)
+        let vb = vtype_map_value(b)
+        return settled_layout_conflict(tc, ka, kb) || generic_args_layout_conflict(tc, ka, kb) ||
+               settled_layout_conflict(tc, va, vb) || generic_args_layout_conflict(tc, va, vb)
+    }
+    // Tuples carry element types `vtype_type_args` doesn't expose, so recurse
+    // pairwise. Without this, ANY layout conflict is bypassed by tuple-wrapping —
+    // even a bare scalar↔ptr: `let t: (int, string) = (1, 9)` would store int 9
+    // in the string slot (a wild pointer read) yet compile clean.
+    if (a is .Tuple) && (b is .Tuple) {
+        return type_list_layout_conflict(tc, vtype_tuple_elems(a), vtype_tuple_elems(b))
+    }
+    // Nullable widening: a value of type `T` satisfies an expected `T?`, so a
+    // real conflict can hide under a ONE-SIDED Optional (a `Box<int>` value into
+    // a `Box<string>?` slot — same pointer-niche layout, but the inner field is
+    // int-vs-ptr). Strip Optional from whichever side carries it and compare the
+    // inner types: `T` conflicts with `U?` exactly when `T` conflicts with `U`.
+    // Catches the nullable container-value hole uniformly for List elements, Map
+    // values, and struct fields. (The top-level annotation's own Optional is
+    // already stripped by check_expr_expected; this covers the nested ones.)
+    if (a is .Optional) || (b is .Optional) {
         let ea = vtype_strip_optional(a)
         let eb = vtype_strip_optional(b)
         return settled_layout_conflict(tc, ea, eb) || generic_args_layout_conflict(tc, ea, eb)
     }
     let na = vtype_nominal_name(a)
     if na == "" || na != vtype_nominal_name(b) { return false }
-    let aa = vtype_type_args(a)
-    let ba = vtype_type_args(b)
+    type_list_layout_conflict(tc, vtype_type_args(a), vtype_type_args(b))
+}
+
+/// Pairwise layout-conflict over two type lists — nominal generic args or tuple
+/// elements: a settled scalar↔ptr mismatch OR a deeper nested conflict in any
+/// aligned pair. Length-tolerant (compares the shorter arity).
+fn type_list_layout_conflict(tc: TC, aa: List<ValueType>, ba: List<ValueType>) -> bool {
     let n = if aa.length < ba.length { aa.length } else { ba.length }
     mut i = 0
     while i < n {
@@ -1736,6 +1773,21 @@ export fn int_into_pointer_slot(tc: TC, arg_ty: ValueType, declared: ValueType) 
     let inner = vtype_strip_optional(declared)
     if vtype_mentions_unresolved(tc, inner) { return false }
     inner is .Str || inner is .Bytes
+}
+
+/// The inverse of `int_into_pointer_slot`: a COLLECTION value (a `List` / `Map`
+/// literal — always a pointer) flowing into a VALUE-SCALAR slot (int/float/bool/…)
+/// is a wild store, a pointer stored in a scalar cell (`Map<string,int>.set(k, {…})`
+/// stores a map ptr in an int slot; `List<int>.push([…])` likewise). Restricted to
+/// List/Map args on purpose: it is the concrete "collection literal into a scalar
+/// cell" case, which keeps the check free of false positives on `null`/`void`
+/// (valid for nullable slots), `Optional` args, and newtype wrappers. The slot's
+/// own `Optional` is stripped (`int?` is still a scalar cell), unresolved slots skip.
+export fn collection_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
+    if !((arg_ty is .List) || (arg_ty is .Map)) { return false }
+    let slot = vtype_strip_optional(declared)
+    if vtype_mentions_unresolved(tc, slot) { return false }
+    vtype_is_value_scalar(slot)
 }
 
 /// Type-check a `let` / `mut` / `const` binding: infer the
@@ -2006,6 +2058,19 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 
 // ── Expression checking ──
 
+/// Reject an already-checked collection literal (`list` / `map`) bound to a
+/// VALUE-SCALAR slot (int/float/bool/…): a collection is always a pointer, so
+/// storing it in a scalar cell is a layout lie (the inverse of the scalar→ptr
+/// hole). Wraps the literal's result, reporting F1000 only for the value-scalar
+/// case — non-scalar pointer slots (`string`) are a nominal mismatch elsewhere.
+/// `kind` is the literal word for the message ("list" / "map").
+fn reject_collection_into_value_scalar(r: ExprResult, exp: ValueType, kind: string) -> ExprResult {
+    if vtype_is_value_scalar(exp) {
+        return tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a ${kind} literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
+    }
+    r
+}
+
 /// Bidirectional variant of `check_expr`: threads the caller's
 /// `expected` type down so generic constructors / calls can pin
 /// type-args from the return position. ListLit consumes it as an
@@ -2018,7 +2083,15 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
     // return type instead of seeing `Optional` and decaying to Unknown.
     let exp = vtype_strip_optional(expected)
     match expr {
-        .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
+        // A list/map literal (always a pointer) meeting a VALUE-SCALAR expected
+        // type (int/float/bool/…) is the inverse of the ry1a scalar→ptr hole:
+        // a pointer stored in a scalar slot. `let x: int = [1,2]` / `{"k":1}`
+        // were silently accepted (a85d). The elements are checked first so
+        // errors inside the literal surface too; `reject_collection_into_value_scalar`
+        // then rejects only the value-scalar slot (a non-scalar pointer slot like
+        // `string` is a nominal mismatch handled elsewhere, not a layout one).
+        .ListLit(elements) -> reject_collection_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
+        .MapLit(entries) -> reject_collection_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, callee, args, exp)
             // A call returning a concrete generic instance that conflicts with the
@@ -2027,6 +2100,12 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
             // whose return type is still being inferred safe.
             if generic_args_layout_conflict(r.tc, r.ty, exp) {
                 let msg = "call result of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(exp)}` (generic argument layout conflict)"
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
+            } else if collection_into_value_scalar_slot(r.tc, r.ty, exp) {
+                // A call returning a List/Map into a value-scalar slot
+                // (`let x: int = make_list()`) — the dedicated .Call arm returns
+                // before the `_` fallthrough, so apply the guard here too.
+                let msg = "a ${if r.ty is .List { "list" } else { "map" }} value cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"
                 tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
             } else {
                 r
@@ -2060,6 +2139,13 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
             // `generic_args_layout_conflict` keeps valid generic code safe.
             if generic_args_layout_conflict(r.tc, r.ty, exp) {
                 let msg = "expression of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(exp)}` (generic argument layout conflict)"
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
+            } else if collection_into_value_scalar_slot(r.tc, r.ty, exp) {
+                // A `List`/`Map` VALUE (not just a literal) into a value-scalar
+                // slot is a wild store — `let x: int = xs` stores a list ptr in
+                // an int cell. The .ListLit/.MapLit arms cover the literal form;
+                // this covers idents, calls, and any other collection-typed expr.
+                let msg = "a ${if r.ty is .List { "list" } else { "map" }} value cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"
                 tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
             } else {
                 r
@@ -2138,7 +2224,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
                 let gmsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}` (generic argument layout conflict)"
                 return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, gmsg), v.ty)
             }
-            if int_into_pointer_slot(v.tc, v.ty, var_ty) {
+            if int_into_pointer_slot(v.tc, v.ty, var_ty) || collection_into_value_scalar_slot(v.tc, v.ty, var_ty) {
                 let amsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}`"
                 return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, amsg), v.ty)
             }
@@ -2242,6 +2328,14 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
             let smsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
             cur = tc_report(cur, DiagCode.TypeMismatch, smsg)
         }
+        // NOTE: a collection-into-value-scalar check (`take_int(xs)`) is
+        // deliberately NOT applied at the parameter position. Extern C bindings
+        // use `int` as an i64-legacy generic value slot — e.g.
+        // `extern fn avra_map_set_cstr(map, key, value: int)` legitimately
+        // receives a `List`/`Map` value — so the guard mass-false-positives here.
+        // Closing this safely needs an extern/i64-legacy-aware param check
+        // (tracked separately); the let / reassign / field / call positions are
+        // real typed slots and ARE guarded.
         i = i + 1
     }
     cur
@@ -2292,6 +2386,15 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
             let a0 = vtype_strip_optional(aty)
             if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) {
                 let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}`"
+                cur = tc_report(cur, DiagCode.TypeMismatch, msg)
+            } else if generic_args_layout_conflict(cur, aty, fty) {
+                // Same representation class (both ptr) but conflicting generic args —
+                // a `Box<int>` payload where `Box<string>` is declared is a layout
+                // lie (the Box's inner field is int-vs-ptr). Mirrors the
+                // generic-arg conflict checks at let / fn-arg / struct-field
+                // positions (q6p4). Generic-payload enums (`Box<T>` still generic
+                // at ctor-check time) are skipped above and tracked as enwi.
+                let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}` (generic argument layout conflict)"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
         }
@@ -2661,6 +2764,18 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
             .Task(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
             _ -> acc
         }
+        // Bind K and V from a `Map<K, V>` arg — the typeck twin of mono's
+        // unify_param Map branch. Without this, a generic fn over a map
+        // (`fn f<V>(m: Map<string, V>) -> Map<string, V>`) never resolves V
+        // from the arg, so the call's return type stays generic and a
+        // conflicting `let n: Map<string, string> = f(int_map)` escapes.
+        .Map(p_key, p_val) -> match arg_ty {
+            .Map(a_key, a_val) -> {
+                let acc1 = tc_unify(tp, p_key, a_key, acc)
+                tc_unify(tp, p_val, a_val, acc1)
+            }
+            _ -> acc
+        }
         // Unify `T?` param against `U?` arg (inner-to-inner) or against a
         // bare `U` arg (auto-widen — a present `U` satisfies `T?`).
         .Optional(p_inner) -> match arg_ty {
@@ -2784,10 +2899,23 @@ fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
 /// `none` is `List<T?>` — re-wrap so the fast-path agrees with `emit_list_lit`.
 fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
-    let first = elements[0]
-    let r = check_expr(tc, first.node)
-    let base = if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
-    list_lit_optionalize(elements, base)
+    list_lit_optionalize(elements, tc_expr_or_lit_ty(tc, elements[0].node))
+}
+
+/// Type of an expr node, falling back to literal-shape inference when the
+/// checker returns `Unknown` (a bare literal whose type the surrounding context
+/// pins). Shared by the quick-type inference for list elements and map values.
+fn tc_expr_or_lit_ty(tc: TC, node: Expr) -> ValueType {
+    let r = check_expr(tc, node)
+    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(node) } else { r.ty }
+}
+
+/// First map VALUE type for quick `MapLit` typing — the value analog of
+/// `tc_first_elem_ty`. entries = [k0, v0, k1, v1, ...] so the first value
+/// is at index 1; empty literals are `Unknown`.
+fn tc_first_map_value_ty(tc: TC, entries: List<SExpr>) -> ValueType {
+    if entries.length < 2 { return ValueType.Unknown }
+    tc_expr_or_lit_ty(tc, entries[1].node)
 }
 
 /// Substitute every T occurrence in `ty` with the binding from
@@ -2956,9 +3084,31 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
 /// Type-check `obj.method(args)`: dispatch to type-specific
 /// method tables (List / Map built-ins) or fall back to user-
 /// defined impl blocks looked up by mangled name.
+/// Guard a collection MUTATION method's value arg against the element/value
+/// type — `push(v)` / `set(i,v)` / `insert(i,v)` / map `set(k,v)` value args
+/// were previously unchecked (ibjo), so a `Box<int>` into a `List<Box<string>>`
+/// (or a map value slot) compiled as a wild store. The value-arg position is
+/// method-dependent (push: 0; set/insert: 1 — after the index/key). Reuses the
+/// same generic-arg + scalar↔ptr predicates as the let/fn-arg/field positions.
+/// `arg_types` are precomputed (check_method_call already checked the args once),
+/// so this re-checks nothing and can't double-report.
+fn check_collection_value_arg(tc: TC, arg_types: List<ValueType>, method: string, elem: ValueType) -> TC {
+    let idx = if method == "push" { 0 } else if (method == "set") || (method == "insert") { 1 } else { -1 }
+    if idx < 0 || idx >= arg_types.length { return tc }
+    let vt = arg_types[idx]
+    if generic_args_layout_conflict(tc, vt, elem) {
+        return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (generic argument layout conflict)")
+    }
+    if int_into_pointer_slot(tc, vt, elem) || collection_into_value_scalar_slot(tc, vt, elem) {
+        return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (scalar/pointer layout conflict)")
+    }
+    tc
+}
+
 export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
     let o = check_expr(tc, obj)
-    let checked_args = check_expr_list(o.tc, args)
+    let ca = check_expr_list_types(o.tc, args)
+    let checked_args = ca.tc
 
     // String methods
     if vtype_eq(o.ty, .Str) {
@@ -2986,12 +3136,15 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
 
     // List methods — dispatched to features/list_lit/typeck.av
     if o.ty is .List {
-        return check_list_method(checked_args, vtype_list_elem(o.ty), method, args)
+        let elem = vtype_list_elem(o.ty)
+        // ibjo: guard push/set/insert value args against the element type.
+        return check_list_method(check_collection_value_arg(checked_args, ca.types, method, elem), elem, method, args)
     }
 
     // Map methods — dispatched to features/map_lit/typeck.av
-    if vtype_eq(o.ty, .Map) {
-        return check_map_method(checked_args, method)
+    if o.ty is .Map {
+        // ibjo: guard set's value arg against the map's value type.
+        return check_map_method(check_collection_value_arg(checked_args, ca.types, method, vtype_map_value(o.ty)), method)
     }
 
     // Channel methods — dispatched to features/channels/typeck.av
@@ -3430,7 +3583,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
             } else { check_expr(tc, se.node).ty }
         }
         .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
-        .MapLit(_) -> ValueType.Map
+        .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, entries))
         // Build the tuple type from the already-annotated elements'
         // stamped `.ty` (annotate_expr recursed into them). Typing the
         // literal as an empty Tuple lost the element types, which broke

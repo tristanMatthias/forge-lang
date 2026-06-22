@@ -262,10 +262,10 @@ export fn sym_id_for(qualified_name: string) -> int {
 // Magic bytes: ASCII "AVMD" in little-endian u32.
 export const METADATA_MAGIC: int = 0x444D5641
 export const METADATA_VERSION_MAJOR: int = 1
-// Minor 2: added the VT_OPTIONAL type tag (`T?` ≡ Option<T>). Backward-
-// compatible additive change; the compiler-binary fingerprint already
-// invalidates stale caches, but the bump records the format evolution.
-export const METADATA_VERSION_MINOR: int = 2
+// Minor 3: VT_MAP now carries key + value ValueType payloads (was a payloadless
+// tag). The compiler-binary fingerprint already invalidates stale caches, but
+// the bump records the wire-format evolution.
+export const METADATA_VERSION_MINOR: int = 3
 
 /// Stable section IDs. Kept in this enum so the byte values are
 /// pinned — adding a new section appends; never reorder or reuse a
@@ -401,7 +401,11 @@ impl BytesWriter {
             .Str -> self.u8(VT_STR)
             .Bytes -> self.u8(VT_BYTES)
             .Ptr -> self.u8(VT_PTR)
-            .Map -> self.u8(VT_MAP)
+            .Map(k, v) -> {
+                self.u8(VT_MAP)
+                self.vtype(k)
+                self.vtype(v)
+            }
             .Void -> self.u8(VT_VOID)
             .U8 -> self.u8(VT_U8)
             .U16 -> self.u8(VT_U16)
@@ -610,7 +614,11 @@ impl BytesReader {
         if tag == VT_STR { return ValueType.Str }
         if tag == VT_BYTES { return ValueType.Bytes }
         if tag == VT_PTR { return ValueType.Ptr }
-        if tag == VT_MAP { return ValueType.Map }
+        if tag == VT_MAP {
+            let k = self.vtype()
+            let v = self.vtype()
+            return ValueType.Map(k, v)
+        }
         if tag == VT_VOID { return ValueType.Void }
         if tag == VT_U8 { return ValueType.U8 }
         if tag == VT_U16 { return ValueType.U16 }

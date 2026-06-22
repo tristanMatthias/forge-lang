@@ -1,0 +1,34 @@
+// WHY: the metadata codec (BytesWriter/BytesReader `.vtype`) must round-trip
+// container ValueTypes including `Map(key, value)` — the encoder writes the
+// VT_MAP tag then recursively encodes key + value, and the decoder reads them
+// back (the Map analog of the VT_LIST arm). No exported @std / compiler
+// signature currently carries a `Map`, so without this the Map codec arm would
+// ship untested even though every package build round-trips its metadata.
+
+use @std.avrac.build.{writer_new, reader_new}
+use @std.avrac.core.{ValueType, vtype_render_full}
+
+// Encode a ValueType through the writer, decode it back through the reader, and
+// render the result — a string-equality assertion is byte-for-byte enough since
+// vtype_render_full is injective over the structure under test.
+fn rt(vt: ValueType) -> string {
+    let w = writer_new()
+    w.vtype(vt)
+    let r = reader_new(w.finish())
+    vtype_render_full(r.vtype())
+}
+
+spec "metadata codec round-trips Map(key, value)" {
+    then "Map<string, int> survives the round-trip" {
+        rt(ValueType.Map(ValueType.Str, ValueType.Int)) == "Map<string, int>"
+    }
+    then "a list-typed map value round-trips (Map<string, List<int>>)" {
+        rt(ValueType.Map(ValueType.Str, ValueType.List(ValueType.Int))) == "Map<string, List<int>>"
+    }
+    then "a map-in-map value round-trips (Map<string, Map<string, bool>>)" {
+        rt(ValueType.Map(ValueType.Str, ValueType.Map(ValueType.Str, ValueType.Bool))) == "Map<string, Map<string, bool>>"
+    }
+    then "the List arm still round-trips (control)" {
+        rt(ValueType.List(ValueType.Int)) == "List<int>"
+    }
+}

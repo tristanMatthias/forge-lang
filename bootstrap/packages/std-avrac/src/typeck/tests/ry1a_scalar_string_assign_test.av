@@ -114,6 +114,19 @@ spec "int into a pointer slot is rejected in list-element, match-tail, and bytes
         let out = ry1a_out("fn main() { let xs: List<int?> = [\"a\"] }")
         out.contains("F1000")
     }
+    // A conflict can hide under a one-sided Optional element: a Box<int> into a
+    // List<Box<string>?> slot is a wild store (Box's int field vs ptr field).
+    // generic_args_layout_conflict strips the one-sided Optional and recurses.
+    then "list element: Box<int> into List<Box<string>?> is F1000 (conflict under one-sided Optional)" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn main() { let xs: List<Box<string>?> = [Box { val: 9 }] }")
+        out.contains("F1000")
+    }
+    then "list element: Box<string> into List<Box<string>?> compiles (matching, no false positive)" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn main() { let xs: List<Box<string>?> = [Box { val: \"ok\" }] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
     then "match tail: an int arm into a string return type is F1000" {
         let out = ry1a_out("fn f(c: bool) -> string { match c { _ -> 9 } }
 fn main() { let x = f(true) }")

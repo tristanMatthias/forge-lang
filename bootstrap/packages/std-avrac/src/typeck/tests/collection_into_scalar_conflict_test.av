@@ -1,0 +1,104 @@
+// WHY: regression for a85d — a list/map literal (always a pointer) assigned to a
+// VALUE-SCALAR slot (int/float/bool/…) was silently accepted: `let x: int =
+// [1,2]` / `let x: int = {"k":1}` stored a pointer in a scalar cell — the
+// inverse of the ry1a scalar→ptr hole. check_expr_expected's .ListLit/.MapLit
+// arms now reject a value-scalar expected type. Non-scalar pointer slots (e.g.
+// `string`) are a nominal mismatch handled elsewhere, so only value scalars are
+// gated here — which is what keeps the check free of false positives.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn cs_out(source: string) -> string {
+    let path = "/tmp/avra_collection_into_scalar.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a collection/map literal into a value-scalar slot is rejected (a85d)" {
+    then "a list literal into an int slot is F1000" {
+        let out = cs_out("fn main() { let x: int = [1, 2] }")
+        out.contains("F1000")
+    }
+    then "a map literal into an int slot is F1000" {
+        let out = cs_out("fn main() { let x: int = {\"k\": 1} }")
+        out.contains("F1000")
+    }
+    then "a list literal into a float slot is F1000" {
+        let out = cs_out("fn main() { let x: float = [1] }")
+        out.contains("F1000")
+    }
+    then "a map literal into a bool slot is F1000" {
+        let out = cs_out("fn main() { let b: bool = {\"k\": 1} }")
+        out.contains("F1000")
+    }
+    then "a list VARIABLE into an int slot is F1000 (non-literal path)" {
+        let out = cs_out("fn main() { let xs: List<int> = [1]  let x: int = xs }")
+        out.contains("F1000")
+    }
+    then "a map VARIABLE into an int slot is F1000 (non-literal path)" {
+        let out = cs_out("fn main() { let m: Map<string, int> = {\"a\": 1}  let x: int = m }")
+        out.contains("F1000")
+    }
+    then "reassigning a list literal into an int var is F1000" {
+        let out = cs_out("fn main() { mut x: int = 0  x = [1] }")
+        out.contains("F1000")
+    }
+    then "a CALL returning a list into an int slot is F1000" {
+        let out = cs_out("fn make_list() -> List<int> { [1] }
+fn main() { let x: int = make_list() }")
+        out.contains("F1000")
+    }
+    then "a list literal into a scalar struct FIELD is F1000" {
+        let out = cs_out("type S = { n: int }
+fn main() { let s = S { n: [1] } }")
+        out.contains("F1000")
+    }
+    then "assigning a list literal to a scalar struct field is F1000" {
+        let out = cs_out("type S = { n: int }
+fn main() { mut s = S { n: 0 }  s.n = [1] }")
+        out.contains("F1000")
+    }
+}
+
+spec "valid collection bindings still compile (a85d — no false positives)" {
+    then "a list literal into a List slot compiles" {
+        let out = cs_out("fn main() { let xs: List<int> = [1, 2] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a map literal into a Map slot compiles" {
+        let out = cs_out("fn main() { let m: Map<string, int> = {\"k\": 1} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an unannotated list literal compiles" {
+        let out = cs_out("fn main() { let x = [1, 2]  let _ = x.length }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a nested list-of-lists compiles (inner lists aren't scalar slots)" {
+        let out = cs_out("fn main() { let xs: List<List<int>> = [[1], [2]] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list variable into a List slot compiles (no false positive on the non-literal path)" {
+        let out = cs_out("fn main() { let xs: List<int> = [1]  let ys: List<int> = xs }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list arg into a List PARAMETER compiles (no false positive)" {
+        let out = cs_out("fn take_list(xs: List<int>) -> int { xs.length }
+fn main() { let xs: List<int> = [1]  let _ = take_list(xs) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a call returning a list into a List slot compiles (no false positive)" {
+        let out = cs_out("fn make_list() -> List<int> { [1] }
+fn main() { let xs: List<int> = make_list() }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list literal into a List struct field compiles (no false positive)" {
+        let out = cs_out("type S = { xs: List<int> }
+fn main() { let s = S { xs: [1, 2] } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "reassigning an int var to an int compiles (no false positive)" {
+        let out = cs_out("fn main() { mut x: int = 0  x = 5 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

@@ -1,0 +1,67 @@
+// WHY: regression for the tuple-element layout-conflict hole found during the
+// 63wu deep review. generic_args_layout_conflict had no `.Tuple` branch and
+// vtype_type_args doesn't expose tuple elements, so a wrong type in a tuple slot
+// bypassed EVERY conflict check by tuple-wrapping: `let t: (int, string) =
+// (1, 9)` stored int 9 in the string slot (a wild pointer when later read as a
+// string) yet compiled clean — trivially defeating the ry1a / 26ql / 63wu
+// conflict checks. The fix recurses pairwise into tuple elements (the shared
+// type_list_layout_conflict helper), catching scalar↔ptr and nested generic
+// conflicts in any tuple position, with the settled-type guard avoiding false
+// positives on unresolved/Unknown elements.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn tup_out(source: string) -> string {
+    let path = "/tmp/avra_tuple_conflict.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "tuple-element layout conflicts are caught (no tuple-wrap bypass)" {
+    then "scalar: an int in a string tuple slot is F1000" {
+        let out = tup_out("fn main() { let t: (int, string) = (1, 9) }")
+        out.contains("F1000")
+    }
+    then "generic struct: a Box<int> in a Box<string> tuple slot is F1000" {
+        let out = tup_out("type Box<T> = { val: T }
+fn main() { let t: (int, Box<string>) = (1, Box { val: 9 }) }")
+        out.contains("F1000")
+    }
+    then "list element: a List<Box<string>> tuple slot fed a Box<int> is F1000" {
+        let out = tup_out("type Box<T> = { val: T }
+fn main() { let t: (int, List<Box<string>>) = (1, [Box { val: 9 }]) }")
+        out.contains("F1000")
+    }
+    then "map value: a Map<string, Box<string>> tuple slot fed a Box<int> is F1000" {
+        let out = tup_out("type Box<T> = { val: T }
+fn main() { let t: (int, Map<string, Box<string>>) = (1, {\"k\": Box { val: 9 }}) }")
+        out.contains("F1000")
+    }
+    then "a conflict in a later (third) tuple slot is caught (every element checked)" {
+        let out = tup_out("type Box<T> = { val: T }
+fn main() { let t: (int, string, Box<string>) = (1, \"ok\", Box { val: 9 }) }")
+        out.contains("F1000")
+    }
+}
+
+spec "valid tuples still compile (tuple fix — no false positives)" {
+    then "a matching scalar tuple compiles" {
+        let out = tup_out("fn main() { let t: (int, string) = (1, \"x\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a matching generic-struct tuple compiles" {
+        let out = tup_out("type Box<T> = { val: T }
+fn main() { let t: (int, Box<string>) = (1, Box { val: \"ok\" }) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "nested collections in a tuple compile" {
+        let out = tup_out("fn main() { let t: (int, List<int>, string) = (1, [2, 3], \"x\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "multi-return tuple destructuring compiles" {
+        let out = tup_out("fn pair() -> (int, string) { (1, \"a\") }
+fn main() { let (a, b) = pair() }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

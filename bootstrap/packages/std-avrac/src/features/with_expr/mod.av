@@ -1,8 +1,8 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.with_expr.{...}`.
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, vtype_struct_name}
 use resolve.{resolve_expr, resolve_field_init_list}
-use features.struct_decl.{check_field_inits}
+use features.struct_decl.{check_field_inits, check_struct_lit_fields}
 use typeck.{check_expr, tc_er}
 
 /// Register the `with` expression feature. Used to produce a
@@ -29,14 +29,21 @@ fn with_resolve(r: Resolver, expr: Expr) -> Resolver {
     }
 }
 
-/// Type-check hook for `With`. Checks the source object and each
-/// override expression. Result type matches the source — `with`
-/// is a shallow copy, not a coercion.
+/// Type-check hook for `With`. Checks the source object, then validates each
+/// override against the source struct's DECLARED fields — name, scalar
+/// string-mismatch, and generic-arg layout conflict — via the same
+/// `check_struct_lit_fields` a struct literal uses. Previously it only checked
+/// the override value expressions (`check_field_inits`), so `s with { b:
+/// Box{val:9} }` on `b: Box<string>` stored a Box<int> in the slot — a wild
+/// store read later as a pointer (lb81). Falls back to the lenient value-only
+/// check when the source isn't a known struct (generic / forward ref).
+/// Result type matches the source — `with` is a shallow copy, not a coercion.
 fn with_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .With(obj, overrides) -> {
             let o = check_expr(tc, obj)
-            let checked = check_field_inits(o.tc, overrides)
+            let name = vtype_struct_name(o.ty)
+            let checked = if name == "" { check_field_inits(o.tc, overrides) } else { check_struct_lit_fields(o.tc, o.ty, name, overrides) }
             tc_er(checked, o.ty)
         }
         _ -> tc_er(tc, .Unknown)

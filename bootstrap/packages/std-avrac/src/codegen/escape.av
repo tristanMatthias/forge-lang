@@ -525,7 +525,7 @@ fn vtype_is_copy_in_set(vt: ValueType, candidates: List<string>) -> bool {
         .Bytes -> false
         .Ptr -> false
         .List(_) -> false
-        .Map -> false
+        .Map(_, _) -> false
         .Fn(_) -> false
         .FnTyped(_, _) -> false
         .Closure(_, _) -> false
