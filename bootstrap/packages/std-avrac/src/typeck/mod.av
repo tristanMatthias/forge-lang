@@ -950,6 +950,11 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             ValueType.Enum(name, resolved_args, 0)
         }
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
+        // Resolve a Map's key + value (mirrors List/Tuple/Optional): without
+        // this a `Map<string, Email>` value stays an unresolved nominal shell,
+        // so the map-value layout check compares against `Unknown` and SKIPS a
+        // real conflict (`Map<string, Box<Email>> = {Box<int>}` slipped).
+        .Map(key, value) -> ValueType.Map(resolve_vtype(tc, key), resolve_vtype(tc, value))
         .Union(types) -> ValueType.Union(resolve_vtype_list(tc, types))
         .FnTyped(params, ret) -> ValueType.FnTyped(resolve_vtype_list(tc, params), resolve_vtype(tc, ret))
         // Shortcut #6: recurse into Tuple element types. Without
@@ -2096,6 +2101,12 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
             if generic_args_layout_conflict(r.tc, r.ty, exp) {
                 let msg = "call result of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(exp)}` (generic argument layout conflict)"
                 tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
+            } else if collection_into_value_scalar_slot(r.tc, r.ty, exp) {
+                // A call returning a List/Map into a value-scalar slot
+                // (`let x: int = make_list()`) — the dedicated .Call arm returns
+                // before the `_` fallthrough, so apply the guard here too.
+                let msg = "a ${if r.ty is .List { "list" } else { "map" }} value cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"
+                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
             } else {
                 r
             }
@@ -2317,6 +2328,14 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
             let smsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
             cur = tc_report(cur, DiagCode.TypeMismatch, smsg)
         }
+        // NOTE: a collection-into-value-scalar check (`take_int(xs)`) is
+        // deliberately NOT applied at the parameter position. Extern C bindings
+        // use `int` as an i64-legacy generic value slot — e.g.
+        // `extern fn avra_map_set_cstr(map, key, value: int)` legitimately
+        // receives a `List`/`Map` value — so the guard mass-false-positives here.
+        // Closing this safely needs an extern/i64-legacy-aware param check
+        // (tracked separately); the let / reassign / field / call positions are
+        // real typed slots and ARE guarded.
         i = i + 1
     }
     cur

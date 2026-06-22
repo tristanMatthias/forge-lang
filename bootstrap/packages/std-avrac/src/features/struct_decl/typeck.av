@@ -3,7 +3,7 @@
 // Shared by struct_decl, with_expr, and null_safety features.
 
 use core.{Expr, FieldEntry, FieldInit, ValueType, SExpr, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full}
-use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict}
+use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot}
 use diagnostics.{DiagCode}
 
 /// Type-check a `obj.field` access. Recognises `.length` on Str
@@ -114,6 +114,11 @@ export fn check_one_field_ty(tc: TC, receiver_ty: ValueType, name: string, field
     }
     if generic_args_layout_conflict(acc, value_ty, fty) {
         acc = tc_report(acc, DiagCode.TypeMismatch, "field `${field}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(value_ty)}` (generic argument layout conflict)")
+    }
+    // A List/Map value into a value-scalar field slot (`S { n: [1] }`, `s.n = [1]`
+    // where `n: int`) is a wild store — a collection pointer in a scalar cell.
+    if collection_into_value_scalar_slot(acc, value_ty, fty) {
+        acc = tc_report(acc, DiagCode.TypeMismatch, "field `${field}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(value_ty)}` (scalar/pointer layout conflict)")
     }
     acc
 }

@@ -44,6 +44,27 @@ spec "a collection/map literal into a value-scalar slot is rejected (a85d)" {
         let out = cs_out("fn main() { mut x: int = 0  x = [1] }")
         out.contains("F1000")
     }
+    then "a CALL returning a list into an int slot is F1000" {
+        let out = cs_out("fn make_list() -> List<int> { [1] }
+fn main() { let x: int = make_list() }")
+        out.contains("F1000")
+    }
+    then "a list literal into a scalar struct FIELD is F1000" {
+        let out = cs_out("type S = { n: int }
+fn main() { let s = S { n: [1] } }")
+        out.contains("F1000")
+    }
+    then "assigning a list literal to a scalar struct field is F1000" {
+        let out = cs_out("type S = { n: int }
+fn main() { mut s = S { n: 0 }  s.n = [1] }")
+        out.contains("F1000")
+    }
+    then "a conflict hidden behind a Map value ALIAS is caught (resolve_vtype Map)" {
+        let out = cs_out("type Box<T> = { val: T }
+type Email = string
+fn main() { let m: Map<string, Box<Email>> = {\"k\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
 }
 
 spec "valid collection bindings still compile (a85d — no false positives)" {
@@ -65,6 +86,21 @@ spec "valid collection bindings still compile (a85d — no false positives)" {
     }
     then "a list variable into a List slot compiles (no false positive on the non-literal path)" {
         let out = cs_out("fn main() { let xs: List<int> = [1]  let ys: List<int> = xs }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list arg into a List PARAMETER compiles (no false positive)" {
+        let out = cs_out("fn take_list(xs: List<int>) -> int { xs.length }
+fn main() { let xs: List<int> = [1]  let _ = take_list(xs) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a call returning a list into a List slot compiles (no false positive)" {
+        let out = cs_out("fn make_list() -> List<int> { [1] }
+fn main() { let xs: List<int> = make_list() }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list literal into a List struct field compiles (no false positive)" {
+        let out = cs_out("type S = { xs: List<int> }
+fn main() { let s = S { xs: [1, 2] } }")
         out.contains("__AVRA_COMPILE_OK__")
     }
     then "reassigning an int var to an int compiles (no false positive)" {
