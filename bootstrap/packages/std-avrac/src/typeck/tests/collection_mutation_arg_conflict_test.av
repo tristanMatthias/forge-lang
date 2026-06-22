@@ -1,0 +1,58 @@
+// WHY: regression for ibjo — collection MUTATION methods (List.push / .set /
+// .insert, Map.set) did not typecheck their VALUE arg against the element/value
+// type. So `xs.push(Box{val:9})` on a `List<Box<string>>` (or `m.set("k",
+// Box{val:9})` on a `Map<string, Box<string>>`) stored a Box<int> in a
+// Box<string> slot — a wild store read later as a pointer. check_method_call now
+// guards the value arg (method-dependent position: push→0, set/insert→1) via
+// generic_args_layout_conflict + int_into_pointer_slot, reusing the arg types it
+// already computed (no re-check, no double-report).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn cm_out(source: string) -> string {
+    let path = "/tmp/avra_collection_mut_conflict.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "collection mutation value args are checked (ibjo)" {
+    then "List.push of a Box<int> into List<Box<string>> is F1000" {
+        let out = cm_out("type Box<T> = { val: T }
+fn main() { mut xs: List<Box<string>> = [Box{val:\"ok\"}]  let _ = xs.push(Box{val:9}) }")
+        out.contains("F1000")
+    }
+    then "List.push of an int into List<string> is F1000 (scalar↔ptr)" {
+        let out = cm_out("fn main() { mut xs: List<string> = [\"a\"]  let _ = xs.push(9) }")
+        out.contains("F1000")
+    }
+    then "List.set value arg (index, value) conflict is F1000" {
+        let out = cm_out("fn main() { mut xs: List<string> = [\"a\"]  let _ = xs.set(0, 9) }")
+        out.contains("F1000")
+    }
+    then "Map.set of a Box<int> into Map<string, Box<string>> is F1000" {
+        let out = cm_out("type Box<T> = { val: T }
+fn main() { mut m: Map<string, Box<string>> = {\"a\": Box{val:\"ok\"}}  m.set(\"b\", Box{val:9}) }")
+        out.contains("F1000")
+    }
+}
+
+spec "valid collection mutations still compile (ibjo — no false positives)" {
+    then "List.push of a matching element compiles" {
+        let out = cm_out("type Box<T> = { val: T }
+fn main() { mut xs: List<Box<string>> = [Box{val:\"ok\"}]  let _ = xs.push(Box{val:\"y\"}) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "List<int>.push(int) and Map<string,int>.set(k,int) compile" {
+        let out = cm_out("fn main() {
+    mut xs: List<int> = [1]  let _ = xs.push(2)
+    mut m: Map<string, int> = {\"a\": 1}  m.set(\"b\", 2)
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a generic mut push binds the element type (no false positive)" {
+        let out = cm_out("fn add<T>(v: T) -> List<T> { mut xs: List<T> = []  let _ = xs.push(v)  xs }
+fn main() { let _ = add(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

@@ -3023,9 +3023,28 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
 /// Type-check `obj.method(args)`: dispatch to type-specific
 /// method tables (List / Map built-ins) or fall back to user-
 /// defined impl blocks looked up by mangled name.
+/// Guard a collection MUTATION method's value arg against the element/value
+/// type — `push(v)` / `set(i,v)` / `insert(i,v)` / map `set(k,v)` value args
+/// were previously unchecked (ibjo), so a `Box<int>` into a `List<Box<string>>`
+/// (or a map value slot) compiled as a wild store. The value-arg position is
+/// method-dependent (push: 0; set/insert: 1 — after the index/key). Reuses the
+/// same generic-arg + scalar↔ptr predicates as the let/fn-arg/field positions.
+/// `arg_types` are precomputed (check_method_call already checked the args once),
+/// so this re-checks nothing and can't double-report.
+fn check_collection_value_arg(tc: TC, arg_types: List<ValueType>, method: string, elem: ValueType) -> TC {
+    let idx = if method == "push" { 0 } else if (method == "set") || (method == "insert") { 1 } else { -1 }
+    if idx < 0 || idx >= arg_types.length { return tc }
+    let vt = arg_types[idx]
+    if generic_args_layout_conflict(tc, vt, elem) || int_into_pointer_slot(tc, vt, elem) {
+        return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (generic argument layout conflict)")
+    }
+    tc
+}
+
 export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
     let o = check_expr(tc, obj)
-    let checked_args = check_expr_list(o.tc, args)
+    let ca = check_expr_list_types(o.tc, args)
+    let checked_args = ca.tc
 
     // String methods
     if vtype_eq(o.ty, .Str) {
@@ -3053,12 +3072,15 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
 
     // List methods — dispatched to features/list_lit/typeck.av
     if o.ty is .List {
-        return check_list_method(checked_args, vtype_list_elem(o.ty), method, args)
+        let elem = vtype_list_elem(o.ty)
+        // ibjo: guard push/set/insert value args against the element type.
+        return check_list_method(check_collection_value_arg(checked_args, ca.types, method, elem), elem, method, args)
     }
 
     // Map methods — dispatched to features/map_lit/typeck.av
     if o.ty is .Map {
-        return check_map_method(checked_args, method)
+        // ibjo: guard set's value arg against the map's value type.
+        return check_map_method(check_collection_value_arg(checked_args, ca.types, method, vtype_map_value(o.ty)), method)
     }
 
     // Channel methods — dispatched to features/channels/typeck.av
