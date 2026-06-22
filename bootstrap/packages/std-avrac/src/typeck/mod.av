@@ -1705,6 +1705,23 @@ fn type_list_layout_conflict(tc: TC, aa: List<ValueType>, ba: List<ValueType>) -
     false
 }
 
+/// THE broad layout-conflict check (nlzq) for a value flowing into a RELIABLE
+/// element / value / payload slot (list element, map value, …). Combines a
+/// top-level settled scalar↔ptr conflict with a nested generic-arg conflict —
+/// exactly the pair the List / Map / Tuple branches of `generic_args_layout_conflict`
+/// already apply internally — lifted into one named predicate so element/value
+/// checkers share it instead of hand-wrapping a `List`/`Map` shell to reach it.
+///
+/// Broader than the narrow `assign_layout_conflict`: `settled_layout_conflict`
+/// applies the FULL scalar↔ptr divide (int→struct/list too, not just int→Str),
+/// safe HERE because these positions hold explicitly-written values rather than
+/// the inference-artifact `.Int` fallbacks that force the narrow scoping at the
+/// binding / return / call positions. The per-pair `settled` guard skips
+/// still-unresolved type params, so valid generic code is never rejected.
+export fn nested_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
+    settled_layout_conflict(tc, a, b) || generic_args_layout_conflict(tc, a, b)
+}
+
 /// When `expr` is a generic struct literal `Name { … }` and `declared` is an
 /// annotation `Name<args>` (a `let`/`mut`/`const` binding OR a function's
 /// declared return type), return the literal's field-inferred type (so the
@@ -1790,40 +1807,60 @@ export fn collection_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared:
     vtype_is_value_scalar(slot)
 }
 
-/// THE wild-store layout-conflict predicate (nlzq). True iff storing a value of
-/// type `actual` into a slot of declared type `expected` is a layout lie: a
-/// generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a pointer
-/// slot, or — when `incl_collection` — a `List`/`Map` into a value-scalar slot.
-/// Unions the three wild-store checks that were hand-rolled, and individually
-/// forgotten, across ~15 positions (the dominant root cause behind the 63wu
-/// arc). `incl_collection` is false ONLY at the fn-parameter position: extern C
-/// bindings declare `int` as an i64-legacy generic value slot that legitimately
-/// receives a collection (tracked as wlll); every REAL typed slot passes true.
-export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType, incl_collection: bool) -> bool {
+/// THE narrow wild-store layout-conflict predicate (nlzq). True iff storing a
+/// value of type `actual` into a slot of declared type `expected` is a layout
+/// lie: a generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a
+/// pointer slot (`incl_int`), or a `List`/`Map` into a value-scalar slot
+/// (`incl_collection`). Unions the wild-store checks that were hand-rolled, and
+/// individually forgotten, across the binding / reassign / call / arg positions
+/// (the dominant root cause behind the 63wu arc).
+///
+/// This is the NARROW family: the int / collection checks are deliberately
+/// scoped subsets (int→Str/Bytes only; List/Map arg only) because these
+/// positions hold INFERENCE-ARTIFACT-prone values — typeck hands back `.Int` as
+/// a fallback for ~140 unresolved exprs on the compiler's own source, so the
+/// full scalar↔ptr divide (`layout_conflict`) would mass-false-positive here.
+/// Reliable element / value / payload positions use the broad
+/// `nested_layout_conflict` instead. The two toggles tune which subset a
+/// position needs (both default on; see the three wrappers below).
+export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType, incl_int: bool, incl_collection: bool) -> bool {
     generic_args_layout_conflict(tc, actual, expected)
-        || int_into_pointer_slot(tc, actual, expected)
+        || (incl_int && int_into_pointer_slot(tc, actual, expected))
         || (incl_collection && collection_into_value_scalar_slot(tc, actual, expected))
 }
 
 /// THE assignability gate (nlzq): the SINGLE place a "value meets an expected
-/// type" wild-store check lives. Every position that binds a value to a known
-/// type routes its `(actual, expected)` pair through here, so no position can
-/// omit a check — collapsing the per-position hand-rolled checks to one and
-/// making the whole wild-store class drift-proof. `ctx` names the position for
-/// the diagnostic. Returns `tc` unchanged when the store is layout-safe.
+/// type" wild-store check lives for the narrow family. Every artifact-prone
+/// position that binds a value to a known type routes its `(actual, expected)`
+/// pair through one of these three wrappers, so no position can omit a check —
+/// collapsing the per-position hand-rolled checks and making the wild-store
+/// class drift-proof. `ctx` names the position for the diagnostic. Returns `tc`
+/// unchanged when the store is layout-safe.
+///
+/// The FULL gate — generic-arg + int→pointer + collection→scalar. Used at the
+/// real typed value slots: reassignment and collection-mutation value args.
 export fn check_assign_layout(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
-    check_assign_layout_ex(tc, actual, expected, ctx, true)
+    check_assign_layout_ex(tc, actual, expected, ctx, true, true)
 }
 
-/// The fn-PARAMETER variant of `check_assign_layout`: skips the collection→scalar
-/// check, which mass-false-positives on extern C bindings that pass a collection
-/// into an i64-legacy `int` value slot (wlll). All other checks still apply.
+/// The fn-PARAMETER / match-arm variant: omits the collection→scalar check,
+/// which mass-false-positives on extern C bindings that pass a collection into
+/// an i64-legacy `int` value slot (wlll). Generic-arg + int→pointer still apply.
 export fn check_assign_layout_param(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
-    check_assign_layout_ex(tc, actual, expected, ctx, false)
+    check_assign_layout_ex(tc, actual, expected, ctx, true, false)
 }
 
-fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: string, incl_collection: bool) -> TC {
-    if assign_layout_conflict(tc, actual, expected, incl_collection) {
+/// The check_expr_expected variant: omits the int→pointer check. This gate feeds
+/// the `let` site (where check_binding's int block catches int→pointer) and the
+/// return site (where vtype_assignable catches it), so including int here would
+/// DOUBLE-REPORT. Generic-arg + collection→scalar (neither caught at those
+/// sites) still apply.
+export fn check_assign_layout_no_int(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
+    check_assign_layout_ex(tc, actual, expected, ctx, false, true)
+}
+
+fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: string, incl_int: bool, incl_collection: bool) -> TC {
+    if assign_layout_conflict(tc, actual, expected, incl_int, incl_collection) {
         return tc_report(tc, DiagCode.TypeMismatch, "${ctx}: `${vtype_render_full(actual)}` is not assignable to `${vtype_render_full(expected)}` (layout conflict)")
     }
     tc
@@ -2133,22 +2170,15 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         .MapLit(entries) -> reject_collection_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, callee, args, exp)
-            // A call returning a concrete generic instance that conflicts with the
-            // annotation (`let b: Box<string> = make_box_int()`) is the fn-side of
-            // the same memory-safety hole. The type-param guard keeps generic calls
-            // whose return type is still being inferred safe.
-            if generic_args_layout_conflict(r.tc, r.ty, exp) {
-                let msg = "call result of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(exp)}` (generic argument layout conflict)"
-                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
-            } else if collection_into_value_scalar_slot(r.tc, r.ty, exp) {
-                // A call returning a List/Map into a value-scalar slot
-                // (`let x: int = make_list()`) — the dedicated .Call arm returns
-                // before the `_` fallthrough, so apply the guard here too.
-                let msg = "a ${if r.ty is .List { "list" } else { "map" }} value cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"
-                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
-            } else {
-                r
-            }
+            // The call result meets the expected type. Route through the no-int
+            // gate (generic-arg + collection→scalar): the fn-side of the hole
+            // (`let b: Box<string> = make_box_int()`, `let x: int = make_list()`).
+            // int→pointer is OMITTED here — it's caught downstream by
+            // check_binding's int block at the let site and by vtype_assignable at
+            // the return site, so including it would double-report. (so07.7.15:
+            // still-inferring generic calls stay safe via the predicate's
+            // type-param guard.)
+            tc_er(check_assign_layout_no_int(r.tc, r.ty, exp, "call result"), r.ty)
         }
         // A generic struct literal whose field-inferred type args are layout-
         // incompatible with the annotation (`let`/return `Name<args>`) is a
@@ -2168,27 +2198,14 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         }
         _ -> {
             let r = check_expr(tc, expr)
-            // Centralized generic-arg layout conflict for every OTHER expression
-            // kind that meets an expected type — a parenthesized literal
-            // `(Box { val: 9 })`, a call returning a generic instance
-            // (`let b: Box<string> = make_box_int()`), or an ident rebound to a
-            // conflicting annotation (`let b: Box<string> = a` where a: Box<int>).
-            // `.StructLit` / `.ListLit` / `.Call` have dedicated arms above; this
-            // closes the rest. The type-param guard inside
-            // `generic_args_layout_conflict` keeps valid generic code safe.
-            if generic_args_layout_conflict(r.tc, r.ty, exp) {
-                let msg = "expression of type `${vtype_render_full(r.ty)}` conflicts with expected `${vtype_render_full(exp)}` (generic argument layout conflict)"
-                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
-            } else if collection_into_value_scalar_slot(r.tc, r.ty, exp) {
-                // A `List`/`Map` VALUE (not just a literal) into a value-scalar
-                // slot is a wild store — `let x: int = xs` stores a list ptr in
-                // an int cell. The .ListLit/.MapLit arms cover the literal form;
-                // this covers idents, calls, and any other collection-typed expr.
-                let msg = "a ${if r.ty is .List { "list" } else { "map" }} value cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"
-                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
-            } else {
-                r
-            }
+            // The universal arm: any OTHER expression meeting an expected type —
+            // a parenthesized literal `(Box { val: 9 })`, an ident rebound to a
+            // conflicting annotation (`let b: Box<string> = a`, `let x: int = xs`),
+            // etc. `.StructLit` / `.ListLit` / `.MapLit` / `.Call` have dedicated
+            // arms above; this gates the rest. Same no-int gate as `.Call`:
+            // int→pointer is handled positionally at the binding / return sites,
+            // so it's omitted here to avoid a duplicate diagnostic.
+            tc_er(check_assign_layout_no_int(r.tc, r.ty, exp, "expression"), r.ty)
         }
     }
 }
@@ -2342,31 +2359,16 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
         }
-        // Layout-incompatible generic argument (`want(Box { val: 9 })` for
-        // `want(b: Box<string>)`): vtype_eq ignores generic args so this passes
-        // the checks above, but passing a `Box<int>` where a `Box<string>` is
-        // expected lets the callee deref an int as a pointer. Reject it.
-        if generic_args_layout_conflict(cur, arg_ty, param_ty) {
-            let cmsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}` (generic argument layout conflict)"
-            cur = tc_report(cur, DiagCode.TypeMismatch, cmsg)
-        }
-        // An int passed where a pointer-layout param is expected is the same
-        // wild-pointer hole as the let site (ry1a/w0kt) — the callee derefs the int.
-        // The default arg path otherwise type-checks only Newtype/shape params, so
-        // scalar↔pointer slips through. (int→numeric stays lenient; type-param and
-        // ptr/trait params are excluded inside int_into_pointer_slot.)
-        if int_into_pointer_slot(cur, arg_ty, param_ty) {
-            let smsg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
-            cur = tc_report(cur, DiagCode.TypeMismatch, smsg)
-        }
-        // NOTE: a collection-into-value-scalar check (`take_int(xs)`) is
-        // deliberately NOT applied at the parameter position. Extern C bindings
-        // use `int` as an i64-legacy generic value slot — e.g.
-        // `extern fn avra_map_set_cstr(map, key, value: int)` legitimately
-        // receives a `List`/`Map` value — so the guard mass-false-positives here.
-        // Closing this safely needs an extern/i64-legacy-aware param check
-        // (tracked separately); the let / reassign / field / call positions are
-        // real typed slots and ARE guarded.
+        // A layout-incompatible argument: a generic-arg conflict (`want(Box { val:
+        // 9 })` for `want(b: Box<string>)` — vtype_eq ignores generic args) or an
+        // int into a pointer-layout slot (the callee derefs the int — the same
+        // wild-pointer hole as the let site, ry1a/w0kt). Route through the fn-param
+        // gate, which OMITS the collection→scalar check: extern C bindings use
+        // `int` as an i64-legacy value slot that legitimately receives a List/Map
+        // value (`avra_map_set_cstr(map, key, value: int)`), so it would mass-
+        // false-positive here (tracked as wlll). int→numeric and type-param / ptr
+        // params stay lenient inside the predicates.
+        cur = check_assign_layout_param(cur, arg_ty, param_ty, "`${fn_name}` parameter `${p.name}`")
         i = i + 1
     }
     cur
@@ -2413,6 +2415,12 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
             // cross-package type identity (wc5w) and are NOT gated here —
             // vtype_eq currently trusts diverging registry ids for identical
             // FQN nominals, so a strict nominal check false-positives.
+            //
+            // This repr-class check is STRONGER than the narrow `assign_layout_conflict`
+            // gate (catches int→struct, `null`→scalar, … — the full scalar↔ptr
+            // divide, safe here because a ctor arg is concrete, not an inference
+            // artifact), so this position uses it directly rather than routing
+            // through that gate, which would narrow coverage. + generic-arg below.
             let f0 = vtype_strip_optional(fty)
             let a0 = vtype_strip_optional(aty)
             if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) {

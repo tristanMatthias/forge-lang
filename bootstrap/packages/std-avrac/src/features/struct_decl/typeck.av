@@ -105,6 +105,11 @@ export fn check_struct_lit_fields(tc: TC, receiver_ty: ValueType, name: string, 
 /// unresolved param and skips it, letting `b.val = 9` / `b with { val: 9 }` on a
 /// `Box<string>` slip through. The read path (check_field_access) specialises
 /// the same way; pass `.Unknown` to opt out (no args → no-op specialisation).
+/// Like the enum-ctor payload check, a struct field uses position-appropriate
+/// checks STRONGER than the narrow `assign_layout_conflict` gate (the string↔non-
+/// string scalar check catches `int`/`bool`→`string` both ways), so it stays
+/// here rather than routing through that gate — which would narrow coverage. The
+/// generic-arg + collection→scalar checks below are the shared predicates.
 export fn check_one_field_ty(tc: TC, receiver_ty: ValueType, name: string, fields: List<FieldEntry>, field: string, value_ty: ValueType) -> TC {
     let fty = tc_specialize_field_ty(tc.structs, receiver_ty, field_type_in(tc, fields, field))
     mut acc = tc

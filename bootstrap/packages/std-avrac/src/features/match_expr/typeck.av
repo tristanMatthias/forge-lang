@@ -4,7 +4,7 @@
 use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
-use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, generic_args_layout_conflict, int_into_pointer_slot, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, check_assign_layout_param, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use core.{vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
 
 // ── Arm type skip logic ──
@@ -536,18 +536,15 @@ export fn tc_check_match_tail_conflict(tc: TC, fn_name: string, subject: Expr, a
             _ -> {
                 let br = check_expr(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node)
                 acc = tc_exit(br.tc)
-                // Two memory-unsafe arm/return mismatches: an int into a string/bytes
-                // (scalar→pointer) slot, and a generic-arg layout conflict. NOT a full
-                // `vtype_assignable` check — a statement-match is exempt from arm-type
-                // unification (`is_truthy` legitimately yields `int | bool`), and
-                // assignability would wrongly reject that. Two scalars never straddle
-                // the layout divide, so these scoped predicates catch the wild-store
-                // cases (`match c { _ -> 9 }` into `-> string`) without the relapse.
-                if int_into_pointer_slot(acc, br.ty, declared) {
-                    acc = tc_report(acc, DiagCode.TypeMismatch, "`${fn_name}` returns `${vtype_render_full(declared)}`, but a match arm produces `${vtype_render_full(br.ty)}`")
-                } else if generic_args_layout_conflict(acc, br.ty, declared) {
-                    acc = tc_report(acc, DiagCode.TypeMismatch, "`${fn_name}` returns `${vtype_render_full(declared)}`, but a match arm produces `${vtype_render_full(br.ty)}` (generic argument layout conflict)")
-                }
+                // A memory-unsafe arm/return mismatch: an int into a string/bytes
+                // (scalar→pointer) slot, or a generic-arg layout conflict. Route
+                // through the param gate (generic-arg + int→pointer, NO
+                // collection→scalar) — NOT a full `vtype_assignable` check: a
+                // statement-match is exempt from arm-type unification (`is_truthy`
+                // legitimately yields `int | bool`), which assignability would
+                // wrongly reject. The scoped predicates catch the wild-store cases
+                // (`match c { _ -> 9 }` into `-> string`) without that relapse.
+                acc = check_assign_layout_param(acc, br.ty, declared, "`${fn_name}` match-arm return")
             }
         }
         i = i + 1
