@@ -771,6 +771,7 @@ export fn count_id_zero_in_vtype(t: ValueType) -> int {
         }
         .NarrowedEnum(_, _, id) -> if id == 0 { 1 } else { 0 }
         .List(elem) -> count_id_zero_in_vtype(elem)
+        .Map(k, v) -> count_id_zero_in_vtype(k) + count_id_zero_in_vtype(v)
         .Task(r) -> count_id_zero_in_vtype(r)
         .Tuple(types) -> count_id_zero_in_vtypes(types)
         .Union(types) -> count_id_zero_in_vtypes(types)
@@ -821,6 +822,7 @@ export fn collect_id_zero_names_vtype(t: ValueType, out: List<string>) -> List<s
             acc
         }
         .List(elem) -> collect_id_zero_names_vtype(elem, acc)
+        .Map(k, v) -> collect_id_zero_names_vtype(v, collect_id_zero_names_vtype(k, acc))
         .Task(r) -> collect_id_zero_names_vtype(r, acc)
         .Tuple(types) -> collect_id_zero_names_vtypes(types, acc)
         .Union(types) -> collect_id_zero_names_vtypes(types, acc)
@@ -1052,6 +1054,7 @@ fn assignable_with_unknowns(src: ValueType, dst: ValueType) -> bool {
     if vtype_eq(src, dst) { return true }
     match src {
         .List(ea) -> match dst { .List(eb) -> assignable_with_unknowns(ea, eb), _ -> false }
+        .Map(ka, va) -> match dst { .Map(kb, vb) -> assignable_with_unknowns(ka, kb) && assignable_with_unknowns(va, vb), _ -> false }
         .Tuple(ea) -> match dst { .Tuple(eb) -> type_lists_assignable_unknowns(ea, eb), _ -> false }
         .Task(ra) -> match dst { .Task(rb) -> assignable_with_unknowns(ra, rb), _ -> false }
         .Closure(na, ra) -> match dst { .Closure(nb, rb) -> na == nb && assignable_with_unknowns(ra, rb), _ -> false }
