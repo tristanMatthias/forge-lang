@@ -146,4 +146,35 @@ fn main() { let x = f(true) }")
 fn main() { want(9) }")
         out.contains("F1000")
     }
+    // Map VALUES land on the same scalar↔pointer divide as list elements: a bare
+    // int into a `Map<string, string>` value slot stores an i64 where a ptr is
+    // read. Routed through `nested_layout_conflict` (the broad element/value
+    // check), with positive controls proving it's layout-scoped, not a lockdown.
+    then "map value: a bare int into a Map<string, string> is F1000" {
+        let out = ry1a_out("fn main() { let m: Map<string, string> = {\"k\": 9} }")
+        out.contains("F1000")
+    }
+    then "map value: a later int among string values is F1000 (every value checked)" {
+        let out = ry1a_out("fn main() { let m: Map<string, string> = {\"a\": \"ok\", \"b\": 9} }")
+        out.contains("F1000")
+    }
+    then "map value: Map<string, int> = {\"k\": 9} still compiles (no false positive)" {
+        let out = ry1a_out("fn main() { let m: Map<string, int> = {\"k\": 9}  let _ = m.len() }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "map value: int into Map<string, int?> compiles (nullable widening, not a conflict)" {
+        let out = ry1a_out("fn main() { let m: Map<string, int?> = {\"k\": 1} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "map value: string into Map<string, int?> is still F1000 (real base conflict)" {
+        let out = ry1a_out("fn main() { let m: Map<string, int?> = {\"k\": \"a\"} }")
+        out.contains("F1000")
+    }
+    // The fn-parameter position routes through `check_assign_layout_param`; an int
+    // into a `string` param is the same wild store as the `bytes` case above.
+    then "fn param: an int passed to a string parameter is F1000" {
+        let out = ry1a_out("fn want(s: string) { }
+fn main() { want(9) }")
+        out.contains("F1000")
+    }
 }
