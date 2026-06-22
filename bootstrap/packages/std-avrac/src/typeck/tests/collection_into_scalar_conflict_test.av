@@ -59,6 +59,18 @@ fn main() { let s = S { n: [1] } }")
 fn main() { mut s = S { n: 0 }  s.n = [1] }")
         out.contains("F1000")
     }
+    // A tail-`match` arm is a return slot: a collection arm into a value-scalar
+    // return type is the same wild store, caught via the full layout gate.
+    then "a match arm returning a list into an int return type is F1000" {
+        let out = cs_out("fn f(c: int) -> int { match c { 0 -> 1  _ -> [1] } }
+fn main() { let _ = f(1) }")
+        out.contains("F1000")
+    }
+    then "a match arm returning a map into an int return type is F1000" {
+        let out = cs_out("fn f(c: int) -> int { match c { 0 -> 1  _ -> {\"k\": 1} } }
+fn main() { let _ = f(1) }")
+        out.contains("F1000")
+    }
 }
 
 spec "valid collection bindings still compile (a85d — no false positives)" {
@@ -99,6 +111,11 @@ fn main() { let s = S { xs: [1, 2] } }")
     }
     then "reassigning an int var to an int compiles (no false positive)" {
         let out = cs_out("fn main() { mut x: int = 0  x = 5 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a match arm returning a list into a List return type compiles (no false positive)" {
+        let out = cs_out("fn f(c: int) -> List<int> { match c { 0 -> [0]  _ -> [1] } }
+fn main() { let _ = f(1) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
