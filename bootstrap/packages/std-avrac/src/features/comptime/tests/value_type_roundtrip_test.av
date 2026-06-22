@@ -63,6 +63,28 @@ spec "gap 1.B: ValueType.List(.Int) survives quote roundtrip" {
     }
 }
 
+spec "ValueType.Map(.Str, .Int) survives quote roundtrip" {
+    then "fn -> Map<string, int> renders with Map return type, not Unknown" {
+        let out = run_expand_e2e("map",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_map() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen_map() -> Map<string, int> { return {} }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_map)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn _gen_map")
+            && !out.contains("_gen_map() -> <unknown>")
+    }
+}
+
 spec "gap 1.B: typed bool return roundtrips" {
     then "fn -> bool renders with explicit `bool` return type" {
         let out = run_expand_e2e("bool",
