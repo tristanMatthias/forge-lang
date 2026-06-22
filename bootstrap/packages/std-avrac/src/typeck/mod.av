@@ -2038,6 +2038,19 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 
 // ── Expression checking ──
 
+/// Reject an already-checked collection literal (`list` / `map`) bound to a
+/// VALUE-SCALAR slot (int/float/bool/…): a collection is always a pointer, so
+/// storing it in a scalar cell is a layout lie (the inverse of the scalar→ptr
+/// hole). Wraps the literal's result, reporting F1000 only for the value-scalar
+/// case — non-scalar pointer slots (`string`) are a nominal mismatch elsewhere.
+/// `kind` is the literal word for the message ("list" / "map").
+fn reject_collection_into_value_scalar(r: ExprResult, exp: ValueType, kind: string) -> ExprResult {
+    if vtype_is_value_scalar(exp) {
+        return tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a ${kind} literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
+    }
+    r
+}
+
 /// Bidirectional variant of `check_expr`: threads the caller's
 /// `expected` type down so generic constructors / calls can pin
 /// type-args from the return position. ListLit consumes it as an
@@ -2053,21 +2066,12 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // A list/map literal (always a pointer) meeting a VALUE-SCALAR expected
         // type (int/float/bool/…) is the inverse of the ry1a scalar→ptr hole:
         // a pointer stored in a scalar slot. `let x: int = [1,2]` / `{"k":1}`
-        // were silently accepted (a85d). Still check the elements first so
-        // errors inside the literal surface too. (Non-scalar pointer slots like
-        // `string` are a nominal mismatch handled elsewhere, not a layout one.)
-        .ListLit(elements) -> {
-            let r = check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
-            if vtype_is_value_scalar(exp) {
-                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a list literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
-            } else { r }
-        }
-        .MapLit(entries) -> {
-            let r = check_map_lit_with_expected(tc, entries, vtype_map_value(exp))
-            if vtype_is_value_scalar(exp) {
-                tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a map literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
-            } else { r }
-        }
+        // were silently accepted (a85d). The elements are checked first so
+        // errors inside the literal surface too; `reject_collection_into_value_scalar`
+        // then rejects only the value-scalar slot (a non-scalar pointer slot like
+        // `string` is a nominal mismatch handled elsewhere, not a layout one).
+        .ListLit(elements) -> reject_collection_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
+        .MapLit(entries) -> reject_collection_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, callee, args, exp)
             // A call returning a concrete generic instance that conflicts with the
