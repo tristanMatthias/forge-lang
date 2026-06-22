@@ -1,7 +1,8 @@
-// WHY: type checking for map method calls.
+// WHY: type checking for map method calls + map-literal value-type checking.
 
-use core.{ValueType}
-use typeck.{TC, ExprResult, tc_er}
+use core.{SExpr, ValueType, vtype_render_full}
+use typeck.{TC, ExprResult, tc_er, check_expr_list_types, tc_report, generic_args_layout_conflict}
+use diagnostics.{DiagCode}
 
 /// Map a method name to its result ValueType for type-checking.
 /// Returns `.Unknown` for methods the typeck doesn't track yet —
@@ -16,4 +17,29 @@ export fn check_map_method(tc: TC, method: string) -> ExprResult {
         "length" or "len"  -> tc_er(tc, .Int)
         _                  -> tc_er(tc, .Unknown)
     }
+}
+
+/// Bidirectional map-literal checker — the `.MapLit` analog of
+/// `check_list_lit_with_expected`. Keys are string-keyed; `expected_value`
+/// is the annotation's value type (callers pass `Unknown` with no hint).
+/// EVERY value is checked against `expected_value` via the `Map` branch of
+/// `generic_args_layout_conflict`, so a wrong generic annotation on a map
+/// value (`Map<string, Box<string>> = {"k": Box{val:9}}`, or a later entry
+/// `{"a": Box{val:"ok"}, "b": Box{val:9}}`) is rejected — closing 63wu.
+/// Construction is memory-safe regardless via the mono gap-fill; this is the
+/// clean diagnostic. An empty literal adopts `expected_value`.
+export fn check_map_lit_with_expected(tc: TC, entries: List<SExpr>, expected_value: ValueType) -> ExprResult {
+    if entries.length == 0 { return tc_er(tc, ValueType.Map(ValueType.Str, expected_value)) }
+    let lr = check_expr_list_types(tc, entries)
+    mut after = lr.tc
+    // entries = [k0, v0, k1, v1, ...] — values live at the odd indices.
+    mut i = 1
+    while i < lr.types.length {
+        if generic_args_layout_conflict(after, ValueType.Map(ValueType.Str, lr.types[i]), ValueType.Map(ValueType.Str, expected_value)) {
+            after = tc_report(after, DiagCode.TypeMismatch, "map value of type `${vtype_render_full(lr.types[i])}` conflicts with expected `${vtype_render_full(expected_value)}` (generic argument layout conflict)")
+        }
+        i = i + 2
+    }
+    let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
+    tc_er(after, ValueType.Map(ValueType.Str, v_ty))
 }

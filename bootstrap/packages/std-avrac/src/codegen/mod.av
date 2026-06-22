@@ -148,7 +148,7 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         // managed separately at the site where the value was created/wrapped.
         .Union(_) -> ctx.rc_release(val)
         .List(_) -> ctx.rc_release(val)
-        .Map -> ctx.rc_release(val)
+        .Map(_, _) -> ctx.rc_release(val)
         .Trait(_, _) -> ctx.rc_release(val)
         // Value types — not RC-managed, no-op (rc_release checks magic).
         .Int -> {}

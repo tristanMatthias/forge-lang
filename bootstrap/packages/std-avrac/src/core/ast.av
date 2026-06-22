@@ -444,8 +444,9 @@ export enum ValueType {
     Tuple(elements: List<ValueType>),
     /// Homogeneous list. `elem` is the element type.
     List(elem: ValueType),
-    /// String-keyed map. Element type pinned by usage / inference.
-    Map,
+    /// String-keyed map. `key`/`value` types pinned by annotation /
+    /// inference (mirrors `List(elem)`); `Unknown` when not yet resolved.
+    Map(key: ValueType, value: ValueType),
     /// Function value. `ret` is the return type — params are
     /// elided pre-typecheck and resolved into `FnTyped`.
     Fn(ret: ValueType),
@@ -573,7 +574,7 @@ export fn vtype_from_name(name: string) -> ValueType {
         "f64" -> ValueType.Float
         "bool" -> ValueType.Bool
         "ptr" -> ValueType.Ptr
-        "Map" -> ValueType.Map
+        "Map" -> ValueType.Map(ValueType.Unknown, ValueType.Unknown)
         "List" -> ValueType.List(ValueType.Unknown)
         "void" -> ValueType.Void
         "fn" -> ValueType.Fn(ValueType.Unknown)
@@ -606,6 +607,11 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                 "Channel" -> {
                     let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
                     ValueType.Channel(elem)
+                }
+                "Map" -> {
+                    let k = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
+                    let v = if args.length < 2 { ValueType.Unknown } else { type_expr_to_vtype(args[1]) }
+                    ValueType.Map(k, v)
                 }
                 "__tuple" -> ValueType.Tuple(tel_to_type_list(args))
                 _ -> ValueType.Enum(base, tel_to_type_list(args), 0)
@@ -658,7 +664,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Struct(n1, _, id1) -> match b { .Struct(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Float -> b is .Float
-        .Map -> b is .Map
+        .Map(ka, va) -> match b { .Map(kb, vb) -> vtype_eq(ka, kb) && vtype_eq(va, vb), _ -> false }
         .FnTyped(pa, ra) -> match b {
             // FnTyped-vs-FnTyped: compare param list + return, strict.
             .FnTyped(pb, rb) -> type_lists_eq(pa, pb) && vtype_eq(ra, rb)
@@ -721,6 +727,7 @@ export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
             } else { t }
         }
         .List(elem) -> ValueType.List(stamp_ids_vtype(elem, reg))
+        .Map(k, v) -> ValueType.Map(stamp_ids_vtype(k, reg), stamp_ids_vtype(v, reg))
         .Channel(elem) -> ValueType.Channel(stamp_ids_vtype(elem, reg))
         .Task(r) -> ValueType.Task(stamp_ids_vtype(r, reg))
         .Tuple(types) -> ValueType.Tuple(stamp_ids_vtypes(types, reg))
@@ -1149,6 +1156,16 @@ export fn vtype_list_elem(t: ValueType) -> ValueType {
     match t { .List(e) -> e, _ -> ValueType.Unknown }
 }
 
+/// Key type of a `Map`, else `Unknown`.
+export fn vtype_map_key(t: ValueType) -> ValueType {
+    match t { .Map(k, _) -> k, _ -> ValueType.Unknown }
+}
+
+/// Value type of a `Map`, else `Unknown`.
+export fn vtype_map_value(t: ValueType) -> ValueType {
+    match t { .Map(_, v) -> v, _ -> ValueType.Unknown }
+}
+
 /// True iff `t` is a `Map`.
 export fn vtype_is_map(t: ValueType) -> bool { t is .Map }
 
@@ -1220,6 +1237,7 @@ export fn vtype_eq_deep(a: ValueType, b: ValueType) -> bool {
     }
     match a {
         .List(ea) -> match b { .List(eb) -> vtype_eq_deep(ea, eb), _ -> false }
+        .Map(ka, va) -> match b { .Map(kb, vb) -> vtype_eq_deep(ka, kb) && vtype_eq_deep(va, vb), _ -> false }
         .Task(ra) -> match b { .Task(rb) -> vtype_eq_deep(ra, rb), _ -> false }
         .Channel(ea) -> match b { .Channel(eb) -> vtype_eq_deep(ea, eb), _ -> false }
         .Tuple(ea) -> match b { .Tuple(eb) -> vtype_list_eq_deep(ea, eb), _ -> false }
@@ -1300,7 +1318,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Enum(n, _, _) -> n
         .Tuple(_) -> "(tuple)"
         .List(_) -> "List"
-        .Map -> "Map"
+        .Map(_, _) -> "Map"
         .Fn(_) or .Closure(_, _) -> "fn"
         .Void -> "void"
         .Float -> "float"
@@ -1350,7 +1368,7 @@ export fn vtype_render_full(t: ValueType) -> string {
         }
         .Tuple(types) -> "(${render_type_list(types)})"
         .List(elem) -> "List<${vtype_render_full(elem)}>"
-        .Map -> "Map"
+        .Map(k, v) -> "Map<${vtype_render_full(k)}, ${vtype_render_full(v)}>"
         .Fn(_) or .Closure(_, _) -> "fn"
         .Void -> "void"
         .Float -> "float"

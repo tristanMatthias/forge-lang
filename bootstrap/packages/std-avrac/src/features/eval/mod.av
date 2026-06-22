@@ -2841,7 +2841,12 @@ fn enum_value_to_value_type(v: Value) -> Result<ValueType, string> {
         "Bytes"   -> .Ok(ValueType.Bytes)
         "Void"    -> .Ok(ValueType.Void)
         "Ptr"     -> .Ok(ValueType.Ptr)
-        "Map"     -> .Ok(ValueType.Map)
+        "Map"     -> {
+            if p.length != 2 { return .Err("decode: Map arity") }
+            let k = value_to_value_type_node(p[0])?
+            let v = value_to_value_type_node(p[1])?
+            .Ok(ValueType.Map(k, v))
+        }
         "Unknown" -> .Ok(ValueType.Unknown)
         "Struct" -> {
             if p.length != 3 { return .Err("decode: bad payload") }

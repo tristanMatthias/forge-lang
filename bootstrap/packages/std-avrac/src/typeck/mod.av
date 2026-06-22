@@ -3,14 +3,14 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
 use features.channels.{check_channel_method}
 use features.list_lit.{check_list_method, check_list_lit_with_expected}
-use features.map_lit.{check_map_method}
+use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts}
@@ -1650,6 +1650,18 @@ export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bo
         let eb = vtype_list_elem(b)
         return settled_layout_conflict(tc, ea, eb) || generic_args_layout_conflict(tc, ea, eb)
     }
+    // Maps carry key+value types that `vtype_type_args` doesn't expose either, so
+    // recurse through a matching `Map` shell — catches a conflict nested in a map
+    // value (`Map<string, Box<int>>` vs `Map<string, Box<string>>`, 63wu) the same
+    // way the List branch handles list elements.
+    if (a is .Map) && (b is .Map) {
+        let ka = vtype_map_key(a)
+        let kb = vtype_map_key(b)
+        let va = vtype_map_value(a)
+        let vb = vtype_map_value(b)
+        return settled_layout_conflict(tc, ka, kb) || generic_args_layout_conflict(tc, ka, kb) ||
+               settled_layout_conflict(tc, va, vb) || generic_args_layout_conflict(tc, va, vb)
+    }
     if (a is .Optional) && (b is .Optional) {
         let ea = vtype_strip_optional(a)
         let eb = vtype_strip_optional(b)
@@ -2019,6 +2031,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
     let exp = vtype_strip_optional(expected)
     match expr {
         .ListLit(elements) -> check_list_lit_with_expected(tc, elements, vtype_list_elem(exp))
+        .MapLit(entries) -> check_map_lit_with_expected(tc, entries, vtype_map_value(exp))
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, callee, args, exp)
             // A call returning a concrete generic instance that conflicts with the
@@ -2790,6 +2803,16 @@ fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
     list_lit_optionalize(elements, base)
 }
 
+/// First map VALUE type for quick `MapLit` typing — the value analog of
+/// `tc_first_elem_ty`. entries = [k0, v0, k1, v1, ...] so the first value
+/// is at index 1; empty literals are `Unknown`.
+fn tc_first_map_value_ty(tc: TC, entries: List<SExpr>) -> ValueType {
+    if entries.length < 2 { return ValueType.Unknown }
+    let first_val = entries[1]
+    let r = check_expr(tc, first_val.node)
+    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first_val.node) } else { r.ty }
+}
+
 /// Substitute every T occurrence in `ty` with the binding from
 /// `bindings`. Recurses through List/Task/FnTyped/Enum/Union
 /// constructors so a generic `Result<T, E>` returns the
@@ -2990,7 +3013,7 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
     }
 
     // Map methods — dispatched to features/map_lit/typeck.av
-    if vtype_eq(o.ty, .Map) {
+    if o.ty is .Map {
         return check_map_method(checked_args, method)
     }
 
@@ -3430,7 +3453,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
             } else { check_expr(tc, se.node).ty }
         }
         .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
-        .MapLit(_) -> ValueType.Map
+        .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, entries))
         // Build the tuple type from the already-annotated elements'
         // stamped `.ty` (annotate_expr recursed into them). Typing the
         // literal as an empty Tuple lost the element types, which broke

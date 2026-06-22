@@ -233,7 +233,7 @@ fn should_null_check_vt(vt: ValueType) -> bool {
         .Struct(_, _, _) -> true
         .Enum(_, _, _) -> true
         .List(_) -> true
-        .Map -> true
+        .Map(_, _) -> true
         .Trait(_, _) -> true
         .Union(_) -> true
         .Newtype(_, inner, _) -> should_null_check_vt(inner)

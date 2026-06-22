@@ -2,9 +2,9 @@
 // as siblings, surface flat at `features.map_lit.{...}`. emit_map_lit
 // is in scope without a self-import.
 use codegen.{err_emit}
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, ValueType}
 use resolve.{resolve_expr_list}
-use typeck.{check_expr_list, tc_er}
+use typeck.{check_expr_list_types, tc_er}
 
 /// Register the `{k: v, k: v}` map literal feature. Wires up
 /// resolver, typeck, and codegen via the standard feature
@@ -28,12 +28,18 @@ fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 }
 
 /// Type-check hook for `MapLit`. Walks every entry expression so
-/// errors are reported, then declares the result type Map.
+/// errors are reported, then declares the result type
+/// `Map<string, V>` — keys are string-keyed (cstr-backed), V pinned
+/// from the first value (mirrors list-element inference). The pinned
+/// V lets `generic_args_layout_conflict` catch a wrong map-value
+/// annotation (`Map<string, Box<string>> = {"k": Box{val:9}}`, 63wu).
 fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MapLit(entries) -> {
-            let checked = check_expr_list(tc, entries)
-            tc_er(checked, .Map)
+            let lr = check_expr_list_types(tc, entries)
+            // entries = [k0, v0, k1, v1, ...]; first value is at index 1.
+            let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
+            tc_er(lr.tc, ValueType.Map(ValueType.Str, v_ty))
         }
         _ -> tc_er(tc, .Unknown)
     }

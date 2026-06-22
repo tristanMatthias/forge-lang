@@ -726,7 +726,7 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Struct(_, _, _) -> pt
         .Enum(_, _, _) -> pt
         .List(_) -> pt
-        .Map -> pt
+        .Map(_, _) -> pt
         .Fn(_) -> pt
         .FnTyped(_, _) -> pt
         .Closure(_, _) -> pt

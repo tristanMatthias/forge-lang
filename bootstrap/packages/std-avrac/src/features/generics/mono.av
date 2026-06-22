@@ -431,6 +431,7 @@ fn vtype_mangle_slug(t: ValueType) -> string {
         .Trait(n, _) -> "dyn ${type_short_name(n)}"
         .Enum(n, args, _) -> mangle_slug_named(n, args)
         .List(elem) -> "List<${vtype_mangle_slug(elem)}>"
+        .Map(k, v) -> "Map<${vtype_mangle_slug(k)}, ${vtype_mangle_slug(v)}>"
         .Task(inner) -> "Task<${vtype_mangle_slug(inner)}>"
         .Channel(elem) -> "Channel<${vtype_mangle_slug(elem)}>"
         .Tuple(elems) -> "Tuple<${mangle_arg_list(elems)}>"
@@ -528,6 +529,13 @@ fn unify_param(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType,
         }
         .Channel(p_inner) -> match arg_ty {
             .Channel(a_inner) -> unify_param(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        .Map(p_key, p_val) -> match arg_ty {
+            .Map(a_key, a_val) -> {
+                let acc1 = unify_param(tp, p_key, a_key, acc)
+                unify_param(tp, p_val, a_val, acc1)
+            }
             _ -> acc
         }
         .FnTyped(p_params, p_ret) -> match arg_ty {
@@ -2015,6 +2023,7 @@ fn vtype_is_nonconcrete(vt: ValueType, regs: GenRegs) -> bool {
         .Optional(inner) -> vtype_is_nonconcrete(inner, regs)
         .Task(inner) -> vtype_is_nonconcrete(inner, regs)
         .Channel(elem) -> vtype_is_nonconcrete(elem, regs)
+        .Map(k, v) -> vtype_is_nonconcrete(k, regs) || vtype_is_nonconcrete(v, regs)
         .Tuple(elems) -> ta_vtypes_nonconcrete(elems, regs)
         .Union(types) -> ta_vtypes_nonconcrete(types, regs)
         .Newtype(_, inner, _) -> vtype_is_nonconcrete(inner, regs)
@@ -2091,6 +2100,11 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         if base == "Channel" {
             let elem = if args.length > 0 { args[0] } else { ValueType.Unknown }
             return ValueType.Channel(elem)
+        }
+        if base == "Map" {
+            let k = if args.length > 0 { args[0] } else { ValueType.Unknown }
+            let v = if args.length > 1 { args[1] } else { ValueType.Unknown }
+            return ValueType.Map(k, v)
         }
         return ValueType.Enum(base, args, 0)
     }

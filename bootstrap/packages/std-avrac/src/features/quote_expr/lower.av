@@ -838,7 +838,9 @@ fn construct_value_type(vt: ValueType) -> Expr {
         .Bytes   -> value_type_ctor("Bytes")
         .Void    -> value_type_ctor("Void")
         .Ptr     -> value_type_ctor("Ptr")
-        .Map     -> value_type_ctor("Map")
+        .Map(key, value) -> value_type_ctor_args("Map",
+            two_args(construct_value_type(key),
+                     construct_value_type(value)))
         .Unknown -> value_type_ctor("Unknown")
         .Struct(name, type_args, id) -> value_type_ctor_args("Struct",
             three_args(name_or_splice(name),
