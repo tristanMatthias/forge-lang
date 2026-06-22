@@ -107,8 +107,10 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
             }
             // Validate field names + scalar cell types against the declared
             // struct so a bad table column / cell is F1000, not a codegen ICE.
-            // A generic struct literal carries its inferred type args.
-            tc_er(check_struct_lit_fields(tc, name, inits), tc_struct_lit_vtype(tc, name, inits))
+            // A generic struct literal carries its inferred type args — pass that
+            // instance type as the receiver so generic fields specialise.
+            let rty = tc_struct_lit_vtype(tc, name, inits)
+            tc_er(check_struct_lit_fields(tc, rty, name, inits), rty)
         }
         _ -> tc_er(tc, .Unknown)
     }
@@ -212,7 +214,7 @@ fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
             // the direct-assignment twin of with-update / struct-literal field
             // checking. Skips when obj isn't a known struct.
             let name = vtype_struct_name(o.ty)
-            let after = if name == "" { v.tc } else { check_field_assign_ty(v.tc, name, field, v.ty) }
+            let after = if name == "" { v.tc } else { check_field_assign_ty(v.tc, o.ty, name, field, v.ty) }
             tc_er(after, v.ty)
         }
         _ -> tc_er(tc, .Unknown)

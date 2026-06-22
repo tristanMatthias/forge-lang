@@ -42,6 +42,14 @@ fn main() {
 }")
         out.contains("F1000")
     }
+    then "an override of a SPECIALIZED generic field (Box<string> val := int) is F1000" {
+        let out = wu_out("type Box<T> = { val: T }
+fn main() {
+    let b: Box<string> = Box { val: \"x\" }
+    let b2 = b with { val: 9 }
+}")
+        out.contains("F1000")
+    }
 }
 
 spec "valid with-updates still compile (lb81 — no false positives)" {

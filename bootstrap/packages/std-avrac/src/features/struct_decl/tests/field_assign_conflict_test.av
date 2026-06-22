@@ -34,6 +34,11 @@ type S = { xs: List<Box<string>> }
 fn main() { mut s = S { xs: [Box { val: \"ok\" }] }  s.xs = [Box { val: 9 }] }")
         out.contains("F1000")
     }
+    then "assigning int to a SPECIALIZED generic field (b.val on Box<string>) is F1000" {
+        let out = fa_out("type Box<T> = { val: T }
+fn main() { mut b: Box<string> = Box { val: \"x\" }  b.val = 9 }")
+        out.contains("F1000")
+    }
 }
 
 spec "valid field assignments still compile (tokv — no false positives)" {
@@ -51,6 +56,11 @@ fn main() { mut s = S { name: \"a\" }  s.name = \"b\" }")
     then "numeric interchange into an int field is tolerated" {
         let out = fa_out("type S = { n: int }
 fn main() { mut s = S { n: 1 }  s.n = 5 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a matching write to a specialized generic field compiles (b.val = \"y\" on Box<string>)" {
+        let out = fa_out("type Box<T> = { val: T }
+fn main() { mut b: Box<string> = Box { val: \"x\" }  b.val = \"y\" }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }

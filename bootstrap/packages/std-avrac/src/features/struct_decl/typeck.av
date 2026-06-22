@@ -72,7 +72,7 @@ export fn check_field_inits(tc: TC, inits: List<FieldInit>) -> TC {
 /// `table<Row>` row is a StructLit(Row, …), so a header column that isn't
 /// a field of Row, or a cell whose type doesn't match the field, is
 /// reported here as F1000 instead of crashing codegen with an ICE.
-export fn check_struct_lit_fields(tc: TC, name: string, inits: List<FieldInit>) -> TC {
+export fn check_struct_lit_fields(tc: TC, receiver_ty: ValueType, name: string, inits: List<FieldInit>) -> TC {
     let fields = struct_type_lookup(tc.structs, name)
     mut acc = tc
     mut i = 0
@@ -84,7 +84,7 @@ export fn check_struct_lit_fields(tc: TC, name: string, inits: List<FieldInit>) 
             if !tc_field_exists(fields, init.name) {
                 acc = tc_report(acc, DiagCode.TypeMismatch, "no field `${init.name}` on type `${name}`")
             } else {
-                acc = check_one_field_ty(acc, name, fields, init.name, r.ty)
+                acc = check_one_field_ty(acc, receiver_ty, name, fields, init.name, r.ty)
             }
         }
         i = i + 1
@@ -98,8 +98,15 @@ export fn check_struct_lit_fields(tc: TC, name: string, inits: List<FieldInit>) 
 /// `Box<string>` field — vtype_eq ignores generic args, so a reader would deref
 /// the int as a pointer). Assumes the field exists (callers gate that). Shared
 /// by struct-literal fields and direct field assignment (tokv).
-export fn check_one_field_ty(tc: TC, name: string, fields: List<FieldEntry>, field: string, value_ty: ValueType) -> TC {
-    let fty = field_type_in(tc, fields, field)
+///
+/// `receiver_ty` is the instance type the field belongs to (e.g. `Box<string>`).
+/// A generic field's declared type (`T`) is specialised to the receiver's arg
+/// before the checks — otherwise `generic_args_layout_conflict` sees an
+/// unresolved param and skips it, letting `b.val = 9` / `b with { val: 9 }` on a
+/// `Box<string>` slip through. The read path (check_field_access) specialises
+/// the same way; pass `.Unknown` to opt out (no args → no-op specialisation).
+export fn check_one_field_ty(tc: TC, receiver_ty: ValueType, name: string, fields: List<FieldEntry>, field: string, value_ty: ValueType) -> TC {
+    let fty = tc_specialize_field_ty(tc.structs, receiver_ty, field_type_in(tc, fields, field))
     mut acc = tc
     let cross_str = vtype_is_string_like(fty) != vtype_is_string_like(value_ty)
     if vtype_is_scalar(fty) && vtype_is_scalar(value_ty) && cross_str && !vtype_assignable(value_ty, fty) {
@@ -114,11 +121,11 @@ export fn check_one_field_ty(tc: TC, name: string, fields: List<FieldEntry>, fie
 /// Validate a direct field assignment `obj.field = value` (tokv) — the single-
 /// field analog of check_struct_lit_fields. Skips when the struct/field isn't
 /// resolved (unknown-field assignment is reported on the resolve/access path).
-export fn check_field_assign_ty(tc: TC, name: string, field: string, value_ty: ValueType) -> TC {
+export fn check_field_assign_ty(tc: TC, receiver_ty: ValueType, name: string, field: string, value_ty: ValueType) -> TC {
     let fields = struct_type_lookup(tc.structs, name)
     if fields.length == 0 { return tc }
     if !tc_field_exists(fields, field) { return tc }
-    check_one_field_ty(tc, name, fields, field, value_ty)
+    check_one_field_ty(tc, receiver_ty, name, fields, field, value_ty)
 }
 
 /// True for the string-category scalars (`string` / `bytes`), which

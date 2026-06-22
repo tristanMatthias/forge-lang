@@ -1770,6 +1770,21 @@ export fn int_into_pointer_slot(tc: TC, arg_ty: ValueType, declared: ValueType) 
     inner is .Str || inner is .Bytes
 }
 
+/// The inverse of `int_into_pointer_slot`: a COLLECTION value (a `List` / `Map`
+/// literal — always a pointer) flowing into a VALUE-SCALAR slot (int/float/bool/…)
+/// is a wild store, a pointer stored in a scalar cell (`Map<string,int>.set(k, {…})`
+/// stores a map ptr in an int slot; `List<int>.push([…])` likewise). Restricted to
+/// List/Map args on purpose: it is the concrete "collection literal into a scalar
+/// cell" case, which keeps the check free of false positives on `null`/`void`
+/// (valid for nullable slots), `Optional` args, and newtype wrappers. The slot's
+/// own `Optional` is stripped (`int?` is still a scalar cell), unresolved slots skip.
+export fn collection_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
+    if !((arg_ty is .List) || (arg_ty is .Map)) { return false }
+    let slot = vtype_strip_optional(declared)
+    if vtype_mentions_unresolved(tc, slot) { return false }
+    vtype_is_value_scalar(slot)
+}
+
 /// Type-check a `let` / `mut` / `const` binding: infer the
 /// initializer's type, verify it matches any declared annotation,
 /// and bind `name: type` into the env. `is_mut` distinguishes `mut`
@@ -3055,7 +3070,7 @@ fn check_collection_value_arg(tc: TC, arg_types: List<ValueType>, method: string
     let idx = if method == "push" { 0 } else if (method == "set") || (method == "insert") { 1 } else { -1 }
     if idx < 0 || idx >= arg_types.length { return tc }
     let vt = arg_types[idx]
-    if generic_args_layout_conflict(tc, vt, elem) || int_into_pointer_slot(tc, vt, elem) {
+    if generic_args_layout_conflict(tc, vt, elem) || int_into_pointer_slot(tc, vt, elem) || collection_into_value_scalar_slot(tc, vt, elem) {
         return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (generic argument layout conflict)")
     }
     tc

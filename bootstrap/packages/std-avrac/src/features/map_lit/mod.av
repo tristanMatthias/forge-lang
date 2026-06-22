@@ -37,9 +37,14 @@ fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MapLit(entries) -> {
             let lr = check_expr_list_types(tc, entries)
-            // entries = [k0, v0, k1, v1, ...]; first value is at index 1.
+            // entries = [k0, v0, k1, v1, ...]; pin V from the first value.
             let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
-            tc_er(lr.tc, ValueType.Map(ValueType.Str, v_ty))
+            // Reject a heterogeneous literal even WITHOUT an annotation: every
+            // later value must share the first value's layout, else a read
+            // through the inferred `Map<string, V>` derefs the wrong shape
+            // (the map analog of list-element checking).
+            let after = check_map_values_against(lr.tc, lr.types, v_ty)
+            tc_er(after, ValueType.Map(ValueType.Str, v_ty))
         }
         _ -> tc_er(tc, .Unknown)
     }

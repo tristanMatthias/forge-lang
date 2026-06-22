@@ -36,6 +36,11 @@ fn main() { let m: Map<string, Box<string>> = {\"k\": Box { val: 9 }} }")
 fn main() { let m: Map<string, Box<string>> = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: 9 }} }")
         out.contains("F1000")
     }
+    then "an UNANNOTATED heterogeneous literal is rejected (first value pins V)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
     then "the inverse instantiation Map<string, Box<int>> = {\"k\": Box{val:\"x\"}} is F1000" {
         let out = m63wu_out("type Box<T> = { val: T }
 fn main() { let m: Map<string, Box<int>> = {\"k\": Box { val: \"x\" }} }")
@@ -139,6 +144,11 @@ fn main() { let m: Map<string, Box<string>> = {} }")
     then "an unannotated map literal is never a conflict" {
         let out = m63wu_out("type Box<T> = { val: T }
 fn main() { let m = {\"k\": Box { val: 9 }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an unannotated HOMOGENEOUS multi-value literal compiles (no false positive)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: \"y\" }} }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }

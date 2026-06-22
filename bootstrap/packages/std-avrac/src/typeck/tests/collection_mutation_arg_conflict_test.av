@@ -30,9 +30,21 @@ fn main() { mut xs: List<Box<string>> = [Box{val:\"ok\"}]  let _ = xs.push(Box{v
         let out = cm_out("fn main() { mut xs: List<string> = [\"a\"]  let _ = xs.set(0, 9) }")
         out.contains("F1000")
     }
+    then "List.insert value arg (index, value) conflict is F1000" {
+        let out = cm_out("fn main() { mut xs: List<string> = [\"a\"]  let _ = xs.insert(0, 9) }")
+        out.contains("F1000")
+    }
     then "Map.set of a Box<int> into Map<string, Box<string>> is F1000" {
         let out = cm_out("type Box<T> = { val: T }
 fn main() { mut m: Map<string, Box<string>> = {\"a\": Box{val:\"ok\"}}  m.set(\"b\", Box{val:9}) }")
+        out.contains("F1000")
+    }
+    then "Map.set of a map literal (pointer) into a scalar Map<string,int> value is F1000" {
+        let out = cm_out("fn main() { mut m: Map<string, int> = {\"a\": 1}  m.set(\"b\", {\"x\": 1}) }")
+        out.contains("F1000")
+    }
+    then "List.push of a list literal (pointer) into a scalar List<int> is F1000" {
+        let out = cm_out("fn main() { mut xs: List<int> = [1]  let _ = xs.push([2]) }")
         out.contains("F1000")
     }
 }
@@ -48,6 +60,10 @@ fn main() { mut xs: List<Box<string>> = [Box{val:\"ok\"}]  let _ = xs.push(Box{v
     mut xs: List<int> = [1]  let _ = xs.push(2)
     mut m: Map<string, int> = {\"a\": 1}  m.set(\"b\", 2)
 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "List<string>.insert(0, \"x\") compiles (matching value, no false positive)" {
+        let out = cm_out("fn main() { mut xs: List<string> = [\"a\"]  let _ = xs.insert(0, \"x\") }")
         out.contains("__AVRA_COMPILE_OK__")
     }
     then "a generic mut push binds the element type (no false positive)" {

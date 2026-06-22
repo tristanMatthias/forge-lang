@@ -31,15 +31,26 @@ export fn check_map_method(tc: TC, method: string) -> ExprResult {
 export fn check_map_lit_with_expected(tc: TC, entries: List<SExpr>, expected_value: ValueType) -> ExprResult {
     if entries.length == 0 { return tc_er(tc, ValueType.Map(ValueType.Str, expected_value)) }
     let lr = check_expr_list_types(tc, entries)
-    mut after = lr.tc
-    // entries = [k0, v0, k1, v1, ...] — values live at the odd indices.
+    let after = check_map_values_against(lr.tc, lr.types, expected_value)
+    let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
+    tc_er(after, ValueType.Map(ValueType.Str, v_ty))
+}
+
+/// Validate every map VALUE (the odd indices of `types`, since entries are
+/// [k0, v0, k1, v1, ...]) against `expected_value` via the `Map` branch of
+/// generic_args_layout_conflict, reporting F1000 on a layout conflict. Shared by
+/// the ANNOTATED path (check_map_lit_with_expected — expected = the annotation's
+/// value type) and the UNANNOTATED path (map_lit_check_expr — expected = the
+/// FIRST value's type) so a heterogeneous literal is rejected either way: the
+/// map analog of list-element layout checking.
+export fn check_map_values_against(tc: TC, types: List<ValueType>, expected_value: ValueType) -> TC {
+    mut after = tc
     mut i = 1
-    while i < lr.types.length {
-        if generic_args_layout_conflict(after, ValueType.Map(ValueType.Str, lr.types[i]), ValueType.Map(ValueType.Str, expected_value)) {
-            after = tc_report(after, DiagCode.TypeMismatch, "map value of type `${vtype_render_full(lr.types[i])}` conflicts with expected `${vtype_render_full(expected_value)}` (generic argument layout conflict)")
+    while i < types.length {
+        if generic_args_layout_conflict(after, ValueType.Map(ValueType.Str, types[i]), ValueType.Map(ValueType.Str, expected_value)) {
+            after = tc_report(after, DiagCode.TypeMismatch, "map value of type `${vtype_render_full(types[i])}` conflicts with expected `${vtype_render_full(expected_value)}` (generic argument layout conflict)")
         }
         i = i + 2
     }
-    let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
-    tc_er(after, ValueType.Map(ValueType.Str, v_ty))
+    after
 }
