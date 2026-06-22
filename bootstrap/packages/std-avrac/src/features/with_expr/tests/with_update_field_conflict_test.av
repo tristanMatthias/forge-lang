@@ -1,0 +1,65 @@
+// WHY: regression for lb81 — `with`-update field values were not validated
+// against the source struct's declared fields. with_check called
+// check_field_inits (which only type-checks the override value expressions),
+// not check_struct_lit_fields (which validates field name + scalar mismatch +
+// generic-arg layout conflict, exactly as a struct literal is checked). So
+// `s with { b: Box{val:9} }` on `b: Box<string>` stored a Box<int> in the slot
+// — a wild store read later as a pointer. The fix routes with-update through
+// check_struct_lit_fields using the source object's struct name.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn wu_out(source: string) -> string {
+    let path = "/tmp/avra_with_update_conflict.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "with-update field values are validated against the struct (lb81)" {
+    then "a generic-arg conflict in an override is F1000 (Box<int> into Box<string>)" {
+        let out = wu_out("type Box<T> = { val: T }
+type S = { b: Box<string> }
+fn main() {
+    let s = S { b: Box { val: \"ok\" } }
+    let s2 = s with { b: Box { val: 9 } }
+}")
+        out.contains("F1000")
+    }
+    then "a scalar string mismatch in an override is F1000 (int into a string field)" {
+        let out = wu_out("type S = { name: string, n: int }
+fn main() {
+    let s = S { name: \"a\", n: 1 }
+    let s2 = s with { name: 9 }
+}")
+        out.contains("F1000")
+    }
+    then "an override naming a nonexistent field is F1000" {
+        let out = wu_out("type S = { name: string }
+fn main() {
+    let s = S { name: \"a\" }
+    let s2 = s with { nope: 1 }
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "valid with-updates still compile (lb81 — no false positives)" {
+    then "a matching generic override compiles" {
+        let out = wu_out("type Box<T> = { val: T }
+type S = { b: Box<string> }
+fn main() {
+    let s = S { b: Box { val: \"ok\" } }
+    let s2 = s with { b: Box { val: \"x\" } }
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a matching scalar override compiles" {
+        let out = wu_out("type S = { name: string, n: int }
+fn main() {
+    let s = S { name: \"a\", n: 1 }
+    let s2 = s with { name: \"b\", n: 2 }
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
