@@ -95,13 +95,26 @@ impl BytesWriter {
     }
 
     fn finish(self) -> bytes {
-        finish_loop(self.chunks, 0, avra_bytes_make(0))
+        concat_chunks(self.chunks, 0, self.chunks.length)
     }
 }
 
-fn finish_loop(chunks: List<bytes>, idx: int, acc: bytes) -> bytes {
-    if idx >= chunks.length { return acc }
-    finish_loop(chunks, idx + 1, acc.concat(chunks[idx]))
+/// Divide-and-conquer concatenation of the writer's chunks: O(total · log N)
+/// bytes copied, O(total) peak memory.
+///
+/// The previous implementation folded left — `acc.concat(chunk)` once per
+/// chunk — which is O(N²): every `concat` copies the whole running
+/// accumulator, and the tail recursion kept each intermediate `acc` alive
+/// (one per frame). Serializing the self-hosted compiler's unit metadata
+/// (~576 KB across tens of thousands of fixed-width chunks) peaked at ~14 GB,
+/// OOM-killing the 16 GB seed-train CI on every whole-compiler producer build
+/// (snw0 lever-b). Splitting the range in half bounds both the recursion
+/// depth (log N) and the live accumulators (O(total)).
+fn concat_chunks(chunks: List<bytes>, lo: int, hi: int) -> bytes {
+    if hi <= lo { return avra_bytes_make(0) }
+    if hi - lo == 1 { return chunks[lo] }
+    let mid = lo + (hi - lo) / 2
+    concat_chunks(chunks, lo, mid).concat(concat_chunks(chunks, mid, hi))
 }
 
 // ── Reader ──
