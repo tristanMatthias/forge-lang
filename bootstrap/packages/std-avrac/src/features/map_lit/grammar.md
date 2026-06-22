@@ -51,7 +51,9 @@ expressions must evaluate to a string at runtime.
   paired — keeps the AST shape uniform with `Expr.ListLit`).
 - Resolve walks each entry expression.
 - Type-check pins V from the first value entry (or annotated
-  context) and validates keys are strings.
+  context), validates keys are strings, and rejects a value whose
+  layout conflicts with an annotated `Map<K, V>` value type
+  (e.g. `Map<string, Box<string>> = {"k": Box{val: 9}}` — F1000).
 - Codegen emits the map-build sequence in
   `features/map_lit/codegen.av`.
 

@@ -1662,7 +1662,15 @@ export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bo
         return settled_layout_conflict(tc, ka, kb) || generic_args_layout_conflict(tc, ka, kb) ||
                settled_layout_conflict(tc, va, vb) || generic_args_layout_conflict(tc, va, vb)
     }
-    if (a is .Optional) && (b is .Optional) {
+    // Nullable widening: a value of type `T` satisfies an expected `T?`, so a
+    // real conflict can hide under a ONE-SIDED Optional (a `Box<int>` value into
+    // a `Box<string>?` slot — same pointer-niche layout, but the inner field is
+    // int-vs-ptr). Strip Optional from whichever side carries it and compare the
+    // inner types: `T` conflicts with `U?` exactly when `T` conflicts with `U`.
+    // Catches the nullable container-value hole uniformly for List elements, Map
+    // values, and struct fields. (The top-level annotation's own Optional is
+    // already stripped by check_expr_expected; this covers the nested ones.)
+    if (a is .Optional) || (b is .Optional) {
         let ea = vtype_strip_optional(a)
         let eb = vtype_strip_optional(b)
         return settled_layout_conflict(tc, ea, eb) || generic_args_layout_conflict(tc, ea, eb)
@@ -2797,10 +2805,15 @@ fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
 /// `none` is `List<T?>` — re-wrap so the fast-path agrees with `emit_list_lit`.
 fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
-    let first = elements[0]
-    let r = check_expr(tc, first.node)
-    let base = if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first.node) } else { r.ty }
-    list_lit_optionalize(elements, base)
+    list_lit_optionalize(elements, tc_expr_or_lit_ty(tc, elements[0].node))
+}
+
+/// Type of an expr node, falling back to literal-shape inference when the
+/// checker returns `Unknown` (a bare literal whose type the surrounding context
+/// pins). Shared by the quick-type inference for list elements and map values.
+fn tc_expr_or_lit_ty(tc: TC, node: Expr) -> ValueType {
+    let r = check_expr(tc, node)
+    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(node) } else { r.ty }
 }
 
 /// First map VALUE type for quick `MapLit` typing — the value analog of
@@ -2808,9 +2821,7 @@ fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
 /// is at index 1; empty literals are `Unknown`.
 fn tc_first_map_value_ty(tc: TC, entries: List<SExpr>) -> ValueType {
     if entries.length < 2 { return ValueType.Unknown }
-    let first_val = entries[1]
-    let r = check_expr(tc, first_val.node)
-    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(first_val.node) } else { r.ty }
+    tc_expr_or_lit_ty(tc, entries[1].node)
 }
 
 /// Substitute every T occurrence in `ty` with the binding from

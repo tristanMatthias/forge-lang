@@ -46,6 +46,39 @@ fn main() { let m: Map<string, Box<int>> = {\"k\": Box { val: \"x\" }} }")
 fn main() { let m: Map<string, List<Box<string>>> = {\"k\": [Box { val: 9 }]} }")
         out.contains("F1000")
     }
+    then "a conflict nested in a map-in-map value is caught (recursion through Map then Map)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Map<string, Box<string>>> = {\"k\": {\"j\": Box { val: 9 }}} }")
+        out.contains("F1000")
+    }
+    then "a NULLABLE map value still catches the base conflict (Box<int> into Box<string>?)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>?> = {\"k\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
+}
+
+spec "map-value conflicts are caught across binding positions (63wu)" {
+    then "fn-argument: a map literal arg with a conflicting value is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn want(m: Map<string, Box<string>>) { }
+fn main() { want({\"k\": Box { val: 9 }}) }")
+        out.contains("F1000")
+    }
+    then "return: a conflicting map literal against the return type is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn f() -> Map<string, Box<string>> { return {\"k\": Box { val: 9 }} }
+fn main() { let m = f() }")
+        out.contains("F1000")
+    }
+    then "reassignment: a conflicting map literal into a mut binding is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() {
+    mut m: Map<string, Box<string>> = {\"k\": Box { val: \"ok\" }}
+    m = {\"k\": Box { val: 9 }}
+}")
+        out.contains("F1000")
+    }
 }
 
 spec "valid maps and matching instantiations still compile (63wu — no false positives)" {
@@ -64,6 +97,15 @@ fn main() { let m: Map<string, Box<string>> = {\"k\": Box { val: \"ok\" }} }")
     then "Map<string, Box<int>> with a matching int value compiles" {
         let out = m63wu_out("type Box<T> = { val: T }
 fn main() { let m: Map<string, Box<int>> = {\"k\": Box { val: 9 }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a NULLABLE map value accepts a matching value (Box<string> into Box<string>?)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>?> = {\"k\": Box { val: \"ok\" }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "nullable int values compile (nullable widening, not a conflict)" {
+        let out = m63wu_out("fn main() { let m: Map<string, int?> = {\"k\": 1, \"j\": 2} }")
         out.contains("__AVRA_COMPILE_OK__")
     }
     then "an empty map literal adopts the annotation (no values to conflict)" {
