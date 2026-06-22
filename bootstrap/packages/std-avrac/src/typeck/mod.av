@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
@@ -1662,6 +1662,13 @@ export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bo
         return settled_layout_conflict(tc, ka, kb) || generic_args_layout_conflict(tc, ka, kb) ||
                settled_layout_conflict(tc, va, vb) || generic_args_layout_conflict(tc, va, vb)
     }
+    // Tuples carry element types `vtype_type_args` doesn't expose, so recurse
+    // pairwise. Without this, ANY layout conflict is bypassed by tuple-wrapping —
+    // even a bare scalar↔ptr: `let t: (int, string) = (1, 9)` would store int 9
+    // in the string slot (a wild pointer read) yet compile clean.
+    if (a is .Tuple) && (b is .Tuple) {
+        return type_list_layout_conflict(tc, vtype_tuple_elems(a), vtype_tuple_elems(b))
+    }
     // Nullable widening: a value of type `T` satisfies an expected `T?`, so a
     // real conflict can hide under a ONE-SIDED Optional (a `Box<int>` value into
     // a `Box<string>?` slot — same pointer-niche layout, but the inner field is
@@ -1677,8 +1684,13 @@ export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bo
     }
     let na = vtype_nominal_name(a)
     if na == "" || na != vtype_nominal_name(b) { return false }
-    let aa = vtype_type_args(a)
-    let ba = vtype_type_args(b)
+    type_list_layout_conflict(tc, vtype_type_args(a), vtype_type_args(b))
+}
+
+/// Pairwise layout-conflict over two type lists — nominal generic args or tuple
+/// elements: a settled scalar↔ptr mismatch OR a deeper nested conflict in any
+/// aligned pair. Length-tolerant (compares the shorter arity).
+fn type_list_layout_conflict(tc: TC, aa: List<ValueType>, ba: List<ValueType>) -> bool {
     let n = if aa.length < ba.length { aa.length } else { ba.length }
     mut i = 0
     while i < n {
@@ -2680,6 +2692,18 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
         }
         .Task(p_inner) -> match arg_ty {
             .Task(a_inner) -> tc_unify(tp, p_inner, a_inner, acc)
+            _ -> acc
+        }
+        // Bind K and V from a `Map<K, V>` arg — the typeck twin of mono's
+        // unify_param Map branch. Without this, a generic fn over a map
+        // (`fn f<V>(m: Map<string, V>) -> Map<string, V>`) never resolves V
+        // from the arg, so the call's return type stays generic and a
+        // conflicting `let n: Map<string, string> = f(int_map)` escapes.
+        .Map(p_key, p_val) -> match arg_ty {
+            .Map(a_key, a_val) -> {
+                let acc1 = tc_unify(tp, p_key, a_key, acc)
+                tc_unify(tp, p_val, a_val, acc1)
+            }
             _ -> acc
         }
         // Unify `T?` param against `U?` arg (inner-to-inner) or against a

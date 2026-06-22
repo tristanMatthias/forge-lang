@@ -1166,6 +1166,17 @@ export fn vtype_map_value(t: ValueType) -> ValueType {
     match t { .Map(_, v) -> v, _ -> ValueType.Unknown }
 }
 
+/// Element types of a `Tuple`, else the empty list.
+export fn vtype_tuple_elems(t: ValueType) -> List<ValueType> {
+    match t {
+        .Tuple(es) -> es
+        _ -> {
+            let empty: List<ValueType> = []
+            empty
+        }
+    }
+}
+
 /// True iff `t` is a `Map`.
 export fn vtype_is_map(t: ValueType) -> bool { t is .Map }
 

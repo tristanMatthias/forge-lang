@@ -81,6 +81,29 @@ fn main() {
     }
 }
 
+// A generic fn over a map must bind its value type-param from the arg (the
+// typeck twin of mono's unify_param Map branch), so a conflicting annotation
+// on the CALL RESULT is caught — the map analog of the working List behavior.
+spec "map-value conflicts through generic functions (63wu)" {
+    then "generic fn returning Map<string,V>: a conflicting result annotation is F1000" {
+        let out = m63wu_out("fn idm<V>(m: Map<string, V>) -> Map<string, V> { m }
+fn main() {
+    let m: Map<string, int> = {\"a\": 1}
+    let n: Map<string, string> = idm(m)
+}")
+        out.contains("F1000")
+    }
+    then "the same generic fn with a MATCHING result annotation compiles (V bound from arg)" {
+        let out = m63wu_out("fn idm<V>(m: Map<string, V>) -> Map<string, V> { m }
+fn main() {
+    let m: Map<string, int> = {\"a\": 1}
+    let n: Map<string, int> = idm(m)
+    let _ = n.len()
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
 spec "valid maps and matching instantiations still compile (63wu — no false positives)" {
     then "Map<string, int> = {\"k\": 9} compiles" {
         let out = m63wu_out("fn main() {
