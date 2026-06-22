@@ -1,0 +1,53 @@
+// WHY: regression for q6p4 — an enum constructor payload arg with a conflicting
+// generic argument was a wild store. tc_check_enum_ctor_args did a scalar<->ptr
+// representation check on payload args but NOT a generic-arg layout conflict, so
+// `Wrap.W(Box{val:9})` where the payload field is `Box<string>` slipped through
+// (Box<int> and Box<string> are both ptr-class, so the scalar check passed) and
+// stored an int where a string-ptr is expected — read later as a wild pointer.
+// The fix runs generic_args_layout_conflict(arg_ty, field_ty) per payload arg.
+// Generic-payload enums (`Box<T>` still generic at ctor-check time) are skipped
+// here and tracked separately as enwi (they need ctor result-type inference).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn ec_out(source: string) -> string {
+    let path = "/tmp/avra_enum_ctor_conflict.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "enum-ctor payload generic-arg conflicts are caught (q6p4)" {
+    then "Box<int> into a Box<string> payload slot is F1000" {
+        let out = ec_out("type Box<T> = { val: T }
+enum Wrap { W(v: Box<string>), N }
+fn main() { let e: Wrap = Wrap.W(Box { val: 9 }) }")
+        out.contains("F1000")
+    }
+    then "the inverse (Box<string> into a Box<int> payload) is F1000" {
+        let out = ec_out("type Box<T> = { val: T }
+enum Wrap { W(v: Box<int>), N }
+fn main() { let e: Wrap = Wrap.W(Box { val: \"x\" }) }")
+        out.contains("F1000")
+    }
+    then "a conflict nested in a List-typed payload is F1000" {
+        let out = ec_out("type Box<T> = { val: T }
+enum Wrap { W(v: List<Box<string>>), N }
+fn main() { let e: Wrap = Wrap.W([Box { val: 9 }]) }")
+        out.contains("F1000")
+    }
+}
+
+spec "valid enum-ctor payloads still compile (q6p4 — no false positives)" {
+    then "a matching Box<string> payload compiles" {
+        let out = ec_out("type Box<T> = { val: T }
+enum Wrap { W(v: Box<string>), N }
+fn main() { let e: Wrap = Wrap.W(Box { val: \"ok\" }) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a plain scalar payload (no generic args) compiles" {
+        let out = ec_out("enum Wrap { W(v: int), N }
+fn main() { let e: Wrap = Wrap.W(42) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

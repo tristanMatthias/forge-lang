@@ -2326,6 +2326,15 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
             if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) {
                 let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}`"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
+            } else if generic_args_layout_conflict(cur, aty, fty) {
+                // Same representation class (both ptr) but conflicting generic args —
+                // a `Box<int>` payload where `Box<string>` is declared is a layout
+                // lie (the Box's inner field is int-vs-ptr). Mirrors the
+                // generic-arg conflict checks at let / fn-arg / struct-field
+                // positions (q6p4). Generic-payload enums (`Box<T>` still generic
+                // at ctor-check time) are skipped above and tracked as enwi.
+                let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}` (generic argument layout conflict)"
+                cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
         }
         i = i + 1
