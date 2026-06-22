@@ -1790,6 +1790,45 @@ export fn collection_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared:
     vtype_is_value_scalar(slot)
 }
 
+/// THE wild-store layout-conflict predicate (nlzq). True iff storing a value of
+/// type `actual` into a slot of declared type `expected` is a layout lie: a
+/// generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a pointer
+/// slot, or — when `incl_collection` — a `List`/`Map` into a value-scalar slot.
+/// Unions the three wild-store checks that were hand-rolled, and individually
+/// forgotten, across ~15 positions (the dominant root cause behind the 63wu
+/// arc). `incl_collection` is false ONLY at the fn-parameter position: extern C
+/// bindings declare `int` as an i64-legacy generic value slot that legitimately
+/// receives a collection (tracked as wlll); every REAL typed slot passes true.
+export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType, incl_collection: bool) -> bool {
+    generic_args_layout_conflict(tc, actual, expected)
+        || int_into_pointer_slot(tc, actual, expected)
+        || (incl_collection && collection_into_value_scalar_slot(tc, actual, expected))
+}
+
+/// THE assignability gate (nlzq): the SINGLE place a "value meets an expected
+/// type" wild-store check lives. Every position that binds a value to a known
+/// type routes its `(actual, expected)` pair through here, so no position can
+/// omit a check — collapsing the per-position hand-rolled checks to one and
+/// making the whole wild-store class drift-proof. `ctx` names the position for
+/// the diagnostic. Returns `tc` unchanged when the store is layout-safe.
+export fn check_assign_layout(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
+    check_assign_layout_ex(tc, actual, expected, ctx, true)
+}
+
+/// The fn-PARAMETER variant of `check_assign_layout`: skips the collection→scalar
+/// check, which mass-false-positives on extern C bindings that pass a collection
+/// into an i64-legacy `int` value slot (wlll). All other checks still apply.
+export fn check_assign_layout_param(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
+    check_assign_layout_ex(tc, actual, expected, ctx, false)
+}
+
+fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: string, incl_collection: bool) -> TC {
+    if assign_layout_conflict(tc, actual, expected, incl_collection) {
+        return tc_report(tc, DiagCode.TypeMismatch, "${ctx}: `${vtype_render_full(actual)}` is not assignable to `${vtype_render_full(expected)}` (layout conflict)")
+    }
+    tc
+}
+
 /// Type-check a `let` / `mut` / `const` binding: infer the
 /// initializer's type, verify it matches any declared annotation,
 /// and bind `name: type` into the env. `is_mut` distinguishes `mut`
@@ -2216,19 +2255,11 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             // hole (ry1a/w0kt): the var's slot is a pointer, the int isn't.
             // (int→numeric stays lenient, matching the let site.)
             let var_ty = type_lookup(v.tc.types, name)
-            // A generic instance whose args straddle the layout divide
-            // (`mut b: Box<string> = …; b = Box { val: 9 }`) is the same hole one
-            // level up — `vtype_eq` ignores generic args, so guard it explicitly,
-            // mirroring the let/field/return sites.
-            if generic_args_layout_conflict(v.tc, v.ty, var_ty) {
-                let gmsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}` (generic argument layout conflict)"
-                return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, gmsg), v.ty)
-            }
-            if int_into_pointer_slot(v.tc, v.ty, var_ty) || collection_into_value_scalar_slot(v.tc, v.ty, var_ty) {
-                let amsg = "cannot assign `${vtype_render_full(v.ty)}` to `${name}` of type `${vtype_render_full(var_ty)}`"
-                return tc_er(tc_report(v.tc, DiagCode.TypeMismatch, amsg), v.ty)
-            }
-            tc_er(v.tc, v.ty)
+            // A reassignment is a value meeting an expected type — route it
+            // through the single assignability gate (nlzq) so it can't omit a
+            // wild-store check (`b = Box { val: 9 }` on `b: Box<string>`,
+            // `x = [1]` on `x: int`, …).
+            return tc_er(check_assign_layout(v.tc, v.ty, var_ty, "assignment to `${name}`"), v.ty)
         }
         .QualifiedIdent(path) -> {
             let fn_ty = fn_type_get(tc.fns, path).ret_ty
@@ -3095,14 +3126,10 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
 fn check_collection_value_arg(tc: TC, arg_types: List<ValueType>, method: string, elem: ValueType) -> TC {
     let idx = if method == "push" { 0 } else if (method == "set") || (method == "insert") { 1 } else { -1 }
     if idx < 0 || idx >= arg_types.length { return tc }
-    let vt = arg_types[idx]
-    if generic_args_layout_conflict(tc, vt, elem) {
-        return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (generic argument layout conflict)")
-    }
-    if int_into_pointer_slot(tc, vt, elem) || collection_into_value_scalar_slot(tc, vt, elem) {
-        return tc_report(tc, DiagCode.TypeMismatch, "`${method}` value of type `${vtype_render_full(vt)}` conflicts with element/value type `${vtype_render_full(elem)}` (scalar/pointer layout conflict)")
-    }
-    tc
+    // The mutation value arg meets the collection's element/value type — the same
+    // "value meets expected type" shape as every other slot, so route it through
+    // the single assignability gate (nlzq).
+    check_assign_layout(tc, arg_types[idx], elem, "`${method}` value")
 }
 
 export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
