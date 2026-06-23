@@ -41,14 +41,17 @@ jobs:
     timeout-minutes: 30
     steps:
       # Pinned to a commit (what @v4 resolves to at pin time): tags are
-      # mutable and this workflow is a trust gate. The verify build reads the
-      # pinned seed from seed.lock and the working tree only — no git history
-      # needed — so a shallow checkout of the PR's merge ref is enough.
+      # mutable and this workflow is a trust gate. Full history (depth 0,
+      # matching seed-train.yml and the window/diff-test gates): the build
+      # itself needs none, but the SPEC SUITE does — e.g. the pre-push relay
+      # test (beads_hook_stdin_relay_test) walks `git rev-list HEAD -- bootstrap`
+      # then `${head}^`, which a shallow clone can't resolve. Running what the
+      # train runs means running it in the train's environment.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # Read-only workflow — never let the token outlive checkout.
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - uses: ./.github/actions/setup-llvm
 
