@@ -5,35 +5,40 @@
 // any one bs2 invocation, so the memo holds for the whole process
 // after the first compute.
 //
-// Observes the round-trip contract: pre-set, get returns ""; after
-// set, get returns the same string. Catches a regression to the
-// pre-memo code path where every call repeats the full sidecar
-// pipeline.
+// What this verifies — the WRITE-ONCE contract, NOT a marker round-trip.
+// The memo (g_test_toolchain_fp_memo) is process-GLOBAL and shared with
+// read_or_compute_toolchain_fp, which every fixture-using test warms via
+// avra_test_toolchain_fp_set. Under the shared-process parallel runner
+// (d4jv — test files run as @deferred_init units across worker threads in
+// ONE process), a sibling fixture test sharded before this one publishes
+// the real fp FIRST. A "set marker; get == marker" round-trip is therefore
+// unobservable: write-once makes our set a no-op and get() returns the
+// sibling's value (the failure that flaked the seed-train per shard order).
+//
+// So we assert the property that holds regardless of who wrote first:
+// after any set the memo is published (non-empty), and a second, distinct
+// set NEVER changes it. This is deterministic whether the memo was cold (we
+// win the write) or already warmed (a sibling won) — once published the
+// value is immutable, so there is no race between get() and the later set.
 
 extern fn avra_test_toolchain_fp_get() -> string
 extern fn avra_test_toolchain_fp_set(fp: string)
 
-spec "4szi.1: toolchain fp memo round-trips and publishes once" {
-    then "first set / first get returns the value" {
-        // The memo is process-global state — earlier specs in the
-        // same shard may have already warmed it. Choose a unique
-        // marker so set+get observes this spec's own value, not a
-        // stale one from a sibling.
-        let marker = "4szi1-roundtrip-marker-cafebabe"
-        avra_test_toolchain_fp_set(marker)
-        avra_test_toolchain_fp_get() == marker
+spec "4szi.1: toolchain fp memo is write-once (first writer wins)" {
+    then "a set publishes a non-empty value" {
+        // Our set wins only if the memo is still cold; otherwise it is a
+        // no-op and the value is whatever a sibling fixture already wrote.
+        // Either way the memo is now non-empty.
+        avra_test_toolchain_fp_set("4szi1-probe-cafebabe")
+        avra_test_toolchain_fp_get() != ""
     }
-    then "later sets are no-ops — first writer wins" {
-        // The memo is WRITE-ONCE under a mutex. The fp
-        // is a pure function of process-stable inputs (bs2 binary,
-        // runtime.o, wrapper.o, @std sources), so every caller in one
-        // process computes the same value — a second set can only be
-        // a concurrent duplicate of the first. First-writer-wins lets
-        // concurrent getters hold the returned pointer without a
-        // free-behind-the-reader hazard (the historic strdup-replace
-        // implementation freed the prior slot WHILE other workers
-        // could still be reading it).
-        avra_test_toolchain_fp_set("later-set-must-not-stick")
-        avra_test_toolchain_fp_get() == "4szi1-roundtrip-marker-cafebabe"
+    then "a second distinct set never changes the published value (write-once)" {
+        // Capture whatever is published (ours, or a sibling's first write),
+        // then prove a deliberately different set does not stick. Write-once
+        // means the captured value is already frozen, so this holds with no
+        // free-behind-the-reader hazard for concurrent getters.
+        let published = avra_test_toolchain_fp_get()
+        avra_test_toolchain_fp_set("4szi1-second-must-not-stick")
+        published != "" && avra_test_toolchain_fp_get() == published
     }
 }
