@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify next work epic coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -57,6 +57,8 @@ help:
 	@echo "                     (integration-branch seed-train operation; needs GH_TOKEN)."
 	@echo "  make seed-train    Automated train advance: build from pin + fixed point +"
 	@echo "                     suite, publish only if the compiler output diverged."
+	@echo "  make seed-train-verify  PR gate: the train's verify phase (build from pin +"
+	@echo "                     fixed point + suite) WITHOUT publish. Run before a PR."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
@@ -242,6 +244,12 @@ seed-publish:
 # target for manual advances.
 seed-train:
 	@$(DIAG) --seed-train
+
+# The PR-side gate: the train's verify phase (build from pin, fixed point,
+# suite) WITHOUT publish. CI runs this on every PR into the integration branch
+# so a merge can't red the train post-merge; run it locally before opening a PR.
+seed-train-verify:
+	@$(DIAG) --seed-train-verify
 
 # Verify bootstrap chain integrity (no auto-cycle on failure).
 # Builds seed → bs2 → verifies bs2 self-compiles → verifies bs3 self-compiles.
