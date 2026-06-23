@@ -45,6 +45,32 @@ spec "extern redeclaration rules" {
             !out.contains("F3105")
         }
     }
+    // Mixing normal-fn and extern-fn under one name flips the registry's
+    // is_extern provenance, which the fn-param layout gate keys on (a normal
+    // fn silently inheriting the extern carve-out would skip the
+    // collection→scalar check). Reject the mix in BOTH declaration orders.
+    given "one name declared as both a normal fn and an extern fn" {
+        then "a normal fn cannot reuse a prior extern's name (F3105)" {
+            let dir = "build/cache/_extern_then_normal_fixture"
+            let _ = avra_mkdir_p(dir)
+            write_fixture("${dir}/main.av",
+                "extern fn probe_mix_a(x: int) -> int\n" +
+                "fn probe_mix_a(x: int) -> int { return x }\n" +
+                "fn main() { }\n")
+            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            out.contains("F3105")
+        }
+        then "an extern cannot reuse a prior normal fn's name (F3105)" {
+            let dir = "build/cache/_normal_then_extern_fixture"
+            let _ = avra_mkdir_p(dir)
+            write_fixture("${dir}/main.av",
+                "fn probe_mix_b(x: int) -> int { return x }\n" +
+                "extern fn probe_mix_b(x: int) -> int\n" +
+                "fn main() { }\n")
+            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            out.contains("F3105")
+        }
+    }
 }
 
 extern fn avra_mkdir_p(path: string) -> int

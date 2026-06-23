@@ -146,4 +146,87 @@ fn main() { let x = f(true) }")
 fn main() { want(9) }")
         out.contains("F1000")
     }
+    // Map VALUES land on the same scalar↔pointer divide as list elements: a bare
+    // int into a `Map<string, string>` value slot stores an i64 where a ptr is
+    // read. Routed through `nested_layout_conflict` (the broad element/value
+    // check), with positive controls proving it's layout-scoped, not a lockdown.
+    then "map value: a bare int into a Map<string, string> is F1000" {
+        let out = ry1a_out("fn main() { let m: Map<string, string> = {\"k\": 9} }")
+        out.contains("F1000")
+    }
+    then "map value: a later int among string values is F1000 (every value checked)" {
+        let out = ry1a_out("fn main() { let m: Map<string, string> = {\"a\": \"ok\", \"b\": 9} }")
+        out.contains("F1000")
+    }
+    then "map value: Map<string, int> = {\"k\": 9} still compiles (no false positive)" {
+        let out = ry1a_out("fn main() { let m: Map<string, int> = {\"k\": 9} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "map value: int into Map<string, int?> compiles (nullable widening, not a conflict)" {
+        let out = ry1a_out("fn main() { let m: Map<string, int?> = {\"k\": 1} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "map value: string into Map<string, int?> is still F1000 (real base conflict)" {
+        let out = ry1a_out("fn main() { let m: Map<string, int?> = {\"k\": \"a\"} }")
+        out.contains("F1000")
+    }
+    // The fn-parameter position routes through `check_assign_layout_param`; an int
+    // into a `string` param is the same wild store as the `bytes` case above.
+    then "fn param: an int passed to a string parameter is F1000" {
+        let out = ry1a_out("fn want(s: string) { }
+fn main() { want(9) }")
+        out.contains("F1000")
+    }
+}
+
+// The layout-conflict check must catch a SETTLED top-level scalar↔ptr conflict
+// even when a NESTED arg is still unresolved: a `List<T>` (a known pointer, T
+// unbound) flowing into an `int` slot is a wild store. A whole-tree resolution
+// guard bails on the `T`, and `generic_args_layout_conflict` can't see List-vs-int
+// (not a matching shell), so the check guards on TOP-LEVEL resolution instead —
+// while still leaving a bare `T` (unknown layout) and a matching `List<T>`-into-
+// `List<...>` alone. This holds at the OUTERMOST pair AND at every nested pair
+// (`Box<List<T>>` into `Box<int>`), since the two predicates recurse mutually.
+spec "broad gate catches a top-level conflict under unresolved nested args (nlzq)" {
+    then "list element: a List<T> value into a List<int> slot is F1000" {
+        let out = ry1a_out("fn f<T>(x: List<T>) -> int { let xs: List<int> = [x]  return 0 }
+fn main() { let _ = f([1]) }")
+        out.contains("F1000")
+    }
+    then "map value: a List<T> value into a Map<string, int> slot is F1000" {
+        let out = ry1a_out("fn f<T>(x: List<T>) -> int { let m: Map<string, int> = {\"k\": x}  return 0 }
+fn main() { let _ = f([1]) }")
+        out.contains("F1000")
+    }
+    then "a List<T> value into a List<List<int>> slot compiles (matching layout, no false positive)" {
+        let out = ry1a_out("fn f<T>(x: List<T>) -> int { let xs: List<List<int>> = [x]  return 0 }
+fn main() { let _ = f([1]) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare T value into a List<int> slot compiles (T's layout is unknown — could be int)" {
+        let out = ry1a_out("fn f<T>(x: T) -> int { let xs: List<int> = [x]  return 0 }
+fn main() { let _ = f(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    // The conflict can hide one generic level deeper: `Box<List<T>>` into a
+    // `Box<int>` slot — the recursion must thread the top-level guard into the
+    // nested `List<T>`-vs-`int` pair (a wild store on `Box.val`).
+    then "nested: a Box<List<T>> value into a Box<int> slot is F1000" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn f<T>(x: Box<List<T>>) -> int { let y: Box<int> = x  return 0 }
+fn main() { let b: Box<List<int>> = Box { val: [1] }  let _ = f(b) }")
+        out.contains("F1000")
+    }
+    then "nested: a Box<List<T>> value into a Box<List<int>> slot compiles (matching, no false positive)" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn f<T>(x: Box<List<T>>) -> int { let y: Box<List<int>> = x  return 0 }
+fn main() { let b: Box<List<int>> = Box { val: [1] }  let _ = f(b) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "nested: a Box<T> value into a Box<int> slot compiles (T's layout is unknown)" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn f<T>(x: Box<T>) -> int { let y: Box<int> = x  return 0 }
+fn main() { let b: Box<int> = Box { val: 1 }  let _ = f(b) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
 }
