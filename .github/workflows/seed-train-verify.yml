@@ -34,7 +34,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  seed-train-verify:
     runs-on: ubuntu-24.04
     # Build-from-pin + fixed point + suite is ~the train's runtime; 30m of
     # headroom matches the bootstrap-window gate.
