@@ -113,6 +113,7 @@ type FnTypeMeta = {
     tp: List<TypeParamEntry>,
     params: List<ParamEntry>,
     ret_ty: ValueType,
+    is_extern: bool,
 }
 
 /// Function-name → (params, return type) table. Looked up by call
@@ -154,10 +155,10 @@ fn empty_type_params() -> List<TypeParamEntry> {
 /// Append (name, params, ret_ty) to `reg`. Mutates the map in place;
 /// returns a new FnTypeReg with the extended list. Map ptr is shared
 /// with the prior reg — see the `idx` field doc above.
-fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: ValueType) -> FnTypeReg {
+fn fn_type_reg_register(reg: FnTypeReg, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_ty: ValueType, is_extern: bool) -> FnTypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(FnTypeMeta { name, tp, params, ret_ty })
+    ord.push(FnTypeMeta { name, tp, params, ret_ty, is_extern })
     avra_map_set_cstr(reg.idx, name, new_idx)
     FnTypeReg { ord, idx: reg.idx }
 }
@@ -175,6 +176,7 @@ type FnTypeFound = {
     tp: List<TypeParamEntry>,
     params: List<ParamEntry>,
     ret_ty: ValueType,
+    is_extern: bool,
 }
 
 /// True when an extern re-declaration is signature-identical to the
@@ -212,11 +214,11 @@ fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
     if avra_map_has_cstr(fns.idx, name) == 0 {
         let empty_tp: List<TypeParamEntry> = []
         let empty_p: List<ParamEntry> = []
-        return FnTypeFound { found: false, tp: empty_tp, params: empty_p, ret_ty: ValueType.Unknown }
+        return FnTypeFound { found: false, tp: empty_tp, params: empty_p, ret_ty: ValueType.Unknown, is_extern: false }
     }
     let i = avra_map_get_cstr(fns.idx, name)
     let m = fns.ord[i]
-    FnTypeFound { found: true, tp: m.tp, params: m.params, ret_ty: m.ret_ty }
+    FnTypeFound { found: true, tp: m.tp, params: m.params, ret_ty: m.ret_ty, is_extern: m.is_extern }
 }
 
 
@@ -1198,7 +1200,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
                     cur with {
                         newtypes: newtype_reg_register(cur.newtypes, name, inner_vt),
-                        fns: fn_type_reg_register(cur.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, type_registry_id_for(cur.type_reg, name))),
+                        fns: fn_type_reg_register(cur.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, type_registry_id_for(cur.type_reg, name)), false),
                     }
                 }
             }
@@ -1224,7 +1226,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             .Function(name, tp, params, ret_vt, _) -> {
                 let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
-                cur with { fns: fn_type_reg_register(cur.fns, name, tp, params, final_ret) }
+                cur with { fns: fn_type_reg_register(cur.fns, name, tp, params, final_ret, false) }
             }
             .ExternFn(name, params, ret_vt) -> {
                 let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
@@ -1241,7 +1243,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                         "extern `${name}` redeclared with a conflicting signature: ${render_extern_sig(params, final_ret)} (previously ${render_extern_sig(prior.params, prior.ret_ty)})",
                         ss.line, ss.col, name.length)
                 } else {
-                    cur with { fns: fn_type_reg_register(cur.fns, name, empty_type_params(), params, final_ret) }
+                    cur with { fns: fn_type_reg_register(cur.fns, name, empty_type_params(), params, final_ret, true) }
                 }
             }
             .Impl(impl_name, methods) -> {
@@ -1307,7 +1309,7 @@ fn rewrite_fn_ret_tys(tc: TC, fns: FnTypeReg) -> FnTypeReg {
         let m = fns.ord[i]
         let upgraded_ret = if vtype_eq(m.ret_ty, .Void) { m.ret_ty } else { resolve_vtype(tc, m.ret_ty) }
         let upgraded_params = rewrite_param_list_vts(tc, m.params)
-        out = fn_type_reg_register(out, m.name, m.tp, upgraded_params, upgraded_ret)
+        out = fn_type_reg_register(out, m.name, m.tp, upgraded_params, upgraded_ret, m.is_extern)
         i = i + 1
     }
     out
@@ -1857,11 +1859,13 @@ export fn check_assign_layout(tc: TC, actual: ValueType, expected: ValueType, ct
     check_assign_layout_ex(tc, actual, expected, ctx, true, true)
 }
 
-/// The fn-PARAMETER variant: omits the collection→scalar check, which mass-false-
-/// positives on extern C bindings that pass a collection into an i64-legacy `int`
-/// value slot (wlll). Generic-arg + int→pointer still apply. (Match-arm RETURNS
-/// are a real return slot — they use the FULL `check_assign_layout`, with
-/// collection→scalar, so `match … -> [1]` into `-> int` is still rejected.)
+/// The EXTERN-parameter variant: omits the collection→scalar check, which
+/// mass-false-positives on extern C bindings that declare `int` as an i64-legacy
+/// value slot legitimately receiving a `List`/`Map` (`avra_map_set_cstr(map, key,
+/// value: int)`). Generic-arg + int→pointer still apply. Used ONLY for params of
+/// `extern fn`s (gated on `FnTypeMeta.is_extern`); a NORMAL Avra fn parameter is a
+/// real typed slot and gets the FULL `check_assign_layout`, so `f([1])` into
+/// `f(x: int)` is rejected.
 export fn check_assign_layout_param(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
     check_assign_layout_ex(tc, actual, expected, ctx, true, false)
 }
@@ -2361,7 +2365,7 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<SExpr>) -> T
 /// Verify newtype-wrapped arguments: a `UserId` param doesn't
 /// accept a bare `UUID` — the wrapper has to be explicit at the
 /// call site.
-fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<SExpr>) -> TC {
+fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<SExpr>, is_extern: bool) -> TC {
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
@@ -2376,15 +2380,18 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
             }
         }
         // A layout-incompatible argument: a generic-arg conflict (`want(Box { val:
-        // 9 })` for `want(b: Box<string>)` — vtype_eq ignores generic args) or an
-        // int into a pointer-layout slot (the callee derefs the int — the same
-        // wild-pointer hole as the let site, ry1a/w0kt). Route through the fn-param
-        // gate, which OMITS the collection→scalar check: extern C bindings use
-        // `int` as an i64-legacy value slot that legitimately receives a List/Map
-        // value (`avra_map_set_cstr(map, key, value: int)`), so it would mass-
-        // false-positive here (tracked as wlll). int→numeric and type-param / ptr
-        // params stay lenient inside the predicates.
-        cur = check_assign_layout_param(cur, arg_ty, param_ty, "`${fn_name}` parameter `${p.name}`")
+        // 9 })` for `want(b: Box<string>)` — vtype_eq ignores generic args), an int
+        // into a pointer-layout slot (the callee derefs the int — the ry1a/w0kt
+        // hole), or a `List`/`Map` into a value-scalar slot (`f([1])` for
+        // `f(x: int)`). A NORMAL Avra fn is a real typed slot, so it gets the FULL
+        // gate. An EXTERN C binding uses `int` as an i64-legacy value slot that
+        // legitimately receives a List/Map (`avra_map_set_cstr(map, key, value: int)`),
+        // so the collection→scalar check is omitted ONLY there (the param gate).
+        cur = if is_extern {
+            check_assign_layout_param(cur, arg_ty, param_ty, "`${fn_name}` parameter `${p.name}`")
+        } else {
+            check_assign_layout(cur, arg_ty, param_ty, "`${fn_name}` parameter `${p.name}`")
+        }
         i = i + 1
     }
     cur
@@ -2624,7 +2631,7 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<SExpr>, 
     }
     // Check shape and newtype compatibility
     let shape_checked = tc_check_shape_args(checked, rec.params, args)
-    let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args)
+    let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args, rec.is_extern)
     // Optional strict arg-type warnings: AVRA_STRICT_ARGS=1 surfaces
     // F9004 when a concrete arg type isn't assignable to its concrete
     // param type. Off by default — the existing typeck has gaps in

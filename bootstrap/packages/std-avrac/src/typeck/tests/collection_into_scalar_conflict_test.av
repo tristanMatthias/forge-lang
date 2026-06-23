@@ -119,3 +119,40 @@ fn main() { let _ = f(1) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
+
+// A normal Avra fn parameter is a real typed slot, so a collection into a
+// value-scalar param is a wild store (wlll). The carve-out that lets a collection
+// flow into an `int` param applies ONLY to `extern fn`s, where `int` is an
+// i64-legacy generic value slot (gated on FnTypeMeta.is_extern).
+spec "collection into a fn parameter — normal fns gated, extern shims exempt (wlll)" {
+    then "a list literal into a normal fn's int param is F1000" {
+        let out = cs_out("fn f(x: int) -> int { return x }
+fn main() { let _ = f([1]) }")
+        out.contains("F1000")
+    }
+    then "a map literal into a normal fn's int param is F1000" {
+        let out = cs_out("fn f(x: int) -> int { return x }
+fn main() { let _ = f({\"k\": 1}) }")
+        out.contains("F1000")
+    }
+    then "a list variable into a normal fn's int param is F1000 (non-literal path)" {
+        let out = cs_out("fn f(x: int) -> int { return x }
+fn main() { let xs: List<int> = [1]  let _ = f(xs) }")
+        out.contains("F1000")
+    }
+    then "a list into an EXTERN fn's int param compiles (i64-legacy carve-out)" {
+        let out = cs_out("extern fn avra_map_set_cstr(map: ptr, key: string, value: int) -> int
+fn main() { let xs: List<int> = [1]  let _ = avra_map_set_cstr(0, \"k\", xs) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an int into a normal fn's int param compiles (no false positive)" {
+        let out = cs_out("fn f(x: int) -> int { return x }
+fn main() { let _ = f(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a list into a normal fn's List param compiles (no false positive)" {
+        let out = cs_out("fn f(xs: List<int>) -> int { return xs.length }
+fn main() { let _ = f([1, 2]) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
