@@ -2760,6 +2760,37 @@ fn method_params_without_self(params: List<ParamEntry>) -> List<ParamEntry> {
 /// type-param param (`x: T`) is checked against its concrete binding (T=string)
 /// rather than the unresolved `T` — otherwise `id<string>(9)` and
 /// `Box<string>.m(9)` slip past the gate (the param reads as layout-unknown).
+// rs0b: receiver type-param bindings for the method-param layout gate. Zips a
+// generic receiver's DECLARED type params (from its struct/enum definition)
+// against its concrete `type_args` — a `GcStack<string>` receiver with
+// `type GcStack<T>` yields T=string. Used ONLY to refine the params the layout
+// gate checks (via subst_param_types in check_method_call); it never feeds
+// tc_unify / fn-call inference / mono, so emitted IR is byte-identical and the
+// HRN diff-test stays green. The global tc_unify deliberately has no Struct/Enum
+// arm (adding one would perturb inference + IR); this is the gate-local twin.
+fn tc_recv_type_bindings(tc: TC, recv: ValueType) -> List<TypeArg> {
+    match recv {
+        .Struct(name, args, _) -> tc_zip_type_args(struct_type_params(tc.structs, name), args)
+        .Enum(name, args, _) -> tc_zip_type_args(enum_type_params(tc.enums, name), args)
+        _ -> []
+    }
+}
+
+// Pairwise-zip declared type params with concrete type args into TypeArg
+// bindings. Truncates to the shorter list (a partially-applied or placeholder
+// receiver simply contributes fewer bindings — and a placeholder arg substitutes
+// to itself, a harmless no-op).
+fn tc_zip_type_args(params: List<TypeParamEntry>, args: List<ValueType>) -> List<TypeArg> {
+    mut out: List<TypeArg> = []
+    let n = if params.length < args.length { params.length } else { args.length }
+    mut i = 0
+    while i < n {
+        out.push(TypeArg { param_name: params[i].name, concrete_vt: args[i] })
+        i = i + 1
+    }
+    out
+}
+
 fn subst_param_types(params: List<ParamEntry>, bindings: List<TypeArg>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     mut i = 0
@@ -3284,11 +3315,19 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
             // Gate user args against params[1..] (drop self, which dispatch
             // already bound) so `obj.m([1])` into a concrete int param is caught
             // — this user-defined method path otherwise never reached the param
-            // gate. A receiver-bound type param (`Box<string>.m(9)` where
-            // `x: T`) is NOT yet instantiated here: binding T from the receiver
-            // needs Struct-aware unification the global tc_unify lacks (tracked
-            // follow-up); the concrete-param cases are the common ones.
-            let arg_checked = tc_check_newtype_args(checked_args, qualified, method_params_without_self(r.params), args, r.is_extern)
+            // gate. A receiver-bound type param (`Box<string>.m(9)`, where the
+            // method's `x: T` gets T from the receiver) is instantiated first:
+            // tc_recv_type_bindings binds T from the receiver's concrete
+            // type_args and subst_param_types refines the gated params, so `x: T`
+            // is checked as `x: string` and `gc_string.push_one(9)` is caught.
+            // Gate-local on purpose — the global tc_unify (fn-call inference +
+            // mono) is left untouched, so emitted IR / the HRN diff-test are
+            // unaffected; this only adds rejections for invalid programs.
+            // Receiver-bound analog of the explicit-type-arg `id<string>(9)` fix
+            // (#539, also subst_param_types).
+            let recv_bindings = tc_recv_type_bindings(checked_args, o.ty)
+            let gated_params = subst_param_types(method_params_without_self(r.params), recv_bindings)
+            let arg_checked = tc_check_newtype_args(checked_args, qualified, gated_params, args, r.is_extern)
             let resolved_ret = tc_subst_generic_method_ret(arg_checked, r.tp, r.params, args, r.ret_ty)
             return tc_er(arg_checked, resolved_ret)
         }
