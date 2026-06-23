@@ -1608,19 +1608,36 @@ fn layout_conflict(a: ValueType, b: ValueType) -> bool {
     vtype_is_ptr_layout(sa) != vtype_is_ptr_layout(sb)
 }
 
+/// True iff the SINGLE type node `x` is an unresolved nominal — a type parameter
+/// that surfaces as `.Struct("T")` / `.Enum("T")` with no registry entry.
+/// Registry membership is the single source of truth (mirrors resolve_vtype).
+/// The per-node core shared by `vtype_mentions_unresolved` (whole tree) and
+/// `top_level_layout_unresolved` (top node only).
+fn vtype_node_unresolved(tc: TC, x: ValueType) -> bool {
+    match x {
+        .Struct(n, _, _) -> !struct_type_has(tc.structs, n) && !enum_type_has(tc.enums, n)
+        .Enum(n, _, _) -> !enum_type_has(tc.enums, n) && !struct_type_has(tc.structs, n)
+        _ -> false
+    }
+}
+
 /// True if `t`'s type tree mentions a nominal that is NOT a registered struct or
 /// enum — i.e. an unresolved type parameter, which surfaces as `.Struct("T")`.
 /// The layout check below MUST skip such types: before monomorphization a param
 /// `Box<T>` carries `T` as a nominal `vtype_is_ptr_layout` would call
 /// pointer-shaped, so comparing it against a concrete `Box<int>` would wrongly
 /// reject valid generic code (`fn id<T>(b: Box<T>)` called with `Box { val: 9 }`).
-/// Registry membership is the single source of truth (mirrors resolve_vtype).
 fn vtype_mentions_unresolved(tc: TC, t: ValueType) -> bool {
-    t.any((x) -> match x {
-        .Struct(n, _, _) -> !struct_type_has(tc.structs, n) && !enum_type_has(tc.enums, n)
-        .Enum(n, _, _) -> !enum_type_has(tc.enums, n) && !struct_type_has(tc.structs, n)
-        _ -> false
-    })
+    t.any((x) -> vtype_node_unresolved(tc, x))
+}
+
+/// True iff the TOP-LEVEL layout of `t` is unknown — i.e. `t` itself (Optional
+/// stripped) is an unresolved type parameter. Unlike `vtype_mentions_unresolved`
+/// (whole tree), a resolved CONTAINER with unresolved args (`List<T>`) is NOT
+/// top-level-unresolved: its layout (a pointer) is already known, so a top-level
+/// scalar↔ptr conflict against it is real and must be caught.
+fn top_level_layout_unresolved(tc: TC, t: ValueType) -> bool {
+    vtype_node_unresolved(tc, vtype_strip_optional(t))
 }
 
 /// `layout_conflict`, gated to operands that BOTH have a settled layout (neither
@@ -1712,14 +1729,31 @@ fn type_list_layout_conflict(tc: TC, aa: List<ValueType>, ba: List<ValueType>) -
 /// already apply internally — lifted into one named predicate so element/value
 /// checkers share it instead of hand-wrapping a `List`/`Map` shell to reach it.
 ///
-/// Broader than the narrow `assign_layout_conflict`: `settled_layout_conflict`
-/// applies the FULL scalar↔ptr divide (int→struct/list too, not just int→Str),
-/// safe HERE because these positions hold explicitly-written values rather than
-/// the inference-artifact `.Int` fallbacks that force the narrow scoping at the
-/// binding / return / call positions. The per-pair `settled` guard skips
-/// still-unresolved type params, so valid generic code is never rejected.
+/// Broader than the narrow `assign_layout_conflict`: `layout_conflict` is the
+/// FULL scalar↔ptr divide (int→struct/list too, not just int→Str), safe HERE
+/// because these positions hold explicitly-written values rather than the
+/// inference-artifact `.Int` fallbacks that force the narrow scoping at the
+/// binding / return / call positions.
+///
+/// The top-level guard uses `top_level_settled_layout_conflict`, NOT
+/// `settled_layout_conflict`: the latter bails when the WHOLE tree mentions an
+/// unresolved param, which would let a settled top-level conflict slip when only
+/// a NESTED arg is unresolved (`List<T>` — a known pointer — flowing into an
+/// `int` element/value slot; `generic_args_layout_conflict` can't see it either,
+/// since List-vs-Int isn't a matching generic shell). The top-level variant skips
+/// only a bare `T` (genuinely unknown layout), so valid generic code stays clean.
 export fn nested_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
-    settled_layout_conflict(tc, a, b) || generic_args_layout_conflict(tc, a, b)
+    top_level_settled_layout_conflict(tc, a, b) || generic_args_layout_conflict(tc, a, b)
+}
+
+/// `layout_conflict` gated only on the operands' TOP-LEVEL resolution (not the
+/// whole tree like `settled_layout_conflict`): catches a settled top-level
+/// scalar↔ptr split even when nested args are still unresolved, while still
+/// skipping a bare `T` whose layout is genuinely unknown. Used by the broad
+/// element/value gate; the narrow positions keep `settled_layout_conflict`.
+fn top_level_settled_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
+    if top_level_layout_unresolved(tc, a) || top_level_layout_unresolved(tc, b) { return false }
+    layout_conflict(a, b)
 }
 
 /// When `expr` is a generic struct literal `Name { … }` and `declared` is an
@@ -1843,9 +1877,11 @@ export fn check_assign_layout(tc: TC, actual: ValueType, expected: ValueType, ct
     check_assign_layout_ex(tc, actual, expected, ctx, true, true)
 }
 
-/// The fn-PARAMETER / match-arm variant: omits the collection→scalar check,
-/// which mass-false-positives on extern C bindings that pass a collection into
-/// an i64-legacy `int` value slot (wlll). Generic-arg + int→pointer still apply.
+/// The fn-PARAMETER variant: omits the collection→scalar check, which mass-false-
+/// positives on extern C bindings that pass a collection into an i64-legacy `int`
+/// value slot (wlll). Generic-arg + int→pointer still apply. (Match-arm RETURNS
+/// are a real return slot — they use the FULL `check_assign_layout`, with
+/// collection→scalar, so `match … -> [1]` into `-> int` is still rejected.)
 export fn check_assign_layout_param(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
     check_assign_layout_ex(tc, actual, expected, ctx, true, false)
 }

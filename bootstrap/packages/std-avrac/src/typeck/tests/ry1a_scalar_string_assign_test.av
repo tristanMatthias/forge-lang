@@ -178,3 +178,33 @@ fn main() { want(9) }")
         out.contains("F1000")
     }
 }
+
+// The broad element/value gate (nested_layout_conflict) must catch a SETTLED
+// top-level scalar↔ptr conflict even when a NESTED arg is still unresolved: a
+// `List<T>` (a known pointer, T unbound) flowing into an `int` element/value slot
+// is a wild store. `settled_layout_conflict` bails on the whole-tree `T`, and
+// `generic_args_layout_conflict` can't see List-vs-int (not a matching shell), so
+// the gate guards on TOP-LEVEL resolution instead — while still leaving a bare
+// `T` (genuinely unknown layout) and a matching `List<T>`-into-`List<...>` alone.
+spec "broad gate catches a top-level conflict under unresolved nested args (nlzq)" {
+    then "list element: a List<T> value into a List<int> slot is F1000" {
+        let out = ry1a_out("fn f<T>(x: List<T>) -> int { let xs: List<int> = [x]  return 0 }
+fn main() { let _ = f([1]) }")
+        out.contains("F1000")
+    }
+    then "map value: a List<T> value into a Map<string, int> slot is F1000" {
+        let out = ry1a_out("fn f<T>(x: List<T>) -> int { let m: Map<string, int> = {\"k\": x}  return 0 }
+fn main() { let _ = f([1]) }")
+        out.contains("F1000")
+    }
+    then "a List<T> value into a List<List<int>> slot compiles (matching layout, no false positive)" {
+        let out = ry1a_out("fn f<T>(x: List<T>) -> int { let xs: List<List<int>> = [x]  return 0 }
+fn main() { let _ = f([1]) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare T value into a List<int> slot compiles (T's layout is unknown — could be int)" {
+        let out = ry1a_out("fn f<T>(x: T) -> int { let xs: List<int> = [x]  return 0 }
+fn main() { let _ = f(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
