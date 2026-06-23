@@ -1640,17 +1640,6 @@ fn top_level_layout_unresolved(tc: TC, t: ValueType) -> bool {
     vtype_node_unresolved(tc, vtype_strip_optional(t))
 }
 
-/// `layout_conflict`, gated to operands that BOTH have a settled layout (neither
-/// still mentions an unresolved type parameter). The guard is per-PAIR on
-/// purpose: `Pair<T, int>` vs `Pair<T, string>` skips the `T`/`T` pair (no
-/// settled layout yet) while still catching the concrete `int`↔`string` split —
-/// a blanket "either side mentions a param ⇒ bail for the whole comparison"
-/// misses that mixed case.
-fn settled_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
-    if vtype_mentions_unresolved(tc, a) || vtype_mentions_unresolved(tc, b) { return false }
-    layout_conflict(a, b)
-}
-
 /// Layout conflict between two generic instances of the SAME nominal type:
 /// their positional type-args straddle the scalar/pointer divide somewhere — the
 /// memory-unsafe case, where reading one as the other derefs a scalar as a
@@ -1659,30 +1648,27 @@ fn settled_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
 /// `vtype_eq` short-circuits to "equal" because it deliberately ignores generic
 /// args (that leniency is load-bearing for mono's name/id instance dedup, so it
 /// can't be fixed there). Different nominals, or any `Unknown`/`Void` arg, are
-/// never a conflict. A still-unresolved type parameter is skipped PER-PAIR (via
-/// `settled_layout_conflict`), NOT for the whole comparison — so `Pair<T, int>`
-/// vs `Pair<T, string>` still flags the concrete `int`↔`string` pair while
-/// leaving the `T`/`T` pair (no settled layout yet) alone.
+/// never a conflict. Mutually recursive with `nested_layout_conflict`: this
+/// function recurses into matching structure (containers / nominals / tuples),
+/// and checks each aligned pair via `nested_layout_conflict` (top-level scalar↔ptr
+/// OR deeper). A bare type param is skipped PER-PAIR (by the top-level guard
+/// inside that predicate), NOT for the whole comparison — so `Pair<T, int>` vs
+/// `Pair<T, string>` still flags the concrete `int`↔`string` pair while leaving
+/// the `T`/`T` pair (unknown layout) alone.
 export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
     // Recurse through matching List / Optional shells (their element type isn't a
     // generic arg `vtype_type_args` exposes) so a conflict nested in a container
     // field/arg (`List<Box<int>>` vs `List<Box<string>>`) is caught too.
     if (a is .List) && (b is .List) {
-        let ea = vtype_list_elem(a)
-        let eb = vtype_list_elem(b)
-        return settled_layout_conflict(tc, ea, eb) || generic_args_layout_conflict(tc, ea, eb)
+        return nested_layout_conflict(tc, vtype_list_elem(a), vtype_list_elem(b))
     }
     // Maps carry key+value types that `vtype_type_args` doesn't expose either, so
     // recurse through a matching `Map` shell — catches a conflict nested in a map
     // value (`Map<string, Box<int>>` vs `Map<string, Box<string>>`, 63wu) the same
     // way the List branch handles list elements.
     if (a is .Map) && (b is .Map) {
-        let ka = vtype_map_key(a)
-        let kb = vtype_map_key(b)
-        let va = vtype_map_value(a)
-        let vb = vtype_map_value(b)
-        return settled_layout_conflict(tc, ka, kb) || generic_args_layout_conflict(tc, ka, kb) ||
-               settled_layout_conflict(tc, va, vb) || generic_args_layout_conflict(tc, va, vb)
+        return nested_layout_conflict(tc, vtype_map_key(a), vtype_map_key(b)) ||
+               nested_layout_conflict(tc, vtype_map_value(a), vtype_map_value(b))
     }
     // Tuples carry element types `vtype_type_args` doesn't expose, so recurse
     // pairwise. Without this, ANY layout conflict is bypassed by tuple-wrapping —
@@ -1700,9 +1686,7 @@ export fn generic_args_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bo
     // values, and struct fields. (The top-level annotation's own Optional is
     // already stripped by check_expr_expected; this covers the nested ones.)
     if (a is .Optional) || (b is .Optional) {
-        let ea = vtype_strip_optional(a)
-        let eb = vtype_strip_optional(b)
-        return settled_layout_conflict(tc, ea, eb) || generic_args_layout_conflict(tc, ea, eb)
+        return nested_layout_conflict(tc, vtype_strip_optional(a), vtype_strip_optional(b))
     }
     let na = vtype_nominal_name(a)
     if na == "" || na != vtype_nominal_name(b) { return false }
@@ -1716,41 +1700,37 @@ fn type_list_layout_conflict(tc: TC, aa: List<ValueType>, ba: List<ValueType>) -
     let n = if aa.length < ba.length { aa.length } else { ba.length }
     mut i = 0
     while i < n {
-        if settled_layout_conflict(tc, aa[i], ba[i]) || generic_args_layout_conflict(tc, aa[i], ba[i]) { return true }
+        if nested_layout_conflict(tc, aa[i], ba[i]) { return true }
         i = i + 1
     }
     false
 }
 
-/// THE broad layout-conflict check (nlzq) for a value flowing into a RELIABLE
-/// element / value / payload slot (list element, map value, …). Combines a
-/// top-level settled scalar↔ptr conflict with a nested generic-arg conflict —
-/// exactly the pair the List / Map / Tuple branches of `generic_args_layout_conflict`
-/// already apply internally — lifted into one named predicate so element/value
-/// checkers share it instead of hand-wrapping a `List`/`Map` shell to reach it.
+/// THE layout-conflict check between two types — a top-level scalar↔ptr conflict
+/// OR one nested anywhere deeper. Mutually recursive with
+/// `generic_args_layout_conflict`: this is the per-PAIR step (it recurses into
+/// matching structure). It is also the public broad gate for a value flowing into
+/// a RELIABLE element / value / payload slot (list element, map value, …) — so
+/// those checkers call it directly instead of hand-wrapping a `List`/`Map` shell.
 ///
 /// Broader than the narrow `assign_layout_conflict`: `layout_conflict` is the
 /// FULL scalar↔ptr divide (int→struct/list too, not just int→Str), safe HERE
 /// because these positions hold explicitly-written values rather than the
 /// inference-artifact `.Int` fallbacks that force the narrow scoping at the
 /// binding / return / call positions.
-///
-/// The top-level guard uses `top_level_settled_layout_conflict`, NOT
-/// `settled_layout_conflict`: the latter bails when the WHOLE tree mentions an
-/// unresolved param, which would let a settled top-level conflict slip when only
-/// a NESTED arg is unresolved (`List<T>` — a known pointer — flowing into an
-/// `int` element/value slot; `generic_args_layout_conflict` can't see it either,
-/// since List-vs-Int isn't a matching generic shell). The top-level variant skips
-/// only a bare `T` (genuinely unknown layout), so valid generic code stays clean.
 export fn nested_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
     top_level_settled_layout_conflict(tc, a, b) || generic_args_layout_conflict(tc, a, b)
 }
 
-/// `layout_conflict` gated only on the operands' TOP-LEVEL resolution (not the
-/// whole tree like `settled_layout_conflict`): catches a settled top-level
-/// scalar↔ptr split even when nested args are still unresolved, while still
-/// skipping a bare `T` whose layout is genuinely unknown. Used by the broad
-/// element/value gate; the narrow positions keep `settled_layout_conflict`.
+/// `layout_conflict` gated only on the operands' TOP-LEVEL resolution — NOT the
+/// whole tree. A WHOLE-tree guard bails whenever any nested arg mentions an
+/// unbound `T`, which would let a SETTLED top-level conflict slip when only a
+/// nested arg is unresolved (`List<T>` — a known pointer — flowing into an `int`
+/// slot; `generic_args_layout_conflict` can't see that either, since List-vs-Int
+/// isn't a matching shell). Guarding on the top node alone catches it while still
+/// skipping a bare `T` whose layout is genuinely unknown, so valid generic code
+/// stays clean. (`vtype_mentions_unresolved` is the whole-tree predicate, kept for
+/// the narrow int→pointer / collection→scalar checks where it is the right scope.)
 fn top_level_settled_layout_conflict(tc: TC, a: ValueType, b: ValueType) -> bool {
     if top_level_layout_unresolved(tc, a) || top_level_layout_unresolved(tc, b) { return false }
     layout_conflict(a, b)
@@ -1791,7 +1771,7 @@ fn generic_struct_annotation_conflict(tc: TC, declared: ValueType, expr: Expr) -
                 // e.g. `let x: Box<T>` inside a generic fn), then catch a direct
                 // scalar↔ptr split OR one nested inside a generic arg
                 // (`Box<List<Box<int>>>` vs `Box<List<Box<string>>>`).
-                let conflict = settled_layout_conflict(tc, ai, bi) || generic_args_layout_conflict(tc, ai, bi)
+                let conflict = nested_layout_conflict(tc, ai, bi)
                 if conflict {
                     return tc_struct_lit_vtype(tc, name, inits)
                 }

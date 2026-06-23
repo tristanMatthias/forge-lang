@@ -159,7 +159,7 @@ fn main() { want(9) }")
         out.contains("F1000")
     }
     then "map value: Map<string, int> = {\"k\": 9} still compiles (no false positive)" {
-        let out = ry1a_out("fn main() { let m: Map<string, int> = {\"k\": 9}  let _ = m.len() }")
+        let out = ry1a_out("fn main() { let m: Map<string, int> = {\"k\": 9} }")
         out.contains("__AVRA_COMPILE_OK__")
     }
     then "map value: int into Map<string, int?> compiles (nullable widening, not a conflict)" {
@@ -179,13 +179,14 @@ fn main() { want(9) }")
     }
 }
 
-// The broad element/value gate (nested_layout_conflict) must catch a SETTLED
-// top-level scalar↔ptr conflict even when a NESTED arg is still unresolved: a
-// `List<T>` (a known pointer, T unbound) flowing into an `int` element/value slot
-// is a wild store. `settled_layout_conflict` bails on the whole-tree `T`, and
-// `generic_args_layout_conflict` can't see List-vs-int (not a matching shell), so
-// the gate guards on TOP-LEVEL resolution instead — while still leaving a bare
-// `T` (genuinely unknown layout) and a matching `List<T>`-into-`List<...>` alone.
+// The layout-conflict check must catch a SETTLED top-level scalar↔ptr conflict
+// even when a NESTED arg is still unresolved: a `List<T>` (a known pointer, T
+// unbound) flowing into an `int` slot is a wild store. A whole-tree resolution
+// guard bails on the `T`, and `generic_args_layout_conflict` can't see List-vs-int
+// (not a matching shell), so the check guards on TOP-LEVEL resolution instead —
+// while still leaving a bare `T` (unknown layout) and a matching `List<T>`-into-
+// `List<...>` alone. This holds at the OUTERMOST pair AND at every nested pair
+// (`Box<List<T>>` into `Box<int>`), since the two predicates recurse mutually.
 spec "broad gate catches a top-level conflict under unresolved nested args (nlzq)" {
     then "list element: a List<T> value into a List<int> slot is F1000" {
         let out = ry1a_out("fn f<T>(x: List<T>) -> int { let xs: List<int> = [x]  return 0 }
@@ -205,6 +206,27 @@ fn main() { let _ = f([1]) }")
     then "a bare T value into a List<int> slot compiles (T's layout is unknown — could be int)" {
         let out = ry1a_out("fn f<T>(x: T) -> int { let xs: List<int> = [x]  return 0 }
 fn main() { let _ = f(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    // The conflict can hide one generic level deeper: `Box<List<T>>` into a
+    // `Box<int>` slot — the recursion must thread the top-level guard into the
+    // nested `List<T>`-vs-`int` pair (a wild store on `Box.val`).
+    then "nested: a Box<List<T>> value into a Box<int> slot is F1000" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn f<T>(x: Box<List<T>>) -> int { let y: Box<int> = x  return 0 }
+fn main() { let b: Box<List<int>> = Box { val: [1] }  let _ = f(b) }")
+        out.contains("F1000")
+    }
+    then "nested: a Box<List<T>> value into a Box<List<int>> slot compiles (matching, no false positive)" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn f<T>(x: Box<List<T>>) -> int { let y: Box<List<int>> = x  return 0 }
+fn main() { let b: Box<List<int>> = Box { val: [1] }  let _ = f(b) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "nested: a Box<T> value into a Box<int> slot compiles (T's layout is unknown)" {
+        let out = ry1a_out("type Box<T> = { val: T }
+fn f<T>(x: Box<T>) -> int { let y: Box<int> = x  return 0 }
+fn main() { let b: Box<int> = Box { val: 1 }  let _ = f(b) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
