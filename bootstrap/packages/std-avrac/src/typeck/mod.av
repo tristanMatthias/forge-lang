@@ -1226,7 +1226,20 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             .Function(name, tp, params, ret_vt, _) -> {
                 let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
-                cur with { fns: fn_type_reg_register(cur.fns, name, tp, params, final_ret, false) }
+                // Reusing an extern's name for a normal fn would re-register
+                // the entry with is_extern=false, silently flipping provenance
+                // (the reverse of the .ExternFn case below). Reject the mix so
+                // the fn-param layout gate always sees the right regime. A
+                // normal re-declaration (prior also normal — inlined modules)
+                // stays allowed: the guard only fires when the prior was extern.
+                let prior = fn_type_get(cur.fns, name)
+                if prior.found && prior.is_extern {
+                    tc_report_at(cur, DiagCode.DuplicateDecl,
+                        "`${name}` is already declared as an extern fn; a normal fn cannot reuse that name",
+                        ss.line, ss.col, name.length)
+                } else {
+                    cur with { fns: fn_type_reg_register(cur.fns, name, tp, params, final_ret, false) }
+                }
             }
             .ExternFn(name, params, ret_vt) -> {
                 let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(cur, ret_vt) }
@@ -1238,7 +1251,14 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 // symbol table as two types for one name, which is an
                 // ICE-grade abort there.
                 let prior = fn_type_get(cur.fns, name)
-                if prior.found && !extern_sig_matches(prior, params, final_ret) {
+                if prior.found && !prior.is_extern {
+                    // A prior NORMAL fn: registering as extern (is_extern=true)
+                    // would flip the entry so the normal fn's later calls use
+                    // the extern carve-out and skip the collection→scalar check.
+                    tc_report_at(cur, DiagCode.DuplicateDecl,
+                        "extern `${name}` conflicts with a prior normal fn of the same name",
+                        ss.line, ss.col, name.length)
+                } else if prior.found && !extern_sig_matches(prior, params, final_ret) {
                     tc_report_at(cur, DiagCode.DuplicateDecl,
                         "extern `${name}` redeclared with a conflicting signature: ${render_extern_sig(params, final_ret)} (previously ${render_extern_sig(prior.params, prior.ret_ty)})",
                         ss.line, ss.col, name.length)
@@ -2720,16 +2740,25 @@ fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntr
 /// tc_subst_generic_ret. y9y4.16 — `t.fold(0, sum_leaves)` on
 /// `Tree__fold<S>(self, init: S, f: fn(S,Tree)->S) -> S` substitutes
 /// S = Int from init, returns Int instead of the generic S.
+/// Project a method's parameter list to drop `self` (params[0]). User-visible
+/// call args align with params[1..], so both the generic-return substitution
+/// (tc_subst_generic_method_ret) and the param-layout gate (the method-call arm
+/// of check_method_call) compare against this projected slice. A params list of
+/// length 0 yields an empty list.
+fn method_params_without_self(params: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 1
+    while i < params.length {
+        out.push(params[i])
+        i = i + 1
+    }
+    out
+}
+
 fn tc_subst_generic_method_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     if params.length == 0 { return ret_ty }
-    mut method_params: List<ParamEntry> = []
-    mut i = 1
-    while i < params.length {
-        method_params.push(params[i])
-        i = i + 1
-    }
-    tc_subst_generic_ret(tc, tp, method_params, args, ret_ty)
+    tc_subst_generic_ret(tc, tp, method_params_without_self(params), args, ret_ty)
 }
 
 /// Bidirectional variant: ALSO unify `ret_ty` against `expected` (the
@@ -3080,7 +3109,11 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<
     for i in 0..n {
         bindings.push(TypeArg { param_name: r.tp[i].name, concrete_vt: resolve_vtype(checked, vtype_from_name(type_args[i])) })
     }
-    tc_er(checked, tc_subst_vtype(r.ret_ty, bindings))
+    // Gate args against the declared params (mirrors the regular call path's
+    // tc_check_newtype_args) so `g<string>([1])` into an int param is caught —
+    // this explicit-type-arg path otherwise returns without any param check.
+    let arg_checked = tc_check_newtype_args(checked, name, r.params, args, r.is_extern)
+    tc_er(arg_checked, tc_subst_vtype(r.ret_ty, bindings))
 }
 
 /// Bidirectional variant — accepts the caller's expected return type
@@ -3231,8 +3264,12 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
             // `t.fold(0, f)` typed as `S` and `string(t.fold(...))`
             // fired F1003. Mirror of tc_check_fn_call_with's free-fn
             // substitution, projected to drop self.
-            let resolved_ret = tc_subst_generic_method_ret(checked_args, r.tp, r.params, args, r.ret_ty)
-            return tc_er(checked_args, resolved_ret)
+            // Gate user args against params[1..] (drop self, which dispatch
+            // already bound) so `obj.m([1])` into an int param is caught — this
+            // user-defined method path otherwise never reached the param gate.
+            let arg_checked = tc_check_newtype_args(checked_args, qualified, method_params_without_self(r.params), args, r.is_extern)
+            let resolved_ret = tc_subst_generic_method_ret(arg_checked, r.tp, r.params, args, r.ret_ty)
+            return tc_er(arg_checked, resolved_ret)
         }
     }
 
