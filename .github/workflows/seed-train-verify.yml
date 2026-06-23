@@ -1,0 +1,66 @@
+# seed-train-verify — the PR-side seed-train gate.
+#
+# The seed train runs build-from-pin + fixed point + the full spec suite
+# AFTER a merge lands on the integration branch (seed-train.yml, on push),
+# then publishes. The other PR gates do NOT run that suite: bootstrap-window
+# builds + smoke-runs one program, diff-test asserts IR equality. So a suite
+# failure — e.g. an order-dependent test flake — sails through PR CI and only
+# reds the train post-merge, when it's already on integration and the pin is
+# stuck (exactly how #538/#539's 4szi.1 flake bit).
+#
+# This gate closes that hole: it runs the train's verify phase — the SAME
+# diagnose.sh code path the train uses, minus publish — on every PR. Green
+# here ⇒ the post-merge train cannot fail on build / fixed-point / suite.
+# Logic lives in bootstrap/scripts/diagnose.sh --seed-train-verify; this
+# workflow only provisions the toolchain and invokes it.
+name: seed-train-verify
+
+on:
+  pull_request:
+    branches: [feat/crafting-intepreters]
+
+# Least privilege: a trust gate that builds + runs PR code. It only reads the
+# tree and fetches the pinned seed release asset — never writes, never
+# publishes (the lock bump is seed-train.yml's alone). Pin read-only so a
+# repo-default change can't hand this job a write-capable token.
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to the same PR supersedes this run — don't burn a runner
+  # finishing a verify for stale code (the train can't cancel mid-publish;
+  # this read-only gate safely can).
+  group: seed-train-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    # Build-from-pin + fixed point + suite is ~the train's runtime; 30m of
+    # headroom matches the bootstrap-window gate.
+    timeout-minutes: 30
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow is a trust gate. The verify build reads the
+      # pinned seed from seed.lock and the working tree only — no git history
+      # needed — so a shallow checkout of the PR's merge ref is enough.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Read-only workflow — never let the token outlive checkout.
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: ./.github/actions/setup-llvm
+
+      - name: Seed-train verify (build from pin + fixed point + suite, no publish)
+        env:
+          # Read-only token + repo slug so the pinned seed release asset
+          # resolves even if the repo is private. permissions:contents:read
+          # keeps it incapable of writing; the mode never calls publish.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AVRA_SEED_REPO: ${{ github.repository }}
+          # Match the train's exact suite parallelism (seed-train.yml) so the
+          # same sharding that surfaces order-dependent flakes is exercised
+          # here, pre-merge, rather than post-merge on the train.
+          AVRA_TEST_JOBS: "2"
+        run: bash bootstrap/scripts/diagnose.sh --seed-train-verify

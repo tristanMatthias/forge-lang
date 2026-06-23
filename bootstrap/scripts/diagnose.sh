@@ -356,6 +356,14 @@ SEED MANAGEMENT
                          Run by .github/workflows/seed-train.yml on
                          every integration push; `make seed-train`
                          for manual advances.
+  --seed-train-verify    The PR-side seed-train gate (read-only): run the
+                         train's verify phase — build from the pin, check
+                         the fixed point, run the spec suite — but STOP
+                         before publish. Run by seed-train-verify.yml on
+                         every PR into the integration branch so a merge
+                         cannot land something that reds the train
+                         post-merge. `make seed-train-verify` runs it
+                         locally.
   --seed-canonical-sha <file>
                          INTERNAL (spec-tested): sha256 of a seed IR
                          with provenance comment lines stripped — the
@@ -691,17 +699,10 @@ mode_seed_publish() {
 # (gate-enforced) → merge → CI advances the pin → everyone dogfoods
 # on rebase.
 mode_seed_train() {
-  # The train never papers over breakage: if the pinned seed cannot
-  # build the merged source, the window gate failed and a human needs
-  # to look — refuse to auto-cycle around it.
-  export NO_AUTOCYCLE=1
-
-  log "seed train: building from the current pin"
-  mode_build_bs2
-  mode_check_fixedpoint || die "fixed point broken on the train — refusing to publish"
-
-  log "seed train: running the spec suite"
-  ( cd "$BOOTSTRAP_DIR" && "$BS2" test ) || die "suite red on the train — refusing to publish"
+  # Verify exactly what the PR gate verifies — shared code path, so parity is
+  # by construction — then publish. seed_train_verify sets NO_AUTOCYCLE, so the
+  # train never papers over a pin that can't build the merged source.
+  seed_train_verify "seed train"
 
   # The published seed MUST be self-contained: a fresh clone bootstraps
   # it via seed.ll -> llc + cc -> seed binary with no other objects. The
@@ -738,6 +739,37 @@ mode_seed_train() {
   mode_update_seed
   mode_seed_publish
   ok "seed train advanced — commit bootstrap/seed/seed.lock to complete the cycle"
+}
+
+# The verify phase shared by `--seed-train` (which then publishes) and
+# `--seed-train-verify` (the PR gate, which stops here). Build the compiler from
+# the CURRENT pin (NO_AUTOCYCLE — a pin that can't build the merged source is a
+# window-gate failure a human must see, never something to auto-cycle around),
+# check the selfhost fixed point, then run the full spec suite. This is EXACTLY
+# what the train runs before it publishes, so a green PR gate guarantees the
+# post-merge train cannot fail on build / fixed-point / suite. $1 = context
+# label woven into the diagnostics.
+seed_train_verify() {
+  local ctx="${1:-seed train}"
+  export NO_AUTOCYCLE=1
+
+  log "$ctx: building from the current pin"
+  mode_build_bs2
+  mode_check_fixedpoint || die "$ctx: fixed point broken — bs2 and bs3 disagree"
+
+  log "$ctx: running the spec suite"
+  ( cd "$BOOTSTRAP_DIR" && "$BS2" test ) || die "$ctx: spec suite red"
+}
+
+# The PR-side seed-train gate (read-only): the train's verify phase, stopping
+# before publish. Wired into .github/workflows/seed-train-verify.yml on every PR
+# into the integration branch so a merge can't land something that reds the
+# train post-merge — the gap that let the 4szi.1 flake (and #538/#539) sail
+# through diff-test + bootstrap-window and only fail the train AFTER merging.
+# No token, no writes; the publish half (lock bump) is the train's alone.
+mode_seed_train_verify() {
+  seed_train_verify "seed-train verify"
+  ok "seed-train verify holds — build + fixed point + spec suite all green from the pin"
 }
 
 # A seed IR MUST be self-contained: a fresh clone bootstraps it via
@@ -1767,6 +1799,7 @@ main() {
     --write-seed-lock)    write_seed_lock "$@" ;;
     --seed-publish)       mode_seed_publish "$@" ;;
     --seed-train)         mode_seed_train "$@" ;;
+    --seed-train-verify)  mode_seed_train_verify "$@" ;;
     --seed-canonical-sha) seed_canonical_sha "$@" ;;
     --seed-inputs-hash)   seed_inputs_hash "$@" ;;
     --seed-self-contained) seed_is_self_contained "$@" ;;
