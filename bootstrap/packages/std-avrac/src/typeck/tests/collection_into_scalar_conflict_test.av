@@ -178,6 +178,19 @@ fn main() { let b = Box { v: 0 }  let _ = b.take([1]) }")
 fn main() { let _ = g<string>([1]) }")
         out.contains("F1000")
     }
+    // Finding A (CodeRabbit #539): explicit type-args are substituted into the
+    // params before gating (subst_param_types), so a `T`-typed param bound to a
+    // concrete type by the call's type-arg is checked against that concrete type.
+    then "an int into an explicit-generic call's string-bound type param is F1000 (id<string>(9))" {
+        let out = cs_out("fn id<T>(x: T) -> T { return x }
+fn main() { let _ = id<string>(9) }")
+        out.contains("F1000")
+    }
+    then "an int into an explicit-generic call's int-bound type param compiles (id<int>(9))" {
+        let out = cs_out("fn id<T>(x: T) -> T { return x }
+fn main() { let _ = id<int>(9) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
     then "an int into a method's int param compiles (no false positive)" {
         let out = cs_out("type Box = { v: int }
 impl Box { fn take(self, x: int) -> int { return x } }
