@@ -645,6 +645,19 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     if (a is .Optional) || (b is .Optional) {
         return vtype_eq(vtype_strip_optional(a), vtype_strip_optional(b))
     }
+    // Kind-agnostic nominal identity (op3w): the SAME nominal type can carry a
+    // .Struct wrapper in one position and .Enum in another — the parser defaults
+    // every nominal type annotation to .Struct, and only decl positions know the
+    // real kind — while counter TypeIds (type_registry.av) diverge across package
+    // registries. The fully-qualified name is the stable identity, so compare
+    // Struct/Enum nominals by name regardless of the wrapper, ahead of the
+    // per-kind arms (which would miss an Enum-vs-Struct mismatch). Generic args
+    // are ignored here exactly as the .Struct/.Enum arms below do — arg layout is
+    // checked separately (generic_args_layout_conflict). vtype_nominal_name is
+    // non-empty only for Struct/Enum; Trait/Newtype/NarrowedEnum keep their arms.
+    let nom_a = vtype_nominal_name(a)
+    let nom_b = vtype_nominal_name(b)
+    if nom_a != "" && nom_b != "" { return nom_a == nom_b }
     match a {
         .Int -> b is .Int
         .U8 -> b is .U8
