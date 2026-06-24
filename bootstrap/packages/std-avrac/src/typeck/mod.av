@@ -2236,6 +2236,36 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                 r
             }
         }
+        // enwi: a subjectless enum ctor (`.Ok(...)`, `.Some(...)`, `.W(...)`) takes
+        // its enum from the EXPECTED type, not a `Type.` prefix — so check_expr's
+        // tn="" path returns Unknown and the conflict escapes the no-int gate
+        // below (Unknown is lenient). Resolve the enum from `exp`, infer the
+        // payload type-args exactly as the explicit `Type.Variant` form does, and
+        // route through the same layout gate. (`exp` is the optional-stripped
+        // expected, so `.Some(x)` into a declared enum still resolves.)
+        .EnumCtor(tn, variant, args) if tn == "" -> {
+            let after = check_expr_list(tc, args)
+            match exp {
+                .Enum(en, _, _) if en != "" -> {
+                    let gated = tc_check_enum_ctor_args(after, en, variant, args)
+                    let result_args = tc_infer_enum_ctor_type_args(gated, en, variant, args)
+                    let rty = ValueType.Enum(en, result_args, 0)
+                    tc_er(check_assign_layout_no_int(gated, rty, exp, "expression"), rty)
+                }
+                _ -> match expected {
+                    // `.Some(x)` into a `T?` optional: the present-ctor carries the
+                    // value directly (not a generic enum whose args we'd infer), so
+                    // its single payload must match the optional's inner. Route it
+                    // through the same layout gate so `.Some(Box<int>)` into
+                    // `Box<string>?` is caught (enwi's optional form).
+                    .Optional(inner) if args.length == 1 -> {
+                        let aty = tc_arg_concrete_ty(after, args[0])
+                        tc_er(check_assign_layout_no_int(after, aty, inner, "expression"), expected)
+                    }
+                    _ -> tc_er(after, .Unknown)
+                }
+            }
+        }
         _ -> {
             let r = check_expr(tc, expr)
             // The universal arm: any OTHER expression meeting an expected type —
@@ -2331,8 +2361,10 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let after_args = check_expr_list(tc, args)
             if tn == "" { return tc_er(after_args, .Unknown) }
             let gated = tc_check_enum_ctor_args(after_args, tn, variant, args)
-            let empty_args: List<ValueType> = []
-            tc_er(gated, ValueType.Enum(tn, empty_args, 0))
+            // enwi: carry the type-args inferred from the payload (Wrap<int>, not
+            // Wrap<?>) so a mismatched binding annotation is caught downstream.
+            let result_args = tc_infer_enum_ctor_type_args(gated, tn, variant, args)
+            tc_er(gated, ValueType.Enum(tn, result_args, 0))
         }
         // Parens-less `EnumType.Variant` parses as
         // FieldAccess(Ident(EnumType), Variant). When the head is a
@@ -2480,6 +2512,77 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
         }
+        i = i + 1
+    }
+    cur
+}
+
+// enwi: infer a generic enum's type-args from the constructor's payload args, so
+// the ctor's RESULT type carries them (`Wrap.W(Box{val:9})` types as `Wrap<int>`,
+// not `Wrap<?>`) and the existing let / return / arg layout-conflict checks fire
+// against a mismatched annotation (`let w: Wrap<string> = Wrap.W(Box{val:9})` ->
+// F1000). Same gap, same fix for the built-in Result/Option ctors (`.Ok`/`.Some`,
+// whose payload is a naked `T`). Returns the inferred type per declared param, in
+// order — `Unknown` for any the args left unbound (a partial bind still lets the
+// resolved positions catch a conflict; Unknown stays lenient).
+//
+// Gate-local on purpose: the shared tc_unify omits the Struct/Enum arm (g97x)
+// because adding it there perturbs fn-arg inference + emitted IR. This only
+// REFINES an otherwise-empty ctor result type, so IR is byte-identical and it
+// merely adds rejections for invalid programs. (Deep Struct-in-container payloads
+// like `List<Box<T>>` bind once g97x lands the arm in the shared unifier.)
+fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<SExpr>) -> List<ValueType> {
+    let tp = enum_type_params(tc.enums, tn)
+    if tp.length == 0 { return [] }
+    let v = variant_find(enum_type_variants(tc.enums, tn), variant)
+    if v == null { return [] }
+    let fields = v!.fields
+    mut bindings: List<TypeArg> = []
+    mut i = 0
+    let limit = if fields.length < args.length { fields.length } else { args.length }
+    while i < limit {
+        let fty = resolve_vtype(tc, fields[i].resolved)
+        let aty = tc_arg_concrete_ty(tc, args[i])
+        bindings = tc_unify_enum_payload(tp, fty, aty, bindings)
+        i = i + 1
+    }
+    mut out: List<ValueType> = []
+    mut j = 0
+    while j < tp.length {
+        out.push(tc_type_arg_lookup(bindings, tp[j].name))
+        j = j + 1
+    }
+    out
+}
+
+// tc_unify plus the top-level Struct/Enum peel the shared unifier omits (g97x);
+// see tc_infer_enum_ctor_type_args. Delegate first so naked `T` and
+// List/Map/Optional/Task/FnTyped payloads bind exactly as fn-arg inference does;
+// then peel a generic Struct/Enum payload (`Box<T>`) pairwise. A naked param is
+// already bound by the delegate and is not a generic application, so it skips the
+// peel.
+fn tc_unify_enum_payload(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+    let base = tc_unify(tp, param_ty, arg_ty, acc)
+    if type_param_has(tp, vtype_display(param_ty)) { return base }
+    match param_ty {
+        .Struct(_, p_args, _) -> match arg_ty {
+            .Struct(_, a_args, _) -> tc_unify_enum_payload_lists(tp, p_args, a_args, base)
+            _ -> base
+        }
+        .Enum(_, p_args, _) -> match arg_ty {
+            .Enum(_, a_args, _) -> tc_unify_enum_payload_lists(tp, p_args, a_args, base)
+            _ -> base
+        }
+        _ -> base
+    }
+}
+
+fn tc_unify_enum_payload_lists(tp: List<TypeParamEntry>, p_args: List<ValueType>, a_args: List<ValueType>, acc: List<TypeArg>) -> List<TypeArg> {
+    mut cur = acc
+    mut i = 0
+    let limit = if p_args.length < a_args.length { p_args.length } else { a_args.length }
+    while i < limit {
+        cur = tc_unify_enum_payload(tp, p_args[i], a_args[i], cur)
         i = i + 1
     }
     cur
