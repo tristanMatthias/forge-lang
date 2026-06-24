@@ -2238,6 +2238,25 @@ impl Parser {
 
     // ── Speculative parsing (backtracking) ──
 
+    // Snapshot / restore the lexer+parser position for a speculative parse. The
+    // two are kept symmetric: every field saved here is restored below.
+    //
+    // `prev_line` is in the snapshot (cpi6) because the newline-sensitivity
+    // readers (cell-mode continuation, dot_is_postfix, same-line postfix-call
+    // attach) consult it — a backtrack that left it stale would mis-decide on the
+    // re-parse. This guard is verified by the SELFHOST DIFFERENTIAL (byte-identical
+    // IR), not a spec test, and that is not an oversight: the only save_state
+    // caller, try_parse_generic_call, always has parse_comparison re-consume the
+    // backtracked `<` (which refreshes prev_line) before any reader runs, so no
+    // user-visible `.av` program can distinguish the fix. (A future statement-level
+    // save_state user could — the qsqm map-literal lookahead deliberately avoids
+    // one for exactly this reason.)
+    //
+    // NOT snapshotted, by design: `gensym_seq` (a monotonic hygiene counter —
+    // rolling it back would re-mint an already-issued temp name) and the context
+    // flags (allow_struct_lit / allow_dot_postfix / cell_mode / allow_it_sugar),
+    // which the sole caller balances locally. Folding those in so they can't drift
+    // is tracked as forge-crafting-intepreters-2sgo.
     fn save_state(self) -> ParserState {
         ParserState {
             start: self.start, current: self.current,
