@@ -52,6 +52,7 @@ export type ParserState = {
     current_lexeme: string,
     current_line: int,
     current_column: int,
+    prev_line: int,
     current_start: int,
     had_error: int,
     error_message: string,
@@ -2243,6 +2244,7 @@ impl Parser {
             line: self.line, column: self.column,
             current_kind: self.current_kind, current_lexeme: self.current_lexeme,
             current_line: self.current_line, current_column: self.current_column,
+            prev_line: self.prev_line,
             current_start: self.current_start,
             had_error: self.had_error, error_message: self.error_message,
             bag: self.bag,
@@ -2258,6 +2260,7 @@ impl Parser {
         self.current_lexeme = state.current_lexeme
         self.current_line = state.current_line
         self.current_column = state.current_column
+        self.prev_line = state.prev_line
         self.current_start = state.current_start
         self.had_error = state.had_error
         self.error_message = state.error_message
