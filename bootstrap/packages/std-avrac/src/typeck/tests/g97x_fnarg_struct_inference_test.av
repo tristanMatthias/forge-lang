@@ -1,0 +1,64 @@
+// WHY: forge-crafting-intepreters-g97x — the shared tc_unify (fn-call type-arg
+// inference) recursed into List/Map/Optional/Task/FnTyped but had NO Struct/Enum
+// arm, so a type param that appears only INSIDE a struct/enum argument never
+// bound: `fn unbox<T>(b: Box<T>) -> T` called with `Box<int>` left T unresolved,
+// so `let s: string = unbox(Box{val:9})` escaped as a wild store. rs0b and enwi
+// each added a gate-local twin to dodge this; g97x adds the arm to the shared
+// unifier and retires enwi's twin, so fn-arg and enum-ctor inference share it.
+//
+// This file guards the FN-ARG inference path specifically (the receiver-bound
+// method path is rs0b's test, the enum-ctor path is enwi's). Driven through
+// `bs2 check` — a typeck gate.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn g97x_out(source: string) -> string {
+    let path = "/tmp/avra_g97x_gate.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "g97x: fn-arg inference binds a type param through a struct argument" {
+    then "unbox(Box<int>) returned into a string slot is F1000" {
+        let out = g97x_out("type Box<T> = { val: T }
+fn unbox<T>(b: Box<T>) -> T { b.val }
+fn main() {
+    let s: string = unbox(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+    then "the same call into the matching int slot checks clean" {
+        let out = g97x_out("type Box<T> = { val: T }
+fn unbox<T>(b: Box<T>) -> T { b.val }
+fn main() {
+    let i: int = unbox(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "g97x: inference binds through a generic-enum argument too" {
+    then "first(Option<int>) returned into a string slot is F1000" {
+        let out = g97x_out("fn first<T>(o: Option<T>) -> T { match o { .Some(v) -> v, .None -> first(o) } }
+fn main() {
+    let s: string = first(Option.Some(9))
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "g97x: a nested struct argument still binds the inner param" {
+    then "unbox(Box<Box<int>>) returned into Box<string> is F1000" {
+        let out = g97x_out("type Box<T> = { val: T }
+fn unbox<T>(b: Box<Box<T>>) -> Box<T> { b.val }
+fn main() {
+    let s: Box<string> = unbox(Box { val: Box { val: 9 } })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
