@@ -62,3 +62,35 @@ fn main() {
         out.contains("F1000")
     }
 }
+
+spec "g97x: the SECOND type param binds through a struct argument (not first-match)" {
+    then "snd(Pair<int,bool>) returned into a string slot is F1000 — B binds to bool, not A" {
+        let out = g97x_out("type Pair<A, B> = { fst: A, snd: B }
+fn snd<A, B>(p: Pair<A, B>) -> B { p.snd }
+fn main() {
+    let s: string = snd(Pair { fst: 1, snd: true })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+    then "the same call into the matching bool slot checks clean" {
+        let out = g97x_out("type Pair<A, B> = { fst: A, snd: B }
+fn snd<A, B>(p: Pair<A, B>) -> B { p.snd }
+fn main() {
+    let b: bool = snd(Pair { fst: 1, snd: true })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "g97x: a generic-enum argument is not falsely flagged when the types match" {
+    then "first(Option<int>) returned into an int slot checks clean" {
+        let out = g97x_out("fn first<T>(o: Option<T>) -> T { match o { .Some(v) -> v, .None -> first(o) } }
+fn main() {
+    let i: int = first(Option.Some(9))
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
