@@ -2543,7 +2543,10 @@ fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<
     while i < limit {
         let fty = resolve_vtype(tc, fields[i].resolved)
         let aty = tc_arg_concrete_ty(tc, args[i])
-        bindings = tc_unify_enum_payload(tp, fty, aty, bindings)
+        // g97x: the shared tc_unify now peels Struct/Enum args, so the gate-local
+        // twin this used to call is retired — fn-arg inference and enum-ctor
+        // inference share one unifier again.
+        bindings = tc_unify(tp, fty, aty, bindings)
         i = i + 1
     }
     mut out: List<ValueType> = []
@@ -2553,39 +2556,6 @@ fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<
         j = j + 1
     }
     out
-}
-
-// tc_unify plus the top-level Struct/Enum peel the shared unifier omits (g97x);
-// see tc_infer_enum_ctor_type_args. Delegate first so naked `T` and
-// List/Map/Optional/Task/FnTyped payloads bind exactly as fn-arg inference does;
-// then peel a generic Struct/Enum payload (`Box<T>`) pairwise. A naked param is
-// already bound by the delegate and is not a generic application, so it skips the
-// peel.
-fn tc_unify_enum_payload(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
-    let base = tc_unify(tp, param_ty, arg_ty, acc)
-    if type_param_has(tp, vtype_display(param_ty)) { return base }
-    match param_ty {
-        .Struct(_, p_args, _) -> match arg_ty {
-            .Struct(_, a_args, _) -> tc_unify_enum_payload_lists(tp, p_args, a_args, base)
-            _ -> base
-        }
-        .Enum(_, p_args, _) -> match arg_ty {
-            .Enum(_, a_args, _) -> tc_unify_enum_payload_lists(tp, p_args, a_args, base)
-            _ -> base
-        }
-        _ -> base
-    }
-}
-
-fn tc_unify_enum_payload_lists(tp: List<TypeParamEntry>, p_args: List<ValueType>, a_args: List<ValueType>, acc: List<TypeArg>) -> List<TypeArg> {
-    mut cur = acc
-    mut i = 0
-    let limit = if p_args.length < a_args.length { p_args.length } else { a_args.length }
-    while i < limit {
-        cur = tc_unify_enum_payload(tp, p_args[i], a_args[i], cur)
-        i = i + 1
-    }
-    cur
 }
 
 // Check newtype constructor argument matches the inner type
@@ -3030,6 +3000,21 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
             }
             .Closure(_, a_ret) -> tc_unify(tp, p_ret, a_ret, acc)
             .Fn(a_ret) -> tc_unify(tp, p_ret, a_ret, acc)
+            _ -> acc
+        }
+        // g97x: bind type params nested inside a Struct/Enum arg — `f<T>(x: Box<T>)`
+        // called with `Box<int>` now binds T=int, exactly as the List/Map/Optional
+        // constructors above already do. This is the arm the gate-local twins
+        // rs0b/enwi added while it was missing here; promoting it lets fn-call
+        // inference resolve a type param that only appears inside a struct/enum arg.
+        // The generic head is matched by position, not name (like .List/.Map) — a
+        // mismatched head is a type error caught at assignability, not here.
+        .Struct(_, p_args, _) -> match arg_ty {
+            .Struct(_, a_args, _) -> tc_unify_lists(tp, p_args, a_args, acc)
+            _ -> acc
+        }
+        .Enum(_, p_args, _) -> match arg_ty {
+            .Enum(_, a_args, _) -> tc_unify_lists(tp, p_args, a_args, acc)
             _ -> acc
         }
         _ -> acc
