@@ -2470,17 +2470,25 @@ fn tc_nominal_id(tc: TC, t: ValueType) -> int {
     type_registry_id_for(tc.type_reg, n)
 }
 
-/// 703y bridge: during the AST span migration a spanned wrapper (SExpr =
-/// `{ node: Expr, … }`, SStmt = `{ node: Stmt, … }`) flows into positions still
-/// declared with the bare type. True when `a0` is a struct whose `node` field
-/// canonically IS `f0` — the spanned-of-bare relationship — so the nominal gate
-/// doesn't flag it as a mismatch while that migration is in flight.
-fn tc_is_spanned_of(tc: TC, a0: ValueType, f0: ValueType) -> bool {
-    let sn = vtype_struct_name(a0)
+/// 703y bridge (one direction): true when `spanned` is a struct whose `node`
+/// field canonically IS `bare` — the spanned-of-bare relationship for the AST
+/// span migration (SExpr = `{ node: Expr, … }`, SStmt = `{ node: Stmt, … }`).
+fn tc_is_spanned_of(tc: TC, spanned: ValueType, bare_ty: ValueType) -> bool {
+    let sn = vtype_struct_name(spanned)
     if sn == "" { return false }
     let node_ty = field_type_lookup(struct_type_lookup(tc.structs, sn), "node")
     let nid = tc_nominal_id(tc, node_ty)
-    nid != 0 && nid == tc_nominal_id(tc, f0)
+    nid != 0 && nid == tc_nominal_id(tc, bare_ty)
+}
+
+/// True when `a0`/`f0` are a spanned/bare pair EITHER way — a spanned wrapper
+/// flowing into a bare-declared slot (SExpr→Expr) OR a bare value flowing into a
+/// spanned-declared slot (Stmt→SStmt, e.g. the quote machinery's Stmt.Annotated
+/// payload). Both occur in the compiler's own code while the 703y span migration
+/// is in flight; bridging keeps the nominal gate from flagging them until that
+/// migration unifies the bare/spanned types. Transitional — remove with 703y.
+fn tc_bridges_span(tc: TC, a0: ValueType, f0: ValueType) -> bool {
+    tc_is_spanned_of(tc, a0, f0) || tc_is_spanned_of(tc, f0, a0)
 }
 
 /// pyly: a value of one registered nominal flowing into a DIFFERENT registered
@@ -2496,7 +2504,7 @@ fn tc_nominal_payload_mismatch(tc: TC, f0: ValueType, a0: ValueType) -> bool {
     if fid == 0 || aid == 0 { return false }
     if fid == aid { return false }
     if vtype_assignable(a0, f0) { return false }
-    if tc_is_spanned_of(tc, a0, f0) { return false }
+    if tc_bridges_span(tc, a0, f0) { return false }
     true
 }
 
