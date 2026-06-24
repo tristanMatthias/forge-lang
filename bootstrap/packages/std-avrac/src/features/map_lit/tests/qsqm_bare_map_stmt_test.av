@@ -14,9 +14,42 @@
 
 fn qsqm_pair() -> Map<string, int> { {"k": 1, "j": 2} }
 
+// Regression: a comment between the `{` and the first key. The disambiguation
+// is token-based (the lexer skips comments), so this is a map. The previous
+// raw-source-byte peek was comment-blind and misparsed it as a block → F0040.
+// If that regresses, this fn fails to PARSE and the whole file fails to build.
+fn qsqm_commented() -> Map<string, int> { { /* c */ "k": 7 } }
+
+// Edge: a single-entry bare map.
+fn qsqm_single() -> Map<string, int> { {"only": 9} }
+
 spec "qsqm: a bare map literal is a function's implicit-return value" {
     then "the bare-form map carries its entries" {
         let m = qsqm_pair()
         m.get("k") == 1 && m.get("j") == 2 && m.length == 2
+    }
+    then "a comment before the first key still parses as a map (was F0040)" {
+        let m = qsqm_commented()
+        m.get("k") == 7 && m.length == 1
+    }
+    then "a single-entry bare map carries its one entry" {
+        let m = qsqm_single()
+        m.get("only") == 9 && m.length == 1
+    }
+}
+
+// Negative direction: a bare `{}` at statement position stays an empty BLOCK,
+// not an empty map. `nb` runs an empty-block statement then returns 42 — if `{}`
+// were reclassified as an empty-map expression statement the function would
+// still return 42, but the compiler's own `{}` block statements (which DO rely
+// on block semantics) are the real guard; this pins the value end-to-end.
+fn qsqm_empty_block() -> int {
+    {}
+    42
+}
+
+spec "qsqm: a bare `{}` at statement position is a block, not a map" {
+    then "the empty block is a no-op and the function returns its tail value" {
+        qsqm_empty_block() == 42
     }
 }
