@@ -2470,12 +2470,22 @@ fn tc_nominal_id(tc: TC, t: ValueType) -> int {
     type_registry_id_for(tc.type_reg, n)
 }
 
-/// 703y bridge (one direction): true when `spanned` is a struct whose `node`
-/// field canonically IS `bare` — the spanned-of-bare relationship for the AST
-/// span migration (SExpr = `{ node: Expr, … }`, SStmt = `{ node: Stmt, … }`).
+/// 703y bridge (one direction): true when `spanned` is specifically the AST
+/// span wrapper SExpr/SStmt whose `node` field canonically IS `bare_ty` — the
+/// spanned-of-bare relationship (SExpr = `{ node: Expr, … }`, SStmt =
+/// `{ node: Stmt, … }`). Restricted to those two exact wrappers so it can't
+/// bridge an unrelated `{ node: T }` user struct.
 fn tc_is_spanned_of(tc: TC, spanned: ValueType, bare_ty: ValueType) -> bool {
     let sn = vtype_struct_name(spanned)
     if sn == "" { return false }
+    // Only the two AST span wrappers bridge: SExpr = { node: Expr, … },
+    // SStmt = { node: Stmt, … }. Gating on the exact wrapper type — not merely
+    // "has a field named `node`" — is what keeps an unrelated user struct
+    // `{ node: Inner }` from masking a genuine nominal payload mismatch. The
+    // field name `node` is ordinary; the previous check bridged ANY struct that
+    // happened to have one, silently accepting a wrong-shaped value through it.
+    let short = type_short_name(sn)
+    if short != "SExpr" && short != "SStmt" { return false }
     let node_ty = field_type_lookup(struct_type_lookup(tc.structs, sn), "node")
     let nid = tc_nominal_id(tc, node_ty)
     nid != 0 && nid == tc_nominal_id(tc, bare_ty)
@@ -2536,10 +2546,13 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
             // (an i64 where a ptr is expected) and dereferences to a SIGSEGV
             // at runtime (pyly: `Holder.One(42)` where the field is a struct).
             // Optionals are stripped first so a `T?` field accepts a bare `T`.
-            // Nominal ptr-vs-ptr mismatches (e.g. Stmt vs SStmt) need sound
-            // cross-package type identity (wc5w) and are NOT gated here —
-            // vtype_eq currently trusts diverging registry ids for identical
-            // FQN nominals, so a strict nominal check false-positives.
+            // Nominal ptr-vs-ptr mismatches (e.g. `Other` into an `Inner` field)
+            // ARE gated below via tc_nominal_payload_mismatch, which compares
+            // through canonical registry ids (op3w) so it doesn't false-positive
+            // on the .Struct-vs-.Enum / FQN-vs-short representation drift raw
+            // vtype_eq diverged on. (Genuinely-divergent cross-registry ids for
+            // the same FQN are the residual wc5w concern; the in-process gate is
+            // sound.)
             //
             // This repr-class check is STRONGER than the narrow `assign_layout_conflict`
             // gate (catches int→struct, `null`→scalar, … — the full scalar↔ptr

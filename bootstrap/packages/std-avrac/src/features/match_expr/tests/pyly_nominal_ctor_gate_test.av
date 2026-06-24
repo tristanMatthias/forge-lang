@@ -31,13 +31,44 @@ fn main() {
     let e = E.V(Other { b: 1 })
     println(\"x\")
 }")
-        out.contains("F1000")
+        // Assert the SPECIFIC nominal gate fired (its `(type mismatch)` suffix),
+        // not merely some F1000 — F1000 is shared by ~10 gates, so a bare-code
+        // assertion would pass even if a different gate rejected for the wrong
+        // reason.
+        out.contains("F1000") && out.contains("(type mismatch)")
     }
     then "the matching `Inner` payload checks clean" {
         let out = pyly_out("type Inner = { a: int }
 enum E { V(x: Inner) }
 fn main() {
     let e = E.V(Inner { a: 1 })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "pyly: a user struct with a `node` field does NOT mask a payload mismatch" {
+    then "an `Inner` into a `{ node: Inner }` `Wrap` field is still rejected" {
+        // Regression guard: the 703y span bridge (tc_is_spanned_of) used to fire
+        // for ANY struct with a field named `node` whose type matched the payload,
+        // so a wrong-typed value flowed through the slot uncaught. `node` is an
+        // ordinary field name; only the actual AST wrappers SExpr/SStmt may bridge.
+        let out = pyly_out("type Inner = { a: int }
+type Wrap = { node: Inner, line: int }
+enum E { V(w: Wrap) }
+fn main() {
+    let e = E.V(Inner { a: 1 })
+    println(\"x\")
+}")
+        out.contains("F1000") && out.contains("(type mismatch)")
+    }
+    then "the matching `Wrap` payload checks clean" {
+        let out = pyly_out("type Inner = { a: int }
+type Wrap = { node: Inner, line: int }
+enum E { V(w: Wrap) }
+fn main() {
+    let e = E.V(Wrap { node: Inner { a: 1 }, line: 0 })
     println(\"x\")
 }")
         out.contains("__AVRA_CHECK_OK__")
@@ -53,7 +84,7 @@ fn main() {
     let e = E.V(ColorB.Up)
     println(\"x\")
 }")
-        out.contains("F1000")
+        out.contains("F1000") && out.contains("(type mismatch)")
     }
 }
 
