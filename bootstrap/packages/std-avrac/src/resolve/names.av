@@ -50,7 +50,8 @@
 use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
-use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
+use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
+use core.{TypeParamEntry, type_param_has}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
 use list_ops.{list_any, list_push_copy}
@@ -564,11 +565,101 @@ type NameCtx = {
     locals: List<LocalBinding>,
     global_index: GlobalItemReg,
     type_reg: TypeRegistry,
+    // cpvo: the enclosing generic fn's / type's type-params, in scope as a
+    // LOCAL binding that shadows same-named types. A name is a type-param iff
+    // it's here — replacing the brittle "single uppercase letter" heuristic
+    // that conflated a param `T` with a user type `T`.
+    type_params: List<TypeParamEntry>,
+    // cpvo: every generic TypeDecl/EnumDecl's declared type-params, keyed by
+    // name. The impl parser DROPS `impl Foo<T>`'s `<T>` (it skips the angle
+    // brackets), so an impl method that returns the struct's param `T` would
+    // otherwise have `T` qualified to a phantom `mod::T` while the struct
+    // field's `T` stays bare — a spurious return-type mismatch. rewrite_impl_stmt
+    // recovers the target's type-params from here and threads them into scope.
+    type_decl_tps: List<TypeDeclTpEntry>,
+}
+
+/// One generic type declaration's type-params, indexed for impl-method
+/// scope recovery (cpvo). Keyed by both qualified and short name so an
+/// impl's resolved target (`mod::Foo`) or the parser's bare target
+/// (`Foo`) both find it.
+type TypeDeclTpEntry = {
+    qualified: string,
+    short: string,
+    tp: List<TypeParamEntry>,
 }
 
 /// Functional update: replace the `locals` field.
 fn ctx_with_locals(ctx: NameCtx, locals: List<LocalBinding>) -> NameCtx {
     ctx with { locals }
+}
+
+/// cpvo: enter a generic fn's / type's type-param scope. MERGES with the
+/// existing scope so a nested generic accumulates (rather than dropping) the
+/// outer type-params.
+fn ctx_with_type_params(ctx: NameCtx, tp: List<TypeParamEntry>) -> NameCtx {
+    if tp.length == 0 { return ctx }
+    ctx with { type_params: concat_type_params(ctx.type_params, tp) }
+}
+
+fn concat_type_params(a: List<TypeParamEntry>, b: List<TypeParamEntry>) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    for p in a { out.push(p) }
+    for p in b { out.push(p) }
+    out
+}
+
+/// cpvo: walk every TypeDecl / EnumDecl (recursing into Module bodies +
+/// Annotated wrappers) and record those carrying type-params. Built once
+/// per resolve pass; lets rewrite_impl_stmt recover an impl target's
+/// `<T>` (which the impl parser discards). Names are short at collect time
+/// — declared_type_name qualifies them only DURING the rewrite — so the
+/// qualified key is computed here from the module path; an already-qualified
+/// name (re-resolve passes) is stored as-is with its short tail.
+fn collect_type_decl_tps(stmts: List<SStmt>, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+    mut out = out_ref
+    mut i = 0
+    while i < stmts.length {
+        collect_type_decl_tp_stmt(stmts[i].node, mod_path, out)
+        i = i + 1
+    }
+}
+
+fn collect_type_decl_tp_stmt(stmt: Stmt, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+    mut out = out_ref
+    match stmt {
+        .TypeDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
+        .EnumDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
+        .Module(name, body) -> collect_type_decl_tps(body, type_qualified_name(mod_path, name), out)
+        .Annotated(_, inner) -> collect_type_decl_tp_stmt(inner.node, mod_path, out)
+        _ -> {}
+    }
+}
+
+fn type_decl_tp_entry(mod_path: string, name: string, tp: List<TypeParamEntry>) -> TypeDeclTpEntry {
+    if name.contains("::") {
+        TypeDeclTpEntry { qualified: name, short: type_short_name(name), tp }
+    } else {
+        TypeDeclTpEntry { qualified: type_qualified_name(mod_path, name), short: name, tp }
+    }
+}
+
+/// cpvo: recover an impl target's declared type-params. Tries the
+/// resolved qualified name first (precise), then the bare short name
+/// the impl parser hands us. Returns [] when the type isn't generic.
+fn type_decl_tp_lookup(list: List<TypeDeclTpEntry>, qualified: string, short: string) -> List<TypeParamEntry> {
+    mut i = 0
+    while i < list.length {
+        if list[i].qualified == qualified { return list[i].tp }
+        i = i + 1
+    }
+    mut j = 0
+    while j < list.length {
+        if list[j].short == short { return list[j].tp }
+        j = j + 1
+    }
+    let empty: List<TypeParamEntry> = []
+    empty
 }
 
 /// Functional update: enter a new module by swapping the active path
@@ -707,6 +798,8 @@ export fn register_decls(stmts: List<SStmt>) -> ResolverState {
 /// using the supplied `ResolverState`. Pure: returns a new stmt list,
 /// does not modify `stmts`.
 export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+    mut tps: List<TypeDeclTpEntry> = []
+    collect_type_decl_tps(stmts, "", tps)
     let ctx = NameCtx {
         tree: state.tree,
         graph: state.graph,
@@ -715,6 +808,8 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
         locals: [],
         global_index: state.global_index,
         type_reg: state.type_reg,
+        type_params: [],
+        type_decl_tps: tps,
     }
     rewrite_stmt_list(ctx, stmts)
 }
@@ -729,6 +824,8 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
 /// the post-expand registry. Recurses into Module bodies so a
 /// spliced fn inside a user module still gets rewritten.
 export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+    mut tps: List<TypeDeclTpEntry> = []
+    collect_type_decl_tps(stmts, "", tps)
     let ctx = NameCtx {
         tree: state.tree,
         graph: state.graph,
@@ -737,6 +834,8 @@ export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> L
         locals: [],
         global_index: state.global_index,
         type_reg: state.type_reg,
+        type_params: [],
+        type_decl_tps: tps,
     }
     rewrite_macro_stmts(ctx, stmts)
 }
@@ -974,8 +1073,9 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             // (`@std::crypto::foo` → `@std::crypto::@std::crypto::foo`).
             let already_qualified = name.length > 0 && name.substring(0, 1) == "@"
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
-            let rp = rewrite_param_types(ctx, params)
-            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
+            let ctx_tp = ctx_with_type_params(ctx, tp)
+            let rp = rewrite_param_types(ctx_tp, params)
+            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
         }
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
@@ -985,14 +1085,14 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         }
         .TypeDecl(name, tp, fields) -> {
             let qn = declared_type_name(ctx, name)
-            let rf = rewrite_field_types(ctx, fields)
+            let rf = rewrite_field_types(ctx_with_type_params(ctx, tp), fields)
             let no_variants: List<Variant> = []
             type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, rf, no_variants, ValueType.Unknown)
             Stmt.TypeDecl(qn, tp, rf)
         }
         .EnumDecl(name, tp, variants) -> {
             let qn = declared_type_name(ctx, name)
-            let rv = rewrite_variant_types(ctx, variants)
+            let rv = rewrite_variant_types(ctx_with_type_params(ctx, tp), variants)
             let no_fields: List<FieldEntry> = []
             type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, no_fields, rv, ValueType.Unknown)
             Stmt.EnumDecl(qn, tp, rv)
@@ -1085,10 +1185,18 @@ fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: List<SStmt>) -> S
         let type_part = type_name.substring(sep + 1, type_name.length)
         let rt = resolve_type_in_ctx(ctx, trait_part)
         let tt = resolve_type_in_ctx(ctx, type_part)
-        Stmt.Impl(trait_impl_name(rt, tt), rewrite_impl_methods(ctx, tt, methods))
+        // cpvo: a `impl Trait for Foo<T>` impl's methods reference Foo's `<T>`,
+        // dropped by the parser — recover it so `T` stays bare (see below).
+        let impl_ctx = ctx_with_type_params(ctx, type_decl_tp_lookup(ctx.type_decl_tps, tt, type_part))
+        Stmt.Impl(trait_impl_name(rt, tt), rewrite_impl_methods(impl_ctx, tt, methods))
     } else {
         let rt = resolve_type_in_ctx(ctx, type_name)
-        Stmt.Impl(rt, rewrite_impl_methods(ctx, rt, methods))
+        // cpvo: the impl parser discards `impl Foo<T>`'s `<T>`. Recover Foo's
+        // declared type-params and put them in scope so a method returning the
+        // struct's param `T` keeps `T` bare (matching the struct field's bare
+        // `T`) instead of qualifying it to a phantom `mod::T`.
+        let impl_ctx = ctx_with_type_params(ctx, type_decl_tp_lookup(ctx.type_decl_tps, rt, type_name))
+        Stmt.Impl(rt, rewrite_impl_methods(impl_ctx, rt, methods))
     }
 }
 
@@ -1140,9 +1248,12 @@ fn declared_type_name(ctx: NameCtx, name: string) -> string {
 /// producing FATAL duplicate-symbol collisions at codegen (yx7b).
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     if type_name.contains("::") { return type_name }
-    // Primitives and type parameters (single uppercase letter) stay as-is
+    // Primitives stay as-is.
     if type_name in ["int", "string", "bool", "float", "ptr", "void"] { return type_name }
-    if type_name.length == 1 && type_name[0] in "A".."Z" { return type_name }
+    // cpvo: a type-param in scope shadows any same-named type and stays bare
+    // (typeck binds it). Replaces the brittle single-uppercase-letter heuristic
+    // that conflated a param `T` with a user type also named `T`.
+    if type_param_has(ctx.type_params, type_name) { return type_name }
     if ctx.current_module != "" {
         let local_qn = type_qualified_name(ctx.current_module, type_name)
         if type_registry_id_for(ctx.type_reg, local_qn) != 0 {
@@ -1311,8 +1422,9 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
         .Function(name, tp, params, rvt, body) -> {
             let mn = method_from_mangled(name)
             let qualified_name = method_mangled_name(qualified_type, mn)
-            let rp = rewrite_param_types(ctx, qualify_self_param(ctx, params, qualified_type))
-            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
+            let ctx_tp = ctx_with_type_params(ctx, tp)
+            let rp = rewrite_param_types(ctx_tp, qualify_self_param(ctx_tp, params, qualified_type))
+            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
         }
         .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_impl_method_stmt(ctx, qualified_type, inner.node) })
         _ -> rewrite_stmt(ctx, stmt)

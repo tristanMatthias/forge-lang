@@ -1,0 +1,55 @@
+// WHY: forge-crafting-intepreters-cpvo — a generic fn's type-param was resolved
+// against the global type registry via a BRITTLE heuristic (resolve_type_in_ctx:
+// "any single uppercase letter is a type-param"). When a type-param shared a name
+// with a real type — a user `enum T` and a fn `<W, T>` — the heuristic conflated
+// them: an explicit type-arg `T` (the enum) was kept bare instead of resolving to
+// the enum, so binding failed with F1002 "cannot infer type parameter T". The fix
+// threads a real type-param SCOPE through the resolver: a name is a type-param iff
+// it's in the enclosing fn/type's declared params, shadowing any same-named type;
+// outside that scope the name resolves to the type as usual. These specs pin the
+// valid programs that were wrongly rejected.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn cpvo_out(source: string) -> string {
+    let path = "/tmp/avra_cpvo_shadow.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "cpvo: an enum used as an explicit type-arg resolves to the enum" {
+    then "pick<SN, T>(…) with a user `enum T` checks clean (was F1002)" {
+        let out = cpvo_out("type SN = { node: int }
+enum T { A, B }
+fn pick<W, P>(x: W, y: P) -> P { y }
+fn main() {
+    let e: T = pick<SN, T>(SN { node: 1 }, T.A)
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "cpvo: a fn type-param shadows a same-named type" {
+    then "fn pick<W, T> with a user `enum T` in scope binds (was F1002)" {
+        let out = cpvo_out("enum T { A, B }
+fn pick<W, T>(x: W, y: T) -> T { y }
+fn main() {
+    let r: T = pick<int, T>(1, T.A)
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "cpvo: an ordinary generic still resolves" {
+    then "fn id<U>(x: U) -> U checks clean" {
+        let out = cpvo_out("fn id<U>(x: U) -> U { x }
+fn main() {
+    let a = id<int>(5)
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
