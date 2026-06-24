@@ -28,10 +28,17 @@ jobs:
     timeout-minutes: 90
     steps:
       # Pinned to a commit (what @v4 resolves to at pin time). Credentials
-      # stay persisted on purpose: the train pushes the lock bump.
+      # stay persisted on purpose: the train pushes the lock bump — under
+      # SEED_TRAIN_TOKEN, a bypass-eligible PAT, so that push clears the branch
+      # ruleset's required-status-checks. github-actions[bot] cannot be a bypass
+      # actor (its push is rejected GH013 "N of N required status checks are
+      # expected"), but a repo-admin PAT's owner can. Falls back to the default
+      # GITHUB_TOKEN when the secret is absent — the push then stays gated, a
+      # safe no-op rather than a hard error.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.SEED_TRAIN_TOKEN || github.token }}
 
       - uses: ./.github/actions/setup-llvm
 
