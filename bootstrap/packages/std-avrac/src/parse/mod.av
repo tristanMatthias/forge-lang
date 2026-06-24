@@ -742,7 +742,14 @@ impl Parser {
     // They extend Parser via `impl Parser { ... }` blocks.
 
     fn parse_statement(self) -> Result<Stmt, string> {
-        if self.check(Tk.LeftBrace) {
+        // qsqm: a bare map literal at statement position — a function's
+        // implicit-return `{"k": v}` — must not be swallowed as a block.
+        // is_stmt_map_literal fires only on a string-keyed `{ "str": ... }`; a
+        // real block (`{ let x = ... }`) AND a bare `{}` (which stays a block,
+        // since the compiler's own source uses `{}` block statements) both parse
+        // as blocks. A map falls through to the expression path below
+        // (parse_expression → parse_map_literal).
+        if self.check(Tk.LeftBrace) && !self.is_stmt_map_literal() {
             self.advance()
             let body = self.parse_statement_list(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after block") {

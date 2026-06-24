@@ -1,0 +1,22 @@
+// WHY: forge-crafting-intepreters-qsqm — a bare map literal at statement /
+// implicit-return position (`fn f() -> Map<…> { {"k": v} }`) parsed as a nested
+// block: the body `{` opened the fn body, the inner `{` was read as a block, and
+// the map entry's `:` yielded F0040 "expected expression". The workaround was
+// `return {…}`. Fix: parse_statement gates its block branch on
+// `!is_stmt_map_literal()` — a lookahead that fires only on a string-keyed
+// `{ "k": ... }`. A real block (`{ let x = … }`) AND a bare `{}` both stay
+// blocks (the compiler's own source uses `{}` block statements, e.g. empty match
+// arms), so only the unambiguous non-empty map is reclassified.
+//
+// This spec constructs a map via the bare form and asserts its runtime values —
+// proving the parse produced a real, populated map (a block/empty misparse would
+// fail the assertions), not just that it stopped erroring.
+
+fn qsqm_pair() -> Map<string, int> { {"k": 1, "j": 2} }
+
+spec "qsqm: a bare map literal is a function's implicit-return value" {
+    then "the bare-form map carries its entries" {
+        let m = qsqm_pair()
+        m.get("k") == 1 && m.get("j") == 2 && m.length == 2
+    }
+}
