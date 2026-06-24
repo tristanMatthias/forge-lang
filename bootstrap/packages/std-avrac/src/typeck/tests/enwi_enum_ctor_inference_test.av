@@ -9,8 +9,8 @@
 // type-args from the ctor payload (Wrap.W(Box{val:9}) => Wrap<int>), wired into
 // both the explicit `Type.Variant` path (check_expr) and the subjectless
 // `.Variant` path (check_expr_expected, where the enum name comes from the
-// annotation). The existing layout gate then catches the mismatch. Inference is
-// gate-local (the shared tc_unify omits the Struct/Enum arm — g97x), so emitted
+// annotation). The existing layout gate then catches the mismatch. Inference runs
+// through the shared tc_unify (which peels Struct/Enum args — g97x), so emitted
 // IR is unchanged; this only adds rejections for invalid programs.
 //
 // Driven through `bs2 check`: enwi is a TYPECK gate, so a check is enough.
@@ -44,6 +44,29 @@ fn main() {
     println(\"x\")
 }")
         out.contains("F1000")
+    }
+}
+
+spec "enwi: a deep container payload (List<Box<T>>) infers and conflicts" {
+    // Pins the shared-unifier recursion through List<…> (g97x): before the arm
+    // landed, a Struct nested inside a container left T unbound, so this escaped.
+    then "Wrap.W([Box<int>]) into Wrap<string> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: List<Box<T>>) }
+fn main() {
+    let w: Wrap<string> = Wrap.W([Box { val: 9 }])
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+    then "the matching List<Box<string>> payload checks clean" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: List<Box<T>>) }
+fn main() {
+    let w: Wrap<string> = Wrap.W([Box { val: \"hi\" }])
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
     }
 }
 

@@ -2597,11 +2597,12 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
 // order — `Unknown` for any the args left unbound (a partial bind still lets the
 // resolved positions catch a conflict; Unknown stays lenient).
 //
-// Gate-local on purpose: the shared tc_unify omits the Struct/Enum arm (g97x)
-// because adding it there perturbs fn-arg inference + emitted IR. This only
-// REFINES an otherwise-empty ctor result type, so IR is byte-identical and it
-// merely adds rejections for invalid programs. (Deep Struct-in-container payloads
-// like `List<Box<T>>` bind once g97x lands the arm in the shared unifier.)
+// Uses the shared tc_unify, which peels Struct/Enum args (g97x) — so the
+// gate-local twin this once needed is retired and fn-arg and enum-ctor inference
+// share one unifier. This only REFINES an otherwise-empty ctor result type, so IR
+// is byte-identical and it merely adds rejections for invalid programs (deep
+// Struct-in-container payloads like `List<Box<T>>` now bind, since g97x landed
+// the arm in the shared unifier).
 fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<SExpr>) -> List<ValueType> {
     let tp = enum_type_params(tc.enums, tn)
     if tp.length == 0 { return [] }
@@ -2910,8 +2911,10 @@ fn method_params_without_self(params: List<ParamEntry>) -> List<ParamEntry> {
 // `type GcStack<T>` yields T=string. Used ONLY to refine the params the layout
 // gate checks (via subst_param_types in check_method_call); it never feeds
 // tc_unify / fn-call inference / mono, so emitted IR is byte-identical and the
-// HRN diff-test stays green. The global tc_unify deliberately has no Struct/Enum
-// arm (adding one would perturb inference + IR); this is the gate-local twin.
+// HRN diff-test stays green. This is a DISTINCT mechanism from tc_unify's
+// Struct/Enum arm (g97x): it zips a receiver's declared params against its
+// concrete type-args, rather than unifying a param type against an arg type — so
+// it stays separate even though tc_unify now peels Struct/Enum.
 fn tc_recv_type_bindings(tc: TC, recv: ValueType) -> List<TypeArg> {
     match recv {
         .Struct(name, args, _) -> tc_zip_type_args(struct_type_params(tc.structs, name), args)
@@ -3075,11 +3078,14 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
         }
         // g97x: bind type params nested inside a Struct/Enum arg — `f<T>(x: Box<T>)`
         // called with `Box<int>` now binds T=int, exactly as the List/Map/Optional
-        // constructors above already do. This is the arm the gate-local twins
-        // rs0b/enwi added while it was missing here; promoting it lets fn-call
-        // inference resolve a type param that only appears inside a struct/enum arg.
-        // The generic head is matched by position, not name (like .List/.Map) — a
-        // mismatched head is a type error caught at assignability, not here.
+        // constructors above already do. enwi's gate-local twin unifier carried this
+        // arm while it was missing here; promoting it lets fn-call inference resolve a
+        // type param that only appears inside a struct/enum arg, and retires that twin.
+        // The generic head is matched by position, not name (like .List/.Map): head
+        // identity is NOT verified here. A wrong head falls to the caller's
+        // assignability check, which is lenient for structurally-compatible nominals,
+        // so it does not always reject (a structural-vs-nominal gap, not a guarantee
+        // this position enforces).
         .Struct(_, p_args, _) -> match arg_ty {
             .Struct(_, a_args, _) -> tc_unify_lists(tp, p_args, a_args, acc)
             _ -> acc
