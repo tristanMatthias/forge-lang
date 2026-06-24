@@ -2571,9 +2571,20 @@ fn run_test_shard_command() {
     let args = parse_test_args()
     let inputs = compute_test_shard_inputs(project_dir, paths, args)
     let shard_id = batch_slug(paths)
+    // uzs9.1: the shard path is the DEFAULT per-file test path, but on a
+    // cache hit it silently exec'd the cached binary — so `bs2 test <file>`
+    // reruns were fast yet never printed `[test-cache] hit`, leaving cache
+    // behaviour undiagnosable (a fast miss looked identical to a hit). Mirror
+    // the bundled path's symmetric hit/miss logging (check_test_cache_or_miss).
+    // The line lands in the shard log, which aggregate_shard_logs surfaces via
+    // `println(out)`.
     let bin_path = match decide_build(inputs) {
-        .Hit(_, cached_bin) -> cached_bin
-        .Miss(fp, _, _) -> {
+        .Hit(fp, cached_bin) -> {
+            eprintln("[test-cache] hit ${fp_short(fp)} — ${cached_bin}")
+            cached_bin
+        }
+        .Miss(fp, _, reason) -> {
+            eprintln("[test-cache] miss ${fp_short(fp)} — ${reason}")
             let built = match compile_test_unit_to(inputs, paths, args, shard_id) {
                 .Ok(b) -> b
                 .Err(e) -> { fail("shard compile failed: ${e}") }

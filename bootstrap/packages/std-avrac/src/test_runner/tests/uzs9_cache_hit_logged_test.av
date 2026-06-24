@@ -1,0 +1,38 @@
+// WHY: forge-crafting-intepreters-uzs9.1 — `bs2 test <file>` reruns were fast
+// but NEVER printed `[test-cache] hit`, so a cache hit was indistinguishable
+// from a fast recompile and the cache was undiagnosable. The 05yc per-file
+// rewrite made the SHARD path (run_test_shard_command) the default, but on a
+// hit it exec'd the cached binary SILENTLY (`.Hit(_, cached_bin) -> cached_bin`)
+// — only the legacy bundled path (check_test_cache_or_miss) logged hit/miss.
+// The fix gives the shard path the same symmetric logging.
+//
+// This spec drives the modified path directly: `bs2 _test_shard <fixture>` is
+// the exact subcommand the per-file orchestrator dispatches, and it writes the
+// cache line straight to stderr (no orchestrator, no shared log dir — so it
+// can't clobber THIS shard's own log, which a nested `bs2 test` would). The
+// first call warms the slot (hit or miss depending on prior suite state); the
+// SECOND identical call must hit and must say so — precisely the ticket's
+// acceptance ("Second run should print `[test-cache] hit`"). Asserting only the
+// second call keeps it deterministic across suite reruns. AVRA_TEST_RESULTS_BIN_PATH
+// is unset for the nested calls so the probe can't write its TestResults over
+// this shard's result bin; the metadata fast-path env is inherited so the warm
+// compile stays cheap.
+
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn uzs9_rerun_output() -> string {
+    let path = "/tmp/avra_uzs9_cache_probe.av"
+    write_fixture(path, "spec \"uzs9 probe\" {\n    then \"trivially true\" { 1 + 1 == 2 }\n}\n")
+    // Warm the shard cache for this fixture.
+    let _warm = avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 _test_shard '${path}' 2>&1")
+    // The slot is now warm, so this identical invocation must hit.
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 _test_shard '${path}' 2>&1")
+}
+
+spec "uzs9.1: a per-file test-shard rerun reports its cache hit" {
+    then "the second identical `_test_shard` call prints `[test-cache] hit`" {
+        uzs9_rerun_output().contains("[test-cache] hit")
+    }
+}
