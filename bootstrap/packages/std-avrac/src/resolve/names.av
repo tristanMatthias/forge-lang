@@ -51,6 +51,7 @@ use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Patt
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled}
+use core.{TypeParamEntry, type_param_has}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
 use list_ops.{list_any, list_push_copy}
@@ -564,11 +565,31 @@ type NameCtx = {
     locals: List<LocalBinding>,
     global_index: GlobalItemReg,
     type_reg: TypeRegistry,
+    // cpvo: the enclosing generic fn's / type's type-params, in scope as a
+    // LOCAL binding that shadows same-named types. A name is a type-param iff
+    // it's here — replacing the brittle "single uppercase letter" heuristic
+    // that conflated a param `T` with a user type `T`.
+    type_params: List<TypeParamEntry>,
 }
 
 /// Functional update: replace the `locals` field.
 fn ctx_with_locals(ctx: NameCtx, locals: List<LocalBinding>) -> NameCtx {
     ctx with { locals }
+}
+
+/// cpvo: enter a generic fn's / type's type-param scope. MERGES with the
+/// existing scope so a nested generic accumulates (rather than dropping) the
+/// outer type-params.
+fn ctx_with_type_params(ctx: NameCtx, tp: List<TypeParamEntry>) -> NameCtx {
+    if tp.length == 0 { return ctx }
+    ctx with { type_params: concat_type_params(ctx.type_params, tp) }
+}
+
+fn concat_type_params(a: List<TypeParamEntry>, b: List<TypeParamEntry>) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    for p in a { out.push(p) }
+    for p in b { out.push(p) }
+    out
 }
 
 /// Functional update: enter a new module by swapping the active path
@@ -715,6 +736,7 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
         locals: [],
         global_index: state.global_index,
         type_reg: state.type_reg,
+        type_params: [],
     }
     rewrite_stmt_list(ctx, stmts)
 }
@@ -737,6 +759,7 @@ export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> L
         locals: [],
         global_index: state.global_index,
         type_reg: state.type_reg,
+        type_params: [],
     }
     rewrite_macro_stmts(ctx, stmts)
 }
@@ -974,8 +997,9 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             // (`@std::crypto::foo` → `@std::crypto::@std::crypto::foo`).
             let already_qualified = name.length > 0 && name.substring(0, 1) == "@"
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
-            let rp = rewrite_param_types(ctx, params)
-            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
+            let ctx_tp = ctx_with_type_params(ctx, tp)
+            let rp = rewrite_param_types(ctx_tp, params)
+            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
         }
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
@@ -985,14 +1009,14 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         }
         .TypeDecl(name, tp, fields) -> {
             let qn = declared_type_name(ctx, name)
-            let rf = rewrite_field_types(ctx, fields)
+            let rf = rewrite_field_types(ctx_with_type_params(ctx, tp), fields)
             let no_variants: List<Variant> = []
             type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, rf, no_variants, ValueType.Unknown)
             Stmt.TypeDecl(qn, tp, rf)
         }
         .EnumDecl(name, tp, variants) -> {
             let qn = declared_type_name(ctx, name)
-            let rv = rewrite_variant_types(ctx, variants)
+            let rv = rewrite_variant_types(ctx_with_type_params(ctx, tp), variants)
             let no_fields: List<FieldEntry> = []
             type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, no_fields, rv, ValueType.Unknown)
             Stmt.EnumDecl(qn, tp, rv)
@@ -1140,9 +1164,12 @@ fn declared_type_name(ctx: NameCtx, name: string) -> string {
 /// producing FATAL duplicate-symbol collisions at codegen (yx7b).
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     if type_name.contains("::") { return type_name }
-    // Primitives and type parameters (single uppercase letter) stay as-is
+    // Primitives stay as-is.
     if type_name in ["int", "string", "bool", "float", "ptr", "void"] { return type_name }
-    if type_name.length == 1 && type_name[0] in "A".."Z" { return type_name }
+    // cpvo: a type-param in scope shadows any same-named type and stays bare
+    // (typeck binds it). Replaces the brittle single-uppercase-letter heuristic
+    // that conflated a param `T` with a user type also named `T`.
+    if type_param_has(ctx.type_params, type_name) { return type_name }
     if ctx.current_module != "" {
         let local_qn = type_qualified_name(ctx.current_module, type_name)
         if type_registry_id_for(ctx.type_reg, local_qn) != 0 {
@@ -1311,8 +1338,9 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
         .Function(name, tp, params, rvt, body) -> {
             let mn = method_from_mangled(name)
             let qualified_name = method_mangled_name(qualified_type, mn)
-            let rp = rewrite_param_types(ctx, qualify_self_param(ctx, params, qualified_type))
-            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
+            let ctx_tp = ctx_with_type_params(ctx, tp)
+            let rp = rewrite_param_types(ctx_tp, qualify_self_param(ctx_tp, params, qualified_type))
+            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
         }
         .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_impl_method_stmt(ctx, qualified_type, inner.node) })
         _ -> rewrite_stmt(ctx, stmt)
