@@ -14,9 +14,44 @@
 
 fn qsqm_pair() -> Map<string, int> { {"k": 1, "j": 2} }
 
+// Regression: a comment between the `{` and the first key. The disambiguation
+// is token-based (the lexer skips comments), so this is a map. The previous
+// raw-source-byte peek was comment-blind and misparsed it as a block → F0040.
+// If that regresses, this fn fails to PARSE and the whole file fails to build.
+fn qsqm_commented() -> Map<string, int> { { /* c */ "k": 7 } }
+
+// Edge: a single-entry bare map.
+fn qsqm_single() -> Map<string, int> { {"only": 9} }
+
 spec "qsqm: a bare map literal is a function's implicit-return value" {
     then "the bare-form map carries its entries" {
         let m = qsqm_pair()
         m.get("k") == 1 && m.get("j") == 2 && m.length == 2
+    }
+    then "a comment before the first key still parses as a map (was F0040)" {
+        let m = qsqm_commented()
+        m.get("k") == 7 && m.length == 1
+    }
+    then "a single-entry bare map carries its one entry" {
+        let m = qsqm_single()
+        m.get("only") == 9 && m.length == 1
+    }
+}
+
+// Negative direction, DISCRIMINATING: a block whose first token is a string that
+// is NOT a map key. `{ "hello"  99 }` is a block of two expression statements
+// (the string, then the tail 99) — the lookahead must reject it as a map because
+// no `:` follows the string. If the colon check regressed (matching on a leading
+// string alone), this would be parsed as a map literal and `parse_map_entries`
+// would hit F0040 ("expected `:`") at `99` — so the function would FAIL TO
+// COMPILE. Asserting it both compiles and yields the block's tail value pins the
+// string-but-not-a-key case, the one place block-vs-map genuinely diverges.
+fn qsqm_str_prefix_block() -> int {
+    { "hello"  99 }
+}
+
+spec "qsqm: a leading string without a colon is a block, not a map" {
+    then "`{ \"hello\" 99 }` is a block whose tail value is 99 (would be F0040 as a map)" {
+        qsqm_str_prefix_block() == 99
     }
 }
