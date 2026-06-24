@@ -2458,6 +2458,56 @@ fn tc_first_arg_type(tc: TC, args: List<SExpr>) -> ValueType {
     check_expr(tc, args[0].node).ty
 }
 
+/// Canonical registry identity of a nominal ValueType, else 0 (non-nominal, or
+/// an unregistered name like a bare type-param). Resolves FQN AND short names
+/// to the same id (the registry indexes both) and is kind-agnostic (name-based),
+/// so it is stable across the .Struct/.Enum and FQN-vs-short representation drift
+/// that makes raw vtype_eq unsound for cross-package nominals (op3w). The sound
+/// identity primitive for the nominal gates.
+fn tc_nominal_id(tc: TC, t: ValueType) -> int {
+    let n = vtype_nominal_name(t)
+    if n == "" { return 0 }
+    type_registry_id_for(tc.type_reg, n)
+}
+
+/// 703y bridge (one direction): true when `spanned` is a struct whose `node`
+/// field canonically IS `bare` — the spanned-of-bare relationship for the AST
+/// span migration (SExpr = `{ node: Expr, … }`, SStmt = `{ node: Stmt, … }`).
+fn tc_is_spanned_of(tc: TC, spanned: ValueType, bare_ty: ValueType) -> bool {
+    let sn = vtype_struct_name(spanned)
+    if sn == "" { return false }
+    let node_ty = field_type_lookup(struct_type_lookup(tc.structs, sn), "node")
+    let nid = tc_nominal_id(tc, node_ty)
+    nid != 0 && nid == tc_nominal_id(tc, bare_ty)
+}
+
+/// True when `a0`/`f0` are a spanned/bare pair EITHER way — a spanned wrapper
+/// flowing into a bare-declared slot (SExpr→Expr) OR a bare value flowing into a
+/// spanned-declared slot (Stmt→SStmt, e.g. the quote machinery's Stmt.Annotated
+/// payload). Both occur in the compiler's own code while the 703y span migration
+/// is in flight; bridging keeps the nominal gate from flagging them until that
+/// migration unifies the bare/spanned types. Transitional — remove with 703y.
+fn tc_bridges_span(tc: TC, a0: ValueType, f0: ValueType) -> bool {
+    tc_is_spanned_of(tc, a0, f0) || tc_is_spanned_of(tc, f0, a0)
+}
+
+/// pyly: a value of one registered nominal flowing into a DIFFERENT registered
+/// nominal field — `Other` into an `Inner` field. Both ptr-represented (the
+/// scalar-repr check already passed) with no generic-arg shells, but distinct
+/// canonical types → a wrong-shaped value read through the field's slot. Skips
+/// unregistered names / type-params (id 0), the SAME canonical type under
+/// representation drift (fid == aid), legitimately-assignable values, and the
+/// 703y bare-vs-spanned bridge.
+fn tc_nominal_payload_mismatch(tc: TC, f0: ValueType, a0: ValueType) -> bool {
+    let fid = tc_nominal_id(tc, f0)
+    let aid = tc_nominal_id(tc, a0)
+    if fid == 0 || aid == 0 { return false }
+    if fid == aid { return false }
+    if vtype_assignable(a0, f0) { return false }
+    if tc_bridges_span(tc, a0, f0) { return false }
+    true
+}
+
 /// Gate an enum constructor's payload types against the variant's declared
 /// field types (pyly). A wrong-typed payload — e.g. `Holder.One(42)` where
 /// the field is a struct, or `Stmt.Annotated(annots, bareStmt)` where the
@@ -2509,6 +2559,14 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
                 // positions (q6p4). Generic-payload enums (`Box<T>` still generic
                 // at ctor-check time) are skipped above and tracked as enwi.
                 let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}` (generic argument layout conflict)"
+                cur = tc_report(cur, DiagCode.TypeMismatch, msg)
+            } else if tc_nominal_payload_mismatch(cur, f0, a0) {
+                // pyly: the ORIGINAL nominal ptr-vs-ptr class — `Other` into an
+                // `Inner` field. Both ptr (the repr check passed) but distinct
+                // registered types. Sound now that the comparison goes through
+                // canonical registry ids (op3w) instead of raw vtype_eq, which
+                // diverged on .Struct-vs-.Enum / FQN-vs-short representation.
+                let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}` (type mismatch)"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
         }
