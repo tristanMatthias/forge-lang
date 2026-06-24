@@ -38,18 +38,20 @@ spec "qsqm: a bare map literal is a function's implicit-return value" {
     }
 }
 
-// Negative direction: a bare `{}` at statement position stays an empty BLOCK,
-// not an empty map. `nb` runs an empty-block statement then returns 42 — if `{}`
-// were reclassified as an empty-map expression statement the function would
-// still return 42, but the compiler's own `{}` block statements (which DO rely
-// on block semantics) are the real guard; this pins the value end-to-end.
-fn qsqm_empty_block() -> int {
-    {}
-    42
+// Negative direction, DISCRIMINATING: a block whose first token is a string that
+// is NOT a map key. `{ "hello"  99 }` is a block of two expression statements
+// (the string, then the tail 99) — the lookahead must reject it as a map because
+// no `:` follows the string. If the colon check regressed (matching on a leading
+// string alone), this would be parsed as a map literal and `parse_map_entries`
+// would hit F0040 ("expected `:`") at `99` — so the function would FAIL TO
+// COMPILE. Asserting it both compiles and yields the block's tail value pins the
+// string-but-not-a-key case, the one place block-vs-map genuinely diverges.
+fn qsqm_str_prefix_block() -> int {
+    { "hello"  99 }
 }
 
-spec "qsqm: a bare `{}` at statement position is a block, not a map" {
-    then "the empty block is a no-op and the function returns its tail value" {
-        qsqm_empty_block() == 42
+spec "qsqm: a leading string without a colon is a block, not a map" {
+    then "`{ \"hello\" 99 }` is a block whose tail value is 99 (would be F0040 as a map)" {
+        qsqm_str_prefix_block() == 99
     }
 }
