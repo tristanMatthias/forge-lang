@@ -35,6 +35,17 @@ fn z98_out(source: string) -> string {
     avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
 }
 
+// TYPECK-only variant (sentinel on a clean `check`). For positive controls whose
+// codegen is blocked by an UNRELATED bug — subjectless `.Some(...)` / `.None` into
+// an optional ICEs in codegen (forge-crafting-intepreters-xc6g) — so a `compile`
+// would fail for a reason orthogonal to this gate. enwi drives the same forms via
+// `check` for the same reason; 98z0 is a typeck gate, so a clean check is the bar.
+fn z98_check(source: string) -> string {
+    let path = "/tmp/avra_98z0_chk.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
 spec "98z0: an enum ctor value into a value-scalar slot is rejected" {
     then "named: Wrap.W(...) into an int annotation is F1000 (layout conflict)" {
         let out = z98_out("type Box = { val: int }
@@ -89,6 +100,17 @@ enum Wrap { W(b: Box) }
 fn main() { let x: int? = Wrap.W(Box { val: 9 }) }")
         out.contains("F1000") && out.contains("layout conflict")
     }
+    then "a SUBJECTLESS non-Some ctor into int? is F1000 (not treated as optional-present)" {
+        // `.W(...)` is not the optional present ctor, so it must NOT be accepted as
+        // an `int?` payload — it falls through to the scalar rejection. (The legit
+        // present-ctor path `.Some(x)` into a matching optional is covered by the
+        // enwi typeck tests; it is asserted via `check` there because subjectless
+        // `.Some(<struct>)` codegen is a separate pre-existing ICE, see the filed bug.)
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: int? = .W(Box { val: 9 }) }")
+        out.contains("F1000") && out.contains("layout conflict")
+    }
     then "a struct literal into a bool? annotation is F1000" {
         let out = z98_out("type Box = { val: int }
 fn main() { let x: bool? = Box { val: 9 } }")
@@ -98,6 +120,13 @@ fn main() { let x: bool? = Box { val: 9 } }")
         let out = z98_out("type Box = { val: int }
 fn main() { let x: Box? = Box { val: 9 }  println(\"ok\") }")
         out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "the empty optional .None into an int? slot is NOT rejected (typeck)" {
+        // `.None` carries no payload — it's the valid empty `int?`, so the scalar
+        // gate must not flag it (the optional-stripped `int` cell reads as scalar).
+        // Checked via typeck: subjectless-.None codegen is the separate xc6g ICE.
+        let out = z98_check("fn main() { let x: int? = .None }")
+        out.contains("__AVRA_CHECK_OK__")
     }
 }
 

@@ -2323,11 +2323,23 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // value directly (not a generic enum whose args we'd infer), so
                     // its single payload must match the optional's inner. Route it
                     // through the same layout gate so `.Some(Box<int>)` into
-                    // `Box<string>?` is caught (enwi's optional form).
-                    .Optional(inner) if args.length == 1 -> {
+                    // `Box<string>?` is caught (enwi's optional form). Gated to the
+                    // PRESENT ctor only (`variant == "Some"`): any OTHER 1-arg
+                    // subjectless ctor (`.W(Box)`) is NOT an optional-present value,
+                    // so it must fall through to the scalar rejection below — else
+                    // `let x: int? = .W(Box{val:9})` smuggles a `Wrap` enum into the
+                    // optional-stripped `int` cell.
+                    .Optional(inner) if args.length == 1 && variant == "Some" -> {
                         let aty = tc_arg_concrete_ty(after, args[0])
                         tc_er(check_assign_layout_no_int(after, aty, inner, "expression"), expected)
                     }
+                    // `.None` is the empty optional — valid for ANY `T?`, with no
+                    // payload to check. It must be allowed here, else the scalar
+                    // fallback below wrongly rejects `let x: int? = .None` (the
+                    // optional-stripped `int` cell reads as value-scalar). The
+                    // payload-carrying `.Some` is the only OTHER ctor the optional
+                    // accepts; everything else is a wild store and falls through.
+                    .Optional(_) if variant == "None" && args.length == 0 -> tc_er(after, expected)
                     _ -> {
                         // A subjectless ctor `.${variant}(…)` is an enum value —
                         // always the pointer-represented {tag,payload} — so into a
