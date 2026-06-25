@@ -1864,34 +1864,17 @@ export fn enum_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: Value
     slot_is_concrete_value_scalar(tc, declared)
 }
 
-/// Sibling for a STRUCT value — a struct is a heap record, pointer-passed, so into
-/// a value-scalar slot (`take(Box { val: 9 })` where `take(n: int)`, or
-/// `let s = Box{…}; let x: int = s`) it is the same wild store. Unlike the enum
-/// case, a struct's nominal CAN be a bare type-param (`.Struct("T")`, which may
-/// instantiate to a scalar), so this is gated to a CONCRETE struct:
-/// `!vtype_mentions_unresolved(arg_ty)` skips type-param and still-inferring
-/// structs, keeping it false-positive-free. (A struct LITERAL in a let/return is
-/// caught earlier, by the StructLit arm in `check_expr_expected`; this predicate
-/// covers the positions that route a struct VALUE through the shared gate —
-/// fn-args and reassignment.)
-export fn concrete_struct_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
-    if !(arg_ty is .Struct) || vtype_struct_name(arg_ty) == "" { return false }
-    if vtype_mentions_unresolved(tc, arg_ty) { return false }
-    slot_is_concrete_value_scalar(tc, declared)
-}
-
 /// THE narrow wild-store layout-conflict predicate (nlzq). True iff storing a
 /// value of type `actual` into a slot of declared type `expected` is a layout
 /// lie: a generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a
-/// pointer slot (`incl_int`), or a `List`/`Map`/enum/concrete-struct value into a
-/// value-scalar slot (`incl_collection` — all the pointer-into-scalar checks ride
-/// the same toggle). Unions the wild-store checks that were hand-rolled, and
-/// individually forgotten, across the binding / reassign / call / arg positions
-/// (the dominant root cause behind the 63wu arc).
+/// pointer slot (`incl_int`), or a `List`/`Map`/enum value into a value-scalar
+/// slot (`incl_collection` — both pointer-into-scalar checks ride the same
+/// toggle). Unions the wild-store checks that were hand-rolled, and individually
+/// forgotten, across the binding / reassign / call / arg positions (the dominant
+/// root cause behind the 63wu arc).
 ///
-/// This is the NARROW family: the int / collection / enum / struct checks are
-/// deliberately scoped subsets (int→Str/Bytes only; List/Map/Enum arg, and only a
-/// CONCRETE struct — never a bare type-param) because these
+/// This is the NARROW family: the int / collection / enum checks are deliberately
+/// scoped subsets (int→Str/Bytes only; List/Map/Enum arg only) because these
 /// positions hold INFERENCE-ARTIFACT-prone values — typeck hands back `.Int` as
 /// a fallback for ~140 unresolved exprs on the compiler's own source, so the
 /// full scalar↔ptr divide (`layout_conflict`) would mass-false-positive here.
@@ -1903,7 +1886,6 @@ export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType,
         || (incl_int && int_into_pointer_slot(tc, actual, expected))
         || (incl_collection && collection_into_value_scalar_slot(tc, actual, expected))
         || (incl_collection && enum_into_value_scalar_slot(tc, actual, expected))
-        || (incl_collection && concrete_struct_into_value_scalar_slot(tc, actual, expected))
 }
 
 /// THE assignability gate (nlzq): the SINGLE place a "value meets an expected

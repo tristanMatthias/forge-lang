@@ -19,18 +19,10 @@
 // reopened the hole — fixed by making `.Grouping` transparent (recurse on the
 // inner with the same expected type).
 //
-// A struct VALUE (not a literal) reaches the same slot through a fn-arg, a
-// variable, or a reassignment — positions that route through the shared
-// assign_layout_conflict gate. That gate gains concrete_struct_into_value_scalar_slot
-// so those are caught too (`take(Box{…})` into `take(n: int)`; `let s = Box{…};
-// let x: int = s`).
-//
-// All gates are scoped so they never fire on a bare type-param: enums are never
-// type-params; a struct literal always names a concrete declared type; the
-// struct-VALUE gate is restricted to a CONCRETE struct (a bare `.Struct("T")` is
-// skipped); a scalar slot is never an inference artifact. So a generic fn that
-// binds a type-param struct arg (or returns a type-param) into an int slot stays
-// lenient (asserted below).
+// All gates are scoped so they never fire on a bare type-param (enums are never
+// type-params; a struct literal always names a concrete declared type; a scalar
+// slot is never an inference artifact), so a generic fn returning a type-param
+// into an int slot stays lenient (asserted below).
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
@@ -111,41 +103,6 @@ fn main() { let x: int = ((Box { val: 9 })) }")
     then "(Box { val: 9 }) into a matching Box slot still compiles" {
         let out = z98_out("type Box = { val: int }
 fn main() { let x: Box = (Box { val: 9 })  println(\"ok\") }")
-        out.contains("__AVRA_COMPILE_OK__")
-    }
-}
-
-spec "98z0: a struct value reaches the scalar gate at non-literal positions too" {
-    // A struct literal in a let/return is caught by the StructLit arm; a struct
-    // VALUE that flows through a fn-arg or a variable routes through the shared
-    // assign_layout_conflict gate, which gains concrete_struct_into_value_scalar_slot
-    // (type-param-safe: a bare `.Struct("T")` is skipped).
-    then "a struct literal passed to an int parameter is F1000" {
-        let out = z98_out("type Box = { val: int }
-fn take(n: int) { println(\"${n}\") }
-fn main() { take(Box { val: 9 }) }")
-        out.contains("F1000") && out.contains("layout conflict")
-    }
-    then "a struct held in a variable, then bound to an int, is F1000" {
-        let out = z98_out("type Box = { val: int }
-fn main() { let s = Box { val: 9 }  let x: int = s }")
-        out.contains("F1000") && out.contains("layout conflict")
-    }
-    then "a CONCRETE struct value reassigned into an int (mut) is F1000" {
-        let out = z98_out("type Box = { val: int }
-fn main() { mut x: int = 0  let s = Box { val: 9 }  x = s }")
-        out.contains("F1000")
-    }
-    then "passing the matching struct to a struct parameter still compiles" {
-        let out = z98_out("type Box = { val: int }
-fn take(b: Box) { println(\"${b.val}\") }
-fn main() { take(Box { val: 9 })  println(\"ok\") }")
-        out.contains("__AVRA_COMPILE_OK__")
-    }
-    then "a generic fn binding a type-param struct arg is NOT flagged" {
-        let out = z98_out("type Box<T> = { val: T }
-fn unbox<T>(b: Box<T>) -> T { b.val }
-fn main() { let i: int = unbox(Box { val: 9 })  println(\"ok\") }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
