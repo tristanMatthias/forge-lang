@@ -2733,13 +2733,7 @@ fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<
         bindings = tc_unify(tp, fty, aty, bindings)
         i = i + 1
     }
-    mut out: List<ValueType> = []
-    mut j = 0
-    while j < tp.length {
-        out.push(tc_type_arg_lookup(bindings, tp[j].name))
-        j = j + 1
-    }
-    out
+    tc_project_type_args(tp, bindings)
 }
 
 // Check newtype constructor argument matches the inner type
@@ -3366,6 +3360,20 @@ fn tc_type_arg_lookup(args: List<TypeArg>, name: string) -> ValueType {
     ValueType.Unknown
 }
 
+/// Project each declared type-param's binding, in declared order, out of an
+/// inference accumulator — an unbound param yields Unknown so the positional zip
+/// with the params stays aligned at field-access time. This is the shared tail of
+/// tc_infer_struct_type_args and tc_infer_enum_ctor_type_args; they differ only in
+/// how they FOLD the args into `bindings` (by field name vs positionally), not in
+/// this projection.
+fn tc_project_type_args(tp: List<TypeParamEntry>, bindings: List<TypeArg>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    for p in tp {
+        out.push(tc_type_arg_lookup(bindings, p.name))
+    }
+    out
+}
+
 /// Infer a generic struct construction's type args by unifying each
 /// field's declared type against its initializer's actual type — the
 /// typeck-side mirror of the monomorphizer's construction inference.
@@ -3387,11 +3395,7 @@ export fn tc_infer_struct_type_args(tc: TC, name: string, inits: List<FieldInit>
             acc = tc_unify(tps, fdecl, vty, acc)
         }
     }
-    mut out: List<ValueType> = []
-    for p in tps {
-        out.push(tc_type_arg_lookup(acc, p.name))
-    }
-    out
+    tc_project_type_args(tps, acc)
 }
 
 /// The ValueType of a non-anonymous struct literal `Name { inits }`.
