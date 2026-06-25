@@ -3198,14 +3198,21 @@ fn tc_unify(tp: List<TypeParamEntry>, param_ty: ValueType, arg_ty: ValueType, ac
         // assignability check, which is lenient for structurally-compatible nominals,
         // so it does not always reject (a structural-vs-nominal gap, not a guarantee
         // this position enforces).
-        .Struct(_, p_args, _) -> match arg_ty {
-            .Struct(_, a_args, _) -> tc_unify_lists(tp, p_args, a_args, acc)
-            _ -> acc
-        }
-        .Enum(_, p_args, _) -> match arg_ty {
-            .Enum(_, a_args, _) -> tc_unify_lists(tp, p_args, a_args, acc)
-            _ -> acc
-        }
+        //
+        // CROSS-REPRESENTATION (matches the mono unify_param oracle, mono.av): pull the
+        // arg's type-args via vtype_type_args, which reads them from EITHER nominal form.
+        // A generic annotation `Box<T>` lowers to Enum-form (the parser can't tell struct
+        // from enum) while its `Box{...}` instance is Struct-form, so a `.Struct` param
+        // must still bind against an `.Enum` arg and vice versa — otherwise the two
+        // unifiers diverge and a param reachable only through that field goes unbound.
+        // vtype_type_args returns [] for a non-nominal arg, so tc_unify_lists is then a
+        // no-op — identical to the prior kind-matched `_ -> acc`. The reachable arm
+        // (binding a param through a same-kind struct/enum arg) stays exercised by the
+        // g97x fn-arg-inference gate suite; the cross-KIND step this adds is unreachable
+        // today (callers pre-resolve_vtype), so it is a structural parity guard, not a
+        // behaviour change — selfhost + diff-test are byte-identical.
+        .Struct(_, p_args, _) -> tc_unify_lists(tp, p_args, vtype_type_args(arg_ty), acc)
+        .Enum(_, p_args, _) -> tc_unify_lists(tp, p_args, vtype_type_args(arg_ty), acc)
         _ -> acc
     }
 }
