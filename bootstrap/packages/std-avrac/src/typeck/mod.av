@@ -13,6 +13,7 @@ use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
+use core.{variant_is_optional_present, variant_is_optional_absent}
 use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts}
 use core.{exit}
 use core.{avra_process_env_get}
@@ -2324,12 +2325,12 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // its single payload must match the optional's inner. Route it
                     // through the same layout gate so `.Some(Box<int>)` into
                     // `Box<string>?` is caught (enwi's optional form). Gated to the
-                    // PRESENT ctor only (`variant == "Some"`): any OTHER 1-arg
+                    // PRESENT ctor only (`variant_is_optional_present`): any OTHER 1-arg
                     // subjectless ctor (`.W(Box)`) is NOT an optional-present value,
                     // so it must fall through to the scalar rejection below — else
                     // `let x: int? = .W(Box{val:9})` smuggles a `Wrap` enum into the
                     // optional-stripped `int` cell.
-                    .Optional(inner) if args.length == 1 && variant == "Some" -> {
+                    .Optional(inner) if args.length == 1 && variant_is_optional_present(variant) -> {
                         let aty = tc_arg_concrete_ty(after, args[0])
                         tc_er(check_assign_layout_no_int(after, aty, inner, "expression"), expected)
                     }
@@ -2339,7 +2340,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // optional-stripped `int` cell reads as value-scalar). The
                     // payload-carrying `.Some` is the only OTHER ctor the optional
                     // accepts; everything else is a wild store and falls through.
-                    .Optional(_) if variant == "None" && args.length == 0 -> tc_er(after, expected)
+                    .Optional(_) if variant_is_optional_absent(variant) && args.length == 0 -> tc_er(after, expected)
                     _ -> {
                         // A subjectless ctor `.${variant}(…)` is an enum value —
                         // always the pointer-represented {tag,payload} — so into a

@@ -2,13 +2,13 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct}
+use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.list_lit.{emit_list_lit_expected}
-use codegen.{emit_optional_coerce}
+use codegen.{emit_optional_coerce, emit_optional_ctor_value}
 use diagnostics.{DiagCode}
 
 /// Codegen for `let / mut / const name = init`. Handles four
@@ -42,6 +42,21 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
                 .ListLit(elements) -> {
                     let boxed = emit_list_lit_expected(ctx, env, elements, vtype_list_elem(decl))?
                     return ok_stmt(ctx.bind(env, name, boxed.value, decl))
+                }
+                _ -> {}
+            }
+        }
+        // Subjectless Option ctor into a `T?` slot is the optional repr — NOT a
+        // same-named user enum's variant. emit_enum_ctor resolves a bare `.Some` /
+        // `.None` by variant-NAME lookup, with no access to the expected type, so
+        // it would ICE (no registered Option enum) or wrongly bind a shadowing
+        // user enum. The slot type is known here, so disambiguate by it — the
+        // same expected-type-directed pattern the `List<T?>` literal above uses.
+        if vtype_is_optional(decl) {
+            match initializer {
+                .EnumCtor(tn, variant, args) if tn == "" && variant_is_optional_ctor(variant, args.length) -> {
+                    let r = emit_optional_ctor_value(emit_ctx, env, variant, args, decl)?
+                    return ok_stmt(ctx.bind(env, name, r.value, decl))
                 }
                 _ -> {}
             }
