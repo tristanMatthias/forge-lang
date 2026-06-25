@@ -25,8 +25,8 @@ impl Parser {
         let saved_lex = self.current_lexeme
 
         self.advance()  // consume {
-        let is_map = self.check(Tk.RightBrace) || (self.check(Tk.String) && {
-            self.advance()  // consume string
+        let is_map = self.check(Tk.RightBrace) || (self.at_map_key_token() && {
+            self.advance()  // consume string / interpolated-string key
             self.check(Tk.Colon)
         })
 
@@ -52,12 +52,22 @@ impl Parser {
     fn is_stmt_map_literal(self) -> bool {
         let st = self.save_state()
         self.advance()  // consume {
-        let is_map = self.check(Tk.String) && {
-            self.advance()  // consume string key
+        let is_map = self.at_map_key_token() && {
+            self.advance()  // consume string / interpolated-string key
             self.check(Tk.Colon)
         }
         self.restore_state(st)
         is_map
+    }
+
+    // A map-literal key starts with a string literal OR an interpolated string
+    // (`"a${x}b"`, which lexes as Tk.Template) — both are string-valued keys. The
+    // `{` detection lookahead (is_map_literal / is_stmt_map_literal) recognises a
+    // map by this key token followed by `:`. parse_map_entries already parses the
+    // key via parse_expression, which handles either form, so only the lookahead
+    // was string-only.
+    fn at_map_key_token(self) -> bool {
+        self.check(Tk.String) || self.check(Tk.Template)
     }
 
     fn parse_map_literal(self) -> Result<Expr, string> {
