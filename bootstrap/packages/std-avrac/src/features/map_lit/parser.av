@@ -9,10 +9,15 @@ impl Parser {
     // Lookahead: is the current `{` the start of a map literal?
     // A map starts with `{ "string" :` or `{ }` (empty map).
     // Expression-position `{`: a bare `{}` is an empty map literal. Partial-save
-    // lookahead (current/start/kind/lexeme only). A full save_state restore would
-    // shift the diagnostic columns the compiler's own spans are computed against
-    // here, so this stays as-is; sharing one snapshot with is_stmt_map_literal is
-    // tracked separately (forge-crafting-intepreters-2sgo).
+    // lookahead (current/start/kind/lexeme only) — deliberately NOT a full
+    // save_state/restore_state. Restoring line/column too would shift the
+    // diagnostic columns the compiler's own spans are computed against here:
+    // folding this into the full snapshot was tried and the selfhost differential
+    // DIVERGED (the compiler compiles itself differently), proving the partial
+    // save is the correct scoped design — not a hand-synced subset. The
+    // statement-position twin (is_stmt_map_literal) re-parses through
+    // parse_statement, so a full restore is right THERE; the two genuinely need
+    // different restore extents.
     fn is_map_literal(self) -> bool {
         let saved_pos = self.current
         let saved_start = self.start
