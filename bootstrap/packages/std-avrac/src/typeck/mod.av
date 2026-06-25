@@ -2225,6 +2225,20 @@ fn reject_literal_into_value_scalar(r: ExprResult, exp: ValueType, kind: string)
     r
 }
 
+/// Run the no-int layout gate over an already-checked expression result, then
+/// collapse the result type to `.Unknown` when the gate reported a conflict. An
+/// invalid expression must NOT propagate its concrete type — otherwise a
+/// downstream return / binding re-check (vtype_assignable / tc_check_stmt_returns)
+/// re-reports the same expression as a second TypeMismatch. This is the value path
+/// twin of `reject_literal_into_value_scalar`: the literal arms use that, the
+/// `.Call` and universal arms use this (a named enum ctor or a collection-returning
+/// call in `return` position would otherwise double-report). The predicate is
+/// recomputed (pure + cheap) rather than threading a fired-flag out of the gate.
+fn gate_expr_no_int(r: ExprResult, exp: ValueType, ctx: string) -> ExprResult {
+    let after = check_assign_layout_no_int(r.tc, r.ty, exp, ctx)
+    tc_er(after, if assign_layout_conflict(r.tc, r.ty, exp, false, true) { .Unknown } else { r.ty })
+}
+
 /// Bidirectional variant of `check_expr`: threads the caller's
 /// `expected` type down so generic constructors / calls can pin
 /// type-args from the return position. ListLit consumes it as an
@@ -2262,8 +2276,9 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
             // check_binding's int block at the let site and by vtype_assignable at
             // the return site, so including it would double-report. (so07.7.15:
             // still-inferring generic calls stay safe via the predicate's
-            // type-param guard.)
-            tc_er(check_assign_layout_no_int(r.tc, r.ty, exp, "call result"), r.ty)
+            // type-param guard.) `gate_expr_no_int` collapses the result to
+            // `.Unknown` on a conflict so a `return make_list()` can't double-report.
+            gate_expr_no_int(r, exp, "call result")
         }
         // A generic struct literal whose field-inferred type args are layout-
         // incompatible with the annotation (`let`/return `Name<args>`) is a
@@ -2334,13 +2349,14 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         _ -> {
             let r = check_expr(tc, expr)
             // The universal arm: any OTHER expression meeting an expected type —
-            // a parenthesized literal `(Box { val: 9 })`, an ident rebound to a
-            // conflicting annotation (`let b: Box<string> = a`, `let x: int = xs`),
-            // etc. `.StructLit` / `.ListLit` / `.MapLit` / `.Call` have dedicated
-            // arms above; this gates the rest. Same no-int gate as `.Call`:
-            // int→pointer is handled positionally at the binding / return sites,
-            // so it's omitted here to avoid a duplicate diagnostic.
-            tc_er(check_assign_layout_no_int(r.tc, r.ty, exp, "expression"), r.ty)
+            // a named enum ctor `Wrap.W(…)`, an ident rebound to a conflicting
+            // annotation (`let b: Box<string> = a`, `let x: int = xs`), etc.
+            // `.StructLit` / `.ListLit` / `.MapLit` / `.Call` have dedicated arms
+            // above; this gates the rest. Same no-int gate as `.Call`: int→pointer
+            // is handled positionally at the binding / return sites, so it's omitted
+            // here to avoid a duplicate diagnostic. `gate_expr_no_int` collapses to
+            // `.Unknown` on a conflict so `return Wrap.W(…)` can't double-report.
+            gate_expr_no_int(r, exp, "expression")
         }
     }
 }
