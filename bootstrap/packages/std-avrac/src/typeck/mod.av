@@ -1828,41 +1828,71 @@ export fn int_into_pointer_slot(tc: TC, arg_ty: ValueType, declared: ValueType) 
     inner is .Str || inner is .Bytes
 }
 
-/// The inverse of `int_into_pointer_slot`: a COLLECTION value (a `List` / `Map`
-/// literal — always a pointer) flowing into a VALUE-SCALAR slot (int/float/bool/…)
-/// is a wild store, a pointer stored in a scalar cell (`Map<string,int>.set(k, {…})`
-/// stores a map ptr in an int slot; `List<int>.push([…])` likewise). Restricted to
-/// List/Map args on purpose: it is the concrete "collection literal into a scalar
-/// cell" case, which keeps the check free of false positives on `null`/`void`
-/// (valid for nullable slots), `Optional` args, and newtype wrappers. The slot's
-/// own `Optional` is stripped (`int?` is still a scalar cell), unresolved slots skip.
-export fn collection_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
-    if !((arg_ty is .List) || (arg_ty is .Map)) { return false }
+/// True iff `declared`, with its `Optional` stripped, is a CONCRETE value-scalar
+/// slot (int/float/bool/u8-64/i8-32) — i.e. a cell that holds raw scalar bits, so
+/// storing a pointer there is a layout lie. The `Optional` strip means `int?` is
+/// still a scalar cell; an unresolved slot is skipped (a still-inferring type-param
+/// is never proven a scalar). This is the shared SLOT half of the pointer→scalar
+/// wild-store predicates below — each pairs it with its own ARG-shape guard.
+fn slot_is_concrete_value_scalar(tc: TC, declared: ValueType) -> bool {
     let slot = vtype_strip_optional(declared)
     if vtype_mentions_unresolved(tc, slot) { return false }
     vtype_is_value_scalar(slot)
 }
 
+/// The inverse of `int_into_pointer_slot`: a COLLECTION value (a `List` / `Map`
+/// literal — always a pointer) flowing into a value-scalar slot (int/float/bool/…)
+/// is a wild store, a pointer stored in a scalar cell (`Map<string,int>.set(k, {…})`
+/// stores a map ptr in an int slot; `List<int>.push([…])` likewise). Restricted to
+/// List/Map args on purpose: it is the concrete "collection literal into a scalar
+/// cell" case, which keeps the check free of false positives on `null`/`void`
+/// (valid for nullable slots), `Optional` args, and newtype wrappers.
+export fn collection_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
+    if !((arg_ty is .List) || (arg_ty is .Map)) { return false }
+    slot_is_concrete_value_scalar(tc, declared)
+}
+
+/// Sibling of `collection_into_value_scalar_slot`: a concrete ENUM value — always
+/// the 16-byte `{tag, payload}`, pointer-passed — flowing into a value-scalar slot
+/// (int/bool/float/…) is a wild store, a pointer stored in a scalar cell
+/// (`let x: int = Wrap.W(…)`). Scoped to `.Enum` on purpose: an enum is never an
+/// inference artifact and never a bare type-param (those are `.Struct`-form), so
+/// this is false-positive-free — unlike a broad nominal check, which would flag a
+/// `.Struct("T")` type-param that may instantiate to a scalar.
+export fn enum_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
+    if !(arg_ty is .Enum) || vtype_enum_name(arg_ty) == "" { return false }
+    slot_is_concrete_value_scalar(tc, declared)
+}
+
 /// THE narrow wild-store layout-conflict predicate (nlzq). True iff storing a
 /// value of type `actual` into a slot of declared type `expected` is a layout
 /// lie: a generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a
-/// pointer slot (`incl_int`), or a `List`/`Map` into a value-scalar slot
-/// (`incl_collection`). Unions the wild-store checks that were hand-rolled, and
-/// individually forgotten, across the binding / reassign / call / arg positions
-/// (the dominant root cause behind the 63wu arc).
+/// pointer slot (`incl_int`), or a `List`/`Map`/enum value into a value-scalar
+/// slot (`incl_collection` — these pointer-into-scalar checks ride the same
+/// toggle). Unions the wild-store checks that were hand-rolled, and individually
+/// forgotten, across the binding / reassign / call / arg positions (the dominant
+/// root cause behind the 63wu arc).
 ///
-/// This is the NARROW family: the int / collection checks are deliberately
-/// scoped subsets (int→Str/Bytes only; List/Map arg only) because these
+/// This is the NARROW family: the int / collection / enum checks are deliberately
+/// scoped subsets (int→Str/Bytes only; List/Map/Enum arg only) because these
 /// positions hold INFERENCE-ARTIFACT-prone values — typeck hands back `.Int` as
 /// a fallback for ~140 unresolved exprs on the compiler's own source, so the
 /// full scalar↔ptr divide (`layout_conflict`) would mass-false-positive here.
 /// Reliable element / value / payload positions use the broad
 /// `nested_layout_conflict` instead. The two toggles tune which subset a
 /// position needs (both default on; see the three wrappers below).
+///
+/// The enum check rides `incl_collection` ON PURPOSE: extern C bindings declare
+/// `int` for legacy pointer-ish slots that legitimately receive an enum too — the
+/// compiler's own `avra_stmt_tag(stmt: int)` / `avra_expr_tag(expr: int)` are
+/// called with `Stmt`/`Expr` enum values (C reads the {tag,…} payload). So the
+/// extern-param carve-out (`incl_collection=false`) must drop the enum check as
+/// well, exactly as it drops the List/Map check.
 export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType, incl_int: bool, incl_collection: bool) -> bool {
     generic_args_layout_conflict(tc, actual, expected)
         || (incl_int && int_into_pointer_slot(tc, actual, expected))
         || (incl_collection && collection_into_value_scalar_slot(tc, actual, expected))
+        || (incl_collection && enum_into_value_scalar_slot(tc, actual, expected))
 }
 
 /// THE assignability gate (nlzq): the SINGLE place a "value meets an expected
@@ -1879,13 +1909,14 @@ export fn check_assign_layout(tc: TC, actual: ValueType, expected: ValueType, ct
     check_assign_layout_ex(tc, actual, expected, ctx, true, true)
 }
 
-/// The EXTERN-parameter variant: omits the collection→scalar check, which
-/// mass-false-positives on extern C bindings that declare `int` as an i64-legacy
-/// value slot legitimately receiving a `List`/`Map` (`avra_map_set_cstr(map, key,
-/// value: int)`). Generic-arg + int→pointer still apply. Used ONLY for params of
-/// `extern fn`s (gated on `FnTypeMeta.is_extern`); a NORMAL Avra fn parameter is a
-/// real typed slot and gets the FULL `check_assign_layout`, so `f([1])` into
-/// `f(x: int)` is rejected.
+/// The EXTERN-parameter variant: omits the collection/enum→scalar checks, which
+/// mass-false-positive on extern C bindings that declare `int` as an i64-legacy
+/// pointer-ish slot legitimately receiving a `List`/`Map` (`avra_map_set_cstr(map,
+/// key, value: int)`) OR an enum (`avra_stmt_tag(stmt: int)` / `avra_expr_tag(expr:
+/// int)`, called with `Stmt`/`Expr` enum values). Generic-arg + int→pointer still
+/// apply. Used ONLY for params of `extern fn`s (gated on `FnTypeMeta.is_extern`); a
+/// NORMAL Avra fn parameter is a real typed slot and gets the FULL
+/// `check_assign_layout`, so `f([1])` into `f(x: int)` is rejected.
 export fn check_assign_layout_param(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
     check_assign_layout_ex(tc, actual, expected, ctx, true, false)
 }
@@ -2174,17 +2205,38 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 
 // ── Expression checking ──
 
-/// Reject an already-checked collection literal (`list` / `map`) bound to a
-/// VALUE-SCALAR slot (int/float/bool/…): a collection is always a pointer, so
-/// storing it in a scalar cell is a layout lie (the inverse of the scalar→ptr
-/// hole). Wraps the literal's result, reporting F1000 only for the value-scalar
-/// case — non-scalar pointer slots (`string`) are a nominal mismatch elsewhere.
-/// `kind` is the literal word for the message ("list" / "map").
-fn reject_collection_into_value_scalar(r: ExprResult, exp: ValueType, kind: string) -> ExprResult {
+/// Reject an already-checked POINTER literal (`list` / `map` / `struct`) bound to
+/// a VALUE-SCALAR slot (int/float/bool/…): each of these literal forms is always a
+/// pointer, so storing it in a scalar cell is a layout lie (the inverse of the
+/// scalar→ptr hole). A literal's nominal type is always concrete (a struct literal
+/// names a declared type, never a bare type-param), so the value-scalar test is
+/// false-positive-free — no `vtype_mentions_unresolved` guard is needed (a scalar
+/// slot is never an inference artifact). Reports F1000 only for the value-scalar
+/// case — a non-scalar pointer slot (`string`) is a nominal mismatch handled
+/// elsewhere. `kind` is the literal word for the message ("list" / "map" /
+/// "struct"). On rejection the result type collapses to `.Unknown`, NOT the
+/// literal's concrete type: at a `return` position the implicit/explicit return
+/// check (vtype_assignable) would otherwise see the literal type vs the annotation
+/// and emit a SECOND TypeMismatch — `.Unknown` keeps the single diagnostic.
+fn reject_literal_into_value_scalar(r: ExprResult, exp: ValueType, kind: string) -> ExprResult {
     if vtype_is_value_scalar(exp) {
-        return tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a ${kind} literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
+        return tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a ${kind} literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), .Unknown)
     }
     r
+}
+
+/// Run the no-int layout gate over an already-checked expression result, then
+/// collapse the result type to `.Unknown` when the gate reported a conflict. An
+/// invalid expression must NOT propagate its concrete type — otherwise a
+/// downstream return / binding re-check (vtype_assignable / tc_check_stmt_returns)
+/// re-reports the same expression as a second TypeMismatch. This is the value path
+/// twin of `reject_literal_into_value_scalar`: the literal arms use that, the
+/// `.Call` and universal arms use this (a named enum ctor or a collection-returning
+/// call in `return` position would otherwise double-report). The predicate is
+/// recomputed (pure + cheap) rather than threading a fired-flag out of the gate.
+fn gate_expr_no_int(r: ExprResult, exp: ValueType, ctx: string) -> ExprResult {
+    let after = check_assign_layout_no_int(r.tc, r.ty, exp, ctx)
+    tc_er(after, if assign_layout_conflict(r.tc, r.ty, exp, false, true) { .Unknown } else { r.ty })
 }
 
 /// Bidirectional variant of `check_expr`: threads the caller's
@@ -2199,15 +2251,22 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
     // return type instead of seeing `Optional` and decaying to Unknown.
     let exp = vtype_strip_optional(expected)
     match expr {
+        // Parentheses are transparent to bidirectional checking: `(expr)` meets the
+        // expected type exactly as `expr` does. Without this, a `.Grouping` wrapper
+        // falls to the universal arm below — which loses the dedicated struct /
+        // subjectless-enum gates, so a wild store hides behind one pair of parens
+        // (`let x: int = (Box { val: 9 })`). Recurse on the inner with the SAME raw
+        // `expected` so it re-strips the optional and lands in the right arm.
+        .Grouping(inner) -> check_expr_expected(tc, inner, expected)
         // A list/map literal (always a pointer) meeting a VALUE-SCALAR expected
         // type (int/float/bool/…) is the inverse of the ry1a scalar→ptr hole:
         // a pointer stored in a scalar slot. `let x: int = [1,2]` / `{"k":1}`
         // were silently accepted (a85d). The elements are checked first so
-        // errors inside the literal surface too; `reject_collection_into_value_scalar`
+        // errors inside the literal surface too; `reject_literal_into_value_scalar`
         // then rejects only the value-scalar slot (a non-scalar pointer slot like
         // `string` is a nominal mismatch handled elsewhere, not a layout one).
-        .ListLit(elements) -> reject_collection_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
-        .MapLit(entries) -> reject_collection_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
+        .ListLit(elements) -> reject_literal_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
+        .MapLit(entries) -> reject_literal_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, callee, args, exp)
             // The call result meets the expected type. Route through the no-int
@@ -2217,8 +2276,9 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
             // check_binding's int block at the let site and by vtype_assignable at
             // the return site, so including it would double-report. (so07.7.15:
             // still-inferring generic calls stay safe via the predicate's
-            // type-param guard.)
-            tc_er(check_assign_layout_no_int(r.tc, r.ty, exp, "call result"), r.ty)
+            // type-param guard.) `gate_expr_no_int` collapses the result to
+            // `.Unknown` on a conflict so a `return make_list()` can't double-report.
+            gate_expr_no_int(r, exp, "call result")
         }
         // A generic struct literal whose field-inferred type args are layout-
         // incompatible with the annotation (`let`/return `Name<args>`) is a
@@ -2226,6 +2286,12 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // annotation lies about, and a later read derefs a scalar as a pointer.
         // Reject it here, the universal expected-type entry, so EVERY annotated
         // position (let/mut/const + implicit/explicit return) is covered.
+        // A struct literal is also a pointer, so into a VALUE-SCALAR slot
+        // (`let x: int = Box { val: 9 }`) it is the same wild store the list/map
+        // arms reject (and the enum arms below reject for enum ctors). The two
+        // checks here are mutually exclusive — a value-scalar slot is never a
+        // generic struct — so the scalar rejection only fires when there is no
+        // generic-arg conflict.
         .StructLit(name, _) if name != "" -> {
             let r = check_expr(tc, expr)
             let conflict = generic_struct_annotation_conflict(r.tc, exp, expr)
@@ -2233,7 +2299,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                 let msg = "`${name}` literal of type `${vtype_render_full(conflict!)}` conflicts with expected `${vtype_render_full(exp)}` (a field's type doesn't match the generic argument)"
                 tc_er(tc_report(r.tc, DiagCode.TypeMismatch, msg), r.ty)
             } else {
-                r
+                reject_literal_into_value_scalar(r, exp, "struct")
             }
         }
         // enwi: a subjectless enum ctor (`.Ok(...)`, `.Some(...)`, `.W(...)`) takes
@@ -2257,25 +2323,52 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // value directly (not a generic enum whose args we'd infer), so
                     // its single payload must match the optional's inner. Route it
                     // through the same layout gate so `.Some(Box<int>)` into
-                    // `Box<string>?` is caught (enwi's optional form).
-                    .Optional(inner) if args.length == 1 -> {
+                    // `Box<string>?` is caught (enwi's optional form). Gated to the
+                    // PRESENT ctor only (`variant == "Some"`): any OTHER 1-arg
+                    // subjectless ctor (`.W(Box)`) is NOT an optional-present value,
+                    // so it must fall through to the scalar rejection below — else
+                    // `let x: int? = .W(Box{val:9})` smuggles a `Wrap` enum into the
+                    // optional-stripped `int` cell.
+                    .Optional(inner) if args.length == 1 && variant == "Some" -> {
                         let aty = tc_arg_concrete_ty(after, args[0])
                         tc_er(check_assign_layout_no_int(after, aty, inner, "expression"), expected)
                     }
-                    _ -> tc_er(after, .Unknown)
+                    // `.None` is the empty optional — valid for ANY `T?`, with no
+                    // payload to check. It must be allowed here, else the scalar
+                    // fallback below wrongly rejects `let x: int? = .None` (the
+                    // optional-stripped `int` cell reads as value-scalar). The
+                    // payload-carrying `.Some` is the only OTHER ctor the optional
+                    // accepts; everything else is a wild store and falls through.
+                    .Optional(_) if variant == "None" && args.length == 0 -> tc_er(after, expected)
+                    _ -> {
+                        // A subjectless ctor `.${variant}(…)` is an enum value —
+                        // always the pointer-represented {tag,payload} — so into a
+                        // value-scalar slot it is a wild store, even though without
+                        // an enum expected type we can't resolve WHICH enum. (A
+                        // pointer expected slot stays lenient: ptr→ptr isn't a layout
+                        // lie, and the specific nominal can't be checked here.) Same
+                        // concrete-value-scalar slot test the predicates above use.
+                        if slot_is_concrete_value_scalar(after, expected) {
+                            let msg = "expression: enum constructor `.${variant}` is not assignable to `${vtype_render_full(expected)}` (layout conflict)"
+                            tc_er(tc_report(after, DiagCode.TypeMismatch, msg), .Unknown)
+                        } else {
+                            tc_er(after, .Unknown)
+                        }
+                    }
                 }
             }
         }
         _ -> {
             let r = check_expr(tc, expr)
             // The universal arm: any OTHER expression meeting an expected type —
-            // a parenthesized literal `(Box { val: 9 })`, an ident rebound to a
-            // conflicting annotation (`let b: Box<string> = a`, `let x: int = xs`),
-            // etc. `.StructLit` / `.ListLit` / `.MapLit` / `.Call` have dedicated
-            // arms above; this gates the rest. Same no-int gate as `.Call`:
-            // int→pointer is handled positionally at the binding / return sites,
-            // so it's omitted here to avoid a duplicate diagnostic.
-            tc_er(check_assign_layout_no_int(r.tc, r.ty, exp, "expression"), r.ty)
+            // a named enum ctor `Wrap.W(…)`, an ident rebound to a conflicting
+            // annotation (`let b: Box<string> = a`, `let x: int = xs`), etc.
+            // `.StructLit` / `.ListLit` / `.MapLit` / `.Call` have dedicated arms
+            // above; this gates the rest. Same no-int gate as `.Call`: int→pointer
+            // is handled positionally at the binding / return sites, so it's omitted
+            // here to avoid a duplicate diagnostic. `gate_expr_no_int` collapses to
+            // `.Unknown` on a conflict so `return Wrap.W(…)` can't double-report.
+            gate_expr_no_int(r, exp, "expression")
         }
     }
 }

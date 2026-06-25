@@ -1,0 +1,182 @@
+// WHY: regression for forge-crafting-intepreters-98z0 — a constructor value that
+// is pointer-represented (an ENUM's 16-byte {tag, payload}, or a STRUCT literal's
+// heap record) stored into a VALUE-SCALAR slot (int/bool/float) is a wild store:
+// the scalar cell holds a pointer, and a reader derefs the scalar bits as the
+// pointer's target. All forms compiled clean before the fix:
+//   - `let x: int = Wrap.W(...)`      (named enum ctor)
+//   - `let x: int = .W(...)`          (subjectless enum ctor)
+//   - `let x: int = Box { val: 9 }`   (struct literal)
+//   - `let x: int = (Box { val: 9 })` (any of the above, parenthesized)
+//
+// The named enum form routes through the shared assign_layout_conflict gate,
+// which caught int→ptr and List/Map→scalar but NOT a concrete enum→scalar — fixed
+// by adding enum_into_value_scalar_slot to it. The subjectless enum form returned
+// `.Unknown` from check_expr_expected and bypassed the gate entirely — fixed by
+// gating that arm. The struct literal reached the StructLit arm, which only
+// checked generic-arg conflicts, not the scalar slot — fixed by routing it through
+// the same reject_literal_into_value_scalar the list/map arms use. Parens build a
+// `.Grouping` wrapper check_expr_expected didn't see through, so a single pair
+// reopened the hole — fixed by making `.Grouping` transparent (recurse on the
+// inner with the same expected type).
+//
+// All gates are scoped so they never fire on a bare type-param (enums are never
+// type-params; a struct literal always names a concrete declared type; a scalar
+// slot is never an inference artifact), so a generic fn returning a type-param
+// into an int slot stays lenient (asserted below).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Compile and emit a sentinel ONLY on a clean compile, so the positive controls
+// assert real success rather than the mere absence of an F-code.
+fn z98_out(source: string) -> string {
+    let path = "/tmp/avra_98z0_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+// TYPECK-only variant (sentinel on a clean `check`). For positive controls whose
+// codegen is blocked by an UNRELATED bug — subjectless `.Some(...)` / `.None` into
+// an optional ICEs in codegen (forge-crafting-intepreters-xc6g) — so a `compile`
+// would fail for a reason orthogonal to this gate. enwi drives the same forms via
+// `check` for the same reason; 98z0 is a typeck gate, so a clean check is the bar.
+fn z98_check(source: string) -> string {
+    let path = "/tmp/avra_98z0_chk.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "98z0: an enum ctor value into a value-scalar slot is rejected" {
+    then "named: Wrap.W(...) into an int annotation is F1000 (layout conflict)" {
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: int = Wrap.W(Box { val: 9 }) }")
+        out.contains("F1000") && out.contains("layout conflict")
+    }
+    then "subjectless: .W(...) into an int annotation is F1000 (layout conflict)" {
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: int = .W(Box { val: 9 }) }")
+        out.contains("F1000") && out.contains("layout conflict")
+    }
+    then "a payload-less enum value into a bool slot is F1000" {
+        let out = z98_out("enum E { A, B }
+fn main() { let x: bool = E.A }")
+        out.contains("F1000")
+    }
+}
+
+spec "98z0: a struct literal into a value-scalar slot is rejected" {
+    then "Box { val: 9 } into an int annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: int = Box { val: 9 } }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+    then "Box { val: 9 } into a bool annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: bool = Box { val: 9 } }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+    then "a struct literal RETURNED into an int slot is F1000 (return position)" {
+        let out = z98_out("type Box = { val: int }
+fn make() -> int { return Box { val: 9 } }
+fn main() { let x = make()  println(\"ok\") }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+    then "a struct literal into a float annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: float = Box { val: 9 } }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+}
+
+spec "98z0: an OPTIONAL value-scalar slot still rejects after the Optional strip" {
+    // check_expr_expected strips `Optional` before the gate, so `int?` / `bool?`
+    // are value-scalar cells too (a scalar payload + a null flag) — a pointer ctor
+    // stored there is the same wild store. Pins that strip contract.
+    then "named enum ctor into an int? annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: int? = Wrap.W(Box { val: 9 }) }")
+        out.contains("F1000") && out.contains("layout conflict")
+    }
+    then "a SUBJECTLESS non-Some ctor into int? is F1000 (not treated as optional-present)" {
+        // `.W(...)` is not the optional present ctor, so it must NOT be accepted as
+        // an `int?` payload — it falls through to the scalar rejection. (The legit
+        // present-ctor path `.Some(x)` into a matching optional is covered by the
+        // enwi typeck tests; it is asserted via `check` there because subjectless
+        // `.Some(<struct>)` codegen is a separate pre-existing ICE, see the filed bug.)
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: int? = .W(Box { val: 9 }) }")
+        out.contains("F1000") && out.contains("layout conflict")
+    }
+    then "a struct literal into a bool? annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: bool? = Box { val: 9 } }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+    then "a matching Box? optional slot still compiles" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: Box? = Box { val: 9 }  println(\"ok\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "the empty optional .None into an int? slot is NOT rejected (typeck)" {
+        // `.None` carries no payload — it's the valid empty `int?`, so the scalar
+        // gate must not flag it (the optional-stripped `int` cell reads as scalar).
+        // Checked via typeck: subjectless-.None codegen is the separate xc6g ICE.
+        let out = z98_check("fn main() { let x: int? = .None }")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "98z0: a parenthesized ctor cannot smuggle past the gate" {
+    // Parens build a `.Grouping` wrapper; without transparency in
+    // check_expr_expected the wrapper falls to the universal arm and the
+    // dedicated struct / subjectless-enum gates never run, so one pair of
+    // parens reopens the wild store.
+    then "(Box { val: 9 }) into an int annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: int = (Box { val: 9 }) }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+    then "a subjectless (.W(...)) into an int annotation is F1000" {
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: int = (.W(Box { val: 9 })) }")
+        out.contains("F1000") && out.contains("layout conflict")
+    }
+    then "doubly-parenthesized ((Box { val: 9 })) into int is still F1000" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: int = ((Box { val: 9 })) }")
+        out.contains("F1000") && out.contains("value-scalar")
+    }
+    then "(Box { val: 9 }) into a matching Box slot still compiles" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: Box = (Box { val: 9 })  println(\"ok\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "98z0: matching slots and a type-param still check clean (no false positive)" {
+    then "Wrap.W(...) into a Wrap slot compiles" {
+        let out = z98_out("type Box = { val: int }
+enum Wrap { W(b: Box) }
+fn main() { let x: Wrap = Wrap.W(Box { val: 9 })  println(\"ok\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "Box { val: 9 } into a Box slot compiles" {
+        let out = z98_out("type Box = { val: int }
+fn main() { let x: Box = Box { val: 9 }  println(\"ok\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a value still typed as an unresolved type-param into an int slot is NOT flagged" {
+        // The value flowing into the `int` slot is typed `T` (unresolved inside
+        // keep_generic), NOT a specialized `int` — this is the real leniency case:
+        // the gate must skip an unresolved type-param, never proving it a scalar.
+        let out = z98_out("fn id<T>(x: T) -> T { x }
+fn keep_generic<T>(x: T) -> int { let y: int = id(x)  y }
+fn main() { let r: int = keep_generic(9)  println(\"ok\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
