@@ -1,0 +1,109 @@
+// WHY: a struct and an enum (or newtype) sharing one name in a module compiled
+// clean, then corrupted memory at runtime. Every nominal type kind shares the
+// one TypeRegistry id space, which collapses same-name declarations
+// first-write-wins, and vtype_eq compares the survivors as EQUAL — so an enum
+// value flowed into a struct-typed slot (and vice versa) and ran to garbage. The
+// duplicate-decl guard checked the struct and enum indexes SEPARATELY, so a
+// cross-kind pair was never flagged. Fix: a name is one nominal identity —
+// is_duplicate_type_name checks all nominal kind indexes (struct/shape, enum,
+// newtype), so the second declaration is rejected as F3105 DuplicateDecl
+// whichever kind is declared first.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn check_out(source: string) -> string {
+    let path = "/tmp/avra_cross_kind_dupe_decl.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "a struct and an enum of the same name are a cross-kind duplicate" {
+    then "`type Color = {...}` then `enum Color` is F3105" {
+        let out = check_out("type Color = { r: int }
+enum Color { Red, Green }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse order `enum Color` then `type Color = {...}` is also F3105" {
+        let out = check_out("enum Color { Red, Green }
+type Color = { r: int }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
+spec "a newtype collides with a same-name struct or enum" {
+    then "`type Id = int` then `enum Id` is F3105" {
+        let out = check_out("type Id = int
+enum Id { A, B }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `enum Id` then `type Id = int` is also F3105" {
+        let out = check_out("enum Id { A, B }
+type Id = int
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "`type Box = {...}` then `type Box = int` (struct vs newtype) is F3105" {
+        let out = check_out("type Box = { v: int }
+type Box = int
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `type Box = int` then `type Box = {...}` (newtype vs struct) is also F3105" {
+        // The opposite order routes through the TypeDecl arm checking newtypes.idx
+        // (rather than NewtypeDecl checking structs.idx), so it pins the other
+        // half of the order-independence guarantee.
+        let out = check_out("type Box = int
+type Box = { v: int }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
+spec "a shape collides with a same-name enum or newtype" {
+    // Pins the .ShapeDecl arm of collect_decls (a shape registers into structs.idx
+    // like a struct, but via a distinct decl arm). Shape syntax is `shape N = {...}`.
+    then "`shape Token = {...}` then `enum Token` is F3105" {
+        let out = check_out("shape Token = { text: string }
+enum Token { Word }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `enum Token` then `shape Token = {...}` is also F3105" {
+        let out = check_out("enum Token { Word }
+shape Token = { text: string }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
+spec "generic type kinds collide on the bare name, ignoring type-param arity" {
+    then "`type Pair<A, B> = {...}` then `enum Pair<A>` is F3105" {
+        // The registries key on the short name `Pair`, so a differing type-param
+        // arity does not let the second declaration dodge the collision.
+        let out = check_out("type Pair<A, B> = { a: A, b: B }
+enum Pair<A> { One(x: A) }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
+spec "distinct names across kinds still compile clean" {
+    then "a struct and a differently-named enum check clean" {
+        let out = check_out("type Color = { r: int }
+enum Shade { Light, Dark }
+fn main() { println(\"x\") }")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "a lone struct used normally checks clean (no false positive)" {
+        let out = check_out("type Point = { x: int, y: int }
+fn main() {
+    let p = Point { x: 1, y: 2 }
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}

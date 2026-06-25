@@ -1181,12 +1181,30 @@ fn string_contains_qualifier(name: string) -> bool {
     false
 }
 
+/// True when `name` is already declared as a nominal type-kind in this module —
+/// a struct/shape (`structs.idx`), an enum (`enums.idx`), or a newtype
+/// (`newtypes.idx`). A type name is one nominal identity, so a SECOND declaration
+/// under a DIFFERENT kind (`enum Color` after `type Color = {...}`) is a
+/// cross-kind collision: every kind shares the one TypeRegistry id space, which
+/// collapses duplicates first-write-wins, and `vtype_eq` then compares the two as
+/// EQUAL — so a value of one kind flows into the other's slot and runs to garbage.
+/// Each kind registers into its own index, so all three are checked here for the
+/// collision to be caught whichever kind is declared first (e.g. `newtype Id` then
+/// `enum Id`, where the enum-side arm must still see the newtype). Honors the dkfa
+/// `::`-qualifier exemption (bundling re-registers the same qualified cross-module
+/// name under each path it loads, which is not a user error).
+fn is_duplicate_type_name(cur: TC, name: string) -> bool {
+    is_duplicate_decl(cur.structs.idx, name)
+        || is_duplicate_decl(cur.enums.idx, name)
+        || is_duplicate_decl(cur.newtypes.idx, name)
+}
+
 fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = tc
     for ss in stmts {
         cur = match stmt_unwrap(ss.node) {
             .TypeDecl(name, tp, fields) -> {
-                if is_duplicate_decl(cur.structs.idx, name) {
+                if is_duplicate_type_name(cur, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
                     let resolved = tc_resolve_type_operator(fields, cur.structs)
@@ -1194,7 +1212,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 }
             }
             .NewtypeDecl(name, inner_vt) -> {
-                if is_duplicate_decl(cur.structs.idx, name) {
+                if is_duplicate_type_name(cur, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
                     let inner_ty = resolve_vtype(cur, inner_vt)
@@ -1209,7 +1227,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 cur with { union_aliases: union_alias_reg_register(cur.union_aliases, name, type_vt) }
             }
             .ShapeDecl(name, fields) -> {
-                if is_duplicate_decl(cur.structs.idx, name) {
+                if is_duplicate_type_name(cur, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
                     cur with {
@@ -1219,7 +1237,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 }
             }
             .EnumDecl(name, tp, variants) -> {
-                if is_duplicate_decl(cur.enums.idx, name) {
+                if is_duplicate_type_name(cur, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", ss.line, ss.col, name.length)
                 } else {
                     cur with { enums: enum_type_reg_register(cur.enums, name, tp, variants) }
