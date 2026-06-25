@@ -242,6 +242,33 @@ export fn pattern_is_optional_absent(p: Pattern) -> bool {
     }
 }
 
+/// Expression-side twin of `pattern_is_optional_present`: true for the Option
+/// present ctor `.Some(x)`. The `T?` optional has no registered enum (it is a
+/// codegen primitive — `optional_repr.av`), so a subjectless `.Some` / `.None`
+/// is recognized by its spec-defined variant name. Centralized here so typeck
+/// and codegen recognise through this contract rather than scattering the
+/// "Some" / "None" string-match (see the contract note above).
+export fn variant_is_optional_present(variant: string) -> bool {
+    variant == "Some"
+}
+
+/// Expression-side twin of `pattern_is_optional_absent`: true for the Option
+/// absent ctor `.None`.
+export fn variant_is_optional_absent(variant: string) -> bool {
+    variant == "None"
+}
+
+/// True when a subjectless ctor `.<variant>(args)` is an Option ctor of the
+/// correct arity — present `.Some(x)` takes one arg, absent `.None` takes none.
+/// This is the form that lowers to the optional repr (`optional_repr.av`) rather
+/// than a registered enum, so an expected-type-directed site (binding / return /
+/// fn-arg / field) recognises it through this one predicate. The arity check
+/// keeps a malformed `.Some` / `.None(x)` falling through to the generic
+/// enum-ctor path (a clean "no enum has variant" error) instead of matching here.
+export fn variant_is_optional_ctor(variant: string, arity: int) -> bool {
+    (variant_is_optional_present(variant) && arity == 1) || (variant_is_optional_absent(variant) && arity == 0)
+}
+
 /// The single bound name of a present-bind arm; `""` when the arm
 /// binds nothing (or isn't a present-bind arm).
 export fn pattern_optional_binding(p: Pattern) -> string {
