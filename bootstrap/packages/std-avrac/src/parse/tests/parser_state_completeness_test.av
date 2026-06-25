@@ -1,0 +1,78 @@
+// WHY: ParserState (the save_state/restore_state snapshot) was a hand-synced
+// SUBSET of the Parser's mutable fields — the context-mode flags
+// (allow_struct_lit / allow_dot_postfix / cell_mode / allow_it_sugar) and
+// quote_depth were absent, so a failed speculative parse (try_parse_generic_call,
+// is_stmt_map_literal) could leak a mode change into the retry. It was benign
+// only because the callers happened to balance those flags locally — one new
+// caller, or one error-path that backtracks mid-toggle, turns the drift into a
+// real misparse.
+//
+// These unit tests pin save/restore COMPLETENESS: each backtrack-relevant field
+// round-trips through save -> mutate -> restore, while gensym_seq (a monotonic
+// hygiene counter, the ONE deliberate exclusion) does NOT roll back. Without the
+// fix the flag cases fail — the mutated value survives the restore.
+
+use @std.avrac.parse.{parser_new}
+
+spec "restore_state round-trips every backtrack-relevant mutable field" {
+    then "a positional field (current) is restored" {
+        mut p = parser_new("x")
+        let before = p.current
+        let st = p.save_state()
+        p.current = 999
+        p.restore_state(st)
+        p.current == before
+    }
+    then "allow_struct_lit is restored" {
+        mut p = parser_new("x")
+        p.allow_struct_lit = 0
+        let st = p.save_state()
+        p.allow_struct_lit = 1
+        p.restore_state(st)
+        p.allow_struct_lit == 0
+    }
+    then "allow_dot_postfix is restored" {
+        mut p = parser_new("x")
+        p.allow_dot_postfix = 0
+        let st = p.save_state()
+        p.allow_dot_postfix = 1
+        p.restore_state(st)
+        p.allow_dot_postfix == 0
+    }
+    then "cell_mode is restored" {
+        mut p = parser_new("x")
+        p.cell_mode = false
+        let st = p.save_state()
+        p.cell_mode = true
+        p.restore_state(st)
+        p.cell_mode == false
+    }
+    then "allow_it_sugar is restored" {
+        mut p = parser_new("x")
+        p.allow_it_sugar = 0
+        let st = p.save_state()
+        p.allow_it_sugar = 1
+        p.restore_state(st)
+        p.allow_it_sugar == 0
+    }
+    then "quote_depth is restored" {
+        mut p = parser_new("x")
+        p.quote_depth = 0
+        let st = p.save_state()
+        p.quote_depth = 3
+        p.restore_state(st)
+        p.quote_depth == 0
+    }
+}
+
+spec "gensym_seq is the one deliberate exclusion — a monotonic counter survives a restore" {
+    then "a counter bump after save is NOT rolled back" {
+        // Rolling gensym_seq back would re-mint an already-issued temp name, so it
+        // must survive a backtrack even though every other field is restored.
+        mut p = parser_new("x")
+        let st = p.save_state()
+        p.gensym_seq = 7
+        p.restore_state(st)
+        p.gensym_seq == 7
+    }
+}
