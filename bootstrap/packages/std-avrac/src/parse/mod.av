@@ -56,6 +56,13 @@ export type ParserState = {
     current_start: int,
     had_error: int,
     error_message: string,
+    // Context-sensitive parse-mode flags. A backtrack must restore these so a
+    // failed lookahead cannot leak a mode change into the retry.
+    allow_struct_lit: int,
+    allow_dot_postfix: int,
+    cell_mode: bool,
+    allow_it_sugar: int,
+    quote_depth: int,
     bag: DiagnosticBag,
 }
 
@@ -2253,11 +2260,13 @@ impl Parser {
     // parsing 881 real `.av` files is unaffected by the restore). Keeping prev_line
     // in the snapshot stays correct if a future caller reads it before that advance.
     //
-    // NOT snapshotted, by design: `gensym_seq` (a monotonic hygiene counter —
-    // rolling it back would re-mint an already-issued temp name) and the context
-    // flags (allow_struct_lit / allow_dot_postfix / cell_mode / allow_it_sugar),
-    // which callers balance locally. Folding those in so they can't drift is
-    // tracked as forge-crafting-intepreters-2sgo.
+    // NOT snapshotted, by design: `gensym_seq` ONLY — a monotonic hygiene
+    // counter, so rolling it back would re-mint an already-issued temp name.
+    // Every other mutable field IS snapshotted now, including the context-mode
+    // flags (allow_struct_lit / allow_dot_postfix / cell_mode / allow_it_sugar /
+    // quote_depth): a backtrack must restore them so a failed lookahead cannot
+    // leak a mode change into the retry (previously these were a hand-synced
+    // subset that callers had to balance locally — a latent drift hazard).
     fn save_state(self) -> ParserState {
         ParserState {
             start: self.start, current: self.current,
@@ -2267,6 +2276,9 @@ impl Parser {
             prev_line: self.prev_line,
             current_start: self.current_start,
             had_error: self.had_error, error_message: self.error_message,
+            allow_struct_lit: self.allow_struct_lit, allow_dot_postfix: self.allow_dot_postfix,
+            cell_mode: self.cell_mode, allow_it_sugar: self.allow_it_sugar,
+            quote_depth: self.quote_depth,
             bag: self.bag,
         }
     }
@@ -2284,6 +2296,11 @@ impl Parser {
         self.current_start = state.current_start
         self.had_error = state.had_error
         self.error_message = state.error_message
+        self.allow_struct_lit = state.allow_struct_lit
+        self.allow_dot_postfix = state.allow_dot_postfix
+        self.cell_mode = state.cell_mode
+        self.allow_it_sugar = state.allow_it_sugar
+        self.quote_depth = state.quote_depth
         self.bag = state.bag
     }
 
