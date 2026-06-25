@@ -1868,7 +1868,7 @@ export fn enum_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: Value
 /// value of type `actual` into a slot of declared type `expected` is a layout
 /// lie: a generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a
 /// pointer slot (`incl_int`), or a `List`/`Map`/enum value into a value-scalar
-/// slot (`incl_collection` — both pointer-into-scalar checks ride the same
+/// slot (`incl_collection` — these pointer-into-scalar checks ride the same
 /// toggle). Unions the wild-store checks that were hand-rolled, and individually
 /// forgotten, across the binding / reassign / call / arg positions (the dominant
 /// root cause behind the 63wu arc).
@@ -1881,6 +1881,13 @@ export fn enum_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: Value
 /// Reliable element / value / payload positions use the broad
 /// `nested_layout_conflict` instead. The two toggles tune which subset a
 /// position needs (both default on; see the three wrappers below).
+///
+/// The enum check rides `incl_collection` ON PURPOSE: extern C bindings declare
+/// `int` for legacy pointer-ish slots that legitimately receive an enum too — the
+/// compiler's own `avra_stmt_tag(stmt: int)` / `avra_expr_tag(expr: int)` are
+/// called with `Stmt`/`Expr` enum values (C reads the {tag,…} payload). So the
+/// extern-param carve-out (`incl_collection=false`) must drop the enum check as
+/// well, exactly as it drops the List/Map check.
 export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType, incl_int: bool, incl_collection: bool) -> bool {
     generic_args_layout_conflict(tc, actual, expected)
         || (incl_int && int_into_pointer_slot(tc, actual, expected))
@@ -1902,13 +1909,14 @@ export fn check_assign_layout(tc: TC, actual: ValueType, expected: ValueType, ct
     check_assign_layout_ex(tc, actual, expected, ctx, true, true)
 }
 
-/// The EXTERN-parameter variant: omits the collection→scalar check, which
-/// mass-false-positives on extern C bindings that declare `int` as an i64-legacy
-/// value slot legitimately receiving a `List`/`Map` (`avra_map_set_cstr(map, key,
-/// value: int)`). Generic-arg + int→pointer still apply. Used ONLY for params of
-/// `extern fn`s (gated on `FnTypeMeta.is_extern`); a NORMAL Avra fn parameter is a
-/// real typed slot and gets the FULL `check_assign_layout`, so `f([1])` into
-/// `f(x: int)` is rejected.
+/// The EXTERN-parameter variant: omits the collection/enum→scalar checks, which
+/// mass-false-positive on extern C bindings that declare `int` as an i64-legacy
+/// pointer-ish slot legitimately receiving a `List`/`Map` (`avra_map_set_cstr(map,
+/// key, value: int)`) OR an enum (`avra_stmt_tag(stmt: int)` / `avra_expr_tag(expr:
+/// int)`, called with `Stmt`/`Expr` enum values). Generic-arg + int→pointer still
+/// apply. Used ONLY for params of `extern fn`s (gated on `FnTypeMeta.is_extern`); a
+/// NORMAL Avra fn parameter is a real typed slot and gets the FULL
+/// `check_assign_layout`, so `f([1])` into `f(x: int)` is rejected.
 export fn check_assign_layout_param(tc: TC, actual: ValueType, expected: ValueType, ctx: string) -> TC {
     check_assign_layout_ex(tc, actual, expected, ctx, true, false)
 }
@@ -2203,13 +2211,16 @@ export fn tc_bind_params(tc: TC, params: List<ParamEntry>) -> TC {
 /// scalar→ptr hole). A literal's nominal type is always concrete (a struct literal
 /// names a declared type, never a bare type-param), so the value-scalar test is
 /// false-positive-free — no `vtype_mentions_unresolved` guard is needed (a scalar
-/// slot is never an inference artifact). Wraps the literal's result, reporting
-/// F1000 only for the value-scalar case — a non-scalar pointer slot (`string`) is
-/// a nominal mismatch handled elsewhere. `kind` is the literal word for the
-/// message ("list" / "map" / "struct").
+/// slot is never an inference artifact). Reports F1000 only for the value-scalar
+/// case — a non-scalar pointer slot (`string`) is a nominal mismatch handled
+/// elsewhere. `kind` is the literal word for the message ("list" / "map" /
+/// "struct"). On rejection the result type collapses to `.Unknown`, NOT the
+/// literal's concrete type: at a `return` position the implicit/explicit return
+/// check (vtype_assignable) would otherwise see the literal type vs the annotation
+/// and emit a SECOND TypeMismatch — `.Unknown` keeps the single diagnostic.
 fn reject_literal_into_value_scalar(r: ExprResult, exp: ValueType, kind: string) -> ExprResult {
     if vtype_is_value_scalar(exp) {
-        return tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a ${kind} literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), r.ty)
+        return tc_er(tc_report(r.tc, DiagCode.TypeMismatch, "a ${kind} literal cannot be assigned to value-scalar type `${vtype_render_full(exp)}`"), .Unknown)
     }
     r
 }

@@ -119,9 +119,13 @@ fn main() { let x: Wrap = Wrap.W(Box { val: 9 })  println(\"ok\") }")
 fn main() { let x: Box = Box { val: 9 }  println(\"ok\") }")
         out.contains("__AVRA_COMPILE_OK__")
     }
-    then "a generic fn returning a type-param into an int slot is NOT flagged" {
+    then "a value still typed as an unresolved type-param into an int slot is NOT flagged" {
+        // The value flowing into the `int` slot is typed `T` (unresolved inside
+        // keep_generic), NOT a specialized `int` — this is the real leniency case:
+        // the gate must skip an unresolved type-param, never proving it a scalar.
         let out = z98_out("fn id<T>(x: T) -> T { x }
-fn main() { let x: int = id(9)  println(\"ok\") }")
+fn keep_generic<T>(x: T) -> int { let y: int = id(x)  y }
+fn main() { let r: int = keep_generic(9)  println(\"ok\") }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
