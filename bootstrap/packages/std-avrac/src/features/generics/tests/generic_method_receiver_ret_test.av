@@ -47,8 +47,7 @@ spec "generic method returning a bare type param resolves it from the receiver" 
         from_param(Box { v: 7 }) == 7
     }
     then "let receiver: b.get() flows into an int return" {
-        let b: Box<int> = Box { v: 9 }
-        get_via_let(b) == 9
+        get_via_let() == 9
     }
     then "field receiver: Holder.read() over a Box<int> field returns int" {
         let h = Holder { b: Box { v: 42 } }
@@ -59,7 +58,12 @@ spec "generic method returning a bare type param resolves it from the receiver" 
     }
 }
 
-fn get_via_let(b: Box<int>) -> int { b.get() }
+// Receiver is let-bound INSIDE the function so `b.get()` is evaluated from a
+// let binding at the return site (not a parameter — that's `from_param`'s path).
+fn get_via_let() -> int {
+    let b: Box<int> = Box { v: 9 }
+    b.get()
+}
 fn from_param_str(b: Box<string>) -> string { b.get() }
 
 spec "two-param receiver substitution is positional" {
