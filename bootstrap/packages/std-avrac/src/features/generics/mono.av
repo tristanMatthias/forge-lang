@@ -1720,20 +1720,24 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
             let fe = fn_e!
             out.push(sstmt(specialize_fn(mangled, fe.params, fe.ret_vt, fe.body, ta, name), 0, 0))
         } else {
+            // A generic TYPE — emit its specialised decl, then (shared below) its
+            // impl methods. Enum and struct are mutually exclusive on a name.
             let enum_e = generic_enum_lookup(regs.enums, name)
+            let struct_e = generic_struct_lookup(regs.structs, name)
             if enum_e != null {
                 out.push(sstmt(specialize_enum(mangled, enum_e!.variants, ta), 0, 0))
-            } else {
-                let struct_e = generic_struct_lookup(regs.structs, name)
-                if struct_e != null {
-                    out.push(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0))
-                    // Also emit each of the struct's impl methods, specialised
-                    // onto this instantiation (mkwc) — otherwise `value.method()`
-                    // has no concrete `MangledType__method` to dispatch to.
-                    let methods = specialize_impl_methods(regs.impls, name, mangled, ta)
-                    mut mi = 0
-                    while mi < methods.length { out.push(methods[mi])  mi = mi + 1 }
-                }
+            } else if struct_e != null {
+                out.push(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0))
+            }
+            // Both kinds also need each of their impl methods specialised onto
+            // THIS instantiation — otherwise `value.method()` has no concrete
+            // `Mangled__method` to dispatch to. The struct side always did this;
+            // the enum side long lacked it, so any method on a generic-enum
+            // instance failed codegen ("undefined method EBox__int.is_wrap").
+            if enum_e != null || struct_e != null {
+                let methods = specialize_impl_methods(regs.impls, name, mangled, ta)
+                mut mi = 0
+                while mi < methods.length { out.push(methods[mi])  mi = mi + 1 }
             }
         }
         i = i + 1
