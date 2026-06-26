@@ -1,0 +1,78 @@
+// WHY: acceptance spec for the L1 side-table infrastructure (ps3t.3.6 /
+// spine §14.3). Two id-keyed side-tables let analysis passes record DERIVED
+// facts about a node WITHOUT mutating it (the immutable-pass model):
+//   - DenseTable<Id, V>  for facts most nodes carry (resolved type, span)
+//   - SparseTable<Id, V> for facts few nodes carry (provenance, name-res)
+//
+// HOW THIS IS TESTED: the tables are generic structs, and a generic instance
+// can't yet be CONSTRUCTED across a package boundary (its type-args are dropped
+// in the metadata codec — bug nsvk), while a test file is always a separate
+// package (`use @std.avrac.core`). So we exercise the real RUNTIME behaviour
+// through the gated `AVRA_L1_INGEST` probe (main.av), which builds the tables
+// inside @std on the arena's real StmtIds and prints a summary — the same
+// shell-out pattern arena_test.av uses for the L1 ingest. The summary asserts:
+//   - dense=<n>   : a DenseTable<StmtId,int> has one slot per ingested stmt
+//                   (set + grow + count over the arena's ids)
+//   - nonleaf=<k> : a SparseTable<StmtId,int> stored only the non-leaf stmts
+//                   (sparse set + len)
+//   - fill=y      : an id past the high-water mark reads the dense fill default
+//   - upsert=y    : re-recording a present sparse id overwrites in place (len
+//                   unchanged)
+//   - absent=y    : get_or on an unrecorded sparse id returns the fallback
+// The facts live entirely in the side-tables, keyed by node id — no node is
+// mutated, which IS the §14.3 guarantee.
+//
+// The type-safety facet ("keyed by node-id") is a typeck error, caught before
+// codegen/construction, so it tests cleanly cross-package: a DenseTable keyed by
+// one id kind rejects another kind's id (F1000).
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+// 3 top-level fns, each with a one-statement body -> 6 stmt nodes once bodies
+// are flattened recursively; 3 of them (the fn decls) are non-leaf. Mirrors the
+// fixture arena_test.av uses, so the ingest counts line up.
+fn l1_sidetable_output() -> string {
+    let fixture = "build/_l1_sidetable_fixture.av"
+    let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
+    avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "L1 side-tables record derived facts over the arena's ids (wired)" {
+    then "a dense child-count table has one slot per ingested statement" {
+        l1_sidetable_output().contains("[l1-sidetable] dense=6")
+    }
+    then "a sparse non-leaf table stores only the 3 non-leaf statements" {
+        l1_sidetable_output().contains("nonleaf=3")
+    }
+    then "an id past the dense high-water mark reads the fill default" {
+        l1_sidetable_output().contains("fill=y")
+    }
+    then "re-recording a present sparse id overwrites in place (len unchanged)" {
+        l1_sidetable_output().contains("upsert=y")
+    }
+    then "get_or on an unrecorded sparse id returns the fallback" {
+        l1_sidetable_output().contains("absent=y")
+    }
+}
+
+// The "keyed by node-id" guarantee, statically enforced: a DenseTable keyed by
+// ExprId rejects a StmtId. This is a typeck error (F1000), caught before any
+// construction, so it's testable cross-package even though constructing the
+// generic instance at runtime cross-package isn't yet (nsvk).
+fn st_mixup_output() -> string {
+    let fixture = "build/_st_mixup.av"
+    let src = "use @std.avrac.core.{DenseTable, new_dense_table, ExprId, StmtId}\n" +
+        "fn main() {\n" +
+        "    let mut t: DenseTable<ExprId, int> = new_dense_table(0)\n" +
+        "    t.set(StmtId(0), 1)\n" +
+        "}\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "L1 side-table keys are nominally typed" {
+    then "indexing an ExprId-keyed table with a StmtId is an F1000 type error" {
+        let out = st_mixup_output()
+        out.contains("F1000") && out.contains("StmtId")
+    }
+}
