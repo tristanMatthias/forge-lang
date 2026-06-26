@@ -1197,6 +1197,7 @@ fn is_duplicate_type_name(cur: TC, name: string) -> bool {
     is_duplicate_decl(cur.structs.idx, name)
         || is_duplicate_decl(cur.enums.idx, name)
         || is_duplicate_decl(cur.newtypes.idx, name)
+        || is_duplicate_decl(cur.union_aliases.idx, name)
 }
 
 fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
@@ -1224,7 +1225,11 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 }
             }
             .UnionAliasDecl(name, type_vt) -> {
-                cur with { union_aliases: union_alias_reg_register(cur.union_aliases, name, type_vt) }
+                if is_duplicate_type_name(cur, name) {
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                } else {
+                    cur with { union_aliases: union_alias_reg_register(cur.union_aliases, name, type_vt) }
+                }
             }
             .ShapeDecl(name, fields) -> {
                 if is_duplicate_type_name(cur, name) {
