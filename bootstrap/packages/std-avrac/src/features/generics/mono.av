@@ -363,14 +363,18 @@ fn is_generic_decl(stmt: Stmt) -> bool {
     }
 }
 
-/// True for an impl block whose target is a generic struct. Such impls are
-/// dropped from the rewritten program (mkwc): their methods are emitted
+/// True for an impl block whose target is a generic struct OR enum. Such impls
+/// are dropped from the rewritten program: their methods are emitted
 /// per-instantiation by `specialize_impl_methods`, so the un-specialised
-/// `OrigType__method` (with `self: OrigType`, a type that never gets a
-/// concrete struct) must not reach codegen.
+/// `OrigType__method` (with `self: OrigType`, a type that never gets a concrete
+/// layout) must not reach codegen — it would otherwise emit a stray, unused
+/// strong symbol (e.g. `@EBox__is_wrap` next to the real `@EBox__int__is_wrap`)
+/// that bloats the output and can collide across files in a bundled shard.
 fn is_generic_impl(stmt: Stmt, regs: GenRegs) -> bool {
     match stmt {
-        .Impl(type_name, _) -> generic_struct_lookup(regs.structs, type_name) != null
+        .Impl(type_name, _) ->
+            generic_struct_lookup(regs.structs, type_name) != null
+            || generic_enum_lookup(regs.enums, type_name) != null
         .Annotated(_, inner) -> is_generic_impl(inner.node, regs)
         _ -> false
     }

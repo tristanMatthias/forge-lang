@@ -17,6 +17,12 @@
 // hold a generic enum in (param / let / struct field); a two-type-param generic
 // enum; and two distinct instantiations of the same enum (int + string payload),
 // proving per-instantiation method emission rather than a single shared body.
+// Plus an IR check that the generic enum impl is DROPPED from the rewrite pass
+// (`is_generic_impl`) so only the specialised `EBox__int__method` is emitted —
+// not a stray unspecialised `EBox__method` strong symbol that bloats the output
+// and can collide across files in a bundled shard.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 
 // Multi-variant generic enum: one method matches both arms (bool), the other
 // returns the bound type param T (extracts the payload, the harder path).
@@ -128,5 +134,34 @@ spec "generic enum methods are emitted per instantiation" {
         // ptr-typed default also round-trips.
         let hs2 = Holder.Full("a")
         hs2.unwrap_or("def") == "a"
+    }
+}
+
+// Build a tiny generic-enum-method program and return its emitted IR. The
+// generic `impl EBox<T>` must be DROPPED from the rewrite pass (is_generic_impl
+// now matches enums, not just structs), so codegen sees ONLY the per-instance
+// `EBox__int__is_wrap` — never the un-specialised `EBox__is_wrap`, whose `self`
+// is the bare generic enum that never gets a concrete layout (a stray, unused
+// strong symbol that bloats output and can collide across bundled files).
+fn ge_emitted_ir() -> string {
+    let fixture = "build/_ge_stray_fixture.av"
+    let src = "enum EBox<T> { Wrap(value: T) }\n" +
+        "impl EBox<T> { fn is_wrap(self) -> bool { match self { .Wrap(value) -> true } } }\n" +
+        "fn f(b: EBox<int>) -> bool { b.is_wrap() }\n" +
+        "fn main() { let x = f(EBox.Wrap(5)) }\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let _ = avra_shell_exec("./build/bs2 build ${fixture} 2>&1")
+    avra_shell_exec("cat ${fixture}.ll 2>&1")
+}
+
+spec "a generic enum impl is dropped from the rewrite pass — no stray unspecialised method" {
+    then "the specialised per-instance method is emitted" {
+        ge_emitted_ir().contains("EBox__int__is_wrap")
+    }
+    then "the un-specialised generic-enum method is NOT emitted" {
+        // `@EBox__is_wrap(` is the bare-generic symbol; it must be absent. (It is
+        // not a substring of `@EBox__int__is_wrap(`, so this distinguishes them.)
+        let ir = ge_emitted_ir()
+        ir.contains("EBox__int__is_wrap") && !ir.contains("@EBox__is_wrap(")
     }
 }
