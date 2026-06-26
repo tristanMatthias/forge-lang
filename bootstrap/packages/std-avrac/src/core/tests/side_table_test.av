@@ -24,6 +24,8 @@
 //   - present=y : sparse get_or on a recorded id returns the stored value
 //   - absent=y  : sparse get_or on an unrecorded id returns the fallback
 //   - upsert=y  : re-recording a present sparse id overwrites in place (len fixed)
+//   - scale=y   : the sparse intmap grows past 256 + the dense table to a high id
+//   - ptrv=y    : a pointer-typed value (string, like the real ValueType) round-trips
 // The facts live entirely in the side-tables, keyed by node id — no node is
 // mutated, which IS the §14.3 guarantee.
 //
@@ -65,6 +67,12 @@ spec "L1 side-table op coverage (dense + sparse)" {
     }
     then "sparse: re-recording a present id overwrites in place (len unchanged)" {
         l1_sidetable_output().contains("upsert=y")
+    }
+    then "scale: the sparse intmap grows past 256 and the dense table to a high id" {
+        l1_sidetable_output().contains("scale=y")
+    }
+    then "pointer-typed values (not just int) round-trip through both tables" {
+        l1_sidetable_output().contains("ptrv=y")
     }
 }
 

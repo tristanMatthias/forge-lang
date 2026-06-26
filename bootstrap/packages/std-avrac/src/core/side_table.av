@@ -166,7 +166,7 @@ export fn l1_sidetable_summary(store: NodeStore) -> string {
             nonleaf.set(id, 1)
         }
     }
-    "[l1-sidetable] dense=${string(child_counts.count())} nonleaf=${string(nonleaf.len())} ${side_table_ops_check()}"
+    "[l1-sidetable] dense=${string(child_counts.count())} nonleaf=${string(nonleaf.len())} ${side_table_ops_check()} ${side_table_scale_check()}"
 }
 
 fn yn(b: bool) -> string { if b { "y" } else { "n" } }
@@ -195,4 +195,32 @@ fn side_table_ops_check() -> string {
     let upsert_ok = s.get_or(StmtId(7), -1) == 71 && s.len() == 1 // overwrites in place, len fixed
 
     "gap=${yn(gap_ok)} end=${yn(end_ok)} over=${yn(over_ok)} present=${yn(present_ok)} absent=${yn(absent_ok)} upsert=${yn(upsert_ok)}"
+}
+
+/// Scale + pointer-value coverage. The sparse table's backing intmap must grow
+/// past the historical 256-slot limit, the dense table must grow to a high id,
+/// and both must carry a POINTER-typed value — the real side-table value is a
+/// `ValueType` ptr, so `int`-only coverage would miss a List<ptr> layout bug.
+/// Same `==`/count surface so compiler `src/` still builds on the integration seed.
+fn side_table_scale_check() -> string {
+    let mut sp: SparseTable<StmtId, int> = new_sparse_table()
+    for i in 0..300 {
+        sp.set(StmtId(i), i * 10)
+    }
+    // intmap grows past 256; dense grows to a high id with the gaps reading fill.
+    let mut dn: DenseTable<StmtId, int> = new_dense_table(-1)
+    dn.set(StmtId(299), 7)
+    let scale_ok = sp.len() == 300 && sp.get_or(StmtId(257), -1) == 2570 && sp.get_or(StmtId(299), -1) == 2990
+        && dn.count() == 300 && dn.get(StmtId(299)) == 7 && dn.get(StmtId(150)) == -1
+
+    // Pointer-typed V (string stands in for ValueType): grow-with-fill + set +
+    // get must round-trip a non-scalar value through both tables' List<V> store.
+    let mut dv: DenseTable<StmtId, string> = new_dense_table("?")
+    dv.set(StmtId(3), "x")
+    let mut sv: SparseTable<StmtId, string> = new_sparse_table()
+    sv.set(StmtId(1), "y")
+    let ptrv_ok = dv.get(StmtId(3)) == "x" && dv.get(StmtId(0)) == "?" && dv.count() == 4
+        && sv.get_or(StmtId(1), "?") == "y" && sv.get_or(StmtId(0), "?") == "?"
+
+    "scale=${yn(scale_ok)} ptrv=${yn(ptrv_ok)}"
 }
