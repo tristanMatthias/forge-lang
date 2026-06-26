@@ -143,15 +143,14 @@ export fn new_sparse_table<Id, V>() -> SparseTable<Id, V> {
     SparseTable { idx: avra_intmap_new(), vals: [] }
 }
 
-// Dogfood (ps3t.3.6): demonstrate the side-tables in the REAL L1 substrate —
-// record DERIVED facts keyed by the arena's own StmtIds WITHOUT mutating any
-// node. Builds a DenseTable<StmtId,int> of each ingested statement's direct
-// child count (a fact ~every node has) and a SparseTable<StmtId,int> marking
-// the non-leaf statements (a fact few nodes have), then returns a summary the
-// gated AVRA_L1_INGEST probe (main.av) prints and the spec asserts. Lives here,
-// in @std (intra-package), so the generic instantiation is anchored in the
-// table's own package; main.av calls it across the package boundary as a plain
-// `NodeStore -> string`. Kept on the count()/len()/`==` surface (no method
+/// Dogfood the side-tables in the real L1 substrate: attach DERIVED facts keyed
+/// by an ingested program's StmtIds (a dense per-statement child-count + a
+/// sparse non-leaf marker) without mutating any node, and return a one-line
+/// summary. Driven by the gated `AVRA_L1_INGEST` probe in main.av.
+//
+// Lives here, in @std (intra-package), so the generic instantiation is anchored
+// in the table's own package; main.av calls it across the package boundary as a
+// plain `NodeStore -> string`. Kept on the count()/len()/`==` surface (no method
 // result fed into a return/arg position) so the integration seed's compiler can
 // still build compiler `src/` — the receiver-substituted-return form the live
 // pass migration (ps3t.3.7) will use is seed-gated behind this fix landing.
