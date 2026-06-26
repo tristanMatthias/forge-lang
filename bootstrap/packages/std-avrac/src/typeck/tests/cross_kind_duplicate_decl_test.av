@@ -6,8 +6,14 @@
 // duplicate-decl guard checked the struct and enum indexes SEPARATELY, so a
 // cross-kind pair was never flagged. Fix: a name is one nominal identity —
 // is_duplicate_type_name checks all nominal kind indexes (struct/shape, enum,
-// newtype), so the second declaration is rejected as F3105 DuplicateDecl
-// whichever kind is declared first.
+// newtype, union alias), so the second declaration is rejected as F3105
+// DuplicateDecl whichever kind is declared first.
+//
+// Union aliases (`type J = A | B`) share that same one-name-one-identity space:
+// a union alias's name lives in the union_aliases index, so it both collides
+// against an earlier struct/enum/newtype AND is itself rejected when a later
+// declaration of any kind reuses the name. The .UnionAliasDecl arm was the one
+// collect_decls arm registering without the is_duplicate_type_name gate.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
@@ -91,6 +97,78 @@ fn main() { println(\"x\") }")
     }
 }
 
+spec "a union alias collides cross-kind with a struct, enum, or newtype" {
+    // Pins both halves: the .UnionAliasDecl arm now gated by is_duplicate_type_name
+    // (union-alias-second), and is_duplicate_type_name consulting union_aliases.idx
+    // (union-alias-first, caught by the other kinds' arms).
+    then "`type J = int | string` then `type J = {...}` (alias vs struct) is F3105" {
+        let out = check_out("type J = int | string
+type J = { v: int }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `type J = {...}` then `type J = int | string` (struct vs alias) is F3105" {
+        let out = check_out("type J = { v: int }
+type J = int | string
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "`type J = int | string` then `enum J` (alias vs enum) is F3105" {
+        let out = check_out("type J = int | string
+enum J { A, B }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `enum J` then `type J = int | string` (enum vs alias) is F3105" {
+        let out = check_out("enum J { A, B }
+type J = int | string
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "`type J = int | string` then `type J = int` (alias vs newtype) is F3105" {
+        let out = check_out("type J = int | string
+type J = int
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `type J = int` then `type J = int | string` (newtype vs alias) is F3105" {
+        // The .UnionAliasDecl arm checking newtypes.idx — the newtype-first order
+        // (its sibling alias-first case routes through the NewtypeDecl arm instead).
+        let out = check_out("type J = int
+type J = int | string
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
+spec "a union alias collides cross-kind with a shape" {
+    // .ShapeDecl is a fourth arm that gates on is_duplicate_type_name: the
+    // alias-first order exercises that arm seeing union_aliases.idx, and the
+    // shape-first order exercises .UnionAliasDecl seeing the shape's structs.idx
+    // entry (a shape registers like a struct). `shape` requires the `= {...}` form.
+    then "`type J = int | string` then `shape J = {...}` (alias vs shape) is F3105" {
+        let out = check_out("type J = int | string
+shape J = { v: int }
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+    then "the reverse `shape J = {...}` then `type J = int | string` (shape vs alias) is F3105" {
+        let out = check_out("shape J = { v: int }
+type J = int | string
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
+spec "two union aliases of the same name are a duplicate" {
+    then "`type J = int | string` then `type J = bool | int` is F3105" {
+        let out = check_out("type J = int | string
+type J = bool | int
+fn main() { println(\"x\") }")
+        out.contains("F3105")
+    }
+}
+
 spec "distinct names across kinds still compile clean" {
     then "a struct and a differently-named enum check clean" {
         let out = check_out("type Color = { r: int }
@@ -104,6 +182,12 @@ fn main() {
     let p = Point { x: 1, y: 2 }
     println(\"x\")
 }")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "a union alias with a distinct name checks clean (no false positive)" {
+        let out = check_out("type Num = int | string
+type Flag = { on: bool }
+fn main() { println(\"x\") }")
         out.contains("__AVRA_CHECK_OK__")
     }
 }
