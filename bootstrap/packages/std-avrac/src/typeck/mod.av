@@ -3621,7 +3621,22 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
             let recv_bindings = tc_recv_type_bindings(checked_args, o.ty)
             let gated_params = subst_param_types(method_params_without_self(r.params), recv_bindings)
             let arg_checked = tc_check_newtype_args(checked_args, qualified, gated_params, args, r.is_extern)
-            let resolved_ret = tc_subst_generic_method_ret(arg_checked, r.tp, r.params, args, r.ret_ty)
+            // Substitute the return type from the ARGS first (method-level type
+            // params, y9y4.16), then FILL any receiver-bound type param the args
+            // left unresolved from the receiver's concrete type_args. A method
+            // returning a bare impl type param — `Box<V> { fn get(self) -> V }`
+            // called on a `Box<int>` — has no arg to bind V, so without this it
+            // came back as the unsubstituted `V` and `fn f(b: Box<int>) -> int {
+            // b.get() }` fired a bogus F1000 (body produces `V`). Receiver fill
+            // is the return-type analog of the param-gate's subst_param_types
+            // (rs0b): same recv_bindings, applied AFTER arg substitution so it
+            // only fills gaps and never overrides an arg-bound param (the
+            // fill-only discipline used everywhere else here). tc_subst_vtype is
+            // a no-op once a param is concrete, so already-resolved programs are
+            // unaffected — this only resolves types that were previously left
+            // generic, accepting valid programs that were wrongly rejected.
+            let arg_ret = tc_subst_generic_method_ret(arg_checked, r.tp, r.params, args, r.ret_ty)
+            let resolved_ret = tc_subst_vtype(arg_ret, recv_bindings)
             return tc_er(arg_checked, resolved_ret)
         }
     }

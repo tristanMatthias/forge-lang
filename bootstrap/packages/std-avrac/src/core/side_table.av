@@ -1,0 +1,226 @@
+// WHY: L1 side-table infrastructure (ps3t.3.6 / spine §14.3). Analysis passes
+// must record DERIVED facts about a node (its resolved type, its provenance, a
+// name-resolution override) WITHOUT mutating the node — the immutable-pass
+// model (spine §4 Layer 6: passes write facts to a side-table, never edit the
+// tree). This file is the reusable substrate for that: two generic,
+// node-id-keyed tables.
+//
+//   DenseTable<Id, V>  — a flat array keyed by `id.raw()`. For facts that MOST
+//                        nodes carry (every node has a span; typeck assigns a
+//                        resolved type to ~every expr). O(1) get/set; one slot
+//                        per id, so it pays an array cell even for the few ids
+//                        that were never written (read back as a caller-supplied
+//                        `fill` sentinel). This is the `SExpr.ty ->
+//                        DenseTable<ExprId, ValueType>` shape from §14.3.
+//
+//   SparseTable<Id, V> — a map keyed by `id.raw()`. For facts that FEW nodes
+//                        carry (provenance / `SStmt.from_macro`, name-res
+//                        overrides). Stores nothing for absent ids. Backed by
+//                        the C intmap (`avra_intmap_*`, id -> slot) plus a
+//                        `List<V>` of values — the same int-keyed primitive the
+//                        compiler already uses everywhere it needs an int map
+//                        (registry.av, module_graph.av); the language-level
+//                        `Map<int, V>` is avoided deliberately (it SIGSEGVs on
+//                        int keys today — bug g9o9). This is the
+//                        `SStmt.from_macro -> SparseTable<StmtId, Provenance>`
+//                        shape from §14.3.
+//
+// TYPE SAFETY: both tables are generic over the typed-id newtype `Id`
+// (ExprId / StmtId / PatId / TypeId — see core/arena.av), so a table keyed by
+// one id kind nominally rejects another kind's id (a `DenseTable<ExprId, _>`
+// cannot be indexed by a `StmtId` — F1000). `Id` is an opaque handle: the only
+// thing these tables do with it is peel `.raw()` to reach the backing int index
+// (the newtype's zero-cost accessor), never inspect it otherwise.
+//
+// CONSTRUCTION: build with `new_dense_table(fill)` / `new_sparse_table()` (or a
+// struct literal) and a type annotation at the binding — the annotation supplies
+// the key type `Id`, which appears only in the method signatures, never a field,
+// so it can't be inferred from the args alone (`let t: DenseTable<ExprId, V> =
+// new_dense_table(...)`). The annotation must be on the BINDING: a generic
+// instance built directly in a struct-field initializer can't yet take `Id` from
+// the field's declared type (bug pf15), so a pass owning a side-table field
+// builds it in a typed `let` and assembles the struct from that. Construction is
+// also @std-local today: a different package can't yet instantiate an imported
+// generic struct (its type-args are dropped across the module boundary — bug
+// nsvk), and the side-table's consumers (resolver/typeck) are all in @std, so
+// this is a non-issue for its purpose.
+//
+// ADDITIVE (bootstrap window, §14.6 step 1): generic structs + impls over
+// existing syntax — no node-rep change, no new surface syntax, no seed cycle —
+// so it builds on the pinned seed and lands ALONGSIDE today's on-node fields.
+// Wiring the live resolver/typeck to WRITE their derived facts here (retiring
+// `SExpr.ty` / `SStmt.from_macro` in-place mutation) is the seed-gated pass
+// migration (§14.6 step 2, ticket ps3t.3.7) — NOT done here.
+
+use core.{NodeStore, StmtId}
+
+/// The C int-keyed map primitive (int -> int). Declared extern per-module, the
+/// same way registry.av / runtime.av declare it (extern decls don't cross
+/// modules). SparseTable uses it as an `id.raw() -> slot` index.
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// A dense, node-id-keyed side-table: `vals[id.raw()]` holds the fact for that
+/// id, `fill` is the value returned for an id never written (and used to pad the
+/// backing list when a later id is written first). For facts most nodes carry.
+export type DenseTable<Id, V> = { vals: List<V>, fill: V }
+
+impl DenseTable<Id, V> {
+    /// Grow the backing list so index `n` is addressable, padding new slots with
+    /// `fill`. Ids are allocated densely from the arena (0..count), so in
+    /// practice this appends at most one slot per `set`.
+    fn ensure(self, n: int) {
+        while self.vals.length <= n {
+            self.vals.push(self.fill)
+        }
+    }
+    /// Record fact `v` for `id` (overwrites any prior fact). Never touches the
+    /// node — the immutable-pass discipline (§14.3).
+    fn set(self, id: Id, v: V) {
+        self.ensure(id.raw())
+        self.vals.set(id.raw(), v)
+    }
+    /// The fact for `id`, or `fill` if `id` was never written (or is past the
+    /// high-water mark). Total — a dense table always answers.
+    fn get(self, id: Id) -> V {
+        if id.raw() < self.vals.length {
+            self.vals[id.raw()]
+        } else {
+            self.fill
+        }
+    }
+    /// The number of addressable slots (the high-water id + 1), NOT the number
+    /// of distinct facts written — a dense table doesn't track that.
+    fn count(self) -> int { self.vals.length }
+}
+
+/// Construct an empty dense table whose unwritten slots read back as `fill`.
+/// `fill` binds `V`; `Id` comes from the call's expected type (the let/field
+/// annotation at the use site).
+export fn new_dense_table<Id, V>(fill: V) -> DenseTable<Id, V> {
+    DenseTable { vals: [], fill }
+}
+
+/// A sparse, node-id-keyed side-table: `idx` maps `id.raw() -> slot` and
+/// `vals[slot]` holds the fact. Absent ids cost nothing (no array slot). For
+/// facts few nodes carry — provenance, name-resolution overrides (§14.3).
+export type SparseTable<Id, V> = { idx: ptr, vals: List<V> }
+
+impl SparseTable<Id, V> {
+    /// True iff a fact has been recorded for `id`.
+    fn has(self, id: Id) -> bool { avra_intmap_has(self.idx, id.raw()) != 0 }
+    /// Record fact `v` for `id`. Upsert: overwrites in place if `id` already has
+    /// a fact, else appends a new value slot and points `id` at it. Never
+    /// touches the node.
+    fn set(self, id: Id, v: V) {
+        if self.has(id) {
+            self.vals.set(avra_intmap_get(self.idx, id.raw()), v)
+        } else {
+            let slot = self.vals.length
+            self.vals.push(v)
+            avra_intmap_set(self.idx, id.raw(), slot)
+        }
+    }
+    /// The fact for `id` if present, else `fallback`. The safe accessor — a
+    /// sparse table has no fact for most ids, so callers supply the absent value
+    /// at the use site rather than at construction.
+    fn get_or(self, id: Id, fallback: V) -> V {
+        if self.has(id) {
+            self.vals[avra_intmap_get(self.idx, id.raw())]
+        } else {
+            fallback
+        }
+    }
+    /// The number of distinct facts recorded (present entries).
+    fn len(self) -> int { self.vals.length }
+}
+
+/// Construct an empty sparse table over a fresh intmap. `Id`/`V` come from the
+/// call's expected type (the let/field annotation at the use site).
+export fn new_sparse_table<Id, V>() -> SparseTable<Id, V> {
+    SparseTable { idx: avra_intmap_new(), vals: [] }
+}
+
+/// Dogfood the side-tables in the real L1 substrate: attach DERIVED facts keyed
+/// by an ingested program's StmtIds (a dense per-statement child-count + a
+/// sparse non-leaf marker) without mutating any node, and return a one-line
+/// summary. Driven by the gated `AVRA_L1_INGEST` probe in main.av.
+//
+// Lives here, in @std (intra-package), so the generic instantiation is anchored
+// in the table's own package; main.av calls it across the package boundary as a
+// plain `NodeStore -> string`. Kept on the count()/len()/`==` surface (no method
+// result fed into a return/arg position) so the integration seed's compiler can
+// still build compiler `src/` — the receiver-substituted-return form the live
+// pass migration (ps3t.3.7) will use is seed-gated behind this fix landing.
+export fn l1_sidetable_summary(store: NodeStore) -> string {
+    let mut child_counts: DenseTable<StmtId, int> = new_dense_table(-1)
+    let mut nonleaf: SparseTable<StmtId, int> = new_sparse_table()
+    let n = store.stmts.count()
+    for i in 0..n {
+        let id = StmtId(i)
+        let kids = store.stmts.children_of(id).length
+        child_counts.set(id, kids)
+        if kids > 0 {
+            nonleaf.set(id, 1)
+        }
+    }
+    "[l1-sidetable] dense=${string(child_counts.count())} nonleaf=${string(nonleaf.len())} ${side_table_ops_check()} ${side_table_scale_check()}"
+}
+
+fn yn(b: bool) -> string { if b { "y" } else { "n" } }
+
+/// Exhaustive op self-check over fresh, deterministic tables, appended to the
+/// dogfood summary so the cross-package spec can assert each behavior. A
+/// generic instance can't be CONSTRUCTED across a package boundary yet (its
+/// type-args are dropped in the metadata codec — bug nsvk), and a test file is
+/// always a separate package, so this in-@std check is how the dense overwrite /
+/// in-range-gap / fill and the sparse present-vs-absent / upsert paths get
+/// covered. Stays on the `==`/count surface so compiler `src/` still builds on
+/// the integration seed.
+fn side_table_ops_check() -> string {
+    let mut d: DenseTable<StmtId, int> = new_dense_table(-1)
+    d.set(StmtId(2), 20)                                   // grows to 3 slots; 0,1 padded with fill
+    let gap_ok = d.get(StmtId(0)) == -1                    // in-range but unwritten -> fill
+    let end_ok = d.get(StmtId(9)) == -1                    // past the high-water mark -> fill
+    d.set(StmtId(2), 22)                                   // overwrite an existing slot
+    let over_ok = d.get(StmtId(2)) == 22 && d.count() == 3 // latest value wins, no growth
+
+    let mut s: SparseTable<StmtId, int> = new_sparse_table()
+    s.set(StmtId(7), 70)
+    let present_ok = s.get_or(StmtId(7), -1) == 70         // present -> the stored value
+    let absent_ok = s.get_or(StmtId(8), -1) == -1          // absent -> the fallback
+    s.set(StmtId(7), 71)                                   // upsert
+    let upsert_ok = s.get_or(StmtId(7), -1) == 71 && s.len() == 1 // overwrites in place, len fixed
+
+    "gap=${yn(gap_ok)} end=${yn(end_ok)} over=${yn(over_ok)} present=${yn(present_ok)} absent=${yn(absent_ok)} upsert=${yn(upsert_ok)}"
+}
+
+/// Scale + pointer-value coverage. The sparse table's backing intmap must grow
+/// past the historical 256-slot limit, the dense table must grow to a high id,
+/// and both must carry a POINTER-typed value — the real side-table value is a
+/// `ValueType` ptr, so `int`-only coverage would miss a List<ptr> layout bug.
+/// Same `==`/count surface so compiler `src/` still builds on the integration seed.
+fn side_table_scale_check() -> string {
+    let mut sp: SparseTable<StmtId, int> = new_sparse_table()
+    for i in 0..300 {
+        sp.set(StmtId(i), i * 10)
+    }
+    // intmap grows past 256; dense grows to a high id with the gaps reading fill.
+    let mut dn: DenseTable<StmtId, int> = new_dense_table(-1)
+    dn.set(StmtId(299), 7)
+    let scale_ok = sp.len() == 300 && sp.get_or(StmtId(257), -1) == 2570 && sp.get_or(StmtId(299), -1) == 2990
+        && dn.count() == 300 && dn.get(StmtId(299)) == 7 && dn.get(StmtId(150)) == -1
+
+    // Pointer-typed V (string stands in for ValueType): grow-with-fill + set +
+    // get must round-trip a non-scalar value through both tables' List<V> store.
+    let mut dv: DenseTable<StmtId, string> = new_dense_table("?")
+    dv.set(StmtId(3), "x")
+    let mut sv: SparseTable<StmtId, string> = new_sparse_table()
+    sv.set(StmtId(1), "y")
+    let ptrv_ok = dv.get(StmtId(3)) == "x" && dv.get(StmtId(0)) == "?" && dv.count() == 4
+        && sv.get_or(StmtId(1), "?") == "y" && sv.get_or(StmtId(0), "?") == "?"
+
+    "scale=${yn(scale_ok)} ptrv=${yn(ptrv_ok)}"
+}
