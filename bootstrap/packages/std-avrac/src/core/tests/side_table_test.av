@@ -85,7 +85,14 @@ fn st_mixup_output() -> string {
 
 spec "L1 side-table keys are nominally typed" {
     then "indexing an ExprId-keyed table with a StmtId is an F1000 type error" {
+        // Assert the diagnostic's own `expects … got …` wording, not the bare
+        // kind names — those also appear in the echoed fixture source, so they'd
+        // match even if the F1000 fired for some other reason. `expects`/`got`
+        // occur only in the parameter-type-mismatch message, so together with
+        // both kind names they prove the mismatch was reported with the right
+        // expected (ExprId) and actual (StmtId) key kinds.
         let out = st_mixup_output()
-        out.contains("F1000") && out.contains("StmtId")
+        out.contains("F1000") && out.contains("expects") && out.contains("got")
+            && out.contains("ExprId") && out.contains("StmtId")
     }
 }
