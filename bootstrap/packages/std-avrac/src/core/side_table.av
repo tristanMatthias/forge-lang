@@ -166,17 +166,33 @@ export fn l1_sidetable_summary(store: NodeStore) -> string {
             nonleaf.set(id, 1)
         }
     }
-    // An id past the high-water mark reads back the dense fill sentinel (-1):
-    // proof the dense table answers totally without a stored slot.
-    let fill_ok = if child_counts.get(StmtId(n)) == -1 { "y" } else { "n" }
-    // Sparse upsert: re-recording a present id overwrites in place, never grows
-    // the entry count.
-    let before = nonleaf.len()
-    if nonleaf.has(StmtId(0)) {
-        nonleaf.set(StmtId(0), 2)
-    }
-    let upsert_ok = if nonleaf.len() == before { "y" } else { "n" }
-    // Sparse absent id falls back to the supplied default.
-    let absent_ok = if nonleaf.get_or(StmtId(n), -7) == -7 { "y" } else { "n" }
-    "[l1-sidetable] dense=${string(child_counts.count())} nonleaf=${string(nonleaf.len())} fill=${fill_ok} upsert=${upsert_ok} absent=${absent_ok}"
+    "[l1-sidetable] dense=${string(child_counts.count())} nonleaf=${string(nonleaf.len())} ${side_table_ops_check()}"
+}
+
+fn yn(b: bool) -> string { if b { "y" } else { "n" } }
+
+/// Exhaustive op self-check over fresh, deterministic tables, appended to the
+/// dogfood summary so the cross-package spec can assert each behavior. A
+/// generic instance can't be CONSTRUCTED across a package boundary yet (its
+/// type-args are dropped in the metadata codec — bug nsvk), and a test file is
+/// always a separate package, so this in-@std check is how the dense overwrite /
+/// in-range-gap / fill and the sparse present-vs-absent / upsert paths get
+/// covered. Stays on the `==`/count surface so compiler `src/` still builds on
+/// the integration seed.
+fn side_table_ops_check() -> string {
+    let mut d: DenseTable<StmtId, int> = new_dense_table(-1)
+    d.set(StmtId(2), 20)                                   // grows to 3 slots; 0,1 padded with fill
+    let gap_ok = d.get(StmtId(0)) == -1                    // in-range but unwritten -> fill
+    let end_ok = d.get(StmtId(9)) == -1                    // past the high-water mark -> fill
+    d.set(StmtId(2), 22)                                   // overwrite an existing slot
+    let over_ok = d.get(StmtId(2)) == 22 && d.count() == 3 // latest value wins, no growth
+
+    let mut s: SparseTable<StmtId, int> = new_sparse_table()
+    s.set(StmtId(7), 70)
+    let present_ok = s.get_or(StmtId(7), -1) == 70         // present -> the stored value
+    let absent_ok = s.get_or(StmtId(8), -1) == -1          // absent -> the fallback
+    s.set(StmtId(7), 71)                                   // upsert
+    let upsert_ok = s.get_or(StmtId(7), -1) == 71 && s.len() == 1 // overwrites in place, len fixed
+
+    "gap=${yn(gap_ok)} end=${yn(end_ok)} over=${yn(over_ok)} present=${yn(present_ok)} absent=${yn(absent_ok)} upsert=${yn(upsert_ok)}"
 }

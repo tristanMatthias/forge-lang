@@ -15,10 +15,15 @@
 //                   (set + grow + count over the arena's ids)
 //   - nonleaf=<k> : a SparseTable<StmtId,int> stored only the non-leaf stmts
 //                   (sparse set + len)
-//   - fill=y      : an id past the high-water mark reads the dense fill default
-//   - upsert=y    : re-recording a present sparse id overwrites in place (len
-//                   unchanged)
-//   - absent=y    : get_or on an unrecorded sparse id returns the fallback
+// followed by an exhaustive op-coverage matrix over fresh deterministic tables
+// (side_table_ops_check) — these can't be constructed in the cross-package test
+// directly (nsvk), so they ride the in-@std probe:
+//   - gap=y     : a dense id in range but never written reads the fill default
+//   - end=y     : a dense id past the high-water mark reads the fill default
+//   - over=y    : a dense overwrite replaces the value without growing count
+//   - present=y : sparse get_or on a recorded id returns the stored value
+//   - absent=y  : sparse get_or on an unrecorded id returns the fallback
+//   - upsert=y  : re-recording a present sparse id overwrites in place (len fixed)
 // The facts live entirely in the side-tables, keyed by node id — no node is
 // mutated, which IS the §14.3 guarantee.
 //
@@ -44,14 +49,22 @@ spec "L1 side-tables record derived facts over the arena's ids (wired)" {
     then "a sparse non-leaf table stores only the 3 non-leaf statements" {
         l1_sidetable_output().contains("nonleaf=3")
     }
-    then "an id past the dense high-water mark reads the fill default" {
-        l1_sidetable_output().contains("fill=y")
+}
+
+spec "L1 side-table op coverage (dense + sparse)" {
+    then "dense: in-range-unwritten and past-end ids both read the fill default" {
+        let out = l1_sidetable_output()
+        out.contains("gap=y") && out.contains("end=y")
     }
-    then "re-recording a present sparse id overwrites in place (len unchanged)" {
+    then "dense: an overwrite replaces the value without growing count" {
+        l1_sidetable_output().contains("over=y")
+    }
+    then "sparse: get_or returns the stored value when present, the fallback when absent" {
+        let out = l1_sidetable_output()
+        out.contains("present=y") && out.contains("absent=y")
+    }
+    then "sparse: re-recording a present id overwrites in place (len unchanged)" {
         l1_sidetable_output().contains("upsert=y")
-    }
-    then "get_or on an unrecorded sparse id returns the fallback" {
-        l1_sidetable_output().contains("absent=y")
     }
 }
 
