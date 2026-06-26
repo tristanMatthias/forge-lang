@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, FORCE_UNWRAP_FN}
+use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
 use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
@@ -2218,7 +2218,7 @@ export fn value_to_stmt_list(v: Value) -> Result<List<SStmt>, string> {
 
 fn enum_value_to_expr(v: Value) -> Result<Expr, string> {
     if v.enum_type != "@std::avrac::core::Expr" { return .Err("decode: not an Expr") }
-    if v.enum_variant == "None" { return .Ok(Expr.None) }
+    if variant_is_optional_absent(v.enum_variant) { return .Ok(Expr.None) }
     let p = v.enum_payload
     if p.length == 0 { return .Err("decode: empty Expr payload") }
     let head: Value = p[0]
@@ -2394,7 +2394,7 @@ fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
                 // Check the variant name (intact for both kind="enum"
                 // and a boxed kind="expr") rather than kind so a boxed
                 // Null still reads as "no guard".
-                if g_val.enum_variant == "None" {
+                if variant_is_optional_absent(g_val.enum_variant) {
                     guard_opt = null
                 } else {
                     match value_to_expr_node(g_val) {
@@ -2631,7 +2631,7 @@ fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
             let cond = value_to_expr_node(p[0])?
             let then_b = value_to_stmt(p[1])?
             let else_v: Value = p[2]
-            let else_b = if else_v.enum_variant == "None" { none } else {
+            let else_b = if variant_is_optional_absent(else_v.enum_variant) { none } else {
                 match value_to_stmt(else_v) { .Ok(s) -> s, .Err(_) -> none }
             }
             .Ok(Stmt.If(cond, then_b, else_b))
