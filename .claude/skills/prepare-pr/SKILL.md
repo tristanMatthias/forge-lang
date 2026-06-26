@@ -128,8 +128,13 @@ use-the-language, beauty, centralize, missed-abstraction audit, consolidate
 similar APIs, eliminate redundant types, doc accuracy, API surface). That
 file IS the bar.
 
+**Do the consolidation in this PR — never file a DRY ticket to defer it.** The
+only exception is a consolidation the bootstrap genuinely blocks now (e.g.
+seed-gated: it needs a fix that isn't in the seed yet); say so in the PR body
+and do it the moment the seed advances — don't open a ticket.
+
 - **Round 1 — intra-file** duplication → extract local helpers.
-- **Round 2 — cross-file / cross-module** near-duplicates → shared helper, or file the cross-cutting refactor ticket and DRY locally.
+- **Round 2 — cross-file / cross-module** near-duplicates → extract the shared helper now (don't file it for later).
 - **Round 3 — API consolidation** — `has_X` / `find_X` / `count_X` share one underlying walker (wrappers fine).
 - **Round 4 — redundant types** — collapse near-duplicate structs/enums; name collisions confuse both the resolver and the reader.
 - **Round 5 — constants** — no magic strings/numbers; centralize. F-codes, mangling separators, sentinels live in one place.
