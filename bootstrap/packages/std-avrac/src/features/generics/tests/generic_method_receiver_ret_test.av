@@ -17,6 +17,8 @@
 // Receivers exercised: a plain param, a `let`, and — the case the L1 side-tables
 // need (ps3t.3.6) — a generic-struct value reached through a struct FIELD.
 
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
 type Box<V> = { v: V }
 impl Box<V> {
     fn get(self) -> V { self.v }
@@ -69,3 +71,46 @@ spec "two-param receiver substitution is positional" {
 
 fn pair_left(p: Pair<int, string>) -> int { p.left() }
 fn pair_right(p: Pair<int, string>) -> string { p.right() }
+
+// The receiver substitution recurses structurally into the return type: a
+// method returning `List<V>` on a `Bag<int>` must resolve to `List<int>`, so the
+// elements iterate as `int`. (tc_subst_vtype maps into container children.)
+type Bag<V> = { items: List<V> }
+impl Bag<V> {
+    fn all(self) -> List<V> { self.items }
+}
+
+spec "receiver substitution recurses into a container return type" {
+    then "Bag<int>.all() iterates as List<int>" {
+        let b: Bag<int> = Bag { items: [10, 20, 30] }
+        bag_sum(b) == 60
+    }
+}
+
+fn bag_sum(b: Bag<int>) -> int {
+    mut s = 0
+    for x in b.all() {
+        s = s + x
+    }
+    s
+}
+
+// Over-accept guard: the fix RESOLVES the receiver's param into the return type,
+// it does not blindly accept. A method whose resolved return (int, from
+// Box<int>.get) contradicts the declared return (string) must still be rejected.
+fn overaccept_output() -> string {
+    let fixture = "build/_gmr_overaccept.av"
+    let src = "type Box<V> = { v: V }\n" +
+        "impl Box<V> { fn get(self) -> V { self.v } }\n" +
+        "fn f(b: Box<int>) -> string { b.get() }\n" +
+        "fn main() { let _ = f(Box { v: 1 }) }\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "receiver substitution does not over-accept a wrong declared return" {
+    then "Box<int>.get() into a `-> string` body is still F1000 (produces int)" {
+        let out = overaccept_output()
+        out.contains("F1000") && out.contains("produces `int`")
+    }
+}
