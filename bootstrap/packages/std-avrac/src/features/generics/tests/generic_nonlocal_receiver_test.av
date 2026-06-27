@@ -45,6 +45,11 @@ spec "a generic struct reached through an Optional dispatches to the monomorphiz
     then "field access through an optional generic struct" {
         opt_param_field(box_of([1, 2, 3, 4])) == 4
     }
+    then "a null optional short-circuits field access to none" {
+        // The field path is `OptionalChain`, distinct from the method path's
+        // `OptionalMethodCall`, so its null short-circuit is worth asserting too.
+        opt_param_field(null) == -1
+    }
     then "method on a let-bound optional generic struct (no `Box__int>` mangle)" {
         let b: Box<int>? = box_of([5])
         (b?.count() ?? -1) == 1
