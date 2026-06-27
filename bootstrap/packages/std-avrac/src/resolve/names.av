@@ -1500,7 +1500,15 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             Expr.EnumCtor(qt, variant, rewrite_expr_list(ctx, args))
         }
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
-        .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
+        .Lambda(params, body) -> {
+            // Qualify the closure's PARAM type annotations (a generic instance
+            // `Box<int>` -> `mymod::Box<int>`) exactly as a fn decl's params are,
+            // then bind the qualified params into the body scope. Without this a
+            // method/field on the param later resolves against the un-qualified
+            // name and mono can't find the instance (the closure-receiver gap).
+            let rp = rewrite_param_types(ctx, params)
+            Expr.Lambda(rp, rewrite_expr(bind_params_ctx(ctx, rp), body))
+        }
         .ListComp(body, var, coll, filter) -> {
             // Collection sees the outer scope; body+filter see `var` bound.
             // Without binding, an Ident matching `var` could be wrongly

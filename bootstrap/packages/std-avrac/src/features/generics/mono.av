@@ -2490,7 +2490,11 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .ListLit(elems) -> .ListLit(rewrite_expr_list(elems, regs, insts))
         .Tuple(elems) -> .Tuple(rewrite_expr_list(elems, regs, insts))
         .MapLit(entries) -> .MapLit(rewrite_expr_list(entries, regs, insts))
-        .Lambda(params, body) -> .Lambda(params, rewrite_expr(body, regs, insts))
+        // Mangle the closure's PARAM types too (not just the body): a param
+        // typed with a generic instance (`(x: Box<int>) -> x.count()`) must pick
+        // up the monomorphized name, or a method/field on it dispatches to the
+        // bare `Box`. Mirrors how fn params are rewritten.
+        .Lambda(params, body) -> .Lambda(rewrite_param_types(params, regs, insts), rewrite_expr(body, regs, insts))
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, regs, insts), rewrite_expr(r, regs, insts))
         .Try(e) -> .Try(rewrite_expr(e, regs, insts))
         .With(obj, overrides) -> .With(rewrite_expr(obj, regs, insts), rewrite_field_inits(overrides, regs, insts))
