@@ -1056,10 +1056,20 @@ fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst
 /// untouched, so the string round-trip never corrupts a non-generic type.
 fn rewrite_instance_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueType {
     if vtype_is_unknown(vt) { return vt }
+    // A wrapper type (`T?`) names no generic instance itself, so the string-
+    // render path below would leave it untouched — but its INNER type may be a
+    // generic instance that must be mangled (`Box<int>?` -> `Box__int?`).
+    // Recurse structurally so the inner gets the same treatment a bare param
+    // would; otherwise a method/field on the unwrapped value dispatches to the
+    // un-monomorphized name (`undefined method Box.count`).
+    match vt {
+        .Optional(inner) -> return ValueType.Optional(rewrite_instance_vtype(inner, regs, insts))
+        _ -> {}
+    }
     let full = vtype_render_full(vt)
     let full_mangled = rewrite_type_name(full, regs, insts)
     // No rewrite ⇒ the type names no registered generic instance (a scalar, a
-    // plain struct, a fn / optional type). The bare-name path would mangle this
+    // plain struct, a fn type). The bare-name path would mangle this
     // identically (both consult the same registries), so skip it and return the
     // original — the common case, and it avoids a second render+mangle per param.
     if full_mangled == full { return vt }
@@ -2323,9 +2333,13 @@ fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<S
 /// calls on the RHS mangle to the same specialisation that
 /// `collect_inst_stmt` registered (so07.7.16).
 fn rewrite_let_binding(name: string, vt: ValueType, init: Expr, regs: GenRegs, insts: List<Inst>, is_mut: bool) -> Stmt {
-    let rendered = vtype_render_full(vt)
-    let rewritten = rewrite_type_name(rendered, regs, insts)
-    let new_vt = if rewritten != rendered { vtype_from_type_string(rewritten) } else { vt }
+    // Mangle the declared type through the SAME structural rewriter the param /
+    // field paths use, so a generic instance — at any depth, including behind an
+    // `Optional` wrapper — picks up its monomorphized name. The previous string-
+    // render path mangled `Box<int>?` to the garbage `Box__int>` (it rewrote the
+    // `<int>` but left the trailing `>`), so a later `b?.method()` dispatched to
+    // an unresolvable owner.
+    let new_vt = rewrite_instance_vtype(vt, regs, insts)
     let new_init = rewrite_expr_with_expected(init, vt, regs, insts)
     if is_mut { Stmt.Mut(name, new_vt, new_init) } else { Stmt.Let(name, new_vt, new_init) }
 }
