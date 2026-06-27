@@ -1,0 +1,66 @@
+// WHY: regression spec for generic method/field dispatch on a receiver reached
+// through an `Optional` wrapper — `b?.method()` / `b?.field` where `b` is a
+// generic-instance value held in a param, a `let`, or returned nullable (ebp6).
+//
+// The monomorphizer rewrites a declared generic-instance type to its mangled
+// name (`Box<int>` -> `Box__int`) so codegen can resolve `value.method()` /
+// `value.field`. The `Optional` wrapper slipped through that rewrite in two
+// positions, leaving the receiver with the BARE generic name (or a string-
+// mangled `Box__int>`), so dispatch/field-access failed at codegen:
+//   - a param/field `Optional` type — `rewrite_instance_vtype` named no generic
+//     instance for the wrapper itself and returned it untouched, so the inner
+//     stayed bare (`undefined method Box.count`; `field access on non-struct`).
+//   - a `let` `Optional` type — `rewrite_let_binding` string-rendered then
+//     re-mangled, turning `Box<int>?` into the garbage owner `Box__int>`.
+//
+// The fix makes `rewrite_instance_vtype` descend structurally into `Optional`
+// and routes the `let` path through that same rewriter (not the string round-
+// trip), so the unwrapped receiver dispatches exactly like a direct local one.
+// Covers generic structs and — since generic-enum methods now exist — enums.
+//
+// (`Box<int>` is constructed via the return-annotated `box_of`: a direct
+// `Box { … }` struct literal does not infer `V` from its field in a spec/then
+// context, a separate pre-existing inference gap unrelated to the dispatch fix.
+// `EBox.Wrap(n)` infers `T` from its payload, so the enum cases construct inline.)
+
+type Box<V> = { items: List<V> }
+impl Box<V> { fn count(self) -> int { self.items.length } }
+
+enum EBox<T> { Wrap(value: T) }
+impl EBox<T> { fn unwrap_or(self, d: T) -> T { match self { .Wrap(value) -> value } } }
+
+fn box_of(xs: List<int>) -> Box<int> { Box { items: xs } }
+
+fn opt_param_method(b: Box<int>?) -> int { b?.count() ?? -1 }
+fn opt_param_field(b: Box<int>?) -> int { b?.items.length ?? -1 }
+fn opt_enum_method(b: EBox<int>?) -> int { b?.unwrap_or(0) ?? -1 }
+
+spec "a generic struct reached through an Optional dispatches to the monomorphized name" {
+    then "method on an optional generic-struct param" {
+        opt_param_method(box_of([1, 2, 3])) == 3
+    }
+    then "a null optional short-circuits the method to none" {
+        opt_param_method(null) == -1
+    }
+    then "field access through an optional generic struct" {
+        opt_param_field(box_of([1, 2, 3, 4])) == 4
+    }
+    then "a null optional short-circuits field access to none" {
+        // The field path is `OptionalChain`, distinct from the method path's
+        // `OptionalMethodCall`, so its null short-circuit is worth asserting too.
+        opt_param_field(null) == -1
+    }
+    then "method on a let-bound optional generic struct (no `Box__int>` mangle)" {
+        let b: Box<int>? = box_of([5])
+        (b?.count() ?? -1) == 1
+    }
+}
+
+spec "the optional-receiver fix covers generic enums too" {
+    then "method on an optional generic enum" {
+        opt_enum_method(EBox.Wrap(42)) == 42
+    }
+    then "a null optional generic enum short-circuits" {
+        opt_enum_method(null) == -1
+    }
+}
