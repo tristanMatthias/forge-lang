@@ -43,7 +43,7 @@
 // shift token, so nested generics are seed-gated — the wrapper is the
 // additive equivalent (and the side-table value type).
 
-use core.{Expr, Stmt, Pattern, ValueType, SStmt}
+use core.{Expr, Stmt, Pattern, ValueType, SStmt, sstmt_at}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
 use core.{DenseTable, new_dense_table}
 
@@ -204,6 +204,11 @@ export type NodeStore = {
     pats: PatArena,
     types: TypeArena,
     lines: LineIndex,
+    // The top-level statement ids, in source order — the program's entry
+    // points into the StmtArena. `ingest_program` records them (the returned
+    // root id of each top-level ingest); `program_from_store` reads them back.
+    // Without these the arena has no "where does the program start" handle.
+    roots: List<StmtId>,
 }
 
 impl NodeStore {
@@ -225,12 +230,14 @@ impl NodeStore {
 /// Construct an empty store carrying `lines` (the per-file LineIndex used to
 /// turn spans back into line/col on demand).
 export fn new_node_store(lines: LineIndex) -> NodeStore {
+    let roots: List<StmtId> = []
     NodeStore {
         exprs: new_expr_arena(),
         stmts: new_stmt_arena(),
         pats: new_pat_arena(),
         types: new_type_arena(),
         lines,
+        roots,
     }
 }
 
@@ -245,6 +252,7 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
 export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
     let lines = build_line_index(source)
     let store = new_node_store(lines)
+    mut roots: List<StmtId> = []
     for (k, s) in stmts.enumerate() {
         // A synthesised top-level statement (line == 0, e.g. injected
         // intrinsics) has no source position — record the sentinel, never a
@@ -270,7 +278,26 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
             }
             byte_span(lo, hi)
         }
-        let _ = store.stmts.ingest(s.node, sp)
+        roots.push(store.stmts.ingest(s.node, sp))
     }
-    store
+    store with { roots }
+}
+
+/// Compat shim (reverse direction, ps3t.3.7): rebuild the top-level statement
+/// list from the arena — the inverse of `ingest_program`, so a pass migrated to
+/// read from the store can still hand the un-migrated passes an `SStmt` tree.
+/// Each root node is re-wrapped with its (line, col) recomputed from the span
+/// side-table (§14.2). Faithful for node structure + line/col at this migration
+/// phase (nodes still retain their boxed children, which carry their own
+/// positions); `file` is threaded in (the arena is single-source) and per-node
+/// provenance (`from_macro`) round-trips once the §14.3 provenance side-table
+/// lands — until then a reconstructed node is non-macro, so this is used only
+/// behind `AVRA_L1_INGEST` where no pass yet depends on it.
+export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for id in store.roots {
+        let lc = store.stmt_linecol(id)
+        out.push(sstmt_at(store.stmts.get(id), lc.line, lc.col, file))
+    }
+    out
 }
