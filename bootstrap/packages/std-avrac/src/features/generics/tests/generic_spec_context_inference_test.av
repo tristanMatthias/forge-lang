@@ -1,0 +1,101 @@
+// WHY: regression spec for generic type-param inference inside spec/given/then
+// blocks.
+//
+// Inferring a type param from a constructor's *value* (a struct field value or
+// an enum payload — never an annotation) requires the typeck ANNOTATE pass to
+// have stamped that nested value expression's `.ty`, which mono then reads.
+// The annotate pass walks `annotate_stmt`, and its `SpecBlock` / `GivenBlock`
+// cases fell into the `_ -> stmt` default — so it stopped at the spec boundary
+// and never descended into the bodies. A `then` condition therefore went
+// un-annotated, the constructor's value expression carried no `.ty`, and mono
+// could not bind the type param: `Box { items: [1,2,3] }` failed with F1002
+// "cannot infer type parameter V" / monomorphization failed.
+//
+// The exact same construction in a top-level `fn` body (whose `.Function` arm
+// IS descended) or in `main()` always worked — which is the tell that the gap
+// was the spec-block boundary, not the inference itself.
+//
+// The fix descends into both `SpecBlock` and `GivenBlock` bodies. `given` wraps
+// `then` (a `given` body is a list of `then`s), so BOTH nesting depths matter:
+// a `then` directly under `spec`, and a `then` under a `given`. This spec pins
+// both, for struct field-value inference and enum payload inference, crossed
+// with the constructs the inferred value must then compose with.
+
+type Box<V> = { items: List<V> }
+impl Box<V> {
+    fn count(self) -> int { self.items.length }
+    fn first_or(self, d: V) -> V {
+        if self.items.length > 0 { self.items[0] } else { d }
+    }
+}
+
+enum Wrap<T> {
+    Empty,
+    Full(value: T),
+}
+impl Wrap<T> {
+    fn or_else(self, d: T) -> T {
+        match self {
+            .Empty -> d
+            .Full(value) -> value
+        }
+    }
+}
+
+// Two type params: the field-value inference must bind BOTH from the literal.
+type Pair<A, B> = { a: A, b: B }
+impl Pair<A, B> {
+    fn left(self) -> A { self.a }
+}
+
+spec "generic struct field-value inference works directly under a spec" {
+    // `then` directly under `spec` — exercises the SpecBlock descent.
+    then "infer V=int from the field's list-literal value" {
+        let b = Box { items: [1, 2, 3] }
+        b.count() == 3
+    }
+    then "infer V=string from a string-payload field value" {
+        let bs = Box { items: ["a", "b"] }
+        bs.first_or("?") == "a"
+    }
+    then "infer both type params of a two-param struct from its field values" {
+        let p = Pair { a: 7, b: "x" }
+        p.left() == 7
+    }
+}
+
+spec "generic inference works under a given block" {
+    // `then` nested under `given` — exercises the GivenBlock descent. Without it
+    // these conditions would be un-annotated exactly as the bare-spec ones were.
+    given "a freshly constructed generic value" {
+        then "struct field-value inference, nested one level deeper" {
+            let b = Box { items: [10, 20] }
+            b.count() == 2
+        }
+        then "enum payload inference, nested under given" {
+            let w = Wrap.Full(9)
+            w.or_else(0) == 9
+        }
+    }
+}
+
+spec "the inferred generic value composes with the rest of the language" {
+    then "the value flows through an if-expr" {
+        let b = Box { items: [5] }
+        let n = if b.count() > 0 { b.first_or(-1) } else { -1 }
+        n == 5
+    }
+    then "the value flows through a match" {
+        let w = Wrap.Full(8)
+        let v = match w { .Empty -> -1  .Full(x) -> x }
+        v == 8
+    }
+    then "an element of a list of inferred generics" {
+        let xs = [Box { items: [1] }, Box { items: [2, 3] }]
+        xs[0].count() + xs[1].count() == 3
+    }
+    then "enum payload inference with a string (pointer) payload" {
+        let ws = Wrap.Full("hi")
+        ws.or_else("?") == "hi"
+    }
+}

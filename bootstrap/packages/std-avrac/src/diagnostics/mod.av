@@ -197,6 +197,14 @@ export enum DiagCode {
     /// Display — define the method or convert the value through one
     /// of the primitive types first.
     MissingDisplay
+    /// F1004 — a declared generic type used with fewer type arguments
+    /// than it declares (`GenOpt` where `enum GenOpt<T>`). Such a type
+    /// does not determine a layout — a single body cannot serve every
+    /// instantiation's payload representation, so codegen would have to
+    /// GUESS one (the silent wrong-layout / segfault class). Apply the
+    /// type (`GenOpt<int>`) or make the function generic over the
+    /// missing parameter (`fn f<T>(x: GenOpt<T>)`).
+    UnderAppliedGeneric
     /// F1043 — method call on a receiver whose type has no such
     /// method. The message lists the receiver's available methods.
     UnknownMethod
@@ -387,6 +395,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .WrongArgCount       -> ErrorDef { code: "F1001", help: "check the function's declared arity against the call site" }
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
         .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
+        .UnderAppliedGeneric -> ErrorDef { code: "F1004", help: "apply the type's arguments (`Foo<int>`), or make the function generic over the missing parameter (`fn f<T>(x: Foo<T>)`)" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }

@@ -3,12 +3,12 @@ enum GenResult<T, E> {
     Err(error: E),
 }
 
-fn gen_divide(a: int, b: int) -> GenResult {
+fn gen_divide(a: int, b: int) -> GenResult<int, string> {
     if b == 0 { return GenResult.Err("division by zero") }
     GenResult.Ok(a / b)
 }
 
-fn gen_result_describe(r: GenResult) -> string {
+fn gen_result_describe(r: GenResult<int, string>) -> string {
     match r {
         .Ok(v) -> string(v)
         .Err(e) -> "propagated: ${e}"

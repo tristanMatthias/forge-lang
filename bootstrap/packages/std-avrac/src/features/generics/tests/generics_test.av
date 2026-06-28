@@ -12,7 +12,7 @@ enum GOption<T> {
     Some(value: T),
 }
 
-fn g_show_opt(opt: GOption) -> string {
+fn g_show_opt(opt: GOption<int>) -> string {
     match opt {
         .None -> "none"
         .Some(v) -> string(v)

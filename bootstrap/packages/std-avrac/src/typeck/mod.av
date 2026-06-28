@@ -981,6 +981,72 @@ fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
     list_map(types, (t: ValueType) -> resolve_vtype(tc, t))
 }
 
+// ── F1004 — under-applied generic gate (spec Axis 20; the totality rule) ──
+//
+// A representation/layout decision must never be made from a type that does
+// not uniquely determine a representation. A declared generic used with fewer
+// type arguments than it declares (`GenOpt` where `enum GenOpt<T>`) is exactly
+// such a type: a single non-generic body cannot serve every instantiation's
+// payload representation, so codegen would otherwise pick one by first-match —
+// the silent wrong-layout / segfault class. Reject it here, before codegen,
+// with a clear diagnostic instead of a guess.
+
+/// Recursively verify every declared-generic reference inside a RESOLVED
+/// ValueType is fully applied. Recurses through container / wrapper types so a
+/// bare generic nested in `List<…>`, `T?`, a tuple, a union, or a fn type is
+/// caught too. Non-generic names (declared arity 0) and bare type params (`T`,
+/// not a declared type) are naturally exempt — their arity lookup is empty.
+fn tc_check_type_applied(tc: TC, vt: ValueType) -> TC {
+    match vt {
+        .Enum(name, args, _) -> tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name))
+        .Struct(name, args, _) -> tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name))
+        .List(elem) -> tc_check_type_applied(tc, elem)
+        .Map(key, value) -> tc_check_type_applied(tc_check_type_applied(tc, key), value)
+        .Optional(inner) -> tc_check_type_applied(tc, inner)
+        .Newtype(_, inner, _) -> tc_check_type_applied(tc, inner)
+        .Union(types) -> tc_check_type_applied_list(tc, types)
+        .Tuple(elems) -> tc_check_type_applied_list(tc, elems)
+        .FnTyped(params, ret) -> tc_check_type_applied(tc_check_type_applied_list(tc, params), ret)
+        _ -> tc
+    }
+}
+
+/// `tc_check_type_applied` folded over a list of ValueTypes.
+fn tc_check_type_applied_list(tc: TC, types: List<ValueType>) -> TC {
+    mut cur = tc
+    for t in types { cur = tc_check_type_applied(cur, t) }
+    cur
+}
+
+/// Report F1004 when a declared generic (`tps.length > 0`) is given fewer
+/// type arguments than it declares, then recurse into whatever args ARE
+/// present so a nested bare generic (`Box<GenOpt>`) is still caught.
+fn tc_check_generic_arity(tc: TC, name: string, args: List<ValueType>, tps: List<TypeParamEntry>) -> TC {
+    let inner = tc_check_type_applied_list(tc, args)
+    if tps.length > 0 && args.length < tps.length {
+        return tc_report(inner, DiagCode.UnderAppliedGeneric,
+            "generic type `${name}` takes ${tps.length} type argument(s) but ${args.length} given — write `${name}<…>`, or make the function generic over the missing parameter")
+    }
+    inner
+}
+
+/// Run the F1004 gate over a function signature: every NON-`self` parameter
+/// plus the return type. `self` is exempt — its concrete type is the receiver,
+/// supplied (and monomorphized) at the call site, not a written annotation.
+/// Unknown / Void positions carry no layout claim, so they are skipped.
+fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
+    mut cur = tc
+    for p in params {
+        if p.name != "self" && !vtype_is_unknown(p.vtype) {
+            cur = tc_check_type_applied(cur, resolve_vtype(cur, p.vtype))
+        }
+    }
+    if !vtype_is_unknown(ret_vt) && !vtype_eq(ret_vt, .Void) {
+        cur = tc_check_type_applied(cur, resolve_vtype(cur, ret_vt))
+    }
+    cur
+}
+
 // ── Entry point ──
 
 /// Output of `typecheck_program`: the annotated stmt tree, the
@@ -1972,7 +2038,10 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // Other Expr variants are unaffected — check_expr_expected falls
     // through to check_expr for them.
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
-    let r = if has_annotation { check_expr_expected(tc, init, pre_declared) } else { check_expr(tc, init) }
+    // F1004: a bare/under-applied generic annotation (`let x: GenOpt = …`)
+    // determines no layout — reject before it reaches codegen.
+    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared) } else { tc }
+    let r = if has_annotation { check_expr_expected(gated, init, pre_declared) } else { check_expr(gated, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
     // An int bound to a pointer-layout annotation is a wild store (ry1a/w0kt; see
     // int_into_pointer_slot). The everything-is-i64 leniency the `.Int` skip below
@@ -2042,7 +2111,8 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         .Function(name, _, params, ret_vt, body) -> {
             avra_ice_push_fn(name)
             let inner = tc_enter(tc) with { current_fn: name }
-            let with_params = tc_bind_params(inner, params)
+            let gated = tc_check_signature_arity(inner, params, ret_vt)
+            let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
             let result = tc_exit(checked)
             avra_ice_pop_fn()
@@ -3900,8 +3970,16 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         .Defer(body) -> .Defer(annotate_expr(tc, body))
         .LetDestructure(names, init) -> .LetDestructure(names, annotate_expr(tc, init))
         .ThenBlock(name, cond) -> .ThenBlock(name, annotate_expr(tc, cond))
+        // A spec/given body is a statement list like any other block; descend so
+        // the `then` conditions (and any `let`s they reference) get their nested
+        // SExprs stamped. Without this the annotate pass stopped at the spec
+        // boundary, so a generic struct/enum constructed inside a `then` had no
+        // field-value `.ty` for mono to infer a type param from — the same
+        // construction in a top-level fn body (which IS annotated) worked.
+        .SpecBlock(name, body) -> .SpecBlock(name, annotate_stmts(tc, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, annotate_stmts(tc, body))
         .Parallel(body) -> .Parallel(annotate_stmts(tc, body))
-        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use, SpecBlock, GivenBlock, Select
+        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use, Select
     }
 }
 
