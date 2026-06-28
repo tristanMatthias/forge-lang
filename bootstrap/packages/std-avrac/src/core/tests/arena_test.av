@@ -143,6 +143,18 @@ spec "program_from_store round-trips the top-level statements" {
         let orig = [sstmt_at(Stmt.Break, 1, 1, ""), sstmt_at(Stmt.NoOp, 2, 1, "")]
         ingest_program(orig, "break\nx\n").roots.length == 2
     }
+    then "from_macro provenance round-trips per root (§14.3 side-table)" {
+        // A macro-introduced root and an ordinary one in the same program: the
+        // reverse shim must restore each one's `from_macro`, not flatten both to
+        // false (sstmt_at's default). Provenance is recorded sparsely — the
+        // ordinary root gets no entry and reads back as non-macro, which doubles
+        // as the sparseness check. Verified through the @std API (program_from_
+        // store → SStmt fields), not the SparseTable internals.
+        let orig = [SStmt { node: Stmt.Break, line: 1, col: 1, file: "t.av", from_macro: true },
+                    SStmt { node: Stmt.NoOp, line: 2, col: 1, file: "t.av", from_macro: false }]
+        let back = program_from_store(ingest_program(orig, "break\nx\n"), "t.av")
+        back.length == 2 && back[0].from_macro && !back[1].from_macro
+    }
 }
 
 // A synthesised statement (line 0, e.g. an injected intrinsic) has no source
