@@ -1034,7 +1034,8 @@ fn tc_check_generic_arity(tc: TC, name: string, args: List<ValueType>, tps: List
 /// plus the return type. `self` is exempt — its concrete type is the receiver,
 /// supplied (and monomorphized) at the call site, not a written annotation.
 /// Unknown / Void positions carry no layout claim, so they are skipped.
-fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
+/// Exported so the closures feature can gate lambda params the same way.
+export fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
     mut cur = tc
     for p in params {
         if p.name != "self" && !vtype_is_unknown(p.vtype) {
@@ -1068,6 +1069,24 @@ fn tc_check_field_types(tc: TC, fields: List<FieldEntry>) -> TC {
 fn tc_check_variant_types(tc: TC, variants: List<Variant>) -> TC {
     mut cur = tc
     for v in variants { cur = tc_check_field_types(cur, v.fields) }
+    cur
+}
+
+/// Gate the signature of every method in a trait declaration. A default
+/// method body is compiled into each impl that inherits it, and a required
+/// signature is the contract every impl must match — both claim a layout, so
+/// a bare generic in a trait method's params/return is gated like a free fn's.
+fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
+    mut cur = tc
+    for ss in methods {
+        // A trait method with a body parses to `Function`; a body-less required
+        // signature parses to `ExternFn` (see trait_decl/parser.av). Gate both.
+        cur = match stmt_unwrap(ss.node) {
+            .Function(_, _, params, ret_vt, _) -> tc_check_signature_arity(cur, params, ret_vt)
+            .ExternFn(_, params, ret_vt) -> tc_check_signature_arity(cur, params, ret_vt)
+            _ -> cur
+        }
+    }
     cur
 }
 
@@ -2160,6 +2179,11 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         .ShapeDecl(_, fields) -> tc_check_field_types(tc, fields)
         .EnumDecl(_, _, variants) -> tc_check_variant_types(tc, variants)
         .NewtypeDecl(_, inner_vt) -> tc_check_type_applied(tc, resolve_vtype(tc, inner_vt))
+        // An extern's params + return are an FFI ABI claim codegen lowers to a
+        // `declare` and coerces call args against — also a layout-determining
+        // position, so a bare generic there is gated like any other.
+        .ExternFn(_, params, ret_vt) -> tc_check_signature_arity(tc, params, ret_vt)
+        .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, methods)
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,
         // while_check, for_check, for_in_check, defer_check,

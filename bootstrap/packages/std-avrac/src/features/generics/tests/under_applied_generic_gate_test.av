@@ -105,6 +105,33 @@ type Wrapped = GenOpt
 fn main() { let w = Wrapped(GenOpt.Some(1)) }")
         out.contains("F1004")
     }
+    then "a bare generic LAMBDA parameter is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let f = (x: GenOpt) -> 0  let r = f(GenOpt.Some(1)) }")
+        out.contains("F1004")
+    }
+    then "an untyped lambda parameter compiles (no annotation to gate)" {
+        let out = uag_compile_out("fn main() { let f = (x) -> 0  let r = f(7) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic EXTERN parameter is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+extern fn ext(x: GenOpt) -> int
+fn main() { }")
+        out.contains("F1004")
+    }
+    then "a bare generic in a TRAIT default-method signature is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+trait Show { fn show(self, o: GenOpt) -> int { 0 } }
+fn main() { }")
+        out.contains("F1004")
+    }
+    then "a bare generic in a required TRAIT method signature is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+trait Show { fn show(self, o: GenOpt) -> int }
+fn main() { }")
+        out.contains("F1004")
+    }
 }
 
 spec "the gate does not over-fire" {

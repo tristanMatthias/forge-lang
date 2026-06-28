@@ -3,7 +3,7 @@
 // `emit_lambda` and parser helpers are in scope without self-imports.
 use core.{feature_new, Feature}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
-use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
+use typeck.{check_expr, tc_bind_params, tc_check_signature_arity, tc_enter, tc_er, tc_exit}
 
 /// Register the `(x, y) -> body` lambda + closure feature.
 /// Captures referenced bindings from the enclosing scope; spec
@@ -40,7 +40,11 @@ fn closure_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Lambda(params, body) -> {
             let inner = tc_enter(tc)
-            let with_params = tc_bind_params(inner, params)
+            // F1004: a typed lambda parameter is a layout-determining position
+            // like any fn param — a bare generic there is the same unguarded
+            // hole. (No return annotation on a lambda, so gate params only.)
+            let gated = tc_check_signature_arity(inner, params, ValueType.Void)
+            let with_params = tc_bind_params(gated, params)
             let b = check_expr(with_params, body)
             let after = tc_exit(b.tc)
             tc_er(after, ValueType.Fn(b.ty))
