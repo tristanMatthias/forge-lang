@@ -195,6 +195,27 @@ export fn type_short_name(name: string) -> string {
     name
 }
 
+/// Flatten a `::`-qualified name into a `__`-joined mangle segment, so a
+/// monomorphized instance of a generic declared in module `m` (`m::Box`) gets
+/// a name distinct from a same-short-named generic in another module
+/// (`other::Box`). Example: `"a::b::Box" → "a__b__Box"`; a bare name is
+/// returned unchanged. The monomorphizer uses this ONLY to disambiguate a
+/// short name shared by two declarations across modules — the non-colliding
+/// path keeps `type_short_name`, so the common case (and the compiler's own
+/// emitted IR, whose generic short names are already globally unique) is
+/// byte-identical.
+export fn qualified_mangle_base(name: string) -> string {
+    if !name.contains("::") { return name }
+    let parts = name.split("::")
+    mut out = ""
+    mut i = 0
+    while i < parts.length {
+        if out == "" { out = parts[i] } else { out = mangle_join(out, parts[i]) }
+        i = i + 1
+    }
+    out
+}
+
 /// Heuristic: a name is method-mangled if it contains `__`. Cheap;
 /// false positives are impossible because user identifiers can't
 /// contain `__` (spec Axis 28).
