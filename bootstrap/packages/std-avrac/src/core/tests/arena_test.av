@@ -16,7 +16,7 @@
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 use @std.avrac.core.{new_expr_arena, new_pat_arena, new_type_arena, Expr, Pattern, ValueType}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
-use @std.avrac.core.{ingest_program, sstmt_at, Stmt, SStmt, StmtId}
+use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, render_stmt_list}
 
 fn l1_ingest_output() -> string {
     // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
@@ -113,6 +113,35 @@ spec "ingest_program handles an empty program" {
     then "no statements means an empty StmtArena" {
         let stmts: List<SStmt> = []
         ingest_program(stmts, "").stmts.count() == 0
+    }
+}
+
+// The reverse shim (ps3t.3.7): program_from_store rebuilds the top-level SStmt
+// list from the arena roots — the inverse of ingest_program. A pass migrated to
+// read from the store hands this back to the un-migrated passes. At this phase
+// it must round-trip structure (render) + recomputed (line, col) + file.
+spec "program_from_store round-trips the top-level statements" {
+    then "ingest then reverse rebuilds the same program (structure + positions)" {
+        // Three DISTINCT roots so order + node identity are actually checked.
+        let orig = [sstmt_at(Stmt.Break, 1, 1, "t.av"),
+                    sstmt_at(Stmt.Continue, 2, 1, "t.av"),
+                    sstmt_at(Stmt.NoOp, 3, 1, "t.av")]
+        let store = ingest_program(orig, "break\ncontinue\nx\n")
+        let back = program_from_store(store, "t.av")
+        back.length == 3
+            && render_stmt_list(back) == render_stmt_list(orig)
+            && back[0].line == 1 && back[0].col == 1
+            && back[1].line == 2 && back[1].col == 1
+            && back[2].line == 3 && back[2].col == 1
+            && back[2].file == "t.av"
+    }
+    then "an empty program round-trips to an empty list" {
+        let empty: List<SStmt> = []
+        program_from_store(ingest_program(empty, ""), "t.av").length == 0
+    }
+    then "the roots list matches the top-level statement count" {
+        let orig = [sstmt_at(Stmt.Break, 1, 1, ""), sstmt_at(Stmt.NoOp, 2, 1, "")]
+        ingest_program(orig, "break\nx\n").roots.length == 2
     }
 }
 
