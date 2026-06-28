@@ -996,17 +996,13 @@ fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
 /// bare generic nested in `List<…>`, `T?`, a tuple, a union, or a fn type is
 /// caught too. `scope_tp` is the in-scope type parameters (the enclosing fn's
 /// or decl's): a name that IS a type param is exempt even when a declared
-/// generic type SHADOWS it (`fn id<T>(x: T)` with a global `type T<U>` — `T`
+/// generic type SHADOWS it (`fn id<T>(x: T)` with a top-level `type T<U>` — `T`
 /// here is the param, not the type). A non-shadowing type param is exempt
 /// anyway, since it names no declared type (arity lookup empty).
 fn tc_check_type_applied(tc: TC, vt: ValueType, scope_tp: List<TypeParamEntry>) -> TC {
     match vt {
-        .Enum(name, args, _) ->
-            if type_param_has(scope_tp, name) { tc_check_type_applied_list(tc, args, scope_tp) }
-            else { tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name), scope_tp) }
-        .Struct(name, args, _) ->
-            if type_param_has(scope_tp, name) { tc_check_type_applied_list(tc, args, scope_tp) }
-            else { tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name), scope_tp) }
+        .Enum(name, args, _) -> tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name), scope_tp)
+        .Struct(name, args, _) -> tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name), scope_tp)
         .List(elem) -> tc_check_type_applied(tc, elem, scope_tp)
         .Map(key, value) -> tc_check_type_applied(tc_check_type_applied(tc, key, scope_tp), value, scope_tp)
         .Optional(inner) -> tc_check_type_applied(tc, inner, scope_tp)
@@ -1027,10 +1023,13 @@ fn tc_check_type_applied_list(tc: TC, types: List<ValueType>, scope_tp: List<Typ
 
 /// Report F1004 when a declared generic (`decl_tps.length > 0`) is given fewer
 /// type arguments than it declares, then recurse into whatever args ARE
-/// present so a nested bare generic (`Box<GenOpt>`) is still caught.
+/// present so a nested bare generic (`Box<GenOpt>`) is still caught. A name
+/// that is an in-scope type param is exempt — it's the param, not a shadowed
+/// declared type (`fn id<T>(x: T)` with a top-level `type T<U>`); the arity
+/// exemption lives here so both the Enum and Struct paths share it.
 fn tc_check_generic_arity(tc: TC, name: string, args: List<ValueType>, decl_tps: List<TypeParamEntry>, scope_tp: List<TypeParamEntry>) -> TC {
     let inner = tc_check_type_applied_list(tc, args, scope_tp)
-    if decl_tps.length > 0 && args.length < decl_tps.length {
+    if !type_param_has(scope_tp, name) && decl_tps.length > 0 && args.length < decl_tps.length {
         return tc_report(inner, DiagCode.UnderAppliedGeneric,
             "generic type `${name}` takes ${decl_tps.length} type argument(s) but ${args.length} given — write `${name}<…>`, or make the function generic over the missing parameter")
     }
