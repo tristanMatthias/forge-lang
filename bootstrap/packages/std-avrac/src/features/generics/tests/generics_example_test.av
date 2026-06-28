@@ -12,7 +12,7 @@ enum ExGOption<T> {
     Some(value: T),
 }
 
-fn ex_g_show_opt(opt: ExGOption) -> string {
+fn ex_g_show_opt(opt: ExGOption<int>) -> string {
     match opt {
         .None -> string(0)
         .Some(v) -> string(v)

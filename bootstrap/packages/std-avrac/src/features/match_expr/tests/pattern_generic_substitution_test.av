@@ -29,14 +29,14 @@ enum WResult<T, E> {
     Err(error: E)
 }
 
-fn wresult_unwrap_ok(r: WResult) -> int {
+fn wresult_unwrap_ok(r: WResult<int, int>) -> int {
     match r {
         .Ok(value) -> value + 1
         .Err(_) -> 0
     }
 }
 
-fn wresult_unwrap_err(r: WResult) -> int {
+fn wresult_unwrap_err(r: WResult<int, int>) -> int {
     match r {
         .Err(error) -> error - 2
         .Ok(_) -> 0

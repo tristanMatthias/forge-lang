@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
@@ -979,6 +979,128 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
 /// Map `resolve_vtype` over each ValueType in a `List<ValueType>`.
 fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
     list_map(types, (t: ValueType) -> resolve_vtype(tc, t))
+}
+
+// ── F1004 — under-applied generic gate (spec Axis 20; the totality rule) ──
+//
+// A representation/layout decision must never be made from a type that does
+// not uniquely determine a representation. A declared generic used with fewer
+// type arguments than it declares (`GenOpt` where `enum GenOpt<T>`) is exactly
+// such a type: a single non-generic body cannot serve every instantiation's
+// payload representation, so codegen would otherwise pick one by first-match —
+// the silent wrong-layout / segfault class. Reject it here, before codegen,
+// with a clear diagnostic instead of a guess.
+
+/// Recursively verify every declared-generic reference inside a RESOLVED
+/// ValueType is fully applied. Recurses through container / wrapper types so a
+/// bare generic nested in `List<…>`, `T?`, a tuple, a union, or a fn type is
+/// caught too. `scope_tp` is the in-scope type parameters (the enclosing fn's
+/// or decl's): a name that IS a type param is exempt even when a declared
+/// generic type SHADOWS it (`fn id<T>(x: T)` with a top-level `type T<U>` — `T`
+/// here is the param, not the type). A non-shadowing type param is exempt
+/// anyway, since it names no declared type (arity lookup empty).
+fn tc_check_type_applied(tc: TC, vt: ValueType, scope_tp: List<TypeParamEntry>) -> TC {
+    match vt {
+        .Enum(name, args, _) -> tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name), scope_tp)
+        .Struct(name, args, _) -> tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name), scope_tp)
+        .List(elem) -> tc_check_type_applied(tc, elem, scope_tp)
+        .Map(key, value) -> tc_check_type_applied(tc_check_type_applied(tc, key, scope_tp), value, scope_tp)
+        .Optional(inner) -> tc_check_type_applied(tc, inner, scope_tp)
+        .Newtype(_, inner, _) -> tc_check_type_applied(tc, inner, scope_tp)
+        .Union(types) -> tc_check_type_applied_list(tc, types, scope_tp)
+        .Tuple(elems) -> tc_check_type_applied_list(tc, elems, scope_tp)
+        .FnTyped(params, ret) -> tc_check_type_applied(tc_check_type_applied_list(tc, params, scope_tp), ret, scope_tp)
+        _ -> tc
+    }
+}
+
+/// `tc_check_type_applied` folded over a list of ValueTypes.
+fn tc_check_type_applied_list(tc: TC, types: List<ValueType>, scope_tp: List<TypeParamEntry>) -> TC {
+    mut cur = tc
+    for t in types { cur = tc_check_type_applied(cur, t, scope_tp) }
+    cur
+}
+
+/// Report F1004 when a declared generic (`decl_tps.length > 0`) is given fewer
+/// type arguments than it declares, then recurse into whatever args ARE
+/// present so a nested bare generic (`Box<GenOpt>`) is still caught. A name
+/// that is an in-scope type param is exempt — it's the param, not a shadowed
+/// declared type (`fn id<T>(x: T)` with a top-level `type T<U>`); the arity
+/// exemption lives here so both the Enum and Struct paths share it.
+fn tc_check_generic_arity(tc: TC, name: string, args: List<ValueType>, decl_tps: List<TypeParamEntry>, scope_tp: List<TypeParamEntry>) -> TC {
+    let inner = tc_check_type_applied_list(tc, args, scope_tp)
+    if !type_param_has(scope_tp, name) && decl_tps.length > 0 && args.length < decl_tps.length {
+        return tc_report(inner, DiagCode.UnderAppliedGeneric,
+            "generic type `${name}` takes ${decl_tps.length} type argument(s) but ${args.length} given — write `${name}<…>`, or make the function generic over the missing parameter")
+    }
+    inner
+}
+
+/// Run the F1004 gate over a function signature: every NON-`self` parameter
+/// plus the return type, with the fn's own type params in scope so a param
+/// named after a type param is exempt. `self` is exempt — its concrete type is
+/// the receiver, supplied (and monomorphized) at the call site. Unknown / Void
+/// positions carry no layout claim, so they are skipped.
+fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType, scope_tp: List<TypeParamEntry>) -> TC {
+    mut cur = tc
+    for p in params {
+        if p.name != "self" && !vtype_is_unknown(p.vtype) {
+            cur = tc_check_type_applied(cur, resolve_vtype(cur, p.vtype), scope_tp)
+        }
+    }
+    if !vtype_is_unknown(ret_vt) && !vtype_eq(ret_vt, .Void) {
+        cur = tc_check_type_applied(cur, resolve_vtype(cur, ret_vt), scope_tp)
+    }
+    cur
+}
+
+/// No-type-param entry point for callers with no enclosing generic context
+/// (lambdas, externs). Exported for the closures feature.
+export fn tc_check_signature_arity_top(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
+    tc_check_signature_arity(tc, params, ret_vt, empty_type_params())
+}
+
+/// Run the F1004 gate over a struct/shape's fields (or an enum variant's
+/// payload — same `FieldEntry` shape). A field stores a value, so a bare
+/// generic field type is the same unguarded layout hole as a bare parameter.
+/// A generic decl's own type params (`items: List<V>`) are exempt — `V` is not
+/// a declared type, so its arity lookup is empty. Runs in the check pass, after
+/// `collect_decls` populates the registries, so forward-referenced generics
+/// resolve.
+fn tc_check_field_types(tc: TC, fields: List<FieldEntry>, scope_tp: List<TypeParamEntry>) -> TC {
+    mut cur = tc
+    for f in fields {
+        if !vtype_is_unknown(f.resolved) {
+            cur = tc_check_type_applied(cur, resolve_vtype(cur, f.resolved), scope_tp)
+        }
+    }
+    cur
+}
+
+/// `tc_check_field_types` over every variant's payload in an enum.
+fn tc_check_variant_types(tc: TC, variants: List<Variant>, scope_tp: List<TypeParamEntry>) -> TC {
+    mut cur = tc
+    for v in variants { cur = tc_check_field_types(cur, v.fields, scope_tp) }
+    cur
+}
+
+/// Gate the signature of every method in a trait declaration. A default
+/// method body is compiled into each impl that inherits it, and a required
+/// signature is the contract every impl must match — both claim a layout, so
+/// a bare generic in a trait method's params/return is gated like a free fn's.
+fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
+    mut cur = tc
+    for ss in methods {
+        // A trait method with a body parses to `Function`; a body-less required
+        // signature parses to `ExternFn` (see trait_decl/parser.av). Gate both,
+        // with the method's own type params in scope.
+        cur = match stmt_unwrap(ss.node) {
+            .Function(_, mtp, params, ret_vt, _) -> tc_check_signature_arity(cur, params, ret_vt, mtp)
+            .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(cur, params, ret_vt)
+            _ -> cur
+        }
+    }
+    cur
 }
 
 // ── Entry point ──
@@ -1972,7 +2094,12 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // Other Expr variants are unaffected — check_expr_expected falls
     // through to check_expr for them.
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
-    let r = if has_annotation { check_expr_expected(tc, init, pre_declared) } else { check_expr(tc, init) }
+    // F1004: a bare/under-applied generic annotation (`let x: GenOpt = …`)
+    // determines no layout — reject before it reaches codegen. (No enclosing
+    // type params threaded to bindings; a type-param-shadowed local annotation
+    // is the residual tracked under the totality lint.)
+    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared, empty_type_params()) } else { tc }
+    let r = if has_annotation { check_expr_expected(gated, init, pre_declared) } else { check_expr(gated, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
     // An int bound to a pointer-layout annotation is a wild store (ry1a/w0kt; see
     // int_into_pointer_slot). The everything-is-i64 leniency the `.Int` skip below
@@ -2039,10 +2166,11 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .Function(name, _, params, ret_vt, body) -> {
+        .Function(name, tp, params, ret_vt, body) -> {
             avra_ice_push_fn(name)
             let inner = tc_enter(tc) with { current_fn: name }
-            let with_params = tc_bind_params(inner, params)
+            let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
+            let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
             let result = tc_exit(checked)
             avra_ice_pop_fn()
@@ -2056,6 +2184,21 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .Module(_, body) -> check_stmts(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, inner.node)
+        // F1004: a stored field / variant payload / newtype inner is a
+        // layout-determining position, so a bare generic there is the same
+        // unguarded hole as a bare parameter. Gated here (not in collect_decls)
+        // so the registries are fully populated and forward-referenced generics
+        // resolve. No feature registers a check handler for these decls, so the
+        // arms are purely additive over the prior dispatch no-op.
+        .TypeDecl(_, tp, fields) -> tc_check_field_types(tc, fields, tp)
+        .ShapeDecl(_, fields) -> tc_check_field_types(tc, fields, empty_type_params())
+        .EnumDecl(_, tp, variants) -> tc_check_variant_types(tc, variants, tp)
+        .NewtypeDecl(_, inner_vt) -> tc_check_type_applied(tc, resolve_vtype(tc, inner_vt), empty_type_params())
+        // An extern's params + return are an FFI ABI claim codegen lowers to a
+        // `declare` and coerces call args against — also a layout-determining
+        // position, so a bare generic there is gated like any other.
+        .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(tc, params, ret_vt)
+        .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, methods)
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,
         // while_check, for_check, for_in_check, defer_check,
@@ -3900,9 +4043,38 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         .Defer(body) -> .Defer(annotate_expr(tc, body))
         .LetDestructure(names, init) -> .LetDestructure(names, annotate_expr(tc, init))
         .ThenBlock(name, cond) -> .ThenBlock(name, annotate_expr(tc, cond))
+        // A spec/given body is a statement list like any other block; descend so
+        // the `then` conditions (and any `let`s they reference) get their nested
+        // SExprs stamped. Without this the annotate pass stopped at the spec
+        // boundary, so a generic struct/enum constructed inside a `then` had no
+        // field-value `.ty` for mono to infer a type param from — the same
+        // construction in a top-level fn body (which IS annotated) worked.
+        .SpecBlock(name, body) -> .SpecBlock(name, annotate_stmts(tc, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, annotate_stmts(tc, body))
         .Parallel(body) -> .Parallel(annotate_stmts(tc, body))
-        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use, SpecBlock, GivenBlock, Select
+        // A select arm is a block that binds the recv value, exactly like
+        // for-in binds the loop var — descend so a generic construction in an
+        // arm body gets its SExprs stamped (mirrors select_check's binding).
+        .Select(arms) -> .Select(annotate_select_arms(tc, arms))
+        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use
     }
+}
+
+/// Annotate each select arm: bind the recv value to the channel's element type
+/// (mirroring `select_check`) so a generic construction in an arm body gets its
+/// SExprs stamped. The same hole the spec/given descent fixed, for `select`.
+fn annotate_select_arms(tc: TC, arms: List<SelectArm>) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    for arm in arms {
+        let new_chan = annotate_expr(tc, arm.chan)
+        let elem = match check_expr(tc, arm.chan).ty {
+            .Channel(e) -> e
+            _ -> ValueType.Unknown
+        }
+        let inner = tc_bind(tc, arm.binding, elem)
+        out.push(arm with { chan: new_chan, body: annotate_stmts(inner, arm.body) })
+    }
+    out
 }
 
 // Recursively annotate SExpr-containing sub-structures within an Expr.

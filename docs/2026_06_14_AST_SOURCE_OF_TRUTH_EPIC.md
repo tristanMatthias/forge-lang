@@ -430,6 +430,16 @@ Rides on Layers 3 (stable IDs) + 4 (serialization).
 not aspirations.*
 
 - **Stringly-typed tags** anywhere on the hot path (Layer 3 kills these).
+- **A representation/layout decision from an under-determined type** — the
+  type→layout boundary is **total**: codegen consumes only a fully-resolved type;
+  an `Unknown`, an unbound type param, an under-applied generic (`GenOpt` where
+  `GenOpt<T>` is declared), or an ambiguous name is a **hard compile error before
+  codegen, never a guess**. No first-match-by-name, no `i64`/`ptr` fallback for an
+  unresolved slot. Layer 3 kills the *mechanism* (string identity → interned id;
+  `5idg` makes mono structural); this rule adds the *invariant* identity alone
+  doesn't give — resolve totally or hard-error. Enforced by typeck gating (spec
+  Axis 20) + a lint flagging rep-boundary fallbacks. *(Tracked: `ps3t.4.5`;
+  concrete witness + first gate: `sh0g`.)*
 - **Eager-only design** — architect for on-demand/incremental even if we
   implement simply first (Layer 6).
 - **Unversioned serialization** — content-address it (bet 4) so cross-version

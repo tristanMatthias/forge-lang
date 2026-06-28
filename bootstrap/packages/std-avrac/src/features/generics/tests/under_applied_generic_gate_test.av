@@ -1,0 +1,167 @@
+// WHY: negative-path spec for the F1004 under-applied-generic gate.
+//
+// A declared generic type used with fewer type arguments than it declares
+// (`GenOpt` where `enum GenOpt<T>`) determines no layout: a single non-generic
+// body cannot serve every instantiation's payload representation, so codegen
+// would otherwise pick one by first-match — the silent wrong-layout / segfault
+// class. The typeck gate rejects it before codegen (spec Axis 20) with F1004.
+//
+// These fixtures compile real programs through `bs2 compile` and assert the
+// F-code in captured output (or `__AVRA_COMPILE_OK__` for the positive
+// controls). Each error case is paired with a fully-applied control so the gate
+// is proven to fire on the under-application specifically — not on the type.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn uag_compile_out(source: string) -> string {
+    let path = "/tmp/avra_uag_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "an under-applied generic in a fn signature is rejected (F1004)" {
+    then "a bare generic-enum PARAMETER is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn show(o: GenOpt) -> bool { match o { .None -> false  .Some(v) -> true } }
+fn main() { let r = show(GenOpt.Some(1)) }")
+        out.contains("F1004")
+    }
+    then "the fully-applied parameter compiles (positive control)" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn show(o: GenOpt<int>) -> bool { match o { .None -> false  .Some(v) -> true } }
+fn main() { let r = show(GenOpt.Some(1)) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic-struct PARAMETER is F1004" {
+        let out = uag_compile_out("type Box<T> = { val: T }
+fn unbox(b: Box) -> int { 0 }
+fn main() { let r = unbox(Box { val: 1 }) }")
+        out.contains("F1004")
+    }
+    then "a bare generic RETURN type is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn make() -> GenOpt { GenOpt.Some(1) }
+fn main() { let r = make() }")
+        out.contains("F1004")
+    }
+    then "the fully-applied return type compiles (positive control)" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn make() -> GenOpt<int> { GenOpt.Some(1) }
+fn main() { let r = make() }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "partial application and nesting are caught" {
+    then "a two-param generic given ONE argument is F1004" {
+        let out = uag_compile_out("type Pair<A, B> = { a: A, b: B }
+fn left(p: Pair<int>) -> int { p.a }
+fn main() { let r = left(Pair { a: 1, b: 2 }) }")
+        out.contains("F1004")
+    }
+    then "both type arguments compiles (positive control)" {
+        let out = uag_compile_out("type Pair<A, B> = { a: A, b: B }
+fn left(p: Pair<int, int>) -> int { p.a }
+fn main() { let r = left(Pair { a: 1, b: 2 }) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic NESTED in a List parameter is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn count(xs: List<GenOpt>) -> int { xs.length }
+fn main() { let r = count([GenOpt.Some(1)]) }")
+        out.contains("F1004")
+    }
+    then "a bare generic in a LET annotation is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let o: GenOpt = GenOpt.Some(1) }")
+        out.contains("F1004")
+    }
+}
+
+spec "stored positions (field / payload / newtype) are gated" {
+    then "a bare generic STRUCT FIELD is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+type Holder = { g: GenOpt }
+fn main() { let h = Holder { g: GenOpt.Some(1) } }")
+        out.contains("F1004")
+    }
+    then "a generic struct field over the decl's own type param compiles" {
+        // `items: List<V>` — V is Holder's type param, not a declared type, so
+        // it must NOT be flagged (the common, correct generic-struct case).
+        let out = uag_compile_out("type Holder<V> = { items: List<V> }
+fn main() { let h = Holder { items: [1, 2] } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic ENUM PAYLOAD is F1004" {
+        let out = uag_compile_out("enum Inner<T> { A(v: T) }
+enum Outer { Wrap(i: Inner) }
+fn main() { let o = Outer.Wrap(Inner.A(1)) }")
+        out.contains("F1004")
+    }
+    then "a bare generic NEWTYPE inner is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+type Wrapped = GenOpt
+fn main() { let w = Wrapped(GenOpt.Some(1)) }")
+        out.contains("F1004")
+    }
+    then "a bare generic LAMBDA parameter is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let f = (x: GenOpt) -> 0  let r = f(GenOpt.Some(1)) }")
+        out.contains("F1004")
+    }
+    then "an untyped lambda parameter compiles (no annotation to gate)" {
+        let out = uag_compile_out("fn main() { let f = (x) -> 0  let r = f(7) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic EXTERN parameter is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+extern fn ext(x: GenOpt) -> int
+fn main() { }")
+        out.contains("F1004")
+    }
+    then "a bare generic in a TRAIT default-method signature is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+trait Show { fn show(self, o: GenOpt) -> int { 0 } }
+fn main() { }")
+        out.contains("F1004")
+    }
+    then "a bare generic in a required TRAIT method signature is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+trait Show { fn show(self, o: GenOpt) -> int }
+fn main() { }")
+        out.contains("F1004")
+    }
+}
+
+spec "the gate does not over-fire" {
+    then "`self` is exempt — a generic impl method compiles" {
+        // self's resolved type is the bare generic receiver; the call site +
+        // monomorphization supply its concrete args, so it must NOT be flagged.
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+impl GenOpt<T> { fn present(self) -> bool { match self { .None -> false  .Some(v) -> true } } }
+fn main() { let r = GenOpt.Some(1).present() }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a NON-generic type used bare compiles (only generics are gated)" {
+        let out = uag_compile_out("type Plain = { x: int }
+fn get(p: Plain) -> int { p.x }
+fn main() { let r = get(Plain { x: 5 }) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an explicitly-generic fn over the bare type compiles" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn show<T>(o: GenOpt<T>) -> bool { match o { .None -> false  .Some(v) -> true } }
+fn main() { let r = show(GenOpt.Some(1)) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a type param that SHADOWS a declared generic type is not flagged" {
+        // `T` is `id`'s type param, even though a generic `type T<U>` is declared;
+        // the gate must treat the param-position `T` as the type param, not the
+        // shadowed nominal (it would otherwise false-positive F1004 on valid code).
+        let out = uag_compile_out("type T<U> = { value: U }
+fn id<T>(x: T) -> T { x }
+fn main() { let r = id(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
