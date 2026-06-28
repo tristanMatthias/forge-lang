@@ -994,58 +994,71 @@ fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
 /// Recursively verify every declared-generic reference inside a RESOLVED
 /// ValueType is fully applied. Recurses through container / wrapper types so a
 /// bare generic nested in `List<…>`, `T?`, a tuple, a union, or a fn type is
-/// caught too. Non-generic names (declared arity 0) and bare type params (`T`,
-/// not a declared type) are naturally exempt — their arity lookup is empty.
-fn tc_check_type_applied(tc: TC, vt: ValueType) -> TC {
+/// caught too. `scope_tp` is the in-scope type parameters (the enclosing fn's
+/// or decl's): a name that IS a type param is exempt even when a declared
+/// generic type SHADOWS it (`fn id<T>(x: T)` with a global `type T<U>` — `T`
+/// here is the param, not the type). A non-shadowing type param is exempt
+/// anyway, since it names no declared type (arity lookup empty).
+fn tc_check_type_applied(tc: TC, vt: ValueType, scope_tp: List<TypeParamEntry>) -> TC {
     match vt {
-        .Enum(name, args, _) -> tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name))
-        .Struct(name, args, _) -> tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name))
-        .List(elem) -> tc_check_type_applied(tc, elem)
-        .Map(key, value) -> tc_check_type_applied(tc_check_type_applied(tc, key), value)
-        .Optional(inner) -> tc_check_type_applied(tc, inner)
-        .Newtype(_, inner, _) -> tc_check_type_applied(tc, inner)
-        .Union(types) -> tc_check_type_applied_list(tc, types)
-        .Tuple(elems) -> tc_check_type_applied_list(tc, elems)
-        .FnTyped(params, ret) -> tc_check_type_applied(tc_check_type_applied_list(tc, params), ret)
+        .Enum(name, args, _) ->
+            if type_param_has(scope_tp, name) { tc_check_type_applied_list(tc, args, scope_tp) }
+            else { tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name), scope_tp) }
+        .Struct(name, args, _) ->
+            if type_param_has(scope_tp, name) { tc_check_type_applied_list(tc, args, scope_tp) }
+            else { tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name), scope_tp) }
+        .List(elem) -> tc_check_type_applied(tc, elem, scope_tp)
+        .Map(key, value) -> tc_check_type_applied(tc_check_type_applied(tc, key, scope_tp), value, scope_tp)
+        .Optional(inner) -> tc_check_type_applied(tc, inner, scope_tp)
+        .Newtype(_, inner, _) -> tc_check_type_applied(tc, inner, scope_tp)
+        .Union(types) -> tc_check_type_applied_list(tc, types, scope_tp)
+        .Tuple(elems) -> tc_check_type_applied_list(tc, elems, scope_tp)
+        .FnTyped(params, ret) -> tc_check_type_applied(tc_check_type_applied_list(tc, params, scope_tp), ret, scope_tp)
         _ -> tc
     }
 }
 
 /// `tc_check_type_applied` folded over a list of ValueTypes.
-fn tc_check_type_applied_list(tc: TC, types: List<ValueType>) -> TC {
+fn tc_check_type_applied_list(tc: TC, types: List<ValueType>, scope_tp: List<TypeParamEntry>) -> TC {
     mut cur = tc
-    for t in types { cur = tc_check_type_applied(cur, t) }
+    for t in types { cur = tc_check_type_applied(cur, t, scope_tp) }
     cur
 }
 
-/// Report F1004 when a declared generic (`tps.length > 0`) is given fewer
+/// Report F1004 when a declared generic (`decl_tps.length > 0`) is given fewer
 /// type arguments than it declares, then recurse into whatever args ARE
 /// present so a nested bare generic (`Box<GenOpt>`) is still caught.
-fn tc_check_generic_arity(tc: TC, name: string, args: List<ValueType>, tps: List<TypeParamEntry>) -> TC {
-    let inner = tc_check_type_applied_list(tc, args)
-    if tps.length > 0 && args.length < tps.length {
+fn tc_check_generic_arity(tc: TC, name: string, args: List<ValueType>, decl_tps: List<TypeParamEntry>, scope_tp: List<TypeParamEntry>) -> TC {
+    let inner = tc_check_type_applied_list(tc, args, scope_tp)
+    if decl_tps.length > 0 && args.length < decl_tps.length {
         return tc_report(inner, DiagCode.UnderAppliedGeneric,
-            "generic type `${name}` takes ${tps.length} type argument(s) but ${args.length} given — write `${name}<…>`, or make the function generic over the missing parameter")
+            "generic type `${name}` takes ${decl_tps.length} type argument(s) but ${args.length} given — write `${name}<…>`, or make the function generic over the missing parameter")
     }
     inner
 }
 
 /// Run the F1004 gate over a function signature: every NON-`self` parameter
-/// plus the return type. `self` is exempt — its concrete type is the receiver,
-/// supplied (and monomorphized) at the call site, not a written annotation.
-/// Unknown / Void positions carry no layout claim, so they are skipped.
-/// Exported so the closures feature can gate lambda params the same way.
-export fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
+/// plus the return type, with the fn's own type params in scope so a param
+/// named after a type param is exempt. `self` is exempt — its concrete type is
+/// the receiver, supplied (and monomorphized) at the call site. Unknown / Void
+/// positions carry no layout claim, so they are skipped.
+fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType, scope_tp: List<TypeParamEntry>) -> TC {
     mut cur = tc
     for p in params {
         if p.name != "self" && !vtype_is_unknown(p.vtype) {
-            cur = tc_check_type_applied(cur, resolve_vtype(cur, p.vtype))
+            cur = tc_check_type_applied(cur, resolve_vtype(cur, p.vtype), scope_tp)
         }
     }
     if !vtype_is_unknown(ret_vt) && !vtype_eq(ret_vt, .Void) {
-        cur = tc_check_type_applied(cur, resolve_vtype(cur, ret_vt))
+        cur = tc_check_type_applied(cur, resolve_vtype(cur, ret_vt), scope_tp)
     }
     cur
+}
+
+/// No-type-param entry point for callers with no enclosing generic context
+/// (lambdas, externs). Exported for the closures feature.
+export fn tc_check_signature_arity_top(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
+    tc_check_signature_arity(tc, params, ret_vt, empty_type_params())
 }
 
 /// Run the F1004 gate over a struct/shape's fields (or an enum variant's
@@ -1055,20 +1068,20 @@ export fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: Val
 /// a declared type, so its arity lookup is empty. Runs in the check pass, after
 /// `collect_decls` populates the registries, so forward-referenced generics
 /// resolve.
-fn tc_check_field_types(tc: TC, fields: List<FieldEntry>) -> TC {
+fn tc_check_field_types(tc: TC, fields: List<FieldEntry>, scope_tp: List<TypeParamEntry>) -> TC {
     mut cur = tc
     for f in fields {
         if !vtype_is_unknown(f.resolved) {
-            cur = tc_check_type_applied(cur, resolve_vtype(cur, f.resolved))
+            cur = tc_check_type_applied(cur, resolve_vtype(cur, f.resolved), scope_tp)
         }
     }
     cur
 }
 
 /// `tc_check_field_types` over every variant's payload in an enum.
-fn tc_check_variant_types(tc: TC, variants: List<Variant>) -> TC {
+fn tc_check_variant_types(tc: TC, variants: List<Variant>, scope_tp: List<TypeParamEntry>) -> TC {
     mut cur = tc
-    for v in variants { cur = tc_check_field_types(cur, v.fields) }
+    for v in variants { cur = tc_check_field_types(cur, v.fields, scope_tp) }
     cur
 }
 
@@ -1080,10 +1093,11 @@ fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
     mut cur = tc
     for ss in methods {
         // A trait method with a body parses to `Function`; a body-less required
-        // signature parses to `ExternFn` (see trait_decl/parser.av). Gate both.
+        // signature parses to `ExternFn` (see trait_decl/parser.av). Gate both,
+        // with the method's own type params in scope.
         cur = match stmt_unwrap(ss.node) {
-            .Function(_, _, params, ret_vt, _) -> tc_check_signature_arity(cur, params, ret_vt)
-            .ExternFn(_, params, ret_vt) -> tc_check_signature_arity(cur, params, ret_vt)
+            .Function(_, mtp, params, ret_vt, _) -> tc_check_signature_arity(cur, params, ret_vt, mtp)
+            .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(cur, params, ret_vt)
             _ -> cur
         }
     }
@@ -2082,8 +2096,10 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // through to check_expr for them.
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
     // F1004: a bare/under-applied generic annotation (`let x: GenOpt = …`)
-    // determines no layout — reject before it reaches codegen.
-    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared) } else { tc }
+    // determines no layout — reject before it reaches codegen. (No enclosing
+    // type params threaded to bindings; a type-param-shadowed local annotation
+    // is the residual tracked under the totality lint.)
+    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared, empty_type_params()) } else { tc }
     let r = if has_annotation { check_expr_expected(gated, init, pre_declared) } else { check_expr(gated, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
     // An int bound to a pointer-layout annotation is a wild store (ry1a/w0kt; see
@@ -2151,10 +2167,10 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .Function(name, _, params, ret_vt, body) -> {
+        .Function(name, tp, params, ret_vt, body) -> {
             avra_ice_push_fn(name)
             let inner = tc_enter(tc) with { current_fn: name }
-            let gated = tc_check_signature_arity(inner, params, ret_vt)
+            let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
             let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
             let result = tc_exit(checked)
@@ -2175,14 +2191,14 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         // so the registries are fully populated and forward-referenced generics
         // resolve. No feature registers a check handler for these decls, so the
         // arms are purely additive over the prior dispatch no-op.
-        .TypeDecl(_, _, fields) -> tc_check_field_types(tc, fields)
-        .ShapeDecl(_, fields) -> tc_check_field_types(tc, fields)
-        .EnumDecl(_, _, variants) -> tc_check_variant_types(tc, variants)
-        .NewtypeDecl(_, inner_vt) -> tc_check_type_applied(tc, resolve_vtype(tc, inner_vt))
+        .TypeDecl(_, tp, fields) -> tc_check_field_types(tc, fields, tp)
+        .ShapeDecl(_, fields) -> tc_check_field_types(tc, fields, empty_type_params())
+        .EnumDecl(_, tp, variants) -> tc_check_variant_types(tc, variants, tp)
+        .NewtypeDecl(_, inner_vt) -> tc_check_type_applied(tc, resolve_vtype(tc, inner_vt), empty_type_params())
         // An extern's params + return are an FFI ABI claim codegen lowers to a
         // `declare` and coerces call args against — also a layout-determining
         // position, so a bare generic there is gated like any other.
-        .ExternFn(_, params, ret_vt) -> tc_check_signature_arity(tc, params, ret_vt)
+        .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(tc, params, ret_vt)
         .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, methods)
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,

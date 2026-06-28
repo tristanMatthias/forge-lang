@@ -155,4 +155,13 @@ fn show<T>(o: GenOpt<T>) -> bool { match o { .None -> false  .Some(v) -> true } 
 fn main() { let r = show(GenOpt.Some(1)) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
+    then "a type param that SHADOWS a declared generic type is not flagged" {
+        // `T` is `id`'s type param, even though a generic `type T<U>` is declared;
+        // the gate must treat the param-position `T` as the type param, not the
+        // shadowed nominal (it would otherwise false-positive F1004 on valid code).
+        let out = uag_compile_out("type T<U> = { value: U }
+fn id<T>(x: T) -> T { x }
+fn main() { let r = id(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
 }
