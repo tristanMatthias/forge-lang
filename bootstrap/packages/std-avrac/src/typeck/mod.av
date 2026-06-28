@@ -1047,6 +1047,30 @@ fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType)
     cur
 }
 
+/// Run the F1004 gate over a struct/shape's fields (or an enum variant's
+/// payload — same `FieldEntry` shape). A field stores a value, so a bare
+/// generic field type is the same unguarded layout hole as a bare parameter.
+/// A generic decl's own type params (`items: List<V>`) are exempt — `V` is not
+/// a declared type, so its arity lookup is empty. Runs in the check pass, after
+/// `collect_decls` populates the registries, so forward-referenced generics
+/// resolve.
+fn tc_check_field_types(tc: TC, fields: List<FieldEntry>) -> TC {
+    mut cur = tc
+    for f in fields {
+        if !vtype_is_unknown(f.resolved) {
+            cur = tc_check_type_applied(cur, resolve_vtype(cur, f.resolved))
+        }
+    }
+    cur
+}
+
+/// `tc_check_field_types` over every variant's payload in an enum.
+fn tc_check_variant_types(tc: TC, variants: List<Variant>) -> TC {
+    mut cur = tc
+    for v in variants { cur = tc_check_field_types(cur, v.fields) }
+    cur
+}
+
 // ── Entry point ──
 
 /// Output of `typecheck_program`: the annotated stmt tree, the
@@ -2126,6 +2150,16 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .Module(_, body) -> check_stmts(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, inner.node)
+        // F1004: a stored field / variant payload / newtype inner is a
+        // layout-determining position, so a bare generic there is the same
+        // unguarded hole as a bare parameter. Gated here (not in collect_decls)
+        // so the registries are fully populated and forward-referenced generics
+        // resolve. No feature registers a check handler for these decls, so the
+        // arms are purely additive over the prior dispatch no-op.
+        .TypeDecl(_, _, fields) -> tc_check_field_types(tc, fields)
+        .ShapeDecl(_, fields) -> tc_check_field_types(tc, fields)
+        .EnumDecl(_, _, variants) -> tc_check_variant_types(tc, variants)
+        .NewtypeDecl(_, inner_vt) -> tc_check_type_applied(tc, resolve_vtype(tc, inner_vt))
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,
         // while_check, for_check, for_in_check, defer_check,

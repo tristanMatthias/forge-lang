@@ -79,6 +79,34 @@ fn main() { let o: GenOpt = GenOpt.Some(1) }")
     }
 }
 
+spec "stored positions (field / payload / newtype) are gated" {
+    then "a bare generic STRUCT FIELD is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+type Holder = { g: GenOpt }
+fn main() { let h = Holder { g: GenOpt.Some(1) } }")
+        out.contains("F1004")
+    }
+    then "a generic struct field over the decl's own type param compiles" {
+        // `items: List<V>` — V is Holder's type param, not a declared type, so
+        // it must NOT be flagged (the common, correct generic-struct case).
+        let out = uag_compile_out("type Holder<V> = { items: List<V> }
+fn main() { let h = Holder { items: [1, 2] } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic ENUM PAYLOAD is F1004" {
+        let out = uag_compile_out("enum Inner<T> { A(v: T) }
+enum Outer { Wrap(i: Inner) }
+fn main() { let o = Outer.Wrap(Inner.A(1)) }")
+        out.contains("F1004")
+    }
+    then "a bare generic NEWTYPE inner is F1004" {
+        let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
+type Wrapped = GenOpt
+fn main() { let w = Wrapped(GenOpt.Some(1)) }")
+        out.contains("F1004")
+    }
+}
+
 spec "the gate does not over-fire" {
     then "`self` is exempt — a generic impl method compiles" {
         // self's resolved type is the bare generic receiver; the call site +
