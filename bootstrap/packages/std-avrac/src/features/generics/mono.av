@@ -484,7 +484,13 @@ fn vtype_mangle_slug(t: ValueType, ambig: List<string>) -> string {
 ///    name — it's the reserved mangle separator.)
 fn mangle_slug_named(n: string, args: List<ValueType>, ambig: List<string>) -> string {
     let base = mangle_base(n, ambig)
-    if args.length == 0 || find_dunder(base) >= 0 { return base }
+    // The already-monomorphized guard tests the ORIGINAL short name, not `base`:
+    // an ambiguous `a::Box` flattens to `a__Box`, whose `__` is a module
+    // separator — NOT a monomorphization marker — so its args must still be
+    // appended (else `a::Box<int>` and `a::Box<string>` collapse to one slug).
+    // A genuine already-mangled inner name (`Box__int`, args baked in) keeps its
+    // dunder in the short name and is returned as-is.
+    if args.length == 0 || find_dunder(type_short_name(n)) >= 0 { return base }
     mut joined = ""
     mut i = 0
     while i < args.length {
@@ -2687,6 +2693,10 @@ export type MonoResult = { stmts: List<SStmt>, bag: DiagnosticBag }
 fn compute_ambig_short_names(regs: GenRegs) -> List<string> {
     mut shorts: List<string> = []
     mut quals: List<string> = []
+    // Generic fns mangle through the same `mangle_name_ordered` path as
+    // structs/enums (`fn id<T>` → `id__int`), so two modules' `id<T>` collide
+    // identically — include them in the scan.
+    for e in regs.fns { shorts.push(type_short_name(e.name))  quals.push(e.name) }
     for e in regs.structs { shorts.push(type_short_name(e.name))  quals.push(e.name) }
     for e in regs.enums { shorts.push(type_short_name(e.name))  quals.push(e.name) }
     mut ambig: List<string> = []
