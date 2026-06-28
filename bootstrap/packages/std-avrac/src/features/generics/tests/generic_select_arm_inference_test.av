@@ -1,0 +1,35 @@
+// WHY: regression — a generic construction whose type param is inferred from a
+// field value must work inside a `select` arm body. The typeck annotate pass
+// originally skipped `Select` (the same `_ -> stmt` default that skipped
+// spec/given blocks), so an arm body's nested SExprs got no `.ty` and mono
+// failed with F1002 "cannot infer type parameter". `annotate_stmt` now descends
+// into select arms, binding the recv value to the channel's element type exactly
+// as `select_check` does (and as for-in binds its loop var) — so the arm body is
+// annotated like any other block.
+
+type SBox<V> = { items: List<V> }
+impl SBox<V> {
+    fn count(self) -> int { self.items.length }
+}
+
+// The select lives in a top-level fn body (annotated via the `.Function` arm),
+// so this pins the core annotate-descent fix independently of the spec/given
+// descent — the `then` below only calls it.
+fn recv_then_build() -> int {
+    let ch = channel<int>(1)
+    ch.send(5)
+    mut got = 0
+    select {
+        n <- ch -> {
+            let b = SBox { items: [1, 2, 3] }
+            got = n + b.count()
+        }
+    }
+    got
+}
+
+spec "generic type-param inference inside a select arm body" {
+    then "a generic struct built in a select arm infers its param from the field value" {
+        recv_then_build() == 8
+    }
+}

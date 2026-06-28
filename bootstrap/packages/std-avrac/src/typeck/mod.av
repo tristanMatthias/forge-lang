@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
@@ -4037,8 +4037,29 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         .SpecBlock(name, body) -> .SpecBlock(name, annotate_stmts(tc, body))
         .GivenBlock(name, body) -> .GivenBlock(name, annotate_stmts(tc, body))
         .Parallel(body) -> .Parallel(annotate_stmts(tc, body))
-        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use, Select
+        // A select arm is a block that binds the recv value, exactly like
+        // for-in binds the loop var — descend so a generic construction in an
+        // arm body gets its SExprs stamped (mirrors select_check's binding).
+        .Select(arms) -> .Select(annotate_select_arms(tc, arms))
+        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use
     }
+}
+
+/// Annotate each select arm: bind the recv value to the channel's element type
+/// (mirroring `select_check`) so a generic construction in an arm body gets its
+/// SExprs stamped. The same hole the spec/given descent fixed, for `select`.
+fn annotate_select_arms(tc: TC, arms: List<SelectArm>) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    for arm in arms {
+        let new_chan = annotate_expr(tc, arm.chan)
+        let elem = match check_expr(tc, arm.chan).ty {
+            .Channel(e) -> e
+            _ -> ValueType.Unknown
+        }
+        let inner = tc_bind(tc, arm.binding, elem)
+        out.push(arm with { chan: new_chan, body: annotate_stmts(inner, arm.body) })
+    }
+    out
 }
 
 // Recursively annotate SExpr-containing sub-structures within an Expr.
