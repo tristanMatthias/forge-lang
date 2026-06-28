@@ -1,0 +1,46 @@
+// WHY: regression for a cross-module monomorphization mangle collision. Two
+// modules each declaring a generic with the SAME short name but a DIFFERENT
+// layout (`Box<V> = { items }` vs `Box<T> = { val }`), both instantiated at
+// `Box<int>`, used to mangle to one flat name `Box__int` (the module qualifier
+// was stripped). Codegen then registered a single struct under that name and
+// the other module's field access resolved against the wrong layout — a hard
+// `codegen error: unknown field` whenever both modules landed in one compilation
+// unit (e.g. two test files bundled into one shard, or a program that `mod`s
+// both). The monomorphizer now qualifies a short name shared across modules
+// (`xmgc_box_a__Box__int` vs `xmgc_box_b__Box__int`), so each instance keeps
+// its own layout. Collision-free programs mangle by short name exactly as
+// before (byte-identical IR), so the fix is exercised here through a genuine
+// multi-module fixture compiled as one unit via `mod`/`use` — the form a real
+// program hits, not just the test-runner's shard bundling.
+
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
+
+spec "cross-module generic mangle collision" {
+    then "two modules' same-named Box<int> each keep their own field layout" {
+        // Sibling module files live next to the main fixture; `mod` is
+        // file-based (the module name is the file's basename), so both are
+        // pulled into main's compilation unit and monomorphized together.
+        write_fixture("/tmp/xmgc_box_a.av",
+            "export type Box<V> = { items: List<V> }\n" +
+            "export fn mk_a() -> Box<int> { Box { items: [1, 2, 3] } }\n" +
+            "export fn count_items(b: Box<int>) -> int { b.items.length }\n")
+        write_fixture("/tmp/xmgc_box_b.av",
+            "export type Box<T> = { val: T }\n" +
+            "export fn mk_b() -> Box<int> { Box { val: 7 } }\n" +
+            "export fn get_val(b: Box<int>) -> int { b.val }\n")
+        let out = write_fixture_and_run("/tmp/xmgc_main.av",
+            "mod xmgc_box_a\n" +
+            "mod xmgc_box_b\n" +
+            "use xmgc_box_a.{mk_a, count_items}\n" +
+            "use xmgc_box_b.{mk_b, get_val}\n" +
+            "fn main() {\n" +
+            "    println(\"a=\" + string(count_items(mk_a())))\n" +
+            "    println(\"b=\" + string(get_val(mk_b())))\n" +
+            "}\n")
+        // A: `items` layout → 3; B: `val` layout → 7. Pre-fix, the shared
+        // `Box__int` mangle made one resolve against the other's layout —
+        // a `codegen error: unknown field`, so neither line would print.
+        out.contains("a=3") && out.contains("b=7")
+            && !out.contains("unknown field") && !out.contains("F9999")
+    }
+}
