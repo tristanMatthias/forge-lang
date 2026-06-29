@@ -16,6 +16,10 @@ on:
 
 permissions:
   contents: write
+  # Read the merged PR + the seed-verify PASS status it published, to decide
+  # whether the suite can be skipped (it already ran green pre-merge).
+  statuses: read
+  pull-requests: read
 
 concurrency:
   # Serialize advances; never cancel a publish mid-flight.
@@ -39,19 +43,38 @@ jobs:
       # seed `llc` is skipped when the pin + C inputs are unchanged.
       - uses: ./.github/actions/cache-seed
 
-      # The merged HEAD's seed×source fingerprint. A squash merge preserves the
-      # compiler-source blobs, so this matches the fingerprint the PR's
-      # seed-train-verify already published a PASS marker for. Tolerant: an
-      # empty fingerprint just means no skip (the suite runs).
+      # The merged HEAD's seed×source fingerprint (window_fingerprint). Tolerant:
+      # an empty fingerprint just means no skip (the suite runs).
       - id: fp
         shell: bash
         run: echo "fp=$(bash bootstrap/scripts/diagnose.sh --seed-verify-fp || true)" >> "$GITHUB_OUTPUT"
-      - id: passmarker
+
+      # Did the PR this squash commit came from already verify the suite for THIS
+      # exact fingerprint? Look up HEAD's PR, then its head commit's statuses for
+      # the context seed-suite-verified/<fp> (published by seed-train-verify only
+      # on a green suite). Context match == fingerprint match, so an intervening
+      # base change (different fp on HEAD) finds no matching status → no skip.
+      # Every failure path (no PR, no status, API error) leaves skip empty → the
+      # suite runs. The status can never assert a pass for an unverified suite,
+      # so this cannot skip a suite that did not already pass.
+      - id: skip
         if: steps.fp.outputs.fp != ''
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: .seedpass
-          key: seedpass-v1-${{ steps.fp.outputs.fp }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FP: ${{ steps.fp.outputs.fp }}
+        run: |
+          skip=""
+          pr_head="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq '.[0].head.sha' 2>/dev/null || true)"
+          if [ -n "$pr_head" ] && [ "$pr_head" != "null" ]; then
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head}/statuses" \
+              --jq "[.[] | select(.context == \"seed-suite-verified/${FP}\")][0].state" 2>/dev/null || true)"
+            if [ "$state" = "success" ]; then
+              skip="1"
+              echo "seed-suite-verified/${FP} = success on PR head ${pr_head} — skipping the suite"
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
       - name: Build from pin, verify, publish if diverged
         env:
@@ -61,12 +84,11 @@ jobs:
           # throttle (--slot-exec): 4-vCPU runners still benefit from
           # reduced unit-thread width for the non-compile workload.
           AVRA_TEST_JOBS: "2"
-          # Skip the redundant suite ONLY on an exact PASS-marker hit — i.e. the
-          # PR's seed-train-verify already ran the full suite green on this exact
-          # seed×source fingerprint (the marker is saved there only on success).
-          # Any miss → empty → the suite runs (today's behaviour). Build + fixed
-          # point + hermetic recompile + publish always run regardless.
-          AVRA_SEED_TRAIN_SKIP_SUITE: ${{ steps.passmarker.outputs.cache-hit == 'true' && '1' || '' }}
+          # Skip the redundant suite ONLY when the merged PR's seed-train-verify
+          # published a PASS status for this exact seed×source fingerprint. Any
+          # miss → empty → the suite runs (today's behaviour). Build + fixed point
+          # + hermetic recompile + publish always run regardless.
+          AVRA_SEED_TRAIN_SKIP_SUITE: ${{ steps.skip.outputs.skip }}
         run: bash bootstrap/scripts/diagnose.sh --seed-train
 
       - name: Commit the lock bump

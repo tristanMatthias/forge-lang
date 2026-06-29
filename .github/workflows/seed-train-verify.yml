@@ -22,7 +22,12 @@ on:
 # Least privilege: a trust gate that builds + runs PR code. It only reads the
 # tree and fetches the pinned seed release asset — never writes, never
 # publishes (the lock bump is seed-train.yml's alone). Pin read-only so a
-# repo-default change can't hand this job a write-capable token.
+# repo-default change can't hand this job a write-capable token. The PASS-status
+# publish needs statuses:write, but that grant is ISOLATED to a separate
+# no-checkout job below (publish-seed-verify-pass) that only runs on a green
+# verify — so the build/suite step (which runs PR code) never holds a token that
+# can write a commit status, keeping the "status exists iff the suite passed"
+# invariant unforgeable.
 permissions:
   contents: read
 
@@ -39,6 +44,9 @@ jobs:
     # Build-from-pin + fixed point + suite is ~the train's runtime; 30m of
     # headroom matches the bootstrap-window gate.
     timeout-minutes: 30
+    # Expose the verified fingerprint to the isolated publish job below.
+    outputs:
+      fp: ${{ steps.fp.outputs.fp }}
     steps:
       # Pinned to a commit (what @v4 resolves to at pin time): tags are
       # mutable and this workflow is a trust gate. Full history (depth 0,
@@ -84,21 +92,36 @@ jobs:
           AVRA_TEST_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
-      # Publish a PASS marker for this fingerprint — but ONLY on a fully green
-      # verify (`if: success()`). The post-merge seed-train restores it to skip
-      # its redundant suite re-run. Because the marker exists iff the suite
-      # actually passed here, the train can never skip an unverified suite; a
-      # concurrent merge that changed the seed/source yields a different
-      # fingerprint, so its train run misses the marker and runs the suite.
-      - name: Record seed-verify PASS marker
-        if: success() && steps.fp.outputs.fp != ''
-        shell: bash
+  # Publish the PASS fingerprint as a commit STATUS on the PR head — in an
+  # ISOLATED job so the only token that can write a status never coexists with
+  # the PR-code-running build/suite step above. It runs ONLY when the verify job
+  # succeeded (needs.result == 'success'), so the status exists iff this exact
+  # fingerprint's suite passed. The post-merge seed-train reads it (statuses are
+  # scope-independent, unlike actions/cache which scopes a PR's cache to the PR
+  # and hides it from the integration-branch train) and re-checks fp == its own
+  # HEAD fingerprint, so a concurrent base change makes the train's fp differ →
+  # no skip → it runs the suite. The fp is in the status CONTEXT so a stale
+  # status can't be mismatched as a pass for a different source. Same-repo PRs
+  # only: a fork PR gets a read-only token, so the gh api POST would fail the
+  # job — gate it out and let the train simply miss the status (and run the
+  # suite). No checkout: this job runs no PR code.
+  publish-seed-verify-pass:
+    needs: seed-train-verify
+    if: >-
+      needs.seed-train-verify.result == 'success'
+      && needs.seed-train-verify.outputs.fp != ''
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish seed-verify PASS status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FP: ${{ needs.seed-train-verify.outputs.fp }}
+          SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          mkdir -p .seedpass
-          echo "${{ steps.fp.outputs.fp }}" > .seedpass/ok
-      - name: Save seed-verify PASS marker
-        if: success() && steps.fp.outputs.fp != ''
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: .seedpass
-          key: seedpass-v1-${{ steps.fp.outputs.fp }}
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state=success \
+            -f context="seed-suite-verified/${FP}" \
+            -f description="spec suite verified for this seed+source fingerprint"
