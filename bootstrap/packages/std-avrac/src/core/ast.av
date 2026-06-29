@@ -148,6 +148,55 @@ export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
     unwrap_node_list(xs)
 }
 
+/// A child node as a boxed AST node, BEFORE the arena assigns it an id — the
+/// heterogeneous element the derive-generated `all_children()` yields, so one
+/// recursion can flatten a node's children across all four kinds (an `Expr`
+/// has `Stmt`/`Pattern`/`ValueType` children, etc.). The arena's cross-type
+/// ingest turns each `AnyNode` into a `NodeRef` (its id in the owning arena).
+/// Lives here (not arena.av) so the generated walker code spliced beside the
+/// AST enums can name it without a core-file import cycle.
+export enum AnyNode {
+    AnyExpr(node: Expr),
+    AnyStmt(node: Stmt),
+    AnyPat(node: Pattern),
+    AnyType(node: ValueType),
+}
+
+// Boxing helpers for the derive-generated `all_children()`. Only the four
+// bare-list forms need a helper; the generator composes everything else from
+// the existing walker helpers (a wrapper list via `unwrap_node_list`, a `Self?`
+// via `self_opt_to_list`, a `Wrapper<Self>?` via `unwrap_node_opt`, a single
+// child inline as `AnyX(field)` / `AnyX(field.node)`). One per node kind because
+// the `AnyNode` constructor differs by kind.
+
+/// Box each `Expr` of a list as an `AnyNode` child, order preserved.
+export fn box_expr_list(xs: List<Expr>) -> List<AnyNode> {
+    mut out: List<AnyNode> = []
+    for x in xs { out.push(AnyNode.AnyExpr(x)) }
+    out
+}
+
+/// Box each `Stmt` of a list as an `AnyNode` child, order preserved.
+export fn box_stmt_list(xs: List<Stmt>) -> List<AnyNode> {
+    mut out: List<AnyNode> = []
+    for x in xs { out.push(AnyNode.AnyStmt(x)) }
+    out
+}
+
+/// Box each `Pattern` of a list as an `AnyNode` child, order preserved.
+export fn box_pat_list(xs: List<Pattern>) -> List<AnyNode> {
+    mut out: List<AnyNode> = []
+    for x in xs { out.push(AnyNode.AnyPat(x)) }
+    out
+}
+
+/// Box each `ValueType` of a list as an `AnyNode` child, order preserved.
+export fn box_type_list(xs: List<ValueType>) -> List<AnyNode> {
+    mut out: List<AnyNode> = []
+    for x in xs { out.push(AnyNode.AnyType(x)) }
+    out
+}
+
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
 /// re-resolve knows which entries to walk.

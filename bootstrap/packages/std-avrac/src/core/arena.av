@@ -65,6 +65,34 @@ export type PatEdges = { ids: List<PatId> }
 /// The direct child `TypeId` edges of one node.
 export type TypeEdges = { ids: List<TypeId> }
 
+// ── Cross-type node model (A1: faithful cross-type ingest) ──
+//
+// The per-type `*Edges` above hold only SAME-type child ids — enough for the
+// stmt-only parallel index the arena was, but not for a faithful tree, where a
+// `Stmt` has `Expr` children, an `Expr` has `Stmt`/`Pattern`/`ValueType`
+// children, etc. `NodeRef` is the cross-type child reference (a typed id into
+// whichever arena owns that child), and `NodeEdges` is one node's ordered,
+// heterogeneous child list — order preserved so reconstruction is faithful.
+
+/// A typed reference to a node in one of the four arenas — the cross-type edge
+/// payload. Opaque handle: compare / look up, never inspect the inner int.
+export enum NodeRef {
+    ExprRef(id: ExprId),
+    StmtRef(id: StmtId),
+    PatRef(id: PatId),
+    TypeRef(id: TypeId),
+}
+
+// `AnyNode` (the boxed-child element `all_children()` yields) lives in
+// core/ast.av, next to the Expr/Stmt/Pattern/ValueType enums and the
+// unwrap_node_* walker helpers — so the derive-generated walker code can name
+// it without arena.av importing ast.av back (avoiding a core-file cycle).
+
+/// One node's direct children as an ordered, heterogeneous `NodeRef` list
+/// (wrapper dodges `List<List<>>`, mirroring `*Edges`). Replaces the same-type
+/// `*Edges` once a node kind is ingested cross-type.
+export type NodeEdges = { refs: List<NodeRef> }
+
 /// Append-only arena of `Expr` nodes, addressed by `ExprId`. `nodes[i]` is the
 /// boxed node (array-of-nodes-now, §14.1); `edges` and `spans` are dense,
 /// id-keyed side-tables (core/side_table.av): `edges` holds each node's direct
