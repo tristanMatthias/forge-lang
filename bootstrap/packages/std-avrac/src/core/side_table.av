@@ -144,9 +144,10 @@ export fn new_sparse_table<Id, V>() -> SparseTable<Id, V> {
 }
 
 /// Dogfood the side-tables in the real L1 substrate: attach DERIVED facts keyed
-/// by an ingested program's StmtIds (a dense per-statement child-count + a
-/// sparse non-leaf marker) without mutating any node, and return a one-line
-/// summary. Driven by the gated `AVRA_L1_INGEST` probe in main.av.
+/// by an ingested program's StmtIds (a dense per-statement CROSS-TYPE child-count
+/// — children of any kind, A1 — plus a sparse non-leaf marker) without mutating
+/// any node, and return a one-line summary. Driven by the gated `AVRA_L1_INGEST`
+/// probe in main.av.
 //
 // Lives here, in @std (intra-package), so the generic instantiation is anchored
 // in the table's own package; main.av calls it across the package boundary as a

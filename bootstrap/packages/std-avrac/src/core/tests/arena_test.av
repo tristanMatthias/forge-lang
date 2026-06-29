@@ -14,9 +14,37 @@
 // F1000 type error ("type system rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
-use @std.avrac.core.{new_expr_arena, new_pat_arena, new_type_arena, Expr, Pattern, ValueType}
+use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
 use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, render_stmt_list}
+
+/// Peel an `ExprRef` (the span specs ingest all-Expr trees, so every child
+/// edge is one); a non-Expr ref returns the -1 sentinel so a wrong-kind edge
+/// fails the assertion loudly rather than silently.
+fn expr_ref_id(r: NodeRef) -> ExprId {
+    match r {
+        .ExprRef(id) -> id
+        _ -> ExprId(-1)
+    }
+}
+
+/// One-letter kind tag (E/S/P/T) of a stored child edge.
+fn noderef_tag(r: NodeRef) -> string {
+    match r {
+        .ExprRef(_) -> "E"
+        .StmtRef(_) -> "S"
+        .PatRef(_) -> "P"
+        .TypeRef(_) -> "T"
+    }
+}
+
+/// Concatenated kind-tags of a stored edge list — proves the persisted
+/// cross-type edges carry the right kinds in the right order.
+fn edge_tags(refs: List<NodeRef>) -> string {
+    mut out = ""
+    for r in refs { out = out + noderef_tag(r) }
+    out
+}
 
 fn l1_ingest_output() -> string {
     // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
@@ -64,32 +92,34 @@ spec "L1 typed ids reject wrong-arena use" {
 // All four node kinds get their own dense arena (acceptance: "Expr/Stmt/
 // Pattern/ValueType each in its own dense arena"). Exercise Expr/Pattern/
 // ValueType in-process here (same package, no cross-package re-link); the
-// StmtArena is covered by the wired ingest spec above. Each ingest is
-// recursive and id-based: the count is the FULL flattened node total, so a
-// non-leaf tree yields more than one node — proof the children() recursion
-// runs and edges are recorded.
+// StmtArena is covered by the wired ingest spec above. Ingest is the
+// cross-type, id-based `NodeStore.ingest_*` (A1): the count is the FULL
+// flattened node total in that kind's arena, so a non-leaf tree yields more
+// than one node — proof the all_children() recursion runs and edges are
+// recorded. These trees are all-one-kind, so each lands wholly in its own
+// arena (no cross-kind children to scatter).
 spec "L1 ExprArena ingests recursively" {
     then "Grouping(Number) flattens to 2 expr nodes" {
-        let ea = new_expr_arena()
-        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span_none())
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_expr(Expr.Grouping(Expr.Number("5")), byte_span_none())
         // root is the parent (Grouping); it has exactly one child edge.
-        ea.count() == 2 && ea.children_of(root).length == 1
+        store.exprs.count() == 2 && store.exprs.children_of(root).length == 1
     }
 }
 
 spec "L1 PatArena ingests recursively" {
     then "Or(Wildcard, Wildcard) flattens to 3 pattern nodes" {
-        let pa = new_pat_arena()
-        let root = pa.ingest(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
-        pa.count() == 3 && pa.children_of(root).length == 2
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_pat(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
+        store.pats.count() == 3 && store.pats.children_of(root).length == 2
     }
 }
 
 spec "L1 TypeArena ingests recursively" {
     then "List(Int) flattens to 2 type nodes" {
-        let ta = new_type_arena()
-        let root = ta.ingest(ValueType.List(ValueType.Int), byte_span_none())
-        ta.count() == 2 && ta.children_of(root).length == 1
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_type(ValueType.List(ValueType.Int), byte_span_none())
+        store.types.count() == 2 && store.types.children_of(root).length == 1
     }
 }
 
@@ -113,6 +143,36 @@ spec "ingest_program handles an empty program" {
     then "no statements means an empty StmtArena" {
         let stmts: List<SStmt> = []
         ingest_program(stmts, "").stmts.count() == 0
+    }
+}
+
+// A1 headline: ingest_program fans a program's nodes out across ALL FOUR
+// arenas by kind, not just the StmtArena. `let x: int = 5` is one Stmt.Let
+// whose cross-type children are a ValueType (`int`) and an Expr (`5`) — both
+// childless leaves — so ingest must place ONE node in each of the stmt, type,
+// and expr arenas (the pattern arena stays empty: no pattern here). Under the
+// OLD same-type ingest the type and expr arenas would both be empty; this spec
+// is what proves the ingest is genuinely cross-type at the program entry point.
+spec "ingest_program populates all four arenas cross-type" {
+    then "let x: int = 5 fills the stmt, type, and expr arenas (pattern stays empty)" {
+        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, "")]
+        let store = ingest_program(stmts, "let x: int = 5\n")
+        store.stmts.count() == 1
+            && store.types.count() == 1
+            && store.exprs.count() == 1
+            && store.pats.count() == 0
+    }
+}
+
+// Beyond "the arenas are populated": the stored EDGES must be faithful. The
+// root Let's children, read back BY ID from the edge side-table (not recomputed
+// via all_children), must be the ValueType then the Expr in field order — so an
+// ingest that dropped, reordered, or mis-kinded a cross-type edge is caught.
+spec "ingest_program stores faithful cross-type edges (kind + order)" {
+    then "the Let root's stored edges read back as [type, expr] (TE)" {
+        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, "")]
+        let store = ingest_program(stmts, "let x: int = 5\n")
+        edge_tags(store.stmts.children_of(store.roots[0])) == "TE"
     }
 }
 
@@ -188,10 +248,10 @@ spec "ingest_program: hi skips synthesised statements to the next real one" {
 // byte_span_none() sentinel until the parser migration threads precise spans.
 spec "L1 ExprArena records the node's span" {
     then "the ingested root keeps its span; the recursed child is byte_span_none" {
-        let ea = new_expr_arena()
-        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
-        let child = ea.children_of(root)[0]
-        let rs = ea.span_of(root)
-        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(ea.span_of(child))
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_expr(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
+        let child = expr_ref_id(store.exprs.children_of(root)[0])
+        let rs = store.exprs.span_of(root)
+        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(store.exprs.span_of(child))
     }
 }
