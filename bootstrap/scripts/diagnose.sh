@@ -367,6 +367,14 @@ SEED MANAGEMENT
                          cannot land something that reds the train
                          post-merge. `make seed-train-verify` runs it
                          locally.
+  --seed-verify-fp       Echo the (integration-seed × compiler-source)
+                         fingerprint that keys the seed-train suite-skip
+                         cache. seed-train-verify writes a PASS marker
+                         under it; seed-train skips its redundant suite
+                         re-run when the marker is present (build + fixed
+                         point + publish still run). Same content hash on
+                         a PR's merge ref and the squash commit, so the
+                         pre-merge verify covers the post-merge train.
   --seed-canonical-sha <file>
                          INTERNAL (spec-tested): sha256 of a seed IR
                          with provenance comment lines stripped — the
@@ -744,6 +752,25 @@ mode_seed_train() {
   ok "seed train advanced — commit bootstrap/seed/seed.lock to complete the cycle"
 }
 
+# The fingerprint that keys the seed-train suite-skip cache: the integration
+# seed identity × every compiler-source blob at HEAD (window_fingerprint, the
+# same content hash the bootstrap-window verify cache uses). It is IDENTICAL
+# whenever a PR's seed-train-verify already ran the full suite on the same seed
+# and same compiler source as the merged HEAD — a squash merge preserves the
+# source blobs, so the merge ref the PR tested and the squash commit on the
+# integration branch hash to the same value. seed-train-verify publishes a PASS
+# marker under this fingerprint on success; seed-train skips its redundant suite
+# re-run when the marker is present. A concurrent merge that changed the seed or
+# the compiler source yields a DIFFERENT fingerprint → no marker → the suite
+# runs, so the 4szi.1 "untested combination" safety net stays intact.
+seed_verify_fingerprint() {
+  local head; head=$(git -C "$REPO_DIR" rev-parse HEAD) || die "cannot resolve HEAD"
+  local seed_id; seed_id=$(ref_seed_sha256 HEAD) \
+    || die "HEAD pins no seed (no seed.ll or seed.lock)"
+  window_fingerprint "$seed_id" "$head"
+}
+mode_seed_verify_fp() { seed_verify_fingerprint; }
+
 # The verify phase shared by `--seed-train` (which then publishes) and
 # `--seed-train-verify` (the PR gate, which stops here). Build the compiler from
 # the CURRENT pin (NO_AUTOCYCLE — a pin that can't build the merged source is a
@@ -759,6 +786,21 @@ seed_train_verify() {
   log "$ctx: building from the current pin"
   mode_build_bs2
   mode_check_fixedpoint || die "$ctx: fixed point broken — bs2 and bs3 disagree"
+
+  # The train sets AVRA_SEED_TRAIN_SKIP_SUITE=1 ONLY after restoring a PASS
+  # marker its PR-side seed-train-verify wrote for THIS exact seed×source
+  # fingerprint — so the full suite already ran green on identical inputs and
+  # re-running it is pure redundancy (~the train's longest phase). Build + fixed
+  # point still run above (the train needs a built bs2 for the hermetic
+  # recompile). The PR gate is the marker's PRODUCER and never sets this, so it
+  # always runs the suite. A bug anywhere in the marker plumbing can only fail
+  # to find a marker → the suite runs (today's behaviour); it can never skip a
+  # suite that did not already pass, because the marker is written only on a
+  # fully green verify (the workflow's `if: success()`).
+  if [ "${AVRA_SEED_TRAIN_SKIP_SUITE:-}" = "1" ]; then
+    ok "$ctx: spec suite skipped — PASS marker matches this seed+source fingerprint (already verified pre-merge)"
+    return 0
+  fi
 
   log "$ctx: running the spec suite"
   ( cd "$BOOTSTRAP_DIR" && "$BS2" test ) || die "$ctx: spec suite red"
@@ -1822,6 +1864,7 @@ main() {
     --seed-publish)       mode_seed_publish "$@" ;;
     --seed-train)         mode_seed_train "$@" ;;
     --seed-train-verify)  mode_seed_train_verify "$@" ;;
+    --seed-verify-fp)     mode_seed_verify_fp "$@" ;;
     --seed-canonical-sha) seed_canonical_sha "$@" ;;
     --seed-inputs-hash)   seed_inputs_hash "$@" ;;
     --seed-self-contained) seed_is_self_contained "$@" ;;

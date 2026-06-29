@@ -59,6 +59,18 @@ jobs:
       # seed `llc` is skipped when the pin + C inputs are unchanged.
       - uses: ./.github/actions/cache-seed
 
+      # The seed×source fingerprint this verify covers. The post-merge train
+      # reuses it to skip its redundant suite re-run (a squash merge preserves
+      # the compiler-source blobs, so the merge ref hashes the same as the
+      # squash commit). Fail loud if empty — a missing fingerprint must not
+      # silently degrade into a marker that can't be matched.
+      - id: fp
+        shell: bash
+        run: |
+          fp="$(bash bootstrap/scripts/diagnose.sh --seed-verify-fp)"
+          if [ -z "$fp" ]; then echo "empty seed-verify fingerprint" >&2; exit 1; fi
+          echo "fp=$fp" >> "$GITHUB_OUTPUT"
+
       - name: Seed-train verify (build from pin + fixed point + suite, no publish)
         env:
           # Read-only token + repo slug so the pinned seed release asset
@@ -71,3 +83,22 @@ jobs:
           # here, pre-merge, rather than post-merge on the train.
           AVRA_TEST_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
+
+      # Publish a PASS marker for this fingerprint — but ONLY on a fully green
+      # verify (`if: success()`). The post-merge seed-train restores it to skip
+      # its redundant suite re-run. Because the marker exists iff the suite
+      # actually passed here, the train can never skip an unverified suite; a
+      # concurrent merge that changed the seed/source yields a different
+      # fingerprint, so its train run misses the marker and runs the suite.
+      - name: Record seed-verify PASS marker
+        if: success() && steps.fp.outputs.fp != ''
+        shell: bash
+        run: |
+          mkdir -p .seedpass
+          echo "${{ steps.fp.outputs.fp }}" > .seedpass/ok
+      - name: Save seed-verify PASS marker
+        if: success() && steps.fp.outputs.fp != ''
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .seedpass
+          key: seedpass-v1-${{ steps.fp.outputs.fp }}

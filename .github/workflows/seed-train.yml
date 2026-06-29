@@ -39,6 +39,20 @@ jobs:
       # seed `llc` is skipped when the pin + C inputs are unchanged.
       - uses: ./.github/actions/cache-seed
 
+      # The merged HEAD's seed×source fingerprint. A squash merge preserves the
+      # compiler-source blobs, so this matches the fingerprint the PR's
+      # seed-train-verify already published a PASS marker for. Tolerant: an
+      # empty fingerprint just means no skip (the suite runs).
+      - id: fp
+        shell: bash
+        run: echo "fp=$(bash bootstrap/scripts/diagnose.sh --seed-verify-fp || true)" >> "$GITHUB_OUTPUT"
+      - id: passmarker
+        if: steps.fp.outputs.fp != ''
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .seedpass
+          key: seedpass-v1-${{ steps.fp.outputs.fp }}
+
       - name: Build from pin, verify, publish if diverged
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,6 +61,12 @@ jobs:
           # throttle (--slot-exec): 4-vCPU runners still benefit from
           # reduced unit-thread width for the non-compile workload.
           AVRA_TEST_JOBS: "2"
+          # Skip the redundant suite ONLY on an exact PASS-marker hit — i.e. the
+          # PR's seed-train-verify already ran the full suite green on this exact
+          # seed×source fingerprint (the marker is saved there only on success).
+          # Any miss → empty → the suite runs (today's behaviour). Build + fixed
+          # point + hermetic recompile + publish always run regardless.
+          AVRA_SEED_TRAIN_SKIP_SUITE: ${{ steps.passmarker.outputs.cache-hit == 'true' && '1' || '' }}
         run: bash bootstrap/scripts/diagnose.sh --seed-train
 
       - name: Commit the lock bump
