@@ -1,0 +1,57 @@
+# Cross-run cache for the bootstrap seed binary + C link objects.
+#
+# Every workflow that builds the compiler from the pin (window / diff-test /
+# seed-train-verify / seed-train) derives the seed binary (build/seed) from the
+# pinned seed IR via `llc -O2` — ~3-4 min — plus the C objects runtime.o and
+# llvm_wrapper.o. On a fresh runner that work is redone on every job of every
+# PR and every merge, because nothing persists it across runs.
+#
+# ensure_seed / ensure_runtime / ensure_llvm_wrapper (bootstrap/scripts/
+# diagnose.sh) key those artifacts on the CONTENT of their inputs (seed.lock →
+# seed.ll, runtime.c, llvm_wrapper.c) via sidecar .seed_hash / .runtime_hash /
+# .llvm_wrapper_hash files — NOT on mtimes. So a restored artifact is reused
+# ONLY when its inputs are byte-identical: a cache hit is always content-correct,
+# and a miss rebuilds exactly as before. The seed `llc` therefore runs once per
+# (seed pin × C inputs × LLVM version) instead of once per job. The window /
+# diff-test gates pick the restored build/seed up too — window_stage_binary
+# reuses it whenever its input fingerprint matches the integration seed.
+#
+# Place AFTER ./.github/actions/setup-llvm (the key reads the LLVM version).
+name: cache-seed
+description: Persist the bootstrap seed binary + C objects across CI runs (content-keyed).
+outputs:
+  llvm_ver:
+    description: The detected LLVM version — exposed so callers needing their own seed-keyed cache (e.g. diff-test) reuse this single detection rather than duplicating it.
+    value: ${{ steps.llvm.outputs.ver }}
+runs:
+  using: composite
+  steps:
+    - id: llvm
+      shell: bash
+      # Pin the key to the exact LLVM version: the seed binary links -lLLVM, so
+      # a libLLVM bump must be a clean cache MISS (rebuild), never a stale reuse.
+      # Fail CLOSED if llvm-config is missing — a sentinel like "unknown" would
+      # collapse the key into a shared bucket, letting a seed built against one
+      # LLVM be restored against another. setup-llvm runs first, so this only
+      # fires if that step silently stopped exposing the toolchain.
+      run: |
+        if ver="$(llvm-config-20 --version 2>/dev/null)"; then :
+        elif ver="$(llvm-config --version 2>/dev/null)"; then :
+        else
+          echo "llvm-config not found after ./.github/actions/setup-llvm" >&2
+          exit 1
+        fi
+        echo "ver=$ver" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: |
+          bootstrap/build/seed
+          bootstrap/build/.seed_hash
+          bootstrap/build/runtime.o
+          bootstrap/build/.runtime_hash
+          bootstrap/build/llvm_wrapper.o
+          bootstrap/build/.llvm_wrapper_hash
+        # hashFiles tracks the seed pin (seed.ll is fetched deterministically
+        # from seed.lock) and the C link inputs — exactly what ensure_seed keys
+        # build/seed on, so the cache key and the sidecar hash invalidate together.
+        key: avra-seedbin-${{ runner.os }}-llvm${{ steps.llvm.outputs.ver }}-${{ hashFiles('bootstrap/seed/seed.lock', 'bootstrap/runtime.c', 'bootstrap/llvm_wrapper.c') }}

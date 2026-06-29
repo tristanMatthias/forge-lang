@@ -35,6 +35,10 @@ jobs:
 
       - uses: ./.github/actions/setup-llvm
 
+      # Restore the seed binary + C objects (content-keyed) so the ~3-4 min
+      # seed `llc` is skipped when the pin + C inputs are unchanged.
+      - uses: ./.github/actions/cache-seed
+
       - name: Build from pin, verify, publish if diverged
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
