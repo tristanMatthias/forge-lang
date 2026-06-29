@@ -14,9 +14,10 @@
 // F1000 type error ("type system rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
-use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType}
+use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType, BinOp}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
 use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, render_stmt_list}
+use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr}
 
 /// Peel an `ExprRef` (the span specs ingest all-Expr trees, so every child
 /// edge is one); a non-Expr ref returns the -1 sentinel so a wrong-kind edge
@@ -214,6 +215,56 @@ spec "program_from_store round-trips the top-level statements" {
                     SStmt { node: Stmt.NoOp, line: 2, col: 1, file: "t.av", from_macro: false }]
         let back = program_from_store(ingest_program(orig, "break\nx\n"), "t.av")
         back.length == 2 && back[0].from_macro && !back[1].from_macro
+    }
+}
+
+// Combinatorial: a single program that nests the kinds THROUGH each other —
+// Stmt(fn) -> Stmt(if) -> { Expr(binary cond) -> Expr,Expr ; Stmt(let) ->
+// Type(List<List<int>>, 3 deep) + Expr(empty list) }. Proves the cross-type
+// recursion descends across every kind boundary AND back, and lands each node
+// in its own arena. (Counts hand-derived below; mutation-checked elsewhere.)
+spec "ingest_program: combinatorial cross-kind nesting populates all arenas" {
+    then "fn { if (1<2) { let xs: List<List<int>> = [] } } yields stmt=3 expr=4 type=4 pat=0" {
+        let no_tp: List<TypeParamEntry> = []
+        let no_pp: List<ParamEntry> = []
+        let no_el: List<SExpr> = []
+        let cond = Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2"))
+        let inner_let = Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), Expr.ListLit(no_el))
+        let body: List<SStmt> = [sstmt_at(Stmt.If(cond, inner_let, null), 0, 0, "")]
+        let f_decl = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
+        let store = ingest_program([sstmt_at(f_decl, 0, 0, "")], "")
+        // stmts: Function, If, Let.  exprs: Binary, Number, Number, ListLit.
+        // types: Void(ret), List(List(Int)), List(Int), Int.  pats: none.
+        // Edge fidelity (not just counts): the Function root's stored edges are
+        // its ret-type then its body stmt — a cross-kind [type, stmt] = "TS",
+        // proving edges aren't scrambled across kinds at the top level.
+        store.stmts.count() == 3
+            && store.exprs.count() == 4
+            && store.types.count() == 4
+            && store.pats.count() == 0
+            && edge_tags(store.stmts.children_of(store.roots[0])) == "TS"
+    }
+}
+
+// Stress + recursion guard (Phase 2 R7): the ingest must scale linearly and
+// survive realistic depth without a stack overflow. Wide = 1000 top-level
+// lets (the ingest_program loop + per-node fan-out); deep = a 300-level binary
+// chain (the ingest_expr recursion depth). Synthesised (line 0) so no span math.
+spec "ingest_program: stress — wide (1000) and deep (300)" {
+    then "1000 top-level `let`s ingest to 1000 stmts + 1000 exprs + 1000 types" {
+        mut stmts: List<SStmt> = []
+        for i in 0..1000 {
+            stmts.push(sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("1")), 0, 0, ""))
+        }
+        let store = ingest_program(stmts, "")
+        store.stmts.count() == 1000 && store.exprs.count() == 1000 && store.types.count() == 1000
+    }
+    then "a 300-deep binary chain ingests fully (601 exprs) without stack overflow" {
+        mut e: Expr = Expr.Number("0")
+        for i in 0..300 { e = Expr.Binary(e, BinOp.Add, Expr.Number("1")) }
+        let store = ingest_program([sstmt_at(Stmt.Expr(e), 0, 0, "")], "")
+        // 300 Binary + 301 Number = 601 exprs; the one wrapping Stmt.Expr.
+        store.exprs.count() == 601 && store.stmts.count() == 1
     }
 }
 
