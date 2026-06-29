@@ -45,7 +45,7 @@
 
 use core.{Expr, Stmt, Pattern, ValueType, SStmt, sstmt_at}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
-use core.{DenseTable, new_dense_table}
+use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 
 /// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
 export type ExprId = int
@@ -209,6 +209,12 @@ export type NodeStore = {
     // root id of each top-level ingest); `program_from_store` reads them back.
     // Without these the arena has no "where does the program start" handle.
     roots: List<StmtId>,
+    // Per-node provenance (§14.3): the StmtIds whose source `SStmt` carried
+    // `from_macro = true`. Recorded SPARSELY — only macro-introduced nodes get
+    // an entry, so the table is empty for an ordinary program. The presence of
+    // an id IS the fact (`from_macro`), read via `.has`, so the reverse shim
+    // restores provenance instead of flattening every node to non-macro.
+    provenance: SparseTable<StmtId, bool>,
 }
 
 impl NodeStore {
@@ -231,6 +237,7 @@ impl NodeStore {
 /// turn spans back into line/col on demand).
 export fn new_node_store(lines: LineIndex) -> NodeStore {
     let roots: List<StmtId> = []
+    let provenance: SparseTable<StmtId, bool> = new_sparse_table()
     NodeStore {
         exprs: new_expr_arena(),
         stmts: new_stmt_arena(),
@@ -238,6 +245,7 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
         types: new_type_arena(),
         lines,
         roots,
+        provenance,
     }
 }
 
@@ -253,6 +261,7 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
     let lines = build_line_index(source)
     let store = new_node_store(lines)
     mut roots: List<StmtId> = []
+    mut provenance: SparseTable<StmtId, bool> = new_sparse_table()
     for (k, s) in stmts.enumerate() {
         // A synthesised top-level statement (line == 0, e.g. injected
         // intrinsics) has no source position — record the sentinel, never a
@@ -278,26 +287,33 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
             }
             byte_span(lo, hi)
         }
-        roots.push(store.stmts.ingest(s.node, sp))
+        let root_id = store.stmts.ingest(s.node, sp)
+        roots.push(root_id)
+        // Record provenance only for macro-introduced roots (§14.3) — the table
+        // stays empty for an ordinary program, and presence == `from_macro`.
+        if s.from_macro { provenance.set(root_id, true) }
     }
-    store with { roots }
+    store with { roots, provenance }
 }
 
 /// Compat shim (reverse direction, ps3t.3.7): rebuild the top-level statement
 /// list from the arena — the inverse of `ingest_program`, so a pass migrated to
 /// read from the store can still hand the un-migrated passes an `SStmt` tree.
 /// Each root node is re-wrapped with its (line, col) recomputed from the span
-/// side-table (§14.2). Faithful for node structure + line/col at this migration
-/// phase (nodes still retain their boxed children, which carry their own
-/// positions); `file` is threaded in (the arena is single-source) and per-node
-/// provenance (`from_macro`) round-trips once the §14.3 provenance side-table
-/// lands — until then a reconstructed node is non-macro, so this is used only
-/// behind `AVRA_L1_INGEST` where no pass yet depends on it.
+/// side-table (§14.2) and its `from_macro` restored from the provenance
+/// side-table (§14.3). Faithful for node structure + line/col + provenance at
+/// this migration phase (nodes still retain their boxed children, which carry
+/// their own positions); `file` is threaded in (the arena is single-source) so
+/// this stays behind `AVRA_L1_INGEST` until per-node file lands for multi-file
+/// units.
 export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
     mut out: List<SStmt> = []
     for id in store.roots {
         let lc = store.stmt_linecol(id)
-        out.push(sstmt_at(store.stmts.get(id), lc.line, lc.col, file))
+        // `.has` returns a concrete bool (presence == from_macro), restoring the
+        // provenance that `sstmt_at` would otherwise flatten to false.
+        let from_macro = store.provenance.has(id)
+        out.push(SStmt { node: store.stmts.get(id), line: lc.line, col: lc.col, file, from_macro })
     }
     out
 }
