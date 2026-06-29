@@ -1,0 +1,70 @@
+// WHY: ps3t.3.7 increment (ii) — the FIRST real consumers of the L1 arena.
+// With AVRA_L1_INGEST=1, parse_or_fail returns the program reconstructed FROM
+// the arena (program_from_store) instead of the direct parse output, so every
+// command routing through parse_or_fail reads the arena round-trip: `check`
+// (resolve + typeck), `run` (interpreter), and a cache-miss `compile` (codegen).
+// These end-to-end specs prove that round-trip is behaviour-identical to the
+// normal path on real programs — a valid program still type-checks (`ok`), an
+// invalid one still reports the SAME F-code, and a compiled program still runs
+// to the SAME output — with the [l1-ingest] probe in each captured output
+// confirming the flag-on path actually ran (so an assertion can't silently pass
+// on the flag-off path). (The `build` fast-path parses via its own unit-cache
+// entry, not parse_or_fail, so it is a separate, later migration target.)
+// Default builds keep the flag off, so this exercises a path the byte-identical
+// diff-test gate cannot reach.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+/// Run a bs2 verb on a fixture with the L1 ingest flag ON, capturing
+/// stdout+stderr — so the [l1-ingest] probe (compile-time, dropped by
+/// diagnose.sh --run) is visible and the round-trip path is provably exercised.
+fn l1_run(verb: string, path: string) -> string {
+    avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 ${verb} ${path} 2>&1")
+}
+
+spec "L1 ingest round-trip drives the real passes" {
+    then "a valid program type-checks identically through the arena round-trip" {
+        // Several node kinds exercised through the top-level-stmt round-trip
+        // (each top-level decl rebuilt from the arena, its body riding along as
+        // boxed children): a struct, field access, a generic-free fn, a match.
+        // `answer` is the FIRST root and `main` CALLS it, so a reverse converter
+        // that dropped or reordered a root would resolve `answer` as undefined
+        // (F3000) — the `ok` assertion then genuinely depends on a faithful
+        // round-trip, not just on typeck leniency. (The fixture name avoids the
+        // substring "ok" so the assertion can't be satisfied by the file path.)
+        write_fixture("/tmp/l1_pipe_valid.av",
+            "fn answer() -> int { 42 }\n" +
+            "type Pt = { x: int, y: int }\n" +
+            "fn sum(p: Pt) -> int { p.x + p.y }\n" +
+            "fn label(n: int) -> string { match n { 42 -> \"life\"  _ -> \"other\" } }\n" +
+            "fn main() {\n" +
+            "    let p = Pt { x: 40, y: 2 }\n" +
+            "    println(label(sum(p)))\n" +
+            "    println(string(answer()))\n" +
+            "}\n")
+        let out = l1_run("check", "/tmp/l1_pipe_valid.av")
+        out.contains("ok") && out.contains("[l1-ingest]")
+    }
+    then "a type error reports the same F-code through the arena round-trip" {
+        write_fixture("/tmp/l1_pipe_err.av",
+            "fn main() { let x: int = \"hi\"  println(string(x)) }\n")
+        let out = l1_run("check", "/tmp/l1_pipe_err.av")
+        // The reverse converter is faithful on the error path too: same F1000.
+        out.contains("F1000") && out.contains("[l1-ingest]")
+    }
+    then "a compiled program runs to the same output through the round-trip" {
+        write_fixture("/tmp/l1_pipe_cmp.av",
+            "fn add(a: int, b: int) -> int { a + b }\n" +
+            "fn main() { println(\"cmp=\" + string(add(40, 2))) }\n")
+        // A cache-miss `compile` also routes through parse_or_fail, so CODEGEN
+        // reads the round-trip. The probe proves the flag-on compile ran the
+        // arena path and emitted /tmp/l1_pipe_cmp.av.ll. We then link+run THAT
+        // EXACT artifact (--link-run, no recompile) and assert its output is
+        // correct (40 + 2 = 42) — so a round-trip that printed the probe but
+        // emitted bad/missing IR would fail here, not silently pass.
+        let comp = l1_run("compile", "/tmp/l1_pipe_cmp.av")
+        let run = avra_shell_exec("bash scripts/diagnose.sh --link-run /tmp/l1_pipe_cmp.av.ll 2>&1")
+        comp.contains("[l1-ingest]") && run.contains("cmp=42")
+    }
+}
