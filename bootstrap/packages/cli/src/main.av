@@ -76,7 +76,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, ingest_program, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{NodeStore, ingest_program, program_from_store, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -253,6 +253,20 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
         // L1 side-tables (ps3t.3.6): attach DERIVED facts (per-stmt child counts
         // + a non-leaf marker) keyed by the arena's StmtIds, mutating no node.
         println(l1_sidetable_summary(store))
+        // ps3t.3.7 increment (ii): the FIRST real consumer of the arena. Every
+        // command routing through parse_or_fail now reads the program
+        // reconstructed FROM the store, not the direct parse output — so
+        // resolve, typeck, the interpreter (`run`), and even codegen (a
+        // cache-miss `compile`) read through the arena round-trip instead of the
+        // SExpr/SStmt pointer-tree. (The `build` fast-path parses via its own
+        // unit-cache entry, not this function — a separate, later target.)
+        // Faithful (structure + recomputed line/col + provenance + file), so it
+        // is behaviour-preserving; the flag-off default below returns `stmts`
+        // unchanged, keeping diff-test byte-identical. `file` comes from the
+        // parsed roots (all share one source here — single-file ingest); an
+        // empty program has no roots so the file is irrelevant.
+        let file = if stmts.length > 0 { stmts[0].file } else { "" }
+        return program_from_store(store, file)
     }
     stmts
 }

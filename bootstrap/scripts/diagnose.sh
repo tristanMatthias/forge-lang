@@ -231,6 +231,9 @@ BUILD MODES
 
 RUN MODES
   --run    <file.av>   Compile <file.av> with bs2, link, run. Prints stdout.
+  --link-run <file.ll> Link a pre-emitted .ll into a binary and run it (no
+                       recompile). Prints stdout. Used to execute the EXACT
+                       artifact a prior `bs2 compile` produced.
   --run-stage1 <file.av>
                        Same but with stage1 (the host-built bootstrapc).
   --check  <file.av>   Run bs2's parse+resolve only — no codegen, no link.
@@ -1492,6 +1495,24 @@ run_fg() {
 
 mode_run() { run_fg "$1"; }
 
+# Link a pre-emitted .ll into a binary and run it — WITHOUT recompiling
+# from source. Unlike --run (which always re-invokes `bs2 compile`), this
+# executes the EXACT artifact a prior `bs2 compile` already wrote, so a
+# caller can verify that one specific .ll links and runs correctly. The
+# runtime + LLVM-wrapper objects are the same link inputs link_ll uses.
+link_run_ll() {
+  local ll="$1"
+  [ -f "$ll" ] || die "no such file: $ll"
+  ensure_runtime
+  ensure_llvm_wrapper
+  local bin="${ll%.ll}.bin"
+  link_ll "$ll" "$bin" "$BUILD_DIR/link_run.log.$$"
+  rm -f "$BUILD_DIR/link_run.log.$$"
+  "$bin"
+}
+
+mode_link_run() { link_run_ll "$1"; }
+
 mode_check() {
   local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
   ensure_bs2
@@ -1777,6 +1798,7 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
+    --link-run)           mode_link_run "$@" ;;
     --check)              mode_check "$@" ;;
     --ll)                 mode_ll "$@" ;;
     --diff)               mode_diff "$@" ;;
