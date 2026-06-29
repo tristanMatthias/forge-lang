@@ -42,6 +42,28 @@ jobs:
 
       - uses: ./.github/actions/setup-llvm
 
+      # Restore the seed binary (content-keyed): both the OLD (base) and NEW
+      # (HEAD) compiler builds reuse it instead of re-running the seed `llc`.
+      # `id: seed` exposes its fail-closed LLVM version for the difftest key below.
+      - id: seed
+        uses: ./.github/actions/cache-seed
+
+      # Persist the per-ref compiler build cache across runs. dt_build_compiler
+      # gates reuse on window_fingerprint (seed identity + compiler-source
+      # blob-shas), so a restored compiler is reused ONLY when its source + seed
+      # are byte-identical: the OLD (base) compiler survives a PR's force-pushes
+      # (base source unchanged) — saving the ~6 min base rebuild — while NEW
+      # rebuilds whenever HEAD's source changes. The github.sha suffix saves a
+      # fresh entry per run; restore-keys restores the most recent same-(seed,
+      # LLVM) prefix match. Correctness is the marker's (not the key's), and
+      # diff-test's own byte-identical IR comparison is the backstop.
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: bootstrap/build/difftest
+          key: avra-difftest-${{ runner.os }}-llvm${{ steps.seed.outputs.llvm_ver }}-${{ hashFiles('bootstrap/seed/seed.lock') }}-${{ github.sha }}
+          restore-keys: |
+            avra-difftest-${{ runner.os }}-llvm${{ steps.seed.outputs.llvm_ver }}-${{ hashFiles('bootstrap/seed/seed.lock') }}-
+
       - name: Differential test (OLD=integration vs NEW=HEAD)
         env:
           # Indirection keeps the ref out of shell parsing — branch names

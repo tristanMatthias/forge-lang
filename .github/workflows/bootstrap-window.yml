@@ -43,6 +43,12 @@ jobs:
 
       - uses: ./.github/actions/setup-llvm
 
+      # Restore the seed binary (content-keyed): window_stage_binary reuses
+      # build/seed when its input fingerprint matches the integration seed,
+      # skipping the ~3-4 min seed `llc`. The window's COLD unit-cache
+      # discipline is untouched — that's packages/*/build/cache, not the seed.
+      - uses: ./.github/actions/cache-seed
+
       - name: Bootstrap-window check
         env:
           # Indirection keeps the ref out of shell parsing — branch
