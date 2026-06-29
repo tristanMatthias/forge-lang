@@ -16,7 +16,7 @@
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType, BinOp}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
-use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, render_stmt_list}
+use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
 use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr}
 
 /// Peel an `ExprRef` (the span specs ingest all-Expr trees, so every child
@@ -26,6 +26,14 @@ fn expr_ref_id(r: NodeRef) -> ExprId {
     match r {
         .ExprRef(id) -> id
         _ -> ExprId(-1)
+    }
+}
+
+/// Peel a `TypeRef` to its TypeId (for inspecting type-arena children in order).
+fn type_ref_id(r: NodeRef) -> TypeId {
+    match r {
+        .TypeRef(id) -> id
+        _ -> TypeId(0 - 1)
     }
 }
 
@@ -243,6 +251,23 @@ spec "ingest_program: combinatorial cross-kind nesting populates all arenas" {
             && store.types.count() == 4
             && store.pats.count() == 0
             && edge_tags(store.stmts.children_of(store.roots[0])) == "TS"
+    }
+}
+
+// Field-order fidelity for the ONE AST variant where a node-list field precedes
+// a node-single field: ValueType.FnTyped(params: List<ValueType>, ret: ValueType).
+// all_children must yield params THEN ret (field order) — a singles-first fold
+// would emit ret first. `fn(int, str) -> bool` ingests with children [int, str,
+// bool]: first child is a param (Int), last is the return (Bool).
+spec "ingest: FnTyped children keep field order (params before ret)" {
+    then "fn(int,str)->bool ingests to [int, str, bool], not ret-first" {
+        let store = new_node_store(build_line_index(""))
+        let params: List<ValueType> = [ValueType.Int, ValueType.Str]
+        let root = store.ingest_type(ValueType.FnTyped(params, ValueType.Bool), byte_span_none())
+        let kids = store.types.children_of(root)
+        let first_is_param = match store.types.get(type_ref_id(kids[0])) { .Int -> true  _ -> false }
+        let last_is_ret = match store.types.get(type_ref_id(kids[2])) { .Bool -> true  _ -> false }
+        kids.length == 3 && first_is_param && last_is_ret
     }
 }
 

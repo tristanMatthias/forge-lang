@@ -472,31 +472,29 @@ fn count_wrap(bindings: List<Binding>) -> int {
 /// expression-valued `map_arm_body` match stays the exhaustiveness guard).
 @comptime
 fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr {
-    mut direct_elems: List<SExpr> = []
+    // Fold children in FIELD ORDER from the typed-empty list (which pins the
+    // element type to List<Self>), one binding at a time. A single contributes
+    // a one-element list; a list its elements; a nullable single a 0-or-1
+    // element list via the none-guarded *_opt helpers. Folding in binding order
+    // — rather than all singles first, then lists — keeps a list field that
+    // PRECEDES a single field in order (ValueType.FnTyped: params before ret).
+    mut acc: Expr = Expr.Ident(empty_binding_name())
     for b in bindings {
         if is_single_child(b.kind) {
-            direct_elems.push(sexpr_dummy(direct_child_expr(b)))
+            let one: List<SExpr> = [sexpr_dummy(direct_child_expr(b))]
+            acc = cross_concat(acc, Expr.ListLit(one))
         }
-    }
-    mut acc: Expr = Expr.ListLit(direct_elems)
-    for b in bindings {
         if b.kind is .ListOfSelf {
-            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(Expr.Ident(b.binding_name))]
-            acc = Expr.Call(Expr.Ident("list_concat"), args)
+            acc = cross_concat(acc, Expr.Ident(b.binding_name))
         }
         if b.kind is .WrapperListOfSelf {
-            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(unwrap_call(b.binding_name, wrapper_of(b.kind), parent_name))]
-            acc = Expr.Call(Expr.Ident("list_concat"), args)
+            acc = cross_concat(acc, unwrap_call(b.binding_name, wrapper_of(b.kind), parent_name))
         }
-        // Nullable single children contribute a 0-or-1 element list via
-        // the none-guarded *_opt helpers.
         if b.kind is .OptionalDirectSelf {
-            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(self_opt_to_list_call(b.binding_name, parent_name))]
-            acc = Expr.Call(Expr.Ident("list_concat"), args)
+            acc = cross_concat(acc, self_opt_to_list_call(b.binding_name, parent_name))
         }
         if b.kind is .OptionalWrapperOfSelf {
-            let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(unwrap_node_opt_call(b.binding_name, wrapper_of(b.kind), parent_name))]
-            acc = Expr.Call(Expr.Ident("list_concat"), args)
+            acc = cross_concat(acc, unwrap_node_opt_call(b.binding_name, wrapper_of(b.kind), parent_name))
         }
     }
     acc
@@ -588,7 +586,12 @@ fn anynode_ctor(target: string) -> string {
     if s == "Expr" { return "AnyExpr" }
     if s == "Stmt" { return "AnyStmt" }
     if s == "Pattern" { return "AnyPat" }
-    "AnyType"
+    if s == "ValueType" { return "AnyType" }
+    // A new node kind reached the cross-type generator without an AnyNode arm.
+    // Emit an undefined ctor name so the generated all_children fails to COMPILE
+    // here (loud, named) rather than silently boxing the new kind as a ValueType
+    // — a wrong-arena store that would corrupt at runtime.
+    "AnyNode__add_a_NodeRef_AnyNode_arm_for_${s}"
 }
 
 /// The `box_*_list` helper name for a target node kind (matched on short name).
@@ -598,7 +601,10 @@ fn box_list_fn(target: string) -> string {
     if s == "Expr" { return "box_expr_list" }
     if s == "Stmt" { return "box_stmt_list" }
     if s == "Pattern" { return "box_pat_list" }
-    "box_type_list"
+    if s == "ValueType" { return "box_type_list" }
+    // See anynode_ctor: undefined helper name -> loud build failure on a new
+    // node kind, not a silent box_type_list miscategorization.
+    "box_list_add_helper_for_${s}"
 }
 
 /// The module-qualification prefix of `name` (everything up to and including
@@ -710,18 +716,28 @@ fn is_list_child(k: FieldKind) -> bool {
 /// binding (so the arm types as `List<AnyNode>`, not `List<Unknown>`).
 @comptime
 fn all_arm_body(bindings: List<CrossBinding>) -> Expr {
-    mut direct_elems: List<SExpr> = []
-    mut has_list = false
+    mut any_child = false
     for b in bindings {
-        if is_single_child(b.kind) { direct_elems.push(sexpr_dummy(box_single(b))) }
-        if is_list_child(b.kind) { has_list = true }
+        if is_single_child(b.kind) || is_list_child(b.kind) { any_child = true }
     }
-    if direct_elems.length == 0 && !has_list {
+    if !any_child {
         return Expr.Ident(all_empty_binding_name())
     }
-    mut acc: Expr = Expr.ListLit(direct_elems)
+    // Fold in FIELD ORDER, one binding at a time, starting from the typed-empty
+    // list (which pins the element type to List<AnyNode> before the first
+    // concat). A single contributes a one-element list, a list its boxed list.
+    // Folding in binding order — rather than all singles first, then lists —
+    // is what keeps a list field that PRECEDES a single field in order
+    // (ValueType.FnTyped: params: List<ValueType> before ret: ValueType).
+    mut acc: Expr = Expr.Ident(all_empty_binding_name())
     for b in bindings {
-        if is_list_child(b.kind) { acc = cross_concat(acc, box_list_child(b)) }
+        if is_single_child(b.kind) {
+            let one: List<SExpr> = [sexpr_dummy(box_single(b))]
+            acc = cross_concat(acc, Expr.ListLit(one))
+        }
+        if is_list_child(b.kind) {
+            acc = cross_concat(acc, box_list_child(b))
+        }
     }
     acc
 }
