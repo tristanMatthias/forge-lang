@@ -1,0 +1,27 @@
+// WHY: A1 (faithful cross-type arena ingest) — verify the derive_walker's new
+// `all_children()` returns EVERY child across the four node kinds (not just the
+// same-type ones `children()` returns), each boxed as `AnyNode`, in field
+// order. Exercised through the @std probes `stmt_child_tags`/`expr_child_tags`
+// (a consumer shard can't call the @std-internal generated method on a core
+// type directly), which return a per-child kind-tag string E/S/P/T.
+
+use @std.avrac.core.{Stmt, Expr, ValueType, BinOp, SStmt, sstmt}
+use @std.avrac.core.{stmt_child_tags, expr_child_tags}
+
+spec "derive all_children: cross-type children, in order" {
+    then "Stmt.Let -> ValueType child then Expr child (T then E)" {
+        // children() (same-type Stmt) is empty; all_children adds the cross-type
+        // ty_vt (ValueType) and initializer (Expr). name (string) is scalar.
+        stmt_child_tags(Stmt.Let("x", ValueType.Int, Expr.Number("1"))) == "TE"
+    }
+    then "Expr.Binary -> both operand Exprs (op scalar skipped)" {
+        expr_child_tags(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2"))) == "EE"
+    }
+    then "Expr.Block -> its body Stmts via wrapper-list .node unwrap" {
+        let body: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
+        expr_child_tags(Expr.Block(body)) == "SS"
+    }
+    then "a scalar-only node has no children" {
+        stmt_child_tags(Stmt.Break) == ""
+    }
+}

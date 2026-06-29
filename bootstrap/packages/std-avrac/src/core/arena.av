@@ -93,6 +93,34 @@ export enum NodeRef {
 /// `*Edges` once a node kind is ingested cross-type.
 export type NodeEdges = { refs: List<NodeRef> }
 
+/// One-letter tag for an AnyNode's kind — E/S/P/T. The exhaustive match (no
+/// wildcard) makes a new node kind a compile error here.
+export fn any_node_tag(n: AnyNode) -> string {
+    match n {
+        .AnyExpr(_) -> "E"
+        .AnyStmt(_) -> "S"
+        .AnyPat(_) -> "P"
+        .AnyType(_) -> "T"
+    }
+}
+
+/// Diagnostic/test probe: the kind-tags of a statement's cross-type children,
+/// in order, via the derive-generated `all_children()`. Lives in @std because a
+/// consumer shard can't call the generated method on a core type directly; the
+/// tag string lets a shard assert count + kinds + order through the @std API.
+export fn stmt_child_tags(s: Stmt) -> string {
+    mut out = ""
+    for c in s.all_children() { out = out + any_node_tag(c) }
+    out
+}
+
+/// Expr sibling of `stmt_child_tags`.
+export fn expr_child_tags(e: Expr) -> string {
+    mut out = ""
+    for c in e.all_children() { out = out + any_node_tag(c) }
+    out
+}
+
 /// Append-only arena of `Expr` nodes, addressed by `ExprId`. `nodes[i]` is the
 /// boxed node (array-of-nodes-now, §14.1); `edges` and `spans` are dense,
 /// id-keyed side-tables (core/side_table.av): `edges` holds each node's direct
