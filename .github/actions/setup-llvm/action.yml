@@ -1,22 +1,48 @@
 # Shared LLVM 20 provisioning for the bootstrap workflows. The pinned
 # major lives in scripts/bootstrap.sh + bootstrap/scripts/diagnose.sh;
 # this action mirrors it for CI runners.
+#
+# The install is still done by apt (so dpkg resolves deps + lays down the
+# correct /usr/bin symlinks and package state every run — the toolchain is
+# never restored half-formed). The only thing cached is apt's .deb ARCHIVE
+# dir: on a hit the packages are already downloaded, so the install skips the
+# network fetch (faster, and immune to a transient mirror/apt.llvm.org blip).
+# A miss simply downloads as before and seeds the cache — so a cold or stale
+# cache degrades to exactly today's behaviour, never a broken toolchain.
 name: setup-llvm
-description: Install the pinned LLVM 20 toolchain (distro archive first, apt.llvm.org fallback)
+description: Install the pinned LLVM 20 toolchain (distro archive first, apt.llvm.org fallback), reusing a cached .deb archive.
 runs:
   using: composite
   steps:
+    # Workspace-owned archive dir (the runner can restore into it without
+    # sudo, unlike a system path). Fixed key: the LLVM major + runner image
+    # pin the package set; debs are immutable, so the first miss seeds it and
+    # later runs hit until the image or major changes.
+    - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: .llvm-debs
+        key: llvm-20-debs-${{ runner.os }}-${{ runner.arch }}
     - shell: bash
       run: |
+        archives="${GITHUB_WORKSPACE}/.llvm-debs"
+        mkdir -p "$archives/partial"
         # Prefer the distro archive; only fall back to executing the
         # apt.llvm.org bootstrap script (remote code under sudo) when
-        # the runner's archive doesn't carry LLVM 20 yet.
+        # the runner's archive doesn't carry LLVM 20 yet. Dir::Cache::archives
+        # points apt at the cached dir, so present .debs skip the download.
+        # No `set -e`: a transient `apt-get update` blip must not abort before
+        # the install (and its fallback) get a chance — matching prior behaviour.
         sudo apt-get update -y
         if ! sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::archives="$archives" \
             llvm-20 llvm-20-dev llvm-20-tools clang-20 lld-20; then
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash /tmp/llvm.sh 20
           sudo apt-get install -y --no-install-recommends llvm-20-dev lld-20 clang-20
         fi
+        # apt writes the .debs as root; hand them back to the runner so the
+        # post-job cache save can read them (best-effort — a failure here only
+        # costs a cache miss next run, never the build).
+        sudo chown -R "$(id -u):$(id -g)" "$archives" || true
         # diagnose.sh probes `ld.lld` by name for the @-symbol-safe linker.
         sudo ln -sf /usr/lib/llvm-20/bin/ld.lld /usr/local/bin/ld.lld
