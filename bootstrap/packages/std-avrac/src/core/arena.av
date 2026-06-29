@@ -105,22 +105,22 @@ export fn any_node_tag(n: AnyNode) -> string {
     }
 }
 
-/// Diagnostic/test probe: the kind-tags of a statement's cross-type children,
-/// in order, via the derive-generated `all_children()`. Lives in @std because a
-/// consumer shard can't call the generated method on a core type directly; the
-/// tag string lets a shard assert count + kinds + order through the @std API.
-export fn stmt_child_tags(s: Stmt) -> string {
+/// The kind-tags (E/S/P/T) of a cross-type child list, in order — the shared
+/// body of the per-kind probes below.
+fn child_tags_of(children: List<AnyNode>) -> string {
     mut out = ""
-    for c in s.all_children() { out = out + any_node_tag(c) }
+    for c in children { out = out + any_node_tag(c) }
     out
 }
 
-/// Expr sibling of `stmt_child_tags`.
-export fn expr_child_tags(e: Expr) -> string {
-    mut out = ""
-    for c in e.all_children() { out = out + any_node_tag(c) }
-    out
-}
+// Diagnostic/test probes: the kind-tags of a node's cross-type children, in
+// order, via the derive-generated `all_children()` — one per node kind so a
+// consumer shard (which can't call the generated method on a core type
+// directly) can assert count + kinds + order through the @std API for any kind.
+export fn stmt_child_tags(s: Stmt) -> string { child_tags_of(s.all_children()) }
+export fn expr_child_tags(e: Expr) -> string { child_tags_of(e.all_children()) }
+export fn pat_child_tags(p: Pattern) -> string { child_tags_of(p.all_children()) }
+export fn type_child_tags(t: ValueType) -> string { child_tags_of(t.all_children()) }
 
 /// Append-only arena of `Expr` nodes, addressed by `ExprId`. `nodes[i]` is the
 /// boxed node (array-of-nodes-now, §14.1); `edges` and `spans` are dense,
@@ -339,13 +339,18 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
 /// into the store, recursively and CROSS-TYPE (A1) — every descendant node, of
 /// ANY kind, gets an id in its owning arena (a stmt's expr/type/pattern
 /// children among them), and each node's edges record those children as typed
-/// `NodeRef`s. So after ingest the four arenas together hold the WHOLE tree by
-/// id, not just the top-level statements. The first reachable consumer of the
-/// store is the gated AVRA_L1_INGEST probe in parse_or_fail (main.av); later
-/// increments migrate passes to read from it instead of the SStmt pointer-tree.
-/// `source` builds the LineIndex and lifts each top-level statement's preserved
-/// (line, col) into a REAL byte-offset span (§14.2); nested nodes carry
-/// byte_span_none() until the parser migration.
+/// `NodeRef`s. So after ingest the four arenas together hold the whole
+/// WALKER-REACHABLE tree by id, not just the top-level statements. (Reachable =
+/// what `all_children()` traverses: the four AST enum kinds and their SExpr/
+/// SStmt wrappers. Nodes embedded in plain STRUCTS — match arms, struct-lit
+/// fields, params — are not yet ingested, because the derive walker stops at
+/// non-node-kind fields, same as `children()`; they arrive when the parser
+/// assigns ids directly, the B/id-children step.) The first reachable consumer
+/// of the store is the gated AVRA_L1_INGEST probe in parse_or_fail (main.av);
+/// later increments migrate passes to read from it instead of the SStmt
+/// pointer-tree. `source` builds the LineIndex and lifts each top-level
+/// statement's preserved (line, col) into a REAL byte-offset span (§14.2);
+/// nested nodes carry byte_span_none() until the parser migration.
 export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
     let lines = build_line_index(source)
     let store = new_node_store(lines)

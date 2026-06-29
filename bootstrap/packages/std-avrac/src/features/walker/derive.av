@@ -322,16 +322,27 @@ fn vt_optional_inner(vt: ValueType) -> ValueType {
 }
 
 
-/// `.VariantName(b1, b2, b3)` pattern. Each binding becomes a
-/// ParamEntry — same shape the parser produces for the simple
-/// bind form `.Variant(x, y)`. `_` is a valid binding name here.
+/// `.VariantName(n1, n2, n3)` pattern from already-extracted binding NAMES —
+/// each becomes a ParamEntry, the same shape the parser produces for the
+/// simple bind form `.Variant(x, y)`. `_` is a valid binding name here. The
+/// single Pattern.Variant builder shared by every walker arm (same-type,
+/// cross-type, and map); only the per-binding-type name extraction differs.
 @comptime
-fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+fn variant_pattern(variant_name: string, names: List<string>) -> Pattern {
     mut params: List<ParamEntry> = []
-    for b in bindings {
-        params.push(ParamEntry { name: b.binding_name, vtype: ValueType.Unknown })
+    for n in names {
+        params.push(ParamEntry { name: n, vtype: ValueType.Unknown })
     }
     Pattern.Variant(variant_name, params)
+}
+
+/// `.VariantName(b1, b2, b3)` for same-type `children()` bindings (scalars
+/// already carry the `_` binding name).
+@comptime
+fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+    mut names: List<string> = []
+    for b in bindings { names.push(b.binding_name) }
+    variant_pattern(variant_name, names)
 }
 
 /// Build the arm body — the Expr producing the children list for this
@@ -735,11 +746,9 @@ fn build_all_children_arms(variants: List<Variant>, parent_name: string, ctx: Re
 /// `.Variant(b1, b2, ...)` pattern for the cross-type bindings.
 @comptime
 fn pattern_for_cross(variant_name: string, bindings: List<CrossBinding>) -> Pattern {
-    mut params: List<ParamEntry> = []
-    for b in bindings {
-        params.push(ParamEntry { name: b.binding_name, vtype: ValueType.Unknown })
-    }
-    Pattern.Variant(variant_name, params)
+    mut names: List<string> = []
+    for b in bindings { names.push(b.binding_name) }
+    variant_pattern(variant_name, names)
 }
 
 /// Build `fn Type__all_children(self) -> List<AnyNode> { match self { arms } }`.
@@ -982,12 +991,7 @@ fn map_binding_names(bindings: List<Binding>) -> List<string> {
 /// scalars to `_`; map can't because it needs to read them back.)
 @comptime
 fn map_pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
-    let names = map_binding_names(bindings)
-    mut params: List<ParamEntry> = []
-    for n in names {
-        params.push(ParamEntry { name: n, vtype: ValueType.Unknown })
-    }
-    Pattern.Variant(variant_name, params)
+    variant_pattern(variant_name, map_binding_names(bindings))
 }
 
 @comptime
