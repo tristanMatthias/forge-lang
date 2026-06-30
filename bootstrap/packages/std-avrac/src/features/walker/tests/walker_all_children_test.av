@@ -1,19 +1,20 @@
-// WHY: A1 (faithful cross-type arena ingest) — verify the derive_walker's new
-// `all_children()` returns EVERY child across the four node kinds (not just the
-// same-type ones `children()` returns), each boxed as `AnyNode`, in field
-// order. Exercised through the @std probes `{stmt,expr,pat,type}_child_tags`
-// (a consumer shard can't call the @std-internal generated method on a core
-// type directly), which return a per-child kind-tag string E/S/P/T. Together
-// the specs cover every FieldKind the real AST exercises: DirectSelf,
-// WrapperListOfSelf, OptionalDirectSelf, bare ListOfSelf, and all-scalar.
+// WHY: A1 (faithful cross-type arena ingest) — verify the derive_walker's
+// `all_children_spanned()` returns EVERY child across the four node kinds (not
+// just the same-type ones `children()` returns), in field order. Exercised
+// through the @std probes `{stmt,expr,pat,type}_child_tags` (a consumer shard
+// can't call the @std-internal generated method on a core type directly), which
+// strip the spans and return a per-child kind-tag string E/S/P/T. Together the
+// specs cover every FieldKind the real AST exercises: DirectSelf,
+// WrapperListOfSelf, OptionalDirectSelf, bare ListOfSelf, and all-scalar. (The
+// per-child SPANS the same walker carries are covered in arena_test.av.)
 
 use @std.avrac.core.{Stmt, Expr, Pattern, ValueType, BinOp, SStmt, sstmt}
 use @std.avrac.core.{stmt_child_tags, expr_child_tags, pat_child_tags, type_child_tags}
 
-spec "derive all_children: cross-type children, in order" {
+spec "derive all_children_spanned: cross-type children, in order" {
     then "Stmt.Let -> ValueType child then Expr child (T then E)" {
-        // children() (same-type Stmt) is empty; all_children adds the cross-type
-        // ty_vt (ValueType) and initializer (Expr). name (string) is scalar.
+        // children() (same-type Stmt) is empty; all_children_spanned adds the
+        // cross-type ty_vt (ValueType) and initializer (Expr). name is scalar.
         stmt_child_tags(Stmt.Let("x", ValueType.Int, Expr.Number("1"))) == "TE"
     }
     then "Expr.Binary -> both operand Exprs (op scalar skipped)" {
@@ -31,7 +32,7 @@ spec "derive all_children: cross-type children, in order" {
 // One spec per remaining FieldKind the AST actually exercises, so the boxing of
 // each kind is asserted on a real node — not just the DirectSelf/WrapperList
 // cases above.
-spec "derive all_children: optional and bare-list field kinds" {
+spec "derive all_children_spanned: optional and bare-list field kinds" {
     then "Stmt.If with an else -> cond/then/else (OptionalDirectSelf present, ESS)" {
         // else_branch is Stmt? — a present value boxes as one trailing child.
         stmt_child_tags(Stmt.If(Expr.Number("1"), Stmt.Break, Stmt.Continue)) == "ESS"
