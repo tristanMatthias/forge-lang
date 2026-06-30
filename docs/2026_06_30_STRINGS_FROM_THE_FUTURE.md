@@ -517,6 +517,11 @@ mut out = ""
 for line in lines { out += "> {line}\n" }
 ```
 
+> **Observation writing these:** the crown-jewel match + slices + the `Seq`
+> protocol carry almost every example, and they all lean on the same **two
+> guarantees** — *immutable* + *valid-UTF-8*. That's a good sign the model is
+> actually **one idea, not a bag of features**.
+
 ---
 
 # Part V — Taking it further: a format is a value the compiler runs in every direction
@@ -828,9 +833,11 @@ Reproduced word-for-word from the design conversation.
 
 # Part VIII — Open questions
 
-1. **Grapheme default.** Resolved in this doc by *deleting* the default (iterate a
-   lens: `.chars` / `.bytes` / `.graphemes`). Confirm this beats a defaulted
-   `for c in s` on real code ergonomics.
+1. **Grapheme default** — posed in the conversation as "the next paradox in the
+   stack": codepoints (`char`) are fast/simple/ASCII-correct but split emoji;
+   graphemes are human-correct but need Unicode tables. Resolved in this doc by
+   *deleting* the default (iterate a lens: `.chars` / `.bytes` / `.graphemes`).
+   Confirm this beats a defaulted `for c in s` on real code ergonomics.
 2. **Mutable text.** Proposed: `string` is a persistent rope (Move 6). Confirm the
    O(log n) edit / value-semantics / cursor-survival story holds against an
    editor/streaming workload, and that it composes with `scope` manual memory.
