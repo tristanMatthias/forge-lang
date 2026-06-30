@@ -450,6 +450,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 
 ## Known Technical Details
 
+- **TypeId is content-addressed, not a counter:** `type_registry_register` assigns `id = content_id_for(FQN)` (FNV-1a-64 of the fully-qualified name), so the SAME type gets the SAME id in every registry/process/build. Ids are sparse i64 (frequently NEGATIVE) — NEVER index by them (`infos[id-1]` is gone; go through `type_registry_lookup` / the `id_to_index` map) and test "stamped" as `id != 0`, never `> 0`. `vtype_eq` compares nominal identity by id, kind-agnostically (a parser-default `Struct("Foo")` and a resolved `Newtype("Foo")` of the same FQN are equal); the FQN string is only the pre-resolve (id==0) fallback. The on-disk symbol id (`build::metadata::sym_id_for`) delegates to the same `content_id_for` — one identity, in-process and on-disk. (Counter ids were collision-free but diverged across package registries — the 24yd bug; content ids trade a negligible i64-truncation collision risk for cross-registry stability, matching the scheme metadata already trusted.)
 - **Enum layout:** `{i64 tag, ptr payload}` (16 bytes). Tags are djb2 hashes (stable across reordering). Payloads heap-allocated.
 - **Statement/Token size:** 112 bytes each (`{i8, i64x13}`), not 16.
 - **`export let` vs `export mut`:** `let` compiles to local allocas. Use `mut` for cross-module globals.

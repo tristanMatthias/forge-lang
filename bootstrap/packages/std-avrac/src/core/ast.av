@@ -900,8 +900,10 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         let id1 = vtype_nominal_id(a)
         let id2 = vtype_nominal_id(b)
         let same = if id1 != 0 && id2 != 0 { id1 == id2 } else { vtype_nominal_fqn(a) == vtype_nominal_fqn(b) }
-        let variant_match = vtype_nominal_variant(a) == vtype_nominal_variant(b)
-        return same && variant_match && newtype_inners_eq(a, b)
+        if !same { return false }
+        // Same nominal: a NarrowedEnum still differs by its narrowed variant,
+        // and two Newtypes by their inner type. Both short-circuit cheaply.
+        return vtype_nominal_variant(a) == vtype_nominal_variant(b) && newtype_inners_eq(a, b)
     }
     // Nominal kinds (Struct / Enum / Newtype / Trait / NarrowedEnum) are
     // settled above by the content-id short-circuit; this match handles only
@@ -947,7 +949,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     }
 }
 
-/// T6.C: re-stamp registry ids on every nominal slot whose id is 0.
+/// Re-stamp registry ids on every nominal slot whose id is 0.
 /// Required because macro / comptime / monomorphizer-emitted AST
 /// nodes carry parser-shape ValueTypes with id=0 even though the
 /// type's name IS registered. Walking the AST after resolve+expand
