@@ -169,11 +169,13 @@ spec "bs2 cache prune: rejects a non-numeric --max-age-days (no deletion)" {
         let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
         let probe = avra_shell_exec(
             "touch -t 202001010000 " + project + "build/cache/abc123 " + project + "build/cache/def456 && " +
-            "cd " + project + " && (" + bs2 + " cache prune --max-age-days abc 2>&1 || true) && " +
+            "cd " + project + " && (" + bs2 + " cache prune --max-age-days abc 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi) && " +
             "echo --- && " +
             "([ -d " + project + "build/cache/abc123 ] && echo kept=yes || echo kept=no)")
         let _ = teardown_fixture(project)
-        probe.contains("kept=yes") && probe.contains("--max-age-days")
+        // rc=nonzero: the bad arg must EXIT non-zero (not just print) so scripts
+        // see the failure; kept=yes: the cache is left fully intact.
+        probe.contains("kept=yes") && probe.contains("--max-age-days") && probe.contains("rc=nonzero")
     }
 }
 
@@ -183,11 +185,13 @@ spec "bs2 cache prune: rejects a negative --max-age-days (no deletion)" {
         let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
         let probe = avra_shell_exec(
             "touch -t 202001010000 " + project + "build/cache/abc123 " + project + "build/cache/def456 && " +
-            "cd " + project + " && (" + bs2 + " cache prune --max-age-days -5 2>&1 || true) && " +
+            "cd " + project + " && (" + bs2 + " cache prune --max-age-days -5 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi) && " +
             "echo --- && " +
             "([ -d " + project + "build/cache/abc123 ] && echo kept=yes || echo kept=no)")
         let _ = teardown_fixture(project)
-        probe.contains("kept=yes") && probe.contains("--max-age-days")
+        // rc=nonzero: the bad arg must EXIT non-zero (not just print) so scripts
+        // see the failure; kept=yes: the cache is left fully intact.
+        probe.contains("kept=yes") && probe.contains("--max-age-days") && probe.contains("rc=nonzero")
     }
 }
 

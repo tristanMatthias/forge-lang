@@ -36,6 +36,7 @@
 #include <sys/wait.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include <errno.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -1486,7 +1487,7 @@ int64_t avra_remove_file(const char* path) {
 static int64_t avra_remove_tree_rec(const char* path, int depth) {
     if (depth > AVRA_CACHE_WALK_MAX_DEPTH) return 0;  // too deep — refuse
     struct stat st;
-    if (lstat(path, &st) != 0) return 1;  // already absent
+    if (lstat(path, &st) != 0) return errno == ENOENT ? 1 : 0;  // ENOENT = already gone (ok); any other errno (EACCES/EIO/ELOOP/…) = it's still there, so fail
     if (!S_ISDIR(st.st_mode)) return unlink(path) == 0 ? 1 : 0;
     DIR* d = opendir(path);
     if (!d) return 0;  // can't enumerate → can't empty → report failure

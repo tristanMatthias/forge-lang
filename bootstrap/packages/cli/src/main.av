@@ -2173,11 +2173,11 @@ fn valid_max_age_days(s: string) -> bool {
     n >= 0 && n <= 36500 && string(n) == s
 }
 
-// `avra cache <subcommand>` — manage the build cache.
-//   prune        : evict stale entries (default: max-age 30 days).
-//   info         : print cache size + entry count.
-//   clear-failed : evict fixture-stdout captures that froze a `: FAIL`
-//                  (zp5b) without disturbing passing captures.
+/// `avra cache <subcommand>` — manage the build cache.
+///   prune        : evict stale entries (default: max-age 30 days).
+///   info         : print cache size + entry count.
+///   clear-failed : evict fixture-stdout captures that froze a `: FAIL`
+///                  (zp5b) without disturbing passing captures.
 fn run_cache_command() {
     let project_dir = avra_process_env_get("PWD")
     let cache_dir = "${project_dir}/build/cache"
@@ -2264,7 +2264,9 @@ fn run_cache_command() {
             if avra_remove_tree(p) != 1 { failures = failures + 1 }
         }
         if failures > 0 {
-            println("cache prune: evicted ${string(stale.length - failures)} entries; ${string(failures)} could not be fully removed")
+            // Exit non-zero (fail) on a partial prune, so a script driving
+            // `bs2 cache prune` never treats an incomplete deletion as success.
+            fail("cache prune: evicted ${string(stale.length - failures)} entries; ${string(failures)} could not be fully removed")
         } else {
             println("cache prune: evicted ${string(stale.length)} entries older than ${max_age_days_str} days")
         }
