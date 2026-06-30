@@ -214,9 +214,10 @@ decisive oracle, which nothing removes; the corpus is tiny and always runs). Two
 **NON-HERMETIC** (build/bs2's seed/source aren't pinned), so the plain
 `make diff-test` is the authoritative check and the only one CI runs; (2)
 **rebuild `bs2` first** — a stale build/bs2 (the known `pdme.1`/`6cks` cache bug)
-compared against OLD reports a false **PASS**. The selfhost + corpus compiles run
-**concurrently** in every mode (via `bs2 compile --output`), so the post-build
-cost is ~one selfhost compile, not two — no flag needed.
+compared against OLD reports a false **PASS**. The two **selfhost** compiles (OLD
+and NEW) run **concurrently** in every mode (via `bs2 compile --output`), so the
+selfhost phase costs ~one compile, not two; the corpus files fan out in parallel
+too — no flag needed.
 
 - Implemented as `diagnose.sh --diff-test` (centralized, per rule 10). It
   builds the compiler at both refs **in isolation, from the SAME pinned

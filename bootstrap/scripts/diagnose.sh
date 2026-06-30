@@ -252,11 +252,12 @@ DIFF & ANALYSIS
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
                        over the selfhost source + curated standalone corpus
-                       (tests/difftest_corpus/*.av), selfhost + corpus compiled
-                       concurrently. The go-hard safety net. --new-prebuilt
-                       reuses build/bs2 as NEW (skip the cold rebuild; LOCAL,
-                       non-hermetic). DIFF_TEST_CORPUS=<glob> overrides the
-                       corpus; DIFF_TEST_JOBS=<n> the fan-out width.
+                       (tests/difftest_corpus/*.av). The two selfhost compiles
+                       run concurrently; the corpus fans out in parallel. The
+                       go-hard safety net. --new-prebuilt reuses build/bs2 as
+                       NEW (skip the cold rebuild; LOCAL, non-hermetic).
+                       DIFF_TEST_CORPUS=<glob> overrides the corpus;
+                       DIFF_TEST_JOBS=<n> the fan-out width.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -2744,9 +2745,12 @@ mode_check_bootstrap_window() {
 # would be skipped after a doomed ~1s compile, leaving the corpus phase with
 # ZERO real comparisons (the bug this default fixed).
 #
-# The selfhost + corpus compiles run CONCURRENTLY (`--output` stops the two
-# compilers clobbering each other's IR file), so the post-build cost is roughly
-# one selfhost compile, not two. Corpus fan-out is bounded by DIFF_TEST_JOBS.
+# The two selfhost compiles (OLD and NEW) run CONCURRENTLY — `--output` stops
+# them clobbering each other's IR file — so the selfhost phase, the dominant
+# post-build cost, takes ~one compile's wall time, not two. The corpus files
+# then fan out in parallel too (bounded by DIFF_TEST_JOBS). The selfhost and
+# corpus PHASES are still sequential, but the corpus is tiny (~13 files) so
+# overlapping them across phases would save a rounding error, not the builds.
 #
 # Usage / knobs:
 #   --base <ref>            OLD/oracle ref     (default: integration branch)
@@ -2819,13 +2823,22 @@ dt_default_jobs() {
   printf '%s' "$n"
 }
 
-# Run ONE corpus input through BOTH compilers in an isolated per-file dir, so
-# tasks fan out without racing. Writes a one-word verdict to $cwd/status
-# (ok | diverge | newfail | skip) for the caller to aggregate; never fails the
-# calling shell (a bad compile is recorded, not propagated up).
+# Collision-free per-input work-dir key: a hash of the FULL path. Same-named
+# files from different directories (a multi-dir DIFF_TEST_CORPUS override) must
+# not share $wd/corpus/<key> — that would race their status/.ll files and
+# mis-attribute the verdict. The display name (basename) is kept separate.
+dt_corpus_key() {
+  printf '%s' "$1" | cksum | cut -d' ' -f1
+}
+
+# Run ONE corpus input through BOTH compilers in an isolated per-input dir
+# (keyed by full path, not basename), so tasks fan out without racing. Writes a
+# one-word verdict to $cwd/status (ok | diverge | newfail | skip) for the caller
+# to aggregate; never fails the calling shell (a bad compile is recorded, not
+# propagated up).
 dt_corpus_task() {
   local input="$1" old_bs2="$2" new_bs2="$3" wd="$4"
-  local name cwd; name=$(basename "$input"); cwd="$wd/corpus/$name"
+  local cwd="$wd/corpus/$(dt_corpus_key "$input")"
   mkdir -p "$cwd"
   # OLD is the oracle: a file it can't compile standalone is out of scope.
   if ! dt_compile_ir "$input" "$old_bs2" "$cwd" "$cwd/old.ll"; then
@@ -2933,7 +2946,7 @@ mode_diff_test() {
   local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/difftest_corpus/*.av}"
   local jobs="${DIFF_TEST_JOBS:-$(dt_default_jobs)}"
   log "diff-test: corpus differential — $glob (jobs=$jobs)"
-  local divergent=() skipped_names=() input name cwd status in_batch=0
+  local divergent=() skipped_names=() input name cwd status in_batch=0 first_div_cwd=""
   # Fan out: each input runs through both compilers in its own dir
   # (dt_corpus_task), bounded to $jobs concurrent so a large overridden
   # corpus can't OOM. --output means no two tasks share an output path.
@@ -2949,14 +2962,16 @@ mode_diff_test() {
   # scope); for the curated corpus that signals a regressed file.
   for input in $glob; do
     [ -f "$input" ] || continue
-    name=$(basename "$input"); cwd="$wd/corpus/$name"
+    name=$(basename "$input"); cwd="$wd/corpus/$(dt_corpus_key "$input")"
     status=$(cat "$cwd/status" 2>/dev/null || printf 'missing')
     case "$status" in
       ok)      checked=$((checked+1)); rm -rf "$cwd" ;;
       skip)    skipped=$((skipped+1)); skipped_names+=("$name"); rm -rf "$cwd" ;;
       newfail) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name")
+               [ -z "$first_div_cwd" ] && first_div_cwd="$cwd"
                err "diff-test: NEW failed to compile '$name' that OLD compiled — regression" ;;
-      diverge) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name") ;;
+      diverge) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name")
+               [ -z "$first_div_cwd" ] && first_div_cwd="$cwd" ;;
       *)       fails=$((fails+1))
                err "diff-test: corpus task for '$name' produced no verdict (harness bug)" ;;
     esac
@@ -2965,11 +2980,11 @@ mode_diff_test() {
     err "diff-test: ${#divergent[@]} corpus input(s) diverged:"
     printf '  %s\n' "${divergent[@]}" >&2
     # Show the first IR divergence — but only when both sides exist (a
-    # NEW-compile failure leaves no new.ll to diff against).
-    local d0="$wd/corpus/${divergent[0]}"
-    if [ -f "$d0/old.ll" ] && [ -f "$d0/new.ll" ]; then
+    # NEW-compile failure leaves no new.ll to diff against). first_div_cwd is
+    # the work dir of divergent[0] (path-keyed, not basename).
+    if [ -f "$first_div_cwd/old.ll" ] && [ -f "$first_div_cwd/new.ll" ]; then
       err "first divergence (${divergent[0]}):"
-      diff -u "$d0/old.ll" "$d0/new.ll" | head -80 >&2
+      diff -u "$first_div_cwd/old.ll" "$first_div_cwd/new.ll" | head -80 >&2
     fi
   fi
   # A skip in the curated corpus is a misconfiguration, not normal scope
