@@ -903,6 +903,10 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         let variant_match = vtype_nominal_variant(a) == vtype_nominal_variant(b)
         return same && variant_match && newtype_inners_eq(a, b)
     }
+    // Nominal kinds (Struct / Enum / Newtype / Trait / NarrowedEnum) are
+    // settled above by the content-id short-circuit; this match handles only
+    // structural / primitive / container types. A nominal `a` reaching here
+    // means `b` is non-nominal, so the `_ -> false` tail correctly rejects it.
     match a {
         .Int -> b is .Int
         .U8 -> b is .U8
@@ -919,8 +923,6 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .List(ea) -> match b { .List(eb) -> vtype_eq(ea, eb), _ -> false }
         .Fn -> b is .Fn
         .Void -> b is .Void
-        .Struct(n1, _, id1) -> match b { .Struct(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
-        .Enum(n1, _, id1) -> match b { .Enum(n2, _, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Float -> b is .Float
         .Map(ka, va) -> match b { .Map(kb, vb) -> vtype_eq(ka, kb) && vtype_eq(va, vb), _ -> false }
         .FnTyped(pa, ra) -> match b {
@@ -932,15 +934,12 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
             .Fn(_) -> true
             _ -> false
         }
-        .Trait(n1, id1) -> match b { .Trait(n2, id2) -> if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }, _ -> false }
         .Tuple(ea) -> match b { .Tuple(eb) -> type_lists_eq(ea, eb), _ -> false }
         .Closure(na, ra) -> match b { .Closure(nb, rb) -> na == nb && vtype_eq(ra, rb), _ -> false }
         .Union(types_a) -> match b {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
-        .Newtype(n1, ia, id1) -> match b { .Newtype(n2, ib, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { n1 == n2 }) && vtype_eq(ia, ib), _ -> false }
-        .NarrowedEnum(e1, v1, id1) -> match b { .NarrowedEnum(e2, v2, id2) -> (if id1 > 0 && id2 > 0 { id1 == id2 } else { e1 == e2 }) && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
         .Task(ra) -> match b { .Task(rb) -> vtype_eq(ra, rb), _ -> false }
         .Channel(ea) -> match b { .Channel(eb) -> vtype_eq(ea, eb), _ -> false }
@@ -952,9 +951,10 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
 /// Required because macro / comptime / monomorphizer-emitted AST
 /// nodes carry parser-shape ValueTypes with id=0 even though the
 /// type's name IS registered. Walking the AST after resolve+expand
-/// + comptime closes the gap so vtype_eq's nominal arms reach
-/// the id-path for the common case (T6.D dropped the bare/FQN
-/// tolerance helper — names are exact-match now).
+/// + comptime closes the gap so vtype_eq's content-id short-circuit
+/// reaches the id-path for the common case, leaving the FQN-string
+/// fallback only for genuinely unstamped slots (names are exact-match —
+/// no bare/FQN tolerance).
 export fn stamp_ids_vtype(t: ValueType, reg: TypeRegistry) -> ValueType {
     match t {
         .Struct(n, args, id) -> {
