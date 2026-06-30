@@ -496,16 +496,6 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
     store with { roots, provenance }
 }
 
-/// Compat shim (reverse direction, ps3t.3.7): rebuild the top-level statement
-/// list from the arena — the inverse of `ingest_program`, so a pass migrated to
-/// read from the store can still hand the un-migrated passes an `SStmt` tree.
-/// Each root node is re-wrapped with its (line, col) recomputed from the span
-/// side-table (§14.2) and its `from_macro` restored from the provenance
-/// side-table (§14.3). Faithful for node structure + line/col + provenance at
-/// this migration phase (nodes still retain their boxed children, which carry
-/// their own positions); `file` is threaded in (the arena is single-source) so
-/// this stays behind `AVRA_L1_INGEST` until per-node file lands for multi-file
-/// units.
 /// Assemble the top-level `List<SStmt>` from the store's roots — the shared spine
 /// of `program_from_store` / `reconstruct_program`. Each root's boxed node comes
 /// from `node_of` (the stored node, or one rebuilt from edges); its (line, col),
@@ -522,6 +512,15 @@ fn roots_to_sstmts(store: NodeStore, file: string, node_of: fn(StmtId) -> Stmt) 
     out
 }
 
+/// Compat shim (reverse direction): rebuild the top-level statement list from the
+/// arena — the inverse of `ingest_program`, so a pass migrated to read from the
+/// store can still hand the un-migrated passes an `SStmt` tree. Each root is its
+/// stored boxed node, re-wrapped with (line, col) recomputed from the span
+/// side-table (§14.2) and `from_macro` restored from the provenance side-table
+/// (§14.3). Faithful for node structure + line/col + provenance at this migration
+/// phase (nodes still retain their boxed children, which carry their own
+/// positions); `file` is threaded in (the arena is single-source) so this stays
+/// behind `AVRA_L1_INGEST` until per-node file lands for multi-file units.
 export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
     roots_to_sstmts(store, file, (id: StmtId) -> store.stmts.get(id))
 }
