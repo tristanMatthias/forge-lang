@@ -11,6 +11,7 @@
 use @std.avrac.core.{Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry}
 use @std.avrac.core.{stmt_child_tags, expr_child_tags, pat_child_tags, type_child_tags}
 use @std.avrac.core.{wc_roundtrip_expr, wc_roundtrip_stmt, wc_roundtrip_pat, wc_roundtrip_type}
+use @std.avrac.core.{AnyNode, SpannedChild, spanned_child, respan_sexpr_opt, respan_sstmt_opt, render_expr, render_stmt, render_pattern}
 
 spec "derive all_children_spanned: cross-type children, in order" {
     then "Stmt.Let -> ValueType child then Expr child (T then E)" {
@@ -113,5 +114,49 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
     then "nested (Block holds an Expr-stmt holding a Binary) round-trips at depth" {
         let inner: List<SStmt> = [sstmt(Stmt.Expr(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2"))), 1, 1)]
         wc_roundtrip_expr(Expr.Block(inner))
+    }
+}
+
+// The OptionalWrapperOfSelf field kind (a `SExpr?`/`SStmt?` slot) has NO walked
+// AST variant today — the only such fields live on the MatchArm/WhenArm structs,
+// which the walker doesn't descend into — so the generated with_children never
+// reaches the respan_*_opt rebuild helpers and the round-trip law can't cover them.
+// Exercise the inverse helpers directly: present (1 child) rebuilds the wrapper
+// with its recovered span, absent (empty run) yields null. Guards the codepath
+// that would otherwise first execute, untested, the day such a field is added.
+spec "inverse-walker: OptionalWrapperOfSelf rebuild (respan_*_opt) — present + absent" {
+    then "present run rebuilds the wrapper from its node + recovered span" {
+        let e_kids: List<SpannedChild> = [spanned_child(AnyNode.AnyExpr(Expr.Number("7")), 4, 2)]
+        let s_kids: List<SpannedChild> = [spanned_child(AnyNode.AnyStmt(Stmt.Break), 5, 1)]
+        let e = respan_sexpr_opt(e_kids)
+        let s = respan_sstmt_opt(s_kids)
+        e != null && e!.line == 4 && e!.col == 2 && render_expr(e!.node) == "7"
+          && s != null && s!.line == 5 && render_stmt(s!.node) == "(break)"
+    }
+    then "absent run (empty child list) yields null" {
+        let none_e: List<SpannedChild> = []
+        let none_s: List<SpannedChild> = []
+        respan_sexpr_opt(none_e) == null && respan_sstmt_opt(none_s) == null
+    }
+}
+
+// The render arms render_pattern gained alongside the inverse walker (so the
+// round-trip oracle stops collapsing patterns) are all-scalar passthroughs, so a
+// round-trip can't break them — but the render LOGIC itself (LitBool int->bool,
+// LitString quoting, NestedVariant sub-list descent) was unverified. Assert it.
+spec "render_pattern: literal + nested arms render distinctly" {
+    then "string literal renders quoted" {
+        render_pattern(Pattern.LitString("hi")) == "\"hi\""
+    }
+    then "bool literals render true/false" {
+        render_pattern(Pattern.LitBool(1)) == "true" && render_pattern(Pattern.LitBool(0)) == "false"
+    }
+    then "float literal renders its stored value" {
+        render_pattern(Pattern.LitFloat("1.5")) == "1.5"
+    }
+    then "nested variant descends into its comma-joined sub-patterns" {
+        let no_b: List<ParamEntry> = []
+        let subs: List<Pattern> = [Pattern.LitInt(1), Pattern.Variant("X", no_b)]
+        render_pattern(Pattern.NestedVariant("Some", subs)) == ".Some(1, .X())"
     }
 }
