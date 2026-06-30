@@ -559,6 +559,28 @@ export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, cmd, "compile-and-run")
 }
 
+/// The fixture-stdout capture cache directory, relative to PWD. Single
+/// source of truth for the layout: both the writer (cached_fixture_capture)
+/// and the `bs2 cache clear-failed` evictor compose their paths from this,
+/// so they can never disagree on where captures live.
+export fn fixture_stdout_cache_dir() -> string { "build/cache/fixture_stdout" }
+
+/// fxfz: source directive a fixture embeds (as a comment) to opt into
+/// "stateful" cache treatment. Defined once so the producer (the fixture
+/// source) and the consumer (fixture_is_stateful) key on the same token — a
+/// raw duplicated sentinel would drift silently and quietly re-open the freeze.
+export const FIXTURE_STATEFUL_MARKER: string = "@@fixture-stateful@@"
+
+/// fxfz: true when the fixture's SOURCE opts into stateful cache treatment —
+/// it pre-builds @std packages into the SHARED packages/*/build caches and
+/// probes the resulting artifacts, build state that lives OUTSIDE the cache
+/// key (toolchain fp + fixture source). Detected from the source rather than
+/// the captured stdout so a run that is killed mid-capture (the OOM case fxfz
+/// guards) can't drop the opt-in along with the truncated output.
+export fn fixture_is_stateful(fixture_path: string) -> bool {
+    avra_selfhost_read_file(fixture_path).contains(FIXTURE_STATEFUL_MARKER)
+}
+
 /// Shared helper. The verb is folded into the cache key so two
 /// different command shapes against the same fixture don't share a
 /// slot; everything else (toolchain fp + file hash + fixture path)
@@ -576,7 +598,7 @@ export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
 /// to persist such outputs makes the next run re-execute the fixture
 /// and pick up a clean stdout.
 fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> string {
-    let cache_dir = "build/cache/fixture_stdout"
+    let cache_dir = fixture_stdout_cache_dir()
     let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
     let fixture_h = sha256_file(fixture_path)
     let key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
@@ -600,7 +622,7 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
         return cached
     }
     let out = avra_shell_exec(cmd)
-    if fixture_output_is_publishable(out) {
+    if fixture_output_is_publishable(out, fixture_is_stateful(fixture_path)) {
         let _ = avra_selfhost_write_file(cache_path, out)
     }
     avra_file_unlock(lock_fd)
@@ -634,23 +656,21 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 /// reopened with. (The on-demand `bs2 cache clear-failed` command is
 /// the escape hatch for a generic FAIL frozen by a one-off transient.)
 ///
-/// fxfz: a fixture may OPT IN to "stateful" treatment by printing the
-/// `@@fixture-stateful@@` marker (typically the first line of `main`).
-/// Such a fixture pre-builds @std packages into the SHARED
-/// `packages/*/build` caches and probes the resulting artifacts — build
-/// state that is NOT covered by the fixture cache key (toolchain fp +
-/// fixture source). A capture taken while that shared cache sat in a
-/// corrupt / half-published state would otherwise be frozen and replayed
-/// forever, since repairing the cache changes neither key input (the
-/// historic fxfz freeze: `cli_metadata_compile`'s `PROBE
-/// std_cli_meta_present: FAIL`). So when a stateful fixture reports ANY
-/// `: FAIL`, reject the capture and let the next invocation re-probe once
-/// the build state is consistent. Happy captures (every probe `: ok`) carry
-/// no `: FAIL`, so they cache normally — zero cost on the passing path. A
-/// fixture asserting an EXPECTED failure simply omits the marker, keeping
-/// its `: FAIL` cacheable.
-export fn fixture_output_is_publishable(out: string) -> bool {
-    if out.contains("@@fixture-stateful@@") && out.contains(": FAIL") { return false }
+/// fxfz: `fixture_stateful` (computed by `fixture_is_stateful` from the
+/// fixture SOURCE) marks a fixture that pre-builds @std packages into the
+/// SHARED `packages/*/build` caches and probes the resulting artifacts —
+/// build state NOT covered by the fixture cache key (toolchain fp + fixture
+/// source). A capture taken while that shared cache sat in a corrupt /
+/// half-published state would otherwise be frozen and replayed forever, since
+/// repairing the cache changes neither key input (the historic fxfz freeze:
+/// `cli_metadata_compile`'s `PROBE std_cli_meta_present: FAIL`). So when a
+/// stateful fixture reports ANY `: FAIL`, reject the capture and let the next
+/// invocation re-probe once the build state is consistent. Happy captures
+/// (every probe `: ok`) carry no `: FAIL`, so they cache normally — zero cost
+/// on the passing path. A fixture asserting an EXPECTED failure simply omits
+/// the stateful directive, keeping its `: FAIL` cacheable.
+export fn fixture_output_is_publishable(out: string, fixture_stateful: bool) -> bool {
+    if fixture_stateful && out.contains(": FAIL") { return false }
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }

@@ -58,7 +58,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
@@ -2218,34 +2218,44 @@ fn run_cache_command() {
         // to re-run the handful of genuinely-failed fixtures, not the whole
         // suite. Zero cost on normal runs: it does work only when invoked.
         //
+        // Walked natively (avra_readdir / avra_remove_file) rather than shelled
+        // out: the cache dir derives from $PWD, and interpolating an arbitrary
+        // path into a `grep … '<dir>'/*.out` shell string is both injectable (a
+        // path containing a quote escapes the quoting — Avra expands the path
+        // into the string before the shell sees it) and fragile (ARG_MAX on a
+        // large cache; `grep -l | xargs rm` mishandling odd filenames). The
+        // native walk reads each capture once and unlinks the matches directly.
+        //
         // `: FAIL` is the PROBE/spec failure convention (`PROBE <name>: FAIL`,
         // `<name>: FAIL`). Compiler diagnostics use F-codes (`F0012: …`), never
         // this token, so error-assertion captures are untouched. Evicting a
         // legitimately-failing capture is harmless regardless: the next run
         // re-captures the identical result.
-        let fixture_dir = "${cache_dir}/fixture_stdout"
-        if !avra_selfhost_file_exists(fixture_dir) {
+        let fixture_dir = "${project_dir}/${fixture_stdout_cache_dir()}"
+        if avra_is_dir(fixture_dir) == 0 {
             println("cache clear-failed: no fixture_stdout cache at ${fixture_dir}")
             return
         }
-        // grep -lF lists files whose captured stdout carries the fixed `: FAIL`
-        // token. The `*.out` glob may stay literal on an empty cache — grep then
-        // fails to open it (stderr → /dev/null) and prints nothing, which the
-        // empty-string guard handles.
-        let scan = "grep -lF ': FAIL' '${fixture_dir}'/*.out 2>/dev/null"
-        let matches = avra_shell_exec(scan)
-        if matches == "" {
+        mut failed: List<string> = []
+        for name in avra_readdir(fixture_dir) {
+            if avra_str_ends_with(name, ".out") {
+                let path = "${fixture_dir}/${name}"
+                if avra_selfhost_read_file(path).contains(": FAIL") {
+                    failed.push(path)
+                }
+            }
+        }
+        if failed.length == 0 {
             println("cache clear-failed: no frozen-FAIL captures in ${fixture_dir}")
             return
         }
-        let count_str = avra_shell_exec("printf '%s\\n' '${matches}' | grep -c .")
         if dry_run {
-            println("cache clear-failed --dry-run: would delete ${count_str} frozen-FAIL captures:")
-            println(matches)
+            println("cache clear-failed --dry-run: would delete ${string(failed.length)} frozen-FAIL captures:")
+            for p in failed { println(p) }
             return
         }
-        let _ = avra_shell_exec("${scan} | xargs rm -f")
-        println("cache clear-failed: deleted ${count_str} frozen-FAIL captures")
+        for p in failed { let _ = avra_remove_file(p) }
+        println("cache clear-failed: deleted ${string(failed.length)} frozen-FAIL captures")
         return
     }
 

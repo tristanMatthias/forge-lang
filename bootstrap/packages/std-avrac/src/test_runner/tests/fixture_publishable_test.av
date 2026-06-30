@@ -1,86 +1,122 @@
-// WHY: the fixture-stdout cache must never freeze a TRANSIENT build-state
-// failure into a permanent one (the fxfz/927f hazard). A heavy fixture that
-// gets OOM-killed (bare `Killed` + `compile produced no IR`), hits a linker
-// error from an inconsistent realobj state, or races diagnose.sh's temp files
-// would otherwise have that failure cached and replayed forever. These cases
-// are never legitimate fixture stdout, so `fixture_output_is_publishable`
-// rejects them and lets the next run re-capture once the environment recovers.
-// This pins that contract so a future edit can't silently re-open the freeze.
+// WHY: the fixture-stdout cache must never freeze a TRANSIENT or stale-
+// ENVIRONMENT failure into a permanent one (the zp5b/fxfz/927f hazard). This
+// pins three contracts of the publishability gate plus the source-directive
+// statefulness detector:
+//   1. Environmental noise (OOM `Killed`, `compile produced no IR`, link
+//      errors, segfaults) is never cached — a heavy fixture killed once would
+//      otherwise replay that failure forever.
+//   2. fxfz: a STATEFUL fixture (one probing SHARED build state outside the
+//      cache key — detected from its SOURCE by `fixture_is_stateful`) must not
+//      cache a `: FAIL`, so a corrupt shared-cache state re-probes next run.
+//   3. zp5b: a NON-stateful `: FAIL` stays cacheable (rejecting every FAIL
+//      would re-run deterministically-failing fixtures every cycle — the cost
+//      the zp5b revert was about); `bs2 cache clear-failed` evicts those on
+//      demand instead.
 
-use @std.avrac.test_runner.{fixture_output_is_publishable}
+use @std.avrac.test_runner.{fixture_output_is_publishable, fixture_is_stateful, FIXTURE_STATEFUL_MARKER}
+
+extern fn avra_shell_exec(cmd: string) -> string
 
 spec "fixture cache: legitimate output is publishable" {
     then "normal PROBE output caches" {
-        fixture_output_is_publishable("PROBE thing: ok\nmore output\n")
+        fixture_output_is_publishable("PROBE thing: ok\nmore output\n", false)
     }
     then "empty output caches" {
-        fixture_output_is_publishable("")
+        fixture_output_is_publishable("", false)
     }
     then "output mentioning a signal IN PROSE still caches" {
         // A test that legitimately prints the word in running text must not
         // be rejected — only the line-anchored crash reports are.
-        fixture_output_is_publishable("the handler logged: process was reaped\n")
+        fixture_output_is_publishable("the handler logged: process was reaped\n", false)
     }
 }
 
 spec "fixture cache: transient build-state failures are rejected" {
     then "OOM bare `Killed` mid-output is rejected" {
-        !fixture_output_is_publishable("compiling...\nKilled\n")
+        !fixture_output_is_publishable("compiling...\nKilled\n", false)
     }
     then "OOM bare `Killed` at end-of-output (no trailing newline) is rejected" {
-        !fixture_output_is_publishable("compiling...\nKilled")
+        !fixture_output_is_publishable("compiling...\nKilled", false)
     }
     then "an exactly-`Killed` capture is rejected" {
-        !fixture_output_is_publishable("Killed")
+        !fixture_output_is_publishable("Killed", false)
     }
     then "`compile produced no IR` (build killed before emit) is rejected" {
-        !fixture_output_is_publishable("error: compile produced no IR (looked for src/x.ll)")
+        !fixture_output_is_publishable("error: compile produced no IR (looked for src/x.ll)", false)
     }
     then "`Out of memory` is rejected" {
-        !fixture_output_is_publishable("Out of memory: cannot allocate\n")
+        !fixture_output_is_publishable("Out of memory: cannot allocate\n", false)
     }
     then "an undefined-symbol link error is rejected" {
-        !fixture_output_is_publishable("ld.lld: error: undefined symbol: foo\n")
+        !fixture_output_is_publishable("ld.lld: error: undefined symbol: foo\n", false)
     }
     then "a segfault is rejected" {
-        !fixture_output_is_publishable("Segmentation fault\n")
+        !fixture_output_is_publishable("Segmentation fault\n", false)
     }
 }
 
-// fxfz: a fixture that declares itself stateful (the `@@fixture-stateful@@`
-// marker) pre-builds @std packages into the SHARED packages/*/build caches
-// and probes the artifacts — state outside the fixture-stdout cache key. A
-// `: FAIL` from such a fixture means that shared state was corrupt/half-
-// published, NOT a deterministic property of the fixture source, so the
-// capture must not be frozen. A passing capture (every probe `: ok`) carries
-// no `: FAIL` and still caches normally — zero cost on the passing path.
-spec "fixture cache: stateful-marked failures are rejected (fxfz)" {
-    then "marker + a probe FAIL is rejected" {
-        !fixture_output_is_publishable("@@fixture-stateful@@\nPROBE std_cli_meta_present: FAIL\n")
+// fxfz: a STATEFUL fixture probes SHARED build state outside the cache key, so
+// a `: FAIL` from it means that shared state was corrupt/half-published, NOT a
+// deterministic property of the fixture source — the capture must not freeze.
+// A passing capture (every probe `: ok`) carries no `: FAIL` and still caches.
+spec "fixture cache: a stateful fixture's failures are rejected (fxfz)" {
+    then "stateful + a probe FAIL is rejected" {
+        !fixture_output_is_publishable("PROBE std_cli_meta_present: FAIL\n", true)
     }
-    then "marker + a FAIL anywhere in the capture is rejected" {
-        !fixture_output_is_publishable("@@fixture-stateful@@\nPROBE a: ok\nPROBE b: FAIL detail\nPROBE c: ok\n")
+    then "stateful + a FAIL anywhere in the capture is rejected" {
+        !fixture_output_is_publishable("PROBE a: ok\nPROBE b: FAIL detail\nPROBE c: ok\n", true)
     }
-    then "marker with every probe ok still caches" {
-        fixture_output_is_publishable("@@fixture-stateful@@\nPROBE avrac_meta_present: ok\nPROBE cli_main_ll_present: ok\n")
+    then "stateful with every probe ok still caches" {
+        fixture_output_is_publishable("PROBE avrac_meta_present: ok\nPROBE cli_main_ll_present: ok\n", true)
     }
-    then "marker alone (no probes) still caches" {
-        fixture_output_is_publishable("@@fixture-stateful@@\n")
+    then "stateful with the word FAIL in prose (no `: FAIL`) still caches" {
+        // Only the `: FAIL` probe form blocks caching — a stateful fixture that
+        // prints FAIL in running text must still cache its passing capture, or
+        // it would re-run every cycle (the false-positive perf trap).
+        fixture_output_is_publishable("rebuilt after a prior FAILED attempt\nPROBE x: ok\n", true)
     }
 }
 
-// zp5b: a plain `: FAIL` WITHOUT the stateful marker stays publishable — many
-// fixtures legitimately cache a deterministic failure while it's being worked
-// on, and rejecting every `: FAIL` would re-run them on every cycle (the cost
-// the zp5b revert was about). The on-demand `bs2 cache clear-failed` command is
-// the escape hatch for an UNmarked FAIL frozen by a one-off transient.
-spec "fixture cache: an UNmarked FAIL remains publishable (zp5b zero-cost rule)" {
-    then "a bare probe FAIL with no marker still caches" {
-        fixture_output_is_publishable("PROBE foo_slice_smaller_than_whole: FAIL\n")
+// zp5b: a NON-stateful `: FAIL` stays publishable — rejecting every FAIL would
+// re-run deterministically-failing fixtures every cycle (the zp5b revert cost).
+// `bs2 cache clear-failed` is the on-demand escape hatch for those instead.
+spec "fixture cache: a non-stateful FAIL remains publishable (zp5b zero-cost rule)" {
+    then "a bare probe FAIL from a non-stateful fixture still caches" {
+        fixture_output_is_publishable("PROBE foo_slice_smaller_than_whole: FAIL\n", false)
     }
     then "an F-code diagnostic capture still caches" {
         // F-code-assertion tests deliberately cache their error output; the
-        // marker rule keys on `@@fixture-stateful@@`, never on F-codes.
-        fixture_output_is_publishable("error[F0012]: type mismatch: expected int\n")
+        // stateful rule keys on the fixture being marked, never on F-codes.
+        fixture_output_is_publishable("error[F0012]: type mismatch: expected int\n", false)
+    }
+}
+
+// fxfz: statefulness is read from the fixture SOURCE (not its stdout) so a run
+// killed mid-capture can't drop the opt-in. Pins that the directive is detected
+// and — the drift guard — that the two real stateful fixtures in the tree
+// actually carry it, so a typo in the sentinel fails loudly here.
+spec "fixture cache: fixture_is_stateful reads the source directive" {
+    then "a source carrying the directive is stateful" {
+        let p = "/tmp/avra_fxfz_stateful_probe.av"
+        let _ = avra_shell_exec("printf '// ${FIXTURE_STATEFUL_MARKER} marker\\nfn main() -> int { 0 }\\n' > ${p}")
+        let r = fixture_is_stateful(p)
+        let _ = avra_shell_exec("rm -f ${p}")
+        r
+    }
+    then "a source without the directive is not stateful" {
+        let p = "/tmp/avra_fxfz_plain_probe.av"
+        let _ = avra_shell_exec("printf 'fn main() -> int { 0 }\\n' > ${p}")
+        let r = fixture_is_stateful(p)
+        let _ = avra_shell_exec("rm -f ${p}")
+        !r
+    }
+    then "the cli_metadata_compile fixture is registered stateful" {
+        fixture_is_stateful("tests/cli_metadata_compile_fixtures/sample.av")
+    }
+    then "the std_avrac_lib_build fixture is registered stateful" {
+        fixture_is_stateful("tests/std_avrac_lib_build_fixtures/sample.av")
+    }
+    then "a non-stateful fixture is not registered stateful" {
+        !fixture_is_stateful("tests/per_file_metadata_emit_fixtures/sample.av")
     }
 }

@@ -19,13 +19,13 @@ fn probe(name: string, ok: bool) {
 }
 
 fn main() -> int {
-    // fxfz: this fixture builds @std/avrac into the SHARED packages/std-avrac
-    // tree and probes its meta.bin / avrac.av.ll artifacts — build state
-    // outside the fixture-stdout cache key. The marker makes any `: FAIL`
-    // non-publishable (see fixture_output_is_publishable) so a capture taken
-    // against a corrupt/half-published shared cache re-probes next run instead
-    // of freezing the failure.
-    println("@@fixture-stateful@@")
+    // @@fixture-stateful@@ — fxfz: this fixture builds @std/avrac into the
+    // SHARED packages/std-avrac tree and probes its meta.bin / avrac.av.ll
+    // artifacts — build state outside the fixture-stdout cache key.
+    // fixture_is_stateful reads this directive from the source, making any
+    // `: FAIL` capture non-publishable so a capture taken against a corrupt/
+    // half-published shared cache re-probes next run instead of freezing.
+    // (Token: FIXTURE_STATEFUL_MARKER in @std.avrac.)
     let pwd = avra_process_env_get("PWD")
     let bs2 = "${pwd}/build/bs2"
     let std_avrac = "${pwd}/packages/std-avrac"
