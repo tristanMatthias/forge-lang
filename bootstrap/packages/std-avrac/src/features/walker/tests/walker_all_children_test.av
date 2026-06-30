@@ -8,7 +8,7 @@
 // WrapperListOfSelf, OptionalDirectSelf, bare ListOfSelf, and all-scalar. (The
 // per-child SPANS the same walker carries are covered in arena_test.av.)
 
-use @std.avrac.core.{Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation}
+use @std.avrac.core.{Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry}
 use @std.avrac.core.{stmt_child_tags, expr_child_tags, pat_child_tags, type_child_tags}
 use @std.avrac.core.{wc_roundtrip_expr, wc_roundtrip_stmt, wc_roundtrip_pat, wc_roundtrip_type}
 
@@ -81,8 +81,22 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
         wc_roundtrip_stmt(Stmt.Annotated(no_ann, sstmt(Stmt.Break, 3, 1)))
     }
     then "bare-list child (Pattern.NestedVariant: List<Pattern>)" {
-        let subs: List<Pattern> = [Pattern.Wildcard, Pattern.Wildcard]
+        // DISTINCT, order-sensitive sub-patterns: render now descends into the
+        // sub-list (render_pattern_list), so a dropped / reordered / mis-kinded
+        // sub-pattern diverges — the case is no longer vacuous (was two equal
+        // wildcards, which a drop/swap rendered identically).
+        let no_b: List<ParamEntry> = []
+        let subs: List<Pattern> = [Pattern.LitInt(1), Pattern.Variant("X", no_b)]
         wc_roundtrip_pat(Pattern.NestedVariant("Some", subs))
+    }
+    then "literal-pattern leaf (Pattern.LitInt: all-scalar, render distinguishes)" {
+        wc_roundtrip_pat(Pattern.LitInt(42))
+    }
+    then "wrapper-list body on a block-stmt variant (Stmt.Parallel: List<SStmt>)" {
+        // Stmt.Parallel's body is a walked List<SStmt> that render now descends
+        // into (was elided as `...`), so a mis-rebuilt body diverges.
+        let pbody: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
+        wc_roundtrip_stmt(Stmt.Parallel(pbody))
     }
     then "optional child present (Stmt.If with else)" {
         wc_roundtrip_stmt(Stmt.If(Expr.Number("1"), Stmt.Break, Stmt.Continue))

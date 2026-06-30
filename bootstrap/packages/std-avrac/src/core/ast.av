@@ -294,10 +294,13 @@ export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
 // children FROM a `List<SpannedChild>`. The derive-generated `with_children`
 // (features/walker) consumes these to put children back into a node's slots in
 // field order — the inverse of `all_children_spanned` — so the arena can
-// reconstruct a boxed tree purely from its edge ids (each child's span recovered
-// from the side-table). They rebuild STRUCTURE + SPANS only; `SStmt.from_macro`
-// and `file` are patched by the reconstruct driver from the arena's provenance /
-// single-source `file` (a `SpannedChild` carries neither). The `_` arm in each
+// reconstruct a boxed tree from its edge ids (each child's span recovered from
+// the side-table). They rebuild STRUCTURE + SPANS only: a `SpannedChild` carries
+// neither `from_macro` nor `file`, so wrappers are stamped `from_macro = false`,
+// `file = ""`. The reconstruct driver patches `from_macro`/`file` back onto the
+// TOP-LEVEL roots from the arena's provenance / single-source `file`; nested
+// wrappers keep the placeholders (single-file ingest makes `file` uniform, and
+// `render_*` — the round-trip oracle — compares neither). The `_` arm in each
 // unbox is a structural invariant (a slot's edge must be its declared kind);
 // the round-trip fidelity test (`with_children(self, all_children_spanned(self))
 // == self`) catches any violation, so the poison fallback never fires on a
@@ -314,7 +317,8 @@ export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(
 
 /// Rebuild a single `SExpr` wrapper child from its node + recovered (line, col).
 export fn respan_sexpr(sc: SpannedChild) -> SExpr { sexpr_at(unspan_expr(sc), sc.line, sc.col, "") }
-/// Rebuild a single `SStmt` wrapper child (from_macro/file patched by reconstruct).
+/// Rebuild a single `SStmt` wrapper child (from_macro=false, file=""; the
+/// reconstruct driver patches both back onto top-level roots — see the header).
 export fn respan_sstmt(sc: SpannedChild) -> SStmt { sstmt_at(unspan_stmt(sc), sc.line, sc.col, "") }
 
 /// Unbox a bare `Expr` list slot (the whole run, in order).
@@ -2722,11 +2726,11 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Defer(body) -> "(defer ${render_expr(body)})"
         .Errdefer(body) -> "(errdefer ${render_expr(body)})"
         .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner.node)})"
-        .SpecBlock(name, _) -> "(spec ${name} ...)"
-        .GivenBlock(name, _) -> "(given ${name} ...)"
+        .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_list(body)})"
+        .GivenBlock(name, body) -> "(given ${name} ${render_stmt_list(body)})"
         .ThenBlock(name, cond) -> "(then ${name} ${render_expr(cond)})"
         .Select(_) -> "(select ...)"
-        .Parallel(_) -> "(parallel ...)"
+        .Parallel(body) -> "(parallel ${render_stmt_list(body)})"
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
@@ -2757,10 +2761,21 @@ export fn render_pattern(p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
         .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
+        .LitString(value) -> "\"${value}\""
+        .LitInt(value) -> string(value)
+        .LitBool(value) -> if value != 0 { "true" } else { "false" }
+        .LitFloat(value) -> value
+        .NestedVariant(name, sub_patterns) -> ".${name}(${render_pattern_list(sub_patterns)})"
         .Or(left, right) -> "${render_pattern(left)} or ${render_pattern(right)}"
         .TypePattern(type_name, binding) -> "${type_name}(${binding})"
-        _ -> "?"
     }
+}
+
+/// Render a `List<Pattern>` as a comma-separated S-expression list — used by
+/// `render_pattern` for `NestedVariant` sub-patterns (so nested destructures
+/// render distinctly instead of collapsing, which a round-trip oracle relies on).
+export fn render_pattern_list(pats: List<Pattern>) -> string {
+    list_map(pats, (p: Pattern) -> render_pattern(p)).join(", ")
 }
 
 /// Render a `List<MatchArm>` as a comma-separated list of `pat -> body`.
