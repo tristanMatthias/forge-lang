@@ -11,7 +11,7 @@
 //   4. vtype_eq compares nominal identity by content id KIND-AGNOSTICALLY:
 //      a Newtype and a parser-default Struct of the same FQN, both stamped
 //      to the same content id, are equal (the 24yd regression).
-use @std.avrac.core.{content_id_for, vtype_eq, ValueType, FieldEntry, Variant}
+use @std.avrac.core.{content_id_for, vtype_eq, vtype_eq_deep, ValueType, FieldEntry, Variant}
 use @std.avrac.core.{type_registry_new, type_registry_register, type_registry_lookup, type_registry_id_for, type_registry_has, TypeKind}
 
 spec "wc5w: content_id_for is a deterministic content hash" {
@@ -91,5 +91,15 @@ spec "wc5w: vtype_eq compares nominal identity by content id, kind-agnostic (24y
         let n = ValueType.Newtype("@m::UserId", ValueType.Int, content_id_for("@m::UserId"))
         let s = ValueType.Struct("@m::ProductId", no_args, content_id_for("@m::ProductId"))
         !vtype_eq(n, s)
+    }
+    then "vtype_eq_deep agrees cross-kind, symmetrically (both directions)" {
+        // The deep-equality path must follow the same wc5w cross-kind rule as
+        // vtype_eq, in BOTH argument orders (the bug it guards against was
+        // asymmetric: Struct-vs-Newtype passed but Newtype-vs-Struct did not).
+        let no_args: List<ValueType> = []
+        let id = content_id_for("@std::avrac::core::ExprId")
+        let resolved = ValueType.Newtype("@std::avrac::core::ExprId", ValueType.Int, id)
+        let parser_default = ValueType.Struct("@std::avrac::core::ExprId", no_args, id)
+        vtype_eq_deep(resolved, parser_default) && vtype_eq_deep(parser_default, resolved)
     }
 }

@@ -131,6 +131,16 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     // id→position map that replaces the old `infos[id-1]` positional access.
     mut infos = reg.infos
     let id = content_id_for(name)
+    // Content ids are i64-truncated FNV-1a-64 hashes, so a collision (two
+    // distinct FQNs → the same id) is astronomically unlikely but would
+    // silently corrupt the id-keyed maps below (and the on-disk sym_ids that
+    // now share this scheme). The name was confirmed unregistered above, so an
+    // id already present here belongs to a DIFFERENT type — fail loud rather
+    // than overwrite and corrupt nominal identity.
+    if avra_intmap_has(reg.id_to_index, id) == 1 {
+        let existing = avra_intmap_get_as_string(reg.id_to_name, id)
+        panic("TypeId hash collision: `${name}` and `${existing}` both hash to ${string(id)} (content_id_for / FNV-1a-64) — rename one type")
+    }
     let info = TypeInfo { id, name, kind, fields, variants, inner_vt }
     infos.push(info)
     avra_intmap_set(reg.id_to_index, id, infos.length - 1)

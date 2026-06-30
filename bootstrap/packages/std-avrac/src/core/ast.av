@@ -1516,7 +1516,12 @@ export fn vtype_eq_deep(a: ValueType, b: ValueType) -> bool {
         .Channel(ea) -> match b { .Channel(eb) -> vtype_eq_deep(ea, eb), _ -> false }
         .Tuple(ea) -> match b { .Tuple(eb) -> vtype_list_eq_deep(ea, eb), _ -> false }
         .Union(ea) -> match b { .Union(eb) -> vtype_list_eq_deep(ea, eb), _ -> false }
-        .Newtype(_, ia, _) -> match b { .Newtype(_, ib, _) -> vtype_eq_deep(ia, ib), _ -> false }
+        // Cross-kind nominal identity already settled by the vtype_eq gate above
+        // (wc5w): a stamped Newtype and a same-FQN Struct are equal, so here we
+        // only deep-check the Newtype inner when BOTH sides are Newtype — the
+        // `_ -> true` mirrors newtype_inners_eq and keeps deep-equality callers
+        // on the same cross-kind rule as vtype_eq.
+        .Newtype(_, ia, _) -> match b { .Newtype(_, ib, _) -> vtype_eq_deep(ia, ib), _ -> true }
         // FnTyped-vs-Fn keeps `vtype_eq`'s leniency (vtype_eq already returned
         // true for it); only tighten when both sides are FnTyped.
         .FnTyped(pa, ra) -> match b { .FnTyped(pb, rb) -> vtype_list_eq_deep(pa, pb) && vtype_eq_deep(ra, rb), _ -> true }
