@@ -417,9 +417,14 @@ setup_beads_sync() {
   # `bd dolt commit/pull/push` is handled without special-casing. We commit
   # explicitly rather than via a persisted `dolt.auto-commit` config (which would
   # dirty the git-tracked config.yaml). Inner dolt calls hit the REAL bd (no
-  # recursion) and the push is best-effort (cache is only advanced on success, so
-  # a failed push retries on the next command). If the manifest can't be located
-  # we fall back to pushing (fail toward syncing, never silently drop a write).
+  # recursion). Because refs/dolt/data is a SHARED ref, we pull (merge) before
+  # pushing so a remote that advanced (another session / the seed-train / CI)
+  # doesn't reject the push non-fast-forward; the push is best-effort (cache is
+  # only advanced on success, so a failure retries on the next command) and its
+  # output is logged to $rt/sync.log rather than discarded, so a persistent
+  # failure is visible instead of silently stranding writes. If the manifest
+  # can't be located we fall back to pushing (fail toward syncing, never
+  # silently drop a write).
   cat > "$rt/bd" <<WRAP
 #!/bin/sh
 export GIT_CONFIG_GLOBAL="$rt/gitconfig"
@@ -431,7 +436,14 @@ if [ -n "\${GH_TOKEN:-}" ]; then
   __fp="\$(cat "\$__mani" 2>/dev/null)"
   if [ -z "\$__mani" ] || [ "\$__fp" != "\$(cat "$rt/last_synced" 2>/dev/null)" ]; then
     "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
-    if "$real_bd" dolt push origin >/dev/null 2>&1; then
+    # refs/dolt/data is SHARED (other sessions, the seed-train, and CI all push
+    # it), so PULL (merge any remote advance) before pushing — otherwise the push
+    # is rejected non-fast-forward and, with output discarded to /dev/null, fails
+    # SILENTLY and can never recover (retry-on-next-command can't fast-forward a
+    # diverged remote without a pull). Output goes to sync.log so a persistent
+    # failure is diagnosable instead of invisible.
+    "$real_bd" dolt pull origin >>"$rt/sync.log" 2>&1 || true
+    if "$real_bd" dolt push origin >>"$rt/sync.log" 2>&1; then
       cat "\$__mani" 2>/dev/null > "$rt/last_synced" || true
     fi
   fi
