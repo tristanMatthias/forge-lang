@@ -247,15 +247,16 @@ DIFF & ANALYSIS
   --diff-fn <file.av> <fn>
                        Same as --diff but only shows the body of one
                        function.
-  --diff-test [--base <ref>] [--new <ref>]
+  --diff-test [--base <ref>] [--new <ref>] [--new-prebuilt]
                        Differential test (HRN): build the
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
                        over the selfhost source + curated standalone corpus
-                       (tests/difftest_corpus/*.av). The go-hard safety net.
-                       DIFF_TEST_QUICK=1 = selfhost only (the decisive
-                       oracle; fastest local change-check). DIFF_TEST_CORPUS=
-                       <glob> overrides the corpus.
+                       (tests/difftest_corpus/*.av), selfhost + corpus compiled
+                       concurrently. The go-hard safety net. --new-prebuilt
+                       reuses build/bs2 as NEW (skip the cold rebuild; LOCAL,
+                       non-hermetic). DIFF_TEST_CORPUS=<glob> overrides the
+                       corpus; DIFF_TEST_JOBS=<n> the fan-out width.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -2743,13 +2744,19 @@ mode_check_bootstrap_window() {
 # would be skipped after a doomed ~1s compile, leaving the corpus phase with
 # ZERO real comparisons (the bug this default fixed).
 #
+# The selfhost + corpus compiles run CONCURRENTLY (`--output` stops the two
+# compilers clobbering each other's IR file), so the post-build cost is roughly
+# one selfhost compile, not two. Corpus fan-out is bounded by DIFF_TEST_JOBS.
+#
 # Usage / knobs:
 #   --base <ref>            OLD/oracle ref     (default: integration branch)
 #   --new  <ref>            NEW/candidate ref  (default: HEAD)
-#   DIFF_TEST_QUICK=1       selfhost differential only (skip the corpus) —
-#                           the RIGHT default for fast local change-checks:
-#                           the selfhost diff is the decisive oracle.
+#   --new-prebuilt          reuse the warm build/bs2 as NEW instead of building
+#                           it in isolation — skips the dominant ~5-7 min cold
+#                           rebuild. LOCAL convenience only: NON-HERMETIC (the
+#                           binary's seed/source aren't pinned); CI never uses it.
 #   DIFF_TEST_CORPUS=<glob> corpus inputs  (default: tests/difftest_corpus/*.av)
+#   DIFF_TEST_JOBS=<n>      corpus fan-out width (default: ~nproc-1, capped at 8)
 #   AVRA_FORCE_DIFFTEST=1   ignore the per-ref compiler build cache
 
 DIFFTEST_DIR="$BUILD_DIR/difftest"
@@ -2790,12 +2797,48 @@ dt_build_compiler() {
   printf '%s' "$fp" > "$marker"
 }
 
-# Compile $1 (an absolute .av path) with the compiler in dir $2; on
-# success copy its IR to $3. Echoes nothing; returns bs2's exit status.
+# Compile $1 (an absolute .av path) with the compiler BINARY $2, writing the
+# emitted IR straight to $4 via `--output`. Because --output fully redirects
+# (nothing is written next to the input), two compilers can compile the SAME
+# input concurrently without clobbering each other's <input>.ll — that is what
+# lets the selfhost + corpus passes parallelize. Per-call log → $3/last.compile.log.
+# Returns bs2's exit status.
 dt_compile_ir() {
-  local input="$1" cdir="$2" out_ll="$3"
-  hermetic_compile_env "$cdir/bs2" compile "$input" >"$cdir/last.compile.log" 2>&1 || return $?
-  cp "$input.ll" "$out_ll"
+  local input="$1" bs2="$2" logdir="$3" out_ll="$4"
+  hermetic_compile_env "$bs2" compile --output="$out_ll" "$input" \
+    >"$logdir/last.compile.log" 2>&1
+}
+
+# Bounded fan-out width for the corpus differential. Leaves a core free and
+# caps the pool so a large overridden DIFF_TEST_CORPUS can't fork-bomb / OOM
+# (the snw0 class on small boxes). Override with DIFF_TEST_JOBS.
+dt_default_jobs() {
+  local n; n=$(nproc 2>/dev/null || echo 4)
+  if [ "$n" -gt 2 ]; then n=$((n - 1)); else n=1; fi   # leave a core free
+  if [ "$n" -gt 8 ]; then n=8; fi                       # cap the pool
+  printf '%s' "$n"
+}
+
+# Run ONE corpus input through BOTH compilers in an isolated per-file dir, so
+# tasks fan out without racing. Writes a one-word verdict to $cwd/status
+# (ok | diverge | newfail | skip) for the caller to aggregate; never fails the
+# calling shell (a bad compile is recorded, not propagated up).
+dt_corpus_task() {
+  local input="$1" old_bs2="$2" new_bs2="$3" wd="$4"
+  local name cwd; name=$(basename "$input"); cwd="$wd/corpus/$name"
+  mkdir -p "$cwd"
+  # OLD is the oracle: a file it can't compile standalone is out of scope.
+  if ! dt_compile_ir "$input" "$old_bs2" "$cwd" "$cwd/old.ll"; then
+    printf 'skip' > "$cwd/status"; return 0
+  fi
+  if ! dt_compile_ir "$input" "$new_bs2" "$cwd" "$cwd/new.ll"; then
+    printf 'newfail' > "$cwd/status"; return 0
+  fi
+  if diff -q "$cwd/old.ll" "$cwd/new.ll" >/dev/null 2>&1; then
+    printf 'ok' > "$cwd/status"
+  else
+    printf 'diverge' > "$cwd/status"
+  fi
 }
 
 # Entry point for `--diff-test` (see the section banner above). Builds the
@@ -2803,47 +2846,70 @@ dt_compile_ir() {
 # over the selfhost source + corpus; prints a readable diff and returns
 # non-zero on any divergence.
 mode_diff_test() {
-  local base="" new="HEAD"
+  local base="" new="HEAD" prebuilt=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --base) base="${2:?--base needs a ref}"; shift 2 ;;
       --new)  new="${2:?--new needs a ref}";  shift 2 ;;
-      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref>)" ;;
+      --new-prebuilt) prebuilt=1; shift ;;
+      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref> / --new-prebuilt)" ;;
     esac
   done
   [ -n "$base" ] || base="${AVRA_DIFFTEST_BASE:-$(window_resolve_integration_ref)}"
 
   # The oracle model requires OLD and NEW to build from the SAME seed, so any
-  # IR difference is attributable to compiler SOURCE alone. The seed-train
-  # invariant guarantees this on a feature branch — but assert it rather than
-  # assume it: a seed-pin mismatch would make a divergence ambiguous (seed vs
-  # source). Fail fast, before the expensive builds.
-  local base_seed new_seed
-  base_seed=$(ref_seed_sha256 "$base") || true
-  new_seed=$(ref_seed_sha256 "$new")  || true
-  [ -n "$base_seed" ] && [ -n "$new_seed" ] \
-    || die "diff-test: base ($base) or new ($new) pins no seed (no seed.ll/seed.lock)"
-  [ "$base_seed" = "$new_seed" ] \
-    || die "diff-test: seed pin differs between OLD ($base) and NEW ($new) — a divergence would be ambiguous (seed vs source). Align the pins (feature branches must not cycle the seed; see --check-bootstrap-window)."
+  # IR difference is attributable to compiler SOURCE alone. Assert it (fail
+  # fast, before the expensive builds) for the hermetic path. --new-prebuilt
+  # deliberately opts out: it reuses the working-tree build/bs2 as NEW, whose
+  # seed/source aren't pinned — a LOCAL convenience, never the CI oracle.
+  local base_seed; base_seed=$(ref_seed_sha256 "$base") || true
+  [ -n "$base_seed" ] \
+    || die "diff-test: base ($base) pins no seed (no seed.ll/seed.lock)"
+  if [ "$prebuilt" = "0" ]; then
+    local new_seed; new_seed=$(ref_seed_sha256 "$new") || true
+    [ -n "$new_seed" ] \
+      || die "diff-test: new ($new) pins no seed (no seed.ll/seed.lock)"
+    [ "$base_seed" = "$new_seed" ] \
+      || die "diff-test: seed pin differs between OLD ($base) and NEW ($new) — a divergence would be ambiguous (seed vs source). Align the pins (feature branches must not cycle the seed; see --check-bootstrap-window)."
+  fi
 
   local old="$DIFFTEST_DIR/old" newd="$DIFFTEST_DIR/new"
-  log "diff-test: OLD/oracle=$base   NEW/candidate=$new"
+  local old_bs2 new_bs2 new_label="$new"
   dt_build_compiler "$base" "$old" || return 1
-  dt_build_compiler "$new"  "$newd" || return 1
+  old_bs2="$old/bs2"
+  if [ "$prebuilt" = "1" ]; then
+    new_bs2="$BOOTSTRAP_DIR/build/bs2"
+    [ -x "$new_bs2" ] \
+      || die "diff-test: --new-prebuilt needs a built compiler at build/bs2 — run 'make build-quick' first"
+    mkdir -p "$newd"                          # holds the NEW compile logs
+    new_label="build/bs2 (prebuilt, NON-HERMETIC)"
+    warn "diff-test: --new-prebuilt reuses build/bs2 as NEW — fast but NON-HERMETIC (its seed/source aren't pinned). The default hermetic build is the authoritative check (CI always uses it)."
+  else
+    dt_build_compiler "$new" "$newd" || return 1
+    new_bs2="$newd/bs2"
+  fi
+  log "diff-test: OLD/oracle=$base   NEW/candidate=$new_label"
 
   local wd="$DIFFTEST_DIR/work"; rm -rf "$wd"; mkdir -p "$wd"
   local fails=0 checked=0 skipped=0
 
   # ── Selfhost differential: compile the OLD compiler's OWN source with
-  # BOTH compilers. OLD parses it by construction; a behaviour-preserving
-  # NEW must emit identical IR. This single input exercises ~all codegen.
-  log "diff-test: selfhost differential — both compilers compile the compiler"
+  # BOTH compilers, CONCURRENTLY. OLD parses it by construction; a
+  # behaviour-preserving NEW must emit identical IR. This single input
+  # exercises ~all codegen and is the dominant post-build cost — --output
+  # keeps the two compiles from racing on main.av.ll, so they run in parallel.
+  log "diff-test: selfhost differential — both compilers compile the compiler (parallel)"
   local self="$old/tree/bootstrap/packages/cli/src/main.av"
-  if ! dt_compile_ir "$self" "$old" "$wd/self.old.ll"; then
+  local p_old p_new rc_old rc_new
+  dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/self.old.ll" & p_old=$!
+  dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/self.new.ll" & p_new=$!
+  wait "$p_old"; rc_old=$?
+  wait "$p_new"; rc_new=$?
+  if [ "$rc_old" -ne 0 ]; then
     cat "$old/last.compile.log" >&2; die "diff-test: OLD failed its own selfhost compile (oracle broken)"
   fi
   checked=$((checked+1))
-  if ! dt_compile_ir "$self" "$newd" "$wd/self.new.ll"; then
+  if [ "$rc_new" -ne 0 ]; then
     err "diff-test: NEW failed to compile the compiler source that OLD compiles — regression"
     tail -15 "$newd/last.compile.log" >&2
     fails=$((fails+1))
@@ -2856,62 +2922,67 @@ mode_diff_test() {
     fails=$((fails+1))
   fi
 
-  # ── Corpus differential: same .av inputs through both compilers.
-  if [ "${DIFF_TEST_QUICK:-0}" = "1" ]; then
-    log "diff-test: DIFF_TEST_QUICK=1 — skipping the corpus"
-  else
-    # Default: the CURATED standalone corpus (tests/difftest_corpus/*.av) —
-    # small, single-file, feature-diverse programs that compile with a bare
-    # `bs2 compile`, giving real per-feature IR comparisons that localize a
-    # divergence to a tiny file (the selfhost pass stays the comprehensive
-    # oracle). NOT the test-harness suite (tests/*.av): those need @std + the
-    # spec/given/then runtime, so the OLD oracle can't compile them standalone
-    # — every one would be skipped after a doomed compile, doing zero work.
-    local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/difftest_corpus/*.av}"
-    log "diff-test: corpus differential — $glob"
-    local divergent=() skipped_names=() input name cwd
-    for input in $glob; do
-      [ -f "$input" ] || continue
-      name=$(basename "$input")
-      cwd="$wd/corpus/$name"; mkdir -p "$cwd"
-      cp "$input" "$cwd/in.av"
-      # OLD is the oracle: a file it can't compile standalone (needs the
-      # test-harness link, sibling imports, …) is out of corpus scope —
-      # the selfhost pass already covers those codegen paths. Skip it. For
-      # the curated corpus this should never fire: a skip means a corpus
-      # file regressed (no longer standalone-compilable), so name it below.
-      if ! dt_compile_ir "$cwd/in.av" "$old" "$cwd/old.ll"; then
-        skipped=$((skipped+1)); skipped_names+=("$name"); rm -rf "$cwd"; continue
-      fi
-      checked=$((checked+1))
-      if ! dt_compile_ir "$cwd/in.av" "$newd" "$cwd/new.ll"; then
-        err "diff-test: NEW failed to compile '$name' that OLD compiled — regression"
-        divergent+=("$name"); fails=$((fails+1)); continue
-      fi
-      if diff -q "$cwd/old.ll" "$cwd/new.ll" >/dev/null 2>&1; then
-        rm -rf "$cwd"   # keep only divergent artifacts for inspection
-      else
-        divergent+=("$name"); fails=$((fails+1))
-      fi
-    done
-    if [ ${#divergent[@]} -gt 0 ]; then
-      err "diff-test: ${#divergent[@]} corpus input(s) diverged:"
-      printf '  %s\n' "${divergent[@]}" >&2
+  # ── Corpus differential: the CURATED standalone corpus
+  # (tests/difftest_corpus/*.av) — small, single-file, feature-diverse programs
+  # that compile with a bare `bs2 compile`, giving real per-feature IR
+  # comparisons that localize a divergence to a tiny file (the selfhost pass
+  # stays the comprehensive oracle). NOT the test-harness suite (tests/*.av):
+  # those need @std + the spec/given/then runtime, so the OLD oracle can't
+  # compile them standalone — every one would be skipped, doing zero work.
+  # (Always runs — it's now tiny and fast; there is no skip-the-corpus knob.)
+  local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/difftest_corpus/*.av}"
+  local jobs="${DIFF_TEST_JOBS:-$(dt_default_jobs)}"
+  log "diff-test: corpus differential — $glob (jobs=$jobs)"
+  local divergent=() skipped_names=() input name cwd status in_batch=0
+  # Fan out: each input runs through both compilers in its own dir
+  # (dt_corpus_task), bounded to $jobs concurrent so a large overridden
+  # corpus can't OOM. --output means no two tasks share an output path.
+  for input in $glob; do
+    [ -f "$input" ] || continue
+    dt_corpus_task "$input" "$old_bs2" "$new_bs2" "$wd" &
+    in_batch=$((in_batch + 1))
+    if [ "$in_batch" -ge "$jobs" ]; then wait; in_batch=0; fi
+  done
+  wait
+  # Aggregate the per-task verdicts in deterministic glob order. OLD is the
+  # oracle: a 'skip' means OLD couldn't compile the file standalone (out of
+  # scope); for the curated corpus that signals a regressed file.
+  for input in $glob; do
+    [ -f "$input" ] || continue
+    name=$(basename "$input"); cwd="$wd/corpus/$name"
+    status=$(cat "$cwd/status" 2>/dev/null || printf 'missing')
+    case "$status" in
+      ok)      checked=$((checked+1)); rm -rf "$cwd" ;;
+      skip)    skipped=$((skipped+1)); skipped_names+=("$name"); rm -rf "$cwd" ;;
+      newfail) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name")
+               err "diff-test: NEW failed to compile '$name' that OLD compiled — regression" ;;
+      diverge) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name") ;;
+      *)       fails=$((fails+1))
+               err "diff-test: corpus task for '$name' produced no verdict (harness bug)" ;;
+    esac
+  done
+  if [ ${#divergent[@]} -gt 0 ]; then
+    err "diff-test: ${#divergent[@]} corpus input(s) diverged:"
+    printf '  %s\n' "${divergent[@]}" >&2
+    # Show the first IR divergence — but only when both sides exist (a
+    # NEW-compile failure leaves no new.ll to diff against).
+    local d0="$wd/corpus/${divergent[0]}"
+    if [ -f "$d0/old.ll" ] && [ -f "$d0/new.ll" ]; then
       err "first divergence (${divergent[0]}):"
-      diff -u "$wd/corpus/${divergent[0]}/old.ll" "$wd/corpus/${divergent[0]}/new.ll" | head -80 >&2
+      diff -u "$d0/old.ll" "$d0/new.ll" | head -80 >&2
     fi
-    # A skip in the curated corpus is a misconfiguration, not normal scope
-    # trimming — surface it so a non-standalone file gets fixed or removed
-    # instead of silently buying zero coverage at the cost of a compile.
-    if [ ${#skipped_names[@]} -gt 0 ]; then
-      warn "diff-test: ${#skipped_names[@]} corpus input(s) skipped (OLD couldn't compile standalone — fix or remove them):"
-      printf '  %s\n' "${skipped_names[@]}" >&2
-    fi
+  fi
+  # A skip in the curated corpus is a misconfiguration, not normal scope
+  # trimming — surface it so a non-standalone file gets fixed or removed
+  # instead of silently buying zero coverage at the cost of a compile.
+  if [ ${#skipped_names[@]} -gt 0 ]; then
+    warn "diff-test: ${#skipped_names[@]} corpus input(s) skipped (OLD couldn't compile standalone — fix or remove them):"
+    printf '  %s\n' "${skipped_names[@]}" >&2
   fi
 
   log "diff-test: compared $checked input(s), skipped $skipped (not standalone-compilable)"
   if [ "$fails" -eq 0 ]; then
-    ok "DIFF-TEST PASS — OLD ($base) and NEW ($new) emit byte-identical IR"
+    ok "DIFF-TEST PASS — OLD ($base) and NEW ($new_label) emit byte-identical IR"
     return 0
   fi
   err "DIFF-TEST FAIL — $fails divergence(s); the change is NOT behaviour-preserving"

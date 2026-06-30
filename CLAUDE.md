@@ -86,7 +86,7 @@ make                       # build the bootstrap compiler (produces build/bs2)
 make build-quick           # rebuild bs2, skip selfhost verify (inner loop)
 make test                  # spec suite + selfhost. Options: FILTER=<substr>, SKIP_SELFHOST=1
 make test FILTER=<substr>  # narrow tests (substring match against filename) — USE THIS for iteration
-make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-identical IR. QUICK=1 / BASE= / NEW= / CORPUS=
+make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-identical IR. PREBUILT=1 (fast local) / BASE= / NEW= / CORPUS= / JOBS=
 make coverage              # run all spec tests with coverage instrumentation
 make run FILE=x            # compile and run a Avra program
 make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
@@ -198,12 +198,25 @@ OLD and NEW must emit **byte-identical IR** for the same inputs, so you can
 rip the foundation out and instantly catch behaviour drift.
 
 ```bash
-make diff-test                 # OLD = integration branch, NEW = HEAD
+make diff-test                 # OLD = integration branch, NEW = HEAD (HERMETIC; == CI)
+make diff-test PREBUILT=1      # FAST LOCAL ITERATION: reuse the warm build/bs2 as NEW,
+                               # skipping the dominant ~5-7 min cold rebuild. Reflects
+                               # your WORKING TREE (uncommitted edits), not committed HEAD.
 make diff-test BASE=<ref>      # override the oracle ref
-make diff-test QUICK=1         # selfhost differential only — the decisive
-                               # oracle; the right default for local checks
-make diff-test CORPUS='path/*.av'    # override the corpus glob
+make diff-test CORPUS='path/*.av'   # override the corpus glob
+make diff-test JOBS=<n>        # corpus fan-out width (default ~nproc-1)
 ```
+
+**Iterating on a compiler-source change? Use `make diff-test PREBUILT=1`** — it
+skips the isolated NEW rebuild and reuses your `build/bs2`, turning a multi-minute
+check into a ~30s one (that residual ~30s is the selfhost compile itself — the
+decisive oracle, which nothing removes; the corpus is tiny and always runs). Two caveats: (1) it is
+**NON-HERMETIC** (build/bs2's seed/source aren't pinned), so the plain
+`make diff-test` is the authoritative check and the only one CI runs; (2)
+**rebuild `bs2` first** — a stale build/bs2 (the known `pdme.1`/`6cks` cache bug)
+compared against OLD reports a false **PASS**. The selfhost + corpus compiles run
+**concurrently** in every mode (via `bs2 compile --output`), so the post-build
+cost is ~one selfhost compile, not two — no flag needed.
 
 - Implemented as `diagnose.sh --diff-test` (centralized, per rule 10). It
   builds the compiler at both refs **in isolation, from the SAME pinned
@@ -231,7 +244,7 @@ make diff-test CORPUS='path/*.av'    # override the corpus glob
   intended codegen improvement) trips the gate by design — confirm
   run-results match, then advance the oracle.
 - **Wired in:** CI (`.github/workflows/diff-test.yml`, full corpus, every
-  PR into the integration branch) and the pre-push hook (quick selfhost
+  PR into the integration branch) and the pre-push hook (selfhost + corpus
   check, only when compiler sources changed; `AVRA_SKIP_DIFFTEST=1` to
   skip). This is the sibling of `--check-bootstrap-window`: the window gate
   proves the source *builds* from the seed; diff-test proves it *behaves*
