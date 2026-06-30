@@ -103,6 +103,15 @@ spec "fixture cache: capture_has_probe_failure anchors on the probe FAIL form" {
     then "`: FAILURE` in prose is NOT a probe failure" {
         !capture_has_probe_failure("note: total: FAILURE rate 0%\nPROBE x: ok\n")
     }
+    then "non-probe prose with `: FAIL ` (e.g. `step: FAIL recovered`) is NOT a probe failure" {
+        // The line carries `: FAIL ` but does not start with `PROBE `, so it is
+        // a log line, not a probe FAIL — anchoring to the line form excludes it.
+        !capture_has_probe_failure("PROBE x: ok\nstep: FAIL recovered\n")
+    }
+    then "a real PROBE FAIL alongside `: FAIL ` prose is still a failure" {
+        // Prose on one line must not mask a genuine probe FAIL on another.
+        capture_has_probe_failure("step: FAIL recovered\nPROBE meta_present: FAIL\n")
+    }
     then "an all-ok capture has no probe failure" {
         !capture_has_probe_failure("PROBE x: ok\nPROBE y: ok\n")
     }

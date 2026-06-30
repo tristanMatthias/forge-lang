@@ -629,17 +629,25 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
     out
 }
 
-/// True when a captured fixture stdout carries a PROBE/spec FAILURE — a
-/// `: FAIL` token terminated by end-of-line, a space (before failure detail),
-/// or end-of-string. Anchored to the probe form (`PROBE <name>: FAIL`,
-/// `<name>: FAIL`) so a PASSING capture that merely mentions failure in running
-/// text (`: FAILED`, `: FAILURE`) is never mistaken for a probe FAIL. Shared by
-/// the cache write-gate (fixture_output_is_publishable, stateful branch) and the
-/// `bs2 cache clear-failed` evictor, so the two can never disagree about what
-/// counts as a frozen failure — a blunt substring `: FAIL` would let the evictor
-/// throw away a warm passing capture the write-gate deliberately kept.
+/// True when a captured fixture stdout carries a PROBE failure — a LINE of the
+/// form `PROBE <name>: FAIL` (optionally `PROBE <name>: FAIL <detail>`), the
+/// shape the `probe()` helper emits. Anchored to that line convention (the line
+/// must START with `PROBE `) rather than matching a bare `: FAIL` substring, so
+/// a PASSING capture that merely mentions failure in running text — `step: FAIL
+/// recovered`, `: FAILED`, `: FAILURE` — is never mistaken for a probe FAIL.
+/// Shared by the cache write-gate (fixture_output_is_publishable, stateful
+/// branch) and the `bs2 cache clear-failed` evictor, so the two can never
+/// disagree about what counts as a frozen failure — a looser match would let
+/// the evictor throw away a warm passing capture the write-gate deliberately
+/// kept. (Fixture stdout is raw text with no AST to inspect, so the documented
+/// `PROBE <name>: FAIL` line shape is the structural anchor available.)
 export fn capture_has_probe_failure(out: string) -> bool {
-    out.contains(": FAIL\n") || out.contains(": FAIL ") || out.ends_with(": FAIL")
+    for line in out.split("\n") {
+        if line.starts_with("PROBE ") && (line.ends_with(": FAIL") || line.contains(": FAIL ")) {
+            return true
+        }
+    }
+    false
 }
 
 /// cbg3.1 + zp5b: classify the captured output as safe-to-cache or
