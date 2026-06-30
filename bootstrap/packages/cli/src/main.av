@@ -58,7 +58,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
@@ -2141,8 +2141,10 @@ fn run_clean_command() {
 }
 
 // `avra cache <subcommand>` — manage the build cache.
-//   prune  : evict stale entries (default: max-age 30 days).
-//   info   : print cache size + entry count.
+//   prune        : evict stale entries (default: max-age 30 days).
+//   info         : print cache size + entry count.
+//   clear-failed : evict fixture-stdout captures that froze a `: FAIL`
+//                  (zp5b) without disturbing passing captures.
 fn run_cache_command() {
     let project_dir = avra_process_env_get("PWD")
     let cache_dir = "${project_dir}/build/cache"
@@ -2168,7 +2170,7 @@ fn run_cache_command() {
         i = i + 1
     }
     if subcommand == "" {
-        fail("usage: bs2 cache <prune|info> [--dry-run] [--max-age-days N]")
+        fail("usage: bs2 cache <prune|info|clear-failed> [--dry-run] [--max-age-days N]")
     }
     if !avra_selfhost_file_exists(cache_dir) {
         println("cache: ${cache_dir} does not exist (no cache yet)")
@@ -2207,7 +2209,61 @@ fn run_cache_command() {
         return
     }
 
-    fail("unknown cache subcommand `${subcommand}` (expected: prune | info)")
+    if subcommand == "clear-failed" {
+        // zp5b: surgically evict fixture-stdout captures that froze a `: FAIL`
+        // — a transient (cold-cache jetsam, a concurrent build) or stale-
+        // environment failure baked into the cache that then replays on every
+        // run with no source diff to explain it. Unlike `prune` / `make clean`
+        // this keeps every PASSING capture warm, so the next test run pays only
+        // to re-run the handful of genuinely-failed fixtures, not the whole
+        // suite. Zero cost on normal runs: it does work only when invoked.
+        //
+        // Walked natively (avra_readdir / avra_remove_file) rather than shelled
+        // out: the cache dir derives from $PWD, and interpolating an arbitrary
+        // path into a `grep … '<dir>'/*.out` shell string is both injectable (a
+        // path containing a quote escapes the quoting — Avra expands the path
+        // into the string before the shell sees it) and fragile (ARG_MAX on a
+        // large cache; `grep -l | xargs rm` mishandling odd filenames). The
+        // native walk reads each capture once and unlinks the matches directly.
+        //
+        // capture_has_probe_failure (shared with the cache write-gate) anchors
+        // on the PROBE/spec convention (`PROBE <name>: FAIL`, `<name>: FAIL`) so
+        // the evictor and the writer agree exactly on what a frozen failure is —
+        // a blunt substring `: FAIL` would also evict a PASSING capture that
+        // merely prints `: FAILED` / `: FAILURE` in prose, breaking the "keeps
+        // passing captures warm" guarantee. Compiler diagnostics use F-codes
+        // (`F0012: …`), never the probe form, so error-assertion captures are
+        // untouched. Evicting a genuinely-failing capture is harmless regardless:
+        // the next run re-captures the identical result.
+        let fixture_dir = "${project_dir}/${fixture_stdout_cache_dir()}"
+        if avra_is_dir(fixture_dir) == 0 {
+            println("cache clear-failed: no fixture_stdout cache at ${fixture_dir}")
+            return
+        }
+        mut failed: List<string> = []
+        for name in avra_readdir(fixture_dir) {
+            if avra_str_ends_with(name, ".out") {
+                let path = "${fixture_dir}/${name}"
+                if capture_has_probe_failure(avra_selfhost_read_file(path)) {
+                    failed.push(path)
+                }
+            }
+        }
+        if failed.length == 0 {
+            println("cache clear-failed: no frozen-FAIL captures in ${fixture_dir}")
+            return
+        }
+        if dry_run {
+            println("cache clear-failed --dry-run: would delete ${string(failed.length)} frozen-FAIL captures:")
+            for p in failed { println(p) }
+            return
+        }
+        for p in failed { let _ = avra_remove_file(p) }
+        println("cache clear-failed: deleted ${string(failed.length)} frozen-FAIL captures")
+        return
+    }
+
+    fail("unknown cache subcommand `${subcommand}` (expected: prune | info | clear-failed)")
 }
 
 // `avra test` — discover every `*_test.av` under PWD, parse each as
@@ -3520,10 +3576,10 @@ fn main() {
         }
 
         command cache {
-            description "Manage the build cache: prune | info"
+            description "Manage the build cache: prune | info | clear-failed"
             flag dry_run { description "Print what would change but do not modify the filesystem" }
             option max_age_days { description "Evict entries with mtime older than N days" }
-            arg subcommand { description "prune | info", required true }
+            arg subcommand { description "prune | info | clear-failed", required true }
         }
 
         command test {

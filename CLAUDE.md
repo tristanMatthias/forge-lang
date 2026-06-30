@@ -189,6 +189,20 @@ rm -rf packages/std-avrac/build/cache packages/cli/src/build/cache build/cache \
   && rm -f build/bs2 packages/std-avrac/src/avrac.av.ll && make build-quick
 ```
 
+**Frozen-FAIL in the fixture-stdout cache (zp5b/fxfz).** Distinct from the
+compile caches above: the test runner also memoises each *fixture's stdout*
+under `build/cache/fixture_stdout/<key>.out` (keyed on toolchain fingerprint +
+fixture source). A fixture that FAILed once on a transient hiccup — cold-cache
+jetsam, a concurrent build, a half-published `@std` package cache — can have
+that `: FAIL` frozen and replayed with no source diff to explain it. If a test
+fails with nothing in the diff to explain it, run `bs2 cache clear-failed`: it
+evicts only the frozen-`: FAIL` captures and keeps passing ones warm (cheaper
+than `make clean`, which discards every warm capture). Fixtures that probe
+SHARED build state (e.g. pre-building `@std` into `packages/*/build`) opt out of
+caching failures entirely via the `@@fixture-stateful@@` source directive — the
+test runner reads it with `fixture_is_stateful` and never caches a `: FAIL` from
+such a fixture, so a repaired environment re-probes instead of replaying.
+
 ## Differential testing (HRN — the go-hard safety net)
 
 The `ps3t` "AST as the single source of truth" program rewrites the
