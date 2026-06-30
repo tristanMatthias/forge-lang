@@ -182,4 +182,18 @@ spec "render_stmt: binding/fn type annotations render faithfully (round-trip ora
     then "unresolved binding type still renders the <unknown> marker" {
         render_stmt(Stmt.Let("x", ValueType.Unknown, Expr.Number("1"))).contains("<unknown>")
     }
+    then "Fn return type is faithful (Fn<int> != Fn<string>; vtype_render_full collapses both to 'fn')" {
+        let a = render_stmt(Stmt.Let("f", ValueType.Fn(ValueType.Int), Expr.Number("0")))
+        let b = render_stmt(Stmt.Let("f", ValueType.Fn(ValueType.Str), Expr.Number("0")))
+        a != b
+    }
+    then "Tuple element types are faithful (compound element not collapsed to 'List')" {
+        let elems: List<ValueType> = [ValueType.List(ValueType.Int), ValueType.Str]
+        render_stmt(Stmt.Let("t", ValueType.Tuple(elems), Expr.Number("0"))).contains("List<int>")
+    }
+    then "NESTED type child is faithful (List<Fn<int>> != List<Fn<string>>; the case a naive fix misses)" {
+        let a = render_stmt(Stmt.Let("x", ValueType.List(ValueType.Fn(ValueType.Int)), Expr.Number("0")))
+        let b = render_stmt(Stmt.Let("x", ValueType.List(ValueType.Fn(ValueType.Str)), Expr.Number("0")))
+        a != b
+    }
 }

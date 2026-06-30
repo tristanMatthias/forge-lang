@@ -1771,15 +1771,42 @@ fn render_union_full(tl: List<ValueType>) -> string {
     list_map(tl, (t: ValueType) -> vtype_render_full(t)).join("|")
 }
 
-/// Faithful type rendering for AST INSPECTION (render_stmt's binding/fn arms):
-/// full structural detail like `vtype_render_full` — so a mis-reconstructed type
-/// child (e.g. `List<int>` rebuilt as `List<string>`) DIVERGES under the
-/// render-equality round-trip oracle, which `vtype_display` would hide (it
-/// collapses `List<_>`→"List", `Tuple(_)`→"(tuple)", Struct/Enum args, Fn ret).
-/// Keeps the explicit `<unknown>` marker that `vtype_render_full` elides to "",
-/// so an unresolved binding type still renders readably.
+/// Fully faithful, NESTED-SAFE type rendering for the render-equality round-trip
+/// oracle (render_stmt's binding / fn-return type slots). Recurses through ITSELF
+/// for every compound type, so a mis-reconstructed type child at ANY depth
+/// diverges — including the cases `vtype_render_full` itself collapses: `.Fn` /
+/// `.Closure` → "fn" (drops ret) and `.Tuple` elements rendered via the
+/// `vtype_display`-based `render_type_list`, plus nested forms like `List<Fn<int>>`
+/// (whose inner Fn `vtype_render_full` would still flatten to "fn").
+///
+/// It deliberately does NOT fix `vtype_render_full`: that renderer is the
+/// monomorphizer's symbol-mangling key (and docs --gen's), so changing its output
+/// would alter emitted IR — breaking this increment's byte-identical invariant.
+/// Leaf types (primitives, Trait, NarrowedEnum, Newtype-by-name) carry no type
+/// children, so they delegate to `vtype_render_full`; `<unknown>` stays explicit.
 fn vtype_render_decl(t: ValueType) -> string {
-    if vtype_is_unknown(t) { "<unknown>" } else { vtype_render_full(t) }
+    match t {
+        .Unknown -> "<unknown>"
+        .Fn(ret) -> "fn -> ${vtype_render_decl(ret)}"
+        .Closure(n, ret) -> "closure(${string(n)}) -> ${vtype_render_decl(ret)}"
+        .Tuple(types) -> "(${render_type_list_decl(types)})"
+        .List(elem) -> "List<${vtype_render_decl(elem)}>"
+        .Map(k, v) -> "Map<${vtype_render_decl(k)}, ${vtype_render_decl(v)}>"
+        .Optional(inner) -> "${vtype_render_decl(inner)}?"
+        .Task(r) -> "Task<${vtype_render_decl(r)}>"
+        .Channel(e) -> "Channel<${vtype_render_decl(e)}>"
+        .Union(types) -> list_map(types, (x: ValueType) -> vtype_render_decl(x)).join("|")
+        .Struct(n, args, _) -> if args.length == 0 { n } else { "${n}<${render_type_list_decl(args)}>" }
+        .Enum(n, args, _) -> if args.length == 0 { n } else { "${n}<${render_type_list_decl(args)}>" }
+        .FnTyped(params, ret) -> "fn(${render_type_list_decl(params)}) -> ${vtype_render_decl(ret)}"
+        _ -> vtype_render_full(t)
+    }
+}
+
+/// `vtype_render_decl` over each element, comma-joined — the faithful (recurses
+/// through `vtype_render_decl`) counterpart of `render_type_list`.
+fn render_type_list_decl(tl: List<ValueType>) -> string {
+    list_map(tl, (t: ValueType) -> vtype_render_decl(t)).join(", ")
 }
 
 /// Trait name for a Trait ValueType, or "" otherwise.
