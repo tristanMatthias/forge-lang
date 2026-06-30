@@ -149,12 +149,12 @@ export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
 }
 
 /// A child node as a boxed AST node, BEFORE the arena assigns it an id — the
-/// heterogeneous element the derive-generated `all_children()` yields, so one
-/// recursion can flatten a node's children across all four kinds (an `Expr`
-/// has `Stmt`/`Pattern`/`ValueType` children, etc.). The arena's cross-type
-/// ingest turns each `AnyNode` into a `NodeRef` (its id in the owning arena).
-/// Lives here (not arena.av) so the generated walker code spliced beside the
-/// AST enums can name it without a core-file import cycle.
+/// node inside each `SpannedChild` the derive-generated `all_children_spanned()`
+/// yields, so one recursion can flatten a node's children across all four kinds
+/// (an `Expr` has `Stmt`/`Pattern`/`ValueType` children, etc.). The arena's
+/// cross-type ingest turns each `AnyNode` into a `NodeRef` (its id in the owning
+/// arena). Lives here (not arena.av) so the generated walker code spliced beside
+/// the AST enums can name it without a core-file import cycle.
 export enum AnyNode {
     AnyExpr(node: Expr),
     AnyStmt(node: Stmt),
@@ -162,12 +162,11 @@ export enum AnyNode {
     AnyType(node: ValueType),
 }
 
-// Boxing helpers for the derive-generated `all_children()`. Only the four
-// bare-list forms need a helper; the generator composes everything else from
-// the existing walker helpers (a wrapper list via `unwrap_node_list`, a `Self?`
-// via `self_opt_to_list`, a `Wrapper<Self>?` via `unwrap_node_opt`, a single
-// child inline as `AnyX(field)` / `AnyX(field.node)`). One per node kind because
-// the `AnyNode` constructor differs by kind.
+// Boxing helpers for the derive-generated cross-type walker. Only the four
+// bare-list forms need a helper; the spanned generator composes everything else
+// from these plus the span-aware helpers below (a wrapper list via
+// `box_*_list_spanned`, a single wrapper via `spanned_one_*`, etc.). One per
+// node kind because the `AnyNode` constructor differs by kind.
 
 /// Box each `Expr` of a list as an `AnyNode` child, order preserved.
 export fn box_expr_list(xs: List<Expr>) -> List<AnyNode> {
@@ -194,6 +193,98 @@ export fn box_pat_list(xs: List<Pattern>) -> List<AnyNode> {
 export fn box_type_list(xs: List<ValueType>) -> List<AnyNode> {
     mut out: List<AnyNode> = []
     for x in xs { out.push(AnyNode.AnyType(x)) }
+    out
+}
+
+// ── Span-aware children (A2 / spine §14.2) ──
+//
+// A child node paired with the SOURCE POSITION of the spanned wrapper it
+// came from. The derive-generated `all_children_spanned()` — the SINGLE
+// cross-type traversal — yields these so the arena's cross-type ingest can
+// record a REAL byte-offset span for every WRAPPED nested node (the parser
+// preserves (line, col) on each SExpr/SStmt wrapper). A caller wanting just the
+// position-free `AnyNode` list strips the spans with `strip_spans` (the @std
+// probes do this); there is no separate per-variant `all_children` generator.
+//
+// `line == 0` (the `sexpr_dummy`/`sstmt_dummy` "no position" sentinel) means a
+// BARE child: a field typed as a plain `Expr`/`Stmt`/`Pattern`/`ValueType`,
+// whose source offset no wrapper carries. The arena records byte_span_none()
+// for it until the parser builds the arena directly (the id-children step, B).
+// Only SExpr/SStmt wrappers carry positions, so only their children (call/ctor
+// args, list/tuple/map elems, block/fn/impl/… bodies, Annotated.inner) are
+// span-bearing here; Pattern/ValueType children are always bare.
+export type SpannedChild = { node: AnyNode, line: int, col: int }
+
+/// The single `SpannedChild` constructor. `line == 0` ⇒ a bare child (no
+/// wrapper position; ingest records span_none).
+export fn spanned_child(node: AnyNode, line: int, col: int) -> SpannedChild {
+    SpannedChild { node, line, col }
+}
+
+/// A single bare child as a 1-element spanned list (position 0 ⇒ no wrapper).
+/// `n` is the already-boxed `AnyNode` (the generator builds it as `AnyX(field)`).
+export fn spanned_bare_one(n: AnyNode) -> List<SpannedChild> {
+    [spanned_child(n, 0, 0)]
+}
+
+/// A bare child LIST as spanned children — every position 0 (these come from
+/// `List<Pattern>` / `List<ValueType>` / boxed `Self?` lists, none of which
+/// carries a wrapper). `ns` is the already-boxed `List<AnyNode>`.
+export fn spanned_bare_list(ns: List<AnyNode>) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    for n in ns { out.push(spanned_child(n, 0, 0)) }
+    out
+}
+
+/// A single `SExpr` wrapper child carrying its real (line, col).
+export fn spanned_one_sexpr(w: SExpr) -> List<SpannedChild> {
+    [spanned_child(AnyNode.AnyExpr(w.node), w.line, w.col)]
+}
+
+/// A single `SStmt` wrapper child carrying its real (line, col).
+export fn spanned_one_sstmt(w: SStmt) -> List<SpannedChild> {
+    [spanned_child(AnyNode.AnyStmt(w.node), w.line, w.col)]
+}
+
+/// A `List<SExpr>` wrapper list → spanned children, each at its wrapper's
+/// (line, col) — the span-preserving sibling of `box_expr_list` (which would
+/// lose the positions by unwrapping `.node` first).
+export fn box_sexpr_list_spanned(xs: List<SExpr>) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    for x in xs { out.push(spanned_child(AnyNode.AnyExpr(x.node), x.line, x.col)) }
+    out
+}
+
+/// A `List<SStmt>` wrapper list → spanned children, each at its wrapper's
+/// (line, col). Span-preserving sibling of `box_stmt_list`.
+export fn box_sstmt_list_spanned(xs: List<SStmt>) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    for x in xs { out.push(spanned_child(AnyNode.AnyStmt(x.node), x.line, x.col)) }
+    out
+}
+
+/// A nullable single `SExpr?` wrapper → 0-or-1 spanned children at the
+/// wrapper's (line, col). The span-preserving sibling of `unwrap_node_opt`.
+export fn node_opt_spanned_sexpr(x: SExpr?) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    if x != none { out.push(spanned_child(AnyNode.AnyExpr(x!.node), x!.line, x!.col)) }
+    out
+}
+
+/// A nullable single `SStmt?` wrapper → 0-or-1 spanned children at the
+/// wrapper's (line, col). Span-preserving sibling of `unwrap_node_opt`.
+export fn node_opt_spanned_sstmt(x: SStmt?) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    if x != none { out.push(spanned_child(AnyNode.AnyStmt(x!.node), x!.line, x!.col)) }
+    out
+}
+
+/// Project the bare `AnyNode`s out of a spanned-child list, order preserved —
+/// the position-free view of `all_children_spanned()`, for @std callers that
+/// only need the node set (e.g. the arena kind-tag probes).
+export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
+    mut out: List<AnyNode> = []
+    for sc in scs { out.push(sc.node) }
     out
 }
 
