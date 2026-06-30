@@ -48,7 +48,7 @@ help:
 	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
 	@echo "                     byte-identical IR over selfhost + curated corpus"
 	@echo "                     (tests/difftest_corpus/). Options: BASE=, NEW=, CORPUS=,"
-	@echo "                     QUICK=1 (selfhost only — fastest local change-check)."
+	@echo "                     JOBS=, PREBUILT=1 (reuse build/bs2 as NEW; local, fast)."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source. Add FAST=1"
 	@echo "                     for the inner-loop variant (per-fn diff, no verify)."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
@@ -158,11 +158,13 @@ selfhost:
 #   make diff-test                 # base = integration branch, new = HEAD
 #   make diff-test BASE=<ref>      # override the oracle ref
 #   make diff-test NEW=<ref>       # override the candidate ref
-#   make diff-test QUICK=1         # selfhost differential only — the decisive
-#                                  # oracle; the right default for local checks
+#   make diff-test PREBUILT=1      # reuse the warm build/bs2 as NEW (skip the
+#                                  # cold ~5-7 min rebuild) — LOCAL only, non-
+#                                  # hermetic; CI always uses the default build
 #   make diff-test CORPUS='path/*.av'   # override the corpus glob
+#   make diff-test JOBS=N          # corpus fan-out width (default: ~nproc-1)
 diff-test:
-	@$(if $(QUICK),DIFF_TEST_QUICK=1 )$(if $(CORPUS),DIFF_TEST_CORPUS='$(CORPUS)' )$(DIAG) --diff-test $(if $(BASE),--base $(BASE)) $(if $(NEW),--new $(NEW))
+	@$(if $(CORPUS),DIFF_TEST_CORPUS='$(CORPUS)' )$(if $(JOBS),DIFF_TEST_JOBS=$(JOBS) )$(DIAG) --diff-test $(if $(BASE),--base $(BASE)) $(if $(NEW),--new $(NEW)) $(if $(PREBUILT),--new-prebuilt)
 
 # Compile and run a single Avra file with the bootstrap compiler.
 run:

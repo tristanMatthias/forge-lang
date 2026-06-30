@@ -40,4 +40,4 @@ A file the OLD oracle can't compile standalone is **skipped with a `[warn]`**
 1. Write `<feature>.av` here with a `// WHY:` header naming the path it covers.
 2. Verify it compiles standalone: `./build/bs2 compile tests/difftest_corpus/<feature>.av`
    (the emitted `<file>.av.ll` is gitignored).
-3. `make diff-test` (or `make diff-test QUICK=1` for a fast selfhost-only check).
+3. `make diff-test` (add `PREBUILT=1` to skip the cold NEW rebuild while iterating).

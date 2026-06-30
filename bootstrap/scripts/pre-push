@@ -81,11 +81,12 @@ if [ "$need_check" -eq 1 ] && [ "${AVRA_SKIP_WINDOW_CHECK:-0}" != "1" ]; then
   bash bootstrap/scripts/diagnose.sh --check-bootstrap-window
 fi
 
-# HRN differential test: quick (selfhost) IR-equality check
-# against the integration oracle when compiler sources changed. The full
-# corpus runs in CI (.github/workflows/diff-test.yml). Skip with
+# HRN differential test: byte-identical-IR check against the integration
+# oracle when compiler sources changed. Selfhost + the (now tiny) curated
+# corpus compile concurrently, so this is cheap on top of the builds. CI
+# re-runs it on the PR (.github/workflows/diff-test.yml). Skip with
 # AVRA_SKIP_DIFFTEST=1 git push.
 if [ "$need_difftest" -eq 1 ] && [ "${AVRA_SKIP_DIFFTEST:-0}" != "1" ]; then
-  echo "[pre-push] compiler sources changed — quick differential test (selfhost IR)"
-  DIFF_TEST_QUICK=1 bash bootstrap/scripts/diagnose.sh --diff-test
+  echo "[pre-push] compiler sources changed — differential test (selfhost + corpus IR)"
+  bash bootstrap/scripts/diagnose.sh --diff-test
 fi
