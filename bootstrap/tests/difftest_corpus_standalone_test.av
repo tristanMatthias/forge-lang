@@ -1,0 +1,32 @@
+// WHY: guards the 51zr contract — the HRN diff-test corpus
+// (tests/difftest_corpus/*.av) must stay STANDALONE-compilable with a bare
+// `bs2 compile`. A file that needs @std, sibling imports, or the
+// spec/given/then runtime is the exact misconfiguration 51zr fixed: the OLD
+// oracle can't compile it, so the diff-test silently skips it for zero added
+// coverage. This catches such a regression (a non-standalone file slipping
+// in, or the corpus dir being emptied/repointed) in seconds in the normal
+// suite — long before CI's expensive two-compiler diff-test would.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "diff-test corpus stays standalone-compilable (51zr)" {
+    then "every tests/difftest_corpus/*.av compiles with a bare bs2 compile" {
+        let root = avra_shell_exec("pwd").trim()
+        let bs2 = root + "/build/bs2"
+        let dir = root + "/tests/difftest_corpus"
+        // Compile copies under a PID-unique /tmp dir so no .ll/sidecar
+        // artifacts touch the source tree, and strip the runner's @std
+        // fast-path env so each file is a true standalone compile (the same
+        // way the diff-test invokes the OLD oracle). POSIX-sh only.
+        let out = avra_shell_exec(
+            "tmp=/tmp/avra_difftest_corpus_guard_$$; rm -rf \"$tmp\"; mkdir -p \"$tmp\"; " +
+            "cp " + dir + "/*.av \"$tmp\"/ 2>/dev/null; n=0; bad=0; " +
+            "for f in \"$tmp\"/*.av; do [ -e \"$f\" ] || continue; n=$((n+1)); " +
+            "if ! env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS \"" + bs2 + "\" compile \"$f\" >/dev/null 2>&1; then " +
+            "bad=$((bad+1)); echo \"NONSTANDALONE: $f\"; fi; done; " +
+            "rm -rf \"$tmp\"; echo \"corpus_total=$n corpus_bad=$bad\"")
+        // Zero failures AND a non-empty corpus (an emptied/repointed dir
+        // yields corpus_total=0, which must fail this guard).
+        out.contains("corpus_bad=0") && !out.contains("corpus_total=0")
+    }
+}
