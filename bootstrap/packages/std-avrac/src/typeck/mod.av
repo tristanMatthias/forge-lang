@@ -914,6 +914,19 @@ export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: s
 /// by the per-expression checker arms.
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 
+/// Reject `obj[i]` on a receiver that has no `[]` codegen path (maps,
+/// scalars): both would otherwise ICE in codegen (F9999 "indexing on
+/// non-string/list value"). typeck is the gating stage, so emit the clean
+/// F1206 here instead. `hint` completes the shared "cannot index a `T` with
+/// `[]` — " message; `ret` is the type the checker keeps going with so a
+/// rejected index produces no cascade (the F1206 already stops compilation).
+fn tc_reject_index(tc: TC, obj_ty: ValueType, hint: string, ret: ValueType) -> ExprResult {
+    tc_er(
+        tc_report(tc, DiagCode.NotIndexable,
+            "cannot index a `${vtype_render_full(obj_ty)}` with `[]` — ${hint}"),
+        ret)
+}
+
 // Parse a union alias string "A | B | C" into ValueType.Union.
 /// Canonicalise a ValueType against the TC's registries — peel
 /// newtypes, expand union aliases, etc. Idempotent — calling
@@ -2586,15 +2599,19 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             if vtype_eq(o.ty, .Str) {
                 return tc_er(i.tc, .Str)
             }
-            // Maps are not subscriptable — `m[k]` has no codegen case and
-            // would ICE (F9999 "indexing on non-string/list value"). typeck
-            // gates, so reject it here with the spec alternative `.get(key)`.
-            // Return V so the checker keeps going (the F1206 already stops it).
+            // Maps and value scalars (the i64/double types) have no `[]` codegen
+            // path — both would ICE as F9999 "indexing on non-string/list value".
+            // typeck gates, so reject them here with a clean F1206. Strings are
+            // handled above; lists and pointers fall through to the element-type
+            // path below. A type-param placeholder is `Struct("T", …)` and a
+            // newtype is its own `Newtype(…)`, so neither is a value scalar — both
+            // fall through on purpose (a newtype wrapping a list should index
+            // *through* to its base, resolved where newtype transparency is
+            // handled).
             match o.ty {
-                .Map(_, v) -> return tc_er(
-                    tc_report(i.tc, DiagCode.NotIndexable,
-                        "cannot index a `${vtype_render_full(o.ty)}` with `[]` — use `.get(key)`"),
-                    v)
+                .Map(_, _) -> return tc_reject_index(i.tc, o.ty, "use `.get(key)`", vtype_map_value(o.ty))
+                _ if vtype_is_value_scalar(o.ty) ->
+                    return tc_reject_index(i.tc, o.ty, "only strings, lists, and pointers are indexable", o.ty)
                 _ -> {}
             }
             let elem_ty = vtype_list_elem(o.ty)
