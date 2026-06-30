@@ -511,3 +511,24 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
         back.length == 1 && back[0].line == 1 && nested_line == 2 && nested_col == 3
     }
 }
+
+// ps3t.3.7.1 regression: `quote arm { p -> e }` parses to a synthetic
+// `Expr.MatchExpr(Expr.None, [arm])`. The subject MUST be a bare `Expr` (its
+// declared field type). The parser once stored an `sexpr(...)` WRAPPER there —
+// type-checks because both lower to `ptr`, harmless to the normal pipeline (quote
+// lowering ignores the subject), but it makes the node ill-formed: arena ingest's
+// `all_children_spanned` descends `subject` as a bare Expr, reads the SExpr
+// struct's first word as an enum tag, and traps ("unmatched tag <heap ptr>"). This
+// only surfaced once ingest ran on the pre-lowering tree. Guard the walked path.
+spec "ps3t.3.7.1: ingest walks a quote-arm synthetic MatchExpr without trapping" {
+    then "AVRA_L1_INGEST on a quote-arm program reconstructs faithfully and never traps" {
+        let fixture = "/tmp/avra_l1_quote_arm_regress.av"
+        let _ = avra_selfhost_write_file(fixture,
+            "use @std.avrac.core.{MatchArm}\n" +
+            "@comptime\n" +
+            "fn ma() -> List<MatchArm> { [quote arm { 1 -> 100 }] }\n" +
+            "fn main() {}\n")
+        let out = avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
+        out.contains("[l1-reconstruct] faithful=y") && !out.contains("unmatched tag")
+    }
+}

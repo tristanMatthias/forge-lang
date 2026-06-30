@@ -2208,7 +2208,14 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return .Err("parse error") }
         let arm = MatchArm { pattern, guard, body: body_se }
         let arms: List<MatchArm> = [arm]
-        .Ok(Expr.MatchExpr(sexpr(Expr.None, self.current_line, self.current_column), arms))
+        // The synthetic envelope's subject is a BARE `Expr` (the field type), not
+        // an `sexpr(...)` wrapper: storing an SExpr struct in the `subject: Expr`
+        // slot type-checks only because both lower to `ptr`, but it makes the
+        // node ill-formed — a walker (e.g. arena ingest's `all_children_spanned`)
+        // that descends `subject` as a bare Expr reads the SExpr's first word as
+        // an enum tag and traps. The lowering pass ignores `subject` anyway
+        // (`extract_single_match_arm` matches `.MatchExpr(_, arms)`).
+        .Ok(Expr.MatchExpr(Expr.None, arms))
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
