@@ -1,0 +1,40 @@
+// WHY: regression for forge-crafting-intepreters-j4yt — `m[key]` on a Map had
+// no codegen case, so it reached codegen and ICEd (F9999 "indexing on
+// non-string/list value"). typeck now gates it with a clean F1206
+// (NotIndexable) that points at the spec alternative `.get(key)`. Strings and
+// lists stay indexable (no false positive).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Compile a fixture and capture stderr+stdout; emit a sentinel on clean
+// compile so positive controls assert real success, not the mere absence of
+// an F-code.
+fn j4yt_out(source: string) -> string {
+    let path = "/tmp/avra_j4yt_idx.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "map [] indexing is a clean diagnostic, not an ICE (j4yt)" {
+    then "m[\"k\"] on a Map is F1206, never the F9999 ICE" {
+        let out = j4yt_out("fn main() {\n    let m = {\"a\": 1}\n    let _ = m[\"a\"]\n}")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+    then "the diagnostic points at .get(key)" {
+        let out = j4yt_out("fn main() {\n    let m = {\"a\": 1}\n    let _ = m[\"a\"]\n}")
+        out.contains(".get(key)")
+    }
+    then "string indexing still compiles (no false F1206)" {
+        let out = j4yt_out("fn main() {\n    let s = \"hi\"\n    let _ = s[0]\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+    then "list indexing still compiles (no false F1206)" {
+        let out = j4yt_out("fn main() {\n    let xs = [1, 2, 3]\n    let _ = xs[0]\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+    then "the spec-blessed m.get(key) still compiles clean" {
+        let out = j4yt_out("fn main() {\n    let m = {\"a\": 1}\n    let v = m.get(\"a\")\n    if v != null { let _ = v! }\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+}

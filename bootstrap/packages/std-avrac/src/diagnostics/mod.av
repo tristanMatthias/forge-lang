@@ -232,6 +232,11 @@ export enum DiagCode {
     /// to an optional `T?`. A `none` has no value, so the result is
     /// undefined; unwrap, default, or handle absence first.
     ArithOnOptional
+    /// F1206 — `[]` indexing was applied to a value that isn't indexable.
+    /// Only strings, lists, and pointers support `obj[i]`; maps use
+    /// `.get(key)`. Without this gate the bad index reaches codegen and
+    /// ICEs (F9999 "indexing on non-string/list value").
+    NotIndexable
     // ── Name resolution (F3000-3999) ────────────────────────────────
     /// F3000 — name not in scope. Either a typo, missing `use`, or
     /// reference to a private symbol.
@@ -402,6 +407,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .LetElseMustDiverge  -> ErrorDef { code: "F1203", help: "a `let … else` block must exit the scope (`return` / `break` / `continue` / `panic`) — for a same-type fallback that continues, use `?? default`" }
         .OrderOnOptional     -> ErrorDef { code: "F1204", help: "a `none` has no position in an ordering — unwrap first (`a!`), default the gap (`a ?? 0`), or compare presence with `match` / `if let`" }
         .ArithOnOptional     -> ErrorDef { code: "F1205", help: "a `none` has no value to compute with — unwrap first (`a!`), default the gap (`a ?? 0`), or handle absence with `match` / `if let`" }
+        .NotIndexable        -> ErrorDef { code: "F1206", help: "only strings, lists, and pointers support `obj[i]` — a map uses `.get(key)` (returns the value or null)" }
         .UndefinedVariable   -> ErrorDef { code: "F3000", help: "name not in scope — check spelling, add a `use` import, or declare it" }
         .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
         .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }
