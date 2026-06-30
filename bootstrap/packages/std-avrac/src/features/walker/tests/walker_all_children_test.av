@@ -8,7 +8,7 @@
 // WrapperListOfSelf, OptionalDirectSelf, bare ListOfSelf, and all-scalar. (The
 // per-child SPANS the same walker carries are covered in arena_test.av.)
 
-use @std.avrac.core.{Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry}
+use @std.avrac.core.{Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry, TypeParamEntry}
 use @std.avrac.core.{stmt_child_tags, expr_child_tags, pat_child_tags, type_child_tags}
 use @std.avrac.core.{wc_roundtrip_expr, wc_roundtrip_stmt, wc_roundtrip_pat, wc_roundtrip_type}
 use @std.avrac.core.{AnyNode, SpannedChild, spanned_child, respan_sexpr_opt, respan_sstmt_opt, render_expr, render_stmt, render_pattern}
@@ -158,5 +158,28 @@ spec "render_pattern: literal + nested arms render distinctly" {
         let no_b: List<ParamEntry> = []
         let subs: List<Pattern> = [Pattern.LitInt(1), Pattern.Variant("X", no_b)]
         render_pattern(Pattern.NestedVariant("Some", subs)) == ".Some(1, .X())"
+    }
+}
+
+// render_stmt's binding/fn-return type annotations are WALKED ValueType children,
+// so the round-trip oracle (render-equality) must render them faithfully — but they
+// used the concise `vtype_display`, which collapses `List<int>`≡`List<string>`→"List"
+// (etc.), making the oracle vacuous for those type slots. They now use a faithful
+// renderer; assert two distinct element types diverge (and Unknown stays readable).
+spec "render_stmt: binding/fn type annotations render faithfully (round-trip oracle non-vacuity)" {
+    then "Let element type is faithful (List<int> != List<string>; was both 'List')" {
+        let no_el: List<SExpr> = []
+        let a = render_stmt(Stmt.Let("x", ValueType.List(ValueType.Int), Expr.ListLit(no_el)))
+        let b = render_stmt(Stmt.Let("x", ValueType.List(ValueType.Str), Expr.ListLit(no_el)))
+        a != b && a.contains("List<int>")
+    }
+    then "Function return type is faithful (List<int> not collapsed to 'List')" {
+        let no_tp: List<TypeParamEntry> = []
+        let no_pp: List<ParamEntry> = []
+        let no_body: List<SStmt> = []
+        render_stmt(Stmt.Function("f", no_tp, no_pp, ValueType.List(ValueType.Int), no_body)).contains("List<int>")
+    }
+    then "unresolved binding type still renders the <unknown> marker" {
+        render_stmt(Stmt.Let("x", ValueType.Unknown, Expr.Number("1"))).contains("<unknown>")
     }
 }

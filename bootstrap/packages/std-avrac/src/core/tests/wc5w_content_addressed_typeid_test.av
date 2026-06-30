@@ -102,4 +102,13 @@ spec "wc5w: vtype_eq compares nominal identity by content id, kind-agnostic (24y
         let parser_default = ValueType.Struct("@std::avrac::core::ExprId", no_args, id)
         vtype_eq_deep(resolved, parser_default) && vtype_eq_deep(parser_default, resolved)
     }
+    then "vtype_eq_deep deep-compares Fn return types (vtype_eq's shallow `.Fn` ignored ret)" {
+        // `Fn(ret)`'s ret is a walked child, but vtype_eq's `.Fn -> b is .Fn`
+        // ignored it, so Fn(int) == Fn(string) deeply — a vacuous oracle for any
+        // Fn-bearing reconstructed type. The new `.Fn` deep arm distinguishes them,
+        // and the difference must propagate through containers (List<Fn<_>>).
+        !vtype_eq_deep(ValueType.Fn(ValueType.Int), ValueType.Fn(ValueType.Str))
+          && vtype_eq_deep(ValueType.Fn(ValueType.Int), ValueType.Fn(ValueType.Int))
+          && !vtype_eq_deep(ValueType.List(ValueType.Fn(ValueType.Int)), ValueType.List(ValueType.Fn(ValueType.Str)))
+    }
 }

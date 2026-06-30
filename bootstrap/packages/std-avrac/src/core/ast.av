@@ -1612,6 +1612,11 @@ export fn vtype_eq_deep(a: ValueType, b: ValueType) -> bool {
         // `_ -> true` mirrors newtype_inners_eq and keeps deep-equality callers
         // on the same cross-kind rule as vtype_eq.
         .Newtype(_, ia, _) -> match b { .Newtype(_, ib, _) -> vtype_eq_deep(ia, ib), _ -> true }
+        // `vtype_eq`'s `.Fn -> b is .Fn` ignores the `ret` field, so two `Fn`s
+        // differing only in return type pass the shallow gate; deep-compare ret
+        // (mirrors Task/Channel). The gate guarantees b is `.Fn` here; `_ -> true`
+        // keeps the FnTyped-vs-Fn leniency for the unreachable cross-kind case.
+        .Fn(ra) -> match b { .Fn(rb) -> vtype_eq_deep(ra, rb), _ -> true }
         // FnTyped-vs-Fn keeps `vtype_eq`'s leniency (vtype_eq already returned
         // true for it); only tighten when both sides are FnTyped.
         .FnTyped(pa, ra) -> match b { .FnTyped(pb, rb) -> vtype_list_eq_deep(pa, pb) && vtype_eq_deep(ra, rb), _ -> true }
@@ -1764,6 +1769,17 @@ fn render_type_list_full(tl: List<ValueType>) -> string {
 /// pipe-joined for union rendering (`int|string|bool`).
 fn render_union_full(tl: List<ValueType>) -> string {
     list_map(tl, (t: ValueType) -> vtype_render_full(t)).join("|")
+}
+
+/// Faithful type rendering for AST INSPECTION (render_stmt's binding/fn arms):
+/// full structural detail like `vtype_render_full` — so a mis-reconstructed type
+/// child (e.g. `List<int>` rebuilt as `List<string>`) DIVERGES under the
+/// render-equality round-trip oracle, which `vtype_display` would hide (it
+/// collapses `List<_>`→"List", `Tuple(_)`→"(tuple)", Struct/Enum args, Fn ret).
+/// Keeps the explicit `<unknown>` marker that `vtype_render_full` elides to "",
+/// so an unresolved binding type still renders readably.
+fn vtype_render_decl(t: ValueType) -> string {
+    if vtype_is_unknown(t) { "<unknown>" } else { vtype_render_full(t) }
 }
 
 /// Trait name for a Trait ValueType, or "" otherwise.
@@ -2658,9 +2674,9 @@ export fn render_param_list(params: List<ParamEntry>) -> string {
 /// inspection-only, not source round-trip.
 export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
-        .Let(name, vt, initializer) -> "(let ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
-        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
-        .Const(name, vt, initializer) -> "(const ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
+        .Let(name, vt, initializer) -> "(let ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
+        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
+        .Const(name, vt, initializer) -> "(const ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
         .Expr(expr) -> "(expr ${render_expr(expr)})"
         .Block(body) -> "(block ${render_stmt_list(body)})"
         .If(condition, then_branch, else_branch) -> {
@@ -2677,7 +2693,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_display(rvt)} ${render_stmt_list(body)})"
+            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_render_decl(rvt)} ${render_stmt_list(body)})"
         }
         .Return(value) -> "(return ${render_expr(value)})"
         .ReturnEmpty -> "(return)"
@@ -2697,7 +2713,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
         .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"
-        .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_display(rvt)})"
+        .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_render_decl(rvt)})"
         .Break -> "(break)"
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"
