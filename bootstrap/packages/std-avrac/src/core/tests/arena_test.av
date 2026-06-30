@@ -16,7 +16,7 @@
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType, BinOp}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
-use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
+use @std.avrac.core.{ingest_program, program_from_store, reconstruct_program, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
 use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr, sexpr_at, Annotation}
 
 /// Peel an `ExprRef` (the span specs ingest all-Expr trees, so every child
@@ -96,6 +96,12 @@ spec "L1 arena ingest (wired)" {
     then "the last stmt carries a real byte-offset span; line/col recomputed from it" {
         let out = l1_ingest_output()
         out.contains("[l1-ingest] last stmt span [40,") && out.contains("line 3 col 1")
+    }
+    // B1: the arena edges reconstruct the REAL parsed program faithfully — the
+    // round-trip (reconstruct_program rebuilds from edges via the inverse walker;
+    // render-equality vs the parse output is the structural oracle).
+    then "reconstruct_program rebuilds the real parsed program faithfully from edges" {
+        l1_ingest_output().contains("[l1-reconstruct] faithful=y")
     }
 }
 
@@ -448,5 +454,44 @@ spec "A2: ingest_program threads real spans to wrapped nested statements" {
         let break_id = stmt_ref_id(store.stmts.children_of(store.roots[0])[1])
         let bs = store.stmts.span_of(break_id)
         !byte_span_is_none(bs) && bs.lo == 11 && store.stmt_linecol(break_id).line == 2
+    }
+}
+
+// B1: reconstruct_program rebuilds the WHOLE tree from arena EDGES (not the
+// stored boxed children) via the derive-generated inverse walker `with_children`
+// — the round-trip fidelity proof that the edges are a COMPLETE representation
+// (the boxed-view shim the id-children rep flip stands on). render-equality is
+// the structural oracle: any dropped / reordered / mis-kinded edge diverges.
+spec "B1: reconstruct_program round-trips a program from arena edges" {
+    then "a simple program rebuilds structurally identically" {
+        let orig = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, ""),
+                    sstmt_at(Stmt.Break, 2, 1, "")]
+        let store = ingest_program(orig, "let x: int = 5\nbreak\n")
+        render_stmt_list(reconstruct_program(store, "")) == render_stmt_list(orig)
+    }
+    then "a deep cross-kind program (fn { if (1<2) { let xs: List<List<int>> = [] } }) rebuilds identically" {
+        // Exercises edge reconstruction across every kind boundary: Function ->
+        // [ret-type, body], If -> [cond expr, then stmt], Let -> [type, init],
+        // Binary -> [left, right] — all rebuilt from edges, not stored children.
+        let no_tp: List<TypeParamEntry> = []
+        let no_pp: List<ParamEntry> = []
+        let no_el: List<SExpr> = []
+        let cond = Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2"))
+        let inner_let = Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), Expr.ListLit(no_el))
+        let body: List<SStmt> = [sstmt_at(Stmt.If(cond, inner_let, null), 2, 3, "")]
+        let f = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
+        let orig = [sstmt_at(f, 1, 1, "")]
+        let store = ingest_program(orig, "fn f() {\n  if 1<2 { }\n}\n")
+        render_stmt_list(reconstruct_program(store, "")) == render_stmt_list(orig)
+    }
+    then "wrapper-list children (Call args) rebuild from edges identically" {
+        let args: List<SExpr> = [sexpr_at(Expr.Number("1"), 1, 3, ""), sexpr_at(Expr.Ident("y"), 1, 6, "")]
+        let orig = [sstmt_at(Stmt.Expr(Expr.Call(Expr.Ident("g"), args)), 1, 1, "")]
+        let store = ingest_program(orig, "g(1, y)\n")
+        render_stmt_list(reconstruct_program(store, "")) == render_stmt_list(orig)
+    }
+    then "an empty program reconstructs to an empty list" {
+        let empty: List<SStmt> = []
+        reconstruct_program(ingest_program(empty, ""), "").length == 0
     }
 }

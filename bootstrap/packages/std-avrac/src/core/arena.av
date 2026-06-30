@@ -346,18 +346,75 @@ impl NodeStore {
     fn ingest_type(self, node: ValueType, sp: ByteSpan) -> TypeId {
         self.types.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
     }
-    /// Recompute a statement node's 1-based (line, col) from its span —
-    /// the on-demand conversion that §14.2 says happens only at
-    /// diagnostic-render time, never from a stored field. A synthesised node
-    /// (span_none) has no source position, so it maps to (0, 0) — the same
-    /// "no attribution" coordinate `span_dummy` uses, which the renderer
-    /// treats as "skip the caret".
-    fn stmt_linecol(self, id: StmtId) -> LineCol {
-        let sp = self.stmts.span_of(id)
+    /// 1-based (line, col) of a byte-span — the on-demand conversion §14.2 says
+    /// happens only at diagnostic-render / reconstruct time, never from a stored
+    /// field. A synthesised node (span_none) maps to (0, 0) — the "no attribution"
+    /// coordinate the renderer treats as "skip the caret".
+    fn linecol_of_span(self, sp: ByteSpan) -> LineCol {
         if byte_span_is_none(sp) {
             return LineCol { line: 0, col: 0 }
         }
         self.lines.to_linecol(sp.lo)
+    }
+    /// Recompute a statement node's (line, col) from its recorded span.
+    fn stmt_linecol(self, id: StmtId) -> LineCol {
+        self.linecol_of_span(self.stmts.span_of(id))
+    }
+
+    // ── reconstruct: rebuild the boxed tree purely from arena EDGES (B1) ──
+    //
+    // The inverse of ingest: given a node id, rebuild its boxed node from its
+    // EDGE ids (not the stored boxed children — proving the edges are a complete
+    // representation), recursively, via the derive-generated `with_children`.
+    // Each child arrives as a `SpannedChild` carrying the (line, col) recovered
+    // from the span side-table, so `with_children` can rebuild SExpr/SStmt
+    // wrappers faithfully. The boxed-view shim the id-children rep flip stands on.
+
+    /// Rebuild one child edge into a `SpannedChild`: its node (recursively, from
+    /// ITS edges) paired with its (line, col) recovered from the span side-table.
+    fn reconstruct_ref(self, r: NodeRef) -> SpannedChild {
+        match r {
+            .ExprRef(id) -> {
+                let lc = self.linecol_of_span(self.exprs.span_of(id))
+                spanned_child(AnyNode.AnyExpr(self.reconstruct_expr(id)), lc.line, lc.col)
+            }
+            .StmtRef(id) -> {
+                let lc = self.linecol_of_span(self.stmts.span_of(id))
+                spanned_child(AnyNode.AnyStmt(self.reconstruct_stmt(id)), lc.line, lc.col)
+            }
+            .PatRef(id) -> {
+                let lc = self.linecol_of_span(self.pats.span_of(id))
+                spanned_child(AnyNode.AnyPat(self.reconstruct_pat(id)), lc.line, lc.col)
+            }
+            .TypeRef(id) -> {
+                let lc = self.linecol_of_span(self.types.span_of(id))
+                spanned_child(AnyNode.AnyType(self.reconstruct_type(id)), lc.line, lc.col)
+            }
+        }
+    }
+    /// Rebuild a node's ordered children from its edge list — the input
+    /// `with_children` reassembles into the parent's slots.
+    fn reconstruct_kids(self, refs: List<NodeRef>) -> List<SpannedChild> {
+        mut out: List<SpannedChild> = []
+        for r in refs { out.push(self.reconstruct_ref(r)) }
+        out
+    }
+    /// Rebuild an `Expr` from its arena id: its variant + scalars from the stored
+    /// node, its children rebuilt from the edges (NOT the stored boxed children).
+    fn reconstruct_expr(self, id: ExprId) -> Expr {
+        self.exprs.get(id).with_children(self.reconstruct_kids(self.exprs.children_of(id)))
+    }
+    /// Rebuild a `Stmt` from its arena id (see `reconstruct_expr`).
+    fn reconstruct_stmt(self, id: StmtId) -> Stmt {
+        self.stmts.get(id).with_children(self.reconstruct_kids(self.stmts.children_of(id)))
+    }
+    /// Rebuild a `Pattern` from its arena id (see `reconstruct_expr`).
+    fn reconstruct_pat(self, id: PatId) -> Pattern {
+        self.pats.get(id).with_children(self.reconstruct_kids(self.pats.children_of(id)))
+    }
+    /// Rebuild a `ValueType` from its arena id (see `reconstruct_expr`).
+    fn reconstruct_type(self, id: TypeId) -> ValueType {
+        self.types.get(id).with_children(self.reconstruct_kids(self.types.children_of(id)))
     }
 }
 
@@ -452,6 +509,25 @@ export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
         // provenance that `sstmt_at` would otherwise flatten to false.
         let from_macro = store.provenance.has(id)
         out.push(SStmt { node: store.stmts.get(id), line: lc.line, col: lc.col, file, from_macro })
+    }
+    out
+}
+
+/// Rebuild the top-level statement list ENTIRELY from arena edges (B1) — the
+/// inverse of `ingest_program`. Unlike `program_from_store` (which returns the
+/// stored boxed root nodes with recomputed positions), each root's whole subtree
+/// is reconstructed from its edge ids via `reconstruct_stmt`, so this exercises
+/// the edges as a COMPLETE representation — the boxed-view shim the id-children
+/// rep flip stands on. Each root's own (line, col) + `from_macro` + `file` are
+/// patched from the side-tables (a `SpannedChild` carries none of those). Proven
+/// structurally faithful by the gated round-trip check (`reconstruct_program(
+/// ingest_program(p)) ≅ p`); behind `AVRA_L1_INGEST` until the pass migration.
+export fn reconstruct_program(store: NodeStore, file: string) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for id in store.roots {
+        let lc = store.stmt_linecol(id)
+        let from_macro = store.provenance.has(id)
+        out.push(SStmt { node: store.reconstruct_stmt(id), line: lc.line, col: lc.col, file, from_macro })
     }
     out
 }
