@@ -20,7 +20,7 @@ spec "diff-test corpus stays standalone-compilable (51zr)" {
         // way the diff-test invokes the OLD oracle). POSIX-sh only.
         let out = avra_shell_exec(
             "tmp=/tmp/avra_difftest_corpus_guard_$$; rm -rf \"$tmp\"; mkdir -p \"$tmp\"; " +
-            "cp " + dir + "/*.av \"$tmp\"/ 2>/dev/null; n=0; bad=0; " +
+            "cp \"" + dir + "\"/*.av \"$tmp\"/ 2>/dev/null; n=0; bad=0; " +
             "for f in \"$tmp\"/*.av; do [ -e \"$f\" ] || continue; n=$((n+1)); " +
             "if ! env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS \"" + bs2 + "\" compile \"$f\" >/dev/null 2>&1; then " +
             "bad=$((bad+1)); echo \"NONSTANDALONE: $f\"; fi; done; " +

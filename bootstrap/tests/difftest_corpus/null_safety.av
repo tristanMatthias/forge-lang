@@ -11,4 +11,6 @@ fn main() {
     let absent: Box? = null
     println(string(pick(present)))
     println(string(pick(absent)))
+    // Force-unwrap (`!`): Box? -> Box, then field access.
+    println(string(present!.value))
 }
