@@ -251,9 +251,11 @@ DIFF & ANALYSIS
                        Differential test (HRN): build the
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
-                       over the selfhost source + corpus. The go-hard
-                       safety net. DIFF_TEST_QUICK=1 = selfhost only;
-                       DIFF_TEST_CORPUS=<glob> overrides the corpus.
+                       over the selfhost source + curated standalone corpus
+                       (tests/difftest_corpus/*.av). The go-hard safety net.
+                       DIFF_TEST_QUICK=1 = selfhost only (the decisive
+                       oracle; fastest local change-check). DIFF_TEST_CORPUS=
+                       <glob> overrides the corpus.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -2731,11 +2733,23 @@ mode_check_bootstrap_window() {
 # renumbering) the divergence surfaces here for a human to confirm against
 # results — exactly the "byte-identical IR where applicable" of sec 8.
 #
+# The corpus is the CURATED standalone set (bootstrap/tests/difftest_corpus/
+# *.av): small, single-file, feature-diverse programs that compile with a bare
+# `bs2 compile`. The selfhost pass is the comprehensive oracle; the corpus is
+# the surgical complement — a divergence in (say) channel or match codegen
+# surfaces against a ~20-line file instead of bisecting the ~590k-line selfhost
+# IR. It is NOT the test-harness suite (tests/*.av): those need @std + the
+# spec/given/then runtime, so OLD cannot compile them standalone — every one
+# would be skipped after a doomed ~1s compile, leaving the corpus phase with
+# ZERO real comparisons (the bug this default fixed).
+#
 # Usage / knobs:
 #   --base <ref>            OLD/oracle ref     (default: integration branch)
 #   --new  <ref>            NEW/candidate ref  (default: HEAD)
-#   DIFF_TEST_QUICK=1       selfhost differential only (skip the corpus)
-#   DIFF_TEST_CORPUS=<glob> corpus inputs      (default: bootstrap/tests/*.av)
+#   DIFF_TEST_QUICK=1       selfhost differential only (skip the corpus) —
+#                           the RIGHT default for fast local change-checks:
+#                           the selfhost diff is the decisive oracle.
+#   DIFF_TEST_CORPUS=<glob> corpus inputs  (default: tests/difftest_corpus/*.av)
 #   AVRA_FORCE_DIFFTEST=1   ignore the per-ref compiler build cache
 
 DIFFTEST_DIR="$BUILD_DIR/difftest"
@@ -2846,9 +2860,16 @@ mode_diff_test() {
   if [ "${DIFF_TEST_QUICK:-0}" = "1" ]; then
     log "diff-test: DIFF_TEST_QUICK=1 — skipping the corpus"
   else
-    local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/*.av}"
+    # Default: the CURATED standalone corpus (tests/difftest_corpus/*.av) —
+    # small, single-file, feature-diverse programs that compile with a bare
+    # `bs2 compile`, giving real per-feature IR comparisons that localize a
+    # divergence to a tiny file (the selfhost pass stays the comprehensive
+    # oracle). NOT the test-harness suite (tests/*.av): those need @std + the
+    # spec/given/then runtime, so the OLD oracle can't compile them standalone
+    # — every one would be skipped after a doomed compile, doing zero work.
+    local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/difftest_corpus/*.av}"
     log "diff-test: corpus differential — $glob"
-    local divergent=() input name cwd
+    local divergent=() skipped_names=() input name cwd
     for input in $glob; do
       [ -f "$input" ] || continue
       name=$(basename "$input")
@@ -2856,9 +2877,11 @@ mode_diff_test() {
       cp "$input" "$cwd/in.av"
       # OLD is the oracle: a file it can't compile standalone (needs the
       # test-harness link, sibling imports, …) is out of corpus scope —
-      # the selfhost pass already covers those codegen paths. Skip it.
+      # the selfhost pass already covers those codegen paths. Skip it. For
+      # the curated corpus this should never fire: a skip means a corpus
+      # file regressed (no longer standalone-compilable), so name it below.
       if ! dt_compile_ir "$cwd/in.av" "$old" "$cwd/old.ll"; then
-        skipped=$((skipped+1)); rm -rf "$cwd"; continue
+        skipped=$((skipped+1)); skipped_names+=("$name"); rm -rf "$cwd"; continue
       fi
       checked=$((checked+1))
       if ! dt_compile_ir "$cwd/in.av" "$newd" "$cwd/new.ll"; then
@@ -2876,6 +2899,13 @@ mode_diff_test() {
       printf '  %s\n' "${divergent[@]}" >&2
       err "first divergence (${divergent[0]}):"
       diff -u "$wd/corpus/${divergent[0]}/old.ll" "$wd/corpus/${divergent[0]}/new.ll" | head -80 >&2
+    fi
+    # A skip in the curated corpus is a misconfiguration, not normal scope
+    # trimming — surface it so a non-standalone file gets fixed or removed
+    # instead of silently buying zero coverage at the cost of a compile.
+    if [ ${#skipped_names[@]} -gt 0 ]; then
+      warn "diff-test: ${#skipped_names[@]} corpus input(s) skipped (OLD couldn't compile standalone — fix or remove them):"
+      printf '  %s\n' "${skipped_names[@]}" >&2
     fi
   fi
 

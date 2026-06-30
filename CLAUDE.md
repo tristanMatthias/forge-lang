@@ -200,8 +200,9 @@ rip the foundation out and instantly catch behaviour drift.
 ```bash
 make diff-test                 # OLD = integration branch, NEW = HEAD
 make diff-test BASE=<ref>      # override the oracle ref
-make diff-test QUICK=1         # selfhost differential only (fast)
-make diff-test CORPUS='tests/*.av'   # override the corpus glob
+make diff-test QUICK=1         # selfhost differential only — the decisive
+                               # oracle; the right default for local checks
+make diff-test CORPUS='path/*.av'    # override the corpus glob
 ```
 
 - Implemented as `diagnose.sh --diff-test` (centralized, per rule 10). It
@@ -211,9 +212,18 @@ make diff-test CORPUS='tests/*.av'   # override the corpus glob
   **source** alone, never the seed. Builds reuse the bootstrap-window
   primitives and cache on a (seed + source) fingerprint.
 - **Inputs:** the selfhost source (the whole compiler — one compile each,
-  exercising ~all codegen; the decisive oracle) + a corpus of `.av`
-  programs. Files OLD can't compile standalone are skipped (the selfhost
-  pass covers those paths).
+  exercising ~all codegen; the decisive, comprehensive oracle) + the
+  **curated standalone corpus** `bootstrap/tests/difftest_corpus/*.av` —
+  small, single-file, feature-diverse programs that compile with a bare
+  `bs2 compile`. The corpus is the surgical complement to the selfhost pass:
+  a divergence in (say) channel or match codegen surfaces against a ~20-line
+  file instead of bisecting the ~590k-line selfhost IR. It is NOT the harness
+  suite (`tests/*.av`): those need `@std` + the spec/given/then runtime, so
+  OLD can't compile them standalone — every one would be skipped after a
+  doomed compile, leaving the corpus phase doing zero work (51zr). A corpus
+  file OLD can't compile standalone is skipped with a `[warn]` (fix or remove
+  it). Add coverage by dropping a new standalone `.av` into that dir (see its
+  README).
 - **Why IR equality is the oracle:** the toolchain is deterministic (the
   selfhost fixed point already relies on it), so identical IR ⇒ identical
   object ⇒ identical run-results. IR equality is the strict superset of the

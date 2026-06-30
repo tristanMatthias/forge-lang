@@ -1,0 +1,12 @@
+// WHY: diff-test corpus — exercises closure codegen: explicit-param lambdas,
+// capture of an outer binding, and passing a closure as a `fn(int) -> int`
+// argument that is then invoked.
+fn apply(f: fn(int) -> int, x: int) -> int { f(x) }
+
+fn main() {
+    let base = 10
+    let add_base = (n: int) -> n + base
+    let doubled = (n: int) -> n * 2
+    println(string(apply(add_base, 5)))
+    println(string(apply(doubled, 21)))
+}

@@ -1,0 +1,16 @@
+// WHY: diff-test corpus — exercises nullable types, optional chaining (?.),
+// null-coalescing (??) and force-unwrap on struct fields.
+type Box = { value: int }
+
+fn pick(b: Box?) -> int {
+    b?.value ?? -1
+}
+
+fn main() {
+    let present: Box? = Box { value: 7 }
+    let absent: Box? = null
+    println(string(pick(present)))
+    println(string(pick(absent)))
+    // Force-unwrap (`!`): Box? -> Box, then field access.
+    println(string(present!.value))
+}

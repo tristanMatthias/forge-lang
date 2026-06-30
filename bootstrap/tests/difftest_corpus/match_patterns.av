@@ -1,0 +1,27 @@
+// WHY: diff-test corpus — exercises match codegen with enum variants, guards,
+// or-patterns and a wildcard arm over both enum and int subjects.
+enum Color { Red, Green, Blue }
+
+fn name(c: Color) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+fn classify(n: int) -> string {
+    match n {
+        0 -> "zero"
+        1 or 2 or 3 -> "small"
+        _ if n < 0 -> "negative"
+        _ -> "big"
+    }
+}
+
+fn main() {
+    println(name(.Green))
+    println(classify(2))
+    println(classify(-5))
+    println(classify(99))
+}
