@@ -143,3 +143,33 @@ spec "bs2 cache clear-failed --dry-run: lists without deleting" {
         probe.contains("would delete 1") && probe.contains("still=yes")
     }
 }
+
+// The two no-op branches: a cache with only passing captures, and a cache
+// directory that has no fixture_stdout subdir at all. Both must report cleanly
+// and touch nothing — the common case when a dev runs the command speculatively.
+spec "bs2 cache clear-failed: a cache with only passing captures is a no-op" {
+    then "reports no frozen-FAIL captures and leaves both passing captures" {
+        let project = "/tmp/avra_clear_failed_clean_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = setup_fixture_stdout(project, "PROBE x: ok", "PROBE y: ok")
+        let probe = avra_shell_exec(
+            "cd " + project + " && " + bs2 + " cache clear-failed 2>&1 && " +
+            "echo --- && " +
+            "([ -f " + project + "build/cache/fixture_stdout/aaa.out ] && echo a=kept || echo a=gone) && " +
+            "([ -f " + project + "build/cache/fixture_stdout/bbb.out ] && echo b=kept || echo b=gone)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("no frozen-FAIL captures") && probe.contains("a=kept") && probe.contains("b=kept")
+    }
+}
+
+spec "bs2 cache clear-failed: a cache with no fixture_stdout dir is handled" {
+    then "reports no fixture_stdout cache when only the parent build/cache exists" {
+        let project = "/tmp/avra_clear_failed_nodir_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        // build/cache exists (so the parent guard passes) but fixture_stdout does not.
+        let _ = avra_shell_exec("rm -rf " + project + " && mkdir -p " + project + "build/cache/otherdir")
+        let probe = avra_shell_exec("cd " + project + " && " + bs2 + " cache clear-failed 2>&1")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("no fixture_stdout cache")
+    }
+}

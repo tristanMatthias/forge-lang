@@ -126,3 +126,19 @@ spec "fixture cache: fixture_is_stateful reads the source directive" {
         avra_selfhost_file_exists(path) != 0 && !fixture_is_stateful(path)
     }
 }
+
+// The exact decision cached_fixture_capture makes before writing a capture:
+// `fixture_output_is_publishable(out, fixture_is_stateful(fixture_path))`.
+// Exercising the two functions COMPOSED against a real on-disk stateful fixture
+// pins the end-to-end contract (a real stateful fixture's FAIL is not cached; a
+// passing one is) without the cost of compiling/running the fixture.
+spec "fixture cache: the composed publish decision on a real stateful fixture (fxfz)" {
+    then "real stateful fixture + a FAIL capture → the capture is NOT cacheable" {
+        let path = "tests/cli_metadata_compile_fixtures/sample.av"
+        !fixture_output_is_publishable("PROBE std_cli_meta_present: FAIL\n", fixture_is_stateful(path))
+    }
+    then "real stateful fixture + an all-ok capture → the capture IS cacheable" {
+        let path = "tests/cli_metadata_compile_fixtures/sample.av"
+        fixture_output_is_publishable("PROBE std_cli_meta_present: ok\n", fixture_is_stateful(path))
+    }
+}
