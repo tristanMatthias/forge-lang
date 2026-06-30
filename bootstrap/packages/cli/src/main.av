@@ -30,7 +30,7 @@
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
 use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
-use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_str_ends_with}
+use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_remove_tree, avra_dir_size, avra_datetime_now, avra_str_ends_with}
 
 // Convenience aliases so handler bodies stay readable.
 fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
@@ -2140,6 +2140,39 @@ fn run_clean_command() {
     }
 }
 
+/// Count the cache's entries — its top-level subdirectories. Native walk
+/// (avra_readdir + avra_is_dir) so the cache path, which derives from $PWD,
+/// is never interpolated into a shell command (the injection ohyd closes).
+fn count_cache_entries(dir: string) -> int {
+    mut n = 0
+    for name in avra_readdir(dir) {
+        if avra_is_dir("${dir}/${name}") == 1 { n = n + 1 }
+    }
+    n
+}
+
+/// Render a byte count in the largest sensible whole unit (B / K / M / G) —
+/// e.g. 1992294 -> "1M". Display-only; one decimal isn't worth the precision
+/// for a cache-size readout.
+fn format_byte_size(bytes: int) -> string {
+    if bytes < 1024 { return "${string(bytes)}B" }
+    if bytes < 1048576 { return "${string(bytes / 1024)}K" }
+    if bytes < 1073741824 { return "${string(bytes / 1048576)}M" }
+    "${string(bytes / 1073741824)}G"
+}
+
+/// True when `s` is a canonical non-negative integer within [0, 36500] days.
+/// Guards `prune --max-age-days`: avra_parse_int is atoll, which silently maps
+/// "abc"/"" to 0 and "-5" to -5 — a cutoff of now-or-later would then evict the
+/// ENTIRE cache (the old shell `find -mtime +<bad>` errored and deleted
+/// nothing). The string round-trip rejects non-numeric / empty / signed /
+/// leading-zero input; the upper bound rejects values large enough to overflow
+/// `days * 86400` (36500 days ≈ 100 years is already absurd for a cache).
+fn valid_max_age_days(s: string) -> bool {
+    let n = avra_parse_int(s)
+    n >= 0 && n <= 36500 && string(n) == s
+}
+
 // `avra cache <subcommand>` — manage the build cache.
 //   prune        : evict stale entries (default: max-age 30 days).
 //   info         : print cache size + entry count.
@@ -2151,8 +2184,8 @@ fn run_cache_command() {
 
     mut subcommand = ""
     mut dry_run = false
-    // Keep as a string so we can embed directly into the shell `find
-    // -mtime +N` without an int<->string round trip. Defaults to 30 days.
+    // Default max-age for `prune`. Kept as a string for the user-facing
+    // messages; parsed to an int for the mtime comparison. Defaults to 30 days.
     mut max_age_days_str = "30"
     mut i = 2
     while i < avra_selfhost_argc() {
@@ -2178,34 +2211,63 @@ fn run_cache_command() {
     }
 
     if subcommand == "info" {
-        let count = avra_shell_exec("find '${cache_dir}' -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '")
-        let size = avra_shell_exec("du -sh '${cache_dir}' 2>/dev/null | cut -f1")
+        // Native walk (count + recursive size) — no shell, so the
+        // $PWD-derived cache_dir is never interpolated into a command (ohyd).
         println("cache info:")
         println("  path:    ${cache_dir}")
-        println("  entries: ${count}")
-        println("  size:    ${size}")
+        println("  entries: ${string(count_cache_entries(cache_dir))}")
+        println("  size:    ${format_byte_size(avra_dir_size(cache_dir))}")
         return
     }
 
     if subcommand == "prune" {
-        // find -mtime +N matches files modified more than N*24h ago.
-        // We list candidate dirs first so --dry-run is cheap and side-
-        // effect-free; the actual rm is a separate exec.
-        let candidates = avra_shell_exec("find '${cache_dir}' -mindepth 1 -maxdepth 1 -type d -mtime +${max_age_days_str} 2>/dev/null")
-        if candidates == "" {
+        // A cache entry (top-level subdir) is stale when its mtime is older
+        // than max-age days. Native walk + avra_remove_tree — no shell, so the
+        // $PWD-derived cache path is never interpolated into a command (ohyd,
+        // the injection class clear-failed already avoids).
+        //
+        // Validate max-age FIRST: avra_parse_int is atoll, which maps a
+        // non-numeric or negative argument to 0 / a negative — either of which
+        // sets the cutoff to now-or-later and would evict the WHOLE cache. The
+        // old shell `find -mtime +<bad>` errored and deleted nothing; preserve
+        // that safety. (Semantics note: `-mtime +N` truncated age to whole 24h
+        // periods; the direct `mtime < now - N*86400` comparison here is
+        // continuous, so a boundary entry can be evicted up to ~24h younger —
+        // harmless for a cache.)
+        if !valid_max_age_days(max_age_days_str) {
+            fail("cache prune: --max-age-days must be an integer in 0..36500, got `${max_age_days_str}`")
+        }
+        // avra_file_mtime is epoch NANOSECONDS; avra_datetime_now is epoch
+        // SECONDS. Collect candidates first so --dry-run is side-effect-free.
+        let cutoff_secs = avra_datetime_now() - avra_parse_int(max_age_days_str) * 86400
+        mut stale: List<string> = []
+        for name in avra_readdir(cache_dir) {
+            let entry = "${cache_dir}/${name}"
+            if avra_is_dir(entry) == 1 && (avra_file_mtime(entry) / 1000000000 < cutoff_secs) {
+                stale.push(entry)
+            }
+        }
+        if stale.length == 0 {
             println("cache prune: no entries older than ${max_age_days_str} days")
             return
         }
-        let count_str = avra_shell_exec("printf '%s\\n' '${candidates}' | grep -c .")
         if dry_run {
-            println("cache prune --dry-run: would evict ${count_str} entries:")
-            println(candidates)
+            println("cache prune --dry-run: would evict ${string(stale.length)} entries:")
+            for p in stale { println(p) }
             return
         }
-        // Actually evict. xargs -I keeps each path argument separate
-        // so spaces (none expected, but defensive) don't break globbing.
-        let _ = avra_shell_exec("find '${cache_dir}' -mindepth 1 -maxdepth 1 -type d -mtime +${max_age_days_str} -exec rm -rf {} +")
-        println("cache prune: evicted ${count_str} entries older than ${max_age_days_str} days")
+        // avra_remove_tree returns 0 if an entry can't be fully removed
+        // (permissions, OOM, the depth cap) — surface that instead of claiming
+        // a clean prune (no silent failures).
+        mut failures = 0
+        for p in stale {
+            if avra_remove_tree(p) != 1 { failures = failures + 1 }
+        }
+        if failures > 0 {
+            println("cache prune: evicted ${string(stale.length - failures)} entries; ${string(failures)} could not be fully removed")
+        } else {
+            println("cache prune: evicted ${string(stale.length)} entries older than ${max_age_days_str} days")
+        }
         return
     }
 

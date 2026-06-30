@@ -101,6 +101,96 @@ spec "bs2 cache prune: actually evicts stale entries" {
     }
 }
 
+// ohyd: prune/info walk the cache natively (avra_remove_tree / avra_dir_size /
+// avra_file_mtime) instead of interpolating the $PWD-derived cache path into a
+// shell command. These exercise the behaviours the flat-entry specs above don't:
+// recursive deletion of a nested entry, the mtime cutoff with the DEFAULT
+// max-age, and the recursive size readout.
+spec "bs2 cache prune: recursively deletes a nested cache entry" {
+    then "a stale entry containing nested subdirs is fully removed" {
+        let project = "/tmp/avra_prune_nested_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let probe = avra_shell_exec(
+            "rm -rf " + project + " && " +
+            "mkdir -p " + project + "build/cache/entry/nested/deep && " +
+            "printf 'x' > " + project + "build/cache/entry/unit.ll && " +
+            "printf 'y' > " + project + "build/cache/entry/nested/deep/obj.o && " +
+            "touch -t 202001010000 " + project + "build/cache/entry && " +
+            "cd " + project + " && " + bs2 + " cache prune --max-age-days 0 2>&1 && " +
+            "([ ! -d " + project + "build/cache/entry ] && echo entry=gone || echo entry=here)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("evicted 1") && probe.contains("entry=gone")
+    }
+}
+
+spec "bs2 cache prune: keeps recent entries under the default max-age (mtime cutoff)" {
+    then "a 2020 entry is evicted while a fresh entry survives" {
+        let project = "/tmp/avra_prune_recency_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        // Default max-age is 30 days: the backdated entry is stale, the fresh
+        // one (mtime ≈ now) is kept — exercising avra_datetime_now + the cutoff.
+        let probe = avra_shell_exec(
+            "rm -rf " + project + " && " +
+            "mkdir -p " + project + "build/cache/old " + project + "build/cache/fresh && " +
+            "printf 'x' > " + project + "build/cache/old/u.ll && " +
+            "printf 'y' > " + project + "build/cache/fresh/u.ll && " +
+            "touch -t 202001010000 " + project + "build/cache/old && " +
+            "cd " + project + " && " + bs2 + " cache prune 2>&1 && " +
+            "([ ! -d " + project + "build/cache/old ] && echo old=gone || echo old=here) && " +
+            "([ -d " + project + "build/cache/fresh ] && echo fresh=kept || echo fresh=gone)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("evicted 1") && probe.contains("old=gone") && probe.contains("fresh=kept")
+    }
+}
+
+spec "bs2 cache info: reports a recursive byte size" {
+    then "size sums nested files and renders a unit" {
+        let project = "/tmp/avra_info_size_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        // 2048 + 1024 = 3072 bytes = 3K; the nested file must be counted.
+        let out = avra_shell_exec(
+            "rm -rf " + project + " && " +
+            "mkdir -p " + project + "build/cache/e/nested && " +
+            "head -c 2048 /dev/zero > " + project + "build/cache/e/big.ll && " +
+            "head -c 1024 /dev/zero > " + project + "build/cache/e/nested/d.o && " +
+            "cd " + project + " && " + bs2 + " cache info 2>&1")
+        let _ = avra_shell_exec("rm -rf " + project)
+        out.contains("entries: 1") && out.contains("size:") && out.contains("3K")
+    }
+}
+
+// ohyd safety: avra_parse_int is atoll, so a non-numeric or negative
+// --max-age-days would otherwise set the cutoff to now-or-later and evict the
+// WHOLE cache. valid_max_age_days rejects it; the old shell `find -mtime +<bad>`
+// likewise deleted nothing. Both cases must error AND leave the cache intact.
+spec "bs2 cache prune: rejects a non-numeric --max-age-days (no deletion)" {
+    then "`--max-age-days abc` errors and the cache is left intact" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let probe = avra_shell_exec(
+            "touch -t 202001010000 " + project + "build/cache/abc123 " + project + "build/cache/def456 && " +
+            "cd " + project + " && (" + bs2 + " cache prune --max-age-days abc 2>&1 || true) && " +
+            "echo --- && " +
+            "([ -d " + project + "build/cache/abc123 ] && echo kept=yes || echo kept=no)")
+        let _ = teardown_fixture(project)
+        probe.contains("kept=yes") && probe.contains("--max-age-days")
+    }
+}
+
+spec "bs2 cache prune: rejects a negative --max-age-days (no deletion)" {
+    then "`--max-age-days -5` errors and the cache is left intact" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let probe = avra_shell_exec(
+            "touch -t 202001010000 " + project + "build/cache/abc123 " + project + "build/cache/def456 && " +
+            "cd " + project + " && (" + bs2 + " cache prune --max-age-days -5 2>&1 || true) && " +
+            "echo --- && " +
+            "([ -d " + project + "build/cache/abc123 ] && echo kept=yes || echo kept=no)")
+        let _ = teardown_fixture(project)
+        probe.contains("kept=yes") && probe.contains("--max-age-days")
+    }
+}
+
 // zp5b: clear-failed scans build/cache/fixture_stdout/*.out and deletes
 // captures carrying the `: FAIL` token (a frozen transient / stale-env
 // failure) while leaving passing captures warm. We seed two .out files —
