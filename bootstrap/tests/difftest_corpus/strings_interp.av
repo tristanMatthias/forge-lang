@@ -1,0 +1,15 @@
+// WHY: diff-test corpus — exercises string interpolation, multiline strings
+// and the pipe operator desugaring.
+fn shout(s: string) -> string { s + "!" }
+
+fn main() {
+    let name = "world"
+    let greeting = "hello {name}"
+    println(greeting)
+    let multi = """
+line one
+line two
+"""
+    println(multi)
+    println("piped" |> shout)
+}

@@ -46,7 +46,9 @@ help:
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
-	@echo "                     byte-identical IR. Options: BASE=, NEW=, QUICK=1, CORPUS=."
+	@echo "                     byte-identical IR over selfhost + curated corpus"
+	@echo "                     (tests/difftest_corpus/). Options: BASE=, NEW=, CORPUS=,"
+	@echo "                     QUICK=1 (selfhost only — fastest local change-check)."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source. Add FAST=1"
 	@echo "                     for the inner-loop variant (per-fn diff, no verify)."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
@@ -148,13 +150,16 @@ selfhost:
 
 # Differential test (HRN): build the compiler at the base
 # (oracle) and at HEAD, then assert byte-identical IR over the selfhost
-# source + corpus. The go-hard safety net — a behaviour-preserving change
-# keeps every output identical; a divergence fails with a readable diff.
+# source + the curated standalone corpus (tests/difftest_corpus/*.av — small
+# single-file programs giving isolated per-feature IR comparisons). The go-hard
+# safety net — a behaviour-preserving change keeps every output identical; a
+# divergence fails with a readable diff.
 #
 #   make diff-test                 # base = integration branch, new = HEAD
 #   make diff-test BASE=<ref>      # override the oracle ref
 #   make diff-test NEW=<ref>       # override the candidate ref
-#   make diff-test QUICK=1         # selfhost differential only (fast)
+#   make diff-test QUICK=1         # selfhost differential only — the decisive
+#                                  # oracle; the right default for local checks
 #   make diff-test CORPUS='path/*.av'   # override the corpus glob
 diff-test:
 	@$(if $(QUICK),DIFF_TEST_QUICK=1 )$(if $(CORPUS),DIFF_TEST_CORPUS='$(CORPUS)' )$(DIAG) --diff-test $(if $(BASE),--base $(BASE)) $(if $(NEW),--new $(NEW))

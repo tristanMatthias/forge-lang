@@ -1,0 +1,17 @@
+// WHY: diff-test corpus — a small standalone repro exercising
+// `select { ch <- name -> { ... } }` typed multi-channel receive codegen.
+// The selfhost pass also covers select (the build driver uses it); isolated
+// here so a divergence in arm dispatch surfaces against ~15 lines.
+fn main() {
+    let nums = channel<int>(1)
+    let words = channel<string>(1)
+    nums.send(42)
+    mut got_n = 0
+    mut got_s = ""
+    select {
+        n <- nums -> { got_n = n + 1 }
+        s <- words -> { got_s = s }
+    }
+    println(string(got_n))
+    println(got_s)
+}

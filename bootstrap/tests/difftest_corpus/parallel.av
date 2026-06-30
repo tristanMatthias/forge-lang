@@ -1,0 +1,16 @@
+// WHY: diff-test corpus — a small standalone repro exercising the
+// `parallel { ... }` block codegen (fork/join over named fn references). Also
+// compiled by the selfhost pass (the build driver parallelises unit compiles),
+// but isolated here so a divergence in fork/join points at ~15 lines.
+mut counter: int = 0
+
+fn bump() { counter = counter + 1 }
+
+fn main() {
+    parallel {
+        bump
+        bump
+        bump
+    }
+    println(string(counter))
+}

@@ -1,0 +1,17 @@
+// WHY: diff-test corpus — exercises Result<T,E> (an enum: `.Ok`/`.Err`), the
+// `?` propagation operator, and a `catch` default-on-error binding.
+fn parse(ok: bool) -> Result<int, string> {
+    if ok { .Ok(42) } else { .Err("bad") }
+}
+
+fn doubled(ok: bool) -> Result<int, string> {
+    let v = parse(ok)?
+    .Ok(v * 2)
+}
+
+fn main() {
+    let a = doubled(true) catch { -1 }
+    let b = doubled(false) catch { -1 }
+    println(string(a))
+    println(string(b))
+}

@@ -1,0 +1,25 @@
+// WHY: diff-test corpus — exercises trait declaration, impl-for-type, static
+// dispatch and `dyn Trait` vtable boxing.
+trait Shape {
+    fn area(self) -> int
+}
+
+type Square = { side: int }
+type Rect = { w: int, h: int }
+
+impl Shape for Square {
+    fn area(self) -> int { self.side * self.side }
+}
+
+impl Shape for Rect {
+    fn area(self) -> int { self.w * self.h }
+}
+
+fn total(s: dyn Shape) -> int { s.area() }
+
+fn main() {
+    let sq = Square { side: 4 }
+    let r = Rect { w: 2, h: 3 }
+    println(string(total(sq)))
+    println(string(total(r)))
+}
