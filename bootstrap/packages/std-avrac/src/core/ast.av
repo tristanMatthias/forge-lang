@@ -799,11 +799,80 @@ fn tel_to_type_list(tel: List<TypeExpr>) -> List<ValueType> {
     out
 }
 
-/// Strict ValueType equality. Two types are equal when they have
-/// the same shape AND the same identity for nominal kinds (matched
-/// by TypeRegistry id when both are non-zero, else by direct name
-/// string). Use `vtype_assignable` for the broader "can A be passed
-/// where B is expected" check.
+/// True when `t` is a nominal kind — one whose identity is a registered
+/// name/id (Struct, Enum, Newtype, Trait, NarrowedEnum) — rather than a
+/// structural / primitive / container shape. Gates `vtype_eq`'s
+/// content-id identity fast-path.
+fn vtype_is_nominal(t: ValueType) -> bool {
+    match t {
+        .Struct(_, _, _) -> true
+        .Enum(_, _, _) -> true
+        .Newtype(_, _, _) -> true
+        .Trait(_, _) -> true
+        .NarrowedEnum(_, _, _) -> true
+        _ -> false
+    }
+}
+
+/// The content-addressed TypeId of a nominal type — 0 when unstamped
+/// (pre-resolve) or non-nominal. 0 is the ONLY "no id" sentinel: real
+/// content ids are FNV-1a-64 folded into i64 and are frequently negative,
+/// so callers must test `!= 0`, never `> 0`.
+fn vtype_nominal_id(t: ValueType) -> int {
+    match t {
+        .Struct(_, _, id) -> id
+        .Enum(_, _, id) -> id
+        .Newtype(_, _, id) -> id
+        .Trait(_, id) -> id
+        .NarrowedEnum(_, _, id) -> id
+        _ -> 0
+    }
+}
+
+/// The narrowed variant of a NarrowedEnum, "" for every other type. The
+/// extra discriminator that keeps `Result.Ok` distinct from `Result.Err`
+/// (which share the enum's content id) in `vtype_eq`.
+fn vtype_nominal_variant(t: ValueType) -> string {
+    match t {
+        .NarrowedEnum(_, v, _) -> v
+        _ -> ""
+    }
+}
+
+/// Nominal identity name across ALL nominal kinds — Struct / Enum / Newtype
+/// / Trait, or a NarrowedEnum's underlying enum — else "". Broader than
+/// `vtype_nominal_name` (Struct/Enum/NarrowedEnum only); used as `vtype_eq`'s
+/// PRE-STAMP fallback, where no content id is assigned yet, so a Newtype and
+/// a parser-default Struct of the same FQN still reconcile before resolve runs.
+fn vtype_nominal_fqn(t: ValueType) -> string {
+    match t {
+        .Struct(n, _, _) -> n
+        .Enum(n, _, _) -> n
+        .Newtype(n, _, _) -> n
+        .Trait(n, _) -> n
+        .NarrowedEnum(en, _, _) -> en
+        _ -> ""
+    }
+}
+
+/// A Newtype's inner type is part of its identity, so two Newtypes are
+/// equal only when their inner types are. Checked ONLY when BOTH sides are
+/// Newtype: a cross-kind compare (the 24yd Newtype-vs-parser-default-Struct
+/// case) has no inner on the other side and must still reconcile by id/name,
+/// so it returns true there.
+fn newtype_inners_eq(a: ValueType, b: ValueType) -> bool {
+    match a {
+        .Newtype(_, ia, _) -> match b { .Newtype(_, ib, _) -> vtype_eq(ia, ib), _ -> true }
+        _ -> true
+    }
+}
+
+/// Strict ValueType equality. Two types are equal when they have the same
+/// shape AND the same nominal identity — matched by content-addressed
+/// TypeId when both sides are stamped (the common, post-resolve case),
+/// falling back to the fully-qualified name only pre-resolve. Use
+/// `vtype_assignable` for the broader "can A be passed where B is
+/// expected" check.
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     // Permissive nullability: `T?` is interchangeable with `T`. Strip
     // optionals on both sides before structural comparison so existing
@@ -812,20 +881,27 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     if (a is .Optional) || (b is .Optional) {
         return vtype_eq(vtype_strip_optional(a), vtype_strip_optional(b))
     }
-    // Kind-agnostic nominal identity (op3w): the SAME nominal type can carry a
-    // .Struct wrapper in one position and .Enum in another — the parser defaults
-    // every nominal type annotation to .Struct, and only decl positions know the
-    // real kind — while counter TypeIds (type_registry.av) diverge across package
-    // registries. The fully-qualified name is the stable identity, so compare
-    // PLAIN Struct/Enum nominals by name regardless of the wrapper, ahead of the
-    // per-kind arms (which would miss an Enum-vs-Struct mismatch). Generic args
-    // are ignored here exactly as the .Struct/.Enum arms below do — arg layout is
-    // checked separately (generic_args_layout_conflict). RESTRICTED to Struct/Enum:
-    // Newtype / NarrowedEnum / Trait carry extra discriminators (inner type,
-    // variant) so they keep their per-kind arms (vtype_nominal_name would return
-    // a NarrowedEnum's enum name and wrongly collapse its variant).
-    if (a is .Struct || a is .Enum) && (b is .Struct || b is .Enum) {
-        return vtype_nominal_name(a) == vtype_nominal_name(b)
+    // Content-addressed nominal identity (wc5w — supersedes op3w's FQN-string
+    // short-circuit). A nominal type's identity is its registration id, a
+    // `content_id_for(FQN)` hash (type_registry.av). That id is the SAME in
+    // every registry/process, so once BOTH sides are stamped (id != 0 — ids
+    // are FNV-1a-64 in i64 and may be negative, hence `!= 0`, never `> 0`) an
+    // integer compare settles identity regardless of which wrapper — .Struct /
+    // .Enum / .Newtype / .Trait / .NarrowedEnum — the parser-default vs the
+    // resolver attached. THIS is what lets a resolved Newtype("ExprId") and a
+    // parser-default Struct("ExprId") — same FQN, same content id — compare
+    // equal (24yd), which op3w's Struct/Enum-only string compare missed.
+    // Generic args are intentionally ignored (the id keys on the bare name);
+    // arg layout is checked separately (generic_args_layout_conflict).
+    // NarrowedEnum keeps its variant discriminator on top. Pre-resolve, when
+    // either side is unstamped (id == 0), we fall back to the FQN string — the
+    // only place a string identity remains, and only until stamp_ids_vtype runs.
+    if vtype_is_nominal(a) && vtype_is_nominal(b) {
+        let id1 = vtype_nominal_id(a)
+        let id2 = vtype_nominal_id(b)
+        let same = if id1 != 0 && id2 != 0 { id1 == id2 } else { vtype_nominal_fqn(a) == vtype_nominal_fqn(b) }
+        let variant_match = vtype_nominal_variant(a) == vtype_nominal_variant(b)
+        return same && variant_match && newtype_inners_eq(a, b)
     }
     match a {
         .Int -> b is .Int

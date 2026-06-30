@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry, vtype_struct}
+use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry, vtype_struct, content_id_for}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
@@ -207,33 +207,16 @@ impl BytesReader {
 // same id, otherwise downstream units fail to resolve their
 // references after a recompile.
 //
-// FNV-1a-64 is used: simple, well-distributed for short ASCII names,
-// fits in a single u64 without external state. Crypto strength is
-// not a goal — collision probability across a project's symbol set
-// is the only constraint, and FNV-1a is fine for that scale.
-//
-// The constants below are the canonical FNV-1a-64 values. They are
-// fixed and must not be changed; doing so would invalidate every
-// cached metadata.bin in the wild.
-
-const FNV64_OFFSET: int = 0xCBF29CE484222325
-const FNV64_PRIME: int = 0x100000001B3
+// This is the SAME identity the type registry now assigns in-process
+// (wc5w unified the two): `sym_id_for` delegates to `core::content_id_for`
+// (FNV-1a-64), so a symbol's on-disk id and its in-process TypeId are one
+// value. The canonical FNV constants live with that single implementation.
 
 /// Hash a fully qualified symbol name (e.g. `@std::avrac::build::cache::Cache`)
-/// to a stable u64. Determined by FNV-1a — see the section header above.
-/// Empty input hashes to the FNV offset (the standard "empty input"
-/// behaviour); collisions on real qualified names are vanishingly
-/// unlikely for any realistic project's symbol count.
+/// to a stable u64 — the content-addressed identity shared with the type
+/// registry. See `core::content_id_for`.
 export fn sym_id_for(qualified_name: string) -> int {
-    mut h = FNV64_OFFSET
-    let b = avra_bytes_from_string(qualified_name)
-    let n = b.length
-    mut i = 0
-    while i < n {
-        h = (h ^ b.byte(i)) * FNV64_PRIME
-        i = i + 1
-    }
-    h
+    content_id_for(qualified_name)
 }
 
 // ── File header + section framing ──
