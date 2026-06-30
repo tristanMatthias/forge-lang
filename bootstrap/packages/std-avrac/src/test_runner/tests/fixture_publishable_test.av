@@ -14,6 +14,7 @@
 //      demand instead.
 
 use @std.avrac.test_runner.{fixture_output_is_publishable, fixture_is_stateful, FIXTURE_STATEFUL_MARKER}
+use @std.avrac.core.{avra_selfhost_file_exists}
 
 extern fn avra_shell_exec(cmd: string) -> string
 
@@ -117,6 +118,11 @@ spec "fixture cache: fixture_is_stateful reads the source directive" {
         fixture_is_stateful("tests/std_avrac_lib_build_fixtures/sample.av")
     }
     then "a non-stateful fixture is not registered stateful" {
-        !fixture_is_stateful("tests/per_file_metadata_emit_fixtures/sample.av")
+        // Existence-guarded: fixture_is_stateful also returns false for a
+        // MISSING file, so without the file_exists check a moved control path
+        // would pass for the wrong reason. (The positive cases above fail loudly
+        // on a moved path already — false ≠ the asserted true.)
+        let path = "tests/per_file_metadata_emit_fixtures/sample.av"
+        avra_selfhost_file_exists(path) != 0 && !fixture_is_stateful(path)
     }
 }
