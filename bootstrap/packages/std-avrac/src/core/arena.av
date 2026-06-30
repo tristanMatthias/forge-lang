@@ -47,7 +47,7 @@
 // are seed-gated — the wrapper is the additive equivalent (and the
 // side-table value type).
 
-use core.{Expr, Stmt, Pattern, ValueType, SStmt, sstmt_at}
+use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SStmt, sstmt_at}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 

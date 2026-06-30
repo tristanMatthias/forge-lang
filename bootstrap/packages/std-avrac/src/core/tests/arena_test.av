@@ -37,6 +37,14 @@ fn type_ref_id(r: NodeRef) -> TypeId {
     }
 }
 
+/// Peel a `StmtRef` to its StmtId (for walking nested stmt-arena edges).
+fn stmt_ref_id(r: NodeRef) -> StmtId {
+    match r {
+        .StmtRef(id) -> id
+        _ -> StmtId(0 - 1)
+    }
+}
+
 /// One-letter kind tag (E/S/P/T) of a stored child edge.
 fn noderef_tag(r: NodeRef) -> string {
     match r {
@@ -241,16 +249,21 @@ spec "ingest_program: combinatorial cross-kind nesting populates all arenas" {
         let body: List<SStmt> = [sstmt_at(Stmt.If(cond, inner_let, null), 0, 0, "")]
         let f_decl = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
         let store = ingest_program([sstmt_at(f_decl, 0, 0, "")], "")
-        // stmts: Function, If, Let.  exprs: Binary, Number, Number, ListLit.
-        // types: Void(ret), List(List(Int)), List(Int), Int.  pats: none.
-        // Edge fidelity (not just counts): the Function root's stored edges are
-        // its ret-type then its body stmt — a cross-kind [type, stmt] = "TS",
-        // proving edges aren't scrambled across kinds at the top level.
+        // Edge fidelity at EVERY level (not just counts, not just the root):
+        //   Function -> [ret-type, body stmt]              = "TS"
+        //   If       -> [cond expr, then stmt] (no else)   = "ES"
+        //   Let      -> [ty_vt type, initializer expr]     = "TE"
+        // so a cross-kind ordering regression at any depth is caught.
+        let fn_kids = store.stmts.children_of(store.roots[0])
+        let if_kids = store.stmts.children_of(stmt_ref_id(fn_kids[1]))
+        let let_kids = store.stmts.children_of(stmt_ref_id(if_kids[1]))
         store.stmts.count() == 3
             && store.exprs.count() == 4
             && store.types.count() == 4
             && store.pats.count() == 0
-            && edge_tags(store.stmts.children_of(store.roots[0])) == "TS"
+            && edge_tags(fn_kids) == "TS"
+            && edge_tags(if_kids) == "ES"
+            && edge_tags(let_kids) == "TE"
     }
 }
 
@@ -266,8 +279,10 @@ spec "ingest: FnTyped children keep field order (params before ret)" {
         let root = store.ingest_type(ValueType.FnTyped(params, ValueType.Bool), byte_span_none())
         let kids = store.types.children_of(root)
         let first_is_param = match store.types.get(type_ref_id(kids[0])) { .Int -> true  _ -> false }
+        let second_is_param = match store.types.get(type_ref_id(kids[1])) { .Str -> true  _ -> false }
         let last_is_ret = match store.types.get(type_ref_id(kids[2])) { .Bool -> true  _ -> false }
-        kids.length == 3 && first_is_param && last_is_ret
+        // Assert all three positions so a [int, <wrong>, bool] mis-order can't pass.
+        kids.length == 3 && first_is_param && second_is_param && last_is_ret
     }
 }
 
