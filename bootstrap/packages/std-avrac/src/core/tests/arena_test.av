@@ -496,4 +496,18 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
         let empty: List<SStmt> = []
         reconstruct_program(ingest_program(empty, ""), "").length == 0
     }
+    then "reconstruct recovers a NESTED child's (line, col) from the span side-table" {
+        // render-equality is span-BLIND, so the reconstruct path's per-child span
+        // recovery (reconstruct_ref → respan_sstmt) is otherwise unverified. Assert
+        // the position directly: a Block whose inner Break sits at (2,3) must
+        // reconstruct with that span, not (0,0). A1/A2 test the ingest side-table;
+        // this tests the rebuild stamps it back onto the nested wrapper.
+        let inner: List<SStmt> = [sstmt_at(Stmt.Break, 2, 3, "")]
+        let orig: List<SStmt> = [sstmt_at(Stmt.Block(inner), 1, 1, "")]
+        let store = ingest_program(orig, "x\n  break\n")
+        let back = reconstruct_program(store, "")
+        let nested_line = match back[0].node { .Block(b) -> b[0].line  _ -> 0 - 1 }
+        let nested_col = match back[0].node { .Block(b) -> b[0].col  _ -> 0 - 1 }
+        back.length == 1 && back[0].line == 1 && nested_line == 2 && nested_col == 3
+    }
 }
