@@ -958,6 +958,21 @@ fn wc_binding_names(bindings: List<CrossBinding>) -> List<string> {
     names
 }
 
+/// Count of variable-arity child slots (a node-list or an optional) in a variant.
+/// `with_children` reassembles exactly ONE such run from the flat child list — its
+/// boundary is the variant's fixed leading/trailing single-child counts. Two runs
+/// would be ambiguous (no marker says where the first ends and the second begins),
+/// so a variant with >1 is POISONED into a loud build failure rather than silently
+/// mis-generated. Today every walked AST variant has ≤1; this guards the next one.
+@comptime
+fn wc_var_slot_count(bindings: List<CrossBinding>) -> int {
+    mut n = 0
+    for b in bindings {
+        if b.target != "" && is_list_child(b.kind) { n = n + 1 }
+    }
+    n
+}
+
 /// Count of single-child slots BEFORE the (first) variable-arity slot — the
 /// `before` bound of the run. If the variant has no variable slot, this is the
 /// total single count and there is no run.
@@ -1001,6 +1016,16 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
     let bindings = classify_variant_crosstype(v, parent_name, ctx)
     let names = wc_binding_names(bindings)
     let pat = variant_pattern(v.name, names)
+    if wc_var_slot_count(bindings) > 1 {
+        // POISON: two variable-arity slots can't be inverted from a flat child run
+        // (no boundary marker). Emit a call to an undefined helper so the build
+        // fails LOUDLY, naming the variant, instead of silently assigning the whole
+        // run to both slots. Such a variant must first teach with_children a run
+        // boundary representation (spine §14.1) — mirrors the `__no_kind_` poison.
+        let no_args: List<SExpr> = []
+        let poison = Expr.Call(Expr.Ident("__avra_wc_unsupported_multiple_var_slots__${parent_name}_${v.name}"), no_args)
+        return MatchArm { pattern: pat, guard: null, body: sexpr_dummy(poison) }
+    }
     let before = wc_singles_before_var(bindings)
     let after = wc_singles_after_var(bindings)
     mut args: List<SExpr> = []
