@@ -457,11 +457,13 @@ spec "A2: ingest_program threads real spans to wrapped nested statements" {
     }
 }
 
-// B1: reconstruct_program rebuilds the WHOLE tree from arena EDGES (not the
-// stored boxed children) via the derive-generated inverse walker `with_children`
-// — the round-trip fidelity proof that the edges are a COMPLETE representation
-// (the boxed-view shim the id-children rep flip stands on). render-equality is
-// the structural oracle: any dropped / reordered / mis-kinded edge diverges.
+// B1: reconstruct_program rebuilds the tree from arena EDGES (not the stored
+// boxed children) via the derive-generated inverse walker `with_children` — the
+// round-trip fidelity proof that the edges faithfully carry every WALKER-REACHABLE
+// child (struct-embedded children — match arms, field-init values — are carried
+// through from the stored node; see the reconstruct block in arena.av). The
+// boxed-view shim the id-children rep flip stands on. render-equality is the
+// structural oracle: any dropped / reordered / mis-kinded edge diverges.
 spec "B1: reconstruct_program round-trips a program from arena edges" {
     then "a simple program rebuilds structurally identically" {
         let orig = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, ""),

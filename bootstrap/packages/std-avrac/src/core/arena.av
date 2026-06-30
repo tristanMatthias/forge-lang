@@ -361,14 +361,19 @@ impl NodeStore {
         self.linecol_of_span(self.stmts.span_of(id))
     }
 
-    // ── reconstruct: rebuild the boxed tree purely from arena EDGES (B1) ──
+    // ── reconstruct: rebuild the boxed tree from arena EDGES (B1) ──
     //
     // The inverse of ingest: given a node id, rebuild its boxed node from its
-    // EDGE ids (not the stored boxed children — proving the edges are a complete
-    // representation), recursively, via the derive-generated `with_children`.
-    // Each child arrives as a `SpannedChild` carrying the (line, col) recovered
-    // from the span side-table, so `with_children` can rebuild SExpr/SStmt
-    // wrappers faithfully. The boxed-view shim the id-children rep flip stands on.
+    // EDGE ids (not the stored boxed children) recursively, via the derive-
+    // generated `with_children`. SCOPE: edges cover every WALKER-REACHABLE child;
+    // children embedded in plain structs (a match arm's pattern/guard/body, a
+    // field-init's value, a param's type) are NOT walked, so they have no edge and
+    // `with_children` carries them through from the stored node unchanged. Within
+    // that scope the edges are a faithful representation — the boxed-view shim the
+    // id-children rep flip stands on (descending into the struct carriers is the
+    // rep-flip step proper, not this shim). Each child arrives as a `SpannedChild`
+    // carrying the (line, col) recovered from the span side-table, so
+    // `with_children` rebuilds SExpr/SStmt wrappers with their position.
 
     /// Rebuild one child edge into a `SpannedChild`: its node (recursively, from
     /// ITS edges) paired with its (line, col) recovered from the span side-table.
@@ -501,33 +506,38 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
 /// their own positions); `file` is threaded in (the arena is single-source) so
 /// this stays behind `AVRA_L1_INGEST` until per-node file lands for multi-file
 /// units.
-export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
+/// Assemble the top-level `List<SStmt>` from the store's roots — the shared spine
+/// of `program_from_store` / `reconstruct_program`. Each root's boxed node comes
+/// from `node_of` (the stored node, or one rebuilt from edges); its (line, col),
+/// provenance (`.has` returns a concrete bool — presence == from_macro, which
+/// `sstmt_at` would otherwise flatten to false), and `file` come from the
+/// side-tables either way.
+fn roots_to_sstmts(store: NodeStore, file: string, node_of: fn(StmtId) -> Stmt) -> List<SStmt> {
     mut out: List<SStmt> = []
     for id in store.roots {
         let lc = store.stmt_linecol(id)
-        // `.has` returns a concrete bool (presence == from_macro), restoring the
-        // provenance that `sstmt_at` would otherwise flatten to false.
         let from_macro = store.provenance.has(id)
-        out.push(SStmt { node: store.stmts.get(id), line: lc.line, col: lc.col, file, from_macro })
+        out.push(SStmt { node: node_of(id), line: lc.line, col: lc.col, file, from_macro })
     }
     out
 }
 
-/// Rebuild the top-level statement list ENTIRELY from arena edges (B1) — the
-/// inverse of `ingest_program`. Unlike `program_from_store` (which returns the
-/// stored boxed root nodes with recomputed positions), each root's whole subtree
-/// is reconstructed from its edge ids via `reconstruct_stmt`, so this exercises
-/// the edges as a COMPLETE representation — the boxed-view shim the id-children
-/// rep flip stands on. Each root's own (line, col) + `from_macro` + `file` are
-/// patched from the side-tables (a `SpannedChild` carries none of those). Proven
-/// structurally faithful by the gated round-trip check (`reconstruct_program(
-/// ingest_program(p)) ≅ p`); behind `AVRA_L1_INGEST` until the pass migration.
+export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
+    roots_to_sstmts(store, file, (id: StmtId) -> store.stmts.get(id))
+}
+
+/// Rebuild the top-level statement list from arena edges (B1) — the inverse of
+/// `ingest_program`. Unlike `program_from_store` (which returns the stored boxed
+/// root nodes with recomputed positions), each root's subtree is reconstructed
+/// from its edge ids via `reconstruct_stmt`, exercising the edges as the source of
+/// every WALKER-REACHABLE child (struct-embedded children — match arms, field-init
+/// values, params — are carried through from the stored node; see the reconstruct
+/// block above). The boxed-view shim the id-children rep flip stands on. Each
+/// root's own (line, col) + `from_macro` + `file` are patched here from the
+/// side-tables; nested wrappers keep the placeholder `file = ""` that `respan_*`
+/// stamps (single-file ingest makes `file` uniform, and `render_*` — the round-
+/// trip oracle — ignores it). Proven structurally faithful by the gated round-trip
+/// check; behind `AVRA_L1_INGEST` until the pass migration.
 export fn reconstruct_program(store: NodeStore, file: string) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    for id in store.roots {
-        let lc = store.stmt_linecol(id)
-        let from_macro = store.provenance.has(id)
-        out.push(SStmt { node: store.reconstruct_stmt(id), line: lc.line, col: lc.col, file, from_macro })
-    }
-    out
+    roots_to_sstmts(store, file, (id: StmtId) -> store.reconstruct_stmt(id))
 }
