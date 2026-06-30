@@ -2586,6 +2586,17 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             if vtype_eq(o.ty, .Str) {
                 return tc_er(i.tc, .Str)
             }
+            // Maps are not subscriptable — `m[k]` has no codegen case and
+            // would ICE (F9999 "indexing on non-string/list value"). typeck
+            // gates, so reject it here with the spec alternative `.get(key)`.
+            // Return V so the checker keeps going (the F1206 already stops it).
+            match o.ty {
+                .Map(_, v) -> return tc_er(
+                    tc_report(i.tc, DiagCode.NotIndexable,
+                        "cannot index a `${vtype_render_full(o.ty)}` with `[]` — use `.get(key)`"),
+                    v)
+                _ -> {}
+            }
             let elem_ty = vtype_list_elem(o.ty)
             tc_er(i.tc, elem_ty)
         }
