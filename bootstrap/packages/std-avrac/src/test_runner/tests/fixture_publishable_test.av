@@ -46,3 +46,41 @@ spec "fixture cache: transient build-state failures are rejected" {
         !fixture_output_is_publishable("Segmentation fault\n")
     }
 }
+
+// fxfz: a fixture that declares itself stateful (the `@@fixture-stateful@@`
+// marker) pre-builds @std packages into the SHARED packages/*/build caches
+// and probes the artifacts — state outside the fixture-stdout cache key. A
+// `: FAIL` from such a fixture means that shared state was corrupt/half-
+// published, NOT a deterministic property of the fixture source, so the
+// capture must not be frozen. A passing capture (every probe `: ok`) carries
+// no `: FAIL` and still caches normally — zero cost on the passing path.
+spec "fixture cache: stateful-marked failures are rejected (fxfz)" {
+    then "marker + a probe FAIL is rejected" {
+        !fixture_output_is_publishable("@@fixture-stateful@@\nPROBE std_cli_meta_present: FAIL\n")
+    }
+    then "marker + a FAIL anywhere in the capture is rejected" {
+        !fixture_output_is_publishable("@@fixture-stateful@@\nPROBE a: ok\nPROBE b: FAIL detail\nPROBE c: ok\n")
+    }
+    then "marker with every probe ok still caches" {
+        fixture_output_is_publishable("@@fixture-stateful@@\nPROBE avrac_meta_present: ok\nPROBE cli_main_ll_present: ok\n")
+    }
+    then "marker alone (no probes) still caches" {
+        fixture_output_is_publishable("@@fixture-stateful@@\n")
+    }
+}
+
+// zp5b: a plain `: FAIL` WITHOUT the stateful marker stays publishable — many
+// fixtures legitimately cache a deterministic failure while it's being worked
+// on, and rejecting every `: FAIL` would re-run them on every cycle (the cost
+// the zp5b revert was about). The on-demand `bs2 cache clear-failed` command is
+// the escape hatch for an UNmarked FAIL frozen by a one-off transient.
+spec "fixture cache: an UNmarked FAIL remains publishable (zp5b zero-cost rule)" {
+    then "a bare probe FAIL with no marker still caches" {
+        fixture_output_is_publishable("PROBE foo_slice_smaller_than_whole: FAIL\n")
+    }
+    then "an F-code diagnostic capture still caches" {
+        // F-code-assertion tests deliberately cache their error output; the
+        // marker rule keys on `@@fixture-stateful@@`, never on F-codes.
+        fixture_output_is_publishable("error[F0012]: type mismatch: expected int\n")
+    }
+}

@@ -1,4 +1,4 @@
-// Spec test for `bs2 clean` and `bs2 cache prune|info`.
+// Spec test for `bs2 clean` and `bs2 cache prune|info|clear-failed`.
 //
 // Builds the bs2 invocation as a shell command against a temp project
 // dir, asserts the side effects via filesystem probes. We exercise:
@@ -7,8 +7,11 @@
 //   3. cache info: reports the cache path + entry count
 //   4. cache prune --dry-run: lists candidates without modifying state
 //   5. cache prune (live): removes stale entries
+//   6. cache clear-failed (live): evicts only frozen-`: FAIL` captures (zp5b)
+//   7. cache clear-failed --dry-run: lists frozen-FAIL captures without deleting
 //
-// Tracking ticket: forge-crafting-intepreters-g32c.
+// Tracking ticket: forge-crafting-intepreters-g32c (clean/prune/info),
+// forge-crafting-intepreters-zp5b (clear-failed).
 
 extern fn avra_shell_exec(cmd: string) -> string
 
@@ -95,5 +98,48 @@ spec "bs2 cache prune: actually evicts stale entries" {
             "([ ! -d " + project + "build/cache/def456 ] && echo def=gone || echo def=here)")
         let _ = teardown_fixture(project)
         probe.contains("abc=gone") && probe.contains("def=gone")
+    }
+}
+
+// zp5b: clear-failed scans build/cache/fixture_stdout/*.out and deletes
+// captures carrying the `: FAIL` token (a frozen transient / stale-env
+// failure) while leaving passing captures warm. We seed two .out files —
+// one FAIL, one ok — and assert the surgical eviction. A distinct temp dir
+// avoids the shared setup_fixture (whose `info` test pins exactly 2 dir
+// entries — adding fixture_stdout there would break that count).
+fn setup_fixture_stdout(project: string, marker_a: string, marker_b: string) -> string {
+    avra_shell_exec(
+        "rm -rf " + project + " && " +
+        "mkdir -p " + project + "build/cache/fixture_stdout && " +
+        "printf '" + marker_a + "\\n' > " + project + "build/cache/fixture_stdout/aaa.out && " +
+        "printf '" + marker_b + "\\n' > " + project + "build/cache/fixture_stdout/bbb.out")
+}
+
+spec "bs2 cache clear-failed: evicts only frozen-FAIL captures" {
+    then "a `: FAIL` capture is deleted while a passing capture survives" {
+        let project = "/tmp/avra_clear_failed_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = setup_fixture_stdout(project, "PROBE x: FAIL", "PROBE y: ok")
+        let probe = avra_shell_exec(
+            "cd " + project + " && " + bs2 + " cache clear-failed 2>&1 && " +
+            "echo --- && " +
+            "([ ! -f " + project + "build/cache/fixture_stdout/aaa.out ] && echo failed=gone || echo failed=here) && " +
+            "([ -f " + project + "build/cache/fixture_stdout/bbb.out ] && echo ok=kept || echo ok=lost)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("deleted 1") && probe.contains("failed=gone") && probe.contains("ok=kept")
+    }
+}
+
+spec "bs2 cache clear-failed --dry-run: lists without deleting" {
+    then "the frozen-FAIL capture is reported but stays on disk" {
+        let project = "/tmp/avra_clear_failed_dry_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = setup_fixture_stdout(project, "PROBE x: FAIL", "PROBE y: ok")
+        let probe = avra_shell_exec(
+            "cd " + project + " && " + bs2 + " cache clear-failed --dry-run 2>&1 && " +
+            "echo --- && " +
+            "([ -f " + project + "build/cache/fixture_stdout/aaa.out ] && echo still=yes || echo still=no)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("would delete 1") && probe.contains("still=yes")
     }
 }

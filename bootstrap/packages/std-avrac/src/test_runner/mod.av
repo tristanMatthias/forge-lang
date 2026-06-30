@@ -631,8 +631,26 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 /// F9999) tokens: many spec/typeck tests intentionally assert that a
 /// specific F-code fires, and rejecting them would force a re-run
 /// every time. Zero-cost on the happy path is the requirement zp5b
-/// reopened with.
+/// reopened with. (The on-demand `bs2 cache clear-failed` command is
+/// the escape hatch for a generic FAIL frozen by a one-off transient.)
+///
+/// fxfz: a fixture may OPT IN to "stateful" treatment by printing the
+/// `@@fixture-stateful@@` marker (typically the first line of `main`).
+/// Such a fixture pre-builds @std packages into the SHARED
+/// `packages/*/build` caches and probes the resulting artifacts — build
+/// state that is NOT covered by the fixture cache key (toolchain fp +
+/// fixture source). A capture taken while that shared cache sat in a
+/// corrupt / half-published state would otherwise be frozen and replayed
+/// forever, since repairing the cache changes neither key input (the
+/// historic fxfz freeze: `cli_metadata_compile`'s `PROBE
+/// std_cli_meta_present: FAIL`). So when a stateful fixture reports ANY
+/// `: FAIL`, reject the capture and let the next invocation re-probe once
+/// the build state is consistent. Happy captures (every probe `: ok`) carry
+/// no `: FAIL`, so they cache normally — zero cost on the passing path. A
+/// fixture asserting an EXPECTED failure simply omits the marker, keeping
+/// its `: FAIL` cacheable.
 export fn fixture_output_is_publishable(out: string) -> bool {
+    if out.contains("@@fixture-stateful@@") && out.contains(": FAIL") { return false }
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }

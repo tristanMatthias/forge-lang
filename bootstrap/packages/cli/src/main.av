@@ -2141,8 +2141,10 @@ fn run_clean_command() {
 }
 
 // `avra cache <subcommand>` — manage the build cache.
-//   prune  : evict stale entries (default: max-age 30 days).
-//   info   : print cache size + entry count.
+//   prune        : evict stale entries (default: max-age 30 days).
+//   info         : print cache size + entry count.
+//   clear-failed : evict fixture-stdout captures that froze a `: FAIL`
+//                  (zp5b) without disturbing passing captures.
 fn run_cache_command() {
     let project_dir = avra_process_env_get("PWD")
     let cache_dir = "${project_dir}/build/cache"
@@ -2168,7 +2170,7 @@ fn run_cache_command() {
         i = i + 1
     }
     if subcommand == "" {
-        fail("usage: bs2 cache <prune|info> [--dry-run] [--max-age-days N]")
+        fail("usage: bs2 cache <prune|info|clear-failed> [--dry-run] [--max-age-days N]")
     }
     if !avra_selfhost_file_exists(cache_dir) {
         println("cache: ${cache_dir} does not exist (no cache yet)")
@@ -2207,7 +2209,47 @@ fn run_cache_command() {
         return
     }
 
-    fail("unknown cache subcommand `${subcommand}` (expected: prune | info)")
+    if subcommand == "clear-failed" {
+        // zp5b: surgically evict fixture-stdout captures that froze a `: FAIL`
+        // — a transient (cold-cache jetsam, a concurrent build) or stale-
+        // environment failure baked into the cache that then replays on every
+        // run with no source diff to explain it. Unlike `prune` / `make clean`
+        // this keeps every PASSING capture warm, so the next test run pays only
+        // to re-run the handful of genuinely-failed fixtures, not the whole
+        // suite. Zero cost on normal runs: it does work only when invoked.
+        //
+        // `: FAIL` is the PROBE/spec failure convention (`PROBE <name>: FAIL`,
+        // `<name>: FAIL`). Compiler diagnostics use F-codes (`F0012: …`), never
+        // this token, so error-assertion captures are untouched. Evicting a
+        // legitimately-failing capture is harmless regardless: the next run
+        // re-captures the identical result.
+        let fixture_dir = "${cache_dir}/fixture_stdout"
+        if !avra_selfhost_file_exists(fixture_dir) {
+            println("cache clear-failed: no fixture_stdout cache at ${fixture_dir}")
+            return
+        }
+        // grep -lF lists files whose captured stdout carries the fixed `: FAIL`
+        // token. The `*.out` glob may stay literal on an empty cache — grep then
+        // fails to open it (stderr → /dev/null) and prints nothing, which the
+        // empty-string guard handles.
+        let scan = "grep -lF ': FAIL' '${fixture_dir}'/*.out 2>/dev/null"
+        let matches = avra_shell_exec(scan)
+        if matches == "" {
+            println("cache clear-failed: no frozen-FAIL captures in ${fixture_dir}")
+            return
+        }
+        let count_str = avra_shell_exec("printf '%s\\n' '${matches}' | grep -c .")
+        if dry_run {
+            println("cache clear-failed --dry-run: would delete ${count_str} frozen-FAIL captures:")
+            println(matches)
+            return
+        }
+        let _ = avra_shell_exec("${scan} | xargs rm -f")
+        println("cache clear-failed: deleted ${count_str} frozen-FAIL captures")
+        return
+    }
+
+    fail("unknown cache subcommand `${subcommand}` (expected: prune | info | clear-failed)")
 }
 
 // `avra test` — discover every `*_test.av` under PWD, parse each as
@@ -3520,10 +3562,10 @@ fn main() {
         }
 
         command cache {
-            description "Manage the build cache: prune | info"
+            description "Manage the build cache: prune | info | clear-failed"
             flag dry_run { description "Print what would change but do not modify the filesystem" }
             option max_age_days { description "Evict entries with mtime older than N days" }
-            arg subcommand { description "prune | info", required true }
+            arg subcommand { description "prune | info | clear-failed", required true }
         }
 
         command test {
