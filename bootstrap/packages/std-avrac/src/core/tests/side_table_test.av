@@ -35,12 +35,18 @@
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 
-// 3 top-level fns, each with a one-statement body -> 6 stmt nodes once bodies
-// are flattened recursively; 3 of them (the fn decls) are non-leaf. Mirrors the
-// fixture arena_test.av uses, so the ingest counts line up.
+// 3 top-level fns -> 6 stmt nodes once bodies are flattened recursively
+// (3 fn decls + 3 body stmts). Under the CROSS-TYPE ingest (A1) a node's
+// children span all four kinds, so a fn decl (ret-type + body children) AND a
+// value-returning body stmt (its expr child) are both non-leaf — only a
+// CHILDLESS stmt is a leaf. `fn c() { return }`'s bare `return` (ReturnEmpty,
+// no fields) is exactly that, so 5 of the 6 are non-leaf and the sparse table
+// genuinely holds a SUBSET (nonleaf 5 < dense 6) — the point of the sparse/dense
+// split. (Were every stmt non-leaf, nonleaf would equal dense and a "records
+// everything" bug would slip past this assertion.)
 fn l1_sidetable_output() -> string {
     let fixture = "build/_l1_sidetable_fixture.av"
-    let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
+    let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() { return }\n")
     avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
 }
 
@@ -48,8 +54,8 @@ spec "L1 side-tables record derived facts over the arena's ids (wired)" {
     then "a dense child-count table has one slot per ingested statement" {
         l1_sidetable_output().contains("[l1-sidetable] dense=6")
     }
-    then "a sparse non-leaf table stores only the 3 non-leaf statements" {
-        l1_sidetable_output().contains("nonleaf=3")
+    then "a sparse non-leaf table stores only the 5 non-leaf statements" {
+        l1_sidetable_output().contains("nonleaf=5")
     }
 }
 

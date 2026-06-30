@@ -14,9 +14,54 @@
 // F1000 type error ("type system rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
-use @std.avrac.core.{new_expr_arena, new_pat_arena, new_type_arena, Expr, Pattern, ValueType}
+use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType, BinOp}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
-use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, render_stmt_list}
+use @std.avrac.core.{ingest_program, program_from_store, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
+use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr}
+
+/// Peel an `ExprRef` (the span specs ingest all-Expr trees, so every child
+/// edge is one); a non-Expr ref returns the -1 sentinel so a wrong-kind edge
+/// fails the assertion loudly rather than silently.
+fn expr_ref_id(r: NodeRef) -> ExprId {
+    match r {
+        .ExprRef(id) -> id
+        _ -> ExprId(-1)
+    }
+}
+
+/// Peel a `TypeRef` to its TypeId (for inspecting type-arena children in order).
+fn type_ref_id(r: NodeRef) -> TypeId {
+    match r {
+        .TypeRef(id) -> id
+        _ -> TypeId(0 - 1)
+    }
+}
+
+/// Peel a `StmtRef` to its StmtId (for walking nested stmt-arena edges).
+fn stmt_ref_id(r: NodeRef) -> StmtId {
+    match r {
+        .StmtRef(id) -> id
+        _ -> StmtId(0 - 1)
+    }
+}
+
+/// One-letter kind tag (E/S/P/T) of a stored child edge.
+fn noderef_tag(r: NodeRef) -> string {
+    match r {
+        .ExprRef(_) -> "E"
+        .StmtRef(_) -> "S"
+        .PatRef(_) -> "P"
+        .TypeRef(_) -> "T"
+    }
+}
+
+/// Concatenated kind-tags of a stored edge list — proves the persisted
+/// cross-type edges carry the right kinds in the right order.
+fn edge_tags(refs: List<NodeRef>) -> string {
+    mut out = ""
+    for r in refs { out = out + noderef_tag(r) }
+    out
+}
 
 fn l1_ingest_output() -> string {
     // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
@@ -64,32 +109,34 @@ spec "L1 typed ids reject wrong-arena use" {
 // All four node kinds get their own dense arena (acceptance: "Expr/Stmt/
 // Pattern/ValueType each in its own dense arena"). Exercise Expr/Pattern/
 // ValueType in-process here (same package, no cross-package re-link); the
-// StmtArena is covered by the wired ingest spec above. Each ingest is
-// recursive and id-based: the count is the FULL flattened node total, so a
-// non-leaf tree yields more than one node — proof the children() recursion
-// runs and edges are recorded.
+// StmtArena is covered by the wired ingest spec above. Ingest is the
+// cross-type, id-based `NodeStore.ingest_*` (A1): the count is the FULL
+// flattened node total in that kind's arena, so a non-leaf tree yields more
+// than one node — proof the all_children() recursion runs and edges are
+// recorded. These trees are all-one-kind, so each lands wholly in its own
+// arena (no cross-kind children to scatter).
 spec "L1 ExprArena ingests recursively" {
     then "Grouping(Number) flattens to 2 expr nodes" {
-        let ea = new_expr_arena()
-        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span_none())
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_expr(Expr.Grouping(Expr.Number("5")), byte_span_none())
         // root is the parent (Grouping); it has exactly one child edge.
-        ea.count() == 2 && ea.children_of(root).length == 1
+        store.exprs.count() == 2 && store.exprs.children_of(root).length == 1
     }
 }
 
 spec "L1 PatArena ingests recursively" {
     then "Or(Wildcard, Wildcard) flattens to 3 pattern nodes" {
-        let pa = new_pat_arena()
-        let root = pa.ingest(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
-        pa.count() == 3 && pa.children_of(root).length == 2
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_pat(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
+        store.pats.count() == 3 && store.pats.children_of(root).length == 2
     }
 }
 
 spec "L1 TypeArena ingests recursively" {
     then "List(Int) flattens to 2 type nodes" {
-        let ta = new_type_arena()
-        let root = ta.ingest(ValueType.List(ValueType.Int), byte_span_none())
-        ta.count() == 2 && ta.children_of(root).length == 1
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_type(ValueType.List(ValueType.Int), byte_span_none())
+        store.types.count() == 2 && store.types.children_of(root).length == 1
     }
 }
 
@@ -113,6 +160,36 @@ spec "ingest_program handles an empty program" {
     then "no statements means an empty StmtArena" {
         let stmts: List<SStmt> = []
         ingest_program(stmts, "").stmts.count() == 0
+    }
+}
+
+// A1 headline: ingest_program fans a program's nodes out across ALL FOUR
+// arenas by kind, not just the StmtArena. `let x: int = 5` is one Stmt.Let
+// whose cross-type children are a ValueType (`int`) and an Expr (`5`) — both
+// childless leaves — so ingest must place ONE node in each of the stmt, type,
+// and expr arenas (the pattern arena stays empty: no pattern here). Under the
+// OLD same-type ingest the type and expr arenas would both be empty; this spec
+// is what proves the ingest is genuinely cross-type at the program entry point.
+spec "ingest_program populates all four arenas cross-type" {
+    then "let x: int = 5 fills the stmt, type, and expr arenas (pattern stays empty)" {
+        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, "")]
+        let store = ingest_program(stmts, "let x: int = 5\n")
+        store.stmts.count() == 1
+            && store.types.count() == 1
+            && store.exprs.count() == 1
+            && store.pats.count() == 0
+    }
+}
+
+// Beyond "the arenas are populated": the stored EDGES must be faithful. The
+// root Let's children, read back BY ID from the edge side-table (not recomputed
+// via all_children), must be the ValueType then the Expr in field order — so an
+// ingest that dropped, reordered, or mis-kinded a cross-type edge is caught.
+spec "ingest_program stores faithful cross-type edges (kind + order)" {
+    then "the Let root's stored edges read back as [type, expr] (TE)" {
+        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, "")]
+        let store = ingest_program(stmts, "let x: int = 5\n")
+        edge_tags(store.stmts.children_of(store.roots[0])) == "TE"
     }
 }
 
@@ -157,6 +234,80 @@ spec "program_from_store round-trips the top-level statements" {
     }
 }
 
+// Combinatorial: a single program that nests the kinds THROUGH each other —
+// Stmt(fn) -> Stmt(if) -> { Expr(binary cond) -> Expr,Expr ; Stmt(let) ->
+// Type(List<List<int>>, 3 deep) + Expr(empty list) }. Proves the cross-type
+// recursion descends across every kind boundary AND back, and lands each node
+// in its own arena. (Counts hand-derived below; mutation-checked elsewhere.)
+spec "ingest_program: combinatorial cross-kind nesting populates all arenas" {
+    then "fn { if (1<2) { let xs: List<List<int>> = [] } } yields stmt=3 expr=4 type=4 pat=0" {
+        let no_tp: List<TypeParamEntry> = []
+        let no_pp: List<ParamEntry> = []
+        let no_el: List<SExpr> = []
+        let cond = Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2"))
+        let inner_let = Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), Expr.ListLit(no_el))
+        let body: List<SStmt> = [sstmt_at(Stmt.If(cond, inner_let, null), 0, 0, "")]
+        let f_decl = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
+        let store = ingest_program([sstmt_at(f_decl, 0, 0, "")], "")
+        // Edge fidelity at EVERY level (not just counts, not just the root):
+        //   Function -> [ret-type, body stmt]              = "TS"
+        //   If       -> [cond expr, then stmt] (no else)   = "ES"
+        //   Let      -> [ty_vt type, initializer expr]     = "TE"
+        // so a cross-kind ordering regression at any depth is caught.
+        let fn_kids = store.stmts.children_of(store.roots[0])
+        let if_kids = store.stmts.children_of(stmt_ref_id(fn_kids[1]))
+        let let_kids = store.stmts.children_of(stmt_ref_id(if_kids[1]))
+        store.stmts.count() == 3
+            && store.exprs.count() == 4
+            && store.types.count() == 4
+            && store.pats.count() == 0
+            && edge_tags(fn_kids) == "TS"
+            && edge_tags(if_kids) == "ES"
+            && edge_tags(let_kids) == "TE"
+    }
+}
+
+// Field-order fidelity for the ONE AST variant where a node-list field precedes
+// a node-single field: ValueType.FnTyped(params: List<ValueType>, ret: ValueType).
+// all_children must yield params THEN ret (field order) — a singles-first fold
+// would emit ret first. `fn(int, str) -> bool` ingests with children [int, str,
+// bool]: first child is a param (Int), last is the return (Bool).
+spec "ingest: FnTyped children keep field order (params before ret)" {
+    then "fn(int,str)->bool ingests to [int, str, bool], not ret-first" {
+        let store = new_node_store(build_line_index(""))
+        let params: List<ValueType> = [ValueType.Int, ValueType.Str]
+        let root = store.ingest_type(ValueType.FnTyped(params, ValueType.Bool), byte_span_none())
+        let kids = store.types.children_of(root)
+        let first_is_param = match store.types.get(type_ref_id(kids[0])) { .Int -> true  _ -> false }
+        let second_is_param = match store.types.get(type_ref_id(kids[1])) { .Str -> true  _ -> false }
+        let last_is_ret = match store.types.get(type_ref_id(kids[2])) { .Bool -> true  _ -> false }
+        // Assert all three positions so a [int, <wrong>, bool] mis-order can't pass.
+        kids.length == 3 && first_is_param && second_is_param && last_is_ret
+    }
+}
+
+// Stress + recursion guard (Phase 2 R7): the ingest must scale linearly and
+// survive realistic depth without a stack overflow. Wide = 1000 top-level
+// lets (the ingest_program loop + per-node fan-out); deep = a 300-level binary
+// chain (the ingest_expr recursion depth). Synthesised (line 0) so no span math.
+spec "ingest_program: stress — wide (1000) and deep (300)" {
+    then "1000 top-level `let`s ingest to 1000 stmts + 1000 exprs + 1000 types" {
+        mut stmts: List<SStmt> = []
+        for i in 0..1000 {
+            stmts.push(sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("1")), 0, 0, ""))
+        }
+        let store = ingest_program(stmts, "")
+        store.stmts.count() == 1000 && store.exprs.count() == 1000 && store.types.count() == 1000
+    }
+    then "a 300-deep binary chain ingests fully (601 exprs) without stack overflow" {
+        mut e: Expr = Expr.Number("0")
+        for i in 0..300 { e = Expr.Binary(e, BinOp.Add, Expr.Number("1")) }
+        let store = ingest_program([sstmt_at(Stmt.Expr(e), 0, 0, "")], "")
+        // 300 Binary + 301 Number = 601 exprs; the one wrapping Stmt.Expr.
+        store.exprs.count() == 601 && store.stmts.count() == 1
+    }
+}
+
 // A synthesised statement (line 0, e.g. an injected intrinsic) has no source
 // position: ingest records span_none, and stmt_linecol maps it to (0, 0) —
 // the "no attribution" coordinate, not a misleading line 1.
@@ -188,10 +339,10 @@ spec "ingest_program: hi skips synthesised statements to the next real one" {
 // byte_span_none() sentinel until the parser migration threads precise spans.
 spec "L1 ExprArena records the node's span" {
     then "the ingested root keeps its span; the recursed child is byte_span_none" {
-        let ea = new_expr_arena()
-        let root = ea.ingest(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
-        let child = ea.children_of(root)[0]
-        let rs = ea.span_of(root)
-        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(ea.span_of(child))
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_expr(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
+        let child = expr_ref_id(store.exprs.children_of(root)[0])
+        let rs = store.exprs.span_of(root)
+        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(store.exprs.span_of(child))
     }
 }

@@ -10,6 +10,11 @@
 
 # Rust build artifacts
 **/target/
+
+# Test-runner artifact emitted when bs2 test is invoked from the repo root
+# (e.g. build/test_shards). Regenerable; never source. bootstrap/build is
+# already ignored via its own entry; this covers the root-level twin.
+/build/
 .ralph/logs/
 .ralph/.claude_session_id
 .ralph/.ralph_session
