@@ -302,18 +302,21 @@ export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
 // wrappers keep the placeholders (single-file ingest makes `file` uniform, and
 // `render_*` — the round-trip oracle — compares neither). The `_` arm in each
 // unbox is a structural invariant (a slot's edge must be its declared kind);
-// the round-trip fidelity test (`with_children(self, all_children_spanned(self))
-// == self`) catches any violation, so the poison fallback never fires on a
+// a violation falls to a recognizable `__wc_kind_mismatch` marker (one per node
+// kind) that the round-trip fidelity test (`with_children(self,
+// all_children_spanned(self)) == self`) flags — so it never fires on a
 // faithfully-ingested tree.
 
-/// Unbox a single bare `Expr` child. `_` ⇒ wrong-kind edge (poison sentinel).
+/// Unbox a single bare `Expr` child. `_` ⇒ wrong-kind edge → a recognizable
+/// `__wc_kind_mismatch` marker (each sibling uses the same marker in its own kind,
+/// so a violation renders/compares distinctly; the round-trip oracle flags it).
 export fn unspan_expr(sc: SpannedChild) -> Expr { match sc.node { .AnyExpr(e) -> e  _ -> Expr.Ident("__wc_kind_mismatch") } }
-/// Unbox a single bare `Stmt` child.
-export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.NoOp } }
-/// Unbox a single bare `Pattern` child.
-export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -> p  _ -> Pattern.Wildcard } }
-/// Unbox a single bare `ValueType` child.
-export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(t) -> t  _ -> ValueType.Unknown } }
+/// Unbox a single bare `Stmt` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
+export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.Expr(Expr.Ident("__wc_kind_mismatch")) } }
+/// Unbox a single bare `Pattern` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
+export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -> p  _ -> Pattern.TypePattern("__wc_kind_mismatch", "") } }
+/// Unbox a single bare `ValueType` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
+export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(t) -> t  _ -> ValueType.Trait("__wc_kind_mismatch", 0) } }
 
 /// Rebuild a single `SExpr` wrapper child from its node + recovered (line, col).
 export fn respan_sexpr(sc: SpannedChild) -> SExpr { sexpr_at(unspan_expr(sc), sc.line, sc.col, "") }
@@ -322,42 +325,18 @@ export fn respan_sexpr(sc: SpannedChild) -> SExpr { sexpr_at(unspan_expr(sc), sc
 export fn respan_sstmt(sc: SpannedChild) -> SStmt { sstmt_at(unspan_stmt(sc), sc.line, sc.col, "") }
 
 /// Unbox a bare `Expr` list slot (the whole run, in order).
-export fn unspan_expr_list(scs: List<SpannedChild>) -> List<Expr> {
-    mut out: List<Expr> = []
-    for sc in scs { out.push(unspan_expr(sc)) }
-    out
-}
+export fn unspan_expr_list(scs: List<SpannedChild>) -> List<Expr> { list_map(scs, (sc: SpannedChild) -> unspan_expr(sc)) }
 /// Unbox a bare `Stmt` list slot.
-export fn unspan_stmt_list(scs: List<SpannedChild>) -> List<Stmt> {
-    mut out: List<Stmt> = []
-    for sc in scs { out.push(unspan_stmt(sc)) }
-    out
-}
+export fn unspan_stmt_list(scs: List<SpannedChild>) -> List<Stmt> { list_map(scs, (sc: SpannedChild) -> unspan_stmt(sc)) }
 /// Unbox a bare `Pattern` list slot.
-export fn unspan_pat_list(scs: List<SpannedChild>) -> List<Pattern> {
-    mut out: List<Pattern> = []
-    for sc in scs { out.push(unspan_pat(sc)) }
-    out
-}
+export fn unspan_pat_list(scs: List<SpannedChild>) -> List<Pattern> { list_map(scs, (sc: SpannedChild) -> unspan_pat(sc)) }
 /// Unbox a bare `ValueType` list slot.
-export fn unspan_type_list(scs: List<SpannedChild>) -> List<ValueType> {
-    mut out: List<ValueType> = []
-    for sc in scs { out.push(unspan_type(sc)) }
-    out
-}
+export fn unspan_type_list(scs: List<SpannedChild>) -> List<ValueType> { list_map(scs, (sc: SpannedChild) -> unspan_type(sc)) }
 
 /// Rebuild a `List<SExpr>` wrapper-list slot, each from node + recovered span.
-export fn respan_sexpr_list(scs: List<SpannedChild>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    for sc in scs { out.push(respan_sexpr(sc)) }
-    out
-}
+export fn respan_sexpr_list(scs: List<SpannedChild>) -> List<SExpr> { list_map(scs, (sc: SpannedChild) -> respan_sexpr(sc)) }
 /// Rebuild a `List<SStmt>` wrapper-list slot.
-export fn respan_sstmt_list(scs: List<SpannedChild>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    for sc in scs { out.push(respan_sstmt(sc)) }
-    out
-}
+export fn respan_sstmt_list(scs: List<SpannedChild>) -> List<SStmt> { list_map(scs, (sc: SpannedChild) -> respan_sstmt(sc)) }
 
 /// A bare `Self?` optional slot: the run is 0-or-1 spanned children.
 export fn unspan_expr_opt(scs: List<SpannedChild>) -> Expr? { if scs.length > 0 { unspan_expr(scs[0]) } else { null } }
