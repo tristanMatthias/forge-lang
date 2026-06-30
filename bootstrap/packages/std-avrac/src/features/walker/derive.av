@@ -53,6 +53,10 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     // FnTyped ordering-drift. One generator avoids both.
     let all_spanned_arms = build_all_children_spanned_arms(view.variants, view.name, ctx)
     let all_children_spanned_fn = build_all_children_spanned_fn(all_spanned_arms, view.name)
+    // B1: the INVERSE walker — put children back into a variant's slots (the dual
+    // of all_children_spanned). Drives the arena's reconstruct-from-edges shim.
+    let wc_arms = build_with_children_arms(view.variants, view.name, ctx)
+    let with_children_fn = build_with_children_fn(wc_arms, view.name)
     let visit_fn = build_visit_fn(view.name)
     let any_fn = build_any_fn(view.name)
     let find_fn = build_find_fn(view.name)
@@ -63,6 +67,7 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
         sstmt_dummy(target.stmt),
         sstmt_dummy(children_fn),
         sstmt_dummy(all_children_spanned_fn),
+        sstmt_dummy(with_children_fn),
         sstmt_dummy(visit_fn),
         sstmt_dummy(any_fn),
         sstmt_dummy(find_fn),
@@ -70,6 +75,7 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     ]
     let children_mangled = "${view.name}__children"
     let all_children_spanned_mangled = "${view.name}__all_children_spanned"
+    let with_children_mangled = "${view.name}__with_children"
     let visit_mangled = "${view.name}__visit"
     let any_mangled = "${view.name}__any"
     let find_mangled = "${view.name}__find"
@@ -80,6 +86,7 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
         name                         | kind                       | canonical_path
         children_mangled             | DeclKind.Method(view.name) | children_mangled
         all_children_spanned_mangled | DeclKind.Method(view.name) | all_children_spanned_mangled
+        with_children_mangled        | DeclKind.Method(view.name) | with_children_mangled
         visit_mangled                | DeclKind.Method(view.name) | visit_mangled
         any_mangled                  | DeclKind.Method(view.name) | any_mangled
         find_mangled                 | DeclKind.Method(view.name) | find_mangled
@@ -855,6 +862,221 @@ fn build_all_children_spanned_fn(arms: List<MatchArm>, enum_name: string) -> Stm
         sstmt_dummy(Stmt.Expr(match_expr)),
     ]
     Stmt.Function("${enum_name}__all_children_spanned", empty_tp, params, ret_ty, body)
+}
+
+// ── with_children() — the INVERSE walker (B1 / spine §14.1) ──
+//
+// The dual of all_children_spanned: put children BACK into a variant's slots, in
+// field order, from a `List<SpannedChild>`. `with_children(self, kids) -> Self`.
+// Drives the arena's reconstruct-from-edges (the boxed-view shim the rep flip
+// stands on). Each slot pulls its child(ren) positionally from `kids`; the one
+// variable-arity slot (a node-list OR an optional — no walked variant has two)
+// takes the run `kids[before .. len-after]`, where before/after are the variant's
+// fixed single-child counts (the generator computes them). Indexing rides the
+// `wc_at`/`wc_at_end`/`wc_run` accessors (core/ast.av) so the spliced body stays
+// within the @comptime decoder's Call subset (no Expr.Index/Binary).
+//
+// PROPERTY LAW (the correctness oracle, spec §8): for every node,
+//   with_children(self, all_children_spanned(self)) == self.
+
+/// Node-kind tag ("expr"/"stmt"/"pat"/"type") for the bare-unbox helper names.
+@comptime
+fn wc_kind_tag(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "expr" }
+    if s == "Stmt" { return "stmt" }
+    if s == "Pattern" { return "pat" }
+    if s == "ValueType" { return "type" }
+    "__no_kind_${s}"   // poison: loud build failure on a new kind
+}
+
+/// Wrapper tag ("sexpr"/"sstmt") for the wrapper-rebuild helper names. Only
+/// Expr/Stmt have spanned wrappers; a Pattern/ValueType target here is impossible
+/// (poison name -> loud build failure).
+@comptime
+fn wc_wrapper_tag(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "sexpr" }
+    if s == "Stmt" { return "sstmt" }
+    "__no_wrapper_${s}"
+}
+
+/// The @std helper that rebuilds one single-child slot: `respan_*` for a wrapper
+/// (WrapperOfSelf), `unspan_*` for a bare child (DirectSelf).
+@comptime
+fn wc_single_helper(b: CrossBinding) -> string {
+    if b.kind is .WrapperOfSelf { return "respan_${wc_wrapper_tag(b.target)}" }
+    "unspan_${wc_kind_tag(b.target)}"
+}
+
+/// The @std helper that rebuilds the variable-arity slot's run (list or optional,
+/// bare or wrapper).
+@comptime
+fn wc_run_helper(b: CrossBinding) -> string {
+    if b.kind is .WrapperListOfSelf { return "respan_${wc_wrapper_tag(b.target)}_list" }
+    if b.kind is .ListOfSelf { return "unspan_${wc_kind_tag(b.target)}_list" }
+    if b.kind is .OptionalWrapperOfSelf { return "respan_${wc_wrapper_tag(b.target)}_opt" }
+    "unspan_${wc_kind_tag(b.target)}_opt"   // OptionalDirectSelf
+}
+
+/// `wc_at(kids, i)` — the i-th spanned child (a single slot before the var slot).
+@comptime
+fn wc_at_call(i: int) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident("kids")), sexpr_dummy(Expr.Number(string(i)))]
+    Expr.Call(Expr.Ident("wc_at"), args)
+}
+
+/// `wc_at_end(kids, j)` — the spanned child j-from-end (a single slot AFTER the
+/// var slot, e.g. FnTyped.ret following the params list).
+@comptime
+fn wc_at_end_call(j: int) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident("kids")), sexpr_dummy(Expr.Number(string(j)))]
+    Expr.Call(Expr.Ident("wc_at_end"), args)
+}
+
+/// `wc_run(kids, before, after)` — the variable-arity slot's run.
+@comptime
+fn wc_run_call(before: int, after: int) -> Expr {
+    let args: List<SExpr> = [
+        sexpr_dummy(Expr.Ident("kids")),
+        sexpr_dummy(Expr.Number(string(before))),
+        sexpr_dummy(Expr.Number(string(after))),
+    ]
+    Expr.Call(Expr.Ident("wc_run"), args)
+}
+
+/// Pattern binding names for with_children's arm: scalars get a readable minted
+/// name (the body passes them through), node-children bind to `_` (the body
+/// rebuilds them from `kids`, never from the original binding).
+@comptime
+fn wc_binding_names(bindings: List<CrossBinding>) -> List<string> {
+    mut names: List<string> = []
+    for b in bindings {
+        let nm = if b.target == "" { "__avra_wc_s${string(names.length)}" } else { "_" }
+        names.push(nm)
+    }
+    names
+}
+
+/// Count of variable-arity child slots (a node-list or an optional) in a variant.
+/// `with_children` reassembles exactly ONE such run from the flat child list — its
+/// boundary is the variant's fixed leading/trailing single-child counts. Two runs
+/// would be ambiguous (no marker says where the first ends and the second begins),
+/// so a variant with >1 is POISONED into a loud build failure rather than silently
+/// mis-generated. Today every walked AST variant has ≤1; this guards the next one.
+@comptime
+fn wc_var_slot_count(bindings: List<CrossBinding>) -> int {
+    mut n = 0
+    for b in bindings {
+        if b.target != "" && is_list_child(b.kind) { n = n + 1 }
+    }
+    n
+}
+
+/// Count of single-child slots BEFORE the (first) variable-arity slot — the
+/// `before` bound of the run. If the variant has no variable slot, this is the
+/// total single count and there is no run.
+@comptime
+fn wc_singles_before_var(bindings: List<CrossBinding>) -> int {
+    mut n = 0
+    for b in bindings {
+        if b.target != "" {
+            if is_single_child(b.kind) { n = n + 1 }
+            if is_list_child(b.kind) { return n }
+        }
+    }
+    n
+}
+
+/// Count of single-child slots AFTER the (first) variable-arity slot — the
+/// `after` bound (0 when none). Only ValueType.FnTyped (params list, then ret)
+/// exercises this among the real AST variants.
+@comptime
+fn wc_singles_after_var(bindings: List<CrossBinding>) -> int {
+    mut seen = false
+    mut n = 0
+    for b in bindings {
+        if b.target != "" {
+            if is_list_child(b.kind) {
+                seen = true
+            } else if is_single_child(b.kind) {
+                if seen { n = n + 1 }
+            }
+        }
+    }
+    n
+}
+
+/// Build one with_children arm: `.V(pat) -> .V(rebuilt slots)`. Scalars pass
+/// through their bound name; single children pull one kid (positional from the
+/// front, or from the end once past the variable slot); the variable slot pulls
+/// its run.
+@comptime
+fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm {
+    let bindings = classify_variant_crosstype(v, parent_name, ctx)
+    let names = wc_binding_names(bindings)
+    let pat = variant_pattern(v.name, names)
+    if wc_var_slot_count(bindings) > 1 {
+        // POISON: two variable-arity slots can't be inverted from a flat child run
+        // (no boundary marker). Emit a call to an undefined helper so the build
+        // fails LOUDLY, naming the variant, instead of silently assigning the whole
+        // run to both slots. Such a variant must first teach with_children a run
+        // boundary representation (spine §14.1) — mirrors the `__no_kind_` poison.
+        let no_args: List<SExpr> = []
+        let poison = Expr.Call(Expr.Ident("__avra_wc_unsupported_multiple_var_slots__${parent_name}_${v.name}"), no_args)
+        return MatchArm { pattern: pat, guard: null, body: sexpr_dummy(poison) }
+    }
+    let before = wc_singles_before_var(bindings)
+    let after = wc_singles_after_var(bindings)
+    mut args: List<SExpr> = []
+    mut single_pos = 0
+    mut after_pos = 0
+    mut seen_var = false
+    mut i = 0
+    while i < bindings.length {
+        let b = bindings[i]
+        if b.target == "" {
+            // Scalar: carry the bound value through unchanged.
+            args.push(sexpr_dummy(Expr.Ident(names[i])))
+        } else if is_single_child(b.kind) {
+            let kid = if seen_var { wc_at_end_call(after - after_pos) } else { wc_at_call(single_pos) }
+            if seen_var { after_pos = after_pos + 1 } else { single_pos = single_pos + 1 }
+            args.push(sexpr_dummy(helper_call(wc_single_helper(b), kid)))
+        } else {
+            // The one variable-arity slot (list / optional).
+            args.push(sexpr_dummy(helper_call(wc_run_helper(b), wc_run_call(before, after))))
+            seen_var = true
+        }
+        i = i + 1
+    }
+    MatchArm { pattern: pat, guard: null, body: sexpr_dummy(Expr.EnumCtor(parent_name, v.name, args)) }
+}
+
+@comptime
+fn build_with_children_arms(variants: List<Variant>, parent_name: string, ctx: ResolverCtx) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        arms.push(build_with_children_arm(v, parent_name, ctx))
+    }
+    arms
+}
+
+/// Build `fn Type__with_children(self: Type, kids: List<SpannedChild>) -> Type {
+/// match self { arms } }`. Returns Self (each arm an EnumCtor), so — unlike
+/// all_children_spanned — no typed-empty binding is needed.
+@comptime
+fn build_with_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let sc_ty = ValueType.Struct("SpannedChild", no_type_args, 0)
+    let kids_ty = ValueType.List(sc_ty)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let kids_param = ParamEntry { name: "kids", vtype: kids_ty }
+    let params: List<ParamEntry> = [self_param, kids_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
+    Stmt.Function("${enum_name}__with_children", empty_tp, params, self_ty, body)
 }
 
 // ── Slice C: visit() — depth-first traversal callback ──

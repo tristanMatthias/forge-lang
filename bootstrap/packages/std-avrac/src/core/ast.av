@@ -288,6 +288,96 @@ export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
     out
 }
 
+// ── Inverse-walker helpers (B1 / spine §14.1) ──
+//
+// The dual of the `box_*` / `spanned_*` family above: rebuild a variant's
+// children FROM a `List<SpannedChild>`. The derive-generated `with_children`
+// (features/walker) consumes these to put children back into a node's slots in
+// field order — the inverse of `all_children_spanned` — so the arena can
+// reconstruct a boxed tree from its edge ids (each child's span recovered from
+// the side-table). They rebuild STRUCTURE + SPANS only: a `SpannedChild` carries
+// neither `from_macro` nor `file`, so wrappers are stamped `from_macro = false`,
+// `file = ""`. The reconstruct driver patches `from_macro`/`file` back onto the
+// TOP-LEVEL roots from the arena's provenance / single-source `file`; nested
+// wrappers keep the placeholders (single-file ingest makes `file` uniform, and
+// `render_*` — the round-trip oracle — compares neither). The `_` arm in each
+// unbox is a structural invariant (a slot's edge must be its declared kind);
+// a violation falls to a recognizable `__wc_kind_mismatch` marker (one per node
+// kind) that the round-trip fidelity test (`with_children(self,
+// all_children_spanned(self)) == self`) flags — so it never fires on a
+// faithfully-ingested tree.
+
+/// Unbox a single bare `Expr` child. `_` ⇒ wrong-kind edge → a recognizable
+/// `__wc_kind_mismatch` marker (each sibling uses the same marker in its own kind,
+/// so a violation renders/compares distinctly; the round-trip oracle flags it).
+export fn unspan_expr(sc: SpannedChild) -> Expr { match sc.node { .AnyExpr(e) -> e  _ -> Expr.Ident("__wc_kind_mismatch") } }
+/// Unbox a single bare `Stmt` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
+export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.Expr(Expr.Ident("__wc_kind_mismatch")) } }
+/// Unbox a single bare `Pattern` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
+export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -> p  _ -> Pattern.TypePattern("__wc_kind_mismatch", "") } }
+/// Unbox a single bare `ValueType` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
+export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(t) -> t  _ -> ValueType.Trait("__wc_kind_mismatch", 0) } }
+
+/// Rebuild a single `SExpr` wrapper child from its node + recovered (line, col).
+export fn respan_sexpr(sc: SpannedChild) -> SExpr { sexpr_at(unspan_expr(sc), sc.line, sc.col, "") }
+/// Rebuild a single `SStmt` wrapper child (from_macro=false, file=""; the
+/// reconstruct driver patches both back onto top-level roots — see the header).
+export fn respan_sstmt(sc: SpannedChild) -> SStmt { sstmt_at(unspan_stmt(sc), sc.line, sc.col, "") }
+
+/// Unbox a bare `Expr` list slot (the whole run, in order).
+export fn unspan_expr_list(scs: List<SpannedChild>) -> List<Expr> { list_map(scs, (sc: SpannedChild) -> unspan_expr(sc)) }
+/// Unbox a bare `Stmt` list slot.
+export fn unspan_stmt_list(scs: List<SpannedChild>) -> List<Stmt> { list_map(scs, (sc: SpannedChild) -> unspan_stmt(sc)) }
+/// Unbox a bare `Pattern` list slot.
+export fn unspan_pat_list(scs: List<SpannedChild>) -> List<Pattern> { list_map(scs, (sc: SpannedChild) -> unspan_pat(sc)) }
+/// Unbox a bare `ValueType` list slot.
+export fn unspan_type_list(scs: List<SpannedChild>) -> List<ValueType> { list_map(scs, (sc: SpannedChild) -> unspan_type(sc)) }
+
+/// Rebuild a `List<SExpr>` wrapper-list slot, each from node + recovered span.
+export fn respan_sexpr_list(scs: List<SpannedChild>) -> List<SExpr> { list_map(scs, (sc: SpannedChild) -> respan_sexpr(sc)) }
+/// Rebuild a `List<SStmt>` wrapper-list slot.
+export fn respan_sstmt_list(scs: List<SpannedChild>) -> List<SStmt> { list_map(scs, (sc: SpannedChild) -> respan_sstmt(sc)) }
+
+/// A bare `Self?` optional slot: the run is 0-or-1 spanned children.
+export fn unspan_expr_opt(scs: List<SpannedChild>) -> Expr? { if scs.length > 0 { unspan_expr(scs[0]) } else { null } }
+export fn unspan_stmt_opt(scs: List<SpannedChild>) -> Stmt? { if scs.length > 0 { unspan_stmt(scs[0]) } else { null } }
+export fn unspan_pat_opt(scs: List<SpannedChild>) -> Pattern? { if scs.length > 0 { unspan_pat(scs[0]) } else { null } }
+export fn unspan_type_opt(scs: List<SpannedChild>) -> ValueType? { if scs.length > 0 { unspan_type(scs[0]) } else { null } }
+
+/// A `Wrapper<Self>?` optional slot: 0-or-1 rebuilt wrapper.
+export fn respan_sexpr_opt(scs: List<SpannedChild>) -> SExpr? { if scs.length > 0 { respan_sexpr(scs[0]) } else { null } }
+export fn respan_sstmt_opt(scs: List<SpannedChild>) -> SStmt? { if scs.length > 0 { respan_sstmt(scs[0]) } else { null } }
+
+/// The contiguous `[lo, hi)` run of a spanned-child list — the one variable-arity
+/// slot's children (a node-list or an optional). `with_children` computes the
+/// bounds from the variant's fixed single-child count (`hi - lo` is the run).
+export fn wc_slice(scs: List<SpannedChild>, lo: int, hi: int) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    mut i = lo
+    while i < hi {
+        out.push(scs[i])
+        i = i + 1
+    }
+    out
+}
+
+// Indexing accessors the generated `with_children` calls instead of raw `kids[i]`
+// / `kids.length` arithmetic — kept as fn calls so the spliced macro body stays
+// within the @comptime decoder's Expr subset (Call), never `Expr.Index` /
+// `Expr.Binary` (which the macro-return roundtrip doesn't decode).
+
+/// The `i`-th spanned child (a single-child slot before the variable-arity slot).
+export fn wc_at(scs: List<SpannedChild>, i: int) -> SpannedChild { scs[i] }
+/// The spanned child `j` from the END (a single-child slot AFTER the variable
+/// slot — e.g. `ValueType.FnTyped`'s `ret`, which follows the `params` list).
+export fn wc_at_end(scs: List<SpannedChild>, j: int) -> SpannedChild { scs[scs.length - j] }
+/// The variable-arity slot's run: everything between the `before` leading and
+/// `after` trailing single-child slots. `before`/`after` are the variant's fixed
+/// single counts (the generator knows them); the run length is whatever remains.
+export fn wc_run(scs: List<SpannedChild>, before: int, after: int) -> List<SpannedChild> {
+    wc_slice(scs, before, scs.length - after)
+}
+
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
 /// re-resolve knows which entries to walk.
@@ -1522,6 +1612,11 @@ export fn vtype_eq_deep(a: ValueType, b: ValueType) -> bool {
         // `_ -> true` mirrors newtype_inners_eq and keeps deep-equality callers
         // on the same cross-kind rule as vtype_eq.
         .Newtype(_, ia, _) -> match b { .Newtype(_, ib, _) -> vtype_eq_deep(ia, ib), _ -> true }
+        // `vtype_eq`'s `.Fn -> b is .Fn` ignores the `ret` field, so two `Fn`s
+        // differing only in return type pass the shallow gate; deep-compare ret
+        // (mirrors Task/Channel). The gate guarantees b is `.Fn` here; `_ -> true`
+        // keeps the FnTyped-vs-Fn leniency for the unreachable cross-kind case.
+        .Fn(ra) -> match b { .Fn(rb) -> vtype_eq_deep(ra, rb), _ -> true }
         // FnTyped-vs-Fn keeps `vtype_eq`'s leniency (vtype_eq already returned
         // true for it); only tighten when both sides are FnTyped.
         .FnTyped(pa, ra) -> match b { .FnTyped(pb, rb) -> vtype_list_eq_deep(pa, pb) && vtype_eq_deep(ra, rb), _ -> true }
@@ -1674,6 +1769,44 @@ fn render_type_list_full(tl: List<ValueType>) -> string {
 /// pipe-joined for union rendering (`int|string|bool`).
 fn render_union_full(tl: List<ValueType>) -> string {
     list_map(tl, (t: ValueType) -> vtype_render_full(t)).join("|")
+}
+
+/// Fully faithful, NESTED-SAFE type rendering for the render-equality round-trip
+/// oracle (render_stmt's binding / fn-return type slots). Recurses through ITSELF
+/// for every compound type, so a mis-reconstructed type child at ANY depth
+/// diverges — including the cases `vtype_render_full` itself collapses: `.Fn` /
+/// `.Closure` → "fn" (drops ret) and `.Tuple` elements rendered via the
+/// `vtype_display`-based `render_type_list`, plus nested forms like `List<Fn<int>>`
+/// (whose inner Fn `vtype_render_full` would still flatten to "fn").
+///
+/// It deliberately does NOT fix `vtype_render_full`: that renderer is the
+/// monomorphizer's symbol-mangling key (and docs --gen's), so changing its output
+/// would alter emitted IR — breaking this increment's byte-identical invariant.
+/// Leaf types (primitives, Trait, NarrowedEnum, Newtype-by-name) carry no type
+/// children, so they delegate to `vtype_render_full`; `<unknown>` stays explicit.
+fn vtype_render_decl(t: ValueType) -> string {
+    match t {
+        .Unknown -> "<unknown>"
+        .Fn(ret) -> "fn -> ${vtype_render_decl(ret)}"
+        .Closure(n, ret) -> "closure(${string(n)}) -> ${vtype_render_decl(ret)}"
+        .Tuple(types) -> "(${render_type_list_decl(types)})"
+        .List(elem) -> "List<${vtype_render_decl(elem)}>"
+        .Map(k, v) -> "Map<${vtype_render_decl(k)}, ${vtype_render_decl(v)}>"
+        .Optional(inner) -> "${vtype_render_decl(inner)}?"
+        .Task(r) -> "Task<${vtype_render_decl(r)}>"
+        .Channel(e) -> "Channel<${vtype_render_decl(e)}>"
+        .Union(types) -> list_map(types, (x: ValueType) -> vtype_render_decl(x)).join("|")
+        .Struct(n, args, _) -> if args.length == 0 { n } else { "${n}<${render_type_list_decl(args)}>" }
+        .Enum(n, args, _) -> if args.length == 0 { n } else { "${n}<${render_type_list_decl(args)}>" }
+        .FnTyped(params, ret) -> "fn(${render_type_list_decl(params)}) -> ${vtype_render_decl(ret)}"
+        _ -> vtype_render_full(t)
+    }
+}
+
+/// `vtype_render_decl` over each element, comma-joined — the faithful (recurses
+/// through `vtype_render_decl`) counterpart of `render_type_list`.
+fn render_type_list_decl(tl: List<ValueType>) -> string {
+    list_map(tl, (t: ValueType) -> vtype_render_decl(t)).join(", ")
 }
 
 /// Trait name for a Trait ValueType, or "" otherwise.
@@ -2568,9 +2701,9 @@ export fn render_param_list(params: List<ParamEntry>) -> string {
 /// inspection-only, not source round-trip.
 export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
-        .Let(name, vt, initializer) -> "(let ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
-        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
-        .Const(name, vt, initializer) -> "(const ${name}:${vtype_display(vt)} ${render_expr(initializer)})"
+        .Let(name, vt, initializer) -> "(let ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
+        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
+        .Const(name, vt, initializer) -> "(const ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
         .Expr(expr) -> "(expr ${render_expr(expr)})"
         .Block(body) -> "(block ${render_stmt_list(body)})"
         .If(condition, then_branch, else_branch) -> {
@@ -2587,7 +2720,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_display(rvt)} ${render_stmt_list(body)})"
+            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_render_decl(rvt)} ${render_stmt_list(body)})"
         }
         .Return(value) -> "(return ${render_expr(value)})"
         .ReturnEmpty -> "(return)"
@@ -2607,7 +2740,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
         .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"
-        .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_display(rvt)})"
+        .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_render_decl(rvt)})"
         .Break -> "(break)"
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"
@@ -2615,11 +2748,11 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Defer(body) -> "(defer ${render_expr(body)})"
         .Errdefer(body) -> "(errdefer ${render_expr(body)})"
         .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner.node)})"
-        .SpecBlock(name, _) -> "(spec ${name} ...)"
-        .GivenBlock(name, _) -> "(given ${name} ...)"
+        .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_list(body)})"
+        .GivenBlock(name, body) -> "(given ${name} ${render_stmt_list(body)})"
         .ThenBlock(name, cond) -> "(then ${name} ${render_expr(cond)})"
         .Select(_) -> "(select ...)"
-        .Parallel(_) -> "(parallel ...)"
+        .Parallel(body) -> "(parallel ${render_stmt_list(body)})"
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
@@ -2650,10 +2783,21 @@ export fn render_pattern(p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
         .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
+        .LitString(value) -> "\"${value}\""
+        .LitInt(value) -> string(value)
+        .LitBool(value) -> if value != 0 { "true" } else { "false" }
+        .LitFloat(value) -> value
+        .NestedVariant(name, sub_patterns) -> ".${name}(${render_pattern_list(sub_patterns)})"
         .Or(left, right) -> "${render_pattern(left)} or ${render_pattern(right)}"
         .TypePattern(type_name, binding) -> "${type_name}(${binding})"
-        _ -> "?"
     }
+}
+
+/// Render a `List<Pattern>` as a comma-separated S-expression list — used by
+/// `render_pattern` for `NestedVariant` sub-patterns (so nested destructures
+/// render distinctly instead of collapsing, which a round-trip oracle relies on).
+export fn render_pattern_list(pats: List<Pattern>) -> string {
+    list_map(pats, (p: Pattern) -> render_pattern(p)).join(", ")
 }
 
 /// Render a `List<MatchArm>` as a comma-separated list of `pat -> body`.

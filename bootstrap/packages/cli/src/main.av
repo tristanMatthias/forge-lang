@@ -76,7 +76,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, ingest_program, program_from_store, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{NodeStore, ingest_program, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -266,6 +266,13 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
         // parsed roots (all share one source here — single-file ingest); an
         // empty program has no roots so the file is irrelevant.
         let file = if stmts.length > 0 { stmts[0].file } else { "" }
+        // B1: prove the arena EDGES reconstruct the program faithfully (structure)
+        // on REAL parser output — the round-trip fidelity check, exercised on every
+        // gated run. `reconstruct_program` rebuilds purely from edge ids via the
+        // inverse walker `with_children` (not the stored boxed children);
+        // render-equality is the structural oracle.
+        let recon_faithful = render_stmt_list(reconstruct_program(store, file)) == render_stmt_list(stmts)
+        println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
         return program_from_store(store, file)
     }
     stmts
