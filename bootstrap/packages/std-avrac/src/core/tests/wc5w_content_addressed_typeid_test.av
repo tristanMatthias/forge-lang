@@ -24,6 +24,9 @@ spec "wc5w: content_id_for is a deterministic content hash" {
     then "a real name is non-zero (0 stays the no-type sentinel)" {
         content_id_for("@std::avrac::core::ExprId") != 0
     }
+    then "empty name hashes deterministically and distinctly from non-empty" {
+        content_id_for("") == content_id_for("") && content_id_for("") != content_id_for("a")
+    }
 }
 
 spec "wc5w: TypeId is stable across independent registries" {
@@ -53,6 +56,25 @@ spec "wc5w: registry round-trips a type by its sparse content id" {
     then "an unregistered content id is absent" {
         let reg = type_registry_new()
         !type_registry_has(reg, content_id_for("@m::Never"))
+    }
+    then "many types round-trip via their sparse content ids (id_to_index at scale)" {
+        // Content ids are sparse i64 hashes, not a dense 1..N counter, so the
+        // id->index intmap must tolerate arbitrary keys. Register 100 types and
+        // confirm each one's id is content_id_for(name) AND looks back up to it.
+        let no_fields: List<FieldEntry> = []
+        let no_variants: List<Variant> = []
+        let reg = type_registry_new()
+        mut ok = true
+        mut i = 0
+        while i < 100 {
+            let name = "@m::T" + string(i)
+            let id = type_registry_register(reg, name, TypeKind.StructKind, no_fields, no_variants, ValueType.Unknown)
+            if id != content_id_for(name) { ok = false }
+            let opt = type_registry_lookup(reg, id)
+            if opt == null { ok = false } else { if opt!.name != name { ok = false } }
+            i = i + 1
+        }
+        ok
     }
 }
 
