@@ -1,0 +1,63 @@
+// WHY: regression for forge-crafting-intepreters-m0fd — indexing a scalar
+// (`n[0]` on an int/bool/float/sized-int) had no codegen case, so it reached
+// codegen and ICEd (F9999 "indexing on non-string/list value"), the same bug
+// class as j4yt (Map). typeck now gates every i64/double scalar with the same
+// clean F1206 (NotIndexable). Strings, lists, and pointers stay indexable, and
+// type-param / newtype receivers are NOT scalars so they correctly fall through
+// (a newtype wrapping a list should index *through* to its base, not be
+// rejected here).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Compile a fixture and capture stderr+stdout; emit a sentinel on a clean
+// compile so the positive controls assert real success, not the mere absence
+// of an F-code.
+fn m0fd_out(source: string) -> string {
+    let path = "/tmp/avra_m0fd_idx.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "indexing a scalar is a clean diagnostic, not an ICE (m0fd)" {
+    then "int[0] is F1206, never the F9999 ICE" {
+        let out = m0fd_out("fn main() {\n    let n = 5\n    let _ = n[0]\n}")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+    then "bool[0] is F1206, never the F9999 ICE" {
+        let out = m0fd_out("fn main() {\n    let b = true\n    let _ = b[0]\n}")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+    then "float[0] is F1206, never the F9999 ICE" {
+        let out = m0fd_out("fn main() {\n    let f = 1.5\n    let _ = f[0]\n}")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+    then "a sized int (u8) is gated too, not just the default int" {
+        let out = m0fd_out("fn main() {\n    let n: u8 = 5\n    let _ = n[0]\n}")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+    then "the diagnostic names the indexable types" {
+        let out = m0fd_out("fn main() {\n    let n = 5\n    let _ = n[0]\n}")
+        out.contains("strings, lists, and pointers")
+    }
+    then "string indexing still compiles (no false F1206)" {
+        let out = m0fd_out("fn main() {\n    let s = \"hi\"\n    let _ = s[0]\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+    then "list indexing still compiles (no false F1206)" {
+        let out = m0fd_out("fn main() {\n    let xs = [1, 2, 3]\n    let _ = xs[0]\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+    then "indexing a generic List<T> param compiles (instantiated generic, list path)" {
+        let out = m0fd_out("fn first<T>(xs: List<T>) -> T {\n    xs[0]\n}\nfn main() {\n    let xs = [1, 2, 3]\n    let _ = first(xs)\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+    then "indexing a bare type param T does not trip the scalar gate (no false F1206)" {
+        // The real escape hatch: a bare `x: T` is `Struct(\"T\", …)`, not a value
+        // scalar, so the gate must NOT reject it. (Distinct from the List<T> case
+        // above, where the receiver is a List.) typeck checks the abstract body,
+        // so a too-broad gate would emit F1206 here.
+        let out = m0fd_out("fn idx<T>(x: T) {\n    let _ = x[0]\n}\nfn main() {}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206")
+    }
+}
