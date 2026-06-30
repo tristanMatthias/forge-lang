@@ -90,6 +90,23 @@ Ranking, as designer:
 > `== 97`) **>>** today's "1-char string at byte index" (silently wrong on
 > anything non-ASCII — the worst of all worlds).
 
+The concrete first lean (before the redesign): add a `char` type with `'x'`
+literals, make `string` a sequence of `char` and `bytes` a sequence of `u8`
+("the type you chose to hold the data decides what indexing means"); accept O(n)
+string indexing but make iteration the idiomatic path and **lint `s[i]` inside a
+counting loop** to catch the accidental-quadratic trap.
+
+(The redesign in Parts II–III goes further: the *lint* becomes a hard
+**compile error** — no bare `s[i]` and no bare iteration at all — everything goes
+through typed lenses.)
+
+## `29f3` is really two tickets hiding as one
+
+1. **The small fix:** stop returning a byte-fragment-as-string (the current
+   silent-invalid-UTF-8 bug).
+2. **The real design call:** introduce a `char` type, make `string` char-indexed,
+   and leave `u8` to `bytes` — likely a split-off `char`-type ticket.
+
 This kicked off the from-scratch redesign in Part II.
 
 ---
@@ -183,6 +200,14 @@ expects char count, spec returns bytes). Same fix: no bare `.length` on a string
 `s.bytes.length` (O(1)) and `s.chars.count()` (O(n)). `s.bytes` is the `bytes`
 view, `s.chars` the char sequence; the cost is legible from which one you reach for.
 
+## The escape hatch for true O(1) random access
+
+For the genuine 1% — a parser hopping over a huge buffer *by codepoint count* —
+the `Cursor`/`s.char(n)` split still leaves random access at O(n). The escape
+hatch: an opt-in `IndexedString` that carries a codepoint→byte-offset table,
+giving O(1) random codepoint access. Pay-for-what-you-use, never the default tax.
+That closes the paradox even for the 1% case.
+
 ---
 
 # Part III — Dialing it in: Avra's pillars dissolve Rust's ceremony
@@ -214,6 +239,23 @@ refcounting and move to manual/borrow memory management (Rust-like). Inside a
 borrows, so string slicing is *unconditionally* zero-cost there. Escape analysis
 is just what recovers that same zero-cost in the *refcounted* regions for the
 common (non-escaping) case.
+
+## Escape analysis, in plain terms
+
+A slice is a *view* into a string's buffer. To keep that buffer alive while the
+view exists you would normally bump a refcount. **Escape analysis is the compiler
+asking: "does this view outlive the function that made it?"**
+
+- **No** (you read it and drop it locally) → it can't dangle → skip the bump.
+  **Free.**
+- **Yes** (you return it or store it in a field) → it escapes → pay the one cheap
+  bump.
+
+So local throwaway slices cost nothing; only the ones you *keep* pay. And inside a
+manual-memory `scope` there is no refcount at all — slices are pure
+compile-time-checked borrows (Rust-like), so slicing there is *unconditionally*
+zero-cost. Escape analysis is just what recovers that same zero-cost in the
+refcounted regions for the common, non-escaping case.
 
 ## Resolve the open question: there is no bare `s[i]` *or* bare `for c in s`
 
