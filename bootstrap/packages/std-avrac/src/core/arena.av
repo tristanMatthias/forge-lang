@@ -56,6 +56,7 @@
 // side-table value type).
 
 use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild, strip_spans, SStmt, sstmt_at}
+use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 
@@ -133,6 +134,19 @@ export fn stmt_child_tags(s: Stmt) -> string { child_tags_of(s.all_children_span
 export fn expr_child_tags(e: Expr) -> string { child_tags_of(e.all_children_spanned()) }
 export fn pat_child_tags(p: Pattern) -> string { child_tags_of(p.all_children_spanned()) }
 export fn type_child_tags(t: ValueType) -> string { child_tags_of(t.all_children_spanned()) }
+
+// The B1 inverse-walker (with_children) ROUND-TRIP oracle — the §8 property law:
+// rebuilding a node from its OWN extracted children reproduces it,
+// `with_children(self, all_children_spanned(self)) == self`. A consumer shard
+// can't call the generated methods on a core type directly, so these @std probes
+// run the round-trip and compare structurally: render-equality for Expr/Stmt/
+// Pattern (structure — spans are tested separately, A2); `vtype_eq_deep` for
+// ValueType (deep-compares FnTyped params+ret, so a mis-ordered/mis-partitioned
+// rebuild is caught). True ⇒ the inverse walker faithfully inverts the walker.
+export fn wc_roundtrip_expr(e: Expr) -> bool { render_expr(e.with_children(e.all_children_spanned())) == render_expr(e) }
+export fn wc_roundtrip_stmt(s: Stmt) -> bool { render_stmt(s.with_children(s.all_children_spanned())) == render_stmt(s) }
+export fn wc_roundtrip_pat(p: Pattern) -> bool { render_pattern(p.with_children(p.all_children_spanned())) == render_pattern(p) }
+export fn wc_roundtrip_type(t: ValueType) -> bool { vtype_eq_deep(t.with_children(t.all_children_spanned()), t) }
 
 /// Append-only arena of `Expr` nodes, addressed by `ExprId`. `nodes[i]` is the
 /// boxed node (array-of-nodes-now, §14.1); `edges` and `spans` are dense,

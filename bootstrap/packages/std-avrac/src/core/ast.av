@@ -288,6 +288,113 @@ export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
     out
 }
 
+// ── Inverse-walker helpers (B1 / spine §14.1) ──
+//
+// The dual of the `box_*` / `spanned_*` family above: rebuild a variant's
+// children FROM a `List<SpannedChild>`. The derive-generated `with_children`
+// (features/walker) consumes these to put children back into a node's slots in
+// field order — the inverse of `all_children_spanned` — so the arena can
+// reconstruct a boxed tree purely from its edge ids (each child's span recovered
+// from the side-table). They rebuild STRUCTURE + SPANS only; `SStmt.from_macro`
+// and `file` are patched by the reconstruct driver from the arena's provenance /
+// single-source `file` (a `SpannedChild` carries neither). The `_` arm in each
+// unbox is a structural invariant (a slot's edge must be its declared kind);
+// the round-trip fidelity test (`with_children(self, all_children_spanned(self))
+// == self`) catches any violation, so the poison fallback never fires on a
+// faithfully-ingested tree.
+
+/// Unbox a single bare `Expr` child. `_` ⇒ wrong-kind edge (poison sentinel).
+export fn unspan_expr(sc: SpannedChild) -> Expr { match sc.node { .AnyExpr(e) -> e  _ -> Expr.Ident("__wc_kind_mismatch") } }
+/// Unbox a single bare `Stmt` child.
+export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.NoOp } }
+/// Unbox a single bare `Pattern` child.
+export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -> p  _ -> Pattern.Wildcard } }
+/// Unbox a single bare `ValueType` child.
+export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(t) -> t  _ -> ValueType.Unknown } }
+
+/// Rebuild a single `SExpr` wrapper child from its node + recovered (line, col).
+export fn respan_sexpr(sc: SpannedChild) -> SExpr { sexpr_at(unspan_expr(sc), sc.line, sc.col, "") }
+/// Rebuild a single `SStmt` wrapper child (from_macro/file patched by reconstruct).
+export fn respan_sstmt(sc: SpannedChild) -> SStmt { sstmt_at(unspan_stmt(sc), sc.line, sc.col, "") }
+
+/// Unbox a bare `Expr` list slot (the whole run, in order).
+export fn unspan_expr_list(scs: List<SpannedChild>) -> List<Expr> {
+    mut out: List<Expr> = []
+    for sc in scs { out.push(unspan_expr(sc)) }
+    out
+}
+/// Unbox a bare `Stmt` list slot.
+export fn unspan_stmt_list(scs: List<SpannedChild>) -> List<Stmt> {
+    mut out: List<Stmt> = []
+    for sc in scs { out.push(unspan_stmt(sc)) }
+    out
+}
+/// Unbox a bare `Pattern` list slot.
+export fn unspan_pat_list(scs: List<SpannedChild>) -> List<Pattern> {
+    mut out: List<Pattern> = []
+    for sc in scs { out.push(unspan_pat(sc)) }
+    out
+}
+/// Unbox a bare `ValueType` list slot.
+export fn unspan_type_list(scs: List<SpannedChild>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    for sc in scs { out.push(unspan_type(sc)) }
+    out
+}
+
+/// Rebuild a `List<SExpr>` wrapper-list slot, each from node + recovered span.
+export fn respan_sexpr_list(scs: List<SpannedChild>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    for sc in scs { out.push(respan_sexpr(sc)) }
+    out
+}
+/// Rebuild a `List<SStmt>` wrapper-list slot.
+export fn respan_sstmt_list(scs: List<SpannedChild>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for sc in scs { out.push(respan_sstmt(sc)) }
+    out
+}
+
+/// A bare `Self?` optional slot: the run is 0-or-1 spanned children.
+export fn unspan_expr_opt(scs: List<SpannedChild>) -> Expr? { if scs.length > 0 { unspan_expr(scs[0]) } else { null } }
+export fn unspan_stmt_opt(scs: List<SpannedChild>) -> Stmt? { if scs.length > 0 { unspan_stmt(scs[0]) } else { null } }
+export fn unspan_pat_opt(scs: List<SpannedChild>) -> Pattern? { if scs.length > 0 { unspan_pat(scs[0]) } else { null } }
+export fn unspan_type_opt(scs: List<SpannedChild>) -> ValueType? { if scs.length > 0 { unspan_type(scs[0]) } else { null } }
+
+/// A `Wrapper<Self>?` optional slot: 0-or-1 rebuilt wrapper.
+export fn respan_sexpr_opt(scs: List<SpannedChild>) -> SExpr? { if scs.length > 0 { respan_sexpr(scs[0]) } else { null } }
+export fn respan_sstmt_opt(scs: List<SpannedChild>) -> SStmt? { if scs.length > 0 { respan_sstmt(scs[0]) } else { null } }
+
+/// The contiguous `[lo, hi)` run of a spanned-child list — the one variable-arity
+/// slot's children (a node-list or an optional). `with_children` computes the
+/// bounds from the variant's fixed single-child count (`hi - lo` is the run).
+export fn wc_slice(scs: List<SpannedChild>, lo: int, hi: int) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    mut i = lo
+    while i < hi {
+        out.push(scs[i])
+        i = i + 1
+    }
+    out
+}
+
+// Indexing accessors the generated `with_children` calls instead of raw `kids[i]`
+// / `kids.length` arithmetic — kept as fn calls so the spliced macro body stays
+// within the @comptime decoder's Expr subset (Call), never `Expr.Index` /
+// `Expr.Binary` (which the macro-return roundtrip doesn't decode).
+
+/// The `i`-th spanned child (a single-child slot before the variable-arity slot).
+export fn wc_at(scs: List<SpannedChild>, i: int) -> SpannedChild { scs[i] }
+/// The spanned child `j` from the END (a single-child slot AFTER the variable
+/// slot — e.g. `ValueType.FnTyped`'s `ret`, which follows the `params` list).
+export fn wc_at_end(scs: List<SpannedChild>, j: int) -> SpannedChild { scs[scs.length - j] }
+/// The variable-arity slot's run: everything between the `before` leading and
+/// `after` trailing single-child slots. `before`/`after` are the variant's fixed
+/// single counts (the generator knows them); the run length is whatever remains.
+export fn wc_run(scs: List<SpannedChild>, before: int, after: int) -> List<SpannedChild> {
+    wc_slice(scs, before, scs.length - after)
+}
+
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
 /// re-resolve knows which entries to walk.
