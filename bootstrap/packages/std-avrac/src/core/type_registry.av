@@ -5,6 +5,47 @@
 use core.{FieldEntry, Variant, ValueType}
 use core.{avra_intmap_new, avra_intmap_set, avra_intmap_get, avra_intmap_has, avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
 use core.{avra_intmap_inc, avra_intmap_get_as_string}
+use core.{avra_bytes_from_string, avra_bytes_length, avra_bytes_byte}
+
+// ── Content-addressed type/symbol identity ──
+//
+// A nominal type's identity is its fully-qualified name. `content_id_for`
+// folds that name to a stable 64-bit id via FNV-1a-64 — deterministic
+// across processes, machines, and builds (two compiles of the same name
+// always agree). That is precisely what a TypeId must be: the historic
+// per-registry positional counter (`infos.length + 1`) handed the SAME
+// type different ids in @std's registry vs a consumer's, which forced the
+// FQN-string fallbacks in `vtype_eq`. Content ids remove that divergence
+// at the root, so identity is compared by id, not by string.
+//
+// This is the SAME hash the metadata layer already trusts for cross-unit
+// symbol references (`build::metadata::sym_id_for` delegates here), so the
+// in-process TypeId and the on-disk symbol id are now one value.
+//
+// FNV-1a-64: simple, well-distributed for short ASCII names, no external
+// state. Crypto strength is not a goal; the only constraint is collision
+// probability across a project's symbol set, which FNV-1a clears at this
+// scale. The constants are the canonical FNV-1a-64 values and MUST NOT
+// change — doing so reassigns every TypeId AND invalidates every cached
+// metadata.bin in the wild.
+const FNV64_OFFSET: int = 0xCBF29CE484222325
+const FNV64_PRIME: int = 0x100000001B3
+
+/// Hash a fully-qualified name to a stable, content-addressed 64-bit id.
+/// Empty input yields the FNV offset basis (the standard "empty input"
+/// behaviour). Determinism — same name → same id on every build and
+/// machine — is the load-bearing property; see the section header above.
+export fn content_id_for(qualified_name: string) -> int {
+    mut h = FNV64_OFFSET
+    let b = avra_bytes_from_string(qualified_name)
+    let n = avra_bytes_length(b)
+    mut i = 0
+    while i < n {
+        h = (h ^ avra_bytes_byte(b, i)) * FNV64_PRIME
+        i = i + 1
+    }
+    h
+}
 
 /// Categorical kind for a registered type — drives codegen layout
 /// decisions (struct vs enum tagged-union, newtype passthrough, etc.).
@@ -45,27 +86,31 @@ export type TypeInfo = {
 /// "string-name everywhere" approach with O(1) integer ids and
 /// constant-time name ↔ id lookups. Pass-by-value (the maps are
 /// pointers — copying TypeRegistry shares the underlying tables).
-/// @field infos      — List<TypeInfo>: id-1 indexed (id 0 reserved
-///                     as the "no such type" sentinel). Was an
-///                     avra_intmap with hard 256-slot cap before
-///                     forge-crafting-intepreters-q3gp follow-up;
-///                     bundle compiles overflowed at ~280 types.
+/// @field infos      — List<TypeInfo> in registration order. NO longer
+///                     id-indexed: ids are content hashes (sparse), so
+///                     `id_to_index` maps id → position here.
 /// @field name_to_id — string-keyed map: qualified name → id.
 /// @field id_to_name — intmap: id → name string ptr.
+/// @field id_to_index— intmap: content-id → index into `infos`. The
+///                     id-keyed access path that replaces `infos[id-1]`
+///                     now that ids are sparse content hashes.
 export type TypeRegistry = {
     infos: List<TypeInfo>,
     name_to_id: ptr,
     id_to_name: ptr,
+    id_to_index: ptr,
 }
 
 
-/// Construct an empty registry. The id counter starts at 1 — id 0 is
-/// reserved as the "no such type" sentinel returned by lookups.
+/// Construct an empty registry. id 0 is reserved as the "no such type"
+/// sentinel returned by lookups; `content_id_for` effectively never
+/// produces it for a real name.
 export fn type_registry_new() -> TypeRegistry {
     TypeRegistry {
         infos: [],
         name_to_id: avra_map_new_cstr(),
         id_to_name: avra_intmap_new(),
+        id_to_index: avra_intmap_new(),
     }
 }
 
@@ -79,11 +124,26 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
     if avra_map_has_cstr(reg.name_to_id, name) == 1 {
         return avra_map_get_cstr(reg.name_to_id, name)
     }
-    // List-backed: id is 1-indexed position. id 0 stays the sentinel.
+    // Content-addressed id: a stable FNV-1a-64 of the name (wc5w). The same
+    // type gets the same id in every registry/process, so cross-package id
+    // divergence — the reason `vtype_eq` fell back to FQN strings — is gone.
+    // `infos` keeps registration order for iteration; `id_to_index` is the
+    // id→position map that replaces the old `infos[id-1]` positional access.
     mut infos = reg.infos
-    let id = infos.length + 1
+    let id = content_id_for(name)
+    // Content ids are i64-truncated FNV-1a-64 hashes, so a collision (two
+    // distinct FQNs → the same id) is astronomically unlikely but would
+    // silently corrupt the id-keyed maps below (and the on-disk sym_ids that
+    // now share this scheme). The name was confirmed unregistered above, so an
+    // id already present here belongs to a DIFFERENT type — fail loud rather
+    // than overwrite and corrupt nominal identity.
+    if avra_intmap_has(reg.id_to_index, id) == 1 {
+        let existing = avra_intmap_get_as_string(reg.id_to_name, id)
+        panic("TypeId hash collision: `${name}` and `${existing}` both hash to ${string(id)} (content_id_for / FNV-1a-64) — rename one type")
+    }
     let info = TypeInfo { id, name, kind, fields, variants, inner_vt }
     infos.push(info)
+    avra_intmap_set(reg.id_to_index, id, infos.length - 1)
     avra_map_set_cstr(reg.name_to_id, name, id)
     avra_intmap_set(reg.id_to_name, id, name)
     // Also register short name (last segment after ::) for codegen lookups
@@ -102,7 +162,8 @@ export fn type_registry_register(reg: TypeRegistry, name: string, kind: TypeKind
 /// at a dummy struct.
 export fn type_registry_lookup(reg: TypeRegistry, id: int) -> TypeInfo? {
     if id == 0 { return null }
-    let i = id - 1
+    if avra_intmap_has(reg.id_to_index, id) == 0 { return null }
+    let i = avra_intmap_get(reg.id_to_index, id)
     if i < 0 || i >= reg.infos.length { return null }
     reg.infos[i]
 }
@@ -118,7 +179,7 @@ export fn type_registry_id_for(reg: TypeRegistry, name: string) -> int {
 /// True iff `id` corresponds to a registered type. Cheap O(1) probe;
 /// use this before treating a non-zero id as valid.
 export fn type_registry_has(reg: TypeRegistry, id: int) -> bool {
-    id > 0 && (id - 1) < reg.infos.length
+    id != 0 && avra_intmap_has(reg.id_to_index, id) != 0
 }
 
 
