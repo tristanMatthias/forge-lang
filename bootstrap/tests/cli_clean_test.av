@@ -173,3 +173,21 @@ spec "bs2 cache clear-failed: a cache with no fixture_stdout dir is handled" {
         probe.contains("no fixture_stdout cache")
     }
 }
+
+// Evictor/writer agreement: a PASSING capture that merely prints `: FAILED` in
+// running text must NOT be evicted (it would match a blunt substring `: FAIL`,
+// but capture_has_probe_failure anchors on the probe form). This is the live
+// end-to-end of the 6th-review finding — clear-failed keeps passing captures.
+spec "bs2 cache clear-failed: a passing capture mentioning `: FAILED` in prose is kept" {
+    then "a `: FAILED`-in-prose capture (not a probe FAIL) survives clear-failed" {
+        let project = "/tmp/avra_clear_failed_prose_fixture/"
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let _ = setup_fixture_stdout(project, "log: a: FAILED disk write recovered", "PROBE y: ok")
+        let probe = avra_shell_exec(
+            "cd " + project + " && " + bs2 + " cache clear-failed 2>&1 && " +
+            "echo --- && " +
+            "([ -f " + project + "build/cache/fixture_stdout/aaa.out ] && echo prose=kept || echo prose=gone)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("no frozen-FAIL captures") && probe.contains("prose=kept")
+    }
+}

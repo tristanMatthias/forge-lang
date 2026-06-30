@@ -58,7 +58,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_list}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
@@ -2226,11 +2226,15 @@ fn run_cache_command() {
         // large cache; `grep -l | xargs rm` mishandling odd filenames). The
         // native walk reads each capture once and unlinks the matches directly.
         //
-        // `: FAIL` is the PROBE/spec failure convention (`PROBE <name>: FAIL`,
-        // `<name>: FAIL`). Compiler diagnostics use F-codes (`F0012: …`), never
-        // this token, so error-assertion captures are untouched. Evicting a
-        // legitimately-failing capture is harmless regardless: the next run
-        // re-captures the identical result.
+        // capture_has_probe_failure (shared with the cache write-gate) anchors
+        // on the PROBE/spec convention (`PROBE <name>: FAIL`, `<name>: FAIL`) so
+        // the evictor and the writer agree exactly on what a frozen failure is —
+        // a blunt substring `: FAIL` would also evict a PASSING capture that
+        // merely prints `: FAILED` / `: FAILURE` in prose, breaking the "keeps
+        // passing captures warm" guarantee. Compiler diagnostics use F-codes
+        // (`F0012: …`), never the probe form, so error-assertion captures are
+        // untouched. Evicting a genuinely-failing capture is harmless regardless:
+        // the next run re-captures the identical result.
         let fixture_dir = "${project_dir}/${fixture_stdout_cache_dir()}"
         if avra_is_dir(fixture_dir) == 0 {
             println("cache clear-failed: no fixture_stdout cache at ${fixture_dir}")
@@ -2240,7 +2244,7 @@ fn run_cache_command() {
         for name in avra_readdir(fixture_dir) {
             if avra_str_ends_with(name, ".out") {
                 let path = "${fixture_dir}/${name}"
-                if avra_selfhost_read_file(path).contains(": FAIL") {
+                if capture_has_probe_failure(avra_selfhost_read_file(path)) {
                     failed.push(path)
                 }
             }

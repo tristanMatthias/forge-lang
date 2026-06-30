@@ -13,7 +13,7 @@
 //      the zp5b revert was about); `bs2 cache clear-failed` evicts those on
 //      demand instead.
 
-use @std.avrac.test_runner.{fixture_output_is_publishable, fixture_is_stateful, FIXTURE_STATEFUL_MARKER}
+use @std.avrac.test_runner.{fixture_output_is_publishable, fixture_is_stateful, FIXTURE_STATEFUL_MARKER, capture_has_probe_failure}
 use @std.avrac.core.{avra_selfhost_file_exists}
 
 extern fn avra_shell_exec(cmd: string) -> string
@@ -71,10 +71,40 @@ spec "fixture cache: a stateful fixture's failures are rejected (fxfz)" {
         fixture_output_is_publishable("PROBE avrac_meta_present: ok\nPROBE cli_main_ll_present: ok\n", true)
     }
     then "stateful with the word FAIL in prose (no `: FAIL`) still caches" {
-        // Only the `: FAIL` probe form blocks caching — a stateful fixture that
+        // Only the probe-FAIL form blocks caching — a stateful fixture that
         // prints FAIL in running text must still cache its passing capture, or
         // it would re-run every cycle (the false-positive perf trap).
         fixture_output_is_publishable("rebuilt after a prior FAILED attempt\nPROBE x: ok\n", true)
+    }
+    then "stateful with `: FAILED` in prose (colon, but not the probe form) still caches" {
+        // The anchored predicate excludes `: FAILED` / `: FAILURE` — a passing
+        // stateful capture that mentions failure in running text must cache.
+        fixture_output_is_publishable("PROBE meta_present: ok\nnote: a: FAILED retry, recovered\n", true)
+    }
+}
+
+// capture_has_probe_failure is the single notion of "a capture froze a failure"
+// shared by the write-gate (above) and `bs2 cache clear-failed`. It anchors on
+// the probe form so prose mentions of failure don't trip it — pinning that
+// keeps the evictor from throwing away a warm PASSING capture.
+spec "fixture cache: capture_has_probe_failure anchors on the probe FAIL form" {
+    then "a probe FAIL line (terminated by newline) is a failure" {
+        capture_has_probe_failure("PROBE x: FAIL\nPROBE y: ok\n")
+    }
+    then "a probe FAIL with trailing detail (space) is a failure" {
+        capture_has_probe_failure("PROBE x: FAIL count=3\n")
+    }
+    then "a probe FAIL at end-of-string (no trailing newline) is a failure" {
+        capture_has_probe_failure("PROBE x: FAIL")
+    }
+    then "`: FAILED` in prose is NOT a probe failure" {
+        !capture_has_probe_failure("PROBE x: ok\nlog: a: FAILED disk write, recovered\n")
+    }
+    then "`: FAILURE` in prose is NOT a probe failure" {
+        !capture_has_probe_failure("note: total: FAILURE rate 0%\nPROBE x: ok\n")
+    }
+    then "an all-ok capture has no probe failure" {
+        !capture_has_probe_failure("PROBE x: ok\nPROBE y: ok\n")
     }
 }
 

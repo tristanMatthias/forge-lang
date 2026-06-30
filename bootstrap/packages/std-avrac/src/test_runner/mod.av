@@ -629,6 +629,19 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
     out
 }
 
+/// True when a captured fixture stdout carries a PROBE/spec FAILURE — a
+/// `: FAIL` token terminated by end-of-line, a space (before failure detail),
+/// or end-of-string. Anchored to the probe form (`PROBE <name>: FAIL`,
+/// `<name>: FAIL`) so a PASSING capture that merely mentions failure in running
+/// text (`: FAILED`, `: FAILURE`) is never mistaken for a probe FAIL. Shared by
+/// the cache write-gate (fixture_output_is_publishable, stateful branch) and the
+/// `bs2 cache clear-failed` evictor, so the two can never disagree about what
+/// counts as a frozen failure — a blunt substring `: FAIL` would let the evictor
+/// throw away a warm passing capture the write-gate deliberately kept.
+export fn capture_has_probe_failure(out: string) -> bool {
+    out.contains(": FAIL\n") || out.contains(": FAIL ") || out.ends_with(": FAIL")
+}
+
 /// cbg3.1 + zp5b: classify the captured output as safe-to-cache or
 /// not. The patterns rejected here are environmental noise produced by
 /// the shell/kernel/diagnose.sh when a fixture's bs2 invocation is
@@ -664,13 +677,14 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 /// half-published state would otherwise be frozen and replayed forever, since
 /// repairing the cache changes neither key input (the historic fxfz freeze:
 /// `cli_metadata_compile`'s `PROBE std_cli_meta_present: FAIL`). So when a
-/// stateful fixture reports ANY `: FAIL`, reject the capture and let the next
-/// invocation re-probe once the build state is consistent. Happy captures
-/// (every probe `: ok`) carry no `: FAIL`, so they cache normally — zero cost
-/// on the passing path. A fixture asserting an EXPECTED failure simply omits
-/// the stateful directive, keeping its `: FAIL` cacheable.
+/// stateful fixture reports a probe FAIL (`capture_has_probe_failure`), reject
+/// the capture and let the next invocation re-probe once the build state is
+/// consistent. Happy captures (every probe `: ok`) carry no probe FAIL, so they
+/// cache normally — zero cost on the passing path. A fixture asserting an
+/// EXPECTED failure simply omits the stateful directive, keeping its FAIL
+/// cacheable.
 export fn fixture_output_is_publishable(out: string, fixture_stateful: bool) -> bool {
-    if fixture_stateful && out.contains(": FAIL") { return false }
+    if fixture_stateful && capture_has_probe_failure(out) { return false }
     if out.contains("scripts/diagnose.sh: line ") { return false }
     if out.contains("Killed: 9") { return false }
     if out.contains("Killed: 15") { return false }
