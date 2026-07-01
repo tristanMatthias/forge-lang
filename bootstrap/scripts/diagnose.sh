@@ -1562,10 +1562,15 @@ mode_run() { run_fg "$1"; }
 mode_rc_strict_suite() {
   ensure_bs2
   log "running the spec suite under AVRA_RC_STRICT=1 (poison-on-free + reuse quarantine + foreign-release abort)"
+  # `bs2 test` discovers test files and resolves @std relative to CWD, so it
+  # MUST run from the bootstrap dir — CI invokes this script from the repo
+  # root. Same `( cd "$BOOTSTRAP_DIR" && "$BS2" test )` form the seed-train's
+  # spec-suite check uses; without it every shard fails to resolve the test
+  # runner (`undefined variable run_test_suite`).
   if [ -n "${1:-}" ]; then
-    AVRA_RC_STRICT=1 "$BS2" test -f "$1"
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test -f "$1" )
   else
-    AVRA_RC_STRICT=1 "$BS2" test
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test )
   fi
 }
 
