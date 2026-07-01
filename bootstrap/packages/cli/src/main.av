@@ -229,53 +229,41 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
         fail(parsed.error_message)
     }
     let stmts = parsed.stmts!
-    // L1 (ps3t.3.2/.3.7): exercise the per-type arena store on the real
-    // parse output. Gated off by default — a no-op for normal builds, so
-    // the diff-test stays byte-identical — while keeping the arena code
-    // reachable (emitted + linkable). Flip AVRA_L1_INGEST=1 to verify the
-    // recursive, id-based ingest as the pass migration proceeds: every
-    // nested statement is flattened into the StmtArena with typed-id edges.
+    // L1 (ps3t.3.7): the arena is the CANONICAL producer for every full compile
+    // through this entry (run / check / cache-miss compile / the interpreter).
+    // The parser builds the boxed tree, `ingest_program` flattens it into the
+    // per-type arena (typed-id edges + byte-offset span side-tables + provenance),
+    // and the program is served back FROM the arena via `program_from_store`
+    // (stored roots, with line/col recomputed from the span side-table on demand
+    // and `from_macro` restored from provenance). This puts the arena on the
+    // critical path — load-bearing and continuously validated — the prerequisite
+    // for migrating consumers to read ids. Byte-identical to the direct parse
+    // output (diff-test is the oracle): passes are unchanged. `program_from_store`
+    // (not the edge-rebuilt `reconstruct_program`) is used here because it keeps
+    // each NESTED wrapper's `from_macro`, which the edge round-trip flattens.
+    //
+    // COST: one extra ingest pass per full compile (~5% measured) with no consumer
+    // payoff yet — the staged price §14.6 accepts; it disappears once consumers
+    // read ids and the boxed tree is deleted. NOT on the incremental `build`
+    // fast-path (that parses via its own unit-cache entry — a later target).
+    let store = ingest_program(stmts, source)
+    let file = if stmts.length > 0 { stmts[0].file } else { "" }
+    // AVRA_L1_INGEST surfaces the arena diagnostics + the EDGE round-trip fidelity
+    // probe (`reconstruct_program` ≅ parse output via render-equality). Debug-only
+    // and noisy, so gated; the canonical serve-path above runs unconditionally.
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
-        let store = ingest_program(stmts, source)
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
-        // Prove the byte-offset SPAN side-table holds REAL spans
-        // for statement nodes, and that (line, col) is recomputed on demand
-        // from the span via the LineIndex (never stored on the node). Ingest
-        // is post-order, so the LAST appended node is the last top-level
-        // statement's root (its children took the earlier ids) — the node
-        // that carries a real source span rather than the span_none sentinel.
         if store.stmts.count() > 0 {
             let last = StmtId(store.stmts.count() - 1)
             let sp = store.stmts.span_of(last)
             let lc = store.stmt_linecol(last)
             println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")
         }
-        // L1 side-tables (ps3t.3.6): attach DERIVED facts (per-stmt child counts
-        // + a non-leaf marker) keyed by the arena's StmtIds, mutating no node.
         println(l1_sidetable_summary(store))
-        // ps3t.3.7 increment (ii): the FIRST real consumer of the arena. Every
-        // command routing through parse_or_fail now reads the program
-        // reconstructed FROM the store, not the direct parse output — so
-        // resolve, typeck, the interpreter (`run`), and even codegen (a
-        // cache-miss `compile`) read through the arena round-trip instead of the
-        // SExpr/SStmt pointer-tree. (The `build` fast-path parses via its own
-        // unit-cache entry, not this function — a separate, later target.)
-        // Faithful (structure + recomputed line/col + provenance + file), so it
-        // is behaviour-preserving; the flag-off default below returns `stmts`
-        // unchanged, keeping diff-test byte-identical. `file` comes from the
-        // parsed roots (all share one source here — single-file ingest); an
-        // empty program has no roots so the file is irrelevant.
-        let file = if stmts.length > 0 { stmts[0].file } else { "" }
-        // B1: prove the arena EDGES reconstruct the program faithfully (structure)
-        // on REAL parser output — the round-trip fidelity check, exercised on every
-        // gated run. `reconstruct_program` rebuilds purely from edge ids via the
-        // inverse walker `with_children` (not the stored boxed children);
-        // render-equality is the structural oracle.
         let recon_faithful = render_stmt_list(reconstruct_program(store, file)) == render_stmt_list(stmts)
         println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
-        return program_from_store(store, file)
     }
-    stmts
+    program_from_store(store, file)
 }
 
 /// Same shape as parse_or_fail but for the expression parser.
