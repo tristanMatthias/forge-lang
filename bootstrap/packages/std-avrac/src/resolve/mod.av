@@ -7,6 +7,7 @@
 // flat at `resolve.{...}`.
 
 use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
+use core.{NodeStore, ingest_program}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -81,12 +82,40 @@ export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
     r = declare_function(r, FORCE_UNWRAP_FN)
     r = declare_function(r, "self")
     r = collect_function_names(r, stmts)
-    r = resolve_stmt_list(r, stmts)
+    // First consumer of the id-arena (y5um B2): the top-level statement walk
+    // reads each root node by StmtId from a NodeStore instead of indexing the
+    // boxed list directly. The store is ingested from these exact `stmts`, so
+    // `roots` is in source order and `stmts.get(id)` returns the ingested node
+    // verbatim — the diagnostics are byte-identical to `resolve_stmt_list`.
+    // Nested walks stay boxed until later increments migrate them.
+    let store = ingest_program(stmts, "")
+    r = resolve_roots_via_arena(r, stmts, store)
     ResolveResult {
         had_error: r.had_error,
         error_message: r.error_message,
         bag: r.bag,
     }
+}
+
+/// Resolve the program's top-level statements by reading each root node from
+/// the arena by `StmtId`, rather than indexing the boxed `stmts` list. This is
+/// the top-level equivalent of `resolve_stmt_list`: it threads the same
+/// per-stmt `source_line`/`source_col`/`source_file` (still taken from the
+/// boxed `SStmt` wrapper, which the arena does not yet carry) into
+/// `resolve_stmt`. `store.roots[k]` and `stmts[k]` denote the same statement —
+/// `ingest_program` pushes one root per top-level `SStmt` in source order — so
+/// the fetched node equals `stmts[k].node` and the walk is byte-identical.
+fn resolve_roots_via_arena(r: Resolver, stmts: List<SStmt>, store: NodeStore) -> Resolver {
+    mut res = r
+    mut k = 0
+    while k < store.roots.length {
+        let id = store.roots[k]
+        let node = store.stmts.get(id)
+        let ss = stmts[k]
+        res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, node)
+        k = k + 1
+    }
+    res
 }
 
 /// First pass — pre-declare every fn / extern fn / impl-method /
