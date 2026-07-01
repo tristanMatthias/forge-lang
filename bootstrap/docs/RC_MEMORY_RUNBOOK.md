@@ -21,11 +21,43 @@ alloca source. Consequences:
 `--build-bs2` self-compile integrity check, so commit-grade builds
 cannot regress the guard silently.
 
+## Strict allocator mode (`AVRA_RC_STRICT`) — rcsf.3
+
+`AVRA_VERIFY_RC` is the *compile-time* guard; `AVRA_RC_STRICT=1` is its
+*runtime* sibling. The forgiving allocator is why zm77 stayed silent:
+`avra_rc_release` / `avra_rc_should_free` no-op on any pointer that
+isn't a live RC allocation, so a phantom release of stack garbage was
+absorbed with no signal — until the garbage happened to alias a live
+node. Strict mode turns three screws (all in `runtime.c`, gated on the
+env var; the default path is byte-for-byte unchanged):
+
+- **poison-on-free** — freed payloads are `memset` to `0xDD`, so a
+  use-after-free READ hits an obvious `0xDDDD…` instead of stale data.
+  Strict allocations carry an 8-byte payload-size prefix *before* the
+  RC header (the header stays at `ptr-8`, so codegen is unaffected).
+- **reuse quarantine** — freed blocks are held back from the allocator
+  (a bounded FIFO ring, deferred free), so a stale pointer keeps
+  pointing at DEAD memory rather than a recycled live object.
+- **foreign-release abort** — a release/retain that receives a pointer
+  into a freed-and-quarantined block aborts with a backtrace naming the
+  releasing context. Membership is tested against blocks the runtime
+  *actually froze*, never an address-range guess, so it never fires on
+  the legitimate non-RC no-ops these paths also see (NULL, stack, text,
+  LLVM ValueRefs, bump-arena interiors) — a clean suite stays green.
+
+Use it when a corruption smells RC-shaped but the watchpoint hunt is
+expensive: `AVRA_RC_STRICT=1 ./build/bs2 compile <repro>` aborts at the
+FIRST offending release (the message + F9999 breadcrumb name the fn),
+turning a multi-session hunt into a ~10-minute one. `bash
+scripts/diagnose.sh --rc-strict-suite` runs the whole spec suite under
+it (the compiler runs strict too, as it compiles + runs each test
+binary); wired into CI as the `rc-strict` gate.
+
 ## Symptom → action
 
 | Symptom | Likely cause | First move |
 |---|---|---|
-| `unmatched tag <huge value>` / `unsupported expression type (tag=<heap ptr>)` | A node slot holds a non-node pointer: freed-and-recycled memory or garbage stored into the AST | `AVRA_VERIFY_RC=1 ./build/bs2 compile <repro>` — if it FAILS, the guard regressed; fix that. If ok → watchpoint hunt (below) |
+| `unmatched tag <huge value>` / `unsupported expression type (tag=<heap ptr>)` | A node slot holds a non-node pointer: freed-and-recycled memory or garbage stored into the AST | `AVRA_VERIFY_RC=1 ./build/bs2 compile <repro>` — if it FAILS, the guard regressed; fix that. If ok → `AVRA_RC_STRICT=1 ./build/bs2 compile <repro>` (aborts at a stale/phantom release naming the fn), then watchpoint hunt (below) |
 | Crash only at scale / only in test-assembly / "flaky" | Layout-sensitive UB; with the guard in place, suspect a *stale binary or seed* compiled before the guard | Confirm the binary is fresh (`rm -rf packages/cli/src/build/cache && rm -f build/bs2 && make build-quick`); remember: codegen fixes only take effect in binaries compiled BY a fixed compiler (seed cycle may be needed) |
 | `A null value was used where an object was expected` | Real definite-assignment bug, surfaced *cleanly* by the guard (pre-guard this was silent garbage) | Find the unset path; this is a source bug, not a guard bug |
 | `__release_*` frees a live object | EmitValue/struct released through a slot that aliases live data — should be impossible post-guard; check verifier first | Watchpoint hunt |

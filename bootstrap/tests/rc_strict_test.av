@@ -1,0 +1,82 @@
+// rcsf.3: AVRA_RC_STRICT makes RC misuse LOUD instead of silently
+// absorbable. zm77 — a phantom-release of uninitialised stack garbage at
+// every zero-arg call site — stayed silent for a whole session because the
+// release paths no-op on any pointer that isn't a live RC allocation. Under
+// AVRA_RC_STRICT the runtime poisons freed payloads (0xDD), quarantines them
+// (deferred reuse), and ABORTS when a release path receives a pointer to a
+// freed-and-quarantined block — the exact zm77 signature.
+//
+// Strict mode lives in runtime.c, so it applies to NATIVELY COMPILED
+// programs, not `bs2 run`'s evaluator. Both directions are driven through a
+// native compile+run subprocess (diagnose.sh --run) so this test's own
+// process is never the one that aborts:
+//   - NEGATIVE: a fixture that feeds a stale pointer to a release path
+//     (avra_rc_strict_selftest_stale_release, a runtime self-test hook)
+//     aborts under strict mode with the foreign-release diagnostic, and is a
+//     silent no-op without it (behaviour byte-identical to before). The
+//     control explicitly `env -u AVRA_RC_STRICT`s so it holds even when the
+//     whole suite runs under strict (the CI gate) and would otherwise be
+//     inherited by the child.
+//   - POSITIVE: a normal RC-churning fixture runs GREEN under strict mode —
+//     the "full suite green, no false positives" acceptance in miniature. It
+//     prints STRICT_ACTIVE via avra_rc_strict_enabled() so the assertion also
+//     proves strict was genuinely on (strict mode has no startup banner, by
+//     design, so output-capturing tests stay clean).
+//
+// @@fixture-stateful@@  probes shared build state via diagnose.sh --run;
+// never freeze a transient FAIL (fxfz, see CLAUDE.md).
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "rcsf.3: AVRA_RC_STRICT foreign-release detector" {
+    given "a fixture that feeds a stale pointer to a release path" {
+        then "strict mode aborts with the freed-RC-memory diagnostic" {
+            write_fixture("/tmp/rc_strict_stale.av", "
+extern fn avra_rc_strict_selftest_stale_release() -> int
+
+fn main() -> int {
+    avra_rc_strict_selftest_stale_release()
+}
+")
+            let out = avra_shell_exec("AVRA_RC_STRICT=1 bash scripts/diagnose.sh --run /tmp/rc_strict_stale.av 2>&1 || true")
+            out.contains("AVRA_RC_STRICT") && out.contains("freed RC memory")
+        }
+        then "without strict mode the same fixture is a silent no-op" {
+            write_fixture("/tmp/rc_strict_stale.av", "
+extern fn avra_rc_strict_selftest_stale_release() -> int
+
+fn main() -> int {
+    avra_rc_strict_selftest_stale_release()
+}
+")
+            let out = avra_shell_exec("env -u AVRA_RC_STRICT bash scripts/diagnose.sh --run /tmp/rc_strict_stale.av 2>&1 || true")
+            out.contains("freed RC memory") == false
+        }
+    }
+    given "a normal RC-churning fixture" {
+        then "runs green under strict mode (no false positive)" {
+            write_fixture("/tmp/rc_strict_clean.av", "
+extern fn avra_rc_strict_enabled() -> int
+
+type PBox = { v: int, label: string }
+
+fn mk(n: int) -> PBox { PBox { v: n, label: \"box\" } }
+
+fn main() -> int {
+    mut sum = 0
+    mut i = 0
+    while i < 1000 {
+        let b = mk(i)
+        sum = sum + b.v
+        i = i + 1
+    }
+    if avra_rc_strict_enabled() == 1 { println(\"STRICT_ACTIVE\") }
+    if sum == 499500 { 0 } else { 1 }
+}
+")
+            let out = avra_shell_exec("AVRA_RC_STRICT=1 bash scripts/diagnose.sh --run /tmp/rc_strict_clean.av 2>&1 || true")
+            out.contains("STRICT_ACTIVE") && out.contains("freed RC memory") == false
+        }
+    }
+}

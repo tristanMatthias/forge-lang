@@ -48,6 +48,9 @@
 // ─── Forward declarations for error reporting ────────────────────
 static void avra_runtime_error(const char* msg);
 static void avra_runtime_errorf(const char* fmt, ...);
+// AVRA_RC_STRICT foreign-release detector (defined after the crash-report
+// helpers it uses; called from the RC retain/release no-op paths below).
+static void avra_rc_strict_check(const char* op, void* ptr);
 
 // ─── Result tagging (debug only) ─────────────────────────────────
 // avra_tag_as_result is called from codegen helpers (ok_emit, err_emit, etc.)
@@ -217,20 +220,173 @@ static void rc_set_remove(void* ptr) {
     pthread_mutex_unlock(&rc_set_mutex);
 }
 
+// ─── Strict allocator mode (AVRA_RC_STRICT) ─────────────────────
+// Debug mode that makes RC misuse LOUD instead of silently absorbable.
+// zm77 — a phantom-release of uninitialised stack garbage at every zero-arg
+// call site — stayed silent for a whole session because the release/free
+// paths no-op on any pointer that isn't a live RC allocation. Under
+// AVRA_RC_STRICT the runtime turns three screws:
+//   (a) poison-on-free   — freed payloads are memset to 0xDD, so a
+//       use-after-free READ hits an obviously-garbage value (0xDDDD…)
+//       instead of stale-but-plausible data.
+//   (b) reuse quarantine — freed blocks are held back from the allocator
+//       (deferred free), so a stale pointer keeps pointing at DEAD memory
+//       rather than a recycled live object (defeats ABA reuse).
+//   (c) foreign-release abort — a release/retain path that receives a
+//       pointer into a freed-and-quarantined block aborts with a backtrace
+//       naming the releasing context. That freed set is exactly the zm77
+//       signature (releasing a stale pointer to memory we already
+//       reclaimed); because membership is tested against blocks WE froze —
+//       never an address-range guess — it never fires on the legitimate
+//       non-RC no-ops these paths also see (NULL, stack, text, LLVM
+//       ValueRefs, bump-arena interiors), so a clean suite stays green.
+// Every branch here is gated on avra_rc_strict; with the env var unset the
+// allocation layout and free path are byte-for-byte the historical ones.
+
+#define RC_POISON_BYTE 0xDD
+// A strict allocation stores its payload size in an 8-byte prefix placed
+// BEFORE the RC header, so the free path can poison exactly the payload.
+// The header still sits at user_ptr-8 in BOTH modes, so codegen (which
+// reads the header at ptr-8) is unaffected:
+//   normal:  [ RcHeader:8 ][ payload… ]                 base = ptr-8
+//   strict:  [ size:8 ][ RcHeader:8 ][ payload… ]       base = ptr-16
+#define RC_STRICT_PREFIX 8
+
+static int avra_rc_strict = 0;
+
+// High-priority constructor (101 = earliest user priority): the alloc/free
+// layout is flag-dependent (rc_malloc_base), so the flag MUST be settled
+// before the FIRST avra_rc_alloc. All C constructors already finish before
+// main() (where compiled Avra — the only caller of avra_rc_alloc — begins),
+// so this is belt-and-suspenders against any RC-allocating initializer that
+// might otherwise sneak in ahead of a default-priority constructor.
+//
+// SILENT by design: no startup banner. This mode is meant to run across the
+// whole CI suite, where every compiled binary is a subprocess whose output
+// some test captures + exact-matches; a chatty stderr line would pollute
+// those captures. Strict mode announces itself only when it ACTUALLY catches
+// misuse (avra_rc_strict_check aborts). Query the flag via
+// avra_rc_strict_enabled() when a test needs to confirm it is active.
+__attribute__((constructor(101)))
+static void auto_enable_rc_strict(void) {
+    if (getenv("AVRA_RC_STRICT")) avra_rc_strict = 1;
+}
+
+// The malloc base for a user pointer, layout-aware. avra_rc_strict is set
+// once in a constructor and constant thereafter, so every alloc/free in a
+// process agrees on the offset.
+static inline void* rc_malloc_base(void* user_ptr) {
+    size_t back = RC_HEADER_SIZE + (avra_rc_strict ? RC_STRICT_PREFIX : 0);
+    return (char*)user_ptr - back;
+}
+
+// Quarantine: an open-addressing hash set (O(1) membership) paired with a
+// FIFO ring (eviction order + deferred-free storage). Holds the malloc
+// bases of freed-but-not-yet-reclaimed strict allocations.
+#define RC_QUARANTINE_CAP   16384                     // freed blocks held back
+#define RC_QUARANTINE_SLOTS (RC_QUARANTINE_CAP * 2)   // hash load ≤ 50%
+static void*  rc_quar_ring[RC_QUARANTINE_CAP];        // zero-init (FIFO order)
+static size_t rc_quar_head = 0;                       // next ring slot to write
+static size_t rc_quar_fill = 0;
+static void*  rc_quar_slots[RC_QUARANTINE_SLOTS];     // hash set, NULL = empty
+static pthread_mutex_t rc_quar_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static size_t rc_quar_hash(void* p) {
+    uintptr_t x = (uintptr_t)p >> 4;   // bases are ≥16-byte spaced
+    x *= 0x9E3779B97F4A7C15ULL;         // fibonacci hashing
+    return (size_t)(x & (RC_QUARANTINE_SLOTS - 1));
+}
+static void rc_quar_slot_insert(void* base) {
+    size_t i = rc_quar_hash(base);
+    while (rc_quar_slots[i] != NULL) i = (i + 1) & (RC_QUARANTINE_SLOTS - 1);
+    rc_quar_slots[i] = base;
+}
+static void rc_quar_slot_remove(void* base) {
+    size_t i = rc_quar_hash(base);
+    while (rc_quar_slots[i] != NULL) {
+        if (rc_quar_slots[i] == base) {
+            rc_quar_slots[i] = NULL;
+            // Backward-shift deletion: reinsert the following cluster so
+            // probe chains stay intact (no tombstones).
+            size_t j = (i + 1) & (RC_QUARANTINE_SLOTS - 1);
+            while (rc_quar_slots[j] != NULL) {
+                void* moved = rc_quar_slots[j];
+                rc_quar_slots[j] = NULL;
+                rc_quar_slot_insert(moved);
+                j = (j + 1) & (RC_QUARANTINE_SLOTS - 1);
+            }
+            return;
+        }
+        i = (i + 1) & (RC_QUARANTINE_SLOTS - 1);
+    }
+}
+static int rc_quar_slot_contains(void* base) {
+    size_t i = rc_quar_hash(base);
+    while (rc_quar_slots[i] != NULL) {
+        if (rc_quar_slots[i] == base) return 1;
+        i = (i + 1) & (RC_QUARANTINE_SLOTS - 1);
+    }
+    return 0;
+}
+
+// Defer-free a strict allocation's malloc base; evict + really free the
+// oldest block once the ring is full.
+static void rc_quarantine_push(void* base) {
+    void* evict = NULL;
+    pthread_mutex_lock(&rc_quar_mutex);
+    if (rc_quar_fill == RC_QUARANTINE_CAP) {
+        evict = rc_quar_ring[rc_quar_head];
+        rc_quar_slot_remove(evict);
+    } else {
+        rc_quar_fill++;
+    }
+    rc_quar_ring[rc_quar_head] = base;
+    rc_quar_slot_insert(base);
+    rc_quar_head = (rc_quar_head + 1) % RC_QUARANTINE_CAP;
+    pthread_mutex_unlock(&rc_quar_mutex);
+    if (evict) free(evict);   // real reclamation happens only on eviction
+}
+
+// Is user_ptr a pointer into a freed-and-quarantined strict allocation?
+static int rc_quarantine_contains_user(void* user_ptr) {
+    void* base = rc_malloc_base(user_ptr);
+    pthread_mutex_lock(&rc_quar_mutex);
+    int found = rc_quar_slot_contains(base);
+    pthread_mutex_unlock(&rc_quar_mutex);
+    return found;
+}
+
+// Reclaim an RC object. Under strict mode: poison the payload then hand the
+// base to the quarantine (deferred free). Otherwise: free immediately, the
+// historical path. Caller has already cleared type_tag + removed from rc_set.
+static void rc_reclaim(void* user_ptr) {
+    if (avra_rc_strict) {
+        void* base = rc_malloc_base(user_ptr);
+        size_t payload = *(size_t*)base;        // stored by avra_rc_alloc
+        if (payload) memset(user_ptr, RC_POISON_BYTE, payload);
+        rc_quarantine_push(base);
+    } else {
+        free((char*)user_ptr - RC_HEADER_SIZE);
+    }
+}
+
 // Allocate an RC-managed object via system malloc.
 // Returns pointer to payload (past header).
 void* avra_rc_alloc(int64_t payload_size) {
-    size_t total = RC_HEADER_SIZE + (size_t)payload_size;
+    size_t payload = (size_t)payload_size;
+    size_t prefix = avra_rc_strict ? RC_STRICT_PREFIX : 0;
+    size_t total = prefix + RC_HEADER_SIZE + payload;
     total = (total + 7) & ~7;  // align to 8
     void* raw = malloc(total);
     if (!raw) {
         avra_runtime_errorf("out of memory (rc_alloc %lld bytes)", (long long)payload_size);
         exit(1);
     }
-    RcHeader* hdr = (RcHeader*)raw;
+    if (avra_rc_strict) *(size_t*)raw = payload;   // size prefix for poison-on-free
+    void* user_ptr = (char*)raw + prefix + RC_HEADER_SIZE;
+    RcHeader* hdr = (RcHeader*)((char*)user_ptr - RC_HEADER_SIZE);
     atomic_store(&hdr->refcount, 1);
     hdr->type_tag = RC_MAGIC;
-    void* user_ptr = (char*)raw + RC_HEADER_SIZE;
     t_rc_allocs++;
     rc_set_add(user_ptr);
     if (rc_trace) {
@@ -247,7 +403,10 @@ static inline int is_rc_managed(void* ptr) {
 // Increment reference count.
 void avra_rc_retain(void* ptr) {
     if (!ptr) return;
-    if (!is_rc_managed(ptr)) return;
+    if (!is_rc_managed(ptr)) {
+        if (avra_rc_strict) avra_rc_strict_check("avra_rc_retain", ptr);
+        return;
+    }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
     int32_t new_rc = atomic_fetch_add(&hdr->refcount, 1) + 1;
@@ -259,7 +418,10 @@ void avra_rc_retain(void* ptr) {
 // Decrement reference count. Frees the object when refcount reaches 0.
 void avra_rc_release(void* ptr) {
     if (!ptr) return;
-    if (!is_rc_managed(ptr)) return;
+    if (!is_rc_managed(ptr)) {
+        if (avra_rc_strict) avra_rc_strict_check("avra_rc_release", ptr);
+        return;
+    }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
     int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
@@ -272,7 +434,7 @@ void avra_rc_release(void* ptr) {
         }
         hdr->type_tag = 0;  // Clear magic to prevent double-free
         rc_set_remove(ptr);
-        free((char*)ptr - RC_HEADER_SIZE);
+        rc_reclaim(ptr);
     }
 }
 
@@ -282,7 +444,10 @@ void avra_rc_release(void* ptr) {
 // functions for recursive field release.
 int64_t avra_rc_should_free(void* ptr) {
     if (!ptr) return 0;
-    if (!is_rc_managed(ptr)) return 0;
+    if (!is_rc_managed(ptr)) {
+        if (avra_rc_strict) avra_rc_strict_check("avra_rc_should_free", ptr);
+        return 0;
+    }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return 0;
     int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
@@ -302,7 +467,7 @@ void avra_rc_free(void* ptr) {
     }
     hdr->type_tag = 0;  // Clear magic to prevent double-free
     rc_set_remove(ptr);
-    free((char*)ptr - RC_HEADER_SIZE);
+    rc_reclaim(ptr);
 }
 
 // Introspection for spec tests / leak checks. Returns the number
@@ -313,6 +478,28 @@ int64_t avra_rc_live_count(void) {
     int64_t n = (int64_t)rc_set_count;
     pthread_mutex_unlock(&rc_set_mutex);
     return n;
+}
+
+// Deterministic self-test for AVRA_RC_STRICT (spec: tests/rc_strict_test.av).
+// Allocates an RC block, releases it to zero (reclaimed), then feeds the now
+// STALE pointer back to a release path — the exact zm77 signature. Under
+// AVRA_RC_STRICT this aborts with the foreign-release diagnostic; with the
+// env var unset it is the historical silent no-op (the double-free guard), so
+// the normal suite stays green. Returns 0 on the no-op path (strict mode
+// aborts before returning). A test hook, like avra_rc_live_count above — not
+// a codegen workaround.
+int64_t avra_rc_strict_selftest_stale_release(void) {
+    void* p = avra_rc_alloc(64);
+    avra_rc_release(p);   // rc 1 → 0: reclaimed (strict: poisoned + quarantined)
+    avra_rc_release(p);   // p is stale now: strict mode must catch this release
+    return 0;
+}
+
+// Query whether AVRA_RC_STRICT is active (1) or not (0). Lets a test confirm
+// strict mode is really on without a stderr banner (which would pollute
+// output-capturing tests when the whole suite runs under strict).
+int64_t avra_rc_strict_enabled(void) {
+    return (int64_t)avra_rc_strict;
 }
 
 // ─── RC cycle detection (spec Axis 9.5) ─────────────────────────
@@ -385,7 +572,7 @@ void avra_rc_collect(void) {
             }
             hdr->type_tag = 0;
             rc_set_remove(ptr);
-            free((char*)ptr - RC_HEADER_SIZE);
+            rc_reclaim(ptr);
             freed++;
         }
     }
@@ -676,6 +863,38 @@ static void avra_print_ice_breadcrumb(void) {
         safe_write("\n");
     }
     safe_write("    please report (include these lines): https://github.com/tristanMatthias/forge-lang/issues\n");
+}
+
+// ─── AVRA_RC_STRICT foreign-release detector ────────────────────
+// Reached from the RC retain/release/should_free no-op paths when `ptr` is
+// NOT a live RC allocation. If it points into a freed-and-quarantined block
+// this is a use-after-free / double-free / stale-pointer release — the zm77
+// signature — so we abort, naming the offending context. Every other
+// non-live pointer these paths legitimately see (NULL is pre-filtered by the
+// callers; stack, text, foreign heap such as LLVM ValueRefs, bump-arena
+// interiors) is not in the quarantine set, so this returns quietly and the
+// historical no-op behaviour is preserved. Testing membership against blocks
+// we actually froze — rather than guessing from an address range — is what
+// makes strict mode false-positive-free on a clean suite.
+static void avra_rc_strict_check(const char* op, void* ptr) {
+    if (!ptr) return;
+    if (!rc_quarantine_contains_user(ptr)) return;   // not one of our freed blocks
+    safe_write("\nerror: AVRA_RC_STRICT: ");
+    safe_write(op);
+    safe_write(" received a pointer to freed RC memory\n  ptr = ");
+    safe_write_ptr(ptr);
+    safe_write("\n"
+        "  A stale/garbage pointer to an object the runtime already reclaimed\n"
+        "  reached a release path. This is the zm77 phantom-release class: in\n"
+        "  production it silently corrupts memory (a later alias frees a live\n"
+        "  object mid-use); strict mode makes it fatal HERE, at the first\n"
+        "  offending release, instead of a multi-session watchpoint hunt.\n");
+    avra_print_ice_breadcrumb();   // names the Avra phase / fn-trail / statement
+    // C-level backtrace: names the releasing runtime + generated frames.
+    void* frames[64];
+    int n = backtrace(frames, 64);
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);
+    abort();
 }
 
 static void avra_signal_handler(int sig, siginfo_t *si, void *context) {

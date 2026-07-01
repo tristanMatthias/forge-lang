@@ -231,6 +231,10 @@ BUILD MODES
 
 RUN MODES
   --run    <file.av>   Compile <file.av> with bs2, link, run. Prints stdout.
+  --rc-strict-suite [f] Run the spec suite under AVRA_RC_STRICT=1 (rcsf.3):
+                       poison-on-free + reuse quarantine + abort on release of
+                       already-freed RC memory. Validates the compiler's own
+                       RC discipline AND every test program's. Optional filter.
   --link-run <file.ll> Link a pre-emitted .ll into a binary and run it (no
                        recompile). Prints stdout. Used to execute the EXACT
                        artifact a prior `bs2 compile` produced.
@@ -410,6 +414,12 @@ ENVIRONMENT
                guard) on every compiled module; violations fail the build
                naming fn+slot. Always on during --build-bs2's self-compile
                integrity check.
+  AVRA_RC_STRICT=1  Runtime sibling of AVRA_VERIFY_RC (rcsf.3): poison freed
+               RC payloads (0xDD), quarantine them from reuse, and ABORT with
+               a backtrace when a release path receives a pointer to already-
+               freed RC memory (the zm77 phantom-release signature). Turns a
+               silent corruption into a loud, first-offense abort. Exercised
+               by --rc-strict-suite.
                Default: /opt/homebrew/opt/llvm
 
 EXAMPLES
@@ -1541,6 +1551,29 @@ run_fg() {
 
 mode_run() { run_fg "$1"; }
 
+# rcsf.3: run the spec suite under AVRA_RC_STRICT=1. Strict mode lives in
+# runtime.c, so BOTH bs2 (as it compiles + runs each test binary) AND the
+# test programs themselves execute under it — a release of a stale pointer to
+# reclaimed RC memory (the zm77 phantom-release class) aborts loudly with a
+# backtrace instead of silently corrupting memory. A clean run proves the
+# compiler's own RC discipline plus every test program's is misuse-free (the
+# "full suite green, no false positives" acceptance). Optional arg: a filename
+# substring filter, same as `bs2 test -f`.
+mode_rc_strict_suite() {
+  ensure_bs2
+  log "running the spec suite under AVRA_RC_STRICT=1 (poison-on-free + reuse quarantine + foreign-release abort)"
+  # `bs2 test` discovers test files and resolves @std relative to CWD, so it
+  # MUST run from the bootstrap dir — CI invokes this script from the repo
+  # root. Same `( cd "$BOOTSTRAP_DIR" && "$BS2" test )` form the seed-train's
+  # spec-suite check uses; without it every shard fails to resolve the test
+  # runner (`undefined variable run_test_suite`).
+  if [ -n "${1:-}" ]; then
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test -f "$1" )
+  else
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test )
+  fi
+}
+
 # Link a pre-emitted .ll into a binary and run it — WITHOUT recompiling
 # from source. Unlike --run (which always re-invokes `bs2 compile`), this
 # executes the EXACT artifact a prior `bs2 compile` already wrote, so a
@@ -1844,6 +1877,7 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
+    --rc-strict-suite)    mode_rc_strict_suite "$@" ;;
     --link-run)           mode_link_run "$@" ;;
     --check)              mode_check "$@" ;;
     --ll)                 mode_ll "$@" ;;
