@@ -269,11 +269,22 @@ export fn cache_publish(
 /// files — pay zero; only library-mode callers pay the llc cost,
 /// and only once per cache slot.
 export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
-    let ll = entry_ll_path(c, fp)
-    if avra_selfhost_file_exists(ll) == 0 { return "" }
+    // Require a COMPLETE slot, not merely unit.ll. This producer object is
+    // consumed by library-mode linking, so materialising it from a
+    // half-published slot (one cache_has would reject as a miss) would
+    // punch a hole in the very completeness gate this ticket adds — the
+    // build driver would rebuild the slot while a direct realobj consumer
+    // linked the incomplete one.
+    if !cache_has(c, fp) { return "" }
     let entry = entry_dir_for(c, fp)
     let real_o = entry + "/unit.realobj.o"
-    if avra_selfhost_file_exists(real_o) == 1 { return real_o }
+    // Trust an existing final only if it is NON-EMPTY. A 0-byte / partial
+    // real_o — e.g. a pre-atomic leftover from a killed direct-to-final
+    // llc, or external corruption — must not be linked: drop it and
+    // re-materialise atomically below.
+    if avra_file_size(real_o) > 0 { return real_o }
+    if avra_selfhost_file_exists(real_o) == 1 { let _ = avra_remove_file(real_o) }
+    let ll = entry_ll_path(c, fp)
     let llvm_prefix = llvm_prefix_dir()
     // kaux: materialise ATOMICALLY, mirroring cache_publish's discipline.
     // llc writes its object to a process-unique temp sibling; only a
@@ -299,7 +310,7 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
         // already-materialised final if a concurrent producer left one
         // (it too landed via this atomic path, so it is complete).
         let _ = avra_remove_file(tmp_o)
-        if avra_selfhost_file_exists(real_o) == 1 { return real_o }
+        if avra_file_size(real_o) > 0 { return real_o }
         return ""
     }
     real_o
