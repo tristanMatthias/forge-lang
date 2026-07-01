@@ -19,7 +19,7 @@ use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
 use @std.avrac.core.{ingest_program, program_from_store, reconstruct_program, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
 use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr, sexpr_at, Annotation}
 use @std.avrac.core.{expr_ref_id, stmt_ref_id, pat_ref_id, type_ref_id, noderef_tag}
-use @std.avrac.core.{MatchArm, expr_child_tags, wc_roundtrip_expr, wc_roundtrip_stmt}
+use @std.avrac.core.{MatchArm, FieldInit, expr_child_tags, wc_roundtrip_expr, wc_roundtrip_stmt}
 
 // The `NodeRef` peel helpers (`expr_ref_id` / `stmt_ref_id` / `pat_ref_id` /
 // `type_ref_id`) and `noderef_tag` are now exported from core/arena.av; they are
@@ -417,6 +417,48 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let stmts: List<SStmt> = [sstmt_at(Stmt.Expr(Expr.MatchExpr(Expr.Ident("x"), outer_arms)), 1, 1, "")]
         let store = ingest_program(stmts, "")
         render_stmt_list(program_from_store(store, "")) == render_stmt_list(stmts)
+    }
+}
+
+// Stage 2 (y5um.3): FieldInit — StructLit/With inits are now walked into the
+// arena via the same mechanism as MatchArm (a second entry in struct_list_helpers).
+// Each init contributes exactly one Expr child (its `value`; `name` is a scalar).
+spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
+    then "StructLit walks one Expr child per init; With is obj then overrides" {
+        let inits: List<FieldInit> = [
+            FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 1, 1, "") },
+            FieldInit { name: "b", value: sexpr_at(Expr.Number("2"), 1, 1, "") },
+        ]
+        let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 1, 1, "") }]
+        expr_child_tags(Expr.StructLit("P", inits)) == "EE"
+            && expr_child_tags(Expr.With(Expr.Ident("o"), ovr)) == "EE"
+    }
+    then "the arena records each init value as a real edge (children_of)" {
+        let inits: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("7"), 1, 1, "") }]
+        let store = new_node_store(build_line_index(""))
+        let root = store.ingest_expr(Expr.StructLit("P", inits), byte_span_none())
+        edge_tags(store.exprs.children_of(root)) == "E"
+    }
+    then "StructLit and With reconstruct faithfully (incl. empty)" {
+        let inits: List<FieldInit> = [
+            FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 2, 3, "") },
+            FieldInit { name: "b", value: sexpr_at(Expr.Ident("z"), 2, 7, "") },
+        ]
+        let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 4, 1, "") }]
+        let empty: List<FieldInit> = []
+        wc_roundtrip_expr(Expr.StructLit("Point", inits))
+            && wc_roundtrip_expr(Expr.With(Expr.Ident("o"), ovr))
+            && wc_roundtrip_expr(Expr.StructLit("E", empty))
+    }
+    then "FieldInit crossed with other walked structs round-trips (combinatorial)" {
+        // A struct-init value that is itself a walked struct — the arena walk must
+        // recurse from the FieldInit value into the inner MatchExpr / StructLit.
+        let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("1"), 2, 2, "") }
+        let m_inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(Expr.MatchExpr(Expr.Ident("y"), [arm]), 3, 3, "") }]
+        let inner: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 2, 2, "") }]
+        let s_ovr: List<FieldInit> = [FieldInit { name: "b", value: sexpr_at(Expr.StructLit("Q", inner), 3, 3, "") }]
+        wc_roundtrip_expr(Expr.StructLit("P", m_inits))              // struct-init value is a match
+            && wc_roundtrip_expr(Expr.With(Expr.Ident("o"), s_ovr))  // with-override value is a struct
     }
 }
 

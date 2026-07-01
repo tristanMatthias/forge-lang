@@ -429,6 +429,32 @@ export fn rebuild_match_arms(original: List<MatchArm>, run: List<SpannedChild>) 
     out
 }
 
+/// Flatten a `List<FieldInit>` into cross-type spanned children: each init's
+/// `value` (an Expr) at its SExpr wrapper's (line, col). The `name` is a scalar,
+/// not a node child — exactly one child per init. The FieldInit analogue of
+/// `match_arm_children_spanned`.
+export fn field_init_children_spanned(inits: List<FieldInit>) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    for fi in inits {
+        out.push(spanned_child(AnyNode.AnyExpr(fi.value.node), fi.value.line, fi.value.col))
+    }
+    out
+}
+
+/// Rebuild a `List<FieldInit>` from `run` (produced by
+/// `field_init_children_spanned`), taking each init's scalar `name` from
+/// `original` (shape) and its `value` + recovered span from `run`. Each init
+/// contributes exactly one child, so the run index IS the init index (unlike
+/// `rebuild_match_arms`, where the optional guard makes arity variable). A
+/// faithfully-ingested tree round-trips identically.
+export fn rebuild_field_inits(original: List<FieldInit>, run: List<SpannedChild>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    for (idx, fi) in original.enumerate() {
+        out.push(FieldInit { name: fi.name, value: respan_sexpr(run[idx]) })
+    }
+    out
+}
+
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
 /// re-resolve knows which entries to walk.

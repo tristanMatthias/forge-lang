@@ -153,7 +153,7 @@ enum FieldKind {
     // (produced by classify_field_crosstype, never classify_field_kind): a struct
     // spans multiple node kinds, so `children()`/`map()` leave it Scalar and only
     // all_children_spanned/with_children walk it, via hand-written per-struct
-    // extract+rebuild helpers dispatched by `struct` (see struct_list_*_fn).
+    // extract+rebuild helpers dispatched by `struct` (see struct_list_helpers).
     StructListOfSelf(struct: string),
 }
 
@@ -261,28 +261,28 @@ fn struct_of(k: FieldKind) -> string {
     }
 }
 
-/// Dispatch table: the @std helper that flattens `List<Struct>` into cross-type
-/// spanned children, keyed by the struct's short name. "" ⇒ the struct is not a
-/// registered walkable node-container (stays a Scalar field). This is the
-/// staging registry — one entry (+ its rebuild sibling + the two @std helpers)
-/// per struct type; mirrors the `anynode_ctor` / `spanned_one_wrapper_fn`
-/// name-dispatch style, not a content heuristic. Keying on the short name is safe
-/// because `classify_field_crosstype` only reaches this table for an element in
-/// the SAME MODULE as the derived enum (its same-module gate) — a foreign type
-/// sharing the short name never routes here.
-@comptime
-fn struct_list_spanned_fn(struct_short: string) -> string {
-    if struct_short == "MatchArm" { return "match_arm_children_spanned" }
-    ""
-}
+/// The @std helper pair for one registered struct-list: `spanned` flattens
+/// `List<Struct>` into cross-type spanned children, `rebuild` inverts it (Strategy
+/// A — shape from the original bound list, values from the run).
+type StructListHelpers = { spanned: string, rebuild: string }
 
-/// The rebuild sibling of `struct_list_spanned_fn`: the @std helper that inverts
-/// the flattened run back into `List<Struct>` (Strategy A — shape from the
-/// original bound list, values from the run). "" ⇒ not registered.
+/// Dispatch table: the extract + rebuild helpers for a `List<Struct>` whose
+/// element is a registered walkable node-container, keyed by the struct's short
+/// name. `spanned == ""` ⇒ not registered (the field stays Scalar). One entry per
+/// struct type (+ its two @std helpers); mirrors the `anynode_ctor` /
+/// `spanned_one_wrapper_fn` name-dispatch style, not a content heuristic. Keying
+/// on the short name is safe because `classify_field_crosstype` only reaches this
+/// table for an element in the SAME MODULE as the derived enum (its same-module
+/// gate) — a foreign type sharing the short name never routes here.
 @comptime
-fn struct_list_rebuild_fn(struct_short: string) -> string {
-    if struct_short == "MatchArm" { return "rebuild_match_arms" }
-    ""
+fn struct_list_helpers(struct_short: string) -> StructListHelpers {
+    if struct_short == "MatchArm" {
+        return StructListHelpers { spanned: "match_arm_children_spanned", rebuild: "rebuild_match_arms" }
+    }
+    if struct_short == "FieldInit" {
+        return StructListHelpers { spanned: "field_init_children_spanned", rebuild: "rebuild_field_inits" }
+    }
+    StructListHelpers { spanned: "", rebuild: "" }
 }
 
 /// True for the nullable single-child kinds — contribute a 0-or-1
@@ -720,7 +720,7 @@ fn classify_field_crosstype(vt: ValueType, parent_name: string, ctx: ResolverCtx
     // `match_arm_children_spanned` / `rebuild_match_arms`.
     let elem_name = self_type_name(list_elem_or_unknown(vt))
     let elem_struct = type_short_name(elem_name)
-    if struct_list_spanned_fn(elem_struct) != "" && elem_name == "${module_prefix(parent_name)}${elem_struct}" {
+    if struct_list_helpers(elem_struct).spanned != "" && elem_name == "${module_prefix(parent_name)}${elem_struct}" {
         return CrossBinding { binding_name: "", target: elem_struct, kind: FieldKind.StructListOfSelf(elem_struct) }
     }
     CrossBinding { binding_name: "", target: "", kind: FieldKind.Scalar }
@@ -823,7 +823,7 @@ fn spanned_list_child(b: CrossBinding) -> Expr {
     if b.kind is .StructListOfSelf {
         // A registered struct-list: its hand-written extract helper flattens the
         // element list into cross-type spanned children (field order per element).
-        return helper_call(struct_list_spanned_fn(struct_of(b.kind)), Expr.Ident(b.binding_name))
+        return helper_call(struct_list_helpers(struct_of(b.kind)).spanned, Expr.Ident(b.binding_name))
     }
     if b.kind is .WrapperListOfSelf {
         return helper_call(box_wrapper_list_spanned_fn(b.target), Expr.Ident(b.binding_name))
@@ -1123,7 +1123,7 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
             // element count + per-element optional presence) plus the flat run
             // (node values + recovered spans).
             let reb_args: List<SExpr> = [sexpr_dummy(Expr.Ident(names[i])), sexpr_dummy(wc_run_call(before, after))]
-            args.push(sexpr_dummy(Expr.Call(Expr.Ident(struct_list_rebuild_fn(struct_of(b.kind))), reb_args)))
+            args.push(sexpr_dummy(Expr.Call(Expr.Ident(struct_list_helpers(struct_of(b.kind)).rebuild), reb_args)))
             seen_var = true
         } else {
             // The one variable-arity slot (list / optional).
