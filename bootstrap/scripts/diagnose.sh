@@ -1872,7 +1872,7 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
-    --rc-strict-suite)    mode_rc_strict_suite "$2" ;;
+    --rc-strict-suite)    mode_rc_strict_suite "$@" ;;
     --link-run)           mode_link_run "$@" ;;
     --check)              mode_check "$@" ;;
     --ll)                 mode_ll "$@" ;;
