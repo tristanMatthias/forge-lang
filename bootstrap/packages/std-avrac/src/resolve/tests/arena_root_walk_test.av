@@ -12,11 +12,15 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 
+// Captures the compiler's stdout+stderr AND its exit status (appended as
+// `__AVRA_STATUS:<code>`) so a clean-compile assertion can require success
+// rather than merely the absence of error text — a crash that prints nothing
+// would otherwise slip past a substring-only check.
 fn compile_capture(source: string) -> string {
     let path = "/tmp/avra_arena_root_walk_test.av"
     let escaped = source.replace("'", "'\\''")
     avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
-    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1; echo __AVRA_STATUS:$?")
 }
 
 spec "y5um.1: resolve_program root walk reads roots from the arena" {
@@ -28,7 +32,7 @@ spec "y5um.1: resolve_program root walk reads roots from the arena" {
             "const A: int = 1\n" +
             "fn main() -> int { helper() }\n" +
             "fn helper() -> int { A }\n")
-        !out.contains("error") && !out.contains("undefined")
+        out.contains("__AVRA_STATUS:0") && !out.contains("error") && !out.contains("undefined")
     }
 
     then "an undefined reference on a top-level statement is caught" {
