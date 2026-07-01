@@ -47,12 +47,18 @@ spec "378k: cache_has rejects 0-byte unit.ll" {
         // requires non-zero size.
         !cache_has(c, fp)
     }
-    then "non-empty unit.ll: cache_has returns true" {
+    then "non-empty unit.ll (complete slot): cache_has returns true" {
         let c = mk_cache("good")
         let fp = mk_fp("2222222222222222222222222222222222222222222222222222222222222222")
         let dir = entry_dir_for(c, fp)
         let _ = avra_mkdir_p(dir)
         let _ = avra_selfhost_write_file(dir + "/unit.ll", "; mock ll content\n")
+        // kaux: cache_has now also requires metadata.bin (slot completeness),
+        // so write it too — this exercises the non-empty-unit.ll HIT within a
+        // COMPLETE slot, not a half-published one. (The half-published case —
+        // unit.ll present but metadata.bin absent — is covered in
+        // cache_slot_integrity_test.av.)
+        let _ = avra_selfhost_write_file(dir + "/metadata.bin", "meta\n")
         cache_has(c, fp)
     }
 }

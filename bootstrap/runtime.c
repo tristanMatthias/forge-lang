@@ -1466,6 +1466,16 @@ int64_t avra_rename(const char* src, const char* dst) {
     return rename(src, dst) == 0 ? 1 : 0;
 }
 
+// This process's PID. Callers build a process-unique temp path
+// (`<final>.tmp.<pid>`) to materialise an artifact then avra_rename it
+// onto the final path — so a killed/OOM'd writer leaves only the temp,
+// never a truncated final that a later cache HIT would serve (kaux).
+// The test runner parallelises at the PROCESS level, so PID alone makes
+// concurrent producers of the same slot land on distinct temps.
+int64_t avra_getpid(void) {
+    return (int64_t)getpid();
+}
+
 // Remove a file. Returns 1 on success or when the file is already
 // absent, 0 on failure for any other reason. The cache GC needs
 // this to evict stale entries.

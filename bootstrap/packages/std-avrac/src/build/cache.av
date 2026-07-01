@@ -26,6 +26,7 @@ use core.{
     avra_is_dir,
     avra_shell_exec_status,
     avra_file_size,
+    avra_getpid,
 }
 use build.fingerprint.{Fingerprint}
 use build.link.{llvm_prefix_dir}
@@ -154,7 +155,17 @@ export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
 export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
     let ll_path = entry_ll_path(c, fp)
     if avra_selfhost_file_exists(ll_path) == 0 { return false }
-    avra_file_size(ll_path) > 0
+    if avra_file_size(ll_path) <= 0 { return false }
+    // kaux: validate slot COMPLETENESS, not just the unit.ll sentinel.
+    // cache_publish stages unit.ll AND metadata.bin then renames the
+    // staging dir as one unit, so a complete slot always carries both;
+    // a slot with unit.ll but no metadata.bin is half-published or
+    // externally corrupted (an interrupted publish, a partial copy).
+    // Treat it as a miss so the caller rebuilds+republishes atomically
+    // rather than restoring a partial producer slot. Existence-only
+    // (not a size gate): an empty-metadata unit legitimately stages a
+    // 0-byte blob, and the atomic rename guarantees the file is whole.
+    avra_selfhost_file_exists(entry_metadata_path(c, fp)) == 1
 }
 
 /// True when this cache has a published test binary for `fp`. Probes
@@ -164,7 +175,16 @@ export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
 /// cache kind keys off its own sentinel so a build entry never
 /// satisfies a test lookup or vice versa.
 export fn cache_has_test(c: Cache, fp: Fingerprint) -> bool {
-    avra_selfhost_file_exists(entry_bin_path(c, fp)) == 1
+    let bin_path = entry_bin_path(c, fp)
+    if avra_selfhost_file_exists(bin_path) == 0 { return false }
+    // kaux: a 0-byte binary is a killed-mid-cp/link partial — reject it
+    // (symmetric to cache_has's size gate on unit.ll). cache_has_test
+    // previously trusted mere existence, so a truncated executable could
+    // be served as a HIT and forwarded to avra_process_forward.
+    if avra_file_size(bin_path) <= 0 { return false }
+    // kaux: manifest.txt is staged and renamed atomically alongside the
+    // binary, so its absence marks a half-published/corrupted test slot.
+    avra_selfhost_file_exists(entry_manifest_path(c, fp)) == 1
 }
 
 /// Outcome of a publish attempt. The build driver inspects this to
@@ -265,8 +285,31 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     let real_o = entry + "/unit.realobj.o"
     if avra_selfhost_file_exists(real_o) == 1 { return real_o }
     let llvm_prefix = llvm_prefix_dir()
-    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${real_o}' 2>/dev/null")
-    if rc != 0 { return "" }
+    // kaux: materialise ATOMICALLY, mirroring cache_publish's discipline.
+    // llc writes its object to a process-unique temp sibling; only a
+    // complete, non-empty object is renamed onto the canonical path. A
+    // killed/OOM'd llc leaves the temp (GC'd here), never a truncated
+    // unit.realobj.o that a later cache HIT would link as a corrupt
+    // producer object — the "half-published slot served" bug this ticket
+    // closes. Unlike unit.ll/metadata.bin (written via the pid-atomic
+    // avra_selfhost_write_file), llc writes the object file itself, so
+    // the temp+rename must live here. rename is atomic on the same fs;
+    // the per-pid temp keeps concurrent producers (process-level
+    // parallelism) from clobbering each other's staging.
+    let tmp_o = real_o + ".tmp." + string(avra_getpid())
+    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${tmp_o}' 2>/dev/null")
+    if rc != 0 || avra_file_size(tmp_o) <= 0 {
+        let _ = avra_remove_file(tmp_o)
+        return ""
+    }
+    if avra_rename(tmp_o, real_o) == 0 {
+        // Lost a publish race (a concurrent producer renamed first) or a
+        // filesystem error. Drop our temp; trust an already-materialised
+        // final (it too landed via this atomic path).
+        let _ = avra_remove_file(tmp_o)
+        if avra_selfhost_file_exists(real_o) == 1 { return real_o }
+        return ""
+    }
     real_o
 }
 
