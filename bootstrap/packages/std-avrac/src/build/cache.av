@@ -155,7 +155,8 @@ export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
 /// stages a 0-byte metadata.bin, and the atomic rename guarantees the
 /// file is whole.
 fn slot_complete(primary: string, companion: string) -> bool {
-    if avra_selfhost_file_exists(primary) == 0 { return false }
+    // avra_file_size returns -1 for a missing file, so `<= 0` rejects
+    // both absent and 0-byte in a single stat.
     if avra_file_size(primary) <= 0 { return false }
     avra_selfhost_file_exists(companion) == 1
 }
@@ -292,9 +293,11 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
         return ""
     }
     if avra_rename(tmp_o, real_o) == 0 {
-        // Lost a publish race (a concurrent producer renamed first) or a
-        // filesystem error. Drop our temp; trust an already-materialised
-        // final (it too landed via this atomic path).
+        // A genuine filesystem error (rename atomically REPLACES an
+        // existing target, so a concurrent producer that renamed first
+        // does not fail us here). Drop our temp; still salvage an
+        // already-materialised final if a concurrent producer left one
+        // (it too landed via this atomic path, so it is complete).
         let _ = avra_remove_file(tmp_o)
         if avra_selfhost_file_exists(real_o) == 1 { return real_o }
         return ""
