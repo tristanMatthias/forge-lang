@@ -1367,6 +1367,14 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     if !args.json {
         eprintln("[per-module] llc'ing ${string(llc_cmds.length)} units to .o (jobs=${string(jobs_n)})")
     }
+    // rrio: sweep stale `.o.tmp.*` orphans left by a PRIOR build that was
+    // hard-killed (OOM/SIGKILL) before atomic_obj_llc_cmd's own `|| rm`
+    // cleanup could run. They're correctness-neutral — a `.o.tmp.<pid>`
+    // never matches ar's `*.o` glob — but this tree runs under real OOM
+    // pressure, so don't let them accumulate. Safe here: it runs before the
+    // pool creates THIS build's fresh temps, and a package's per-module
+    // out_dir has no concurrent producer (they would already collide on <sl>.o).
+    let _ = avra_shell_exec("rm -f '${out_dir}'/*.o.tmp.* 2>/dev/null")
     let llc_rc = pool_run(llc_cmds, jobs_n)
     if llc_rc != 0 {
         eprintln("[per-module] llc failed for one or more units (rc=${string(llc_rc)}) — see ${out_dir}/<unit>.llc.log")
