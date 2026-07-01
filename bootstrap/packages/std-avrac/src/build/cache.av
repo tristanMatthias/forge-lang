@@ -26,6 +26,7 @@ use core.{
     avra_is_dir,
     avra_shell_exec_status,
     avra_file_size,
+    avra_getpid,
 }
 use build.fingerprint.{Fingerprint}
 use build.link.{llvm_prefix_dir}
@@ -136,35 +137,44 @@ export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/manifest.txt"
 }
 
-/// True when this cache has a complete entry for `fp`. We probe the
-/// `.ll` file as the existence sentinel — cache writes use atomic
-/// rename, so the entry directory either contains everything we
-/// need or doesn't exist at all. Probing `unit.ll` (rather than the
-/// directory itself) avoids any race where the directory is created
-/// but `unit.ll` was not yet written.
+/// True when a cache slot is COMPLETE: its primary artifact exists and
+/// is non-empty AND its companion artifact is present. cache_publish
+/// stages the pair then renames the staging dir as one unit, so a
+/// complete entry always carries both — a slot missing either is
+/// half-published or externally corrupted (an interrupted publish, a
+/// partial copy) and must be treated as a miss so the caller
+/// rebuilds+republishes rather than restoring a partial producer slot
+/// (kaux). Probing the files (not the directory) also avoids any race
+/// where the entry dir exists but its contents were not yet renamed in.
 ///
-/// 378k defense: ALSO require the .ll to be non-empty. A 0-byte
-/// cached unit.ll has been observed in the wild — most likely from
-/// a killed-mid-write or disk-full event that left the file behind
-/// despite cache_publish's empty-content guard. Returning true for
-/// a 0-byte entry caused mysterious "missing _main" link errors
-/// (consumers wrote the 0 bytes back to dest_ll and clang found
-/// nothing to link). Size > 0 is the same test the publish-side
-/// guard uses; this matches the read side to it.
-export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
-    let ll_path = entry_ll_path(c, fp)
-    if avra_selfhost_file_exists(ll_path) == 0 { return false }
-    avra_file_size(ll_path) > 0
+/// The primary is size-gated: a 0-byte unit.ll/unit.bin is a
+/// killed-mid-write / disk-full partial (the 378k class — a 0-byte
+/// unit.ll caused mysterious "missing _main" link errors when consumers
+/// wrote the empty bytes back and clang found nothing to link). The
+/// companion is existence-only: an empty-metadata unit legitimately
+/// stages a 0-byte metadata.bin, and the atomic rename guarantees the
+/// file is whole.
+fn slot_complete(primary: string, companion: string) -> bool {
+    // avra_file_size returns -1 for a missing file, so `<= 0` rejects
+    // both absent and 0-byte in a single stat.
+    if avra_file_size(primary) <= 0 { return false }
+    avra_selfhost_file_exists(companion) == 1
 }
 
-/// True when this cache has a published test binary for `fp`. Probes
-/// the `.bin` slot as the sentinel — symmetric to `cache_has` but
-/// for the test-action output. Build units publish .ll/.o/.metadata
-/// without a binary; test units publish .bin without .ll/.o. Each
-/// cache kind keys off its own sentinel so a build entry never
-/// satisfies a test lookup or vice versa.
+/// True when this cache has a complete BUILD entry for `fp`: unit.ll
+/// (present + non-empty) paired with metadata.bin. See slot_complete.
+export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
+    slot_complete(entry_ll_path(c, fp), entry_metadata_path(c, fp))
+}
+
+/// True when this cache has a complete TEST entry for `fp`: unit.bin
+/// (present + non-empty) paired with manifest.txt. Build units publish
+/// unit.ll/metadata.bin without a binary; test units publish
+/// unit.bin/manifest.txt without a .ll — each kind keys off its own
+/// primary so a build entry never satisfies a test lookup or vice
+/// versa. See slot_complete.
 export fn cache_has_test(c: Cache, fp: Fingerprint) -> bool {
-    avra_selfhost_file_exists(entry_bin_path(c, fp)) == 1
+    slot_complete(entry_bin_path(c, fp), entry_manifest_path(c, fp))
 }
 
 /// Outcome of a publish attempt. The build driver inspects this to
@@ -259,14 +269,50 @@ export fn cache_publish(
 /// files — pay zero; only library-mode callers pay the llc cost,
 /// and only once per cache slot.
 export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
-    let ll = entry_ll_path(c, fp)
-    if avra_selfhost_file_exists(ll) == 0 { return "" }
+    // Require a COMPLETE slot, not merely unit.ll. This producer object is
+    // consumed by library-mode linking, so materialising it from a
+    // half-published slot (one cache_has would reject as a miss) would
+    // punch a hole in the very completeness gate this ticket adds — the
+    // build driver would rebuild the slot while a direct realobj consumer
+    // linked the incomplete one.
+    if !cache_has(c, fp) { return "" }
     let entry = entry_dir_for(c, fp)
     let real_o = entry + "/unit.realobj.o"
-    if avra_selfhost_file_exists(real_o) == 1 { return real_o }
+    // Trust an existing final only if it is NON-EMPTY. A 0-byte / partial
+    // real_o — e.g. a pre-atomic leftover from a killed direct-to-final
+    // llc, or external corruption — must not be linked: drop it and
+    // re-materialise atomically below.
+    if avra_file_size(real_o) > 0 { return real_o }
+    if avra_selfhost_file_exists(real_o) == 1 { let _ = avra_remove_file(real_o) }
+    let ll = entry_ll_path(c, fp)
     let llvm_prefix = llvm_prefix_dir()
-    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${real_o}' 2>/dev/null")
-    if rc != 0 { return "" }
+    // kaux: materialise ATOMICALLY, mirroring cache_publish's discipline.
+    // llc writes its object to a process-unique temp sibling; only a
+    // complete, non-empty object is renamed onto the canonical path. A
+    // killed/OOM'd llc leaves the temp (GC'd here), never a truncated
+    // unit.realobj.o that a later cache HIT would link as a corrupt
+    // producer object — the "half-published slot served" bug this ticket
+    // closes. Unlike unit.ll/metadata.bin (written via the pid-atomic
+    // avra_selfhost_write_file), llc writes the object file itself, so
+    // the temp+rename must live here. rename is atomic on the same fs;
+    // the per-pid temp keeps concurrent producers (process-level
+    // parallelism) from clobbering each other's staging.
+    let tmp_o = real_o + ".tmp." + string(avra_getpid())
+    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${tmp_o}' 2>/dev/null")
+    if rc != 0 || avra_file_size(tmp_o) <= 0 {
+        let _ = avra_remove_file(tmp_o)
+        return ""
+    }
+    if avra_rename(tmp_o, real_o) == 0 {
+        // A genuine filesystem error (rename atomically REPLACES an
+        // existing target, so a concurrent producer that renamed first
+        // does not fail us here). Drop our temp; still salvage an
+        // already-materialised final if a concurrent producer left one
+        // (it too landed via this atomic path, so it is complete).
+        let _ = avra_remove_file(tmp_o)
+        if avra_file_size(real_o) > 0 { return real_o }
+        return ""
+    }
     real_o
 }
 

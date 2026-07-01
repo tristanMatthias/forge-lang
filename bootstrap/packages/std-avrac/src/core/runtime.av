@@ -90,6 +90,11 @@ extern fn avra_file_size(path: string) -> int
 extern fn avra_mkdir_p(path: string) -> int
 extern fn avra_rename(src: string, dst: string) -> int
 extern fn avra_remove_file(path: string) -> int
+/// This process's PID. Used to build a process-unique temp path
+/// (`<final>.tmp.<pid>`) for atomic materialise-then-rename, so a killed
+/// writer never leaves a truncated final artifact a later cache HIT
+/// would serve (kaux). The runner parallelises at the process level.
+extern fn avra_getpid() -> int
 /// Recursively delete a directory tree (`rm -rf <path>`), symlink-safe.
 /// Returns 1 on success or when the path is already gone, 0 on failure.
 extern fn avra_remove_tree(path: string) -> int

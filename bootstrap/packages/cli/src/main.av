@@ -95,7 +95,7 @@ use @std.avrac.build.{
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
-    cache_bin_path_for,
+    cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary,
     package_source_fingerprint,
 }
@@ -1105,24 +1105,25 @@ fn collect_workspace_lib_objs(project_dir: string) -> string {
     let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
     if listing == "" { return "" }
     let pkg_dirs = split_by_newline(listing)
-    let llvm_pfx = resolve_llvm_prefix()
     mut keep: List<string> = []
     mut i = 0
     while i < pkg_dirs.length {
         let dir = pkg_dirs[i]
         if dir != "" && avra_selfhost_file_exists("${dir}avra.toml") != 0 {
             let fp = sidecar_fp_for(dir)
-            mut o = ""
-            if fp != "" {
-                let entry = "${dir}build/cache/${fp}"
-                o = "${entry}/unit.realobj.o"
-                if avra_selfhost_file_exists(o) == 0 {
-                    // Realobjs are materialised lazily from the slot's
-                    // unit.ll on first consume — which is now, here.
-                    avra_shell_exec("'${llvm_pfx}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${entry}/unit.ll' -o '${o}' 2>/dev/null")
-                }
+            // kaux: single, atomic materialisation path. This used to inline
+            // its own direct-to-final `llc -o unit.realobj.o`, a duplicate of
+            // cache_entry_realobj_path that shared its half-published-slot bug
+            // (a killed llc left a truncated final object a later HIT linked).
+            // cache_entry_realobj_path now llc's to a per-pid temp and renames
+            // into place, so existence implies completeness. Returns "" when
+            // the slot's unit.ll is absent or llc fails.
+            let o = if fp != "" {
+                cache_entry_realobj_path(cache_for(dir), Fingerprint { hex: fp })
+            } else {
+                ""
             }
-            if fp == "" || avra_selfhost_file_exists(o) == 0 {
+            if fp == "" || o == "" {
                 // ALL or NOTHING: a partial object set is worse than none.
                 // Shards resolve every @std/* package via metadata, so a
                 // missing producer .o surfaces later as undefined symbols
