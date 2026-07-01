@@ -398,6 +398,26 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         expr_child_tags(Expr.MatchExpr(Expr.Ident("x"), none_arms)) == "E"
             && wc_roundtrip_expr(Expr.MatchExpr(Expr.Ident("x"), none_arms))
     }
+    then "a match nested in a match-arm body round-trips (combinatorial)" {
+        // A guarded outer arm whose body is another MatchExpr — the arm-child walk
+        // must recurse through the inner match's own arm children.
+        let inner_arm = MatchArm { pattern: Pattern.LitInt(1), guard: null, body: sexpr_at(Expr.Number("11"), 2, 5, "") }
+        let inner_arms: List<MatchArm> = [inner_arm]
+        let inner = Expr.MatchExpr(Expr.Ident("y"), inner_arms)
+        let outer_arm = MatchArm { pattern: Pattern.Wildcard, guard: sexpr_at(Expr.Ident("g"), 1, 1, ""), body: sexpr_at(inner, 3, 3, "") }
+        let outer_arms: List<MatchArm> = [outer_arm]
+        wc_roundtrip_expr(Expr.MatchExpr(Expr.Ident("x"), outer_arms))
+    }
+    then "ingest → program_from_store is faithful for a nested-match program" {
+        let inner_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("11"), 2, 5, "") }
+        let inner_arms: List<MatchArm> = [inner_arm]
+        let inner = Expr.MatchExpr(Expr.Ident("y"), inner_arms)
+        let outer_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(inner, 3, 3, "") }
+        let outer_arms: List<MatchArm> = [outer_arm]
+        let stmts: List<SStmt> = [sstmt_at(Stmt.Expr(Expr.MatchExpr(Expr.Ident("x"), outer_arms)), 1, 1, "")]
+        let store = ingest_program(stmts, "")
+        render_stmt_list(program_from_store(store, "")) == render_stmt_list(stmts)
+    }
 }
 
 // ── A2: real spans for WRAPPED nested nodes (spine §14.2) ──
