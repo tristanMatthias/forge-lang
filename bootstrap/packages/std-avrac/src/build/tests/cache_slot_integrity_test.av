@@ -22,7 +22,7 @@ use @std.avrac.build.{
     entry_metadata_path, entry_bin_path, entry_manifest_path,
 }
 use @std.avrac.build.fingerprint.{Fingerprint}
-use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_selfhost_file_exists, avra_shell_exec}
+use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_selfhost_file_exists, avra_file_size, avra_shell_exec}
 
 fn mk_fp(hex: string) -> Fingerprint {
     Fingerprint { hex: hex }
@@ -130,6 +130,19 @@ spec "kaux: cache_entry_realobj_path is atomic and slot-guarded" {
         let c = mk_cache("realobj_no_ll")
         let fp = mk_fp("3000000000000000000000000000000000000000000000000000000000000000")
         cache_entry_realobj_path(c, fp) == ""
+    }
+    then "a valid unit.ll materialises the object at the canonical path" {
+        // Happy path: llc lowers a minimal valid module; the object must
+        // land at the canonical unit.realobj.o (via temp → rename), be
+        // returned as that path, and be non-empty. Proves the atomic
+        // materialise-then-rename works end to end, not just its guards.
+        let c = mk_cache("realobj_ok")
+        let fp = mk_fp("3300000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "define i32 @kaux_probe() {\nentry:\n  ret i32 0\n}\n")
+        let real_o = dir + "/unit.realobj.o"
+        let result = cache_entry_realobj_path(c, fp)
+        result == real_o && avra_selfhost_file_exists(real_o) == 1 && avra_file_size(real_o) > 0
     }
     then "a pre-existing unit.realobj.o is returned as-is (trust path)" {
         // The early-return path: an already-materialised object landed via
