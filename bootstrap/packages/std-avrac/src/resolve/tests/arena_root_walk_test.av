@@ -1,0 +1,54 @@
+// WHY: `resolve_program` walks its top-level statements by reading each root
+// node from a `NodeStore` by `StmtId` (the first consumer of the id-arena)
+// rather than indexing the boxed `SStmt` list directly. These specs guard the
+// two properties that make that walk byte-identical to the old list index:
+//   1. every root is visited, in source order, with full mutual visibility
+//      (a broken walk would drop a root or reorder, breaking forward refs);
+//   2. the per-root source position is still threaded from the boxed wrapper
+//      (the arena fetch supplies the NODE, but line/col/file come from the
+//      `SStmt`), so a top-level diagnostic keeps its real caret.
+// The selfhost fixed point + diff-test prove IR equality on clean input; these
+// specs are the error-path guard that clean compiles never exercise.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+// Captures the compiler's stdout+stderr AND its exit status (appended as
+// `__AVRA_STATUS:<code>`) so a clean-compile assertion can require success
+// rather than merely the absence of error text — a crash that prints nothing
+// would otherwise slip past a substring-only check.
+fn compile_capture(source: string) -> string {
+    let path = "/tmp/avra_arena_root_walk_test.av"
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1; echo __AVRA_STATUS:$?")
+}
+
+spec "y5um.1: resolve_program root walk reads roots from the arena" {
+    then "every top-level root is visited with full mutual visibility" {
+        // `main` (declared first) forward-refs `helper` (declared after) and
+        // `helper` reads `A` (declared before both). A dropped or reordered
+        // root would break one of these references.
+        let out = compile_capture(
+            "const A: int = 1\n" +
+            "fn main() -> int { helper() }\n" +
+            "fn helper() -> int { A }\n")
+        out.contains("__AVRA_STATUS:0") && !out.contains("error") && !out.contains("undefined")
+    }
+
+    then "an undefined reference on a top-level statement is caught" {
+        let out = compile_capture(
+            "fn main() -> int { 0 }\n" +
+            "const BAD: int = missing_name\n")
+        out.contains("undefined variable") && out.contains("missing_name")
+    }
+
+    then "a top-level diagnostic keeps the wrapper's source position" {
+        // `missing_name` sits on line 2, column 1. The node is fetched from the
+        // arena but its (line, col) must still come from the `SStmt` wrapper —
+        // if the walk lost the wrapper position the caret would move.
+        let out = compile_capture(
+            "fn main() -> int { 0 }\n" +
+            "const BAD: int = missing_name\n")
+        out.contains("(line 2)") && out.contains(":2:1")
+    }
+}
