@@ -30,7 +30,7 @@
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
 use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, exit, avra_char_from_hex}
-use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_remove_tree, avra_dir_size, avra_datetime_now, avra_str_ends_with}
+use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_remove_tree, avra_dir_size, avra_datetime_now, avra_str_ends_with, avra_getpid}
 
 // Convenience aliases so handler bodies stay readable.
 fn file_exists(path: string) -> int { avra_selfhost_file_exists(path) }
@@ -96,7 +96,7 @@ use @std.avrac.build.{
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
-    CompileTarget, build_binary,
+    CompileTarget, build_binary, atomic_obj_llc_cmd,
     package_source_fingerprint,
 }
 use @std.crypto.{sha256_hex, sha256_file}
@@ -1358,12 +1358,23 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
                 continue
             }
         }
-        llc_cmds.push("${llc_bin} -O0 -relocation-model=pic -filetype=obj '${ll}' -o '${o}' > '${out_dir}/${sl}.llc.log' 2>&1")
+        // rrio: materialise the .o ATOMICALLY (llc → per-pid temp → rename),
+        // so a killed/OOM'd llc can't leave a truncated `${o}` that the
+        // mtime-freshness skip above would reuse as complete on the next run.
+        llc_cmds.push(atomic_obj_llc_cmd(llc_bin, "-O0", ll, o, "${out_dir}/${sl}.llc.log", avra_getpid()))
         k = k + 1
     }
     if !args.json {
         eprintln("[per-module] llc'ing ${string(llc_cmds.length)} units to .o (jobs=${string(jobs_n)})")
     }
+    // rrio: sweep stale `.o.tmp.*` orphans left by a PRIOR build that was
+    // hard-killed (OOM/SIGKILL) before atomic_obj_llc_cmd's own `|| rm`
+    // cleanup could run. They're correctness-neutral — a `.o.tmp.<pid>`
+    // never matches ar's `*.o` glob — but this tree runs under real OOM
+    // pressure, so don't let them accumulate. Safe here: it runs before the
+    // pool creates THIS build's fresh temps, and a package's per-module
+    // out_dir has no concurrent producer (they would already collide on <sl>.o).
+    let _ = avra_shell_exec("rm -f '${out_dir}'/*.o.tmp.* 2>/dev/null")
     let llc_rc = pool_run(llc_cmds, jobs_n)
     if llc_rc != 0 {
         eprintln("[per-module] llc failed for one or more units (rc=${string(llc_rc)}) — see ${out_dir}/<unit>.llc.log")
