@@ -378,6 +378,57 @@ export fn wc_run(scs: List<SpannedChild>, before: int, after: int) -> List<Spann
     wc_slice(scs, before, scs.length - after)
 }
 
+// ── Struct-embedded child helpers (y5um.3 / spine §14.1) ──
+//
+// A `MatchArm` is a plain struct holding node children the derive walker can't
+// reach through its Self/wrapper-of-Self classification (a bare `Pattern`, an
+// optional `SExpr` guard, and an `SExpr` body). These hand-written extract +
+// rebuild helpers teach the arena to cover them: `match_arm_children_spanned`
+// flattens the arm list into the cross-type child run (in field order: pattern,
+// guard?, body — the same order the reconstruct consumes), and
+// `rebuild_match_arms` inverts it. The rebuild takes the ORIGINAL arm list for
+// SHAPE (arm count + per-arm guard presence — the flat run has no boundary
+// marker, and guard optionality makes per-arm arity variable) and pulls each
+// node VALUE + span from the run, mirroring how reconstruct already carries a
+// node's un-walked struct fields through from the stored node.
+
+/// Flatten a `List<MatchArm>` into cross-type spanned children, per arm in field
+/// order: the bare `pattern` (position 0 ⇒ span_none), the 0-or-1 `guard` at its
+/// SExpr wrapper's (line, col), then the `body` at its wrapper's (line, col).
+export fn match_arm_children_spanned(arms: List<MatchArm>) -> List<SpannedChild> {
+    mut out: List<SpannedChild> = []
+    for arm in arms {
+        out.push(spanned_child(AnyNode.AnyPat(arm.pattern), 0, 0))
+        if arm.guard != none {
+            out.push(spanned_child(AnyNode.AnyExpr(arm.guard!.node), arm.guard!.line, arm.guard!.col))
+        }
+        out.push(spanned_child(AnyNode.AnyExpr(arm.body.node), arm.body.line, arm.body.col))
+    }
+    out
+}
+
+/// Rebuild a `List<MatchArm>` from `run` (the flattened child slice produced by
+/// `match_arm_children_spanned`), using `original` only for shape: each arm's
+/// guard-presence and the arm count. Values + spans come from `run`, consumed in
+/// the same field order. A faithfully-ingested tree round-trips identically.
+export fn rebuild_match_arms(original: List<MatchArm>, run: List<SpannedChild>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    for arm in original {
+        let pattern = unspan_pat(run[i])
+        i = i + 1
+        mut guard: SExpr? = null
+        if arm.guard != none {
+            guard = respan_sexpr(run[i])
+            i = i + 1
+        }
+        let body = respan_sexpr(run[i])
+        i = i + 1
+        out.push(MatchArm { pattern, guard, body })
+    }
+    out
+}
+
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
 /// pass calls this after invoking a macro so the post-expand partial
 /// re-resolve knows which entries to walk.

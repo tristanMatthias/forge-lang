@@ -148,6 +148,13 @@ enum FieldKind {
     // *_opt runtime helpers.
     OptionalDirectSelf,
     OptionalWrapperOfSelf(wrapper: string),
+    // A `List<S>` where `S` is a plain struct that embeds node children the
+    // Self/wrapper classification can't reach (e.g. `MatchArm`). CROSS-TYPE ONLY
+    // (produced by classify_field_crosstype, never classify_field_kind): a struct
+    // spans multiple node kinds, so `children()`/`map()` leave it Scalar and only
+    // all_children_spanned/with_children walk it, via hand-written per-struct
+    // extract+rebuild helpers dispatched by `struct` (see struct_list_*_fn).
+    StructListOfSelf(struct: string),
 }
 
 type Binding = { binding_name: string, kind: FieldKind }
@@ -243,6 +250,39 @@ fn wrapper_of(k: FieldKind) -> string {
         .OptionalWrapperOfSelf(w) -> w
         _ -> ""
     }
+}
+
+/// The struct short-name carried by a `StructListOfSelf` kind ("" otherwise).
+@comptime
+fn struct_of(k: FieldKind) -> string {
+    match k {
+        .StructListOfSelf(s) -> s
+        _ -> ""
+    }
+}
+
+/// Dispatch table: the @std helper that flattens `List<Struct>` into cross-type
+/// spanned children, keyed by the struct's short name. "" ⇒ the struct is not a
+/// registered walkable node-container (stays a Scalar field). This is the
+/// staging registry — one entry (+ its rebuild sibling + the two @std helpers)
+/// per struct type; mirrors the `anynode_ctor` / `spanned_one_wrapper_fn`
+/// name-dispatch style, not a content heuristic. Keying on the short name is safe
+/// because `classify_field_crosstype` only reaches this table for an element in
+/// the SAME MODULE as the derived enum (its same-module gate) — a foreign type
+/// sharing the short name never routes here.
+@comptime
+fn struct_list_spanned_fn(struct_short: string) -> string {
+    if struct_short == "MatchArm" { return "match_arm_children_spanned" }
+    ""
+}
+
+/// The rebuild sibling of `struct_list_spanned_fn`: the @std helper that inverts
+/// the flattened run back into `List<Struct>` (Strategy A — shape from the
+/// original bound list, values from the run). "" ⇒ not registered.
+@comptime
+fn struct_list_rebuild_fn(struct_short: string) -> string {
+    if struct_short == "MatchArm" { return "rebuild_match_arms" }
+    ""
 }
 
 /// True for the nullable single-child kinds — contribute a 0-or-1
@@ -664,6 +704,25 @@ fn classify_field_crosstype(vt: ValueType, parent_name: string, ctx: ResolverCtx
     let tt = "${pfx}ValueType"
     let kt = classify_field_kind(vt, tt, ctx)
     if field_is_node(kt) { return CrossBinding { binding_name: "", target: tt, kind: kt } }
+    // A `List<Struct>` whose element is a REGISTERED walkable node-container
+    // (e.g. `List<MatchArm>`). Classified here rather than in classify_field_kind
+    // because such a struct spans multiple node kinds, so the same-type children()
+    // leaves it Scalar and only the cross-type walk covers it. `target` carries
+    // the struct short name (non-empty ⇒ the field binds to its name, which the
+    // with_children rebuild needs for shape).
+    //
+    // The registry keys on the short name, so gate on SAME MODULE as the parent
+    // enum: compare the full resolved element name to the parent-module-prefixed
+    // short name. The registered structs (MatchArm, …) live beside Expr/Stmt in
+    // this module, and a core AST enum's struct-list fields only reference core
+    // structs — so a foreign `otherpkg::MatchArm` sharing the short name (the 24yd
+    // short-name-collision class) is rejected here rather than misrouted to @std's
+    // `match_arm_children_spanned` / `rebuild_match_arms`.
+    let elem_name = self_type_name(list_elem_or_unknown(vt))
+    let elem_struct = type_short_name(elem_name)
+    if struct_list_spanned_fn(elem_struct) != "" && elem_name == "${module_prefix(parent_name)}${elem_struct}" {
+        return CrossBinding { binding_name: "", target: elem_struct, kind: FieldKind.StructListOfSelf(elem_struct) }
+    }
     CrossBinding { binding_name: "", target: "", kind: FieldKind.Scalar }
 }
 
@@ -761,6 +820,11 @@ fn spanned_single_list(b: CrossBinding) -> Expr {
 /// the existing `box_*_list` boxing then tags every element position-0.
 @comptime
 fn spanned_list_child(b: CrossBinding) -> Expr {
+    if b.kind is .StructListOfSelf {
+        // A registered struct-list: its hand-written extract helper flattens the
+        // element list into cross-type spanned children (field order per element).
+        return helper_call(struct_list_spanned_fn(struct_of(b.kind)), Expr.Ident(b.binding_name))
+    }
     if b.kind is .WrapperListOfSelf {
         return helper_call(box_wrapper_list_spanned_fn(b.target), Expr.Ident(b.binding_name))
     }
@@ -774,10 +838,11 @@ fn spanned_list_child(b: CrossBinding) -> Expr {
     helper_call(node_opt_spanned_fn(b.target), Expr.Ident(b.binding_name))
 }
 
-/// True for the list/optional kinds (those folded via concat, vs singles).
+/// True for the list/optional kinds (those folded via concat, vs singles) —
+/// including a registered struct-list, which is one variable-arity slot.
 @comptime
 fn is_list_child(k: FieldKind) -> bool {
-    (k is .ListOfSelf) || (k is .WrapperListOfSelf) || is_optional_child(k)
+    (k is .ListOfSelf) || (k is .WrapperListOfSelf) || is_optional_child(k) || (k is .StructListOfSelf)
 }
 
 /// Build one `all_children_spanned()` arm body: a `List<SpannedChild>` of every
@@ -952,7 +1017,17 @@ fn wc_run_call(before: int, after: int) -> Expr {
 fn wc_binding_names(bindings: List<CrossBinding>) -> List<string> {
     mut names: List<string> = []
     for b in bindings {
-        let nm = if b.target == "" { "__avra_wc_s${string(names.length)}" } else { "_" }
+        // A struct-list binds to its FIELD name (not `_`): the rebuild reads the
+        // ORIGINAL list from it for shape (element count + per-element optional
+        // presence). Scalars get a minted pass-through name; other node-children
+        // are `_` (rebuilt purely from `kids`).
+        let nm = if b.kind is .StructListOfSelf {
+            b.binding_name
+        } else if b.target == "" {
+            "__avra_wc_s${string(names.length)}"
+        } else {
+            "_"
+        }
         names.push(nm)
     }
     names
@@ -1042,6 +1117,14 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
             let kid = if seen_var { wc_at_end_call(after - after_pos) } else { wc_at_call(single_pos) }
             if seen_var { after_pos = after_pos + 1 } else { single_pos = single_pos + 1 }
             args.push(sexpr_dummy(helper_call(wc_single_helper(b), kid)))
+        } else if b.kind is .StructListOfSelf {
+            // The variable-arity struct-list slot. Strategy A: rebuild from the
+            // ORIGINAL bound list (`names[i]` is the field name — supplies shape:
+            // element count + per-element optional presence) plus the flat run
+            // (node values + recovered spans).
+            let reb_args: List<SExpr> = [sexpr_dummy(Expr.Ident(names[i])), sexpr_dummy(wc_run_call(before, after))]
+            args.push(sexpr_dummy(Expr.Call(Expr.Ident(struct_list_rebuild_fn(struct_of(b.kind))), reb_args)))
+            seen_var = true
         } else {
             // The one variable-arity slot (list / optional).
             args.push(sexpr_dummy(helper_call(wc_run_helper(b), wc_run_call(before, after))))
@@ -1320,6 +1403,11 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
             // explicitly (not `_`) so a new FieldKind forces a compile error
             // here rather than silently leaving its child unwalked.
             .Scalar -> Expr.Ident(bind_name)
+            // StructListOfSelf is cross-type only (classify_field_kind never
+            // yields it), so this arm is unreachable in the same-type map(); it
+            // exists to keep this exhaustiveness guard wildcard-free. A struct-
+            // list is left unmapped here (same as its Scalar status in children()).
+            .StructListOfSelf(_) -> Expr.Ident(bind_name)
         }
         args.push(sexpr_dummy(arg_expr))
         idx = idx + 1
