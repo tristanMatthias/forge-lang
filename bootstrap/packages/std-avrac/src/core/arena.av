@@ -115,6 +115,48 @@ export fn any_node_tag(n: AnyNode) -> string {
     }
 }
 
+/// One-letter kind tag (E/S/P/T) of a child edge — the `NodeRef` analogue of
+/// `any_node_tag`, for probes/diagnostics (and the unwrap messages below) that
+/// report which arena an edge points into.
+export fn noderef_tag(r: NodeRef) -> string {
+    match r {
+        .ExprRef(_) -> "E"
+        .StmtRef(_) -> "S"
+        .PatRef(_) -> "P"
+        .TypeRef(_) -> "T"
+    }
+}
+
+// Peel a child edge to the id of the arena it points into. A consumer walks
+// `children_of` knowing each position's kind from the parent node's structure,
+// so a wrong kind is an arena-construction bug, not a recoverable case: these
+// abort loudly rather than return a sentinel id that would index out of bounds
+// downstream. When the kind is genuinely unknown, `match` on `NodeRef` instead.
+export fn expr_ref_id(r: NodeRef) -> ExprId {
+    match r {
+        .ExprRef(id) -> id
+        _ -> panic("expr_ref_id: expected an ExprRef edge, got ${noderef_tag(r)}")
+    }
+}
+export fn stmt_ref_id(r: NodeRef) -> StmtId {
+    match r {
+        .StmtRef(id) -> id
+        _ -> panic("stmt_ref_id: expected a StmtRef edge, got ${noderef_tag(r)}")
+    }
+}
+export fn pat_ref_id(r: NodeRef) -> PatId {
+    match r {
+        .PatRef(id) -> id
+        _ -> panic("pat_ref_id: expected a PatRef edge, got ${noderef_tag(r)}")
+    }
+}
+export fn type_ref_id(r: NodeRef) -> TypeId {
+    match r {
+        .TypeRef(id) -> id
+        _ -> panic("type_ref_id: expected a TypeRef edge, got ${noderef_tag(r)}")
+    }
+}
+
 /// The kind-tags (E/S/P/T) of a node's cross-type children, in order — the
 /// shared body of the per-kind probes below. `strip_spans` drops the
 /// per-child (line, col) the spanned walker carries (irrelevant to kind/order);
@@ -367,6 +409,18 @@ impl NodeStore {
     /// Recompute a statement node's (line, col) from its recorded span.
     fn stmt_linecol(self, id: StmtId) -> LineCol {
         self.linecol_of_span(self.stmts.span_of(id))
+    }
+    /// Recompute an expression node's (line, col) from its recorded span.
+    fn expr_linecol(self, id: ExprId) -> LineCol {
+        self.linecol_of_span(self.exprs.span_of(id))
+    }
+    /// Recompute a pattern node's (line, col) from its recorded span.
+    fn pat_linecol(self, id: PatId) -> LineCol {
+        self.linecol_of_span(self.pats.span_of(id))
+    }
+    /// Recompute a type node's (line, col) from its recorded span.
+    fn type_linecol(self, id: TypeId) -> LineCol {
+        self.linecol_of_span(self.types.span_of(id))
     }
 
     // ── reconstruct: rebuild the boxed tree from arena EDGES (B1) ──

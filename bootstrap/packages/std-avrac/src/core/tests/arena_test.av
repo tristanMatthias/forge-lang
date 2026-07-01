@@ -14,46 +14,15 @@
 // F1000 type error ("type system rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
-use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, Expr, Pattern, ValueType, BinOp}
+use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, PatId, Expr, Pattern, ValueType, BinOp}
 use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
 use @std.avrac.core.{ingest_program, program_from_store, reconstruct_program, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
 use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr, sexpr_at, Annotation}
+use @std.avrac.core.{expr_ref_id, stmt_ref_id, pat_ref_id, type_ref_id, noderef_tag}
 
-/// Peel an `ExprRef` (the span specs ingest all-Expr trees, so every child
-/// edge is one); a non-Expr ref returns the -1 sentinel so a wrong-kind edge
-/// fails the assertion loudly rather than silently.
-fn expr_ref_id(r: NodeRef) -> ExprId {
-    match r {
-        .ExprRef(id) -> id
-        _ -> ExprId(-1)
-    }
-}
-
-/// Peel a `TypeRef` to its TypeId (for inspecting type-arena children in order).
-fn type_ref_id(r: NodeRef) -> TypeId {
-    match r {
-        .TypeRef(id) -> id
-        _ -> TypeId(0 - 1)
-    }
-}
-
-/// Peel a `StmtRef` to its StmtId (for walking nested stmt-arena edges).
-fn stmt_ref_id(r: NodeRef) -> StmtId {
-    match r {
-        .StmtRef(id) -> id
-        _ -> StmtId(0 - 1)
-    }
-}
-
-/// One-letter kind tag (E/S/P/T) of a stored child edge.
-fn noderef_tag(r: NodeRef) -> string {
-    match r {
-        .ExprRef(_) -> "E"
-        .StmtRef(_) -> "S"
-        .PatRef(_) -> "P"
-        .TypeRef(_) -> "T"
-    }
-}
+// The `NodeRef` peel helpers (`expr_ref_id` / `stmt_ref_id` / `pat_ref_id` /
+// `type_ref_id`) and `noderef_tag` are now exported from core/arena.av; they are
+// imported above and exercised by the specs below (and the whole suite).
 
 /// Concatenated kind-tags of a stored edge list — proves the persisted
 /// cross-type edges carry the right kinds in the right order.
@@ -353,6 +322,39 @@ spec "L1 ExprArena records the node's span" {
         let child = expr_ref_id(store.exprs.children_of(root)[0])
         let rs = store.exprs.span_of(root)
         rs.lo == 10 && rs.hi == 13 && byte_span_is_none(store.exprs.span_of(child))
+    }
+}
+
+// The exported NodeRef accessors + per-kind linecol accessors (y5um B2 inc 2) —
+// the read primitives a pass migrated to `children_of` needs: peel an edge to
+// its typed id, and recover a node's (line, col) from its arena span.
+spec "y5um.2: NodeRef unwrap helpers peel each edge kind" {
+    then "noderef_tag maps each variant to its kind letter" {
+        noderef_tag(NodeRef.ExprRef(ExprId(0))) == "E"
+            && noderef_tag(NodeRef.StmtRef(StmtId(0))) == "S"
+            && noderef_tag(NodeRef.PatRef(PatId(0))) == "P"
+            && noderef_tag(NodeRef.TypeRef(TypeId(0))) == "T"
+    }
+    then "each *_ref_id peels its own kind to the underlying id" {
+        expr_ref_id(NodeRef.ExprRef(ExprId(3))) == ExprId(3)
+            && stmt_ref_id(NodeRef.StmtRef(StmtId(4))) == StmtId(4)
+            && pat_ref_id(NodeRef.PatRef(PatId(5))) == PatId(5)
+            && type_ref_id(NodeRef.TypeRef(TypeId(6))) == TypeId(6)
+    }
+}
+
+spec "y5um.2: per-kind linecol accessors recompute (line, col) from the span" {
+    then "expr/pat/type_linecol lift a real span; a none-span maps to (0, 0)" {
+        // line_starts for "aaaa\nbbbb\n" = [0, 5]; offset 5 = line 2, col 1.
+        let store = new_node_store(build_line_index("aaaa\nbbbb\n"))
+        let eid = store.ingest_expr(Expr.Number("5"), byte_span(5, 6))
+        let pid = store.ingest_pat(Pattern.Wildcard, byte_span(5, 6))
+        let tid = store.ingest_type(ValueType.Int, byte_span(5, 6))
+        let none_eid = store.ingest_expr(Expr.Number("7"), byte_span_none())
+        store.expr_linecol(eid).line == 2 && store.expr_linecol(eid).col == 1
+            && store.pat_linecol(pid).line == 2 && store.pat_linecol(pid).col == 1
+            && store.type_linecol(tid).line == 2 && store.type_linecol(tid).col == 1
+            && store.expr_linecol(none_eid).line == 0 && store.expr_linecol(none_eid).col == 0
     }
 }
 
