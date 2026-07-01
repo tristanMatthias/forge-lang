@@ -36,6 +36,7 @@
 #include <sys/wait.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include <errno.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -1474,6 +1475,89 @@ int64_t avra_remove_file(const char* path) {
     struct stat st;
     if (stat(path, &st) != 0) return 1;
     return 0;
+}
+
+// Depth cap shared by the recursive cache walkers. A build cache is a handful
+// of levels deep (build/cache/<hash>/...); 256 is far beyond any real tree and
+// bounds both the C stack and the open-fd count (one DIR* is held per level
+// while recursing). lstat (below) already prevents symlink loops, so the cap
+// only ever fires on a pathological tree — where refusing is the safe answer.
+#define AVRA_CACHE_WALK_MAX_DEPTH 256
+
+static int64_t avra_remove_tree_rec(const char* path, int depth) {
+    if (depth > AVRA_CACHE_WALK_MAX_DEPTH) return 0;  // too deep — refuse
+    struct stat st;
+    if (lstat(path, &st) != 0) return errno == ENOENT ? 1 : 0;  // ENOENT = already gone (ok); any other errno (EACCES/EIO/ELOOP/…) = it's still there, so fail
+    if (!S_ISDIR(st.st_mode)) return unlink(path) == 0 ? 1 : 0;
+    DIR* d = opendir(path);
+    if (!d) return 0;  // can't enumerate → can't empty → report failure
+    int ok = 1;
+    struct dirent* e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.' && (e->d_name[1] == '\0' ||
+            (e->d_name[1] == '.' && e->d_name[2] == '\0'))) continue;
+        size_t len = strlen(path) + 1 + strlen(e->d_name) + 1;
+        char* child = (char*)malloc(len);
+        if (!child) { ok = 0; continue; }
+        snprintf(child, len, "%s/%s", path, e->d_name);
+        if (avra_remove_tree_rec(child, depth + 1) != 1) ok = 0;
+        free(child);
+    }
+    closedir(d);
+    if (!ok) return 0;  // a child survived — don't claim success
+    return rmdir(path) == 0 ? 1 : 0;
+}
+
+// Recursively delete a directory tree (`rm -rf <path>` semantics). Used by
+// `bs2 cache prune` to evict a stale cache entry without shelling out (a
+// $PWD-derived path interpolated into a shell command is injectable). Uses
+// lstat so a symlink is unlinked itself and never followed into its target.
+// Refuses NULL/empty, `.`, `..`, and any path that collapses to the filesystem
+// root, so a buggy caller can never recursively wipe the cwd or `/`. Returns 1
+// on success (or when the path was already gone), 0 if ANY entry could not be
+// removed (opendir/unlink/rmdir failure, OOM, or the depth cap) — so the caller
+// can report a partial prune instead of silently claiming success.
+int64_t avra_remove_tree(const char* path) {
+    if (!path || !path[0]) return 0;
+    if (strcmp(path, ".") == 0 || strcmp(path, "..") == 0) return 0;
+    size_t n = strlen(path);
+    while (n > 1 && path[n - 1] == '/') n--;       // collapse trailing slashes
+    if (n == 1 && path[0] == '/') return 0;        // "/", "//", "///", …
+    return avra_remove_tree_rec(path, 0);
+}
+
+static int64_t avra_dir_size_rec(const char* path, int depth) {
+    if (depth > AVRA_CACHE_WALK_MAX_DEPTH) return 0;
+    struct stat st;
+    if (lstat(path, &st) != 0) return 0;
+    if (!S_ISDIR(st.st_mode)) return S_ISREG(st.st_mode) ? (int64_t)st.st_size : 0;
+    int64_t total = 0;
+    DIR* d = opendir(path);
+    if (!d) return 0;
+    struct dirent* e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.' && (e->d_name[1] == '\0' ||
+            (e->d_name[1] == '.' && e->d_name[2] == '\0'))) continue;
+        size_t len = strlen(path) + 1 + strlen(e->d_name) + 1;
+        char* child = (char*)malloc(len);
+        if (!child) continue;
+        snprintf(child, len, "%s/%s", path, e->d_name);
+        total += avra_dir_size_rec(child, depth + 1);
+        free(child);
+    }
+    closedir(d);
+    return total;
+}
+
+// Recursive apparent-byte total for a directory tree, for `bs2 cache info`.
+// lstat-based (a symlink contributes nothing, never its target's tree) and
+// sums only REGULAR files — symlinks/FIFOs/devices/sockets contribute 0, so a
+// device node's bogus st_size can't inflate the total. Returns total bytes, or
+// 0 when the path is missing. (Apparent size — sum of st_size — not allocated
+// blocks; close enough for a cache-size readout.)
+int64_t avra_dir_size(const char* path) {
+    if (!path) return 0;
+    return avra_dir_size_rec(path, 0);
 }
 
 

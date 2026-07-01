@@ -90,6 +90,15 @@ extern fn avra_file_size(path: string) -> int
 extern fn avra_mkdir_p(path: string) -> int
 extern fn avra_rename(src: string, dst: string) -> int
 extern fn avra_remove_file(path: string) -> int
+/// Recursively delete a directory tree (`rm -rf <path>`), symlink-safe.
+/// Returns 1 on success or when the path is already gone, 0 on failure.
+extern fn avra_remove_tree(path: string) -> int
+/// Recursive on-disk byte total for a directory tree (sum of regular-file
+/// sizes), symlink-safe. Returns 0 when the path is missing.
+extern fn avra_dir_size(path: string) -> int
+/// Current wall-clock time as Unix epoch SECONDS (note: avra_file_mtime
+/// returns epoch NANOSECONDS — divide by 1e9 to compare).
+extern fn avra_datetime_now() -> int
 extern fn avra_stdin_read_bytes(n: int) -> string
 extern fn avra_stdin_read_line() -> string
 extern fn avra_stdout_write(s: string)
