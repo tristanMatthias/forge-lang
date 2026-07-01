@@ -91,7 +91,28 @@ export fn llvm_prefix_dir() -> string {
 /// discriminates concurrent producers; llc's own output is captured to `log`.
 export fn atomic_obj_llc_cmd(llc_bin: string, opt: string, ll: string, obj: string, log: string, pid: int) -> string {
     let tmp = "${obj}.tmp.${string(pid)}"
-    "${llc_bin} ${opt} -relocation-model=pic -filetype=obj '${ll}' -o '${tmp}' > '${log}' 2>&1 && mv -f '${tmp}' '${obj}' || { rm -f '${tmp}'; false; }"
+    "${llc_bin} ${opt} -relocation-model=pic -filetype=obj '${ll}' -o '${tmp}' > '${log}' 2>&1" + atomic_rename_tail(tmp, obj)
+}
+
+/// The shared tail of a materialise-then-rename shell command: on success
+/// rename the temp onto the destination; on ANY failure remove the temp and
+/// preserve a non-zero exit. Centralises the atomic-publish discipline —
+/// write to a temp, swap it in only when whole — across the producers here.
+fn atomic_rename_tail(tmp: string, dest: string) -> string {
+    " && mv -f '${tmp}' '${dest}' || { rm -f '${tmp}'; false; }"
+}
+
+/// Shell command that copies `src` onto `dst` ATOMICALLY: a binary-safe `cp`
+/// to a process-unique temp sibling (`<dst>.tmp.<pid>`), then rename onto
+/// `dst` only on success (temp removed on failure). For BINARY artifacts
+/// (e.g. metadata.bin) that can't go through the NUL-truncating
+/// avra_selfhost_write_file and that land in a cache slot a later run trusts
+/// by mere existence: a killed `cp` would otherwise leave a partial file the
+/// existence gate serves as complete. `pid` (e.g. avra_getpid()) discriminates
+/// concurrent writers.
+export fn atomic_cp_cmd(src: string, dst: string, pid: int) -> string {
+    let tmp = "${dst}.tmp.${string(pid)}"
+    "cp '${src}' '${tmp}'" + atomic_rename_tail(tmp, dst)
 }
 
 /// Resolve the LLVM install root for one link. Honours an explicit

@@ -49,3 +49,6 @@ bootstrap/seed/seed.ll
 
 # Agent tool worktree isolation (transient; never commit)
 .claude/worktrees/
+
+# Harness scheduler lock — session-local runtime state, must not be tracked.
+.claude/scheduled_tasks.lock
