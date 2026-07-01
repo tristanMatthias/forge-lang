@@ -79,6 +79,21 @@ export fn llvm_prefix_dir() -> string {
     "/opt/homebrew/opt/llvm"
 }
 
+/// Shell command that compiles LLVM IR `ll` to object `obj` ATOMICALLY.
+/// llc writes to a process-unique temp sibling (`<obj>.tmp.<pid>`); only a
+/// SUCCESSFUL compile is renamed onto `obj`, and any failure removes the
+/// temp. So a killed/OOM'd/failed llc leaves `obj` untouched — the old
+/// complete object or nothing — never a truncated `obj`. This matters
+/// wherever a later run reuses `obj` by mtime freshness: a partial object
+/// carrying a fresh mtime would otherwise be linked (or archived) as if
+/// complete, surfacing as baffling "undefined symbol" errors far from the
+/// interrupted build that caused them. `pid` (e.g. avra_getpid())
+/// discriminates concurrent producers; llc's own output is captured to `log`.
+export fn atomic_obj_llc_cmd(llc_bin: string, opt: string, ll: string, obj: string, log: string, pid: int) -> string {
+    let tmp = "${obj}.tmp.${string(pid)}"
+    "${llc_bin} ${opt} -relocation-model=pic -filetype=obj '${ll}' -o '${tmp}' > '${log}' 2>&1 && mv -f '${tmp}' '${obj}' || { rm -f '${tmp}'; false; }"
+}
+
 /// Resolve the LLVM install root for one link. Honours an explicit
 /// `opts.llvm_prefix` first, then the shared `llvm_prefix_dir()`
 /// probe. Centralised so every linker call ends up with the same
