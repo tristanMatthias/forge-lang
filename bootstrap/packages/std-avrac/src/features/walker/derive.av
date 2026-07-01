@@ -266,7 +266,10 @@ fn struct_of(k: FieldKind) -> string {
 /// registered walkable node-container (stays a Scalar field). This is the
 /// staging registry — one entry (+ its rebuild sibling + the two @std helpers)
 /// per struct type; mirrors the `anynode_ctor` / `spanned_one_wrapper_fn`
-/// name-dispatch style, not a content heuristic.
+/// name-dispatch style, not a content heuristic. Keying on the short name is safe
+/// because `classify_field_crosstype` only reaches this table for an element in
+/// the SAME MODULE as the derived enum (its same-module gate) — a foreign type
+/// sharing the short name never routes here.
 @comptime
 fn struct_list_spanned_fn(struct_short: string) -> string {
     if struct_short == "MatchArm" { return "match_arm_children_spanned" }
@@ -707,8 +710,17 @@ fn classify_field_crosstype(vt: ValueType, parent_name: string, ctx: ResolverCtx
     // leaves it Scalar and only the cross-type walk covers it. `target` carries
     // the struct short name (non-empty ⇒ the field binds to its name, which the
     // with_children rebuild needs for shape).
-    let elem_struct = type_short_name(self_type_name(list_elem_or_unknown(vt)))
-    if struct_list_spanned_fn(elem_struct) != "" {
+    //
+    // The registry keys on the short name, so gate on SAME MODULE as the parent
+    // enum: compare the full resolved element name to the parent-module-prefixed
+    // short name. The registered structs (MatchArm, …) live beside Expr/Stmt in
+    // this module, and a core AST enum's struct-list fields only reference core
+    // structs — so a foreign `otherpkg::MatchArm` sharing the short name (the 24yd
+    // short-name-collision class) is rejected here rather than misrouted to @std's
+    // `match_arm_children_spanned` / `rebuild_match_arms`.
+    let elem_name = self_type_name(list_elem_or_unknown(vt))
+    let elem_struct = type_short_name(elem_name)
+    if struct_list_spanned_fn(elem_struct) != "" && elem_name == "${module_prefix(parent_name)}${elem_struct}" {
         return CrossBinding { binding_name: "", target: elem_struct, kind: FieldKind.StructListOfSelf(elem_struct) }
     }
     CrossBinding { binding_name: "", target: "", kind: FieldKind.Scalar }
