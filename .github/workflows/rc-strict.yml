@@ -1,0 +1,51 @@
+# rcsf.3 — strict-allocator gate.
+#
+# Runtime sibling of the AVRA_VERIFY_RC IR gate (rcsf.2). Every PR into the
+# integration branch runs the whole spec suite under AVRA_RC_STRICT=1, which
+# poisons freed RC payloads, quarantines them from reuse, and ABORTS with a
+# backtrace the instant a release path receives a pointer to already-freed RC
+# memory — the zm77 phantom-release class. Because bs2 itself runs under
+# strict mode as it compiles + runs each test binary, this validates the
+# COMPILER's own RC discipline as well as every test program's: a latent
+# use-after-free fails the job loudly instead of shipping silent corruption.
+# Logic lives in bootstrap/scripts/diagnose.sh --rc-strict-suite; this
+# workflow only provisions the toolchain and invokes it.
+name: rc-strict
+
+on:
+  pull_request:
+    branches: [feat/crafting-intepreters]
+
+# Least privilege: a trust gate that builds + runs PR code — read only.
+permissions:
+  contents: read
+
+concurrency:
+  group: rc-strict-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rc-strict:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow is a trust gate.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Read-only workflow — never let the token outlive checkout.
+          persist-credentials: false
+          # Full history: cache-seed resolves the pinned seed blob.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      # Restore the seed binary (content-keyed): the bs2 build reuses it
+      # instead of re-running the ~3-4 min seed `llc`.
+      - uses: ./.github/actions/cache-seed
+
+      - name: Build bs2
+        run: bash bootstrap/scripts/diagnose.sh --build-bs2
+
+      - name: Spec suite under AVRA_RC_STRICT=1
+        run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite
