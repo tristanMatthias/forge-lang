@@ -137,54 +137,43 @@ export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/manifest.txt"
 }
 
-/// True when this cache has a complete entry for `fp`. We probe the
-/// `.ll` file as the existence sentinel — cache writes use atomic
-/// rename, so the entry directory either contains everything we
-/// need or doesn't exist at all. Probing `unit.ll` (rather than the
-/// directory itself) avoids any race where the directory is created
-/// but `unit.ll` was not yet written.
+/// True when a cache slot is COMPLETE: its primary artifact exists and
+/// is non-empty AND its companion artifact is present. cache_publish
+/// stages the pair then renames the staging dir as one unit, so a
+/// complete entry always carries both — a slot missing either is
+/// half-published or externally corrupted (an interrupted publish, a
+/// partial copy) and must be treated as a miss so the caller
+/// rebuilds+republishes rather than restoring a partial producer slot
+/// (kaux). Probing the files (not the directory) also avoids any race
+/// where the entry dir exists but its contents were not yet renamed in.
 ///
-/// 378k defense: ALSO require the .ll to be non-empty. A 0-byte
-/// cached unit.ll has been observed in the wild — most likely from
-/// a killed-mid-write or disk-full event that left the file behind
-/// despite cache_publish's empty-content guard. Returning true for
-/// a 0-byte entry caused mysterious "missing _main" link errors
-/// (consumers wrote the 0 bytes back to dest_ll and clang found
-/// nothing to link). Size > 0 is the same test the publish-side
-/// guard uses; this matches the read side to it.
-export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
-    let ll_path = entry_ll_path(c, fp)
-    if avra_selfhost_file_exists(ll_path) == 0 { return false }
-    if avra_file_size(ll_path) <= 0 { return false }
-    // kaux: validate slot COMPLETENESS, not just the unit.ll sentinel.
-    // cache_publish stages unit.ll AND metadata.bin then renames the
-    // staging dir as one unit, so a complete slot always carries both;
-    // a slot with unit.ll but no metadata.bin is half-published or
-    // externally corrupted (an interrupted publish, a partial copy).
-    // Treat it as a miss so the caller rebuilds+republishes atomically
-    // rather than restoring a partial producer slot. Existence-only
-    // (not a size gate): an empty-metadata unit legitimately stages a
-    // 0-byte blob, and the atomic rename guarantees the file is whole.
-    avra_selfhost_file_exists(entry_metadata_path(c, fp)) == 1
+/// The primary is size-gated: a 0-byte unit.ll/unit.bin is a
+/// killed-mid-write / disk-full partial (the 378k class — a 0-byte
+/// unit.ll caused mysterious "missing _main" link errors when consumers
+/// wrote the empty bytes back and clang found nothing to link). The
+/// companion is existence-only: an empty-metadata unit legitimately
+/// stages a 0-byte metadata.bin, and the atomic rename guarantees the
+/// file is whole.
+fn slot_complete(primary: string, companion: string) -> bool {
+    if avra_selfhost_file_exists(primary) == 0 { return false }
+    if avra_file_size(primary) <= 0 { return false }
+    avra_selfhost_file_exists(companion) == 1
 }
 
-/// True when this cache has a published test binary for `fp`. Probes
-/// the `.bin` slot as the sentinel — symmetric to `cache_has` but
-/// for the test-action output. Build units publish .ll/.o/.metadata
-/// without a binary; test units publish .bin without .ll/.o. Each
-/// cache kind keys off its own sentinel so a build entry never
-/// satisfies a test lookup or vice versa.
+/// True when this cache has a complete BUILD entry for `fp`: unit.ll
+/// (present + non-empty) paired with metadata.bin. See slot_complete.
+export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
+    slot_complete(entry_ll_path(c, fp), entry_metadata_path(c, fp))
+}
+
+/// True when this cache has a complete TEST entry for `fp`: unit.bin
+/// (present + non-empty) paired with manifest.txt. Build units publish
+/// unit.ll/metadata.bin without a binary; test units publish
+/// unit.bin/manifest.txt without a .ll — each kind keys off its own
+/// primary so a build entry never satisfies a test lookup or vice
+/// versa. See slot_complete.
 export fn cache_has_test(c: Cache, fp: Fingerprint) -> bool {
-    let bin_path = entry_bin_path(c, fp)
-    if avra_selfhost_file_exists(bin_path) == 0 { return false }
-    // kaux: a 0-byte binary is a killed-mid-cp/link partial — reject it
-    // (symmetric to cache_has's size gate on unit.ll). cache_has_test
-    // previously trusted mere existence, so a truncated executable could
-    // be served as a HIT and forwarded to avra_process_forward.
-    if avra_file_size(bin_path) <= 0 { return false }
-    // kaux: manifest.txt is staged and renamed atomically alongside the
-    // binary, so its absence marks a half-published/corrupted test slot.
-    avra_selfhost_file_exists(entry_manifest_path(c, fp)) == 1
+    slot_complete(entry_bin_path(c, fp), entry_manifest_path(c, fp))
 }
 
 /// Outcome of a publish attempt. The build driver inspects this to
