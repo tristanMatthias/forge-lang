@@ -9,7 +9,7 @@
 // structurally (it never writes llc output straight to the final) and
 // end-to-end against a real llc.
 
-use @std.avrac.build.{atomic_obj_llc_cmd, llvm_prefix_dir}
+use @std.avrac.build.{atomic_obj_llc_cmd, atomic_cp_cmd, llvm_prefix_dir}
 use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_file_exists, avra_file_size, avra_getpid}
 
 fn workdir(slug: string) -> string {
@@ -72,5 +72,34 @@ spec "rrio: a failed re-llc does not clobber a previous complete object" {
         let pid = avra_getpid()
         let _ = avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O0", ll, o, "${d}/u.log", pid))
         avra_selfhost_file_exists(o) == 1 && avra_file_size(o) > 0
+    }
+}
+
+// atomic_cp_cmd copies BINARY artifacts (metadata.bin) into cache slots that a
+// later run trusts by existence (cache_has / cache_has_source_meta). A killed
+// `cp` must never leave a partial there — same bug class as the .o above, found
+// by the post-kaux/rrio sweep of direct-to-final materialisations.
+spec "atomic_cp_cmd never copies directly onto the destination" {
+    then "cp targets a .tmp.<pid> sibling; success renames, failure cleans up" {
+        let cmd = atomic_cp_cmd("/w/src.bin", "/w/dst.bin", 77)
+        // The revert-discriminator: the old inline `cp src dst` wrote straight
+        // to the destination; here cp targets the temp and dst is reached only
+        // via `mv`.
+        cmd.contains("cp '/w/src.bin' '/w/dst.bin.tmp.77'")
+            && cmd.contains("mv -f '/w/dst.bin.tmp.77' '/w/dst.bin'")
+            && cmd.contains("rm -f '/w/dst.bin.tmp.77'")
+            && !cmd.contains("cp '/w/src.bin' '/w/dst.bin'")
+    }
+}
+
+spec "atomic_cp_cmd copies a real file onto the destination atomically" {
+    then "the destination receives the content and no temp is left behind" {
+        let d = workdir("cp_ok")
+        let src = "${d}/src.bin"
+        let dst = "${d}/dst.bin"
+        let _ = avra_selfhost_write_file(src, "PAYLOAD-BYTES\n")
+        let pid = avra_getpid()
+        let rc = avra_shell_exec_status(atomic_cp_cmd(src, dst, pid))
+        rc == 0 && avra_file_size(dst) > 0 && avra_selfhost_file_exists("${dst}.tmp.${string(pid)}") == 0
     }
 }

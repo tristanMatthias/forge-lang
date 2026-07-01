@@ -96,7 +96,7 @@ use @std.avrac.build.{
     pool_run, pool_extract_rc,
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
-    CompileTarget, build_binary, atomic_obj_llc_cmd,
+    CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
     package_source_fingerprint,
 }
 use @std.crypto.{sha256_hex, sha256_file}
@@ -1969,7 +1969,10 @@ fn run_build_command() {
                         let pkg_cache = cache_for(pkg_root)
                         let _ = ensure_source_meta_dir(pkg_cache, source_fp)
                         let dest = entry_source_meta_path(pkg_cache, source_fp)
-                        avra_shell_exec("cp '${cached_meta}' '${dest}'")
+                        // Atomic: the source-keyed meta slot is trusted by
+                        // existence (cache_has_source_meta); a killed cp must
+                        // not leave a partial there for the resolver fast-path.
+                        avra_shell_exec(atomic_cp_cmd(cached_meta, dest, avra_getpid()))
                     }
                 }
             }
@@ -2066,7 +2069,10 @@ fn run_build_command() {
                 let sidecar = entry_source_meta_path(pkg_cache, source_fp)
                 if file_exists(sidecar) != 0 {
                     let cache_meta_dir = "${project_dir}/build/cache/${fp.hex}"
-                    avra_shell_exec("cp '${sidecar}' '${cache_meta_dir}/metadata.bin'")
+                    // Atomic: this metadata.bin lands in a cache slot that a
+                    // later HIT trusts by existence (cache_has), so a killed cp
+                    // must not leave a partial there. (kaux/rrio bug class.)
+                    avra_shell_exec(atomic_cp_cmd(sidecar, "${cache_meta_dir}/metadata.bin", avra_getpid()))
                 }
             }
             let t_after_publish = avra_uptime_ms()
