@@ -1,0 +1,42 @@
+// rcsf.1: encapsulation invariant — RC-managed scope-exit cleanup is
+// registered at exactly ONE chokepoint, `Ctx.register_rc_cleanup`
+// (codegen/types.av). Both the RcCleanupEntry (cleanup list) and its matching
+// DeferEntry.Release (defer stack) are born there, together, so no future
+// emitter can push a half-registered cleanup slot — the shape that let zm77
+// exist (a cleanup entry whose alloca was never definitely initialized).
+//
+// Safety itself (the slot reads null until first stored) is guaranteed
+// UPSTREAM by the universal ptr-alloca zero-init in avra_llvm_build_alloca
+// (zm77). This test guards the ENCAPSULATION: it greps the compiler source
+// and asserts construction happens nowhere else.
+//
+// Construction is always QUALIFIED — `RcCleanupEntry {` and
+// `DeferEntry.Release(` — whereas consumers destructure with the `.Release`
+// shorthand in match arms, so these fixed-string greps match construction
+// only, never pattern arms. grep runs from the bootstrap dir (test CWD) and
+// excludes test files so this test's own pattern strings don't self-match.
+//
+// @@fixture-stateful@@  greps the live compiler source tree.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "rcsf.1: RC cleanup has a single registration chokepoint" {
+    given "the compiler source (excluding test files)" {
+        then "RcCleanupEntry is constructed at exactly one site" {
+            let n = avra_shell_exec("grep -rF 'RcCleanupEntry {' packages/std-avrac/src --include=*.av | grep -v '/tests/' | wc -l").trim()
+            n == "1"
+        }
+        then "the sole RcCleanupEntry site is in codegen/types.av" {
+            let site = avra_shell_exec("grep -rlF 'RcCleanupEntry {' packages/std-avrac/src --include=*.av | grep -v '/tests/'").trim()
+            site.contains("codegen/types.av")
+        }
+        then "DeferEntry.Release is constructed at exactly one site" {
+            let n = avra_shell_exec("grep -rF 'DeferEntry.Release(' packages/std-avrac/src --include=*.av | grep -v '/tests/' | wc -l").trim()
+            n == "1"
+        }
+        then "the sole DeferEntry.Release site is in codegen/types.av" {
+            let site = avra_shell_exec("grep -rlF 'DeferEntry.Release(' packages/std-avrac/src --include=*.av | grep -v '/tests/'").trim()
+            site.contains("codegen/types.av")
+        }
+    }
+}
