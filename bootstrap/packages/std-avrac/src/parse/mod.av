@@ -15,6 +15,7 @@ use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, Logic
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, expr_force_unwrap, expr_ne_none}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
+use core.{NodeRef, NodeEdges, ExprId, ByteSpan, byte_span, byte_span_none}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -1187,7 +1188,8 @@ impl Parser {
     }
 
     fn parse_call(self) -> Result<Expr, string> {
-        let expr = self.parse_primary()?
+        let primary_id = self.parse_primary()?
+        let expr = self.store.exprs.get(primary_id)
 
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
@@ -1386,7 +1388,20 @@ impl Parser {
         .Ok(out)
     }
 
-    fn parse_primary(self) -> Result<Expr, string> {
+    /// B1: primary productions now hand back a typed id — the node (and its
+    /// whole subtree) is in the arena. The internals still build boxed nodes;
+    /// `parse_primary_boxed` is the shrinking seam: its result enters the
+    /// store walker-faithfully here, and later commits push allocation down
+    /// into the arms (leaves alloc directly, composites glue their children)
+    /// until the boxed body deletes.
+    fn parse_primary(self) -> Result<ExprId, string> {
+        match self.parse_primary_boxed() {
+            .Ok(e) -> .Ok(self.glue_ingest_expr(e))
+            .Err(m) -> .Err(m)
+        }
+    }
+
+    fn parse_primary_boxed(self) -> Result<Expr, string> {
         if self.check(Tk.Number) {
             let value = self.current_lexeme
             self.advance()
@@ -2262,6 +2277,29 @@ impl Parser {
             out.push(WhenArm { cond, body: body_se })
         }
         .Ok(out)
+    }
+
+    // ── B1: native arena allocation (dark-launched) ──
+    //
+    // Converted productions push the node they just built into `self.store`
+    // and return its typed id; `edges` are the already-allocated children's
+    // refs in walker (field) order. Children arriving BOXED from a
+    // not-yet-converted producer are bridged via `self.glue_ingest_expr` —
+    // the whole boxed subtree enters the store walker-faithfully in one call
+    // (the ingest-the-gap glue; each bridge disappears when its producer
+    // converts). Nothing reads this store yet: ingest_program remains the
+    // canonical producer until the Stage E flip.
+
+    /// Allocate a parser-built `Expr` with its children's edge refs.
+    fn alloc_expr(self, node: Expr, sp: ByteSpan, edges: List<NodeRef>) -> ExprId {
+        self.store.exprs.add(node, NodeEdges { refs: edges }, sp)
+    }
+
+    /// Bridge a BOXED expr subtree from an unconverted producer into the
+    /// store, returning its root id. Walker-driven, so the subtree's edges
+    /// and nested wrapper spans match what the canonical ingest records.
+    fn glue_ingest_expr(self, node: Expr) -> ExprId {
+        self.store.ingest_expr(node, byte_span_none())
     }
 
     // ── Speculative parsing (backtracking) ──

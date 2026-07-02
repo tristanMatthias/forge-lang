@@ -95,7 +95,10 @@ impl Parser {
             mut i = 0
             while i < value_count {
                 if self.check(Tk.RightBrace) { break }
-                let val = self.parse_primary()?
+                // B1 interim glue: parse_primary returns a typed id; read the
+                // boxed node back until this producer converts.
+                let val_id = self.parse_primary()?
+                let val = self.store.exprs.get(val_id)
                 vals.push(sexpr(val, self.current_line, self.current_column))
                 i = i + 1
                 if self.check(Tk.Pipe) { self.advance() }
