@@ -1,0 +1,139 @@
+// WHY: B1 — the statement chain allocates arena rows natively and the
+// parser records its top-level statements as store ROOTS (with the same
+// conservative spans the canonical ingest derives, via one shared helper).
+// That makes the SERVE-PATH oracle constructible for the first time: for a
+// parsed program, `program_from_store` over the PARSER's native store must
+// be indistinguishable from `program_from_store` over the canonical
+// `ingest_program` store — same renders, same (line, col), same provenance,
+// same root spans. This equivalence is exactly what the eventual flip
+// (serving from the parser store and deleting the canonical re-ingest)
+// relies on. The per-subtree faithfulness oracle from the expression stage
+// extends to statement roots here.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{ingest_program, program_from_store, render_stmt_list, store_stmt_subtree_faithful}
+
+/// Serve-path equivalence: parser-store serve == canonical-ingest serve.
+fn serve_parity(source: string) -> bool {
+    let r = parse_program_source(source)
+    if r.had_error != 0 { return false }
+    let native = program_from_store(r.store, "probe.av")
+    let canonical = program_from_store(ingest_program(r.stmts!, source), "probe.av")
+    if native.length != canonical.length { return false }
+    if render_stmt_list(native) != render_stmt_list(canonical) { return false }
+    for (i, n) in native.enumerate() {
+        let c = canonical[i]
+        if n.line != c.line { return false }
+        if n.col != c.col { return false }
+        if n.from_macro != c.from_macro { return false }
+    }
+    true
+}
+
+/// Every root subtree in the parser's native store is walker-faithful.
+fn roots_faithful(source: string) -> bool {
+    let r = parse_program_source(source)
+    if r.had_error != 0 { return false }
+    if r.store.roots.length == 0 { return false }
+    for id in r.store.roots {
+        if !store_stmt_subtree_faithful(r.store, id) { return false }
+    }
+    true
+}
+
+/// Root spans are byte-identical between the two producers (they share
+/// `conservative_root_span`, so this pins the wiring, not just the math).
+fn root_spans_match(source: string) -> bool {
+    let r = parse_program_source(source)
+    if r.had_error != 0 { return false }
+    let canonical = ingest_program(r.stmts!, source)
+    if r.store.roots.length != canonical.roots.length { return false }
+    for (i, id) in r.store.roots.enumerate() {
+        let a = r.store.stmts.span_of(id)
+        let b = canonical.stmts.span_of(canonical.roots[i])
+        if a.lo != b.lo { return false }
+        if a.hi != b.hi { return false }
+    }
+    true
+}
+
+/// All three oracles at once — the standard assertion for battery sources.
+fn stmt_parity(source: string) -> bool {
+    serve_parity(source) && roots_faithful(source) && root_spans_match(source)
+}
+
+spec "B1 native stmts: serve-path parity on declaration forms" {
+    given "functions and bindings" {
+        then "a fn with a body serves identically from both stores" {
+            stmt_parity("fn add(a: int, b: int) -> int {\n    let s = a + b\n    s\n}\n")
+        }
+        then "let/mut/const at top level" {
+            stmt_parity("let a = 1\nmut b = a + 1\nconst C: int = 3\n")
+        }
+        then "type/enum declarations" {
+            stmt_parity("type P = { x: int, y: int }\nenum E { A, B(v: int) }\n")
+        }
+        then "extern and use declarations" {
+            stmt_parity("extern fn puts(s: string) -> int\n")
+        }
+    }
+    given "annotation and doc wrapping" {
+        then "doc comments become @doc-annotated roots" {
+            stmt_parity("/// adds one\nfn inc(x: int) -> int { x + 1 }\n")
+        }
+        then "explicit annotations wrap natively" {
+            stmt_parity("@inline\nfn f() -> int { 1 }\n")
+        }
+        then "export wraps via the handler dispatch" {
+            stmt_parity("export fn api() -> int { 7 }\n")
+        }
+    }
+}
+
+spec "B1 native stmts: serve-path parity on statement forms" {
+    given "control flow statements inside bodies" {
+        then "if/else statements" {
+            stmt_parity("fn f(c: bool) -> int {\n    mut r = 0\n    if c {\n        r = 1\n    } else {\n        r = 2\n    }\n    r\n}\n")
+        }
+        then "while and for loops" {
+            stmt_parity("fn g() -> int {\n    mut s = 0\n    for i in 0..3 {\n        s = s + i\n    }\n    while s > 10 {\n        s = s - 1\n    }\n    s\n}\n")
+        }
+        then "match statements" {
+            stmt_parity("fn h(x: int) -> int {\n    mut r = 0\n    match x {\n        1 -> r = 10\n        _ -> r = 0\n    }\n    r\n}\n")
+        }
+        then "defer and blocks and expression statements" {
+            stmt_parity("fn k() -> int {\n    defer cleanup()\n    {\n        side_effect()\n    }\n    finish()\n    0\n}\n")
+        }
+        then "break and continue leaves" {
+            stmt_parity("fn m() {\n    for i in 0..9 {\n        if i == 2 { continue }\n        if i == 5 { break }\n    }\n}\n")
+        }
+    }
+    given "nested declaration bodies" {
+        then "impl blocks with methods" {
+            stmt_parity("type T = { v: int }\nimpl T {\n    fn get(self) -> int { self.v }\n}\n")
+        }
+        then "trait declarations" {
+            stmt_parity("trait Show {\n    fn show(self) -> string\n}\n")
+        }
+        then "block expressions and lambdas inside bodies" {
+            stmt_parity("fn n() -> int {\n    let f = (x: int) -> {\n        let y = x + 1\n        y\n    }\n    f(1)\n}\n")
+        }
+    }
+}
+
+spec "B1 native stmts: multi-root ordering and spans" {
+    given "several top-level statements" {
+        then "roots serve in source order with conservative extents" {
+            stmt_parity("fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
+        }
+        then "a trailing expression statement gets the EOF extent" {
+            stmt_parity("let x = 1\nx + 1\n")
+        }
+    }
+    given "parse errors" {
+        then "an unparsable program reports had_error through the id chain" {
+            let r = parse_program_source("fn broken( {\n")
+            r.had_error == 1
+        }
+    }
+}

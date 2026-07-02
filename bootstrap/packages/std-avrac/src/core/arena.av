@@ -492,6 +492,20 @@ impl NodeStore {
     fn add_root_shallow(self, node: Stmt) -> StmtId {
         self.stmts.add(node, NodeEdges { refs: [] }, byte_span_none())
     }
+    /// Record the parser's already-allocated top-level statements as this
+    /// store's roots: stamp each root row with the same conservative span
+    /// the canonical ingest derives (`conservative_root_span` — one shared
+    /// implementation, so both producers are byte-identical) and mirror
+    /// macro provenance. `stmts[k]` is the spanned wrapper of the row
+    /// `ids[k]`; both lists come from one `parse_statement_list_ids` pass.
+    fn record_roots(self, stmts: List<SStmt>, ids: List<StmtId>, source_len: int) {
+        for (k, s) in stmts.enumerate() {
+            let sp = conservative_root_span(self.lines, stmts, k, source_len)
+            if !byte_span_is_none(sp) { self.stmts.spans.set(ids[k], sp) }
+            self.roots.push(ids[k])
+            if s.from_macro { self.provenance.set(ids[k], true) }
+        }
+    }
     /// Recursively ingest a `Pattern` subtree (see `ingest_expr`).
     fn ingest_pat(self, node: Pattern, sp: ByteSpan) -> PatId {
         self.pats.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
