@@ -109,9 +109,19 @@ masking loop):
    machinery) and the faithfulness oracle
    (`store_expr_subtree_faithful` + the `b1_native_arena_test` battery).
 3. **Stage C — statements + declarations** (`parse_statement_list` chokepoint,
-   top-level span parity, sub-parser store threading).
-4. **Stage D — the 25 feature parsers** (mechanical; dispatch passes `self`,
-   so no registry changes) + patterns.
+   top-level span parity, sub-parser store threading). **DONE** — the spine
+   and every registered handler return `StmtId` (registry type flipped); the
+   high-frequency forms (fn/if/while/let/mut/const/return/defer/match,
+   blocks, spawn/isolated, templates via a shared sub-parser store) alloc
+   natively, the rest glue-bridge at their own return until Stage D; the
+   parser records ROOTS with canonical-identical conservative spans
+   (`conservative_root_span`, one shared implementation) + provenance, so
+   the SERVE-PATH oracle went live: `program_from_store` over the parser's
+   store == over the canonical ingest (render + linecol + provenance + root
+   spans; `b1_native_stmt_test`). Measured +1.4% vs oracle.
+4. **Stage D — the 25 feature parsers** (the remaining glue-bridged handler
+   bodies: impl/trait/parallel/select/spec/component + for + desugar
+   producers) + patterns.
 5. **Stage E — flip + delete ingest** (+ retire the parity probe to a spec).
 
 Each stage is one PR on the standing process (prepare-pr ×3, CodeRabbit, merge
