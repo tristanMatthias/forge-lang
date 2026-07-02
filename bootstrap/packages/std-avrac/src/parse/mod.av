@@ -57,6 +57,15 @@ export type ArgListIds = {
     ids: List<ExprId>,
 }
 
+/// One parse of a struct-literal field-init list, surfaced both ways:
+/// `inits` is the boxed view (shorthand expanded, position-wrapped exactly
+/// as always); `ids` are the arena rows backing each field VALUE, in field
+/// order, for the parent's edge list.
+export type FieldInitIds = {
+    inits: List<FieldInit>,
+    ids: List<ExprId>,
+}
+
 /// Running state of the template-desugar fold — the boxed concatenation
 /// built so far and the arena row backing it (`have` distinguishes the
 /// empty fold from a real first segment).
@@ -744,7 +753,7 @@ impl Parser {
     // When the row type is omitted it is left empty here and resolved
     // from context (let/return/arg annotation) by the typechecker; an
     // unresolved row type is a compile error (no weak List<Map> fallback).
-    fn parse_table_literal(self) -> Result<Expr, string> {
+    fn parse_table_literal(self) -> Result<ExprId, string> {
         // Optional `<RowStruct>` row-type ascription.
         mut row_type = ""
         if self.check(Tk.Less) {
@@ -772,7 +781,7 @@ impl Parser {
         if header_count == 0 {
             if !self.consume(Tk.RightBrace, "expected `}` to close table") { return .Err("parse error") }
             let empty: List<SExpr> = []
-            return .Ok(Expr.ListLit(empty))
+            return .Ok(self.alloc_leaf(Expr.ListLit(empty)))
         }
         // Reject duplicate column names — they would silently collide on the
         // same struct field.
@@ -793,6 +802,7 @@ impl Parser {
         // the cells (left-to-right, one per column). A row occupies a
         // single source line; its cell count must match the header width.
         mut rows: List<SExpr> = []
+        mut row_ids: List<ExprId> = []
         // Bound each cell expression to its row's line so a value at the end
         // of one row doesn't merge with a `-`/`.Variant` starting the next.
         // Saved/restored to keep nested tables (a table cell) well-behaved.
@@ -801,11 +811,13 @@ impl Parser {
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
             let row_line = self.current_line
             mut cells: List<SExpr> = []
+            mut cell_ids: List<ExprId> = []
             while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
                 // parse_bitwise_xor stops before `|`, so the column
                 // separator is never swallowed as a bitwise-or operand.
                 let val_id = self.parse_bitwise_xor()?
                 cells.push(sexpr_at(self.expr_of(val_id), self.current_line, self.current_column, self.file))
+                cell_ids.push(val_id)
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
@@ -821,13 +833,16 @@ impl Parser {
                 inits.push(FieldInit { name: col_names[ci], value: cells[ci] })
                 ci = ci + 1
             }
-            rows.push(sexpr_at(Expr.StructLit(row_type, inits), row_line, 0, self.file))
+            // Row StructLit: one ExprRef per FieldInit value, in column order.
+            let row_node = Expr.StructLit(row_type, inits)
+            rows.push(sexpr_at(row_node, row_line, 0, self.file))
+            row_ids.push(self.alloc_expr(row_node, byte_span_none(), self.edges_of_ids(cell_ids)))
         }
         self.cell_mode = saved_cell_mode
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return .Err("parse error")
         }
-        .Ok(Expr.ListLit(rows))
+        .Ok(self.alloc_expr(Expr.ListLit(rows), byte_span_none(), self.edges_of_ids(row_ids)))
     }
 
     // Module parser (parse_module_declaration, parse_use_declaration)
@@ -1210,11 +1225,11 @@ impl Parser {
             if self.check(Tk.Identifier) && self.allow_struct_lit && self.peek_after_ident_is_lbrace() {
                 let var_name = self.take_lexeme()
                 self.advance()  // consume `{`
-                let inits = self.parse_field_init_list()?
+                let parsed = self.parse_field_init_list()?
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_expr(Expr.StructLit("~" + var_name, inits), byte_span_none(), self.glue_field_init_refs(inits)))
+                return .Ok(self.alloc_expr(Expr.StructLit("~" + var_name, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids)))
             }
             let target = self.parse_unary()?
             return .Ok(self.alloc1(Expr.Splice(self.expr_of(target)), target))
@@ -1237,13 +1252,11 @@ impl Parser {
             if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
                 return .Err("parse error")
             }
-            let overrides = self.parse_field_init_list()?
+            let parsed = self.parse_field_init_list()?
             if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
                 return .Err("parse error")
             }
-            mut edges: List<NodeRef> = [NodeRef.ExprRef(eid)]
-            for vr in self.glue_field_init_refs(overrides) { edges.push(vr) }
-            eid = self.alloc_expr(Expr.With(self.expr_of(eid), overrides), byte_span_none(), edges)
+            eid = self.alloc_expr(Expr.With(self.expr_of(eid), parsed.inits), byte_span_none(), self.edges_subject_args(eid, parsed.ids))
         }
         .Ok(eid)
     }
@@ -1608,16 +1621,15 @@ impl Parser {
             // when the `<` is followed by `Ident > {` — otherwise it's a
             // comparison on a variable named `table` (e.g. `table < 10`).
             if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
-                let tbl = self.parse_table_literal()?
-                return .Ok(self.glue_ingest_expr(tbl))
+                return self.parse_table_literal()
             }
             if self.allow_struct_lit && self.check(Tk.LeftBrace) {
                 self.advance()
-                let inits = self.parse_field_init_list()?
+                let parsed = self.parse_field_init_list()?
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_expr(Expr.StructLit(name, inits), byte_span_none(), self.glue_field_init_refs(inits)))
+                return .Ok(self.alloc_expr(Expr.StructLit(name, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids)))
             }
             // Tagged template: `tag`template with ${expr}`
             // Desugars to: tag(desugar_template(raw))
@@ -1758,8 +1770,7 @@ impl Parser {
         }
 
         if self.check(Tk.KwQuote) {
-            let q = self.parse_quote()?
-            return .Ok(self.glue_ingest_expr(q))
+            return self.parse_quote()
         }
 
         if self.check(Tk.LeftBrace) {
@@ -2330,7 +2341,7 @@ impl Parser {
         .Ok(args)
     }
 
-    fn parse_quote(self) -> Result<Expr, string> {
+    fn parse_quote(self) -> Result<ExprId, string> {
         self.advance()  // consume `quote`
         // Optional kind keyword: `stmt` / `stmts` / `type` / `decl` /
         // `arm` selects the result-type of the captured AST. Default
@@ -2340,13 +2351,13 @@ impl Parser {
         // Track quote nesting so parse_unary recognizes splice `~`.
         self.quote_depth = self.quote_depth + 1
         if kind == "arm" {
-            let body = self.parse_quote_arm_body()?
+            let body_id = self.parse_quote_arm_body()?
             self.quote_depth = self.quote_depth - 1
-            return .Ok(Expr.Quote(kind, body))
+            return .Ok(self.alloc1(Expr.Quote(kind, self.expr_of(body_id)), body_id))
         }
-        let body = self.expr_of(self.parse_block_expression()?)
+        let body_id = self.parse_block_expression()?
         self.quote_depth = self.quote_depth - 1
-        .Ok(Expr.Quote(kind, body))
+        .Ok(self.alloc1(Expr.Quote(kind, self.expr_of(body_id)), body_id))
     }
 
     fn parse_quote_kind(self) -> string {
@@ -2368,18 +2379,23 @@ impl Parser {
     /// resulting arm in a single-armed `Expr.MatchExpr(Expr.None, [arm])`
     /// so the existing Quote(kind, body) shape stays — the lowering
     /// pass picks the arm back out via its `arm` kind discriminator.
-    fn parse_quote_arm_body(self) -> Result<Expr, string> {
+    fn parse_quote_arm_body(self) -> Result<ExprId, string> {
         if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
-        let pattern = self.pat_of(self.parse_pattern_or()?)
+        let pat_id = self.parse_pattern_or()?
+        let pattern = self.pat_of(pat_id)
         mut guard: SExpr? = none
+        mut guard_id = ExprId(0)
+        mut has_guard = false
         if self.check(Tk.KwIf) {
             self.advance()
-            let g = self.parse_expression_boxed()?
-            guard = sexpr(g, self.current_line, self.current_column)
+            let g_id = self.parse_expression()?
+            guard = sexpr(self.expr_of(g_id), self.current_line, self.current_column)
+            guard_id = g_id
+            has_guard = true
         }
         if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return .Err("parse error") }
-        let body = self.parse_expression_boxed()?
-        let body_se = sexpr(body, self.current_line, self.current_column)
+        let body_id = self.parse_expression()?
+        let body_se = sexpr(self.expr_of(body_id), self.current_line, self.current_column)
         if self.check(Tk.Comma) { self.advance() }
         if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return .Err("parse error") }
         let arm = MatchArm { pattern, guard, body: body_se }
@@ -2391,7 +2407,14 @@ impl Parser {
         // that descends `subject` as a bare Expr reads the SExpr's first word as
         // an enum tag and traps. The lowering pass ignores `subject` anyway
         // (`extract_single_match_arm` matches `.MatchExpr(_, arms)`).
-        .Ok(Expr.MatchExpr(Expr.None, arms))
+        // Edges in walker order: subject, then the arm's pattern, guard
+        // (only when present), body — `match_arm_children_spanned`'s
+        // flattening.
+        let subject_id = self.alloc_leaf(Expr.None)
+        mut edges: List<NodeRef> = [NodeRef.ExprRef(subject_id), NodeRef.PatRef(pat_id)]
+        if has_guard { edges.push(NodeRef.ExprRef(guard_id)) }
+        edges.push(NodeRef.ExprRef(body_id))
+        .Ok(self.alloc_expr(Expr.MatchExpr(Expr.None, arms), byte_span_none(), edges))
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
@@ -2528,14 +2551,6 @@ impl Parser {
         refs
     }
 
-    /// Edge refs for a boxed FieldInit list's values (struct-lit / with) —
-    /// interim glue: each value subtree is bridged whole. Disappears when
-    /// parse_field_init_list flows ids.
-    fn glue_field_init_refs(self, inits: List<FieldInit>) -> List<NodeRef> {
-        mut refs: List<NodeRef> = []
-        for init in inits { refs.push(NodeRef.ExprRef(self.glue_ingest_expr(init.value.node))) }
-        refs
-    }
 
     // ── B1 stmt-side allocation ──
     // The statement mirror of the expr helpers above: converted stmt

@@ -137,3 +137,62 @@ spec "B1 native stmts: multi-root ordering and spans" {
         }
     }
 }
+
+spec "B1 native stmts: desugared producers alloc their synthetic trees natively" {
+    given "bind-fresh if-let in both positions" {
+        then "if-let statements with and without else" {
+            stmt_parity("fn f(o: int?) -> int {\n    if let v = o {\n        return v\n    } else {\n        return 0\n    }\n}\n")
+            stmt_parity("fn g(o: int?) -> int {\n    if let v = o {\n        return v\n    }\n    0\n}\n")
+        }
+        then "if-let expressions across all else forms" {
+            stmt_parity("fn f(o: int?) -> int {\n    let r = if let v = o { v } else { 0 }\n    r\n}\n")
+            stmt_parity("fn g(o: int?, c: bool) -> int {\n    let r = if let v = o { v } else if c { 1 } else { 2 }\n    r\n}\n")
+            stmt_parity("fn h(o: int?) -> int {\n    let r = if let v = o { v }\n    r\n}\n")
+        }
+    }
+    given "let-else guard bindings" {
+        then "let-else and mut-else desugar to faithful block initializers" {
+            stmt_parity("fn f(o: int?) -> int {\n    let v = o else { return 0 }\n    v\n}\n")
+            stmt_parity("fn g(o: int?) -> int {\n    mut v = o else { return 0 }\n    v = v + 1\n    v\n}\n")
+        }
+        then "a non-block else stmt wraps as the block's single child" {
+            stmt_parity("fn h(o: int?) -> int {\n    let v = o else return 0\n    v\n}\n")
+        }
+    }
+    given "for-loop tuple destructuring" {
+        then "for (a, b) desugars to a faithful ForIn over a fresh temp" {
+            stmt_parity("fn f(pairs: List<(int, int)>) -> int {\n    mut s = 0\n    for (a, b) in pairs {\n        s = s + a + b\n    }\n    s\n}\n")
+        }
+    }
+    given "quote captures" {
+        then "expression and stmt quotes re-parent the block body row" {
+            stmt_parity("fn f() -> int {\n    let e = quote { 1 + 2 }\n    0\n}\n")
+            stmt_parity("fn g() -> int {\n    let s = quote stmt { let a = 1 }\n    0\n}\n")
+        }
+        then "quote arm flattens subject/pattern/guard/body in walker order" {
+            stmt_parity("fn f() -> int {\n    let a = quote arm { .Ok(v) -> v }\n    0\n}\n")
+            stmt_parity("fn g() -> int {\n    let a = quote arm { .Ok(v) if v > 1 -> v }\n    0\n}\n")
+        }
+    }
+    given "table literals" {
+        then "rows record per-cell StructLit edges under the ListLit" {
+            stmt_parity("fn f() -> int {\n    let rows = table {\n        a | b\n        1 | 2\n        3 | 4\n    }\n    0\n}\n")
+            stmt_parity("fn g() -> int {\n    let rows = table<Row> {\n        a | b\n        1 | \"x\"\n    }\n    0\n}\n")
+        }
+        then "an empty table is a faithful ListLit leaf" {
+            stmt_parity("fn h() -> int {\n    let rows = table { }\n    0\n}\n")
+        }
+    }
+    given "component declarations and blocks" {
+        then "component defs record body StmtRefs (config is walker-opaque)" {
+            stmt_parity("component counter {\n    config {\n        start: int = 0\n    }\n    let count: int = 0\n    on tick {\n        count = count + 1\n    }\n    event clicked(x: int)\n    fn get(self) -> int { count }\n}\n")
+            stmt_parity("component legacy(n: int) {\n    fn go(self) -> int { n }\n}\n")
+        }
+        then "keyword-free and keyword'd instantiation blocks are faithful" {
+            stmt_parity("component counter {\n    config {\n        start: int = 0\n    }\n}\ncounter c1 {\n    start 5\n}\ncomponent counter c2 {\n    start 7\n}\n")
+        }
+        then "nested instantiation bodies flow their element ids" {
+            stmt_parity("component inner_x {\n    config {\n        tag: string = \"\"\n    }\n}\ncomponent outer_x {\n    on render {\n        draw()\n    }\n}\nouter_x hub {\n    inner_x a {\n    }\n    on refresh {\n        redraw()\n    }\n}\n")
+        }
+    }
+}
