@@ -2170,6 +2170,21 @@ int64_t avra_str_index_of(const char* s, const char* needle) {
     return (int64_t)(p - s);
 }
 
+// One-pass line-start index for LineIndex construction: byte offsets where
+// each line begins ([0, nl0+1, nl1+1, ...]). Replaces per-char `source[i]`
+// scanning in Avra, whose bounds check re-derives strlen(source) on every
+// access — quadratic in file size.
+void* avra_str_line_starts(const char* s) {
+    AvraArray* arr = avra_array_new();
+    avra_array_push(arr, 0);
+    const char* p = s;
+    while ((p = strchr(p, '\n')) != NULL) {
+        p++;
+        avra_array_push(arr, (int64_t)(p - s));
+    }
+    return arr;
+}
+
 const char* avra_str_replace(const char* s, const char* from, const char* to) {
     size_t slen = strlen(s);
     size_t flen = strlen(from);
