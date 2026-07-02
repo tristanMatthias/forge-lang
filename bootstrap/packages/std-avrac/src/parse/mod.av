@@ -57,6 +57,11 @@ export type ArgListIds = {
     ids: List<ExprId>,
 }
 
+/// Running state of the template-desugar fold — the boxed concatenation
+/// built so far and the arena row backing it (`have` distinguishes the
+/// empty fold from a real first segment).
+type TemplateFold = { have: bool, result: Expr, result_id: ExprId }
+
 /// One parse of a statement list, surfaced both ways: `wrapped` is the boxed
 /// spanned view (`sstmt_at` at the same positions as always) for embedding in
 /// a parent's payload; `ids` are the arena rows backing each statement, in
@@ -1782,9 +1787,7 @@ impl Parser {
     // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
     // `${string(x)}` all work.
     fn desugar_template(self, raw: string) -> Result<ExprId, string> {
-        mut have = false
-        mut result = Expr.None
-        mut result_id = ExprId(0)
+        mut acc = TemplateFold { have: false, result: Expr.None, result_id: ExprId(0) }
         mut i = 0
         let len = raw.length
         mut text_start = 0
@@ -1792,17 +1795,8 @@ impl Parser {
             if i + 1 < len && raw[i] == "$" && raw[i + 1] == "{" {
                 // Flush text segment before the interpolation.
                 if i > text_start {
-                    let seg = "\"${raw.substring(text_start, i)}\""
-                    let str_expr = Expr.String(seg)
-                    let str_id = self.alloc_leaf(str_expr)
-                    if !have {
-                        have = true
-                        result = str_expr
-                        result_id = str_id
-                    } else {
-                        result = Expr.Binary(result, BinOp.Add, str_expr)
-                        result_id = self.alloc2(result, result_id, str_id)
-                    }
+                    let str_expr = Expr.String("\"${raw.substring(text_start, i)}\"")
+                    acc = self.template_fold(acc, str_expr, self.alloc_leaf(str_expr))
                 }
                 // Find matching `}` (no nesting — braces inside
                 // template expressions are not supported).
@@ -1869,14 +1863,7 @@ impl Parser {
                     str_call = Expr.Call(Expr.Ident("string"), str_args)
                     call_id = self.alloc2(str_call, callee_id, parsed_id)
                 }
-                if !have {
-                    have = true
-                    result = str_call
-                    result_id = call_id
-                } else {
-                    result = Expr.Binary(result, BinOp.Add, str_call)
-                    result_id = self.alloc2(result, result_id, call_id)
-                }
+                acc = self.template_fold(acc, str_call, call_id)
                 i = j + 1
                 text_start = i
             } else {
@@ -1885,22 +1872,25 @@ impl Parser {
         }
         // Flush trailing text after last interpolation.
         if text_start < len {
-            let seg = "\"${raw.substring(text_start, len)}\""
-            let str_expr = Expr.String(seg)
-            let str_id = self.alloc_leaf(str_expr)
-            if !have {
-                have = true
-                result = str_expr
-                result_id = str_id
-            } else {
-                result = Expr.Binary(result, BinOp.Add, str_expr)
-                result_id = self.alloc2(result, result_id, str_id)
-            }
+            let str_expr = Expr.String("\"${raw.substring(text_start, len)}\"")
+            acc = self.template_fold(acc, str_expr, self.alloc_leaf(str_expr))
         }
-        if !have {
-            result_id = self.alloc_leaf(Expr.String("\"\""))
+        if !acc.have {
+            return .Ok(self.alloc_leaf(Expr.String("\"\"")))
         }
-        .Ok(result_id)
+        .Ok(acc.result_id)
+    }
+
+    /// Append one segment to the running template concatenation: the first
+    /// segment starts the fold; every later one chains `prev + seg`
+    /// left-associatively (the shape the boxed desugar always produced),
+    /// allocating the Binary row over the two segment rows.
+    fn template_fold(self, acc: TemplateFold, node: Expr, id: ExprId) -> TemplateFold {
+        if !acc.have {
+            return TemplateFold { have: true, result: node, result_id: id }
+        }
+        let combined = Expr.Binary(acc.result, BinOp.Add, node)
+        TemplateFold { have: true, result: combined, result_id: self.alloc2(combined, acc.result_id, id) }
     }
 
     fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
