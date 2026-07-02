@@ -67,6 +67,7 @@ spec "lower_quotes_via_store: arena rows cover struct-embedded positions" {
         let arms: List<MatchArm> = [arm]
         let stmts = program_of(Expr.MatchExpr(Expr.Ident("x"), arms))
         let store = ingest_program(stmts, "")
-        render_stmt_list(lower_quotes_via_store(stmts, store)) != render_stmt_list(stmts)
+        render_stmt_list(lower_quotes_via_store(stmts, store)) == render_stmt_list(lower_quotes(stmts))
+            && render_stmt_list(lower_quotes_via_store(stmts, store)) != render_stmt_list(stmts)
     }
 }
