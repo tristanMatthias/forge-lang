@@ -121,7 +121,16 @@ masking loop):
    spans; `b1_native_stmt_test`). Measured +1.4% vs oracle.
 4. **Stage D — the 25 feature parsers** (the remaining glue-bridged handler
    bodies: impl/trait/parallel/select/spec/component + for + desugar
-   producers) + patterns.
+   producers) + patterns. **DONE** — every stmt/decl handler, every pattern
+   production, the desugar synthesis sites (if-let both positions,
+   let-else, for-destructure), quote/quote-arm, table literals, and
+   struct-literal field-init values alloc natively; the expr/stmt glue
+   bridges are GONE (only `glue_ingest_type` remains — type expressions
+   are the one still-boxed producer, no ticket site). Walker-opaque
+   containers (SelectArm, CompConfig/Pair, Annotation args) alloc as
+   leaves, matching the canonical ingest. Measured -0.4% vs oracle: with
+   the glue re-ingests eliminated, the native store build is now cheaper
+   than what it replaced.
 5. **Stage E — flip + delete ingest** (+ retire the parity probe to a spec).
 
 Each stage is one PR on the standing process (prepare-pr ×3, CodeRabbit, merge
