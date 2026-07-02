@@ -195,6 +195,19 @@ spec "B1 native chain: frontier productions" {
     }
 }
 
+spec "B1 native chain: parse errors surface through the id chain" {
+    given "malformed expressions" {
+        then "an incomplete binary expression reports had_error" {
+            let probe = parse_expression_native_probe("1 +")
+            probe.had_error == 1
+        }
+        then "an unclosed call reports had_error" {
+            let probe = parse_expression_native_probe("f(1, 2")
+            probe.had_error == 1
+        }
+    }
+}
+
 spec "B1 native chain: speculative rollback stays consistent" {
     given "generic-call disambiguation backtracks" {
         then "a comparison that looks like a generic call parses faithfully" {
