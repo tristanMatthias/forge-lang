@@ -26,7 +26,7 @@ impl Parser {
         if self.check(Tk.KwLet) { return self.parse_if_let_statement() }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let condition_opt = self.parse_expression()
+        let condition_opt = self.parse_expression_boxed()
         self.allow_struct_lit = saved
         let condition = condition_opt?
 
@@ -60,7 +60,7 @@ impl Parser {
         if !self.consume(Tk.Equal, "expected `=` after the `if let` binding") { return .Err("parse error") }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let subject_opt = self.parse_expression()
+        let subject_opt = self.parse_expression_boxed()
         self.allow_struct_lit = saved
         let subject = subject_opt?
         if !self.check(Tk.LeftBrace) {
@@ -107,11 +107,11 @@ impl Parser {
         if self.check(Tk.KwElse) {
             self.advance()
             if self.check(Tk.KwIf) {
-                else_expr = self.parse_if_expression()?
+                else_expr = self.expr_of(self.parse_if_expression()?)
             } else if self.check(Tk.LeftBrace) {
                 else_expr = self.parse_block_expression()?
             } else {
-                else_expr = self.parse_expression()?
+                else_expr = self.parse_expression_boxed()?
             }
         }
         let bind_stmt = self.iflet_bind_stmt(h.tmp, h.binding)
@@ -141,10 +141,14 @@ impl Parser {
         list_concat(head, body)
     }
 
-    fn parse_if_expression(self) -> Result<Expr, string> {
+    fn parse_if_expression(self) -> Result<ExprId, string> {
         self.advance()
         // Bind-fresh `if let v = x { … } else { … }` in expression position.
-        if self.check(Tk.KwLet) { return self.parse_if_let_expression() }
+        // The desugared block carries statements — glue bridge at its boundary.
+        if self.check(Tk.KwLet) {
+            let iflet = self.parse_if_let_expression()?
+            return .Ok(self.glue_ingest_expr(iflet))
+        }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let condition_opt = self.parse_expression()
@@ -154,22 +158,29 @@ impl Parser {
             self.report(DiagCode.ExpectedBlock, "expected `{` after if condition")
             return .Err("parse error")
         }
+        // Branch blocks are stmt-bearing (boxed producers) — each enters the
+        // store via the glue bridge at its own boundary.
         let then_branch = self.parse_block_expression()?
+        let then_id = self.glue_ingest_expr(then_branch)
         if !self.check(Tk.KwElse) {
-            return .Ok(Expr.IfExpr(condition, then_branch, Expr.Number("0")))
+            // The synthesized `0` else-arm is a real child row, exactly as
+            // the canonical ingest would record it.
+            let zero_id = self.alloc_leaf(Expr.Number("0"))
+            return .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, Expr.Number("0")), condition, then_id, zero_id))
         }
         self.advance()
         // Else can be either a block, another if-expression
         // (`else if`), or a single expression.
         if self.check(Tk.KwIf) {
-            let else_branch = self.parse_if_expression()?
-            return .Ok(Expr.IfExpr(condition, then_branch, else_branch))
+            let else_id = self.parse_if_expression()?
+            return .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, self.expr_of(else_id)), condition, then_id, else_id))
         }
         if self.check(Tk.LeftBrace) {
             let else_branch = self.parse_block_expression()?
-            return .Ok(Expr.IfExpr(condition, then_branch, else_branch))
+            let else_id = self.glue_ingest_expr(else_branch)
+            return .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, else_branch), condition, then_id, else_id))
         }
-        let else_branch = self.parse_expression()?
-        .Ok(Expr.IfExpr(condition, then_branch, else_branch))
+        let else_id = self.parse_expression()?
+        .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, self.expr_of(else_id)), condition, then_id, else_id))
     }
 }

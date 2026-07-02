@@ -19,7 +19,7 @@ use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none}
 use @std.avrac.core.{ingest_program, program_from_store, reconstruct_program, sstmt_at, Stmt, SStmt, StmtId, TypeId, render_stmt_list}
 use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr, sexpr_at, Annotation}
 use @std.avrac.core.{expr_ref_id, stmt_ref_id, pat_ref_id, type_ref_id, noderef_tag}
-use @std.avrac.core.{MatchArm, FieldInit, expr_child_tags, wc_roundtrip_expr, wc_roundtrip_stmt}
+use @std.avrac.core.{MatchArm, FieldInit, expr_child_tags, wc_roundtrip_expr, wc_roundtrip_stmt, render_expr}
 
 // The `NodeRef` peel helpers (`expr_ref_id` / `stmt_ref_id` / `pat_ref_id` /
 // `type_ref_id`) and `noderef_tag` are now exported from core/arena.av; they are
@@ -459,6 +459,35 @@ spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
         let s_ovr: List<FieldInit> = [FieldInit { name: "b", value: sexpr_at(Expr.StructLit("Q", inner), 3, 3, "") }]
         wc_roundtrip_expr(Expr.StructLit("P", m_inits))              // struct-init value is a match
             && wc_roundtrip_expr(Expr.With(Expr.Ident("o"), s_ovr))  // with-override value is a struct
+    }
+}
+
+// Speculative-parse rollback (B1): mark() snapshots the four arenas' row
+// counts; truncate_to_mark() rolls them back so a backtracked parse leaves no
+// rows. Nodes and their parallel id-keyed columns (edges, spans) truncate
+// together — a stale span/edge for a re-issued id would corrupt later reads.
+spec "B1: StoreMark truncation rolls back speculative allocation" {
+    then "truncate_to_mark drops rows allocated after the mark, across kinds" {
+        let store = new_node_store(build_line_index(""))
+        let keep = store.ingest_expr(Expr.Number("1"), byte_span(0, 1))
+        let m = store.mark()
+        let _ = store.ingest_expr(Expr.Grouping(Expr.Number("2")), byte_span(2, 3))
+        let _ = store.ingest_pat(Pattern.Wildcard, byte_span_none())
+        let _ = store.ingest_type(ValueType.Int, byte_span_none())
+        store.truncate_to_mark(m)
+        store.exprs.count() == 1 && store.pats.count() == 0 && store.types.count() == 0
+            && render_expr(store.exprs.get(keep)) == render_expr(Expr.Number("1"))
+    }
+    then "a re-issued id after truncation gets fresh edges and span (no stale columns)" {
+        let store = new_node_store(build_line_index(""))
+        let m = store.mark()
+        // Allocate a parent with a child edge + a real span, then roll back.
+        let _ = store.ingest_expr(Expr.Grouping(Expr.Number("9")), byte_span(5, 9))
+        store.truncate_to_mark(m)
+        // The same raw ids are re-issued for a childless node with span_none.
+        let fresh = store.ingest_expr(Expr.Ident("x"), byte_span_none())
+        store.exprs.children_of(fresh).length == 0
+            && byte_span_is_none(store.exprs.span_of(fresh))
     }
 }
 

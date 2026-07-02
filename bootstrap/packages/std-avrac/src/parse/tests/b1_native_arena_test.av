@@ -1,0 +1,224 @@
+// WHY: B1 — the parser's expression chain allocates arena rows natively
+// (typed ids end-to-end) while production still serves the boxed tree.
+// These specs run the migration oracle over real parses: for every parsed
+// expression, the ROOT ROW's recorded edges must mirror the derive-walker's
+// view of its boxed payload — same arity, same kinds, same nodes — all the
+// way down the subtree (`store_expr_subtree_faithful`). That equivalence is
+// exactly what the eventual flip (serving from the parser's store instead
+// of re-ingesting) relies on, so a regression here is a flip-blocker even
+// though nothing in production reads the native store yet.
+
+use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.core.{store_expr_subtree_faithful, render_expr}
+
+fn faithful(source: string) -> bool {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return false }
+    store_expr_subtree_faithful(probe.store, probe.root)
+}
+
+fn root_render(source: string) -> string {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return "<parse error>" }
+    render_expr(probe.store.exprs.get(probe.root))
+}
+
+spec "B1 native chain: leaves and operator spine are walker-faithful" {
+    given "literal and ident leaves" {
+        then "a bare literal parses to a faithful leaf row" {
+            faithful("42")
+            faithful("\"hi\"")
+            faithful("3.25")
+            faithful("true")
+            faithful("none")
+            faithful("name")
+        }
+    }
+    given "the binary/logical precedence spine" {
+        then "nested arithmetic re-parents child rows faithfully" {
+            faithful("1 + 2 * 3 - 4 / 5 % 6")
+        }
+        then "comparisons, equality, shifts and bitwise ops chain faithfully" {
+            faithful("a << 2 >> 1 & m | n ^ p")
+            faithful("a < b && c >= d || e == f && g != h")
+        }
+        then "null-coalesce and unary nest faithfully" {
+            faithful("-x + !y ?? ~z")
+        }
+        then "range membership shares the subject row as a DAG" {
+            // `x in 1..9` desugars to `x >= 1 && x <= 9` — the same `x` row
+            // backs both comparisons by design (the canonical ingest copies).
+            faithful("x in 1..9")
+        }
+        then "list membership records subject + item edges" {
+            faithful("x in [1, 2, 3]")
+        }
+        then "empty list membership records only the subject edge" {
+            faithful("x in []")
+        }
+        then "is-check wraps the subject row" {
+            faithful("s is .Some")
+        }
+    }
+}
+
+spec "B1 native chain: postfix loop rebuilds re-parent by id" {
+    given "call/index/field postfix chains" {
+        then "calls with args are faithful" {
+            faithful("f(1, g(2), h)")
+        }
+        then "method chains and field access are faithful" {
+            faithful("obj.field.method(1).other")
+        }
+        then "index and slice are faithful" {
+            faithful("xs[i + 1]")
+            faithful("xs[1..n]")
+        }
+        then "tuple index is faithful" {
+            faithful("pair.0")
+        }
+        then "try and force-unwrap wrap the subject row" {
+            faithful("fallible()?")
+            faithful("maybe!")
+        }
+        then "optional chain and optional method call are faithful" {
+            faithful("obj?.field")
+            faithful("obj?.method(1, 2)")
+        }
+        then "enum ctor promotion orphans the type-name shell" {
+            // `Foo.Bar(x)`: the `Foo` ident row is discarded (scalar data on
+            // the ctor); the arg is re-parented — edges must match the walker.
+            faithful("Foo.Bar(x, y)")
+            faithful(".Bare(1)")
+        }
+        then "catch bridges its stmt-bearing handler" {
+            faithful("risky() catch { 0 }")
+        }
+        then "it-sugar args wrap the raw row in a fresh lambda row" {
+            // `xs.map(it * 2)` — the arg's raw row becomes the body child of
+            // an implicit-lambda row; the call's arg edge points at the lambda.
+            faithful("xs.map(it * 2)")
+            faithful("xs.filter(it > 1).map(it + 1)")
+        }
+    }
+    given "assignment retargets" {
+        then "ident assignment re-parents the value row" {
+            faithful("x = y + 1")
+        }
+        then "field assignment re-parents the object off the shell's edge" {
+            // The parsed `a.b` FieldAccess shell orphans; its object child is
+            // re-parented by id onto the FieldAssign row.
+            faithful("a.b = c * 2")
+        }
+    }
+    given "pipe desugars" {
+        then "bare pipe becomes a call with the LHS re-parented" {
+            faithful("xs |> render")
+            root_render("xs |> render") == root_render("render(xs)")
+        }
+        then "pipe into a call prepends the LHS edge" {
+            faithful("xs |> take(2)")
+        }
+        then "placeholder pipe splices the LHS edge at the placeholder slot" {
+            faithful("xs |> insert(_, 2)")
+        }
+    }
+}
+
+spec "B1 native chain: composite literals and closures" {
+    given "grouping, tuples, lists, maps" {
+        then "grouping wraps the inner row" {
+            faithful("(a + b)")
+        }
+        then "tuples record element edges" {
+            faithful("(1, two, 3.0)")
+            faithful("()")
+        }
+        then "list literals record element edges" {
+            faithful("[1, x + 1, f(2)]")
+            faithful("[]")
+        }
+        then "list comprehension re-parents body/collection/filter" {
+            faithful("[x * x for x in xs if x > 1]")
+            faithful("[x + 1 for x in xs]")
+        }
+        then "map literals bridge at their boundary" {
+            faithful("{ \"k\": 1, \"j\": v }")
+        }
+    }
+    given "struct construction and update" {
+        then "struct literals record field-value edges" {
+            faithful("Point { x: 1, y: f(2) }")
+        }
+        then "with-update re-parents subject + override values" {
+            faithful("p with { y: 5 }")
+        }
+    }
+    given "lambdas" {
+        then "expression-bodied lambdas re-parent the body row" {
+            faithful("(x) -> x + 1")
+            faithful("(a, b) -> a * b")
+            faithful("() -> 0")
+        }
+        then "block-bodied lambdas bridge the block at its boundary" {
+            faithful("(x) -> { let y = x + 1 y }")
+        }
+        then "typed-param lambdas are faithful" {
+            faithful("(x: int, y: int) -> x + y")
+        }
+    }
+}
+
+spec "B1 native chain: frontier productions" {
+    given "if/match/when expressions" {
+        then "if-expressions record cond/then/else edges" {
+            faithful("if c { 1 } else { 2 }")
+            faithful("if c { 1 } else if d { 2 } else { 3 }")
+        }
+        then "an else-less if synthesizes the 0 arm as a real row" {
+            faithful("if c { 1 }")
+        }
+        then "match subject and arm children flatten in walker order" {
+            faithful("match s { .A -> 1 .B(v) -> v + 1 _ -> 0 }")
+        }
+        then "match guards contribute their edge in position" {
+            faithful("match s { .A(n) if n > 2 -> n _ -> 0 }")
+        }
+        then "when is walker-opaque and holds trivially as a leaf" {
+            faithful("when { a > 1 -> 1 _ -> 0 }")
+        }
+    }
+    given "nesting across the frontier" {
+        then "a match inside an if inside a call stays faithful" {
+            faithful("f(if c { match s { .A -> 1 _ -> 0 } } else { 2 })")
+        }
+    }
+}
+
+spec "B1 native chain: parse errors surface through the id chain" {
+    given "malformed expressions" {
+        then "an incomplete binary expression reports had_error" {
+            let probe = parse_expression_native_probe("1 +")
+            probe.had_error == 1
+        }
+        then "an unclosed call reports had_error" {
+            let probe = parse_expression_native_probe("f(1, 2")
+            probe.had_error == 1
+        }
+    }
+}
+
+spec "B1 native chain: speculative rollback stays consistent" {
+    given "generic-call disambiguation backtracks" {
+        then "a comparison that looks like a generic call parses faithfully" {
+            // `a < b` triggers the speculative generic-call attempt, which
+            // fails and truncates the store; the surviving rows must still
+            // be walker-faithful.
+            faithful("a < b")
+            faithful("f < g && h > i")
+        }
+        then "a real generic call allocates callee + arg edges" {
+            faithful("f<int>(x, 1)")
+        }
+    }
+}

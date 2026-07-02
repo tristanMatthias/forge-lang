@@ -25,7 +25,7 @@ impl Parser {
             ty_vt = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
-        let initializer = self.parse_expression()?
+        let initializer = self.parse_expression_boxed()?
         // Guard form: `let v = x else { … }` (also `let mut v = x else { … }`).
         if self.check(Tk.KwElse) {
             return self.build_let_else(name, ty_vt, initializer, is_mut)
@@ -79,7 +79,7 @@ impl Parser {
             ty_vt = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return .Err("parse error") }
-        let initializer = self.parse_expression()?
+        let initializer = self.parse_expression_boxed()?
         // `mut v = x else { … }` — bind-fresh guard binding a reassignable `v`.
         if self.check(Tk.KwElse) {
             return self.build_let_else(name, ty_vt, initializer, true)
@@ -97,7 +97,7 @@ impl Parser {
             ty_vt = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.Equal, "expected `=` after constant name") { return .Err("parse error") }
-        let initializer = self.parse_expression()?
+        let initializer = self.parse_expression_boxed()?
         .Ok(Stmt.Const(name, ty_vt, initializer))
     }
 
@@ -106,7 +106,7 @@ impl Parser {
         let names = self.parse_destructure_names()?
         if !self.consume(Tk.RightParen, "expected `)` after destructure names") { return .Err("parse error") }
         if !self.consume(Tk.Equal, "expected `=` after destructure pattern") { return .Err("parse error") }
-        let initializer = self.parse_expression()?
+        let initializer = self.parse_expression_boxed()?
         .Ok(Stmt.LetDestructure(names, initializer))
     }
 }

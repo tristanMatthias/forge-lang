@@ -2915,9 +2915,14 @@ fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<
 // Check newtype constructor argument matches the inner type
 /// Verify that the single arg to a newtype constructor matches the
 /// newtype's declared inner type. `UserId(uuid)` should pass a UUID.
+/// Fires ONLY when the callee IS the newtype (its ctor registers under
+/// the newtype's own name) — an ordinary fn that merely RETURNS the
+/// newtype (e.g. `expr_ref_id(r: NodeRef) -> ExprId`) constrains its
+/// args by its own param types, not by the newtype's payload.
 fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
     match ret_ty {
-        .Newtype(_, inner_ty, _) -> {
+        .Newtype(nt_name, inner_ty, _) -> {
+            if !tc_callee_names_type(name, nt_name) { return tc }
             if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Unknown || inner_ty is .Unknown) {
                 let msg = "`${name}()` expects `${vtype_render_full(inner_ty)}`, got `${vtype_render_full(arg_ty)}`"
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
@@ -2926,6 +2931,19 @@ fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueT
         }
         _ -> tc
     }
+}
+
+/// True when a callee name refers to the given type name — exactly, or
+/// with fully-qualified module prefixes on either side (`ExprId` vs
+/// `@std::avrac::core::ExprId` match in both directions).
+fn tc_callee_names_type(callee: string, type_name: string) -> bool {
+    if callee == type_name { return true }
+    let callee_suffix = "::" + callee
+    if type_name.length > callee_suffix.length && type_name.substring(type_name.length - callee_suffix.length, type_name.length) == callee_suffix {
+        return true
+    }
+    let type_suffix = "::" + type_name
+    callee.length > type_suffix.length && callee.substring(callee.length - type_suffix.length, callee.length) == type_suffix
 }
 
 /// Verify shape compatibility — the arg's struct must have all the

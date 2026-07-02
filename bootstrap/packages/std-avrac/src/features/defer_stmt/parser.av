@@ -7,13 +7,13 @@ use parse.{Parser}
 impl Parser {
     fn parse_defer_statement(self) -> Result<Stmt, string> {
         self.advance()
-        let body = self.parse_expression()?
+        let body = self.parse_expression_boxed()?
         .Ok(Stmt.Defer(body))
     }
 
     fn parse_errdefer_statement(self) -> Result<Stmt, string> {
         self.advance()
-        let body = self.parse_expression()?
+        let body = self.parse_expression_boxed()?
         .Ok(Stmt.Errdefer(body))
     }
 }

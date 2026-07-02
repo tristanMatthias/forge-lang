@@ -208,7 +208,7 @@ impl Parser {
             let vt = type_expr_to_vtype(te)
             let default_val = if self.check(Tk.Equal) {
                 self.advance()
-                let dv = self.parse_expression()?
+                let dv = self.parse_expression_boxed()?
                 dv
             } else {
                 null
@@ -272,7 +272,7 @@ impl Parser {
                 let vt = type_expr_to_vtype(te)
                 let init = if self.check(Tk.Equal) {
                     self.advance()
-                    let v = self.parse_expression()?
+                    let v = self.parse_expression_boxed()?
                     v
                 } else { Expr.None }
                 let stmt = Stmt.Let(field_name, vt, init)
@@ -305,7 +305,7 @@ impl Parser {
             // Check if next char is a quote (string literal) or digit (number)
             if self.peek_after_ident_is_string() || self.peek_after_ident_is_number() {
                 self.advance()  // consume key
-                let value = self.parse_expression()?
+                let value = self.parse_expression_boxed()?
                 if self.check(Tk.Comma) { self.advance() }
                 out.push(CompConfigPair { key, value })
                 continue
@@ -313,7 +313,7 @@ impl Parser {
             // Check for `true` or `false` keywords after ident
             if self.peek_after_ident_is_keyword("true") || self.peek_after_ident_is_keyword("false") {
                 self.advance()  // consume key
-                let value = self.parse_expression()?
+                let value = self.parse_expression_boxed()?
                 if self.check(Tk.Comma) { self.advance() }
                 out.push(CompConfigPair { key, value })
                 continue
@@ -322,7 +322,7 @@ impl Parser {
             if self.peek_after_ident_is_eq() {
                 self.advance()  // consume key
                 self.advance()  // consume =
-                let value = self.parse_expression()?
+                let value = self.parse_expression_boxed()?
                 if self.check(Tk.Comma) { self.advance() }
                 out.push(CompConfigPair { key, value })
                 continue

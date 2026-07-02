@@ -108,6 +108,7 @@ extern fn avra_stdin_read_bytes(n: int) -> string
 extern fn avra_stdin_read_line() -> string
 extern fn avra_stdout_write(s: string)
 extern fn avra_str_ends_with(s: string, suffix: string) -> int
+extern fn avra_str_line_starts(s: string) -> List<int>
 
 // ── Intmap extensions ──
 extern fn avra_intmap_inc(map: ptr, key: int) -> int

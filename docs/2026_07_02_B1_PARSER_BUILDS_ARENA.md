@@ -100,13 +100,18 @@ Per-production-family stages, each dark-launched + parity-probed + diff-tested
 masking loop):
 
 1. **Stage A — plumbing + primary/postfix expressions** (`Parser.store`,
-   signatures for the primary chain, the parity probe itself).
+   signatures for the primary chain, the parity probe itself). **DONE** —
+   shipped merged with Stage B: measurement showed the A-only seam form
+   (glue-ingest per primary) costs +10%, so the chain went in one PR.
 2. **Stage B — binary/logical/pipe chains + the rebuild sites** (the hard
-   cases live here; targeted parity fixtures per case).
+   cases live here; targeted parity fixtures per case). **DONE** — plus the
+   expr-shaped frontier (if-expr, match-expr, when, lambdas, list/tuple/arg
+   machinery) and the faithfulness oracle
+   (`store_expr_subtree_faithful` + the `b1_native_arena_test` battery).
 3. **Stage C — statements + declarations** (`parse_statement_list` chokepoint,
-   top-level span parity).
+   top-level span parity, sub-parser store threading).
 4. **Stage D — the 25 feature parsers** (mechanical; dispatch passes `self`,
-   so no registry changes).
+   so no registry changes) + patterns.
 5. **Stage E — flip + delete ingest** (+ retire the parity probe to a spec).
 
 Each stage is one PR on the standing process (prepare-pr ×3, CodeRabbit, merge
@@ -122,6 +127,16 @@ moves into `parser_new` for store-carrying entries only. The *wins* arrive at
 B2/B-final when consumers read ids and the boxed tree shrinks — B1 is the
 foundation move, priced accordingly. During dark-launch stages: temporary
 ~+5% (double alloc), removed at Stage E.
+
+**Measured (Stage A+B, 2026-07-02, selfhost `bs2 check main.av`):** parity —
+new ≈ 23.2s vs oracle ≈ 23.4s. Two perf findings made this possible and are
+in the Stage A+B PR: (1) `build_line_index`'s per-char `source[i]` scan
+re-derived `strlen(source)` per access (quadratic per file, ~+10% alone) —
+replaced with a one-pass C scanner (`avra_str_line_starts`); (2) arena `add`
+now elides edge/span side-table writes when they equal the DenseTable `fill`
+(leaf rows — the majority — cost one list push), which also cheapens the
+canonical ingest. Remaining dark-launch overhead (native rows + the
+still-boxed stmt/pattern glue re-ingest) fits inside that budget.
 
 ## 8. Risks
 

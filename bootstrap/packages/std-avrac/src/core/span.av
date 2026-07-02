@@ -49,14 +49,11 @@ export type LineIndex = { line_starts: List<int> }
 /// each '\n' opens the next line at the following byte. This mirrors the
 /// lexer's advance_char (line + 1 / column = 1 on '\n'), so an offset run
 /// back through `to_linecol` reproduces the lexer's (line, col) exactly.
+/// The scan is a single C-side pass (avra_str_line_starts): per-char
+/// `source[i]` indexing re-derives strlen(source) on every access, which
+/// made this quadratic in file size.
 export fn build_line_index(source: string) -> LineIndex {
-    let mut starts: List<int> = [0]
-    for i in 0..source.length {
-        if source[i] == "\n" {
-            starts.push(i + 1)
-        }
-    }
-    LineIndex { line_starts: starts }
+    LineIndex { line_starts: avra_str_line_starts(source) }
 }
 
 impl LineIndex {

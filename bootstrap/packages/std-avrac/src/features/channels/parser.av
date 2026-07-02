@@ -23,7 +23,7 @@ impl Parser {
             self.advance()
             return .Ok(Expr.ChannelNew(elem, null))
         }
-        let cap = self.parse_expression()?
+        let cap = self.parse_expression_boxed()?
         if !self.consume(Tk.RightParen, "expected `)` after channel capacity") {
             return .Err("parse error")
         }

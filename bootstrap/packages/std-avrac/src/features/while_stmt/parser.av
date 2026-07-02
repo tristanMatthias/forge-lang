@@ -10,7 +10,7 @@ impl Parser {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let condition_opt = self.parse_expression()
+        let condition_opt = self.parse_expression_boxed()
         self.allow_struct_lit = saved
         let condition = condition_opt?
 
