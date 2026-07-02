@@ -65,7 +65,10 @@ Mechanics:
    differential probe (`AVRA_B1_PARITY=1`, spec-tested like the `AVRA_L1_INGEST`
    probe) builds both stores and asserts serve-path equivalence on real
    programs — the corpus, the selfhost source, and targeted fixtures for every
-   hard case in §5.
+   hard case in §5. The probe also reports **arena stats** (rows per kind +
+   orphan count = parser rows minus ingest rows), turning Decision 4 from an
+   argument into a measurement: a runaway rebuild or a truncation bug shows up
+   as an orphan-rate spike at the stage gate, not as a mystery later.
 2. **Flip + delete.** When parity holds across the suite + selfhost,
    `parse_or_fail` serves from the parser store and the `ingest_program` call
    is deleted. The quote-scan (`y5um.5`) and resolver-roots (`y5um.1`)
