@@ -78,11 +78,7 @@ impl Parser {
     fn parse_lambda_body(self) -> Result<ExprId, string> {
         // Lambda body: either a block { ... } or a single expression.
         if self.check(Tk.LeftBrace) {
-            // Block bodies carry statements — still boxed producers, so the
-            // block subtree enters the store via the glue bridge here, at
-            // its own boundary.
-            let block = self.parse_block_expression()?
-            return .Ok(self.glue_ingest_expr(block))
+            return self.parse_block_expression()
         }
         self.parse_expression()
     }

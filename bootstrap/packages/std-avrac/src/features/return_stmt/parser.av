@@ -9,10 +9,10 @@ impl Parser {
         self.advance()
 
         if self.current_kind in [Tk.RightBrace, Tk.Eof] {
-            return .Ok(self.glue_ingest_stmt(Stmt.ReturnEmpty))
+            return .Ok(self.alloc_stmt_leaf(Stmt.ReturnEmpty))
         }
 
-        let value = self.parse_expression_boxed()?
-        .Ok(self.glue_ingest_stmt(Stmt.Return(value)))
+        let value_id = self.parse_expression()?
+        .Ok(self.alloc_stmt_expr1(Stmt.Return(self.expr_of(value_id)), value_id))
     }
 }
