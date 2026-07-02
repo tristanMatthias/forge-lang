@@ -1,0 +1,91 @@
+// WHY: the newtype-ctor arg gate (`UserId(uuid)` must pass the inner type)
+// used to fire for ANY call whose RETURN type is a newtype — so an ordinary
+// fn like `fn wrap_len(s: string) -> NrId` was rejected with F1000 because
+// its `string` arg isn't the newtype's inner `int`. The gate now checks that
+// the callee IS the newtype (ctors register under the newtype's own name)
+// before comparing the first arg against the inner type. These specs pin
+// both sides: newtype-returning fns with unrelated params compile and run;
+// a genuinely mistyped ctor call still errors.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+/// Test fixture: newtype wrapping an int.
+type NrId = int
+
+/// Ordinary fn RETURNING the newtype whose param is NOT the inner type —
+/// the shape the broken gate rejected.
+fn nr_wrap_len(s: string) -> NrId {
+    NrId(s.length)
+}
+
+/// Two params, neither the inner type — the gate only ever looked at the
+/// FIRST arg, so this pins the general no-fire case too. Single trailing
+/// ctor return deliberately: mixed-control-flow bodies currently drop the
+/// newtype identity of the return (a separate, tracked codegen gap).
+fn nr_combine(a: string, b: bool) -> NrId {
+    mut n = a.length
+    if !b { n = 0 }
+    NrId(n)
+}
+
+/// Param-typed unwrap: `.raw()` resolves on a declared NrId parameter,
+/// keeping the assertions independent of return-type inference gaps.
+fn nr_unwrap(id: NrId) -> int {
+    id.raw()
+}
+
+/// Pointer-represented param (List) — immune to the scalar assignability
+/// leniency that lets a string arg slip past an int gate, so THIS is the
+/// call the broken form of the gate actually rejected.
+fn nr_from_list(xs: List<int>) -> NrId {
+    NrId(xs.length)
+}
+
+fn nr_bad_ctor_output() -> string {
+    // A genuinely mistyped CTOR call must still be gated: `NrBad("x")`
+    // where the inner type is int.
+    let fixture = "build/_nr_bad_ctor.av"
+    let src = "type NrBad = int\n" +
+        "fn main() {\n" +
+        "    let _ = NrBad(\"not an int\")\n" +
+        "}\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
+fn nr_gate_ok_output() -> string {
+    // The no-fire side, asserted through a standalone `bs2 check` fixture:
+    // a fn RETURNING a newtype, called with a pointer-represented arg (List
+    // is immune to the int→string scalar leniency), must typecheck clean.
+    // Compile-fixture form because a main()-body call exercises the gate
+    // directly, independent of how spec-block bodies are typechecked.
+    let fixture = "build/_nr_gate_ok.av"
+    let src = "type NrOk = int\n" +
+        "fn from_list(xs: List<int>) -> NrOk { NrOk(xs.length) }\n" +
+        "fn main() {\n" +
+        "    let v = from_list([1, 2, 3])\n" +
+        "    println(string(v.raw()))\n" +
+        "}\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "newtype-returning fns are not ctor calls" {
+    then "a fn returning a newtype accepts params unrelated to the inner type" {
+        nr_unwrap(nr_wrap_len("abcd")) == 4
+    }
+    then "a pointer-represented param passes the gate too" {
+        nr_unwrap(nr_from_list([1, 2, 3])) == 3
+    }
+    then "the gate stays quiet for a main()-body call with a List arg" {
+        let out = nr_gate_ok_output()
+        !out.contains("F1000")
+    }
+    then "multiple unrelated params pass the gate" {
+        nr_unwrap(nr_combine("ab", true)) == 2
+        nr_unwrap(nr_combine("ab", false)) == 0
+    }
+    then "a mistyped newtype CTOR call still errors with F1000" {
+        nr_bad_ctor_output().contains("F1000")
+    }
+}
