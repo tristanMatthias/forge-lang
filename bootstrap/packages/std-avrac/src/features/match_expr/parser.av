@@ -7,7 +7,7 @@
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArm}
 
 use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, SExpr, SStmt, sexpr, sstmt, pattern_optional_present, pattern_optional_absent}
-use core.{NodeRef, ExprId, byte_span_none}
+use core.{NodeRef, ExprId, PatId, byte_span_none}
 use parse.{Parser, table_zip_entries}
 use core.{Tk}
 
@@ -99,7 +99,7 @@ impl Parser {
             // becoming a field access on the previous expression
             let saved_dot = self.allow_dot_postfix
             self.allow_dot_postfix = false
-            let pattern = self.parse_pattern()?
+            let pattern = self.pat_of(self.parse_pattern()?)
             self.allow_dot_postfix = saved_dot
             if self.check(Tk.Pipe) { self.advance() }
             // Parse values — one per column, stopping at | separators
@@ -130,12 +130,13 @@ impl Parser {
     // Parse a pattern that may be an OR of alternatives: `pat or pat or pat`.
     // Only used in normal match arms — table rows use parse_pattern directly
     // so that `|` column separators are not consumed as part of OR patterns.
-    fn parse_pattern_or(self) -> Result<Pattern, string> {
+    fn parse_pattern_or(self) -> Result<PatId, string> {
         let left = self.parse_pattern()?
         if !self.check(Tk.KwOr) { return .Ok(left) }
         self.advance()
         let right = self.parse_pattern_or()?
-        .Ok(Pattern.Or(left, right))
+        let node = Pattern.Or(self.pat_of(left), self.pat_of(right))
+        .Ok(self.alloc_pat(node, [NodeRef.PatRef(left), NodeRef.PatRef(right)]))
     }
 
     fn parse_match_arm_list(self) -> Result<MatchArmsParsed, string> {
@@ -161,7 +162,7 @@ impl Parser {
                 if self.check(Tk.Comma) { self.advance() }
                 let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
                 let splice = Expr.Splice(target)
-                refs.push(NodeRef.PatRef(self.glue_ingest_pat(sentinel_pat)))
+                refs.push(NodeRef.PatRef(self.alloc_pat_leaf(sentinel_pat)))
                 refs.push(NodeRef.ExprRef(self.alloc1(splice, target_id)))
                 out.push(MatchArm {
                     pattern: sentinel_pat,
@@ -170,8 +171,9 @@ impl Parser {
                 })
                 continue
             }
-            let pattern = self.parse_pattern_or()?
-            refs.push(NodeRef.PatRef(self.glue_ingest_pat(pattern)))
+            let pat_id = self.parse_pattern_or()?
+            let pattern = self.pat_of(pat_id)
+            refs.push(NodeRef.PatRef(pat_id))
             // Optional guard: `pattern if cond ->`
             mut guard: SExpr? = none
             if self.check(Tk.KwIf) {
@@ -215,10 +217,10 @@ impl Parser {
         .Ok(MatchArmsParsed { arms: out, refs: refs })
     }
 
-    fn parse_pattern(self) -> Result<Pattern, string> {
+    fn parse_pattern(self) -> Result<PatId, string> {
         if self.check(Tk.Identifier) && self.current_lexeme == "_" {
             self.advance()
-            return .Ok(Pattern.Wildcard)
+            return .Ok(self.alloc_pat_leaf(Pattern.Wildcard))
         }
         // Optional-match surface (spec Axis 10.4). One rule everywhere:
         // `let <name>` binds the present value — here it lowers to the
@@ -228,11 +230,11 @@ impl Parser {
         if self.check(Tk.KwLet) {
             self.advance()
             let bind = self.consume_identifier("expected binding name after `let` in pattern")?
-            return .Ok(pattern_optional_present(bind))
+            return .Ok(self.alloc_pat_leaf(pattern_optional_present(bind)))
         }
         if self.check(Tk.KwNone) || self.check(Tk.KwNull) {
             self.advance()
-            return .Ok(pattern_optional_absent())
+            return .Ok(self.alloc_pat_leaf(pattern_optional_absent()))
         }
         // Literal patterns: "string", 42, true, false
         if self.check(Tk.String) {
@@ -240,17 +242,17 @@ impl Parser {
             self.advance()
             // Strip surrounding quotes from the lexeme
             let content = raw.substring(1, raw.length - 1)
-            return .Ok(Pattern.LitString(content))
+            return .Ok(self.alloc_pat_leaf(Pattern.LitString(content)))
         }
         if self.check(Tk.Number) {
             let val = int(self.current_lexeme)
             self.advance()
-            return .Ok(Pattern.LitInt(val))
+            return .Ok(self.alloc_pat_leaf(Pattern.LitInt(val)))
         }
         if self.check(Tk.Float) {
             let val = self.current_lexeme
             self.advance()
-            return .Ok(Pattern.LitFloat(val))
+            return .Ok(self.alloc_pat_leaf(Pattern.LitFloat(val)))
         }
         // Negative literal patterns: -42, -3.14
         if self.check(Tk.Minus) {
@@ -258,23 +260,23 @@ impl Parser {
             if self.check(Tk.Number) {
                 let val = int(self.current_lexeme)
                 self.advance()
-                return .Ok(Pattern.LitInt(0 - val))
+                return .Ok(self.alloc_pat_leaf(Pattern.LitInt(0 - val)))
             }
             if self.check(Tk.Float) {
                 let val = "-${self.current_lexeme}"
                 self.advance()
-                return .Ok(Pattern.LitFloat(val))
+                return .Ok(self.alloc_pat_leaf(Pattern.LitFloat(val)))
             }
             self.set_error("expected number after `-` in pattern")
             return .Err("parse error")
         }
         if self.check(Tk.KwTrue) {
             self.advance()
-            return .Ok(Pattern.LitBool(true))
+            return .Ok(self.alloc_pat_leaf(Pattern.LitBool(true)))
         }
         if self.check(Tk.KwFalse) {
             self.advance()
-            return .Ok(Pattern.LitBool(false))
+            return .Ok(self.alloc_pat_leaf(Pattern.LitBool(false)))
         }
         // Union type pattern: int(n), string(s), MyStruct(v)
         // Recognized when an identifier is followed by '(' — distinguishes from
@@ -287,7 +289,7 @@ impl Parser {
             if !self.consume(Tk.RightParen, "expected `)` after type pattern binding") {
                 return .Err("parse error")
             }
-            return .Ok(Pattern.TypePattern(type_name, binding))
+            return .Ok(self.alloc_pat_leaf(Pattern.TypePattern(type_name, binding)))
         }
         if !self.consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start pattern") {
             return .Err("parse error")
@@ -295,7 +297,7 @@ impl Parser {
         let name = self.consume_identifier("expected variant name in pattern")?
         if !self.check(Tk.LeftParen) {
             let empty_b: List<ParamEntry> = []
-            return .Ok(Pattern.Variant(name, empty_b))
+            return .Ok(self.alloc_pat_leaf(Pattern.Variant(name, empty_b)))
         }
         self.advance()
         // Detect nested patterns: if first token inside parens is `.`, `_`,
@@ -305,13 +307,19 @@ impl Parser {
             if !self.consume(Tk.RightParen, "expected `)` after nested patterns") {
                 return .Err("parse error")
             }
-            return .Ok(Pattern.NestedVariant(name, sub))
+            mut boxed: List<Pattern> = []
+            mut edges: List<NodeRef> = []
+            for pid in sub {
+                boxed.push(self.pat_of(pid))
+                edges.push(NodeRef.PatRef(pid))
+            }
+            return .Ok(self.alloc_pat(Pattern.NestedVariant(name, boxed), edges))
         }
         let bindings = self.parse_param_list()?
         if !self.consume(Tk.RightParen, "expected `)` after binding list") {
             return .Err("parse error")
         }
-        .Ok(Pattern.Variant(name, bindings))
+        .Ok(self.alloc_pat_leaf(Pattern.Variant(name, bindings)))
     }
 
     fn is_pattern_start(self) -> bool {
@@ -322,8 +330,8 @@ impl Parser {
         self.check(Tk.Dot)
     }
 
-    fn parse_pattern_list(self) -> Result<List<Pattern>, string> {
-        mut out: List<Pattern> = []
+    fn parse_pattern_list(self) -> Result<List<PatId>, string> {
+        mut out: List<PatId> = []
         while !self.check(Tk.RightParen) {
             let p = self.parse_pattern()?
             out.push(p)

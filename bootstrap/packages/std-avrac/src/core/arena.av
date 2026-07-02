@@ -352,6 +352,12 @@ impl PatArena {
         if !byte_span_is_none(sp) { self.spans.set(id, sp) }
         id
     }
+    /// Append a LEAF row (no children, no source span) — see ExprArena.add_leaf.
+    fn add_leaf(self, node: Pattern) -> PatId {
+        let id = PatId(self.nodes.length)
+        self.nodes.push(node)
+        id
+    }
     fn get(self, id: PatId) -> Pattern { self.nodes[id.raw()] }
     fn children_of(self, id: PatId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: PatId) -> ByteSpan { self.spans.get(id) }

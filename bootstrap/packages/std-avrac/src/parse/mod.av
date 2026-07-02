@@ -2370,7 +2370,7 @@ impl Parser {
     /// pass picks the arm back out via its `arm` kind discriminator.
     fn parse_quote_arm_body(self) -> Result<Expr, string> {
         if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
-        let pattern = self.parse_pattern_or()?
+        let pattern = self.pat_of(self.parse_pattern_or()?)
         mut guard: SExpr? = none
         if self.check(Tk.KwIf) {
             self.advance()
@@ -2463,6 +2463,21 @@ impl Parser {
     /// producers) into the store, returning its root id.
     fn glue_ingest_type(self, node: ValueType) -> TypeId {
         self.store.ingest_type(node, byte_span_none())
+    }
+
+    /// Boxed readback of an allocated pattern — an O(1) row read.
+    fn pat_of(self, id: PatId) -> Pattern {
+        self.store.pats.get(id)
+    }
+
+    /// Allocate a parser-built `Pattern` with its children's edge refs.
+    fn alloc_pat(self, node: Pattern, edges: List<NodeRef>) -> PatId {
+        self.store.pats.add(node, NodeEdges { refs: edges }, byte_span_none())
+    }
+
+    /// Alloc a pattern LEAF (no node children) — the arena's one-push path.
+    fn alloc_pat_leaf(self, node: Pattern) -> PatId {
+        self.store.pats.add_leaf(node)
     }
 
     /// Boxed readback of an allocated expr — an O(1) row read. The chain uses
