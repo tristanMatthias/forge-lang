@@ -106,7 +106,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.features.comptime.{run_comptime, resolve_and_expand_program}
-use @std.avrac.features.quote_expr.{lower_quotes}
+use @std.avrac.features.quote_expr.{lower_quotes, lower_quotes_via_store}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
 use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
@@ -218,9 +218,9 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext)
 /// Renders bag warnings/errors when `parsed.had_error` is set
 /// (the parser populates the bag with F0xxx codes before
 /// reporting), then `fail`s with the parse-level error message.
-/// Returns the parsed stmt list on success — the caller continues
-/// from there.
-fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
+/// Returns the parsed program + its parse-time store on success —
+/// the caller continues from there.
+fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     let parsed = parse_program_source(source)
     if parsed.had_error || parsed.stmts == null {
         if bag_has_errors(parsed.bag) {
@@ -263,8 +263,16 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> List<SStmt> {
         let recon_faithful = render_stmt_list(reconstruct_program(store, file)) == render_stmt_list(stmts)
         println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
     }
-    program_from_store(store, file)
+    ParsedProgram { stmts: program_from_store(store, file), store }
 }
+
+/// What `parse_or_fail` hands back: the boxed program (served from the arena)
+/// plus the parse-time `NodeStore` itself, so early passes can read the arena
+/// instead of re-walking the boxed tree (first consumer: the quote presence
+/// scan). The store was ingested from exactly these `stmts` — a caller that
+/// merges in statements parsed elsewhere (sibling-file loading) must not scan
+/// the store as if it covered the merged program.
+type ParsedProgram = { stmts: List<SStmt>, store: NodeStore }
 
 /// Same shape as parse_or_fail but for the expression parser.
 /// Used by cmd_expr / cmd_eval — both want F-code rendering on a
@@ -3781,7 +3789,7 @@ fn main() {
             return
         }
         "program" -> {
-            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path))
+            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path)).stmts
             println(render_stmt_list(parsed_stmts))
             return
         }
@@ -3817,13 +3825,14 @@ fn main() {
             let check_source = if check_path != path { read_file(check_path) } else { source }
             let ctx = render_ctx(check_json, check_source, check_path)
 
-            let parsed_stmts = parse_or_fail(check_source, ctx)
+            let parsed_prog = parse_or_fail(check_source, ctx)
+            let parsed_stmts = parsed_prog.stmts
             let check_dir = modules_dirname(check_path)
             let check_pkg = load_package_config(check_dir)
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            let post_quote = lower_quotes(parsed_stmts)
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
@@ -3845,7 +3854,7 @@ fn main() {
             // context, just like every other bs2 subcommand. Without it,
             // a parse error in cmd_run would print only a bare one-line
             // message ("parse error at L:C: …") with no diagnostic frame.
-            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path))
+            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path)).stmts
             let result = execute_program_stmts(parsed_stmts)
             if result.had_error || result.value == null {
                 fail(result.error_message)
@@ -3858,7 +3867,7 @@ fn main() {
             // Parse and check the file, then apply high-confidence fixes.
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
             let ctx = render_ctx(false, source, path)
-            let parsed_stmts = parse_or_fail(source, ctx)
+            let parsed_stmts = parse_or_fail(source, ctx).stmts
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
             fail_on_module_resolve_error(mod_resolved, ctx)
@@ -3870,7 +3879,7 @@ fn main() {
         "fmt" -> {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
-            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path))
+            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path)).stmts
             println(fmt_stmt_list(parsed_stmts, 0))
             return
         }
@@ -3886,8 +3895,9 @@ fn main() {
             // same program as the original — the P7 (visible magic)
             // promise made tangible.
             let ctx = render_ctx(false, source, path)
-            let parsed_stmts = parse_or_fail(source, ctx)
-            let post_quote = lower_quotes(parsed_stmts)
+            let parsed_prog = parse_or_fail(source, ctx)
+            let parsed_stmts = parsed_prog.stmts
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
@@ -3904,8 +3914,9 @@ fn main() {
             // Compile the file (which should contain spec/given/then blocks)
             // and report the output path for linking and execution.
             let ctx = render_ctx(false, source, path)
-            let parsed_stmts = parse_or_fail(source, ctx)
-            let post_quote = lower_quotes(parsed_stmts)
+            let parsed_prog = parse_or_fail(source, ctx)
+            let parsed_stmts = parsed_prog.stmts
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
@@ -4063,7 +4074,8 @@ fn main() {
         let t_start = avra_uptime_ms()
         let ctx = render_ctx(json_output, csource, cpath)
 
-        let parsed_stmts = parse_or_fail(csource, ctx)
+        let parsed_prog = parse_or_fail(csource, ctx)
+        let parsed_stmts = parsed_prog.stmts
         let t_parse = avra_uptime_ms()
         if stop_after_matches(stop_after, "parse") { return }
         // 2f54: when --module_path is set, wrap the parsed body in a
@@ -4119,7 +4131,17 @@ fn main() {
         // expressions BEFORE desugar/resolve so identifiers inside quote
         // bodies are captured as string-typed AST literals (not seen by
         // resolve as undefined references).
-        let post_quote_stmts = lower_quotes(pre_desugar_stmts)
+        //
+        // The arena presence scan is valid only when `pre_desugar_stmts` IS the
+        // parse output the store was ingested from. With --module_path the body
+        // may have absorbed sibling files parsed elsewhere (not in the store),
+        // so that path keeps the boxed scan — a store scan there would miss
+        // quotes in siblings.
+        let post_quote_stmts = if module_path == "" {
+            lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
+        } else {
+            lower_quotes(pre_desugar_stmts)
+        }
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
         let desugared = desugar_program(post_quote_stmts)
         let t_desugar = avra_uptime_ms()
