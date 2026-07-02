@@ -15,6 +15,7 @@
 // visitor ticket lands (93k3) all three should share a single visitor.
 
 use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{NodeStore, ExprId}
 use list_ops.{list_map}
 
 // ── Public entry ──
@@ -29,9 +30,41 @@ use list_ops.{list_map}
 /// a new tree, so the worst case (file *with* quotes) is one extra
 /// O(N) traversal — accepted in exchange for the common-case win
 /// where we never allocate a single new Stmt/Expr node.
+///
+/// Callers that hold the parse-time NodeStore for `stmts` should prefer
+/// `lower_quotes_via_store` (flat arena scan). This boxed entry remains for
+/// storeless callers (in-process check, the incremental build path) and for
+/// trees merged from more than one parse (sibling-file loading) — its scan
+/// and the arena scan must stay presence-equivalent (spec-guarded).
 export fn lower_quotes(stmts: List<SStmt>) -> List<SStmt> {
     if !any_quote_in_stmt_list(stmts) { return stmts }
     lower_stmt_list(stmts)
+}
+
+/// `lower_quotes` for a caller that already holds the parse-time `NodeStore`
+/// for `stmts` (the arena `parse_or_fail` builds). The presence scan becomes a
+/// FLAT pass over the expr arena — no recursion, no tree walk: every Expr in
+/// the program (including those embedded in match arms and struct-field
+/// inits) is a row, so "any quote?" is one linear read of dense rows. Strictly
+/// covers at least the positions the boxed scan reaches; the lowering itself
+/// is unchanged. ONLY valid when `store` was ingested from these exact
+/// `stmts` — a store from a superset/subset tree (e.g. after sibling-file
+/// merging) would scan the wrong program; such callers use `lower_quotes`.
+export fn lower_quotes_via_store(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
+    if !store_has_quote(store) { return stmts }
+    lower_stmt_list(stmts)
+}
+
+/// True iff any `Expr.Quote` row exists in the store's expr arena. The
+/// data-oriented form of the presence scan: O(#exprs) over a dense array.
+fn store_has_quote(store: NodeStore) -> bool {
+    mut i = 0
+    let n = store.exprs.count()
+    while i < n {
+        if store.exprs.get(ExprId(i)) is .Quote { return true }
+        i = i + 1
+    }
+    false
 }
 
 // ── Fast-path: non-allocating presence scan ──
