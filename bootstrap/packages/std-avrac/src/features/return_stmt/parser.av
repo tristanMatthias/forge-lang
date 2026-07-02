@@ -12,7 +12,7 @@ impl Parser {
             return .Ok(Stmt.ReturnEmpty)
         }
 
-        let value = self.parse_expression()?
+        let value = self.parse_expression_boxed()?
         .Ok(Stmt.Return(value))
     }
 }

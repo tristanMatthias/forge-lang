@@ -28,7 +28,7 @@ impl Parser {
             if !self.check(Tk.LeftArrow) { return out }
             self.advance()  // consume <-
             // Parse channel expression
-            let chan = match self.parse_expression() {
+            let chan = match self.parse_expression_boxed() {
                 .Ok(c) -> c
                 .Err(_) -> return out
             }

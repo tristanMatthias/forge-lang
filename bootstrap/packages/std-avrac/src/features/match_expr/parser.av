@@ -7,8 +7,15 @@
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArm}
 
 use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, SExpr, SStmt, sexpr, sstmt, pattern_optional_present, pattern_optional_absent}
+use core.{NodeRef, ExprId, byte_span_none}
 use parse.{Parser, table_zip_entries}
 use core.{Tk}
+
+/// One parse of a match-arm list, surfaced both ways: `arms` is the boxed
+/// view; `refs` the arena rows backing each arm's children in walker order
+/// (pattern, guard when present, body — `match_arm_children_spanned`'s
+/// flattening) for the parent MatchExpr's edge list.
+type MatchArmsParsed = { arms: List<MatchArm>, refs: List<NodeRef> }
 
 impl Parser {
     fn parse_match_statement(self) -> Result<Stmt, string> {
@@ -22,7 +29,7 @@ impl Parser {
         }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let subject_opt = self.parse_expression()
+        let subject_opt = self.parse_expression_boxed()
         self.allow_struct_lit = saved
         let subject = subject_opt?
         // Match table: `match expr table { pattern | col | col; .A | v | v }`
@@ -36,11 +43,11 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
             return .Err("parse error")
         }
-        let arms = self.parse_match_arm_list()?
+        let parsed = self.parse_match_arm_list()?
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
             return .Err("parse error")
         }
-        .Ok(Stmt.Match(subject, arms))
+        .Ok(Stmt.Match(subject, parsed.arms))
     }
 
     // Parse match table: first row is headers, remaining rows are pattern | values.
@@ -126,11 +133,12 @@ impl Parser {
         .Ok(Pattern.Or(left, right))
     }
 
-    fn parse_match_arm_list(self) -> Result<List<MatchArm>, string> {
+    fn parse_match_arm_list(self) -> Result<MatchArmsParsed, string> {
         // Source-order loop: each iteration parses one arm and
         // pushes it into the growable list. First-match-wins arm
         // ordering is preserved by the natural forward push.
         mut out: List<MatchArm> = []
+        mut refs: List<NodeRef> = []
         while !self.check(Tk.RightBrace) {
             // qa6i probe 2: `~target` in match-arm position splices
             // a `List<MatchArm>` value into the surrounding match
@@ -143,22 +151,29 @@ impl Parser {
             // between sentinels.
             if self.check(Tk.Tilde) && self.quote_depth > 0 {
                 self.advance()
-                let target = self.parse_unary()?
+                let target_id = self.parse_unary()?
+                let target = self.expr_of(target_id)
                 if self.check(Tk.Comma) { self.advance() }
+                let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
+                let splice = Expr.Splice(target)
+                refs.push(NodeRef.PatRef(self.glue_ingest_pat(sentinel_pat)))
+                refs.push(NodeRef.ExprRef(self.alloc1(splice, target_id)))
                 out.push(MatchArm {
-                    pattern: Pattern.TypePattern("__quote_splice_arms__", ""),
+                    pattern: sentinel_pat,
                     guard: null,
-                    body: sexpr(Expr.Splice(target), self.current_line, self.current_column),
+                    body: sexpr(splice, self.current_line, self.current_column),
                 })
                 continue
             }
             let pattern = self.parse_pattern_or()?
+            refs.push(NodeRef.PatRef(self.glue_ingest_pat(pattern)))
             // Optional guard: `pattern if cond ->`
             mut guard: SExpr? = none
             if self.check(Tk.KwIf) {
                 self.advance()
-                let g = self.parse_expression()?
-                guard = sexpr(g, self.current_line, self.current_column)
+                let g_id = self.parse_expression()?
+                guard = sexpr(self.expr_of(g_id), self.current_line, self.current_column)
+                refs.push(NodeRef.ExprRef(g_id))
             }
             if !self.consume(Tk.Arrow, "expected `->` after pattern") {
                 return .Err("parse error")
@@ -167,16 +182,21 @@ impl Parser {
             self.allow_dot_postfix = false
             // Allow `return expr` in bare match arm position by
             // wrapping it in a Block expression: `{ return expr }`.
+            // The wrap is stmt-bearing, so it bridges at its boundary.
             mut body_val = Expr.None
+            mut body_id = ExprId(0)
             if self.check(Tk.KwReturn) {
                 self.advance()
-                let rv = self.parse_expression()?
+                let rv = self.parse_expression_boxed()?
                 let ret_stmt = sstmt(Stmt.Return(rv), self.current_line, self.current_column)
                 let body_stmts: List<SStmt> = [ret_stmt]
                 body_val = Expr.Block(body_stmts)
+                body_id = self.glue_ingest_expr(body_val)
             } else {
-                body_val = self.parse_expression()?
+                body_id = self.parse_expression()?
+                body_val = self.expr_of(body_id)
             }
+            refs.push(NodeRef.ExprRef(body_id))
             self.allow_dot_postfix = saved
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {
@@ -185,7 +205,7 @@ impl Parser {
                 body: sexpr(body_val, self.current_line, self.current_column),
             })
         }
-        .Ok(out)
+        .Ok(MatchArmsParsed { arms: out, refs: refs })
     }
 
     fn parse_pattern(self) -> Result<Pattern, string> {
@@ -305,36 +325,65 @@ impl Parser {
         .Ok(out)
     }
 
-    fn parse_match_expression(self) -> Result<Expr, string> {
+    fn parse_match_expression(self) -> Result<ExprId, string> {
         self.advance()
-        // Subjectless match: `match { cond -> body ... _ -> fallback }`
+        // Subjectless match: `match { cond -> body ... _ -> fallback }`.
+        // `When` is walker-opaque (WhenArm isn't a registered container
+        // struct), so the canonical ingest records NO children — the native
+        // alloc mirrors that as a leaf; the arms' natively-parsed rows
+        // orphan until WhenArm registers with the walker.
         if self.check(Tk.LeftBrace) {
             self.advance()
             let arms = self.parse_when_arm_list()?
             if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return .Err("parse error") }
-            return .Ok(Expr.When(arms))
+            return .Ok(self.alloc_leaf(Expr.When(arms)))
         }
         let saved_struct = self.allow_struct_lit
         self.allow_struct_lit = false
         let subject_opt = self.parse_expression()
         self.allow_struct_lit = saved_struct
         let subject = subject_opt?
-        // Match table expression
+        // Match table expression — arms come back boxed (the rare path),
+        // so their children bridge whole via the glue helper.
         if self.check(Tk.Identifier) && self.current_lexeme == "table" {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return .Err("parse error") }
             let arms = self.parse_match_table_arms()?
             if !self.consume(Tk.RightBrace, "expected `}` after match table") { return .Err("parse error") }
-            return .Ok(Expr.MatchExpr(subject, arms))
+            let node = Expr.MatchExpr(self.expr_of(subject), arms)
+            return .Ok(self.alloc_expr(node, byte_span_none(), self.match_edges(subject, self.glue_match_arm_refs(arms))))
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
             return .Err("parse error")
         }
-        let arms = self.parse_match_arm_list()?
+        let parsed = self.parse_match_arm_list()?
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
             return .Err("parse error")
         }
-        .Ok(Expr.MatchExpr(subject, arms))
+        let node = Expr.MatchExpr(self.expr_of(subject), parsed.arms)
+        .Ok(self.alloc_expr(node, byte_span_none(), self.match_edges(subject, parsed.refs)))
+    }
+
+    /// Edge refs `[subject, arm-children…]` for a MatchExpr row.
+    fn match_edges(self, subject: ExprId, arm_refs: List<NodeRef>) -> List<NodeRef> {
+        mut edges: List<NodeRef> = [NodeRef.ExprRef(subject)]
+        for r in arm_refs { edges.push(r) }
+        edges
+    }
+
+    /// Edge refs for a BOXED arm list (the match-table path): each arm's
+    /// children bridge whole, in walker order (pattern, guard when present,
+    /// body) — the same flattening as `match_arm_children_spanned`.
+    fn glue_match_arm_refs(self, arms: List<MatchArm>) -> List<NodeRef> {
+        mut refs: List<NodeRef> = []
+        for arm in arms {
+            refs.push(NodeRef.PatRef(self.glue_ingest_pat(arm.pattern)))
+            if arm.guard != none {
+                refs.push(NodeRef.ExprRef(self.glue_ingest_expr(arm.guard!.node)))
+            }
+            refs.push(NodeRef.ExprRef(self.glue_ingest_expr(arm.body.node)))
+        }
+        refs
     }
 
     // Convert subjectless match arms to an if-else chain.
@@ -346,13 +395,13 @@ impl Parser {
             if self.check(Tk.Identifier) && self.current_lexeme == "_" {
                 self.advance()
             } else {
-                let c = self.parse_expression()?
+                let c = self.parse_expression_boxed()?
                 cond = sexpr(c, self.current_line, self.current_column)
             }
             if !self.consume(Tk.Arrow, "expected `->` in match arm") { return .Err("parse error") }
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = false
-            let body_expr = self.parse_expression()?
+            let body_expr = self.parse_expression_boxed()?
             self.allow_dot_postfix = saved
             if self.check(Tk.Comma) { self.advance() }
             out.push(WhenArm { cond, body: sexpr(body_expr, self.current_line, self.current_column) })

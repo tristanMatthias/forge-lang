@@ -32,7 +32,7 @@ impl Parser {
 
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let expr_opt = self.parse_expression()
+        let expr_opt = self.parse_expression_boxed()
         self.allow_struct_lit = saved
         let expr = expr_opt?
 
@@ -41,7 +41,7 @@ impl Parser {
             self.advance()
             let saved2 = self.allow_struct_lit
             self.allow_struct_lit = false
-            let end_opt = self.parse_expression()
+            let end_opt = self.parse_expression_boxed()
             self.allow_struct_lit = saved2
             let end = end_opt?
 
@@ -92,7 +92,7 @@ impl Parser {
 
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let expr_opt = self.parse_expression()
+        let expr_opt = self.parse_expression_boxed()
         self.allow_struct_lit = saved
         let coll = expr_opt?
 

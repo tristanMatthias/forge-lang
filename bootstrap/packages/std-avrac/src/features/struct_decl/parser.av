@@ -143,7 +143,7 @@ impl Parser {
             mut value = Expr.Ident(name)
             if self.check(Tk.Colon) {
                 self.advance()
-                value = self.parse_expression()?
+                value = self.parse_expression_boxed()?
             }
             out.push(FieldInit { name, value: sexpr(value, self.current_line, self.current_column) })
             if self.check(Tk.Comma) { self.advance() }

@@ -2,7 +2,7 @@
 // parse_type_params: called from fn_decl/struct_decl/enum_decl for `<T, U>` declarations.
 // try_parse_generic_call: called from the postfix loop for `f<int, string>(x)` calls.
 
-use core.{TypeParamEntry, Expr, Tk}
+use core.{TypeParamEntry, Expr, Tk, ExprId, byte_span_none}
 use parse.{Parser}
 
 impl Parser {
@@ -53,9 +53,11 @@ impl Parser {
     }
 
     // Speculatively try to parse `<type, type, ...>(args)` as a generic call.
-    // Returns the GenericCall expr if successful, null if not a generic call
-    // (parser state is restored on failure).
-    fn try_parse_generic_call(self, callee: Expr) -> Result<Expr, string> {
+    // Takes the already-allocated callee's arena id; returns the GenericCall's
+    // id on success. On failure the parser state is restored — restore_state
+    // also truncates the node store, so rows allocated during the attempt
+    // vanish with the backtrack (the callee predates the snapshot and lives).
+    fn try_parse_generic_call(self, callee_id: ExprId) -> Result<ExprId, string> {
         let saved = self.save_state()
 
         self.advance()  // consume `<`
@@ -73,7 +75,7 @@ impl Parser {
         }
         self.advance()  // consume `(`
 
-        let args = match self.parse_arg_list() {
+        let parsed = match self.parse_arg_list_ids() {
             .Ok(a) -> a
             .Err(_) -> {
                 self.restore_state(saved)
@@ -85,7 +87,8 @@ impl Parser {
             return .Err("parse error")
         }
 
-        .Ok(Expr.GenericCall(callee, type_args, args))
+        let node = Expr.GenericCall(self.expr_of(callee_id), type_args, parsed.wrapped)
+        .Ok(self.alloc_expr(node, byte_span_none(), self.edges_subject_args(callee_id, parsed.ids)))
     }
 
     fn parse_type_name_list(self) -> List<string> {

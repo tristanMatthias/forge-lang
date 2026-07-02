@@ -89,11 +89,11 @@ impl Parser {
         mut out: List<SExpr> = []
         mut keep_going = true
         while keep_going {
-            let key = self.parse_expression()?
+            let key = self.parse_expression_boxed()?
             if !self.consume(Tk.Colon, "expected `:` after map key") {
                 return .Err("parse error")
             }
-            let value = self.parse_expression()?
+            let value = self.parse_expression_boxed()?
             out.push(sexpr(key, self.current_line, self.current_column))
             out.push(sexpr(value, self.current_line, self.current_column))
             if self.check(Tk.Comma) {
