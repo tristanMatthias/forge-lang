@@ -1,0 +1,3 @@
+mod amod
+use amod.{a_fn}
+export fn b_fn() -> int { a_fn() + 1 }

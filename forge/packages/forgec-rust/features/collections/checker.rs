@@ -11,7 +11,8 @@ use super::types::{ListLitData, MapLitData};
 impl TypeChecker {
     /// Type-check a list literal expression via the Feature dispatch system.
     pub(crate) fn check_list_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, ListLitData, |data| self.check_list_lit(&data.elements))
+        feature_check!(self, fe, ListLitData, |data| self
+            .check_list_lit(&data.elements))
     }
 
     /// Type-check a list literal.
@@ -29,7 +30,8 @@ impl TypeChecker {
 
     /// Type-check a map literal expression via the Feature dispatch system.
     pub(crate) fn check_map_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, MapLitData, |data| self.check_map_lit(&data.entries))
+        feature_check!(self, fe, MapLitData, |data| self
+            .check_map_lit(&data.entries))
     }
 
     /// Type-check a map literal.
@@ -43,19 +45,23 @@ impl TypeChecker {
     }
 
     /// Check a method call on a list type and return the result type.
-    pub(crate) fn check_list_method_call(&mut self, inner: &Type, method: &str, span: Span) -> Type {
+    pub(crate) fn check_list_method_call(
+        &mut self,
+        inner: &Type,
+        method: &str,
+        span: Span,
+    ) -> Type {
         match method {
-            "push" | "pop" | "each" | "sorted" | "reverse" | "flat" | "dedup"
-            | "take" | "skip" | "chunks" | "windows" => {
-                match method {
-                    "push" | "each" => Type::Void,
-                    "pop" => Type::Nullable(Box::new(inner.clone())),
-                    "sorted" | "reverse" | "flat" | "dedup"
-                    | "take" | "skip" => Type::List(Box::new(inner.clone())),
-                    "chunks" | "windows" => Type::List(Box::new(Type::List(Box::new(inner.clone())))),
-                    _ => Type::Unknown,
+            "push" | "pop" | "each" | "sorted" | "reverse" | "flat" | "dedup" | "take" | "skip"
+            | "chunks" | "windows" => match method {
+                "push" | "each" => Type::Void,
+                "pop" => Type::Nullable(Box::new(inner.clone())),
+                "sorted" | "reverse" | "flat" | "dedup" | "take" | "skip" => {
+                    Type::List(Box::new(inner.clone()))
                 }
-            }
+                "chunks" | "windows" => Type::List(Box::new(Type::List(Box::new(inner.clone())))),
+                _ => Type::Unknown,
+            },
             "filter" | "map" => Type::List(Box::new(inner.clone())),
             "find" | "find_map" => Type::Nullable(Box::new(inner.clone())),
             "reduce" => inner.clone(),
@@ -63,23 +69,40 @@ impl TypeChecker {
             "join" => Type::String,
             "contains" | "any" | "all" => Type::Bool,
             "enumerate" => Type::List(Box::new(Type::Tuple(vec![Type::Int, inner.clone()]))),
-            "length" | "clone" => {
-                match method {
-                    "length" => Type::Int,
-                    "clone" => Type::List(Box::new(inner.clone())),
-                    _ => Type::Unknown,
-                }
-            }
+            "length" | "clone" => match method {
+                "length" => Type::Int,
+                "clone" => Type::List(Box::new(inner.clone())),
+                _ => Type::Unknown,
+            },
             _ => {
-                let known = ["push", "pop", "filter", "map", "find", "reduce", "sum",
-                    "join", "each", "sorted", "contains", "any", "all",
-                    "enumerate", "length", "clone", "reverse", "flat",
-                    "dedup", "take", "skip", "chunks", "windows", "find_map"];
-                let mut diag = Diagnostic::error(
-                    "F0020",
-                    format!("list has no method '{}'", method),
-                    span,
-                );
+                let known = [
+                    "push",
+                    "pop",
+                    "filter",
+                    "map",
+                    "find",
+                    "reduce",
+                    "sum",
+                    "join",
+                    "each",
+                    "sorted",
+                    "contains",
+                    "any",
+                    "all",
+                    "enumerate",
+                    "length",
+                    "clone",
+                    "reverse",
+                    "flat",
+                    "dedup",
+                    "take",
+                    "skip",
+                    "chunks",
+                    "windows",
+                    "find_map",
+                ];
+                let mut diag =
+                    Diagnostic::error("F0020", format!("list has no method '{}'", method), span);
                 if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
                     diag = diag.with_help(format!("did you mean '{}'?", suggestion));
                 } else {
@@ -92,20 +115,26 @@ impl TypeChecker {
     }
 
     /// Check a method call on a map type and return the result type.
-    pub(crate) fn check_map_method_call(&mut self, key_type: &Type, val_type: &Type, method: &str, span: Span) -> Type {
+    pub(crate) fn check_map_method_call(
+        &mut self,
+        key_type: &Type,
+        val_type: &Type,
+        method: &str,
+        span: Span,
+    ) -> Type {
         match method {
             "get" => Type::Nullable(Box::new(val_type.clone())),
             "keys" => Type::List(Box::new(key_type.clone())),
             "values" => Type::List(Box::new(val_type.clone())),
             "contains_key" | "has" => Type::Bool,
-            "entries" => Type::List(Box::new(Type::Tuple(vec![key_type.clone(), val_type.clone()]))),
+            "entries" => Type::List(Box::new(Type::Tuple(vec![
+                key_type.clone(),
+                val_type.clone(),
+            ]))),
             _ => {
                 let known = ["get", "keys", "values", "contains_key", "has", "entries"];
-                let mut diag = Diagnostic::error(
-                    "F0020",
-                    format!("map has no method '{}'", method),
-                    span,
-                );
+                let mut diag =
+                    Diagnostic::error("F0020", format!("map has no method '{}'", method), span);
                 if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
                     diag = diag.with_help(format!("did you mean '{}'?", suggestion));
                 } else {

@@ -1,0 +1,74 @@
+// y9y4 typeck — arm-type unification must allow List<Unknown> against
+// List<T>. derive_walker generates match expressions where scalar arms
+// return an empty-typed binding (List<Self> = []) and list-valued arms
+// return the binding's elements. The arms must unify even though strict
+// vtype_eq would reject List<Unknown> != List<Pattern>.
+//
+// Covers all three F1000 sites in features/match_expr/typeck.av:
+// - check_match_expr_infer (subject-typed match-expr, no expected type)
+// - check_match_expr_arms (subject-typed match-expr, expected type seeded
+//   externally — exercised here via a fn whose body is `match` returning
+//   a declared list type)
+// - check_when_arms (subjectless `when` expression)
+
+enum Shape {
+    Scalar,
+    Bag(xs: List<int>),
+}
+
+fn shape_children(s: Shape) -> List<int> {
+    let __empty: List<int> = []
+    match s {
+        .Scalar  -> __empty
+        .Bag(xs) -> xs
+    }
+}
+
+// Body is `match` with one arm returning `[]` (List<Unknown>) and one
+// arm returning a populated list. Exercises check_match_expr_arms when
+// the fn's declared return type seeds the unification.
+fn shape_first_or_empty(s: Shape) -> List<int> {
+    match s {
+        .Scalar  -> []
+        .Bag(xs) -> xs
+    }
+}
+
+// `when` (subjectless match) with one arm yielding `[]` and another
+// yielding a typed list. Exercises check_when_arms.
+fn flag_to_list(flag: bool) -> List<int> {
+    let primed: List<int> = [9]
+    when {
+        flag -> primed
+        true -> []
+    }
+}
+
+spec "y9y4: match arms unify when one branch is List<Unknown>" {
+    then "scalar arm (empty typed list) unifies with list-valued arm" {
+        shape_children(Shape.Scalar).length == 0
+    }
+    then "populated arm returns concrete list" {
+        shape_children(Shape.Bag([1, 2, 3])).length == 3
+    }
+    then "empty literal in arm unifies with list-typed seed" {
+        let s = Shape.Scalar
+        let xs: List<int> = match s {
+            .Scalar  -> []
+            .Bag(ys) -> ys
+        }
+        xs.length == 0
+    }
+    then "fn-body match: bare [] arm unifies with List<int> sibling" {
+        shape_first_or_empty(Shape.Scalar).length == 0
+    }
+    then "fn-body match: list-typed arm preserves its values" {
+        shape_first_or_empty(Shape.Bag([4, 5])).length == 2
+    }
+    then "when expression: empty-literal arm unifies with list-typed sibling" {
+        flag_to_list(false).length == 0
+    }
+    then "when expression: list-typed arm returns its value" {
+        flag_to_list(true).length == 1
+    }
+}

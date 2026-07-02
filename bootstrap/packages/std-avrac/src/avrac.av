@@ -1,0 +1,20 @@
+// WHY: `@std.avrac` library entry — exposes the Avra compiler as a
+// reusable library so downstream tools (the `avra` CLI binary,
+// editor plugins, doc generators, fuzz harnesses) can invoke any
+// pipeline stage without pulling in a CLI driver.
+//
+// All public symbols are accessible by their submodule path, e.g.
+// `use @std.avrac.parse.{parse_program_source}`,
+// `use @std.avrac.codegen.{compile_program}`,
+// `use @std.avrac.diagnostics.{bag_has_errors}`.
+//
+// The bootstrap module resolver wraps this file's contents in
+// `Module("@std") { Module("avrac") { ... } }` so every submodule
+// reachable from this directory is addressable at `@std.avrac.<sub>`.
+//
+// Submodules are auto-discovered from sibling subdirectories — no
+// `mod foo` declarations required (g2eo.1 directory-as-module).
+// Each subdirectory of `src/` (core/, parse/, codegen/, build/, etc.)
+// is its own module. Add a new subdirectory and its public surface
+// shows up at `@std.avrac.<dirname>.*` automatically.
+

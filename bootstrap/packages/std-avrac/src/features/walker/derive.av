@@ -1,0 +1,1500 @@
+// WHY: @comptime derive that auto-generates `children(self) -> List<Self>`
+// on any AST enum. Replaces hand-rolled walker recursion across the
+// bootstrap. First slice: `children` only; fold/map/visit/find/any
+// will layer on top in follow-ups.
+//
+// How it works
+//   1. The macro receives the EnumDecl as `target.stmt` and a
+//      ResolverCtx (unused in this slice — types come straight from
+//      the variant fields' `resolved` ValueType).
+//   2. For each variant, classify every field: if `field.resolved`
+//      is `Enum(enum_name, _, _)` or `Struct(enum_name, _)` whose
+//      name matches the parent enum, it's a child; otherwise scalar.
+//   3. Build one match arm per variant — pattern binds children by
+//      name, scalars to `_`, body is `[c1, c2, ...]`.
+//   4. Emit a top-level `Type__children` fn (parser-style mangled
+//      method name) so codegen's dot-notation dispatch finds it
+//      via the standard method-lookup path.
+
+use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name}
+use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to}
+use diagnostics.{Span}
+
+// ── Public entry ──
+
+/// 2-arg @comptime macro: inspect the annotated enum, emit a
+/// `Type__children` fn callable as `value.children() -> List<Type>`.
+/// On any failure (wrong stmt shape, etc.) returns the target decl
+/// untouched so downstream errors are about the user's intent, not
+/// about the macro hitting an internal corner case.
+@comptime
+export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {
+    let view = unwrap_enum_decl(target.stmt)
+    if view.name == "" {
+        return failsafe_decls(target)
+    }
+
+    // The macro emits the bare enum name in the synthesised
+    // ValueType.Enum; the resolver's rewrite_vtype pass qualifies
+    // each Enum-typed slot to the canonical path on its own, just
+    // like a hand-written `fn children(self: Pattern) -> List<Pattern>`
+    // would resolve. Pre-qualifying here produces doubly-prefixed
+    // names (`@std::avrac::core::@std::avrac::core::Pattern`) when
+    // the spliced fn is re-processed by the post-expand rewrite.
+    let arms = build_children_arms(view.variants, view.name, ctx)
+    let children_fn = build_children_fn(arms, view.name)
+    // A2: `all_children_spanned()` is the SINGLE cross-type traversal — each
+    // child paired with its wrapper-derived (line, col). There is no separate
+    // position-free `all_children()`: a node's @std consumers (the arena probes,
+    // the ingest) strip the spans in @std via `strip_spans`, where that helper
+    // resolves. A generated `all_children` wrapper would emit a `strip_spans`
+    // call into EVERY derived enum — including user enums in packages that don't
+    // import it (F3000) — and a second per-variant fold would re-open the A1
+    // FnTyped ordering-drift. One generator avoids both.
+    let all_spanned_arms = build_all_children_spanned_arms(view.variants, view.name, ctx)
+    let all_children_spanned_fn = build_all_children_spanned_fn(all_spanned_arms, view.name)
+    // B1: the INVERSE walker — put children back into a variant's slots (the dual
+    // of all_children_spanned). Drives the arena's reconstruct-from-edges shim.
+    let wc_arms = build_with_children_arms(view.variants, view.name, ctx)
+    let with_children_fn = build_with_children_fn(wc_arms, view.name)
+    let visit_fn = build_visit_fn(view.name)
+    let any_fn = build_any_fn(view.name)
+    let find_fn = build_find_fn(view.name)
+    let map_arms = build_map_arms(view.variants, view.name, ctx)
+    let map_fn = build_map_fn(map_arms, view.name)
+
+    let decls: List<SStmt> = [
+        sstmt_dummy(target.stmt),
+        sstmt_dummy(children_fn),
+        sstmt_dummy(all_children_spanned_fn),
+        sstmt_dummy(with_children_fn),
+        sstmt_dummy(visit_fn),
+        sstmt_dummy(any_fn),
+        sstmt_dummy(find_fn),
+        sstmt_dummy(map_fn),
+    ]
+    let children_mangled = "${view.name}__children"
+    let all_children_spanned_mangled = "${view.name}__all_children_spanned"
+    let with_children_mangled = "${view.name}__with_children"
+    let visit_mangled = "${view.name}__visit"
+    let any_mangled = "${view.name}__any"
+    let find_mangled = "${view.name}__find"
+    let map_mangled = "${view.name}__map"
+    // Mangled `Type__method` names register so the introduces-
+    // validation pass can find them in the spliced decl list.
+    let introduces: List<DeclSymbol> = table<DeclSymbol> {
+        name                         | kind                       | canonical_path
+        children_mangled             | DeclKind.Method(view.name) | children_mangled
+        all_children_spanned_mangled | DeclKind.Method(view.name) | all_children_spanned_mangled
+        with_children_mangled        | DeclKind.Method(view.name) | with_children_mangled
+        visit_mangled                | DeclKind.Method(view.name) | visit_mangled
+        any_mangled                  | DeclKind.Method(view.name) | any_mangled
+        find_mangled                 | DeclKind.Method(view.name) | find_mangled
+        map_mangled                  | DeclKind.Method(view.name) | map_mangled
+    }
+    let provenance = MacroProvenance {
+        macro_name: "derive_walker",
+        target_canonical: view.name,
+        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" },
+    }
+    ResolvedDecls { decls, introduces, provenance }
+}
+
+// ── Target-decl unwrapping ──
+
+type EnumView = { name: string, variants: List<Variant> }
+
+/// Returns the enum's name + variants when `s` is an EnumDecl; an
+/// empty view (`name == ""`) otherwise. invoke_macro already strips
+/// the Annotated wrapper, so we only need to match EnumDecl directly.
+@comptime
+fn unwrap_enum_decl(s: Stmt) -> EnumView {
+    let empty: List<Variant> = []
+    match s {
+        .EnumDecl(name, _, variants) -> EnumView { name, variants }
+        _ -> EnumView { name: "", variants: empty }
+    }
+}
+
+/// Empty-output failsafe — emits just the original decl, no methods.
+/// Keeps the AST shape correct so downstream diagnostics blame the
+/// user code, not a missing decl from a silent macro failure.
+@comptime
+fn failsafe_decls(target: AnnotatedDecl) -> ResolvedDecls {
+    let decls: List<SStmt> = [sstmt_dummy(target.stmt)]
+    let no_syms: List<DeclSymbol> = []
+    let provenance = MacroProvenance {
+        macro_name: "derive_walker",
+        target_canonical: "",
+        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" },
+    }
+    ResolvedDecls { decls, introduces: no_syms, provenance }
+}
+
+// ── Per-variant arm construction ──
+
+/// One field's role in the children() result. so07.7.6 replaced the
+/// int-coded `kind` + sentinel-empty `unwrap_fn` with a proper enum.
+/// WrapperListOfSelf carries its unwrap helper name on the variant
+/// where it belongs.
+enum FieldKind {
+    Scalar,
+    DirectSelf,
+    ListOfSelf,
+    WrapperOfSelf(wrapper: string),
+    WrapperListOfSelf(wrapper: string),
+    // Nullable single children (`Self?` and `Wrapper<Self>?`, e.g.
+    // `else_branch: SStmt?`). None-guarded in children()/map() via the
+    // *_opt runtime helpers.
+    OptionalDirectSelf,
+    OptionalWrapperOfSelf(wrapper: string),
+    // A `List<S>` where `S` is a plain struct that embeds node children the
+    // Self/wrapper classification can't reach (e.g. `MatchArm`). CROSS-TYPE ONLY
+    // (produced by classify_field_crosstype, never classify_field_kind): a struct
+    // spans multiple node kinds, so `children()`/`map()` leave it Scalar and only
+    // all_children_spanned/with_children walk it, via hand-written per-struct
+    // extract+rebuild helpers dispatched by `struct` (see struct_list_helpers).
+    StructListOfSelf(struct: string),
+}
+
+type Binding = { binding_name: string, kind: FieldKind }
+
+@comptime
+fn build_children_arms(variants: List<Variant>, parent_name: string, ctx: ResolverCtx) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        arms.push(build_one_arm(v, parent_name, ctx))
+    }
+    arms
+}
+
+@comptime
+fn build_one_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm {
+    let bindings = classify_variant(v, parent_name, ctx)
+    let pat = pattern_for(v.name, bindings)
+    let body = arm_body(bindings, parent_name)
+    MatchArm {
+        pattern: pat,
+        guard: null,
+        body: sexpr_dummy(body),
+    }
+}
+
+/// True when `vt` refers to the same type as the enum being walked.
+/// Post-resolve, an `enum Tree { Node(left: Tree, ...) }` field has
+/// `resolved = Enum("Tree", _, id)` (or `Struct("Tree", id)` if the
+/// parser fell back to Struct because the type wasn't yet known to be
+/// an enum). The comparison handles both shapes and tolerates the
+/// canonical-vs-short-name distinction by matching either the full
+/// path or a trailing `::Name` suffix.
+///
+/// Helpers live inline (not imported from `core`) because eval can
+/// only call `@comptime` fns; copying the few lines we need keeps
+/// derive_walker eval-safe without leaking @comptime onto core.
+@comptime
+fn is_self_type(vt: ValueType, parent_name: string) -> bool {
+    let n = self_type_name(vt)
+    if n == "" { return false }
+    n == parent_name
+}
+
+@comptime
+fn self_type_name(vt: ValueType) -> string {
+    match vt {
+        .Enum(name, _, _) -> name
+        .Struct(name, _, _) -> name
+        .NarrowedEnum(name, _, _) -> name
+        _ -> ""
+    }
+}
+
+@comptime
+fn classify_variant(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<Binding> {
+    mut out: List<Binding> = []
+    for f in v.fields {
+        let kind = classify_field_kind(f.resolved, parent_name, ctx)
+        let bind = if kind is .Scalar { "_" } else { f.name }
+        out.push(Binding { binding_name: bind, kind })
+    }
+    out
+}
+
+/// Decide what role a single field plays in `children()`. so07.7.1:
+/// wrapper-lists are discovered structurally via ctx_unwrap_path_to,
+/// not from a hardcoded SStmt/SExpr table.
+@comptime
+fn classify_field_kind(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> FieldKind {
+    // A nullable single child (`Self?` / `Wrapper<Self>?`) is walked
+    // none-guarded. Optional of a non-self type stays a Scalar.
+    if vt_is_optional(vt) {
+        let inner = vt_optional_inner(vt)
+        if is_self_type(inner, parent_name) { return FieldKind.OptionalDirectSelf }
+        let ow = single_wrapper_short_name_of(inner, parent_name, ctx)
+        if ow != "" { return FieldKind.OptionalWrapperOfSelf(ow) }
+        return FieldKind.Scalar
+    }
+    if is_self_type(vt, parent_name) { return FieldKind.DirectSelf }
+    if is_list_of_self(vt, parent_name) { return FieldKind.ListOfSelf }
+    let single = single_wrapper_short_name_of(vt, parent_name, ctx)
+    if single != "" { return FieldKind.WrapperOfSelf(single) }
+    let wrapper = wrapper_short_name_of(vt, parent_name, ctx)
+    if wrapper != "" { return FieldKind.WrapperListOfSelf(wrapper) }
+    FieldKind.Scalar
+}
+
+@comptime
+fn wrapper_of(k: FieldKind) -> string {
+    match k {
+        .WrapperOfSelf(w) -> w
+        .WrapperListOfSelf(w) -> w
+        .OptionalWrapperOfSelf(w) -> w
+        _ -> ""
+    }
+}
+
+/// The struct short-name carried by a `StructListOfSelf` kind ("" otherwise).
+@comptime
+fn struct_of(k: FieldKind) -> string {
+    match k {
+        .StructListOfSelf(s) -> s
+        _ -> ""
+    }
+}
+
+/// The @std helper pair for one registered struct-list: `spanned` flattens
+/// `List<Struct>` into cross-type spanned children, `rebuild` inverts it (Strategy
+/// A — shape from the original bound list, values from the run).
+type StructListHelpers = { spanned: string, rebuild: string }
+
+/// Dispatch table: the extract + rebuild helpers for a `List<Struct>` whose
+/// element is a registered walkable node-container, keyed by the struct's short
+/// name. `spanned == ""` ⇒ not registered (the field stays Scalar). One entry per
+/// struct type (+ its two @std helpers); mirrors the `anynode_ctor` /
+/// `spanned_one_wrapper_fn` name-dispatch style, not a content heuristic. Keying
+/// on the short name is safe because `classify_field_crosstype` only reaches this
+/// table for an element in the SAME MODULE as the derived enum (its same-module
+/// gate) — a foreign type sharing the short name never routes here.
+@comptime
+fn struct_list_helpers(struct_short: string) -> StructListHelpers {
+    if struct_short == "MatchArm" {
+        return StructListHelpers { spanned: "match_arm_children_spanned", rebuild: "rebuild_match_arms" }
+    }
+    if struct_short == "FieldInit" {
+        return StructListHelpers { spanned: "field_init_children_spanned", rebuild: "rebuild_field_inits" }
+    }
+    StructListHelpers { spanned: "", rebuild: "" }
+}
+
+/// True for the nullable single-child kinds — contribute a 0-or-1
+/// element list to children() and a none-guarded map() reconstruction.
+@comptime
+fn is_optional_child(k: FieldKind) -> bool {
+    (k is .OptionalDirectSelf) || (k is .OptionalWrapperOfSelf)
+}
+
+/// True when this field kind contributes exactly one Self child — a bare
+/// `Self` field (DirectSelf) or a single 1-hop `.node` wrapper around
+/// Self (WrapperOfSelf). Both are emitted as a single element into the
+/// children list and reconstructed in-place by map; the only difference
+/// is whether a `.node` projection / rewrap is needed.
+@comptime
+fn is_single_child(k: FieldKind) -> bool {
+    (k is .DirectSelf) || (k is .WrapperOfSelf)
+}
+
+/// True when `vt` is `List<X>` where `X` is the parent type. Covers the
+/// declared-list shapes like `Pattern.NestedVariant(_, sub_patterns:
+/// List<Pattern>)` and `ValueType.Tuple(elements: List<ValueType>)`.
+@comptime
+fn is_list_of_self(vt: ValueType, parent_name: string) -> bool {
+    match vt {
+        .List(elem) -> is_self_type(elem, parent_name)
+        _ -> false
+    }
+}
+
+/// When `vt` is `List<W>` and `W` is a 1-hop wrapper that projects
+/// to `parent_name` via `.node`, return W's short name; else "".
+/// Structural discovery via ctx_unwrap_path_to — zero hardcoded
+/// wrapper table. The 1-hop guard matches what unwrap_node_list's
+/// body assumes (`x.node`); longer chains aren't yet supported.
+@comptime
+fn wrapper_short_name_of(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> string {
+    let elem = list_elem_or_unknown(vt)
+    node_wrapper_name(type_short_name(self_type_name(elem)), parent_name, ctx)
+}
+
+/// When `vt` is itself a 1-hop wrapper `W` (a struct with a single
+/// `.node` field projecting to `parent_name`), return W's short name;
+/// else "". The single-field analogue of `wrapper_short_name_of` — same
+/// structural `.node`-projection discovery, no list unwrap. Drives the
+/// `WrapperOfSelf` classification so a bare `SExpr` / `SStmt` field is
+/// walked like a DirectSelf with one `.node` hop.
+@comptime
+fn single_wrapper_short_name_of(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> string {
+    node_wrapper_name(type_short_name(self_type_name(vt)), parent_name, ctx)
+}
+
+/// Shared tail of the wrapper classifiers: given a candidate wrapper
+/// short name, confirm it resolves to a type whose unwrap path to
+/// `parent_name` is exactly the single hop `.node`. Returns the name on
+/// match, "" otherwise. The 1-hop guard matches what `unwrap_node` /
+/// `map_node` assume (`x.node`); longer chains aren't yet supported.
+@comptime
+fn node_wrapper_name(wrapper: string, parent_name: string, ctx: ResolverCtx) -> string {
+    if wrapper == "" { return "" }
+    let resolved = ctx_lookup_type(ctx, wrapper)
+    if resolved == null { return "" }
+    let path = ctx_unwrap_path_to(ctx, resolved!, parent_name)
+    if path.length == 1 && path[0] == "node" { return wrapper }
+    ""
+}
+
+@comptime
+fn list_elem_or_unknown(vt: ValueType) -> ValueType {
+    match vt {
+        .List(elem) -> elem
+        _ -> ValueType.Unknown
+    }
+}
+
+/// `@comptime` optional probes for classify_field_kind (value-returning
+/// arms, not an empty-block match — comptime can't eval a `_ -> {}` arm).
+@comptime
+fn vt_is_optional(vt: ValueType) -> bool {
+    match vt {
+        .Optional(_) -> true
+        _ -> false
+    }
+}
+
+@comptime
+fn vt_optional_inner(vt: ValueType) -> ValueType {
+    match vt {
+        .Optional(inner) -> inner
+        _ -> ValueType.Unknown
+    }
+}
+
+
+/// `.VariantName(n1, n2, n3)` pattern from already-extracted binding NAMES —
+/// each becomes a ParamEntry, the same shape the parser produces for the
+/// simple bind form `.Variant(x, y)`. `_` is a valid binding name here. The
+/// single Pattern.Variant builder shared by every walker arm (same-type,
+/// cross-type, and map); only the per-binding-type name extraction differs.
+@comptime
+fn variant_pattern(variant_name: string, names: List<string>) -> Pattern {
+    mut params: List<ParamEntry> = []
+    for n in names {
+        params.push(ParamEntry { name: n, vtype: ValueType.Unknown })
+    }
+    Pattern.Variant(variant_name, params)
+}
+
+/// `.VariantName(b1, b2, b3)` for same-type `children()` bindings (scalars
+/// already carry the `_` binding name).
+@comptime
+fn pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+    mut names: List<string> = []
+    for b in bindings { names.push(b.binding_name) }
+    variant_pattern(variant_name, names)
+}
+
+/// Build the arm body — the Expr producing the children list for this
+/// variant. Shapes (in match order):
+///
+///   - All scalars → `__derive_walker_empty` (typed `List<Self> = []`
+///     binding declared at fn-body scope so the arm has static type
+///     `List<Self>`; bare `[]` would be `List<Unknown>` and fail to
+///     unify with list-typed sibling arms — F1000).
+///   - Only direct children → `[c1, c2, ...]`.
+///   - Single direct-list-child, no direct → `field_ident`.
+///   - Single wrapper-list-child, no direct → `unwrap_fn(field_ident)`.
+///   - Anything mixed → fold via `list_concat([directs], list1, list2, ...)`,
+///     unwrapping wrapper-list bindings on the way in.
+@comptime
+fn arm_body(bindings: List<Binding>, parent_name: string) -> Expr {
+    let direct_count = count_direct(bindings)
+    let list_count = count_list(bindings)
+    let wrap_count = count_wrap(bindings)
+    let opt_count = count_opt(bindings)
+    // Optional children contribute a conditional (0-or-1) list, so they
+    // count toward the list total — forcing the concat-fold path.
+    let total_list = list_count + wrap_count + opt_count
+
+    if direct_count == 0 && total_list == 0 {
+        return Expr.Ident(empty_binding_name())
+    }
+
+    if total_list == 0 {
+        mut elems: List<SExpr> = []
+        for b in bindings {
+            if is_single_child(b.kind) {
+                elems.push(sexpr_dummy(direct_child_expr(b)))
+            }
+        }
+        return Expr.ListLit(elems)
+    }
+
+    if direct_count == 0 && total_list == 1 {
+        for b in bindings {
+            if b.kind is .ListOfSelf { return Expr.Ident(b.binding_name) }
+            if b.kind is .WrapperListOfSelf { return unwrap_call(b.binding_name, wrapper_of(b.kind), parent_name) }
+        }
+    }
+
+    block_expr_for_children(bindings, parent_name)
+}
+
+/// The Expr that yields a single-child binding's Self node. DirectSelf
+/// is the binding itself; WrapperOfSelf projects one `.node` hop. Single
+/// source of truth for the three children() sites that emit single
+/// children (the all-direct list literal and the mixed concat fold).
+@comptime
+fn direct_child_expr(b: Binding) -> Expr {
+    if b.kind is .WrapperOfSelf {
+        return Expr.FieldAccess(Expr.Ident(b.binding_name), "node")
+    }
+    Expr.Ident(b.binding_name)
+}
+
+/// Build `unwrap_node_list::<Wrapper, Parent>(field_name)` for a
+/// wrapper-list binding. so07.7.1: explicit type-args make the
+/// typeck unambiguous via check_generic_call's substitution; mono
+/// then inherits the resolved types from the typeck pass.
+///
+/// `parent_name` is the FQN (e.g. "@std::avrac::core::Stmt") — pass
+/// it through unchanged so check_generic_call's resolve_vtype lookup
+/// hits the registered name as-is (the enum_type_has lookup is a
+/// strict string match; bare-vs-qualified tolerance only lives in
+/// vtype_eq, not in the registry probe).
+@comptime
+fn unwrap_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("unwrap_node_list"), type_args, args)
+}
+
+@comptime
+fn empty_binding_name() -> string {
+    "__derive_walker_empty"
+}
+
+@comptime
+fn count_direct(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if is_single_child(b.kind) { n = n + 1 } }
+    n
+}
+
+@comptime
+fn count_list(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if b.kind is .ListOfSelf { n = n + 1 } }
+    n
+}
+
+@comptime
+fn count_opt(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if is_optional_child(b.kind) { n = n + 1 } }
+    n
+}
+
+@comptime
+fn count_wrap(bindings: List<Binding>) -> int {
+    mut n = 0
+    for b in bindings { if b.kind is .WrapperListOfSelf { n = n + 1 } }
+    n
+}
+
+/// Build an Expr that concatenates the direct + list children into a
+/// single List<Self> via repeated `list_concat`. Avoids generating
+/// `Expr.Assign` / `Expr.Block` / `mut` constructs that the @comptime
+/// decoder doesn't understand — the macro return must roundtrip through
+/// `value_to_resolved_decls`, which only handles a subset of Expr.
+///
+/// Layout: starting from the direct-children list literal, fold each
+/// list-child binding through `list_concat(acc, list_child)`. The result
+/// is a single Expr.Call (or Expr.ListLit when no list-children exist —
+/// handled upstream by the early-return in list_lit_of_direct_children).
+///
+/// The list-contributing kinds are dispatched with an `is`-chain rather
+/// than a `match`: this runs under `@comptime`, and the comptime
+/// interpreter can't evaluate a match whose non-contributing arms would
+/// be empty blocks (`-> {}`). The chain is therefore deliberate — when a
+/// new list-contributing FieldKind is added, add its branch here too (the
+/// expression-valued `map_arm_body` match stays the exhaustiveness guard).
+@comptime
+fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr {
+    // Fold children in FIELD ORDER from the typed-empty list (which pins the
+    // element type to List<Self>), one binding at a time. A single contributes
+    // a one-element list; a list its elements; a nullable single a 0-or-1
+    // element list via the none-guarded *_opt helpers. Folding in binding order
+    // — rather than all singles first, then lists — keeps a list field that
+    // PRECEDES a single field in order (ValueType.FnTyped: params before ret).
+    mut acc: Expr = Expr.Ident(empty_binding_name())
+    for b in bindings {
+        if is_single_child(b.kind) {
+            let one: List<SExpr> = [sexpr_dummy(direct_child_expr(b))]
+            acc = cross_concat(acc, Expr.ListLit(one))
+        }
+        if b.kind is .ListOfSelf {
+            acc = cross_concat(acc, Expr.Ident(b.binding_name))
+        }
+        if b.kind is .WrapperListOfSelf {
+            acc = cross_concat(acc, unwrap_call(b.binding_name, wrapper_of(b.kind), parent_name))
+        }
+        if b.kind is .OptionalDirectSelf {
+            acc = cross_concat(acc, self_opt_to_list_call(b.binding_name, parent_name))
+        }
+        if b.kind is .OptionalWrapperOfSelf {
+            acc = cross_concat(acc, unwrap_node_opt_call(b.binding_name, wrapper_of(b.kind), parent_name))
+        }
+    }
+    acc
+}
+
+/// `self_opt_to_list::<Parent>(field)` — a `Self?` child as a 0-or-1
+/// element list. Explicit type-arg (like unwrap_node_list) so the call
+/// type-checks without relying on optional-aware inference.
+@comptime
+fn self_opt_to_list_call(field_name: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let type_args: List<string> = [parent_name]
+    Expr.GenericCall(Expr.Ident("self_opt_to_list"), type_args, args)
+}
+
+/// `unwrap_node_opt::<W, Parent>(field)` — a `Wrapper<Self>?` child as a
+/// 0-or-1 element list of the unwrapped `.node`.
+@comptime
+fn unwrap_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("unwrap_node_opt"), type_args, args)
+}
+
+// ── children() fn builder ──
+
+/// Build `fn Type__children(self) -> List<Self> { match self { arms } }`.
+///
+/// Mangled `Type__method` matches what `parse_method_declaration` emits
+/// for hand-written impls. Free-fn placement (not inside an Impl) keeps
+/// the post-expand register pass simple — it already handles top-level
+/// Function decls; impl-method registration through macros would need
+/// extra plumbing in `collect_macro_item_from_stmt`.
+///
+/// Return type is the concrete `List<EnumName>` — codegen needs a
+/// resolved list-element type to lower `.length` / iteration on the
+/// caller side. Leaving it Unknown defers the work to the post-expand
+/// resolver, but the resolver currently doesn't re-infer fn return
+/// types from match-expression bodies, so we pin it here instead.
+@comptime
+fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let params: List<ParamEntry> = [self_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let ret_ty = ValueType.List(self_ty)
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    // Typed-empty binding at fn-body top so scalar arms produce
+    // `List<Self>`-typed values that unify with sibling list-typed
+    // arms. Stmt.Let encoder preserves the resolved-vtype slot since
+    // 64fe2c84.
+    let empty_elems: List<SExpr> = []
+    let typed_empty = Stmt.Let(empty_binding_name(), ret_ty, Expr.ListLit(empty_elems))
+    let body: List<SStmt> = [
+        sstmt_dummy(typed_empty),
+        sstmt_dummy(Stmt.Expr(match_expr)),
+    ]
+    Stmt.Function("${enum_name}__children", empty_tp, params, ret_ty, body)
+}
+
+// ── all_children_spanned() fn builder (A1 cross-type traversal + A2 spans) ──
+//
+// `children()` returns only SAME-type children (an `Expr`'s `Expr` children).
+// `all_children_spanned()` returns EVERY child across the four node kinds, each
+// boxed as `AnyNode` and PAIRED with its wrapper-derived (line, col) — so one
+// recursion can flatten a node's whole subtree into the per-type arenas with a
+// real span per wrapped child (A2). It reuses the same field classifier as
+// `children()`, run once per target kind: a field matches at most one of
+// Expr/Stmt/Pattern/ValueType (they're mutually exclusive), so the first
+// non-scalar hit wins.
+
+/// A field's cross-type child role: which node kind it references (`target`,
+/// "" for a true scalar) and in what form (`kind`, carrying any wrapper).
+type CrossBinding = { binding_name: string, target: string, kind: FieldKind }
+
+/// True unless the field plays no child role.
+@comptime
+fn field_is_node(k: FieldKind) -> bool {
+    match k {
+        .Scalar -> false
+        _ -> true
+    }
+}
+
+/// The `AnyNode` constructor name for a target node kind. `target` is the
+/// (possibly qualified) type name, so match on its short form.
+@comptime
+fn anynode_ctor(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "AnyExpr" }
+    if s == "Stmt" { return "AnyStmt" }
+    if s == "Pattern" { return "AnyPat" }
+    if s == "ValueType" { return "AnyType" }
+    // A new node kind reached the cross-type generator without an AnyNode arm.
+    // Emit an undefined ctor name so the generated all_children_spanned fails to
+    // COMPILE here (loud, named) rather than silently boxing the new kind as a
+    // ValueType — a wrong-arena store that would corrupt at runtime.
+    "AnyNode__add_a_NodeRef_AnyNode_arm_for_${s}"
+}
+
+/// The `box_*_list` helper name for a target node kind (matched on short name).
+@comptime
+fn box_list_fn(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "box_expr_list" }
+    if s == "Stmt" { return "box_stmt_list" }
+    if s == "Pattern" { return "box_pat_list" }
+    if s == "ValueType" { return "box_type_list" }
+    // See anynode_ctor: undefined helper name -> loud build failure on a new
+    // node kind, not a silent box_type_list miscategorization.
+    "box_list_add_helper_for_${s}"
+}
+
+/// The module-qualification prefix of `name` (everything up to and including
+/// the last `::`), "" if unqualified — the inverse of `type_short_name`. Used
+/// to build the cross-type target names in the SAME qualification as the enum
+/// being derived, so they strict-`==` match the resolved field types (just as
+/// `children()` matches via the qualified `view.name`).
+@comptime
+fn module_prefix(name: string) -> string {
+    let len = name.length
+    mut i = len - 1
+    while i > 0 {
+        if name[i] == ":" && name[i - 1] == ":" {
+            return name.substring(0, i + 1)
+        }
+        i = i - 1
+    }
+    ""
+}
+
+/// Classify one field against ALL four node kinds (not just self): try each
+/// through the same-type classifier, take the first non-scalar. The four kinds
+/// are mutually exclusive, so order is irrelevant. Unrolled (not a loop) —
+/// the @comptime interpreter doesn't iterate a fn-call/list-literal iterable.
+/// `parent_name` is the enum being derived (qualified like the resolved field
+/// types); targets are built in its module prefix so `is_self_type`'s strict
+/// `==` matches — the four node kinds share the AST module.
+@comptime
+fn classify_field_crosstype(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> CrossBinding {
+    let pfx = module_prefix(parent_name)
+    let te = "${pfx}Expr"
+    let ke = classify_field_kind(vt, te, ctx)
+    if field_is_node(ke) { return CrossBinding { binding_name: "", target: te, kind: ke } }
+    let ts = "${pfx}Stmt"
+    let ks = classify_field_kind(vt, ts, ctx)
+    if field_is_node(ks) { return CrossBinding { binding_name: "", target: ts, kind: ks } }
+    let tp = "${pfx}Pattern"
+    let kp = classify_field_kind(vt, tp, ctx)
+    if field_is_node(kp) { return CrossBinding { binding_name: "", target: tp, kind: kp } }
+    let tt = "${pfx}ValueType"
+    let kt = classify_field_kind(vt, tt, ctx)
+    if field_is_node(kt) { return CrossBinding { binding_name: "", target: tt, kind: kt } }
+    // A `List<Struct>` whose element is a REGISTERED walkable node-container
+    // (e.g. `List<MatchArm>`). Classified here rather than in classify_field_kind
+    // because such a struct spans multiple node kinds, so the same-type children()
+    // leaves it Scalar and only the cross-type walk covers it. `target` carries
+    // the struct short name (non-empty ⇒ the field binds to its name, which the
+    // with_children rebuild needs for shape).
+    //
+    // The registry keys on the short name, so gate on SAME MODULE as the parent
+    // enum: compare the full resolved element name to the parent-module-prefixed
+    // short name. The registered structs (MatchArm, …) live beside Expr/Stmt in
+    // this module, and a core AST enum's struct-list fields only reference core
+    // structs — so a foreign `otherpkg::MatchArm` sharing the short name (the 24yd
+    // short-name-collision class) is rejected here rather than misrouted to @std's
+    // `match_arm_children_spanned` / `rebuild_match_arms`.
+    let elem_name = self_type_name(list_elem_or_unknown(vt))
+    let elem_struct = type_short_name(elem_name)
+    if struct_list_helpers(elem_struct).spanned != "" && elem_name == "${module_prefix(parent_name)}${elem_struct}" {
+        return CrossBinding { binding_name: "", target: elem_struct, kind: FieldKind.StructListOfSelf(elem_struct) }
+    }
+    CrossBinding { binding_name: "", target: "", kind: FieldKind.Scalar }
+}
+
+@comptime
+fn classify_variant_crosstype(v: Variant, parent_name: string, ctx: ResolverCtx) -> List<CrossBinding> {
+    mut out: List<CrossBinding> = []
+    for f in v.fields {
+        let cb = classify_field_crosstype(f.resolved, parent_name, ctx)
+        let bind = if cb.target == "" { "_" } else { f.name }
+        out.push(CrossBinding { binding_name: bind, target: cb.target, kind: cb.kind })
+    }
+    out
+}
+
+/// `box_<target>_list(arg)` — box a `List<Node>` as `List<AnyNode>`.
+@comptime
+fn box_list_call(target: string, arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
+    Expr.Call(Expr.Ident(box_list_fn(target)), args)
+}
+
+/// `list_concat(acc, item)`.
+@comptime
+fn cross_concat(acc: Expr, item: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(item)]
+    Expr.Call(Expr.Ident("list_concat"), args)
+}
+
+/// `AnyNode.AnyX(inner)` for a single child — `inner` is the binding itself
+/// (DirectSelf) or its `.node` projection (WrapperOfSelf).
+@comptime
+fn box_single(b: CrossBinding) -> Expr {
+    let inner = if b.kind is .WrapperOfSelf {
+        Expr.FieldAccess(Expr.Ident(b.binding_name), "node")
+    } else {
+        Expr.Ident(b.binding_name)
+    }
+    let args: List<SExpr> = [sexpr_dummy(inner)]
+    Expr.EnumCtor("AnyNode", anynode_ctor(b.target), args)
+}
+
+/// `fn(arg)` — call a named @std helper with one argument.
+@comptime
+fn helper_call(fn_name: string, arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
+    Expr.Call(Expr.Ident(fn_name), args)
+}
+
+/// The `spanned_one_*` helper for a single WRAPPER child, by target kind.
+/// Only SExpr/SStmt wrap a node, so only Expr/Stmt are valid; a Pattern/
+/// ValueType target would mean a wrapper that can't exist — emit an undefined
+/// name so the generated fn fails to COMPILE loudly (like `anynode_ctor`).
+@comptime
+fn spanned_one_wrapper_fn(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "spanned_one_sexpr" }
+    if s == "Stmt" { return "spanned_one_sstmt" }
+    "spanned_one__no_wrapper_for_${s}"
+}
+
+/// The `box_*_list_spanned` helper for a WRAPPER-list child, by target kind
+/// (Expr/Stmt only; poison name otherwise — see `spanned_one_wrapper_fn`).
+@comptime
+fn box_wrapper_list_spanned_fn(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "box_sexpr_list_spanned" }
+    if s == "Stmt" { return "box_sstmt_list_spanned" }
+    "box_list_spanned__no_wrapper_for_${s}"
+}
+
+/// The `node_opt_spanned_*` helper for a nullable single WRAPPER child, by
+/// target kind (Expr/Stmt only; poison name otherwise).
+@comptime
+fn node_opt_spanned_fn(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "node_opt_spanned_sexpr" }
+    if s == "Stmt" { return "node_opt_spanned_sstmt" }
+    "node_opt_spanned__no_wrapper_for_${s}"
+}
+
+/// The `List<SpannedChild>` expr for one single child (A2). A WRAPPER child
+/// rides its `spanned_one_*` helper (real (line, col)); a bare DirectSelf is
+/// boxed and tagged position-0 via `spanned_bare_one`.
+@comptime
+fn spanned_single_list(b: CrossBinding) -> Expr {
+    if b.kind is .WrapperOfSelf {
+        return helper_call(spanned_one_wrapper_fn(b.target), Expr.Ident(b.binding_name))
+    }
+    // DirectSelf: box the bare node, position 0 (no wrapper carries its span).
+    helper_call("spanned_bare_one", box_single(b))
+}
+
+/// The `List<SpannedChild>` expr for one list/optional child (A2). A WRAPPER
+/// list/optional rides its span-preserving helper; a bare list/optional reuses
+/// the existing `box_*_list` boxing then tags every element position-0.
+@comptime
+fn spanned_list_child(b: CrossBinding) -> Expr {
+    if b.kind is .StructListOfSelf {
+        // A registered struct-list: its hand-written extract helper flattens the
+        // element list into cross-type spanned children (field order per element).
+        return helper_call(struct_list_helpers(struct_of(b.kind)).spanned, Expr.Ident(b.binding_name))
+    }
+    if b.kind is .WrapperListOfSelf {
+        return helper_call(box_wrapper_list_spanned_fn(b.target), Expr.Ident(b.binding_name))
+    }
+    if b.kind is .ListOfSelf {
+        return helper_call("spanned_bare_list", box_list_call(b.target, Expr.Ident(b.binding_name)))
+    }
+    if b.kind is .OptionalDirectSelf {
+        return helper_call("spanned_bare_list", box_list_call(b.target, self_opt_to_list_call(b.binding_name, b.target)))
+    }
+    // OptionalWrapperOfSelf
+    helper_call(node_opt_spanned_fn(b.target), Expr.Ident(b.binding_name))
+}
+
+/// True for the list/optional kinds (those folded via concat, vs singles) —
+/// including a registered struct-list, which is one variable-arity slot.
+@comptime
+fn is_list_child(k: FieldKind) -> bool {
+    (k is .ListOfSelf) || (k is .WrapperListOfSelf) || is_optional_child(k) || (k is .StructListOfSelf)
+}
+
+/// Build one `all_children_spanned()` arm body: a `List<SpannedChild>` of every
+/// child, each paired with its wrapper-derived (line, col) (A2). Mirrors the
+/// fold of `block_expr_for_children` but each contribution is a spanned list:
+/// WRAPPER children carry their real position, bare children position-0. All-
+/// scalar → the typed-empty binding (so the arm types as `List<SpannedChild>`,
+/// not `List<Unknown>`).
+@comptime
+fn all_spanned_arm_body(bindings: List<CrossBinding>) -> Expr {
+    mut any_child = false
+    for b in bindings {
+        if is_single_child(b.kind) || is_list_child(b.kind) { any_child = true }
+    }
+    if !any_child {
+        return Expr.Ident(all_spanned_empty_binding_name())
+    }
+    // Fold in FIELD ORDER, one binding at a time, from the typed-empty list
+    // (which pins the element type to List<SpannedChild> before the first
+    // concat). A single contributes a one-element list, a list its boxed list.
+    // Folding in binding order — rather than all singles first, then lists — is
+    // what keeps a list field that PRECEDES a single field in order
+    // (ValueType.FnTyped: params: List<ValueType> before ret: ValueType).
+    mut acc: Expr = Expr.Ident(all_spanned_empty_binding_name())
+    for b in bindings {
+        if is_single_child(b.kind) {
+            acc = cross_concat(acc, spanned_single_list(b))
+        }
+        if is_list_child(b.kind) {
+            acc = cross_concat(acc, spanned_list_child(b))
+        }
+    }
+    acc
+}
+
+@comptime
+fn all_spanned_empty_binding_name() -> string {
+    "__derive_spanned_empty"
+}
+
+@comptime
+fn build_all_children_spanned_arms(variants: List<Variant>, parent_name: string, ctx: ResolverCtx) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        let bindings = classify_variant_crosstype(v, parent_name, ctx)
+        let pat = pattern_for_cross(v.name, bindings)
+        let body = all_spanned_arm_body(bindings)
+        arms.push(MatchArm { pattern: pat, guard: null, body: sexpr_dummy(body) })
+    }
+    arms
+}
+
+/// `.Variant(b1, b2, ...)` pattern for the cross-type bindings.
+@comptime
+fn pattern_for_cross(variant_name: string, bindings: List<CrossBinding>) -> Pattern {
+    mut names: List<string> = []
+    for b in bindings { names.push(b.binding_name) }
+    variant_pattern(variant_name, names)
+}
+
+/// Build `fn Type__all_children_spanned(self) -> List<SpannedChild> { match self
+/// { arms } }` (A2). `SpannedChild` is concrete (a struct, not Self), so the
+/// list element type is fixed across all node kinds — the typed-empty binding
+/// pins it for all-scalar arms. Emit the element type as `ValueType.Struct`
+/// (not `Enum`): the resolver's `rewrite_vtype` re-runs a `.Struct` name slot
+/// through `vtype_from_name` and qualifies it correctly, whereas a `.Enum`
+/// slot would stay (wrongly) tagged Enum.
+@comptime
+fn build_all_children_spanned_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let sc_ty = ValueType.Struct("SpannedChild", no_type_args, 0)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let params: List<ParamEntry> = [self_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let ret_ty = ValueType.List(sc_ty)
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let empty_elems: List<SExpr> = []
+    let typed_empty = Stmt.Let(all_spanned_empty_binding_name(), ret_ty, Expr.ListLit(empty_elems))
+    let body: List<SStmt> = [
+        sstmt_dummy(typed_empty),
+        sstmt_dummy(Stmt.Expr(match_expr)),
+    ]
+    Stmt.Function("${enum_name}__all_children_spanned", empty_tp, params, ret_ty, body)
+}
+
+// ── with_children() — the INVERSE walker (B1 / spine §14.1) ──
+//
+// The dual of all_children_spanned: put children BACK into a variant's slots, in
+// field order, from a `List<SpannedChild>`. `with_children(self, kids) -> Self`.
+// Drives the arena's reconstruct-from-edges (the boxed-view shim the rep flip
+// stands on). Each slot pulls its child(ren) positionally from `kids`; the one
+// variable-arity slot (a node-list OR an optional — no walked variant has two)
+// takes the run `kids[before .. len-after]`, where before/after are the variant's
+// fixed single-child counts (the generator computes them). Indexing rides the
+// `wc_at`/`wc_at_end`/`wc_run` accessors (core/ast.av) so the spliced body stays
+// within the @comptime decoder's Call subset (no Expr.Index/Binary).
+//
+// PROPERTY LAW (the correctness oracle, spec §8): for every node,
+//   with_children(self, all_children_spanned(self)) == self.
+
+/// Node-kind tag ("expr"/"stmt"/"pat"/"type") for the bare-unbox helper names.
+@comptime
+fn wc_kind_tag(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "expr" }
+    if s == "Stmt" { return "stmt" }
+    if s == "Pattern" { return "pat" }
+    if s == "ValueType" { return "type" }
+    "__no_kind_${s}"   // poison: loud build failure on a new kind
+}
+
+/// Wrapper tag ("sexpr"/"sstmt") for the wrapper-rebuild helper names. Only
+/// Expr/Stmt have spanned wrappers; a Pattern/ValueType target here is impossible
+/// (poison name -> loud build failure).
+@comptime
+fn wc_wrapper_tag(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "sexpr" }
+    if s == "Stmt" { return "sstmt" }
+    "__no_wrapper_${s}"
+}
+
+/// The @std helper that rebuilds one single-child slot: `respan_*` for a wrapper
+/// (WrapperOfSelf), `unspan_*` for a bare child (DirectSelf).
+@comptime
+fn wc_single_helper(b: CrossBinding) -> string {
+    if b.kind is .WrapperOfSelf { return "respan_${wc_wrapper_tag(b.target)}" }
+    "unspan_${wc_kind_tag(b.target)}"
+}
+
+/// The @std helper that rebuilds the variable-arity slot's run (list or optional,
+/// bare or wrapper).
+@comptime
+fn wc_run_helper(b: CrossBinding) -> string {
+    if b.kind is .WrapperListOfSelf { return "respan_${wc_wrapper_tag(b.target)}_list" }
+    if b.kind is .ListOfSelf { return "unspan_${wc_kind_tag(b.target)}_list" }
+    if b.kind is .OptionalWrapperOfSelf { return "respan_${wc_wrapper_tag(b.target)}_opt" }
+    "unspan_${wc_kind_tag(b.target)}_opt"   // OptionalDirectSelf
+}
+
+/// `wc_at(kids, i)` — the i-th spanned child (a single slot before the var slot).
+@comptime
+fn wc_at_call(i: int) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident("kids")), sexpr_dummy(Expr.Number(string(i)))]
+    Expr.Call(Expr.Ident("wc_at"), args)
+}
+
+/// `wc_at_end(kids, j)` — the spanned child j-from-end (a single slot AFTER the
+/// var slot, e.g. FnTyped.ret following the params list).
+@comptime
+fn wc_at_end_call(j: int) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident("kids")), sexpr_dummy(Expr.Number(string(j)))]
+    Expr.Call(Expr.Ident("wc_at_end"), args)
+}
+
+/// `wc_run(kids, before, after)` — the variable-arity slot's run.
+@comptime
+fn wc_run_call(before: int, after: int) -> Expr {
+    let args: List<SExpr> = [
+        sexpr_dummy(Expr.Ident("kids")),
+        sexpr_dummy(Expr.Number(string(before))),
+        sexpr_dummy(Expr.Number(string(after))),
+    ]
+    Expr.Call(Expr.Ident("wc_run"), args)
+}
+
+/// Pattern binding names for with_children's arm: scalars get a readable minted
+/// name (the body passes them through), node-children bind to `_` (the body
+/// rebuilds them from `kids`, never from the original binding).
+@comptime
+fn wc_binding_names(bindings: List<CrossBinding>) -> List<string> {
+    mut names: List<string> = []
+    for b in bindings {
+        // A struct-list binds to its FIELD name (not `_`): the rebuild reads the
+        // ORIGINAL list from it for shape (element count + per-element optional
+        // presence). Scalars get a minted pass-through name; other node-children
+        // are `_` (rebuilt purely from `kids`).
+        let nm = if b.kind is .StructListOfSelf {
+            b.binding_name
+        } else if b.target == "" {
+            "__avra_wc_s${string(names.length)}"
+        } else {
+            "_"
+        }
+        names.push(nm)
+    }
+    names
+}
+
+/// Count of variable-arity child slots (a node-list or an optional) in a variant.
+/// `with_children` reassembles exactly ONE such run from the flat child list — its
+/// boundary is the variant's fixed leading/trailing single-child counts. Two runs
+/// would be ambiguous (no marker says where the first ends and the second begins),
+/// so a variant with >1 is POISONED into a loud build failure rather than silently
+/// mis-generated. Today every walked AST variant has ≤1; this guards the next one.
+@comptime
+fn wc_var_slot_count(bindings: List<CrossBinding>) -> int {
+    mut n = 0
+    for b in bindings {
+        if b.target != "" && is_list_child(b.kind) { n = n + 1 }
+    }
+    n
+}
+
+/// Count of single-child slots BEFORE the (first) variable-arity slot — the
+/// `before` bound of the run. If the variant has no variable slot, this is the
+/// total single count and there is no run.
+@comptime
+fn wc_singles_before_var(bindings: List<CrossBinding>) -> int {
+    mut n = 0
+    for b in bindings {
+        if b.target != "" {
+            if is_single_child(b.kind) { n = n + 1 }
+            if is_list_child(b.kind) { return n }
+        }
+    }
+    n
+}
+
+/// Count of single-child slots AFTER the (first) variable-arity slot — the
+/// `after` bound (0 when none). Only ValueType.FnTyped (params list, then ret)
+/// exercises this among the real AST variants.
+@comptime
+fn wc_singles_after_var(bindings: List<CrossBinding>) -> int {
+    mut seen = false
+    mut n = 0
+    for b in bindings {
+        if b.target != "" {
+            if is_list_child(b.kind) {
+                seen = true
+            } else if is_single_child(b.kind) {
+                if seen { n = n + 1 }
+            }
+        }
+    }
+    n
+}
+
+/// Build one with_children arm: `.V(pat) -> .V(rebuilt slots)`. Scalars pass
+/// through their bound name; single children pull one kid (positional from the
+/// front, or from the end once past the variable slot); the variable slot pulls
+/// its run.
+@comptime
+fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm {
+    let bindings = classify_variant_crosstype(v, parent_name, ctx)
+    let names = wc_binding_names(bindings)
+    let pat = variant_pattern(v.name, names)
+    if wc_var_slot_count(bindings) > 1 {
+        // POISON: two variable-arity slots can't be inverted from a flat child run
+        // (no boundary marker). Emit a call to an undefined helper so the build
+        // fails LOUDLY, naming the variant, instead of silently assigning the whole
+        // run to both slots. Such a variant must first teach with_children a run
+        // boundary representation (spine §14.1) — mirrors the `__no_kind_` poison.
+        let no_args: List<SExpr> = []
+        let poison = Expr.Call(Expr.Ident("__avra_wc_unsupported_multiple_var_slots__${parent_name}_${v.name}"), no_args)
+        return MatchArm { pattern: pat, guard: null, body: sexpr_dummy(poison) }
+    }
+    let before = wc_singles_before_var(bindings)
+    let after = wc_singles_after_var(bindings)
+    mut args: List<SExpr> = []
+    mut single_pos = 0
+    mut after_pos = 0
+    mut seen_var = false
+    mut i = 0
+    while i < bindings.length {
+        let b = bindings[i]
+        if b.target == "" {
+            // Scalar: carry the bound value through unchanged.
+            args.push(sexpr_dummy(Expr.Ident(names[i])))
+        } else if is_single_child(b.kind) {
+            let kid = if seen_var { wc_at_end_call(after - after_pos) } else { wc_at_call(single_pos) }
+            if seen_var { after_pos = after_pos + 1 } else { single_pos = single_pos + 1 }
+            args.push(sexpr_dummy(helper_call(wc_single_helper(b), kid)))
+        } else if b.kind is .StructListOfSelf {
+            // The variable-arity struct-list slot. Strategy A: rebuild from the
+            // ORIGINAL bound list (`names[i]` is the field name — supplies shape:
+            // element count + per-element optional presence) plus the flat run
+            // (node values + recovered spans).
+            let reb_args: List<SExpr> = [sexpr_dummy(Expr.Ident(names[i])), sexpr_dummy(wc_run_call(before, after))]
+            args.push(sexpr_dummy(Expr.Call(Expr.Ident(struct_list_helpers(struct_of(b.kind)).rebuild), reb_args)))
+            seen_var = true
+        } else {
+            // The one variable-arity slot (list / optional).
+            args.push(sexpr_dummy(helper_call(wc_run_helper(b), wc_run_call(before, after))))
+            seen_var = true
+        }
+        i = i + 1
+    }
+    MatchArm { pattern: pat, guard: null, body: sexpr_dummy(Expr.EnumCtor(parent_name, v.name, args)) }
+}
+
+@comptime
+fn build_with_children_arms(variants: List<Variant>, parent_name: string, ctx: ResolverCtx) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        arms.push(build_with_children_arm(v, parent_name, ctx))
+    }
+    arms
+}
+
+/// Build `fn Type__with_children(self: Type, kids: List<SpannedChild>) -> Type {
+/// match self { arms } }`. Returns Self (each arm an EnumCtor), so — unlike
+/// all_children_spanned — no typed-empty binding is needed.
+@comptime
+fn build_with_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let sc_ty = ValueType.Struct("SpannedChild", no_type_args, 0)
+    let kids_ty = ValueType.List(sc_ty)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let kids_param = ParamEntry { name: "kids", vtype: kids_ty }
+    let params: List<ParamEntry> = [self_param, kids_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
+    Stmt.Function("${enum_name}__with_children", empty_tp, params, self_ty, body)
+}
+
+// ── Slice C: visit() — depth-first traversal callback ──
+
+/// Build `fn Type__visit(self: Type, f: fn(Type) -> void) { f(self);
+/// for c in self.children() { c.visit(f) } }`.
+///
+/// `f`'s vtype is FnTyped([Self], Void) — concrete signature, not a
+/// generic, so codegen knows the lambda's calling convention up
+/// front. Callers that want polymorphic accumulators (fold) get a
+/// separate generic builder when y9y4.3's fold slice lands.
+///
+/// The recursive `c.visit(f)` resolves through codegen's dot-
+/// dispatch lookup against the same `Type__visit` mangled name the
+/// macro emits — no special handling needed.
+@comptime
+fn build_visit_fn(enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let f_param_types: List<ValueType> = [self_ty]
+    let f_ty = ValueType.FnTyped(f_param_types, ValueType.Void)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let f_param = ParamEntry { name: "f", vtype: f_ty }
+    let params: List<ParamEntry> = [self_param, f_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // f(self)
+    let f_args: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
+    let f_call = Stmt.Expr(Expr.Call(Expr.Ident("f"), f_args))
+
+    // for c in self.children() { c.visit(f) }
+    let no_call_args: List<SExpr> = []
+    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let visit_args: List<SExpr> = [sexpr_dummy(Expr.Ident("f"))]
+    let visit_call = Stmt.Expr(Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "visit"), visit_args))
+    let for_body_stmts: List<SStmt> = [sstmt_dummy(visit_call)]
+    let for_body = Stmt.Block(for_body_stmts)
+    let for_loop = Stmt.ForIn("c", children_call, for_body)
+
+    let body: List<SStmt> = [sstmt_dummy(f_call), sstmt_dummy(for_loop)]
+    Stmt.Function("${enum_name}__visit", empty_tp, params, ValueType.Void, body)
+}
+
+// ── Slice C: any() — short-circuiting existence check ──
+
+/// Build `fn Type__any(self: Type, pred: fn(Type) -> bool) -> bool {
+///     if pred(self) { return true }
+///     for c in self.children() { if c.any(pred) { return true } }
+///     false
+/// }`.
+///
+/// Short-circuit: `c.any(pred)` returning true exits the loop via
+/// an early `return true`. The trailing `false` falls through when
+/// nothing matched. Same shape as visit() but returns bool and
+/// guards with if-stmts.
+@comptime
+fn build_any_fn(enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let pred_param_types: List<ValueType> = [self_ty]
+    let pred_ty = ValueType.FnTyped(pred_param_types, ValueType.Bool)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let pred_param = ParamEntry { name: "pred", vtype: pred_ty }
+    let params: List<ParamEntry> = [self_param, pred_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // if pred(self) { return true }
+    let pred_args_self: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
+    let pred_call_self = Expr.Call(Expr.Ident("pred"), pred_args_self)
+    let return_true_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Bool("true")))]
+    let return_true_block = Stmt.Block(return_true_stmts)
+    let if_pred_self = Stmt.If(pred_call_self, return_true_block, null)
+
+    // for c in self.children() { if c.any(pred) { return true } }
+    let no_call_args: List<SExpr> = []
+    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let any_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
+    let c_any_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "any"), any_args)
+    let inner_return_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Bool("true")))]
+    let inner_return_block = Stmt.Block(inner_return_stmts)
+    let if_c_any = Stmt.If(c_any_call, inner_return_block, null)
+    let for_body_stmts: List<SStmt> = [sstmt_dummy(if_c_any)]
+    let for_body = Stmt.Block(for_body_stmts)
+    let for_loop = Stmt.ForIn("c", children_call, for_body)
+
+    // trailing `false` so the fn returns it when nothing matched
+    let false_return = Stmt.Return(Expr.Bool("false"))
+
+    let body: List<SStmt> = [
+        sstmt_dummy(if_pred_self),
+        sstmt_dummy(for_loop),
+        sstmt_dummy(false_return),
+    ]
+    Stmt.Function("${enum_name}__any", empty_tp, params, ValueType.Bool, body)
+}
+
+// ── Slice C: find() — short-circuiting search returning first match ──
+
+/// Build `fn Type__find(self: Type, pred: fn(Type) -> bool) -> Type {
+///     if pred(self) { return self }
+///     for c in self.children() {
+///         let r = c.find(pred)
+///         if r != null { return r }
+///     }
+///     null
+/// }`.
+///
+/// Returns the matching node or null. Type? at source level lowers
+/// to the same ValueType.Enum (T's nullability lives in TypeExpr,
+/// not ValueType per the parser), so emitting ret_vtype = Self is
+/// the correct shape; `return null` and `r != null` are accepted by
+/// typeck against that return type. Mirror of any() but propagates
+/// the matching value instead of just acknowledging it.
+@comptime
+fn build_find_fn(enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let pred_param_types: List<ValueType> = [self_ty]
+    let pred_ty = ValueType.FnTyped(pred_param_types, ValueType.Bool)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let pred_param = ParamEntry { name: "pred", vtype: pred_ty }
+    let params: List<ParamEntry> = [self_param, pred_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // if pred(self) { return self }
+    let pred_args_self: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
+    let pred_call_self = Expr.Call(Expr.Ident("pred"), pred_args_self)
+    let return_self_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Ident("self")))]
+    let return_self_block = Stmt.Block(return_self_stmts)
+    let if_pred_self = Stmt.If(pred_call_self, return_self_block, null)
+
+    // for c in self.children() {
+    //     let r = c.find(pred)
+    //     if r != null { return r }
+    // }
+    let no_call_args: List<SExpr> = []
+    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let find_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
+    let c_find_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "find"), find_args)
+    let let_r = Stmt.Let("r", self_ty, c_find_call)
+    let r_not_null = Expr.Binary(Expr.Ident("r"), BinOp.Ne, Expr.None)
+    let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Ident("r")))]
+    let return_r_block = Stmt.Block(return_r_stmts)
+    let if_r_not_null = Stmt.If(r_not_null, return_r_block, null)
+    let for_body_stmts: List<SStmt> = [
+        sstmt_dummy(let_r),
+        sstmt_dummy(if_r_not_null),
+    ]
+    let for_body = Stmt.Block(for_body_stmts)
+    let for_loop = Stmt.ForIn("c", children_call, for_body)
+
+    // trailing `null` — no descendant matched
+    let null_return = Stmt.Return(Expr.None)
+
+    let body: List<SStmt> = [
+        sstmt_dummy(if_pred_self),
+        sstmt_dummy(for_loop),
+        sstmt_dummy(null_return),
+    ]
+    Stmt.Function("${enum_name}__find", empty_tp, params, self_ty, body)
+}
+
+// ── Slice B: map() — per-variant constructor reconstruction with f
+//                    applied to direct-Self fields, list_map over
+//                    List<Self> fields. so07/y9y4.2.
+//
+// Shape:
+//   fn Type__map(self: Type, f: fn(Type) -> Type) -> Type {
+//       match self {
+//           .V1(s) -> .V1(s)                                 // scalars only
+//           .V2(x) -> .V2(f(x))                              // one direct Self
+//           .V3(xs) -> .V3(list_map(xs, f))                  // one List<Self>
+//           .V4(s, x, xs, w) -> .V4(s, f(x), list_map(xs, f), w)
+//       }
+//   }
+//
+// Wrapper-list fields (List<SStmt>, List<SExpr>) map through
+// `map_node_list`, which applies f to each entry's `.node` and rewraps
+// with the original span via `with` — so a one-level map descends into
+// wrapper-list children too without the parent losing line/col info.
+// Scalars still pass through untouched.
+
+/// Build one map arm: `.Variant(b1, b2, ...) -> .Variant(t1, t2, ...)`
+/// where ti = f(bi) for DirectSelf, list_map(bi, f) for ListOfSelf,
+/// map_node_list(bi, f) for WrapperListOfSelf, bi unchanged for Scalar.
+@comptime
+fn build_map_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm {
+    let bindings = classify_variant(v, parent_name, ctx)
+    let pat = map_pattern_for(v.name, bindings)
+    let body = map_arm_body(v.name, parent_name, bindings)
+    MatchArm {
+        pattern: pat,
+        guard: null,
+        body: sexpr_dummy(body),
+    }
+}
+
+/// Mint every named binding for map's variant pattern. Scalars get a
+/// deterministic `__avra_map_s<i>` synthetic name (`_` is unreadable;
+/// map needs every field readable so the EnumCtor body can pass it
+/// through). Named bindings keep their source name. The leading `__`
+/// keeps synthetics distinct from any user identifier (spec Axis 28
+/// forbids `__`). Single source of truth for the name mapping —
+/// map_pattern_for + map_arm_body both go through this.
+@comptime
+fn map_binding_names(bindings: List<Binding>) -> List<string> {
+    mut names: List<string> = []
+    for b in bindings {
+        let name = if b.binding_name == "_" { "__avra_map_s${string(names.length)}" } else { b.binding_name }
+        names.push(name)
+    }
+    names
+}
+
+/// Map's per-variant pattern: every named binding stays bound — even
+/// scalars, because map's body reconstructs the variant with each
+/// scalar in its original slot. (Children's pattern was free to bind
+/// scalars to `_`; map can't because it needs to read them back.)
+@comptime
+fn map_pattern_for(variant_name: string, bindings: List<Binding>) -> Pattern {
+    variant_pattern(variant_name, map_binding_names(bindings))
+}
+
+@comptime
+fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Binding>) -> Expr {
+    let names = map_binding_names(bindings)
+    mut args: List<SExpr> = []
+    mut idx = 0
+    while idx < bindings.length {
+        let b = bindings[idx]
+        let bind_name = names[idx]
+        let arg_expr = match b.kind {
+            .DirectSelf -> map_call_on_field(bind_name)
+            .ListOfSelf -> list_map_call(bind_name)
+            .WrapperOfSelf(w) -> map_node_call(bind_name, w, parent_name)
+            .WrapperListOfSelf(w) -> map_node_list_call(bind_name, w, parent_name)
+            // None-guarded map of nullable children.
+            .OptionalDirectSelf -> map_self_opt_call(bind_name, parent_name)
+            .OptionalWrapperOfSelf(w) -> map_node_opt_call(bind_name, w, parent_name)
+            // A scalar (non-Self) field is carried through unchanged. Named
+            // explicitly (not `_`) so a new FieldKind forces a compile error
+            // here rather than silently leaving its child unwalked.
+            .Scalar -> Expr.Ident(bind_name)
+            // StructListOfSelf is cross-type only (classify_field_kind never
+            // yields it), so this arm is unreachable in the same-type map(); it
+            // exists to keep this exhaustiveness guard wildcard-free. A struct-
+            // list is left unmapped here (same as its Scalar status in children()).
+            .StructListOfSelf(_) -> Expr.Ident(bind_name)
+        }
+        args.push(sexpr_dummy(arg_expr))
+        idx = idx + 1
+    }
+    Expr.EnumCtor(parent_name, variant_name, args)
+}
+
+/// `map_self_opt::<Parent>(field, f)` — none-guarded map over a `Self?`
+/// child. Explicit type-arg so the call type-checks without inference.
+@comptime
+fn map_self_opt_call(field_name: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [parent_name]
+    Expr.GenericCall(Expr.Ident("map_self_opt"), type_args, args)
+}
+
+/// `map_node_opt::<W, Parent>(field, f)` — span-preserving none-guarded
+/// map over a `Wrapper<Self>?` child.
+@comptime
+fn map_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("map_node_opt"), type_args, args)
+}
+
+/// `f(bind_name)` — the per-field transform applied to a direct-Self.
+@comptime
+fn map_call_on_field(bind_name: string) -> Expr {
+    let call_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name))]
+    Expr.Call(Expr.Ident("f"), call_args)
+}
+
+/// `list_map(bind_name, f)` — map f over a List<Self>. The generic
+/// list_map helper's inference pins T,U from xs's element type and
+/// f's signature, so no explicit type-args needed here.
+@comptime
+fn list_map_call(bind_name: string) -> Expr {
+    let lm_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name)), sexpr_dummy(Expr.Ident("f"))]
+    Expr.Call(Expr.Ident("list_map"), lm_args)
+}
+
+/// `map_node_list::<Wrapper, Parent>(bind_name, f)` — span-preserving
+/// map of f over a wrapper-list (List<SExpr> / List<SStmt>). Mirrors
+/// the explicit type-args unwrap_call uses (so check_generic_call pins
+/// W + T unambiguously and mono inherits them); the extra `f` arg is
+/// the same per-node transform map threads everywhere else.
+@comptime
+fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("map_node_list"), type_args, args)
+}
+
+/// `map_node::<Wrapper, Parent>(field_name, f)` — span-preserving map of
+/// f over a single wrapper field (one `SExpr` / `SStmt`). The single
+/// analogue of `map_node_list_call`; same explicit type-args so
+/// check_generic_call pins W + T unambiguously and mono inherits them.
+@comptime
+fn map_node_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let type_args: List<string> = [wrapper, parent_name]
+    Expr.GenericCall(Expr.Ident("map_node"), type_args, args)
+}
+
+@comptime
+fn build_map_arms(variants: List<Variant>, parent_name: string, ctx: ResolverCtx) -> List<MatchArm> {
+    mut arms: List<MatchArm> = []
+    for v in variants {
+        arms.push(build_map_arm(v, parent_name, ctx))
+    }
+    arms
+}
+
+/// Build `fn Type__map(self: Type, f: fn(Type) -> Type) -> Type {
+///     match self { arms }
+/// }`. Mirror of the other Type__method emitters' shape.
+@comptime
+fn build_map_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
+    let no_type_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(enum_name, no_type_args, 0)
+    let f_param_types: List<ValueType> = [self_ty]
+    let f_ty = ValueType.FnTyped(f_param_types, self_ty)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let f_param = ParamEntry { name: "f", vtype: f_ty }
+    let params: List<ParamEntry> = [self_param, f_param]
+    let empty_tp: List<TypeParamEntry> = []
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(match_expr))]
+    Stmt.Function("${enum_name}__map", empty_tp, params, self_ty, body)
+}

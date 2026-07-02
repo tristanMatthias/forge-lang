@@ -1,0 +1,13 @@
+// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surfaces flat at `features.extern_decl.{...}`
+use core.{feature_new, Feature}
+
+/// Register the `extern fn` feature with the compiler. Picks up
+/// the `extern` keyword and routes to the parser's
+/// `parse_extern_declaration`. Registered via
+/// `init_features` in `features/mod.av`.
+export fn extern_decl_feature() -> Feature {
+    feature_new("extern_decl") with {
+        decl_keyword: "kw_extern",
+        parse_decl: (p: Parser) -> p.parse_extern_declaration(),
+    }
+}

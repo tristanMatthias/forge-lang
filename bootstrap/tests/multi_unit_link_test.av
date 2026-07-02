@@ -1,0 +1,35 @@
+// End-to-end multi-unit build test.
+//
+// Smoking gun for 2f54: producer compiled standalone, consumer
+// compiled with metadata fast-path, linked together, binary runs
+// and returns the producer's value. The whole incremental-multi-unit
+// pipeline working in one fixture.
+//
+// Memoised at the shell level. Tracking: forge-crafting-intepreters-2f54.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn link_run() -> string {
+    cached_fixture_run("tests/multi_unit_link_fixtures/sample.av")
+}
+
+spec "multi-unit link: producer + consumer build, link, run" {
+    then "producer compile with --emit_metadata + --module_path succeeds" {
+        link_run().contains("PROBE producer_compile_rc_zero: ok")
+    }
+    then "producer llc step succeeds" {
+        link_run().contains("PROBE producer_llc_rc_zero: ok")
+    }
+    then "consumer compile with AVRA_USE_METADATA=1 succeeds" {
+        link_run().contains("PROBE consumer_compile_rc_zero: ok")
+    }
+    then "consumer llc step succeeds" {
+        link_run().contains("PROBE consumer_llc_rc_zero: ok")
+    }
+    then "linker resolves cross-unit symbols (no duplicate _main / __init)" {
+        link_run().contains("PROBE link_rc_zero: ok")
+    }
+    then "linked binary runs and returns producer's value (42)" {
+        link_run().contains("PROBE binary_exits_with_producer_value_42: ok")
+    }
+}

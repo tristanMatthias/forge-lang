@@ -1,0 +1,41 @@
+// vez6.8.4.A/C — 1-arg @expand macros receive the wrapped Stmt.
+// Split out of expand_macro_test.av for shard-parallel speed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_1arg_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+spec "vez6.8.4.A/C: 1-arg @expand macro receives the wrapped Stmt" {
+    then "macro fn(s: Stmt) -> Stmt is invoked and its return decodes" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn passthrough(s: Stmt) -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        impl Foo {\n" +
+            "            fn run(self) -> int { return 7 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(passthrough)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("impl Foo")
+            && out.contains("fn Foo__run")
+            && out.contains("return 7")
+            && !out.contains("fn placeholder")
+    }
+}

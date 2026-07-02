@@ -1,0 +1,35 @@
+fn ug_identity<T>(x: T) -> T {
+    x
+}
+
+fn ug_pair<A, B>(a: A, b: B) -> A {
+    a
+}
+
+fn ug_show(v: int | string) -> string {
+    match v {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+spec "union generic" {
+    then "identity preserves int branch of union" {
+        let u: int | string = 42
+        ug_show(ug_identity(u)) == "42"
+    }
+    then "identity preserves string branch of union" {
+        let u: int | string = "hello"
+        ug_show(ug_identity(u)) == "hello"
+    }
+    then "pair returns first union arg (int)" {
+        let a: int | string = 1
+        let b: int | string = "world"
+        ug_show(ug_pair(a, b)) == "1"
+    }
+    then "pair returns first union arg (string)" {
+        let a: int | string = 1
+        let b: int | string = "world"
+        ug_show(ug_pair(b, a)) == "world"
+    }
+}

@@ -1,0 +1,16 @@
+fn gp_first<A, B>(a: A, b: B) -> A {
+    a
+}
+
+fn gp_second<A, B>(a: A, b: B) -> B {
+    b
+}
+
+spec "generic pair" {
+    then "first<string, int> returns the string" {
+        gp_first("hello", 42) == "hello"
+    }
+    then "second<string, int> returns the int" {
+        gp_second("hello", 42) == 42
+    }
+}

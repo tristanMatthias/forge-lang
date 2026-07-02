@@ -1,0 +1,11 @@
+// diag json: valid code compiles
+
+fn dj_msg() -> string {
+    "json diag test"
+}
+
+spec "diag json" {
+    then "valid code works" {
+        dj_msg() == "json diag test"
+    }
+}

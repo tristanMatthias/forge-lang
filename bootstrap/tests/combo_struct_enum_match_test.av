@@ -1,0 +1,38 @@
+type CsemUser = { name: string, age: int }
+
+enum CsemRole {
+    Admin,
+    Editor(level: int),
+    Viewer,
+}
+
+impl CsemUser {
+    fn csem_greet(self) -> string {
+        `${self.name} (age ${string(self.age)})`
+    }
+}
+
+fn csem_describe_role(user: CsemUser, role: CsemRole) -> string {
+    let base = user.csem_greet()
+    let role_str = match role {
+        .Admin -> "admin"
+        .Editor(lvl) -> `editor level ${string(lvl)}`
+        .Viewer -> "viewer"
+    }
+    `${base} is ${role_str}`
+}
+
+spec "combo struct enum match" {
+    then "admin role" {
+        let u = CsemUser { name: "Alice", age: 30 }
+        csem_describe_role(u, CsemRole.Admin) == "Alice (age 30) is admin"
+    }
+    then "editor role" {
+        let u = CsemUser { name: "Alice", age: 30 }
+        csem_describe_role(u, CsemRole.Editor(3)) == "Alice (age 30) is editor level 3"
+    }
+    then "viewer role" {
+        let u = CsemUser { name: "Alice", age: 30 }
+        csem_describe_role(u, CsemRole.Viewer) == "Alice (age 30) is viewer"
+    }
+}

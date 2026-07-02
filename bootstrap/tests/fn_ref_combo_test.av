@@ -1,0 +1,40 @@
+// Test: first-class function refs combined with other features.
+
+fn frc_double(n: int) -> int { n * 2 }
+fn frc_triple(n: int) -> int { n * 3 }
+fn frc_negate(n: int) -> int { 0 - n }
+
+type FrcTransform = { apply: fn(int) -> int, name: string }
+
+enum FrcOp { Add, Mul }
+
+fn frc_get_op(op: FrcOp) -> fn(int) -> int {
+    match op {
+        .Add -> frc_double
+        .Mul -> frc_triple
+    }
+}
+
+fn frc_pick(use_first: bool) -> fn(int) -> int {
+    if use_first { frc_double } else { frc_triple }
+}
+
+fn frc_apply_fn(x: int, f: fn(int) -> int) -> int { f(x) }
+
+spec "fn ref combo" {
+    then "struct with fn field" {
+        FrcTransform { apply: frc_double, name: "double" }.apply(7) == 14
+    }
+    then "fn ref from match" {
+        frc_get_op(FrcOp.Add)(5) == 10
+    }
+    then "fn ref from if" {
+        frc_pick(false)(4) == 12
+    }
+    then "as argument" {
+        frc_apply_fn(10, frc_triple) == 30
+    }
+    then "with is keyword" {
+        (if FrcOp.Mul is .Mul { frc_triple } else { frc_double })(6) == 18
+    }
+}

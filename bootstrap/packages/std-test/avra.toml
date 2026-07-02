@@ -1,0 +1,10 @@
+# @std/test — testing primitives.
+
+[package]
+name        = "@std/test"
+version     = "0.1.0"
+description = "Unit/integration testing primitives for Avra projects"
+
+[lib]
+name = "std-test"
+path = "src/testing.av"

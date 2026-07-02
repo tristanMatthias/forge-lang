@@ -1,0 +1,15 @@
+// Pipe operator basics
+
+fn pop_double(x: int) -> int { x * 2 }
+fn pop_add(x: int, y: int) -> int { x + y }
+
+spec "pipe operator" {
+    then "basic pipe" {
+        let r = 5 |> pop_double
+        r == 10
+    }
+    then "pipe with extra args" {
+        let n = 40 |> pop_add(2)
+        n == 42
+    }
+}

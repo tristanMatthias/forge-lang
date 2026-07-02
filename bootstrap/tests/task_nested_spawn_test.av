@@ -1,0 +1,22 @@
+spec "task nested spawn" {
+    then "spawn inside if" {
+        let flag = true
+        mut result = 0 - 1
+        if flag {
+            let t = spawn { 1 * 10 }
+            result = t.await
+        }
+        result == 10
+    }
+    then "spawn inside match arm" {
+        let x = 2
+        let result = match x {
+            2 -> {
+                let t2 = spawn { 2 * 10 }
+                t2.await
+            }
+            _ -> 0 - 1
+        }
+        result == 20
+    }
+}

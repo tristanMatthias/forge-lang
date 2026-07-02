@@ -1,0 +1,97 @@
+// WHY: in-process pipeline entry — parse + resolve + typeck + monomorphize
+// a source string and return the accumulated DiagnosticBag. Replaces the
+// test pattern of forking the compiler and grepping stderr.
+//
+// Pipeline stages run (mirrors `bs2 check` minus file-based module loading;
+// Option C per docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md):
+//   parse → lower_quotes → desugar → inject_intrinsics → expand_components
+//   → resolve_and_expand_program → run_comptime → typecheck_program
+//   → monomorphize
+//
+// `resolve_and_expand_program` itself is the composed Option C dance:
+// resolve_names_pre_expand → expand_macros_collect →
+// expand_macros_eval_with_state → register_macro_decls →
+// rewrite_uses_macro_only → validate_scopes_after_expand.
+//
+// Monomorphization is included so the where-clause / trait-bound check
+// (which surfaces during specialisation) is observable in the bag.
+// Returns the final DiagnosticBag, which carries every error/warning
+// raised across all stages.
+
+use parse.{parse_program_source}
+use diagnostics.{DiagnosticBag, bag_merge, bag_has_errors}
+use features.quote_expr.{lower_quotes}
+use desugar.{desugar_program, inject_intrinsics}
+use features.component_decl.{expand_components}
+use features.comptime.{resolve_and_expand_program, run_comptime}
+use typeck.{typecheck_program}
+use features.generics.{monomorphize}
+use core.{SStmt, TypeRegistry, type_registry_new}
+
+/// Run the diagnostic pipeline against a source string and return
+/// the accumulated DiagnosticBag.
+export fn check_source(source: string) -> DiagnosticBag {
+    let r = typecheck_source(source)
+    r.bag
+}
+
+/// Outcome of running the in-process pipeline up to and including
+/// monomorphization. Surfaces both the diagnostic bag AND the
+/// post-typecheck AST + type registry so spec tests can assert on
+/// post-pipeline state (e.g. id-stamp invariants on nominals) without
+/// shelling out to `bs2 compile`.
+export type TypecheckSourceResult = {
+    bag: DiagnosticBag,
+    stmts: List<SStmt>,
+    type_reg: TypeRegistry,
+}
+
+/// Same pipeline as check_source, but returns the post-typecheck
+/// stmts + type registry alongside the bag. Use this when a test
+/// needs to inspect the AST after the type-stamp pass — e.g. to
+/// verify no registered nominal escaped with id=0.
+///
+/// The pipeline still stops early when a stage reports errors that
+/// would render downstream passes meaningless: parse/resolve/expand
+/// failures short-circuit before mono. The returned stmts is the
+/// best post-typecheck shape obtainable from the inputs.
+export fn typecheck_source(source: string) -> TypecheckSourceResult {
+    let parsed = parse_program_source(source)
+    if parsed.had_error || parsed.stmts == null {
+        let empty_stmts: List<SStmt> = []
+        return TypecheckSourceResult { bag: parsed.bag, stmts: empty_stmts, type_reg: type_registry_new() }
+    }
+    let post_quote = lower_quotes(parsed.stmts!)
+    let desugared = desugar_program(post_quote)
+    // typecheck_source intentionally skips file-based module loading,
+    // so the synthesized Result is needed for in-process tests that
+    // don't import stdlib. inject_intrinsics is a no-op when the
+    // source declares Result directly.
+    let with_intrinsics = inject_intrinsics(desugared)
+    let comp = expand_components(with_intrinsics)
+    if bag_has_errors(comp.bag) {
+        let empty_stmts: List<SStmt> = []
+        return TypecheckSourceResult { bag: comp.bag, stmts: empty_stmts, type_reg: type_registry_new() }
+    }
+    // Option C pipeline: macro-introduced decls register before
+    // scope validation runs.
+    let named = resolve_and_expand_program(comp.stmts)
+    if named.had_error {
+        let empty_stmts: List<SStmt> = []
+        return TypecheckSourceResult { bag: bag_merge(comp.bag, named.bag), stmts: empty_stmts, type_reg: named.type_reg }
+    }
+    let post_comptime = run_comptime(named.stmts)
+    let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
+    if bag_has_errors(tc_result.bag) {
+        return TypecheckSourceResult { bag: tc_result.bag, stmts: tc_result.stmts, type_reg: named.type_reg }
+    }
+    // Monomorphize so where-clause / trait-bound errors that only
+    // surface during specialisation land in the bag. Merge with the
+    // typecheck bag so warnings from earlier stages aren't lost.
+    let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+    TypecheckSourceResult {
+        bag: bag_merge(tc_result.bag, mono.bag),
+        stmts: tc_result.stmts,
+        type_reg: named.type_reg,
+    }
+}

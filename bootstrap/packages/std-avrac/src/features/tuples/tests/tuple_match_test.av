@@ -1,0 +1,48 @@
+/// Test fixture: minimal Result-shaped enum used by the
+/// tuple-match test. Locally defined so the test stays
+/// self-contained from the standard `Result<T, E>`.
+///
+/// Variants:
+/// - Ok(value: int) — success carrying an int.
+/// - Err(code: int) — failure carrying an int code.
+enum TmResult {
+    Ok(value: int),
+    Err(code: int),
+}
+
+/// Test fixture: integer division that returns `TmResult.Err(0)`
+/// on divide-by-zero. Used to populate tuples whose elements are
+/// later destructured via match.
+fn tm_divide(a: int, b: int) -> TmResult {
+    if b == 0 { return TmResult.Err(0) }
+    TmResult.Ok(a / b)
+}
+
+/// Test fixture: pattern-match a TmResult, returning the inner
+/// int on success or the fallback on failure. Used to verify
+/// that match works on tuple-indexed enum values.
+fn tm_unwrap_or(r: TmResult, fallback: int) -> int {
+    match r {
+        .Ok(v) -> v
+        .Err(_) -> fallback
+    }
+}
+
+spec "tuple match" {
+    then "ok result from tuple index" {
+        let results = (tm_divide(10, 2), tm_divide(10, 0))
+        tm_unwrap_or(results.0, -1) == 5
+    }
+    then "err result from tuple index" {
+        let results = (tm_divide(10, 2), tm_divide(10, 0))
+        tm_unwrap_or(results.1, -1) == -1
+    }
+    then "ok result from destructure" {
+        let (r1, r2) = (tm_divide(20, 4), tm_divide(20, 0))
+        tm_unwrap_or(r1, -1) == 5
+    }
+    then "err result from destructure" {
+        let (r1, r2) = (tm_divide(20, 4), tm_divide(20, 0))
+        tm_unwrap_or(r2, -1) == -1
+    }
+}

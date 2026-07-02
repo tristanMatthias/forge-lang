@@ -1,0 +1,49 @@
+// is keyword: enum variant type checking
+
+enum IkColor { IkRed, IkGreen, IkBlue }
+
+enum IkOption {
+    IkSome(value: int)
+    IkNone
+}
+
+fn ik_describe(col: IkColor) -> string {
+    if col is .IkRed { return "red" }
+    if col is .IkGreen { return "green" }
+    "blue"
+}
+
+fn ik_is_red(col: IkColor) -> bool { col is .IkRed }
+fn ik_is_blue(col: IkColor) -> bool { col is .IkBlue }
+fn ik_is_some(o: IkOption) -> bool { o is .IkSome }
+fn ik_is_none(o: IkOption) -> bool { o is .IkNone }
+
+spec "is keyword" {
+    then "is red true" {
+        ik_is_red(IkColor.IkRed)
+    }
+    then "is blue false" {
+        !(ik_is_blue(IkColor.IkRed))
+    }
+    then "describe red" {
+        ik_describe(IkColor.IkRed) == "red"
+    }
+    then "describe green" {
+        ik_describe(IkColor.IkGreen) == "green"
+    }
+    then "describe blue" {
+        ik_describe(IkColor.IkBlue) == "blue"
+    }
+    then "payload variant is some" {
+        ik_is_some(IkOption.IkSome(42))
+    }
+    then "none is none" {
+        ik_is_none(IkOption.IkNone)
+    }
+    then "none is not some" {
+        !(ik_is_some(IkOption.IkNone))
+    }
+    then "is in logical expr" {
+        ik_is_red(IkColor.IkGreen) || ik_is_blue(IkColor.IkGreen) || ik_describe(IkColor.IkGreen) == "green"
+    }
+}

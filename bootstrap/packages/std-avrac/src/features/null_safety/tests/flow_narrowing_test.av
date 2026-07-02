@@ -1,0 +1,296 @@
+// WHY: flow narrowing (spec Axis 10). After a proven-present guard
+// (`if x != none`, the `if x == none { return … }` early-exit, an
+// else-branch under `if x == none`, or `while x != none`), the optional
+// `x` is retyped from `T?` to `T` inside the proven scope.
+//
+// The oracle is F1202 (`?` is Result-only; applying it to a `T?` is an
+// error) — the one optionality gate enabled today. A `x?` on a narrowed
+// `x` is NOT F1202 (it is no longer optional); the same `x?` on an
+// un-narrowed `x` still IS F1202. That contrast proves both that
+// narrowing fires AND that it is scoped (the gate remains the backstop
+// outside the proven region). NOTE: this exercises the permissive
+// variable-narrowing model; its unsoundness under reassignment is a
+// known, separately-tracked gap (sound bind-fresh narrowing supersedes
+// it per spec Axis 10).
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+/// Run `bs2 check` on a fixture and return its combined output.
+fn fn_check_out(fixture: string, src: string) -> string {
+    write_fixture(fixture, src)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+}
+
+spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {
+    then "baseline: an un-narrowed `x?` is F1202 (the gate exists)" {
+        let out = fn_check_out("/tmp/avra_narrow_baseline.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "`if x != none { x? }` narrows — no F1202 in the then-branch" {
+        let out = fn_check_out("/tmp/avra_narrow_then.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "`if x == none { return } x?` narrows the continuation — no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_cont.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x == none { return 0 }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "`if x == none { … } else { x? }` narrows the else-branch — no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_else.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x == none {\n" +
+            "        return 0\n" +
+            "    } else {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "`while x != none { x? }` narrows the loop body — no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_while.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    while x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "narrowing is scoped: a `!= none` guard that falls through does NOT narrow the continuation" {
+        // The none-side (the implicit fall-through) does not diverge,
+        // so reaching the code after the `if` does NOT prove presence.
+        // `x` stays `int?` and the trailing `x?` is still F1202.
+        let out = fn_check_out("/tmp/avra_narrow_scope.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "narrowing does not leak past the then-branch — `x?` after the `if` body is still F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_noleak.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        let a = x ?? 0\n" +
+            "        return a\n" +
+            "    }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "if-expr narrows the present arm — `if x != none { x? } else { 0 }` has no F1202" {
+        let out = fn_check_out("/tmp/avra_narrow_ifexpr.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    let v = if x != none { x? } else { 0 }\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "continuation narrowing also fires when the none-side diverges via `break`" {
+        // `if x == none { return }` is the common idiom, but the
+        // divergence check covers `break`/`continue` too — exercise the
+        // `break` path so the `stmt_diverges` arms beyond `return` are
+        // covered.
+        let out = fn_check_out("/tmp/avra_narrow_break.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    while true {\n" +
+            "        if x == none { break }\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "narrowing fires for a pointer-inner optional (`string?`), not just value types" {
+        // int? is the tagged repr; string? is the null-pointer-niche
+        // repr. Narrowing is typeck-only (strip the Optional), so it
+        // must fire regardless of inner representation.
+        let out = fn_check_out("/tmp/avra_narrow_str.av",
+            "fn use_it(x: string?) -> string {\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    \"\"\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    // ── Combinatorial: narrowing crossed with other constructs ──
+
+    then "nested guards narrow independent variables in the inner scope" {
+        // `let`-bind the uses, not `return a? + b?` — narrowing isn't yet
+        // threaded into the return-type re-check pass (see ic8r).
+        let out = fn_check_out("/tmp/avra_narrow_nested.av",
+            "fn use_it(a: int?, b: int?) -> int {\n" +
+            "    if a != none {\n" +
+            "        if b != none {\n" +
+            "            let s = a? + b?\n" +
+            "            return s\n" +
+            "        }\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "narrowing applies to a `?` used as a sub-expression, not only a let-initializer" {
+        // `x?` inside arithmetic is a valid two-sided oracle. (A `match`
+        // arm would not be: `?`-on-optional inside a match arm isn't
+        // F1202-gated today — tracked in ic9m — so it can't distinguish
+        // narrowed from un-narrowed.)
+        let out = fn_check_out("/tmp/avra_narrow_subexpr.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "        let v = x? + 1\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "continuation narrows when the present-side falls through and the else diverges" {
+        // `if x != none { … } else { return }` — reaching past the `if`
+        // means the then-branch ran, so `x` is present in the continuation.
+        let out = fn_check_out("/tmp/avra_narrow_elsediv.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if x != none {\n" +
+            "    } else {\n" +
+            "        return 0\n" +
+            "    }\n" +
+            "    let v = x?\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "the guard is recognised with `none` on the left (`none != x`), not just on the right" {
+        // Exercises the symmetric operand-order branch of narrow_guard_of.
+        let out = fn_check_out("/tmp/avra_narrow_sym.av",
+            "fn use_it(x: int?) -> int {\n" +
+            "    if none != x {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "continuation narrows when the none-side diverges via `continue`" {
+        // Exercises the `.Continue` divergence arm (distinct from `break`
+        // and `return`).
+        let out = fn_check_out("/tmp/avra_narrow_continue.av",
+            "fn use_it(x: int?, n: int) -> int {\n" +
+            "    mut i = 0\n" +
+            "    while i < n {\n" +
+            "        i = i + 1\n" +
+            "        if x == none { continue }\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    // ── Soundness: only immutable bindings narrow ──
+    // An immutable binding (let / param) cannot be reassigned (the
+    // resolver enforces F3001), so narrowing it is always sound. A `mut`
+    // can be reassigned to a maybe-absent value, so the variable form is
+    // never narrowed for it — closing the proven reassignment hole.
+
+    then "SOUNDNESS: a reassigned mut is NOT narrowed — `if x != none { x = g(); x? }` stays F1202" {
+        // The proven hole from the Phase-3 audit. Were the mut narrowed,
+        // the post-reassignment `x?` would be wrongly accepted.
+        let out = fn_check_out("/tmp/avra_narrow_mut_reassign.av",
+            "fn g() -> int? { none }\n" +
+            "fn use_it() -> int {\n" +
+            "    mut x: int? = 5\n" +
+            "    if x != none {\n" +
+            "        x = g()\n" +
+            "        let y = x?\n" +
+            "        return y\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+
+    then "an immutable `let` optional narrows (no reassignment possible → always sound)" {
+        let out = fn_check_out("/tmp/avra_narrow_let.av",
+            "fn use_it(n: int) -> int {\n" +
+            "    let x: int? = if n > 0 { n } else { none }\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        !out.contains("F1202")
+    }
+
+    then "a `mut` optional is conservatively NOT narrowed in the variable form (use `if let`)" {
+        let out = fn_check_out("/tmp/avra_narrow_mut_plain.av",
+            "fn use_it(n: int) -> int {\n" +
+            "    mut x: int? = 5\n" +
+            "    if x != none {\n" +
+            "        let v = x?\n" +
+            "        return v\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        out.contains("F1202")
+    }
+}

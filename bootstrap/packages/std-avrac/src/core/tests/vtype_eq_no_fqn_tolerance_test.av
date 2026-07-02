@@ -1,0 +1,43 @@
+// so07.7.20 / T6.D: vtype_eq now drops nominal_names_match and
+// requires direct name equality (or id equality) for nominal types.
+// The post-T6.B/C resolver+stamp pipeline qualifies every nominal
+// to its canonical FQN, so the bare-vs-FQN tolerance the helper
+// papered over is no longer needed — every nominal has either a
+// real id OR a canonical name, and equality is exact in both arms.
+//
+// Why this test observes the fix: pre-T6.D, nominal_names_match's
+// suffix tolerance made `Struct("SStmt", 0)` and
+// `Struct("@std::avrac::core::SStmt", 0)` compare equal. After
+// T6.D, that's a real mismatch — the bare name is treated as a
+// distinct (unregistered) nominal. Restoring the helper would
+// flip the assertions back to passing.
+
+use @std.avrac.core.{vtype_eq, ValueType, vtype_struct}
+
+spec "T6.D: vtype_eq drops bare-vs-FQN tolerance" {
+    then "Struct bare name and FQN at id=0 are NOT equal" {
+        let short =vtype_struct("SStmt", 0)
+        let fqn = vtype_struct("@std::avrac::core::SStmt", 0)
+        !vtype_eq(short, fqn)
+    }
+    then "Trait bare name and FQN at id=0 are NOT equal" {
+        let short =ValueType.Trait("Display", 0)
+        let fqn = ValueType.Trait("@std::avrac::core::Display", 0)
+        !vtype_eq(short, fqn)
+    }
+    then "Newtype bare name and FQN at id=0 are NOT equal (inner is)" {
+        let short =ValueType.Newtype("UserId", ValueType.Int, 0)
+        let fqn = ValueType.Newtype("@std::ids::UserId", ValueType.Int, 0)
+        !vtype_eq(short, fqn)
+    }
+    then "NarrowedEnum bare and FQN at id=0 are NOT equal" {
+        let short =ValueType.NarrowedEnum("Color", "Red", 0)
+        let fqn = ValueType.NarrowedEnum("@std::ui::Color", "Red", 0)
+        !vtype_eq(short, fqn)
+    }
+    then "matching ids still win regardless of names (T6.A regression guard)" {
+        let a = ValueType.Trait("A", 5)
+        let b = ValueType.Trait("B", 5)
+        vtype_eq(a, b)
+    }
+}

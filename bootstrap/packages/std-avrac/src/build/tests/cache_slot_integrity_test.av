@@ -1,0 +1,204 @@
+// kaux: a cache-HIT restore of a producer slot must validate the slot's
+// COMPLETENESS and treat a half-published slot as a miss (→ rebuild),
+// so an interrupted-mid-publish or externally-corrupted slot can never
+// be served. fxfz incident 2 traced a frozen PROBE FAIL to exactly this:
+// a producer pre-build restored a corrupt half-published slot from
+// packages/std-cli/build/cache instead of rebuilding it.
+//
+// A complete BUILD slot is { unit.ll (non-empty), metadata.bin } — both
+// are staged then atomically renamed together by cache_publish, so a
+// complete slot always carries both. A complete TEST slot is
+// { unit.bin (non-empty), manifest.txt }. The realobj (unit.realobj.o)
+// is materialised lazily from unit.ll; cache_entry_realobj_path now does
+// so atomically (llc → per-pid temp → rename), so a killed llc leaves a
+// temp, never a truncated final object a later HIT would link.
+//
+// We synthesize slots on disk by hand (mkdir + write the constituent
+// files) and probe the read-side gates directly — no compile needed.
+
+use @std.avrac.build.{
+    Cache, cache_for, cache_init, cache_has, cache_has_test,
+    cache_entry_realobj_path, entry_dir_for,
+    entry_metadata_path, entry_bin_path, entry_manifest_path,
+}
+use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_selfhost_file_exists, avra_file_size, avra_shell_exec}
+
+fn mk_fp(hex: string) -> Fingerprint {
+    Fingerprint { hex: hex }
+}
+
+fn mk_cache(slug: string) -> Cache {
+    let root = "/tmp/avra_kaux_cache_test_${slug}"
+    avra_shell_exec("rm -rf '${root}'")
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+// Create (and return) the entry directory for `fp`, so a test can drop
+// individual constituent files into it and probe the completeness gate.
+fn mk_entry(c: Cache, fp: Fingerprint) -> string {
+    let dir = entry_dir_for(c, fp)
+    let _ = avra_mkdir_p(dir)
+    dir
+}
+
+// Materialise a COMPLETE build slot: unit.ll (with `ll` content) paired
+// with metadata.bin, so cache_has — and therefore cache_entry_realobj_path's
+// completeness gate — is satisfied. Returns the entry dir.
+fn mk_build_slot(c: Cache, fp: Fingerprint, ll: string) -> string {
+    let dir = mk_entry(c, fp)
+    let _ = avra_selfhost_write_file(dir + "/unit.ll", ll)
+    let _ = avra_selfhost_write_file(entry_metadata_path(c, fp), "meta\n")
+    dir
+}
+
+spec "kaux: cache_has validates BUILD slot completeness" {
+    then "complete slot (unit.ll + metadata.bin) is a HIT" {
+        let c = mk_cache("build_complete")
+        let fp = mk_fp("1000000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "; real ll\n")
+        let _ = avra_selfhost_write_file(entry_metadata_path(c, fp), "meta\n")
+        cache_has(c, fp)
+    }
+    then "half-published slot (unit.ll, NO metadata.bin) is a MISS" {
+        // The exact fxfz shape: an atomic publish co-locates metadata.bin
+        // with unit.ll, so its absence means the slot was never fully
+        // published (or was corrupted). Must rebuild, not restore.
+        let c = mk_cache("build_no_meta")
+        let fp = mk_fp("1100000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "; real ll\n")
+        !cache_has(c, fp)
+    }
+    then "metadata.bin without unit.ll is a MISS" {
+        let c = mk_cache("build_no_ll")
+        let fp = mk_fp("1200000000000000000000000000000000000000000000000000000000000000")
+        let _ = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(entry_metadata_path(c, fp), "meta\n")
+        !cache_has(c, fp)
+    }
+    then "0-byte unit.ll is a MISS even with metadata.bin present" {
+        let c = mk_cache("build_empty_ll")
+        let fp = mk_fp("1300000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "")
+        let _ = avra_selfhost_write_file(entry_metadata_path(c, fp), "meta\n")
+        !cache_has(c, fp)
+    }
+    then "0-byte metadata.bin still HITS (existence, not size)" {
+        // An empty-metadata unit legitimately stages a 0-byte metadata.bin,
+        // and the atomic rename guarantees the file is whole — so the gate
+        // is existence-only. A size gate here would wrongly evict every
+        // empty-metadata slot on every run (a false-miss perf trap).
+        let c = mk_cache("build_empty_meta")
+        let fp = mk_fp("1400000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "; real ll\n")
+        let _ = avra_selfhost_write_file(entry_metadata_path(c, fp), "")
+        cache_has(c, fp)
+    }
+}
+
+spec "kaux: cache_has_test validates TEST slot completeness" {
+    then "complete test slot (unit.bin + manifest.txt) is a HIT" {
+        let c = mk_cache("test_complete")
+        let fp = mk_fp("2000000000000000000000000000000000000000000000000000000000000000")
+        let _ = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(entry_bin_path(c, fp), "ELF-stub-bytes\n")
+        let _ = avra_selfhost_write_file(entry_manifest_path(c, fp), "filter=; sources=3\n")
+        cache_has_test(c, fp)
+    }
+    then "0-byte unit.bin is a MISS (killed-mid-cp/link partial)" {
+        let c = mk_cache("test_empty_bin")
+        let fp = mk_fp("2100000000000000000000000000000000000000000000000000000000000000")
+        let _ = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(entry_bin_path(c, fp), "")
+        let _ = avra_selfhost_write_file(entry_manifest_path(c, fp), "m\n")
+        !cache_has_test(c, fp)
+    }
+    then "unit.bin without manifest.txt is a MISS" {
+        let c = mk_cache("test_no_manifest")
+        let fp = mk_fp("2200000000000000000000000000000000000000000000000000000000000000")
+        let _ = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(entry_bin_path(c, fp), "ELF-stub-bytes\n")
+        !cache_has_test(c, fp)
+    }
+    then "manifest.txt without unit.bin is a MISS" {
+        let c = mk_cache("test_no_bin")
+        let fp = mk_fp("2300000000000000000000000000000000000000000000000000000000000000")
+        let _ = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(entry_manifest_path(c, fp), "m\n")
+        !cache_has_test(c, fp)
+    }
+}
+
+spec "kaux: cache_entry_realobj_path is atomic and slot-complete-guarded" {
+    then "a slot with no unit.ll yields no object" {
+        let c = mk_cache("realobj_no_ll")
+        let fp = mk_fp("3000000000000000000000000000000000000000000000000000000000000000")
+        cache_entry_realobj_path(c, fp) == ""
+    }
+    then "an INCOMPLETE slot (unit.ll, no metadata.bin) yields no object" {
+        // The realobj is a producer object linked by library mode. It must
+        // be gated on slot COMPLETENESS (cache_has), not mere unit.ll
+        // existence — otherwise a half-published slot the build driver would
+        // rebuild could still be linked here (the gate hole CodeRabbit caught).
+        let c = mk_cache("realobj_incomplete")
+        let fp = mk_fp("3400000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_entry(c, fp)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "define i32 @f() {\nentry:\n  ret i32 0\n}\n")
+        // No metadata.bin → cache_has is false → no object, even though
+        // unit.ll is a valid module llc could lower.
+        cache_entry_realobj_path(c, fp) == "" && avra_selfhost_file_exists(dir + "/unit.realobj.o") == 0
+    }
+    then "a valid COMPLETE slot materialises the object at the canonical path" {
+        // Happy path: llc lowers a minimal valid module; the object must
+        // land at the canonical unit.realobj.o (via temp → rename), be
+        // returned as that path, and be non-empty. Proves the atomic
+        // materialise-then-rename works end to end, not just its guards.
+        let c = mk_cache("realobj_ok")
+        let fp = mk_fp("3300000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_build_slot(c, fp, "define i32 @kaux_probe() {\nentry:\n  ret i32 0\n}\n")
+        let real_o = dir + "/unit.realobj.o"
+        let result = cache_entry_realobj_path(c, fp)
+        result == real_o && avra_file_size(real_o) > 0
+    }
+    then "a pre-existing NON-EMPTY unit.realobj.o is returned as-is (trust path)" {
+        // Early-return: an already-materialised, non-empty object landed via
+        // the atomic rename below, so it is complete — return it untouched.
+        let c = mk_cache("realobj_exists")
+        let fp = mk_fp("3100000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_build_slot(c, fp, "; ll\n")
+        let real_o = dir + "/unit.realobj.o"
+        let _ = avra_selfhost_write_file(real_o, "OBJ")
+        cache_entry_realobj_path(c, fp) == real_o
+    }
+    then "a 0-byte pre-existing unit.realobj.o is dropped and re-materialised" {
+        // A 0-byte / partial final (pre-atomic killed-llc leftover, external
+        // corruption) must NOT be trusted by existence alone: drop it and
+        // re-materialise atomically, yielding a non-empty object.
+        let c = mk_cache("realobj_corrupt")
+        let fp = mk_fp("3500000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_build_slot(c, fp, "define i32 @kaux_probe2() {\nentry:\n  ret i32 0\n}\n")
+        let real_o = dir + "/unit.realobj.o"
+        let _ = avra_selfhost_write_file(real_o, "")  // 0-byte corrupt final
+        let result = cache_entry_realobj_path(c, fp)
+        result == real_o && avra_file_size(real_o) > 0
+    }
+    then "llc failure on garbage unit.ll leaves NO final unit.realobj.o" {
+        // Even with a complete slot, a failed/killed llc must never leave a
+        // truncated object at the canonical path for a later HIT to link.
+        // Garbage IR makes llc exit non-zero; the atomic path writes to a
+        // per-pid temp, so the final unit.realobj.o is never created.
+        // (Robust even if llc is absent — a missing tool also fails rc,
+        // yielding "" and no final object.)
+        let c = mk_cache("realobj_llc_fail")
+        let fp = mk_fp("3200000000000000000000000000000000000000000000000000000000000000")
+        let dir = mk_build_slot(c, fp, "this is not valid llvm ir\n")
+        let result = cache_entry_realobj_path(c, fp)
+        result == "" && avra_selfhost_file_exists(dir + "/unit.realobj.o") == 0
+    }
+}

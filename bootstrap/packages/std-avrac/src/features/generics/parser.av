@@ -1,0 +1,108 @@
+// WHY: parsing for generic type parameters and explicit type arguments.
+// parse_type_params: called from fn_decl/struct_decl/enum_decl for `<T, U>` declarations.
+// try_parse_generic_call: called from the postfix loop for `f<int, string>(x)` calls.
+
+use core.{TypeParamEntry, Expr, Tk, ExprId, byte_span_none}
+use parse.{Parser}
+
+impl Parser {
+    // Parse type parameters in declarations: `<T>`, `<A, B>`, `<T: Display>`.
+    fn parse_type_params(self) -> List<TypeParamEntry> {
+        self.advance()  // consume `<`
+        let result = self.parse_type_param_entries()
+        if !self.consume(Tk.Greater, "expected `>` after type parameters") {
+            let empty: List<TypeParamEntry> = []
+            return empty
+        }
+        result
+    }
+
+    fn parse_type_param_entries(self) -> List<TypeParamEntry> {
+        mut out: List<TypeParamEntry> = []
+        if self.check(Tk.Greater) { return out }
+        if !self.check(Tk.Identifier) {
+            self.set_error("expected type parameter name")
+            return out
+        }
+        mut continue_parsing = true
+        while continue_parsing {
+            let name = self.current_lexeme
+            self.advance()
+            let bounds = if self.check(Tk.Colon) {
+                self.advance()
+                if !self.check(Tk.Identifier) {
+                    self.set_error("expected trait bound after `:`")
+                    return out
+                }
+                let b = self.current_lexeme
+                self.advance()
+                b
+            } else { "" }
+            out.push(TypeParamEntry { name: name, bounds: bounds })
+            if !self.check(Tk.Comma) {
+                continue_parsing = false
+            } else {
+                self.advance()
+                if !self.check(Tk.Identifier) {
+                    self.set_error("expected type parameter name")
+                    return out
+                }
+            }
+        }
+        out
+    }
+
+    // Speculatively try to parse `<type, type, ...>(args)` as a generic call.
+    // Takes the already-allocated callee's arena id; returns the GenericCall's
+    // id on success. On failure the parser state is restored — restore_state
+    // also truncates the node store, so rows allocated during the attempt
+    // vanish with the backtrack (the callee predates the snapshot and lives).
+    fn try_parse_generic_call(self, callee_id: ExprId) -> Result<ExprId, string> {
+        let saved = self.save_state()
+
+        self.advance()  // consume `<`
+        let type_args = self.parse_type_name_list()
+
+        if !self.check(Tk.Greater) {
+            self.restore_state(saved)
+            return .Err("parse error")
+        }
+        self.advance()  // consume `>`
+
+        if !self.check(Tk.LeftParen) {
+            self.restore_state(saved)
+            return .Err("parse error")
+        }
+        self.advance()  // consume `(`
+
+        let parsed = match self.parse_arg_list_ids() {
+            .Ok(a) -> a
+            .Err(_) -> {
+                self.restore_state(saved)
+                return .Err("parse error")
+            }
+        }
+        if !self.consume(Tk.RightParen, "expected `)` after arguments") {
+            self.restore_state(saved)
+            return .Err("parse error")
+        }
+
+        let node = Expr.GenericCall(self.expr_of(callee_id), type_args, parsed.wrapped)
+        .Ok(self.alloc_expr(node, byte_span_none(), self.edges_subject_args(callee_id, parsed.ids)))
+    }
+
+    fn parse_type_name_list(self) -> List<string> {
+        mut out: List<string> = []
+        if self.check(Tk.Greater) { return out }
+        if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
+        out.push(self.current_lexeme)
+        self.advance()
+        while self.check(Tk.Comma) {
+            self.advance()
+            if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
+            out.push(self.current_lexeme)
+            self.advance()
+        }
+        out
+    }
+}

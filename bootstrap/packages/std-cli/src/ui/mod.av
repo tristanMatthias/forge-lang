@@ -1,0 +1,8 @@
+// WHY: terminal UI primitives for CLI tools — currently just the
+// shell-command spinner. Future home for any other shared
+// rendering helpers (progress bars, colour palettes, prompts).
+//
+// Directory-as-module (g2eo.1): no `mod` declarations here. Sibling
+// `.av` files in this directory auto-load via the resolver's flat
+// namespace path; their exports surface at `@std.cli.ui.{...}`
+// rather than the legacy `@std.cli.ui.spinner.{...}` form.

@@ -6,8 +6,8 @@ impl<'ctx> Codegen<'ctx> {
         Target::initialize_all(&InitializationConfig::default());
 
         let target_triple = TargetMachine::get_default_triple();
-        let target = Target::from_triple(&target_triple)
-            .map_err(|e| CompileError::CodegenFailed {
+        let target =
+            Target::from_triple(&target_triple).map_err(|e| CompileError::CodegenFailed {
                 stage: "target lookup",
                 detail: format!("{}", e),
             })?;

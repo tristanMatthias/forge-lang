@@ -1,0 +1,35 @@
+trait WcSized {
+    fn wc_size(self) -> int
+}
+
+type WcInt = { v: int }
+
+impl WcSized for WcInt {
+    fn wc_size(self) -> int { self.v }
+}
+
+type WcStr = { s: string }
+
+impl WcSized for WcStr {
+    fn wc_size(self) -> int { self.s.length }
+}
+
+fn wc_identity<T>(x: T) -> T where T: WcSized {
+    x
+}
+
+fn wc_pick_first<A, B>(a: A, b: B) -> A where A: WcSized, B: WcSized {
+    a
+}
+
+spec "where clause" {
+    then "single where clause: identity returns the same value" {
+        wc_identity(WcInt { v: 42 }).v == 42
+    }
+    then "multiple where clauses: first arg returned" {
+        wc_pick_first(WcInt { v: 10 }, WcInt { v: 20 }).v == 10
+    }
+    then "where clause monomorphizes for string-bearing types" {
+        wc_identity(WcStr { s: "hello" }).s == "hello"
+    }
+}

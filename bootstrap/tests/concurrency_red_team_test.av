@@ -1,0 +1,13 @@
+spec "concurrency red team" {
+    then "single task awaited" {
+        let n = 10
+        let t = spawn { n * n }
+        t.await == 100
+    }
+    then "three concurrent tasks summed" {
+        let t1 = spawn { 100 }
+        let t2 = spawn { 200 }
+        let t3 = spawn { 200 }
+        (t1.await + t2.await + t3.await) == 500
+    }
+}

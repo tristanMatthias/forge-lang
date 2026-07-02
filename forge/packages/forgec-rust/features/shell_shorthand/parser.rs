@@ -11,7 +11,11 @@ impl Parser {
     /// Takes the pre-lexed template parts and span from the lexer token,
     /// parses any interpolated expressions within `${}`, and produces
     /// a `feature_expr` with `DollarExecData`.
-    pub(crate) fn parse_dollar_exec(&mut self, lex_parts: Vec<LexTemplatePart>, span: Span) -> Option<Expr> {
+    pub(crate) fn parse_dollar_exec(
+        &mut self,
+        lex_parts: Vec<LexTemplatePart>,
+        span: Span,
+    ) -> Option<Expr> {
         let mut parts = Vec::new();
         for part in lex_parts {
             match part {
@@ -19,7 +23,12 @@ impl Parser {
                     parts.push(TemplatePart::Literal(s));
                 }
                 LexTemplatePart::Expr(expr_text, expr_span) => {
-                    let mut lexer = Lexer::new_with_offset(&expr_text, expr_span.start, expr_span.line, expr_span.col);
+                    let mut lexer = Lexer::new_with_offset(
+                        &expr_text,
+                        expr_span.start,
+                        expr_span.line,
+                        expr_span.col,
+                    );
                     let tokens = lexer.tokenize();
                     let mut parser = Parser::new(tokens);
                     if let Some(expr) = parser.parse_expr() {

@@ -1,0 +1,21 @@
+fn cc_is_upper(ch: string) -> bool {
+    ch.char_code() >= 65 && ch.char_code() <= 90
+}
+
+spec "char code" {
+    then "A is 65" {
+        "A".char_code() == 65
+    }
+    then "z is 122" {
+        "z".char_code() == 122
+    }
+    then "0 is 48" {
+        "0".char_code() == 48
+    }
+    then "space is 32" {
+        " ".char_code() == 32
+    }
+    then "B is uppercase" {
+        cc_is_upper("B") == true
+    }
+}

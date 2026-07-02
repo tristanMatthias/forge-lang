@@ -1,0 +1,35 @@
+// End-to-end resolver fast-path tests for AVRA_USE_METADATA.
+//
+// Validates that the resolver hook in features/modules/resolver.av
+// (a) runs without breaking when AVRA_USE_METADATA=1 + .meta.bin
+// is present, (b) falls back to source when .meta.bin is missing
+// even with env set, and (c) preserves default behaviour when env
+// is unset.
+//
+// Producer/consumer integration is gated behind the env var so the
+// existing single-unit bootstrap is unaffected. Tracking ticket:
+// forge-crafting-intepreters-2f54.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn fp_run_fixture() -> string {
+    cached_fixture_run("tests/use_metadata_fast_path_fixtures/sample.av")
+}
+
+spec "use-metadata fast path: producer + consumer interplay" {
+    then "producer compile --emit_metadata succeeds" {
+        fp_run_fixture().contains("PROBE producer_compile_rc_zero: ok")
+    }
+    then "producer .meta.bin lands on disk" {
+        fp_run_fixture().contains("PROBE producer_meta_present: ok")
+    }
+    then "AVRA_USE_METADATA=1 with meta.bin present: compile succeeds" {
+        fp_run_fixture().contains("PROBE env_gated_compile_succeeds: ok")
+    }
+    then "AVRA_USE_METADATA=1 with meta.bin missing: falls back to source cleanly" {
+        fp_run_fixture().contains("PROBE fallback_to_source_when_meta_missing: ok")
+    }
+    then "AVRA_USE_METADATA unset: default source-parse path, behaviour unchanged" {
+        fp_run_fixture().contains("PROBE default_behavior_unchanged: ok")
+    }
+}

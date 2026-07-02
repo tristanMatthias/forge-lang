@@ -25,7 +25,7 @@ automatically. Circular dependencies between user modules are detected and repor
     category: "Special",
 }
 
-pub mod types;
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
+pub mod types;

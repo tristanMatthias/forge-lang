@@ -1,0 +1,57 @@
+enum NpInner {
+    A(x: int)
+    B(msg: string)
+}
+
+enum NpOuter {
+    Wrap(inner: NpInner)
+    Empty
+}
+
+enum NpOutcome {
+    Good(value: int)
+    Bad(msg: string)
+}
+
+enum NpMaybe {
+    Some(inner: NpOutcome)
+    None
+}
+
+fn np_describe(m: NpMaybe) -> string {
+    match m {
+        .Some(.Good(v)) -> "ok: " + string(v)
+        .Some(.Bad(msg)) -> "err: " + msg
+        .None -> "nothing"
+    }
+}
+
+spec "nested patterns" {
+    then "basic nested pattern A" {
+        let val = NpOuter.Wrap(NpInner.A(42))
+        let result = match val {
+            .Wrap(.A(x)) -> string(x)
+            .Wrap(.B(msg)) -> msg
+            .Empty -> "empty"
+        }
+        result == "42"
+    }
+    then "basic nested pattern B" {
+        let val2 = NpOuter.Wrap(NpInner.B("hello"))
+        let result = match val2 {
+            .Wrap(.A(n)) -> string(n)
+            .Wrap(.B(s)) -> s
+            .Empty -> "empty"
+        }
+        result == "hello"
+    }
+    then "nested describe ok" {
+        np_describe(NpMaybe.Some(NpOutcome.Good(99))) == "ok: 99"
+    }
+    then "nested describe err" {
+        np_describe(NpMaybe.Some(NpOutcome.Bad("oops"))) == "err: oops"
+    }
+    then "nested describe none" {
+        np_describe(NpMaybe.None) == "nothing"
+    }
+}

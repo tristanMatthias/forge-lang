@@ -1,0 +1,40 @@
+enum CrsmIntList {
+    Nil,
+    Cons(head: int, tail: CrsmIntList),
+}
+
+impl CrsmIntList {
+    fn sum(self) -> int {
+        match self {
+            .Nil -> 0
+            .Cons(h, t) -> h + t.sum()
+        }
+    }
+
+    fn to_string(self) -> string {
+        match self {
+            .Nil -> "[]"
+            .Cons(h, t) -> {
+                let rest = t.to_string()
+                `${string(h)} :: ${rest}`
+            }
+        }
+    }
+}
+
+fn crsm_build_list() -> CrsmIntList {
+    mut list = CrsmIntList.Nil
+    for i in 0..5 {
+        list = CrsmIntList.Cons(i, list)
+    }
+    list
+}
+
+spec "combo recursive struct method" {
+    then "list to string" {
+        crsm_build_list().to_string() == "4 :: 3 :: 2 :: 1 :: 0 :: []"
+    }
+    then "list sum" {
+        crsm_build_list().sum() == 10
+    }
+}

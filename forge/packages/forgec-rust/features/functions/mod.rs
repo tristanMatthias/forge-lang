@@ -47,7 +47,7 @@ crate::runtime_fn! { name: "snprintf", feature: "functions", params: [Ptr, I64, 
 crate::runtime_fn! { name: "forge_write_cstring", feature: "functions", params: [Ptr, I64, Ptr, I64], ret: Void, conditional: true }
 crate::runtime_fn! { name: "atoll", feature: "functions", params: [Ptr], ret: I64, conditional: true }
 
-pub mod types;
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
+pub mod types;

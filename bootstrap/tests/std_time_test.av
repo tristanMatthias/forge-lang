@@ -1,0 +1,51 @@
+extern fn avra_datetime_now() -> int
+extern fn avra_datetime_format(epoch: int, fmt: string) -> string
+extern fn avra_datetime_year(epoch: int) -> int
+extern fn avra_datetime_month(epoch: int) -> int
+extern fn avra_datetime_day(epoch: int) -> int
+extern fn avra_datetime_hour(epoch: int) -> int
+extern fn avra_datetime_minute(epoch: int) -> int
+extern fn avra_datetime_second(epoch: int) -> int
+extern fn avra_uptime_ms() -> int
+
+spec "std time" {
+    then "epoch is positive" {
+        avra_datetime_now() > 0
+    }
+    then "year is at least 2026" {
+        avra_datetime_year(avra_datetime_now()) >= 2026
+    }
+    then "month is in 1..=12" {
+        let m = avra_datetime_month(avra_datetime_now())
+        m >= 1 && m <= 12
+    }
+    then "day is in 1..=31" {
+        let d = avra_datetime_day(avra_datetime_now())
+        d >= 1 && d <= 31
+    }
+    then "hour is in 0..=23" {
+        let h = avra_datetime_hour(avra_datetime_now())
+        h >= 0 && h <= 23
+    }
+    then "minute is in 0..=59" {
+        let m = avra_datetime_minute(avra_datetime_now())
+        m >= 0 && m <= 59
+    }
+    then "second is in 0..=59" {
+        let s = avra_datetime_second(avra_datetime_now())
+        s >= 0 && s <= 59
+    }
+    then "known epoch yields year 2000" {
+        avra_datetime_year(961070400) == 2000
+    }
+    then "uptime is non-negative and below 10 minutes" {
+        // Upper bound is generous because this test runs inside a
+        // bundle of ~2000 spec arms. On a slow machine + cold caches
+        // the cumulative wall time before this test fires can exceed
+        // 5 minutes (e.g. while the per-module dispatch fixture is
+        // running its own 17-unit fan-out and llc step). 10 minutes
+        // is the practical ceiling.
+        let u = avra_uptime_ms()
+        u >= 0 && u < 600000
+    }
+}

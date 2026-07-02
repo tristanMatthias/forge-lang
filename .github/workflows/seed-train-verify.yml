@@ -1,0 +1,127 @@
+# seed-train-verify — the PR-side seed-train gate.
+#
+# The seed train runs build-from-pin + fixed point + the full spec suite
+# AFTER a merge lands on the integration branch (seed-train.yml, on push),
+# then publishes. The other PR gates do NOT run that suite: bootstrap-window
+# builds + smoke-runs one program, diff-test asserts IR equality. So a suite
+# failure — e.g. an order-dependent test flake — sails through PR CI and only
+# reds the train post-merge, when it's already on integration and the pin is
+# stuck (exactly how #538/#539's 4szi.1 flake bit).
+#
+# This gate closes that hole: it runs the train's verify phase — the SAME
+# diagnose.sh code path the train uses, minus publish — on every PR. Green
+# here ⇒ the post-merge train cannot fail on build / fixed-point / suite.
+# Logic lives in bootstrap/scripts/diagnose.sh --seed-train-verify; this
+# workflow only provisions the toolchain and invokes it.
+name: seed-train-verify
+
+on:
+  pull_request:
+    branches: [feat/crafting-intepreters]
+
+# Least privilege: a trust gate that builds + runs PR code. It only reads the
+# tree and fetches the pinned seed release asset — never writes, never
+# publishes (the lock bump is seed-train.yml's alone). Pin read-only so a
+# repo-default change can't hand this job a write-capable token. The PASS-status
+# publish needs statuses:write, but that grant is ISOLATED to a separate
+# no-checkout job below (publish-seed-verify-pass) that only runs on a green
+# verify — so the build/suite step (which runs PR code) never holds a token that
+# can write a commit status, keeping the "status exists iff the suite passed"
+# invariant unforgeable.
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to the same PR supersedes this run — don't burn a runner
+  # finishing a verify for stale code (the train can't cancel mid-publish;
+  # this read-only gate safely can).
+  group: seed-train-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seed-train-verify:
+    runs-on: ubuntu-24.04
+    # Build-from-pin + fixed point + suite is ~the train's runtime; 30m of
+    # headroom matches the bootstrap-window gate.
+    timeout-minutes: 30
+    # Expose the verified fingerprint to the isolated publish job below.
+    outputs:
+      fp: ${{ steps.fp.outputs.fp }}
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow is a trust gate. Full history (depth 0,
+      # matching seed-train.yml and the window/diff-test gates): the build
+      # itself needs none, but the SPEC SUITE does — e.g. the pre-push relay
+      # test (beads_hook_stdin_relay_test) walks `git rev-list HEAD -- bootstrap`
+      # then `${head}^`, which a shallow clone can't resolve. Running what the
+      # train runs means running it in the train's environment.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Read-only workflow — never let the token outlive checkout.
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      # Restore the seed binary + C objects (content-keyed) so the ~3-4 min
+      # seed `llc` is skipped when the pin + C inputs are unchanged.
+      - uses: ./.github/actions/cache-seed
+
+      # The seed×source fingerprint this verify covers. The post-merge train
+      # reuses it to skip its redundant suite re-run (a squash merge preserves
+      # the compiler-source blobs, so the merge ref hashes the same as the
+      # squash commit). Fail loud if empty — a missing fingerprint must not
+      # silently degrade into a marker that can't be matched.
+      - id: fp
+        shell: bash
+        run: |
+          fp="$(bash bootstrap/scripts/diagnose.sh --seed-verify-fp)"
+          if [ -z "$fp" ]; then echo "empty seed-verify fingerprint" >&2; exit 1; fi
+          echo "fp=$fp" >> "$GITHUB_OUTPUT"
+
+      - name: Seed-train verify (build from pin + fixed point + suite, no publish)
+        env:
+          # Read-only token + repo slug so the pinned seed release asset
+          # resolves even if the repo is private. permissions:contents:read
+          # keeps it incapable of writing; the mode never calls publish.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AVRA_SEED_REPO: ${{ github.repository }}
+          # Match the train's exact suite parallelism (seed-train.yml) so the
+          # same sharding that surfaces order-dependent flakes is exercised
+          # here, pre-merge, rather than post-merge on the train.
+          AVRA_TEST_JOBS: "2"
+        run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
+
+  # Publish the PASS fingerprint as a commit STATUS on the PR head — in an
+  # ISOLATED job so the only token that can write a status never coexists with
+  # the PR-code-running build/suite step above. It runs ONLY when the verify job
+  # succeeded (needs.result == 'success'), so the status exists iff this exact
+  # fingerprint's suite passed. The post-merge seed-train reads it (statuses are
+  # scope-independent, unlike actions/cache which scopes a PR's cache to the PR
+  # and hides it from the integration-branch train) and re-checks fp == its own
+  # HEAD fingerprint, so a concurrent base change makes the train's fp differ →
+  # no skip → it runs the suite. The fp is in the status CONTEXT so a stale
+  # status can't be mismatched as a pass for a different source. Same-repo PRs
+  # only: a fork PR gets a read-only token, so the gh api POST would fail the
+  # job — gate it out and let the train simply miss the status (and run the
+  # suite). No checkout: this job runs no PR code.
+  publish-seed-verify-pass:
+    needs: seed-train-verify
+    if: >-
+      needs.seed-train-verify.result == 'success'
+      && needs.seed-train-verify.outputs.fp != ''
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish seed-verify PASS status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FP: ${{ needs.seed-train-verify.outputs.fp }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state=success \
+            -f context="seed-suite-verified/${FP}" \
+            -f description="spec suite verified for this seed+source fingerprint"

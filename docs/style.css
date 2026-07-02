@@ -5,7 +5,7 @@
   --text-primary: #e8e6e3;
   --text-secondary: #a09b94;
   --text-muted: #6b6660;
-  --accent-forge: #f59e0b;
+  --accent-avra: #f59e0b;
   --accent-ember: #ef4444;
   --accent-molten: #fb923c;
   --accent-cool: #3b82f6;
@@ -47,7 +47,7 @@ h1, h2, h3, h4, h5, h6 {
 
 h1 {
   font-size: 2.5em;
-  color: var(--accent-forge);
+  color: var(--accent-avra);
   border-bottom: 2px solid var(--border-subtle);
   padding-bottom: 0.5em;
   text-shadow: 0 0 40px rgba(245, 158, 11, 0.3);
@@ -128,7 +128,7 @@ pre::before {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent-forge), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-avra), transparent);
   opacity: 0.4;
 }
 
@@ -147,7 +147,7 @@ blockquote {
   padding: 1em 1.5em;
   color: var(--text-secondary);
   background: var(--bg-secondary);
-  border-left: 3px solid var(--accent-forge);
+  border-left: 3px solid var(--accent-avra);
   border-radius: 0 6px 6px 0;
 }
 
@@ -171,7 +171,7 @@ th, td {
 
 th {
   background: var(--bg-tertiary);
-  color: var(--accent-forge);
+  color: var(--accent-avra);
   font-weight: 600;
   font-family: "JetBrains Mono", monospace;
   font-size: 0.85em;
@@ -192,7 +192,7 @@ tr:hover td {
 hr {
   border: none;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-subtle), var(--accent-forge), var(--border-subtle), transparent);
+  background: linear-gradient(90deg, transparent, var(--border-subtle), var(--accent-avra), var(--border-subtle), transparent);
   margin: 3em 0;
 }
 
@@ -208,7 +208,7 @@ li {
 }
 
 li::marker {
-  color: var(--accent-forge);
+  color: var(--accent-avra);
 }
 
 /* Images */
@@ -240,7 +240,7 @@ img {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-forge);
+  background: var(--accent-avra);
 }
 
 /* Table of Contents specific styling */
@@ -256,7 +256,7 @@ img {
 }
 
 #content > ul:first-of-type a:hover {
-  color: var(--accent-forge);
+  color: var(--accent-avra);
 }
 
 /* Responsive */

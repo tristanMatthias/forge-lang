@@ -1,0 +1,176 @@
+// WHY: block expression codegen — evaluating statement blocks as values.
+
+use core.{Expr, Stmt, ValueType, VarBinding, SStmt, stmt_unwrap}
+use codegen.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
+use codegen.{emit_if_optional_canon, emit_cond_truthy}
+use core.{ValueType}
+use codegen.{emit_expr, emit_stmt, emit_stmt_list}
+use features.match_expr.{emit_match_expr}
+use features.if_stmt.{narrow_env_for_is}
+use core.{avra_covmap_next_branch_id}
+use features.error_propagation.{Result}
+use core.{avra_tag_as_result}
+
+
+/// Wrap a successful block-as-expr emit (value + type + threaded
+/// ctx + env) as `Result.Ok`. Internal helper for this module only.
+fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding>) -> Result<BlockResult, string> {
+    let r = Result.Ok(BlockResult { value, ty, ctx, env })
+    avra_tag_as_result(r)
+    r
+}
+
+/// Wrap a block-emit failure as `Result.Err`. Pairs with `ok_br`.
+fn err_br(msg: string) -> Result<BlockResult, string> {
+    let r = Result.Err(msg)
+    avra_tag_as_result(r)
+    r
+}
+
+/// Codegen for `{ stmt; stmt; expr }` used as an expression. The
+/// block's value is the value of the LAST statement when that stmt
+/// is a `.Expr`; everything else (return, let, while, ...) yields
+/// i64 0. Non-tail statements run for their side effects.
+export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<EmitValue, string> {
+    emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
+}
+
+/// Emit a statement as a value-producing expression. For `.Expr`,
+/// `.Block`, `.Match`, `.If` we emit them inline with a result slot.
+/// Anything else falls back to plain `emit_stmt` and inherits the
+/// caller's `last_val` / `last_ty`.
+export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+    match stmt {
+        .Expr(e) -> ctx.emit(env, e)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
+        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
+        _ -> {
+            let sr = emit_stmt(ctx, env, stmt)?
+            ok_emit(last_val, last_ty)
+        }
+    }
+}
+
+/// Same as `emit_stmt_as_value` but threads ctx + env through and
+/// returns a BlockResult. Used by `emit_block_loop_ctx` so callers
+/// can recover defer state after evaluating a block.
+fn emit_stmt_as_value_ctx(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    ctx.cov_line()
+    match stmt {
+        .Expr(e) -> {
+            let r = ctx.emit(env, e)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        .Block(body) -> {
+            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Unknown)?
+            ok_br(r.value, r.ty, r.ctx, r.env)
+        }
+        .Match(subject, arms) -> {
+            let r = emit_match_expr(ctx, env, subject, arms)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        .If(condition, then_branch, else_branch) -> {
+            let r = emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        _ -> {
+            let sr = emit_stmt(ctx, env, stmt)?
+            ok_br(last_val, last_ty, sr.ctx, sr.env)
+        }
+    }
+}
+
+/// Codegen for an `if`-statement used in expression position. Emits
+/// the condition, both branches into separate basic blocks, stores
+/// each branch's tail value into a slot, and merges. `is`-narrowing
+/// runs on the then-branch via `narrow_env_for_is`. Branch coverage
+/// counters fire on each side.
+export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
+    let branch_id = avra_covmap_next_branch_id()
+    let cond = ctx.emit(env, condition)?
+    let cond_i1 = emit_cond_truthy(ctx, emit_value_ptr(cond), emit_value_ty(cond), "sif_cond")
+    let then_bb = ctx.bb("sif_then")
+    let else_bb = ctx.bb("sif_else")
+    let merge_bb = ctx.bb("sif_end")
+    let result_slot = ctx.alloca_i64("sif_result")
+    ctx.store(ctx.i64(0), result_slot)
+    ctx.cond_br(cond_i1, then_bb, else_bb)
+
+    ctx.position(then_bb)
+    ctx.cov_branch_then(branch_id)
+    let zero = ctx.i64(0)
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Unknown)?
+    let t_ty = emit_value_ty(t)
+    ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
+
+    ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
+    mut e_ty = ValueType.Void
+    if else_branch != null {
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Unknown)?
+        e_ty = emit_value_ty(e)
+        ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
+    } else {
+        ctx.br(merge_bb)
+    }
+
+    ctx.position(merge_bb)
+    // Canonicalise a value-inner optional mix ({T, null} etc.) to `T?` so a
+    // present value is boxed and `none` stays the null pointer (e.g. an
+    // `if x > 0 { x } else { none }` function body returning `int?`).
+    let canon = emit_if_optional_canon(ctx, cond_i1, result_slot, t_ty, e_ty)
+    if canon != none { return ok_emit(canon!.value, canon!.ty) }
+    let loaded = ctx.load_i64(result_slot, "sif_val")
+    ok_emit(loaded, t_ty)
+}
+
+/// Workhorse loop for `emit_block_expr`. Walks the statement list:
+/// every non-tail stmt runs via `emit_stmt`; the tail stmt runs via
+/// `emit_stmt_as_value` so the block produces a value. Tracks
+/// `source_line` for accurate diagnostics and coverage.
+export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+    if stmts.length == 0 { return ok_emit(last_val, last_ty) }
+    mut cur_ctx = ctx
+    mut cur_env = env
+    mut i = 0
+    let last = stmts.length - 1
+    while i < last {
+        let ss = stmts[i]
+        let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
+        let sr = emit_stmt(line_ctx, cur_env, ss.node)?
+        cur_ctx = sr.ctx
+        cur_env = sr.env
+        i = i + 1
+    }
+    let ss = stmts[last]
+    let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
+    emit_stmt_as_value(line_ctx, cur_env, ss.node, last_val, last_ty)
+}
+
+/// `emit_block_loop` but returns BlockResult so callers see the
+/// final `Ctx` (with accumulated defers). Used by features whose
+/// emission needs to react to ctx changes inside the block (defer
+/// stack mutations, RC pushes, etc.).
+export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    if stmts.length == 0 {
+        let e: List<VarBinding> = []
+        return ok_br(last_val, last_ty, ctx, e)
+    }
+    mut cur_ctx = ctx
+    mut cur_env = env
+    mut i = 0
+    let last = stmts.length - 1
+    while i < last {
+        let ss = stmts[i]
+        let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
+        let sr = emit_stmt(line_ctx, cur_env, ss.node)?
+        cur_ctx = sr.ctx
+        cur_env = sr.env
+        i = i + 1
+    }
+    let ss = stmts[last]
+    let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
+    emit_stmt_as_value_ctx(line_ctx, cur_env, ss.node, last_val, last_ty)
+}

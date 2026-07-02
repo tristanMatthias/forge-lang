@@ -1,0 +1,183 @@
+// Channels × spawn — the combination the in-process
+// test runner is built from. Producer/consumer across real threads,
+// rendezvous handoff, typed select arms, and a generic fn over
+// Channel<T> (exercises the mono unify arm for .Channel).
+
+mut csp_results: Channel<int> = channel<int>(1)
+mut csp_words: Channel<string> = channel<string>(1)
+
+spec "channels × spawn: producer/consumer" {
+    given "a spawned producer" {
+        then "three sent values arrive across the thread boundary" {
+            csp_results = channel<int>(2)
+            let h = spawn {
+                csp_results.send(10)
+                csp_results.send(20)
+                csp_results.send(30)
+                0
+            }
+            let total = csp_results.recv()! + csp_results.recv()! + csp_results.recv()!
+            h.await
+            total == 60
+        }
+        then "string payloads cross threads with contents intact" {
+            csp_words = channel<string>(1)
+            let h = spawn {
+                csp_words.send("from-worker")
+                0
+            }
+            let got = csp_words.recv()!
+            h.await
+            got == "from-worker"
+        }
+    }
+    given "a rendezvous channel" {
+        then "the handoff completes exactly once" {
+            let ch = channel<int>(0)
+            let h = spawn {
+                ch.send(77)
+                0
+            }
+            let got = ch.recv()!
+            h.await
+            got == 77
+        }
+    }
+    given "a closed channel feeding a spawned drain loop" {
+        then "the worker drains to null and reports the sum" {
+            let work = channel<int>(4)
+            let done = channel<int>(1)
+            work.send(1)
+            work.send(2)
+            work.send(3)
+            work.close()
+            let h = spawn {
+                mut sum = 0
+                mut more = true
+                while more {
+                    let v = work.recv()
+                    if v == null { more = false } else { sum = sum + v! }
+                }
+                done.send(sum)
+                0
+            }
+            let total = done.recv()!
+            h.await
+            total == 6
+        }
+    }
+}
+
+spec "channels × select: typed arm bindings" {
+    given "two channels with distinct element types" {
+        then "the int arm binds an int and the string arm a string" {
+            let nums = channel<int>(1)
+            let words = channel<string>(1)
+            nums.send(41)
+            mut got_n = 0
+            mut got_s = ""
+            select {
+                n <- nums -> { got_n = n + 1 }
+                s <- words -> { got_s = s }
+            }
+            words.send("later")
+            select {
+                n <- nums -> { got_n = n + 1 }
+                s <- words -> { got_s = s }
+            }
+            got_n == 42 && got_s == "later"
+        }
+    }
+}
+
+fn csp_pump<T>(ch: Channel<T>, v: T) {
+    ch.send(v)
+}
+
+spec "channels × generics: Channel<T> params unify" {
+    given "a generic pump over Channel<T>" {
+        then "int and string instantiations both deliver" {
+            let ci = channel<int>(1)
+            let cs = channel<string>(1)
+            csp_pump(ci, 8)
+            csp_pump(cs, "generic")
+            ci.recv()! == 8 && cs.recv()! == "generic"
+        }
+    }
+}
+
+// High-volume cross-thread stress: hundreds of sends through a small
+// bounded ring from competing producers, drained by competing
+// consumers. Exercises ring wraparound, blocking-send backpressure,
+// condvar wakeups under contention, and close-while-waiting — the
+// failure modes a single-value handshake test can never reach.
+spec "channel stress: 2 producers × 500 sends through a 4-slot ring" {
+    given "competing producers and consumers" {
+        then "every value arrives exactly once (sum check)" {
+            let work = channel<int>(4)
+            let sums = channel<int>(2)
+            let p1 = spawn {
+                mut i = 1
+                while i <= 500 {
+                    work.send(i)
+                    i = i + 1
+                }
+                0
+            }
+            let p2 = spawn {
+                mut i = 501
+                while i <= 1000 {
+                    work.send(i)
+                    i = i + 1
+                }
+                0
+            }
+            let c1 = spawn {
+                mut sum = 0
+                mut more = true
+                while more {
+                    let v = work.recv()
+                    if v == null { more = false } else { sum = sum + v! }
+                }
+                sums.send(sum)
+                0
+            }
+            let c2 = spawn {
+                mut sum = 0
+                mut more = true
+                while more {
+                    let v = work.recv()
+                    if v == null { more = false } else { sum = sum + v! }
+                }
+                sums.send(sum)
+                0
+            }
+            p1.await
+            p2.await
+            work.close()
+            let total = sums.recv()! + sums.recv()!
+            c1.await
+            c2.await
+            // 1 + 2 + … + 1000
+            total == 500500
+        }
+    }
+}
+
+spec "channel edge: negative capacity behaves as unbounded" {
+    then "500 sends complete without a receiver (no bounded blocking)" {
+        let ch = channel<int>(0 - 1)
+        mut i = 0
+        while i < 500 {
+            ch.send(i)
+            i = i + 1
+        }
+        ch.close()
+        mut n = 0
+        mut more = true
+        while more {
+            if ch.recv() == null { more = false } else { n = n + 1 }
+        }
+        n == 500
+    }
+}

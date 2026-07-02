@@ -1,0 +1,48 @@
+// zm77 regression: RC-cleanup slots for locals declared inside a loop
+// must be null until first bound. Before the fix, `ctx.bind` registered
+// the (entry-block-hoisted) alloca for scope-exit release but only
+// initialized it at the declaration site — so a zero-trip loop's
+// epilogue released stack garbage. In the wild that freed a live AST
+// node during codegen (union_return_test's last match arm) once enough
+// emission had run for the garbage to alias a live allocation.
+//
+// This test exercises the exact shape: an RC-managed struct local bound
+// only inside a `while` body, with calls alternating between zero-trip
+// and non-zero-trip so a stale slot value from a previous frame at the
+// same stack depth would get phantom-released on the zero-trip calls.
+
+type ZtPair = {
+    a: string,
+    b: string,
+}
+
+fn zt_concat(xs: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < xs.length {
+        mut p = ZtPair { a: xs[i], b: "-" }
+        out = out + p.a + p.b
+        i = i + 1
+    }
+    out
+}
+
+fn zt_drive() -> string {
+    let empty: List<string> = []
+    mut acc = ""
+    // Non-zero-trip call plants live RC pointers in the frame; the
+    // zero-trip call right after must not release them.
+    acc = acc + zt_concat(["a", "b"])
+    acc = acc + zt_concat(empty)
+    acc = acc + zt_concat(["c"])
+    acc = acc + zt_concat(empty)
+    acc = acc + zt_concat(empty)
+    acc = acc + zt_concat(["d", "e"])
+    acc
+}
+
+spec "zero-trip loop rc cleanup" {
+    then "zero-trip loops release nothing and values stay live" {
+        zt_drive() == "a-b-c-d-e-"
+    }
+}

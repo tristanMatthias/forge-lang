@@ -1,0 +1,49 @@
+// End-to-end test for the v1.0 avra.toml reader.
+//
+// Drives bs2 from a directory containing a fixture avra.toml and
+// asserts the [package] section is recognised. Catches the regression
+// where the reader looked for [project] but the spec says [package]
+// — load_package_config was silently returning the default for every
+// real manifest in the tree before that fix.
+//
+// We exercise the full CLI path because internal unit testing of the
+// load_manifest function from a *_test.av inside @std.avrac currently
+// trips the @std/json double-load bug (see ticket
+// forge-crafting-intepreters-xks4 — module-resolver dedupe). When that
+// bug is fixed, we should add a fine-grained unit test that asserts
+// every Manifest field. For now, the CLI smoke test proves the reader
+// is wired up and reads the [package] section we ship.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "manifest: bs2 prints [pkg] line when avra.toml has a [package] section" {
+    then "name and version from the fixture surface in the banner" {
+        // tests/manifest_fixtures/avra.toml declares
+        //   name = "fixture-full", version = "0.7.3"
+        // bs2 derives pkg_dir from the source file's parent directory,
+        // so this finds the fixture manifest regardless of cwd.
+        let out = avra_shell_exec(
+            "./build/bs2 check tests/manifest_fixtures/sample.av 2>&1 || true"
+        )
+        out.contains("[pkg] fixture-full v0.7.3")
+    }
+}
+
+spec "manifest: bs2 emits no [pkg] line when no avra.toml is present" {
+    then "/tmp source compiles without a manifest banner" {
+        // Drop a temporary .av in /tmp where there is no avra.toml.
+        // Confirms load_package_config returns found = false for
+        // directories without a manifest. Source is `fn ${entry}` —
+        // composed at runtime to keep the literal `fn ${name}()` text
+        // out of this file (the test runner skips files that contain
+        // a real entry point string).
+        let entry = "main"
+        let body = "fn " + entry + "() -> int { 0 }"
+        avra_shell_exec("printf '%s\\n' '" + body + "' > /tmp/avra_manifest_test.av")
+        let out = avra_shell_exec(
+            "./build/bs2 check /tmp/avra_manifest_test.av 2>&1 || true"
+        )
+        avra_shell_exec("rm -f /tmp/avra_manifest_test.av")
+        !out.contains("[pkg] ")
+    }
+}

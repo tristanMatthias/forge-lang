@@ -1,0 +1,18 @@
+// WHY: parses `isolated { body }` into an Isolated expression.
+// Sibling of `spawn { }` but with process isolation — body runs in
+// a forked subprocess, return value marshals back through a pipe.
+
+use parse.{Parser}
+use core.{Expr, Tk}
+
+impl Parser {
+    fn parse_isolated_expression(self) -> Result<Expr, string> {
+        self.advance()  // consume `isolated`
+        if !self.check(Tk.LeftBrace) {
+            self.consume(Tk.LeftBrace, "expected `{` after isolated")
+            return .Err("parse error")
+        }
+        let body = self.parse_block_expression()?
+        .Ok(Expr.Isolated(body))
+    }
+}

@@ -1,0 +1,109 @@
+// Gap 1.B — non-primitive ValueType decoder roundtrip.
+//
+// Macro emits a `quote stmt { fn f() -> <type> { ... } }`. Without
+// the enum_value_to_value_type extension + the Function arm's typed
+// encoder, the return type would degrade to ValueType.Unknown and
+// the spliced fn would lose its return-type info; the assertions
+// below pin that the decoder + encoder preserve typed return slots
+// through the quote -> expand -> render path.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_expand_e2e(slot: string, source: string) -> string {
+    let path = "/tmp/avra_value_type_roundtrip_${slot}_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+spec "gap 1.B: primitive int return roundtrips through quote" {
+    then "fn -> int renders with explicit `int` return type" {
+        let out = run_expand_e2e("int",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_int() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen_int() -> int { return 0 }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_int)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn _gen_int")
+            && out.contains("-> int")
+            && !out.contains("_gen_int() -> <unknown>")
+    }
+}
+
+spec "gap 1.B: ValueType.List(.Int) survives quote roundtrip" {
+    then "fn -> List<int> renders with List return type, not Unknown" {
+        let out = run_expand_e2e("list",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_list() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen_list() -> List<int> { return [] }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_list)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn _gen_list")
+            && !out.contains("_gen_list() -> <unknown>")
+    }
+}
+
+spec "ValueType.Map(.Str, .Int) survives quote roundtrip" {
+    then "fn -> Map<string, int> renders with Map return type, not Unknown" {
+        let out = run_expand_e2e("map",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_map() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen_map() -> Map<string, int> { return {} }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_map)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn _gen_map")
+            && out.contains("-> Map<string, int>")
+            && !out.contains("_gen_map() -> <unknown>")
+    }
+}
+
+spec "gap 1.B: typed bool return roundtrips" {
+    then "fn -> bool renders with explicit `bool` return type" {
+        let out = run_expand_e2e("bool",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_bool() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen_bool() -> bool { return true }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_bool)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn _gen_bool")
+            && out.contains("-> bool")
+    }
+}

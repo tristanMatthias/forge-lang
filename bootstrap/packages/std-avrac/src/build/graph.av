@@ -1,0 +1,286 @@
+// WHY: dependency graph extractor for the build system.
+//
+// Walks a project's avra.toml + transitively loads each path-dep's
+// own manifest. Builds an in-memory DAG of compile units and topo-
+// sorts them so leaves come first. The build driver consumes the
+// sorted list to compile units bottom-up; per-unit fingerprinting
+// already ensures that an unchanged unit short-circuits to a cache
+// hit even when its dependents are rebuilding.
+//
+// Phase 2 deliberately stays at PACKAGE granularity (one unit per
+// avra.toml-rooted project). Per-module units (one unit per .av file
+// with a `mod` boundary) is Phase 3 — it requires a metadata format
+// (forge-crafting-intepreters-iinq) so each module's public surface
+// can be loaded without re-parsing the implementation.
+//
+// Tracking ticket: forge-crafting-intepreters-eh00.
+
+use core.{
+    avra_selfhost_file_exists,
+}
+use features.modules.{
+    Manifest, Dep, load_manifest,
+}
+
+/// `name_list_contains` lifted into a free helper since List<string>
+/// doesn't ship a built-in `.contains(x)` method yet. Used to dedup
+/// transitive dep names during the graph walk so a diamond
+/// (a→b, a→c, b→d, c→d) doesn't emit `d` twice.
+fn name_list_contains(xs: List<string>, target: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        if xs[i] == target { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// One node in the dependency graph. `name` is the manifest's
+/// [package].name; `project_root` is the absolute filesystem path
+/// to the project (where avra.toml lives); `dep_names` is the
+/// direct dependencies, e.g. `["@std/cli", "@std/lsp", ...]`.
+export type Unit = {
+    name: string,
+    project_root: string,
+    dep_names: List<string>,
+}
+
+/// Free helper for "does `xs` contain a unit with name == target?".
+/// List<Unit> doesn't ship a built-in `.contains_by(predicate)` so
+/// every site that needs name-based membership uses this one walker.
+export fn unit_list_contains_name(xs: List<Unit>, target: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        if xs[i].name == target { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Result of `build_graph`. `units` is in topological order (a unit
+/// appears AFTER all of its dependencies). `had_error` flags cycle
+/// detection or missing-manifest failures; `error` carries a human
+/// description suitable for surfacing as a build diagnostic.
+export type DepGraph = {
+    units: List<Unit>,
+    had_error: bool,
+    error: string,
+}
+
+/// Walk the project starting at `project_root`, recursively load each
+/// path dep's manifest, accumulate a DepGraph. Detects cycles and
+/// missing manifests and reports them via the result's `had_error`
+/// + `error` fields rather than panicking — the build driver decides
+/// whether to halt or continue (today: always halt).
+///
+/// `project_root` MUST end with a trailing slash so `${root}avra.toml`
+/// resolves correctly. The build driver normalises this for the
+/// caller.
+export fn build_graph(project_root: string) -> DepGraph {
+    let root_manifest = load_manifest(project_root)
+    if !root_manifest.found {
+        return DepGraph {
+            units: [],
+            had_error: true,
+            error: "no avra.toml found at " + project_root,
+        }
+    }
+
+    // Collect all units transitively reachable from the root. We keep
+    // a separate "visited" name list so the DFS doesn't re-enter a
+    // unit that's already loaded (the dep list itself is the spine
+    // of the iteration; visited tracks both pending and complete).
+    let collected = collect_units(project_root, root_manifest, [], [])
+    if collected.had_error {
+        return DepGraph {
+            units: [],
+            had_error: true,
+            error: collected.error,
+        }
+    }
+
+    // Topological sort via Kahn's algorithm. Cycles surface as a
+    // shortfall: if the output count is less than the input, there's
+    // a cycle in the residue.
+    let sorted = topological_sort(collected.units)
+    if sorted.had_error {
+        return DepGraph {
+            units: [],
+            had_error: true,
+            error: sorted.error,
+        }
+    }
+    DepGraph {
+        units: sorted.units,
+        had_error: false,
+        error: "",
+    }
+}
+
+/// Internal accumulator for collect_units / topological_sort. The
+/// recursive DFS surfaces cycle / missing-manifest errors via
+/// had_error / error rather than a Result type.
+///
+/// `visited` is threaded through the result so sibling recursions
+/// inherit the names already loaded by their predecessors. Without
+/// that propagation the diamond pattern (a → b, a → c, b → d, c → d)
+/// would visit `d` twice and emit two units for it.
+type CollectResult = {
+    units: List<Unit>,
+    visited: List<string>,
+    had_error: bool,
+    error: string,
+}
+
+fn collect_units(project_root: string, manifest: Manifest, acc: List<Unit>, visited: List<string>) -> CollectResult {
+    // Already loaded — short-circuit.
+    if name_list_contains(visited, manifest.name) {
+        return CollectResult { units: acc, visited: visited, had_error: false, error: "" }
+    }
+    mut visited_now = visited
+    visited_now.push(manifest.name)
+    let dep_names = collect_dep_names(manifest.deps)
+
+    let after_deps = recurse_deps(project_root, manifest.deps, acc, visited_now)
+    if after_deps.had_error {
+        return after_deps
+    }
+    mut units_now = after_deps.units
+    units_now.push(Unit {
+        name: manifest.name,
+        project_root: project_root,
+        dep_names: dep_names,
+    })
+    CollectResult {
+        units: units_now,
+        visited: after_deps.visited,
+        had_error: false,
+        error: "",
+    }
+}
+
+fn recurse_deps(parent_root: string, deps: List<Dep>, acc: List<Unit>, visited: List<string>) -> CollectResult {
+    mut result = CollectResult { units: acc, visited: visited, had_error: false, error: "" }
+    mut i = 0
+    while i < deps.length {
+        let d = deps[i]
+        if d.path == "" {
+            return result with {
+                had_error: true,
+                error: "dep `" + d.name + "` has no path (registry not implemented)",
+            }
+        }
+        let dep_root = ensure_trailing_slash(parent_root + d.path)
+        if !avra_selfhost_file_exists(dep_root + "avra.toml") {
+            return result with {
+                had_error: true,
+                error: "dep `" + d.name + "` at `" + dep_root + "` is missing avra.toml",
+            }
+        }
+        let dep_manifest = load_manifest(dep_root)
+        let nested = collect_units(dep_root, dep_manifest, result.units, result.visited)
+        if nested.had_error { return nested }
+        result = nested
+        i = i + 1
+    }
+    result
+}
+
+fn collect_dep_names(deps: List<Dep>) -> List<string> {
+    mut acc: List<string> = []
+    mut i = 0
+    while i < deps.length {
+        acc.push(deps[i].name)
+        i = i + 1
+    }
+    acc
+}
+
+/// Kahn's algorithm: repeatedly pick a unit whose deps are all
+/// already in the output, output it, mark its name in the resolved
+/// set. Stop when no unit can be picked. If output count < input
+/// count, there's a cycle.
+fn topological_sort(units: List<Unit>) -> CollectResult {
+    let total = units.length
+    mut output: List<Unit> = []
+    mut resolved: List<string> = []
+    mut remaining = units
+    mut progress = true
+
+    while progress {
+        progress = false
+        let scan = scan_for_ready(remaining, resolved)
+        // scan.ready: units whose deps are satisfied
+        // scan.rest:  units still pending
+        if scan.ready.length > 0 {
+            progress = true
+            // Append `ready` to output (in their original order).
+            mut ri = 0
+            while ri < scan.ready.length {
+                let u = scan.ready[ri]
+                output.push(u)
+                resolved.push(u.name)
+                ri = ri + 1
+            }
+            remaining = scan.rest
+        }
+    }
+
+    if output.length < total {
+        // Cycle in the residue. Surface the names involved so the
+        // diagnostic is actionable.
+        let cycle_names = unit_names(remaining)
+        return CollectResult {
+            units: [],
+            visited: [],
+            had_error: true,
+            error: "dep cycle in: " + cycle_names,
+        }
+    }
+
+    CollectResult { units: output, visited: [], had_error: false, error: "" }
+}
+
+type ScanResult = {
+    ready: List<Unit>,
+    rest: List<Unit>,
+}
+
+/// One Kahn pass: split `units` into "ready" (every dep_name is in
+/// `resolved`) and "rest" (something not yet resolved). Both lists
+/// preserve original order.
+fn scan_for_ready(units: List<Unit>, resolved: List<string>) -> ScanResult {
+    mut ready: List<Unit> = []
+    mut rest: List<Unit> = []
+    mut i = 0
+    while i < units.length {
+        let u = units[i]
+        if all_deps_resolved(u.dep_names, resolved) {
+            ready.push(u)
+        } else {
+            rest.push(u)
+        }
+        i = i + 1
+    }
+    ScanResult { ready, rest }
+}
+
+fn all_deps_resolved(deps: List<string>, resolved: List<string>) -> bool {
+    mut i = 0
+    while i < deps.length {
+        if !name_list_contains(resolved, deps[i]) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn unit_names(xs: List<Unit>) -> string {
+    mut out = ""
+    for (i, x) in xs.enumerate() {
+        if i > 0 { out = out + ", " }
+        out = out + x.name
+    }
+    out
+}

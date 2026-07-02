@@ -1,0 +1,10 @@
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "shell exec" {
+    then "echo command stdout" {
+        avra_shell_exec("echo hello") == "hello"
+    }
+    then "expr command computes 2+3" {
+        avra_shell_exec("expr 2 + 3") == "5"
+    }
+}

@@ -1,0 +1,93 @@
+formula = "ticket-inner"
+description = "Inner loop: work a single ticket/bug to completion with aggressive cleanup and testing"
+type = "workflow"
+
+[variables.epic_id]
+description = "Parent epic bead ID"
+required = true
+
+[variables.ticket_id]
+description = "Ticket/bug bead ID to work on"
+required = true
+
+[[steps]]
+id = "implement"
+title = "Implement the ticket"
+description = """
+Pick up the ticket. Implement it fully to spec. Build, test (all must pass),
+seed cycle if needed, commit, push. No shortcuts. No partial implementations."""
+
+[[steps]]
+id = "check-work"
+title = "Check work against spec"
+depends_on = ["implement"]
+description = """
+Audit the implementation against the spec. Check:
+- Did we skip anything the spec requires?
+- Did we defer anything as 'too complex' or 'a bigger lift'?
+- Were we lazy about any edge cases?
+- Is the implementation complete and correct?
+File any bugs found as beads under the epic."""
+
+[[steps]]
+id = "fix-bugs"
+title = "Fix all bugs found in check"
+depends_on = ["check-work"]
+description = """
+For every bug filed in the check step, fix it immediately.
+No exceptions. No deferring. No 'good enough'."""
+
+[[steps]]
+id = "cleanup-1"
+title = "Cleanup: hacks, workarounds, dead code"
+depends_on = ["fix-bugs"]
+description = """
+Remove ANY code that is a hack, workaround, or skips something fundamental.
+Remove all dead code. Fix anything suboptimal. No catch-all patterns without
+explicit leaf case documentation. No TODO comments surviving."""
+
+[[steps]]
+id = "cleanup-2"
+title = "Cleanup: DRY, centralize, architecture"
+depends_on = ["cleanup-1"]
+description = """
+More aggressive cleanup. Centralize duplicated logic into shared helpers.
+Improve abstractions. Ensure proper separation of concerns. Move
+feature-specific code out of core. Consolidate similar patterns."""
+
+[[steps]]
+id = "cleanup-3"
+title = "Cleanup: ridiculously aggressive"
+depends_on = ["cleanup-2"]
+description = """
+Final cleanup pass. Zero tolerance. Every line of code must be justified.
+No fallback patterns. No implicit behavior without documentation.
+Production-quality code that a senior engineer would approve in code review."""
+
+[[steps]]
+id = "break-it-1"
+title = "Break it: aggressive red team tests"
+depends_on = ["cleanup-3"]
+description = """
+Write tests designed to break the implementation. Edge cases, boundary values,
+adversarial inputs, null/empty/zero, deeply nested structures, combinations
+with other features. Commit the tests. Fix any failures found."""
+
+[[steps]]
+id = "break-it-2"
+title = "Break it: outside the box"
+depends_on = ["break-it-1"]
+description = """
+Think about what COULD go wrong that is not obvious. Fuzzing, stress tests,
+resource exhaustion, stack overflow on recursive types, concurrent access,
+memory corruption, type confusion. Fix everything found."""
+
+[[steps]]
+id = "final-cleanup"
+title = "Final cleanup: beautify and polish"
+depends_on = ["break-it-2"]
+description = """
+One final round. Code quality, consistent style, use language features
+where appropriate, add WHY comments where non-obvious, ensure all files
+have proper module headers. The code should read like it was written by
+someone who cares deeply about craft."""

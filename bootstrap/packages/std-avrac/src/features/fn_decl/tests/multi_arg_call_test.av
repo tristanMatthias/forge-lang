@@ -1,0 +1,30 @@
+/// Test fixture: three-arg int sum. Verifies that the codegen
+/// passes more than two arguments correctly through the calling
+/// convention.
+fn add3(a: int, b: int, c: int) -> int {
+    a + b + c
+}
+
+/// Test fixture: three-string concatenation. Mirrors `add3` for
+/// pointer-typed (string) args. Named `concat3` (not the generic
+/// `greet`) deliberately: the bundled test runner shares one flat
+/// symbol namespace across the files in a shard, so a fixture must
+/// not reuse a common name another file might also define — here
+/// `tests/nested_mods/helpers.av` exports a 0-arg `greet`, and the
+/// two collided into one bare `@greet` symbol when strided batching
+/// put them in the same shard.
+fn concat3(prefix: string, name: string, suffix: string) -> string {
+    prefix + name + suffix
+}
+
+spec "multi arg call" {
+    then "three int args" {
+        add3(1, 2, 3) == 6
+    }
+    then "larger int args" {
+        add3(10, 20, 30) == 60
+    }
+    then "three string args" {
+        concat3("hello ", "world", "!") == "hello world!"
+    }
+}

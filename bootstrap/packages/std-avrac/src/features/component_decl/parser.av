@@ -1,0 +1,507 @@
+// WHY: parses component definitions and component block instantiations.
+//
+// Definition: `component name { config { ... } fn init() { ... } ... }`
+// Instantiation (keyword-free): `name instance { config_key value ... }`
+//
+// When a definition is parsed, the component name is dynamically registered
+// in the parser's feature registry. Subsequent code can use `name instance { ... }`
+// without the `component` keyword — single-pass, no ambiguity.
+
+use core.{Stmt, Expr, SExpr, sexpr_dummy, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
+use parse.{Parser}
+use core.{Tk}
+use core.{register_component_name}
+
+impl Parser {
+    // Keyword-free instantiation: `comp_name inst_name { ... }`
+    // Only called when the NEXT token after the component name is an identifier
+    // (the instance name). If next is `{`, `(`, `=`, etc., we don't match.
+    fn parse_component_block_bare(self) -> Result<Stmt, string> {
+        let name = self.consume_identifier("expected component name")?
+        // Require instance name (identifier) — this prevents false positives
+        // like `command {` inside match expressions.
+        if !self.check(Tk.Identifier) {
+            // Not a component block — restore by treating as expression start.
+            // But we already consumed the name. Use it as an Ident expression.
+            return self.parse_statement()
+        }
+        let instance = self.consume_identifier("expected instance name")?
+        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return .Err("parse error") }
+        let config = self.parse_comp_config_pairs()?
+        let body = self.parse_comp_block_body()?
+        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
+        .Ok(Stmt.ComponentBlock(name, instance, config, body))
+    }
+
+    // `component name { ... }` — always a definition (no parens)
+    fn parse_component_decl(self) -> Result<Stmt, string> {
+        self.advance()  // consume `component`
+        let name = self.consume_identifier("expected component name")?
+
+        // Optional `implements TraitA, TraitB` clause (vez6.8) sits
+        // between the component name and the body. Both definition
+        // forms (`component name {` and `component name(params) {`)
+        // accept it. The block / nested form does not.
+        mut implements: List<string> = []
+        if self.check(Tk.Identifier) && self.current_lexeme == "implements" {
+            self.advance()
+            implements = self.parse_implements_list()?
+        }
+
+        // Definition: `component name {` ...
+        if self.check(Tk.LeftBrace) {
+            return self.parse_component_def(name, implements)
+        }
+
+        // Legacy: `component name(params) {` — still supported for backward compat
+        if self.check(Tk.LeftParen) {
+            self.advance()
+            let params = self.parse_param_list()?
+            if !self.consume(Tk.RightParen, "expected `)` after component params") { return .Err("parse error") }
+            if !self.consume(Tk.LeftBrace, "expected `{` after component header") { return .Err("parse error") }
+            let config: List<CompConfig> = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
+                self.advance()
+                if !self.consume(Tk.LeftBrace, "expected `{` after `config`") { return .Err("parse error") }
+                let c = self.parse_comp_config_schema()?
+                if !self.consume(Tk.RightBrace, "expected `}` after config entries") { return .Err("parse error") }
+                c
+            } else { [] }
+            let body = self.parse_comp_def_body()?
+            if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return .Err("parse error") }
+            register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
+            return .Ok(Stmt.ComponentDef(name, params, config, [], implements, body))
+        }
+
+        // Legacy: `component comp instance {` — block with keyword prefix.
+        // Only legal when no implements clause was supplied (instances
+        // get their trait conformance from the parent ComponentDef).
+        if self.check(Tk.Identifier) {
+            if implements.length > 0 {
+                // Two common shapes land here, so the message
+                // covers both: (a) intentional block form with a
+                // stray `implements` clause; (b) missing `,`
+                // between two trait names (e.g.
+                // `implements Runnable Other {` — `Other` is read
+                // as an instance name once the implements list
+                // ended at `Runnable`).
+                self.set_error("`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
+                return .Err("parse error")
+            }
+            let instance = self.current_lexeme
+            self.advance()
+            if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return .Err("parse error") }
+            let config = self.parse_comp_config_pairs()?
+            let body = self.parse_comp_block_body()?
+            if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
+            return .Ok(Stmt.ComponentBlock(name, instance, config, body))
+        }
+
+        self.set_error("expected `{` after component name")
+        .Err("parse error")
+    }
+
+    /// Parse `TraitA, TraitB, ...` until `{` or `(`. Comma-separated,
+    /// trailing comma tolerated. Each entry is a bare identifier — no
+    /// generics or qualified paths in this slice (vez6.8).
+    ///
+    /// Caller already consumed the `implements` keyword. At least one
+    /// trait name is required; an empty list (`implements {`) is a
+    /// parse error (consume_identifier fails on the missing name and
+    /// the `?` operator propagates null up to `parse_component_decl`).
+    fn parse_implements_list(self) -> Result<List<string>, string> {
+        mut out: List<string> = []
+        let first = self.consume_identifier("expected trait name after `implements`")?
+        out.push(first)
+        while self.check(Tk.Comma) {
+            self.advance()
+            // Trailing comma: `implements A, B,` followed directly by
+            // `{` or `(` — treat as legitimate end-of-list rather than
+            // recursing and erroring on the missing identifier.
+            if self.check(Tk.LeftBrace) || self.check(Tk.LeftParen) { return .Ok(out) }
+            let next = self.consume_identifier("expected trait name after `,`")?
+            out.push(next)
+        }
+        .Ok(out)
+    }
+
+    // ── Component Definition ──
+
+    fn parse_component_def(self, name: string, implements: List<string>) -> Result<Stmt, string> {
+        // `component name {` — no parens, self.name is implicit.
+        // `implements` was consumed by the caller (parse_component_decl)
+        // so by the time we land here the next token is the opening `{`.
+        if !self.consume(Tk.LeftBrace, "expected `{` after component name") {
+            return .Err("parse error")
+        }
+        let config: List<CompConfig> = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
+            self.advance()
+            if !self.consume(Tk.LeftBrace, "expected `{` after `config`") {
+                return .Err("parse error")
+            }
+            let c = self.parse_comp_config_schema()?
+            if !self.consume(Tk.RightBrace, "expected `}` after config entries") {
+                return .Err("parse error")
+            }
+            c
+        } else {
+            []
+        }
+        // Optional `children { slot: List<T>, ... }` block declares
+        // accepted nested instantiation slots (vez6.7). Sits at the top
+        // of the component body, after config.
+        let children: List<ChildrenSlot> = if self.check(Tk.Identifier) && self.current_lexeme == "children" {
+            self.advance()
+            if !self.consume(Tk.LeftBrace, "expected `{` after `children`") {
+                return .Err("parse error")
+            }
+            let c = self.parse_comp_children_schema()?
+            if !self.consume(Tk.RightBrace, "expected `}` after children entries") {
+                return .Err("parse error")
+            }
+            c
+        } else {
+            []
+        }
+        let body = self.parse_comp_def_body()?
+        if !self.consume(Tk.RightBrace, "expected `}` at end of component") {
+            return .Err("parse error")
+        }
+        // Register this component name for keyword-free instantiation
+        register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
+        let empty_p: List<ParamEntry> = []
+        .Ok(Stmt.ComponentDef(name, empty_p, config, children, implements, body))
+    }
+
+    // ── Children Schema (definition) — vez6.7 ──
+
+    /// Parse the body of a `children { slot: List<T>, ... }` block.
+    /// Each entry binds a slot name on the parent to the element type
+    /// accepted in that slot. Trailing commas tolerated. Returns an
+    /// empty list for an empty block.
+    fn parse_comp_children_schema(self) -> Result<List<ChildrenSlot>, string> {
+        mut out: List<ChildrenSlot> = []
+        if self.check(Tk.RightBrace) { return .Ok(out) }
+        let first_slot = self.consume_identifier("expected child slot name")?
+        if !self.consume(Tk.Colon, "expected `:` after slot name") { return .Err("parse error") }
+        let first_te = self.parse_type_expr("expected slot type")?
+        out.push(ChildrenSlot { slot_name: first_slot, child_ty: type_expr_to_vtype(first_te) })
+        while self.check(Tk.Comma) {
+            self.advance()
+            // Trailing comma tolerated.
+            if self.check(Tk.RightBrace) { return .Ok(out) }
+            let slot = self.consume_identifier("expected child slot name")?
+            if !self.consume(Tk.Colon, "expected `:` after slot name") { return .Err("parse error") }
+            let te = self.parse_type_expr("expected slot type")?
+            out.push(ChildrenSlot { slot_name: slot, child_ty: type_expr_to_vtype(te) })
+        }
+        .Ok(out)
+    }
+
+    // ── Config Schema (definition) ──
+
+    fn parse_comp_config_schema(self) -> Result<List<CompConfig>, string> {
+        mut out: List<CompConfig> = []
+        while !self.check(Tk.RightBrace) {
+            let key = self.consume_identifier("expected config key")?
+            if !self.consume(Tk.Colon, "expected `:` after config key") { return .Err("parse error") }
+            let te = self.parse_type_expr("expected config type")?
+            let vt = type_expr_to_vtype(te)
+            let default_val = if self.check(Tk.Equal) {
+                self.advance()
+                let dv = self.parse_expression_boxed()?
+                dv
+            } else {
+                null
+            }
+            // Skip optional annotations like @default
+            while self.check(Tk.At) {
+                self.advance()
+                if self.check(Tk.Identifier) { self.advance() }
+            }
+            if self.check(Tk.Comma) { self.advance() }
+            out.push(CompConfig { key, ty_vt: vt, default_val })
+        }
+        .Ok(out)
+    }
+
+    // ── Definition Body ──
+
+    fn parse_comp_def_body(self) -> Result<List<SStmt>, string> {
+        mut out: List<SStmt> = []
+        while !self.check(Tk.RightBrace) {
+            let line = self.current_line
+            let col = self.current_column
+
+            // `on event_name { ... }` → fn __on_event_name
+            if self.check(Tk.Identifier) && self.current_lexeme == "on" {
+                self.advance()
+                let event_name = self.consume_identifier("expected event name after `on`")?
+                if !self.consume(Tk.LeftBrace, "expected `{` after event name") { return .Err("parse error") }
+                let body = self.parse_statement_list(true)?
+                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return .Err("parse error") }
+                let empty_tp: List<TypeParamEntry> = []
+                let empty_p: List<ParamEntry> = []
+                let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // `event name(params)` → fn __event_name
+            if self.check(Tk.Identifier) && self.current_lexeme == "event" {
+                self.advance()
+                let ev_name = self.consume_identifier("expected event name")?
+                let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
+                    self.advance()
+                    let p = self.parse_param_list()?
+                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return .Err("parse error") }
+                    p
+                } else { [] }
+                let empty_tp: List<TypeParamEntry> = []
+                let empty_body: List<SStmt> = []
+                let stmt = Stmt.Function("__event_${ev_name}", empty_tp, ev_params, ValueType.Void, empty_body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // `let field: type = init`
+            if self.check(Tk.KwLet) {
+                self.advance()
+                let field_name = self.consume_identifier("expected field name")?
+                if !self.consume(Tk.Colon, "expected `:` after field name") { return .Err("parse error") }
+                let te = self.parse_type_expr("expected field type")?
+                let vt = type_expr_to_vtype(te)
+                let init = if self.check(Tk.Equal) {
+                    self.advance()
+                    let v = self.parse_expression_boxed()?
+                    v
+                } else { Expr.None }
+                let stmt = Stmt.Let(field_name, vt, init)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // Regular statement (fn declarations, etc.)
+            let stmt = self.parse_declaration()?
+            out.push(sstmt(stmt, line, col))
+        }
+        .Ok(out)
+    }
+
+    // ── Component Block Body ──
+
+    // Parse config pairs: `key value` where value is a literal.
+    // Uses character-level peek to decide without consuming tokens.
+    fn parse_comp_config_pairs(self) -> Result<List<CompConfigPair>, string> {
+        mut out: List<CompConfigPair> = []
+        mut keep_going = true
+        while keep_going {
+            if self.check(Tk.RightBrace) { return .Ok(out) }
+            if self.check(Tk.KwFn) || self.check(Tk.KwComponent) || self.check(Tk.KwLet) { return .Ok(out) }
+            if !self.check(Tk.Identifier) { return .Ok(out) }
+            let key = self.current_lexeme
+            if key == "on" { return .Ok(out) }
+            // Peek at what follows the identifier (without consuming)
+            if self.peek_after_ident_is_brace() { return .Ok(out) }  // nested block
+            // Check if next char is a quote (string literal) or digit (number)
+            if self.peek_after_ident_is_string() || self.peek_after_ident_is_number() {
+                self.advance()  // consume key
+                let value = self.parse_expression_boxed()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(CompConfigPair { key, value })
+                continue
+            }
+            // Check for `true` or `false` keywords after ident
+            if self.peek_after_ident_is_keyword("true") || self.peek_after_ident_is_keyword("false") {
+                self.advance()  // consume key
+                let value = self.parse_expression_boxed()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(CompConfigPair { key, value })
+                continue
+            }
+            // `key = expression` — unambiguous config pair with arbitrary expression value
+            if self.peek_after_ident_is_eq() {
+                self.advance()  // consume key
+                self.advance()  // consume =
+                let value = self.parse_expression_boxed()?
+                if self.check(Tk.Comma) { self.advance() }
+                out.push(CompConfigPair { key, value })
+                continue
+            }
+            // Anything else (identifier, etc.) → end of config pairs
+            keep_going = false
+        }
+        .Ok(out)
+    }
+
+    fn peek_after_ident_is_string(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "\""
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    fn peek_after_ident_is_number(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch >= "0" && ch <= "9"
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Check if the text after whitespace matches a specific keyword
+    fn peek_after_ident_is_keyword(self, keyword: string) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        // Skip whitespace
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                // Check if the text starting here matches the keyword
+                if i + keyword.length <= self.source.length {
+                    return self.source.substring(i, i + keyword.length) == keyword
+                }
+                return false
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Peek: is the next non-whitespace char after current token `=` (but not `==`)?
+    fn peek_after_ident_is_eq(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                if ch != "=" { return false }
+                if i + 1 < self.source.length {
+                    return self.source.substring(i + 1, i + 2) != "="
+                }
+                return true
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Peek: is the next non-whitespace char after current token a `{`?
+    fn peek_after_ident_is_brace(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "{"
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Peek: is the next non-whitespace token an identifier (not a keyword like true/false)?
+    fn peek_after_ident_is_ident(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        // Skip whitespace
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                // Must be a letter or underscore (identifier start)
+                let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+                if !is_alpha { return false }
+                // Extract the full word to check against keywords
+                mut j = i
+                while j < self.source.length {
+                    let wc = self.source.substring(j, j + 1)
+                    let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
+                    if !is_alnum { break }
+                    j = j + 1
+                }
+                let word = self.source.substring(i, j)
+                // Exclude literal keywords — these are config values, not nested block names
+                if word == "true" || word == "false" || word == "null" { return false }
+                return true
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Parse block body: nested blocks + on handlers + fn decls + statements
+    fn parse_comp_block_body(self) -> Result<List<SStmt>, string> {
+        mut out: List<SStmt> = []
+        while !self.check(Tk.RightBrace) {
+            let line = self.current_line
+            let col = self.current_column
+
+            // `on event_name(params) { ... }`
+            if self.check(Tk.Identifier) && self.current_lexeme == "on" {
+                self.advance()
+                let event_name = self.consume_identifier("expected event name after `on`")?
+                let ev_params: List<ParamEntry> = if self.check(Tk.LeftParen) {
+                    self.advance()
+                    let p = self.parse_param_list()?
+                    if !self.consume(Tk.RightParen, "expected `)` after event params") { return .Err("parse error") }
+                    p
+                } else { [] }
+                if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return .Err("parse error") }
+                let body = self.parse_statement_list(true)?
+                if !self.consume(Tk.RightBrace, "expected `}` after event body") { return .Err("parse error") }
+                let empty_tp: List<TypeParamEntry> = []
+                let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // `component ...` keyword for nested blocks
+            if self.check(Tk.KwComponent) {
+                let stmt = self.parse_component_decl()?
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // Nested block: `ident name { ... }` or `ident { ... }`
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_ident() {
+                let comp_name = self.current_lexeme
+                self.advance()
+                let inst_name = self.consume_identifier("expected instance name")?
+                if !self.consume(Tk.LeftBrace, "expected `{` after nested block name") { return .Err("parse error") }
+                let nested_config = self.parse_comp_config_pairs()?
+                let nested_body = self.parse_comp_block_body()?
+                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
+                let stmt = Stmt.ComponentBlock(comp_name, inst_name, nested_config, nested_body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_brace() {
+                let comp_name = self.current_lexeme
+                self.advance()
+                self.advance()  // consume {
+                let nested_config = self.parse_comp_config_pairs()?
+                let nested_body = self.parse_comp_block_body()?
+                if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
+                let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body)
+                out.push(sstmt(stmt, line, col))
+                continue
+            }
+
+            // fn declarations and other statements
+            let stmt = self.parse_declaration()?
+            out.push(sstmt(stmt, line, col))
+        }
+        .Ok(out)
+    }
+}

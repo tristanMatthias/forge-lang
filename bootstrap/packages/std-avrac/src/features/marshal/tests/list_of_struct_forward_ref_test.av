@@ -1,0 +1,43 @@
+// Shortcut #6 / list-of-nested-struct with forward declaration —
+// `@marshal type Outer = { items: List<Item> }` where Item is
+// declared AFTER Outer used to lose the elem type at codegen
+// because `resolve_setup_vt` returned Unknown for forward
+// references inside List<T>. The for-loop body then saw
+// `__x_items: Unknown` and the `.to_bytes()` method-dispatch
+// fired the F9999 backstop.
+//
+// Fix: resolve_setup_vt preserves the original Struct name when
+// the referent isn't yet registered, so downstream codegen
+// passes (which DO have the full registry) dispatch correctly.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn compile_capture(source: string) -> string {
+    let path = "/tmp/avra_yx7b_list_fwd_test.av"
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "List<NestedStruct> compiles when nested type is forward-declared" {
+    then "Outer declared BEFORE Item still produces correct codegen" {
+        let out = compile_capture(
+            "use @std.process.{bytes_reader}\n" +
+            "\n" +
+            "@marshal\n" +
+            "type Outer = {\n" +
+            "    items: List<Item>,\n" +
+            "}\n" +
+            "\n" +
+            "@marshal\n" +
+            "type Item = { value: int }\n" +
+            "\n" +
+            "fn ma" + "in() {\n" +
+            "    let b = \"abc\"\n" +
+            "    let _r = bytes_reader(b)\n" +
+            "}\n")
+        !out.contains("F9999")
+            && !out.contains("method call on non-struct")
+            && !out.contains("this is a compiler bug")
+    }
+}

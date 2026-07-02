@@ -1,0 +1,14 @@
+// Compile-error test: reserved keyword `async` is not yet a valid statement.
+// Migrated from shell-out to in-process via check_source (Stage 2 step 3
+// of GETTING_TO_CLI_V2.md / 4szi sweep).
+
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_errors}
+
+const SOURCE: string = "fn entry() {\n    async\n}\n"
+
+spec "reserved keywords" {
+    then "reserved keyword `async` in fn body produces parse error" {
+        bag_has_errors(check_source(SOURCE))
+    }
+}

@@ -1,0 +1,121 @@
+// WHY: codegen for `spawn { body }`. Wraps the body in a zero-arg
+// closure and calls avra_spawn(closure), returning the thread handle.
+// Per spec Axis 18.7: structured concurrency — spawned tasks are bound
+// to the enclosing scope and auto-awaited at scope exit.
+
+use codegen.{ok_emit, err_emit, EmitValue}
+use core.{vtype_fn_ret, MatchArm, SExpr, ParamEntry}
+use features.closures.{emit_lambda}
+
+/// Codegen entry for `spawn { body }`. Pattern-matches the
+/// `Spawn` AST node and forwards to `emit_spawn`.
+export fn spawn_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Spawn(body) -> emit_spawn(ctx, env, body)
+        _ -> err_emit("spawn_emit_expr: expected Spawn")
+    }
+}
+
+/// Wrap the body in a zero-arg lambda, hand the closure pointer
+/// to `avra_spawn`, and register the resulting handle with the
+/// active structured-concurrency task group (when one exists).
+/// Result type is `Task<RetTy>` inferred from the lambda's return
+/// type so `await` later sees the right type.
+fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, string> {
+    // Wrap body in a zero-arg lambda: () -> { body }
+    let empty_p: List<ParamEntry> = []
+    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body))?
+
+    // Call avra_spawn(closure_ptr) which returns a thread handle
+    let handle = ctx.call("avra_spawn", [closure.value])
+
+    // Structured concurrency: if a task group is active, register
+    // this handle so it gets awaited when the scope exits.
+    if ctx.task_group != null {
+        ctx.call("avra_task_group_add", [ctx.task_group, handle])
+    }
+
+    // Infer result type from the closure's return type
+    let result_ty = vtype_fn_ret(closure.ty)
+    ok_emit(handle, .Task(result_ty))
+}
+
+// ── AST scan: does a statement list contain any Spawn expressions? ──
+// Used by emit_function_body to decide whether to create a task group.
+
+/// True when any statement in `stmts` (including nested control-
+/// flow + bodies) contains a `spawn` expression. Used by
+/// `emit_function_body` to decide whether to allocate a structured-
+/// concurrency task group up front.
+export fn stmts_has_spawn(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if stmt_has_spawn(stmts[i].node) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Per-statement spawn-detector. Recurses into expression
+/// payloads and nested bodies; treats decl-only stmts as opaque.
+fn stmt_has_spawn(st: Stmt) -> bool {
+    match st {
+        .Expr(e) -> expr_has_spawn(e)
+        .Return(e) -> expr_has_spawn(e)
+        .Let(_, _, e) -> expr_has_spawn(e)
+        .Mut(_, _, e) -> expr_has_spawn(e)
+        .Const(_, _, e) -> expr_has_spawn(e)
+        .Block(body) -> stmts_has_spawn(body)
+        .If(cond, then_b, else_b) -> {
+            if expr_has_spawn(cond) { return true }
+            if stmt_has_spawn(then_b) { return true }
+            if else_b != null { stmt_has_spawn(else_b!) } else { false }
+        }
+        .While(cond, body) -> expr_has_spawn(cond) || stmt_has_spawn(body)
+        .For(_, start, end, body) -> expr_has_spawn(start) || expr_has_spawn(end) || stmt_has_spawn(body)
+        .ForIn(_, coll, body) -> expr_has_spawn(coll) || stmt_has_spawn(body)
+        .Match(subj, arms) -> expr_has_spawn(subj) || arms_have_spawn(arms)
+        .Annotated(_, inner) -> stmt_has_spawn(inner.node)
+        .Impl(_, methods) -> stmts_has_spawn(methods)
+        .Parallel(body) -> stmts_has_spawn(body)
+        _ -> false
+    }
+}
+
+/// True when any `match` arm body contains a spawn.
+fn arms_have_spawn(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        if expr_has_spawn(arms[i].body.node) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Per-expression spawn-detector. Returns true on a literal
+/// `Spawn` node and recurses into compound expressions (block,
+/// call, binary, unary, if-expr, match-expr, lambda).
+fn expr_has_spawn(ex: Expr) -> bool {
+    match ex {
+        .Spawn(_) -> true
+        .Block(stmts) -> stmts_has_spawn(stmts)
+        .Call(callee, args) -> expr_has_spawn(callee) || exprs_have_spawn(args)
+        .Binary(l, _, r) -> expr_has_spawn(l) || expr_has_spawn(r)
+        .Unary(_, e) -> expr_has_spawn(e)
+        .IfExpr(cond, then_e, else_e) -> expr_has_spawn(cond) || expr_has_spawn(then_e) || expr_has_spawn(else_e)
+        .MatchExpr(subj, arms) -> expr_has_spawn(subj) || arms_have_spawn(arms)
+        .Lambda(_, body) -> expr_has_spawn(body)
+        _ -> false
+    }
+}
+
+/// Map `expr_has_spawn` across a `List<SExpr>` — used to walk call
+/// argument lists.
+fn exprs_have_spawn(args: List<SExpr>) -> bool {
+    mut i = 0
+    while i < args.length {
+        if expr_has_spawn(args[i].node) { return true }
+        i = i + 1
+    }
+    false
+}

@@ -1,0 +1,124 @@
+// Typed table literals — combinatorial + red-team coverage
+// (forge-crafting-intepreters-c080).
+//
+// `table<Row> { ... }` and context-inferred `table { ... }` both
+// desugar to `List<Row>` of struct rows. These specs exercise the
+// edges: empty tables, single columns, nullable/typed columns, the
+// table flowing through fn args / mut bindings / `with`, and the
+// Phase-C error for a row type that can't be inferred.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+type TtRow = { name: string, qty: int }
+type TtOpt = { id: int, label: string? }
+
+// Table as a fn argument (explicit row type at the call site).
+fn tt_total(rows: List<TtRow>) -> int {
+    mut sum = 0
+    for r in rows {
+        sum = sum + r.qty
+    }
+    sum
+}
+
+// Inference through a `mut` binding.
+fn tt_mut_first() -> string {
+    mut rows: List<TtRow> = table {
+        name   | qty
+        "a"    | 1
+        "b"    | 2
+    }
+    rows.push(TtRow { name: "c", qty: 3 })
+    rows[2].name
+}
+
+// Single-column table.
+fn tt_single() -> List<TtRow> {
+    table<TtRow> {
+        name | qty
+        "x"  | 9
+    }
+}
+
+// Header-only table — zero data rows desugars to an empty list.
+fn tt_empty() -> List<TtRow> {
+    table<TtRow> {
+        name | qty
+    }
+}
+
+// Nullable column: cells may be null where the field is `T?`.
+fn tt_nullable() -> List<TtOpt> {
+    table<TtOpt> {
+        id | label
+        1  | "one"
+        2  | null
+    }
+}
+
+// Build the `fn main()` header at runtime so the test-discovery glob
+// doesn't treat the embedded compile-error fixture as a program.
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn tt_compile(source: string) -> string {
+    let path = "/tmp/avra_table_typed_phasec.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "typed table literals — edges" {
+    then "explicit table<Row> flows into a List<Row> parameter" {
+        tt_total(table<TtRow> {
+            name | qty
+            "a"  | 4
+            "b"  | 6
+        }) == 10
+    }
+    then "bare table arg infers row type from the parameter" {
+        tt_total(table {
+            name | qty
+            "a"  | 4
+            "b"  | 6
+        }) == 10
+    }
+    then "inference through mut binding, then push" {
+        tt_mut_first() == "c"
+    }
+    then "single-column single-row table" {
+        let r = tt_single()
+        r.length == 1 && r[0].qty == 9
+    }
+    then "header-only table is an empty list" {
+        tt_empty().length == 0
+    }
+    then "nullable column accepts null cells" {
+        let rows = tt_nullable()
+        rows.length == 2 && rows[0].label == "one" && rows[1].label == null
+    }
+}
+
+spec "typed table literals — Phase C error" {
+    then "context-free table reports F1042" {
+        let out = tt_compile(
+            "type Cf = { a: int, b: int }
+${MAIN_HEADER} {
+    let xs = table {
+        a | b
+        1 | 2
+    }
+}")
+        out.contains("F1042")
+    }
+    then "explicit table<Row> in the same shape compiles clean" {
+        let out = tt_compile(
+            "type Cf = { a: int, b: int }
+${MAIN_HEADER} {
+    let xs = table<Cf> {
+        a | b
+        1 | 2
+    }
+}")
+        !out.contains("F1042")
+    }
+}

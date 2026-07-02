@@ -1,0 +1,100 @@
+// WHY: forge-crafting-intepreters-pyly (nominal class). An enum constructor
+// with a wrong-typed NOMINAL payload — `E.V(Other { … })` where the field is a
+// DIFFERENT struct `Inner`, both pointer-represented — compiled clean and
+// corrupted memory at runtime (a wrong-shaped value read through the field's
+// slot). The repr-class subset (scalar-vs-ptr) was already gated; the nominal
+// ptr-vs-ptr class needed SOUND cross-package type identity, which raw vtype_eq
+// lacked: the same type is represented as .Struct in one position and .Enum in
+// another (the parser defaults nominal annotations to .Struct), and counter
+// TypeIds diverge across package registries (op3w). The fix routes the gate
+// through CANONICAL registry ids (tc_nominal_payload_mismatch → tc_nominal_id),
+// which resolve FQN and short names to one id and ignore the Struct/Enum wrapper.
+//
+// This pins: a genuine struct/enum nominal mismatch is F1000; the matching type
+// checks clean; and a generic type-param payload is NOT falsely flagged.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn pyly_out(source: string) -> string {
+    let path = "/tmp/avra_pyly_nominal_gate.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "pyly: a wrong-typed struct enum-payload is F1000" {
+    then "`Other` into an `Inner` field is rejected" {
+        let out = pyly_out("type Inner = { a: int }
+type Other = { b: int }
+enum E { V(x: Inner) }
+fn main() {
+    let e = E.V(Other { b: 1 })
+    println(\"x\")
+}")
+        // Assert the SPECIFIC nominal gate fired (its `(type mismatch)` suffix),
+        // not merely some F1000 — F1000 is shared by ~10 gates, so a bare-code
+        // assertion would pass even if a different gate rejected for the wrong
+        // reason.
+        out.contains("F1000") && out.contains("(type mismatch)")
+    }
+    then "the matching `Inner` payload checks clean" {
+        let out = pyly_out("type Inner = { a: int }
+enum E { V(x: Inner) }
+fn main() {
+    let e = E.V(Inner { a: 1 })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "pyly: a user struct with a `node` field does NOT mask a payload mismatch" {
+    then "an `Inner` into a `{ node: Inner }` `Wrap` field is still rejected" {
+        // Regression guard: the 703y span bridge (tc_is_spanned_of) used to fire
+        // for ANY struct with a field named `node` whose type matched the payload,
+        // so a wrong-typed value flowed through the slot uncaught. `node` is an
+        // ordinary field name; only the actual AST wrappers SExpr/SStmt may bridge.
+        let out = pyly_out("type Inner = { a: int }
+type Wrap = { node: Inner, line: int }
+enum E { V(w: Wrap) }
+fn main() {
+    let e = E.V(Inner { a: 1 })
+    println(\"x\")
+}")
+        out.contains("F1000") && out.contains("(type mismatch)")
+    }
+    then "the matching `Wrap` payload checks clean" {
+        let out = pyly_out("type Inner = { a: int }
+type Wrap = { node: Inner, line: int }
+enum E { V(w: Wrap) }
+fn main() {
+    let e = E.V(Wrap { node: Inner { a: 1 }, line: 0 })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "pyly: an enum-into-enum nominal mismatch is F1000" {
+    then "a `ColorB` value into a `ColorA` field is rejected" {
+        let out = pyly_out("enum ColorA { Red, Blue }
+enum ColorB { Up, Down }
+enum E { V(c: ColorA) }
+fn main() {
+    let e = E.V(ColorB.Up)
+    println(\"x\")
+}")
+        out.contains("F1000") && out.contains("(type mismatch)")
+    }
+}
+
+spec "pyly: a generic type-param payload is not falsely flagged" {
+    then "a payload bound to the enum's own type param checks clean" {
+        let out = pyly_out("enum Box<T> { Of(v: T) }
+fn main() {
+    let b = Box.Of(5)
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}

@@ -1,0 +1,801 @@
+// WHY: Pure-AST helpers for assembling a synthetic test program from a
+// set of `_test.av` source files. Used by the `avra test` driver to
+// stitch each test file into one List<SStmt>, hoist package modules so
+// each @std package appears only once, and prepend the externs the
+// test harness binds against.
+//
+// All functions here are pure on the AST side — no I/O, no argv, no
+// process exit. Any caller (CLI driver, IDE plugin, fuzz harness) can
+// reuse them to build a test program.
+
+use core.{
+    Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry,
+    Expr, SExpr, Annotation, FieldInit,
+    sstmt_dummy, sstmt_at,
+    sexpr_dummy,
+    avra_shell_exec,
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+    avra_file_mtime,
+}
+use features.modules.{
+    hoist_package_modules, HoistSplit,
+    resolve_module_files, modules_dirname, find_packages_dir,
+    dedup_modules,
+}
+use parse.{parse_program_source_at}
+use diagnostics.{bag_has_errors, render_bag}
+use pathutil.{basename_no_ext}
+use build.{llvm_prefix_dir}
+use list_ops.{list_concat}
+use @std.crypto.{sha256_hex, sha256_file}
+
+// 4szi.1: in-process memo for read_or_compute_toolchain_fp. The
+// toolchain fp doesn't change for the lifetime of a bs2 process —
+// the binary itself, runtime.o, llvm_wrapper.o, AND every
+// packages/std-avrac/src .av file are all stable. With the memo,
+// only the first cached_fixture_capture call per process does the
+// sidecar + find-newer dance; every subsequent call returns the
+// memoized string immediately, saving a fork+exec per call.
+extern fn avra_test_toolchain_fp_get() -> string
+extern fn avra_test_toolchain_fp_set(fp: string)
+// Advisory lock serializing concurrent cold-misses on one fixture:
+// bs2 emits the fixture's .ll/.o at fixed sibling paths, so two
+// simultaneous runs of the same fixture (parallel units or parallel
+// shards) would race on those artifacts. Lock fd in, fd out.
+extern fn avra_file_lock_exclusive(path: string) -> int
+extern fn avra_file_unlock(fd: int)
+
+/// Drop every `extern fn` declaration from the list.
+///
+/// Test files re-import the extern declarations the runtime supplies
+/// (`avra_test_*`); when we then concatenate the file's body into a
+/// shared program, those externs would collide with the canonical
+/// set we prepend in `prepend_test_externs`. Stripping them once on
+/// each test file keeps a single declaration of each runtime hook in
+/// the assembled program.
+export fn strip_externs(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for ss in stmts {
+        match ss.node {
+            .ExternFn(_, _, _) -> {}
+            _ -> out.push(ss)
+        }
+    }
+    out
+}
+
+// ── AST builder mini-DSL ────────────────────────────────────────────
+//
+// `prepend_test_externs` and `build_guarded_spec_call` both compose
+// nested cons-chains by hand. The helpers below hide that ceremony so
+// the call sites read top-to-bottom in declaration order rather than
+// inside-out. They're test_runner-local because they bake in
+// dummy-span metadata (`sstmt_dummy` / `sexpr_dummy`); other AST
+// consumers may want real spans.
+
+/// Single extern declaration row. Drives `prepend_test_externs`'s
+/// table-driven prepend loop so the runtime contract reads as a
+/// vertical list instead of five nested `List` pushes.
+type RuntimeExtern = { name: string, params: List<ParamEntry>, ret: ValueType }
+
+/// Convert `List<RuntimeExtern>` into prepended `ExternFn` stmts in
+/// declaration order. Builds a fresh List with externs first, then
+/// the existing stmts.
+fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for d in decls {
+        out.push(sstmt_dummy(Stmt.ExternFn(d.name, d.params, d.ret)))
+    }
+    for s in stmts {
+        out.push(s)
+    }
+    out
+}
+
+/// Convert a `List<Expr>` into a `List<SExpr>` in declaration order.
+/// Each Expr gets a dummy-span SExpr wrapper so the resulting list
+/// can stand in any call-site position.
+fn expr_list_from(args: List<Expr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    for a in args {
+        out.push(sexpr_dummy(a))
+    }
+    out
+}
+
+/// Build a fresh `List<ParamEntry>` from `(name, type)` rows. Same
+/// pattern as `expr_list_from` — declaration order in, parameter
+/// list out.
+type ParamSpec = { name: string, ty: ValueType }
+
+fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for s in specs {
+        out.push(ParamEntry { name: s.name, vtype: s.ty })
+    }
+    out
+}
+
+// ── Runtime extern table ────────────────────────────────────────────
+
+/// The full set of runtime externs every assembled test program
+/// needs to link against:
+///   - `avra_test_summary()        -> int`  → final pass/fail tally
+///   - `avra_test_flush()          -> void` → drain captured-output ring
+///   - `avra_test_capture_start()  -> void`
+///   - `avra_test_capture_stop()   -> string`
+///   - `avra_test_run_spec_guarded(name, file, ln, body) -> int` →
+///     hkms.3: invoke one spec block under a sigsetjmp checkpoint so
+///     a fatal signal is caught and the runner advances to the next
+///     spec instead of taking down the bundle. `body` is a no-arg
+///     Avra closure produced by `wrap_specs_with_guard` for every
+///     top-level `spec { ... }` block.
+fn test_runtime_externs() -> List<RuntimeExtern> {
+    let empty_p: List<ParamEntry> = []
+    table<RuntimeExtern> {
+        name                          | params                | ret
+        "avra_test_summary"           | empty_p               | ValueType.Int
+        "avra_test_flush"             | empty_p               | ValueType.Void
+        "avra_test_capture_start"     | empty_p               | ValueType.Void
+        "avra_test_capture_stop"      | empty_p               | ValueType.Str
+        "avra_test_run_spec_guarded"  | guard_extern_params() | ValueType.Int
+    }
+}
+
+/// `fn() -> int` as a structurally-typed param. The runner's source
+/// decl of the guard parses to FnTyped — the table must build the
+/// same shape or the two decls trip the conflicting-extern check.
+fn fn_int_param_type() -> ValueType {
+    let no_params: List<ValueType> = []
+    ValueType.FnTyped(no_params, ValueType.Int)
+}
+
+/// Signature for the per-spec guard runtime fn. Named separately so
+/// the externs table reads cleanly without an inline list literal
+/// on one row.
+fn guard_extern_params() -> List<ParamEntry> {
+    param_list_from(table<ParamSpec> {
+        name   | ty
+        "name" | ValueType.Str
+        "file" | ValueType.Str
+        "ln"   | ValueType.Int
+        "body" | fn_int_param_type()
+    })
+}
+
+/// Cons-prepend the runtime extern table onto a freshly-assembled
+/// test program. See `test_runtime_externs` for the full contract.
+export fn prepend_test_externs(stmts: List<SStmt>) -> List<SStmt> {
+    prepend_externs(stmts, test_runtime_externs())
+}
+
+// ── hkms.3 wrap: spec → guarded call site ──────────────────────────
+
+/// AST transform that wraps each top-level `spec` block in a
+/// crash-isolating call so a SIGSEGV / abort in one spec doesn't kill
+/// the bundle.
+///
+/// For every top-level `Stmt.SpecBlock(name, body)` in `stmts`,
+/// replace the position with:
+///
+///     avra_test_run_spec_guarded(name, file, line, () -> {
+///         <original SpecBlock>
+///         0
+///     })
+///
+/// Why a no-arg **lambda** rather than a hoisted top-level fn:
+///   - Avra closures preserve the enclosing scope, so top-level `mut`
+///     globals in the test file (e.g. `mut hits_alpha: int = 0`) stay
+///     visible inside the wrapped spec body — a hoisted fn would open
+///     a fresh scope and lose them.
+///   - The Avra closure layout (`[TAG, fn_ptr, ...captures]`) is
+///     exactly what `avra_test_run_spec_guarded` consumes via the
+///     existing `avra_closure_call_0` dispatch in runtime.c.
+///   - One less module-level identifier per spec, no synthetic-fn
+///     name to worry about (`is_mangled_method` collisions, etc).
+///
+/// The wrap operates only at the module top level — `spec` blocks
+/// nested inside fn bodies (no realistic use today, but cheap to keep
+/// untouched) compile as before, since their crash would already be
+/// scoped to the enclosing fn call.
+export fn wrap_specs_with_guard(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for ss in stmts {
+        let rewritten = match ss.node {
+            .SpecBlock(name, _) -> build_guarded_spec_call(ss, name)
+            _ -> ss
+        }
+        out.push(rewritten)
+    }
+    out
+}
+
+/// Build the replacement call site:
+///     avra_test_run_spec_guarded("spec name", "file.av", LINE,
+///                                () -> { spec name { body }; 0 })
+///
+/// The spec name retains its outer quotes from the lexeme — codegen's
+/// `strip_quotes` removes one pair so the runtime crash record gets a
+/// clean name. File path is freshly wrapped in quotes for the same
+/// round-trip. The body Lambda returns int (per the extern's
+/// `body: fn() -> int` signature) via the trailing `0`.
+fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
+    let body_stmts: List<SStmt> = [
+        sstmt_dummy(orig.node),
+        sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
+    ]
+    let empty_p: List<ParamEntry> = []
+    let body_lambda = Expr.Lambda(empty_p, Expr.Block(body_stmts))
+    let args = expr_list_from([
+        Expr.String(spec_name_lex),
+        Expr.String("\"" + orig.file + "\""),
+        Expr.Number(string(orig.line)),
+        body_lambda,
+    ])
+    let call = Expr.Call(Expr.Ident("avra_test_run_spec_guarded"), args)
+    sstmt_at(Stmt.Expr(call), orig.line, orig.col, orig.file)
+}
+
+/// Outcome of splitting a stmt list into hoistable package modules
+/// and the per-test body. The runner uses this to keep each
+/// `@std::pkg` module unique across the assembled program.
+export type PackageSplit = {
+    packages: List<SStmt>,
+    body: List<SStmt>,
+}
+
+/// Collect every `@`-prefixed `Module` from the stmt list and
+/// return the residue. Thin wrapper over the resolver's
+/// `hoist_package_modules` so the cli's `test` handler doesn't
+/// need to import `features.modules.resolver` directly. Both
+/// implementations agreed on the recursive walk — sharing the
+/// canonical one removes a second copy that would have drifted.
+export fn split_package_modules(stmts: List<SStmt>) -> PackageSplit {
+    let h = hoist_package_modules(stmts)
+    PackageSplit { packages: h.packages, body: h.body }
+}
+
+/// Resolve the absolute path of the spec_test reporter (`reporter.av`).
+/// Three call sites used to assemble this concatenation by hand
+/// (assemble_test_program here, make_test_inputs + prepare_test_run
+/// in cli/main.av); the literal `std-avrac/src/features/spec_test/`
+/// is now centralised in one place — move the reporter file and one
+/// edit fixes every consumer.
+export fn test_reporter_path(project_dir: string) -> string {
+    find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/reporter.av"
+}
+
+/// Sibling of `test_reporter_path` for the in-process parallel
+/// runner. Inlined into every test bundle the same way.
+export fn test_runner_path(project_dir: string) -> string {
+    find_packages_dir(project_dir) + "std-avrac/src/features/spec_test/runner.av"
+}
+
+
+/// One test file's contribution to an assembled program. The body is
+/// already guard-wrapped; the @std/* packages are split out so the
+/// caller can dedup them across the whole program in one pass.
+type AssembledFile = {
+    mod_name: string,
+    packages: List<SStmt>,
+    wrapped_body: List<SStmt>,
+}
+
+/// Parse + resolve-module-files + hoist + spec-wrap one test file.
+/// Pure on the AST side; errors travel back as Result.Err with the
+/// rendered diagnostic already on stderr (via render_bag).
+///
+/// wd48: LoadedPaths is NOT shared across calls. A shared set made
+/// sibling-Module loads return empty wrappers on second hit, breaking
+/// sibling `use` imports. Cost: @std/* packages re-parsed per file;
+/// `dedup_modules` collapses the duplicate package wrappers by name
+/// at the program-root level.
+fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
+    let content = avra_selfhost_read_file(path)
+    let parsed = parse_program_source_at(content, path)
+    if parsed.had_error || parsed.stmts == null {
+        if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
+        return Result.Err("error parsing ${path}")
+    }
+    let empty_loaded: List<string> = []
+    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded)
+    if mod_resolved.had_error {
+        return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
+    }
+    let split = split_package_modules(mod_resolved.stmts)
+    Result.Ok(AssembledFile {
+        mod_name: basename_no_ext(path),
+        packages: split.packages,
+        // hkms.3: rewrite each top-level `spec` block into a guarded
+        // `avra_test_run_spec_guarded(...)` call so a SIGSEGV / abort
+        // in one spec doesn't take down the bundle.
+        wrapped_body: wrap_specs_with_guard(split.body),
+    })
+}
+
+/// Load + parse the spec_test reporter. Returns an empty list when
+/// the file is missing or fails to parse — the caller still produces
+/// a (broken) test program; the missing reporter fns surface as
+/// "undefined name" diagnostics in the codegen pass, which is the
+/// signal we want when something is wrong with the install.
+fn load_reporter_stmts(project_dir: string) -> List<SStmt> {
+    load_support_stmts(test_reporter_path(project_dir))
+}
+
+/// The in-process parallel runner, inlined right after the
+/// reporter so the synthesized main's `run_test_suite` resolves.
+fn load_runner_stmts(project_dir: string) -> List<SStmt> {
+    load_support_stmts(test_runner_path(project_dir))
+}
+
+/// Load + parse one inlined support file (reporter, runner). An
+/// empty list on missing/parse-failure keeps the caller producing a
+/// (broken) program whose missing names surface as resolve
+/// diagnostics — the right signal for a damaged install.
+fn load_support_stmts(path: string) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if avra_selfhost_file_exists(path) == 0 { return empty }
+    let rsrc = avra_selfhost_read_file(path)
+    let rparsed = parse_program_source_at(rsrc, path)
+    if rparsed.had_error || rparsed.stmts == null { return empty }
+    rparsed.stmts!
+}
+
+/// Synthetic test-bundle entry point:
+///
+///     fn main() -> int {
+///         run_test_suite([TestUnit { name: "<mod>", run: __init_<mod> }, ...])
+///         return test_render_summary()
+///     }
+///
+/// Each test module is @deferred_init (its __init_<mod> exists but
+/// is not auto-called); the runner dispatches the units across
+/// worker threads. Cons-prepended onto the rest of the assembled
+/// program so the declaration lands first in the rendered AST.
+fn synth_test_main(mod_names: List<string>) -> SStmt {
+    let empty_args: List<SExpr> = []
+    mut unit_lits: List<SExpr> = []
+    for mod_name in mod_names {
+        let inits: List<FieldInit> = [
+            FieldInit { name: "name", value: sexpr_dummy(Expr.String("\"${mod_name}\"")) },
+            FieldInit { name: "run", value: sexpr_dummy(Expr.Ident("__init_${mod_name}")) },
+        ]
+        unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
+    }
+    let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("run_test_suite"),
+            [sexpr_dummy(Expr.ListLit(unit_lits))]))),
+        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
+    ]
+    let empty_tp: List<TypeParamEntry> = []
+    let empty_p: List<ParamEntry> = []
+    sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
+}
+
+/// `extern fn __init_<mod>() -> int` rows for every deferred test
+/// module, so the synthesized main's TestUnit literals resolve. The
+/// declarations converge with the definitions codegen emits for the
+/// modules (avra_llvm_add_function is get-or-create by exact type).
+fn unit_init_externs(mod_names: List<string>) -> List<RuntimeExtern> {
+    mut out: List<RuntimeExtern> = []
+    for mod_name in mod_names {
+        let empty_p: List<ParamEntry> = []
+        out.push(RuntimeExtern { name: "__init_${mod_name}", params: empty_p, ret: ValueType.Int })
+    }
+    out
+}
+
+/// Assemble the test program for one action: parse each test file as
+/// its own Stmt.Module, hoist @std packages, inline the spec_test
+/// reporter, and synthesise a main() that returns test_render_summary().
+///
+/// Returned program layout (top-to-bottom): runtime externs,
+/// reporter fns, deduped @std/* packages, per-file test modules,
+/// synthesised `fn main`.
+export fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<List<SStmt>, string> {
+    if test_paths.length == 0 { return Result.Err("no spec test files found") }
+
+    // hkms.1.1 perf pass: iterate test_paths in REVERSE and push so
+    // both `packages` and `modules` come out in the same reverse-of-
+    // test_paths order the prior `list_concat(a.packages, packages)`
+    // + `modules_fwd → modules` reverse-walk produced — without the
+    // O(N²) accumulator-recopy that prepending list_concat forces.
+    //
+    // Why ordering matches: dedup_modules merges per-name bodies via
+    // first-occurrence insertion order (group_by_module_name +
+    // mod_group_merge), so changing this loop's order would shift
+    // the merged module bodies' element order and break the
+    // bs2≡bs3 selfhost fixed point.
+    mut packages: List<SStmt> = []
+    mut modules: List<SStmt> = []
+    mut mod_names: List<string> = []
+    mut i = test_paths.length - 1
+    while i >= 0 {
+        let a = assemble_one_test_file(test_paths[i])?
+        for p in a.packages { packages.push(p) }
+        // Every test module is deferred — codegen synthesizes
+        // __init_<mod> without the top-level auto-call; the runner
+        // invokes the units across worker threads.
+        let deferred: List<Annotation> = [Annotation { name: "deferred_init", args: [] }]
+        modules.push(sstmt_dummy(Stmt.Annotated(deferred,
+            sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))))
+        mod_names.push(a.mod_name)
+        i = i - 1
+    }
+
+    let body = list_concat(load_reporter_stmts(project_dir),
+               list_concat(load_runner_stmts(project_dir),
+               list_concat(dedup_modules(packages), modules)))
+    let with_unit_externs = prepend_externs(prepend_test_externs(body), unit_init_externs(mod_names))
+    let program = list_concat([synth_test_main(mod_names)], with_unit_externs)
+    Result.Ok(program)
+}
+
+/// 0qmm step 3: content-keyed fixture-stdout cache. Replaces the
+/// per-PPID /tmp pattern that re-ran heavy fixtures (cli_metadata_compile,
+/// std_avrac_lib_build, etc.) on every session because PPID changed —
+/// across sessions, nothing carried over. The hash factors in the
+/// fixture source plus every toolchain input that affects its output
+/// (bs2 + runtime.o + llvm_wrapper.o), so a slot is reused across
+/// sessions when those bytes match and invalidated automatically when
+/// they don't.
+///
+/// Performance: the toolchain inputs (bs2/runtime.o/llvm_wrapper.o)
+/// are ~5MB combined; sha256-ing them on every `then` block would
+/// burn ~100ms per call. We memoise the combined toolchain fp via a
+/// sidecar file (`build/cache/fixture_stdout/.toolchain-fp`), valid
+/// as long as that file is newer than every input. Same trick rqwh's
+/// link_shared_fp uses in diagnose.sh.
+///
+/// On Hit: returns the previously-captured stdout. On Miss: runs the
+/// fixture via diagnose.sh, captures stdout, persists, returns.
+export fn cached_fixture_run(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path, "bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true", "run")
+}
+
+/// Same content-keyed cache, but runs `./build/bs2 expand <path>`
+/// instead of building/running the fixture. Used by the
+/// expand_macro_* tests that exercise the macro-expansion CLI and
+/// want a stable stdout snapshot. The cache key includes the verb
+/// ("expand") so a fixture used with --run and `bs2 expand` doesn't
+/// collide.
+export fn cached_fixture_expand(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path, "./build/bs2 expand '${fixture_path}' 2>&1 || true", "expand")
+}
+
+/// Write `source` to `path` via a single-quoted heredoc, escaping
+/// any single quotes in the body so they don't terminate the
+/// surrounding shell quote. Returns nothing — pure side effect.
+/// Used by spec tests that hand-roll their own bs2-invocation
+/// commands (cmd-specific exit-code tests, warning-cap tests) and
+/// don't want the cached_fixture_run wrapper.
+export fn write_fixture(path: string, source: string) {
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+}
+
+/// Convenience: write `source` to `path`, then run it through
+/// `cached_fixture_run`. Centralises the heredoc dance every
+/// fixture-style spec test used to inline. Single-quoted single
+/// quotes in the source are escaped via the standard sh trick
+/// `'\''` so source strings containing quotes don't break the
+/// surrounding heredoc.
+export fn write_fixture_and_run(path: string, source: string) -> string {
+    write_fixture(path, source)
+    cached_fixture_run(path)
+}
+
+/// Content-keyed cache for `./build/bs2 check <path>` invocations
+/// with AVRA_USE_METADATA + AVRA_LIB_OBJS stripped. Used by spec
+/// tests that need to observe typeck-pipeline diagnostics from a
+/// fixture source that imports @std/avrac packages (and therefore
+/// can't run through in-process `check_source`, which skips
+/// file-based module loading). Warm reruns hit the cache and
+/// return the previously-captured stdout in ~10ms instead of
+/// paying a full bs2 startup + compile each time.
+export fn cached_fixture_check_no_metadata(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path,
+        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture_path}' 2>&1 || true",
+        "check-no-metadata")
+}
+
+/// Same as cached_fixture_run, but strips AVRA_USE_METADATA + AVRA_LIB_OBJS
+/// from the env so the fixture sees @comptime annotations + bodies
+/// (metadata mode strips them per 9p1d). Required by tests that
+/// exercise derive_walker / quote_expr / other @comptime macros.
+export fn cached_fixture_run_no_metadata(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path,
+        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true",
+        "run-no-metadata")
+}
+
+/// Convenience: write_fixture + cached_fixture_run_no_metadata.
+/// Centralises the run_capture pattern duplicated across walker /
+/// decoder tests (8+ inline copies before this helper).
+export fn write_fixture_and_run_no_metadata(path: string, source: string) -> string {
+    write_fixture(path, source)
+    cached_fixture_run_no_metadata(path)
+}
+
+/// 6w6v: content-keyed cache for fixtures that need BOTH bs2 compile
+/// stderr (the warning bag) AND runtime stdout. The standard
+/// cached_fixture_run routes through diagnose.sh, which drops compile
+/// stderr on success — so any test that asserts on a compile-time
+/// warning (F9xxx, F0xxx informational) can't use it. Without a cached
+/// alternative, those tests fall back to hand-rolled shell-outs that
+/// pay full bs2 + llc + cc + run on every invocation (~734ms warm for
+/// expand_introduces_validation_test).
+///
+/// The script: bs2 compile + llc + cc + run, capturing combined
+/// stderr+stdout from compile and the run binary. AVRA_USE_METADATA
+/// and AVRA_LIB_OBJS are preserved (caller's responsibility — usually
+/// inherited from the test runner's env).
+///
+/// Returns concat of "compile\n + run". Same shape every hand-rolled
+/// run_capture has used for the warning-bag tests; lets the test stay
+/// a 1-line call with no shell escaping.
+export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
+    let llvm_pfx = llvm_prefix_dir()
+    let is_mac = avra_host_os() == "macos"
+    let cxxlib = if is_mac { "-lc++" } else { "-lstdc++" }
+    let ld_sel = if is_mac { "" } else { "-fuse-ld=lld" }
+    // AVRA_LIB_OBJS is colon-separated; translate to a space-separated
+    // string in shell. Done inside the cache cmd so the cache key
+    // doesn't have to factor environment — toolchain_fp covers the
+    // bs2/runtime/wrapper hashes; AVRA_LIB_OBJS contents change only
+    // when those underlying .o files change.
+    let extra_objs_expr = "$(printf '%s\\n' \"$AVRA_LIB_OBJS\" | tr ':' ' ')"
+    // The compile rides a cross-process slot (diagnose.sh --slot-exec):
+    // uncapped parallel bs2 fixture compiles OOM under the per_file
+    // suite's shard × jobs fan-out.
+    let cmd = "out_c=$(bash scripts/diagnose.sh --slot-exec ./build/bs2 compile '${fixture_path}' 2>&1 || true)\n" +
+              "${llvm_pfx}/bin/llc -relocation-model=pic -filetype=obj '${fixture_path}.ll' -o '${fixture_path}.o' >/dev/null 2>&1 || true\n" +
+              "cc '${fixture_path}.o' build/runtime.o build/llvm_wrapper.o ${extra_objs_expr} ${ld_sel} -L${llvm_pfx}/lib -lLLVM ${cxxlib} -o '${fixture_path}.bin' >/dev/null 2>&1 || true\n" +
+              "out_r=$('${fixture_path}.bin' 2>&1 || true)\n" +
+              "printf '%s\\n%s' \"$out_c\" \"$out_r\""
+    cached_fixture_capture(fixture_path, cmd, "compile-and-run")
+}
+
+/// The fixture-stdout capture cache directory, relative to PWD. Single
+/// source of truth for the layout: both the writer (cached_fixture_capture)
+/// and the `bs2 cache clear-failed` evictor compose their paths from this,
+/// so they can never disagree on where captures live.
+export fn fixture_stdout_cache_dir() -> string { "build/cache/fixture_stdout" }
+
+/// fxfz: source directive a fixture embeds (as a comment) to opt into
+/// "stateful" cache treatment. Defined once so the producer (the fixture
+/// source) and the consumer (fixture_is_stateful) key on the same token — a
+/// raw duplicated sentinel would drift silently and quietly re-open the freeze.
+export const FIXTURE_STATEFUL_MARKER: string = "@@fixture-stateful@@"
+
+/// fxfz: true when the fixture's SOURCE opts into stateful cache treatment —
+/// it pre-builds @std packages into the SHARED packages/*/build caches and
+/// probes the resulting artifacts, build state that lives OUTSIDE the cache
+/// key (toolchain fp + fixture source). Detected from the source rather than
+/// the captured stdout so a run that is killed mid-capture (the OOM case fxfz
+/// guards) can't drop the opt-in along with the truncated output.
+export fn fixture_is_stateful(fixture_path: string) -> bool {
+    avra_selfhost_read_file(fixture_path).contains(FIXTURE_STATEFUL_MARKER)
+}
+
+/// Shared helper. The verb is folded into the cache key so two
+/// different command shapes against the same fixture don't share a
+/// slot; everything else (toolchain fp + file hash + fixture path)
+/// matches cached_fixture_run's pre-existing scheme.
+///
+/// cbg3.1: captured output is rejected from the cache when it carries
+/// the signature of an aborted run (kernel kill notice, diagnose.sh
+/// shell trap line). When the suite runs in --per_file mode several
+/// `diagnose.sh --run` invocations share `$BUILD_DIR/last_run.log`;
+/// if one process is jetsam-killed mid-compile, the shell's "Killed: 9"
+/// message + the contents of the sibling process's last_run.log end
+/// up on this fixture's stdout. Without validation we'd cache that
+/// garbage forever — every later test hits a corrupted slot, fails
+/// with no diff in source, and only `make clean` clears it. Refusing
+/// to persist such outputs makes the next run re-execute the fixture
+/// and pick up a clean stdout.
+fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> string {
+    let cache_dir = fixture_stdout_cache_dir()
+    let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
+    let fixture_h = sha256_file(fixture_path)
+    let key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
+    let cache_path = "${cache_dir}/${key}.out"
+    if avra_selfhost_file_exists(cache_path) == 1 {
+        return avra_selfhost_read_file(cache_path)
+    }
+    let _ = avra_mkdir_p(cache_dir)
+    // Serialize cold-misses per FIXTURE (not per cache slot): bs2
+    // writes the fixture's .ll/.o at fixed sibling paths, so any two
+    // concurrent runs of one fixture — same verb or different verbs
+    // (run vs expand vs check share the same .ll!) — race on those
+    // artifacts, and the loser historically captured garbage stdout.
+    // The lock makes the second runner WAIT; for same-slot waiters
+    // the post-acquire re-check then reuses the winner's published
+    // result instead of re-running at all.
+    let lock_fd = avra_file_lock_exclusive("${cache_dir}/${sha256_hex(fixture_path)}.lock")
+    if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
+        let cached = avra_selfhost_read_file(cache_path)
+        avra_file_unlock(lock_fd)
+        return cached
+    }
+    let out = avra_shell_exec(cmd)
+    if fixture_output_is_publishable(out, fixture_is_stateful(fixture_path)) {
+        let _ = avra_selfhost_write_file(cache_path, out)
+    }
+    avra_file_unlock(lock_fd)
+    out
+}
+
+/// True when a captured fixture stdout carries a PROBE failure — a LINE of the
+/// form `PROBE <name>: FAIL` (optionally `PROBE <name>: FAIL <detail>`), the
+/// shape the `probe()` helper emits. Anchored to that line convention (the line
+/// must START with `PROBE `) rather than matching a bare `: FAIL` substring, so
+/// a PASSING capture that merely mentions failure in running text — `step: FAIL
+/// recovered`, `: FAILED`, `: FAILURE` — is never mistaken for a probe FAIL.
+/// Shared by the cache write-gate (fixture_output_is_publishable, stateful
+/// branch) and the `bs2 cache clear-failed` evictor, so the two can never
+/// disagree about what counts as a frozen failure — a looser match would let
+/// the evictor throw away a warm passing capture the write-gate deliberately
+/// kept. (Fixture stdout is raw text with no AST to inspect, so the documented
+/// `PROBE <name>: FAIL` line shape is the structural anchor available.)
+export fn capture_has_probe_failure(out: string) -> bool {
+    for line in out.split("\n") {
+        if line.starts_with("PROBE ") && (line.ends_with(": FAIL") || line.contains(": FAIL ")) {
+            return true
+        }
+    }
+    false
+}
+
+/// cbg3.1 + zp5b: classify the captured output as safe-to-cache or
+/// not. The patterns rejected here are environmental noise produced by
+/// the shell/kernel/diagnose.sh when a fixture's bs2 invocation is
+/// interrupted or aborts unexpectedly — they are not legitimate
+/// fixture stdout, so caching them would freeze a transient failure
+/// into a permanent one (the historic zp5b incident). The cache layer
+/// then re-runs the fixture on the next call and gets a clean capture.
+///
+/// Each predicate matches a class of failure that is ALWAYS spurious
+/// from the fixture's perspective:
+///   - `scripts/diagnose.sh: line ` — bash trap line printed when the
+///     wrapper script's compile/run step is killed mid-flight.
+///   - `Killed: 9` / `Killed: 15` — macOS jetsam or external SIGKILL/
+///     SIGTERM of bs2; never an intentional test outcome.
+///   - `Bus error` / `Segmentation fault` — bs2 process crash.
+///   - `bs2 codegen failed` / `bs2 compile failed` — diagnose.sh's
+///     `die` markers (scripts/diagnose.sh:466,520,547,562,576). These
+///     fire ONLY when the fixture failed to build at all — no test in
+///     the suite intentionally asserts on these strings (grepped).
+///
+/// We deliberately do NOT filter generic "FAIL" or F-code (F0001 …
+/// F9999) tokens: many spec/typeck tests intentionally assert that a
+/// specific F-code fires, and rejecting them would force a re-run
+/// every time. Zero-cost on the happy path is the requirement zp5b
+/// reopened with. (The on-demand `bs2 cache clear-failed` command is
+/// the escape hatch for a generic FAIL frozen by a one-off transient.)
+///
+/// fxfz: `fixture_stateful` (computed by `fixture_is_stateful` from the
+/// fixture SOURCE) marks a fixture that pre-builds @std packages into the
+/// SHARED `packages/*/build` caches and probes the resulting artifacts —
+/// build state NOT covered by the fixture cache key (toolchain fp + fixture
+/// source). A capture taken while that shared cache sat in a corrupt /
+/// half-published state would otherwise be frozen and replayed forever, since
+/// repairing the cache changes neither key input (the historic fxfz freeze:
+/// `cli_metadata_compile`'s `PROBE std_cli_meta_present: FAIL`). So when a
+/// stateful fixture reports a probe FAIL (`capture_has_probe_failure`), reject
+/// the capture and let the next invocation re-probe once the build state is
+/// consistent. Happy captures (every probe `: ok`) carry no probe FAIL, so they
+/// cache normally — zero cost on the passing path. A fixture asserting an
+/// EXPECTED failure simply omits the stateful directive, keeping its FAIL
+/// cacheable.
+export fn fixture_output_is_publishable(out: string, fixture_stateful: bool) -> bool {
+    if fixture_stateful && capture_has_probe_failure(out) { return false }
+    if out.contains("scripts/diagnose.sh: line ") { return false }
+    if out.contains("Killed: 9") { return false }
+    if out.contains("Killed: 15") { return false }
+    // An OOM kill (or any SIGKILL) shows up as a BARE `Killed` line from
+    // the shell — no signal number — when a sub-build is reaped under
+    // memory pressure, and bs2 then reports `compile produced no IR`.
+    // Neither is ever legitimate fixture stdout, and caching them freezes
+    // a transient out-of-memory failure into a permanent one (the fxfz
+    // hazard): a heavy fixture that got OOM-killed once would fail forever
+    // even after the pressure clears. Reject so the next run re-captures.
+    if out.contains("\nKilled\n") || out.starts_with("Killed\n") || out.ends_with("\nKilled") || out == "Killed" { return false }
+    if out.contains("compile produced no IR") { return false }
+    if out.contains("Out of memory") { return false }
+    if out.contains("Bus error") { return false }
+    if out.contains("Segmentation fault") { return false }
+    if out.contains("bs2 codegen failed") { return false }
+    if out.contains("bs2 compile failed") { return false }
+    // 927f: a fixture that fails to LINK (duplicate/undefined symbols
+    // from a stale or inconsistent metadata/realobj state) emits the
+    // linker's error to stdout instead of its PROBE lines. Caching that
+    // freezes a transient build-state failure into a permanent one — the
+    // same hazard as the codegen/compile markers above. These strings are
+    // never legitimate fixture stdout (grepped: no test asserts on them),
+    // so reject them and let the next invocation re-capture once the build
+    // state is consistent.
+    if out.contains("ld.lld: error:") { return false }
+    if out.contains("duplicate symbol") { return false }
+    if out.contains("undefined symbol") { return false }
+    if out.contains("ld returned ") { return false }
+    if out.contains("collect2: error:") { return false }
+    if out.contains("shard compile failed") { return false }
+    // jdgo: continuous dispatch (cbg3 follow-up) increased concurrent
+    // diagnose.sh invocations. The shell script's `cc -o ${out}.tmp`
+    // followed by `mv ${out}.tmp $out` is not race-safe under high
+    // concurrency: when two shards' diagnose.sh stages write to /tmp
+    // simultaneously (e.g. per-shard temp paths colliding under heavy
+    // parallel cold load), the `mv` step prints `mv: rename ... : No
+    // such file or directory`. The rest of the captured output is
+    // typically the previous fixture's stale bin stdout — caching that
+    // freezes the wrong answer. Reject it so the next test invocation
+    // re-runs cleanly. Root-cause fix would isolate diagnose.sh's
+    // working artifacts per-shard, but that's a separate scope.
+    if out.contains("mv: rename ") { return false }
+    true
+}
+
+/// Memoised hash of (bs2, runtime.o, llvm_wrapper.o). Read from the
+/// sidecar when present and newer than every input; recomputed
+/// otherwise. The sidecar is plain hex (64 chars), so an unrelated
+/// touch (e.g. `make clean` deleting the cache dir) just forces one
+/// recomputation, never a wrong hit.
+///
+/// 4szi.1: an in-process memo layered on top short-circuits the
+/// sidecar logic entirely after the first call per process. The
+/// sidecar's invariants imply that within a single bs2 invocation
+/// no input can change (the binary can't rebuild itself mid-run),
+/// so the first call's result holds for the whole process.
+fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
+    let memoed = avra_test_toolchain_fp_get()
+    if memoed != "" { return memoed }
+    let computed = compute_or_read_toolchain_fp_sidecar(cache_dir)
+    avra_test_toolchain_fp_set(computed)
+    computed
+}
+
+/// The cold-path sidecar logic. Computes the fingerprint from disk
+/// (or reads it from the cache directory's sidecar when valid).
+/// Carved out from `read_or_compute_toolchain_fp` so the memoised
+/// fast path stays a 2-line check that's obviously a no-op when
+/// the memo is warm.
+fn compute_or_read_toolchain_fp_sidecar(cache_dir: string) -> string {
+    let sidecar = "${cache_dir}/.toolchain-fp"
+    if avra_selfhost_file_exists(sidecar) == 1
+        && sidecar_newer_than_inputs(sidecar) {
+        return avra_selfhost_read_file(sidecar)
+    }
+    let bs2_h = sha256_file("build/bs2")
+    let runtime_h = sha256_file("build/runtime.o")
+    let wrapper_h = sha256_file("build/llvm_wrapper.o")
+    // so07.7.11: hash std-avrac source so derive_walker / quote_expr /
+    // other macro-shaping edits invalidate cached fixture stdout even
+    // when the resulting bs2 binary happens to hash the same (unlikely
+    // but possible with cache-hit paths). `shasum` invocation is ~50ms
+    // amortised across the suite — sidecar_newer_than_inputs short-
+    // circuits when no src changed, so the cost only hits on miss.
+    let src_h = sha256_hex(avra_shell_exec("find packages/std-avrac/src -name '*.av' -type f | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256 | awk '{print $1}'"))
+    let combined = sha256_hex("${bs2_h}:${runtime_h}:${wrapper_h}:${src_h}")
+    let _ = avra_mkdir_p(cache_dir)
+    let _ = avra_selfhost_write_file(sidecar, combined)
+    combined
+}
+
+fn sidecar_newer_than_inputs(sidecar: string) -> bool {
+    let s_mtime = avra_file_mtime(sidecar)
+    if s_mtime <= avra_file_mtime("build/bs2") { return false }
+    if s_mtime <= avra_file_mtime("build/runtime.o") { return false }
+    if s_mtime <= avra_file_mtime("build/llvm_wrapper.o") { return false }
+    // so07.7.11: also reject the sidecar when any std-avrac src is
+    // newer. `find -newer <ref> -print -quit` returns the first match
+    // and exits — O(1)-ish across the tree. Empty stdout = no src
+    // changed since the last fp computation.
+    let newer = avra_shell_exec("find packages/std-avrac/src -name '*.av' -type f -newer '${sidecar}' -print -quit 2>/dev/null")
+    newer == ""
+}
+
+

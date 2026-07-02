@@ -1,0 +1,55 @@
+// forge-crafting-intepreters-opo3.3: ctx_lookup_type returns
+// eagerly-expanded ResolvedTypes — each field's .ty carries its
+// own .fields rather than being shallow (name+kind only).
+//
+// Before: ctx_lookup_type("DoubleWrap").fields[0].ty.fields would
+// be empty (depth-1). A macro walking deep had to call lookup_type
+// per level.
+//
+// After: depth cap = 4, visited-set guards recursion. A field
+// chain Outer { mid: Mid }, Mid { leaf: int } is reachable in one
+// lookup: outer.fields[0].ty.fields[0].ty.canonical_name == "int".
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_lookup_type eagerly expands nested fields" {
+    then "DoubleWrap.value.node reaches int two levels down without re-lookup" {
+        let out = write_fixture_and_run("/tmp/avra_ctx_lookup_type_eager_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type}\n" +
+            "\n" +
+            "type Wrap = { node: int }\n" +
+            "type DoubleWrap = { value: Wrap }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let t = ctx_lookup_type(ctx, \"DoubleWrap\")\n" +
+            "    mut deep = \"NULL\"\n" +
+            "    if t != null {\n" +
+            "        let outer = t!\n" +
+            "        if outer.fields != null {\n" +
+            "            let outer_fields = outer.fields!\n" +
+            "            if outer_fields.length > 0 {\n" +
+            "                let value_field = outer_fields[0]\n" +
+            "                let mid = value_field.ty\n" +
+            "                if mid.fields != null {\n" +
+            "                    let mid_fields = mid.fields!\n" +
+            "                    if mid_fields.length > 0 {\n" +
+            "                        deep = mid_fields[0].ty.canonical_name\n" +
+            "                    }\n" +
+            "                }\n" +
+            "            }\n" +
+            "        }\n" +
+            "    }\n" +
+            "    let msg = \"deep=\" + deep\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("deep=int")
+    }
+}

@@ -1,0 +1,136 @@
+// WHY: Static analysis to identify cycle-capable types for targeted
+// RC cycle detection (spec Axis 9.5). A type is cycle-capable if it
+// can reach itself through any chain of pointer-typed fields.
+// This analysis runs at compile time before release function emission.
+// Cycle-capable types get avra_rc_suspect() calls in their release
+// functions when refcount decrements to non-zero.
+
+use core.{FieldEntry, ValueType, Variant}
+use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
+use list_ops.{list_push_copy, list_any}
+
+/// Set of type names whose layout can reach back to itself through
+/// some chain of pointer-typed fields. Built once by `analyze_cycles`
+/// and consulted by release-fn emission so cycle-capable types call
+/// `avra_rc_suspect()` on non-zero decrements (spec Axis 9.5).
+///
+/// Order is irrelevant — this is a name set used purely for
+/// membership queries, not iteration.
+
+/// Membership test for the cycle-capable set.
+export fn cycle_set_has(cs: List<string>, name: string) -> bool {
+    list_any(cs, (n: string) -> n == name)
+}
+
+/// DFS visited set — tracks types already explored on the current
+/// search path so reachability never loops forever. Each branch in
+/// the search gets its OWN list via `list_push_copy` (which copies)
+/// so a sibling branch's recursion doesn't pollute another's
+/// visited frontier.
+
+/// Membership test for the visited set.
+fn visited_has(vs: List<string>, name: string) -> bool {
+    list_any(vs, (n: string) -> n == name)
+}
+
+
+// ── Core DFS reachability check ──
+// Starting from a type's fields, can we reach `target` through
+// any chain of struct/enum field types?
+
+/// True when at least one field in `fields` can reach `target`.
+/// Recursion entry for struct types.
+fn fields_reach_target(fields: List<FieldEntry>, target: string, visited: List<string>, structs: StructReg, enums: EnumReg) -> bool {
+    for f in fields {
+        if type_reaches_target(f.resolved, target, visited, structs, enums) { return true }
+    }
+    false
+}
+
+/// True when at least one variant's payload can reach `target`.
+/// Recursion entry for enum types.
+fn variants_reach_target(variants: List<Variant>, target: string, visited: List<string>, structs: StructReg, enums: EnumReg) -> bool {
+    for v in variants {
+        if fields_reach_target(v.fields, target, visited, structs, enums) { return true }
+    }
+    false
+}
+
+/// True when traversing `ty` can reach `target`. Marks names as
+/// visited before recursing so a self-loop terminates after one
+/// hop. Lists and Newtypes recurse into their inner type. Leaf
+/// types (Int, Bool, Str, Map, Closure, …) trivially can't form a
+/// cycle, since they don't carry user-typed pointers.
+fn type_reaches_target(ty: ValueType, target: string, visited: List<string>, structs: StructReg, enums: EnumReg) -> bool {
+    match ty {
+        .Struct(name, _, _) -> {
+            if name == target { return true }
+            if visited_has(visited, name) { return false }
+            let vs2 = list_push_copy(visited, name)
+            let lookup = struct_reg_lookup(structs, name)
+            if lookup.found {
+                fields_reach_target(lookup.fields, target, vs2, structs, enums)
+            } else {
+                false
+            }
+        }
+        .Enum(name, _, _) -> {
+            if name == target { return true }
+            if visited_has(visited, name) { return false }
+            let vs2 = list_push_copy(visited, name)
+            let elookup = enum_reg_lookup(enums, name)
+            if elookup.found {
+                variants_reach_target(elookup.variants, target, vs2, structs, enums)
+            } else {
+                false
+            }
+        }
+        .List(el) -> type_reaches_target(el, target, visited, structs, enums)
+        .Newtype(_, nt_inner, _) -> type_reaches_target(nt_inner, target, visited, structs, enums)
+        // Leaf types cannot form cycles
+        _ -> false
+    }
+}
+
+// ── Entry point: analyze all types ──
+// Walk struct and enum registries. For each type, check if any of
+// its fields can reach back to itself. Returns the set of all
+// cycle-capable type names.
+
+/// Walk every declared struct type. For each, run a self-targeted
+/// reachability check; record the name when a cycle exists.
+fn analyze_structs(reg: StructReg, cs: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
+    mut out = cs
+    for m in reg.ord {
+        let empty: List<string> = []
+        let visited = list_push_copy(empty, m.name)
+        if fields_reach_target(m.fields, m.name, visited, structs, enums) {
+            out = out.push(m.name)
+        }
+    }
+    out
+}
+
+/// Walk every declared enum type. For each, run a self-targeted
+/// reachability check across its variants; record the name when a
+/// cycle exists.
+fn analyze_enums(reg: EnumReg, cs: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
+    mut out = cs
+    for m in reg.ord {
+        let empty: List<string> = []
+        let visited = list_push_copy(empty, m.name)
+        if variants_reach_target(m.variants, m.name, visited, structs, enums) {
+            out = out.push(m.name)
+        }
+    }
+    out
+}
+
+/// Public entry point. Computes the cycle-capable set across every
+/// declared struct and enum type. Run once during `compile_program`,
+/// then carried through release-fn emission.
+export fn analyze_cycles(structs: StructReg, enums: EnumReg) -> List<string> {
+    let empty: List<string> = []
+    let cs2 = analyze_structs(structs, empty, structs, enums)
+    analyze_enums(enums, cs2, structs, enums)
+}

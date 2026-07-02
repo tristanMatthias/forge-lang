@@ -1,0 +1,2952 @@
+// WHY: eval types shared across features. Actual tree-walk
+// evaluator lives in features/eval/mod.av.
+
+use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
+use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
+use core.{Registry, build_registry}
+use list_ops.{list_contains_str}
+
+// WHY: tree-walk expression evaluator — used by `eval` and `check`
+// commands. Interprets AST directly without LLVM, so it works even
+// when codegen would fail. Limited to expressions + simple
+// statements; complex features (match, for, etc.) are codegen-only.
+
+use parse.{parse_expression_source, parse_program_source}
+use core.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, avra_stmt_tag, avra_expr_tag}
+
+// Numeric-literal parsing for the bootstrap evaluator. Originally
+// routed through `float()` (which called avra_selfhost_string_to_float
+// — a `double`-returning C fn). The Avra-side `int` declaration
+// reinterpreted those float-bits as i64, so any arithmetic on
+// parsed numbers produced garbage (e.g. 2 + 3 = 4890910294835986432).
+//
+// Fix: route Number-literal parsing through an honest base-10
+// integer parser. The bootstrap value model is i64 anyway —
+// no real floats — so this is what we always wanted.
+extern fn avra_selfhost_string_to_int(s: string) -> int
+
+/// Parse a base-10 integer from a string. Replaces the older
+/// `float()` wrapper; same call shape, different (correct) impl.
+fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
+
+/// Tagged value used by the tree-walking evaluator. The `kind`
+/// field discriminates which other field holds the payload —
+/// `"number"`/`"string"`/`"bool"`/`"null"` cover the supported
+/// types. Codegen / runtime model is i64; this struct exists
+/// only inside the evaluator.
+///
+/// @field kind         — one of "number" | "string" | "bool" | "null".
+/// @field number_text  — decimal text when kind == "number".
+/// @field text         — string contents when kind == "string".
+/// @field bool_value   — 0/1 when kind == "bool".
+/// One named field on a struct Value. Used by the `"struct"` kind
+/// so eval can carry struct-literal values produced by the comptime
+/// evaluator (lower.av now emits Expr.ListLit + Expr.StructLit for
+/// AST list/struct payloads; the eval side needs first-class kinds
+/// to match).
+export type StructField = {
+    name: string,
+    value: Value,
+}
+
+/// Build a StructField in one expression. Lets callers write
+/// `fields.push(struct_field("x", v))` instead of
+/// `fields.push(StructField { name: "x", value: v })` — the shorthand
+/// is the canonical way to construct a StructField. Prefer it over
+/// the long form so future contributors don't have to choose.
+export fn struct_field(name: string, value: Value) -> StructField {
+    StructField { name, value }
+}
+
+/// Tagged-union value handed back by the evaluator. `kind` selects
+/// which trailing fields are populated. Phase 6 of Components V2
+/// (vez6.6.4) added the `enum_*` fields so eval can carry runtime
+/// AST values (Stmt, Expr, ValueType, list types) — needed so a
+/// macro fn body can `return quote stmt { ... }` and the @expand
+/// pass can extract the resulting Stmt.
+///
+/// fwyx: added `"list"` and `"struct"` kinds so the comptime
+/// decoder can read AST list / struct payloads directly off the
+/// produced Value, instead of walking enum cons-cells. This is what
+/// unblocked the list-enum→List<T> migrations (lkze.9 + kpbp).
+///
+/// kind = "number" | "string" | "bool" | "null"
+///      | "function" | "builtin"
+///      | "enum"     — enum_type / enum_variant / enum_payload set
+///      | "list"     — list_payload set
+///      | "struct"   — struct_type + struct_payload set
+///      | "stmt"     — stmt_payload carries a native Stmt AST node (so07.8 Phase A)
+///      | "expr"     — expr_payload carries a native Expr AST node (so07.8 Phase A)
+///      | "value_type" — value_type_payload carries a native ValueType (so07.8 Phase A)
+///
+/// so07.8 Phase A: the three trailing nullable AST slots make
+/// Stmt / Expr / ValueType first-class runtime values. Today's
+/// encode→eval→decode roundtrip (quote_expr/lower.av::construct_stmt
+/// → eval EnumCtor producing kind="enum" → comptime/eval.av::
+/// enum_value_to_stmt) loses information at every hop because every
+/// new variant must be mirrored across two dispatchers. The new kinds
+/// let macros emit native AST directly and let value_to_stmt /
+/// value_to_expr / value_to_value_type unwrap without a re-decode.
+/// Phase A is purely additive: all 10 existing constructors zero-
+/// initialise the new slots, the eval EnumCtor path still produces
+/// kind="enum" for back-compat, and value_to_* fall back to the
+/// enum decoder when the new slot is null. Phase B+ migrates callers
+/// to produce kind="stmt" / "expr" / "value_type" directly so the
+/// decoder side eventually deletes.
+export type Value = {
+    kind: string,
+    number_text: string,
+    text: string,
+    bool_value: int,
+    enum_type: string,
+    enum_variant: string,
+    enum_payload: List<Value>,
+    list_payload: List<Value>,
+    struct_type: string,
+    struct_payload: List<StructField>,
+    stmt_payload: Stmt?,
+    expr_payload: Expr?,
+    value_type_payload: ValueType?,
+}
+
+/// Final result of an evaluation. `value` is null on failure;
+/// otherwise it carries the produced Value.
+///
+/// @field value         — produced Value, null when an error was raised.
+/// @field had_error     — 1 when evaluation aborted.
+/// @field error_message — diagnostic when had_error is set.
+export type EvalResult = {
+    value: Value?,
+    had_error: int,
+    error_message: string,
+}
+
+/// One local binding for the evaluator. `mutable_binding` is 1
+/// for `mut`, 0 for `let`/`const`. `depth` is the scope depth at
+/// which it was created so `pop_scope_bindings` can drop the
+/// inner-scope entries on scope exit.
+type Binding = {
+    name: string,
+    mutable_binding: int,
+    depth: int,
+    value: Value,
+}
+
+/// One function declaration registered on the evaluator's runtime.
+/// Maps a name to its AST so recursive + mutually-recursive calls
+/// can resolve at call time.
+type FunctionDef = {
+    name: string,
+    params: List<ParamEntry>,
+    body: List<SStmt>,
+}
+
+/// Tree-walk evaluator state. Threaded through every eval step.
+///
+/// @field bindings  — current local bindings (most-recent first).
+/// @field functions — declared functions reachable for calls.
+/// @field depth     — scope depth, used for `pop_scope_bindings`.
+/// @field features  — feature registry, for dispatched eval hooks.
+export type Runtime = {
+    bindings: List<Binding>,
+    functions: List<FunctionDef>,
+    depth: int,
+    features: Registry,
+}
+
+/// Per-step output: updated runtime, computed value, and
+/// error/return flags. Callers chain these together to walk the
+/// program.
+///
+/// @field runtime       — runtime after the step.
+/// @field value         — value produced by the step.
+/// @field had_error     — 1 when the step failed.
+/// @field is_return     — 1 when the step executed a `return`.
+/// @field error_message — diagnostic when had_error is set.
+export type StepResult = {
+    runtime: Runtime,
+    value: Value,
+    had_error: int,
+    is_return: int,
+    error_message: string,
+}
+
+/// Extract `runtime` from a StepResult. Convenience accessor for
+/// callers that only need the threaded state.
+export fn step_runtime(step: StepResult) -> Runtime {
+    step.runtime
+}
+
+/// Extract `value` from a StepResult.
+export fn step_value(step: StepResult) -> Value {
+    step.value
+}
+
+/// Extract `had_error` from a StepResult — true when evaluation
+/// aborted on this step.
+export fn step_had_error(step: StepResult) -> int {
+    step.had_error
+}
+
+/// Extract `is_return` from a StepResult — true when this step
+/// executed a `return` statement.
+export fn step_is_return(step: StepResult) -> int {
+    step.is_return
+}
+
+/// Extract `error_message` from a StepResult.
+export fn step_error_message(step: StepResult) -> string {
+    step.error_message
+}
+
+/// Result of `assign_binding`. `found` distinguishes "binding
+/// existed and was updated" from "no such binding" so callers
+/// can choose between mutating and erroring.
+///
+/// @field bindings      — updated binding list.
+/// @field found         — 1 when the binding existed.
+/// @field had_error     — 1 when the assign failed (e.g. `let`).
+/// @field error_message — diagnostic when had_error is set.
+type AssignBindingsResult = {
+    bindings: List<Binding>,
+    found: int,
+    had_error: int,
+    error_message: string,
+}
+
+/// Format a `Value` as a user-facing string. Numbers preserve
+/// their text representation, booleans render as `true`/`false`,
+/// strings pass through, and null renders as `"null"`.
+export fn render_value(value: Value) -> string {
+    match value.kind {
+        "number" -> value.number_text
+        "string" -> value.text
+        "bool" -> if value.bool_value { "true" } else { "false" }
+        _ -> "null"
+    }
+}
+
+/// Build a successful StepResult from a runtime + value pair.
+/// The error flags are zeroed.
+export fn ok_result(runtime: Runtime, value: Value) -> StepResult {
+    StepResult {
+        runtime,
+        value,
+        had_error: false,
+        is_return: false,
+        error_message: "",
+    }
+}
+
+/// Build an error StepResult with the message prefixed by
+/// `eval error:` so diagnostics distinguish evaluator errors
+/// from compiler errors at a glance.
+export fn error_result(runtime: Runtime, message: string) -> StepResult {
+    StepResult {
+        runtime,
+        value: value_null(),
+        had_error: true,
+        is_return: false,
+        error_message: "eval error: ${message}",
+    }
+}
+
+/// Construct the canonical null Value. All other Value kinds
+/// have helpers to build them; null is the default for missing
+/// or absent results.
+export fn value_null() -> Value {
+    Value {
+        kind: "null",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Truthiness rules for the evaluator: bool returns its own
+/// flag, null is always falsy, every other kind is truthy
+/// (matches the codegen-side `truthy` semantics).
+export fn is_truthy(value: Value) -> bool {
+    match value.kind {
+        "bool" -> value.bool_value
+        "null" -> false
+        _ -> true
+    }
+}
+
+// WHY: tree-walk evaluator for eval/run debug commands.
+// Not part of the compiler pipeline — used for interactive expression evaluation.
+
+use features.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
+
+/// Public entry point for evaluating a single expression.
+/// Parses + walks the resulting Expr, returning an EvalResult
+/// suitable for the `avra eval` CLI.
+export fn eval_expression_source(source: string) -> EvalResult {
+    let parsed = parse_expression_source(source)
+    if parsed.had_error || parsed.expr == null {
+        return EvalResult {
+            value: null,
+            had_error: true,
+            error_message: parsed.error_message,
+        }
+    }
+    eval_parsed_expression(parsed.expr!)
+}
+
+/// Same as eval_expression_source but takes a pre-parsed Expr. Lets
+/// cmd_eval (which now parses through parse_expression_source first
+/// for proper F-code diagnostic rendering) avoid a redundant parse,
+/// matching the execute_program_stmts pattern.
+export fn eval_parsed_expression(expr: Expr) -> EvalResult {
+    finish_result(eval_expr(runtime_new(), expr))
+}
+
+/// Public entry point for evaluating a full program. Parses
+/// the source, runs it through `execute_stmt_list`, and
+/// returns the final EvalResult. Callers that have already
+/// parsed (e.g. cmd_run, which routes through parse_or_fail
+/// for structured F-code rendering) should use
+/// `execute_program_stmts` instead to avoid a redundant parse.
+export fn execute_program_source(source: string) -> EvalResult {
+    let parsed = parse_program_source(source)
+    if parsed.had_error || parsed.stmts == null {
+        return EvalResult {
+            value: null,
+            had_error: true,
+            error_message: parsed.error_message,
+        }
+    }
+    execute_program_stmts(parsed.stmts!)
+}
+
+/// Same as `execute_program_source` but takes pre-parsed
+/// statements. Lets callers that handle parse-time diagnostics
+/// upstream (cmd_run via parse_or_fail) avoid a second parse
+/// and still surface F-coded parse errors through the unified
+/// rendering pipeline.
+export fn execute_program_stmts(stmts: List<SStmt>) -> EvalResult {
+    finish_result(execute_stmt_list(runtime_new(), stmts))
+}
+
+/// Render an integer as its canonical decimal text. Strips a
+/// trailing `.0` so `42.0` becomes `42` for CLI output.
+fn render_number(value: int) -> string {
+    let text = string(value)
+    if text.length >= 2 {
+        let suffix = text.substring(text.length - 2, text.length)
+        if suffix == ".0" {
+            return text.substring(0, text.length - 2)
+        }
+    }
+    text
+}
+
+/// Convert the per-step `StepResult` into the public
+/// `EvalResult` returned to CLI callers. Drops runtime + return
+/// flags — they don't matter once execution stops.
+fn finish_result(step: StepResult) -> EvalResult {
+    EvalResult {
+        value: step.value,
+        had_error: step.had_error,
+        error_message: step.error_message,
+    }
+}
+
+/// Direct function call — skips the Call-dispatch overhead
+/// (lookup-by-name, callee Ident eval, per-arg eval_expr) when the
+/// caller already has the fn definition AND pre-resolved arg
+/// values. Used by features/comptime to fold @comptime calls fast.
+///
+/// Returns the StepResult of running `body` with `params` bound to
+/// `arg_values` in a fresh scope of `runtime`. Caller is responsible
+/// for arity (`arg_values.length` should match `params.length`).
+export fn eval_fn_with_resolved_args(runtime: Runtime, params: List<ParamEntry>, body: List<SStmt>, arg_values: List<Value>) -> StepResult {
+    let call_env = enter_scope(runtime)
+    let bound_env = bind_params(call_env, params, arg_values)
+    let body_result = execute_stmt_list(bound_env, body)
+    let restored = exit_scope(body_result.runtime)
+    if body_result.had_error {
+        return StepResult {
+            runtime: restored,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: body_result.error_message,
+        }
+    }
+    ok_result(restored, body_result.value)
+}
+
+/// Convert a list of literal-Expr args into Value form, ready for
+/// `eval_fn_with_resolved_args`. Returns null when any arg isn't a
+/// literal — caller treats null as "can't fold, leave the call alone".
+/// Replaces an explicit `all_args_literal` pre-check + per-arg
+/// `eval_expr` round-trip.
+export fn literal_args_to_values(args: List<SExpr>) -> List<Value>? {
+    mut out: List<Value> = []
+    mut i = 0
+    while i < args.length {
+        let v_opt = literal_expr_to_value(args[i].node)
+        if v_opt == none { return none }
+        out.push(v_opt!)
+        i = i + 1
+    }
+    out
+}
+
+/// Convert a single literal Expr to a Value, or null if the Expr
+/// isn't a literal shape eval can represent directly.
+fn literal_expr_to_value(e: Expr) -> Value? {
+    match e {
+        .Number(text) -> value_number(render_number(parse_num(text)))
+        .String(text) -> value_string(unquote_string(text))
+        .Bool(text) -> value_bool(text == "true")
+        .None -> value_null()
+        _ -> null
+    }
+}
+
+/// Construct a fresh evaluator runtime — empty bindings + fns,
+/// depth zero, full feature registry. Public so external callers
+/// (e.g. compile-time evaluator in features/comptime) can build a
+/// runtime to thread through `execute_stmt` / `eval_expr`.
+export fn runtime_new() -> Runtime {
+    Runtime {
+        bindings: [],
+        functions: [],
+        depth: 0,
+        features: build_registry(),
+    }
+}
+
+/// Build a StepResult that signals an early `return`. The body
+/// of an executing fn checks `is_return` after every step to
+/// short-circuit out.
+fn make_return(runtime: Runtime, value: Value) -> StepResult {
+    StepResult {
+        runtime,
+        value,
+        had_error: false,
+        is_return: true,
+        error_message: "",
+    }
+}
+
+/// Construct a number Value carrying its decimal text. Numbers
+/// keep their text form so the evaluator can echo literals
+/// verbatim (e.g. `1.5` not `1.500000`).
+export fn value_number(text: string) -> Value {
+    Value {
+        kind: "number",
+        number_text: text,
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct a string Value.
+export fn value_string(text: string) -> Value {
+    Value {
+        kind: "string",
+        number_text: "",
+        text,
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct a bool Value (`flag` is 0 or 1).
+export fn value_bool(flag: int) -> Value {
+    Value {
+        kind: "bool",
+        number_text: "",
+        text: "",
+        bool_value: flag,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Open a new lexical scope by bumping the runtime's depth
+/// counter. New bindings created until `exit_scope` carry this
+/// depth so the cleanup pass knows what to drop.
+export fn enter_scope(runtime: Runtime) -> Runtime {
+    runtime with { depth: runtime.depth + 1 }
+}
+
+/// Close the current scope: drop every binding created at the
+/// active depth and decrement the depth counter.
+export fn exit_scope(runtime: Runtime) -> Runtime {
+    runtime with { bindings: pop_scope_bindings(runtime.bindings, runtime.depth), depth: runtime.depth - 1 }
+}
+
+/// Drop every binding whose depth matches the scope being closed.
+/// With push-append storage the inner-scope entries are at the
+/// tail, so popping is just shrinking the list from the right —
+/// no walk needed. The previous recursive form rebuilt the entire
+/// list on every pop; this version shrinks in place.
+fn pop_scope_bindings(bindings: List<Binding>, depth: int) -> List<Binding> {
+    mut local = bindings
+    while local.length > 0 && local[local.length - 1].depth == depth {
+        local.pop()
+    }
+    local
+}
+
+/// Push a new local binding onto the runtime. `mutable_binding`
+/// is 1 for `mut`, 0 for `let`/`const`. The depth is recorded so
+/// `pop_scope_bindings` can drop it later.
+export fn define_binding(runtime: Runtime, name: string, mutable_binding: int, value: Value) -> Runtime {
+    mut new_bindings = runtime.bindings
+    new_bindings.push(Binding {
+        name: name,
+        mutable_binding: mutable_binding,
+        depth: runtime.depth,
+        value: value,
+    })
+    runtime with { bindings: new_bindings }
+}
+
+/// Result of a binding lookup. `found` distinguishes
+/// "binding existed" from "no such binding"; the value is null
+/// on miss.
+///
+/// @field value — the binding's current value (null when not found).
+/// @field found — 1 when the binding existed.
+type LookupResult = {
+    value: Value,
+    found: int,
+}
+
+/// Result of a function lookup. Same convention as
+/// `LookupResult` — empty params + body when not found.
+///
+/// @field params — declared params of the looked-up fn.
+/// @field body   — the fn's body statements.
+/// @field found  — 1 when the fn was registered.
+type FunctionLookupResult = {
+    params: List<ParamEntry>,
+    body: List<SStmt>,
+    found: int,
+}
+
+/// Linear lookup of a binding by name. Returns the most-recent
+/// (top-of-stack) entry so inner-scope `let`s shadow outer ones.
+/// Push-append storage means the most-recent entry is at the tail
+/// — scan back-to-front to preserve the shadowing semantic.
+fn lookup_binding(bindings: List<Binding>, name: string) -> LookupResult {
+    mut i = bindings.length - 1
+    while i >= 0 {
+        let b = bindings[i]
+        if b.name == name { return LookupResult { value: b.value, found: true } }
+        i = i - 1
+    }
+    LookupResult { value: value_null(), found: false }
+}
+
+/// Linear lookup of a function declaration by name. Most-recent
+/// definition wins so re-declared functions in tests behave
+/// predictably — the list is push-appended, so we scan back-to-front.
+fn lookup_function(functions: List<FunctionDef>, name: string) -> FunctionLookupResult {
+    mut i = functions.length - 1
+    while i >= 0 {
+        let f = functions[i]
+        if f.name == name {
+            return FunctionLookupResult { params: f.params, body: f.body, found: true }
+        }
+        i = i - 1
+    }
+    let empty_p: List<ParamEntry> = []
+    let empty_body: List<SStmt> = []
+    FunctionLookupResult { params: empty_p, body: empty_body, found: false }
+}
+
+/// Register a function declaration on the runtime. Functions
+/// don't track depth (they're effectively program-global from
+/// the evaluator's perspective).
+fn define_function(runtime: Runtime, name: string, params: List<ParamEntry>, body: List<SStmt>) -> Runtime {
+    mut new_functions = runtime.functions
+    new_functions.push(FunctionDef { name: name, params: params, body: body })
+    runtime with { functions: new_functions }
+}
+
+/// Mutate an existing binding by name. Errors when the matching
+/// entry is immutable (`let`/`const`); returns `found: false`
+/// when no such binding exists so the caller can fall back to
+/// global lookup. Walks back-to-front to honour shadowing — the
+/// innermost binding wins on collision.
+fn assign_binding(bindings: List<Binding>, name: string, value: Value) -> AssignBindingsResult {
+    mut local = bindings
+    mut i = local.length - 1
+    while i >= 0 {
+        let b = local[i]
+        if b.name == name {
+            if b.mutable_binding == 0 {
+                return AssignBindingsResult {
+                    bindings: local,
+                    found: true,
+                    had_error: true,
+                    error_message: "eval error: cannot assign to immutable variable `${name}`",
+                }
+            }
+            local.set(i, b with { value: value })
+            return AssignBindingsResult {
+                bindings: local,
+                found: true,
+                had_error: false,
+                error_message: "",
+            }
+        }
+        i = i - 1
+    }
+    AssignBindingsResult {
+        bindings: local,
+        found: false,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+/// Walk a statement list. Stops as soon as any step errors or
+/// signals an early return. Returns the last step's result so
+/// the final value of a block flows out naturally.
+fn execute_stmt_list(runtime: Runtime, stmts: List<SStmt>) -> StepResult {
+    if stmts.length == 0 { return ok_result(runtime, value_null()) }
+    mut cur = ok_result(runtime, value_null())
+    mut i = 0
+    while i < stmts.length {
+        cur = execute_stmt(cur.runtime, stmts[i].node)
+        if cur.had_error || cur.is_return { return cur }
+        i = i + 1
+    }
+    cur
+}
+
+/// Execute a single statement. Built-ins (let/mut/expr/block/
+/// fn-decl/return) are inlined here; declarative-only stmts
+/// (TypeDecl, ShapeDecl, …) are erased. Anything else dispatches
+/// to the feature registry's eval hooks.
+export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Let(name, _, initializer) -> {
+            let init = eval_expr(runtime, initializer)
+            if init.had_error {
+                return init
+            }
+
+            let next_runtime = define_binding(init.runtime, name, false, init.value)
+            ok_result(next_runtime, value_null())
+        }
+        .Mut(name, _, initializer) -> {
+            let init = eval_expr(runtime, initializer)
+            if init.had_error {
+                return init
+            }
+
+            let next_runtime = define_binding(init.runtime, name, true, init.value)
+            ok_result(next_runtime, value_null())
+        }
+        .Expr(expr) -> eval_expr(runtime, expr)
+        .Block(body) -> {
+            let entered = enter_scope(runtime)
+            let body_result = execute_stmt_list(entered, body)
+            let exited = exit_scope(body_result.runtime)
+            if body_result.had_error {
+                return StepResult {
+                    runtime: exited,
+                    value: value_null(),
+                    had_error: true,
+                    is_return: false,
+                    error_message: body_result.error_message,
+                }
+            }
+
+            if body_result.is_return {
+                return make_return(exited, body_result.value)
+            }
+
+            ok_result(exited, body_result.value)
+        }
+        .Function(name, _, params, _, body) -> {
+            let next_runtime = define_function(runtime, name, params, body)
+            ok_result(next_runtime, value_null())
+        }
+        .Return(value) -> {
+            let val_result = eval_expr(runtime, value)
+            if val_result.had_error {
+                return val_result
+            }
+            make_return(val_result.runtime, val_result.value)
+        }
+        .ReturnEmpty -> {
+            make_return(runtime, value_null())
+        }
+        // These declarations are erased at the eval layer — the tree-walk runtime
+        // is value-untyped, so types/enums/traits/impls have no runtime existence.
+        .TypeDecl(_, _, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .NoOp
+        or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
+        .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
+        .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
+        .Annotated(_, inner) -> execute_stmt(runtime, inner.node)
+        _ -> {
+            let tag = avra_stmt_tag(stmt)
+            let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)
+            if result != null { return result! }
+            ok_result(runtime, value_null())
+        }
+    }
+}
+
+/// Recursive `while` evaluator. Re-evaluates the condition each
+/// iteration; loops until the condition is falsy or the body
+/// errors / returns.
+export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
+    let cond_result = eval_expr(runtime, condition)
+    if cond_result.had_error {
+        return cond_result
+    }
+
+    if !is_truthy(cond_result.value) {
+        return ok_result(cond_result.runtime, value_null())
+    }
+
+    let body_result = execute_stmt(cond_result.runtime, body)
+    if body_result.had_error || body_result.is_return {
+        return body_result
+    }
+
+    execute_while(body_result.runtime, condition, body)
+}
+
+/// Tree-walk evaluator for `for i in start..end { body }`. Both bounds
+/// must evaluate to integer values; the body runs with `variable`
+/// bound to each successive integer in the half-open range. A
+/// `return` or error inside the body short-circuits the loop. The
+/// loop variable lives in its own scope so it doesn't pollute the
+/// enclosing one — matches the codegen behavior.
+export fn execute_for_range(runtime: Runtime, variable: string, start: Expr, end: Expr, body: Stmt) -> StepResult {
+    let start_r = eval_expr(runtime, start)
+    if start_r.had_error { return start_r }
+    let end_r = eval_expr(start_r.runtime, end)
+    if end_r.had_error { return end_r }
+    let start_i = parse_num(start_r.value.number_text)
+    let end_i = parse_num(end_r.value.number_text)
+    let entered = enter_scope(end_r.runtime)
+    let step = execute_for_range_step(entered, variable, start_i, end_i, body)
+    let exited = exit_scope(step.runtime)
+    if step.had_error {
+        return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: step.error_message }
+    }
+    if step.is_return {
+        return make_return(exited, step.value)
+    }
+    ok_result(exited, value_null())
+}
+
+/// Iteration helper for `execute_for_range`. Walks one bound at a
+/// time so the binding update happens once per iteration in the
+/// scope opened by the caller.
+fn execute_for_range_step(runtime: Runtime, variable: string, i: int, end_i: int, body: Stmt) -> StepResult {
+    if i >= end_i {
+        return ok_result(runtime, value_null())
+    }
+    let bound = define_binding(runtime, variable, false, value_number(string(i)))
+    let body_r = execute_stmt(bound, body)
+    if body_r.had_error || body_r.is_return { return body_r }
+    execute_for_range_step(body_r.runtime, variable, i + 1, end_i, body)
+}
+
+/// Tree-walk evaluator for `for x in collection { body }`. The
+/// collection must evaluate to a list value; the body runs once per
+/// element with `variable` bound to that element. Scope discipline +
+/// short-circuit on return/error match the range form.
+export fn execute_for_in(runtime: Runtime, variable: string, collection: Expr, body: Stmt) -> StepResult {
+    let coll_r = eval_expr(runtime, collection)
+    if coll_r.had_error { return coll_r }
+    if coll_r.value.kind != "list" {
+        return error_result(coll_r.runtime, "for-in over non-list value (kind=${coll_r.value.kind})")
+    }
+    let entered = enter_scope(coll_r.runtime)
+    let step = execute_for_in_step(entered, variable, coll_r.value.list_payload, 0, body)
+    let exited = exit_scope(step.runtime)
+    if step.had_error {
+        return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: step.error_message }
+    }
+    if step.is_return {
+        return make_return(exited, step.value)
+    }
+    ok_result(exited, value_null())
+}
+
+fn execute_for_in_step(runtime: Runtime, variable: string, items: List<Value>, i: int, body: Stmt) -> StepResult {
+    if i >= items.length {
+        return ok_result(runtime, value_null())
+    }
+    let bound = define_binding(runtime, variable, false, items[i])
+    let body_r = execute_stmt(bound, body)
+    if body_r.had_error || body_r.is_return { return body_r }
+    execute_for_in_step(body_r.runtime, variable, items, i + 1, body)
+}
+
+/// Evaluate a single expression, returning a StepResult with the
+/// produced Value + any error / return state. Built-in expression
+/// shapes (literals, idents, assignment, grouping, unary/binary/
+/// logical, call, qualified) are inlined; anything else
+/// dispatches to feature eval hooks.
+export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Number(text) -> ok_result(runtime, value_number(render_number(parse_num(text))))
+        .FloatLit(text) -> ok_result(runtime, value_number(text))
+        .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
+        .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
+        .None -> ok_result(runtime, value_null())
+        .EnumCtor(type_name, variant, args) -> eval_enum_ctor(runtime, type_name, variant, args)
+        .Ident(name) -> {
+            let result = lookup_binding(runtime.bindings, name)
+            if result.found {
+                return ok_result(runtime, result.value)
+            }
+
+            let fn_result = lookup_function(runtime.functions, name)
+            if fn_result.found {
+                return ok_result(runtime, value_function(name))
+            }
+
+            if name in ["println", "eprintln", "string", FORCE_UNWRAP_FN] {
+                return ok_result(runtime, value_builtin(name))
+            }
+
+            error_result(runtime, "undefined variable `${name}`")
+        }
+        .Assign(name, value_expr) -> {
+            let value_result = eval_expr(runtime, value_expr)
+            if value_result.had_error {
+                return value_result
+            }
+
+            let assigned = assign_binding(value_result.runtime.bindings, name, value_result.value)
+            if assigned.had_error {
+                return StepResult {
+                    runtime: value_result.runtime,
+                    value: value_null(),
+                    had_error: true,
+                    is_return: false,
+                    error_message: assigned.error_message,
+                }
+            }
+
+            if !assigned.found {
+                return error_result(value_result.runtime, "undefined variable `${name}`")
+            }
+
+            let next_runtime = value_result.runtime with { bindings: assigned.bindings }
+            ok_result(next_runtime, value_result.value)
+        }
+        .Grouping(inner) -> eval_expr(runtime, inner)
+        .Block(body) -> {
+            // Value-position block: runs each stmt, the result is the
+            // value of the final expression statement (or null when
+            // the block is empty / ends in a side-effecting stmt).
+            // Scope discipline matches `Stmt.Block` so let/mut bindings
+            // declared inside don't leak out into the surrounding expr.
+            let entered = enter_scope(runtime)
+            let body_result = execute_stmt_list(entered, body)
+            let exited = exit_scope(body_result.runtime)
+            if body_result.had_error {
+                return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: body_result.error_message }
+            }
+            if body_result.is_return {
+                return make_return(exited, body_result.value)
+            }
+            ok_result(exited, body_result.value)
+        }
+        // fwyx: real list / struct kinds on Value — eval the
+        // elements / inits and assemble a list / struct Value so
+        // the comptime decoder can read AST list / struct payloads
+        // directly. lower.av emits Expr.ListLit + Expr.StructLit
+        // for AST list / struct payloads.
+        .ListLit(elems) -> eval_list_lit(runtime, elems)
+        .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
+        .Unary(op, right) -> eval_unary(runtime, op, right)
+        .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
+        .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
+        .Call(callee, args) -> eval_call(runtime, callee, args)
+        .QualifiedIdent(path) -> {
+            let fn_result = lookup_function(runtime.functions, path)
+            if fn_result.found {
+                return ok_result(runtime, value_function(path))
+            }
+            // The path may name an enum type — `ValueType` after
+            // rewrite_uses becomes `@std::avrac::core::ValueType` and
+            // the macro accesses variants via `.Unknown`. Hand back
+            // a type-marker Value so the FieldAccess arm can build
+            // an EnumCtor from it. Avoids special-casing the parser.
+            ok_result(runtime, value_type_marker(path))
+        }
+        .Index(obj, idx) -> {
+            // `xs[i]` on a list Value, or `s[i]` on a string Value
+            // (so07.7.9 — strings index to a single-char string,
+            // matching the runtime). Out-of-range surfaces as a
+            // clean error rather than a runtime crash.
+            let obj_result = eval_expr(runtime, obj)
+            if obj_result.had_error { return obj_result }
+            let idx_result = eval_expr(obj_result.runtime, idx)
+            if idx_result.had_error { return idx_result }
+            let v = obj_result.value
+            let iv = idx_result.value
+            let i = parse_num(iv.number_text)
+            if v.kind == "string" {
+                let s = v.text
+                if i < 0 || i >= s.length {
+                    return error_result(idx_result.runtime, "string index ${string(i)} out of range (length=${string(s.length)})")
+                }
+                return ok_result(idx_result.runtime, value_string(s.substring(i, i + 1)))
+            }
+            if v.kind != "list" {
+                return error_result(idx_result.runtime, "index on non-list value (kind=${v.kind})")
+            }
+            if i < 0 || i >= v.list_payload.length {
+                return error_result(idx_result.runtime, "index ${string(i)} out of range (length=${string(v.list_payload.length)})")
+            }
+            ok_result(idx_result.runtime, v.list_payload[i])
+        }
+        .FieldAccess(obj, field) -> {
+            // Reach the field on a struct Value, OR the .length
+            // pseudo-field on a list / string, OR an enum-ctor with
+            // no args when obj is a type-marker. Reading
+            // `r!.canonical_name` parses as FieldAccess(r, "canonical_name");
+            // the parser's force-unwrap (`!`) is a no-op so this arm
+            // handles both nullable-unwrap and direct-struct cases.
+            let obj_result = eval_expr(runtime, obj)
+            if obj_result.had_error { return obj_result }
+            let v = obj_result.value
+            if v.kind == "list" && field == "length" {
+                return ok_result(obj_result.runtime, value_number(string(v.list_payload.length)))
+            }
+            if v.kind == "string" && field == "length" {
+                return ok_result(obj_result.runtime, value_number(string(v.text.length)))
+            }
+            if v.kind == "type_marker" {
+                // `ValueType.Unknown` after rewrite is FieldAccess(
+                // QualifiedIdent("@std::avrac::core::ValueType"),
+                // "Unknown"). Build the equivalent zero-arg EnumCtor.
+                let empty_args: List<Value> = []
+                return ok_result(obj_result.runtime, value_enum(v.text, field, empty_args))
+            }
+            if v.kind != "struct" {
+                return error_result(obj_result.runtime, "field access on non-struct value (kind=${v.kind}, field=${field})")
+            }
+            for f in v.struct_payload {
+                if f.name == field { return ok_result(obj_result.runtime, f.value) }
+            }
+            error_result(obj_result.runtime, "no such field `${field}` on struct value")
+        }
+        _ -> {
+            let tag = avra_expr_tag(expr)
+            let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
+            if result != null { return result! }
+            error_result(runtime, "unsupported expression type in tree-walk evaluator (tag=${string(tag)} render=${render_expr(expr)})")
+        }
+    }
+}
+
+/// Result of evaluating an argument list. Threads runtime state
+/// through every arg evaluation so side effects accumulate.
+///
+/// @field runtime       — runtime after evaluating all args.
+/// @field values        — list of produced Values.
+/// @field had_error     — 1 when any arg evaluation failed.
+/// @field error_message — diagnostic when had_error is set.
+type EvalArgsResult = {
+    runtime: Runtime,
+    values: List<Value>,
+    had_error: int,
+    error_message: string,
+}
+
+/// Evaluate every expression in `args` left-to-right, threading
+/// the runtime through each call. Bails on first error. Source
+/// order is preserved by .push — no reverse pass needed.
+fn eval_arg_list(runtime: Runtime, args: List<SExpr>) -> EvalArgsResult {
+    mut current = runtime
+    mut values: List<Value> = []
+    mut i = 0
+    while i < args.length {
+        let result = eval_expr(current, args[i].node)
+        if result.had_error {
+            return EvalArgsResult {
+                runtime: result.runtime,
+                values: [],
+                had_error: true,
+                error_message: result.error_message,
+            }
+        }
+        values.push(result.value)
+        current = result.runtime
+        i = i + 1
+    }
+    EvalArgsResult { runtime: current, values: values, had_error: false, error_message: "" }
+}
+
+/// Bind every entry in `args` to the corresponding name in
+/// `params`. Used by `eval_call` to set up the callee's scope.
+/// Bindings are immutable (`mut: false`) — params are not
+/// reassignable in the evaluator.
+fn bind_params(runtime: Runtime, params: List<ParamEntry>, args: List<Value>) -> Runtime {
+    mut current = runtime
+    let limit = if params.length < args.length { params.length } else { args.length }
+    mut i = 0
+    while i < limit {
+        current = define_binding(current, params[i].name, false, args[i])
+        i = i + 1
+    }
+    current
+}
+
+/// Number of declared parameters. Used to assert arity at call sites.
+fn count_params(params: List<ParamEntry>) -> int {
+    params.length
+}
+
+/// Evaluate a call site. Resolves the callee value first
+/// (function or builtin), then evaluates every arg, asserts
+/// arity, and dispatches: builtins go through `call_builtin`,
+/// user functions enter a fresh scope, bind params, run the
+/// body, and pop the scope on exit.
+fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
+    // vez6.6.4: special-case the AST-construction wrappers from
+    // @std::avrac::core. lower_quotes emits sexpr_dummy / sstmt_dummy
+    // calls around every payload so the resulting AST carries proper
+    // SExpr / SStmt span carriers; at comptime eval those span fields
+    // are unused (line/col are 0) so we can pass the inner argument
+    // straight through. Without this, evaluating a quote-built body
+    // would error on the unresolved fn name. Auto-registering every
+    // pure @std::avrac::core fn would be cleaner but requires the
+    // typechecker to distinguish pure from impure helpers — tracked
+    // as the second half of vez6.6.4 (auto-register).
+    let span_passthrough = call_is_span_wrapper(callee)
+    if span_passthrough {
+        return eval_span_wrapper_passthrough(runtime, args)
+    }
+
+    // qa6i probe 2: list_concat is used by the quote lowerer's
+    // arm-list splice (~arms in match-arm position) to merge a
+    // runtime-spliced list into the surrounding arms. Pure list
+    // operation — implement directly here so the generated quote
+    // code evaluates without needing the comptime registry to
+    // import @std/list_ops.
+    if call_is_list_concat(callee) {
+        return eval_list_concat(runtime, args)
+    }
+
+    // qa6i step 5: ResolverCtx queries. The 2-arg @expand surface
+    // exposes ctx_* free fns the macro calls to introspect its
+    // scope. Each is qualified to the resolver_ctx module path; we
+    // recognise the path and dispatch to a compiler-side handler
+    // that consults the active ResolverState (pushed by
+    // resolve_and_expand_program in features/comptime/expand_macro.av).
+    let ctx_kind = ctx_call_kind(callee)
+    if ctx_kind != "" {
+        return eval_resolver_ctx_call(runtime, ctx_kind, args)
+    }
+
+    // List built-in methods (`xs.push(x)`, etc.). Macros constructing
+    // AST values frequently call these to grow accumulator lists;
+    // without an eval-side intercept, FieldAccess on a list value
+    // errors before the call dispatches. The list-method set is
+    // intentionally minimal (push only for now) — extend here as new
+    // method calls show up in @comptime fn bodies.
+    //
+    // Mutation semantics: in compiled Avra, `mut xs: List<T>` makes
+    // `xs.push(v)` an in-place update. The tree-walker stores Values
+    // by value, so we emulate that by writing the new list back to
+    // the binding when the receiver is a simple Ident — that covers
+    // the `mut arms = []; arms.push(...)` pattern macros rely on.
+    match callee {
+        .FieldAccess(obj, method) -> {
+            let probe = eval_expr(runtime, obj)
+            if !probe.had_error && probe.value.kind == "list" {
+                let lm = eval_list_method(probe.runtime, probe.value, method, args)
+                if lm != null {
+                    let lm_val = lm!
+                    if lm_val.had_error { return lm_val }
+                    match obj {
+                        .Ident(name) -> {
+                            let assigned = assign_binding(lm_val.runtime.bindings, name, lm_val.value)
+                            if assigned.found {
+                                let next_rt = lm_val.runtime with { bindings: assigned.bindings }
+                                return ok_result(next_rt, lm_val.value)
+                            }
+                        }
+                        _ -> {}
+                    }
+                    return lm_val
+                }
+            }
+            if !probe.had_error && probe.value.kind == "string" {
+                let sm = eval_string_method(probe.runtime, probe.value, method, args)
+                if sm != null { return sm! }
+            }
+        }
+        _ -> {}
+    }
+
+    let callee_result = eval_expr(runtime, callee)
+    if callee_result.had_error {
+        return callee_result
+    }
+
+    let callee_value = callee_result.value
+    let call_runtime = callee_result.runtime
+
+    let args_result = eval_arg_list(call_runtime, args)
+    if args_result.had_error {
+        return error_result(args_result.runtime, args_result.error_message)
+    }
+
+    if callee_value.kind == "builtin" {
+        return call_builtin(args_result.runtime, callee_value.text, args_result.values)
+    }
+
+    if callee_value.kind != "function" {
+        return error_result(args_result.runtime, "can only call functions (callee=${render_expr(callee)} kind=${callee_value.kind})")
+    }
+
+    let fn_name = callee_value.text
+    let fn_lookup = lookup_function(args_result.runtime.functions, fn_name)
+    if !fn_lookup.found {
+        return error_result(args_result.runtime, "undefined function `${fn_name}`")
+    }
+
+    let param_count = count_params(fn_lookup.params)
+    let arg_count = args_result.values.length
+    if param_count != arg_count {
+        return error_result(args_result.runtime, "expected ${string(param_count)} arguments but got ${string(arg_count)}")
+    }
+
+    let call_env = enter_scope(args_result.runtime)
+    let bound_env = bind_params(call_env, fn_lookup.params, args_result.values)
+    let body_result = execute_stmt_list(bound_env, fn_lookup.body)
+    let restored = exit_scope(body_result.runtime)
+
+    if body_result.had_error {
+        return StepResult {
+            runtime: restored,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: body_result.error_message,
+        }
+    }
+
+    ok_result(restored, body_result.value)
+}
+
+/// Construct a function-reference Value. `name` resolves to
+/// the matching FunctionDef on the runtime at call time. The kind tag
+/// distinguishes user functions from built-ins.
+fn value_function(name: string) -> Value {
+    Value {
+        kind: "function",
+        number_text: "",
+        text: name,
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct a builtin-reference Value (e.g. for `println`,
+/// `string`). Resolves to a `call_builtin` dispatch at call site.
+fn value_builtin(name: string) -> Value {
+    Value {
+        kind: "builtin",
+        number_text: "",
+        text: name,
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Marker Value for a qualified type name reached via QualifiedIdent
+/// when the path doesn't resolve to a function. `text` holds the
+/// qualified path. The FieldAccess arm uses this to build a no-arg
+/// EnumCtor — needed so macro bodies can write `Type.Variant` for
+/// enum types after rewrite_uses qualifies the lhs.
+export fn value_type_marker(path: string) -> Value {
+    Value {
+        kind: "type_marker",
+        number_text: "",
+        text: path,
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct an enum Value carrying a tag (`type_name::variant`)
+/// plus the per-variant payload values. Phase 6 of Components V2
+/// (vez6.6.4) — used by eval_expr's EnumCtor arm so a macro fn
+/// returning `quote stmt { ... }` produces a runtime Stmt value.
+export fn value_enum(type_name: string, variant: string, payload: List<Value>) -> Value {
+    Value {
+        kind: "enum",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: type_name,
+        enum_variant: variant,
+        enum_payload: payload,
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct a list Value. Carries each element as a Value in
+/// `list_payload`. Source-order is preserved (no reverse).
+/// fwyx — used by Expr.ListLit eval.
+export fn value_list(items: List<Value>) -> Value {
+    Value {
+        kind: "list",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: items,
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct a struct Value. `type_name` is the struct-type tag
+/// (the StructLit's name slot); `fields` carries the per-field
+/// init values in source order.
+/// fwyx — used by Expr.StructLit eval.
+export fn value_struct(type_name: string, fields: List<StructField>) -> Value {
+    Value {
+        kind: "struct",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: type_name,
+        struct_payload: fields,
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// so07.8 Phase A: native Stmt Value. Carries a Stmt AST node
+/// directly in `stmt_payload` so consumers (value_to_stmt) can
+/// unwrap without re-decoding via the construct_stmt → eval
+/// EnumCtor → enum_value_to_stmt roundtrip. Phase B+ migrates
+/// macro return paths to use this constructor.
+export fn value_for_stmt(s: Stmt) -> Value {
+    Value {
+        kind: "stmt",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: s,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// so07.8 Phase A: native Expr Value. Same shape as value_for_stmt
+/// for the Expr AST type; replaces the
+/// construct_expr → eval EnumCtor → enum_value_to_expr roundtrip
+/// once callers migrate (Phase B+).
+export fn value_for_expr(e: Expr) -> Value {
+    Value {
+        kind: "expr",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: e,
+        value_type_payload: null,
+    }
+}
+
+/// so07.8 Phase A: native ValueType Value. Carries a ValueType AST
+/// node directly. Drives the y9y4.17 fix path — today's
+/// enum_value_to_value_type loses TypeId (sets id=0); the new path
+/// preserves it because the ValueType travels intact.
+export fn value_for_value_type(vt: ValueType) -> Value {
+    Value {
+        kind: "value_type",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: [],
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: vt,
+    }
+}
+
+/// Dispatch a builtin call by name. Handles the I/O builtins
+/// `println` (stdout + newline) and `eprintln` (stderr + newline),
+/// plus `string()`. Scoped to whatever the codegen layer also
+/// supports — currently no `print` / `eprint` (no-newline) variants
+/// because emit_print* don't exist; expanding eval beyond codegen
+/// would surface as ICEs when bs2 self-compiles.
+fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult {
+    if name == "println" || name == "eprintln" {
+        let body = if args.length == 0 { "" } else { render_value(args[0]) }
+        if name == "eprintln" { eprintln(body) } else { println(body) }
+        return ok_result(runtime, value_null())
+    }
+
+    if name == "string" {
+        if args.length == 0 {
+            return error_result(runtime, "string() expects 1 argument")
+        }
+        return ok_result(runtime, value_string(render_value(args[0])))
+    }
+
+    // Force-unwrap (`expr!`): the interpreter represents a present optional
+    // as the inner value directly (no boxing), so this is a pass-through.
+    if name == FORCE_UNWRAP_FN {
+        if args.length == 0 {
+            return error_result(runtime, "${FORCE_UNWRAP_FN} expects 1 argument")
+        }
+        return ok_result(runtime, args[0])
+    }
+
+    error_result(runtime, "unknown builtin `${name}`")
+}
+
+/// True when `callee` is a QualifiedIdent for one of the std-core
+/// span wrappers (sexpr_dummy / sstmt_dummy / sexpr / sexpr_at /
+/// sstmt / sstmt_at). At comptime eval these are pass-through —
+/// the resulting Value carries no span info, just the inner AST.
+fn call_is_span_wrapper(callee: Expr) -> bool {
+    match callee {
+        .QualifiedIdent(path) -> {
+            path == "@std::avrac::core::sexpr_dummy"
+                || path == "@std::avrac::core::sstmt_dummy"
+                || path == "@std::avrac::core::sexpr"
+                || path == "@std::avrac::core::sexpr_at"
+                || path == "@std::avrac::core::sstmt"
+                || path == "@std::avrac::core::sstmt_at"
+        }
+        _ -> false
+    }
+}
+
+/// Evaluate the FIRST argument of a span-wrapper call and return it
+/// as the call's value. Span-wrapper signatures all take the inner
+/// AST node as their first arg; remaining args are line/col/file
+/// metadata that comptime eval doesn't need to track.
+fn eval_span_wrapper_passthrough(runtime: Runtime, args: List<SExpr>) -> StepResult {
+    if args.length == 0 { return error_result(runtime, "span-wrapper call needs at least one argument") }
+    eval_expr(runtime, args[0].node)
+}
+
+/// True when `callee` is the qualified path to the standard
+/// `list_concat` operation. The quote lowerer emits this for
+/// arm-list splice handling (probe 2).
+fn call_is_list_concat(callee: Expr) -> bool {
+    match callee {
+        .QualifiedIdent(path) -> path == "@std::avrac::list_ops::list_concat"
+        _ -> false
+    }
+}
+
+// ── ResolverCtx extern-fn handlers (step 5) ──
+
+/// Map a callee QualifiedIdent path to one of the ctx_* fn kinds
+/// the compiler dispatches. Matches either the bare extern-fn name
+/// (resolver canonicalises extern fns to their C symbol) or, for
+/// future-proofing, the fully-qualified path the regular-fn form
+/// would emit.
+fn ctx_call_kind(callee: Expr) -> string {
+    match callee {
+        .QualifiedIdent(path) -> ctx_kind_from_path(path)
+        .Ident(name)          -> ctx_kind_from_path(name)
+        _ -> ""
+    }
+}
+
+fn ctx_kind_from_path(path: string) -> string {
+    // Last `::` segment of the path — handles bare names, in-module
+    // (`@std::avrac::features::comptime::ctx_*`), and explicit
+    // submodule (`@std::avrac::features::comptime::resolver_ctx::ctx_*`)
+    // forms uniformly.
+    let last = path_last_segment(path)
+    if last == "ctx_current_module" { return "current_module" }
+    if last == "ctx_lookup_type"    { return "lookup_type" }
+    if last == "ctx_qualify_ident"  { return "qualify_ident" }
+    if last == "ctx_fresh_ident"    { return "fresh_ident" }
+    if last == "ctx_unwrap_path_to" { return "unwrap_path_to" }
+    ""
+}
+
+export fn path_last_segment(path: string) -> string {
+    mut last_sep = -1
+    mut i = 0
+    while i + 1 < path.length {
+        if path.substring(i, i + 2) == "::" {
+            last_sep = i + 2
+        }
+        i = i + 1
+    }
+    if last_sep < 0 { return path }
+    path.substring(last_sep, path.length)
+}
+
+extern fn avra_resolver_fresh_id() -> int
+
+// Resolver-data getters populated by expand_macro.av before each
+// invoke. See `populate_resolver_data` + the C-side block in
+// runtime.c for the lifecycle.
+extern fn avra_rd_get_current_module() -> string
+extern fn avra_rd_lookup_alias(name: string) -> string
+extern fn avra_rd_lookup_global(name: string) -> string
+extern fn avra_rd_find_type(name: string) -> int
+extern fn avra_rd_type_canonical(type_id: int) -> string
+extern fn avra_rd_type_kind(type_id: int) -> string
+extern fn avra_rd_type_field_count(type_id: int) -> int
+extern fn avra_rd_type_field_name(type_id: int, idx: int) -> string
+extern fn avra_rd_type_field_type(type_id: int, idx: int) -> string
+
+/// Dispatch a ctx_* call. Real implementations for current_module,
+/// lookup_type, qualify_ident, unwrap_path_to — all read from the
+/// C-side resolver-data layer populated by expand_macro.av before
+/// each macro invocation.
+fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<SExpr>) -> StepResult {
+    let args_result = eval_arg_list(runtime, args)
+    if args_result.had_error != 0 {
+        return error_result(args_result.runtime, args_result.error_message)
+    }
+    let rt = args_result.runtime
+    if kind == "current_module" {
+        return ok_result(rt, value_string(avra_rd_get_current_module()))
+    }
+    if kind == "lookup_type" {
+        // args[0] = ctx, args[1] = name
+        if args_result.values.length < 2 { return ok_result(rt, value_null()) }
+        let name_val = args_result.values[1]
+        let name = name_val.text
+        return ok_result(rt, lookup_type_result(name))
+    }
+    if kind == "qualify_ident" {
+        // args[0] = ctx, args[1] = name
+        if args_result.values.length < 2 { return ok_result(rt, value_null()) }
+        let name_val = args_result.values[1]
+        let name = name_val.text
+        // Alias first (use-imported names), then global (top-level decls).
+        let from_alias = avra_rd_lookup_alias(name)
+        if from_alias != "" {
+            return ok_result(rt, value_string(from_alias))
+        }
+        let from_global = avra_rd_lookup_global(name)
+        if from_global != "" {
+            return ok_result(rt, value_string(from_global))
+        }
+        return ok_result(rt, value_null())
+    }
+    if kind == "fresh_ident" {
+        // hint arg is args_result.values[1]; we ignore it and use a
+        // monotonic counter so each call returns a guaranteed-unique
+        // identifier scoped to the whole compile.
+        let counter = avra_resolver_fresh_id()
+        return ok_result(rt, value_string("__avra_fresh_${string(counter)}"))
+    }
+    if kind == "unwrap_path_to" {
+        // args[0] = ctx, args[1] = t (ResolvedType), args[2] = target (string)
+        if args_result.values.length < 3 {
+            let empty: List<Value> = []
+            return ok_result(rt, value_list(empty))
+        }
+        let t_val = args_result.values[1]
+        let target_val = args_result.values[2]
+        let target = target_val.text
+        let t_name = resolved_type_canonical(t_val)
+        if t_name == "" || t_name == target {
+            let empty: List<Value> = []
+            return ok_result(rt, value_list(empty))
+        }
+        let path = unwrap_path_bfs(t_name, target, 8)
+        mut path_values: List<Value> = []
+        for p in path { path_values.push(value_string(p)) }
+        return ok_result(rt, value_list(path_values))
+    }
+    error_result(rt, "ctx_* extern fn `${kind}` not implemented")
+}
+
+/// Pull the `canonical_name` field out of a ResolvedType value (or
+/// a raw string Value if a macro called ctx with a bare name). Empty
+/// string means "no answer".
+fn resolved_type_canonical(v: Value) -> string {
+    if v.kind == "string" { return v.text }
+    if v.kind != "struct" { return "" }
+    for f in v.struct_payload {
+        if f.name == "canonical_name" {
+            if f.value.kind == "string" { return f.value.text }
+        }
+    }
+    ""
+}
+
+/// Frontier entry for the BFS: a known type and the field-chain
+/// that reaches it from the starting `t_name`.
+type BfsEntry = {
+    type_name: string,
+    path: List<string>,
+}
+
+/// True BFS over the field graph from `t_name` looking for a field
+/// whose type canonicalises to `target`. Returns the shortest chain
+/// of field names to reach it, or [] if not found within `depth_cap`
+/// hops. Cycle-safe via depth cap + a visited set — a recursive
+/// type terminates at the cap without infinite loop.
+fn unwrap_path_bfs(t_name: string, target: string, depth_cap: int) -> List<string> {
+    let empty: List<string> = []
+    if depth_cap <= 0 { return empty }
+    let start_id = avra_rd_find_type(t_name)
+    if start_id < 0 { return empty }
+    // Frontier seeded with the starting type at depth 0. visited
+    // tracks types we've already expanded so a recursive field
+    // doesn't loop forever (depth cap is the secondary safety net).
+    let start_path: List<string> = []
+    mut frontier: List<BfsEntry> = []
+    frontier.push(BfsEntry { type_name: t_name, path: start_path })
+    mut visited: List<string> = []
+    visited.push(t_name)
+    while frontier.length > 0 {
+        let head = frontier[0]
+        // shift: drop head by reading the rest into a new list.
+        mut rest: List<BfsEntry> = []
+        mut i = 1
+        while i < frontier.length {
+            rest.push(frontier[i])
+            i = i + 1
+        }
+        frontier = rest
+        if head.path.length >= depth_cap { continue }
+        let type_id = avra_rd_find_type(head.type_name)
+        if type_id < 0 { continue }
+        let n = avra_rd_type_field_count(type_id)
+        mut k = 0
+        while k < n {
+            let fname = avra_rd_type_field_name(type_id, k)
+            let ftype = avra_rd_type_field_type(type_id, k)
+            mut next_path: List<string> = []
+            for p in head.path { next_path.push(p) }
+            next_path.push(fname)
+            if ftype == target { return next_path }
+            // Enqueue sub-type for further exploration if we know it
+            // AND haven't visited it. Visited check protects against
+            // cycles; depth_cap protects against pathologically deep
+            // trees the visited set didn't catch.
+            if avra_rd_find_type(ftype) >= 0 && !list_contains_str(visited, ftype) {
+                visited.push(ftype)
+                frontier.push(BfsEntry { type_name: ftype, path: next_path })
+            }
+            k = k + 1
+        }
+    }
+    empty
+}
+
+/// Build a ResolvedType struct Value for `name`, or null if not
+/// found in the resolver-data layer. The struct shape matches
+/// `@std::avrac::features::comptime::ResolvedType`:
+/// `{ canonical_name, kind, fields?, variants? }`. Fields are
+/// emitted for kind="struct" with eager recursive expansion (each
+/// field's `ty: ResolvedType` carries its own fields, down to a
+/// depth cap of 4 hops). A visited-set guard handles recursive
+/// types — when the recursion would revisit a type it already
+/// expanded in the current chain, that field's ty lands as a
+/// shallow ResolvedType (name + kind only) so the macro can detect
+/// the back-edge by checking ty.fields.length == 0.
+///
+/// Variant introspection requires the resolver to track per-variant
+/// payloads, which the current data layer doesn't yet — variants
+/// comes back as an empty list.
+fn lookup_type_result(name: string) -> Value {
+    let empty: List<string> = []
+    lookup_type_with_depth(name, 4, empty)
+}
+
+/// Recursive expansion driver. `depth_remaining` counts down per
+/// hop; `visited` carries the chain of canonical names we've
+/// already expanded on the way down so a recursive type doesn't
+/// loop. Both bottoming conditions produce a shallow ResolvedType
+/// (name + kind only).
+fn lookup_type_with_depth(name: string, depth_remaining: int, visited: List<string>) -> Value {
+    let type_id = avra_rd_find_type(name)
+    if type_id < 0 { return value_null() }
+    let canonical = avra_rd_type_canonical(type_id)
+    let kind_str = avra_rd_type_kind(type_id)
+    let empty_fields: List<Value> = []
+    if depth_remaining <= 0 || list_contains_str(visited, canonical) {
+        return build_resolved_type(canonical, kind_str, empty_fields)
+    }
+    mut child_visited: List<string> = []
+    for v in visited { child_visited.push(v) }
+    child_visited.push(canonical)
+    let n = avra_rd_type_field_count(type_id)
+    mut field_values: List<Value> = []
+    mut i = 0
+    while i < n {
+        let fname = avra_rd_type_field_name(type_id, i)
+        let ftype_canonical = avra_rd_type_field_type(type_id, i)
+        let inner_id = avra_rd_find_type(ftype_canonical)
+        let ty_value = if inner_id >= 0 {
+            // Recurse into the sub-type. Depth cap + visited set
+            // protect against unbounded walks on recursive types.
+            lookup_type_with_depth(ftype_canonical, depth_remaining - 1, child_visited)
+        } else {
+            // Primitive — no further expansion possible.
+            build_resolved_type(ftype_canonical, "primitive", empty_fields)
+        }
+        mut field_payload: List<StructField> = []
+        field_payload.push(struct_field("name", value_string(fname)))
+        field_payload.push(struct_field("ty", ty_value))
+        field_values.push(value_struct("@std::avrac::features::comptime::ResolvedField", field_payload))
+        i = i + 1
+    }
+    build_resolved_type(canonical, kind_str, field_values)
+}
+
+/// Shared builder for ResolvedType Values. `fields` is empty for
+/// shallow lookups (just name+kind) and populated for the top-level
+/// result. `variants` is always empty in the current data layer.
+fn build_resolved_type(canonical: string, kind_str: string, fields: List<Value>) -> Value {
+    mut payload: List<StructField> = []
+    payload.push(struct_field("canonical_name", value_string(canonical)))
+    payload.push(struct_field("kind", value_enum("TypeKind", kind_str, [])))
+    payload.push(struct_field("fields", value_list(fields)))
+    let empty_variants: List<Value> = []
+    payload.push(struct_field("variants", value_list(empty_variants)))
+    value_struct("@std::avrac::features::comptime::ResolvedType", payload)
+}
+
+/// Evaluate `list_concat(a, b)` at comptime. Both args must
+/// evaluate to list-kind Values; result is a list with `a`'s
+/// elements followed by `b`'s. Used by the quote lowerer's
+/// `~arms` splice to merge a runtime list into the surrounding
+/// arm list.
+/// Built-in method calls on a list `Value`. Returns null when the
+/// method is unknown so the caller falls back to the normal call
+/// dispatch (which will surface a "field access" error). Today
+/// `push` is the only entry — extend as more methods become needed
+/// by @comptime macros. Pure with respect to the input value: the
+/// returned StepResult carries a NEW list value rather than mutating
+/// the original (matches how Avra's mutable-list semantics work
+/// elsewhere — push returns the new list, mut-rebinding the caller).
+/// Built-in method calls on a string `Value`. Mirrors
+/// `eval_list_method` for string-specific operations the @comptime
+/// macros need (substring, contains, etc.). Returns null when the
+/// method is unknown so the dispatcher falls through.
+fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: List<SExpr>) -> StepResult? {
+    if method == "substring" {
+        if args.length != 2 { return error_result(runtime, "string.substring expects 2 arguments") }
+        let s_r = eval_expr(runtime, args[0].node)
+        if s_r.had_error { return s_r }
+        let e_r = eval_expr(s_r.runtime, args[1].node)
+        if e_r.had_error { return e_r }
+        let start = parse_num(s_r.value.number_text)
+        let end = parse_num(e_r.value.number_text)
+        let s = str_val.text
+        mut lo = start
+        mut hi = end
+        if lo < 0 { lo = 0 }
+        if hi > s.length { hi = s.length }
+        if lo > hi { lo = hi }
+        return ok_result(e_r.runtime, value_string(s.substring(lo, hi)))
+    }
+    // so07.7.10 — single-arg string predicates: same signature shape
+    // (one string arg, returns bool / string / int). Each delegates
+    // straight to the runtime method on str_val.text.
+    if method == "contains" || method == "starts_with" || method == "ends_with" {
+        if args.length != 1 { return error_result(runtime, "string.${method} expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        let s = str_val.text
+        let needle = arg_r.value.text
+        if method == "contains"    { return ok_result(arg_r.runtime, value_bool(s.contains(needle))) }
+        if method == "starts_with" { return ok_result(arg_r.runtime, value_bool(s.starts_with(needle))) }
+        return ok_result(arg_r.runtime, value_bool(s.ends_with(needle)))
+    }
+    if method == "index_of" {
+        if args.length != 1 { return error_result(runtime, "string.index_of expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        return ok_result(arg_r.runtime, value_number(string(str_val.text.index_of(arg_r.value.text))))
+    }
+    // so07.7.10 — zero-arg unary transforms (trim / to_upper / to_lower).
+    if method == "trim" || method == "to_upper" || method == "to_lower" {
+        if args.length != 0 { return error_result(runtime, "string.${method} expects 0 arguments") }
+        let s = str_val.text
+        if method == "trim"     { return ok_result(runtime, value_string(s.trim())) }
+        if method == "to_upper" { return ok_result(runtime, value_string(s.to_upper())) }
+        return ok_result(runtime, value_string(s.to_lower()))
+    }
+    if method == "replace" {
+        if args.length != 2 { return error_result(runtime, "string.replace expects 2 arguments") }
+        let needle_r = eval_expr(runtime, args[0].node)
+        if needle_r.had_error { return needle_r }
+        let repl_r = eval_expr(needle_r.runtime, args[1].node)
+        if repl_r.had_error { return repl_r }
+        return ok_result(repl_r.runtime, value_string(str_val.text.replace(needle_r.value.text, repl_r.value.text)))
+    }
+    null
+}
+
+fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: List<SExpr>) -> StepResult? {
+    if method == "push" {
+        if args.length != 1 { return error_result(runtime, "list.push expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        mut new_payload: List<Value> = []
+        for v in list_val.list_payload { new_payload = new_payload.push(v) }
+        new_payload = new_payload.push(arg_r.value)
+        let new_list = list_val with { list_payload: new_payload }
+        return ok_result(arg_r.runtime, new_list)
+    }
+    // ryvy: enumerate -> list of (index, element) pairs. Each pair is a
+    // list-kind Value of two elements, which `let (i, x) = …` destructures
+    // via the eval LetDestructure hook. Lets `for (i, x) in xs.enumerate()`
+    // run inside @comptime macros, not just compiled code.
+    if method == "enumerate" {
+        if args.length != 0 { return error_result(runtime, "list.enumerate expects 0 arguments") }
+        mut pairs: List<Value> = []
+        for (i, v) in list_val.list_payload.enumerate() {
+            pairs = pairs.push(value_list([value_number(string(i)), v]))
+        }
+        return ok_result(runtime, value_list(pairs))
+    }
+    // ryvy: zip -> list of (a, b) pairs, truncated to the shorter input.
+    if method == "zip" {
+        if args.length != 1 { return error_result(runtime, "list.zip expects 1 argument") }
+        let arg_r = eval_expr(runtime, args[0].node)
+        if arg_r.had_error { return arg_r }
+        if arg_r.value.kind != "list" { return error_result(arg_r.runtime, "list.zip expects a list argument") }
+        mut pairs: List<Value> = []
+        for (x, y) in list_val.list_payload.zip(arg_r.value.list_payload) {
+            pairs = pairs.push(value_list([x, y]))
+        }
+        return ok_result(arg_r.runtime, value_list(pairs))
+    }
+    null
+}
+
+fn eval_list_concat(runtime: Runtime, args: List<SExpr>) -> StepResult {
+    if args.length != 2 { return error_result(runtime, "list_concat expects 2 arguments") }
+    let a_result = eval_expr(runtime, args[0].node)
+    if a_result.had_error { return a_result }
+    let b_result = eval_expr(a_result.runtime, args[1].node)
+    if b_result.had_error { return b_result }
+    let a_val = a_result.value
+    let b_val = b_result.value
+    if a_val.kind != "list" { return error_result(b_result.runtime, "list_concat first arg is not a list") }
+    if b_val.kind != "list" { return error_result(b_result.runtime, "list_concat second arg is not a list") }
+    mut merged: List<Value> = []
+    for x in a_val.list_payload { merged = merged.push(x) }
+    for x in b_val.list_payload { merged = merged.push(x) }
+    let combined = a_val with { list_payload: merged }
+    ok_result(b_result.runtime, combined)
+}
+
+/// Evaluate an `Expr.EnumCtor(type_name, variant, args)` — recurse
+/// into each arg, then construct a kind="enum" Value carrying the
+/// resulting payload. Phase 6 of Components V2 (vez6.6.4) — needed
+/// so a comptime fn body can return a constructed AST value via
+/// `quote stmt { ... }` (which lowers to nested EnumCtors).
+fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: List<SExpr>) -> StepResult {
+    let evaluated = eval_args_to_values(runtime, args)
+    if evaluated.had_error {
+        return StepResult {
+            runtime: evaluated.runtime,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: evaluated.error_message,
+        }
+    }
+    // Collapse the encode→eval→decode roundtrip into this
+    // boundary. An EnumCtor whose type is an AST node (Stmt / Expr /
+    // ValueType) is decoded once into its native form here and stored
+    // in the matching payload slot — value_to_stmt / value_to_expr_node
+    // / value_to_value_type_node then unwrap in O(1) instead of
+    // re-running the decoder downstream. The enum_* representation is
+    // kept intact so pattern-matching and the fold reconstructor still
+    // see variant/payload.
+    let boxed = box_ast_value(value_enum(type_name, variant, evaluated.values))
+    ok_result(evaluated.runtime, boxed)
+}
+
+type ArgEvalResult = {
+    runtime: Runtime,
+    values: List<Value>,
+    had_error: bool,
+    error_message: string,
+}
+
+/// Recursively evaluate each `List<SExpr>` arg, threading the
+/// runtime through. Used by `eval_enum_ctor` and any future arg-list eval.
+fn eval_args_to_values(runtime: Runtime, args: List<SExpr>) -> ArgEvalResult {
+    mut acc: List<Value> = []
+    mut rt = runtime
+    mut i = 0
+    while i < args.length {
+        let r = eval_expr(rt, args[i].node)
+        if r.had_error {
+            return ArgEvalResult { runtime: r.runtime, values: [], had_error: true, error_message: r.error_message }
+        }
+        acc.push(r.value)
+        rt = r.runtime
+        i = i + 1
+    }
+    ArgEvalResult { runtime: rt, values: acc, had_error: false, error_message: "" }
+}
+
+/// Evaluate an Expr.ListLit: walk every element via eval_expr,
+/// threading the runtime through, and wrap the result list in a
+/// kind="list" Value. fwyx — replaces the previous value_null()
+/// stub so the comptime decoder can read AST list payloads.
+fn eval_list_lit(runtime: Runtime, elems: List<SExpr>) -> StepResult {
+    let evaluated = eval_args_to_values(runtime, elems)
+    if evaluated.had_error {
+        return StepResult {
+            runtime: evaluated.runtime,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: evaluated.error_message,
+        }
+    }
+    ok_result(evaluated.runtime, value_list(evaluated.values))
+}
+
+/// Evaluate an Expr.StructLit: walk every FieldInit value via
+/// eval_expr (threading runtime), pair each with its field name,
+/// and wrap in a kind="struct" Value tagged with `type_name`.
+/// fwyx — replaces the previous value_null() stub so the comptime
+/// decoder can read AST struct payloads.
+fn eval_struct_lit(runtime: Runtime, type_name: string, inits: List<FieldInit>) -> StepResult {
+    mut current = runtime
+    mut fields: List<StructField> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let r = eval_expr(current, init.value.node)
+        if r.had_error {
+            return StepResult {
+                runtime: r.runtime,
+                value: value_null(),
+                had_error: true,
+                is_return: false,
+                error_message: r.error_message,
+            }
+        }
+        fields.push(struct_field(init.name, r.value))
+        current = r.runtime
+        i = i + 1
+    }
+    ok_result(current, value_struct(type_name, fields))
+}
+
+/// Evaluate a unary operator (`-x`, `!x`, `~x`). Negation
+/// requires a numeric operand; logical-not is universal;
+/// bitwise-not isn't supported by the tree-walk evaluator.
+fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
+    let right_result = eval_expr(runtime, right)
+    if right_result.had_error {
+        return right_result
+    }
+
+    let value = right_result.value
+    match op {
+        .Neg -> {
+            let number_text = as_number_text(value)
+            if number_text == null {
+                return error_result(right_result.runtime, "operand must be a number")
+            }
+            ok_result(right_result.runtime, value_number(render_number(0 - parse_num(number_text!))))
+        }
+        .Not -> ok_result(right_result.runtime, value_bool(!is_truthy(value)))
+        .BitNot -> error_result(right_result.runtime, "bitwise NOT not supported by tree-walk evaluator")
+    }
+}
+
+/// Evaluate a binary operator. `+` is the most overloaded —
+/// numeric addition, string concatenation. `==` / `!=` use
+/// `values_equal`. Numeric comparisons require both operands to
+/// parse as numbers.
+fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResult {
+    let left_result = eval_expr(runtime, left)?
+
+    let left_value = left_result.value
+    let right_result = eval_expr(left_result.runtime, right)?
+
+    let right_value = right_result.value
+    let rt = right_result.runtime
+
+    match op {
+        .Add -> eval_plus(rt, left_value, right_value)
+        .Eq -> ok_result(rt, value_bool(values_equal(left_value, right_value)))
+        .Ne -> ok_result(rt, value_bool(!values_equal(left_value, right_value)))
+        _ -> {
+            let left_text = as_number_text(left_value)
+            if left_text == null {
+                return error_result(rt, "operand must be a number")
+            }
+            let right_text = as_number_text(right_value)
+            if right_text == null {
+                return error_result(rt, "operand must be a number")
+            }
+            let l = parse_num(left_text!)
+            let r = parse_num(right_text!)
+            match op {
+                .Sub -> ok_result(rt, value_number(render_number(l - r)))
+                .Mul -> ok_result(rt, value_number(render_number(l * r)))
+                .Div -> ok_result(rt, value_number(render_number(l / r)))
+                .Lt -> ok_result(rt, value_bool(l < r))
+                .Le -> ok_result(rt, value_bool(l <= r))
+                .Gt -> ok_result(rt, value_bool(l > r))
+                .Ge -> ok_result(rt, value_bool(l >= r))
+                _ -> error_result(rt, "unsupported binary operator")
+            }
+        }
+    }
+}
+
+/// Evaluate a short-circuit logical operator (`||`, `&&`).
+/// Returns the first operand's value when it determines the
+/// outcome; otherwise evaluates and returns the second.
+fn eval_logical(runtime: Runtime, left: Expr, op: LogicOp, right: Expr) -> StepResult {
+    let left_result = eval_expr(runtime, left)?
+
+    let left_truthy = is_truthy(left_result.value)
+    match op {
+        .Or -> {
+            if left_truthy { return left_result }
+            eval_expr(left_result.runtime, right)
+        }
+        .And -> {
+            if !left_truthy { return left_result }
+            eval_expr(left_result.runtime, right)
+        }
+    }
+}
+
+/// `+` is overloaded: numeric add when both sides are numbers,
+/// string concat when both are strings. Mixed types error so
+/// the user catches accidental coercion.
+fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
+    let left_num_text = as_number_text(left)
+    if left_num_text != null {
+        let right_num_text = as_number_text(right)
+        if right_num_text == null {
+            return error_result(runtime, "operands to `+` must both be numbers or both be strings")
+        }
+        let left_num = parse_num(left_num_text!)
+        let right_num = parse_num(right_num_text!)
+        return ok_result(runtime, value_number(render_number(left_num + right_num)))
+    }
+
+    let left_text = as_string(left)
+    if left_text != null {
+        let right_text = as_string(right)
+        if right_text == null {
+            return error_result(runtime, "operands to `+` must both be numbers or both be strings")
+        }
+        return ok_result(runtime, value_string(left_text! + right_text!))
+    }
+
+    error_result(runtime, "operands to `+` must both be numbers or both be strings")
+}
+
+/// Returns a Value's number-text representation when its kind
+/// is `"number"`, otherwise null. Used by numeric operators to
+/// fail early on non-numeric operands.
+fn as_number_text(value: Value) -> string? {
+    if value.kind == "number" {
+        return value.number_text
+    }
+    null
+}
+
+/// Returns a Value's text when its kind is `"string"`, else
+/// null. Mirror of `as_number_text` for string operations.
+fn as_string(value: Value) -> string? {
+    if value.kind == "string" {
+        return value.text
+    }
+    null
+}
+
+/// Value equality: kinds must match, then payloads compare.
+/// Numbers compare as floats so `1` and `1.0` are equal.
+/// Null/null is true; everything else falls through.
+fn values_equal(left: Value, right: Value) -> bool {
+    if left.kind != right.kind { return false }
+    match left.kind {
+        "number" -> parse_num(left.number_text) == parse_num(right.number_text)
+        "string" -> left.text == right.text
+        "bool" -> left.bool_value == right.bool_value
+        _ -> true
+    }
+}
+
+/// Strip the leading + trailing `"` from a parsed string
+/// literal text. Returns the input unchanged when shorter than
+/// 2 chars (defensive: malformed input).
+fn unquote_string(text: string) -> string {
+    if text.length < 2 {
+        return text
+    }
+    text.substring(1, text.length - 1)
+}
+
+// ── AST node boxing at the eval boundary ──
+//
+// The Value↔AST decoder. Historically this lived in
+// features/comptime/eval.av and ran lazily when the @expand pass
+// consumed a macro's return Value (value_to_stmt → enum_value_to_stmt
+// → …). That made every Stmt/Expr/ValueType variant a thing you had
+// to mirror across an encoder (quote_expr/lower.av) AND a decoder,
+// with silent drift between the two.
+//
+// This collapses the decode into the eval boundary: eval_enum_ctor
+// calls box_ast_value on every constructed enum Value. When the enum
+// type is an AST node type, the Value is decoded ONCE into its native
+// form and stored in stmt_payload / expr_payload / value_type_payload,
+// while the enum_* fields are kept intact (so pattern-matching in
+// match_expr and the fold reconstructor in comptime/eval.av still
+// read variant/payload). value_to_stmt / value_to_expr_node /
+// value_to_value_type_node then unwrap in O(1).
+//
+// Child recursion routes through the unwrap-first value_to_* entries:
+// because boxing happens bottom-up, a parent's children already carry
+// their native payload, so the parent decode is a shallow per-field
+// read rather than a deep re-decode.
+//
+// Complexity: boxing a node is O(its direct fields) because every child
+// is already boxed, so building the whole tree is O(total nodes), not
+// O(depth × size). On the hot path (the @expand consumer) value_to_stmt
+// is then an O(1) unwrap instead of re-decoding the subtree. The unwrap-
+// first routing is what keeps this linear — route a child decode through
+// the raw enum_value_to_* and you reintroduce the quadratic re-walk.
+//
+// Non-AST enums pay only the `match v.enum_type` dispatch + the `_ -> v`
+// fallthrough (constant), so user-enum-heavy comptime loops are unaffected.
+// Considered lazy boxing (decode only on first value_to_stmt) to skip the
+// decode for AST values that are matched but never spliced — rejected as
+// premature: it needs a mutable cache slot on the immutable Value, and the
+// only such values are small macro-input decls (one decode each).
+
+/// True when a Value carries an enum-shaped payload — either a plain
+/// runtime enum or an AST node boxed by box_ast_value (which keeps the
+/// enum_* fields populated alongside the native payload). Pattern
+/// matching and `is` checks use this so a boxed Stmt/Expr/ValueType
+/// still matches `.Variant(...)` patterns.
+/// True for the Value kinds box_ast_value produces — the AST nodes
+/// (Stmt / Expr / ValueType) that carry a native payload alongside the
+/// enum_* fields. Single source of truth for "which kinds are boxed
+/// AST" so value_is_enumish and the comptime fold reconstructor agree.
+export fn is_boxed_ast_kind(kind: string) -> bool {
+    kind == "stmt" || kind == "expr" || kind == "value_type"
+}
+
+export fn value_is_enumish(v: Value) -> bool {
+    v.kind == "enum" || is_boxed_ast_kind(v.kind)
+}
+
+/// Box an AST EnumCtor Value into its native form. The native node is
+/// stashed in the matching payload slot and `kind` flips to the AST
+/// kind, while every other field — crucially enum_type / enum_variant /
+/// enum_payload — carries through via `with`, so the dual representation
+/// stays intact (matching + fold still read the enum form). Returns the
+/// Value unchanged for non-AST enum types or when the decode fails, so
+/// the downstream value_to_* fall back to the decoder.
+fn box_ast_value(v: Value) -> Value {
+    match v.enum_type {
+        "@std::avrac::core::Stmt" -> {
+            match enum_value_to_stmt(v) {
+                .Ok(s) -> v with { kind: "stmt", stmt_payload: s }
+                .Err(_) -> v
+            }
+        }
+        "@std::avrac::core::Expr" -> {
+            match enum_value_to_expr(v) {
+                .Ok(e) -> v with { kind: "expr", expr_payload: e }
+                .Err(_) -> v
+            }
+        }
+        "@std::avrac::core::ValueType" -> {
+            match enum_value_to_value_type(v) {
+                .Ok(t) -> v with { kind: "value_type", value_type_payload: t }
+                .Err(_) -> v
+            }
+        }
+        _ -> v
+    }
+}
+
+/// Unwrap a decode `Result`, falling back to `d` on `Err`. Replaces the
+/// `decoder(...) ?? default` idiom now that the value_to_* decoders return
+/// `Result` (the `?`-split makes `?` Result-only; `?` on a `T?` is F1202).
+fn decode_or<T>(r: Result<T, string>, d: T) -> T {
+    match r {
+        .Ok(x) -> x
+        .Err(_) -> d
+    }
+}
+
+// ── Public unwrap-or-decode entry points ──
+
+/// Stmt from a Value: unwrap the boxed native node, else decode the
+/// enum representation. The @expand splice path calls this on macro
+/// return Values.
+export fn value_to_stmt(v: Value) -> Result<Stmt, string> {
+    if v.kind == "stmt" { return .Ok(v.stmt_payload) }
+    enum_value_to_stmt(v)
+}
+
+/// Expr from a Value — unwrap-first, mirroring value_to_stmt.
+fn value_to_expr_node(v: Value) -> Result<Expr, string> {
+    if v.kind == "expr" { return .Ok(v.expr_payload) }
+    enum_value_to_expr(v)
+}
+
+/// ValueType from a Value — unwrap-first, mirroring value_to_stmt.
+fn value_to_value_type_node(v: Value) -> Result<ValueType, string> {
+    if v.kind == "value_type" { return .Ok(v.value_type_payload) }
+    enum_value_to_value_type(v)
+}
+
+/// Decode a Value carrying a `List<SStmt>` back into a real
+/// `List<SStmt>` AST value.
+export fn value_to_stmt_list(v: Value) -> Result<List<SStmt>, string> {
+    list_value_to_stmt_list(v)
+}
+
+// ── Expr decoder ──
+
+fn enum_value_to_expr(v: Value) -> Result<Expr, string> {
+    if v.enum_type != "@std::avrac::core::Expr" { return .Err("decode: not an Expr") }
+    if variant_is_optional_absent(v.enum_variant) { return .Ok(Expr.None) }
+    let p = v.enum_payload
+    if p.length == 0 { return .Err("decode: empty Expr payload") }
+    let head: Value = p[0]
+    match v.enum_variant {
+        "Number"          -> .Ok(Expr.Number(head.text))
+        "String"          -> .Ok(Expr.String("\"${head.text}\""))
+        "Bool"            -> .Ok(Expr.Bool(head.text))
+        "Ident"           -> .Ok(Expr.Ident(head.text))
+        "QualifiedIdent"  -> .Ok(Expr.QualifiedIdent(head.text))
+        "FloatLit"        -> .Ok(Expr.FloatLit(head.text))
+        "Grouping"        -> {
+            let inner = value_to_expr_node(head)?
+            .Ok(Expr.Grouping(inner))
+        }
+        "Unary" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let op = enum_value_to_unop(head)?
+            let right = value_to_expr_node(p[1])?
+            .Ok(Expr.Unary(op, right))
+        }
+        "Binary" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let left = value_to_expr_node(head)?
+            let op = enum_value_to_binop(p[1])?
+            let right = value_to_expr_node(p[2])?
+            .Ok(Expr.Binary(left, op, right))
+        }
+        "Logical" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let left = value_to_expr_node(head)?
+            let op = enum_value_to_logicop(p[1])?
+            let right = value_to_expr_node(p[2])?
+            .Ok(Expr.Logical(left, op, right))
+        }
+        "Call" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let callee = value_to_expr_node(head)?
+            let args = list_value_to_expr_list(p[1])?
+            .Ok(Expr.Call(callee, args))
+        }
+        "GenericCall" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let callee = value_to_expr_node(head)?
+            let type_args = list_value_to_string_list(p[1])?
+            let args = list_value_to_expr_list(p[2])?
+            .Ok(Expr.GenericCall(callee, type_args, args))
+        }
+        "EnumCtor" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let variant_v: Value = p[1]
+            let args_v: Value = p[2]
+            let args = list_value_to_expr_list(args_v)?
+            .Ok(Expr.EnumCtor(head.text, variant_v.text, args))
+        }
+        "Index" -> two_expr_decode(p, "Index")
+        "NullCoalesce" -> two_expr_decode(p, "NullCoalesce")
+        "Try" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let inner = value_to_expr_node(head)?
+            .Ok(Expr.Try(inner))
+        }
+        "Spawn" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let inner = value_to_expr_node(head)?
+            .Ok(Expr.Spawn(inner))
+        }
+        "FieldAccess" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_node(head)?
+            let field_v: Value = p[1]
+            .Ok(Expr.FieldAccess(obj, field_v.text))
+        }
+        "OptionalChain" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_node(head)?
+            let field_v: Value = p[1]
+            .Ok(Expr.OptionalChain(obj, field_v.text))
+        }
+        "OptionalMethodCall" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_node(head)?
+            let method_v: Value = p[1]
+            let args_v: Value = p[2]
+            let args = list_value_to_expr_list(args_v)?
+            .Ok(Expr.OptionalMethodCall(obj, method_v.text, args))
+        }
+        "IsCheck" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let subj = value_to_expr_node(head)?
+            let vname_v: Value = p[1]
+            .Ok(Expr.IsCheck(subj, vname_v.text))
+        }
+        "Tuple" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let elems = list_value_to_expr_list(head)?
+            .Ok(Expr.Tuple(elems))
+        }
+        "ListLit" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let elems = list_value_to_expr_list(head)?
+            .Ok(Expr.ListLit(elems))
+        }
+        "MapLit" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let entries = list_value_to_expr_list(head)?
+            .Ok(Expr.MapLit(entries))
+        }
+        "StructLit" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let inits = list_value_to_field_init_list(p[1])?
+            .Ok(Expr.StructLit(head.text, inits))
+        }
+        "InCheck" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let needle = value_to_expr_node(head)?
+            let items = list_value_to_expr_list(p[1])?
+            .Ok(Expr.InCheck(needle, items))
+        }
+        "IfExpr" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let c = value_to_expr_node(head)?
+            let t = value_to_expr_node(p[1])?
+            let e = value_to_expr_node(p[2])?
+            .Ok(Expr.IfExpr(c, t, e))
+        }
+        "MatchExpr" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let subj = value_to_expr_node(head)?
+            let arms = list_value_to_match_arm_list(p[1])?
+            .Ok(Expr.MatchExpr(subj, arms))
+        }
+        "Block" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let body = list_value_to_stmt_list(head)?
+            .Ok(Expr.Block(body))
+        }
+        "Assign" -> {
+            if p.length != 2 { return .Err("decode: Assign arity") }
+            let name_v: Value = p[0]
+            let value = value_to_expr_node(p[1])?
+            .Ok(Expr.Assign(name_v.text, value))
+        }
+        _                 -> .Err("decode: unknown Expr variant `${v.enum_variant}`")
+    }
+}
+
+fn list_value_to_match_arm_list(v: Value) -> Result<List<MatchArm>, string> {
+    if v.kind != "list" { return .Err("decode: match-arm list not a list") }
+    mut out: List<MatchArm> = []
+    for entry in v.list_payload {
+        let arm = value_to_match_arm(entry)?
+        out.push(arm)
+    }
+    .Ok(out)
+}
+
+fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
+    if v.kind != "struct" { return .Err("decode: match arm not a struct") }
+    mut pat_opt: Pattern? = null
+    mut guard_opt: SExpr? = null
+    mut body_opt: SExpr? = null
+    for f in v.struct_payload {
+        match f.name {
+            "pattern" -> {
+                match value_to_pattern(f.value) {
+                    .Ok(pat) -> pat_opt = pat
+                    .Err(_) -> {}
+                }
+            }
+            "guard" -> {
+                let g_val = f.value
+                // Absent guards are encoded as the Expr.None sentinel.
+                // Check the variant name (intact for both kind="enum"
+                // and a boxed kind="expr") rather than kind so a boxed
+                // Null still reads as "no guard".
+                if variant_is_optional_absent(g_val.enum_variant) {
+                    guard_opt = null
+                } else {
+                    match value_to_expr_node(g_val) {
+                        .Ok(g_expr) -> guard_opt = sexpr_dummy(g_expr)
+                        .Err(_) -> {}
+                    }
+                }
+            }
+            "body" -> {
+                match value_to_expr_node(f.value) {
+                    .Ok(b_expr) -> body_opt = sexpr_dummy(b_expr)
+                    .Err(_) -> {}
+                }
+            }
+            _ -> { /* ignore unknown fields */ }
+        }
+    }
+    if pat_opt == none { return .Err("decode: match arm missing pattern") }
+    if body_opt == none { return .Err("decode: match arm missing body") }
+    .Ok(MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt! })
+}
+
+fn value_to_pattern(v: Value) -> Result<Pattern, string> {
+    if v.enum_type != "@std::avrac::core::Pattern" { return .Err("decode: not a Pattern") }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "Wildcard" -> .Ok(Pattern.Wildcard)
+        "Variant" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let name_v: Value = p[0]
+            let bindings = list_value_to_param_list(p[1])?
+            .Ok(Pattern.Variant(name_v.text, bindings))
+        }
+        "LitString" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let s_v: Value = p[0]
+            .Ok(Pattern.LitString(s_v.text))
+        }
+        "LitInt" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let n_v: Value = p[0]
+            .Ok(Pattern.LitInt(int(n_v.number_text)))
+        }
+        "LitBool" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let b_v: Value = p[0]
+            .Ok(Pattern.LitBool(int(b_v.number_text)))
+        }
+        "LitFloat" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let f_v: Value = p[0]
+            .Ok(Pattern.LitFloat(f_v.text))
+        }
+        "NestedVariant" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let name_v: Value = p[0]
+            let subs = list_value_to_pattern_list(p[1])?
+            .Ok(Pattern.NestedVariant(name_v.text, subs))
+        }
+        "Or" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let left = value_to_pattern(p[0])?
+            let right = value_to_pattern(p[1])?
+            .Ok(Pattern.Or(left, right))
+        }
+        "TypePattern" -> {
+            if p.length != 2 { return .Err("decode: TypePattern arity") }
+            let tn_v: Value = p[0]
+            let bind_v: Value = p[1]
+            .Ok(Pattern.TypePattern(tn_v.text, bind_v.text))
+        }
+        _ -> .Err("decode: unknown Pattern variant `${v.enum_variant}`")
+    }
+}
+
+fn list_value_to_pattern_list(v: Value) -> Result<List<Pattern>, string> {
+    if v.kind != "list" { return .Err("decode: pattern list not a list") }
+    mut out: List<Pattern> = []
+    for entry in v.list_payload {
+        let p = value_to_pattern(entry)?
+        out.push(p)
+    }
+    .Ok(out)
+}
+
+fn two_expr_decode(p: List<Value>, variant: string) -> Result<Expr, string> {
+    if p.length != 2 { return .Err("decode: two-expr arity") }
+    let l = value_to_expr_node(p[0])?
+    let r = value_to_expr_node(p[1])?
+    match variant {
+        "Index" -> .Ok(Expr.Index(l, r))
+        "NullCoalesce" -> .Ok(Expr.NullCoalesce(l, r))
+        _ -> .Err("decode: unknown two-expr variant `${variant}`")
+    }
+}
+
+fn list_value_to_expr_list(v: Value) -> Result<List<SExpr>, string> {
+    if v.kind != "list" { return .Err("decode: expr list not a list") }
+    list_value_to_expr_list_at(v.list_payload, 0)
+}
+
+fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {
+    if v.kind != "list" { return .Err("decode: string list not a list") }
+    mut out: List<string> = []
+    for entry in v.list_payload {
+        if entry.kind != "string" { return .Err("decode: non-string in string list") }
+        out.push(entry.text)
+    }
+    .Ok(out)
+}
+
+fn list_value_to_expr_list_at(items: List<Value>, i: int) -> Result<List<SExpr>, string> {
+    mut out: List<SExpr> = []
+    mut j = i
+    while j < items.length {
+        let inner = value_to_expr_node(items[j])?
+        out.push(sexpr_dummy(inner))
+        j = j + 1
+    }
+    .Ok(out)
+}
+
+fn enum_value_to_binop(v: Value) -> Result<BinOp, string> {
+    if v.enum_type != "@std::avrac::core::BinOp" { return .Err("decode: not a BinOp") }
+    match v.enum_variant {
+        "Add" -> .Ok(BinOp.Add)
+        "Sub" -> .Ok(BinOp.Sub)
+        "Mul" -> .Ok(BinOp.Mul)
+        "Div" -> .Ok(BinOp.Div)
+        "Mod" -> .Ok(BinOp.Mod)
+        "Eq"  -> .Ok(BinOp.Eq)
+        "Ne"  -> .Ok(BinOp.Ne)
+        "Lt"  -> .Ok(BinOp.Lt)
+        "Le"  -> .Ok(BinOp.Le)
+        "Gt"  -> .Ok(BinOp.Gt)
+        "Ge"  -> .Ok(BinOp.Ge)
+        _     -> .Err("decode: unknown BinOp `${v.enum_variant}`")
+    }
+}
+
+fn enum_value_to_unop(v: Value) -> Result<UnOp, string> {
+    if v.enum_type != "@std::avrac::core::UnOp" { return .Err("decode: not a UnOp") }
+    match v.enum_variant {
+        "Neg" -> .Ok(UnOp.Neg)
+        "Not" -> .Ok(UnOp.Not)
+        _     -> .Err("decode: unknown UnOp `${v.enum_variant}`")
+    }
+}
+
+fn enum_value_to_logicop(v: Value) -> Result<LogicOp, string> {
+    if v.enum_type != "@std::avrac::core::LogicOp" { return .Err("decode: not a LogicOp") }
+    match v.enum_variant {
+        "And" -> .Ok(LogicOp.And)
+        "Or"  -> .Ok(LogicOp.Or)
+        _     -> .Err("decode: unknown LogicOp `${v.enum_variant}`")
+    }
+}
+
+// ── Stmt decoder ──
+
+fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
+    if v.enum_type != "@std::avrac::core::Stmt" { return .Err("decode: not a Stmt") }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "ReturnEmpty" -> .Ok(Stmt.ReturnEmpty)
+        "Break"       -> .Ok(Stmt.Break)
+        "Continue"    -> .Ok(Stmt.Continue)
+        "NoOp"        -> .Ok(Stmt.NoOp)
+        "Expr" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let inner = value_to_expr_node(p[0])?
+            .Ok(Stmt.Expr(inner))
+        }
+        "Return" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let inner = value_to_expr_node(p[0])?
+            .Ok(Stmt.Return(inner))
+        }
+        "Let" -> binding_decode(p, "Let")
+        "Mut" -> binding_decode(p, "Mut")
+        "Const" -> binding_decode(p, "Const")
+        "Block" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let body = list_value_to_stmt_list(p[0])?
+            .Ok(Stmt.Block(body))
+        }
+        "Impl" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let type_name_v: Value = p[0]
+            let methods = list_value_to_stmt_list(p[1])?
+            .Ok(Stmt.Impl(type_name_v.text, methods))
+        }
+        "Function" -> {
+            if p.length != 5 { return .Err("decode: bad payload") }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let params = list_value_to_param_list(p[2])?
+            let resolved_rt = decode_or(value_to_value_type_node(p[3]), ValueType.Unknown)
+            let body = list_value_to_stmt_list(p[4])?
+            .Ok(Stmt.Function(name_v.text, tp, params, resolved_rt, body))
+        }
+        "TypeDecl" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let fields = list_value_to_field_list(p[2])?
+            .Ok(Stmt.TypeDecl(name_v.text, tp, fields))
+        }
+        "EnumDecl" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let name_v: Value = p[0]
+            let tp = list_value_to_type_param_list(p[1])?
+            let variants = list_value_to_variant_list(p[2])?
+            .Ok(Stmt.EnumDecl(name_v.text, tp, variants))
+        }
+        "ComponentBlock" -> {
+            if p.length != 4 { return .Err("decode: bad payload") }
+            let comp_v: Value = p[0]
+            let inst_v: Value = p[1]
+            let config = list_value_to_comp_config_pair_list(p[2])?
+            let body = list_value_to_stmt_list(p[3])?
+            .Ok(Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body))
+        }
+        "Annotated" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let annots = list_value_to_annotation_list(p[0])?
+            let inner = value_to_stmt(p[1])?
+            // Annotated.inner is SStmt — wrap the decoded Stmt in a dummy span
+            // (the decoded AST has no source position of its own).
+            .Ok(Stmt.Annotated(annots, sstmt_dummy(inner)))
+        }
+        "If" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let cond = value_to_expr_node(p[0])?
+            let then_b = value_to_stmt(p[1])?
+            let else_v: Value = p[2]
+            let else_b = if variant_is_optional_absent(else_v.enum_variant) { none } else {
+                match value_to_stmt(else_v) { .Ok(s) -> s, .Err(_) -> none }
+            }
+            .Ok(Stmt.If(cond, then_b, else_b))
+        }
+        "While" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let cond = value_to_expr_node(p[0])?
+            let body = value_to_stmt(p[1])?
+            .Ok(Stmt.While(cond, body))
+        }
+        "For" -> {
+            if p.length != 4 { return .Err("decode: bad payload") }
+            let var_v: Value = p[0]
+            let start = value_to_expr_node(p[1])?
+            let end_e = value_to_expr_node(p[2])?
+            let body = value_to_stmt(p[3])?
+            .Ok(Stmt.For(var_v.text, start, end_e, body))
+        }
+        "ForIn" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let var_v: Value = p[0]
+            let coll = value_to_expr_node(p[1])?
+            let body = value_to_stmt(p[2])?
+            .Ok(Stmt.ForIn(var_v.text, coll, body))
+        }
+        "Defer" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let body = value_to_expr_node(p[0])?
+            .Ok(Stmt.Defer(body))
+        }
+        "Errdefer" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let body = value_to_expr_node(p[0])?
+            .Ok(Stmt.Errdefer(body))
+        }
+        "Parallel" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let body = list_value_to_stmt_list(p[0])?
+            .Ok(Stmt.Parallel(body))
+        }
+        "TraitDecl" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let name_v: Value = p[0]
+            let methods = list_value_to_stmt_list(p[1])?
+            .Ok(Stmt.TraitDecl(name_v.text, methods))
+        }
+        _ -> .Err("decode: unknown Stmt variant `${v.enum_variant}`")
+    }
+}
+
+fn list_value_to_annotation_list(v: Value) -> Result<List<Annotation>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<Annotation> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return .Err("decode: annotation not a struct") }
+        let name = struct_field_string(entry, "name")
+        let args = decode_or(struct_field_expr_list(entry, "args"), [])
+        out.push(Annotation { name, args })
+    }
+    .Ok(out)
+}
+
+fn struct_field_expr_list(v: Value, name: string) -> Result<List<SExpr>, string> {
+    if v.kind != "struct" { return .Err("decode: not a struct") }
+    for f in v.struct_payload {
+        if f.name == name { return list_value_to_expr_list(f.value) }
+    }
+    .Err("decode: field `${name}` not found")
+}
+
+fn list_value_to_field_list(v: Value) -> Result<List<FieldEntry>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<FieldEntry> = []
+    for entry in v.list_payload {
+        let name = struct_field_string(entry, "name")
+        let resolved = decode_or(struct_field_value_type(entry, "resolved"), ValueType.Unknown)
+        out.push(FieldEntry { name, resolved })
+    }
+    .Ok(out)
+}
+
+fn list_value_to_variant_list(v: Value) -> Result<List<Variant>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<Variant> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return .Err("decode: variant not a struct") }
+        let name = struct_field_string(entry, "name")
+        mut fields: List<FieldEntry> = []
+        for f in entry.struct_payload {
+            if f.name == "fields" {
+                fields = decode_or(list_value_to_field_list(f.value), [])
+            }
+        }
+        out.push(Variant { name, fields })
+    }
+    .Ok(out)
+}
+
+fn list_value_to_comp_config_pair_list(v: Value) -> Result<List<CompConfigPair>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<CompConfigPair> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return .Err("decode: comp-config pair not a struct") }
+        let key = struct_field_string(entry, "key")
+        mut value_expr: Expr = Expr.None
+        for f in entry.struct_payload {
+            if f.name == "value" {
+                value_expr = value_to_expr_node(f.value)?
+            }
+        }
+        out.push(CompConfigPair { key, value: value_expr })
+    }
+    .Ok(out)
+}
+
+fn list_value_to_field_init_list(v: Value) -> Result<List<FieldInit>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<FieldInit> = []
+    for entry in v.list_payload {
+        if entry.kind != "struct" { return .Err("decode: field-init not a struct") }
+        let name = struct_field_string(entry, "name")
+        mut value_expr: Expr = Expr.None
+        for f in entry.struct_payload {
+            if f.name == "value" {
+                value_expr = value_to_expr_node(f.value)?
+            }
+        }
+        out.push(FieldInit { name, value: sexpr_dummy(value_expr) })
+    }
+    .Ok(out)
+}
+
+fn list_value_to_type_param_list(v: Value) -> Result<List<TypeParamEntry>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<TypeParamEntry> = []
+    for entry in v.list_payload {
+        let name = struct_field_string(entry, "name")
+        let bounds = struct_field_string(entry, "bounds")
+        out.push(TypeParamEntry { name, bounds })
+    }
+    .Ok(out)
+}
+
+fn list_value_to_param_list(v: Value) -> Result<List<ParamEntry>, string> {
+    if v.kind != "list" { return .Err("decode: param list not a list") }
+    mut out: List<ParamEntry> = []
+    for entry in v.list_payload {
+        let name = struct_field_string(entry, "name")
+        let resolved_vt = decode_or(struct_field_value_type(entry, "vtype"), ValueType.Unknown)
+        out.push(ParamEntry { name: name, vtype: resolved_vt })
+    }
+    .Ok(out)
+}
+
+fn struct_field_string(v: Value, name: string) -> string {
+    if v.kind != "struct" { return "" }
+    for f in v.struct_payload {
+        if f.name == name { return f.value.text }
+    }
+    ""
+}
+
+fn struct_field_value_type(v: Value, name: string) -> Result<ValueType, string> {
+    if v.kind != "struct" { return .Err("decode: not a struct") }
+    for f in v.struct_payload {
+        if f.name == name { return value_to_value_type_node(f.value) }
+    }
+    .Err("decode: field `${name}` not found")
+}
+
+fn binding_decode(p: List<Value>, variant: string) -> Result<Stmt, string> {
+    if p.length != 3 { return .Err("decode: binding arity") }
+    let name_v: Value = p[0]
+    let init = value_to_expr_node(p[2])?
+    let resolved_vt = decode_or(value_to_value_type_node(p[1]), ValueType.Unknown)
+    match variant {
+        "Let"   -> .Ok(Stmt.Let(name_v.text, resolved_vt, init))
+        "Mut"   -> .Ok(Stmt.Mut(name_v.text, resolved_vt, init))
+        "Const" -> .Ok(Stmt.Const(name_v.text, resolved_vt, init))
+        _ -> .Err("decode: unknown binding variant `${variant}`")
+    }
+}
+
+// ── ValueType decoder ──
+
+fn enum_value_to_value_type(v: Value) -> Result<ValueType, string> {
+    // Accept both fully-qualified and bare enum_type (inner positional
+    // ValueType args like `.List(.Int)` carry an empty enum_type for
+    // the `.Int`). The slot pins the type, so the variant name alone
+    // is unambiguous.
+    if v.enum_type != "@std::avrac::core::ValueType" && v.enum_type != "" {
+        return .Err("decode: not a ValueType")
+    }
+    let p = v.enum_payload
+    match v.enum_variant {
+        "Int"     -> .Ok(ValueType.Int)
+        "U8"      -> .Ok(ValueType.U8)
+        "U16"     -> .Ok(ValueType.U16)
+        "U32"     -> .Ok(ValueType.U32)
+        "U64"     -> .Ok(ValueType.U64)
+        "I8"      -> .Ok(ValueType.I8)
+        "I16"     -> .Ok(ValueType.I16)
+        "I32"     -> .Ok(ValueType.I32)
+        "Bool"    -> .Ok(ValueType.Bool)
+        "Float"   -> .Ok(ValueType.Float)
+        "Str"     -> .Ok(ValueType.Str)
+        "Bytes"   -> .Ok(ValueType.Bytes)
+        "Void"    -> .Ok(ValueType.Void)
+        "Ptr"     -> .Ok(ValueType.Ptr)
+        "Map"     -> {
+            if p.length != 2 { return .Err("decode: Map arity") }
+            let k = value_to_value_type_node(p[0])?
+            let v = value_to_value_type_node(p[1])?
+            .Ok(ValueType.Map(k, v))
+        }
+        "Unknown" -> .Ok(ValueType.Unknown)
+        "Struct" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let name = p[0].text
+            let type_args = list_value_to_value_type_list(p[1])?
+            let id = number_value_to_int(p[2])
+            .Ok(ValueType.Struct(name, type_args, id))
+        }
+        "Enum" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let name = p[0].text
+            let type_args = list_value_to_value_type_list(p[1])?
+            let id = number_value_to_int(p[2])
+            .Ok(ValueType.Enum(name, type_args, id))
+        }
+        "Tuple" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let elements = list_value_to_value_type_list(p[0])?
+            .Ok(ValueType.Tuple(elements))
+        }
+        "List" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let elem = value_to_value_type_node(p[0])?
+            .Ok(ValueType.List(elem))
+        }
+        "Fn" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let ret = value_to_value_type_node(p[0])?
+            .Ok(ValueType.Fn(ret))
+        }
+        "Closure" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let nc = number_value_to_int(p[0])
+            let ret = value_to_value_type_node(p[1])?
+            .Ok(ValueType.Closure(nc, ret))
+        }
+        "FnTyped" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let params = list_value_to_value_type_list(p[0])?
+            let ret = value_to_value_type_node(p[1])?
+            .Ok(ValueType.FnTyped(params, ret))
+        }
+        "Trait" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let name = p[0].text
+            let id = number_value_to_int(p[1])
+            .Ok(ValueType.Trait(name, id))
+        }
+        "Union" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let types = list_value_to_value_type_list(p[0])?
+            .Ok(ValueType.Union(types))
+        }
+        "Newtype" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let name = p[0].text
+            let inner = value_to_value_type_node(p[1])?
+            let id = number_value_to_int(p[2])
+            .Ok(ValueType.Newtype(name, inner, id))
+        }
+        "NarrowedEnum" -> {
+            if p.length != 3 { return .Err("decode: bad payload") }
+            let en = p[0].text
+            let vn = p[1].text
+            let id = number_value_to_int(p[2])
+            .Ok(ValueType.NarrowedEnum(en, vn, id))
+        }
+        "Task" -> {
+            if p.length != 1 { return .Err("decode: Task arity") }
+            let rt = value_to_value_type_node(p[0])?
+            .Ok(ValueType.Task(rt))
+        }
+        _ -> .Err("decode: unknown ValueType variant `${v.enum_variant}`")
+    }
+}
+
+fn list_value_to_value_type_list(v: Value) -> Result<List<ValueType>, string> {
+    if v.kind != "list" { return .Ok([]) }
+    mut out: List<ValueType> = []
+    for entry in v.list_payload {
+        let vt = decode_or(value_to_value_type_node(entry), ValueType.Unknown)
+        out.push(vt)
+    }
+    .Ok(out)
+}
+
+/// Extract an int from a Value carrying a number literal. Non-number
+/// Values decode as 0 — the resolver re-runs over spliced decls and
+/// overwrites stale ids, so a zero default is safe for ids/slot counts.
+fn number_value_to_int(v: Value) -> int {
+    if v.kind != "number" { return 0 }
+    avra_selfhost_string_to_int(v.number_text)
+}
+
+fn list_value_to_stmt_list(v: Value) -> Result<List<SStmt>, string> {
+    if v.kind != "list" { return .Err("decode: stmt list not a list") }
+    mut out: List<SStmt> = []
+    for entry in v.list_payload {
+        let inner = value_to_stmt(entry)?
+        out.push(sstmt_dummy(inner))
+    }
+    .Ok(out)
+}

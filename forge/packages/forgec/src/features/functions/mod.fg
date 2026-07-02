@@ -5,16 +5,19 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
+use core.kind_ids.{KID_FN, KID_LET, KID_MUT, KID_CONST, KID_TYPE, KID_ENUM, KID_TRAIT, KID_IMPL, KID_LBRACE, KID_RBRACE, KID_LPAREN, KID_RPAREN, KID_COMMA, KID_COLON, KID_ARROW, KID_IDENT}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
-use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY, VAR_LIST_INIT_CSV}
+use codegen.{Codegen, CG_CTX, CG_STR, CG_I64, CG_I8, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types, coerce_to_fn_return}
+use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
+use features.impl_methods.{parse_impl_block}
+use features.enums.{parse_enum_decl}
 use features.while_loops.PARSE_END_POS
-use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
+use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES, PARSED_PARAM_NAMES}
 
 // ─── Side Table ──────────────────────────────────
 
@@ -33,14 +36,14 @@ type FnDeclData = {
 }
 
 fn get_fn_decl(node_id: int) -> FnDeclData? {
-    let key = "${node_id}"
+    let key = string(node_id)
     if FN_DECLS.has(key) { FN_DECLS[key] } else { null }
 }
 
 // ─── Parse ──────────────────────────────────────
 
 fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
-    let start = p.advance().span // consume 'fn'
+    let start = p.advance_span() // consume 'fn'
 
     let name = p.expect_ident()
     if name == "" { return null }
@@ -52,47 +55,73 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     mut return_type: TypeExpr? = null
     if p.check(TokenKind.Arrow) {
         p.advance()
-        // Capture return type name
+        // Capture return type name. For generics like `List<Expr>` we
+        // store the colon-mangled form `"List:Expr"` so list_elem_type can
+        // recover the element type ("Expr") later — without this the
+        // for-loop emit path falls back to CG_I64 stride and reads
+        // 112-byte Expr elements as 8-byte ints.
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
             return_type_name = ret_tok.text
+            let next_tok = p.peek_at(1)
+            if next_tok.kind_id == KID_LT {
+                let generic_tok = p.peek_at(2)
+                if generic_tok.kind_id == 1 {
+                    return_type_name = ret_tok.text + ":" + generic_tok.text
+                }
+            }
         }
         let parsed_ret = p.parse_type_expr()
-        // Check if the parsed type is Nullable (T?) and update return_type_name
-        if parsed_ret != null {
-            match parsed_ret! {
-                .Nullable(inner, span) -> {
-                    // Append ? to signal nullable return
-                    return_type_name = return_type_name + "?"
-                }
-                _ -> {}
+        // Detect nullable return via the last consumed token's kind_id
+        // directly: the `.Nullable` match has proven unreliable in
+        // stage 2's self-compiled build because the enum tag layout
+        // doesn't round-trip cleanly through the wrapping.  Reading
+        // the token stream is the source of truth.
+        let last_pos = forge_parser_get_pos() - 1
+        if last_pos >= 0 && return_type_name.length > 0 && forge_ftok_kind_id(last_pos) == KID_QUESTION {
+            return_type_name = return_type_name + "?"
+        }
+        // Defensive: if parse_type_expr left the cursor sitting on `?`
+        // (stage 2 bin self-host miscompile of `peek_kind_id() ==
+        // KID_QUESTION` inside parse_type_expr), consume it here so
+        // the body brace counter doesn't see it as a non-LBRACE token
+        // and skip the body opener.
+        if p.peek_kind_id() == KID_QUESTION {
+            p.advance()
+            if return_type_name.length > 0 {
+                return_type_name = return_type_name + "?"
             }
         }
         return_type = parsed_ret
     }
 
-    // Capture body source by reconstructing from token positions
-    // Use raw source between the { and } tokens (span-based extraction)
-    let block_open_span = p.peek().span  // span of the {
-    IN_FUNCTION_BODY = 1
-    let body = p.parse_block()
-    IN_FUNCTION_BODY = 0
-    // Get close position directly (avoid if-assignment bug)
-    let close_tok_idx = p.pos - 1
-    let block_close_end = p.tokens[close_tok_idx].span.end
-    mut body_src = ""
-    if p.source.length > 0 {
-        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
+    // Skip body by brace counting using parser's own peek
+    let open_pos = forge_parser_get_pos()
+    if p.peek_kind_id() == KID_LBRACE { p.advance() }
+    mut depth = 1
+    while depth > 0 && !p.is_at_end() {
+        let cur_kid = p.peek_kind_id()
+        if cur_kid == KID_LBRACE { depth = depth + 1 }
+        if cur_kid == KID_RBRACE { depth = depth - 1 }
+        if depth > 0 { p.advance() }
     }
+    if p.peek_kind_id() == KID_RBRACE { p.advance() }
+    let close_pos = forge_parser_get_pos() - 1
+    let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
     // Store for codegen — name, body, param count, names, types, return type
+    eprintln("[STORE] " + name + " params.length=" + string(params.length) + " PPN.length=" + string(PARSED_PARAM_NAMES.length))
     store_fn_source(name, body_src)
     store_fn_param_count(params.length)
     store_fn_return_type(return_type_name)
-    // Store param info with type names from PARSED_PARAM_TYPES
+    // Store param info from PARSED_PARAM_NAMES/TYPES (avoids for-loop over Param structs)
     mut pi = 0
-    for param in params {
-        store_fn_param_name(param.name)
+    while pi < params.length {
+        if pi < PARSED_PARAM_NAMES.length {
+            store_fn_param_name(PARSED_PARAM_NAMES[pi])
+        } else {
+            store_fn_param_name("_")
+        }
         if pi < PARSED_PARAM_TYPES.length {
             store_fn_param_type(PARSED_PARAM_TYPES[pi])
         } else {
@@ -101,7 +130,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         pi = pi + 1
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
 }
@@ -109,37 +138,46 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
 fn parse_fn(p: Parser) -> Statement? { parse_fn_decl(p, false) }
 
 fn parse_export(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'export'
+    let start = p.advance_span() // consume 'export'
 
-    match p.peek().kind {
-        .Fn -> parse_fn_decl(p, true)
-        .Let -> parse_var_binding(p, .Let, true)
-        .Mut -> parse_var_binding(p, .Mut, true)
-        .Const -> parse_var_binding(p, .Const, true)
-        .TypeKw -> {
-            // export type — treat same as type
-            parse_type_decl(p)
-        }
-        .Enum -> {
-            // export enum — treat same as enum
-            parse_enum_decl(p)
-        }
-        .Trait -> {
-            // export trait — skip (trait is no-op for codegen)
-            p.advance() // consume 'trait'
-            p.expect_ident() // trait name
-            if p.check(TokenKind.LBrace) {
-                p.parse_block() // skip body
-            }
-            PARSE_END_POS = p.pos
-            let id = next_node_id()
-            feature_stmt("functions", "noop", id, start)
-        }
-        _ -> {
-            p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
-            null
-        }
+    // kind_id dispatch — use parser's own peek, not C-side position
+    let ekid = p.peek_kind_id()
+    if ekid == KID_FN { return parse_fn_decl(p, true) }
+    if ekid == KID_LET { return parse_var_binding(p, .Let, true) }
+    if ekid == KID_MUT { return parse_var_binding(p, .Mut, true) }
+    if ekid == KID_CONST { return parse_var_binding(p, .Const, true) }
+    // export type — parse to register struct fields
+    if ekid == KID_TYPE { return parse_type_decl(p) }
+    // export enum: parse variants to register tags
+    if ekid == KID_ENUM {
+        p.advance()
+        p.parse_enum_variants()
+        PARSE_END_POS = forge_parser_get_pos()
+        return Statement.Expr(Expr.IntLit(0, start))
     }
+    // export impl/trait — brace-count skip
+    if ekid == KID_TRAIT || ekid == KID_IMPL {
+        p.advance()
+        p.expect_ident()
+        while !p.is_at_end() && p.peek_kind_id() != KID_LBRACE {
+            p.advance()
+        }
+        if p.peek_kind_id() == KID_LBRACE {
+            p.advance()
+            mut bdepth = 1
+            while bdepth > 0 && !p.is_at_end() {
+                let bk = p.peek_kind_id()
+                if bk == KID_LBRACE { bdepth = bdepth + 1 }
+                if bk == KID_RBRACE { bdepth = bdepth - 1 }
+                if bdepth > 0 { p.advance() }
+            }
+            if p.peek_kind_id() == KID_RBRACE { p.advance() }
+        }
+        PARSE_END_POS = forge_parser_get_pos()
+        let id = next_node_id()
+        return feature_stmt("functions", "noop", id, start)
+    }
+    null
 }
 
 // ─── Check ──────────────────────────────────────
@@ -255,6 +293,7 @@ export mut EMIT_FILE_IDX: int = -1               // -1 = all files, >= 0 = only 
 
 // Store source text for re-parsing during codegen
 export fn store_fn_source(name: string, body_source: string) {
+    forge_fn_store_add(name, body_source)
     FN_NAMES = FN_NAMES.push(name)
     FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
     FN_FILE_INDEX = FN_FILE_INDEX.push(CURRENT_FILE_INDEX)
@@ -266,10 +305,12 @@ export fn store_fn_param_count(count: int) {
 
 export fn store_fn_param_name(name: string) {
     FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(name)
+    forge_param_name_add(name)
 }
 
 export fn store_fn_param_type(type_name: string) {
     FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
+    forge_param_type_add(type_name)
 }
 
 export fn store_fn_return_type(type_name: string) {
@@ -279,114 +320,17 @@ export fn store_fn_return_type(type_name: string) {
 // Global function map (bootstrap workaround: Codegen.functions passed by value loses data)
 mut DECLARED_FNS: Map<string, ptr> = {}
 
-// Declare all functions (signatures only, no bodies) so forward calls work
-export fn declare_all_functions(cg: Codegen) {
-    mut i = 0
-    while i < FN_NAMES.length {
-        let name = FN_NAMES[i]
-        let is_main = name == "main"
-        mut pc = 0
-        if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
-        let param_arr = llvm.type_array_new(pc)
-        mut pi = 0
-        while pi < pc {
-            llvm.type_array_set(param_arr, pi, CG_I64)
-            pi = pi + 1
-        }
-        mut ret_ty = CG_I64
-        if is_main { ret_ty = CG_I32 }
-        let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
-        llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        cg.functions[name] = fn_val
-        DECLARED_FNS[name] = fn_val
-        i = i + 1
-    }
-}
+// (declare_all_functions removed — was a dead earlier-iteration variant
+// that defaulted every param + return to CG_I64. The active path is
+// declare_all_fns() called from main.fg.)
 
 // Phase 1: Declare all functions with proper types (called before any body emission)
 export fn declare_all_fns() {
     cg_reinit_types()
-    // Create struct LLVM types
-    let struct_count = CG_STRUCT_NAMES.length
-    // Pass 1: create all opaque named types (handles circular references like Scope → Scope?)
-    mut pre = 0
-    while pre < struct_count {
-        let pname = CG_STRUCT_NAMES[pre]
-        let existing = llvm.get_type_by_name(CG_CTX, pname)
-        if existing == null {
-            llvm.struct_create_named(CG_CTX, pname)
-        }
-        pre = pre + 1
-    }
-    // Pass 2: set bodies with proper field types
-    mut si = 0
-    while si < struct_count {
-        cg_reinit_types()
-        let fields = CG_STRUCT_FIELDS[si]
-        mut fc = 1
-        mut ci = 0
-        while ci < fields.length {
-            if fields[ci] == "," { fc = fc + 1 }
-            ci = ci + 1
-        }
-        if fields.length == 0 { fc = 0 }
-        mut ftn = ""
-        if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
-        let fta = llvm.type_array_new(fc)
-        // Save type values locally (list pushes corrupt globals)
-        let saved_i64 = CG_I64
-        let saved_str = CG_STR
-        if ftn.length > 0 {
-            mut fi = 0
-            mut ftn_pos = 0
-            mut ftn_cur = ""
-            while ftn_pos < ftn.length {
-                let ch = ftn[ftn_pos]
-                if ch == "," {
-                    // Resolve field type — use resolve_type_to_llvm for proper enum/struct types
-                    let fty = resolve_type_to_llvm(ftn_cur)
-                    llvm.type_array_set(fta, fi, fty)
-                    fi = fi + 1
-                    ftn_cur = ""
-                } else {
-                    ftn_cur = ftn_cur + ch
-                }
-                ftn_pos = ftn_pos + 1
-            }
-            if ftn_cur != "" {
-                mut fty = saved_i64
-                if ftn_cur == "string" { fty = saved_str }
-                else if ftn_cur.length >= 4 {
-                    if ftn_cur[0] == "L" { fty = saved_str }
-                }
-                llvm.type_array_set(fta, fi, fty)
-            }
-        } else {
-            mut fi = 0
-            while fi < fc {
-                llvm.type_array_set(fta, fi, saved_i64)
-                fi = fi + 1
-            }
-        }
-        // Always create/update named struct type
-        let sname = CG_STRUCT_NAMES[si]
-        mut sty = llvm.get_type_by_name(CG_CTX, sname)
-        if sty == null {
-            sty = llvm.struct_create_named(CG_CTX, sname)
-        }
-        // Always set body (updates fields to match resolve_type_to_llvm)
-        llvm.struct_set_body(sty, fta, fc, 0)
-        llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(sname)
-        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-        CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
-        si = si + 1
-    }
-    // Declare all function signatures — use i64 for all params/returns
-    // (bootstrap: resolve_type_to_llvm may return null for complex types)
+    // Create core LLVM struct types (Lexer, Parser, etc.) with field info
+    cg_register_core_types()
+
+    // Declare all function signatures
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
@@ -395,45 +339,97 @@ export fn declare_all_fns() {
         let is_main = name == "main"
         mut pc = 0
         if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
+        // main gets argc/argv params for C convention
+        if is_main { pc = 2 }
         let param_arr = llvm.type_array_new(pc)
-        mut pi = 0
-        while pi < pc {
-            let pt_idx = param_offset + pi
-            mut param_ty = CG_I64
-            if pt_idx < FN_ALL_PARAM_TYPES.length {
-                let tname = FN_ALL_PARAM_TYPES[pt_idx]
-                // self param: use ptr for mutability (methods modify self.pos etc.)
-                mut pname = ""
-                if pt_idx < FN_ALL_PARAM_NAMES.length { pname = FN_ALL_PARAM_NAMES[pt_idx] }
-                if pname == "self" {
-                    param_ty = CG_PTR
-                } else {
-                    let resolved = resolve_type_to_llvm(tname)
-                    if resolved != null { param_ty = resolved }
+        if is_main {
+            llvm.type_array_set(param_arr, 0, CG_I32)
+            llvm.type_array_set(param_arr, 1, CG_PTR)
+        } else {
+            mut pi = 0
+            while pi < pc {
+                let pt_idx = param_offset + pi
+                mut param_ty = CG_I64
+                // Check if this is a 'self' param — pass by pointer for struct mutation
+                mut is_self_param = false
+                if pt_idx < FN_ALL_PARAM_NAMES.length {
+                    if forge_param_name_get(pt_idx) == "self" { is_self_param = true }
                 }
+                if pt_idx < FN_ALL_PARAM_TYPES.length {
+                    let tname = forge_param_type_get(pt_idx)
+                    if is_self_param {
+                        // Self params always pass by pointer (enables mutation)
+                        param_ty = CG_PTR
+                    } else if tname == "string" { param_ty = CG_STR }
+                    else if tname == "List" || (tname.length > 5 && tname.substring(0, 5) == "List:") { param_ty = CG_LIST }
+                    else if tname == "ptr" { param_ty = CG_PTR }
+                    // NOTE: bool params left as i64 — changing to i8 broke
+                    // stage 2 binary's hello-world compilation. The Forge
+                    // self-host stores bools as i64 in alloca cache and a
+                    // narrowing wouldn't match. Revisit when alloca cache
+                    // tracks types.
+                    else if tname != "int" && tname != "float" && tname != "bool" && tname != "" {
+                        let resolved = resolve_type_to_llvm(tname)
+                        if resolved != null { param_ty = resolved }
+                    }
+                }
+                llvm.type_array_set(param_arr, pi, param_ty)
+                pi = pi + 1
             }
-            llvm.type_array_set(param_arr, pi, param_ty)
-            pi = pi + 1
         }
         mut ret_ty = CG_I64
         if is_main { ret_ty = CG_I32 }
         if !is_main && i < FN_RETURN_TYPES.length {
             mut rtn = FN_RETURN_TYPES[i]
-            // Strip nullable suffix for type resolution
-            if rtn.length > 1 { if rtn[rtn.length - 1] == "?" {
+            // Check for nullable return type (T?)
+            mut is_nullable_ret = false
+            if rtn.length > 1 && rtn.substring(rtn.length - 1, rtn.length) == "?" {
+                is_nullable_ret = true
                 rtn = rtn.substring(0, rtn.length - 1)
-            } }
-            if rtn == "string" { ret_ty = CG_STR }
-            else if rtn != "" {
-                cg_reinit_types()
+            }
+            // Empty return type ("" / "void") → CG_VOID. Defaulting to
+            // CG_I64 here makes every void-returning function declare
+            // `define i64 @fn(...)`, which then mismatches the rust
+            // compiler's `define void @fn(...)` and breaks calling
+            // convention everywhere they meet (~30 functions).
+            if rtn == "" || rtn == "void" { ret_ty = CG_VOID }
+            else if rtn == "string" { ret_ty = CG_STR }
+            else if rtn == "List" || (rtn.length > 5 && rtn.substring(0, 5) == "List:") { ret_ty = CG_LIST }
+            else if rtn == "ptr" { ret_ty = CG_PTR }
+            // NOTE: bool returns left as i64 (default). See bool param
+            // comment above — narrowing breaks stage 2 binary.
+            else if rtn != "int" && rtn != "float" && rtn != "bool" {
                 let resolved = resolve_type_to_llvm(rtn)
                 if resolved != null { ret_ty = resolved }
             }
+            // Wrap in nullable struct {i8, InnerType} if return type had ?
+            // Use a named struct (Nullable_<TypeName>) so that callers and
+            // emit_return can find/recreate it consistently. This matches
+            // what the Rust compiler does.
+            if is_nullable_ret {
+                let nullable_name = "Nullable_" + rtn
+                mut existing = llvm.get_type_by_name(CG_CTX, nullable_name)
+                if existing == null {
+                    let nf = llvm.type_array_new(2)
+                    llvm.type_array_set(nf, 0, CG_I8)
+                    llvm.type_array_set(nf, 1, ret_ty)
+                    let named = llvm.struct_create_named(CG_CTX, nullable_name)
+                    llvm.struct_set_body(named, nf, 2, 0)
+                    llvm.type_array_free(nf)
+                    existing = named
+                }
+                ret_ty = existing
+            }
         }
+        cg_reinit_types()
+        if ret_ty == null { ret_ty = CG_I64 }
+        if ret_ty == 0 { ret_ty = CG_I64 }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        DECLARED_FNS[name] = fn_val
+        if fn_type != null {
+            let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+            if fn_val != null { DECLARED_FNS[name] = fn_val }
+        }
         param_offset = param_offset + pc
         i = i + 1
     }
@@ -442,124 +438,101 @@ export fn declare_all_fns() {
 // Emit a single function body from source — called per-function (no re-declaration)
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let name = FN_NAMES[idx]
-    eprintln("  emit: " + name)
     let body_src = FN_BODY_SOURCES[idx]
+    eprintln("  >> " + name)
     let is_main = name == "main"
     mut pc = 0
+    mut last = llvm.const_int(CG_I64, 0, 0)
+    mut has_last = 0
     if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)
-    if fn_val == null { return }
+    if fn_val == null {
+        eprintln("  [SKIP] fn not declared: " + name)
+        return
+    }
     cg.current_fn = fn_val
     cg_reinit_types()
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+    if entry == null {
+        eprintln("  [SKIP] null entry block for: " + name)
+        return
+    }
     llvm.position_at_end(CG_B, entry)
 
-    CG_VAR_SCOPE_START = CG_VAR_NAMES.length
-    CG_STR_VAR_NAMES = []
-    CG_STR_LOCALS_CSV = ""
-    CG_STRUCT_VAR_CSV = ""
-    CG_ENUM_VAR_CSV = ""
-    CG_STRUCT_VAR_NAMES = []
-    CG_STRUCT_VAR_TYPES = []
-    CG_STRUCT_VAR_FIELDS = []
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
-    CG_HAS_LAST_VAL = 0
-    CG_IS_MAP_INDEX = 0
-    CG_LAST_STRUCT_TYPE = ""
-
-    // Define params
+    // Define params — alloca auto-cached by build_alloca
     mut pi = 0
     while pi < pc {
-        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
+        let pname = forge_param_name_get(param_offset + pi)
         let param_val = llvm.get_param(fn_val, pi)
-        let pt_idx = param_offset + pi
-        mut param_type_name = "int"
-        if pt_idx < FN_ALL_PARAM_TYPES.length {
-            param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
-        }
-        let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
-        mut p_ty = CG_I64
-        if param_type_name == "string" { p_ty = CG_STR }
-        if is_struct_param {
-            let resolved = resolve_type_to_llvm(param_type_name)
-            if resolved != null && resolved != CG_I64 { p_ty = resolved }
-        }
-        // self param: already a pointer, use directly (no copy)
-        mut alloca = param_val
-        if pname != "self" {
-            alloca = llvm.build_alloca(CG_B, p_ty, pname)
+        if param_val == null { break }
+        let param_type_name = forge_param_type_get(param_offset + pi)
+        if pname == "self" {
+            // Self param is a pointer to caller's alloca — use directly
+            forge_alloca_cache_set(pname, param_val)
+            forge_alloca_cache_set_var_type(pname, param_type_name)
+        } else {
+            let p_ty = llvm.type_of(param_val)
+            let alloca = llvm.build_alloca(CG_B, p_ty, pname)
             llvm.build_store(CG_B, param_val, alloca)
-        }
-        CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-        mut _vis = 0
-        if param_type_name == "string" { _vis = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-        // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
-        if param_type_name == "string" {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
-        } else if param_type_name.length >= 4 {
-            if param_type_name[0] == "L" {
-                CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
-                CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + pname + ","
-                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + pname + ","
-            }
-        }
-        if is_struct_param {
-            let emf = cg_enum_max_fields(param_type_name)
-            // Check if type is a known enum (any payload size)
-            let enum_needle = "," + param_type_name + ":"
-            let is_enum = CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0
-            if is_enum {
-                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
-            } else {
-                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
-                CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + pname + ":" + param_type_name + ","
-                mut field_info = ""
-                mut sri = CG_STRUCT_FIELDS.length - 1
-                while sri >= 0 {
-                    if CG_STRUCT_NAMES[sri] == param_type_name {
-                        field_info = CG_STRUCT_FIELDS[sri]
-                        break
-                    }
-                    sri = sri - 1
-                }
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
-            }
+            forge_alloca_cache_set(pname, alloca)
+            forge_alloca_cache_set_var_type(pname, param_type_name)
         }
         pi = pi + 1
     }
 
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
-    CG_HAS_LAST_VAL = 0
-    CG_IS_MAP_INDEX = 0
-    CG_LAST_STRUCT_TYPE = ""
-    CG_LAST_IS_NULLABLE = 0
-    PENDING_IF = false
-    PENDING_MATCH = false
     cg_reinit_types()
 
-    // Pure AST parse then emit
-    // Clear per-function list init tracking (prevents cross-function name collisions)
-    VAR_LIST_INIT_CSV = ""
+    // Set per-function nullable tracking so emit_return/emit_ret_value can
+    // properly wrap raw T values when the declared return is T?.
+    forge_fn_nullable_set(0, null, null)
+    mut _rtn0 = ""
+    if idx < FN_RETURN_TYPES.length { _rtn0 = FN_RETURN_TYPES[idx] }
+    if _rtn0.length > 1 && _rtn0.substring(_rtn0.length - 1, _rtn0.length) == "?" {
+        let _inner_n = _rtn0.substring(0, _rtn0.length - 1)
+        let _inner_t = resolve_type_to_llvm(_inner_n)
+        if _inner_t != null {
+            forge_fn_nullable_set(1, _inner_t, _inner_t)
+        }
+    }
+
+    // Parse body to AST, then emit
+    // For main: store argc/argv via forge_set_args(argc, argv)
+    if is_main {
+        let set_args_fn = llvm.get_named_function(CG_MOD, "forge_set_args")
+        if set_args_fn != null {
+            let sa = llvm.value_array_new(2)
+            llvm.value_array_set(sa, 0, llvm.get_param(fn_val, 0))
+            llvm.value_array_set(sa, 1, llvm.get_param(fn_val, 1))
+            let sa_ty = llvm.global_get_value_type(set_args_fn)
+            llvm.build_call(CG_B, sa_ty, set_args_fn, sa, 2, "")
+            llvm.value_array_free(sa)
+        }
+    }
+
+    if body_src == "" { eprintln("  [SKIP] empty body for " + name) }
     if body_src != "" {
-        CG_ACTIVE = false
+        eprintln("  [TOK] tokenizing " + name + " (" + string(body_src.length) + " chars)")
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
+        eprintln("  [TOK] done " + name + " tokens=" + string(body_tokens.length))
+        forge_parser_set_pos(0)
+        // Clear the per-function pending var-type table BEFORE parsing this
+        // function body. The pending table holds parser-time `let X: T = …`
+        // annotations and is consumed at codegen-time by emit_let. Since
+        // every function body is parsed and emitted in lockstep, the right
+        // scope for these annotations is the current function — clearing
+        // here prevents a stale entry (e.g. `let command: int = 0` in fn A)
+        // from polluting the next function's `let command = args[1]`.
+        forge_pending_var_type_clear()
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
-        CG_ACTIVE = true
+        eprintln("  [BODY] " + name)
         cg_reinit_types()
-        let last = cg.emit_block(body)
-        CG_LAST_VAL = last
-        CG_HAS_LAST_VAL = 1
+        last = cg.emit_block(body)
+        if body.statements.length > 0 { has_last = 1 }
     }
 
     // Implicit return — must match declared return type
@@ -567,188 +540,56 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if is_main {
             llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
         } else {
-            // Compute return type late (after body emit, before implicit ret)
-            cg_reinit_types()
-            mut ret_type_name = ""
-            if idx < FN_RETURN_TYPES.length { ret_type_name = FN_RETURN_TYPES[idx] }
-            if ret_type_name.length > 1 { if ret_type_name[ret_type_name.length - 1] == "?" {
-                ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
-            } }
-            cg_reinit_types()
-            let ret_ty = resolve_type_to_llvm(ret_type_name)
-            if ret_ty != null && ret_ty != CG_I64 && CG_HAS_LAST_VAL == 1 {
-                // Struct/enum return: use CG_LAST_VAL if available
-                llvm.build_ret(CG_B, CG_LAST_VAL)
-                CG_HAS_LAST_VAL = 0
-            } else if ret_ty != null && ret_ty != CG_I64 {
-                // No value available: fallback to undef
-                llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
-                CG_HAS_LAST_VAL = 0
+            // Detect void-returning functions: declared with no `-> X`
+            // (FN_RETURN_TYPES[idx] empty) or `-> void`. Emit ret void
+            // instead of `ret void <bogus_value>`, which produces
+            // `ret void <badref>` and a broken IR file.
+            mut declared_rtn = ""
+            if idx < FN_RETURN_TYPES.length { declared_rtn = FN_RETURN_TYPES[idx] }
+            if declared_rtn == "" || declared_rtn == "void" {
+                llvm.build_ret_void(CG_B)
             } else {
-                // Use CG_LAST_VAL (set at line 549 from emit_block result)
-                // Falls back to RetVoid if null
-                llvm.build_ret(CG_B, CG_LAST_VAL)
+                // The forge_fn_nullable_set state is already configured
+                // from the function's declared return type (above). All
+                // wrapping logic lives in the single coerce_to_fn_return
+                // helper.
+                cg_reinit_types()
+                if has_last == 1 {
+                    llvm.build_ret(CG_B, coerce_to_fn_return(last))
+                } else {
+                    llvm.build_ret(CG_B, coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0)))
+                }
             }
+        }
+    }
+
+    // Per-function IR validator hook (#3). When FORGE_DEBUG_VERIFY=1,
+    // run LLVMVerifyFunction immediately after each function body
+    // is fully emitted. The first function that fails to verify is
+    // the one whose codegen path is buggy. Pairs naturally with the
+    // builder trace (#1) which then shows which call produced the
+    // bad IR.
+    let dbg_verify = forge_env_int("FORGE_DEBUG_VERIFY")
+    if dbg_verify == 1 {
+        let rc = forge_llvm_verify_function(fn_val)
+        if rc != 0 {
+            eprintln("[VERIFY FAIL] " + name + " (rc=" + string(rc) + ")")
+            forge_llvm_dump_blocks(fn_val)
         }
     }
 }
 
 // emit_next_fn_body and materialize_struct_types removed — dead code that
 // caused LLVM verification errors (FN_BODIES was List<string> but emit_block expects Block).
-// Materialize LLVM struct types from registered field info
-export fn materialize_struct_types() {
-    cg_reinit_types()
-    let struct_count = CG_STRUCT_NAMES.length
-    mut si = 0
-    while si < struct_count {
-        let fields = CG_STRUCT_FIELDS[si]
-        mut fc = 1
-        mut ci = 0
-        while ci < fields.length {
-            if fields[ci] == "," { fc = fc + 1 }
-            ci = ci + 1
-        }
-        if fields.length == 0 { fc = 0 }
-        mut ftn = ""
-        if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
-        let fta = llvm.type_array_new(fc)
-        if ftn.length > 0 {
-            mut fi = 0
-            mut ftn_pos = 0
-            mut ftn_cur = ""
-            while ftn_pos < ftn.length {
-                let ch = ftn[ftn_pos]
-                if ch == "," {
-                    llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
-                    fi = fi + 1
-                    ftn_cur = ""
-                } else {
-                    ftn_cur = ftn_cur + ch
-                }
-                ftn_pos = ftn_pos + 1
-            }
-            if ftn_cur != "" {
-                llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
-            }
-        } else {
-            let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
-            mut fi = 0
-            mut fis_idx = 0
-            while fi < fc {
-                mut is_str_field = false
-                mut fis_cur = ""
-                while fis_idx < field_is_str.length {
-                    let fch = field_is_str[fis_idx]
-                    fis_idx = fis_idx + 1
-                    if fch == "," { break }
-                    fis_cur = fis_cur + fch
-                }
-                if fis_cur == "1" { is_str_field = true }
-                if is_str_field {
-                    llvm.type_array_set(fta, fi, CG_STR)
-                } else {
-                    llvm.type_array_set(fta, fi, CG_I64)
-                }
-                fi = fi + 1
-            }
-        }
-        // Always create/update named struct type
-        let sname = CG_STRUCT_NAMES[si]
-        mut sty = llvm.get_type_by_name(CG_CTX, sname)
-        if sty == null {
-            sty = llvm.struct_create_named(CG_CTX, sname)
-        }
-        // Always set body (updates fields to match resolve_type_to_llvm)
-        llvm.struct_set_body(sty, fta, fc, 0)
-        llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(sname)
-        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-        CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
-        si = si + 1
-    }
-}
+// All function emission goes through emit_all_fn_bodies which re-parses from source text.
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
-    // Re-init LLVM types (globals get zeroed somewhere between init and here)
+    // Re-init LLVM types
     CG_I64 = llvm.int64_type(CG_CTX)
     CG_I32 = llvm.int32_type(CG_CTX)
     CG_I8 = llvm.int8_type(CG_CTX)
-    let struct_count = CG_STRUCT_NAMES.length
-    mut si = 0
-    while si < struct_count {
-        // Always create LLVM type (null check on List<ptr> unreliable)
-        if true {
-            // Count fields from field names string
-            let fields = CG_STRUCT_FIELDS[si]
-            mut fc = 1
-            mut ci = 0
-            while ci < fields.length {
-                if fields[ci] == "," { fc = fc + 1 }
-                ci = ci + 1
-            }
-            if fields.length == 0 { fc = 0 }
-            // Create struct type with correct field types using field type names
-            mut ftn = ""
-            if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
-            let fta = llvm.type_array_new(fc)
-            if ftn.length > 0 {
-                // Use field type names for proper type resolution
-                mut fi = 0
-                mut ftn_pos = 0
-                mut ftn_cur = ""
-                while ftn_pos < ftn.length {
-                    let ch = ftn[ftn_pos]
-                    if ch == "," {
-                        llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
-                        fi = fi + 1
-                        ftn_cur = ""
-                    } else {
-                        ftn_cur = ftn_cur + ch
-                    }
-                    ftn_pos = ftn_pos + 1
-                }
-                if ftn_cur != "" {
-                    llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
-                }
-            } else {
-                // Fallback: use field_is_str (legacy path)
-                let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
-                mut fi = 0
-                mut fis_idx = 0
-                while fi < fc {
-                    mut is_str_field = false
-                    mut fis_cur = ""
-                    while fis_idx < field_is_str.length {
-                        let fch = field_is_str[fis_idx]
-                        fis_idx = fis_idx + 1
-                        if fch == "," { break }
-                        fis_cur = fis_cur + fch
-                    }
-                    if fis_cur == "1" { is_str_field = true }
-                    if is_str_field {
-                        llvm.type_array_set(fta, fi, CG_STR)
-                    } else {
-                        llvm.type_array_set(fta, fi, CG_I64)
-                    }
-                    fi = fi + 1
-                }
-            }
-            // Use named struct type (like Rust) for proper LLVM ARM64 ABI handling
-            let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
-            llvm.struct_set_body(sty, fta, fc, 0)
-            llvm.type_array_free(fta)
-            // Re-register with LLVM type
-            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
-            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-            CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
-        }
-        si = si + 1
-    }
+    // Struct types created lazily via resolve_type_to_llvm
 
     mut param_offset = 0
     mut i = 0
@@ -756,6 +597,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let name = FN_NAMES[i]
         let body_src = FN_BODY_SOURCES[i]
         let is_main = name == "main"
+        mut last = llvm.const_int(CG_I64, 0, 0)
+        mut has_last = 0
         mut pc = 0
         if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
 
@@ -767,8 +610,14 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             let pt_idx = param_offset + pi
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
-                let type_name = FN_ALL_PARAM_TYPES[pt_idx]
-                param_ty = resolve_type_to_llvm(type_name)
+                let type_name = forge_param_type_get(pt_idx)
+                // Self params pass by pointer for mutation support
+                mut is_self = false
+                if pt_idx < FN_ALL_PARAM_NAMES.length {
+                    if forge_param_name_get(pt_idx) == "self" { is_self = true }
+                }
+                if is_self { param_ty = CG_PTR }
+                else { param_ty = resolve_type_to_llvm(type_name) }
             }
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
@@ -798,10 +647,15 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 ret_ty = make_nullable_type(ret_ty)
             }
         }
+        cg_reinit_types()
+        if ret_ty == null { ret_ty = CG_I64 }
+        if ret_ty == 0 { ret_ty = CG_I64 }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        DECLARED_FNS[name] = fn_val
+        if fn_type != null {
+            let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+            if fn_val != null { DECLARED_FNS[name] = fn_val }
+        }
 
         // Per-file mode: skip body for functions from other files (extern declaration only)
         if EMIT_FILE_IDX >= 0 {
@@ -819,31 +673,16 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
         llvm.position_at_end(CG_B, entry)
 
-        // Set scope boundary: emit_ident should only find globals + current function's vars
-        CG_VAR_SCOPE_START = CG_VAR_NAMES.length
-        // Clear per-function type tracking (prevents cross-function contamination)
-        CG_STR_VAR_NAMES = []
-        CG_STRUCT_VAR_NAMES = []
-        CG_STRUCT_VAR_TYPES = []
-        CG_STRUCT_VAR_FIELDS = []
+        // Alloca cache handles per-function variable type tracking
 
-        // Reset type tracking flags BEFORE param definition
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_HAS_LAST_VAL = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_STRUCT_TYPE = ""
-
+        // Reset tracking BEFORE param definition
         // Define params with correct types
         pi = 0
         while pi < pc {
-            let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
+            let pname = forge_param_name_get(param_offset + pi)
             let param_val = llvm.get_param(fn_val, pi)
             let pt_idx = param_offset + pi
-            mut param_type_name = "int"
-            if pt_idx < FN_ALL_PARAM_TYPES.length {
-                param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
-            }
+            let param_type_name = forge_param_type_get(pt_idx)
             // Define param — alloca + store with correct LLVM type
             // Determine the LLVM alloca type: string, struct, or i64
             mut p_ty = CG_I64
@@ -858,189 +697,73 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     is_struct_param = true
                 }
             }
-            let alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            llvm.build_store(CG_B, param_val, alloca)
-            CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-            mut _vis2 = 0
-            if param_type_name == "string" { _vis2 = 1 }
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis2)
-            CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-            if param_type_name == "string" { CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname) }
-            // Register struct/enum-typed params for member access and type tracking
-            if is_struct_param {
-                // Check if this is an enum type (has data-carrying variants)
-                let emf = cg_enum_max_fields(param_type_name)
-                if emf > 0 {
-                    // Enum type — register in CG_ENUM_VAR_CSV for load-time type lookup
-                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
-                } else {
-                    // Struct type — register for field access
-                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
-                    // Get field info from struct registry
-                    mut field_info = ""
-                    mut sri = CG_STRUCT_FIELDS.length - 1
-                    while sri >= 0 {
-                        if CG_STRUCT_NAMES[sri] == param_type_name {
-                            field_info = CG_STRUCT_FIELDS[sri]
-                            break
-                        }
-                        sri = sri - 1
-                    }
-                    CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
-                }
+            if pname == "self" {
+                // Self param is a pointer — use directly
+                forge_alloca_cache_set(pname, param_val)
+            } else {
+                let alloca = llvm.build_alloca(CG_B, p_ty, pname)
+                llvm.build_store(CG_B, param_val, alloca)
+                forge_alloca_cache_set(pname, alloca)
             }
+            forge_alloca_cache_set_var_type(pname, param_type_name)
             pi = pi + 1
         }
         param_offset = param_offset + pc
 
         // Reset type tracking flags before each function body
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_HAS_LAST_VAL = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_STRUCT_TYPE = ""
-        CG_LAST_IS_NULLABLE = 0
-
         // Set nullable return tracking for this function
-        CG_FN_RETURNS_NULLABLE = 0
-        if fn_is_nullable { CG_FN_RETURNS_NULLABLE = 1 }
-        CG_FN_NULLABLE_INNER_TY = fn_nullable_inner
-        CG_FN_NULLABLE_RET_TY = null
-        if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
+        mut nullable_flag = 0
+        if fn_is_nullable { nullable_flag = 1 }
+        mut nullable_ret = null
+        if fn_is_nullable { nullable_ret = ret_ty }
+        forge_fn_nullable_set(nullable_flag, fn_nullable_inner, nullable_ret)
 
         // Re-lex and re-parse the body source text
-        // CG_ACTIVE stays true for control flow (if/else, while, for) that emits inline.
+        // Control flow (if/else, while, for) is handled by AST-mode emit.
         // Returns, assignments, and expressions use proper AST via emit_block.
         if body_src != "" {
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
+            forge_parser_set_pos(0)
             mut body_parser = parser_new(body_tokens)
             let body = body_parser.parse_block()
-            let last = cg.emit_block(body)
-            // Only update CG_LAST_VAL if not already set by inline emit (e.g., PHI from if-expr)
-            if CG_HAS_LAST_VAL != 1 {
-                CG_LAST_VAL = last
-                CG_HAS_LAST_VAL = 1
-            }
+            last = cg.emit_block(body)
+            if body.statements.length > 0 { has_last = 1 }
         }
 
         // Add implicit return only if the block doesn't already terminate
         if !llvm.block_has_terminator(CG_B) {
             if is_main {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-            } else if fn_is_nullable && CG_HAS_LAST_VAL == 1 {
-                // Nullable function with a last value
-                CG_HAS_LAST_VAL = 0
-                // If the last value is already nullable (e.g., null literal), use directly
-                if CG_LAST_IS_NULLABLE == 1 {
-                    llvm.build_ret(CG_B, CG_LAST_VAL)
-                } else {
-                    let wrapped_ret = wrap_nullable(fn_nullable_inner, CG_LAST_VAL)
-                    llvm.build_ret(CG_B, wrapped_ret)
-                }
+            } else if fn_is_nullable && has_last == 1 {
+                let wrapped_ret = wrap_nullable(fn_nullable_inner, last)
+                llvm.build_ret(CG_B, wrapped_ret)
             } else if fn_is_nullable {
-                // Nullable function with no last value — return null
                 let null_ret = make_null_value(fn_nullable_inner)
                 llvm.build_ret(CG_B, null_ret)
-            } else if CG_HAS_LAST_VAL == 1 {
-                // Return the last expression value from emit_block
-                CG_HAS_LAST_VAL = 0
-                llvm.build_ret(CG_B, CG_LAST_VAL)
+            } else if has_last == 1 {
+                llvm.build_ret(CG_B, last)
             } else {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
             }
         }
         // Reset nullable tracking
-        CG_FN_RETURNS_NULLABLE = 0
-        CG_FN_NULLABLE_INNER_TY = null
-        CG_FN_NULLABLE_RET_TY = null
+        forge_fn_nullable_set(0, null, null)
         i = i + 1
     }
 }
 
-// Emit a single function body (called from codegen's emit_statement via dispatch)
-export fn emit_fn_body(cg: Codegen, node: NodeRef) {
-    let d = get_fn_decl(node.node_id)
-    if d == null { return }
-    let data = d!
-    let name = data.name
-    let is_main = name == "main"
+// Stub: registered as the "functions" feature emit handler so dispatch
+// from features/mod.fg doesn't crash. The ACTUAL function-body emission
+// path is emit_fn_body_from_source(cg, idx, param_offset), called from
+// main.fg's compile loop. Keep this as a true no-op so any future agent
+// who finds a 50-line dead body underneath a `return` doesn't waste 10
+// minutes on it (like I just did).
+export fn emit_fn_body(cg: Codegen, node: NodeRef) {}
 
-    // Get function from global map (struct fields don't survive pass-by-value)
-    if !DECLARED_FNS.has(name) { return }
-    let fn_val = DECLARED_FNS[name]
-    cg.current_fn = fn_val
-
-    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
-    llvm.position_at_end(CG_B, entry)
-
-    // Define params as local variables using flat param name list
-    // Find param offset: sum of param counts for functions before this one
-    mut param_offset = 0
-    mut fi = 0
-    while fi < FN_NAMES.length {
-        if FN_NAMES[fi] == name { break }
-        if fi < FN_PARAM_COUNTS.length {
-            param_offset = param_offset + FN_PARAM_COUNTS[fi]
-        }
-        fi = fi + 1
-    }
-    mut pc = 0
-    if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
-    mut pi = 0
-    while pi < pc {
-        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
-        let param_val = llvm.get_param(fn_val, pi)
-        cg.define_var(pname, Type.Int, param_val)
-        pi = pi + 1
-    }
-
-    cg.emit_block(data.body)
-
-    if is_main {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-    } else {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
-    }
-}
-
-fn emit_fn_data(cg: Codegen, data: FnDeclData) {
-    let is_main = data.name == "main"
-    let param_arr = llvm.type_array_new(data.params.length)
-    mut i = 0
-    for param in data.params {
-        llvm.type_array_set(param_arr, i, CG_I64)
-        i = i + 1
-    }
-    mut ret_ty = CG_I64
-    if is_main { ret_ty = CG_I32 }
-    let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
-    llvm.type_array_free(param_arr)
-
-    let fn_val = llvm.add_function(CG_MOD, data.name, fn_type)
-    cg.functions[data.name] = fn_val
-    cg.current_fn = fn_val
-
-    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
-    llvm.position_at_end(CG_B, entry)
-
-    i = 0
-    for param in data.params {
-        let param_val = llvm.get_param(fn_val, i)
-        cg.define_var(param.name, Type.Int, param_val)
-        i = i + 1
-    }
-
-    cg.emit_block(data.body)
-
-    if is_main {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-    } else {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
-    }
-}
+// (emit_fn_data removed — was a third dead variant referencing
+// `i` and `is_main` from a non-existent enclosing scope, would not
+// even compile.)
 
 // ─── Registration ───────────────────────────────
 

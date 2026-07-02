@@ -1,0 +1,26 @@
+// vez6.6/seven — @expand: macro returning a different println body.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+
+spec "vez6.6: @expand — macro returning a different println body" {
+    then "macro returning a different println body" {
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_seven_test.av", 
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn say_seven() -> Stmt {\n" +
+            "    return quote stmt { println(\"seven\") }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(say_seven)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("seven")
+    }
+}

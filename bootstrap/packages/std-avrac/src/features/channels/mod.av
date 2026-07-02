@@ -1,0 +1,40 @@
+// WHY: feature registration for typed channels (spec Axis 18).
+// `channel<T>(cap)` construction + the Channel<T> method surface
+// (.send / .recv / .close). Parser/typeck/codegen live as siblings
+// (dir-as-module, g2eo.1); select integration lives in select_stmt
+// (which consumes the element type this feature establishes).
+
+use core.{feature_new, Feature, ValueType, vtype_display}
+use resolve.{resolve_expr}
+
+/// Register the typed-channel construction expression. Methods
+/// dispatch through the receiver-typed method paths in fn_decl
+/// (codegen) and typeck's check_method_call, not through the
+/// registry — same split List uses.
+export fn channels_feature() -> Feature {
+    feature_new("channels") with {
+        expr_tag: Expr.ChannelNew(ValueType.Unknown, null),
+        emit_expr: channel_emit_expr,
+        resolve_expr: channel_resolve,
+        check_expr: channel_check,
+    }
+}
+
+/// The Channel method surface, rendered for "no such method" help
+/// text. One definition — typeck and codegen both cite it, so the
+/// help can never drift between the two pipelines (the codegen copy
+/// is an ICE-grade backstop; typeck reports first in practice).
+export fn channel_methods_help(elem: ValueType) -> string {
+    ".send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close()"
+}
+
+/// Resolver hook: the capacity expression resolves in the enclosing
+/// scope (it can reference locals, e.g. `channel<int>(jobs)`).
+fn channel_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { r } else { resolve_expr(r, capacity!) }
+        }
+        _ -> r
+    }
+}

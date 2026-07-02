@@ -1,0 +1,63 @@
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.is_keyword.{...}`
+use core.{feature_new, Feature}
+use resolve.{resolve_expr}
+use features.is_keyword.codegen.{emit_is_check}
+use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value, value_is_enumish}
+use typeck.{check_expr, tc_er}
+
+/// Register the `is` operator feature. Used for runtime variant
+/// checks (`x is .Some`) — produces a Bool. Wired up to the
+/// resolver, type-checker, codegen, and the @comptime evaluator
+/// via the standard tag-based dispatch.
+export fn is_keyword_feature() -> Feature {
+    feature_new("is") with {
+        expr_tag: Expr.IsCheck(Expr.None, ""),
+        emit_expr: emit_is_check,
+        resolve_expr: is_resolve,
+        check_expr: is_check,
+        eval_expr: is_eval,
+    }
+}
+
+/// Resolver hook for `IsCheck`. The variant name on the right-hand
+/// side resolves later (during typeck against the enum type), so
+/// here we only need to walk the subject expression.
+fn is_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .IsCheck(subject, _) -> resolve_expr(r, subject)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `IsCheck`. Walks the subject (so its
+/// errors are reported), then declares the result Bool — variant
+/// existence is verified separately by the enum exhaustiveness
+/// check.
+fn is_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .IsCheck(subject, _) -> {
+            let s = check_expr(tc, subject)
+            tc_er(s.tc, .Bool)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// @comptime eval hook for `IsCheck`. so07.7.6 needed `k is .Scalar`
+/// inside derive_walker; the noop_eval_expr dispatch was firing
+/// 'no eval_expr handler' because no feature registered an eval for
+/// IsCheck. Eval the subject, compare its enum_variant to the
+/// pattern's variant name. Non-enum subjects always evaluate false
+/// (matches runtime semantics).
+fn is_eval(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .IsCheck(subject, variant_name) -> {
+            let s = eval_expr(rt, subject)
+            if step_had_error(s) { return s }
+            let v = step_value(s)
+            let matched = value_is_enumish(v) && v.enum_variant == variant_name
+            ok_result(step_runtime(s), value_bool(matched))
+        }
+        _ -> error_result(rt, "is_eval: expected IsCheck expression")
+    }
+}

@@ -1,0 +1,108 @@
+// Fixture for dir_module integration tests (g2eo.1).
+//
+// Builds a small filesystem layout in /tmp and exercises the new
+// directory-as-module primitives end-to-end. The parent test
+// (../dir_module_test.av) asserts on PROBE lines.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+use @std.avrac.features.modules.{
+    list_avra_module_files,
+    list_avra_module_subdirs,
+}
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn list_contains_suffix(xs: List<string>, target_suffix: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let s = xs[i]
+        if s.length >= target_suffix.length {
+            let tail = s.substring(s.length - target_suffix.length, s.length)
+            if tail == target_suffix { return true }
+        }
+        i = i + 1
+    }
+    false
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_dirmod_fixture"
+    avra_shell_exec("rm -rf " + root)
+    avra_shell_exec("mkdir -p " + root + "/sub_a")
+    avra_shell_exec("mkdir -p " + root + "/sub_b")
+    // g2eo.1.2: list_avra_module_subdirs requires at least one
+    // top-level .av file in each candidate dir (filters out
+    // bare-fixtures stubs like features/error_messages/ that exist
+    // only to host examples/ or tests/).
+    avra_shell_exec("touch " + root + "/sub_a/x.av")
+    avra_shell_exec("touch " + root + "/sub_b/y.av")
+    avra_shell_exec("touch " + root + "/foo.av")
+    avra_shell_exec("touch " + root + "/bar.av")
+    avra_shell_exec("touch " + root + "/mod.av")
+    avra_shell_exec("touch " + root + "/baz_test.av")
+    avra_shell_exec("touch " + root + "/.hidden.av")
+    avra_shell_exec("touch " + root + "/README.md")
+
+    let files = list_avra_module_files(root)
+
+    // Probe 1 — only foo.av and bar.av are picked up.
+    probe("two_av_files", files.length == 2)
+
+    // Probe 2 — foo.av is included.
+    probe("foo_included", list_contains_suffix(files, "/foo.av"))
+
+    // Probe 3 — bar.av is included.
+    probe("bar_included", list_contains_suffix(files, "/bar.av"))
+
+    // Probe 4 — mod.av is excluded (legacy parent decl, not part of
+    // the directory's auto-included body).
+    probe("mod_av_excluded", !list_contains_suffix(files, "/mod.av"))
+
+    // Probe 5 — _test.av files are excluded (compiled separately by
+    // the test harness, not as part of the module body).
+    probe("test_av_excluded", !list_contains_suffix(files, "/baz_test.av"))
+
+    // Probe 6 — dotfiles excluded.
+    probe("dotfiles_excluded", !list_contains_suffix(files, "/.hidden.av"))
+
+    // Probe 7 — non-.av files (like README.md) excluded.
+    probe("non_av_excluded", !list_contains_suffix(files, "/README.md"))
+
+    let dirs = list_avra_module_subdirs(root)
+
+    // Probe 8 — both subdirs picked up.
+    probe("two_subdirs", dirs.length == 2)
+
+    // Probe 9 — sub_a included.
+    probe("sub_a_included", list_contains_suffix(dirs, "/sub_a"))
+
+    // Probe 10 — sub_b included.
+    probe("sub_b_included", list_contains_suffix(dirs, "/sub_b"))
+
+    // Probe 11 — missing-dir is empty (not an error).
+    let missing = list_avra_module_files("/tmp/avra_dirmod_does_not_exist_xx")
+    probe("missing_dir_empty", missing.length == 0)
+
+    // Probe 12 — trailing-slash agnostic.
+    let with_slash = list_avra_module_files(root + "/")
+    let without_slash = list_avra_module_files(root)
+    probe("trailing_slash_agnostic", with_slash.length == without_slash.length)
+
+    // Probe 13 — `tests` is excluded from subdirs (test harness owns
+    // it). `build` is INCLUDED — it's a legitimate source subdir name
+    // (e.g. `@std/avrac` ships its build system at `src/build/`); the
+    // artifact-output `build/` dir lives one level above `src/`, so
+    // it's never reached by these scans. Tracking g2eo.1.2.1.
+    avra_shell_exec("mkdir -p " + root + "/tests " + root + "/build")
+    avra_shell_exec("touch " + root + "/build/cache.av")
+    let dirs_after = list_avra_module_subdirs(root)
+    probe("tests_dir_excluded", !list_contains_suffix(dirs_after, "/tests"))
+    probe("build_dir_included", list_contains_suffix(dirs_after, "/build"))
+
+    avra_shell_exec("rm -rf " + root)
+    0
+}

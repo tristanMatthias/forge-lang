@@ -1,4 +1,4 @@
-# Forge — Distributed Application Layer (Ideas)
+# Avra — Distributed Application Layer (Ideas)
 
 **Status:** Ideas only. Not a spec. Captured for future development.
 
@@ -10,7 +10,7 @@
 
 Today building distributed applications requires: application code (Go/Python/etc), infrastructure code (Terraform/Pulumi), deployment config (Docker/K8s YAML), observability setup (Datadog/Grafana), and API integration glue (OpenAPI clients). Five different languages/tools for one system.
 
-Forge collapses all of these into one language. Not by being a framework on top of a language — the language itself understands services, networking, deployment, and monitoring as primitives.
+Avra collapses all of these into one language. Not by being a framework on top of a language — the language itself understands services, networking, deployment, and monitoring as primitives.
 
 Nobody is doing this. Closest attempts: Darklang (too locked in, died), Wing/Winglang (cloud-oriented but limited), Pulumi (infra-as-code but separate from app code), SST (deployment layer, not a language).
 
@@ -20,7 +20,7 @@ Nobody is doing this. Closest attempts: Darklang (too locked in, died), Wing/Win
 
 The code doesn't change between local development and production. Only the config changes.
 
-```forge
+```avra
 // Local development — everything in one process
 queue orders {}
 orders <- { item: "widget" }
@@ -38,7 +38,7 @@ When a component has a `host` config, the runtime transparently handles serializ
 
 Services on other machines are addressable as typed objects:
 
-```forge
+```avra
 use @std.service
 
 remote users_api = service("users.internal:3000")
@@ -53,7 +53,7 @@ server :8080 {
 }
 ```
 
-`users_api.create_user()` is a remote call but reads like a local function. The `remote` keyword tells Forge this is a network boundary — it handles serialization, retries, timeouts, circuit breaking.
+`users_api.create_user()` is a remote call but reads like a local function. The `remote` keyword tells Avra this is a network boundary — it handles serialization, retries, timeouts, circuit breaking.
 
 ---
 
@@ -61,7 +61,7 @@ server :8080 {
 
 Channels span machines. They become the universal event bus:
 
-```forge
+```avra
 // Channels that span the network
 let events = channel<Event>("events.internal:9092")
 
@@ -93,7 +93,7 @@ Fan-in from multiple sources, fan-out to multiple consumers, filter/transform in
 
 Queues, HTTP, cron all feed the same channels across services:
 
-```forge
+```avra
 queue orders { host "queue.internal:5672" }
 
 server :8080 {
@@ -121,7 +121,7 @@ orders
 
 A `deploy` block describes the entire system topology. Pluggable backends.
 
-```forge
+```avra
 use @std.deploy
 
 deploy {
@@ -156,13 +156,13 @@ deploy {
 }
 ```
 
-`forge deploy` reads this and stands up the infrastructure.
+`avra deploy` reads this and stands up the infrastructure.
 
 ### Pluggable Backends
 
 The deploy component doesn't know about AWS or Docker. Backend packages do:
 
-```forge
+```avra
 use @deploy.docker
 use @deploy.aws
 use @deploy.hetzner
@@ -197,7 +197,7 @@ Same service definitions, swap the backend line. Each backend package knows how 
 
 ### Docker Support
 
-```forge
+```avra
 deploy {
   backend docker {
     registry "ghcr.io/myorg"
@@ -225,15 +225,15 @@ deploy {
 }
 ```
 
-`forge deploy` generates Dockerfiles, builds images, pushes to registry, generates docker-compose or k8s manifests.
+`avra deploy` generates Dockerfiles, builds images, pushes to registry, generates docker-compose or k8s manifests.
 
 ---
 
 ## External API Integration (OpenAPI)
 
-Pull an OpenAPI spec and get a typed Forge interface automatically:
+Pull an OpenAPI spec and get a typed Avra interface automatically:
 
-```forge
+```avra
 use @std.api
 
 // Generate types from OpenAPI spec
@@ -242,7 +242,7 @@ remote stripe = api.from_openapi("https://raw.githubusercontent.com/stripe/opena
   auth bearer(env("STRIPE_SECRET_KEY"))
 }
 
-// Fully typed — Forge knows the parameters and return types
+// Fully typed — Avra knows the parameters and return types
 let customer = stripe.customers.create({
   email: "alice@test.com",
   name: "Alice",
@@ -259,7 +259,7 @@ The `api.from_openapi()` call generates typed functions at compile time. Autocom
 
 For APIs without OpenAPI specs, manual definition:
 
-```forge
+```avra
 remote slack = api("https://slack.com/api") {
   auth bearer(env("SLACK_TOKEN"))
 
@@ -283,10 +283,10 @@ Not bolted on — the compiler instruments automatically.
 
 Every `remote` call, every `<-` send, every channel operation gets a trace span automatically:
 
-```forge
+```avra
 server :8080 {
   POST /order -> (req) {
-    // Forge auto-generates trace spans:
+    // Avra auto-generates trace spans:
     //   → POST /order (incoming)
     //     → users_api.get_user (remote call, 12ms)
     //     → orders <- (channel send, 1ms)
@@ -305,7 +305,7 @@ You don't write tracing code. The compiler knows the network boundaries and inst
 
 ### Metrics Built In
 
-```forge
+```avra
 deploy {
   observe {
     provider "prometheus"    // or datadog, grafana, etc
@@ -321,7 +321,7 @@ deploy {
 
 ### Log Aggregation
 
-```forge
+```avra
 deploy {
   logs {
     provider "loki"          // or cloudwatch, datadog, etc
@@ -336,7 +336,7 @@ deploy {
 
 ### Health Checks
 
-```forge
+```avra
 service api {
   source "./api"
   
@@ -358,7 +358,7 @@ service api {
 
 ### Replicas and Auto-scaling
 
-```forge
+```avra
 deploy {
   service api {
     source "./api"
@@ -386,7 +386,7 @@ deploy {
 
 ### Load Balancing
 
-```forge
+```avra
 deploy {
   service api {
     source "./api"
@@ -402,7 +402,7 @@ deploy {
 
 ### Blue/Green and Canary
 
-```forge
+```avra
 deploy {
   service api {
     source "./api"
@@ -424,13 +424,13 @@ deploy {
 
 ## Escape Hatches
 
-Always available. Forge shouldn't trap you.
+Always available. Avra shouldn't trap you.
 
 ### Raw Docker
 
-```forge
+```avra
 service legacy {
-  // Skip Forge entirely — just run a Docker image
+  // Skip Avra entirely — just run a Docker image
   image "myorg/legacy-service:v2.3"
   port 3000
   env {
@@ -441,7 +441,7 @@ service legacy {
 
 ### Shell Hooks
 
-```forge
+```avra
 deploy {
   service api {
     source "./api"
@@ -460,10 +460,10 @@ deploy {
 
 ### Raw Kubernetes YAML
 
-```forge
+```avra
 deploy {
   backend k8s {
-    // Merge custom YAML for anything Forge doesn't cover
+    // Merge custom YAML for anything Avra doesn't cover
     extra_manifests "./k8s/custom/"
   }
 }
@@ -472,7 +472,7 @@ deploy {
 ### Eject
 
 ```bash
-forge deploy --eject
+avra deploy --eject
 # Generates plain Docker Compose / K8s YAML / Terraform
 # You take over from there. No lock-in.
 ```
@@ -490,7 +490,7 @@ Channels, components, `<-`, `|>`. Work locally. Already in progress.
 When a component has `host` config, runtime handles networking transparently. Same code local and remote. This is the key architectural decision.
 
 **Layer 3: Deploy component**
-Describes topology. Pluggable backends (Docker, AWS, GCP, Hetzner). `forge deploy` stands up infrastructure.
+Describes topology. Pluggable backends (Docker, AWS, GCP, Hetzner). `avra deploy` stands up infrastructure.
 
 **Layer 4: Observability**
 Compiler auto-instruments network boundaries. Tracing, metrics, logs as language features not libraries.
@@ -511,7 +511,7 @@ Each layer builds on the previous. Ship Layer 1 without Layer 6. Each layer is i
 
 - How does type checking work across remote service boundaries? Do you generate shared type packages?
 - How do secrets/credentials flow? `secret("key")` needs a secrets manager backend.
-- How does local development simulate the full distributed topology? Something like `forge dev` that runs everything in one process?
+- How does local development simulate the full distributed topology? Something like `avra dev` that runs everything in one process?
 - How do you debug across service boundaries? Distributed tracing needs correlation IDs.
 - How does versioning work when Service A and Service B expect different message shapes?
 - What's the migration story? How do you adopt this incrementally in an existing system?

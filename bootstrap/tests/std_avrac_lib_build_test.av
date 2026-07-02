@@ -1,0 +1,30 @@
+// `bs2 build --lib --emit_metadata` builds @std/avrac (the bootstrap's
+// own compiler library) as a separately-cached unit. Validates the
+// multi-mod use-anchor wiring at scale — @std/avrac has 30+ internal
+// `mod foo` declarations cross-referencing each other via `use`.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn sa_run() -> string {
+    cached_fixture_run("tests/std_avrac_lib_build_fixtures/sample.av")
+}
+
+spec "std-avrac lib build: full bootstrap library compiles cleanly" {
+    then "bs2 build --lib --emit_metadata succeeds on @std/avrac" {
+        sa_run().contains("PROBE std_avrac_build_rc_zero: ok")
+    }
+    then "metadata.bin lands alongside the cached IR" {
+        sa_run().contains("PROBE avrac_meta_bin_present: ok")
+    }
+    then "the .ll cache entry lands" {
+        sa_run().contains("PROBE avrac_ll_present: ok")
+    }
+    then "every codegen fn is qualified under @std::avrac::" {
+        sa_run().contains("PROBE symbols_qualified_under_at_std_avrac: ok")
+    }
+    then "no codegen fn leaks out at the un-qualified namespace level" {
+        sa_run().contains("PROBE no_unqualified_codegen_fns: ok")
+    }
+}

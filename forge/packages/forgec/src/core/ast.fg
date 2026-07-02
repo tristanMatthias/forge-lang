@@ -90,6 +90,26 @@ export type Block = {
     span: Span,
 }
 
+// ─── Patterns ────────────────────────────────────
+// Match arm patterns. Modeled after Rust's Pat enum.
+// Each pattern carries its full structure as data — no string encoding.
+
+export enum Pattern {
+    Wildcard(span: Span)
+    Ident(name: string, span: Span)
+    Literal(value: Expr)
+    EnumVariant(variant: string, fields: List<Pattern>, span: Span)
+    Tuple(elements: List<Pattern>, span: Span)
+    Or(alternatives: List<Pattern>, span: Span)
+}
+
+// A single arm in a match expression: pattern -> body
+export type MatchArm = {
+    pattern: Pattern,
+    body: Block,
+    span: Span,
+}
+
 export enum Expr {
     IntLit(value: int, span: Span)
     FloatLit(value: float, span: Span)
@@ -103,6 +123,10 @@ export enum Expr {
     MemberAccess(object: Expr, field: string, span: Span)
     Index(object: Expr, index: Expr, span: Span)
     Block(block: Block)
+    IfExpr(condition: Expr, then_block: Block, else_block: Block, has_else: int, span: Span)
+    MatchExpr(scrutinee: Expr, arms: List<MatchArm>, span: Span)
+    IsCheck(subject: Expr, variant_name: string, pred: int, span: Span)
+    ForceUnwrap(operand: Expr, span: Span)
     Feature(expr: FeatureExpr)
 }
 
@@ -112,7 +136,7 @@ export enum Statement {
     Return(value: Expr, span: Span)
     Let(name: string, value: Expr, span: Span)
     If(condition: Expr, then_body: Block, else_body: Block, has_else: int, span: Span)
-    Match(scrutinee: Expr, arm_tags: string, arm_bindings: string, arm_bodies: List<Block>, default_body: Block, has_default: int, span: Span)
+    Match(scrutinee: Expr, arms: List<MatchArm>, span: Span)
     While(condition: Expr, body: Block, span: Span)
     For(var_name: string, iterable: Expr, body: Block, span: Span)
     Break(span: Span)

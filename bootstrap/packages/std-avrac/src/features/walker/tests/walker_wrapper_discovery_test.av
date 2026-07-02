@@ -1,0 +1,54 @@
+// so07.7.1 — derive_walker discovers wrapper-list projections via
+// ctx_unwrap_path_to instead of a hardcoded SStmt/SExpr table.
+//
+// To observe the discovery: declare a brand-new wrapper type (not
+// SStmt/SExpr) with a `.node` field projecting to a parent enum
+// type, then attach @expand(derive_walker) to that enum. The
+// macro must classify the wrapper-list field correctly and emit
+// unwrap_node_list::<Wrapper, Parent>(field) for the children()
+// extraction. If derive_walker still used the hardcoded SStmt/
+// SExpr table, our novel wrapper would never be classified and
+// the children() count would be wrong.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn run_capture(source: string) -> string {
+    // Use no_metadata: novel @comptime-discovered wrapper types
+    // require ctx_lookup_type to find struct decls via the runtime
+    // resolver-data layer. AVRA_USE_METADATA strips @comptime
+    // annotations + bodies from std-avrac, so the discovery path
+    // wouldn't fire there.
+    write_fixture_and_run_no_metadata("/tmp/avra_walker_so0771_wrapper_discovery_fixture.av", source)
+}
+
+spec "so07.7.1: derive_walker discovers wrappers structurally" {
+    then "novel wrapper struct (not SStmt/SExpr) is discovered + unwrapped" {
+        let out = run_capture(
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
+            "\n" +
+            "// A new wrapper type the macro has never heard of.\n" +
+            "export type MyWrap = {\n" +
+            "    node: MyTree,\n" +
+            "    extra: int,\n" +
+            "}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum MyTree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Branch(kids: List<MyWrap>),\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let inner: List<MyWrap> = [\n" +
+            "        MyWrap { node: MyTree.Leaf(1), extra: 0 },\n" +
+            "        MyWrap { node: MyTree.Leaf(2), extra: 0 },\n" +
+            "        MyWrap { node: MyTree.Leaf(3), extra: 0 },\n" +
+            "    ]\n" +
+            "    let branch = MyTree.Branch(inner)\n" +
+            "    let kids = branch.children()\n" +
+            "    println(\"count=\" + string(kids.length))\n" +
+            "}\n")
+        out.contains("count=3")
+    }
+}

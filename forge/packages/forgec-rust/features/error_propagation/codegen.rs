@@ -7,7 +7,7 @@ use crate::feature_codegen;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
-use super::types::{ErrorPropagateData, OkExprData, ErrExprData, CatchData};
+use super::types::{CatchData, ErrExprData, ErrorPropagateData, OkExprData};
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile error propagation via Feature dispatch.
@@ -15,7 +15,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, ErrorPropagateData, |data| self.compile_error_propagate(&data.operand))
+        feature_codegen!(self, fe, ErrorPropagateData, |data| self
+            .compile_error_propagate(&data.operand))
     }
 
     /// Compile ok(value) via Feature dispatch.
@@ -23,7 +24,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, OkExprData, |data| self.compile_result_ok(&data.value))
+        feature_codegen!(self, fe, OkExprData, |data| self
+            .compile_result_ok(&data.value))
     }
 
     /// Compile err(value) via Feature dispatch.
@@ -31,7 +33,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, ErrExprData, |data| self.compile_result_err(&data.value))
+        feature_codegen!(self, fe, ErrExprData, |data| self
+            .compile_result_err(&data.value))
     }
 
     /// Compile catch expression via Feature dispatch.
@@ -39,7 +42,11 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, CatchData, |data| self.compile_catch(&data.expr, data.binding.as_deref(), &data.handler))
+        feature_codegen!(self, fe, CatchData, |data| self.compile_catch(
+            &data.expr,
+            data.binding.as_deref(),
+            &data.handler
+        ))
     }
 
     pub(crate) fn compile_error_propagate(
@@ -57,7 +64,9 @@ impl<'ctx> Codegen<'ctx> {
             let ok_bb = self.context.append_basic_block(function, "result_ok");
             let err_bb = self.context.append_basic_block(function, "result_err");
 
-            self.builder.build_conditional_branch(is_err, err_bb, ok_bb).unwrap();
+            self.builder
+                .build_conditional_branch(is_err, err_bb, ok_bb)
+                .unwrap();
 
             // Error path: early return the whole Result value
             self.builder.position_at_end(err_bb);
@@ -68,16 +77,39 @@ impl<'ctx> Codegen<'ctx> {
             let operand_type = self.infer_type(operand);
             let ok_type = match &operand_type {
                 Type::Result(ok, _) => self.type_to_llvm_basic(ok),
-                _ => return Some(self.builder.build_extract_value(struct_val, 1, "ok_val").ok()?.into()),
+                _ => {
+                    return Some(
+                        self.builder
+                            .build_extract_value(struct_val, 1, "ok_val")
+                            .ok()?
+                            .into(),
+                    )
+                }
             };
 
             // Store the result struct, then load the payload as the ok type
-            let result_alloca = self.builder.build_alloca(struct_val.get_type(), "result_tmp").unwrap();
+            let result_alloca = self
+                .builder
+                .build_alloca(struct_val.get_type(), "result_tmp")
+                .unwrap();
             self.builder.build_store(result_alloca, struct_val).unwrap();
             let result_llvm_ty = struct_val.get_type();
-            let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, result_alloca, 1, "payload_ptr").unwrap();
-            let val_ptr = self.builder.build_bit_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr").unwrap();
-            let ok_val = self.builder.build_load(ok_type, val_ptr.into_pointer_value(), "ok_val").unwrap();
+            let payload_ptr = self
+                .builder
+                .build_struct_gep(result_llvm_ty, result_alloca, 1, "payload_ptr")
+                .unwrap();
+            let val_ptr = self
+                .builder
+                .build_bit_cast(
+                    payload_ptr,
+                    self.context.ptr_type(AddressSpace::default()),
+                    "val_ptr",
+                )
+                .unwrap();
+            let ok_val = self
+                .builder
+                .build_load(ok_type, val_ptr.into_pointer_value(), "ok_val")
+                .unwrap();
             return Some(ok_val);
         }
 
@@ -100,10 +132,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Resolve the LLVM struct type for a Result, preferring the current function's
     /// return type if it's a Result, otherwise using the provided fallback.
-    fn resolve_result_struct_type(
-        &mut self,
-        fallback: &Type,
-    ) -> inkwell::types::StructType<'ctx> {
+    fn resolve_result_struct_type(&mut self, fallback: &Type) -> inkwell::types::StructType<'ctx> {
         match &self.current_fn_return_type {
             Some(ret_ty @ Type::Result(_, _)) => self.type_to_llvm_basic(ret_ty).into_struct_type(),
             _ => self.type_to_llvm_basic(fallback).into_struct_type(),
@@ -135,20 +164,38 @@ impl<'ctx> Codegen<'ctx> {
             let function = self.current_function();
 
             // Store the result struct to memory BEFORE branching, so both paths can access it
-            let result_alloca = self.builder.build_alloca(struct_val.get_type(), "catch_result_tmp").unwrap();
+            let result_alloca = self
+                .builder
+                .build_alloca(struct_val.get_type(), "catch_result_tmp")
+                .unwrap();
             self.builder.build_store(result_alloca, struct_val).unwrap();
 
             let ok_bb = self.context.append_basic_block(function, "catch_ok");
             let err_bb = self.context.append_basic_block(function, "catch_err");
             let merge_bb = self.context.append_basic_block(function, "catch_merge");
 
-            self.builder.build_conditional_branch(is_err, err_bb, ok_bb).unwrap();
+            self.builder
+                .build_conditional_branch(is_err, err_bb, ok_bb)
+                .unwrap();
 
             // Ok path: extract ok value through memory reinterpret
             self.builder.position_at_end(ok_bb);
-            let payload_ptr = self.builder.build_struct_gep(struct_val.get_type(), result_alloca, 1, "ok_payload_ptr").unwrap();
-            let val_ptr = self.builder.build_bit_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "ok_val_ptr").unwrap();
-            let ok_val = self.builder.build_load(ok_type, val_ptr.into_pointer_value(), "ok_val").unwrap();
+            let payload_ptr = self
+                .builder
+                .build_struct_gep(struct_val.get_type(), result_alloca, 1, "ok_payload_ptr")
+                .unwrap();
+            let val_ptr = self
+                .builder
+                .build_bit_cast(
+                    payload_ptr,
+                    self.context.ptr_type(AddressSpace::default()),
+                    "ok_val_ptr",
+                )
+                .unwrap();
+            let ok_val = self
+                .builder
+                .build_load(ok_type, val_ptr.into_pointer_value(), "ok_val")
+                .unwrap();
             // Don't branch yet — we may need to coerce the ok value in this block
 
             // Error path: extract err value through memory reinterpret, run handler
@@ -158,9 +205,22 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.position_at_end(err_bb);
             self.push_scope();
             if let Some(name) = binding {
-                let err_payload_ptr = self.builder.build_struct_gep(struct_val.get_type(), result_alloca, 1, "err_payload_ptr").unwrap();
-                let err_val_ptr = self.builder.build_bit_cast(err_payload_ptr, self.context.ptr_type(AddressSpace::default()), "err_val_ptr").unwrap();
-                let err_val = self.builder.build_load(err_type, err_val_ptr.into_pointer_value(), "err_val").unwrap();
+                let err_payload_ptr = self
+                    .builder
+                    .build_struct_gep(struct_val.get_type(), result_alloca, 1, "err_payload_ptr")
+                    .unwrap();
+                let err_val_ptr = self
+                    .builder
+                    .build_bit_cast(
+                        err_payload_ptr,
+                        self.context.ptr_type(AddressSpace::default()),
+                        "err_val_ptr",
+                    )
+                    .unwrap();
+                let err_val = self
+                    .builder
+                    .build_load(err_type, err_val_ptr.into_pointer_value(), "err_val")
+                    .unwrap();
                 let ty = Type::String;
                 let alloca = self.create_entry_block_alloca(&ty, name);
                 self.builder.build_store(alloca, err_val).unwrap();
@@ -203,7 +263,10 @@ impl<'ctx> Codegen<'ctx> {
             // Phi result — only include err path if it doesn't diverge
             if !handler_diverges {
                 if let Some(hv) = handler_val {
-                    let phi = self.builder.build_phi(hv.get_type(), "catch_result").unwrap();
+                    let phi = self
+                        .builder
+                        .build_phi(hv.get_type(), "catch_result")
+                        .unwrap();
                     phi.add_incoming(&[(&ok_final, ok_end), (&hv, err_end)]);
                     return Some(phi.as_basic_value());
                 }

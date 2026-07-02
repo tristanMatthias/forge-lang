@@ -7,9 +7,16 @@ pub struct ListLitData {
 }
 
 impl crate::feature::FeatureNode for ListLitData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(ListLitData {
             elements: self.elements.iter().map(|e| (fns.sub_expr)(e)).collect(),
         })
@@ -23,11 +30,22 @@ pub struct MapLitData {
 }
 
 impl crate::feature::FeatureNode for MapLitData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(MapLitData {
-            entries: self.entries.iter().map(|(k, v)| ((fns.sub_expr)(k), (fns.sub_expr)(v))).collect(),
+            entries: self
+                .entries
+                .iter()
+                .map(|(k, v)| ((fns.sub_expr)(k), (fns.sub_expr)(v)))
+                .collect(),
         })
     }
 }

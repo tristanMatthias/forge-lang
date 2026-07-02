@@ -1,0 +1,127 @@
+// dir-as-module (g2eo.1): no `mod` decls — parser.av + codegen.av
+// auto-load as siblings, surface flat at `features.for_stmt.{...}`.
+// Sibling exports (emit_for, emit_for_in, parse helpers) are in scope
+// without explicit self-imports.
+use core.{vtype_list_elem}
+use core.{feature_new, Feature}
+use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
+use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
+use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
+
+/// Resolver hook for `for i in start..end { body }`. Resolves
+/// both bounds in the outer scope, opens a new scope for the
+/// loop variable, then resolves the body.
+fn for_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .For(variable, start, end, body) -> {
+            let after_start = resolve_expr(r, start)
+            let after_end = resolve_expr(after_start, end)
+            let entered = enter_resolve_scope(after_end)
+            let declared = declare_name(entered, variable)
+            let defined = define_name(declared, variable)
+            let after_body = resolve_stmt(defined, body)
+            exit_resolve_scope(after_body)
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `for x in collection { body }`. Resolves
+/// the collection in the outer scope, opens a fresh scope for
+/// the element binding, then resolves the body.
+fn for_in_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .ForIn(variable, collection, body) -> {
+            let after_coll = resolve_expr(r, collection)
+            let entered = enter_resolve_scope(after_coll)
+            let declared = declare_name(entered, variable)
+            let defined = define_name(declared, variable)
+            let after_body = resolve_stmt(defined, body)
+            exit_resolve_scope(after_body)
+        }
+        _ -> r
+    }
+}
+
+/// Type-check hook for the range form. Both bounds must be Int;
+/// the loop variable enters scope as Int.
+fn for_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .For(variable, start, end, body) -> {
+            let s = check_expr(tc, start)
+            let e = check_expr(s.tc, end)
+            let inner = tc_enter(e.tc)
+            let bound = tc_bind(inner, variable, .Int)
+            let after = check_stmt(bound, body)
+            tc_exit(after)
+        }
+        _ -> tc
+    }
+}
+
+/// Type-check hook for the iterator form. Pulls the element type
+/// from the collection's `List(elem)` type and binds it to the
+/// loop variable in a fresh scope.
+fn for_in_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .ForIn(variable, collection, body) -> {
+            let c = check_expr(tc, collection)
+            let elem_ty = vtype_list_elem(c.ty)
+            let inner = tc_enter(c.tc)
+            let bound = tc_bind(inner, variable, elem_ty)
+            let after = check_stmt(bound, body)
+            tc_exit(after)
+        }
+        _ -> tc
+    }
+}
+
+/// Tree-walk eval hook for the range form. Delegates the iteration
+/// itself to `execute_for_range` so the loop mechanics + scope
+/// discipline live alongside `execute_while` rather than spreading
+/// across feature modules. Without this hook eval would fall back to
+/// `noop_eval_stmt`, breaking any `@comptime` macro that iterates
+/// with `for i in 0..n`.
+fn for_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .For(variable, start, end, body) -> execute_for_range(rt, variable, start, end, body)
+        _ -> error_result(rt, "expected For")
+    }
+}
+
+/// Tree-walk eval hook for `for x in collection { body }`.
+/// Companion to `for_eval` for the iterator form. Required for
+/// `@comptime` macros that iterate over lists — derive_walker
+/// uses this to walk variant lists, field lists, etc.
+fn for_in_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .ForIn(variable, collection, body) -> execute_for_in(rt, variable, collection, body)
+        _ -> error_result(rt, "expected ForIn")
+    }
+}
+
+/// Register the `for i in start..end { body }` range loop.
+export fn for_feature() -> Feature {
+    feature_new("for") with {
+        stmt_tag: Stmt.For("", Expr.None, Expr.None, Stmt.NoOp),
+        stmt_keyword: "kw_for",
+        parse_stmt: (p: Parser) -> p.parse_for_statement(),
+        emit_stmt: emit_for,
+        resolve_stmt: for_resolve,
+        check_stmt: for_check,
+        eval_stmt: for_eval,
+    }
+}
+
+/// Register the `for x in collection { body }` iterator loop.
+/// Distinct AST tag from the range form so codegen / typeck pick
+/// the right hook.
+export fn for_in_feature() -> Feature {
+    feature_new("for_in") with {
+        stmt_tag: Stmt.ForIn("", Expr.None, Stmt.NoOp),
+        emit_stmt: emit_for_in,
+        resolve_stmt: for_in_resolve,
+        check_stmt: for_in_check,
+        eval_stmt: for_in_eval,
+    }
+}

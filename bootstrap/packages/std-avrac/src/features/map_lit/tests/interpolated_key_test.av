@@ -1,0 +1,55 @@
+// WHY: a map literal with an interpolated-string key — `{"a${s}b": v}` — failed
+// to parse in BOTH expression and statement position. The `{` detection lookahead
+// (is_map_literal / is_stmt_map_literal) only recognised a map when the first
+// token was Tk.String, but an interpolated string lexes as Tk.Template, so `{...}`
+// fell through to the block path and errored. parse_map_entries already parses the
+// key via parse_expression (which handles either form), so the fix is
+// detection-only: at_map_key_token accepts Tk.String OR Tk.Template. Interpolated
+// strings ARE strings (spec Axis 28), so a string-valued key is in scope.
+//
+// These run end to end (the key evaluates to its string value and is looked up).
+// The statement-position case requires the fix to even compile: without it,
+// `{"k${s}": v}` as a statement parses as a block and the file fails to build.
+
+spec "map literal accepts an interpolated-string key (expression position)" {
+    then "the interpolated key evaluates to its string value and resolves" {
+        let s = "x"
+        let m = {"a${s}b": "found", "plain": "p"}
+        m.get("axb") == "found"
+    }
+    then "a plain key alongside the interpolated one still resolves" {
+        let s = "x"
+        let m = {"a${s}b": "found", "plain": "p"}
+        m.get("plain") == "p"
+    }
+    then "a map whose ONLY key is interpolated works" {
+        let k = "id"
+        let m = {"key_${k}": "v"}
+        m.get("key_id") == "v"
+    }
+    then "an interpolation at the very start of the key works" {
+        let p = "pre"
+        let m = {"${p}_tail": "t"}
+        m.get("pre_tail") == "t"
+    }
+    then "a purely-interpolated key (no literal parts) works" {
+        let x = "k"
+        let m = {"${x}": "only"}
+        m.get("k") == "only"
+    }
+    then "a key with multiple interpolations works" {
+        let a = "p"
+        let b = "q"
+        let m = {"${a}${b}": "multi"}
+        m.get("pq") == "multi"
+    }
+}
+
+spec "map literal accepts an interpolated-string key (statement position)" {
+    then "a bare statement-position map literal with an interpolated key parses and runs" {
+        let s = "x"
+        {"k${s}": "v"}
+        let after = 5
+        after == 5
+    }
+}

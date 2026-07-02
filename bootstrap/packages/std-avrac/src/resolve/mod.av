@@ -1,0 +1,574 @@
+// WHY: name resolution pass — checks that every variable reference
+// has a visible declaration before codegen runs. Tracks scopes via
+// a linked-list stack; functions are pre-declared so mutual
+// recursion works.
+//
+// dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
+// flat at `resolve.{...}`.
+
+use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
+use core.{NodeStore, ingest_roots_spanless}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
+use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
+
+/// Outcome of `resolve_program`. `had_error` mirrors
+/// `bag_has_errors(bag)` — kept as a flat int so callers can branch
+/// without re-walking the bag.
+export type ResolveResult = {
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+}
+
+/// One binding in the resolver's scope stack: name, "defined yet?"
+/// (set after `define_name`), mutability flag, and the depth at
+/// which it was declared (used for scope pop).
+type ScopeBinding = {
+    name: string,
+    defined: int,
+    mutable: int,
+    depth: int,
+}
+
+/// Mutable threaded state for the resolver pass. Every helper takes
+/// and returns a Resolver — the pass is purely functional under the
+/// hood despite the imperative-looking call sites.
+/// @field scopes        — head of the binding scope stack.
+/// @field functions     — fns declared so far (mutually-visible).
+/// @field depth         — current scope depth (0 = top level).
+/// @field had_error     — sticky flag: any error sets this for life.
+/// @field error_message — the first error's message (legacy).
+/// @field bag           — accumulated diagnostics.
+/// @field features      — feature registry (per-feature resolve hooks).
+/// @field source_line   — line of the stmt currently being walked.
+/// @field source_col    — column of the stmt currently being walked.
+/// @field source_file   — originating source file path (empty when
+///                         not available). Threaded into diagnostic
+///                         spans so multi-file bundles (test runner)
+///                         can render snippets from the right file.
+type Resolver = {
+    scopes: List<ScopeBinding>,
+    functions: List<string>,
+    depth: int,
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+    features: Registry,
+    source_line: int,
+    source_col: int,
+    source_file: string,
+}
+
+/// Top-level entry: resolve every name reference in `stmts`. Pre-
+/// declares the language's built-in fns so they resolve like normal
+/// declarations.
+extern fn avra_ice_phase(phase: string)
+
+export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
+    avra_ice_phase("resolve")
+    mut r = resolver_new()
+    // Pre-declare builtins so they resolve like any other function
+    r = declare_function(r, "println")
+    r = declare_function(r, "eprintln")
+    r = declare_function(r, "print")
+    r = declare_function(r, "eprint")
+    r = declare_function(r, "string")
+    r = declare_function(r, "int")
+    r = declare_function(r, "float")
+    r = declare_function(r, "panic")
+    r = declare_function(r, "exit")
+    r = declare_function(r, "avra_format_float")
+    r = declare_function(r, "avra_format_int")
+    r = declare_function(r, FORCE_UNWRAP_FN)
+    r = declare_function(r, "self")
+    r = collect_function_names(r, stmts)
+    // First consumer of the id-arena (y5um B2): the top-level statement walk
+    // reads each root node by StmtId from a NodeStore instead of indexing the
+    // boxed list directly. Only the roots are registered — shallow and spanless,
+    // since this pass takes positions from the SStmt wrapper — in source order,
+    // so `stmts.get(roots[k])` returns `stmts[k].node` verbatim and the
+    // diagnostics are byte-identical to `resolve_stmt_list`. Nested walks stay
+    // boxed until later increments migrate them.
+    let store = ingest_roots_spanless(stmts)
+    r = resolve_roots_via_arena(r, stmts, store)
+    ResolveResult {
+        had_error: r.had_error,
+        error_message: r.error_message,
+        bag: r.bag,
+    }
+}
+
+/// Resolve the program's top-level statements by reading each root node from
+/// the arena by `StmtId`, rather than indexing the boxed `stmts` list. This is
+/// the top-level equivalent of `resolve_stmt_list`: it threads the same
+/// per-stmt `source_line`/`source_col`/`source_file` (still taken from the
+/// boxed `SStmt` wrapper, which the arena does not yet carry) into
+/// `resolve_stmt`. `store.roots[k]` and `stmts[k]` denote the same statement —
+/// `ingest_roots_spanless` registers one root per top-level `SStmt` in source
+/// order — so the fetched node equals `stmts[k].node` and the walk is
+/// byte-identical.
+fn resolve_roots_via_arena(r: Resolver, stmts: List<SStmt>, store: NodeStore) -> Resolver {
+    mut res = r
+    mut k = 0
+    while k < store.roots.length {
+        let id = store.roots[k]
+        let node = store.stmts.get(id)
+        let ss = stmts[k]
+        res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, node)
+        k = k + 1
+    }
+    res
+}
+
+/// First pass — pre-declare every fn / extern fn / impl-method /
+/// nested-module fn name so the second pass can resolve forward
+/// references. Walks Module / Impl bodies recursively.
+fn collect_function_names(r: Resolver, stmts: List<SStmt>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < stmts.length {
+        res = match stmt_unwrap(stmts[i].node) {
+            .Function(name, _, _, _, _) -> declare_function(res, name)
+            .ExternFn(name, _, _) -> declare_function(res, name)
+            .Impl(_, methods) -> collect_method_names(res, methods)
+            .Module(_, body) -> collect_function_names(res, body)
+            _ -> res
+        }
+        i = i + 1
+    }
+    res
+}
+
+/// Helper for `collect_function_names` — register every method
+/// inside an impl block.
+fn collect_method_names(r: Resolver, methods: List<SStmt>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < methods.length {
+        res = match stmt_unwrap(methods[i].node) {
+            .Function(name, _, _, _, _) -> declare_function(res, name)
+            _ -> res
+        }
+        i = i + 1
+    }
+    res
+}
+
+/// Empty Resolver at depth 0 with a freshly built feature registry
+/// and an empty diagnostic bag.
+fn resolver_new() -> Resolver {
+    Resolver {
+        scopes: [],
+        functions: [],
+        depth: 0,
+        had_error: false,
+        error_message: "",
+        bag: bag_new(),
+        features: build_registry(),
+        source_line: 0,
+        source_col: 0,
+        source_file: "",
+    }
+}
+
+/// Convenience: report an UndefinedVariable error. The most common
+/// code at this layer; other diagnostics call `resolve_report` directly.
+fn set_resolve_error(r: Resolver, message: string) -> Resolver {
+    resolve_report(r, DiagCode.UndefinedVariable, message)
+}
+
+/// Append a diagnostic to the bag and flip `had_error`. Caller's
+/// caller continues resolving so we accumulate every issue, not just
+/// the first.
+fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
+    let loc = if r.source_line > 0 { " (line ${string(r.source_line)})" } else { "" }
+    let span = span_at(0, 0, r.source_line, r.source_col, r.source_file)
+    let diag = diag_error(code, "${message}${loc}", span)
+    r with {
+        had_error: true,
+        error_message: if r.error_message.length == 0 { "resolve error: ${message}${loc}" } else { r.error_message },
+        bag: bag_report(r.bag, diag),
+    }
+}
+
+/// Bump scope depth — a fresh inner block. Bindings declared at the
+/// new depth get popped on `exit_resolve_scope`.
+export fn enter_resolve_scope(r: Resolver) -> Resolver {
+    r with { depth: r.depth + 1 }
+}
+
+/// Pop every binding at the current depth and decrement.
+export fn exit_resolve_scope(r: Resolver) -> Resolver {
+    r with { scopes: pop_resolve_scope(r.scopes, r.depth), depth: r.depth - 1 }
+}
+
+/// Drop bindings whose depth equals `depth` from the top of the
+/// stack down. Stops at the first entry from a shallower scope,
+/// leaving the outer scope intact. The list is used as a stack:
+/// new bindings get pushed at the end, so popping the top means
+/// trimming entries off the tail.
+fn pop_resolve_scope(entries: List<ScopeBinding>, depth: int) -> List<ScopeBinding> {
+    mut out = entries
+    while out.length > 0 && out[out.length - 1].depth == depth {
+        out.pop()
+    }
+    out
+}
+
+/// Push a `let`-style (immutable) binding onto the scope. The
+/// binding starts as undefined — `define_name` flips it once the
+/// initializer has been resolved.
+export fn declare_name(r: Resolver, name: string) -> Resolver {
+    declare_name_mut(r, name, false)
+}
+
+/// Push a `mut`-style binding. Difference from `declare_name`: the
+/// resolver allows reassignment to mutables but not to lets.
+fn declare_name_mutable(r: Resolver, name: string) -> Resolver {
+    declare_name_mut(r, name, true)
+}
+
+/// Implementation backing `declare_name` / `declare_name_mutable` —
+/// pushes the entry with the given mutability flag.
+fn declare_name_mut(r: Resolver, name: string, is_mut: int) -> Resolver {
+    mut scopes = r.scopes
+    scopes.push(ScopeBinding { name, defined: false, mutable: is_mut, depth: r.depth })
+    r with { scopes }
+}
+
+/// Mark a previously-declared name as defined. Allows references
+/// during the rest of the scope.
+export fn define_name(r: Resolver, name: string) -> Resolver {
+    r with { scopes: mark_defined(r.scopes, name, r.depth) }
+}
+
+/// Declare-and-define every parameter name. Params are usable
+/// immediately inside the fn body, so we skip the two-step pattern.
+export fn define_param_names(r: Resolver, params: List<ParamEntry>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let after = declare_name(acc, name)
+        acc = define_name(after, name)
+        i = i + 1
+    }
+    acc
+}
+
+/// Push type param names (`T`, `U`, ...) into scope as defined
+/// variables. Prevents "undefined variable" errors when `T` appears
+/// in param types, return types, or the function body.
+fn define_type_params(r: Resolver, params: List<TypeParamEntry>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let after = declare_name(acc, name)
+        acc = define_name(after, name)
+        i = i + 1
+    }
+    acc
+}
+
+/// Walk the scope stack and flip the `defined` flag on the entry
+/// matching `name` + `depth`. Other entries pass through unchanged.
+/// Scans from the top of the stack (end of the list) so the most
+/// recent matching binding wins — same semantics as the cons-list
+/// walk-from-head form.
+fn mark_defined(entries: List<ScopeBinding>, name: string, depth: int) -> List<ScopeBinding> {
+    mut out = entries
+    mut i = out.length - 1
+    while i >= 0 {
+        let b = out[i]
+        if b.name == name && b.depth == depth {
+            out.set(i, b with { defined: true })
+            return out
+        }
+        i = i - 1
+    }
+    out
+}
+
+/// Register a top-level fn name. Visible across the whole program
+/// after `collect_function_names` finishes.
+fn declare_function(r: Resolver, name: string) -> Resolver {
+    mut functions = r.functions
+    functions.push(name)
+    r with { functions }
+}
+
+/// Result of `lookup_name`: was the name found, has it been defined
+/// (initializer resolved), is it mutable.
+type NameLookup = {
+    found: int,
+    defined: int,
+    mutable: int,
+}
+
+/// Resolve a name against the current scope stack. Returns the
+/// matching binding's metadata, or `found: false` when the name
+/// isn't in scope. Walks from the top of the stack (end of the
+/// list) so inner shadowing wins.
+fn lookup_name(entries: List<ScopeBinding>, name: string) -> NameLookup {
+    mut i = entries.length - 1
+    while i >= 0 {
+        let b = entries[i]
+        if b.name == name {
+            return NameLookup { found: true, defined: b.defined, mutable: b.mutable }
+        }
+        i = i - 1
+    }
+    NameLookup { found: false, defined: false, mutable: false }
+}
+
+/// Membership test for the declared-functions list — true iff
+/// `name` was registered via `declare_function`.
+fn lookup_fn(fns: List<string>, name: string) -> bool {
+    mut i = 0
+    while i < fns.length {
+        if fns[i] == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Walk a List<SStmt>, threading the Resolver through each stmt.
+/// Updates `source_line` / `source_col` per stmt for accurate
+/// diagnostics.
+export fn resolve_stmt_list(r: Resolver, stmts: List<SStmt>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, ss.node)
+        i = i + 1
+    }
+    res
+}
+
+/// Resolve a single statement. Each variant gets its own arm — most
+/// just walk into sub-expressions; the binding statements
+/// (`let`/`mut`/`const`/`Function`) declare names in scope.
+export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .Let(name, _, init) -> resolve_binding(r, name, init, false)
+        .Mut(name, _, init) -> resolve_binding(r, name, init, true)
+        .Const(name, _, init) -> resolve_binding(r, name, init, false)
+        .Expr(expr) -> resolve_expr(r, expr)
+        .Block(body) -> {
+            let entered = enter_resolve_scope(r)
+            let after = resolve_stmt_list(entered, body)
+            exit_resolve_scope(after)
+        }
+        .Function(name, tp, params, _, body) -> {
+            let with_fn = declare_function(r, name)
+            let entered = enter_resolve_scope(with_fn)
+            let with_tp = define_type_params(entered, tp)
+            let with_params = declare_params(with_tp, params)
+            let after_body = resolve_stmt_list(with_params, body)
+            exit_resolve_scope(after_body)
+        }
+        .Return(value) -> resolve_expr(r, value)
+        .ReturnEmpty or .NoOp or .Break or .Continue -> r
+        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) or .AssocType(_, _) -> r
+        .Impl(_, methods) -> resolve_stmt_list(r, methods)
+        .ExternFn(name, _, _) -> declare_function(r, name)
+        .Annotated(_, inner) -> resolve_stmt(r, inner.node)
+        _ -> {
+            let tag = avra_stmt_tag(stmt)
+            let result = dispatch_stmt_resolve(r.features, tag, r, stmt)
+            if result != null { return result! }
+            r
+        }
+    }
+}
+
+/// Same as `define_param_names` but iterative — used in performance-
+/// sensitive paths to skip the recursive Resolver-threading overhead.
+export fn declare_params(r: Resolver, params: List<ParamEntry>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < params.length {
+        let name = params[i].name
+        let declared = declare_name(res, name)
+        res = define_name(declared, name)
+        i = i + 1
+    }
+    res
+}
+
+/// Walk a `FieldAccess` chain back to the root identifier name —
+/// used by `check_immutable_root` to find the underlying binding
+/// when the user writes `obj.field.subfield = value`.
+fn fa_root(expr: Expr) -> string {
+    match expr {
+        .Ident(nm) -> nm
+        .FieldAccess(inner, _) -> fa_root(inner)
+        _ -> ""
+    }
+}
+
+/// Verify a mutation (`obj.field = ...`) targets a `mut`-bound root.
+/// Returns a Resolver-with-error when the root is `let`-bound;
+/// returns null otherwise so the caller continues unchanged.
+fn check_immutable_root(r: Resolver, obj: Expr, operation: string) -> Resolver? {
+    let root = fa_root(obj)
+    if root.length > 0 && root != "self" {
+        let lu = lookup_name(r.scopes, root)
+        if lu.found && !lu.mutable {
+            return resolve_report(r, DiagCode.ImmutableAssign, "${operation} on immutable variable `${root}` (use `mut` or `with` for updates)")
+        }
+    }
+    null
+}
+
+/// Resolve `let`/`mut`/`const` — declare the name (undefined),
+/// resolve the initializer (which may NOT reference the name yet),
+/// then mark the name defined.
+fn resolve_binding(r: Resolver, name: string, init: Expr, is_mutable: bool) -> Resolver {
+    let declared = if is_mutable { declare_name_mutable(r, name) } else { declare_name(r, name) }
+    let after_init = resolve_expr(declared, init)
+    define_name(after_init, name)
+}
+
+/// True for built-in methods that mutate their receiver — drives
+/// the immutable-receiver check (spec Axis 11.5).
+fn is_mutating_method(name: string) -> bool {
+    name in ["push", "pop", "insert", "remove", "clear", "sort", "set"]
+}
+
+/// Resolve every name reference inside an Expr. Most variants just
+/// recurse; `Ident` and `Assign` consult the scope stack and report
+/// UndefinedVariable / ImmutableAssign as appropriate.
+export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Number(_) -> r
+        .FloatLit(_) -> r
+        .String(_) -> r
+        .Bool(_) -> r
+        .None -> r
+        .Ident(name) -> {
+            // Uppercase identifiers are treated as type names — the
+            // resolver doesn't track them, codegen does.
+            if starts_with_upper(name) {
+                return r
+            }
+            let result = lookup_name(r.scopes, name)
+            if result.found {
+                if !result.defined {
+                    return set_resolve_error(r, "cannot read variable `${name}` in its own initializer")
+                }
+                return r
+            }
+            if lookup_fn(r.functions, name) {
+                return r
+            }
+            set_resolve_error(r, "undefined variable `${name}`")
+        }
+        .Assign(name, value) -> {
+            let after_value = resolve_expr(r, value)
+            // Uppercase names are treated as opaque mut globals.
+            if starts_with_upper(name) {
+                return after_value
+            }
+            let result = lookup_name(after_value.scopes, name)
+            if !result.found {
+                return set_resolve_error(after_value, "undefined variable `${name}`")
+            }
+            if !result.mutable {
+                return resolve_report(after_value, DiagCode.ImmutableAssign, "cannot assign to immutable variable `${name}`")
+            }
+            after_value
+        }
+        .Grouping(inner) -> resolve_expr(r, inner)
+        .Unary(_, right) -> resolve_expr(r, right)
+        .Binary(left, _, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .Logical(left, _, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .Call(callee, args) -> {
+            let after_callee = resolve_expr(r, callee)
+            let after_args = resolve_expr_list(after_callee, args)
+            match callee {
+                .FieldAccess(obj, method) -> {
+                    if is_mutating_method(method) {
+                        let err = check_immutable_root(after_args, obj, "cannot call mutating method `${method}`")
+                        if err != null { return err! }
+                    }
+                }
+                _ -> {}
+            }
+            after_args
+        }
+        .Index(obj, idx) -> {
+            let after_obj = resolve_expr(r, obj)
+            resolve_expr(after_obj, idx)
+        }
+        .Block(body) -> {
+            let entered = enter_resolve_scope(r)
+            let after = resolve_stmt_list(entered, body)
+            exit_resolve_scope(after)
+        }
+        .Slice(obj, start, end) -> {
+            let a = resolve_expr(r, obj)
+            let b = resolve_expr(a, start)
+            resolve_expr(b, end)
+        }
+        .QualifiedIdent(_) -> r
+        .FieldAssign(obj, field, value) -> {
+            let ra = resolve_expr(r, obj)
+            let rb = resolve_expr(ra, value)
+            let err = check_immutable_root(rb, obj, "cannot mutate field `${field}`")
+            if err != null { return err! }
+            rb
+        }
+        _ -> {
+            let tag = avra_expr_tag(expr)
+            let result = dispatch_expr_resolve(r.features, tag, r, expr)
+            if result != null { return result! }
+            r
+        }
+    }
+}
+
+/// True iff `name` starts with an uppercase letter — Avra's
+/// convention for type / enum-variant identifiers, used by the
+/// resolver to distinguish a type ref from a value reference.
+export fn starts_with_upper(name: string) -> bool {
+    if name.length < 1 {
+        return false
+    }
+    let head = name.substring(0, 1)
+    head in "A".."Z"
+}
+
+/// Resolve every initializer expression in a struct literal. Field
+/// names themselves are not in scope (they're members of the type,
+/// not bindings).
+export fn resolve_field_init_list(r: Resolver, inits: List<FieldInit>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < inits.length {
+        if res.had_error { return res }
+        res = resolve_expr(res, inits[i].value.node)
+        i = i + 1
+    }
+    res
+}
+
+/// Resolve every Expr in a list, threading the Resolver through.
+export fn resolve_expr_list(r: Resolver, exprs: List<SExpr>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < exprs.length {
+        if res.had_error { return res }
+        res = resolve_expr(res, exprs[i].node)
+        i = i + 1
+    }
+    res
+}

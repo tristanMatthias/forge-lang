@@ -1,0 +1,6 @@
+*.fg.ll
+*.bin
+*.bin.o
+*.cov.ll
+*.covmap.json
+*.profraw

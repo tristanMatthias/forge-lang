@@ -1,0 +1,122 @@
+// Composed scorer + did_you_mean + fuzzy_search.
+
+use @std.lsp.{fuzzy_score, did_you_mean, did_you_mean_n, fuzzy_search, Scored}
+
+fn fuzzy_test_candidates() -> List<string> {
+    ["square", "sqrt", "sequence", "init_user", "Foo", "FooBar"]
+}
+
+fn fuzzy_test_strlist_first(list: List<string>) -> string {
+    if list.length > 0 { list[0] } else { "" }
+}
+
+fn fuzzy_test_scored_first_value(list: List<Scored>) -> string {
+    if list.length > 0 { list[0].value } else { "" }
+}
+
+fn fuzzy_test_scored_len(list: List<Scored>) -> int {
+    list.length
+}
+
+spec "fuzzy: score tiers" {
+    given "exact match" {
+        then "scores 1000" {
+            fuzzy_score("foo", "foo") == 1000
+        }
+    }
+    given "case-insensitive exact" {
+        then "scores 800" {
+            fuzzy_score("foo", "FOO") == 800
+        }
+    }
+    given "prefix match" {
+        then "scores at least 590 for one-char-extra" {
+            fuzzy_score("squa", "square") >= 590
+        }
+        then "exact prefix beats case-insensitive equal" {
+            fuzzy_score("sq", "square") > fuzzy_score("foo", "FOO")
+                == false  // squart prefix is 600 - 4 = 596 < 800
+        }
+    }
+    given "subsequence match" {
+        then "iu matches init_user above 300" {
+            fuzzy_score("iu", "init_user") >= 300
+        }
+        then "fb matches FooBar (case-fold)" {
+            fuzzy_score("fb", "FooBar") >= 300
+        }
+    }
+    given "substring match" {
+        then "uar inside square scores at least 290" {
+            fuzzy_score("uar", "square") >= 290
+        }
+    }
+    given "Levenshtein typo (no subsequence/substring shortcut)" {
+        then "squxre vs square (1 sub) scores 150" {
+            // squxre is the same length as square but with one
+            // substituted char — no subsequence match (no x in
+            // square), no substring, Levenshtein distance 1.
+            fuzzy_score("squxre", "square") == 150
+        }
+        then "skuxx vs square (>2 edits) is 0" {
+            fuzzy_score("skuxx", "square") == 0
+        }
+    }
+    given "no match at all" {
+        then "completely unrelated word scores 0" {
+            fuzzy_score("xyz", "ABC") == 0
+        }
+    }
+}
+
+spec "fuzzy: did_you_mean" {
+    given "a typo with one strong match" {
+        then "returns the closest candidate" {
+            did_you_mean("squre", fuzzy_test_candidates()) == "square"
+        }
+    }
+    given "a query with no near match" {
+        then "returns the empty string (silence beats misleading)" {
+            did_you_mean("blorgh", fuzzy_test_candidates()) == ""
+        }
+    }
+    given "a subsequence query" {
+        then "iu surfaces init_user" {
+            did_you_mean("iu", fuzzy_test_candidates()) == "init_user"
+        }
+    }
+}
+
+spec "fuzzy: did_you_mean_n top suggestions" {
+    given "a query that prefix-matches several" {
+        then "returns up to N candidates ordered by score" {
+            let suggestions = did_you_mean_n("sq", fuzzy_test_candidates(), 3)
+            // Prefix scoring: 600 - len_diff. sqrt has the smaller
+            // diff (4 vs 6 → diff 2 → score 598), beating square
+            // (diff 4 → score 596). Shorter prefix-matching candidate
+            // wins, which matches the "did you really mean the most
+            // direct thing" intuition.
+            fuzzy_test_strlist_first(suggestions) == "sqrt"
+        }
+    }
+}
+
+spec "fuzzy: fuzzy_search ranking and limit" {
+    given "fuzzy_search with limit 2" {
+        then "returns at most 2 entries" {
+            let results = fuzzy_search("sq", fuzzy_test_candidates(), 2)
+            fuzzy_test_scored_len(results) <= 2
+        }
+        then "ranks higher score first" {
+            let results = fuzzy_search("sq", fuzzy_test_candidates(), 2)
+            // sqrt wins on the smaller prefix-length penalty.
+            fuzzy_test_scored_first_value(results) == "sqrt"
+        }
+    }
+    given "fuzzy_search with no matches" {
+        then "returns empty list" {
+            let results = fuzzy_search("blorgh", fuzzy_test_candidates(), 5)
+            fuzzy_test_scored_len(results) == 0
+        }
+    }
+}

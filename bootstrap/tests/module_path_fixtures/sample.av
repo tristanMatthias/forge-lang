@@ -1,0 +1,47 @@
+// Fixture: validates `bs2 compile --module_path=<name>` wraps the
+// parsed source in a virtual Module(<name>), pre-qualifying every
+// top-level fn/type symbol so cross-unit linking reaches matching
+// names. Without --module_path, symbols are unprefixed; with it,
+// they carry the `<name>::` prefix the consumer's `mod <name>`
+// import will reference.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let dir = "/tmp/avra_2f54_mp"
+    avra_shell_exec("rm -rf ${dir}")
+    avra_shell_exec("mkdir -p ${dir}")
+
+    let src = "${dir}/widget.av"
+    avra_shell_exec("printf 'export fn widget_make() -> int { 7 }\\n' > ${src}")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Without --module_path: symbol stays unqualified.
+    let rc1 = avra_shell_exec_status("${bs2} compile ${src}")
+    probe("compile_without_module_path", rc1 == 0)
+    let unq_ir = avra_shell_exec("grep -c '^define i64 @widget_make()' ${src}.ll").trim()
+    probe("unqualified_widget_make_present", unq_ir == "1")
+
+    // With --module_path=widget the logical symbol is widget::widget_make,
+    // which the object-file mangler escapes (`:` -> $3A) to the ELF-valid
+    // `widget$3A$3Awidget_make` (LLVM quotes names containing `$`).
+    let rc2 = avra_shell_exec_status("${bs2} compile --module_path=widget ${src}")
+    probe("compile_with_module_path", rc2 == 0)
+    let qual_ir = avra_shell_exec("grep -c '@\"widget$3A$3Awidget_make\"()' ${src}.ll").trim()
+    probe("qualified_widget_make_present", qual_ir == "1")
+    let unq_after_qual = avra_shell_exec("grep -c '^define i64 @widget_make()' ${src}.ll").trim()
+    probe("no_unqualified_form_when_module_path_set", unq_after_qual == "0")
+
+    0
+}

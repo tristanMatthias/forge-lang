@@ -1,0 +1,115 @@
+// WHY: Single source of truth for ALL runtime C extern declarations.
+// Every extern fn from runtime.c is declared HERE and nowhere else.
+// Other files import via `use core.{fn_name}`.
+
+// ── Selfhost (compiler CLI) ──
+extern fn avra_selfhost_argc() -> int
+extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_append_file(path: string, content: string) -> int
+// Binary-safe variants — read/write `bytes` so embedded 0x00 octets
+// survive (metadata.bin, image data, hash output, …). The plain
+// _file variants strlen-truncate at the first NUL.
+extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+extern fn avra_selfhost_string_to_float(s: string) -> int
+extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
+
+// 73r2: per-process memo for package_source_fingerprint. Stores
+// (pkg_root → fp) within ONE bs2 invocation. Source can't change
+// mid-process, so this is automatically consistent — replaces the
+// disk sidecar which silently went stale.
+extern fn avra_pkg_fp_cache_get(path: string) -> string
+extern fn avra_pkg_fp_cache_set(path: string, fp: string)
+
+// ── Process ──
+extern fn avra_process_exit(code: int)
+extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_env_get(key: string) -> string
+
+// Unset env var in THIS process. Test runner uses this to clear
+// the metadata-fast-path env before forking the test binary, so
+// runtime shell-outs (e.g. `avra_shell_exec("bs2 compile /tmp/x.av")`)
+// see a clean env rather than inheriting AVRA_USE_METADATA + co.
+extern fn avra_process_env_unset(key: string)
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn exit(code: int)
+/// vez6.4szi: in-process stdout capture. Runs `closure`, redirecting
+/// stdout to a temp file across the call, returns the captured bytes.
+/// Replaces the test pattern of `avra_shell_exec("./build/bs2 ...")`
+/// for fixtures that just want to grep what the code prints.
+extern fn avra_capture_stdout(closure: fn() -> void) -> string
+
+// ── Result tagging ──
+extern fn avra_tag_as_result(ptr: ptr) -> ptr
+
+// ── String ──
+extern fn avra_char_from_hex(hi: string, lo: string) -> string
+
+// ── TOML ──
+extern fn avra_toml_has_section(toml: string, section: string) -> int
+extern fn avra_toml_get_section_string(toml: string, section: string, key: string) -> string
+extern fn avra_toml_get_section_int(toml: string, section: string, key: string, default_value: int) -> int
+extern fn avra_toml_get_section_bool(toml: string, section: string, key: string, default_value: int) -> int
+
+// Crypto externs live in packages/std-crypto/src/crypto.av — that
+// package's surface is the only entry point for sha256 etc. The
+// LLVM-IR `decl(...)` registrations for those symbols still happen
+// in codegen/setup.av so the bootstrap toolchain can link the runtime
+// when @std/crypto is in the import graph.
+
+// ── Bytes ──
+// Raw octet sequences. Bytes type is nominally distinct from string
+// (typeck enforces) but uses identical heap layout. See ticket
+// forge-crafting-intepreters-73wa.
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_length(b: bytes) -> int
+extern fn avra_bytes_byte(b: bytes, idx: int) -> int
+extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_empty() -> bytes
+
+// ── Filesystem ──
+// avra_readdir returns the directory's entries as a List<string>
+// (AvraArray of string pointers — the runtime layout matches
+// List<string>). Hidden + parent entries (`.`, `..`) are filtered
+// inside the C runtime so callers never see them.
+extern fn avra_readdir(path: string) -> List<string>
+extern fn avra_is_dir(path: string) -> int
+extern fn avra_file_mtime(path: string) -> int
+/// Return the on-disk file size in bytes for `path`, or -1 when the
+/// file is missing/inaccessible. Lets callers ask "is this file
+/// non-empty?" without reading the whole content (hkms.1.1 perf
+/// pass: test-runner's log_alive used to read every shard's full
+/// log just to compare against "").
+extern fn avra_file_size(path: string) -> int
+extern fn avra_mkdir_p(path: string) -> int
+extern fn avra_rename(src: string, dst: string) -> int
+extern fn avra_remove_file(path: string) -> int
+/// This process's PID. Used to build a process-unique temp path
+/// (`<final>.tmp.<pid>`) for atomic materialise-then-rename, so a killed
+/// writer never leaves a truncated final artifact a later cache HIT
+/// would serve (kaux). The runner parallelises at the process level.
+extern fn avra_getpid() -> int
+/// Recursively delete a directory tree (`rm -rf <path>`), symlink-safe.
+/// Returns 1 on success or when the path is already gone, 0 on failure.
+extern fn avra_remove_tree(path: string) -> int
+/// Recursive on-disk byte total for a directory tree (sum of regular-file
+/// sizes), symlink-safe. Returns 0 when the path is missing.
+extern fn avra_dir_size(path: string) -> int
+/// Current wall-clock time as Unix epoch SECONDS (note: avra_file_mtime
+/// returns epoch NANOSECONDS — divide by 1e9 to compare).
+extern fn avra_datetime_now() -> int
+extern fn avra_stdin_read_bytes(n: int) -> string
+extern fn avra_stdin_read_line() -> string
+extern fn avra_stdout_write(s: string)
+extern fn avra_str_ends_with(s: string, suffix: string) -> int
+extern fn avra_str_line_starts(s: string) -> List<int>
+
+// ── Intmap extensions ──
+extern fn avra_intmap_inc(map: ptr, key: int) -> int
+extern fn avra_intmap_get_as_string(map: ptr, key: int) -> string

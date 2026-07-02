@@ -1,0 +1,27 @@
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av
+// auto-load as siblings and surface flat at `features.parallel_stmt.{...}`.
+// Sibling exports (parallel_emit_stmt, parse_parallel_statement) are in
+// scope here without an explicit self-import.
+use core.{feature_new, Feature}
+use resolve.{resolve_stmt_list}
+
+/// Resolver hook for `parallel { ... }`. Walks the body's statement
+/// list so name resolution still happens inside the parallel block.
+fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r }
+}
+
+
+/// Register the `parallel` block feature. Spawns the body's
+/// statements as concurrent tasks; the wrapper waits for them to
+/// finish before continuing. Spec Axis 18.
+export fn parallel_feature() -> Feature {
+    let empty_body: List<SStmt> = []
+    feature_new("parallel") with {
+        stmt_tag: Stmt.Parallel(empty_body),
+        decl_keyword: "kw_parallel",
+        parse_decl: (p: Parser) -> p.parse_parallel_statement(),
+        emit_stmt: parallel_emit_stmt,
+        resolve_stmt: parallel_resolve,
+    }
+}

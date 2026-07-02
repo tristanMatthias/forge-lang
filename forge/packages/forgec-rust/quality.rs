@@ -45,11 +45,7 @@ pub struct PackageMeta {
 }
 
 /// Compute a quality report for a package.
-pub fn compute_quality(
-    package_name: &str,
-    version: &str,
-    meta: &PackageMeta,
-) -> QualityReport {
+pub fn compute_quality(package_name: &str, version: &str, meta: &PackageMeta) -> QualityReport {
     let mut signals = Vec::new();
 
     // 1. Documentation coverage
@@ -70,7 +66,11 @@ pub fn compute_quality(
     // Weighted average
     let total_weight: f64 = signals.iter().map(|s| s.weight).sum();
     let weighted_sum: f64 = signals.iter().map(|s| s.score * s.weight).sum();
-    let overall = if total_weight > 0.0 { weighted_sum / total_weight } else { 0.0 };
+    let overall = if total_weight > 0.0 {
+        weighted_sum / total_weight
+    } else {
+        0.0
+    };
 
     QualityReport {
         package: package_name.to_string(),
@@ -82,8 +82,12 @@ pub fn compute_quality(
 
 fn compute_docs_score(meta: &PackageMeta) -> QualitySignal {
     let mut score: f64 = 0.0;
-    if meta.has_readme { score += 3.0; }
-    if meta.has_changelog { score += 1.0; }
+    if meta.has_readme {
+        score += 3.0;
+    }
+    if meta.has_changelog {
+        score += 1.0;
+    }
 
     // Doc coverage on exports
     if meta.export_count > 0 {
@@ -91,7 +95,9 @@ fn compute_docs_score(meta: &PackageMeta) -> QualitySignal {
         score += coverage * 4.0;
     }
 
-    if meta.has_examples { score += 2.0; }
+    if meta.has_examples {
+        score += 2.0;
+    }
 
     QualitySignal {
         name: "documentation".to_string(),
@@ -145,12 +151,24 @@ fn compute_capability_score(meta: &PackageMeta) -> QualitySignal {
 
 fn compute_metadata_score(meta: &PackageMeta) -> QualitySignal {
     let mut score: f64 = 0.0;
-    if meta.has_description { score += 2.0; }
-    if meta.has_license { score += 2.0; }
-    if meta.has_repository { score += 2.0; }
-    if meta.has_authors { score += 1.5; }
-    if meta.has_keywords { score += 1.0; }
-    if meta.has_documentation_url { score += 1.5; }
+    if meta.has_description {
+        score += 2.0;
+    }
+    if meta.has_license {
+        score += 2.0;
+    }
+    if meta.has_repository {
+        score += 2.0;
+    }
+    if meta.has_authors {
+        score += 1.5;
+    }
+    if meta.has_keywords {
+        score += 1.0;
+    }
+    if meta.has_documentation_url {
+        score += 1.5;
+    }
 
     QualitySignal {
         name: "metadata".to_string(),
@@ -182,8 +200,7 @@ fn compute_dep_health_score(meta: &PackageMeta) -> QualitySignal {
         weight: 1.5,
         details: format!(
             "{} deps, {} outdated",
-            meta.dependency_count,
-            meta.outdated_dep_count,
+            meta.dependency_count, meta.outdated_dep_count,
         ),
     }
 }
@@ -193,9 +210,17 @@ pub fn format_report(report: &QualityReport) -> String {
     let mut out = String::new();
 
     // Overall score with color
-    let color = if report.overall_score >= 7.0 { "32" }  // green
-        else if report.overall_score >= 4.0 { "33" }     // yellow
-        else { "31" };                                     // red
+    let color = if report.overall_score >= 7.0 {
+        "32"
+    }
+    // green
+    else if report.overall_score >= 4.0 {
+        "33"
+    }
+    // yellow
+    else {
+        "31"
+    }; // red
 
     out.push_str(&format!(
         "  {} v{} — quality score: \x1b[{}m{:.1}/10\x1b[0m\n\n",
@@ -229,7 +254,8 @@ pub fn extract_meta(project_dir: &std::path::Path) -> PackageMeta {
 
     meta.has_readme = project_dir.join("README.md").exists();
     meta.has_changelog = project_dir.join("CHANGELOG.md").exists();
-    meta.has_examples = project_dir.join("examples").is_dir() || project_dir.join("example.fg").exists();
+    meta.has_examples =
+        project_dir.join("examples").is_dir() || project_dir.join("example.fg").exists();
     meta.has_tests = project_dir.join("tests").is_dir();
 
     // Read package.toml for metadata
@@ -239,9 +265,18 @@ pub fn extract_meta(project_dir: &std::path::Path) -> PackageMeta {
                 meta.has_description = pkg.get("description").and_then(|v| v.as_str()).is_some();
                 meta.has_license = pkg.get("license").and_then(|v| v.as_str()).is_some();
                 meta.has_repository = pkg.get("repository").and_then(|v| v.as_str()).is_some();
-                meta.has_documentation_url = pkg.get("documentation").and_then(|v| v.as_str()).is_some();
-                meta.has_authors = pkg.get("authors").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
-                meta.has_keywords = pkg.get("keywords").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+                meta.has_documentation_url =
+                    pkg.get("documentation").and_then(|v| v.as_str()).is_some();
+                meta.has_authors = pkg
+                    .get("authors")
+                    .and_then(|v| v.as_array())
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
+                meta.has_keywords = pkg
+                    .get("keywords")
+                    .and_then(|v| v.as_array())
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
             }
             if let Some(caps) = toml_val.get("capabilities").and_then(|c| c.as_table()) {
                 meta.capability_count = caps.values().filter(|v| v.as_bool() == Some(true)).count();
@@ -281,14 +316,22 @@ mod tests {
             outdated_dep_count: 0,
         };
         let report = compute_quality("perfect-pkg", "1.0.0", &meta);
-        assert!(report.overall_score >= 8.0, "perfect package should score >= 8.0, got {}", report.overall_score);
+        assert!(
+            report.overall_score >= 8.0,
+            "perfect package should score >= 8.0, got {}",
+            report.overall_score
+        );
     }
 
     #[test]
     fn test_quality_minimal_package() {
         let meta = PackageMeta::default();
         let report = compute_quality("empty-pkg", "0.1.0", &meta);
-        assert!(report.overall_score < 4.0, "empty package should score < 4.0, got {}", report.overall_score);
+        assert!(
+            report.overall_score < 4.0,
+            "empty package should score < 4.0, got {}",
+            report.overall_score
+        );
     }
 
     #[test]

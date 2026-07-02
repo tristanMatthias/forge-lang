@@ -1,0 +1,34 @@
+// Test that arena detection correctly handles escaping vs non-escaping.
+
+type AescVec2 = { x: int, y: int }
+
+fn aesc_use_vec(v: AescVec2) -> int {
+    v.x + v.y
+}
+
+fn aesc_non_escape_sum() -> int {
+    mut sum = 0
+    for i in 0..10 {
+        let v = AescVec2 { x: i, y: i }
+        sum = sum + v.x
+    }
+    sum
+}
+
+fn aesc_escape_sum() -> int {
+    mut total = 0
+    for i in 0..10 {
+        let v = AescVec2 { x: i, y: i }
+        total = total + aesc_use_vec(v)
+    }
+    total
+}
+
+spec "arena escape" {
+    then "non-escaping struct sum is correct" {
+        aesc_non_escape_sum() == 45
+    }
+    then "escaping struct sum is correct" {
+        aesc_escape_sum() == 90
+    }
+}

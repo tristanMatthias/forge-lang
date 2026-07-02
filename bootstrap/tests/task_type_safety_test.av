@@ -1,0 +1,6 @@
+spec "task type safety" {
+    then "spawn captures return type and .await yields it" {
+        let t = spawn { 42 }
+        t.await == 42
+    }
+}

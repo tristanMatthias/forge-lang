@@ -1,0 +1,33 @@
+fn g_identity<T>(x: T) -> T {
+    x
+}
+
+type GPair<A, B> = {
+    first: A,
+    second: B,
+}
+
+enum GOption<T> {
+    None,
+    Some(value: T),
+}
+
+fn g_show_opt(opt: GOption<int>) -> string {
+    match opt {
+        .None -> "none"
+        .Some(v) -> string(v)
+    }
+}
+
+spec "generics" {
+    then "identity<int>" {
+        g_identity(42) == 42
+    }
+    then "Pair sum" {
+        let p = GPair { first: 10, second: 20 }
+        p.first + p.second == 30
+    }
+    then "Option.Some payload" {
+        g_show_opt(GOption.Some(99)) == "99"
+    }
+}

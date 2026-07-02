@@ -1,0 +1,112 @@
+# The seed train: after a merge lands on the integration branch, CI —
+# not a human — advances the pinned seed so newly-landed features
+# become dogfoodable in compiler src on the next rebase. Feature
+# branches never cycle the seed (the bootstrap-window gate enforces
+# it); this workflow is the only writer of seed.lock. Logic lives in
+# bootstrap/scripts/diagnose.sh --seed-train; this workflow provisions
+# the toolchain, runs it, and commits the lock bump.
+name: seed-train
+
+on:
+  push:
+    branches: [feat/crafting-intepreters]
+    paths-ignore:
+      # The train's own lock commit must not re-trigger the train.
+      - 'bootstrap/seed/seed.lock'
+
+permissions:
+  contents: write
+  # Read the merged PR + the seed-verify PASS status it published, to decide
+  # whether the suite can be skipped (it already ran green pre-merge).
+  statuses: read
+  pull-requests: read
+
+concurrency:
+  # Serialize advances; never cancel a publish mid-flight.
+  group: seed-train
+  cancel-in-progress: false
+
+jobs:
+  cycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time). Credentials
+      # stay persisted on purpose: the train pushes the lock bump.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      # Restore the seed binary + C objects (content-keyed) so the ~3-4 min
+      # seed `llc` is skipped when the pin + C inputs are unchanged.
+      - uses: ./.github/actions/cache-seed
+
+      # The merged HEAD's seed×source fingerprint (window_fingerprint). Tolerant:
+      # an empty fingerprint just means no skip (the suite runs).
+      - id: fp
+        shell: bash
+        run: echo "fp=$(bash bootstrap/scripts/diagnose.sh --seed-verify-fp || true)" >> "$GITHUB_OUTPUT"
+
+      # Did the PR this squash commit came from already verify the suite for THIS
+      # exact fingerprint? Look up HEAD's PR, then its head commit's statuses for
+      # the context seed-suite-verified/<fp> (published by seed-train-verify only
+      # on a green suite). Context match == fingerprint match, so an intervening
+      # base change (different fp on HEAD) finds no matching status → no skip.
+      # Every failure path (no PR, no status, API error) leaves skip empty → the
+      # suite runs. The status can never assert a pass for an unverified suite,
+      # so this cannot skip a suite that did not already pass.
+      - id: skip
+        if: steps.fp.outputs.fp != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FP: ${{ steps.fp.outputs.fp }}
+        run: |
+          skip=""
+          pr_head="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq '.[0].head.sha' 2>/dev/null || true)"
+          if [ -n "$pr_head" ] && [ "$pr_head" != "null" ]; then
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${pr_head}/statuses" \
+              --jq "[.[] | select(.context == \"seed-suite-verified/${FP}\")][0].state" 2>/dev/null || true)"
+            if [ "$state" = "success" ]; then
+              skip="1"
+              echo "seed-suite-verified/${FP} = success on PR head ${pr_head} — skipping the suite"
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - name: Build from pin, verify, publish if diverged
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AVRA_SEED_REPO: ${{ github.repository }}
+          # Belt and suspenders with the cross-process fixture-compile
+          # throttle (--slot-exec): 4-vCPU runners still benefit from
+          # reduced unit-thread width for the non-compile workload.
+          AVRA_TEST_JOBS: "2"
+          # Skip the redundant suite ONLY when the merged PR's seed-train-verify
+          # published a PASS status for this exact seed×source fingerprint. Any
+          # miss → empty → the suite runs (today's behaviour). Build + fixed point
+          # + hermetic recompile + publish always run regardless.
+          AVRA_SEED_TRAIN_SKIP_SUITE: ${{ steps.skip.outputs.skip }}
+        run: bash bootstrap/scripts/diagnose.sh --seed-train
+
+      - name: Commit the lock bump
+        env:
+          # The trigger constrains this to the integration branch; the
+          # indirection keeps the workflow correct if that ever changes.
+          TRAIN_BRANCH: ${{ github.ref_name }}
+        run: |
+          if git diff --quiet -- bootstrap/seed/seed.lock; then
+            echo "pin unchanged — no train commit"
+            exit 0
+          fi
+          git config user.name "seed-train[bot]"
+          git config user.email "seed-train[bot]@users.noreply.github.com"
+          git add bootstrap/seed/seed.lock
+          v=$(sed -n 's/^version = //p' bootstrap/seed/seed.lock)
+          git commit -m "chore(seed): cycle to v${v}"
+          # A merge can land while we built; rebase the one-file commit
+          # rather than failing the train.
+          git pull --rebase origin "${TRAIN_BRANCH}"
+          git push origin "HEAD:${TRAIN_BRANCH}"

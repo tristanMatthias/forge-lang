@@ -1,0 +1,21 @@
+type ErsfCounter = { value: int }
+impl ErsfCounter {
+    fn increment(self) -> int {
+        self.value = self.value + 1
+        self.value
+    }
+}
+
+spec "edge reassign struct field" {
+    then "increment through method" {
+        let c = ErsfCounter { value: 0 }
+        c.increment() == 1 and c.increment() == 2 and c.increment() == 3
+    }
+    then "field value persists" {
+        let c = ErsfCounter { value: 0 }
+        c.increment()
+        c.increment()
+        c.increment()
+        c.value == 3
+    }
+}

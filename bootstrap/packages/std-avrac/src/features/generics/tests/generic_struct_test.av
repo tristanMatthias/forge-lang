@@ -1,0 +1,14 @@
+type GsWrapper<T> = {
+    value: T,
+}
+
+spec "generic struct" {
+    then "Wrapper { value: 42 }" {
+        let w = GsWrapper { value: 42 }
+        w.value == 42
+    }
+    then "Wrapper { value: \"hello\" }" {
+        let w = GsWrapper { value: "hello" }
+        w.value == "hello"
+    }
+}

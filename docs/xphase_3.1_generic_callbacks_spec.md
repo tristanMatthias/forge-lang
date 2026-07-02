@@ -1,6 +1,6 @@
-# Forge — Generic C ABI Callbacks & Struct JSON Serialization
+# Avra — Generic C ABI Callbacks & Struct JSON Serialization
 
-**Problem:** HTTP route handler codegen is package-specific because it needs to (1) wrap Forge closures as C ABI function pointers and (2) serialize structs to JSON. Both are general problems that every callback-taking package will have.
+**Problem:** HTTP route handler codegen is package-specific because it needs to (1) wrap Avra closures as C ABI function pointers and (2) serialize structs to JSON. Both are general problems that every callback-taking package will have.
 
 **Solution:** Make both generic compiler features. Then delete all HTTP-specific codegen.
 
@@ -10,14 +10,14 @@
 
 ### What it does
 
-When a Forge closure is passed to an `extern fn` parameter that expects a function pointer, the compiler auto-generates a C ABI wrapper.
+When a Avra closure is passed to an `extern fn` parameter that expects a function pointer, the compiler auto-generates a C ABI wrapper.
 
 ### How the compiler knows to do it
 
 From the `extern fn` declaration's type signature:
 
-```forge
-extern fn forge_http_add_route(
+```avra
+extern fn avra_http_add_route(
   server_id: int,
   method: string,
   path: string,
@@ -25,18 +25,18 @@ extern fn forge_http_add_route(
 )
 ```
 
-The compiler sees `handler` is `fn(string, string, string, string) -> string`. When user code passes a Forge closure for this argument, the compiler:
+The compiler sees `handler` is `fn(string, string, string, string) -> string`. When user code passes a Avra closure for this argument, the compiler:
 
 1. Creates a new LLVM function with C calling convention (`extern "C"`)
 2. The function signature matches the C ABI types: `i64 handler(char*, i64, char*, i64, char*, i64, char*, i64)` (each string is ptr + len)
-3. The function body: unmarshal C types → Forge types, call the Forge closure, marshal return value back to C types
+3. The function body: unmarshal C types → Avra types, call the Avra closure, marshal return value back to C types
 4. Passes the new function's pointer to the `extern fn` call
 
 ### Example
 
 User writes:
-```forge
-forge_http_add_route(id, "GET", "/health", (method, path, body, params) -> {
+```avra
+avra_http_add_route(id, "GET", "/health", (method, path, body, params) -> {
   json.stringify({ status: "ok" })
 })
 ```
@@ -45,13 +45,13 @@ Compiler generates:
 ```llvm
 ; Auto-generated C ABI trampoline
 define i64 @__trampoline_0(i8* %method_ptr, i64 %method_len, i8* %path_ptr, i64 %path_len, i8* %body_ptr, i64 %body_len, i8* %params_ptr, i64 %params_len) {
-  ; Wrap C strings into Forge strings
-  %method = ; build ForgeString from ptr+len
-  %path = ; build ForgeString from ptr+len
-  %body = ; build ForgeString from ptr+len
-  %params = ; build ForgeString from ptr+len
+  ; Wrap C strings into Avra strings
+  %method = ; build AvraString from ptr+len
+  %path = ; build AvraString from ptr+len
+  %body = ; build AvraString from ptr+len
+  %params = ; build AvraString from ptr+len
   ; Call the user's closure
-  %result = call %ForgeString @user_closure(%method, %path, %body, %params)
+  %result = call %AvraString @user_closure(%method, %path, %body, %params)
   ; Return as C string (ptr)
   ret i8* %result.ptr
 }
@@ -66,8 +66,8 @@ define i64 @__trampoline_0(i8* %method_ptr, i64 %method_len, i8* %path_ptr, i64 
 
 ### Test
 
-```forge
-// test_callback_trampoline.fg
+```avra
+// test_callback_trampoline.av
 extern fn call_me_back(cb: fn(int, int) -> int) -> int
 
 fn main() {
@@ -120,7 +120,7 @@ The compiler generates a parser function for type T that:
 2. Extracts values by known field names
 3. Constructs the struct
 
-For Phase 4, this can use the C runtime's JSON parser (`forge_json_parse_field(json_str, field_name) -> value`). Full compile-time parser generation is an optimization for later.
+For Phase 4, this can use the C runtime's JSON parser (`avra_json_parse_field(json_str, field_name) -> value`). Full compile-time parser generation is an optimization for later.
 
 ### What changes
 
@@ -131,8 +131,8 @@ For Phase 4, this can use the C runtime's JSON parser (`forge_json_parse_field(j
 
 ### Test
 
-```forge
-// test_json_generic.fg
+```avra
+// test_json_generic.av
 
 type Point = { x: float, y: float }
 type User = { name: string, age: int, active: bool }
@@ -161,11 +161,11 @@ fn main() {
 
 ## 3. Removing req.params.get() Special Case
 
-The `req.params.get("id")` special case in collections.rs exists because `params` is a `Map<string, string>` coming from C as a JSON string, and the codegen hardcodes `forge_params_get`.
+The `req.params.get("id")` special case in collections.rs exists because `params` is a `Map<string, string>` coming from C as a JSON string, and the codegen hardcodes `avra_params_get`.
 
 Fix: once `json.parse` works generically, the route handler parses params as a regular `Map<string, string>`:
 
-```forge
+```avra
 let req = Request {
   method: m,
   path: p,
@@ -184,12 +184,12 @@ Then `req.params.get("id")` is a normal Map method call. No special case.
 - `emit_struct_to_json()` in packages.rs — replaced by generic `json.stringify`
 - `ServerBlock` / `ServerChild::Route` handling in mod.rs — server block becomes normal keyword expansion
 - `req.params.get()` special case in collections.rs — becomes normal Map access
-- `forge_params_get` gated declaration in runtime.rs — no longer needed
+- `avra_params_get` gated declaration in runtime.rs — no longer needed
 
 ## 5. Definition of Done
 
-1. `test_callback_trampoline.fg` passes — Forge closures work as C ABI function pointers
-2. `test_json_generic.fg` passes — json.stringify/parse work on arbitrary structs
+1. `test_callback_trampoline.av` passes — Avra closures work as C ABI function pointers
+2. `test_json_generic.av` passes — json.stringify/parse work on arbitrary structs
 3. All existing HTTP tests pass using the generic systems (no HTTP-specific codegen)
 4. `providers.rs` is deleted or reduced to zero package-specific code
-5. `grep -r "emit_http\|emit_struct_to_json\|ServerBlock\|ServerChild\|forge_params_get" compiler/src/ | grep -v test` returns zero results
+5. `grep -r "emit_http\|emit_struct_to_json\|ServerBlock\|ServerChild\|avra_params_get" compiler/src/ | grep -v test` returns zero results

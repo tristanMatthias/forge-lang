@@ -1,0 +1,18 @@
+/// Test fixture: simple fn used as the inner expression in
+/// `dbg(dbg_add(...))` — exercises the desugar pass's print-and-
+/// return semantics without depending on impl-side helpers.
+fn dbg_add(a: int, b: int) -> int {
+    a + b
+}
+
+spec "dbg" {
+    then "dbg returns value" {
+        let x = dbg(dbg_add(2, 3))
+        x == 5
+    }
+    then "dbg in chain" {
+        let x = dbg(5)
+        let y = dbg(x) + dbg(x)
+        y == 10
+    }
+}

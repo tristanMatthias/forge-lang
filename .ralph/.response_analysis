@@ -1,0 +1,22 @@
+{
+  "loop_number": 12,
+  "timestamp": "2026-04-09T17:48:19+00:00",
+  "output_file": ".ralph/logs/claude_output_2026-04-09_10-47-44.log",
+  "output_format": "json",
+  "analysis": {
+    "has_completion_signal": false,
+    "is_test_only": false,
+    "is_stuck": false,
+    "has_progress": true,
+    "files_modified": 20,
+    "confidence_score": 70,
+    "exit_signal": false,
+    "work_summary": "17/17 regression tests pass, fixed-point invariant holds.\n\nRALPH_STATUS:\n  EXIT_SIGNAL: true",
+    "output_length": 987,
+    "has_permission_denials": false,
+    "permission_denial_count": 0,
+    "denied_commands": [],
+    "asking_questions": false,
+    "question_count": 0
+  }
+}

@@ -3,7 +3,6 @@
 /// Each entry records a package publish with its content hash, author,
 /// timestamp, and registry signature. The log can be verified for
 /// sequential integrity and cross-checked against lockfile hashes.
-
 use serde::{Deserialize, Serialize};
 
 /// A single entry in the transparency log
@@ -78,7 +77,10 @@ impl TransparencyLog {
 
     /// Find all entries for a given package
     pub fn entries_for(&self, package: &str) -> Vec<&LogEntry> {
-        self.entries.iter().filter(|e| e.package == package).collect()
+        self.entries
+            .iter()
+            .filter(|e| e.package == package)
+            .collect()
     }
 
     /// Find the entry for a specific package@version
@@ -113,10 +115,7 @@ impl TransparencyLog {
     }
 
     /// Return packages from locked_deps that have no entry in the log
-    pub fn find_missing(
-        &self,
-        locked_deps: &[(String, String, String)],
-    ) -> Vec<(String, String)> {
+    pub fn find_missing(&self, locked_deps: &[(String, String, String)]) -> Vec<(String, String)> {
         locked_deps
             .iter()
             .filter(|(name, version, _)| self.find_entry(name, version).is_none())
@@ -169,10 +168,7 @@ pub fn format_audit_report(
         out.push_str("All lockfile hashes match the transparency log.\n");
     } else {
         if !mismatches.is_empty() {
-            out.push_str(&format!(
-                "Hash mismatches: {} FAILED\n",
-                mismatches.len()
-            ));
+            out.push_str(&format!("Hash mismatches: {} FAILED\n", mismatches.len()));
             for m in mismatches {
                 out.push_str(&format!(
                     "  {}@{}\n    lockfile: {}\n    log:      {}\n",
@@ -183,10 +179,7 @@ pub fn format_audit_report(
         }
 
         if !missing.is_empty() {
-            out.push_str(&format!(
-                "Missing from log: {} packages\n",
-                missing.len()
-            ));
+            out.push_str(&format!("Missing from log: {} packages\n", missing.len()));
             for (name, version) in missing {
                 out.push_str(&format!("  {}@{}\n", name, version));
             }
@@ -363,8 +356,16 @@ mod tests {
     fn test_verify_against_lockfile_ok() {
         let log = sample_log();
         let deps = vec![
-            ("http-client".to_string(), "1.0.0".to_string(), "abc123".to_string()),
-            ("json-parser".to_string(), "2.0.0".to_string(), "def456".to_string()),
+            (
+                "http-client".to_string(),
+                "1.0.0".to_string(),
+                "abc123".to_string(),
+            ),
+            (
+                "json-parser".to_string(),
+                "2.0.0".to_string(),
+                "def456".to_string(),
+            ),
         ];
         let mismatches = log.verify_against_lockfile(&deps);
         assert!(mismatches.is_empty());
@@ -373,9 +374,11 @@ mod tests {
     #[test]
     fn test_verify_against_lockfile_mismatch() {
         let log = sample_log();
-        let deps = vec![
-            ("http-client".to_string(), "1.0.0".to_string(), "WRONG".to_string()),
-        ];
+        let deps = vec![(
+            "http-client".to_string(),
+            "1.0.0".to_string(),
+            "WRONG".to_string(),
+        )];
         let mismatches = log.verify_against_lockfile(&deps);
         assert_eq!(mismatches.len(), 1);
         assert_eq!(mismatches[0].lockfile_hash, "WRONG");
@@ -386,8 +389,16 @@ mod tests {
     fn test_find_missing() {
         let log = sample_log();
         let deps = vec![
-            ("http-client".to_string(), "1.0.0".to_string(), "abc123".to_string()),
-            ("unknown-pkg".to_string(), "0.1.0".to_string(), "xxx".to_string()),
+            (
+                "http-client".to_string(),
+                "1.0.0".to_string(),
+                "abc123".to_string(),
+            ),
+            (
+                "unknown-pkg".to_string(),
+                "0.1.0".to_string(),
+                "xxx".to_string(),
+            ),
         ];
         let missing = log.find_missing(&deps);
         assert_eq!(missing.len(), 1);

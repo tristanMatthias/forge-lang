@@ -2,7 +2,6 @@
 ///
 /// Extracts `///` doc comments from Forge source files and renders
 /// them for `compiler docs` CLI commands.
-
 use std::path::{Path, PathBuf};
 
 use crate::ansi::{bold, cyan, dim, green, red, truncate_str, yellow};
@@ -126,32 +125,46 @@ pub fn extract_docs(source: &str, file_path: &str) -> ProjectDocs {
         let line_num = i + 1;
 
         // Skip doc blocks that contain test expectations (/// expect: ... or /// expect-error: ...)
-        if doc_lines.iter().any(|l| l.starts_with("expect:") || l.starts_with("expect-error:")) {
+        if doc_lines
+            .iter()
+            .any(|l| l.starts_with("expect:") || l.starts_with("expect-error:"))
+        {
             i += 1;
             continue;
         }
 
         // Check for export prefix
         let (exported, decl) = if decl_line.starts_with("export ") {
-            (true, decl_line.strip_prefix("export ").unwrap_or(decl_line).trim())
+            (
+                true,
+                decl_line
+                    .strip_prefix("export ")
+                    .unwrap_or(decl_line)
+                    .trim(),
+            )
         } else {
             (false, decl_line)
         };
 
         // Match declaration patterns
         if decl.starts_with("fn ") {
-            if let Some(fn_doc) = parse_fn_signature(decl, &doc_text, file_path, line_num, exported) {
+            if let Some(fn_doc) = parse_fn_signature(decl, &doc_text, file_path, line_num, exported)
+            {
                 docs.functions.push(fn_doc);
             }
         } else if decl.starts_with("type ") {
-            if let Some(type_doc) = parse_type_decl(decl, &doc_text, file_path, line_num, exported) {
+            if let Some(type_doc) = parse_type_decl(decl, &doc_text, file_path, line_num, exported)
+            {
                 docs.types.push(type_doc);
             }
         } else if decl.starts_with("enum ") {
-            if let Some(enum_doc) = parse_enum_decl(decl, &lines, i, &doc_text, file_path, line_num, exported) {
+            if let Some(enum_doc) =
+                parse_enum_decl(decl, &lines, i, &doc_text, file_path, line_num, exported)
+            {
                 docs.enums.push(enum_doc);
             }
-        } else if decl.starts_with("let ") || decl.starts_with("mut ") || decl.starts_with("const ") {
+        } else if decl.starts_with("let ") || decl.starts_with("mut ") || decl.starts_with("const ")
+        {
             if let Some(var_doc) = parse_var_decl(decl, &doc_text, file_path, line_num, exported) {
                 docs.constants.push(var_doc);
             }
@@ -163,7 +176,13 @@ pub fn extract_docs(source: &str, file_path: &str) -> ProjectDocs {
     docs
 }
 
-fn parse_fn_signature(line: &str, doc: &str, file: &str, line_num: usize, exported: bool) -> Option<FnDoc> {
+fn parse_fn_signature(
+    line: &str,
+    doc: &str,
+    file: &str,
+    line_num: usize,
+    exported: bool,
+) -> Option<FnDoc> {
     // fn name(params) -> return_type {
     let rest = line.strip_prefix("fn ")?.trim();
 
@@ -275,9 +294,17 @@ fn parse_single_param(param: &str) -> Option<(String, String)> {
     }
 }
 
-fn parse_type_decl(line: &str, doc: &str, file: &str, line_num: usize, exported: bool) -> Option<TypeDocEntry> {
+fn parse_type_decl(
+    line: &str,
+    doc: &str,
+    file: &str,
+    line_num: usize,
+    exported: bool,
+) -> Option<TypeDocEntry> {
     let rest = line.strip_prefix("type ")?.trim();
-    let name_end = rest.find(|c: char| c == '=' || c == '<' || c == ' ').unwrap_or(rest.len());
+    let name_end = rest
+        .find(|c: char| c == '=' || c == '<' || c == ' ')
+        .unwrap_or(rest.len());
     let name = rest[..name_end].trim().to_string();
 
     // Try to detect if it's a struct type (has { fields })
@@ -299,9 +326,19 @@ fn parse_type_decl(line: &str, doc: &str, file: &str, line_num: usize, exported:
     })
 }
 
-fn parse_enum_decl(line: &str, lines: &[&str], start: usize, doc: &str, file: &str, line_num: usize, exported: bool) -> Option<EnumDoc> {
+fn parse_enum_decl(
+    line: &str,
+    lines: &[&str],
+    start: usize,
+    doc: &str,
+    file: &str,
+    line_num: usize,
+    exported: bool,
+) -> Option<EnumDoc> {
     let rest = line.strip_prefix("enum ")?.trim();
-    let name_end = rest.find(|c: char| c == '{' || c == ' ').unwrap_or(rest.len());
+    let name_end = rest
+        .find(|c: char| c == '{' || c == ' ')
+        .unwrap_or(rest.len());
     let name = rest[..name_end].trim().to_string();
 
     // Collect variant names from subsequent lines
@@ -314,7 +351,9 @@ fn parse_enum_decl(line: &str, lines: &[&str], start: usize, doc: &str, file: &s
         }
         if !vline.is_empty() && !vline.starts_with("//") {
             // Extract variant name (before '(' or ',' or whitespace)
-            let vname_end = vline.find(|c: char| c == '(' || c == ',' || c == ' ').unwrap_or(vline.len());
+            let vname_end = vline
+                .find(|c: char| c == '(' || c == ',' || c == ' ')
+                .unwrap_or(vline.len());
             let vname = vline[..vname_end].trim();
             if !vname.is_empty() {
                 variants.push(vname.to_string());
@@ -333,7 +372,13 @@ fn parse_enum_decl(line: &str, lines: &[&str], start: usize, doc: &str, file: &s
     })
 }
 
-fn parse_var_decl(line: &str, doc: &str, file: &str, line_num: usize, exported: bool) -> Option<VarDoc> {
+fn parse_var_decl(
+    line: &str,
+    doc: &str,
+    file: &str,
+    line_num: usize,
+    exported: bool,
+) -> Option<VarDoc> {
     let (kind, rest) = if line.starts_with("const ") {
         ("const", line.strip_prefix("const ")?.trim())
     } else if line.starts_with("mut ") {
@@ -344,14 +389,20 @@ fn parse_var_decl(line: &str, doc: &str, file: &str, line_num: usize, exported: 
         return None;
     };
 
-    let name_end = rest.find(|c: char| c == ':' || c == '=' || c == ' ').unwrap_or(rest.len());
+    let name_end = rest
+        .find(|c: char| c == ':' || c == '=' || c == ' ')
+        .unwrap_or(rest.len());
     let name = rest[..name_end].trim().to_string();
 
     let type_ann = if let Some(colon_pos) = rest.find(':') {
         let after_colon = &rest[colon_pos + 1..];
         let type_end = after_colon.find('=').unwrap_or(after_colon.len());
         let t = after_colon[..type_end].trim();
-        if t.is_empty() { None } else { Some(t.to_string()) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
     } else {
         None
     };
@@ -443,7 +494,10 @@ pub fn show_overview(docs: &ProjectDocs) {
             "  {} No Forge source files found in the current directory.",
             dim("!")
         );
-        println!("  Add {} doc comments to your functions and types.", cyan("///"));
+        println!(
+            "  Add {} doc comments to your functions and types.",
+            cyan("///")
+        );
         println!();
         return;
     }
@@ -503,7 +557,12 @@ pub fn show_overview(docs: &ProjectDocs) {
             } else {
                 format!("{{ {} }}", e.variants.join(", "))
             };
-            println!("    {:<20} {}{}", e.name, dim(&variants_str), dim(export_tag));
+            println!(
+                "    {:<20} {}{}",
+                e.name,
+                dim(&variants_str),
+                dim(export_tag)
+            );
         }
     }
 
@@ -612,12 +671,7 @@ fn show_fn_detail(f: &FnDoc) {
     }
 
     println!();
-    println!(
-        "  {} {}:{}",
-        dim("Defined in"),
-        f.file,
-        f.line
-    );
+    println!("  {} {}:{}", dim("Defined in"), f.file, f.line);
     if f.exported {
         println!("  {}", dim("Exported"));
     }
@@ -640,12 +694,7 @@ fn show_type_detail(t: &TypeDocEntry) {
     }
 
     println!();
-    println!(
-        "  {} {}:{}",
-        dim("Defined in"),
-        t.file,
-        t.line
-    );
+    println!("  {} {}:{}", dim("Defined in"), t.file, t.line);
     if t.exported {
         println!("  {}", dim("Exported"));
     }
@@ -676,12 +725,7 @@ fn show_enum_detail(e: &EnumDoc) {
     }
 
     println!();
-    println!(
-        "  {} {}:{}",
-        dim("Defined in"),
-        e.file,
-        e.line
-    );
+    println!("  {} {}:{}", dim("Defined in"), e.file, e.line);
     if e.exported {
         println!("  {}", dim("Exported"));
     }
@@ -708,12 +752,7 @@ fn show_var_detail(c: &VarDoc) {
     }
 
     println!();
-    println!(
-        "  {} {}:{}",
-        dim("Defined in"),
-        c.file,
-        c.line
-    );
+    println!("  {} {}:{}", dim("Defined in"), c.file, c.line);
     if c.exported {
         println!("  {}", dim("Exported"));
     }
@@ -743,15 +782,26 @@ pub fn validate_docs(dir: &str) {
     if !docs.functions.is_empty() {
         let total = docs.functions.len();
         let documented = docs.functions.iter().filter(|f| !f.doc.is_empty()).count();
-        let undoc: Vec<&str> = docs.functions.iter()
+        let undoc: Vec<&str> = docs
+            .functions
+            .iter()
             .filter(|f| f.doc.is_empty())
             .map(|f| f.name.as_str())
             .collect();
-        let pct = if total > 0 { documented * 100 / total } else { 0 };
+        let pct = if total > 0 {
+            documented * 100 / total
+        } else {
+            0
+        };
 
         println!();
         println!("  {}: {} total", bold("Functions"), total);
-        println!("    {} documented: {} ({}%)", green("\u{2713}"), documented, pct);
+        println!(
+            "    {} documented: {} ({}%)",
+            green("\u{2713}"),
+            documented,
+            pct
+        );
         if !undoc.is_empty() {
             println!("    {} undocumented: {}", red("\u{2717}"), undoc.join(", "));
         }
@@ -761,15 +811,26 @@ pub fn validate_docs(dir: &str) {
     if !docs.types.is_empty() {
         let total = docs.types.len();
         let documented = docs.types.iter().filter(|t| !t.doc.is_empty()).count();
-        let undoc: Vec<&str> = docs.types.iter()
+        let undoc: Vec<&str> = docs
+            .types
+            .iter()
             .filter(|t| t.doc.is_empty())
             .map(|t| t.name.as_str())
             .collect();
-        let pct = if total > 0 { documented * 100 / total } else { 0 };
+        let pct = if total > 0 {
+            documented * 100 / total
+        } else {
+            0
+        };
 
         println!();
         println!("  {}: {} total", bold("Types"), total);
-        println!("    {} documented: {} ({}%)", green("\u{2713}"), documented, pct);
+        println!(
+            "    {} documented: {} ({}%)",
+            green("\u{2713}"),
+            documented,
+            pct
+        );
         if !undoc.is_empty() {
             println!("    {} undocumented: {}", red("\u{2717}"), undoc.join(", "));
         }
@@ -779,15 +840,26 @@ pub fn validate_docs(dir: &str) {
     if !docs.enums.is_empty() {
         let total = docs.enums.len();
         let documented = docs.enums.iter().filter(|e| !e.doc.is_empty()).count();
-        let undoc: Vec<&str> = docs.enums.iter()
+        let undoc: Vec<&str> = docs
+            .enums
+            .iter()
             .filter(|e| e.doc.is_empty())
             .map(|e| e.name.as_str())
             .collect();
-        let pct = if total > 0 { documented * 100 / total } else { 0 };
+        let pct = if total > 0 {
+            documented * 100 / total
+        } else {
+            0
+        };
 
         println!();
         println!("  {}: {} total", bold("Enums"), total);
-        println!("    {} documented: {} ({}%)", green("\u{2713}"), documented, pct);
+        println!(
+            "    {} documented: {} ({}%)",
+            green("\u{2713}"),
+            documented,
+            pct
+        );
         if !undoc.is_empty() {
             println!("    {} undocumented: {}", red("\u{2717}"), undoc.join(", "));
         }
@@ -797,15 +869,26 @@ pub fn validate_docs(dir: &str) {
     if !docs.constants.is_empty() {
         let total = docs.constants.len();
         let documented = docs.constants.iter().filter(|c| !c.doc.is_empty()).count();
-        let undoc: Vec<&str> = docs.constants.iter()
+        let undoc: Vec<&str> = docs
+            .constants
+            .iter()
             .filter(|c| c.doc.is_empty())
             .map(|c| c.name.as_str())
             .collect();
-        let pct = if total > 0 { documented * 100 / total } else { 0 };
+        let pct = if total > 0 {
+            documented * 100 / total
+        } else {
+            0
+        };
 
         println!();
         println!("  {}: {} total", bold("Constants"), total);
-        println!("    {} documented: {} ({}%)", green("\u{2713}"), documented, pct);
+        println!(
+            "    {} documented: {} ({}%)",
+            green("\u{2713}"),
+            documented,
+            pct
+        );
         if !undoc.is_empty() {
             println!("    {} undocumented: {}", red("\u{2717}"), undoc.join(", "));
         }
@@ -815,7 +898,11 @@ pub fn validate_docs(dir: &str) {
     let total = docs.total_symbols();
     let documented = docs.documented_count();
     let undocumented = total - documented;
-    let pct = if total > 0 { documented * 100 / total } else { 100 };
+    let pct = if total > 0 {
+        documented * 100 / total
+    } else {
+        100
+    };
 
     println!();
     println!("  {}", bold("Summary"));
@@ -824,10 +911,7 @@ pub fn validate_docs(dir: &str) {
         "Documented:", documented, total, pct
     );
     if undocumented > 0 {
-        println!(
-            "    {:<16} {} symbols",
-            "Undocumented:", undocumented
-        );
+        println!("    {:<16} {} symbols", "Undocumented:", undocumented);
     }
     println!();
 }
@@ -932,7 +1016,11 @@ pub fn show_short(query: &str, docs: &ProjectDocs) -> bool {
     for f in &docs.functions {
         if f.name.to_lowercase() == query_lower {
             let doc_line = first_line_or_empty(&f.doc);
-            let desc = if doc_line.is_empty() { "(undocumented)".to_string() } else { doc_line };
+            let desc = if doc_line.is_empty() {
+                "(undocumented)".to_string()
+            } else {
+                doc_line
+            };
             println!("  {}: {}", f.name, desc);
             return true;
         }
@@ -940,7 +1028,11 @@ pub fn show_short(query: &str, docs: &ProjectDocs) -> bool {
     for t in &docs.types {
         if t.name.to_lowercase() == query_lower {
             let doc_line = first_line_or_empty(&t.doc);
-            let desc = if doc_line.is_empty() { "(undocumented)".to_string() } else { doc_line };
+            let desc = if doc_line.is_empty() {
+                "(undocumented)".to_string()
+            } else {
+                doc_line
+            };
             println!("  {}: {}", t.name, desc);
             return true;
         }
@@ -948,7 +1040,11 @@ pub fn show_short(query: &str, docs: &ProjectDocs) -> bool {
     for e in &docs.enums {
         if e.name.to_lowercase() == query_lower {
             let doc_line = first_line_or_empty(&e.doc);
-            let desc = if doc_line.is_empty() { "(undocumented)".to_string() } else { doc_line };
+            let desc = if doc_line.is_empty() {
+                "(undocumented)".to_string()
+            } else {
+                doc_line
+            };
             println!("  {}: {}", e.name, desc);
             return true;
         }
@@ -956,7 +1052,11 @@ pub fn show_short(query: &str, docs: &ProjectDocs) -> bool {
     for c in &docs.constants {
         if c.name.to_lowercase() == query_lower {
             let doc_line = first_line_or_empty(&c.doc);
-            let desc = if doc_line.is_empty() { "(undocumented)".to_string() } else { doc_line };
+            let desc = if doc_line.is_empty() {
+                "(undocumented)".to_string()
+            } else {
+                doc_line
+            };
             println!("  {}: {}", c.name, desc);
             return true;
         }
@@ -1139,7 +1239,11 @@ pub fn show_llm(docs: &ProjectDocs) {
             let fields_str = if t.fields.is_empty() {
                 String::new()
             } else {
-                let fields: Vec<String> = t.fields.iter().map(|(n, ty)| format!("{}: {}", n, ty)).collect();
+                let fields: Vec<String> = t
+                    .fields
+                    .iter()
+                    .map(|(n, ty)| format!("{}: {}", n, ty))
+                    .collect();
                 format!(" {{ {} }}", fields.join(", "))
             };
             println!("{} {}{}{}", t.kind, t.name, fields_str, export);

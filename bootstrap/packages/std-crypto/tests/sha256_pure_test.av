@@ -1,0 +1,62 @@
+// Validates the pure-Avra SHA-256 against the canonical FIPS 180-2
+// reference vectors AND against the C-backed implementation. If
+// either drifts, this test fails.
+//
+// Tracking ticket: forge-crafting-intepreters-nfkn (Port @std/crypto.sha256
+// from C-extern to pure Avra).
+
+use @std.crypto.{sha256_hex, sha256_hex_pure}
+
+spec "sha256_hex_pure: FIPS 180-2 reference vectors" {
+    then "empty string vector" {
+        sha256_hex_pure("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+    then "abc vector" {
+        sha256_hex_pure("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    }
+    then "56-byte vector (FIPS 180-2 B.2)" {
+        sha256_hex_pure("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+            == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    }
+}
+
+spec "sha256_hex_pure: agrees with C reference impl" {
+    then "empty string matches" {
+        sha256_hex_pure("") == sha256_hex("")
+    }
+    then "abc matches" {
+        sha256_hex_pure("abc") == sha256_hex("abc")
+    }
+    then "longer string matches" {
+        sha256_hex_pure("the quick brown fox jumps over the lazy dog")
+            == sha256_hex("the quick brown fox jumps over the lazy dog")
+    }
+    then "single byte matches" {
+        sha256_hex_pure("a") == sha256_hex("a")
+    }
+    then "64-byte boundary input matches" {
+        // 64 bytes — exact block boundary, exercises the padding edge case.
+        let s = "0123456789012345678901234567890123456789012345678901234567890123"
+        sha256_hex_pure(s) == sha256_hex(s)
+    }
+    then "63-byte input (just below block) matches" {
+        let s = "012345678901234567890123456789012345678901234567890123456789012"
+        sha256_hex_pure(s) == sha256_hex(s)
+    }
+    then "65-byte input (just above block) matches" {
+        let s = "01234567890123456789012345678901234567890123456789012345678901234"
+        sha256_hex_pure(s) == sha256_hex(s)
+    }
+}
+
+spec "sha256_hex_pure: deterministic and 64-char output" {
+    then "same input twice returns the same digest" {
+        sha256_hex_pure("hello world") == sha256_hex_pure("hello world")
+    }
+    then "single-byte change perturbs the digest" {
+        sha256_hex_pure("hello world") != sha256_hex_pure("hello worle")
+    }
+    then "output is exactly 64 hex characters" {
+        sha256_hex_pure("anything").length == 64
+    }
+}

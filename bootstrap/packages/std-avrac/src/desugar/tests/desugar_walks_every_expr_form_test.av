@@ -1,0 +1,54 @@
+// Regression: desugar/walk_expr was dropping sub-expressions in
+// several arms (.StructLit, .EnumCtor, .Catch, .Spawn, .Isolated,
+// .Quote, .Splice, .GenericCall). Sugar built-ins (assert / dbg /
+// min / max) inside any of those would slip past the desugar pass,
+// leaving raw `assert(...)` calls that the resolver later rejected
+// as undefined function names.
+//
+// Same root cause as the mono + escape + closure walker bugs.
+
+type DBox = { v: int, ok: bool }
+enum DChoice { Empty, Pick(b: DBox) }
+
+/// assert(true) inside a StructLit field init — desugar must
+/// recurse into the inits or the resolver complains about `assert`.
+fn d_struct_lit(p: int) -> DBox {
+    DBox { v: p, ok: assert(p > 0) || true }
+}
+
+/// dbg(...) inside an EnumCtor arg.
+fn d_enum_ctor(p: int) -> DChoice {
+    DChoice.Pick(DBox { v: dbg(p), ok: true })
+}
+
+/// assert inside a Spawn body — same root cause.
+fn d_spawn(p: int) -> int {
+    let t = spawn {
+        assert(p >= 0)
+        p
+    }
+    t.await
+}
+
+spec "desugar recurses into every expression form" {
+    given "StructLit with a sugar call in a field init" {
+        then "the call resolves cleanly and the struct builds" {
+            d_struct_lit(7).v == 7
+        }
+    }
+
+    given "EnumCtor with a sugar call in its args" {
+        then "the variant builds and the inner DBox.v is the input" {
+            match d_enum_ctor(11) {
+                .Empty -> false
+                .Pick(b) -> b.v == 11
+            }
+        }
+    }
+
+    given "Spawn body that contains a sugar call" {
+        then "the body runs through fine and returns its value" {
+            d_spawn(5) == 5
+        }
+    }
+}

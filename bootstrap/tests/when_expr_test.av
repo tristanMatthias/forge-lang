@@ -1,0 +1,23 @@
+fn we_classify(n: int) -> string {
+    when {
+        n < 0 -> "negative"
+        n == 0 -> "zero"
+        n > 100 -> "large"
+        _ -> "normal"
+    }
+}
+
+spec "when expr" {
+    then "negative" {
+        we_classify(-5) == "negative"
+    }
+    then "zero" {
+        we_classify(0) == "zero"
+    }
+    then "normal" {
+        we_classify(42) == "normal"
+    }
+    then "large" {
+        we_classify(200) == "large"
+    }
+}

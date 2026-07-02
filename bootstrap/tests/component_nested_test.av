@@ -1,0 +1,35 @@
+component app_n(name: string) {
+    config {
+        version: string = "0.0.0"
+    }
+}
+
+component cmd_n(name: string) {
+    config {
+        description: string = ""
+    }
+}
+
+fn cn_run() -> string {
+    avra_test_capture_start()
+    component app_n my_app {
+        version "1.0"
+    }
+    println(my_app.name)
+    println(my_app.version)
+    component cmd_n build_cmd {
+        description "Build the project"
+    }
+    println(build_cmd.name)
+    component cmd_n test_cmd {
+        description "Run tests"
+    }
+    println(test_cmd.name)
+    avra_test_capture_stop()
+}
+
+spec "component nested" {
+    then "siblings desugar to separate let bindings" {
+        cn_run() == "my_app\n1.0\nbuild_cmd\ntest_cmd"
+    }
+}

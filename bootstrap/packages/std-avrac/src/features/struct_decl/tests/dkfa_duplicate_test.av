@@ -1,0 +1,35 @@
+// dkfa: F3105 fires on duplicate top-level type decls. Living
+// under struct_decl/tests/ rather than check/tests/ because adding
+// new test files to check/tests/ triggers a wd48-style bundling
+// regression (filed as a follow-up — needs deeper investigation).
+
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_errors}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+spec "dkfa: duplicate type decls produce a compile error" {
+    then "two `type Foo = {...}` at top level error" {
+        bag_has_errors(check_source(
+            "type Foo = { x: int }\n" +
+            "type Foo = { y: int }\n" +
+            MAIN_HEADER + " -> int { 0 }"))
+    }
+    then "single `type Foo = {...}` does NOT error" {
+        !bag_has_errors(check_source(
+            "type Foo = { x: int }\n" +
+            MAIN_HEADER + " -> int { 0 }"))
+    }
+    then "two identical-shape `type Foo` STILL error (no silent dedupe)" {
+        bag_has_errors(check_source(
+            "type Foo = { x: int }\n" +
+            "type Foo = { x: int }\n" +
+            MAIN_HEADER + " -> int { 0 }"))
+    }
+    then "two `enum Color {...}` produce an error" {
+        bag_has_errors(check_source(
+            "enum Color { Red, Green }\n" +
+            "enum Color { Blue, Yellow }\n" +
+            MAIN_HEADER + " -> int { 0 }"))
+    }
+}

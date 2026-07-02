@@ -1,0 +1,14 @@
+spec "type annotations" {
+    then "int annotation" {
+        let x: int = 42
+        x == 42
+    }
+    then "string annotation" {
+        let s: string = "hello"
+        s == "hello"
+    }
+    then "bool annotation" {
+        let b: bool = true
+        b
+    }
+}

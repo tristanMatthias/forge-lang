@@ -1,0 +1,49 @@
+// so07.2 / 1rzz: reserved keywords at binding sites (param names,
+// let / mut / const, fn / type / variant / field names) fail at the
+// binding span with an actionable "rename the binding" diagnostic,
+// not at the first use site with a generic "expected expression"
+// F0001. Pre-T2: consume_identifier accepted Tk.KwReserved silently,
+// the binding succeeded, then the first use site emitted F0001
+// because the lexer mapped the same lexeme to Tk.KwReserved instead
+// of Tk.Identifier. Concrete repro: a parameter named `bare` made
+// every `bare.contains(...)` call inside the fn body fail with
+// "expected expression" pointing at the use, leaving the user no
+// signal that `bare` was reserved.
+//
+// Field / method access positions stay lenient via consume_field_name
+// so `task.await` (`await` as a field accessor) still parses.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn run_compile(source: string) -> string {
+    write_fixture_and_run("/tmp/avra_t2_repro.av", source)
+}
+
+spec "so07.2: reserved keywords rejected at binding sites" {
+    then "param named `bare` errors at the parameter declaration" {
+        let out = run_compile(
+            "fn f(bare: string) -> bool { bare == \"\" }\nfn main() {}\n")
+        out.contains("`bare` is a reserved keyword")
+        && out.contains("rename the binding")
+    }
+    then "let binding named `await` errors at the binding declaration" {
+        let out = run_compile(
+            "fn main() { let await = 1 }\n")
+        out.contains("`await` is a reserved keyword")
+    }
+    then "param named `move` errors at the parameter declaration" {
+        let out = run_compile(
+            "fn g(move: int) -> int { move + 1 }\nfn main() {}\n")
+        out.contains("`move` is a reserved keyword")
+    }
+    then "fn named `unsafe` errors at the fn declaration" {
+        let out = run_compile(
+            "fn unsafe() {}\nfn main() {}\n")
+        out.contains("`unsafe` is a reserved keyword")
+    }
+    then "valid identifier `safe` still parses cleanly" {
+        let out = run_compile(
+            "fn f(safe: int) -> int { safe + 1 }\nfn main() {}\n")
+        !out.contains("is a reserved keyword")
+    }
+}

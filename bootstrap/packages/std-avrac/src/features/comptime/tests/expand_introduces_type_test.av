@@ -1,0 +1,28 @@
+// forge-crafting-intepreters-qa6i: @expand pipeline-order fix —
+// type-decl variant. Confirms the pipeline-fix works not just for
+// macro-emitted fns but for macro-emitted type decls too.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "qa6i: @expand macro can introduce a type decl callable from main" {
+    then "macro-emitted type Foo is constructible and accessible from main" {
+        let out = write_fixture_and_run("/tmp/avra_expand_introduces_type_test.av", 
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_type() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        type Foo = { x: int }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_type)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let f = Foo { x: 42 }\n" +
+            "    println(string(f.x))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}

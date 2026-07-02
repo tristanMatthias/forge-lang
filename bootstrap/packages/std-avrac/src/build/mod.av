@@ -1,0 +1,24 @@
+// WHY: the Avra build system, lived inside @std/avrac because the
+// build driver and the compiler ship together as one toolchain — same
+// versioning, same release, same team. Modeled on cargo and
+// go-build: fingerprint-keyed cache, dependency-graph-aware
+// compilation, bottom-up parallel builds, progress UI. Used by any
+// Avra project, including the bootstrap compiler itself.
+//
+// Layering:
+//   * @std/avrac.parse / typeck / codegen / etc.   ← compile one file
+//   * @std/avrac.build                              ← drive the build
+//   * packages/cli (the bs2 binary)                 ← user surface
+//
+// Phases tracked under epic forge-crafting-intepreters-a1el:
+//   Phase 1: fingerprint + cache the existing single-unit build
+//   Phase 2: split @std/avrac as a separately-cached unit
+//   Phase 3: per-module units, metadata files, parallel workers
+//   Phase 4: progress bars, --timings, lockfile, profiles
+//
+// Public surface lives in sibling files; this file is the namespace
+// root. Each sibling .av (cache.av, driver.av, fingerprint.av, …)
+// auto-loads as part of the `build` module under g2eo.1
+// directory-as-module semantics — no `mod` decls needed. Consumers
+// reach machinery via:
+//   use @std.avrac.build.fingerprint.{fp_for_unit, ...}

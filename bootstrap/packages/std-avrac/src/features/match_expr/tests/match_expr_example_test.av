@@ -1,0 +1,25 @@
+enum ExMeShape {
+    Circle(radius: int)
+    Square(side: int)
+    Unknown
+}
+
+fn ex_me_area(s: ExMeShape) -> int {
+    match s {
+        .Circle(r) -> r * r * 3
+        .Square(side) -> side * side
+        .Unknown -> 0
+    }
+}
+
+spec "match expr example" {
+    then "Circle(5) area" {
+        ex_me_area(ExMeShape.Circle(5)) == 75
+    }
+    then "Square(4) area" {
+        ex_me_area(ExMeShape.Square(4)) == 16
+    }
+    then "Unknown variant area" {
+        ex_me_area(ExMeShape.Unknown) == 0
+    }
+}

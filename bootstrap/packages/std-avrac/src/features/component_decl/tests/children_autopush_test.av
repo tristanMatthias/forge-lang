@@ -1,0 +1,61 @@
+// vez6.7.6 — auto-push verification. When a component declares a
+// `children { slot: List<T> }` schema, nested ComponentBlock
+// instances of T inside the parent's body should be pushed into
+// `parent.<slot>` automatically.
+//
+// Edge cases (vez6.7.3) are in children_autopush_edges_test.av.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_program(source: string) -> string {
+    let path = "/tmp/avra_children_autopush_test.av"
+    write_fixture(path, source)
+    cached_fixture_run(path)
+}
+
+const DOLLAR: string = "$"
+
+fn embed_main(prog_body: string) -> string {
+    MAIN_HEADER + " {\n" + prog_body + "\n}\n"
+}
+
+spec "vez6.7.6: auto-push" {
+    then "two nested instances populate the parent's list slot" {
+        let out = run_program(
+            "component cmd_x { config { name: string = \"\" } }\n" +
+            "component cli_p { children { commands: List<cmd_x> } }\n" +
+            embed_main(
+                "    cli_p avra {\n" +
+                "        cmd_x build {}\n" +
+                "        cmd_x serve {}\n" +
+                "    }\n" +
+                "    println(\"commands: " + DOLLAR + "{avra.commands.length}\")"))
+        out.contains("commands: 2")
+    }
+    then "empty parent block leaves the slot at length zero" {
+        let out = run_program(
+            "component cmd_x { config { name: string = \"\" } }\n" +
+            "component cli_p { children { commands: List<cmd_x> } }\n" +
+            embed_main(
+                "    cli_p avra {}\n" +
+                "    println(\"commands: " + DOLLAR + "{avra.commands.length}\")"))
+        out.contains("commands: 0")
+    }
+    then "multi-slot routes each child to its declared list" {
+        let out = run_program(
+            "component cmd_x { config { name: string = \"\" } }\n" +
+            "component flag_z { config { name: string = \"\" } }\n" +
+            "component cli_p { children { commands: List<cmd_x>, flags: List<flag_z> } }\n" +
+            embed_main(
+                "    cli_p avra {\n" +
+                "        cmd_x build {}\n" +
+                "        flag_z verbose {}\n" +
+                "        cmd_x serve {}\n" +
+                "    }\n" +
+                "    println(\"commands=" + DOLLAR + "{avra.commands.length} flags=" + DOLLAR + "{avra.flags.length}\")"))
+        out.contains("commands=2 flags=1")
+    }
+}

@@ -1,0 +1,2617 @@
+// WHY: recursive-descent parser with integrated lexer. Scans source
+// text one token at a time and builds an AST. Precedence is encoded
+// in the call chain: assignment → pipe → null_coalesce → or → and →
+// equality → comparison → term → factor → unary → call → primary.
+// Feature-specific parsers extend Parser via cross-file impl blocks.
+//
+// NEVER add feature-specific parsing to this file. New syntax belongs
+// in features/<name>/parser.av as an impl Parser block. This file is
+// infrastructure only: the expression precedence chain, statement
+// dispatch, and token consumption helpers.
+
+// dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
+// flat at `parse.{...}`.
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
+use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
+use core.{gensym_name, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN}
+use core.{NodeStore, StoreMark, new_node_store, build_line_index}
+use core.{NodeRef, NodeEdges, ExprId, PatId, ByteSpan, byte_span_none}
+use features.closures.{expr_contains_it, wrap_in_it_lambda}
+use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
+
+/// Output of `parse_expression_source`. `expr` is null on parse
+/// failure; consult `had_error` / `error_message` for the cause.
+/// `bag` mirrors ProgramParseResult — it carries every F-code
+/// diagnostic the parser emitted (lexer + grammar errors) so the
+/// CLI can render structured source-frame output rather than just
+/// the one-line `error_message`. Empty for clean parses.
+export type ParseResult = {
+    expr: Expr?,
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+}
+
+/// Output of `parse_program_source`. Same shape as ParseResult but
+/// carries a `List<SStmt>` plus the full DiagnosticBag so later passes
+/// can render multi-error messages.
+export type ProgramParseResult = {
+    stmts: List<SStmt>?,
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+}
+
+/// One parse of a paren/bracket-bounded argument list, surfaced both ways:
+/// `wrapped` is the boxed view (it-sugar applied, position-wrapped exactly
+/// as the boxed chain always did) for embedding in a parent's payload;
+/// `ids` are the arena rows backing each element, in the same order, for
+/// the parent's edge list.
+export type ArgListIds = {
+    wrapped: List<SExpr>,
+    ids: List<ExprId>,
+}
+
+/// Saved parser state used by speculative parses (e.g. generic call
+/// disambiguation). Pair with `parser.save_state` /
+/// `parser.restore_state` to back out of an attempted parse.
+export type ParserState = {
+    start: int,
+    current: int,
+    line: int,
+    column: int,
+    current_kind: Tk,
+    current_lexeme: string,
+    current_line: int,
+    current_column: int,
+    prev_line: int,
+    current_start: int,
+    had_error: int,
+    error_message: string,
+    // Context-sensitive parse-mode flags. A backtrack must restore these so a
+    // failed lookahead cannot leak a mode change into the retry.
+    allow_struct_lit: int,
+    allow_dot_postfix: int,
+    cell_mode: bool,
+    allow_it_sugar: int,
+    quote_depth: int,
+    bag: DiagnosticBag,
+    // The store half of the snapshot (B1): arena row counts at save time. A
+    // backtrack truncates the arenas to these marks so an abandoned
+    // speculative parse leaves no rows (a quote allocated inside a backtracked
+    // arg list must not trip the flat presence scan).
+    store_mark: StoreMark,
+}
+
+/// Mutable parser state. Tracks lexer position, the currently-staged
+/// token, error state, the diagnostic bag, and a few mode flags
+/// that gate context-sensitive parses.
+/// @field source             — the entire program text.
+/// @field start / current    — lexer byte offsets (start = current
+///                              token's first byte).
+/// @field line / column      — lexer's source position.
+/// @field current_kind       — Tk discriminant of the staged token.
+/// @field current_lexeme     — the staged token's source text.
+/// @field current_line/col   — span coordinates of the staged token.
+/// @field prev_line          — line of the previously-consumed token;
+///                              used to gate same-line postfix attach.
+/// @field had_error          — sticky failure flag.
+/// @field error_message      — first error's message (legacy).
+/// @field allow_struct_lit   — when 0, `Ident { ... }` parses as
+///                              Ident-then-block (inside `if` / `while`
+///                              conditions); when 1, it's a struct
+///                              literal.
+/// @field allow_dot_postfix  — when 0, `.` doesn't attach as postfix
+///                              (inside match-arm bodies, so the next
+///                              `.Variant` arm isn't gobbled).
+/// @field allow_it_sugar     — when 1, `it` inside an arg list wraps
+///                              the expr in an implicit lambda. Set
+///                              by method calls, not regular calls.
+/// @field current_start      — byte offset of the staged token's start.
+/// @field bag                — accumulated diagnostics.
+/// @field features           — feature registry for parser dispatch.
+export type Parser = {
+    source: string,
+    file: string,
+    mut start: int,
+    mut current: int,
+    mut line: int,
+    mut column: int,
+    mut current_kind: Tk,
+    mut current_lexeme: string,
+    mut current_line: int,
+    mut current_column: int,
+    mut prev_line: int,
+    mut had_error: int,
+    mut error_message: string,
+    // When false, `Ident { ... }` is parsed as Ident followed by a
+    // separate block (used inside `if`/`while` conditions to avoid
+    // grabbing the loop body brace as a struct literal). When true,
+    // `Ident { ... }` becomes a struct literal expression.
+    mut allow_struct_lit: int,
+    // When false, parse_call's loop won't consume `.` as a postfix.
+    // Disabled inside match-arm bodies so the next sibling pattern
+    // (e.g. `.Variant(x)`) isn't gobbled into the previous body.
+    mut allow_dot_postfix: int,
+    // When true, expression parsing is bounded to a single source line:
+    // a binary `+`/`-` or a `.`-postfix that begins on the *next* line
+    // does NOT continue the current expression. Set only while parsing
+    // table-literal cells, so a row ending in a value followed by a next
+    // row starting with `-` / `.Variant` doesn't merge across the newline.
+    mut cell_mode: bool,
+    // When true, expressions containing `it` in arg lists are wrapped
+    // in implicit lambdas. Set by method call parsing (.map, etc.),
+    // NOT by regular function calls (prevents double-wrapping).
+    mut allow_it_sugar: int,
+    // Counts open `quote { ... }` bodies the parser is currently
+    // inside. When > 0, a leading `~` parses as Expr.Splice instead
+    // of Expr.Unary(BitNot, ...). The same `~` token is overloaded
+    // by context — outside a quote, it stays the bitwise-NOT prefix.
+    mut quote_depth: int,
+    mut current_start: int,   // byte offset where current token started
+    // Monotonic counter for hygienic temp names in parser desugars
+    // (`if let` / `let-else` / `match` present-bind). Use `self.fresh(tag)`
+    // to mint a guaranteed-unique `__<tag>_<n>` — collision-proof under
+    // macro replication, unlike a source-position-derived name.
+    mut gensym_seq: int,
+    mut bag: DiagnosticBag,
+    features: Registry,
+    // The L1 arena the parser allocates into as it parses (B1, dark-launched:
+    // ingest_program stays the canonical producer until the flip). Productions
+    // converted to native alloc push their node here and return its typed id;
+    // unconverted callers read the boxed node back via `store.<arena>.get(id)`.
+    // Built per entry parser from this parser's source (template `${...}`
+    // sub-parsers will share the outer store once they thread it through).
+    store: NodeStore,
+}
+
+/// Parse a single expression. Used by `bs2 expr` for AST inspection
+/// and by the eval interpreter's REPL-style entry.
+export fn parse_expression_source(source: string) -> ParseResult {
+    mut parser = parser_new(source)
+    parser.parse_file_expression()
+}
+
+/// Parse a whole program (a sequence of declarations + statements).
+/// Top-level entry consumed by every CLI subcommand that ingests
+/// source.
+export fn parse_program_source(source: string) -> ProgramParseResult {
+    parse_program_source_at(source, "")
+}
+
+/// Parse a whole program with explicit file attribution. Used by
+/// the test runner so each test's parsed AST nodes know which file
+/// they came from — diagnostics in the bundled program can then
+/// cite the originating *_test.av rather than a `<test>` placeholder.
+export fn parse_program_source_at(source: string, file: string) -> ProgramParseResult {
+    mut parser = parser_new_with_file(source, file)
+    parser.parse_file_program()
+}
+
+/// Parse a fn-body source rendered by `fmt_stmt_list`. The body is
+/// wrapped in a synthetic fn declaration so `parse_program_source`
+/// sees a complete program; the wrapper's body stmts are returned.
+/// Used by the metadata roundtrip (eager for generic bodies, lazy
+/// for @comptime bodies — both flow through here). Returns `[]` on
+/// any parse failure so callers treat the fn as body-less and
+/// surface a clearer error downstream.
+export fn parse_body_source(source: string) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if source == "" { return empty }
+    let wrapped = "fn __avra_body_source_wrapper() {\n" + source + "\n}"
+    let parsed = parse_program_source(wrapped)
+    if parsed.had_error == 1 { return empty }
+    if parsed.stmts == null { return empty }
+    let ss = parsed.stmts!
+    if ss.length == 0 { return empty }
+    match stmt_unwrap(ss[0].node) {
+        .Function(_, _, _, _, body) -> body
+        _ -> empty
+    }
+}
+
+/// Interleave header names and values into a flat alternating list:
+/// `[k1, k2]` + `[v1, v2]` → `[k1, v1, k2, v2]`. MapLit expects this
+/// flat shape; table-literal parsing produces it.
+export fn table_zip_entries(headers: List<SExpr>, values: List<SExpr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    let n = if headers.length < values.length { headers.length } else { values.length }
+    mut i = 0
+    while i < n {
+        out.push(headers[i])
+        out.push(values[i])
+        i = i + 1
+    }
+    out
+}
+
+/// True iff `e` is a bare or qualified identifier — used to gate
+/// promotions like Ident-to-call or Ident-to-pattern.
+fn expr_is_ident(e: Expr) -> bool {
+    match e {
+        .Ident(_) -> true
+        .QualifiedIdent(_) -> true
+        _ -> false
+    }
+}
+
+/// True iff `e` is an identifier whose first letter is uppercase —
+/// the syntactic marker the resolver uses to distinguish a type ref
+/// from a value ref.
+fn expr_is_upper_ident(e: Expr) -> bool {
+    match e {
+        .Ident(n) -> p_starts_with_upper(n)
+        .QualifiedIdent(n) -> p_starts_with_upper(n)
+        _ -> false
+    }
+}
+
+/// Convert a list of Ident expressions into a `List<ParamEntry>` (for lambda
+/// parsing). `(x, y) -> ...` parses the parens as expressions first,
+/// then reinterprets the Ident names as parameter names once `->`
+/// is seen.
+fn exprs_to_params(exprs: List<SExpr>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < exprs.length {
+        let se = exprs[i]
+        let name = match se.node {
+            .Ident(n) -> n
+            .QualifiedIdent(n) -> n
+            _ -> "_"
+        }
+        out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+        i = i + 1
+    }
+    out
+}
+
+/// True iff `expr` is something that could syntactically be the
+/// callee of `expr(args)` — bare ident, qualified ident, or a field
+/// access (method call). Used by the postfix-call gate.
+fn is_callable(expr: Expr) -> bool {
+    match expr {
+        .Ident(_) -> true
+        .QualifiedIdent(_) -> true
+        .FieldAccess(_, _) -> true
+        _ -> false
+    }
+}
+
+/// True iff `name` starts with an uppercase ASCII letter — Avra's
+/// type / variant naming convention.
+fn p_starts_with_upper(name: string) -> bool {
+    if name.length < 1 {
+        return false
+    }
+    let head = name.substring(0, 1)
+    head in "A".."Z"
+}
+
+/// True iff `s` is a simple identifier (alpha first, then alnum or
+/// underscores). Simple idents inside `${...}` don't need a sub-
+/// parser — they lower directly to `Expr.Ident`.
+fn template_is_simple_ident(s: string) -> bool {
+    if s.length == 0 { return false }
+    // First char must be alpha (not digit) to be an identifier
+    if !p_is_alpha(s[0]) { return false }
+    mut i = 1
+    while i < s.length {
+        let ch = s[i]
+        if !p_is_alpha_numeric(ch) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+/// Output of `template_split_format`: the expression text and its
+/// optional `:format-spec` suffix (empty when no spec).
+type FormatSplit = { expr: string, fmt: string }
+
+/// Split a template interpolation body `"${expr:fmt}"` at the last
+/// colon at brace/paren depth 0. Returns the parts so the lowerer
+/// can route them to the right runtime call. When no valid format
+/// spec is found, the whole input is treated as the expression.
+fn template_split_format(s: string) -> FormatSplit {
+    mut last_colon = -1
+    mut depth = 0
+    mut i = 0
+    while i < s.length {
+        let ch = s[i]
+        if ch in ["(", "[", "{"] { depth = depth + 1 }
+        if ch in [")", "]", "}"] { depth = depth - 1 }
+        if ch == ":" && depth == 0 {
+            last_colon = i
+        }
+        i = i + 1
+    }
+    if last_colon < 0 {
+        return FormatSplit { expr: s, fmt: "" }
+    }
+    // Validate that what's after the colon looks like a format spec
+    // (starts with . or digit or a format char).
+    let fspec = s.substring(last_colon + 1, s.length)
+    if fspec.length == 0 {
+        return FormatSplit { expr: s, fmt: "" }
+    }
+    let first = fspec[0]
+    if first == "." || p_is_digit(first) || first in ["d", "x", "X", "o", "f", "e", "E", "g", "G"] {
+        FormatSplit { expr: s.substring(0, last_colon), fmt: fspec }
+    } else {
+        FormatSplit { expr: s, fmt: "" }
+    }
+}
+
+/// Parse a sub-expression from a string. Used by template
+/// desugaring — creates its own parser instance so the parent's
+/// state isn't disturbed by the inner walk.
+fn parse_template_expr(source: string) -> Result<Expr, string> {
+    mut p = parser_new(source)
+    // The sub-parser's store is discarded with it: the boxed result
+    // re-enters the PARENT's store via the template glue bridge
+    // (a later commit threads sub-parser stores through).
+    p.parse_expression_boxed()
+}
+
+/// B1 probe: parse `source` as a single expression through the id-returning
+/// chain and surface the parser's NATIVE store + root id, so spec tests can
+/// run the faithfulness oracle (`store_expr_subtree_faithful`) over real
+/// parses. Probe surface only — production callers keep the boxed results
+/// until the flip serves from this store.
+export type NativeParseProbe = { root: ExprId, store: NodeStore, had_error: int }
+
+/// See `NativeParseProbe`. On a parse error `root` is a dummy id — check
+/// `had_error` before touching the store.
+export fn parse_expression_native_probe(source: string) -> NativeParseProbe {
+    mut p = parser_new(source)
+    match p.parse_expression() {
+        .Ok(id) -> NativeParseProbe { root: id, store: p.store, had_error: 0 }
+        .Err(_) -> NativeParseProbe { root: ExprId(0), store: p.store, had_error: 1 }
+    }
+}
+
+/// Map a source identifier to its keyword Tk variant. Returns
+/// `Tk.Identifier` when `text` isn't a reserved word. Reserved-but-
+/// inactive keywords (`async`, `await`, `bare`, ...) map to
+/// `Tk.KwReserved` — the lexer rejects them at the use site so we
+/// reserve the name space without committing to semantics.
+export fn p_keyword_kind(text: string) -> Tk {
+    match text {
+        "and"      -> Tk.KwAnd
+        "catch"    -> Tk.KwCatch
+        "channel"  -> Tk.KwChannel
+        "const"    -> Tk.KwConst
+        "else"     -> Tk.KwElse
+        "errdefer" -> Tk.KwErrdefer
+        "false"    -> Tk.KwFalse
+        "fn"       -> Tk.KwFn
+        "if"       -> Tk.KwIf
+        "let"      -> Tk.KwLet
+        "mut"      -> Tk.KwMut
+        "not"      -> Tk.KwNot
+        "null"     -> Tk.KwNull
+        "none"     -> Tk.KwNone
+        "or"       -> Tk.KwOr
+        "return"   -> Tk.KwReturn
+        "true"     -> Tk.KwTrue
+        "for"      -> Tk.KwFor
+        "in"       -> Tk.KwIn
+        "where"    -> Tk.KwWhere
+        "while"    -> Tk.KwWhile
+        "type"     -> Tk.KwType
+        "enum"     -> Tk.KwEnum
+        "match"    -> Tk.KwMatch
+        "export"   -> Tk.KwExport
+        "use"      -> Tk.KwUse
+        "mod"      -> Tk.KwMod
+        "impl"     -> Tk.KwImpl
+        "extern"   -> Tk.KwExtern
+        "break"    -> Tk.KwBreak
+        "continue" -> Tk.KwContinue
+        "defer"    -> Tk.KwDefer
+        "dyn"      -> Tk.KwDyn
+        "trait"    -> Tk.KwTrait
+        "with"     -> Tk.KwWith
+        "when"     -> Tk.KwWhen
+        "is"       -> Tk.KwIs
+        "spec"     -> Tk.KwSpec
+        "given"    -> Tk.KwGiven
+        "then"     -> Tk.KwThen
+        "select"   -> Tk.KwSelect
+        "shape"    -> Tk.KwShape
+        "component" -> Tk.KwComponent
+        "parallel" -> Tk.KwParallel
+        "spawn"    -> Tk.KwSpawn
+        "isolated" -> Tk.KwIsolated
+        "quote"    -> Tk.KwQuote
+        // Reserved future keywords
+        "async"    -> Tk.KwReserved
+        "await"    -> Tk.KwReserved
+        "yield"    -> Tk.KwReserved
+        "move"     -> Tk.KwReserved
+        "ref"      -> Tk.KwReserved
+        "unsafe"   -> Tk.KwReserved
+        "macro"    -> Tk.KwReserved
+        "systems"  -> Tk.KwReserved
+        "bare"     -> Tk.KwReserved
+        "hardware" -> Tk.KwReserved
+        "owned"    -> Tk.KwReserved
+        "borrow"   -> Tk.KwReserved
+        _          -> Tk.Identifier
+    }
+}
+
+/// Construct a Parser positioned on the first token of `source`.
+/// All mode flags default to permissive; feature parsers may flip
+/// them transiently for context-sensitive parses.
+export fn parser_new(source: string) -> Parser {
+    parser_new_with_file(source, "")
+}
+
+/// Construct a Parser with explicit source-file attribution. Stamps
+/// every SStmt/SExpr emitted by this parser with `file` so downstream
+/// diagnostics can cite the originating file even after bundling.
+export fn parser_new_with_file(source: string, file: string) -> Parser {
+    mut parser = Parser {
+        source,
+        file,
+        start: 0,
+        current: 0,
+        line: 1,
+        column: 1,
+        current_kind: Tk.Eof,
+        current_lexeme: "",
+        current_line: 1,
+        prev_line: 1,
+        current_column: 1,
+        had_error: false,
+        error_message: "",
+        allow_struct_lit: true,
+        allow_dot_postfix: true,
+        cell_mode: false,
+        allow_it_sugar: false,
+        quote_depth: 0,
+        current_start: 0,
+        gensym_seq: 0,
+        bag: bag_new(),
+        features: build_registry(),
+        store: new_node_store(build_line_index(source)),
+    }
+    parser.advance_token()
+    parser
+}
+
+impl Parser {
+    /// Mint a hygienic, collision-proof temp name `$<tag>$<n>` for a parser
+    /// desugar (`if let` / `let-else` etc.). The `$` is the key: the lexer
+    /// only admits letters / digits / `_` in identifiers, so user source can
+    /// NEVER produce a `$`-bearing name — the temp cannot shadow or be
+    /// shadowed by a user binding (e.g. a variable literally named
+    /// `__iflet_1`). The monotonic counter keeps temps distinct from each
+    /// other under nesting / macro replication.
+    fn fresh(self, tag: string) -> string {
+        self.gensym_seq = self.gensym_seq + 1
+        gensym_name(tag, self.gensym_seq)
+    }
+
+    fn parse_file_expression(self) -> ParseResult {
+        let expr = match self.parse_expression() {
+            .Ok(e) -> self.expr_of(e)
+            .Err(_) -> {
+                return ParseResult {
+                    expr: none,
+                    had_error: self.had_error,
+                    error_message: self.error_message,
+                    bag: self.bag,
+                }
+            }
+        }
+
+        if !self.check(Tk.Eof) {
+            self.set_error("expected end of input")
+            return ParseResult {
+                expr: none,
+                had_error: true,
+                error_message: self.error_message,
+                bag: self.bag,
+            }
+        }
+
+        ParseResult {
+            expr,
+            had_error: self.had_error,
+            error_message: self.error_message,
+            bag: self.bag,
+        }
+    }
+
+    fn parse_file_program(self) -> ProgramParseResult {
+        let stmts = match self.parse_statement_list(false) {
+            .Ok(s) -> s
+            .Err(_) -> return ProgramParseResult {
+                stmts: null,
+                had_error: self.had_error,
+                error_message: self.error_message,
+                bag: self.bag,
+            }
+        }
+
+        if !self.check(Tk.Eof) {
+            self.set_error("expected end of input")
+            return ProgramParseResult {
+                stmts: null,
+                had_error: true,
+                error_message: self.error_message,
+                bag: self.bag,
+            }
+        }
+
+        ProgramParseResult {
+            stmts,
+            had_error: self.had_error,
+            error_message: self.error_message,
+            bag: self.bag,
+        }
+    }
+
+    fn parse_statement_list(self, stop_at_right_brace: int) -> Result<List<SStmt>, string> {
+        mut out: List<SStmt> = []
+        while true {
+            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(out) }
+            if self.check(Tk.Eof) { return .Ok(out) }
+            if !stop_at_right_brace && self.check(Tk.RightBrace) {
+                self.report(DiagCode.MismatchedBrace, "unexpected `}`")
+                self.advance()
+                continue
+            }
+            let stmt_line = self.current_line
+            let stmt_col = self.current_column
+            let stmt = match self.parse_declaration() {
+                .Ok(s) -> s
+                .Err(_) -> {
+                    self.synchronize()
+                    continue
+                }
+            }
+            out.push(sstmt_at(stmt, stmt_line, stmt_col, self.file))
+        }
+        .Ok(out)
+    }
+
+    fn parse_declaration(self) -> Result<Stmt, string> {
+        // Reserved future keywords produce an error immediately.
+        if self.check(Tk.KwReserved) {
+            self.reject_reserved_keyword("yet")
+            return .Err("parse error")
+        }
+
+        // Doc comments: /// and //! become @doc annotations.
+        if self.check(Tk.DocComment) {
+            mut doc_text = self.current_lexeme
+            self.advance()
+            // Collect consecutive /// lines into one doc string
+            while self.check(Tk.DocComment) {
+                doc_text = doc_text + "\n" + self.current_lexeme
+                self.advance()
+            }
+            let inner_l = self.current_line
+            let inner_c = self.current_column
+            let inner = self.parse_declaration()?
+            let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
+            let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
+            return .Ok(Stmt.Annotated(doc_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
+        }
+        if self.check(Tk.ModDocComment) {
+            mut doc_text = self.current_lexeme
+            self.advance()
+            while self.check(Tk.ModDocComment) {
+                doc_text = doc_text + "\n" + self.current_lexeme
+                self.advance()
+            }
+            // Module docs don't wrap a declaration — store as a NoOp with annotation
+            let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
+            let mdoc_annots: List<Annotation> = [Annotation { name: "module_doc", args: doc_arg }]
+            return .Ok(Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file)))
+        }
+
+        // Annotations: `@name` or `@name(args)` before a declaration.
+        if self.check(Tk.At) {
+            let annotations = self.parse_annotations()
+            let inner_l = self.current_line
+            let inner_c = self.current_column
+            let inner = self.parse_declaration()?
+            return .Ok(Stmt.Annotated(annotations, sstmt_at(inner, inner_l, inner_c, self.file)))
+        }
+
+        // `export` wraps the inner declaration in an @export annotation
+        // so the module system's name resolution pass can enforce visibility.
+        // Only fn, type, enum, trait, and extern are exportable — no stacking.
+        if self.check(Tk.KwExport) {
+            self.advance()
+            let inner_l = self.current_line
+            let inner_c = self.current_column
+            let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
+            if export_handler_raw == none {
+                self.set_error("expected declaration after `export`")
+                return .Err("expected declaration after `export`")
+            }
+            let handler: fn(Parser) -> Result<Stmt, string> = export_handler_raw!
+            let inner_res: Result<Stmt, string> = handler(self)
+            let inner = inner_res?
+            let empty_args: List<SExpr> = []
+            let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
+            return .Ok(Stmt.Annotated(exp_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
+        }
+
+        let decl_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
+        if decl_raw != null {
+            let handler: fn(Parser) -> Result<Stmt, string> = decl_raw!
+            return handler(self)
+        }
+
+        // Component block instantiation: `comp_name instance_name { ... }`
+        // Recognized when current identifier is a registered component name
+        // AND the next non-whitespace char is an identifier start (instance name).
+        // This prevents false positives like `command {` in match expressions.
+        if self.check(Tk.Identifier) && self.peek_after_ident_is_ident_not_keyword() {
+            let comp_raw = lookup_stmt_parser(self.features, self.current_lexeme)
+            if comp_raw != null {
+                let handler: fn(Parser) -> Result<Stmt, string> = comp_raw!
+                return handler(self)
+            }
+        }
+
+        self.parse_statement()
+    }
+
+    // Parse parallel block: parallel { stmt1; stmt2 }
+    // Each statement runs in its own thread, all joined at block end.
+
+    // Parse one or more annotations: @name or @name(arg1, arg2)
+    fn parse_annotations(self) -> List<Annotation> {
+        mut out: List<Annotation> = []
+        while self.check(Tk.At) {
+            self.advance()  // consume @
+            let name = self.current_lexeme
+            self.advance()  // consume name
+            // Optional argument list
+            let args: List<SExpr> = if self.check(Tk.LeftParen) {
+                self.advance()  // consume (
+                let a = match self.parse_arg_list() {
+                    .Ok(v) -> v
+                    .Err(_) -> []
+                }
+                if self.check(Tk.RightParen) { self.advance() }
+                a
+            } else {
+                []
+            }
+            out.push(Annotation { name, args })
+        }
+        out
+    }
+
+    // Parse a typed table literal:
+    //   table<RowStruct> { col1 | col2\n v1a | v1b\n v2a | v2b }
+    //   table          { col1 | col2\n v1a | v1b\n v2a | v2b }   (row type inferred)
+    // The header row names struct fields; each data row becomes a
+    // `StructLit(RowStruct, { col1: v1a, col2: v1b })`. The whole table
+    // desugars to a `ListLit` of those StructLits — i.e. `List<RowStruct>`.
+    // When the row type is omitted it is left empty here and resolved
+    // from context (let/return/arg annotation) by the typechecker; an
+    // unresolved row type is a compile error (no weak List<Map> fallback).
+    fn parse_table_literal(self) -> Result<Expr, string> {
+        // Optional `<RowStruct>` row-type ascription.
+        mut row_type = ""
+        if self.check(Tk.Less) {
+            self.advance()  // consume `<`
+            let rt = self.consume_identifier("expected row struct name after `table<`")?
+            row_type = rt
+            if !self.consume(Tk.Greater, "expected `>` after table row type") { return .Err("parse error") }
+        }
+        if !self.consume(Tk.LeftBrace, "expected `{` to open table") { return .Err("parse error") }
+        // Parse header row: field-name identifiers separated by `|`.
+        mut col_names: List<string> = []
+        let header_line = self.current_line
+        while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
+            if self.check(Tk.Identifier) {
+                col_names.push(self.current_lexeme)
+                self.advance()
+                if self.check(Tk.Pipe) {
+                    self.advance()
+                }
+            } else {
+                break
+            }
+        }
+        let header_count = col_names.length
+        if header_count == 0 {
+            if !self.consume(Tk.RightBrace, "expected `}` to close table") { return .Err("parse error") }
+            let empty: List<SExpr> = []
+            return .Ok(Expr.ListLit(empty))
+        }
+        // Reject duplicate column names — they would silently collide on the
+        // same struct field.
+        mut di = 0
+        while di < header_count {
+            mut dj = di + 1
+            while dj < header_count {
+                if col_names[di] == col_names[dj] {
+                    self.set_error("duplicate table column `${col_names[di]}`")
+                    return .Err("parse error")
+                }
+                dj = dj + 1
+            }
+            di = di + 1
+        }
+        // Parse data rows in source order; each row is a StructLit whose
+        // field names come from the header and whose values come from
+        // the cells (left-to-right, one per column). A row occupies a
+        // single source line; its cell count must match the header width.
+        mut rows: List<SExpr> = []
+        // Bound each cell expression to its row's line so a value at the end
+        // of one row doesn't merge with a `-`/`.Variant` starting the next.
+        // Saved/restored to keep nested tables (a table cell) well-behaved.
+        let saved_cell_mode = self.cell_mode
+        self.cell_mode = true
+        while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
+            let row_line = self.current_line
+            mut cells: List<SExpr> = []
+            while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
+                // parse_bitwise_xor stops before `|`, so the column
+                // separator is never swallowed as a bitwise-or operand.
+                let val_id = self.parse_bitwise_xor()?
+                cells.push(sexpr_at(self.expr_of(val_id), self.current_line, self.current_column, self.file))
+                if self.check(Tk.Pipe) {
+                    self.advance()
+                }
+            }
+            if cells.length != header_count {
+                self.cell_mode = saved_cell_mode
+                self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
+                return .Err("parse error")
+            }
+            mut inits: List<FieldInit> = []
+            mut ci = 0
+            while ci < header_count {
+                inits.push(FieldInit { name: col_names[ci], value: cells[ci] })
+                ci = ci + 1
+            }
+            rows.push(sexpr_at(Expr.StructLit(row_type, inits), row_line, 0, self.file))
+        }
+        self.cell_mode = saved_cell_mode
+        if !self.consume(Tk.RightBrace, "expected `}` to close table") {
+            return .Err("parse error")
+        }
+        .Ok(Expr.ListLit(rows))
+    }
+
+    // Module parser (parse_module_declaration, parse_use_declaration)
+    // lives in features/modules/parser.av.
+
+    // Feature-specific parsers live in features/*/parser.av.
+    // They extend Parser via `impl Parser { ... }` blocks.
+
+    fn parse_statement(self) -> Result<Stmt, string> {
+        // qsqm: a bare map literal at statement position — a function's
+        // implicit-return `{"k": v}` — must not be swallowed as a block.
+        // is_stmt_map_literal fires only on a string-keyed `{ "str": ... }`; a
+        // real block (`{ let x = ... }`) AND a bare `{}` (which stays a block,
+        // since the compiler's own source uses `{}` block statements) both parse
+        // as blocks. A map falls through to the expression path below
+        // (parse_expression → parse_map_literal).
+        if self.check(Tk.LeftBrace) && !self.is_stmt_map_literal() {
+            self.advance()
+            let body = self.parse_statement_list(true)?
+            if !self.consume(Tk.RightBrace, "expected `}` after block") {
+                return .Err("parse error")
+            }
+            return .Ok(Stmt.Block(body))
+        }
+
+        if self.check(Tk.KwBreak) {
+            self.advance()
+            return .Ok(Stmt.Break)
+        }
+
+        if self.check(Tk.KwContinue) {
+            self.advance()
+            return .Ok(Stmt.Continue)
+        }
+
+        let stmt_raw = lookup_stmt_parser(self.features, tk_keyword_str(self.current_kind))
+        if stmt_raw != null {
+            let handler: fn(Parser) -> Result<Stmt, string> = stmt_raw!
+            return handler(self)
+        }
+
+        let expr = self.parse_expression_boxed()?
+        .Ok(Stmt.Expr(expr))
+    }
+
+    /// B1: the expression chain flows typed ids end-to-end; the parsed
+    /// expression's whole subtree is in the arena and this returns its root id.
+    fn parse_expression(self) -> Result<ExprId, string> {
+        self.parse_assignment()
+    }
+
+    /// Boxed readback for callers not yet converted to ids (statements,
+    /// feature parsers): an O(1) row read, NOT a subtree walk — the boxed
+    /// node stored in the arena row IS the built node. Each use of this
+    /// wrapper disappears when its caller converts to ids.
+    fn parse_expression_boxed(self) -> Result<Expr, string> {
+        let id = self.parse_expression()?
+        .Ok(self.store.exprs.get(id))
+    }
+
+    fn parse_assignment(self) -> Result<ExprId, string> {
+        let left = self.parse_pipe()?
+
+        if !self.check(Tk.Equal) {
+            return .Ok(left)
+        }
+
+        self.advance()
+        let value = self.parse_assignment()?
+
+        // Retarget: the parsed LHS shell is discarded (an orphan row per
+        // design Decision 4); its CHILDREN are re-parented by id — the
+        // FieldAccess's object id comes off the shell's edge list, no re-walk.
+        match self.expr_of(left) {
+            .Ident(name) -> .Ok(self.alloc1(Expr.Assign(name, self.expr_of(value)), value))
+            .FieldAccess(obj, field) -> {
+                let obj_id = self.expr_child(left, 0)
+                .Ok(self.alloc2(Expr.FieldAssign(obj, field, self.expr_of(value)), obj_id, value))
+            }
+            _ -> {
+                self.set_error("invalid assignment target")
+                .Err("invalid assignment target")
+            }
+        }
+    }
+
+    fn parse_pipe(self) -> Result<ExprId, string> {
+        let left = self.parse_null_coalesce()?
+
+        mut eid = left
+        while self.check(Tk.PipeGt) {
+            self.advance()
+            // Enable `it` sugar in pipe RHS — `xs |> filter(it > 2)` (spec 28.7+28.8)
+            let saved_it = self.allow_it_sugar
+            self.allow_it_sugar = true
+            let rhs = self.parse_or()?
+            self.allow_it_sugar = saved_it
+            let se = sexpr_at(self.expr_of(eid), self.current_line, self.current_column, self.file)
+            // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
+            // If any arg is `_`, replace it with the piped value (spec Axis 28.7).
+            // The RHS Call shell is discarded (orphan row); callee + surviving
+            // args are re-parented by id off the shell's edge list, and the
+            // piped LHS id takes each placeholder's edge slot.
+            eid = match self.expr_of(rhs) {
+                .Call(callee, args) -> {
+                    let rhs_kids = self.store.exprs.children_of(rhs)
+                    let callee_id = self.expr_child(rhs, 0)
+                    if pipe_args_has_placeholder(args) {
+                        mut edges: List<NodeRef> = [NodeRef.ExprRef(callee_id)]
+                        for (i, a) in args.enumerate() {
+                            let is_placeholder = match a.node {
+                                .Ident(n) -> n == "_"
+                                _ -> false
+                            }
+                            if is_placeholder { edges.push(NodeRef.ExprRef(eid)) } else { edges.push(rhs_kids[i + 1]) }
+                        }
+                        self.alloc_expr(Expr.Call(callee, pipe_replace_placeholder(args, se)), byte_span_none(), edges)
+                    } else {
+                        mut prepended: List<SExpr> = [se]
+                        mut edges: List<NodeRef> = [NodeRef.ExprRef(callee_id), NodeRef.ExprRef(eid)]
+                        for (i, a) in args.enumerate() {
+                            prepended.push(a)
+                            edges.push(rhs_kids[i + 1])
+                        }
+                        self.alloc_expr(Expr.Call(callee, prepended), byte_span_none(), edges)
+                    }
+                }
+                _ -> {
+                    let one: List<SExpr> = [se]
+                    self.alloc2(Expr.Call(self.expr_of(rhs), one), rhs, eid)
+                }
+            }
+        }
+
+        .Ok(eid)
+    }
+
+}
+
+/// True iff the pipe RHS arg list contains an `_` placeholder.
+/// `x |> f(_, 2)` uses the placeholder to position the LHS at a
+/// specific arg slot; without one, the LHS becomes the first arg.
+fn pipe_args_has_placeholder(args: List<SExpr>) -> bool {
+    mut i = 0
+    while i < args.length {
+        let se = args[i]
+        match se.node {
+            .Ident(n) -> if n == "_" { return true }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// Replace the first `_` placeholder in `args` with the pipe's LHS
+/// expression. Counterpart to `pipe_args_has_placeholder`.
+fn pipe_replace_placeholder(args: List<SExpr>, replacement: SExpr) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < args.length {
+        let se = args[i]
+        let is_placeholder = match se.node {
+            .Ident(n) -> n == "_"
+            _ -> false
+        }
+        if is_placeholder { out.push(replacement) } else { out.push(se) }
+        i = i + 1
+    }
+    out
+}
+
+impl Parser {
+    fn parse_null_coalesce(self) -> Result<ExprId, string> {
+        let left = self.parse_or()?
+
+        mut eid = left
+        while self.check(Tk.QuestionQuestion) {
+            self.advance()
+            let right = self.parse_or()?
+            eid = self.alloc2(Expr.NullCoalesce(self.expr_of(eid), self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_or(self) -> Result<ExprId, string> {
+        let left = self.parse_and()?
+
+        mut eid = left
+        while self.current_kind in [Tk.PipePipe, Tk.KwOr] {
+            self.advance()
+            let right = self.parse_and()?
+            eid = self.alloc2(Expr.Logical(self.expr_of(eid), LogicOp.Or, self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_and(self) -> Result<ExprId, string> {
+        let left = self.parse_equality()?
+
+        mut eid = left
+        while self.current_kind in [Tk.AmpAmp, Tk.KwAnd] {
+            self.advance()
+            let right = self.parse_equality()?
+            eid = self.alloc2(Expr.Logical(self.expr_of(eid), LogicOp.And, self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_equality(self) -> Result<ExprId, string> {
+        let left = self.parse_bitwise_or()?
+
+        if self.check(Tk.KwIs) {
+            self.advance()
+            if !self.consume(Tk.Dot, "expected `.Variant` after `is`") {
+                return .Err("parse error")
+            }
+            let vname = self.consume_identifier("expected variant name after `is .`")?
+            return .Ok(self.alloc1(Expr.IsCheck(self.expr_of(left), vname), left))
+        }
+
+        if self.check(Tk.KwIn) {
+            self.advance()
+            if self.check(Tk.LeftBracket) {
+                // List membership: x in [a, b, c]
+                self.advance()
+                mut items: List<SExpr> = []
+                mut item_ids: List<NodeRef> = [NodeRef.ExprRef(left)]
+                if !self.check(Tk.RightBracket) {
+                    let parsed = self.parse_arg_list_ids()?
+                    items = parsed.wrapped
+                    for id in parsed.ids { item_ids.push(NodeRef.ExprRef(id)) }
+                }
+                if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
+                    return .Err("parse error")
+                }
+                return .Ok(self.alloc_expr(Expr.InCheck(self.expr_of(left), items), byte_span_none(), item_ids))
+            }
+            // Range membership: x in start..end → x >= start && x <= end.
+            // `left` is SHARED by both comparisons — in the boxed tree the same
+            // node value appears twice, and in the arena the same row id backs
+            // both edges (a deliberate DAG; the canonical ingest would copy).
+            let start = self.parse_bitwise_or()?
+            if !self.consume(Tk.DotDot, "expected `..` in range expression after `in`") {
+                return .Err("parse error")
+            }
+            let end = self.parse_bitwise_or()?
+            let ge = self.alloc2(Expr.Binary(self.expr_of(left), BinOp.Ge, self.expr_of(start)), left, start)
+            let le = self.alloc2(Expr.Binary(self.expr_of(left), BinOp.Le, self.expr_of(end)), left, end)
+            return .Ok(self.alloc2(Expr.Logical(self.expr_of(ge), LogicOp.And, self.expr_of(le)), ge, le))
+        }
+
+        mut eid = left
+        while self.current_kind in [Tk.EqualEqual, Tk.BangEqual] {
+            let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }
+            self.advance()
+            let right = self.parse_bitwise_or()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_bitwise_or(self) -> Result<ExprId, string> {
+        let left = self.parse_bitwise_xor()?
+        mut eid = left
+        while self.check(Tk.Pipe) {
+            self.advance()
+            let right = self.parse_bitwise_xor()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), BinOp.BitOr, self.expr_of(right)), eid, right)
+        }
+        .Ok(eid)
+    }
+
+    fn parse_bitwise_xor(self) -> Result<ExprId, string> {
+        let left = self.parse_bitwise_and()?
+        mut eid = left
+        while self.check(Tk.Caret) {
+            self.advance()
+            let right = self.parse_bitwise_and()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), BinOp.BitXor, self.expr_of(right)), eid, right)
+        }
+        .Ok(eid)
+    }
+
+    fn parse_bitwise_and(self) -> Result<ExprId, string> {
+        let left = self.parse_comparison()?
+        mut eid = left
+        while self.check(Tk.Amp) {
+            self.advance()
+            let right = self.parse_comparison()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), BinOp.BitAnd, self.expr_of(right)), eid, right)
+        }
+        .Ok(eid)
+    }
+
+    fn parse_comparison(self) -> Result<ExprId, string> {
+        let left = self.parse_shift()?
+
+        mut eid = left
+        while self.current_kind in [Tk.Greater, Tk.GreaterEqual, Tk.Less, Tk.LessEqual] {
+            let op = match {
+                self.check(Tk.Less)         -> BinOp.Lt
+                self.check(Tk.LessEqual)    -> BinOp.Le
+                self.check(Tk.Greater)      -> BinOp.Gt
+                _                           -> BinOp.Ge
+            }
+            self.advance()
+            let right = self.parse_shift()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_shift(self) -> Result<ExprId, string> {
+        let left = self.parse_term()?
+        mut eid = left
+        while self.current_kind in [Tk.Shl, Tk.Shr] {
+            let op = if self.check(Tk.Shl) { BinOp.Shl } else { BinOp.Shr }
+            self.advance()
+            let right = self.parse_term()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+        }
+        .Ok(eid)
+    }
+
+    fn parse_term(self) -> Result<ExprId, string> {
+        let left = self.parse_factor()?
+
+        mut eid = left
+        // In table-cell mode a `+`/`-` that starts the *next* line is the
+        // next row's value, not a continuation of this cell — stop here.
+        while self.current_kind in [Tk.Plus, Tk.Minus] && !(self.cell_mode && self.current_line != self.prev_line) {
+            let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
+            self.advance()
+            let right = self.parse_factor()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_factor(self) -> Result<ExprId, string> {
+        let left = self.parse_unary()?
+
+        mut eid = left
+        while self.current_kind in [Tk.Star, Tk.Slash, Tk.Percent] {
+            let op = match {
+                self.check(Tk.Star)    -> BinOp.Mul
+                self.check(Tk.Percent) -> BinOp.Mod
+                _                      -> BinOp.Div
+            }
+            self.advance()
+            let right = self.parse_unary()?
+            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+        }
+
+        .Ok(eid)
+    }
+
+    fn parse_unary(self) -> Result<ExprId, string> {
+        // Splice `~target` inside a quote body — overloads the `~`
+        // token. Splice is greedy: `~f(x)` parses as
+        // `Splice(Call(f, [x]))`, splicing the entire call. Users
+        // who want only `~f` followed by a separate `(x)` call can
+        // write `(~f)(x)` to scope the splice tightly. The greedy
+        // form matches the typical metaprogramming pattern where
+        // the spliced expression IS the whole quoted hole.
+        if self.check(Tk.Tilde) && self.quote_depth > 0 {
+            self.advance()
+            // `~Name { ... }` splices the *constructor name* of a struct
+            // literal, not the whole literal. The `~Name` tag
+            // flows through name_or_splice in quote lowering. Without this
+            // the greedy rule below would swallow the entire struct literal
+            // as one spliced node carrying a hardcoded type name.
+            if self.check(Tk.Identifier) && self.allow_struct_lit && self.peek_after_ident_is_lbrace() {
+                let var_name = self.take_lexeme()
+                self.advance()  // consume `{`
+                let inits = self.parse_field_init_list()?
+                if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
+                    return .Err("parse error")
+                }
+                return .Ok(self.alloc_expr(Expr.StructLit("~" + var_name, inits), byte_span_none(), self.glue_field_init_refs(inits)))
+            }
+            let target = self.parse_unary()?
+            return .Ok(self.alloc1(Expr.Splice(self.expr_of(target)), target))
+        }
+        if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
+            let op = match {
+                self.check(Tk.Minus) -> UnOp.Neg
+                self.check(Tk.Tilde) -> UnOp.BitNot
+                _                    -> UnOp.Not
+            }
+            self.advance()
+            let right = self.parse_unary()?
+            return .Ok(self.alloc1(Expr.Unary(op, self.expr_of(right)), right))
+        }
+
+        mut eid = self.parse_call()?
+        // `expr with { field: value, ... }` — functional struct update (chainable)
+        while self.check(Tk.KwWith) {
+            self.advance()
+            if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
+                return .Err("parse error")
+            }
+            let overrides = self.parse_field_init_list()?
+            if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
+                return .Err("parse error")
+            }
+            mut edges: List<NodeRef> = [NodeRef.ExprRef(eid)]
+            for vr in self.glue_field_init_refs(overrides) { edges.push(vr) }
+            eid = self.alloc_expr(Expr.With(self.expr_of(eid), overrides), byte_span_none(), edges)
+        }
+        .Ok(eid)
+    }
+
+    // Peek at the source character immediately after the current
+    // `.` token to see whether the next identifier starts with an
+    // uppercase letter.
+    fn peek_next_is_upper(self) -> bool {
+        if self.current >= self.source.length {
+            return false
+        }
+        let ch = self.source[self.current]
+        ch in "A".."Z"
+    }
+
+    // Should the current `.` token be consumed as a field / method
+    // / enum-ctor postfix on `result`?
+    //
+    // Always allowed in normal context (`allow_dot_postfix == true`).
+    //
+    // Inside a match arm body (`allow_dot_postfix == false`):
+    //   - `.lowerIdent`  → always a field / method, never a sibling
+    //                       pattern, so allow it
+    //   - `.UpperIdent`  → might be a sibling pattern unless
+    //                       `result` is itself an uppercase Ident
+    //                       (an enum-type prefix like `Foo.Bar`).
+    //                       Otherwise suppress so the next pattern
+    //                       can be parsed.
+    //
+    // Cross-line postfix rule (forge-crafting-intepreters-3r6q):
+    // a bare `.UpperIdent(...)` on a NEW line is almost always a new
+    // statement starting with a bare enum constructor — not a method
+    // call on the previous expression. Without this, the parser eats
+    // such constructors as postfix on the previous expression's value
+    // (e.g. `let x = if c { a } else { b }` followed by `.B(...)`
+    // becomes `b.B(...)`, silently extending the let initializer).
+    // Lowercase method postfix on a new line still chains, so
+    // `xs.filter(p)\n.map(f)` still works.
+    fn dot_is_postfix(self, result: Expr) -> bool {
+        if self.current_line != self.prev_line && self.peek_next_is_upper() {
+            return false
+        }
+        if self.allow_dot_postfix {
+            return true
+        }
+        if !self.peek_next_is_upper() {
+            return true
+        }
+        expr_is_upper_ident(result)
+    }
+
+    fn parse_call(self) -> Result<ExprId, string> {
+        let primary_id = self.parse_primary()?
+
+        // Dual cursor through the postfix loop: `rid` is the arena id of the
+        // expression built so far, `result` its boxed payload (the loop's
+        // shape dispatch — dot_is_postfix, is_callable, is_method — reads the
+        // boxed node). Every wrap reassigns both.
+        mut rid = primary_id
+        mut result = self.expr_of(primary_id)
+        // If [ appears on a DIFFERENT line than the previous token,
+        // it's a new statement (list literal), not postfix indexing.
+        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result) && (!self.cell_mode || self.current_line == self.prev_line)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
+            // Force-unwrap `expr!` is a no-op pass-through since we
+            // don't track nullability in the value tag.
+            while self.check(Tk.Bang) {
+                self.advance()
+                result = expr_force_unwrap(result)
+                // Call(Ident($force_unwrap), [subject]) — fresh callee leaf,
+                // the subject re-parented under it.
+                let fu_callee = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+                rid = self.alloc2(result, fu_callee, rid)
+            }
+            // Error propagation: `expr?` — if null, return .Err("parse error")
+            // from the enclosing function.
+            if self.check(Tk.Question) {
+                self.advance()
+                result = Expr.Try(result)
+                rid = self.alloc1(result, rid)
+                continue
+            }
+            // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
+            let catch_line = self.current_line
+            let catch_col = self.current_column
+            if self.check(Tk.KwCatch) {
+                self.advance()
+                mut binding = ""
+                if self.check(Tk.LeftParen) {
+                    self.advance()
+                    binding = self.consume_identifier("expected error binding name after `catch (`")?
+                    if !self.consume(Tk.RightParen, "expected `)` after catch binding") { return .Err("parse error") }
+                }
+                if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return .Err("parse error") }
+                let saved_dot = self.allow_dot_postfix
+                self.allow_dot_postfix = true
+                let body_stmts = self.parse_statement_list(true)?
+                self.allow_dot_postfix = saved_dot
+                if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
+                // Handler is a stmt-bearing Block — statements are still boxed
+                // producers, so the handler subtree enters via the glue bridge.
+                let handler = Expr.Block(body_stmts)
+                let handler_id = self.glue_ingest_expr(handler)
+                result = Expr.Catch(result, binding, handler, catch_line, catch_col)
+                rid = self.alloc2(result, rid, handler_id)
+                continue
+            }
+            // Optional chaining `expr?.field` / `expr?.method(args)`.
+            //   `?.field`  keeps the `OptionalChain` AST node — a clean node
+            //              macros/`quote` can see — codegen'd via the shared
+            //              field accessor (emit_field_on_value).
+            //   `?.method(args)` has no AST node (one would need a seed cycle),
+            //              so it desugars to the if-let shape, applying an
+            //              ORDINARY method call to the force-unwrapped receiver:
+            //              `{ let $t = recv; if $t != none { $t!.m(args) } else none }`.
+            //              Both routes ultimately reuse the normal access codegen.
+            if self.check(Tk.QuestionDot) {
+                self.advance()
+                let field = self.consume_field_name("expected field name after `?.`")?
+                if self.check(Tk.LeftParen) && self.current_line == self.prev_line {
+                    self.advance()
+                    let saved_it = self.allow_it_sugar
+                    self.allow_it_sugar = true
+                    let parsed = self.parse_arg_list_ids()?
+                    self.allow_it_sugar = saved_it
+                    if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
+                    result = Expr.OptionalMethodCall(result, field, parsed.wrapped)
+                    rid = self.alloc_expr(result, byte_span_none(), self.edges_subject_args(rid, parsed.ids))
+                } else {
+                    result = Expr.OptionalChain(result, field)
+                    rid = self.alloc1(result, rid)
+                }
+            } else if self.check(Tk.LeftBracket) {
+                self.advance()
+                let idx = self.parse_expression()?
+                // Slice: list[start..end]
+                if self.check(Tk.DotDot) {
+                    self.advance()
+                    let end = self.parse_expression()?
+                    if !self.consume(Tk.RightBracket, "expected `]` after slice") {
+                        return .Err("parse error")
+                    }
+                    result = Expr.Slice(result, self.expr_of(idx), self.expr_of(end))
+                    rid = self.alloc3(result, rid, idx, end)
+                    continue
+                }
+                if !self.consume(Tk.RightBracket, "expected `]` after index") {
+                    return .Err("parse error")
+                }
+                result = Expr.Index(result, self.expr_of(idx))
+                rid = self.alloc2(result, rid, idx)
+            } else if self.check(Tk.Less) && is_callable(result) {
+                // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
+                match self.try_parse_generic_call(rid) {
+                    .Ok(g) -> {
+                        rid = g
+                        result = self.expr_of(g)
+                        continue
+                    }
+                    .Err(_) -> {}
+                }
+                return .Ok(rid)
+            } else if !self.check(Tk.LeftParen) && !self.check(Tk.Dot) {
+                return .Ok(rid)
+            } else {
+            if self.check(Tk.LeftParen) {
+                self.advance()
+                // Enable `it` sugar for method calls (obj.method(it * 2))
+                // but not for regular function calls (to prevent
+                // double-wrapping in `f(it)` inside `.map(f(it))`).
+                let saved_it = self.allow_it_sugar
+                let is_method = match result {
+                    .FieldAccess(_, _) -> true
+                    _ -> false
+                }
+                // Enable it sugar for method calls OR if already enabled (e.g. pipe RHS)
+                self.allow_it_sugar = is_method || saved_it
+                let parsed = self.parse_arg_list_ids()?
+                self.allow_it_sugar = saved_it
+                if !self.consume(Tk.RightParen, "expected `)` after arguments") {
+                    return .Err("parse error")
+                }
+                result = Expr.Call(result, parsed.wrapped)
+                rid = self.alloc_expr(result, byte_span_none(), self.edges_subject_args(rid, parsed.ids))
+            } else {
+                self.advance()
+                // Tuple index: `t.0`, `t.1` — number after dot
+                if self.check(Tk.Number) {
+                    let idx_text = self.current_lexeme
+                    self.advance()
+                    result = Expr.TupleIndex(result, int(idx_text))
+                    rid = self.alloc1(result, rid)
+                    continue
+                }
+                let field = self.consume_field_name("expected field name after `.`")?
+                // Detect enum constructor: `Type.Variant(args)`. We
+                // distinguish from method calls by requiring the
+                // head Ident to start with an uppercase letter
+                // Avra convention: types are PascalCase).
+                let type_name = match result {
+                    .Ident(n) -> {
+                        if p_starts_with_upper(n) {
+                            n
+                        } else {
+                            ""
+                        }
+                    }
+                    _ -> ""
+                }
+                if type_name != "" && self.check(Tk.LeftParen) {
+                    self.advance()
+                    let parsed = self.parse_arg_list_ids()?
+                    if !self.consume(Tk.RightParen, "expected `)` after arguments") {
+                        return .Err("parse error")
+                    }
+                    // The type-name Ident the head parsed becomes scalar data
+                    // on the ctor node; its row orphans (rebuild shells may —
+                    // they are never quote-bearing).
+                    result = Expr.EnumCtor(type_name, field, parsed.wrapped)
+                    rid = self.alloc_expr(result, byte_span_none(), self.edges_of_ids(parsed.ids))
+                } else {
+                    result = Expr.FieldAccess(result, field)
+                    rid = self.alloc1(result, rid)
+                }
+            }
+            }
+        }
+
+        .Ok(rid)
+    }
+
+    /// Boxed-only view of an arg list, for callers that don't record edges
+    /// (annotation args, feature parsers not yet flowing ids).
+    fn parse_arg_list(self) -> Result<List<SExpr>, string> {
+        let parsed = self.parse_arg_list_ids()?
+        .Ok(parsed.wrapped)
+    }
+
+    fn parse_arg_list_ids(self) -> Result<ArgListIds, string> {
+        // Inside a paren-bounded arg list we're unambiguously not
+        // at a sibling pattern position, so re-enable `.field`
+        // postfix consumption.
+        let saved = self.allow_dot_postfix
+        self.allow_dot_postfix = true
+        let result = self.parse_arg_list_ids_inner()
+        self.allow_dot_postfix = saved
+        result
+    }
+
+    fn parse_arg_list_ids_inner(self) -> Result<ArgListIds, string> {
+        mut out: List<SExpr> = []
+        mut ids: List<ExprId> = []
+        if self.check(Tk.RightParen) {
+            return .Ok(ArgListIds { wrapped: out, ids: ids })
+        }
+        mut keep_going = true
+        while keep_going {
+            let raw_id = self.parse_expression()?
+            let raw_expr = self.expr_of(raw_id)
+            mut eid = raw_id
+            // `it` parameter sugar: only wrap if allow_it_sugar is set
+            // (method calls like .map/.filter set this, regular function
+            // calls do not, preventing double-wrapping in `f(it)` inside
+            // `.map(f(it))`).
+            let expr = if self.allow_it_sugar {
+                match raw_expr {
+                    .Lambda(_, _) -> raw_expr
+                    _ -> {
+                        if expr_contains_it(raw_expr) {
+                            let wrapped = wrap_in_it_lambda(raw_expr)
+                            eid = self.alloc1(wrapped, raw_id)
+                            wrapped
+                        } else {
+                            raw_expr
+                        }
+                    }
+                }
+            } else {
+                raw_expr
+            }
+            out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
+            ids.push(eid)
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightParen) { keep_going = false }
+            } else {
+                keep_going = false
+            }
+        }
+        .Ok(ArgListIds { wrapped: out, ids: ids })
+    }
+
+    /// B1: primary productions hand back a typed id — the node (and its
+    /// whole subtree) is in the arena. Leaves alloc directly; composites
+    /// whose children flowed through the id-returning chain re-parent those
+    /// ids; stmt-bearing / feature-parsed productions (match, if, quote,
+    /// templates, table/map literals, blocks) still build boxed and enter
+    /// via the glue bridge at their own boundary — each bridge disappears
+    /// when its producer converts to ids.
+    fn parse_primary(self) -> Result<ExprId, string> {
+        if self.check(Tk.Number) {
+            let value = self.current_lexeme
+            self.advance()
+            return .Ok(self.alloc_leaf(Expr.Number(value)))
+        }
+
+        if self.check(Tk.Float) {
+            let value = self.current_lexeme
+            self.advance()
+            return .Ok(self.alloc_leaf(Expr.FloatLit(value)))
+        }
+
+        if self.check(Tk.String) {
+            let value = self.current_lexeme
+            self.advance()
+            return .Ok(self.alloc_leaf(Expr.String(value)))
+        }
+
+        if self.check(Tk.Template) {
+            let raw = self.current_lexeme
+            self.advance()
+            let desugared = self.desugar_template(raw)?
+            return .Ok(self.glue_ingest_expr(desugared))
+        }
+
+        if self.current_kind in [Tk.KwTrue, Tk.KwFalse] {
+            let value = self.current_lexeme
+            self.advance()
+            return .Ok(self.alloc_leaf(Expr.Bool(value)))
+        }
+
+        // `none` (canonical) and `null` (deprecated alias) both produce
+        // the absence literal `Expr.None`.
+        if self.check(Tk.KwNull) || self.check(Tk.KwNone) {
+            self.advance()
+            return .Ok(self.alloc_leaf(Expr.None))
+        }
+
+        // Contextual enum variant: `.Variant` or `.Variant(args)`
+        // Resolved at codegen time using the expected type from context.
+        if self.check(Tk.Dot) {
+            self.advance()  // consume .
+            if self.check(Tk.Identifier) {
+                let variant = self.current_lexeme
+                self.advance()  // consume variant name
+                if self.check(Tk.LeftParen) {
+                    self.advance()
+                    let parsed = self.parse_arg_list_ids()?
+                    if !self.consume(Tk.RightParen, "expected `)` after variant args") {
+                        return .Err("parse error")
+                    }
+                    let ctor = Expr.EnumCtor("", variant, parsed.wrapped)
+                    return .Ok(self.alloc_expr(ctor, byte_span_none(), self.edges_of_ids(parsed.ids)))
+                }
+                let empty: List<SExpr> = []
+                return .Ok(self.alloc_leaf(Expr.EnumCtor("", variant, empty)))
+            }
+        }
+
+        if self.check(Tk.Identifier) {
+            let name = self.current_lexeme
+            self.advance()
+            // Table literal: `table { ... }` or typed `table<Row> { ... }`.
+            // Must check BEFORE struct literal since both start with ident + {.
+            // `table {` is always a table literal. `table<...>` is one only
+            // when the `<` is followed by `Ident > {` — otherwise it's a
+            // comparison on a variable named `table` (e.g. `table < 10`).
+            if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
+                let tbl = self.parse_table_literal()?
+                return .Ok(self.glue_ingest_expr(tbl))
+            }
+            if self.allow_struct_lit && self.check(Tk.LeftBrace) {
+                self.advance()
+                let inits = self.parse_field_init_list()?
+                if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
+                    return .Err("parse error")
+                }
+                return .Ok(self.alloc_expr(Expr.StructLit(name, inits), byte_span_none(), self.glue_field_init_refs(inits)))
+            }
+            // Tagged template: `tag`template with ${expr}`
+            // Desugars to: tag(desugar_template(raw))
+            if self.check(Tk.Template) {
+                let raw = self.current_lexeme
+                self.advance()
+                let template_expr = self.desugar_template(raw)?
+                let args: List<SExpr> = [sexpr_at(template_expr, self.current_line, self.current_column, self.file)]
+                let tag_callee = self.alloc_leaf(Expr.Ident(name))
+                let template_id = self.glue_ingest_expr(template_expr)
+                return .Ok(self.alloc2(Expr.Call(Expr.Ident(name), args), tag_callee, template_id))
+            }
+            return .Ok(self.alloc_leaf(Expr.Ident(name)))
+        }
+
+        if self.check(Tk.LeftParen) {
+            self.advance()
+            let saved = self.allow_dot_postfix
+            self.allow_dot_postfix = true
+            // Empty parens: () → could be empty tuple or zero-arg lambda
+            if self.check(Tk.RightParen) {
+                self.allow_dot_postfix = saved
+                self.advance()
+                // () -> expr  is a zero-arg lambda
+                if self.check(Tk.Arrow) {
+                    self.advance()
+                    let body = self.parse_lambda_body()?
+                    let empty_ps: List<ParamEntry> = []
+                    return .Ok(self.alloc1(Expr.Lambda(empty_ps, self.expr_of(body)), body))
+                }
+                let empty: List<SExpr> = []
+                return .Ok(self.alloc_leaf(Expr.Tuple(empty)))
+            }
+            // Typed lambda: (x: int, y: string) -> body
+            // Detect by peeking: if current is identifier and next non-ws is ':'
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_colon() {
+                self.allow_dot_postfix = saved
+                let params = self.parse_param_list()?
+                if !self.consume(Tk.RightParen, "expected `)` after typed parameters") {
+                    return .Err("parse error")
+                }
+                if !self.consume(Tk.Arrow, "expected `->` after typed lambda parameters") {
+                    return .Err("parse error")
+                }
+                let body = self.parse_lambda_body()?
+                return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
+            }
+            let expr_opt = self.parse_expression()
+            self.allow_dot_postfix = saved
+            let expr = expr_opt?
+            // (a, b, ...) — comma after first: tuple or multi-param lambda
+            if self.check(Tk.Comma) {
+                self.advance()
+                let rest = self.parse_tuple_rest()?
+                if !self.consume(Tk.RightParen, "expected `)` after tuple") {
+                    return .Err("parse error")
+                }
+                // (a, b) -> expr  is a lambda — the param exprs are consumed
+                // as names (scalar ParamEntry data); their parsed rows orphan.
+                if self.check(Tk.Arrow) {
+                    self.advance()
+                    mut combined: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
+                    for w in rest.wrapped { combined.push(w) }
+                    let params = exprs_to_params(combined)
+                    let body = self.parse_lambda_body()?
+                    return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
+                }
+                mut tuple_elems: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
+                mut tuple_ids: List<ExprId> = [expr]
+                for (tj, w) in rest.wrapped.enumerate() {
+                    tuple_elems.push(w)
+                    tuple_ids.push(rest.ids[tj])
+                }
+                return .Ok(self.alloc_expr(Expr.Tuple(tuple_elems), byte_span_none(), self.edges_of_ids(tuple_ids)))
+            }
+            if !self.consume(Tk.RightParen, "expected `)` after expression") {
+                return .Err("parse error")
+            }
+            // (x) -> expr  is a single-param lambda
+            if self.check(Tk.Arrow) {
+                self.advance()
+                let one: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
+                let params = exprs_to_params(one)
+                let body = self.parse_lambda_body()?
+                return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
+            }
+            return .Ok(self.alloc1(Expr.Grouping(self.expr_of(expr)), expr))
+        }
+
+        // List literal: [expr, expr, ...]
+        if self.check(Tk.LeftBracket) {
+            self.advance()
+            if self.check(Tk.RightBracket) {
+                self.advance()
+                let empty: List<SExpr> = []
+                return .Ok(self.alloc_leaf(Expr.ListLit(empty)))
+            }
+            let elements = self.parse_list_elements()?
+            if !self.consume(Tk.RightBracket, "expected `]` after list") {
+                return .Err("parse error")
+            }
+            // `[body for v in coll if filter]` parses as a single-element
+            // list wrapping `Expr.ListComp(...)`. Unwrap so the
+            // comp flows directly into the list_comp feature instead of
+            // getting a spurious ListLit wrapper that downstream passes
+            // would have to special-case — the comp's own row is returned.
+            if elements.wrapped.length == 1 {
+                match elements.wrapped[0].node {
+                    .ListComp(_, _, _, _) -> return .Ok(elements.ids[0])
+                    _ -> {}
+                }
+            }
+            return .Ok(self.alloc_expr(Expr.ListLit(elements.wrapped), byte_span_none(), self.edges_of_ids(elements.ids)))
+        }
+
+        if self.check(Tk.KwMatch) {
+            return self.parse_match_expression()
+        }
+
+        if self.check(Tk.KwIf) {
+            return self.parse_if_expression()
+        }
+
+        if self.check(Tk.KwSpawn) {
+            let sp = self.parse_spawn_expression()?
+            return .Ok(self.glue_ingest_expr(sp))
+        }
+
+        if self.check(Tk.KwChannel) {
+            let ch = self.parse_channel_expression()?
+            return .Ok(self.glue_ingest_expr(ch))
+        }
+
+        if self.check(Tk.KwIsolated) {
+            let iso = self.parse_isolated_expression()?
+            return .Ok(self.glue_ingest_expr(iso))
+        }
+
+        if self.check(Tk.KwWhen) {
+            return self.parse_when_expression()
+        }
+
+        if self.check(Tk.KwQuote) {
+            let q = self.parse_quote()?
+            return .Ok(self.glue_ingest_expr(q))
+        }
+
+        if self.check(Tk.LeftBrace) {
+            // Map literal: { "key": value, ... }
+            // Disambiguate from block: if first token after { is a string,
+            // and the token after that is a colon, it's a map.
+            if self.is_map_literal() {
+                let m = self.parse_map_literal()?
+                return .Ok(self.glue_ingest_expr(m))
+            }
+            let blk = self.parse_block_expression()?
+            return .Ok(self.glue_ingest_expr(blk))
+        }
+
+        if self.current_lexeme == ";" {
+            self.report(DiagCode.UnexpectedSemicolon, "unexpected `;`")
+        } else {
+            self.report(DiagCode.ExpectedExpression, "expected expression")
+        }
+        .Err("parse error")
+    }
+
+    // Desugar `hello ${expr}!` into `"hello " + string(expr) + "!"`
+    // The content between `${` and `}` is parsed as a full expression
+    // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
+    // `${string(x)}` all work.
+    fn desugar_template(self, raw: string) -> Result<Expr, string> {
+        mut result: Expr? = null
+        mut i = 0
+        let len = raw.length
+        mut text_start = 0
+        while i < len {
+            if i + 1 < len && raw[i] == "$" && raw[i + 1] == "{" {
+                // Flush text segment before the interpolation.
+                if i > text_start {
+                    let seg = "\"${raw.substring(text_start, i)}\""
+                    let str_expr = Expr.String(seg)
+                    if result == null {
+                        result = str_expr
+                    } else {
+                        result = Expr.Binary(result!, BinOp.Add, str_expr)
+                    }
+                }
+                // Find matching `}` (no nesting — braces inside
+                // template expressions are not supported).
+                let expr_start = i + 2
+                mut j = expr_start
+                mut brace_depth = 0
+                while j < len {
+                    if raw[j] == "{" { brace_depth = brace_depth + 1 }
+                    if raw[j] == "}" {
+                        if brace_depth == 0 { break }
+                        brace_depth = brace_depth - 1
+                    }
+                    j = j + 1
+                }
+                if j >= len {
+                    self.set_error("unterminated template expression in string")
+                    return .Err("parse error")
+                }
+                // Parse the content between ${ and } as an expression.
+                // Simple identifiers become Expr.Ident directly. Complex
+                // expressions (containing parens, dots, operators) use a
+                // sub-parser. This split avoids creating a Parser struct
+                // for the common case.
+                let sub_source = raw.substring(expr_start, j)
+                // Check for format spec: split on last ':' at depth 0
+                let fmt_split = template_split_format(sub_source)
+                let expr_part = fmt_split.expr
+                let fmt_spec = fmt_split.fmt
+                mut parsed = Expr.Ident(expr_part)
+                if !template_is_simple_ident(expr_part) {
+                    parsed = match parse_template_expr(expr_part) {
+                        .Ok(sr) -> sr
+                        .Err(_) -> {
+                            self.set_error("invalid expression in template: ${expr_part}")
+                            return .Err("parse error")
+                        }
+                    }
+                }
+                // If format spec exists, use avra_format_float/int; otherwise string().
+                let str_call = if fmt_spec.length > 0 {
+                    // Determine if float or int format.
+                    // Float: ends with f/e/E/g/G, or starts with . (precision without type letter).
+                    let last_ch = fmt_spec[fmt_spec.length - 1]
+                    let first_ch = fmt_spec[0]
+                    let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
+                    let fmt_args: List<SExpr> = [
+                        sexpr_dummy(parsed),
+                        sexpr_dummy(Expr.String("\"${fmt_spec}\""))
+                    ]
+                    if is_float_fmt {
+                        // Float format: avra_format_float(expr, spec)
+                        Expr.Call(Expr.Ident("avra_format_float"), fmt_args)
+                    } else {
+                        // Int format: avra_format_int(expr, spec)
+                        Expr.Call(Expr.Ident("avra_format_int"), fmt_args)
+                    }
+                } else {
+                    let str_args: List<SExpr> = [sexpr_dummy(parsed)]
+                    Expr.Call(Expr.Ident("string"), str_args)
+                }
+                if result == null {
+                    result = str_call
+                } else {
+                    result = Expr.Binary(result!, BinOp.Add, str_call)
+                }
+                i = j + 1
+                text_start = i
+            } else {
+                i = i + 1
+            }
+        }
+        // Flush trailing text after last interpolation.
+        if text_start < len {
+            let seg = "\"${raw.substring(text_start, len)}\""
+            let str_expr = Expr.String(seg)
+            if result == null {
+                result = str_expr
+            } else {
+                result = Expr.Binary(result!, BinOp.Add, str_expr)
+            }
+        }
+        if result == null {
+            result = Expr.String("\"\"")
+        }
+        .Ok(result)
+    }
+
+    fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
+        // After the first comma in a tuple. Parse remaining elements.
+        mut out: List<SExpr> = []
+        mut ids: List<ExprId> = []
+        mut keep_going = true
+        while keep_going {
+            if self.check(Tk.RightParen) {
+                keep_going = false
+            } else {
+                let eid = self.parse_expression()?
+                out.push(sexpr_at(self.expr_of(eid), self.current_line, self.current_column, self.file))
+                ids.push(eid)
+                if self.check(Tk.Comma) {
+                    self.advance()
+                } else {
+                    keep_going = false
+                }
+            }
+        }
+        .Ok(ArgListIds { wrapped: out, ids: ids })
+    }
+
+    fn parse_block_expression(self) -> Result<Expr, string> {
+        self.advance()
+        // A block expression's body is parsed as a regular statement
+        // list. Re-enable `.field` postfix consumption inside —
+        // we're back in normal expression-statement context.
+        let saved_dot = self.allow_dot_postfix
+        self.allow_dot_postfix = true
+        let body = self.parse_statement_list(true)
+        self.allow_dot_postfix = saved_dot
+        let body_val = body?
+        if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
+            return .Err("parse error")
+        }
+        .Ok(Expr.Block(body_val))
+    }
+
+    fn check(self, kind: Tk) -> bool {
+        self.current_kind == kind
+    }
+
+    // Peek ahead: after the current identifier, skip whitespace,
+    // return true if the next char is ':'. For typed lambda detection.
+    fn peek_after_ident_is_colon(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == ":"
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Does the next non-whitespace char after the current identifier open
+    // a `{` block? Distinguishes a struct literal `~Name { ... }` from a
+    // bare spliced identifier `~Name` in the quote splice path.
+    fn peek_after_ident_is_lbrace(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "{"
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // At the `<` token (just after `table`): does the raw source spell
+    // `< Ident > {` — i.e. a typed table literal `table<Row> { … }` — as
+    // opposed to a comparison like `table < 10`? Scans source without
+    // consuming. The `> {` suffix is what disambiguates the two.
+    fn peek_is_table_row_type(self) -> bool {
+        let n = self.source.length
+        mut i = self.current_start + 1   // skip the `<`
+        // skip whitespace
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        if i >= n { return false }
+        // identifier start
+        let c0 = self.source.substring(i, i + 1)
+        let is_alpha = (c0 >= "a" && c0 <= "z") || (c0 >= "A" && c0 <= "Z") || c0 == "_"
+        if !is_alpha { return false }
+        // consume identifier characters
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            let ok = (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
+            if ok { i = i + 1 } else { break }
+        }
+        // skip whitespace, expect `>`
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        if i >= n || self.source.substring(i, i + 1) != ">" { return false }
+        i = i + 1
+        // skip whitespace, expect `{`
+        while i < n {
+            let c = self.source.substring(i, i + 1)
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
+        }
+        i < n && self.source.substring(i, i + 1) == "{"
+    }
+
+    fn peek_after_ident_is_paren(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "("
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Peek: is the next token after current ident another identifier (not a keyword)?
+    // Returns false for `{`, `(`, `=`, operators, and keyword starts like "true"/"false".
+    // Used to detect `comp_name instance_name {` pattern without consuming tokens.
+    fn peek_after_ident_is_ident_not_keyword(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        // Skip whitespace
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+            i = i + 1
+        }
+        if i >= self.source.length { return false }
+        let ch = self.source.substring(i, i + 1)
+        // Must start with letter or underscore
+        let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+        if !is_alpha { return false }
+        // Extract the full word
+        mut j = i
+        while j < self.source.length {
+            let wc = self.source.substring(j, j + 1)
+            let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
+            if !is_alnum { break }
+            j = j + 1
+        }
+        let word = self.source.substring(i, j)
+        // Exclude keywords that appear after identifiers in non-component contexts
+        if word == "true" || word == "false" || word == "null" || word == "none" { return false }
+        if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return false }
+        if word == "with" || word == "match" || word == "if" || word == "else" { return false }
+        if word == "while" || word == "for" || word == "fn" || word == "let" || word == "mut" { return false }
+        if word == "return" || word == "type" || word == "enum" || word == "trait" || word == "impl" { return false }
+        // Check that the word is followed by `{` (to confirm it's instance_name + block)
+        mut k = j
+        while k < self.source.length {
+            let sc = self.source.substring(k, k + 1)
+            if sc != " " && sc != "\t" && sc != "\n" && sc != "\r" { break }
+            k = k + 1
+        }
+        if k < self.source.length {
+            return self.source.substring(k, k + 1) == "{"
+        }
+        false
+    }
+
+    fn advance(self) {
+        self.prev_line = self.current_line
+        self.advance_token()
+    }
+
+    fn consume(self, kind: Tk, message: string) -> bool {
+        if self.check(kind) {
+            self.advance()
+            return true
+        }
+        self.set_error(message)
+        false
+    }
+
+    // A nested generic close (`>>`, e.g. `List<List<int>>`) lexes as a SINGLE
+    // right-shift token, but in a generic-type-arg context the first `>` closes
+    // the inner list and the rest must remain for the enclosing list(s). Split
+    // it: re-point the byte cursor back onto the second `>` and re-stamp the
+    // current token as a single `>`, so the NEXT `advance()` re-lexes the
+    // remainder — which re-forms a `>>` for `>>>` (`List<List<List<int>>>`),
+    // letting each enclosing close peel one `>` in turn. Mirrors the C++/Rust
+    // nested-generic close handling. No-op unless the current token is `>>`,
+    // so it's only ever called from the generic-close sites (type-arg parsing
+    // and `impl`/`trait`-header angle skipping) and never disturbs a real `>>`
+    // shift operator, which is parsed outside any angle-bracket context.
+    fn maybe_split_shr(self) {
+        if self.current_kind == Tk.Shr {
+            self.current = self.current - 1
+            self.column = self.column - 1
+            self.current_kind = Tk.Greater
+            self.current_lexeme = ">"
+        }
+    }
+
+    /// Consume the current token's lexeme + advance. Caller is
+    /// expected to have already checked the token kind.
+    fn take_lexeme(self) -> string {
+        let name = self.current_lexeme
+        self.advance()
+        name
+    }
+
+    /// Emit "`<kw>` is a reserved keyword and cannot be used
+    /// <suffix>" at the current span and consume the offending
+    /// token. Centralises the diagnostic shared by `parse_declaration`
+    /// (top-level decl using a future-reserved keyword) and
+    /// `consume_identifier` (binding site).
+    fn reject_reserved_keyword(self, suffix: string) {
+        let kw = self.current_lexeme
+        self.set_error("`${kw}` is a reserved keyword and cannot be used ${suffix}")
+        self.advance()
+    }
+
+    /// Strict identifier consumer: rejects reserved keywords at
+    /// binding sites (param / let / mut / const / fn / type /
+    /// variant / field names). so07.2 / 1rzz — without this check
+    /// the parser silently accepted `bare`, `await`, etc. as
+    /// identifiers and the use site emitted a confusing F0001.
+    fn consume_identifier(self, message: string) -> Result<string, string> {
+        if self.check(Tk.KwReserved) {
+            self.reject_reserved_keyword("as an identifier — rename the binding")
+            return .Err("parse error")
+        }
+        if self.check(Tk.Identifier) { return .Ok(self.take_lexeme()) }
+        self.set_error(message)
+        .Err("parse error")
+    }
+
+    /// Consume an identifier in a declaration-name slot, honoring
+    /// `~ident` splice syntax inside a `quote { ... }` body.
+    /// Outside a quote it is a plain identifier. Inside one,
+    /// `~ident` defers the name to expansion time: the leading `~` is
+    /// preserved as the sentinel the quote-lowering pass (`name_or_splice`
+    /// in features/quote_expr/lower.av) decodes back into a live splice.
+    /// Used by every name slot that can carry a splice — type names,
+    /// impl targets, and struct-literal constructors.
+    fn consume_name_or_splice(self, message: string) -> Result<string, string> {
+        if self.quote_depth > 0 && self.check(Tk.Tilde) {
+            self.advance()
+            let var_name = self.consume_identifier("expected identifier after `~` in name position")?
+            return .Ok("~" + var_name)
+        }
+        self.consume_identifier(message)
+    }
+
+    /// Parse a comma-separated destructure binding list `a, b, c`
+    /// (caller has already consumed the opening `(` and consumes the
+    /// closing `)`). Shared by `let (a, b) = …` and the for-in tuple
+    /// binding `for (a, b) in …`. A trailing comma is tolerated.
+    /// Each entry's type is left Unknown — inferred from the tuple
+    /// element types at type-check time.
+    fn parse_destructure_names(self) -> Result<List<ParamEntry>, string> {
+        mut out: List<ParamEntry> = []
+        if self.check(Tk.RightParen) { return .Ok(out) }
+        mut keep_going = true
+        while keep_going {
+            let name = self.consume_identifier("expected variable name in destructure")?
+            out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightParen) { keep_going = false }
+            } else {
+                keep_going = false
+            }
+        }
+        .Ok(out)
+    }
+
+    /// Lenient variant for field / method access positions
+    /// (`task.await`, `expr?.field`): accepts reserved keywords
+    /// because the dot disambiguates. Use only for `expr.<name>` /
+    /// `expr?.<name>` sites — binding sites must call
+    /// `consume_identifier` instead so reserved names are rejected.
+    fn consume_field_name(self, message: string) -> Result<string, string> {
+        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) { return .Ok(self.take_lexeme()) }
+        self.set_error(message)
+        .Err("parse error")
+    }
+
+    // Consume a type reference: identifier optionally followed by
+    // generic arguments `<A, B>` and/or nullable `?`.
+    // Both generics and nullable are erased — we return the base name.
+    // Parse a structured type expression. Returns TypeExpr AST node.
+    fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
+        let base = self.parse_type_atom(message)?
+        // Union: A | B | C — lowest precedence in type position
+        if self.check(Tk.Pipe) {
+            mut result = base
+            while self.check(Tk.Pipe) {
+                self.advance()
+                let rhs = self.parse_type_atom("expected type after `|`")?
+                result = TypeExpr.Union(result, rhs)
+            }
+            return .Ok(result)
+        }
+        .Ok(base)
+    }
+
+    // Parse a single type atom (everything except union |).
+    fn parse_type_atom(self, message: string) -> Result<TypeExpr, string> {
+        // qa6i probe 3: `~name` in type position splices a string-
+        // valued local into a TypeExpr.Named at construction time.
+        // The lowerer detects the leading `~` in the name field and
+        // emits a runtime ctor that resolves it against the macro's
+        // scope. Only fires inside a quote — outside, `~` in type
+        // position is a parse error.
+        if self.check(Tk.Tilde) && self.quote_depth > 0 {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected identifier after `~` in type position")
+                return .Err("parse error")
+            }
+            let splice_name = self.current_lexeme
+            self.advance()
+            return .Ok(TypeExpr.Named("~" + splice_name))
+        }
+        // dyn Trait — dynamic trait object
+        if self.check(Tk.KwDyn) {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected trait name after `dyn`")
+                return .Err("parse error")
+            }
+            let trait_name = self.current_lexeme
+            self.advance()
+            let te = TypeExpr.Named(trait_name)
+            if self.check(Tk.Question) {
+                self.advance()
+                return .Ok(TypeExpr.Optional(te))
+            }
+            return .Ok(te)
+        }
+        // fn(T, T) -> T
+        if self.check(Tk.KwFn) {
+            self.advance()
+            mut params: List<TypeExpr> = []
+            if self.check(Tk.LeftParen) {
+                self.advance()
+                params = self.parse_type_expr_list()?
+                if self.check(Tk.RightParen) { self.advance() }
+            }
+            mut ret = TypeExpr.Infer
+            if self.check(Tk.Arrow) {
+                self.advance()
+                ret = self.parse_type_expr("expected return type after `->`")?
+            }
+            return .Ok(TypeExpr.FnType(params, ret))
+        }
+        // (T, U) → Tuple type
+        if self.check(Tk.LeftParen) {
+            self.advance()
+            let types = self.parse_type_expr_list()?
+            if !self.consume(Tk.RightParen, "expected `)` after tuple type") { return .Err("parse error") }
+            // Build a Generic("__tuple", [T, U, ...]) that type_expr_to_vtype converts to Tuple
+            if types.length == 1 {
+                // Single-element parens: treat as grouping, not a 1-tuple
+                return .Ok(types[0])
+            }
+            return .Ok(TypeExpr.Generic("__tuple", types))
+        }
+        // [T] → List type
+        if self.check(Tk.LeftBracket) {
+            self.advance()
+            let inner = self.parse_type_expr("expected element type in `[T]`")?
+            if !self.consume(Tk.RightBracket, "expected `]` after list type") { return .Err("parse error") }
+            return .Ok(TypeExpr.ListType(inner))
+        }
+        if !self.check(Tk.Identifier) {
+            self.set_error(message)
+            return .Err("parse error")
+        }
+        mut name = self.current_lexeme
+        self.advance()
+        // Dotted path: core.ast.BinOp
+        while self.check(Tk.Dot) {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected identifier after '.' in type path")
+                return .Err("parse error")
+            }
+            name = name + "." + self.current_lexeme
+            self.advance()
+        }
+        // Generic arguments: Result<T, E>
+        if self.check(Tk.Less) {
+            let args = self.parse_generic_type_args()?
+            let te = TypeExpr.Generic(name, args)
+            if self.check(Tk.Question) {
+                self.advance()
+                return .Ok(TypeExpr.Optional(te))
+            }
+            return .Ok(te)
+        }
+        let te = TypeExpr.Named(name)
+        if self.check(Tk.Question) {
+            self.advance()
+            return .Ok(TypeExpr.Optional(te))
+        }
+        .Ok(te)
+    }
+
+    fn parse_type_expr_list(self) -> Result<List<TypeExpr>, string> {
+        mut out: List<TypeExpr> = []
+        while !self.check(Tk.RightParen) && !self.check(Tk.Eof) {
+            let ty = self.parse_type_expr("expected type")?
+            out.push(ty)
+            if self.check(Tk.Comma) { self.advance() }
+        }
+        .Ok(out)
+    }
+
+    fn parse_generic_type_args(self) -> Result<List<TypeExpr>, string> {
+        self.advance()
+        mut args: List<TypeExpr> = []
+        mut first = true
+        while !self.check(Tk.Greater) && !self.check(Tk.Eof) {
+            if !first {
+                if self.check(Tk.Comma) { self.advance() }
+            }
+            first = false
+            let ty = self.parse_type_expr("expected generic type argument")?
+            args.push(ty)
+            // After an arg, a `>>`/`>>>` closer lexed as one shift token — peel
+            // a single `>` so this list closes and the rest stays for the parent.
+            self.maybe_split_shr()
+        }
+        if self.check(Tk.Greater) { self.advance() }
+        .Ok(args)
+    }
+
+    fn parse_quote(self) -> Result<Expr, string> {
+        self.advance()  // consume `quote`
+        // Optional kind keyword: `stmt` / `stmts` / `type` / `decl` /
+        // `arm` selects the result-type of the captured AST. Default
+        // is `expr` — the captured body produces an Expr value at
+        // runtime.
+        let kind = self.parse_quote_kind()
+        // Track quote nesting so parse_unary recognizes splice `~`.
+        self.quote_depth = self.quote_depth + 1
+        if kind == "arm" {
+            let body = self.parse_quote_arm_body()?
+            self.quote_depth = self.quote_depth - 1
+            return .Ok(Expr.Quote(kind, body))
+        }
+        let body = self.parse_block_expression()?
+        self.quote_depth = self.quote_depth - 1
+        .Ok(Expr.Quote(kind, body))
+    }
+
+    fn parse_quote_kind(self) -> string {
+        if self.check(Tk.KwType) {
+            self.advance()
+            return "type"
+        }
+        if self.check(Tk.Identifier) {
+            let lex = self.current_lexeme
+            if lex == "stmt" || lex == "stmts" || lex == "decl" || lex == "arm" {
+                self.advance()
+                return lex
+            }
+        }
+        "expr"
+    }
+
+    /// Parse `{ pattern -> body }` for `quote arm { ... }`. Wraps the
+    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.None, [arm])`
+    /// so the existing Quote(kind, body) shape stays — the lowering
+    /// pass picks the arm back out via its `arm` kind discriminator.
+    fn parse_quote_arm_body(self) -> Result<Expr, string> {
+        if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
+        let pattern = self.parse_pattern_or()?
+        mut guard: SExpr? = none
+        if self.check(Tk.KwIf) {
+            self.advance()
+            let g = self.parse_expression_boxed()?
+            guard = sexpr(g, self.current_line, self.current_column)
+        }
+        if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return .Err("parse error") }
+        let body = self.parse_expression_boxed()?
+        let body_se = sexpr(body, self.current_line, self.current_column)
+        if self.check(Tk.Comma) { self.advance() }
+        if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return .Err("parse error") }
+        let arm = MatchArm { pattern, guard, body: body_se }
+        let arms: List<MatchArm> = [arm]
+        // The synthetic envelope's subject is a BARE `Expr` (the field type), not
+        // an `sexpr(...)` wrapper: storing an SExpr struct in the `subject: Expr`
+        // slot type-checks only because both lower to `ptr`, but it makes the
+        // node ill-formed — a walker (e.g. arena ingest's `all_children_spanned`)
+        // that descends `subject` as a bare Expr reads the SExpr's first word as
+        // an enum tag and traps. The lowering pass ignores `subject` anyway
+        // (`extract_single_match_arm` matches `.MatchExpr(_, arms)`).
+        .Ok(Expr.MatchExpr(Expr.None, arms))
+    }
+
+    // Parse `when { cond -> body, ... }` — subjectless match expression.
+    // `When` is walker-opaque (WhenArm isn't a registered container struct):
+    // the canonical ingest records NO children, so the native alloc mirrors
+    // that as a leaf; the arms' natively-parsed rows orphan until WhenArm
+    // registers with the walker.
+    fn parse_when_expression(self) -> Result<ExprId, string> {
+        self.advance()  // consume `when`
+        if !self.consume(Tk.LeftBrace, "expected `{` after `when`") { return .Err("parse error") }
+        let arms = self.parse_when_arms()?
+        if !self.consume(Tk.RightBrace, "expected `}` after when arms") { return .Err("parse error") }
+        .Ok(self.alloc_leaf(Expr.When(arms)))
+    }
+
+    fn parse_when_arms(self) -> Result<List<WhenArm>, string> {
+        mut out: List<WhenArm> = []
+        while !self.check(Tk.RightBrace) {
+            // `_ -> body` or `else -> body` is the default arm (null condition)
+            let line = self.current_line
+            let col = self.current_column
+            mut cond: SExpr? = none
+            if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
+                self.advance()
+            } else {
+                let c = self.parse_expression_boxed()?
+                cond = sexpr_at(c, line, col, self.file)
+            }
+            if !self.consume(Tk.Arrow, "expected `->` after when condition") { return .Err("parse error") }
+            let body_line = self.current_line
+            let body_col = self.current_column
+            let body = self.parse_expression_boxed()?
+            let body_se = sexpr_at(body, body_line, body_col, self.file)
+            out.push(WhenArm { cond, body: body_se })
+        }
+        .Ok(out)
+    }
+
+    // ── B1: native arena allocation (dark-launched) ──
+    //
+    // Converted productions push the node they just built into `self.store`
+    // and return its typed id; `edges` are the already-allocated children's
+    // refs in walker (field) order. Children arriving BOXED from a
+    // not-yet-converted producer are bridged via `self.glue_ingest_expr` —
+    // the whole boxed subtree enters the store walker-faithfully in one call
+    // (the ingest-the-gap glue; each bridge disappears when its producer
+    // converts). Nothing reads this store yet: ingest_program remains the
+    // canonical producer until the flip serves this store directly.
+
+    /// Allocate a parser-built `Expr` with its children's edge refs.
+    fn alloc_expr(self, node: Expr, sp: ByteSpan, edges: List<NodeRef>) -> ExprId {
+        self.store.exprs.add(node, NodeEdges { refs: edges }, sp)
+    }
+
+    /// Bridge a BOXED expr subtree from an unconverted producer into the
+    /// store, returning its root id. Walker-driven, so the subtree's edges
+    /// and nested wrapper spans match what the canonical ingest records.
+    fn glue_ingest_expr(self, node: Expr) -> ExprId {
+        self.store.ingest_expr(node, byte_span_none())
+    }
+
+    /// Bridge a BOXED pattern subtree (patterns are still boxed producers —
+    /// they convert to ids later) into the store, returning its root id.
+    fn glue_ingest_pat(self, node: Pattern) -> PatId {
+        self.store.ingest_pat(node, byte_span_none())
+    }
+
+    /// Boxed readback of an allocated expr — an O(1) row read. The chain uses
+    /// it to embed already-allocated children into a parent's boxed payload.
+    fn expr_of(self, id: ExprId) -> Expr {
+        self.store.exprs.get(id)
+    }
+
+    /// The i-th recorded edge of `id`, unwrapped as an expr child. Used when
+    /// a rebuild discards a shell node (assignment retarget, pipe desugar)
+    /// and re-parents the shell's children by id — no re-walk. The unwrap is
+    /// inlined rather than delegated to `core.expr_ref_id` because the
+    /// pinned seed's typechecker mis-gates free fns that return a newtype
+    /// (fixed in typeck this generation; collapse to `expr_ref_id` once the
+    /// seed train advances past it).
+    fn expr_child(self, id: ExprId, i: int) -> ExprId {
+        match self.store.exprs.children_of(id)[i] {
+            .ExprRef(cid) -> cid
+            _ -> panic("expr_child: edge is not an ExprRef")
+        }
+    }
+
+    /// Alloc an expr LEAF (no node children) — the arena's one-push path.
+    fn alloc_leaf(self, node: Expr) -> ExprId {
+        self.store.exprs.add_leaf(node)
+    }
+
+    /// Alloc an expr with ONE expr child (field order).
+    fn alloc1(self, node: Expr, a: ExprId) -> ExprId {
+        self.alloc_expr(node, byte_span_none(), [NodeRef.ExprRef(a)])
+    }
+
+    /// Alloc an expr with TWO expr children (field order).
+    fn alloc2(self, node: Expr, a: ExprId, b: ExprId) -> ExprId {
+        self.alloc_expr(node, byte_span_none(), [NodeRef.ExprRef(a), NodeRef.ExprRef(b)])
+    }
+
+    /// Alloc an expr with THREE expr children (field order).
+    fn alloc3(self, node: Expr, a: ExprId, b: ExprId, c: ExprId) -> ExprId {
+        self.alloc_expr(node, byte_span_none(), [NodeRef.ExprRef(a), NodeRef.ExprRef(b), NodeRef.ExprRef(c)])
+    }
+
+    /// Edge refs for a plain id list (arg-only nodes like EnumCtor).
+    fn edges_of_ids(self, ids: List<ExprId>) -> List<NodeRef> {
+        mut refs: List<NodeRef> = []
+        for id in ids { refs.push(NodeRef.ExprRef(id)) }
+        refs
+    }
+
+    /// Edge refs `[subject, arg0, arg1, …]` — the walker order shared by
+    /// Call-shaped nodes (Call, OptionalMethodCall, GenericCall).
+    fn edges_subject_args(self, subject: ExprId, arg_ids: List<ExprId>) -> List<NodeRef> {
+        mut refs: List<NodeRef> = [NodeRef.ExprRef(subject)]
+        for id in arg_ids { refs.push(NodeRef.ExprRef(id)) }
+        refs
+    }
+
+    /// Edge refs for a boxed FieldInit list's values (struct-lit / with) —
+    /// interim glue: each value subtree is bridged whole. Disappears when
+    /// parse_field_init_list flows ids.
+    fn glue_field_init_refs(self, inits: List<FieldInit>) -> List<NodeRef> {
+        mut refs: List<NodeRef> = []
+        for init in inits { refs.push(NodeRef.ExprRef(self.glue_ingest_expr(init.value.node))) }
+        refs
+    }
+
+    // ── Speculative parsing (backtracking) ──
+
+    // Snapshot / restore the lexer+parser position for a speculative parse. The
+    // two are kept symmetric: every field saved here is restored below.
+    //
+    // `prev_line` is in the snapshot (cpi6) because the newline-sensitivity
+    // readers (cell-mode continuation, dot_is_postfix, same-line postfix-call
+    // attach) consult it — a backtrack that left it stale would mis-decide on the
+    // re-parse. It has no dedicated spec test because the current callers don't
+    // expose the staleness: each backtrack/restore is followed by an `advance()`
+    // (which refreshes prev_line) before any reader runs — `try_parse_generic_call`
+    // has parse_comparison re-consume the backtracked `<`, and is_stmt_map_literal
+    // is followed by parse_statement consuming the `{`. So the guard is the
+    // SELFHOST DIFFERENTIAL (byte-identical IR), not a `.av` fixture (verified:
+    // parsing 881 real `.av` files is unaffected by the restore). Keeping prev_line
+    // in the snapshot stays correct if a future caller reads it before that advance.
+    //
+    // NOT snapshotted, by design: `gensym_seq` ONLY — a monotonic hygiene
+    // counter, so rolling it back would re-mint an already-issued temp name.
+    // Every other mutable field IS snapshotted now, including the context-mode
+    // flags (allow_struct_lit / allow_dot_postfix / cell_mode / allow_it_sugar /
+    // quote_depth): a backtrack must restore them so a failed lookahead cannot
+    // leak a mode change into the retry (previously these were a hand-synced
+    // subset that callers had to balance locally — a latent drift hazard).
+    fn save_state(self) -> ParserState {
+        ParserState {
+            start: self.start, current: self.current,
+            line: self.line, column: self.column,
+            current_kind: self.current_kind, current_lexeme: self.current_lexeme,
+            current_line: self.current_line, current_column: self.current_column,
+            prev_line: self.prev_line,
+            current_start: self.current_start,
+            had_error: self.had_error, error_message: self.error_message,
+            allow_struct_lit: self.allow_struct_lit, allow_dot_postfix: self.allow_dot_postfix,
+            cell_mode: self.cell_mode, allow_it_sugar: self.allow_it_sugar,
+            quote_depth: self.quote_depth,
+            bag: self.bag,
+            store_mark: self.store.mark(),
+        }
+    }
+
+    fn restore_state(self, state: ParserState) {
+        self.start = state.start
+        self.current = state.current
+        self.line = state.line
+        self.column = state.column
+        self.current_kind = state.current_kind
+        self.current_lexeme = state.current_lexeme
+        self.current_line = state.current_line
+        self.current_column = state.current_column
+        self.prev_line = state.prev_line
+        self.current_start = state.current_start
+        self.had_error = state.had_error
+        self.error_message = state.error_message
+        self.allow_struct_lit = state.allow_struct_lit
+        self.allow_dot_postfix = state.allow_dot_postfix
+        self.cell_mode = state.cell_mode
+        self.allow_it_sugar = state.allow_it_sugar
+        self.quote_depth = state.quote_depth
+        self.bag = state.bag
+        self.store.truncate_to_mark(state.store_mark)
+    }
+
+    // Skip a balanced `< ... >` bracket group, handling nesting.
+    // Used in impl blocks where we don't yet parse type params.
+    fn skip_angle_brackets(self) {
+        self.advance()  // consume `<`
+        mut depth = 1
+        while depth > 0 && !self.check(Tk.Eof) {
+            self.maybe_split_shr()   // a nested `>>` close counts as one `>` here
+            if self.check(Tk.Less) {
+                depth = depth + 1
+            } else if self.check(Tk.Greater) {
+                depth = depth - 1
+            }
+            self.advance()
+        }
+    }
+
+    // Collect angle-bracket content as a string: <EmitValue, string> -> "<EmitValue, string>"
+    fn collect_angle_brackets(self) -> string {
+        self.advance()  // consume `<`
+        mut result = "<"
+        mut depth = 1
+        while depth > 0 && !self.check(Tk.Eof) {
+            if self.check(Tk.Less) {
+                depth = depth + 1
+                result = "${result}<"
+            } else if self.check(Tk.Greater) {
+                depth = depth - 1
+                result = "${result}>"
+            } else if self.check(Tk.Comma) {
+                result = "${result}, "
+            } else {
+                result = "${result}${self.current_lexeme}"
+            }
+            self.advance()
+        }
+        result
+    }
+
+    fn set_error(self, message: string) {
+        self.report(DiagCode.SyntaxError, message)
+    }
+
+    fn report(self, code: DiagCode, message: string) {
+        // Always add to the bag — even if we already had an error.
+        // This lets us show ALL parse errors, not just the first.
+        let sp = span_new(self.current_start, self.current, self.current_line, self.current_column)
+        let diag = diag_error(code, message, sp)
+        self.bag = bag_report(self.bag, diag)
+        // Set had_error + message for backward compat (first error wins)
+        if !self.had_error {
+            self.had_error = true
+            self.error_message = "parse error at ${string(self.current_line)}:${string(self.current_column)}: ${message}"
+        }
+    }
+
+    // Panic-mode recovery: skip tokens until we find something that
+    // looks like the start of a new statement. This lets us resume
+    // parsing and find more errors.
+    fn synchronize(self) {
+        while !self.check(Tk.Eof) {
+            if self.current_kind in [Tk.KwFn, Tk.KwLet, Tk.KwConst, Tk.KwMut, Tk.KwType, Tk.KwEnum, Tk.KwImpl, Tk.KwIf, Tk.KwWhile, Tk.KwFor, Tk.KwMatch, Tk.KwReturn, Tk.KwExtern, Tk.KwTrait, Tk.KwDefer, Tk.KwSpec, Tk.KwGiven, Tk.KwThen, Tk.KwSelect, Tk.RightBrace] {
+                return
+            }
+            self.advance()
+        }
+    }
+}

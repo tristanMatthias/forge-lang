@@ -1,0 +1,474 @@
+// WHY: LLVM IR emission — declaration passes, dispatch, and top-level setup.
+// Feature-specific codegen lives in features/*/codegen.av.
+// Operators in codegen/operators.av, strings in codegen/strings.av, etc.
+//
+// dir-as-module (g2eo.1): types/setup/operators/strings/printing/blocks/
+// indexing/helpers/escape/cycles auto-load as siblings, surface flat at
+// `codegen.{...}`.
+
+use core.{Expr, Pattern, SExpr, SStmt, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
+
+use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
+use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
+use features.defer_stmt.{emit_defers, emit_defers_on_error}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
+use codegen.{emit_optional_coerce}
+use features.fn_decl.{emit_function_bodies}
+use features.let_stmt.{emit_var_decl}
+use features.if_stmt.{emit_if}
+use features.list_lit.{emit_list_reduce_typed, emit_list_method_call}
+use features.map_lit.{emit_map_method_call}
+use features.match_expr.{emit_match_expr}
+use features.trait_decl.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
+use features.fn_decl.{emit_call, emit_call_named, emit_method_call}
+use features.error_propagation.{Result}
+use parse.{parse_int_literal}
+use core.{avra_tag_as_result}
+
+//
+// The bootstrap codegen calls a small set of LLVM-C-API wrappers
+// (the `avra_llvm_*` symbols exposed by the @std.llvm package's
+// native library) plus a handful of libc helpers. We declare them
+// directly as `extern fn` so the bootstrap source has no
+// dependence on the host's package namespace dispatch — it just
+// calls C symbols.
+//
+// We keep the local helper names matching the old `llvm.X` shape
+// (e.g. `bs_llvm_context_create`) so the rest of this file reads
+// the same as before; the helpers are thin wrappers over the
+// underlying C symbols.
+
+// ── Public API ──
+
+
+/// Wrap a successful statement emit (ctx + env pair) as `Result.Ok`.
+/// The threaded-state mirror of `ok_emit`.
+export fn ok_sr(ctx: Ctx, env: List<VarBinding>) -> Result<StmtResult, string> {
+    let r = Result.Ok(StmtResult { ctx, env })
+    avra_tag_as_result(r)
+    r
+}
+
+/// Wrap a statement-emit failure as `Result.Err`. Pairs with `ok_sr`.
+export fn err_sr(msg: string) -> Result<StmtResult, string> {
+    let r = Result.Err(msg)
+    avra_tag_as_result(r)
+    r
+}
+
+// ── Statement emission ──
+
+/// Emit a statement list left-to-right, threading ctx + env through
+/// each step. Tracks the source line on `ctx.source_line` so coverage
+/// and diagnostics get accurate line numbers.
+export fn emit_stmt_list(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<StmtResult, string> {
+    mut cur_ctx = ctx
+    mut cur_env = env
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
+        let sr = emit_stmt(line_ctx, cur_env, ss.node)?
+        cur_ctx = sr.ctx
+        cur_env = sr.env
+        i = i + 1
+    }
+    ok_sr(cur_ctx, cur_env)
+}
+
+/// Release every RC-managed local that wasn't moved out of scope.
+/// Walks `ctx.rc_cleanup` (built up by `ctx.bind`) in LIFO order.
+/// Called from every scope-exit emitter (return, function end,
+/// block end) so cleanup happens deterministically.
+export fn emit_rc_cleanup(ctx: Ctx) {
+    emit_rc_stack(ctx, ctx.rc_cleanup)
+}
+
+/// Recursive worker for `emit_rc_cleanup`. Loads each entry's alloca
+/// and calls `emit_rc_release_typed` so type-aware deallocation runs
+/// (vs. plain `avra_rc_release`).
+fn emit_rc_stack(ctx: Ctx, stack: List<RcCleanupEntry>) {
+    mut i = stack.length - 1
+    while i >= 0 {
+        let entry = stack[i]
+        let val = ctx.load(ctx.ptr_type, entry.alloca, "rc_local")
+        emit_rc_release_typed(ctx, val, entry.ty)
+        i = i - 1
+    }
+}
+
+/// Release a value, dispatching on its ValueType. For struct/enum/
+/// newtype types with a generated `__release_TypeName` function, the
+/// generated function runs (it recursively releases RC-managed
+/// fields before freeing). All other RC types fall through to
+/// `avra_rc_release`. Non-RC types (Int, Bool, Float, Void,
+/// FnTyped, Unknown) are no-ops.
+export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
+    match ty {
+        .Struct(name, _, _) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        .Enum(name, _, _) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        .Newtype(name, _, _) -> {
+            // Newtype wraps another type — release via the wrapper's release function if it exists
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        // Str, Bytes, Ptr, Fn: leaf RC types with no inner RC fields.
+        .Str -> ctx.rc_release(val)
+        .Bytes -> ctx.rc_release(val)
+        .Ptr -> ctx.rc_release(val)
+        .Fn(_) -> ctx.rc_release(val)
+        // Tuple: inline recursive release — check each ptr-typed element.
+        .Tuple(elements) -> emit_rc_release_tuple(ctx, val, elements)
+        // Closure: [TAG, fn_ptr, cap1, cap2, ...] — captures are independently
+        // RC-managed (retained when closure is created), so releasing the closure
+        // array itself via plain rc_release is correct. Each captured value has
+        // its own refcount and will be released when its owning scope ends.
+        .Closure(_, _) -> ctx.rc_release(val)
+        // Union: {i64 tag, ptr payload} — payload values are independently
+        // RC-managed. The union wrapper is a thin envelope; releasing it via
+        // plain rc_release frees the envelope only. The payload's refcount is
+        // managed separately at the site where the value was created/wrapped.
+        .Union(_) -> ctx.rc_release(val)
+        .List(_) -> ctx.rc_release(val)
+        .Map(_, _) -> ctx.rc_release(val)
+        .Trait(_, _) -> ctx.rc_release(val)
+        // Value types — not RC-managed, no-op (rc_release checks magic).
+        .Int -> {}
+        .U8 -> {}
+        .U16 -> {}
+        .U32 -> {}
+        .U64 -> {}
+        .I8 -> {}
+        .I16 -> {}
+        .I32 -> {}
+        .Bool -> {}
+        .Float -> {}
+        .Void -> {}
+        // FnTyped — function pointer, not heap-allocated.
+        .FnTyped(_, _) -> {}
+        // NarrowedEnum — same RC semantics as its base Enum.
+        .NarrowedEnum(name, _, _) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        // Typeck sentinel — should not survive monomorphization, but
+        // codegen paths that fall through pre-resolve hit this when
+        // a value's type was never inferred. No-op is safe: rc_release
+        // checks the runtime magic word and skips non-RC pointers.
+        .Unknown -> {}
+        // Task — green-thread handle. Not RC-managed in v1.0 (spec
+        // Axis 18). The handle is owned by the scheduler and freed
+        // when the task is joined or the process exits.
+        .Task(_) -> {}
+        // Channel — rc-allocated runtime handle (AvraChannel). The
+        // runtime owns the handle's internals (ring buffer), so the
+        // runtime provides the release: avra_channel_release frees
+        // the buffer when this release drops the last reference,
+        // then forwards to avra_rc_release. Mirrors how Struct types
+        // route through their generated __release_TypeName.
+        .Channel(_) -> { ctx.call("avra_channel_release", [val]) }
+        // Optional (T?): pointer-niche repr — the value IS the inner repr
+        // (null pointer = none). For a pointer-backed inner, shallow-release
+        // the pointer (consistent with how List/Map containers are handled,
+        // and avoids referencing a deep `__release_Inner` that may be
+        // declared-only in a cross-unit shard). Value-inner optionals
+        // (int?/bool?/float?) are not RC — no-op.
+        .Optional(inner) -> {
+            if vtype_is_ptr_type(inner) { ctx.rc_release(val) }
+        }
+    }
+}
+
+/// Emit inline recursive release for a tuple. Tuples don't get a
+/// generated `__release_*` because their element types are
+/// structural (not nominal). Steps:
+/// 1. `avra_rc_should_free(val)` — decrements refcount; returns 1
+///    when it hit zero.
+/// 2. When freeing: walk each ptr-typed element, null-check, recurse
+///    into `emit_rc_release_typed`, then `avra_rc_free` the buffer.
+/// 3. Otherwise: nothing more to do (refcount was just decremented).
+fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: List<ValueType>) {
+    let should = ctx.call("avra_rc_should_free", [val])
+    let cond = ctx.icmp_ne(should, ctx.i64(0), "tup_should_free")
+    let free_bb = ctx.bb("tup_free")
+    let done_bb = ctx.bb("tup_done")
+    ctx.cond_br(cond, free_bb, done_bb)
+    ctx.position(free_bb)
+    emit_tuple_elem_releases(ctx, val, elements, 0)
+    ctx.call("avra_rc_free", [val])
+    ctx.br(done_bb)
+    ctx.position(done_bb)
+}
+
+/// Iterate every ptr-typed element of `elements`, loading slot N,
+/// null-checking, releasing, and continuing. Skips primitive
+/// elements. Caller passes the starting slot index in `idx`; the
+/// loop walks every position from there to `elements.length - 1`.
+fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: List<ValueType>, idx: int) {
+    mut i = idx
+    while i < elements.length {
+        let elem_ty = elements[i]
+        if vtype_is_ptr_type(elem_ty) {
+            let loaded = ctx.load_slot(buf, i, "trel_${i}")
+            let as_ptr = ctx.to_ptr(loaded, "trel_ptr_${i}")
+            let is_null = ctx.icmp_eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${i}")
+            let skip_bb = ctx.bb("trel_skip_${i}")
+            let do_bb = ctx.bb("trel_do_${i}")
+            ctx.cond_br(is_null, skip_bb, do_bb)
+            ctx.position(do_bb)
+            emit_rc_release_typed(ctx, as_ptr, elem_ty)
+            ctx.br(skip_bb)
+            ctx.position(skip_bb)
+        }
+        i = i + 1
+    }
+}
+
+/// The statement-emit dispatcher. Handles every built-in `Stmt`
+/// directly; unknown variants fall through to the feature registry
+/// so feature codegen modules can plug in new statement kinds via
+/// `register_stmt_emit`.
+///
+/// Coverage instrumentation runs before any branch — every statement
+/// gets a counter when `--coverage` is on.
+export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    // Coverage: instrument each statement with its source line as region ID
+    ctx.cov_line()
+    match stmt {
+        .Expr(expr) -> {
+            emit_expr(ctx, env, expr)?
+            ok_sr(ctx, env)
+        }
+        .Return(value) -> {
+            mut r = emit_expr(ctx, env, value)?
+            // Structured concurrency: await all spawned tasks before returning.
+            if ctx.task_group != null {
+                ctx.call("avra_task_group_await_all", [ctx.task_group])
+            }
+            // errdefer: detect error returns — Err(...) or null for nullable fns.
+            let is_err_return = match value {
+                .EnumCtor(_, variant, _) -> variant == "Err"
+                .None -> true
+                _ -> false
+            }
+            if is_err_return {
+                emit_defers_on_error(ctx, env)
+            } else {
+                emit_defers(ctx, env)
+            }
+            let fn_ret = ctx.current_fn_ret()
+            // Optional box/unbox: box a present value-inner `T` returned as
+            // `T?`, unbox a `T?` returned into a non-optional slot.
+            // `emit_optional_coerce` is a no-op when neither applies.
+            r = emit_optional_coerce(ctx, r, fn_ret)
+            // Union wrapping: if function returns a union, wrap the concrete value
+            if needs_union_wrap(r.ty, fn_ret) {
+                let wrapped = emit_union_wrap(ctx, r.value, r.ty, fn_ret)?
+                ctx.ret(wrapped.value, fn_ret)
+            } else {
+                ctx.ret(r.value, fn_ret)
+            }
+            ok_sr(ctx, env)
+        }
+        .ReturnEmpty -> {
+            // Structured concurrency: await all spawned tasks before returning.
+            if ctx.task_group != null {
+                ctx.call("avra_task_group_await_all", [ctx.task_group])
+            }
+            emit_defers(ctx, env)
+            let fn_ret = ctx.current_fn_ret()
+            ctx.ret_void(fn_ret)
+            ok_sr(ctx, env)
+        }
+        .Let(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        .Mut(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        .Const(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
+        .Block(body) -> {
+            let sr = emit_stmt_list(ctx, env, body)?
+            ok_sr(sr.ctx, env)
+        }
+        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
+        or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
+        .Annotated(_, inner) -> emit_stmt(ctx, env, inner.node)
+        .Break -> {
+            let frame = loops_top(ctx.loops)
+            if !frame.found {
+                return err_sr("codegen error: break outside loop")
+            }
+            ctx.br(frame.exit_bb)
+            ok_sr(ctx, env)
+        }
+        .Continue -> {
+            let frame = loops_top(ctx.loops)
+            if !frame.found {
+                return err_sr("codegen error: continue outside loop")
+            }
+            ctx.br(frame.cond_bb)
+            ok_sr(ctx, env)
+        }
+        _ -> {
+            let tag = avra_stmt_tag(stmt)
+            if has_stmt_emit(ctx.features, tag) {
+                return dispatch_stmt_emit(ctx.features, tag, ctx, env, stmt)
+            }
+            err_sr("codegen error: unsupported statement type (tag=${string(tag)})")
+        }
+    }
+}
+
+// ── Expression emission ──
+
+/// The expression-emit dispatcher. Mirrors `emit_stmt`: built-ins
+/// are inlined here, everything else dispatches to the feature
+/// registry. Returns a typed `EmitValue` so callers always know the
+/// resulting ValueType (for cleanup, casting, branching).
+export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    ctx.cov_line()
+    match expr {
+        .Number(text) -> {
+            let value = parse_int_literal(text)
+            ok_emit(ctx.i64(value), .Int)
+        }
+        .FloatLit(text) -> {
+            let str_ptr = ctx.global_str(text, ".float_str")
+            let bits = ctx.call("avra_float_parse", [str_ptr])
+            ok_emit(ctx.cast_to(bits, .Float), .Float)
+        }
+        .Bool(text) -> {
+            if text == "true" {
+                return ok_emit(ctx.i64(1), .Bool)
+            }
+            ok_emit(ctx.i64(0), .Bool)
+        }
+        .None -> ok_emit(ctx.i64(0), .Void)
+        .String(text) -> {
+            let inner = strip_quotes(text)
+            let str_ptr = ctx.global_str(inner, ".str")
+            ok_emit(str_ptr, .Str)
+        }
+        .Grouping(inner) -> emit_expr(ctx, env, inner)
+        .Unary(op, right) -> emit_unary(ctx, env, op, right)
+        .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
+        .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
+        .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
+        .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
+        .Assign(name, value) -> {
+            mut r = emit_expr(ctx, env, value)?
+            let local = env_lookup(env, name)
+            if local.found {
+                // Optional box/unbox into the variable's slot (no-op when neither applies).
+                r = emit_optional_coerce(ctx, r, local.ty)
+                // Union wrapping: reassigning to a union-typed variable
+                if needs_union_wrap(r.ty, local.ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, local.ty)?
+                    ctx.store(wrapped.value, local.alloca)
+                    return ok_emit(wrapped.value, local.ty)
+                }
+                ctx.store(r.value, local.alloca)
+                return ok_emit(r.value, local.ty)
+            }
+            let g = ctx.lookup_toplevel(name)
+            if g.found {
+                // Optional box/unbox into the global's slot (no-op when neither applies).
+                r = emit_optional_coerce(ctx, r, g.ty)
+                if needs_union_wrap(r.ty, g.ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
+                    ctx.store(wrapped.value, g.llvm_global)
+                    return ok_emit(wrapped.value, g.ty)
+                }
+                ctx.store(r.value, g.llvm_global)
+                return ok_emit(r.value, g.ty)
+            }
+            err_emit("assignment to undefined variable `${name}`")
+        }
+        .Call(callee, args) -> emit_call(ctx, env, callee, args)
+        .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
+        _ -> {
+            let tag = avra_expr_tag(expr)
+            if has_expr_emit(ctx.features, tag) {
+                return dispatch_expr_emit(ctx.features, tag, ctx, env, expr)
+            }
+            err_emit("unsupported expression type (tag=${string(tag)})")
+        }
+    }
+}
+
+/// Shared lookup for `.Ident` and `.QualifiedIdent` emission.
+/// Resolution order: local var → top-level global → named LLVM
+/// function (wrapped as a closure value). Failure produces an
+/// `undefined ${label}` diagnostic — `label` differentiates
+/// "variable" vs. "name" in the message.
+fn emit_name_lookup(ctx: Ctx, env: List<VarBinding>, name: string, label: string) -> Result<EmitValue, string> {
+    let local = env_lookup(env, name)
+    if local.found {
+        let loaded = ctx.load_typed(local.ty, local.alloca, name)
+        return ok_emit(loaded, local.ty)
+    }
+    let g = ctx.lookup_toplevel(name)
+    if g.found {
+        let loaded = ctx.load_typed(g.ty, g.llvm_global, name)
+        return ok_emit(loaded, g.ty)
+    }
+    let fn_val = ctx.get_fn(name)
+    if fn_val != null {
+        let fn_i64 = ctx.to_i64(fn_val, "fn_ref")
+        let closure_arr = ctx.closure_array(fn_i64)
+        let closure_i64 = ctx.to_i64(closure_arr, "fn_ref_i64")
+        let ret_ty = ctx.fn_ret(name)
+        return ok_emit(closure_i64, .Closure(0, ret_ty))
+    }
+    err_emit("undefined ${label} `${name}` in function `${ctx.current_fn_name}`")
+}
+
+// ── Ctx emit methods ──
+// Make expression/statement emission flow through Ctx.
+
+impl Ctx {
+    fn emit(self, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+        emit_expr(self, env, expr)
+    }
+
+    /// Emit `expr` as a member-access receiver: a `T?` value is treated
+    /// as its inner `T` (pointer-niche — the value IS the inner repr, null
+    /// pointer = none), so field / index / method / `with` dispatch on the
+    /// inner type (permissive nullability); strict gating, a later
+    /// milestone, will instead require an explicit unwrap / narrow here.
+    fn emit_member(self, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+        let r = emit_expr(self, env, expr)?
+        ok_emit(r.value, vtype_strip_optional(r.ty))
+    }
+}

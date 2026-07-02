@@ -1,0 +1,64 @@
+// Coverage for the new `string.byte(i) -> int` method — returns the
+// i-th UTF-8 byte (0..255), distinct from char_code() which only
+// peeks byte 0. Lays the groundwork for porting @std/crypto.sha256 to
+// pure Avra (the body needs byte-level access to the input string).
+//
+// Tracking ticket: forge-crafting-intepreters-agq0 under language
+// epic forge-crafting-intepreters-ayq3.
+
+spec "string.byte(i): basic byte access" {
+    then "byte(0) of \"abc\" is 0x61 (ASCII 'a')" {
+        "abc".byte(0) == 97
+    }
+    then "byte(1) of \"abc\" is 0x62 (ASCII 'b')" {
+        "abc".byte(1) == 98
+    }
+    then "byte(2) of \"abc\" is 0x63 (ASCII 'c')" {
+        "abc".byte(2) == 99
+    }
+    then "byte() agrees with char_code() at index 0" {
+        "Z".byte(0) == "Z".char_code()
+    }
+}
+
+spec "string.byte(i): returns 0..255 (unsigned-byte range)" {
+    then "control character bytes pass through unchanged" {
+        "\t".byte(0) == 9
+    }
+    then "newline byte is 10" {
+        "\n".byte(0) == 10
+    }
+    then "DEL (0x7f) byte" {
+        "\x7f".byte(0) == 127
+    }
+}
+
+spec "string.byte(i): byte iteration over a string" {
+    then "summing all bytes of \"abc\" matches 97+98+99" {
+        let s = "abc"
+        mut sum = 0
+        mut i = 0
+        while i < s.length {
+            sum = sum + s.byte(i)
+            i = i + 1
+        }
+        sum == 294
+    }
+    then "every byte in \"hello\" is in range 0..127" {
+        let s = "hello"
+        mut all_ok = true
+        mut i = 0
+        while i < s.length {
+            let b = s.byte(i)
+            if b < 0 || b > 127 { all_ok = false }
+            i = i + 1
+        }
+        all_ok
+    }
+}
+
+spec "string.byte(i): empty string boundary" {
+    then "length of \"\" is 0 (no bytes to access)" {
+        "".length == 0
+    }
+}

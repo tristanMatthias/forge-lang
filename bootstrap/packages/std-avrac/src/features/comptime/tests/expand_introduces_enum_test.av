@@ -1,0 +1,33 @@
+// forge-crafting-intepreters-qa6i: @expand pipeline-order fix —
+// enum-decl variant. Confirms the pipeline-fix works for macro-
+// emitted enum decls too — the third decl-introducing variant
+// alongside fn and type. Match against the variants must compile
+// and dispatch at runtime.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "qa6i: @expand macro can introduce an enum decl matchable from main" {
+    then "macro-emitted Color.Red is constructible and matchable" {
+        let out = write_fixture_and_run("/tmp/avra_expand_introduces_enum_test.av", 
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_enum() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        enum Color { Red, Blue }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_enum)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let c = Color.Red\n" +
+            "    match c {\n" +
+            "        .Red -> println(\"R\")\n" +
+            "        .Blue -> println(\"B\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("R")
+    }
+}

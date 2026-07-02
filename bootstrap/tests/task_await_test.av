@@ -1,0 +1,17 @@
+spec "task await" {
+    then "spawn + await returns the body value" {
+        let task = spawn { 42 }
+        task.await == 42
+    }
+    then "spawn captures and awaits" {
+        let x = 100
+        let task = spawn { x + 7 }
+        task.await == 107
+    }
+    then "multiple tasks summed" {
+        let t1 = spawn { 10 }
+        let t2 = spawn { 20 }
+        let t3 = spawn { 30 }
+        (t1.await + t2.await + t3.await) == 60
+    }
+}

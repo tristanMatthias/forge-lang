@@ -1,0 +1,340 @@
+// WHY: parses avra.toml build manifests per docs/spec_build_manifest.md.
+// Extracts [package] identity, [bin]/[lib] targets, and [profile.*]
+// sections. Read by the compile pipeline (to know what package we are
+// building) and by the new build system (to fingerprint inputs and
+// resolve deps).
+//
+// The previous version of this file only read [package] name/version
+// and silently ignored manifests that used [project] instead. Both
+// readers exist now: load_package_config() is the legacy compatible
+// view; load_manifest() is the full v1.0 schema.
+
+use core.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_toml_get_section_string,
+    avra_toml_get_section_int,
+    avra_toml_get_section_bool,
+    avra_toml_has_section,
+}
+
+/// Legacy view of an `avra.toml` — name + version + found flag.
+/// Retained for backwards compatibility with existing consumers
+/// (cli/main.av compile + check pipelines). New code should use
+/// `load_manifest` instead.
+///
+/// @field name    — `name = "..."` from the `[package]` table.
+/// @field version — `version = "..."` from the `[package]` table.
+/// @field found   — true when an `avra.toml` was actually loaded.
+export type PackageConfig = {
+    name: string,
+    version: string,
+    found: bool,
+}
+
+fn default_config() -> PackageConfig {
+    PackageConfig { name: "", version: "", found: false }
+}
+
+/// Read `avra.toml` from `dir` and extract the `[package]`
+/// `name` / `version` keys. Returns the default config when the
+/// file is absent or has no `[package]` section.
+export fn load_package_config(dir: string) -> PackageConfig {
+    let toml_path = "${dir}avra.toml"
+    if !avra_selfhost_file_exists(toml_path) {
+        return default_config()
+    }
+    let content = avra_selfhost_read_file(toml_path)
+    if !avra_toml_has_section(content, "package") {
+        return default_config()
+    }
+    let pkg_name = avra_toml_get_section_string(content, "package", "name")
+    let pkg_version = avra_toml_get_section_string(content, "package", "version")
+    PackageConfig { name: pkg_name, version: pkg_version, found: true }
+}
+
+/// Build profile (`[profile.dev]` / `[profile.release]` / custom).
+/// Profile flags participate in the build fingerprint; switching
+/// profiles forces a rebuild of every unit.
+///
+/// Defaults match docs/spec_build_manifest.md.
+export type BuildProfile = {
+    name: string,            // profile name (e.g. "dev", "release")
+    opt_level: int,          // 0..3
+    debug: bool,             // emit debug info
+    overflow_checks: bool,
+    incremental: bool,
+    coverage: bool,
+}
+
+/// Compile target: a binary entry (`[bin]`) or library root (`[lib]`).
+/// At least one of these must be present (or defaultable from
+/// `src/main.av` / `src/lib.av`) for a manifest to be buildable.
+///
+/// Tests are NOT a manifest target — they're discovered by
+/// convention (any `*_test.av` in the package tree). The build
+/// driver's test command synthesizes BuildInputs per package
+/// directly, no manifest declaration needed.
+export type BuildTarget = {
+    kind: string,            // "bin" or "lib"
+    name: string,            // defaults to package name
+    path: string,            // resolved relative to project root
+    present: bool,           // false when this target is not declared
+}
+
+/// One entry from `[dependencies]`. v1 supports path-based deps
+/// only — version-resolved (`"0.5"`) and git deps parse but stay
+/// unresolved until a registry / fetcher exists.
+///
+/// @field name  the dependency identifier as it appears in TOML
+///              (e.g. `"@std/avrac"`).
+/// @field path  resolved local filesystem path; "" when this is a
+///              version-only or git dep we can't resolve yet.
+export type Dep = {
+    name: string,
+    path: string,
+}
+
+
+/// Full v1.0 manifest view. Mirrors docs/spec_build_manifest.md.
+/// Profile lookups are exposed via `profile_dev` / `profile_release`;
+/// future custom profiles will require an indexed list once the
+/// language has it (the bootstrap currently lacks String->T map
+/// support in stable codegen, so we keep the two named profiles
+/// explicit for v1.0).
+export type Manifest = {
+    found: bool,
+    path: string,            // absolute path to the avra.toml that was read
+    name: string,
+    version: string,
+    edition: string,
+    description: string,
+    bin: BuildTarget,
+    lib: BuildTarget,
+    profile_dev: BuildProfile,
+    profile_release: BuildProfile,
+    deps: List<Dep>,         // [dependencies] parsed in TOML order
+}
+
+fn default_target(kind: string) -> BuildTarget {
+    BuildTarget { kind: kind, name: "", path: "", present: false }
+}
+
+fn default_profile(name: string) -> BuildProfile {
+    // dev defaults from docs/spec_build_manifest.md.
+    BuildProfile {
+        name: name,
+        opt_level: 0,
+        debug: true,
+        overflow_checks: true,
+        incremental: true,
+        coverage: false,
+    }
+}
+
+fn release_defaults() -> BuildProfile {
+    BuildProfile {
+        name: "release",
+        opt_level: 2,
+        debug: false,
+        overflow_checks: false,
+        incremental: true,
+        coverage: false,
+    }
+}
+
+fn default_manifest() -> Manifest {
+    Manifest {
+        found: false,
+        path: "",
+        name: "",
+        version: "",
+        edition: "",
+        description: "",
+        bin: default_target("bin"),
+        lib: default_target("lib"),
+        profile_dev: default_profile("dev"),
+        profile_release: release_defaults(),
+        deps: [],
+    }
+}
+
+fn read_target(content: string, kind: string, pkg_name: string) -> BuildTarget {
+    if !avra_toml_has_section(content, kind) {
+        return default_target(kind)
+    }
+    let raw_name = avra_toml_get_section_string(content, kind, "name")
+    let raw_path = avra_toml_get_section_string(content, kind, "path")
+    let resolved_name = if raw_name == "" { pkg_name } else { raw_name }
+    BuildTarget {
+        kind: kind,
+        name: resolved_name,
+        path: raw_path,
+        present: true,
+    }
+}
+
+/// Parse the `[dependencies]` section into a List<Dep>. Each TOML
+/// entry is one line of the form `key = value`. Supported value
+/// shapes:
+///
+///   "X.Y"                   → version-only (unresolved in v1)
+///   { path = "..." }        → path dep (the v1 supported form)
+///   { git = "..." }         → git dep (parses, unresolved in v1)
+///
+/// Walks the section text line-by-line (the TOML helpers can't
+/// iterate keys), extracts `key = value`, then pulls `path = "..."`
+/// out of the inline table when present. Quoted keys
+/// (`"@std/avrac" = ...`) are recognised by stripping the surrounding
+/// quotes after splitting on `=`.
+fn read_dependencies(content: string) -> List<Dep> {
+    if !avra_toml_has_section(content, "dependencies") {
+        return []
+    }
+    let header = "[dependencies]"
+    let header_idx = content.index_of(header)
+    if header_idx < 0 { return [] }
+    let body_start = header_idx + header.length
+    // Find the next [ at line start, or end of string. Section ends
+    // at the next [-prefixed line.
+    let body_end = find_next_section(content, body_start)
+    let section = content.substring(body_start, body_end)
+
+    parse_dep_lines(section)
+}
+
+/// Find the next `\n[` (next section header) starting from `from`.
+/// Returns content.length if none.
+fn find_next_section(content: string, from: int) -> int {
+    mut i = from
+    while i + 1 < content.length {
+        if content.byte(i) == 10 && content.byte(i + 1) == 91 {  // \n[
+            return i
+        }
+        i = i + 1
+    }
+    content.length
+}
+
+/// Walk `section` line by line, pushing Dep entries onto a List<Dep>.
+/// Source order falls out of .push directly — no reverse pass needed.
+fn parse_dep_lines(section: string) -> List<Dep> {
+    mut result: List<Dep> = []
+    mut start = 0
+    mut i = 0
+    while i <= section.length {
+        let at_end = i == section.length
+        let is_nl = !at_end && section.byte(i) == 10
+        if at_end || is_nl {
+            let line = section.substring(start, i).trim()
+            if line.length > 0 && !line.starts_with("#") {
+                let dep = parse_dep_line(line)
+                if dep.name != "" {
+                    result.push(dep)
+                }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    result
+}
+
+/// Parse one `key = value` dep line. Quoted keys are unwrapped.
+/// Returns Dep{name="", path=""} when the line doesn't parse as a
+/// dependency entry — caller skips empty entries.
+fn parse_dep_line(line: string) -> Dep {
+    let eq = line.index_of("=")
+    if eq < 0 { return Dep { name: "", path: "" } }
+    let raw_key = line.substring(0, eq).trim()
+    let raw_val = line.substring(eq + 1, line.length).trim()
+    let key = if raw_key.starts_with("\"") && raw_key.ends_with("\"") && raw_key.length >= 2 {
+        raw_key.substring(1, raw_key.length - 1)
+    } else {
+        raw_key
+    }
+    // Pull `path = "..."` out of the value. The value is either a
+    // string literal (`"X.Y"` — version) or an inline table
+    // (`{ path = "..." }`, `{ git = "..." }`, etc.). For v1 we only
+    // resolve `path`.
+    let path_marker = "path"
+    let path_idx = raw_val.index_of(path_marker)
+    if path_idx < 0 {
+        return Dep { name: key, path: "" }
+    }
+    // Find the first `"` after `path`, then the matching closing `"`.
+    let q1 = find_char_after(raw_val, "\"", path_idx)
+    if q1 < 0 { return Dep { name: key, path: "" } }
+    let q2 = find_char_after(raw_val, "\"", q1 + 1)
+    if q2 < 0 { return Dep { name: key, path: "" } }
+    Dep {
+        name: key,
+        path: raw_val.substring(q1 + 1, q2),
+    }
+}
+
+/// Linear scan for `ch` in `s` starting at `from`. Returns -1 when
+/// not found. We don't have a string.index_of_from yet so we offset
+/// by hand.
+fn find_char_after(s: string, ch: string, from: int) -> int {
+    let rest = s.substring(from, s.length)
+    let idx = rest.index_of(ch)
+    if idx < 0 { return 0 - 1 }
+    from + idx
+}
+
+fn read_profile(content: string, name: string, defaults: BuildProfile) -> BuildProfile {
+    let section = "profile.${name}"
+    if !avra_toml_has_section(content, section) {
+        return defaults
+    }
+    let opt = avra_toml_get_section_int(content, section, "opt_level", defaults.opt_level)
+    let dbg = avra_toml_get_section_bool(content, section, "debug", if defaults.debug { 1 } else { 0 }) != 0
+    let oflow = avra_toml_get_section_bool(content, section, "overflow_checks",
+        if defaults.overflow_checks { 1 } else { 0 }) != 0
+    let incr = avra_toml_get_section_bool(content, section, "incremental",
+        if defaults.incremental { 1 } else { 0 }) != 0
+    let cov = avra_toml_get_section_bool(content, section, "coverage",
+        if defaults.coverage { 1 } else { 0 }) != 0
+    BuildProfile {
+        name: name,
+        opt_level: opt,
+        debug: dbg,
+        overflow_checks: oflow,
+        incremental: incr,
+        coverage: cov,
+    }
+}
+
+/// Read and parse `avra.toml` from `dir`. Returns a default-valued
+/// Manifest with `found = false` when the file is absent or missing
+/// a `[package]` section. Validation errors (per docs/spec_build_manifest.md
+/// rules) surface as F4xxx codes via the diagnostic bag — this loader
+/// itself is permissive and returns a Manifest the caller can inspect.
+export fn load_manifest(dir: string) -> Manifest {
+    let toml_path = "${dir}avra.toml"
+    if !avra_selfhost_file_exists(toml_path) {
+        return default_manifest()
+    }
+    let content = avra_selfhost_read_file(toml_path)
+    if !avra_toml_has_section(content, "package") {
+        return default_manifest()
+    }
+    let pkg_name = avra_toml_get_section_string(content, "package", "name")
+    let pkg_version = avra_toml_get_section_string(content, "package", "version")
+    let edition = avra_toml_get_section_string(content, "package", "edition")
+    let description = avra_toml_get_section_string(content, "package", "description")
+    Manifest {
+        found: true,
+        path: toml_path,
+        name: pkg_name,
+        version: pkg_version,
+        edition: edition,
+        description: description,
+        deps: read_dependencies(content),
+        bin: read_target(content, "bin", pkg_name),
+        lib: read_target(content, "lib", pkg_name),
+        profile_dev: read_profile(content, "dev", default_profile("dev")),
+        profile_release: read_profile(content, "release", release_defaults()),
+    }
+}

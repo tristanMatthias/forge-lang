@@ -1,0 +1,54 @@
+// Fixture: validates parallel path-dep pre-build via xargs -P.
+// Three independent path-deps; with --jobs=3 they should build
+// concurrently. Smoking gun: total wall < 3× single-dep cost.
+//
+// Tracking ticket: forge-crafting-intepreters-e20h.
+
+use @std.avrac.features.modules.{package_meta_path_for}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_e20h_parallel"
+    avra_shell_exec("rm -rf ${root}")
+    avra_shell_exec("mkdir -p ${root}/a/src ${root}/b/src ${root}/c/src ${root}/app/src")
+
+    // Three independent dep packages, each a small lib.
+    avra_shell_exec("printf '[package]\\nname = \"@test/a\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"a\"\\npath = \"src/lib.av\"\\n' > ${root}/a/avra.toml")
+    avra_shell_exec("printf 'export fn a_value() -> int { 1 }\\n' > ${root}/a/src/lib.av")
+    avra_shell_exec("printf '[package]\\nname = \"@test/b\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"b\"\\npath = \"src/lib.av\"\\n' > ${root}/b/avra.toml")
+    avra_shell_exec("printf 'export fn b_value() -> int { 2 }\\n' > ${root}/b/src/lib.av")
+    avra_shell_exec("printf '[package]\\nname = \"@test/c\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"c\"\\npath = \"src/lib.av\"\\n' > ${root}/c/avra.toml")
+    avra_shell_exec("printf 'export fn c_value() -> int { 3 }\\n' > ${root}/c/src/lib.av")
+
+    // App with all three as deps.
+    avra_shell_exec("printf '[package]\\nname = \"@test/app\"\\nversion = \"0.1.0\"\\n[bin]\\nname = \"app\"\\npath = \"src/main.av\"\\n[dependencies]\\n\"@test/a\" = { path = \"../a\" }\\n\"@test/b\" = { path = \"../b\" }\\n\"@test/c\" = { path = \"../c\" }\\n' > ${root}/app/avra.toml")
+    avra_shell_exec("printf 'fn main() -> int { 0 }\\n' > ${root}/app/src/main.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Run with AVRA_JOBS=3 — all 3 deps should build concurrently.
+    let rc = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=3 ${bs2} build --emit_metadata")
+    probe("parallel_build_rc_zero", rc == 0)
+
+    probe("a_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/a")) != 0)
+    probe("b_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/b")) != 0)
+    probe("c_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/c")) != 0)
+
+    // AVRA_JOBS=1 (sequential) — second run hits the cache for each
+    // dep so .meta.bin from the first run is preserved. Just verify
+    // the command exits clean (correctness path identical to N=many).
+    let rc_seq = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=1 ${bs2} build --emit_metadata")
+    probe("sequential_build_rc_zero", rc_seq == 0)
+
+    0
+}

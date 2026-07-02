@@ -1,0 +1,311 @@
+// vez6.8 — `component foo implements TraitA, TraitB { ... }` parser test.
+// Confirms the parser threads the trait-name list through into the
+// ComponentDef AST so later passes (typeck, expand) can consume it.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{Stmt, SStmt, stmt_unwrap}
+
+fn first_component_implements(source: string) -> List<string> {
+    let r = parse_program_source(source)
+    if r.had_error == 1 { return [] }
+    if r.stmts == null { return [] }
+    implements_of_first_component(r.stmts!)
+}
+
+/// Returns the parse-error flag — used by red-team tests that
+/// assert a malformed `implements` clause is rejected rather
+/// than silently misinterpreted.
+fn parse_has_error(source: string) -> bool {
+    let r = parse_program_source(source)
+    r.had_error == 1
+}
+
+/// Walk the whole stmt list, collecting each ComponentDef's
+/// implements list into a list of (component_name, impl_count)
+/// pairs. Used by tests that file multiple component defs in
+/// one source to confirm each gets its own implements list.
+fn all_component_impl_counts(stmts: List<SStmt>) -> List<int> {
+    mut out: List<int> = []
+    walk_impl_counts(stmts, out)
+}
+
+fn walk_impl_counts(stmts: List<SStmt>, acc_in: List<int>) -> List<int> {
+    mut acc = acc_in
+    mut i = 0
+    while i < stmts.length {
+        let inner = stmt_unwrap(stmts[i].node)
+        match inner {
+            .ComponentDef(_, _, _, _, impls, _) -> acc.push(impl_count(impls))
+            _ -> {}
+        }
+        i = i + 1
+    }
+    acc
+}
+
+fn implements_of_first_component(stmts: List<SStmt>) -> List<string> {
+    mut i = 0
+    while i < stmts.length {
+        let inner = stmt_unwrap(stmts[i].node)
+        match inner {
+            .ComponentDef(_, _, _, _, impls, _) -> return impls
+            _ -> {}
+        }
+        i = i + 1
+    }
+    []
+}
+
+fn impl_count(impls: List<string>) -> int { impls.length }
+
+fn first_impl_name(impls: List<string>) -> string {
+    if impls.length > 0 { impls[0] } else { "" }
+}
+
+fn second_impl_name(impls: List<string>) -> string {
+    if impls.length > 1 { impls[1] } else { "" }
+}
+
+spec "vez6.8: implements clause parses trait names" {
+    then "single trait: `implements Runnable`" {
+        let impls = first_component_implements("component Command implements Runnable {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "two traits comma-separated" {
+        let impls = first_component_implements("component Command implements Runnable, Describable {
+}")
+        impl_count(impls) == 2
+            && first_impl_name(impls) == "Runnable"
+            && second_impl_name(impls) == "Describable"
+    }
+    then "three traits comma-separated" {
+        let impls = first_component_implements("component Command implements A, B, C {
+}")
+        impl_count(impls) == 3 && first_impl_name(impls) == "A"
+    }
+    then "no implements clause yields End" {
+        let impls = first_component_implements("component Command {
+}")
+        impl_count(impls) == 0
+    }
+    then "implements + config block both present" {
+        let impls = first_component_implements("component Command implements Runnable {
+    config { description: string = \"\" }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "implements + children block both present" {
+        let impls = first_component_implements("component Cli implements Runnable {
+    children { commands: List<Command> }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "implements + config + children all present" {
+        let impls = first_component_implements("component Cli implements Runnable, Describable {
+    config { name: string = \"\" }
+    children { commands: List<Command> }
+}")
+        impl_count(impls) == 2
+            && first_impl_name(impls) == "Runnable"
+            && second_impl_name(impls) == "Describable"
+    }
+}
+
+// ── Red-team edges (vez6.8.3) ──
+
+spec "vez6.8: implements parser edges" {
+    then "trailing whitespace before `{` after implements list" {
+        let impls = first_component_implements("component Cmd implements Runnable    {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "implements with body content (fn decls etc.) coexists" {
+        let impls = first_component_implements("component Cmd implements Runnable {
+    fn helper() -> int { return 0 }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "trailing comma after the last trait name is tolerated" {
+        let impls = first_component_implements("component Cmd implements Runnable, Describable, {
+}")
+        impl_count(impls) == 2
+    }
+    then "implements after legacy paren-form: component Cmd(p: int) implements Trait { ... }" {
+        let impls = first_component_implements("component Cmd implements Logged (x: int) {
+}")
+        // The implements clause sits BEFORE legacy parens — the parser
+        // accepts the (params) form afterwards. This pins the order
+        // so a future refactor can't silently swap precedence.
+        impl_count(impls) == 1 && first_impl_name(impls) == "Logged"
+    }
+    then "many traits in a row (4+) all register with correct order" {
+        let impls = first_component_implements("component Cmd implements A, B, C, D {
+}")
+        impl_count(impls) == 4 && first_impl_name(impls) == "A"
+    }
+    then "implements + config block + body fn coexist without confusion" {
+        let impls = first_component_implements("component Cmd implements Runnable {
+    config { name: string = \"\" }
+    fn helper() -> int { return 0 }
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "single-letter trait name parses (no min-length confusion)" {
+        let impls = first_component_implements("component Cmd implements R {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "R"
+    }
+    then "implements then immediate `{` (no whitespace) parses" {
+        let impls = first_component_implements("component Cmd implements Runnable{
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+}
+
+// ── vez6.8.3 cleanup C: red-team gates ──
+//
+// The earlier `implements parser edges` spec covered the happy-path
+// + lexer adjacencies. These pin malformed inputs and pin multi-def
+// fan-out so a future refactor can't silently break either.
+
+spec "vez6.8.3: implements parser rejects malformed input" {
+    then "no trait name between `implements` and `{`" {
+        // The parser should require at least one trait name. An
+        // empty list silently parsed into End would let downstream
+        // passes assume "no traits" — which is the same shape as
+        // `component Cmd { ... }` — masking the user's intent.
+        parse_has_error("component Cmd implements {
+}")
+    }
+    then "no trait name between `implements` and EOF" {
+        // Same as above, with no body — `implements` followed by
+        // EOF should produce a parse error, not synthesise an
+        // anonymous ComponentDef.
+        parse_has_error("component Cmd implements")
+    }
+    then "comma with no following identifier (`,{`) errors" {
+        // `implements A,,B` reaches the second iteration with the
+        // next token as `,` not Identifier — consume_identifier
+        // should reject.
+        parse_has_error("component Cmd implements A,, B {
+}")
+    }
+    then "missing brace after implements + bare identifier" {
+        // After consuming `implements Runnable` the parser falls
+        // into the legacy-block path because the next token is
+        // an identifier (`Other`). Since implements was set, the
+        // legacy-block guard at parser.av:80-86 must reject
+        // (`implements` not allowed on a component block).
+        parse_has_error("component Cmd implements Runnable Other {
+}")
+    }
+}
+
+spec "vez6.8.3: implements clause coexists with neighbouring decls" {
+    then "two ComponentDefs in one file each get their own implements list" {
+        // Confirms the implements parser doesn't leak state across
+        // adjacent definitions — the second def's clause is
+        // independent of the first's.
+        let r = parse_program_source("component A implements X {
+}
+component B implements Y, Z {
+}")
+        if r.had_error == 1 { false }
+        else if r.stmts == null { false }
+        else {
+            let counts = all_component_impl_counts(r.stmts!)
+            counts.length == 2 && counts[0] == 1 && counts[1] == 2
+        }
+    }
+    then "ComponentDef sandwiched between non-component stmts retains its implements list" {
+        let r = parse_program_source("fn lead() -> int { return 0 }
+component Cmd implements Runnable {
+}
+fn trail() -> int { return 1 }")
+        if r.had_error == 1 { false }
+        else if r.stmts == null { false }
+        else {
+            let counts = all_component_impl_counts(r.stmts!)
+            counts.length == 1 && counts[0] == 1
+        }
+    }
+    then "ComponentDef with implements inside a module wrapper still parses" {
+        let r = parse_program_source("mod inner {
+    component Cmd implements Runnable {
+    }
+}")
+        // Module-nested ComponentDefs are reached via walk; we
+        // don't dig the impl list out here, but we DO require
+        // the source to parse cleanly. A regression where module-
+        // nested components broke implements parsing would manifest
+        // as had_error.
+        r.had_error == 0
+    }
+}
+
+spec "vez6.8.3: implements parser is whitespace-tolerant" {
+    then "newline between `implements` and the first trait name" {
+        let impls = first_component_implements("component Cmd implements
+    Runnable {
+}")
+        impl_count(impls) == 1 && first_impl_name(impls) == "Runnable"
+    }
+    then "newline between commas in the trait list" {
+        let impls = first_component_implements("component Cmd implements Runnable,
+    Describable {
+}")
+        impl_count(impls) == 2
+            && first_impl_name(impls) == "Runnable"
+            && second_impl_name(impls) == "Describable"
+    }
+    then "deep nesting (8 traits) preserves order" {
+        // Pins the recursive parser against a tail-position
+        // refactor that might accidentally reverse the list.
+        let impls = first_component_implements("component Cmd implements A, B, C, D, E, F, G, H {
+}")
+        impl_count(impls) == 8 && first_impl_name(impls) == "A"
+    }
+}
+
+// ── vez6.8.3 cleanup C: stress + recursion gates ──
+//
+// Section 3 of the cleanup formula: programs that exercise the
+// implements parser at scale. If the recursive walker had a
+// pathological cost or the per-def state leaked, these would
+// surface here.
+
+fn repeat_with_idx(template_left: string, template_right: string, n: int) -> string {
+    mut out = ""
+    mut i = 0
+    while i < n {
+        out = out + template_left + string(i) + template_right
+        i = i + 1
+    }
+    out
+}
+
+spec "vez6.8.3: stress — many components with implements clauses" {
+    then "100 ComponentDefs each declaring one trait parse cleanly" {
+        // Single-trait variant — pins parser cost against scaling
+        // pathologies in the per-def boundary (one `implements` per
+        // ComponentDef, not one giant trait list).
+        let src = repeat_with_idx("component C", " implements Runnable {\n}\n", 100)
+        let r = parse_program_source(src)
+        if r.had_error == 1 { false }
+        else if r.stmts == null { false }
+        else {
+            let counts = all_component_impl_counts(r.stmts!)
+            counts.length == 100 && counts[0] == 1 && counts[99] == 1
+        }
+    }
+    then "32 traits in one implements clause preserves order + count" {
+        // Single-def variant — pins the recursive parse_implements_list
+        // against a deeply recursive list. The parser stack should
+        // handle this with no stack-overflow risk (LLVM target
+        // stack is the implicit limit).
+        let src = "component Cmd implements A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, BB, CC, DD, EE, FF {\n}"
+        let impls = first_component_implements(src)
+        impl_count(impls) == 32 && first_impl_name(impls) == "A"
+    }
+}

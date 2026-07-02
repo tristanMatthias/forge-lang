@@ -224,7 +224,13 @@ impl DiagnosticBag {
         self.print_to_limited(writer, source, filename, usize::MAX);
     }
 
-    pub fn print_to_limited(&self, writer: &mut dyn std::io::Write, source: &str, filename: &str, max_errors: usize) {
+    pub fn print_to_limited(
+        &self,
+        writer: &mut dyn std::io::Write,
+        source: &str,
+        filename: &str,
+        max_errors: usize,
+    ) {
         use ariadne::{Color, Label, Report, ReportKind, Source};
 
         let mut error_count = 0;
@@ -232,7 +238,12 @@ impl DiagnosticBag {
             if diag.severity == Severity::Error {
                 error_count += 1;
                 if error_count > max_errors {
-                    writeln!(writer, "... and {} more errors (use --max-errors to see more)", self.error_count() - max_errors).ok();
+                    writeln!(
+                        writer,
+                        "... and {} more errors (use --max-errors to see more)",
+                        self.error_count() - max_errors
+                    )
+                    .ok();
                     break;
                 }
             }
@@ -405,8 +416,16 @@ mod tests {
     fn test_print_to_with_multi_labels() {
         let source = "let x = 42\nlet y = x + z\n";
         let d = Diagnostic::error("F0020", "undefined variable 'z'", Span::new(24, 25, 2, 13))
-            .with_label(Span::new(24, 25, 2, 13), "not found in scope", LabelKind::Primary)
-            .with_label(Span::new(12, 23, 2, 1), "in this expression", LabelKind::Secondary);
+            .with_label(
+                Span::new(24, 25, 2, 13),
+                "not found in scope",
+                LabelKind::Primary,
+            )
+            .with_label(
+                Span::new(12, 23, 2, 1),
+                "in this expression",
+                LabelKind::Secondary,
+            );
 
         let mut bag = DiagnosticBag::new();
         bag.report(d);
@@ -487,7 +506,11 @@ mod tests {
         let mut bag = DiagnosticBag::new();
         bag.report(
             Diagnostic::error("F0012", "type mismatch", Span::new(5, 10, 1, 6))
-                .with_label(Span::new(5, 10, 1, 6), "expected string", LabelKind::Primary)
+                .with_label(
+                    Span::new(5, 10, 1, 6),
+                    "expected string",
+                    LabelKind::Primary,
+                )
                 .with_suggestion(
                     "wrap with string()",
                     vec![Edit {
@@ -504,6 +527,9 @@ mod tests {
         let diag = &parsed["diagnostics"][0];
         assert_eq!(diag["labels"][0]["kind"], "primary");
         assert_eq!(diag["suggestions"][0]["confidence"], 0.95);
-        assert_eq!(diag["suggestions"][0]["edits"][0]["replacement"], "string(8080)");
+        assert_eq!(
+            diag["suggestions"][0]["edits"][0]["replacement"],
+            "string(8080)"
+        );
     }
 }

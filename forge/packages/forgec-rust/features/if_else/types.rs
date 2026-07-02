@@ -13,9 +13,16 @@ pub struct IfData {
 }
 
 impl crate::feature::FeatureNode for IfData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(IfData {
             condition: Box::new((fns.sub_expr)(&self.condition)),
             then_branch: (fns.sub_block)(&self.then_branch),
@@ -27,7 +34,8 @@ impl crate::feature::FeatureNode for IfData {
 impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of an if/else expression via the Feature dispatch system.
     pub(crate) fn infer_if_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, IfData, |data| self.infer_if_type(&data.then_branch, data.else_branch.as_ref()))
+        feature_check!(self, fe, IfData, |data| self
+            .infer_if_type(&data.then_branch, data.else_branch.as_ref()))
     }
 
     /// Infer the return type of an if/else expression.
@@ -40,12 +48,14 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             Type::Void
         };
-        let else_type = else_branch.and_then(|eb| {
-            eb.statements.last().and_then(|s| match s {
-                Statement::Expr(e) => Some(self.infer_type(e)),
-                _ => None,
+        let else_type = else_branch
+            .and_then(|eb| {
+                eb.statements.last().and_then(|s| match s {
+                    Statement::Expr(e) => Some(self.infer_type(e)),
+                    _ => None,
+                })
             })
-        }).unwrap_or(Type::Void);
+            .unwrap_or(Type::Void);
         // If one branch is nullable (null) and the other is not, wrap in Nullable
         let then_is_null = matches!(then_type, Type::Nullable(_));
         let else_is_null = matches!(else_type, Type::Nullable(_));

@@ -1,0 +1,69 @@
+// Regression for forge-crafting-intepreters-yf2s: monomorphization
+// missed generic calls nested inside `with` expression field
+// initializers — `cur with { trait_impls: list_push_copy(...) }`
+// silently skipped the inner generic call.
+//
+// Root cause in features/generics/mono.av: the .With(obj, _) arms of
+// both collect_inst_expr and rewrite_expr only walked `obj`, dropping
+// the override expressions on the floor. So mono never collected the
+// inst for the inner generic, never generated the specialization, and
+// never rewrote the call to the mangled name. Codegen then crashed
+// with `undefined function @std::...::list_push_copy`.
+//
+// This test confirms the fix by exercising a generic fn called
+// directly inside a `with` field init — if mono ever regresses, this
+// will fail at compile time, not just at the next time someone tries
+// to refactor a helper away.
+
+type MwEntry = { value: int }
+type MwBag = { entries: List<MwEntry>, count: int }
+
+/// Local generic helper — the bug fires on ANY `list_push_copy<T>`
+/// inside a `with` override, not specifically the std-avrac import.
+/// A local generic keeps the test self-contained (no `use list_ops`
+/// needed at spec-test compile time).
+fn mw_push_copy<T>(xs: List<T>, x: T) -> List<T> {
+    mut out: List<T> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
+
+fn mw_bag_new() -> MwBag {
+    let empty: List<MwEntry> = []
+    MwBag { entries: empty, count: 0 }
+}
+
+/// The shape that previously broke mono: a generic call sitting
+/// directly inside a `with` override expression. Mono must spec
+/// `mw_push_copy<MwEntry>` from this call site, which means
+/// collect_inst_expr's .With(obj, inits) arm must recurse into inits.
+fn mw_bag_push(bag: MwBag, e: MwEntry) -> MwBag {
+    bag with { entries: mw_push_copy(bag.entries, e), count: bag.count + 1 }
+}
+
+spec "mono recurses into `with` field initializers" {
+    given "an empty bag" {
+        then "pushing one entry threads through with-override" {
+            let b0 = mw_bag_new()
+            let b1 = mw_bag_push(b0, MwEntry { value: 7 })
+            b1.entries.length == 1 && b1.count == 1 && b1.entries[0].value == 7
+        }
+        then "chained with-pushes preserve order and count" {
+            let b0 = mw_bag_new()
+            let b1 = mw_bag_push(b0, MwEntry { value: 1 })
+            let b2 = mw_bag_push(b1, MwEntry { value: 2 })
+            let b3 = mw_bag_push(b2, MwEntry { value: 3 })
+            b3.count == 3
+                && b3.entries[0].value == 1
+                && b3.entries[1].value == 2
+                && b3.entries[2].value == 3
+        }
+        then "original bag is not mutated (snapshot semantics)" {
+            let b0 = mw_bag_new()
+            let b1 = mw_bag_push(b0, MwEntry { value: 99 })
+            let _ = b1.count
+            b0.entries.length == 0 && b0.count == 0
+        }
+    }
+}

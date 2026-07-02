@@ -1,0 +1,29 @@
+// Polymorphism red team: traits, dyn dispatch, generics
+
+trait PrtSpeak { fn say(self) -> string }
+type PrtDog = { name: string }
+type PrtCat = { name: string }
+impl PrtSpeak for PrtDog { fn say(self) -> string { "woof" } }
+impl PrtSpeak for PrtCat { fn say(self) -> string { "meow" } }
+
+type PrtPair = { first: int, second: string }
+
+spec "polymorphism red team" {
+    then "dog says woof" {
+        let d: PrtSpeak = PrtDog { name: "Rex" }
+        d.say() == "woof"
+    }
+    then "cat says meow" {
+        let c: PrtSpeak = PrtCat { name: "Whiskers" }
+        c.say() == "meow"
+    }
+    then "list reduce sum" {
+        let nums = [1, 2, 3]
+        let total = nums.reduce(0, (acc, x) -> acc + x)
+        total == 6
+    }
+    then "pair fields" {
+        let p = PrtPair { first: 1, second: "hello" }
+        p.first == 1
+    }
+}

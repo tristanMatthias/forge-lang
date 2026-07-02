@@ -1,0 +1,32 @@
+// WHY: F9005 lint — the manual `mut i = 0; while i < xs.length { … }`
+// index+element antipattern should be `for (i, x) in xs.enumerate()`.
+// Always on. Structural AST walk (Mut("i",_,0) followed by
+// While(i < coll.length) whose body reads `i` as a value AND subscripts
+// `xs[i]`, stepping `i` exactly once), not a string heuristic. The lint
+// is deliberately narrow: element-only loops, string scans that never
+// subscript, and multi-step counters are left untouched.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "F9005: manual index-loop lint" {
+    then "fires on an index+element loop (`i` used as value AND `xs[i]`)" {
+        let src = "fn s(xs: List<int>) -> int {\n  mut t = 0\n  mut i = 0\n  while i < xs.length { t = t + i * xs[i]\n    i = i + 1 }\n  t\n}\nfn main() -> int { s([1,2,3]) }\n"
+        avra_shell_exec("printf '%s' '${src}' > /tmp/avra_f9005_fixture.av")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_f9005_fixture.av 2>&1 || true")
+        out.contains("F9005") && out.contains("xs")
+    }
+
+    then "does not fire on an idiomatic for-in loop" {
+        let src = "fn s(xs: List<int>) -> int {\n  mut t = 0\n  for x in xs { t = t + x }\n  t\n}\nfn main() -> int { s([1,2,3]) }\n"
+        avra_shell_exec("printf '%s' '${src}' > /tmp/avra_f9005_clean.av")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_f9005_clean.av 2>&1 || true")
+        !out.contains("F9005")
+    }
+
+    then "does not fire on an element-only index loop (no value-use of `i`)" {
+        let src = "fn s(xs: List<int>) -> int {\n  mut t = 0\n  mut i = 0\n  while i < xs.length { t = t + xs[i]\n    i = i + 1 }\n  t\n}\nfn main() -> int { s([1,2,3]) }\n"
+        avra_shell_exec("printf '%s' '${src}' > /tmp/avra_f9005_elemonly.av")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_f9005_elemonly.av 2>&1 || true")
+        !out.contains("F9005")
+    }
+}

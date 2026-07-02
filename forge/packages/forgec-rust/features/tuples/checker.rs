@@ -9,7 +9,8 @@ use super::types::TupleLitData;
 impl TypeChecker {
     /// Type-check a tuple literal expression via the Feature dispatch system.
     pub(crate) fn check_tuple_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, TupleLitData, |data| self.check_tuple_lit(&data.elements))
+        feature_check!(self, fe, TupleLitData, |data| self
+            .check_tuple_lit(&data.elements))
     }
 
     /// Type-check a tuple literal.

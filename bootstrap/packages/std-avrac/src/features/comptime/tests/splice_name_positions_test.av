@@ -1,0 +1,126 @@
+// Identifier-position splice in impl-target and struct-literal
+// constructor positions (the type-name and type-annotation positions are
+// covered separately).
+//
+// A `@comptime` macro reads a per-instance name from its input and emits
+// `type ~T = { ... }`, `impl Trait for ~T { ... }`, and `~T { ... }`
+// struct literals — each `~T` resolving to the macro local's value at
+// expansion time. This is what lets a macro generate one distinct
+// `type Command_<inst>` + `impl Runnable` per declared command instance.
+//
+// Fixtures avoid `${...}` interpolation on purpose: the surrounding
+// test-file string literal would otherwise interpolate it itself.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "splice into impl-target and struct-literal name positions" {
+    then "impl Trait for ~name: generated impl dispatches at runtime" {
+        let out = write_fixture_and_run("/tmp/avra_splice_impl_target_test.av",
+            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "trait Greeter { fn greet(self) -> int }\n" +
+            "@comptime\n" +
+            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "    let nm = \"Gen_A\"\n" +
+            "    quote stmts {\n" +
+            "        type ~nm = { a: int }\n" +
+            "        impl Greeter for ~nm {\n" +
+            "            fn greet(self) -> int { self.a }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(gen)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {\n" +
+            "    let v = Gen_A { a: 7 }\n" +
+            "    println(string(v.greet()))\n" +
+            "}\n")
+        out.contains("7")
+    }
+
+    then "~name { ... }: struct-literal constructor name splices to the type" {
+        let out = write_fixture_and_run("/tmp/avra_splice_struct_lit_test.av",
+            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "@comptime\n" +
+            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "    let nm = \"Gen_B\"\n" +
+            "    quote stmts {\n" +
+            "        type ~nm = { a: int }\n" +
+            "        fn make(n: int) -> Gen_B { ~nm { a: n } }\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(gen)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {\n" +
+            "    println(string(make(9).a))\n" +
+            "}\n")
+        out.contains("9")
+    }
+
+    then "combined: per-instance type + impl + factory in one macro" {
+        let out = write_fixture_and_run("/tmp/avra_splice_combined_test.av",
+            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "trait Runner { fn run(self) -> int }\n" +
+            "@comptime\n" +
+            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "    let nm = \"Command_build\"\n" +
+            "    quote stmts {\n" +
+            "        type ~nm = { code: int }\n" +
+            "        impl Runner for ~nm {\n" +
+            "            fn run(self) -> int { self.code }\n" +
+            "        }\n" +
+            "        fn build_cmd() -> Command_build { ~nm { code: 42 } }\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(gen)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {\n" +
+            "    let c: dyn Runner = build_cmd()\n" +
+            "    println(string(c.run()))\n" +
+            "}\n")
+        out.contains("42")
+    }
+
+    then "splice var name with a single underscore reads fully (boundary is `__`, not `_`)" {
+        // The macro local `cmd_ty` contains a single underscore. In the
+        // mangled impl method `~cmd_ty__run`, the splice must consume the
+        // whole `cmd_ty` and stop only at the `__` separator — not truncate
+        // at the first `_`. If the boundary scan were wrong, the generated
+        // method name would be malformed and dispatch would fail.
+        let out = write_fixture_and_run("/tmp/avra_splice_underscore_test.av",
+            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "trait Runner3 { fn run(self) -> int }\n" +
+            "@comptime\n" +
+            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "    let cmd_ty = \"Cmd_With_Underscores\"\n" +
+            "    quote stmts {\n" +
+            "        type ~cmd_ty = { code: int }\n" +
+            "        impl Runner3 for ~cmd_ty {\n" +
+            "            fn run(self) -> int { self.code }\n" +
+            "        }\n" +
+            "        fn mk3() -> Cmd_With_Underscores { ~cmd_ty { code: 13 } }\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(gen)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() { println(string(mk3().run())) }\n")
+        out.contains("13")
+    }
+
+    then "non-splice names still round-trip as plain literals (no regression)" {
+        let out = write_fixture_and_run("/tmp/avra_splice_literal_test.av",
+            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "trait Greeter2 { fn greet(self) -> int }\n" +
+            "@comptime\n" +
+            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "    quote stmts {\n" +
+            "        type Plain = { a: int }\n" +
+            "        impl Greeter2 for Plain { fn greet(self) -> int { self.a } }\n" +
+            "        fn mk() -> Plain { Plain { a: 5 } }\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(gen)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() { println(string(mk().greet())) }\n")
+        out.contains("5")
+    }
+}

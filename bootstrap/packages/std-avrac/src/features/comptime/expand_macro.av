@@ -1,0 +1,1013 @@
+// WHY: @expand pass — Option C pipeline-fix per
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md.
+//
+// `@expand(macro_fn)` on a declaration registers a @comptime fn to
+// rewrite the declaration. The pipeline:
+//   parse → ... → resolve_names_pre_expand
+//        → expand_macros_collect           (pre-resolve scan into ExpandPlan)
+//        → expand_macros_eval_with_state   (post-resolve splice + fixpoint)
+//        → register_macro_decls            (additive into existing state)
+//        → rewrite_uses_macro_only         (partial re-resolve)
+//        → validate_scopes_after_expand
+//        → run_comptime → typecheck → ...
+//
+// The eval phase walks the AST; for each Stmt wrapped in
+// `@expand(M)`:
+//   1. Looks up M in the comptime registry built by
+//      `collect_comptime_fns`.
+//   2. Dispatches on M's arity:
+//        - 0 args: invoke; macro returns Stmt or List<SStmt> or
+//          ResolvedDecls (latter decoded via value_to_resolved_decls).
+//        - 1 arg:  invoke with the wrapped (unwrapped) Stmt boxed
+//          via stmt_to_value.
+//        - 2 args: invoke with (AnnotatedDecl, ResolverCtx). The
+//          AnnotatedDecl bundles the boxed stmt + annotation + the
+//          decl's canonical_path. ResolverCtx is an opaque handle
+//          the macro uses to call ctx_* (current_module / lookup_type
+//          / qualify_ident / fresh_ident / unwrap_path_to).
+//   3. Tags every spliced SStmt with `from_macro = true` so the
+//      partial re-resolve walks only the new decls.
+//   4. After each splice, register_and_repopulate augments the
+//      live ResolverState + refreshes the C-side resolver-data
+//      layer so subsequent macros (within the same iteration AND
+//      across iterations) see names introduced by earlier ones.
+//
+// Fixpoint loop: re-walks until no @expand annotations remain.
+// Cap at 16 iters with a clean exit(1) on overflow so a
+// self-referential macro surfaces as a build error.
+//
+// ComponentBlocks are dispatched specially (vez6.8.5): a
+// ComponentDef annotated with `@expand(M)` only REGISTERS the
+// mapping; each ComponentBlock instance routes through M with the
+// block as the Stmt arg.
+
+use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
+use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
+use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
+use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
+use features.quote_expr.{construct_expr}
+use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
+use list_ops.{list_concat, list_contains_str}
+
+// ── ResolverCtx state stack (step 5) ──
+//
+// Runtime helpers that maintain a process-wide stack of active
+// ResolverState pointers so `ctx_*` extern fns in macros can look
+// up the resolver for the currently-expanding @expand site. Push
+// before invoking the macro, pop after.
+
+extern fn avra_resolver_ctx_push(state: ptr) -> int
+extern fn avra_resolver_ctx_pop()
+extern fn avra_resolver_ctx_top() -> int
+
+// ── Resolver-data layer (step 5 of expand-pipeline doc) ──
+//
+// C-side scratch space populated before invoking each macro. Macros
+// call ctx_* fns; the eval dispatch reads from these via getters
+// instead of trying to introspect the opaque ResolverState ptr.
+//
+// `avra_rd_clear` resets all storage. We then call
+// `avra_rd_set_current_module`, `avra_rd_add_alias`,
+// `avra_rd_add_global` etc to populate. The macro reads them
+// during eval. The next macro invocation clears and refills.
+
+extern fn avra_rd_clear()
+extern fn avra_rd_set_current_module(s: string)
+extern fn avra_rd_add_alias(short_name: string, canonical: string)
+extern fn avra_rd_add_global(short_name: string, canonical: string)
+extern fn avra_rd_begin_type(canonical: string, kind: string) -> int
+extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_canonical: string)
+
+/// Push the active resolver state's aliases + global decls + type
+/// field info into the C-side resolver-data layer so `ctx_*` queries
+/// from inside a macro body can answer with real data. Called once
+/// per `expand_macros_eval` invocation; the data layer survives for
+/// the full eval pass. current_module is set to "" for now — the
+/// per-site tracking required to fill it accurately lives in
+/// later work (see step 5 limitations in the handoff doc).
+export fn populate_resolver_data(state: ResolverState, stmts: List<SStmt>) {
+    avra_rd_clear()
+    populate_resolver_data_into(state, stmts)
+}
+
+/// Append into the resolver-data layer WITHOUT clearing first. Used
+/// by `register_and_repopulate` so post-splice re-population doesn't
+/// wipe types registered by the initial populate call (which would
+/// leave the second-and-later macros in the same fixpoint iter
+/// unable to ctx_lookup_type any pre-existing type). so07.7.1 root
+/// cause: SStmt / SExpr were registered by the initial populate
+/// then wiped on the first macro splice, so the next iter's
+/// derive_walker invocation saw null.
+fn populate_resolver_data_into(state: ResolverState, stmts: List<SStmt>) {
+    avra_rd_set_current_module("")
+    for a in state.aliases {
+        avra_rd_add_alias(a.short_name, a.canonical)
+    }
+    for g in state.graph.all_items {
+        avra_rd_add_global(g.short_name, g.canonical)
+    }
+    populate_type_fields(stmts, "")
+}
+
+fn populate_type_fields(stmts: List<SStmt>, mod_path: string) {
+    for ss in stmts {
+        // stmt_unwrap strips every Annotated layer. Most type decls
+        // in std-avrac are `@export type Foo = {...}` so without the
+        // unwrap they'd never reach the .TypeDecl arm. so07.7.1
+        // root cause: SStmt / SExpr were silently absent from the
+        // resolver-data registry, so ctx_lookup_type from @comptime
+        // macros (derive_walker's wrapper-list discovery) saw null.
+        register_type_decl(stmt_unwrap(ss.node), mod_path)
+    }
+}
+
+fn register_type_decl(stmt: Stmt, mod_path: string) {
+    match stmt {
+        .Module(name, body) -> {
+            let child_path = qualify_or_keep(mod_path, name)
+            populate_type_fields(body, child_path)
+        }
+        .TypeDecl(name, _, fields) -> {
+            let canonical = qualify_or_keep(mod_path, name)
+            let type_id = avra_rd_begin_type(canonical, "struct")
+            for f in fields {
+                avra_rd_add_type_field(type_id, f.name, vtype_canonical_name(f.resolved))
+            }
+        }
+        _ -> {}
+    }
+}
+
+/// Build a qualified name without double-prefixing. Resolved AST
+/// decls already carry their fully-qualified name (`@std::lsp::Sym`
+/// or `core::Stmt`) because the rename pass ran before
+/// populate_resolver_data; re-prefixing would produce
+/// `@std::lsp::@std::lsp::Sym`. so07.7.1 root cause: doubly-
+/// qualified registry keys never matched the short-name lookup
+/// from ctx_lookup_type. Any name carrying `::` is treated as
+/// already-qualified; bare names get the mod_path prefix.
+fn qualify_or_keep(mod_path: string, name: string) -> string {
+    if name.contains("::") { return name }
+    if name.length > 0 && name[0] == "@" { return name }
+    type_qualified_name(mod_path, name)
+}
+
+fn vtype_canonical_name(vt: ValueType) -> string {
+    match vt {
+        .Int -> "int"
+        .Bool -> "bool"
+        .Float -> "float"
+        .Str -> "string"
+        .Bytes -> "bytes"
+        .Void -> "void"
+        .Ptr -> "ptr"
+        .Struct(name, _, _) -> name
+        .Enum(name, _, _) -> name
+        .Newtype(name, _, _) -> name
+        .Trait(name, _) -> name
+        _ -> ""
+    }
+}
+
+// ── Option C: collect + eval split (step 4 of expand-pipeline doc) ──
+
+/// One macro invocation to perform during the eval phase. Keyed by
+/// the @expand site's source span — index-based addressing is
+/// brittle because the AST can change shape between phases.
+export type ExpandTarget = {
+    source_file: string,
+    source_line: int,
+    source_col: int,
+    macro_name: string,
+}
+
+/// Output of `expand_macros_collect`: the full list of macros to
+/// invoke during `expand_macros_eval`. Components add `comp_macros`
+/// so the eval phase doesn't have to recompute the mapping. The
+/// stmts pointer is carried through unchanged — pre-resolve walks
+/// don't mutate the AST.
+export type ExpandPlan = {
+    stmts: List<SStmt>,
+    targets: List<ExpandTarget>,
+    comp_macros: List<CompMacroEntry>,
+}
+
+/// Phase 1 (pre-resolve): scan `stmts` for every `@expand(M)` site
+/// and every component-instance whose def carries `@expand(M)`.
+/// Returns the plan unmodified — no macro is invoked here. Lets
+/// `resolve_names` run between collect and eval so that the macro
+/// bodies (which themselves call helper fns) see resolved names.
+export fn expand_macros_collect(stmts: List<SStmt>) -> ExpandPlan {
+    let comp_macros = collect_component_macros(stmts)
+    let targets = collect_expand_targets(stmts)
+    ExpandPlan { stmts, targets, comp_macros }
+}
+
+/// True iff the plan has any work for the eval phase. Lets callers
+/// short-circuit the partial re-resolve when no macros exist.
+export fn plan_has_work(plan: ExpandPlan) -> bool {
+    plan.targets.length > 0 || plan.comp_macros.length > 0
+}
+
+fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
+    mut acc: List<ExpandTarget> = []
+    for ss in stmts {
+        let inner = stmt_unwrap(ss.node)
+        match inner {
+            .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(body))
+            _ -> {
+                if has_expand_annotation(ss.node) {
+                    let name = expand_target_name(ss.node)
+                    if name != "" {
+                        acc = acc.push(ExpandTarget {
+                            source_file: ss.file,
+                            source_line: ss.line,
+                            source_col: ss.col,
+                            macro_name: name,
+                        })
+                    }
+                }
+            }
+        }
+    }
+    acc
+}
+
+/// Result of the @expand eval phase: the rewritten stmt list and the
+/// DiagnosticBag accumulated by every macro invocation across every
+/// fixpoint iteration. The caller (resolve_and_expand_program) merges
+/// `bag` into the final NameResolveResult so the unified renderer
+/// surfaces F-coded diagnostics through the same path as the rest of
+/// the compiler.
+export type ExpandResult = {
+    stmts: List<SStmt>,
+    bag: DiagnosticBag,
+    origins: List<MacroFnOrigin>,
+}
+
+/// Phase 2 (post-resolve): walk the stmt list, invoke every macro
+/// captured in the plan, splice results back in. Tags every spliced
+/// SStmt with `from_macro: true` so the partial re-resolve in
+/// `resolve_and_expand_program` walks only the new decls. Runs a
+/// fixpoint loop so that macro-emitted `@expand` sites expand
+/// transitively. Cap at 16 iterations — a self-referential macro
+/// surfaces as an F4000 error in the returned bag.
+///
+/// Takes the active `ResolverState` and re-populates the resolver-
+/// data layer between fixpoint iterations so that macros firing in
+/// iter N+1 can see the names introduced by iter N via
+/// `ctx_qualify_ident` / `ctx_lookup_type`.
+export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) -> ExpandResult {
+    expand_macros_fixpoint(plan.stmts, plan.comp_macros, state)
+}
+
+/// Shared fixpoint loop. Caps at 16 iterations and reports F4000 in
+/// the returned bag on overflow so a self-referential macro surfaces
+/// as a build error instead of a half-expanded binary.
+/// Re-populates the resolver-data layer between iterations so a
+/// later-iteration macro can see names introduced by an earlier
+/// iteration via `ctx_qualify_ident` / `ctx_lookup_type`.
+fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> ExpandResult {
+    mut current = stmts
+    mut current_state = state
+    mut bag = bag_new()
+    mut origins: List<MacroFnOrigin> = []
+    mut iters = 0
+    while iters < 16 {
+        let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
+        if !any_expand_annotation(current) && comp_macros.length == 0 {
+            return ExpandResult { stmts: current, bag, origins }
+        }
+        if iters > 0 {
+            current_state = register_macro_decls(current_state, current)
+            populate_resolver_data(current_state, current)
+        }
+        let reg = collect_comptime_fns(current)
+        let walked = expand_stmt_list(current, reg, comp_macros, current_state, "")
+        current = walked.out
+        current_state = walked.state
+        bag = bag_merge(bag, walked.bag)
+        origins = list_concat(origins, walked.origins)
+        iters = iters + 1
+    }
+    bag = bag_report(bag, diag_error(
+        DiagCode.ExpandRecursionLimit,
+        "@expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself",
+        span_at(0, 0, 0, 0, "")
+    ))
+    ExpandResult { stmts: current, bag, origins }
+}
+
+
+// ── Component-macro pre-pass (vez6.8.5) ──
+
+/// One (component-name → @expand macro fn name) mapping. The full
+/// registry is `List<CompMacroEntry>` — built once per program and
+/// consulted at every ComponentBlock site.
+export type CompMacroEntry = { comp_name: string, macro_name: string }
+
+fn comp_macro_lookup(m: List<CompMacroEntry>, comp_name: string) -> string {
+    for e in m {
+        if e.comp_name == comp_name { return e.macro_name }
+    }
+    ""
+}
+
+/// Walk the AST, finding every `@expand(macro) component name { ... }`
+/// declaration and recording its (name → macro_fn) pair.
+fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
+    mut acc: List<CompMacroEntry> = []
+    for ss in stmts {
+        let inner = stmt_unwrap(ss.node)
+        // ComponentDefs can live inside Module wrappers (e.g.
+        // `component command implements Runnable {}` declared
+        // in @std/cli's cli.av lands wrapped under
+        // Module("@std::cli::cli", ...) in a bundled compile).
+        // Without this recursion the (comp_name → macro_fn) map
+        // is empty for any def behind a module boundary, so
+        // instance dispatch silently skips them.
+        match inner {
+            .Module(_, body) -> acc = list_concat(acc, collect_component_macros(body))
+            _ -> {
+                let macro_name = comp_macro_for(ss.node)
+                let comp_name = component_def_name(ss.node)
+                if macro_name != "" && comp_name != "" {
+                    acc = acc.push(CompMacroEntry { comp_name, macro_name })
+                }
+            }
+        }
+    }
+    acc
+}
+
+/// If `stmt` is a ComponentDef wrapped in @expand(M), return M's
+/// name. Returns "" otherwise. Handles arbitrarily-nested
+/// Annotated wrappers (e.g. `///` doc + `@expand`).
+fn comp_macro_for(stmt: Stmt) -> string {
+    let inner = stmt_unwrap(stmt)
+    match inner {
+        .ComponentDef(_, _, _, _, _, _) -> expand_target_name(stmt)
+        _ -> ""
+    }
+}
+
+fn component_def_name(stmt: Stmt) -> string {
+    let inner = stmt_unwrap(stmt)
+    match inner {
+        .ComponentDef(name, _, _, _, _, _) -> name
+        _ -> ""
+    }
+}
+
+
+// ── Fast-path presence scan ──
+
+/// True iff any `@expand` annotation appears anywhere in `stmts`,
+/// recursing into Module bodies. Used by the fixpoint loop to decide
+/// whether another pass is needed.
+///
+/// The recursion matters when an @expand site lives inside an imported
+/// package's Module wrapper (e.g. `@expand(derive_walker)` on
+/// `@std::avrac::core::ast::Pattern`): the consumer fixture's top
+/// level has no @expand, but expand_stmt_list will still find one
+/// when it descends through .Module — so the fixpoint loop must
+/// agree, otherwise the walker is never invoked and a present @expand
+/// silently slips past, leading to F9999 'undefined method T.children'
+/// downstream when callers try to use the would-be-derived method.
+export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
+    for ss in stmts {
+        if has_expand_annotation(ss.node) { return true }
+        match stmt_unwrap(ss.node) {
+            .Module(_, body) -> {
+                if any_expand_annotation(body) { return true }
+            }
+            _ -> {}
+        }
+    }
+    false
+}
+
+fn has_expand_annotation(stmt: Stmt) -> bool {
+    let found = find_annotation(stmt, "expand")
+    found != null
+}
+
+// ── Walker ──
+
+fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
+    mut out: List<SStmt> = []
+    mut current_state = in_state
+    mut bag = bag_new()
+    mut origins: List<MacroFnOrigin> = []
+    for ss in stmts {
+        let inner = stmt_unwrap(ss.node)
+        // vez6.8.5: a ComponentDef with @expand only REGISTERS
+        // the macro for its instances. The def itself drops
+        // out of the output — there's no template-style expansion
+        // for the def, only per-instance dispatch.
+        match inner {
+            .ComponentDef(_, _, _, _, _, _) -> {
+                if !has_expand_annotation(ss.node) {
+                    out.push(ss)
+                }
+            }
+            .ComponentBlock(comp_name, _, _, _) -> {
+                // ComponentBlock instances of @expand'd defs route
+                // through the macro pipeline with the block itself
+                // as the Stmt arg.
+                let inst_macro = comp_macro_lookup(comp_macros, comp_name)
+                if inst_macro != "" {
+                    avra_rd_set_current_module(current_module)
+                    // ComponentBlock has no @expand annotation on itself
+                    // (the macro is registered via the parent ComponentDef).
+                    // Pass the same stmt for both invoke_macro args —
+                    // build_annotation_value falls back to a name-only
+                    // annotation when find_annotation returns null.
+                    let invoked = invoke_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module, ss.node)
+                    bag = bag_merge(bag, invoked.bag)
+                    origins = list_concat(origins, invoked.origins)
+                    splice_expansion(out, ss, invoked.replacement)
+                    if invoked.replacement != null {
+                        current_state = register_and_repopulate(current_state, invoked.replacement!, current_module)
+                    }
+                } else {
+                    out.push(ss)
+                }
+            }
+            // Module bodies have to be walked too — without this,
+            // component instances inside an imported module (e.g.
+            // `component command build {}` declared inside a
+            // submodule of @std/cli) never see the @expand
+            // pipeline, and the unprocessed ComponentBlock falls
+            // through to codegen with an unsupported tag. Re-wraps
+            // the recursed body so the module structure stays
+            // intact for downstream resolve/typeck.
+            .Module(mod_name, body) -> {
+                let child_module = type_qualified_name(current_module, mod_name)
+                let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
+                current_state = sub.state
+                bag = bag_merge(bag, sub.bag)
+                origins = list_concat(origins, sub.origins)
+                // The match subject was stmt_unwrap(ss.node) —
+                // rebuild the module INSIDE the original Annotated
+                // layers, or a wrapped module (e.g. the test
+                // assembler's @deferred_init) silently loses its
+                // annotations here and codegen auto-runs its init.
+                let new_stmt = rewrap_annotations(ss.node, Stmt.Module(mod_name, sub.out))
+                out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+            }
+            _ -> {
+                if has_expand_annotation(ss.node) {
+                    avra_rd_set_current_module(current_module)
+                    let attempt = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
+                    bag = bag_merge(bag, attempt.bag)
+                    origins = list_concat(origins, attempt.origins)
+                    splice_expansion(out, ss, attempt.replacement)
+                    if attempt.replacement != null {
+                        current_state = register_and_repopulate(current_state, attempt.replacement!, current_module)
+                    }
+                } else {
+                    out.push(ss)
+                }
+            }
+        }
+    }
+    WalkerOut { out, state: current_state, bag, origins }
+}
+
+/// Walker's per-iter return: the spliced stmts + the state after any
+/// in-iter registrations + every diagnostic produced by macro
+/// invocations in this iteration. The fixpoint loop threads `state`
+/// between iterations so the SECOND macro in an `@expand` site that
+/// fires later in the same iteration can `ctx_qualify_ident` an
+/// introduced name (doc step 4.4 / test 7), and merges `bag` so
+/// every iteration's diagnostics surface in the final result.
+type WalkerOut = {
+    out: List<SStmt>,
+    state: ResolverState,
+    bag: DiagnosticBag,
+    origins: List<MacroFnOrigin>,
+}
+
+/// Internal carrier for a single macro-expansion attempt. `replacement`
+/// is the spliced statements on success or null on any failure;
+/// `bag` collects any diagnostics produced; `origins` is the
+/// MacroFnOrigin entries (one per spliced Function-shape SStmt) so
+/// downstream typeck can blame the macro on errors against the
+/// synthesized fns. Returned as a record so the walker can both
+/// merge the bag and act on the null/non-null replacement without
+/// losing diagnostics on the failure path.
+type ExpandAttempt = {
+    replacement: List<SStmt>?,
+    bag: DiagnosticBag,
+    origins: List<MacroFnOrigin>,
+}
+
+/// Build a failed ExpandAttempt carrying a single F-coded error.
+/// Centralises the `bag_report(bag_new(), diag_error(...))` +
+/// `ExpandAttempt { replacement: null, bag }` wrap that every
+/// fail-path in invoke_macro / try_expand_one would otherwise
+/// repeat verbatim.
+fn expand_fail(code: DiagCode, message: string, span: Span) -> ExpandAttempt {
+    let no_origins: List<MacroFnOrigin> = []
+    ExpandAttempt {
+        replacement: null,
+        bag: bag_report(bag_new(), diag_error(code, message, span)),
+        origins: no_origins,
+    }
+}
+
+/// After a macro splice lands, augment the resolver state with the
+/// newly-introduced top-level decls and re-populate the C-side
+/// resolver-data layer so subsequent ctx_* queries from later macros
+/// in the same iter see the new names.
+fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>, current_module: string) -> ResolverState {
+    mut tagged: List<SStmt> = []
+    for ss in spliced { tagged.push(sstmt_mark_from_macro(ss)) }
+    let new_state = register_macro_decls(state, tagged)
+    // Additive: keeps everything the initial populate registered,
+    // adds the new aliases/globals/types from `tagged`. The clear-
+    // and-rebuild dance the prior code did (calling the public
+    // populate_resolver_data) wiped types other macros in the same
+    // iter still needed (so07.7.1 root cause).
+    populate_resolver_data_into(new_state, tagged)
+    // populate_resolver_data_into overwrote current_module to "";
+    // restore the per-site value so subsequent ctx_current_module
+    // calls keep returning the right module.
+    avra_rd_set_current_module(current_module)
+    new_state
+}
+
+/// Common splicer: replacement-on-success, original-on-failure. Every
+/// spliced stmt gets `from_macro = true` so the partial re-resolve
+/// in `resolve_and_expand_program` walks them (step 4 of the
+/// expand-pipeline doc — Option C).
+fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
+    mut acc = out
+    if replacement != null {
+        for r in replacement! { acc.push(sstmt_mark_from_macro(r)) }
+    } else {
+        // Expansion failed — keep the original stmt so downstream
+        // stages surface the issue (resolve / typeck will emit a
+        // diagnostic against the unexpanded @expand annotation).
+        acc.push(ss)
+    }
+}
+
+/// Look up the macro fn name from the `@expand` annotation's first
+/// arg, find it in the comptime registry, evaluate it (with the
+/// wrapped Stmt as a single arg if the macro is 1-ary, else
+/// zero-arg), and decode the result. Returns null `replacement` plus
+/// a bag entry whenever any step fails — the caller treats null as
+/// "leave this stmt alone" and renders the bag for the user.
+fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
+    let macro_name = expand_target_name(stmt)
+    if macro_name == "" {
+        return expand_fail(
+            DiagCode.ExpandMissingMacroIdent,
+            "@expand requires a macro fn identifier as its argument",
+            span_at(0, 0, line, col, file)
+        )
+    }
+    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module, stmt)
+}
+
+/// Shared driver: locate `macro_name` in the comptime registry,
+/// dispatch on arity (0 or 1), eval, and decode the return as
+/// either a single Stmt or a List<Stmt>. Returns the replacement
+/// list (always a list, even for single-Stmt returns) or null on
+/// any failure. Logs context-rich diagnostics so users see which
+/// macro / which step failed.
+///
+/// Multi-stmt support: macros built via `quote stmts { ... }` return
+/// `List<SStmt>`, decoded via value_to_stmt_list. This lets a single
+/// `@expand` site emit N sibling declarations (e.g. the original
+/// type + an impl block + a top-level helper fn) without forcing
+/// macros into the singleton-Stmt straightjacket. Marshal and other
+/// derives that previously had to bypass @expand entirely can now
+/// be expressed directly. Try list first because a List value
+/// can't decode as a single Stmt; the second decode is the
+/// fallback for traditional `quote stmt { ... }` macros.
+///
+/// 1-arg macros receive the wrapped Stmt boxed via stmt_to_value
+/// (which routes through construct_stmt + eval_expr — so any variant
+/// lower.av's construct_stmt encodes roundtrips correctly). Caller
+/// is responsible for any annotation peeling: try_expand_one strips
+/// @expand before invoking; the ComponentBlock arm in the walker
+/// passes the already-unwrapped block as both stmt + original_stmt.
+fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string, original_stmt: Stmt) -> ExpandAttempt {
+    let span = span_at(0, 0, line, col, file)
+    // 9p1d: metadata-shipped @comptime fns are empty-body stubs at
+    // this point. The eval runtime dispatches helper calls via its
+    // internal registry (no lazy hook in eval's Call path), so we
+    // drain every lazy @comptime in the registry before evaluating
+    // the body — derive_walker calls 30+ helper @comptime fns mid-
+    // eval and those have to be populated first. Idempotent +
+    // amortised: drains once on first @expand, no-op thereafter.
+    comptime_drain_lazy(reg)
+    let lookup = comptime_lookup_lazy(reg, macro_name)
+    if lookup == null {
+        return expand_fail(
+            DiagCode.ExpandUnknownMacro,
+            "@expand(${macro_name}) — no @comptime fn named `${macro_name}` in scope",
+            span
+        )
+    }
+    let fn_def = lookup!
+    let arity = fn_def.params.length
+    let arg_values = if arity == 1 {
+        let boxed = stmt_to_value(reg.runtime, stmt)
+        if boxed == null {
+            return expand_fail(
+                DiagCode.ExpandStmtBoxFailed,
+                "@expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)",
+                span
+            )
+        }
+        [boxed!]
+    } else if arity == 0 {
+        []
+    } else if arity == 2 {
+        // qa6i step 5: 2-arg macro receives (AnnotatedDecl, ResolverCtx).
+        // The first arg boxes the wrapped decl + its @expand annotation
+        // metadata; the second gives the macro an opaque handle the
+        // compiler uses to dispatch ctx_* queries against the active
+        // ResolverState.
+        let boxed = stmt_to_value(reg.runtime, stmt)
+        if boxed == null {
+            return expand_fail(
+                DiagCode.ExpandStmtBoxFailed,
+                "@expand(${macro_name}) — could not box the wrapped Stmt as a Value (encoder may not yet support this Stmt variant)",
+                span
+            )
+        }
+        // `original_stmt` carries the @expand annotation; `stmt` is
+        // already-unwrapped for the boxed payload.
+        let annotated = build_annotated_decl(boxed!, decl_name_of(stmt), current_module, original_stmt, reg.runtime)
+        let handle = avra_resolver_ctx_top()
+        let ctx = build_resolver_ctx(handle)
+        [annotated, ctx]
+    } else {
+        return expand_fail(
+            DiagCode.ExpandUnsupportedArity,
+            "@expand(${macro_name}) — macro has ${arity} parameters; @expand supports 0-, 1-, or 2-arg macros only",
+            span
+        )
+    }
+    let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
+    if step_had_error(result) {
+        return expand_fail(
+            DiagCode.ExpandEvalFailed,
+            "@expand(${macro_name}) — macro evaluation failed: ${step_error_message(result)}",
+            span
+        )
+    }
+    let v = step_value(result)
+    // Try ResolvedDecls first — the 2-arg macro return type per doc
+    // step 4.4. value_to_resolved_decls returns null when v isn't a
+    // `{decls, introduces, provenance}` struct, so non-ResolvedDecls
+    // returns fall through to the existing decoders.
+    let as_rd = value_to_resolved_decls(v)
+    if as_rd != null {
+        let rd = as_rd!
+        mut out: List<SStmt> = []
+        for ss in rd.decls {
+            out.push(sstmt_at(ss.node, line, col, file))
+        }
+        // Validate `.introduces` against `.decls` per doc step 4.4
+        // ("Register result.introduces with the existing registry").
+        // Names in .introduces that don't correspond to any decl in
+        // .decls would land in the registry without backing AST —
+        // codegen would then fail at the call site. Surface this as
+        // a warning so macro authors notice the mismatch.
+        mut bag = bag_new()
+        let decl_names = collect_decl_names(rd.decls)
+        for promised in rd.introduces {
+            if !list_contains_str(decl_names, promised) {
+                bag = bag_report(bag, diag_warning(
+                    DiagCode.ExpandIntroducesPhantom,
+                    "@expand(${macro_name}) — ResolvedDecls.introduces lists `${promised}` but no matching decl appears in ResolvedDecls.decls; the name will not be registered",
+                    span
+                ))
+            }
+        }
+        return expand_ok(out, bag, macro_name, line, col, file)
+    }
+    // Try List<SStmt> — what `quote stmts { ... }` produces.
+    // value_to_stmt_list returns Err when v isn't a list, so this is
+    // the cheap dispatch.
+    match value_to_stmt_list(v) {
+        .Ok(as_list) -> {
+            mut out: List<SStmt> = []
+            for ss in as_list {
+                out.push(sstmt_at(ss.node, line, col, file))
+            }
+            return expand_ok(out, bag_new(), macro_name, line, col, file)
+        }
+        .Err(_) -> {}
+    }
+    // Fall back to single Stmt — `quote stmt { ... }` macros.
+    let decoded = match value_to_stmt(v) {
+        .Ok(s) -> s
+        .Err(_) -> return expand_fail(
+            DiagCode.ExpandUndecodableReturn,
+            "@expand(${macro_name}) — macro returned a value the expander could not decode into a Stmt, List<Stmt>, or ResolvedDecls (kind=${v.kind})",
+            span
+        )
+    }
+    mut single: List<SStmt> = []
+    single.push(sstmt_at(decoded, line, col, file))
+    expand_ok(single, bag_new(), macro_name, line, col, file)
+}
+
+/// Successful ExpandAttempt constructor. Builds the macro-origin
+/// table for each Function-shape entry in `replacement` (so typeck
+/// can blame the macro on errors against the synthesised fns) and
+/// wraps the canonical ExpandAttempt shape so the 3 decode arms in
+/// `invoke_macro` collapse to a single line.
+fn expand_ok(replacement: List<SStmt>, bag: DiagnosticBag, macro_name: string, line: int, col: int, file: string) -> ExpandAttempt {
+    let origins = build_origins(replacement, macro_name, line, col, file)
+    ExpandAttempt { replacement, bag, origins }
+}
+
+/// Build a `MacroFnOrigin` entry per Function-shape SStmt in `spliced`.
+/// `(line, col, file)` describe the `@expand(macro_name)` annotation
+/// site in the user's source; typeck's `tc_report_at` uses both the
+/// macro name and span to retag diagnostics emitted against the
+/// synthesised fns. so07.3 (T3 Phase 1).
+fn build_origins(spliced: List<SStmt>, macro_name: string, line: int, col: int, file: string) -> List<MacroFnOrigin> {
+    mut out: List<MacroFnOrigin> = []
+    let site = span_at(0, 0, line, col, file)
+    for ss in spliced {
+        let name = decl_name_of(ss.node)
+        if name != "" {
+            out.push(MacroFnOrigin { fn_name: name, macro_name, expand_site: site })
+        }
+    }
+    out
+}
+
+/// Decoded payload of a ResolvedDecls struct value.
+/// - decls: the actual SStmts to splice
+/// - introduces: the names the macro promised to introduce; the
+///   compiler validates these against the spliced decls and emits
+///   a warning if they diverge. Provenance is informational and
+///   ignored at this layer.
+type ResolvedDeclsPayload = {
+    decls: List<SStmt>,
+    introduces: List<string>,
+}
+
+/// Decode a `ResolvedDecls` struct Value. Returns null when the
+/// Value doesn't match the expected shape so the caller can fall
+/// through to other decoders.
+fn value_to_resolved_decls(v: Value) -> ResolvedDeclsPayload? {
+    if v.kind != "struct" { return null }
+    // Match by suffix — the qualified form depends on how rewrite_uses
+    // canonicalised the StructLit's type name (may be bare, may include
+    // the @std::… path). path_last_segment ignores the prefix.
+    let last = path_last_segment(v.struct_type)
+    if last != "ResolvedDecls" { return null }
+    mut decls_v: Value? = null
+    mut introduces_v: Value? = null
+    for f in v.struct_payload {
+        if f.name == "decls" { decls_v = f.value }
+        if f.name == "introduces" { introduces_v = f.value }
+    }
+    if decls_v == null { return null }
+    let decls = match value_to_stmt_list(decls_v!) {
+        .Ok(d) -> d
+        .Err(_) -> return null
+    }
+    let introduces = if introduces_v == null { [] } else { decl_symbol_names(introduces_v!) }
+    ResolvedDeclsPayload { decls: decls, introduces }
+}
+
+/// Pull the `name` field off each DeclSymbol struct in the list
+/// value. Returns an empty list for any non-list or mis-shaped
+/// entry — the macro contract says introduces is `List<DeclSymbol>`,
+/// not enforcing it here would just produce spurious warnings.
+fn decl_symbol_names(v: Value) -> List<string> {
+    mut out: List<string> = []
+    if v.kind != "list" { return out }
+    for entry in v.list_payload {
+        if entry.kind != "struct" { continue }
+        for f in entry.struct_payload {
+            if f.name == "name" && f.value.kind == "string" {
+                out.push(f.value.text)
+            }
+        }
+    }
+    out
+}
+
+/// Collect the short_name from every decl in a List<SStmt>. Used to
+/// validate ResolvedDecls.introduces against ResolvedDecls.decls.
+fn collect_decl_names(decls: List<SStmt>) -> List<string> {
+    mut out: List<string> = []
+    for ss in decls {
+        let name = decl_name_of(ss.node)
+        if name != "" { out.push(name) }
+    }
+    out
+}
+
+/// Pull the macro-fn identifier out of the `@expand(NAME)` annotation
+/// args. Returns "" when the annotation isn't present, has no args,
+/// or the first arg isn't a bare Ident / QualifiedIdent.
+fn expand_target_name(stmt: Stmt) -> string {
+    let found = find_annotation(stmt, "expand")
+    if found == null { return "" }
+    first_arg_ident(found!.args)
+}
+
+fn first_arg_ident(args: List<SExpr>) -> string {
+    if args.length == 0 { return "" }
+    match args[0].node {
+        .Ident(name) -> name
+        .QualifiedIdent(path) -> path
+        _ -> ""
+    }
+}
+
+// ── 2-arg @expand value builders (step 5) ──
+
+/// Build a `@std::avrac::features::comptime::macro_types::AnnotatedDecl`
+/// struct Value to pass as the first arg of a 2-arg macro. Per the
+/// doc shape:
+///   - stmt: the boxed (unwrapped) decl Value
+///   - annotation: `{name, args}` struct for the @expand annotation
+///   - canonical_path: qualified path to the decl (mod::name)
+///
+/// `annotation.args` is populated from the actual @expand(...)
+/// annotation on the original wrapped stmt — each arg encoded as an
+/// SExpr Value with Expr.Ident / Expr.QualifiedIdent / Expr.String
+/// payload. Other Expr kinds in the annotation args land as
+/// Expr.None Values; the macro can match on the Expr.kind to
+/// dispatch. The args list is empty when the @expand call had no
+/// args (which the parser prevents for `@expand` — there's always
+/// at least the macro identifier).
+fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string, original_stmt: Stmt, runtime: Runtime) -> Value {
+    let canonical = type_qualified_name(current_module, decl_name)
+    let annotation_v = build_annotation_value(original_stmt, runtime)
+    mut fields: List<StructField> = []
+    fields.push(struct_field("stmt", stmt_v))
+    fields.push(struct_field("annotation", annotation_v))
+    fields.push(struct_field("canonical_path", value_string(canonical)))
+    value_struct("@std::avrac::features::comptime::macro_types::AnnotatedDecl", fields)
+}
+
+/// Find the @expand annotation on the stmt and encode it as an
+/// `{name, args}` struct Value. Each arg goes through the full
+/// construct_expr + eval_expr roundtrip so every Expr variant the
+/// annotation parser allows lands in the macro intact (Ident /
+/// QualifiedIdent / String / Number / Bool / Null / ListLit /
+/// Tuple / FieldAccess / Call / Lambda / etc — anything the user
+/// might write inside `@annotation(...)`).
+///
+/// Falls back to a name-only struct when no annotation is found —
+/// defensive guard for the ComponentBlock arm where the walker
+/// passes the stmt itself for both args.
+fn build_annotation_value(stmt: Stmt, runtime: Runtime) -> Value {
+    let found = find_annotation(stmt, "expand")
+    mut args_values: List<Value> = []
+    if found != null {
+        for arg in found!.args {
+            args_values.push(build_arg_sexpr_value(arg.node, runtime))
+        }
+    }
+    mut ann_fields: List<StructField> = []
+    ann_fields.push(struct_field("name", value_string("expand")))
+    ann_fields.push(struct_field("args", value_list(args_values)))
+    value_struct("@std::avrac::core::Annotation", ann_fields)
+}
+
+/// Wrap an Expr in an SExpr Value carrier — {node, line, col, ty, file}.
+/// Used to encode each @expand annotation arg into the runtime
+/// `List<SExpr>` exposed to the macro via AnnotatedDecl.annotation.args.
+/// Source-position fields are stubbed (0/0/"") because the walker
+/// doesn't propagate the annotation's per-arg span to invoke_macro.
+fn build_arg_sexpr_value(e: Expr, runtime: Runtime) -> Value {
+    mut sexpr_fields: List<StructField> = []
+    sexpr_fields.push(struct_field("node", build_expr_value(e, runtime)))
+    sexpr_fields.push(struct_field("line", value_number("0")))
+    sexpr_fields.push(struct_field("col", value_number("0")))
+    sexpr_fields.push(struct_field("ty", build_value_type_unknown()))
+    sexpr_fields.push(struct_field("file", value_string("")))
+    value_struct("@std::avrac::core::SExpr", sexpr_fields)
+}
+
+/// Encode an Expr as a runtime Value by reusing lower.av's
+/// construct_expr (the same encoder quote-lowering uses) + the eval
+/// runtime. construct_expr produces an Expr that, when evaluated,
+/// rebuilds the original — feeding it through eval_expr gives us the
+/// Value form for free. Covers every Expr variant construct_expr
+/// covers; falls back to Expr.None on eval failure so the macro at
+/// least sees a well-typed marker.
+fn build_expr_value(e: Expr, runtime: Runtime) -> Value {
+    let constructor = construct_expr(e)
+    let result = eval_expr(runtime, constructor)
+    if step_had_error(result) {
+        let empty: List<Value> = []
+        return value_enum("@std::avrac::core::Expr", "None", empty)
+    }
+    step_value(result)
+}
+
+fn build_value_type_unknown() -> Value {
+    let empty: List<Value> = []
+    value_enum("@std::avrac::core::ValueType", "Unknown", empty)
+}
+
+/// Extract the decl name from a (possibly unwrapped) Stmt — the name
+/// slot of Function / TypeDecl / EnumDecl / etc. Used to compute
+/// AnnotatedDecl.canonical_path. Returns "" when the Stmt isn't a
+/// declaration with a name.
+fn decl_name_of(stmt: Stmt) -> string {
+    match stmt {
+        .Function(name, _, _, _, _) -> name
+        .ExternFn(name, _, _) -> name
+        .TypeDecl(name, _, _) -> name
+        .EnumDecl(name, _, _) -> name
+        .NewtypeDecl(name, _) -> name
+        .UnionAliasDecl(name, _) -> name
+        .ShapeDecl(name, _) -> name
+        .TraitDecl(name, _) -> name
+        .Impl(target, _) -> target
+        .ComponentDef(name, _, _, _, _, _) -> name
+        .Annotated(_, inner) -> decl_name_of(inner.node)
+        _ -> ""
+    }
+}
+
+/// Build a `@std::avrac::features::comptime::resolver_ctx::ResolverCtx`
+/// struct Value carrying the handle for the active ResolverState. The
+/// ctx_* extern fns the macro calls extract this id and route to the
+/// compiler-side dispatchers in `features/eval/mod.av`.
+fn build_resolver_ctx(handle: int) -> Value {
+    mut fields: List<StructField> = []
+    fields.push(struct_field("id", value_number(string(handle))))
+    value_struct("@std::avrac::features::comptime::resolver_ctx::ResolverCtx", fields)
+}
+
+// ── Public pipeline driver — Option C ──
+
+/// Compose the full Option C dance into one entry point so every
+/// pipeline site (cli/main.av cmd_compile / cmd_run / cmd_test,
+/// check/mod.av check_source, build/compile.av build_binary) goes
+/// through the same flow. The legacy `resolve_names → expand_macros`
+/// shape was per-pass non-idempotent and broke macro-introduced
+/// decl registration; this driver is the single source of truth.
+///
+/// Pipeline (matches doc step 4 intent — see note on collect order):
+///   1. resolve_names_pre_expand → register_decls + rewrite_uses
+///   2. expand_macros_collect against the rewritten stmts
+///   3. Fast-path: no macros → straight to validate_scopes
+///   4. avra_resolver_ctx_push(state)  — macros can ctx_* now
+///   5. populate_resolver_data + expand_macros_eval_with_state
+///   6. avra_resolver_ctx_pop
+///   7. register_macro_decls(spliced, existing_state) — additive
+///   8. rewrite_uses_macro_only(spliced, state) — partial re-resolve
+///   9. validate_scopes_after_expand
+///
+/// Doc step 4 shows collect BEFORE resolve_names. My impl collects
+/// AFTER because the eval phase walks `plan.stmts` and needs the
+/// resolved version to dispatch macro_name → @comptime fn via the
+/// resolved registry. ExpandTarget keys still work pre- or
+/// post-resolve (source positions are stable through rewrite_uses)
+/// but the eval-time lookup demands resolved names. Collecting
+/// against post-resolve stmts gives the eval the right AST in one
+/// shot; collecting against raw stmts would force a second walk to
+/// re-rewrite the plan's stmts.
+export fn resolve_and_expand_program(stmts: List<SStmt>) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts)
+    if pre.had_error == 1 {
+        return validate_scopes_after_expand(pre.stmts, pre.state)
+    }
+    let plan = expand_macros_collect(pre.stmts)
+    if !plan_has_work(plan) {
+        return validate_scopes_after_expand(pre.stmts, pre.state)
+    }
+    let handle = avra_resolver_ctx_push(pre.state)
+    populate_resolver_data(pre.state, pre.stmts)
+    let expanded = expand_macros_eval_with_state(plan, pre.state)
+    avra_resolver_ctx_pop()
+    let post_state = register_macro_decls(pre.state, expanded.stmts)
+    let rewritten = rewrite_uses_macro_only(expanded.stmts, post_state)
+    let validated = validate_scopes_after_expand(rewritten, post_state)
+    // Fold @expand-time diagnostics into the program-level bag so the
+    // unified renderer surfaces F4xxx codes through the same path as
+    // resolver / typechecker errors.
+    let merged_bag = bag_merge(validated.bag, expanded.bag)
+    let has_errors = validated.had_error || (merged_bag.error_count > 0)
+    NameResolveResult {
+        stmts: validated.stmts,
+        had_error: has_errors,
+        error_message: if has_errors {
+            if validated.had_error { validated.error_message } else { "macro expansion errors" }
+        } else { "" },
+        type_reg: validated.type_reg,
+        bag: merged_bag,
+        macro_origins: expanded.origins,
+    }
+}

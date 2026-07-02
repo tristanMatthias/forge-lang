@@ -1,0 +1,49 @@
+// nce6.3 plumbing slice: `?` on a method returning
+// `Result<(T, U), E>` extracts the tuple, then a let-destructure
+// binds each element to a typed local. Previously this lost the
+// payload type at codegen because resolve_ok_type read the
+// registry's unmonomorphised payload (Ok(value: T)) instead of
+// the substituted concrete type from r.ty's type_args.
+//
+// The fix added resolve_ok_type_with(name, type_args) and routed
+// the `?` codegen through it. This spec captures the supported
+// pattern so the plumbing doesn't regress.
+
+enum TupleErr { Underrun }
+
+type Cur = { pos: int }
+
+impl Cur {
+    fn read_int(self) -> Result<(int, Cur), TupleErr> {
+        if self.pos < 0 { return Result.Err(TupleErr.Underrun) }
+        Result.Ok((self.pos + 100, Cur { pos: self.pos + 8 }))
+    }
+}
+
+fn read_pair() -> Result<int, TupleErr> {
+    let c = Cur { pos: 0 }
+    let (n, c2) = c.read_int()?
+    let (m, _) = c2.read_int()?
+    Result.Ok(n + m)
+}
+
+fn read_underrun() -> Result<int, TupleErr> {
+    let c = Cur { pos: 0 - 1 }
+    let (n, _) = c.read_int()?
+    Result.Ok(n)
+}
+
+spec "try ? on Result<(T,U), E> + tuple destructure (nce6.3 plumbing)" {
+    then "successful chained reads accumulate values" {
+        match read_pair() {
+            .Ok(v) -> v == 208
+            .Err(_) -> false
+        }
+    }
+    then "Err short-circuits through ?" {
+        match read_underrun() {
+            .Ok(_) -> false
+            .Err(e) -> match e { .Underrun -> true }
+        }
+    }
+}

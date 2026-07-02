@@ -1,0 +1,45 @@
+// `bs2 build --emit_metadata` with multiple path-deps renders a
+// TTY-aware progress bar: \r-rewriting + multi-line on a real terminal,
+// suppressed entirely on a pipe so CI logs stay clean. Smoke-tested
+// via `script -q` (PTY simulation) for the TTY case.
+//
+// Tracking ticket: forge-crafting-intepreters-5gvp.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn pb_run() -> string {
+    cached_fixture_run("tests/build_progress_tty_fixtures/sample.av")
+}
+
+spec "build progress (5gvp): pipe-redirected stdout suppresses the bar" {
+    then "pipe build rc is zero" {
+        pb_run().contains("PROBE pipe_build_rc_zero: ok")
+    }
+    then "dep1 meta lands under pipe stdout" {
+        pb_run().contains("PROBE pipe_dep1_meta_present: ok")
+    }
+    then "dep2 meta lands under pipe stdout" {
+        pb_run().contains("PROBE pipe_dep2_meta_present: ok")
+    }
+    then "progress-bar header does not appear in pipe-stdout build log" {
+        pb_run().contains("PROBE pipe_log_no_progress_bar: ok")
+    }
+}
+
+spec "build progress (5gvp): TTY stdout renders the multi-line bar" {
+    then "tty build rc is zero" {
+        pb_run().contains("PROBE tty_build_rc_zero: ok")
+    }
+    then "dep1 meta lands under TTY stdout" {
+        pb_run().contains("PROBE tty_dep1_meta_present: ok")
+    }
+    then "dep2 meta lands under TTY stdout" {
+        pb_run().contains("PROBE tty_dep2_meta_present: ok")
+    }
+    then "ANSI escape codes appear in TTY build log" {
+        pb_run().contains("PROBE tty_log_has_escape_codes: ok")
+    }
+    then "TTY build log ends with a `built N deps` summary" {
+        pb_run().contains("PROBE tty_log_has_summary_line: ok")
+    }
+}

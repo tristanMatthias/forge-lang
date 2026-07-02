@@ -1,0 +1,202 @@
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + typeck.av
+// auto-load as siblings, surface flat at `features.null_safety.{...}`.
+// Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
+// without explicit self-imports.
+use codegen.{err_emit}
+use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown}
+use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
+use features.struct_decl.{check_field_access}
+use typeck.{check_expr, tc_er, check_method_call}
+
+/// Register the `??` null-coalesce expression feature
+/// (`x ?? fallback`).
+export fn null_coalesce_feature() -> Feature {
+    feature_new("null_coalesce") with {
+        expr_tag: Expr.NullCoalesce(Expr.None, Expr.None),
+        emit_expr: null_coalesce_emit_expr,
+        resolve_expr: null_coalesce_resolve_expr,
+        check_expr: check_null_coalesce,
+    }
+}
+
+/// Register the `?.` optional-chain feature (`obj?.field`).
+/// Short-circuits the field access to null when the receiver is
+/// null.
+export fn optional_chain_feature() -> Feature {
+    feature_new("optional_chain") with {
+        expr_tag: Expr.OptionalChain(Expr.None, ""),
+        emit_expr: optional_chain_emit_expr,
+        resolve_expr: optional_chain_resolve_expr,
+        check_expr: optional_chain_check_expr,
+    }
+}
+
+/// Register the `?` (try) operator feature. Unwraps `Ok(x)` to
+/// `x`; propagates `Err(e)` to the enclosing fn (spec Axis 12).
+/// Register the `obj?.method(args)` optional method-call feature — sibling
+/// of optional_chain for the call form. Short-circuits to none on a null
+/// receiver, else calls the method and wraps the result.
+export fn optional_method_call_feature() -> Feature {
+    feature_new("optional_method_call") with {
+        expr_tag: Expr.OptionalMethodCall(Expr.None, "", []),
+        emit_expr: optional_method_call_emit_expr,
+        resolve_expr: optional_method_call_resolve_expr,
+        check_expr: optional_method_call_check_expr,
+    }
+}
+
+export fn try_feature() -> Feature {
+    feature_new("try") with {
+        expr_tag: Expr.Try(Expr.None),
+        emit_expr: try_emit_expr,
+        resolve_expr: try_resolve_expr,
+        check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
+    }
+}
+
+/// Register the `catch` recovery feature
+/// (`expr() catch { default }`). Pairs with `Result`/`?` to
+/// recover an error path with a fallback value.
+export fn catch_feature() -> Feature {
+    feature_new("catch") with {
+        expr_tag: Expr.Catch(Expr.None, "", Expr.None, 0, 0),
+        emit_expr: catch_emit_expr,
+        resolve_expr: catch_resolve_expr,
+        check_expr: check_catch,
+    }
+}
+
+/// Resolver hook for `NullCoalesce`. Walks both sides.
+fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .NullCoalesce(left, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `OptionalChain`. Only the receiver needs
+/// name resolution.
+fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .OptionalChain(obj, _) -> resolve_expr(r, obj)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `OptionalChain`. Same behaviour as
+/// `check_field_access` — the optional-ness widens the result
+/// to nullable downstream but the field lookup itself is the
+/// same.
+fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .OptionalChain(obj, field) -> {
+            // `obj?.field` short-circuits to `none` when `obj` is null → `U?`.
+            // Unknown/already-optional field types stay as-is (no double-wrap,
+            // no `Optional(Unknown)` rendered as a bare `?`).
+            let r = check_field_access(tc, obj, field)
+            if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
+            tc_er(r.tc, vtype_wrap_optional(r.ty))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// Resolver hook for `Try`. Walks the inner expression.
+fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Try(inner) -> resolve_expr(r, inner)
+        _ -> r
+    }
+}
+
+/// Resolver hook for `Catch`. Walks the inner expression, then
+/// (when an error binding name is given) opens a new scope with
+/// the binding visible inside the catch body.
+fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Catch(inner, binding, body, _, _) -> {
+            let ri = resolve_expr(r, inner)
+            let scoped = if binding.length > 0 {
+                let entered = enter_resolve_scope(ri)
+                define_name(declare_name(entered, binding), binding)
+            } else { ri }
+            let rb = resolve_expr(scoped, body)
+            if binding.length > 0 { exit_resolve_scope(rb) } else { rb }
+        }
+        _ -> r
+    }
+}
+
+/// Codegen hook for `Catch`. Forwards to `emit_catch`.
+fn catch_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Catch(inner, binding, body, _, _) -> emit_catch(ctx, env, inner, binding, body)
+        _ -> err_emit("expected Catch")
+    }
+}
+
+/// Codegen hook for `NullCoalesce`. Forwards to
+/// `emit_null_coalesce`.
+fn null_coalesce_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
+        _ -> err_emit("expected NullCoalesce")
+    }
+}
+
+/// Codegen hook for `OptionalChain`. Forwards to
+/// `emit_optional_chain`.
+fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
+        _ -> err_emit("expected OptionalChain")
+    }
+}
+
+/// Codegen hook for `OptionalMethodCall`. Forwards to emit_optional_method_call.
+fn optional_method_call_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, obj, method, args)
+        _ -> err_emit("expected OptionalMethodCall")
+    }
+}
+
+/// Resolver hook for `OptionalMethodCall`. Walks the receiver and each arg.
+fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .OptionalMethodCall(obj, _, args) -> {
+            mut acc = resolve_expr(r, obj)
+            mut i = 0
+            while i < args.length {
+                acc = resolve_expr(acc, args[i].node)
+                i = i + 1
+            }
+            acc
+        }
+        _ -> r
+    }
+}
+
+/// Type-check hook for `OptionalMethodCall`. The method-call type checked on
+/// the unwrapped receiver, then widened to the result's `U?`.
+fn optional_method_call_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .OptionalMethodCall(obj, method, args) -> {
+            let r = check_method_call(tc, obj, method, args)
+            if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
+            tc_er(r.tc, vtype_wrap_optional(r.ty))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// Codegen hook for `Try`. Forwards to `emit_try`.
+fn try_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Try(inner) -> emit_try(ctx, env, inner)
+        _ -> err_emit("expected Try")
+    }
+}

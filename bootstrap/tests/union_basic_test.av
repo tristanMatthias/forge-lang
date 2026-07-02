@@ -1,0 +1,53 @@
+fn ub_show(val: int | string) -> string {
+    match val {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+fn ub_describe(val: int | string) -> string {
+    match val {
+        int(n) -> "int value: " + string(n)
+        string(s) -> "string value: " + s
+    }
+}
+
+fn ub_with_wildcard(val: int | string) -> string {
+    match val {
+        int(n) -> "got int: " + string(n)
+        _ -> "matched wildcard"
+    }
+}
+
+fn ub_match_union(v: int | string) -> string {
+    match v {
+        int(n) -> "int: " + string(n)
+        string(s) -> "string: " + s
+    }
+}
+
+spec "union basic" {
+    then "show string" {
+        ub_show("hello") == "hello"
+    }
+    then "show int" {
+        ub_show(42) == "42"
+    }
+    then "describe int" {
+        ub_describe(10) == "int value: 10"
+    }
+    then "describe string" {
+        ub_describe("world") == "string value: world"
+    }
+    then "wildcard" {
+        ub_with_wildcard("anything") == "matched wildcard"
+    }
+    then "let int union" {
+        let x: int | string = 99
+        ub_match_union(x) == "int: 99"
+    }
+    then "let string union" {
+        let y: int | string = "hi"
+        ub_match_union(y) == "string: hi"
+    }
+}

@@ -1,0 +1,95 @@
+// nce6.1.C: @marshal struct fields whose type is itself
+// @marshal-annotated round-trip recursively. The outer's to_bytes()
+// embeds inner.to_bytes() length-prefixed via write_bytes; the
+// outer's from_bytes_<T>() reads that prefix and hands the payload
+// to from_bytes_<Inner>().
+
+use @std.process.{bytes_builder, bytes_reader}
+
+@marshal
+type MAddress = { street: string, zip: int }
+
+@marshal
+type MPerson = { name: string, addr: MAddress, age: int }
+
+@marshal
+type MOuter = { label: string, body: MPerson }
+
+spec "@marshal: nested struct round-trip (nce6.1.C)" {
+    then "1-deep nested struct round-trips" {
+        let a = MAddress { street: "1 main", zip: 10001 }
+        let p = MPerson { name: "alice", addr: a, age: 30 }
+        let p2 = from_bytes_MPerson(p.to_bytes())
+        p2.name == "alice"
+            && p2.addr.street == "1 main"
+            && p2.addr.zip == 10001
+            && p2.age == 30
+    }
+    then "2-deep nesting round-trips" {
+        let a = MAddress { street: "2 oak", zip: 90210 }
+        let p = MPerson { name: "bob", addr: a, age: 42 }
+        let o = MOuter { label: "wrap", body: p }
+        let o2 = from_bytes_MOuter(o.to_bytes())
+        o2.label == "wrap"
+            && o2.body.name == "bob"
+            && o2.body.age == 42
+            && o2.body.addr.street == "2 oak"
+            && o2.body.addr.zip == 90210
+    }
+    then "primitives alongside nested struct keep working" {
+        let a = MAddress { street: "x", zip: 0 }
+        let p = MPerson { name: "carol", addr: a, age: 99 }
+        let p2 = from_bytes_MPerson(p.to_bytes())
+        p2.age == 99 && p2.name == "carol"
+    }
+    then "empty-string fields inside nested struct round-trip" {
+        let a = MAddress { street: "", zip: 0 }
+        let p = MPerson { name: "", addr: a, age: 0 }
+        let p2 = from_bytes_MPerson(p.to_bytes())
+        p2.name == "" && p2.addr.street == "" && p2.addr.zip == 0
+    }
+    then "long inner string survives the byte-prefix path" {
+        let big = "this is a longer string that exercises the length prefix on the inner write_bytes path"
+        let a = MAddress { street: big, zip: 1 }
+        let p = MPerson { name: "d", addr: a, age: 1 }
+        let p2 = from_bytes_MPerson(p.to_bytes())
+        p2.addr.street == big
+    }
+}
+
+@marshal
+type MTag = { id: int, name: string }
+
+@marshal
+type MCollection = { tags: List<MTag>, total: int }
+
+spec "@marshal: List<NestedMarshalStruct> round-trip" {
+    then "list of @marshal structs round-trips with all fields" {
+        let c = MCollection {
+            tags: table<MTag> {
+                id | name
+                10 | "alpha"
+                20 | "beta"
+                30 | "gamma"
+            },
+            total: 3,
+        }
+        let c2 = from_bytes_MCollection(c.to_bytes())
+        c2.tags.length == 3
+            && c2.total == 3
+            && c2.tags[0].id == 10
+            && c2.tags[0].name == "alpha"
+            && c2.tags[2].id == 30
+            && c2.tags[2].name == "gamma"
+    }
+    then "empty List<Nested> round-trips" {
+        let c = MCollection { tags: [], total: 0 }
+        let c2 = from_bytes_MCollection(c.to_bytes())
+        c2.tags.length == 0 && c2.total == 0
+    }
+    then "single-element List<Nested>" {
+        let c = MCollection { tags: [MTag { id: 99, name: "lone" }], total: 1 }
+        let c2 = from_bytes_MCollection(c.to_bytes())
+        c2.tags.length == 1 && c2.tags[0].id == 99 && c2.tags[0].name == "lone"
+    }
+}

@@ -1,0 +1,26 @@
+// Test scope-aware arena allocation (spec Axis 9.6).
+
+type AscPoint = { x: int, y: int }
+
+fn asc_loop_sum() -> int {
+    mut total = 0
+    for i in 0..10 {
+        let p = AscPoint { x: i, y: i * 2 }
+        total = total + p.x
+    }
+    total
+}
+
+fn asc_post_arena_ok() -> bool {
+    let q = AscPoint { x: 100, y: 200 }
+    q.x == 100
+}
+
+spec "arena scope" {
+    then "for-loop arena sum is correct" {
+        asc_loop_sum() == 45
+    }
+    then "post-arena allocation is not corrupted" {
+        asc_post_arena_ok()
+    }
+}

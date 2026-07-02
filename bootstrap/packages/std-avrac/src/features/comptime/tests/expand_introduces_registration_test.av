@@ -1,0 +1,65 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test 7.
+// "macro returns ResolvedDecls with one fn in decls and a matching
+// DeclSymbol in introduces. Test: a SECOND macro later in the file
+// calls ctx.qualify_ident('<introduced_fn_name>') — must return the
+// qualified path. Proves introduces is registered before downstream
+// macros run."
+//
+// `introducer` returns ResolvedDecls carrying a Function `_emitted`
+// in `.decls` + a matching DeclSymbol in `.introduces`. After Phase
+// 2 of expand_macros_eval splices these, register_macro_decls
+// augments the ResolverState. Between fixpoint iterations
+// populate_resolver_data re-runs, so when the inspector macro (a
+// separate @expand site later in the source) fires, it can
+// `ctx_qualify_ident("_emitted")` and get back the canonical path.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "@expand: introduced fn is registered for downstream macros" {
+    then "second 2-arg macro qualifies the introduced name via ctx" {
+        let out = write_fixture_and_run("/tmp/avra_expand_introduces_registration_test.av", 
+            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.diagnostics.{Span}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ctx_qualify_ident}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn introducer(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
+            "    let empty_params: List<ParamEntry> = []\n" +
+            "    let empty_tp: List<TypeParamEntry> = []\n" +
+            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Number(\"1\")))]\n" +
+            "    let fn_decl = Stmt.Function(\"_emitted\", empty_tp, empty_params, ValueType.Int, body)\n" +
+            "    let decls: List<SStmt> = [sstmt_dummy(fn_decl)]\n" +
+            "    let introduces: List<DeclSymbol> = [\n" +
+            "        DeclSymbol { name: \"_emitted\", kind: DeclKind.Function, canonical_path: \"_emitted\" }\n" +
+            "    ]\n" +
+            "    let provenance = MacroProvenance {\n" +
+            "        macro_name: \"introducer\",\n" +
+            "        target_canonical: \"placeholder_a\",\n" +
+            "        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: \"\" }\n" +
+            "    }\n" +
+            "    ResolvedDecls { decls, introduces, provenance }\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn inspector(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let q = ctx_qualify_ident(ctx, \"_emitted\")\n" +
+            "    mut qstr = \"NULL\"\n" +
+            "    if q != null { qstr = q! }\n" +
+            "    let msg = \"qualified=\" + qstr\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(introducer)\n" +
+            "fn placeholder_a() {}\n" +
+            "\n" +
+            "@expand(inspector)\n" +
+            "fn placeholder_b() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // The introducer's .decls carries _emitted; register_macro_decls
+        // adds the name to the global index between iterations; the
+        // inspector then resolves it via ctx_qualify_ident.
+        out.contains("qualified=_emitted")
+    }
+}

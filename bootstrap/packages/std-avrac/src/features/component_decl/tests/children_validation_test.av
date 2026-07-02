@@ -1,0 +1,89 @@
+// vez6.7.5 — child-type validation at expand time. Verifies the
+// expand pass eprintln's a clear diagnostic when a nested
+// ComponentBlock's type isn't in the parent's `children { ... }`
+// schema. Compiles small test programs via bs2 and inspects stderr.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Test runner skips files whose source contains the literal entry
+// header (it treats them as compiled programs, not specs). The
+// fixture sources we embed all need a top-level entry, so the
+// header is built at runtime to keep the discovery glob from
+// matching this file.
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_compile_capture(source: string) -> string {
+    let path = "/tmp/avra_children_validation_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "vez6.7.5: child-type validation" {
+    then "valid nested type passes silently" {
+        let out = run_compile_capture(
+            "component cmd_x { config { name: string = \"\" } }
+component cli_p {
+    children {
+        commands: List<cmd_x>
+    }
+}
+${MAIN_HEADER} {
+    cli_p avra {
+        cmd_x build {}
+    }
+}")
+        !out.contains("is not a valid child of")
+    }
+    then "wrong nested type errors with parent name + slot hint" {
+        let out = run_compile_capture(
+            "component cmd_x { config { name: string = \"\" } }
+component widget_y { config { x: int = 0 } }
+component cli_p {
+    children {
+        commands: List<cmd_x>
+    }
+}
+${MAIN_HEADER} {
+    cli_p avra {
+        widget_y wrong {}
+    }
+}")
+        out.contains("type `widget_y` is not a valid child of `cli_p`")
+            && out.contains("expected one of")
+            && out.contains("cmd_x (commands)")
+    }
+    then "legacy parent without children schema validates nothing" {
+        // Backwards-compat: a component without an explicit
+        // `children { ... }` block still accepts any nested
+        // instantiation (matches pre-vez6.7 behaviour).
+        let out = run_compile_capture(
+            "component cmd_x { config { name: string = \"\" } }
+component cli_p { config { name: string = \"\" } }
+${MAIN_HEADER} {
+    cli_p avra {
+        cmd_x build {}
+    }
+}")
+        !out.contains("is not a valid child of")
+    }
+    then "multi-slot schema lists all valid types in the hint" {
+        let out = run_compile_capture(
+            "component cmd_x { config { name: string = \"\" } }
+component flag_z { config { name: string = \"\" } }
+component widget_y { config { x: int = 0 } }
+component cli_p {
+    children {
+        commands: List<cmd_x>,
+        flags: List<flag_z>,
+    }
+}
+${MAIN_HEADER} {
+    cli_p avra {
+        widget_y wrong {}
+    }
+}")
+        out.contains("cmd_x (commands)")
+            && out.contains("flag_z (flags)")
+    }
+}

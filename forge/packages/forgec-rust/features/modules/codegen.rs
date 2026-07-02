@@ -5,7 +5,11 @@ use super::types::{ExportedSymbol, ResolvedImport};
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a module's functions with name-mangled prefixes.
-    pub fn compile_module_program(&mut self, program: &crate::parser::ast::Program, module_path: &str) {
+    pub fn compile_module_program(
+        &mut self,
+        program: &crate::parser::ast::Program,
+        module_path: &str,
+    ) {
         if self.module.get_function("forge_println_string").is_none() {
             self.declare_runtime_functions();
         }
@@ -15,7 +19,12 @@ impl<'ctx> Codegen<'ctx> {
 
         for stmt in &program.statements {
             match stmt {
-                Statement::FnDecl { name, params, return_type, .. } => {
+                Statement::FnDecl {
+                    name,
+                    params,
+                    return_type,
+                    ..
+                } => {
                     let mangled = format!("{}_{}", prefix, name);
                     self.declare_function(&mangled, params, return_type.as_ref());
                 }
@@ -28,19 +37,39 @@ impl<'ctx> Codegen<'ctx> {
 
         for stmt in &program.statements {
             match stmt {
-                Statement::FnDecl { name, params, return_type, body, .. } => {
+                Statement::FnDecl {
+                    name,
+                    params,
+                    return_type,
+                    body,
+                    ..
+                } => {
                     let mangled = format!("{}_{}", prefix, name);
                     self.compile_fn(&mangled, params, return_type.as_ref(), body);
                 }
-                Statement::Let { name, value, type_ann, exported: true, .. }
-                | Statement::Const { name, value, type_ann, exported: true, .. } => {
+                Statement::Let {
+                    name,
+                    value,
+                    type_ann,
+                    exported: true,
+                    ..
+                }
+                | Statement::Const {
+                    name,
+                    value,
+                    type_ann,
+                    exported: true,
+                    ..
+                } => {
                     let mangled = format!("{}_{}", prefix, name);
                     self.compile_exported_global(&mangled, value, type_ann.as_ref());
                 }
                 Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
                     self.compile_module_functions_feature(fe, &prefix);
                 }
-                Statement::Feature(fe) if fe.feature_id == "structs" || fe.feature_id == "enums" => {
+                Statement::Feature(fe)
+                    if fe.feature_id == "structs" || fe.feature_id == "enums" =>
+                {
                     // Type/enum declarations are handled by the type checker during
                     // check_program above — no extra codegen needed for module compilation
                 }
@@ -50,7 +79,11 @@ impl<'ctx> Codegen<'ctx> {
                     if let Some(data) = feature_data!(fe, VarDeclData) {
                         if data.exported {
                             let mangled = format!("{}_{}", prefix, data.name);
-                            self.compile_exported_global(&mangled, &data.value, data.type_ann.as_ref());
+                            self.compile_exported_global(
+                                &mangled,
+                                &data.value,
+                                data.type_ann.as_ref(),
+                            );
                         }
                     }
                 }

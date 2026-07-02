@@ -1,0 +1,15 @@
+mut parallel_done_count: int = 0
+
+fn parallel_inc() { parallel_done_count = parallel_done_count + 1 }
+
+spec "parallel stmt" {
+    then "all 3 threads complete before scope exits" {
+        parallel_done_count = 0
+        parallel {
+            parallel_inc
+            parallel_inc
+            parallel_inc
+        }
+        parallel_done_count == 3
+    }
+}

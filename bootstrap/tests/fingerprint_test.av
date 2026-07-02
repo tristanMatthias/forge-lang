@@ -1,0 +1,67 @@
+// End-to-end fingerprint module tests.
+//
+// Compiles and runs tests/fingerprint_fixtures/sample.av, then
+// asserts on the printed PROBE lines. Each probe in the fixture
+// validates one fingerprint property:
+//
+//   1. Determinism — identical inputs yield identical digests.
+//   2. Sensitivity to unit-name change.
+//   3. Digest length (64 hex chars).
+//   4. fp_short is a 12-char prefix of the full hex.
+//   5. SHA-256 of "abc" matches the FIPS 180-2 reference vector
+//      (proves @std/crypto is wired through fingerprint's call graph).
+//   6. profile_key_of distinguishes dev from release.
+//   7. dep_fps participate in the digest.
+//
+// Compiles via bs2 in this checkout — assumes ./build/bs2 is fresh
+// (the test runner builds it as part of `make test`).
+
+// `bs2 run` uses the AST evaluator which doesn't execute the runtime
+// code path the fingerprint module relies on. Use the compile+link+run
+// pipeline (scripts/diagnose.sh --run) instead — same one `make run`
+// invokes — so the fixture is built into a real binary and executed.
+//
+// Memoise at the shell level: each test `then` block calls run_fixture(),
+// and naively each call would re-compile the 700-line fixture against
+// @std/avrac and @std/crypto (~1-2 min per compile, ~10× total per
+// `then`). We compile once into /tmp and `cat` the cached output on
+// every subsequent call. The cache file is wiped at the start of each
+// `make test` run by the FIRST then block (run order is deterministic).
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn run_fixture() -> string {
+    cached_fixture_run("tests/fingerprint_fixtures/sample.av")
+}
+
+/// Wipe the cached fixture output. Tests call this once at the top of
+/// the suite so a stale /tmp file from a previous run is not reused.
+
+spec "fingerprint: end-to-end via bs2 run" {
+    then "PROBE deterministic — same inputs => same digest" {
+        run_fixture().contains("PROBE deterministic: ok")
+    }
+    then "PROBE sensitive_unit — different unit names diverge" {
+        run_fixture().contains("PROBE sensitive_unit: ok")
+    }
+    then "PROBE length — digest is 64 hex chars" {
+        run_fixture().contains("PROBE length: ok")
+    }
+    then "PROBE short — fp_short is a 12-char prefix" {
+        run_fixture().contains("PROBE short: ok")
+    }
+    then "PROBE sha256_abc — FIPS 180-2 reference vector matches" {
+        run_fixture().contains("PROBE sha256_abc: ok")
+    }
+    then "PROBE profile_keys_differ — dev and release distinct" {
+        run_fixture().contains("PROBE profile_keys_differ: ok")
+    }
+    then "PROBE dep_sensitive — different dep_fps diverge" {
+        run_fixture().contains("PROBE dep_sensitive: ok")
+    }
+    then "PROBE lib_root_sensitive — different lib roots diverge" {
+        run_fixture().contains("PROBE lib_root_sensitive: ok")
+    }
+    then "no probe failed" {
+        !run_fixture().contains(": FAIL")
+    }
+}

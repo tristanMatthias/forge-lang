@@ -1,0 +1,34 @@
+// Test: error cause trait with cause() returning Error.
+
+trait EctError {
+    fn message(self) -> string
+    fn kind(self) -> string
+    fn cause(self) -> EctError
+}
+
+type EctIoError = { msg: string }
+type EctAppError = { msg: string, inner: EctIoError }
+
+impl EctError for EctIoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io" }
+    fn cause(self) -> EctError { self }
+}
+
+impl EctError for EctAppError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "app" }
+    fn cause(self) -> EctError { self.inner }
+}
+
+fn ect_show(e: EctError) -> string {
+    let base = e.kind() + ": " + e.message()
+    let c = e.cause()
+    base + "\n  caused by: " + c.message()
+}
+
+spec "error cause trait" {
+    then "app error shows cause chain" {
+        ect_show(EctAppError { msg: "service unavailable", inner: EctIoError { msg: "connection refused" } }) == "app: service unavailable\n  caused by: connection refused"
+    }
+}

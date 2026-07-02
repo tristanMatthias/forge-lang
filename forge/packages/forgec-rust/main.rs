@@ -6,7 +6,11 @@ use forge::driver::{Driver, ErrorFormat, OptLevel};
 use forge::errors::CompileError;
 
 #[derive(Parser)]
-#[command(name = "compiler", version = "0.1.0", about = "The Forge programming language compiler")]
+#[command(
+    name = "compiler",
+    version = "0.1.0",
+    about = "The Forge programming language compiler"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -509,7 +513,9 @@ fn resolve_target(file: Option<PathBuf>) -> (bool, PathBuf) {
             } else {
                 fail(CompileError::CliError {
                     message: "no source file or project directory specified".to_string(),
-                    help: Some("usage: compiler build <file.fg> or compiler run <file.fg>".to_string()),
+                    help: Some(
+                        "usage: compiler build <file.fg> or compiler run <file.fg>".to_string(),
+                    ),
                 });
             }
         }
@@ -581,7 +587,11 @@ fn cmd_build(
     let mut driver = Driver::new();
     driver.emit_ir = emit_ir;
     driver.emit_ast = emit_ast;
-    driver.optimization = if dev { OptLevel::Dev } else { OptLevel::Release };
+    driver.optimization = if dev {
+        OptLevel::Dev
+    } else {
+        OptLevel::Release
+    };
     driver.error_format = if error_format == "json" {
         ErrorFormat::Json
     } else {
@@ -612,7 +622,11 @@ fn cmd_build(
 
 fn cmd_run(file: Option<PathBuf>, dev: bool, no_jit: bool, profile: bool, args: Vec<String>) {
     let mut driver = Driver::new();
-    driver.optimization = if dev { OptLevel::Dev } else { OptLevel::Release };
+    driver.optimization = if dev {
+        OptLevel::Dev
+    } else {
+        OptLevel::Release
+    };
     driver.profile = profile;
 
     let (is_project, path) = resolve_target(file);
@@ -711,7 +725,10 @@ fn cmd_why(file_line: String) {
 
     if parts.len() != 2 {
         fail(CompileError::CliError {
-            message: format!("invalid format '{}' — expected file.fg:LINE or a package name", file_line),
+            message: format!(
+                "invalid format '{}' — expected file.fg:LINE or a package name",
+                file_line
+            ),
             help: Some("examples: compiler why main.fg:5  OR  compiler why graphql".to_string()),
         });
     }
@@ -720,7 +737,10 @@ fn cmd_why(file_line: String) {
         Err(_) => {
             fail(CompileError::CliError {
                 message: format!("invalid line number '{}'", parts[0]),
-                help: Some("line number must be a positive integer, e.g., compiler why main.fg:5".to_string()),
+                help: Some(
+                    "line number must be a positive integer, e.g., compiler why main.fg:5"
+                        .to_string(),
+                ),
             });
         }
     };
@@ -865,7 +885,12 @@ fn cmd_test(
     }
 }
 
-fn cmd_semver_check(old: PathBuf, new: PathBuf, old_version: Option<String>, version: Option<String>) {
+fn cmd_semver_check(
+    old: PathBuf,
+    new: PathBuf,
+    old_version: Option<String>,
+    version: Option<String>,
+) {
     let old_content = match std::fs::read_to_string(&old) {
         Ok(s) => s,
         Err(e) => fail(CompileError::FileNotFound {
@@ -894,13 +919,19 @@ fn cmd_semver_check(old: PathBuf, new: PathBuf, old_version: Option<String>, ver
         let old_ver = old_version.unwrap_or_else(|| {
             fail(CompileError::CliError {
                 message: "--version requires --old-version to validate the bump".to_string(),
-                help: Some("usage: forgec semver-check old.fg new.fg --old-version 1.0.0 --version 1.1.0".to_string()),
+                help: Some(
+                    "usage: forgec semver-check old.fg new.fg --old-version 1.0.0 --version 1.1.0"
+                        .to_string(),
+                ),
             });
         });
 
         match forge::semver::validate_version_bump(&old_ver, &proposed, bump) {
             Ok(()) => {
-                eprintln!("version {} -> {} satisfies minimum {} bump", old_ver, proposed, bump);
+                eprintln!(
+                    "version {} -> {} satisfies minimum {} bump",
+                    old_ver, proposed, bump
+                );
             }
             Err(reason) => {
                 fail(CompileError::VersionBelowMinimum {
@@ -966,7 +997,10 @@ fn cmd_context(file: Option<PathBuf>, output: Option<PathBuf>) {
             if let Err(e) = std::fs::write(&out_path, &context_str) {
                 fail(CompileError::CliError {
                     message: format!("failed to write context file: {}", e),
-                    help: Some(format!("check write permissions for {}", out_path.display())),
+                    help: Some(format!(
+                        "check write permissions for {}",
+                        out_path.display()
+                    )),
                 });
             }
             eprintln!("context written to {}", out_path.display());
@@ -981,7 +1015,9 @@ fn cmd_package_new(name: String, component: bool) {
     if let Err(e) = scaffold_package(&name, component) {
         fail(CompileError::CliError {
             message: e.clone(),
-            help: Some("check write permissions and that the directory doesn't already exist".to_string()),
+            help: Some(
+                "check write permissions and that the directory doesn't already exist".to_string(),
+            ),
         });
     }
 }
@@ -1018,13 +1054,43 @@ fn run() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Build { file, dev, emit_ir, emit_ast, error_format, output, max_errors, profile, profile_format, .. } => {
-            cmd_build(file, dev, emit_ir, emit_ast, error_format, output, max_errors, profile, profile_format)
-        }
+        Commands::Build {
+            file,
+            dev,
+            emit_ir,
+            emit_ast,
+            error_format,
+            output,
+            max_errors,
+            profile,
+            profile_format,
+            ..
+        } => cmd_build(
+            file,
+            dev,
+            emit_ir,
+            emit_ast,
+            error_format,
+            output,
+            max_errors,
+            profile,
+            profile_format,
+        ),
 
-        Commands::Run { file, dev, no_jit, profile, args } => cmd_run(file, dev, no_jit, profile, args),
+        Commands::Run {
+            file,
+            dev,
+            no_jit,
+            profile,
+            args,
+        } => cmd_run(file, dev, no_jit, profile, args),
 
-        Commands::Check { file, error_format, max_errors, autofix } => cmd_check(file, error_format, max_errors, autofix),
+        Commands::Check {
+            file,
+            error_format,
+            max_errors,
+            autofix,
+        } => cmd_check(file, error_format, max_errors, autofix),
 
         Commands::Explain { code } => cmd_explain(code),
 
@@ -1038,23 +1104,58 @@ fn run() {
             PackageCommands::New { name, component } => cmd_package_new(name, component),
         },
 
-        Commands::SemverCheck { old, new, old_version, version } => cmd_semver_check(old, new, old_version, version),
+        Commands::SemverCheck {
+            old,
+            new,
+            old_version,
+            version,
+        } => cmd_semver_check(old, new, old_version, version),
 
         Commands::Context { file, output } => cmd_context(file, output),
 
         Commands::Features { feature, graph } => cmd_features(feature, graph),
 
-        Commands::Lang { query, all, symbols, llm, examples, short, grammar, cheatsheet, search, validate, site, site_dir } => {
-            cmd_lang(query, all, symbols, llm, examples, short, grammar, cheatsheet, search, validate, site, site_dir)
-        }
+        Commands::Lang {
+            query,
+            all,
+            symbols,
+            llm,
+            examples,
+            short,
+            grammar,
+            cheatsheet,
+            search,
+            validate,
+            site,
+            site_dir,
+        } => cmd_lang(
+            query, all, symbols, llm, examples, short, grammar, cheatsheet, search, validate, site,
+            site_dir,
+        ),
 
-        Commands::Docs { query, symbols, short, search, llm, validate, site, site_dir } => {
-            cmd_docs(query, symbols, short, search, llm, validate, site, site_dir)
-        }
+        Commands::Docs {
+            query,
+            symbols,
+            short,
+            search,
+            llm,
+            validate,
+            site,
+            site_dir,
+        } => cmd_docs(query, symbols, short, search, llm, validate, site, site_dir),
 
-        Commands::Test { target, format, filter, fail_fast, no_color, verbose, quiet, jobs } => {
-            cmd_test(target, format, filter, fail_fast, no_color, verbose, quiet, jobs)
-        }
+        Commands::Test {
+            target,
+            format,
+            filter,
+            fail_fast,
+            no_color,
+            verbose,
+            quiet,
+            jobs,
+        } => cmd_test(
+            target, format, filter, fail_fast, no_color, verbose, quiet, jobs,
+        ),
 
         Commands::Deps { action, flat } => match action {
             None | Some(DepsAction::Tree) => cmd_deps(flat),
@@ -1068,10 +1169,21 @@ fn run() {
         Commands::Add { packages, dev } => cmd_add(packages, dev),
         Commands::Remove { packages } => cmd_remove(packages),
         Commands::Update { packages } => cmd_update(packages),
-        Commands::Publish { dry_run, registry, token } => cmd_publish(dry_run, registry, token),
+        Commands::Publish {
+            dry_run,
+            registry,
+            token,
+        } => cmd_publish(dry_run, registry, token),
         Commands::Audit { fix } => cmd_audit(fix),
-        Commands::Yank { package_version, reason, registry } => cmd_yank(package_version, reason, registry),
-        Commands::Allow { package, capability } => cmd_allow(package, capability),
+        Commands::Yank {
+            package_version,
+            reason,
+            registry,
+        } => cmd_yank(package_version, reason, registry),
+        Commands::Allow {
+            package,
+            capability,
+        } => cmd_allow(package, capability),
         Commands::Quality { path } => cmd_quality(path),
 
         Commands::Cache { action } => match action {
@@ -1099,8 +1211,8 @@ fn run() {
 }
 
 fn cmd_deps(flat: bool) {
-    use forge::resolver;
     use forge::features::modules::project::ForgeProject;
+    use forge::resolver;
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
@@ -1145,16 +1257,18 @@ fn cmd_deps(flat: bool) {
         .unwrap_or_default();
 
     if direct_deps.is_empty() {
-        println!("{} v{}", project.config.project.name, project.config.project.version);
+        println!(
+            "{} v{}",
+            project.config.project.name, project.config.project.version
+        );
         println!("  (no dependencies)");
         return;
     }
 
     let packages_dir = cwd.join("packages");
     let local_pkgs = resolver::scan_local_packages(&packages_dir);
-    let available = |name: &str| -> Option<resolver::PackageVersions> {
-        local_pkgs.get(name).cloned()
-    };
+    let available =
+        |name: &str| -> Option<resolver::PackageVersions> { local_pkgs.get(name).cloned() };
 
     match resolver::resolve(&direct_deps, &available) {
         Ok(graph) => {
@@ -1180,7 +1294,10 @@ fn cmd_deps(flat: bool) {
                         eprintln!("warning: the following dependencies are yanked:");
                         yanked_found = true;
                     }
-                    eprintln!("  {}@{} — yanked, consider upgrading or replacing", dep.name, dep.version);
+                    eprintln!(
+                        "  {}@{} — yanked, consider upgrading or replacing",
+                        dep.name, dep.version
+                    );
                 }
             }
         }
@@ -1192,7 +1309,10 @@ fn cmd_deps(flat: bool) {
 
 fn credentials_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".forge").join("auth").join("credentials.toml")
+    PathBuf::from(home)
+        .join(".forge")
+        .join("auth")
+        .join("credentials.toml")
 }
 
 fn cmd_auth_login(token: Option<String>) {
@@ -1271,7 +1391,9 @@ fn cmd_add(packages: Vec<String>, _dev: bool) {
                 help: Some("formats: graphql, graphql@^1.0, @std/http".to_string()),
             }),
         };
-        if let Err(e) = forge::pkg_commands::add_dependency(&cwd, &spec.name, Some(spec.version.as_str())) {
+        if let Err(e) =
+            forge::pkg_commands::add_dependency(&cwd, &spec.name, Some(spec.version.as_str()))
+        {
             fail(CompileError::CliError {
                 message: format!("failed to add {}: {}", spec.name, e),
                 help: None,
@@ -1332,9 +1454,15 @@ fn cmd_publish(dry_run: bool, registry: Option<String>, token: Option<String>) {
     match forge::publish::publish(&cwd, &config) {
         Ok(result) => {
             if dry_run {
-                eprintln!("dry run: would publish {}@{} (hash: {})", result.package_name, result.version, result.content_hash);
+                eprintln!(
+                    "dry run: would publish {}@{} (hash: {})",
+                    result.package_name, result.version, result.content_hash
+                );
             } else {
-                eprintln!("published {}@{} to {}", result.package_name, result.version, result.registry_url);
+                eprintln!(
+                    "published {}@{} to {}",
+                    result.package_name, result.version, result.registry_url
+                );
             }
         }
         Err(e) => fail(CompileError::CliError {
@@ -1366,13 +1494,18 @@ fn cmd_yank(package_version: String, reason: Option<String>, registry: Option<St
         Some((n, v)) => (n.to_string(), v.to_string()),
         None => {
             fail(CompileError::CliError {
-                message: format!("invalid package specifier '{}' — expected name@version", package_version),
+                message: format!(
+                    "invalid package specifier '{}' — expected name@version",
+                    package_version
+                ),
                 help: Some("example: forge yank graphql@3.1.0".to_string()),
             });
         }
     };
 
-    let registry_url = registry.as_deref().unwrap_or("https://registry.forgelang.org");
+    let registry_url = registry
+        .as_deref()
+        .unwrap_or("https://registry.forgelang.org");
     if let Err(e) = forge::publish::yank_local(&name, &version, reason.as_deref(), registry_url) {
         fail(CompileError::CliError {
             message: format!("yank failed: {}", e),
@@ -1394,16 +1527,26 @@ fn cmd_allow(package: String, capability: String) {
 }
 
 fn cmd_quality(path: Option<PathBuf>) {
-    let project_dir = path.unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let project_dir =
+        path.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let meta = forge::quality::extract_meta(&project_dir);
     // Try to get package name/version from forge.toml
     let toml_path = project_dir.join("forge.toml");
     let (pkg_name, pkg_version) = if let Ok(content) = std::fs::read_to_string(&toml_path) {
-        let val: toml::Value = toml::from_str(&content).unwrap_or(toml::Value::Table(Default::default()));
-        let name = val.get("project").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("unknown").to_string();
-        let version = val.get("project").and_then(|p| p.get("version")).and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string();
+        let val: toml::Value =
+            toml::from_str(&content).unwrap_or(toml::Value::Table(Default::default()));
+        let name = val
+            .get("project")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let version = val
+            .get("project")
+            .and_then(|p| p.get("version"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("0.0.0")
+            .to_string();
         (name, version)
     } else {
         ("unknown".to_string(), "0.0.0".to_string())
@@ -1420,8 +1563,8 @@ fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {
 
 /// Load the resolved dependency graph for the current project.
 fn load_dep_graph() -> (String, String, forge::resolver::ResolvedGraph) {
-    use forge::resolver;
     use forge::features::modules::project::ForgeProject;
+    use forge::resolver;
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
@@ -1461,9 +1604,8 @@ fn load_dep_graph() -> (String, String, forge::resolver::ResolvedGraph) {
 
     let packages_dir = cwd.join("packages");
     let local_pkgs = resolver::scan_local_packages(&packages_dir);
-    let available = |name: &str| -> Option<resolver::PackageVersions> {
-        local_pkgs.get(name).cloned()
-    };
+    let available =
+        |name: &str| -> Option<resolver::PackageVersions> { local_pkgs.get(name).cloned() };
 
     let graph = match resolver::resolve(&direct_deps, &available) {
         Ok(g) => g,
@@ -1519,7 +1661,10 @@ fn cmd_deps_explain(package: String) {
     let dep_info = graph.packages.get(&package).unwrap();
 
     eprintln!();
-    eprintln!("  {} v{} is in your project because:", dep_info.name, dep_info.version);
+    eprintln!(
+        "  {} v{} is in your project because:",
+        dep_info.name, dep_info.version
+    );
     eprintln!();
 
     let mut chain_parts = vec![root_label];
@@ -1535,9 +1680,17 @@ fn cmd_deps_explain(package: String) {
     if !dep_info.capabilities.is_empty() {
         let ancestor_caps: Vec<String> = path[..path.len().saturating_sub(1)]
             .iter()
-            .flat_map(|n| graph.packages.get(n).map(|d| d.capabilities.clone()).unwrap_or_default())
+            .flat_map(|n| {
+                graph
+                    .packages
+                    .get(n)
+                    .map(|d| d.capabilities.clone())
+                    .unwrap_or_default()
+            })
             .collect();
-        let already_approved: Vec<&String> = dep_info.capabilities.iter()
+        let already_approved: Vec<&String> = dep_info
+            .capabilities
+            .iter()
             .filter(|c| ancestor_caps.contains(c))
             .collect();
 
@@ -1557,10 +1710,19 @@ fn cmd_deps_capabilities() {
     let (project_name, project_version, graph) = load_dep_graph();
 
     eprintln!();
-    eprintln!("  {} v{} \u{2014} capability summary", project_name, project_version);
+    eprintln!(
+        "  {} v{} \u{2014} capability summary",
+        project_name, project_version
+    );
     eprintln!();
 
-    let all_caps = ["compile_time_codegen", "ffi", "filesystem", "native", "network"];
+    let all_caps = [
+        "compile_time_codegen",
+        "ffi",
+        "filesystem",
+        "native",
+        "network",
+    ];
     let mut cap_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for cap in &all_caps {
         cap_map.insert(cap.to_string(), Vec::new());
@@ -1571,7 +1733,8 @@ fn cmd_deps_capabilities() {
 
     for dep in sorted_deps {
         for cap in &dep.capabilities {
-            cap_map.entry(cap.clone())
+            cap_map
+                .entry(cap.clone())
                 .or_default()
                 .push(format!("{} v{}", dep.name, dep.version));
         }
@@ -1614,25 +1777,34 @@ fn cmd_info(package: String, show_context: bool) {
 
 /// Search `packages_dir` for a subdirectory whose package.toml name or directory
 /// name matches `package_name`. Returns the first matching path.
-fn find_package_dir(packages_dir: &std::path::Path, package_name: &str) -> Option<std::path::PathBuf> {
+fn find_package_dir(
+    packages_dir: &std::path::Path,
+    package_name: &str,
+) -> Option<std::path::PathBuf> {
     let entries = std::fs::read_dir(packages_dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
         }
-        let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let dir_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
         if dir_name == package_name {
             return Some(path);
         }
         let toml_path = path.join("package.toml");
         if let Ok(content) = std::fs::read_to_string(&toml_path) {
             if let Ok(val) = content.parse::<toml::Value>() {
-                let declared_name = val.get("package")
+                let declared_name = val
+                    .get("package")
                     .and_then(|p| p.get("name"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let namespace = val.get("package")
+                let namespace = val
+                    .get("package")
                     .and_then(|p| p.get("namespace"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
@@ -1653,35 +1825,61 @@ fn find_package_dir(packages_dir: &std::path::Path, package_name: &str) -> Optio
 fn print_package_info(package_name: &str, pkg_dir: &std::path::Path, show_context: bool) {
     let toml_path = pkg_dir.join("package.toml");
     let toml_content = std::fs::read_to_string(&toml_path).unwrap_or_default();
-    let val: toml::Value = toml_content.parse::<toml::Value>()
+    let val: toml::Value = toml_content
+        .parse::<toml::Value>()
         .unwrap_or(toml::Value::Table(Default::default()));
     let pkg = val.get("package");
 
-    let name = pkg.and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or(package_name);
-    let version = pkg.and_then(|p| p.get("version")).and_then(|v| v.as_str()).unwrap_or("0.0.0");
-    let description = pkg.and_then(|p| p.get("description")).and_then(|v| v.as_str()).unwrap_or("");
-    let license = pkg.and_then(|p| p.get("license")).and_then(|v| v.as_str()).unwrap_or("");
-    let repository = pkg.and_then(|p| p.get("repository")).and_then(|v| v.as_str()).unwrap_or("");
+    let name = pkg
+        .and_then(|p| p.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(package_name);
+    let version = pkg
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.0.0");
+    let description = pkg
+        .and_then(|p| p.get("description"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let license = pkg
+        .and_then(|p| p.get("license"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let repository = pkg
+        .and_then(|p| p.get("repository"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     let authors: Vec<String> = pkg
         .and_then(|p| p.get("authors"))
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|a| a.as_str().map(|s| s.to_string())).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| a.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let deps: Vec<String> = val.get("dependencies")
+    let deps: Vec<String> = val
+        .get("dependencies")
         .and_then(|d| d.as_table())
         .map(|t| {
             let mut sorted: Vec<_> = t.iter().collect();
             sorted.sort_by_key(|(k, _)| k.clone());
-            sorted.iter().filter_map(|(k, v)| v.as_str().map(|ver| format!("{} {}", k, ver))).collect()
+            sorted
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|ver| format!("{} {}", k, ver)))
+                .collect()
         })
         .unwrap_or_default();
 
-    let caps: Vec<String> = val.get("capabilities")
+    let caps: Vec<String> = val
+        .get("capabilities")
         .and_then(|c| c.as_table())
         .map(|t| {
-            let mut enabled: Vec<_> = t.iter()
+            let mut enabled: Vec<_> = t
+                .iter()
                 .filter(|(_, v)| v.as_bool() == Some(true))
                 .map(|(k, _)| k.clone())
                 .collect();
@@ -1722,7 +1920,13 @@ fn print_package_info(package_name: &str, pkg_dir: &std::path::Path, show_contex
     let score = report.overall_score;
     let filled = score as usize;
     let empty = 10usize.saturating_sub(filled);
-    let color = if score >= 7.0 { "32" } else if score >= 4.0 { "33" } else { "31" };
+    let color = if score >= 7.0 {
+        "32"
+    } else if score >= 4.0 {
+        "33"
+    } else {
+        "31"
+    };
     eprintln!(
         "  quality: \x1b[{}m{}\x1b[90m{}\x1b[0m {:.1}/10",
         color,
@@ -1739,14 +1943,26 @@ fn print_package_info(package_name: &str, pkg_dir: &std::path::Path, show_contex
     let stable_api = score >= 7.0;
 
     let mut badges = Vec::new();
-    if tests_ok { badges.push(format!("\x1b[32m{} tests\x1b[0m", check)); }
-    else { badges.push(format!("\x1b[31m{} tests\x1b[0m", cross)); }
-    if docs_ok { badges.push(format!("\x1b[32m{} documented\x1b[0m", check)); }
-    else { badges.push(format!("\x1b[31m{} documented\x1b[0m", cross)); }
-    if maintained { badges.push(format!("\x1b[32m{} maintained\x1b[0m", check)); }
-    else { badges.push(format!("\x1b[31m{} maintained\x1b[0m", cross)); }
-    if stable_api { badges.push(format!("\x1b[32m{} stable API\x1b[0m", check)); }
-    else { badges.push(format!("\x1b[33m~ stable API\x1b[0m")); }
+    if tests_ok {
+        badges.push(format!("\x1b[32m{} tests\x1b[0m", check));
+    } else {
+        badges.push(format!("\x1b[31m{} tests\x1b[0m", cross));
+    }
+    if docs_ok {
+        badges.push(format!("\x1b[32m{} documented\x1b[0m", check));
+    } else {
+        badges.push(format!("\x1b[31m{} documented\x1b[0m", cross));
+    }
+    if maintained {
+        badges.push(format!("\x1b[32m{} maintained\x1b[0m", check));
+    } else {
+        badges.push(format!("\x1b[31m{} maintained\x1b[0m", cross));
+    }
+    if stable_api {
+        badges.push(format!("\x1b[32m{} stable API\x1b[0m", check));
+    } else {
+        badges.push(format!("\x1b[33m~ stable API\x1b[0m"));
+    }
 
     eprintln!("  {}", badges.join("  "));
 
@@ -1822,4 +2038,3 @@ fn cmd_cache_prefetch() {
         }),
     }
 }
-

@@ -1,0 +1,45 @@
+formula = "epic-outer"
+description = "Outer loop: work through every ticket in an epic using the inner process"
+type = "workflow"
+
+[variables.epic_id]
+description = "Epic bead ID to work through"
+required = true
+
+[[steps]]
+id = "select-epic"
+title = "Select and claim the epic"
+description = """
+Claim the epic. List all open children. Prioritize by P1 > P2 > P3.
+Within same priority, choose the one that unblocks the most other work."""
+
+[[steps]]
+id = "work-tickets"
+title = "Work every ticket in the epic"
+depends_on = ["select-epic"]
+description = """
+For EACH open ticket in the epic (in priority order):
+Run the ticket-inner formula (implement → check → fix → cleanup x3 → break x2 → polish).
+Do NOT skip any ticket. Do NOT move to the next ticket until the current one
+passes all 9 steps of the inner loop.
+Continue until every ticket in the epic is closed."""
+
+[[steps]]
+id = "epic-review"
+title = "Epic-level review"
+depends_on = ["work-tickets"]
+description = """
+All tickets closed. Now review the epic as a whole:
+- Does the combined work satisfy the spec axis it targets?
+- Are there integration issues between the individual implementations?
+- Are there emergent bugs from feature interactions?
+- Is the architecture coherent across all the pieces?
+File any issues found and fix them."""
+
+[[steps]]
+id = "epic-close"
+title = "Close the epic"
+depends_on = ["epic-review"]
+description = """
+All tickets done, all integration issues resolved.
+Close the epic. Push all work. Update any documentation."""

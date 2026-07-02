@@ -44,12 +44,22 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
         // Handle `{}` parsed as empty block when type annotation says map
-        let ann_type = data.type_ann.as_ref().map(|t| self.type_checker.resolve_type_expr(t));
-        let val = if matches!(&ann_type, Some(Type::Map(_, _))) && matches!(&data.value, Expr::Block(b) if b.statements.is_empty()) {
+        let ann_type = data
+            .type_ann
+            .as_ref()
+            .map(|t| self.type_checker.resolve_type_expr(t));
+        let val = if matches!(&ann_type, Some(Type::Map(_, _)))
+            && matches!(&data.value, Expr::Block(b) if b.statements.is_empty())
+        {
             self.compile_map_lit(&[])
         } else if matches!(&ann_type, Some(Type::Ptr)) && matches!(&data.value, Expr::NullLit(_)) {
             // let n: ptr = null → null pointer
-            Some(self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into())
+            Some(
+                self.context
+                    .ptr_type(inkwell::AddressSpace::default())
+                    .const_null()
+                    .into(),
+            )
         } else {
             // When type annotation is ptr, suppress auto-wrapping ptr→ForgeString
             // so the raw C pointer is preserved (needed for forge_model_free_string etc.)
@@ -71,7 +81,8 @@ impl<'ctx> Codegen<'ctx> {
         self.json_parse_hint = None;
         self.struct_target_type = None;
         if let Some(val) = val {
-            let ty = data.type_ann
+            let ty = data
+                .type_ann
                 .as_ref()
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or_else(|| {
@@ -90,6 +101,8 @@ impl<'ctx> Codegen<'ctx> {
                     } else {
                         ty
                     }
+                } else if val.is_pointer_value() {
+                    Type::Ptr
                 } else if val.is_float_value() {
                     Type::Float
                 } else {
@@ -102,9 +115,9 @@ impl<'ctx> Codegen<'ctx> {
             let val = if ty == Type::Ptr && val.is_struct_value() {
                 let string_type = self.string_type();
                 if val.into_struct_value().get_type() == string_type {
-                    self.builder.build_extract_value(
-                        val.into_struct_value(), 0, "str_to_ptr"
-                    ).unwrap()
+                    self.builder
+                        .build_extract_value(val.into_struct_value(), 0, "str_to_ptr")
+                        .unwrap()
                 } else {
                     val
                 }
@@ -122,23 +135,41 @@ impl<'ctx> Codegen<'ctx> {
             // If declared type is nullable but value is non-nullable, wrap in nullable struct
             let val = self.maybe_wrap_nullable(val, &ty);
             let alloca = self.create_entry_block_alloca(&ty, &data.name);
-            self.builder.build_store(alloca, val).unwrap();
+            self.store_typed(alloca, &ty, val);
             self.define_var(data.name.clone(), alloca, ty);
         }
     }
 
     fn compile_mut_var(&mut self, data: &VarDeclData) {
+        // Set type hint from annotation so NullLit / struct literal codegen
+        // can land the value in the right shape (ptr null vs Optional.None).
+        if let Some(ta) = &data.type_ann {
+            let resolved = self.type_checker.resolve_type_expr(ta);
+            self.json_parse_hint = Some(resolved.clone());
+            self.struct_target_type = Some(resolved);
+        }
         // Skip global mutables - they are created in compile_program first pass
         if self.global_mutables.contains_key(&data.name) {
             // Global mutable: compile initializer and store it to the global
-            if self.builder.get_insert_block().and_then(|b| b.get_parent()).is_some() {
+            if self
+                .builder
+                .get_insert_block()
+                .and_then(|b| b.get_parent())
+                .is_some()
+            {
                 let global_ty = self.global_mutables.get(&data.name).cloned();
                 // For ptr-typed globals with null initializer, store ptr null directly
                 // (avoid nullable {i8,i64} zeroinitializer which is 16 bytes into 8-byte slot)
-                if matches!(&global_ty, Some(Type::Ptr)) && matches!(&data.value, Expr::NullLit(_)) {
+                if matches!(&global_ty, Some(Type::Ptr)) && matches!(&data.value, Expr::NullLit(_))
+                {
                     if let Some(global) = self.module.get_global(&data.name) {
-                        let null_ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
-                        self.builder.build_store(global.as_pointer_value(), null_ptr).unwrap();
+                        let null_ptr = self
+                            .context
+                            .ptr_type(inkwell::AddressSpace::default())
+                            .const_null();
+                        self.builder
+                            .build_store(global.as_pointer_value(), null_ptr)
+                            .unwrap();
                     }
                     return;
                 }
@@ -147,7 +178,8 @@ impl<'ctx> Codegen<'ctx> {
                     self.suppress_string_wrap = true;
                 }
                 // ALWAYS use compile_map_lit for {} values on Map-typed globals
-                let is_empty_block = matches!(&data.value, Expr::Block(b) if b.statements.is_empty());
+                let is_empty_block =
+                    matches!(&data.value, Expr::Block(b) if b.statements.is_empty());
                 let val = if is_empty_block {
                     // Always allocate as Map (the value type might not match but the
                     // runtime Map is just {ptr, ptr, i64} regardless of generic params)
@@ -158,28 +190,42 @@ impl<'ctx> Codegen<'ctx> {
                 self.suppress_string_wrap = false;
                 if let Some(val) = val {
                     if let Some(global) = self.module.get_global(&data.name) {
-                        self.builder.build_store(global.as_pointer_value(), val).unwrap();
+                        if let Some(global_ty) = global_ty {
+                            self.store_typed(global.as_pointer_value(), &global_ty, val);
+                        } else {
+                            self.builder
+                                .build_store(global.as_pointer_value(), val)
+                                .unwrap();
+                        }
                     }
                 }
             }
             return;
         }
         // Handle `{}` parsed as empty block when type annotation says map
-        let ann_type = data.type_ann.as_ref().map(|t| self.type_checker.resolve_type_expr(t));
-        let val = if matches!(&ann_type, Some(Type::Map(_, _))) && matches!(&data.value, Expr::Block(b) if b.statements.is_empty()) {
+        let ann_type = data
+            .type_ann
+            .as_ref()
+            .map(|t| self.type_checker.resolve_type_expr(t));
+        let val = if matches!(&ann_type, Some(Type::Map(_, _)))
+            && matches!(&data.value, Expr::Block(b) if b.statements.is_empty())
+        {
             self.compile_map_lit(&[])
         } else {
             self.compile_expr(&data.value)
         };
+        self.json_parse_hint = None;
+        self.struct_target_type = None;
         if let Some(val) = val {
-            let ty = data.type_ann
+            let ty = data
+                .type_ann
                 .as_ref()
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or_else(|| self.infer_type(&data.value));
             // If declared type is nullable but value is non-nullable, wrap in nullable struct
             let val = self.maybe_wrap_nullable(val, &ty);
             let alloca = self.create_entry_block_alloca(&ty, &data.name);
-            self.builder.build_store(alloca, val).unwrap();
+            self.store_typed(alloca, &ty, val);
             self.define_var(data.name.clone(), alloca, ty);
         }
     }
@@ -187,14 +233,15 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_const_var(&mut self, data: &VarDeclData) {
         let val = self.compile_expr(&data.value);
         if let Some(val) = val {
-            let ty = data.type_ann
+            let ty = data
+                .type_ann
                 .as_ref()
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or_else(|| self.infer_type(&data.value));
             // If declared type is nullable but value is non-nullable, wrap in nullable struct
             let val = self.maybe_wrap_nullable(val, &ty);
             let alloca = self.create_entry_block_alloca(&ty, &data.name);
-            self.builder.build_store(alloca, val).unwrap();
+            self.store_typed(alloca, &ty, val);
             self.define_var(data.name.clone(), alloca, ty);
         }
     }
@@ -204,7 +251,8 @@ impl<'ctx> Codegen<'ctx> {
         match fe.kind {
             "Mut" => {
                 if let Some(data) = feature_data!(fe, VarDeclData) {
-                    let ty = data.type_ann
+                    let ty = data
+                        .type_ann
                         .as_ref()
                         .map(|t| self.type_checker.resolve_type_expr(t))
                         .unwrap_or_else(|| self.infer_type(&data.value));

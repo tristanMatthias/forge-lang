@@ -68,6 +68,8 @@ impl TypeEnv {
         };
         // Register all built-in functions from the feature registry
         crate::registry::BuiltinFnRegistry::register_all(&mut env);
+        // Register runtime functions (C runtime) so type checker knows their signatures
+        crate::registry::RuntimeFnRegistry::register_in_env(&mut env);
 
         // channel() returns int (channel ID) — has Custom return type in registry
         env.functions.insert(
@@ -95,7 +97,9 @@ impl TypeEnv {
         );
 
         // validate() has complex Result<T, ValidationError> return type
-        use crate::features::validation::{field_error_type, validation_error_type, validation_result_type};
+        use crate::features::validation::{
+            field_error_type, validation_error_type, validation_result_type,
+        };
         env.functions.insert(
             "validate".to_string(),
             Type::Function {
@@ -105,8 +109,10 @@ impl TypeEnv {
         );
 
         // Register ValidationError and FieldError types
-        env.type_aliases.insert("FieldError".to_string(), field_error_type());
-        env.type_aliases.insert("ValidationError".to_string(), validation_error_type());
+        env.type_aliases
+            .insert("FieldError".to_string(), field_error_type());
+        env.type_aliases
+            .insert("ValidationError".to_string(), validation_error_type());
 
         env
     }
@@ -120,7 +126,11 @@ impl TypeEnv {
         let mut unused = Vec::new();
         if let Some(scope) = self.scopes.pop() {
             for (name, info) in &scope {
-                if !info.used && !name.starts_with('_') && !name.starts_with("__") && info.def_span.is_some() {
+                if !info.used
+                    && !name.starts_with('_')
+                    && !name.starts_with("__")
+                    && info.def_span.is_some()
+                {
                     unused.push(UnusedVar {
                         name: name.clone(),
                         span: info.def_span.unwrap(),
@@ -138,13 +148,29 @@ impl TypeEnv {
 
     pub fn define(&mut self, name: String, ty: Type, mutable: bool) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, VarInfo { ty, mutable, used: false, def_span: None });
+            scope.insert(
+                name,
+                VarInfo {
+                    ty,
+                    mutable,
+                    used: false,
+                    def_span: None,
+                },
+            );
         }
     }
 
     pub fn define_with_span(&mut self, name: String, ty: Type, mutable: bool, span: Span) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, VarInfo { ty, mutable, used: false, def_span: Some(span) });
+            scope.insert(
+                name,
+                VarInfo {
+                    ty,
+                    mutable,
+                    used: false,
+                    def_span: Some(span),
+                },
+            );
         }
     }
 
@@ -204,16 +230,18 @@ impl TypeEnv {
     pub fn resolve_annotation(ann: &Annotation) -> FieldAnnotation {
         FieldAnnotation {
             name: ann.name.clone(),
-            args: ann.args.iter().map(|expr| {
-                match expr {
+            args: ann
+                .args
+                .iter()
+                .map(|expr| match expr {
                     Expr::IntLit(v, _) => AnnotationArg::Int(*v),
                     Expr::FloatLit(v, _) => AnnotationArg::Float(*v),
                     Expr::StringLit(v, _) => AnnotationArg::String(v.clone()),
                     Expr::BoolLit(v, _) => AnnotationArg::Bool(*v),
                     Expr::Ident(v, _) => AnnotationArg::Ident(v.clone()),
                     _ => AnnotationArg::Expr(expr.clone()),
-                }
-            }).collect(),
+                })
+                .collect(),
         }
     }
 
@@ -235,7 +263,9 @@ impl TypeEnv {
                     ty.clone()
                 } else if let Some(ty) = self.enum_types.get(name) {
                     ty.clone()
-                } else if self.trait_methods.contains_key(name) || self.trait_all_methods.contains_key(name) {
+                } else if self.trait_methods.contains_key(name)
+                    || self.trait_all_methods.contains_key(name)
+                {
                     // Trait name used as a type → dynamic dispatch (trait object)
                     Type::DynTrait(name.to_string())
                 } else {

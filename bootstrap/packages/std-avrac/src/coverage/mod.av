@@ -1,0 +1,884 @@
+// WHY: post-test coverage report.
+//
+// Parses two inputs produced by the LLVM coverage pipeline:
+//   - covmap.tsv    — written by codegen during instrumented build.
+//                     Header line `# file=<source>` followed by
+//                     `<id>\t<type>\t<fn>\t<line>\t<col>\t<branch>` per
+//                     entry. Type is one of: fn_entry, line, branch_then,
+//                     branch_else, match_arm, condition_true,
+//                     condition_false.
+//   - profdata-text — output of `llvm-profdata show --all-functions
+//                     --counts`. One section per fn:
+//                       fn_name:
+//                         Hash: 0x...
+//                         Counters: N
+//                         Function count: K
+//                         Block counts: [c1, c2, ...]
+//                     The leading "Function count" is counter[0]; the
+//                     "Block counts" array is counter[1..N-1].
+//
+// Joins them: for each covmap entry, look up
+// fn_counters[entry.fn][entry.id] to get the hit count. Aggregate per
+// function and per module ("foo::bar::baz" → module "foo::bar"). Print
+// a colored table; optionally write LCOV.
+
+use core.{avra_selfhost_read_file, avra_selfhost_write_file, avra_shell_exec}
+use core.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
+use core.{avra_intmap_new, avra_intmap_set, avra_intmap_has}
+use render.{color_pct, pad_right, pad_left}
+
+/// One row of the `.covmap.tsv` written by codegen during an
+/// instrumented build. Identifies what each LLVM `instrprof.increment`
+/// counter slot stands for so we can attribute hit counts back to the
+/// right source location.
+///
+/// @field id      — counter slot index within the fn's counter array.
+/// @field ctype   — counter category: fn_entry | line | branch_then |
+///                   branch_else | match_arm | condition_true |
+///                   condition_false.
+/// @field fn_name — function the counter belongs to.
+/// @field line    — 1-based source line.
+/// @field col     — 1-based source column.
+/// @field branch  — opaque branch / decision id used to pair MC/DC
+///                   counters.
+export type CovEntry = {
+    id: int,
+    ctype: string,
+    fn_name: string,
+    line: int,
+    col: int,
+    branch: int,
+}
+
+
+/// Per-fn counter array parsed out of the `llvm-profdata show
+/// --all-functions --counts` text dump. `counts[0]` is the "Function
+/// count" line; `counts[1..]` come from the "Block counts: [...]"
+/// array in profdata order.
+export type FnCounts = {
+    name: string,
+    counts: List<int>,
+}
+
+
+
+/// Aggregated coverage stats for a single function, produced by
+/// folding `List<CovEntry> × List<FnCounts>`. Mirrors what the printed
+/// summary and LCOV exporter want.
+///
+/// @field name             — fully-qualified fn name.
+/// @field fn_entry_count   — entry counter (>0 ⇒ fn was called).
+/// @field total_lines      — distinct source lines instrumented.
+/// @field hit_lines        — lines that fired at least once.
+/// @field total_branches   — branch_then + branch_else + match_arm.
+/// @field hit_branches     — branches with count > 0.
+/// @field total_conditions — MC/DC condition pairs.
+/// @field hit_conditions   — pairs that fired both true and false.
+/// @field line_set         — unique line numbers seen.
+/// @field line_hit_set     — unique line numbers with hits.
+export type FnStats = {
+    name: string,
+    fn_entry_count: int,
+    total_lines: int,
+    hit_lines: int,
+    total_branches: int,
+    hit_branches: int,
+    total_conditions: int,
+    hit_conditions: int,
+    line_set: IntSet,
+    line_hit_set: IntSet,
+}
+
+/// Set-of-int with O(1) membership/insert plus a List<int> of keys
+/// in insertion order for downstream iteration (intmaps don't expose
+/// key iteration directly). Backs `FnStats.line_set` /
+/// `line_hit_set`. Replaces the prior `IntListSet` cons-list, which
+/// made `apply_line` O(L²) per fn — a multi-minute hang on the full
+/// 1271-test suite (~5K unique lines × 1.3K fns). Tracking ticket
+/// forge-crafting-intepreters-lkze.2.
+export type IntSet = {
+    keys: List<int>,
+    idx: ptr,
+}
+
+
+/// Module-level rollup of FnStats. Modules are derived from the fn
+/// name's `::`-separated path (see `module_of`).
+///
+/// @field module          — derived module path ("foo::bar").
+/// @field total_lines     — sum of `total_lines` across the module.
+/// @field hit_lines       — sum of `hit_lines`.
+/// @field total_branches  — sum of `total_branches`.
+/// @field hit_branches    — sum of `hit_branches`.
+/// @field total_fns       — number of fns in the module.
+/// @field entered_fns     — fns that were actually called.
+export type ModStats = {
+    module: string,
+    total_lines: int,
+    hit_lines: int,
+    total_branches: int,
+    hit_branches: int,
+    total_fns: int,
+    entered_fns: int,
+}
+
+
+/// MC/DC decision row. `condition_true` and `condition_false`
+/// counters arrive separately in the covmap; `decision_update` pairs
+/// them by `(fn_name, line, branch_id)` into one Decision so the
+/// final MC/DC tally knows whether both directions fired.
+///
+/// @field fn_name      — owning function.
+/// @field line         — source line of the compound condition.
+/// @field branch_id    — opaque MC/DC group id.
+/// @field true_count   — times the sub-condition evaluated true.
+/// @field false_count  — times the sub-condition evaluated false.
+export type Decision = {
+    fn_name: string,
+    line: int,
+    branch_id: int,
+    true_count: int,
+    false_count: int,
+}
+
+
+/// Local percentage helper. Coverage treats "no work" as 100%
+/// covered so empty modules don't pollute the table; `render.pct`
+/// returns 0 in that case (more useful for general-purpose math).
+fn pct(hit: int, total: int) -> int {
+    if total == 0 { 100 } else { hit * 100 / total }
+}
+
+/// Public entry point for the coverage report. Reads
+/// `covmap_path` + `profdata_text_path`, prints the colored summary
+/// table to stdout, and optionally writes LCOV to `lcov_path`
+/// (empty string = no LCOV emit).
+export fn render_coverage(covmap_path: string, profdata_text_path: string, lcov_path: string) {
+    let covmap_src = avra_selfhost_read_file(covmap_path)
+    if covmap_src == "" {
+        eprintln("coverage: empty/missing covmap at ${covmap_path}")
+        return
+    }
+    let profdata_src = avra_selfhost_read_file(profdata_text_path)
+    if profdata_src == "" {
+        eprintln("coverage: empty/missing profdata text at ${profdata_text_path}")
+        return
+    }
+
+    let covmap = parse_covmap(covmap_src)
+    let fn_counts = parse_profdata(profdata_src)
+    let stats = aggregate(covmap, fn_counts)
+    print_summary(stats)
+
+    if lcov_path != "" {
+        let source_file = covmap_file(covmap_src)
+        write_lcov(stats, source_file, lcov_path)
+        println("")
+        println("LCOV written to: ${lcov_path}")
+    }
+}
+
+// ── covmap.tsv parsing ──
+// One entry per line; tab-separated. Header lines start with `#`.
+// Field order: id  type  fn  line  col  branch.
+//
+// Per-line strings are tiny (~50 bytes) so `s.length` and `s[i]` stay
+// cheap — the previous JSON parser pathologically called strlen on the
+// 2 MB buffer per character compare.
+
+/// Pull the source-file path out of the covmap's `# file=...`
+/// header. Returns `""` when no header is present.
+fn covmap_file(src: string) -> string {
+    let key = "# file="
+    let start = src.index_of(key)
+    if start != 0 { return "" }
+    let after = key.length
+    let nl = src.index_of("\n")
+    if nl < 0 { return src.substring(after, src.length) }
+    src.substring(after, nl)
+}
+
+/// Parse a covmap.tsv into a List<CovEntry> in declaration order.
+/// Skips comment lines (`#`) and empty lines. Iterative — a covmap
+/// can have tens of thousands of entries. Source-order via .push,
+/// no reverse pass needed.
+fn parse_covmap(src: string) -> List<CovEntry> {
+    let lines = src.split("\n")
+    mut acc: List<CovEntry> = []
+    mut idx = 0
+    while idx < lines.length {
+        let line = lines[idx]
+        idx = idx + 1
+        if line.length == 0 { continue }
+        if line[0] == "#" { continue }
+        acc.push(parse_cov_line(line))
+    }
+    acc
+}
+
+/// Tab-split one covmap row into its 6 fields. Returns a zeroed
+/// CovEntry for malformed lines instead of erroring — covmap is
+/// best-effort input from a crashed test run.
+fn parse_cov_line(line: string) -> CovEntry {
+    let parts = line.split("\t")
+    if parts.length < 6 {
+        return CovEntry { id: 0, ctype: "", fn_name: "", line: 0, col: 0, branch: 0 }
+    }
+    CovEntry {
+        id: parse_int(parts[0]),
+        ctype: parts[1],
+        fn_name: parts[2],
+        line: parse_int(parts[3]),
+        col: parse_int(parts[4]),
+        branch: parse_int(parts[5]),
+    }
+}
+
+/// Local string→int parser. Doesn't allocate. Stops at the first
+/// non-digit character; signed via a leading `-`. Used by
+/// `parse_cov_line` so we don't pull in the full `int(s)` runtime
+/// path on the hot covmap loop.
+fn parse_int(s: string) -> int {
+    let n = s.length
+    mut i = 0
+    let neg = i < n && s[i] == "-"
+    if neg { i = i + 1 }
+    mut value = 0
+    while i < n && s[i] >= "0" && s[i] <= "9" {
+        value = value * 10 + digit_value(s[i])
+        i = i + 1
+    }
+    if neg { 0 - value } else { value }
+}
+
+/// Map "0"–"9" to 0–9. Returns 0 for any other input — caller
+/// guarantees the char is a digit before calling.
+fn digit_value(ch: string) -> int {
+    match ch {
+        "0" -> 0
+        "1" -> 1
+        "2" -> 2
+        "3" -> 3
+        "4" -> 4
+        "5" -> 5
+        "6" -> 6
+        "7" -> 7
+        "8" -> 8
+        "9" -> 9
+        _ -> 0
+    }
+}
+
+// ── profdata-text parsing ──
+//
+// Format (one section per fn, indented two/four spaces):
+//   fn_name:
+//     Hash: 0x...
+//     Counters: N
+//     Function count: K
+//     Block counts: [c1, c2, ...]
+//
+// We extract: fn_name, Function count, Block counts.
+
+/// Parse a `llvm-profdata show --all-functions --counts` text dump
+/// into a List<FnCounts>. State machine: a bare line ending in `:` is
+/// a fn header; the next `Function count: K` and `Block counts:
+/// [...]` lines populate that fn's counter array. Iterative — the
+/// input can be thousands of lines long.
+fn parse_profdata(src: string) -> List<FnCounts> {
+    let lines = src.split("\n")
+    mut acc: List<FnCounts> = []
+    mut cur_fn = ""
+    mut cur_fn_count = 0
+    mut idx = 0
+    while idx < lines.length {
+        let line = lines[idx].trim()
+        idx = idx + 1
+        if line.length == 0 { continue }
+        if line.starts_with("Instrumentation level") || line.starts_with("Functions shown") || line.starts_with("Total functions") || line.starts_with("Maximum function count") || line.starts_with("Maximum internal block count") || line.starts_with("Total number of blocks") || line.starts_with("Total count") {
+            continue
+        }
+        if line == "Counters:" { continue }
+        if line.starts_with("Hash:") || line.starts_with("Counters:") { continue }
+        if line.starts_with("Function count:") {
+            let after = line.substring(15, line.length).trim()
+            cur_fn_count = int(after)
+            continue
+        }
+        if line.starts_with("Block counts:") {
+            let after = line.substring(13, line.length).trim()
+            let inside = if after.starts_with("[") { after.substring(1, after.length) } else { after }
+            let inside2 = if inside.ends_with("]") { inside.substring(0, inside.length - 1) } else { inside }
+            let counts = parse_block_counts(inside2, cur_fn_count)
+            acc.push(FnCounts { name: cur_fn, counts })
+            cur_fn = ""
+            cur_fn_count = 0
+            continue
+        }
+        // Otherwise: fn-name header line like "fn_name:"
+        if line.ends_with(":") {
+            cur_fn = line.substring(0, line.length - 1)
+            cur_fn_count = 0
+        }
+    }
+    acc
+}
+
+/// Parse `"1, 2, 3"` (the body of a profdata `Block counts: [...]`
+/// line, with brackets already stripped) into a List<int>. Prepends
+/// `fn_count` so `counter[0]` is the entry count and the rest are
+/// block counts in profdata order. Source-order via .push, no reverse
+/// pass needed.
+fn parse_block_counts(s: string, fn_count: int) -> List<int> {
+    let parts = s.split(",")
+    mut out: List<int> = []
+    out.push(fn_count)
+    mut i = 0
+    while i < parts.length {
+        let part = parts[i].trim()
+        if part.length > 0 {
+            out.push(int(part))
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Index into a counter list. O(1) random access — no walk needed
+/// now that the storage is List<int>. Returns 0 when out-of-bounds
+/// (matches the prior linked-list helper's sentinel).
+fn int_list_get(list: List<int>, idx: int) -> int {
+    if idx < 0 || idx >= list.length { return 0 }
+    list[idx]
+}
+
+// ── Aggregate covmap × counters into FnStats ──
+//
+// Hot path. The covmap can have tens of thousands of entries, so we
+// build two cstr-maps for O(1) lookup:
+//   - counts_map[fn_name] → IntList (the per-counter hits)
+//   - stats_map[fn_name]  → FnStats (mutable per-iteration via .set())
+// We also collect names into List<FnStats> in insertion order so the
+// final report has a stable iteration order.
+
+/// Fold the covmap × profdata pair into a per-fn List<FnStats>. Hot
+/// path — the covmap can have tens of thousands of entries, so we
+/// build two cstr-maps for O(1) lookup of counter arrays and
+/// running stats. Decisions accumulate separately and roll into
+/// `total_conditions` / `hit_conditions` after the main pass.
+fn aggregate(covmap: List<CovEntry>, counts: List<FnCounts>) -> List<FnStats> {
+    // Build counts_map: fn_name → ptr to List<int> (stored).
+    let counts_map = avra_map_new_cstr()
+    mut ci = 0
+    while ci < counts.length {
+        let item = counts[ci]
+        avra_map_set_cstr(counts_map, item.name, item.counts)
+        ci = ci + 1
+    }
+
+    let stats_map = avra_map_new_cstr()
+    mut name_list: List<string> = []
+    mut decisions: List<Decision> = []
+
+    mut ei = 0
+    while ei < covmap.length {
+        let e = covmap[ei]
+        // Resolve count
+        mut count = 0
+        if avra_map_has_cstr(counts_map, e.fn_name) == 1 {
+            let il_ptr = avra_map_get_cstr(counts_map, e.fn_name)
+            let il: List<int> = il_ptr
+            count = int_list_get(il, e.id)
+        }
+
+        // Look up or create stats; track name on first sight.
+        let was_new = avra_map_has_cstr(stats_map, e.fn_name) == 0
+        let s = stats_get_or_create(stats_map, e.fn_name)
+        if was_new {
+            name_list.push(e.fn_name)
+        }
+
+        let updated = match e.ctype {
+            "fn_entry" -> s with { fn_entry_count: count }
+            "line" -> apply_line(s, e.line, count)
+            "branch_then" -> apply_branch(s, count)
+            "branch_else" -> apply_branch(s, count)
+            "match_arm" -> apply_branch(s, count)
+            _ -> s
+        }
+        avra_map_set_cstr(stats_map, e.fn_name, updated)
+
+        if e.ctype == "condition_true" {
+            decision_add_true(decisions, e.fn_name, e.line, e.branch, count)
+        }
+        if e.ctype == "condition_false" {
+            decision_add_false(decisions, e.fn_name, e.line, e.branch, count)
+        }
+        ei = ei + 1
+    }
+
+    // Apply finalized MC/DC decisions to the stats map.
+    mut di = 0
+    while di < decisions.length {
+        let d = decisions[di]
+        let was_new = avra_map_has_cstr(stats_map, d.fn_name) == 0
+        let s = stats_get_or_create(stats_map, d.fn_name)
+        if was_new {
+            name_list.push(d.fn_name)
+        }
+        let hit = if d.true_count > 0 && d.false_count > 0 { 1 } else { 0 }
+        let updated = s with {
+            total_conditions: s.total_conditions + 1,
+            hit_conditions: s.hit_conditions + hit,
+        }
+        avra_map_set_cstr(stats_map, d.fn_name, updated)
+        di = di + 1
+    }
+
+    // Build the result list. The pre-refactor cons-prepend pattern
+    // walked name_list forward and prepended onto `out` — net result
+    // was reverse-of-name_list order. Preserve that byte-identical
+    // output by walking name_list backward and .pushing.
+    mut out: List<FnStats> = []
+    mut i = name_list.length - 1
+    while i >= 0 {
+        let sptr = avra_map_get_cstr(stats_map, name_list[i])
+        let s: FnStats = sptr
+        out.push(s)
+        i = i - 1
+    }
+    out
+}
+
+/// Update line counters when seeing a `line` covmap entry.
+/// Maintains `total_lines` / `hit_lines` as O(1) running counters
+/// AND O(1) IntSet inserts via the intmap-backed presence index.
+/// The earlier IntListSet impl was O(n) per insert which made
+/// aggregation O(L²) per fn — multi-minute hang on the full
+/// 1271-test suite (~5K unique lines × 1.3K fns). intmap presence
+/// makes the membership probe + insert both O(1).
+fn apply_line(s: FnStats, line: int, count: int) -> FnStats {
+    if line <= 0 { return s }
+    let already = intset_has(s.line_set, line)
+    let new_total = if already {
+        s.total_lines
+    } else {
+        intset_add(s.line_set, line)
+        s.total_lines + 1
+    }
+    let was_hit = intset_has(s.line_hit_set, line)
+    let new_hit_total = if count > 0 && !was_hit {
+        intset_add(s.line_hit_set, line)
+        s.hit_lines + 1
+    } else {
+        s.hit_lines
+    }
+    s with {
+        total_lines: new_total,
+        hit_lines: new_hit_total,
+    }
+}
+
+/// Update branch counters. Each branch_then / branch_else /
+/// match_arm covmap entry contributes exactly one to total_branches
+/// and one to hit_branches when count > 0.
+fn apply_branch(s: FnStats, count: int) -> FnStats {
+    s with {
+        total_branches: s.total_branches + 1,
+        hit_branches: if count > 0 { s.hit_branches + 1 } else { s.hit_branches },
+    }
+}
+
+/// Look up the FnStats for `name` in the cstr-map; create + insert
+/// an empty one when missing. Used during aggregation so each fn
+/// gets exactly one running stats record.
+fn stats_get_or_create(map: ptr, name: string) -> FnStats {
+    if avra_map_has_cstr(map, name) == 1 {
+        let p = avra_map_get_cstr(map, name)
+        let s: FnStats = p
+        return s
+    }
+    let fresh = empty_stats(name)
+    avra_map_set_cstr(map, name, fresh)
+    fresh
+}
+
+/// Linked list of fn names tracked during aggregation so the final
+/// List<FnStats> preserves first-seen order. The cstr-map alone has
+/// no defined iteration order.
+
+/// Build a zeroed FnStats. Used by `stats_get_or_create` on
+/// first-sight and by the LCOV exporter when synthesizing rows.
+fn empty_stats(name: string) -> FnStats {
+    FnStats {
+        name,
+        fn_entry_count: 0,
+        total_lines: 0,
+        hit_lines: 0,
+        total_branches: 0,
+        hit_branches: 0,
+        total_conditions: 0,
+        hit_conditions: 0,
+        line_set: intset_new(),
+        line_hit_set: intset_new(),
+    }
+}
+
+/// Construct a fresh empty IntSet — `keys` empty list + freshly-
+/// allocated avra_intmap for the presence index.
+fn intset_new() -> IntSet {
+    IntSet { keys: [], idx: avra_intmap_new() }
+}
+
+/// Add `value` to `set`, deduplicating. O(1) thanks to the intmap
+/// presence index. The caller is expected to mutate `set.keys` in
+/// place — fine because IntSet is a struct of (List, ptr) and the
+/// intmap is shared by ptr identity, not value-copied.
+fn intset_add(set: IntSet, value: int) {
+    if avra_intmap_has(set.idx, value) == 1 { return }
+    avra_intmap_set(set.idx, value, 1)
+    mut keys = set.keys
+    keys.push(value)
+}
+
+/// O(1) membership test via the intmap presence index.
+fn intset_has(set: IntSet, value: int) -> bool {
+    avra_intmap_has(set.idx, value) == 1
+}
+
+/// Record a `condition_true` hit. Looks up or creates the
+/// matching Decision row keyed on `(fn_name, line, branch)`.
+/// Mutates `decs` in place — caller passes the same list each time.
+fn decision_add_true(decs: List<Decision>, fn_name: string, line: int, branch: int, count: int) {
+    decision_update(decs, fn_name, line, branch, count, 0)
+}
+
+/// Record a `condition_false` hit. Mirror of `decision_add_true`.
+fn decision_add_false(decs: List<Decision>, fn_name: string, line: int, branch: int, count: int) {
+    decision_update(decs, fn_name, line, branch, 0, count)
+}
+
+/// Upsert helper — find a Decision row by `(fn_name, line, branch)`
+/// and add the supplied true/false increments, or push a fresh row
+/// when no match. Mutates `decs` directly via .set / .push so the
+/// previous recursive cons-rebuild collapses to one walk + maybe a
+/// single update.
+fn decision_update(decs: List<Decision>, fn_name: string, line: int, branch: int, t_inc: int, f_inc: int) {
+    mut local = decs
+    for (i, d) in local.enumerate() {
+        if d.fn_name == fn_name && d.line == line && d.branch_id == branch {
+            local.set(i, d with { true_count: d.true_count + t_inc, false_count: d.false_count + f_inc })
+            return
+        }
+    }
+    local.push(Decision { fn_name, line, branch_id: branch, true_count: t_inc, false_count: f_inc })
+}
+
+// ── Per-module rollup ──
+// "foo::bar::baz" → module "foo::bar". Top-level fns → "top-level".
+// Names starting with "__lambda" → "lambdas".
+
+/// Derive a module name from a fully-qualified fn name. Splits on
+/// `::` and drops the last segment; "foo::bar::baz" → "foo::bar".
+/// Top-level fns roll into `"top-level"`; lambdas into `"lambdas"`.
+fn module_of(fn_name: string) -> string {
+    if fn_name.starts_with("__lambda") { return "lambdas" }
+    let parts = fn_name.split("::")
+    if parts.length < 2 { return "top-level" }
+    mut acc = parts[0]
+    mut i = 1
+    while i < parts.length - 1 {
+        acc = acc + "::" + parts[i]
+        i = i + 1
+    }
+    acc
+}
+
+/// Group an List<FnStats> into a List<ModStats>, summing counters
+/// per module. First-seen order preserved; mod_upsert searches the
+/// list-so-far for an existing row and folds counters in, else
+/// appends.
+fn rollup_modules(stats: List<FnStats>) -> List<ModStats> {
+    mut acc: List<ModStats> = []
+    mut i = 0
+    while i < stats.length {
+        let s = stats[i]
+        let mod_name = module_of(s.name)
+        let entered = if s.fn_entry_count > 0 { 1 } else { 0 }
+        mod_upsert(acc, mod_name, s.total_lines, s.hit_lines, s.total_branches, s.hit_branches, entered)
+        i = i + 1
+    }
+    acc
+}
+
+/// Upsert a per-module rollup row. Finds the existing ModStats by
+/// name and increments its counters, or appends a fresh row when no
+/// match. Mutates `acc` in place.
+fn mod_upsert(acc: List<ModStats>, name: string, tl: int, hl: int, tb: int, hb: int, entered: int) {
+    mut local = acc
+    for (i, m) in local.enumerate() {
+        if m.module == name {
+            local.set(i, m with {
+                total_lines: m.total_lines + tl,
+                hit_lines: m.hit_lines + hl,
+                total_branches: m.total_branches + tb,
+                hit_branches: m.hit_branches + hb,
+                total_fns: m.total_fns + 1,
+                entered_fns: m.entered_fns + entered,
+            })
+            return
+        }
+    }
+    local.push(ModStats {
+        module: name,
+        total_lines: tl,
+        hit_lines: hl,
+        total_branches: tb,
+        hit_branches: hb,
+        total_fns: 1,
+        entered_fns: entered,
+    })
+}
+
+// ── Reporting ──
+// `pad_right` / `pad_left` imported from `render`.
+
+/// Total number of fns in the report.
+fn count_stats(stats: List<FnStats>) -> int { stats.length }
+
+/// Number of fns that were actually called (entry count > 0).
+fn count_entered(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        if stats[i].fn_entry_count > 0 { n = n + 1 }
+        i = i + 1
+    }
+    n
+}
+
+/// Sum of `total_lines` across all fns.
+fn sum_total_lines(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].total_lines
+        i = i + 1
+    }
+    n
+}
+
+/// Sum of `hit_lines` across all fns.
+fn sum_hit_lines(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].hit_lines
+        i = i + 1
+    }
+    n
+}
+
+/// Sum of `total_branches` across all fns.
+fn sum_total_branches(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].total_branches
+        i = i + 1
+    }
+    n
+}
+
+/// Sum of `hit_branches` across all fns.
+fn sum_hit_branches(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].hit_branches
+        i = i + 1
+    }
+    n
+}
+
+/// Sum of `total_conditions` (MC/DC pair groups) across all fns.
+fn sum_total_conditions(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].total_conditions
+        i = i + 1
+    }
+    n
+}
+
+/// Sum of `hit_conditions` (pairs that fired both true and false).
+fn sum_hit_conditions(stats: List<FnStats>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < stats.length {
+        n = n + stats[i].hit_conditions
+        i = i + 1
+    }
+    n
+}
+
+/// Print the colored coverage summary table to stdout. Header + per-
+/// module rollup; MC/DC line only shown when any pair fired.
+fn print_summary(stats: List<FnStats>) {
+    let total_fns = count_stats(stats)
+    let entered = count_entered(stats)
+    let tl = sum_total_lines(stats)
+    let hl = sum_hit_lines(stats)
+    let tb = sum_total_branches(stats)
+    let hb = sum_hit_branches(stats)
+    let tc = sum_total_conditions(stats)
+    let hc = sum_hit_conditions(stats)
+
+    let bar = "======================================================================"
+    println(bar)
+    println("AVRA COVERAGE")
+    println(bar)
+    println("Functions: ${string(total_fns)} total, ${string(entered)} entered")
+    println("Line coverage:   ${string(hl)}/${string(tl)} (${string(pct(hl, tl))}%)")
+    println("Branch coverage: ${string(hb)}/${string(tb)} (${string(pct(hb, tb))}%)")
+    if tc > 0 {
+        println("MC/DC coverage:  ${string(hc)}/${string(tc)} (${string(pct(hc, tc))}%)")
+    }
+    println("")
+    println("${pad_right("MODULE", 45)} ${pad_left("LINES", 12)}    ${pad_left("BRANCH", 10)}    ${pad_right("FNS", 8)}")
+    let dash = "----------------------------------------------------------------------"
+    println(dash)
+    let modules = rollup_modules(stats)
+    print_modules(modules)
+}
+
+/// Render every module's rollup as a single right-padded row, with
+/// per-stat colours from `color_pct`. Used by `print_summary`.
+fn print_modules(mods: List<ModStats>) {
+    mut i = 0
+    while i < mods.length {
+        let m = mods[i]
+        let lp = pct(m.hit_lines, m.total_lines)
+        let lstr = "${string(m.hit_lines)}/${string(m.total_lines)}"
+        let bstr = if m.total_branches > 0 { "${string(m.hit_branches)}/${string(m.total_branches)}" } else { "n/a" }
+        let bpct = if m.total_branches > 0 { color_pct(pct(m.hit_branches, m.total_branches)) } else { "    " }
+        let fstr = "${string(m.entered_fns)}/${string(m.total_fns)}"
+        println("${pad_right(m.module, 45)} ${pad_left(lstr, 8)} ${color_pct(lp)}  ${pad_left(bstr, 7)} ${bpct}  ${pad_left(fstr, 8)}")
+        i = i + 1
+    }
+}
+
+// ── LCOV writer ──
+//
+// LCOV format (from genhtml docs):
+//   TN:<test name>
+//   SF:<absolute source path>
+//   FN:<line>,<fn_name>
+//   FNDA:<exec_count>,<fn_name>
+//   FNF:<num fns>
+//   FNH:<num fns hit>
+//   DA:<line>,<exec_count>
+//   LF:<num lines>
+//   LH:<num lines hit>
+//   end_of_record
+
+/// Write the List<FnStats> as an LCOV `.info` file consumable by
+/// `genhtml`, Codecov, etc. Sections per spec: TN/SF/FN/FNDA/FNF/
+/// FNH/DA/LF/LH/end_of_record. One DA row per unique line across
+/// all fns, with `1` when any fn hit it.
+fn write_lcov(stats: List<FnStats>, source_file: string, out_path: string) {
+    let mut s = "TN:\nSF:${source_file}\n"
+    // FN: lines
+    s = s + write_lcov_fns(stats)
+    s = s + write_lcov_fndas(stats)
+    s = s + "FNF:${string(count_stats(stats))}\n"
+    s = s + "FNH:${string(count_entered(stats))}\n"
+    // DA: per-line hits — collapse all fn line sets into one
+    let all_lines = collect_all_lines(stats)
+    s = s + write_lcov_da(stats, all_lines)
+    s = s + "LF:${string(sum_total_lines(stats))}\n"
+    s = s + "LH:${string(sum_hit_lines(stats))}\n"
+    s = s + "end_of_record\n"
+    avra_selfhost_write_file(out_path, s)
+}
+
+/// Emit the `FN:line,name` block of an LCOV file. Line numbers are
+/// always 0 because we haven't tracked the original source line of
+/// each fn declaration here.
+fn write_lcov_fns(stats: List<FnStats>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < stats.length {
+        out = out + "FN:0,${stats[i].name}\n"
+        i = i + 1
+    }
+    out
+}
+
+/// Emit the `FNDA:exec_count,name` block of an LCOV file. Mirrors
+/// `write_lcov_fns` but with the per-fn entry counts.
+fn write_lcov_fndas(stats: List<FnStats>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < stats.length {
+        out = out + "FNDA:${string(stats[i].fn_entry_count)},${stats[i].name}\n"
+        i = i + 1
+    }
+    out
+}
+
+/// Union the per-fn line sets into a single program-wide IntSet.
+/// O(L) total, dominated by the intmap inserts (each O(1)) and the
+/// outer walk over stats. Insertion-order-preserving: the resulting
+/// `keys` list reflects the order each line was first seen across
+/// the per-fn sets, so the LCOV writer downstream emits DA rows in
+/// a stable, source-traversal order.
+fn collect_all_lines(stats: List<FnStats>) -> IntSet {
+    let total = intset_new()
+    mut i = 0
+    while i < stats.length {
+        intset_union(total, stats[i].line_set)
+        i = i + 1
+    }
+    total
+}
+
+/// Fold every key from `b` into `a`. O(|b|) thanks to the intmap
+/// dedup probe inside `intset_add`.
+fn intset_union(a: IntSet, b: IntSet) {
+    mut i = 0
+    while i < b.keys.length {
+        intset_add(a, b.keys[i])
+        i = i + 1
+    }
+}
+
+/// Emit the `DA:line,exec_count` block of an LCOV file — one row
+/// per unique line across all fns, with `1` if any fn hit the line
+/// or `0` otherwise. We intentionally don't expose per-fn counts
+/// here since the LCOV output is single-file. Iterates the IntSet's
+/// `keys` list directly — ordered by first-seen across fns.
+fn write_lcov_da(stats: List<FnStats>, all_lines: IntSet) -> string {
+    mut out = ""
+    mut i = 0
+    while i < all_lines.keys.length {
+        let line = all_lines.keys[i]
+        let was_hit = any_fn_hit_line(stats, line)
+        let hit_str = if was_hit { "1" } else { "0" }
+        out = out + "DA:${string(line)},${hit_str}\n"
+        i = i + 1
+    }
+    out
+}
+
+/// True when at least one fn's `line_hit_set` contains `line`.
+/// Used by `write_lcov_da` to decide each DA row's flag.
+fn any_fn_hit_line(stats: List<FnStats>, line: int) -> bool {
+    mut i = 0
+    while i < stats.length {
+        if intset_has(stats[i].line_hit_set, line) { return true }
+        i = i + 1
+    }
+    false
+}

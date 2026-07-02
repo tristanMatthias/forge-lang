@@ -1,0 +1,101 @@
+enum IcShape { Circle(r: int), Square(s: int), Triangle }
+enum IcOption { Some(val: int), IcNone }
+
+fn ic_describe(s: IcShape) -> string {
+    if s is .Circle { return "circle" }
+    if s is .Square { return "square" }
+    "triangle"
+}
+
+fn ic_is_round_or_none(s: IcShape, o: IcOption) -> bool {
+    s is .Circle || o is .IcNone
+}
+
+fn ic_count_somes(items: List<int>) -> int {
+    mut count = 0
+    mut i = 0
+    while i < items.length {
+        let val = IcOption.Some(items[i])
+        if val is .Some { count = count + 1 }
+        i = i + 1
+    }
+    count
+}
+
+fn ic_classify(s: IcShape) -> string {
+    match s {
+        .Circle(r) -> {
+            if s is .Circle { "confirmed circle r=" + string(r) } else { "impossible" }
+        }
+        _ -> "not circle"
+    }
+}
+
+type IcTagged = { form: IcShape, label: string }
+
+fn ic_run_chained() -> string {
+    avra_test_capture_start()
+    let a = IcShape.Circle(1)
+    let b = IcShape.Circle(2)
+    if a is .Circle && b is .Circle {
+        println("both circles")
+    }
+    avra_test_capture_stop()
+}
+
+fn ic_run_negated() -> string {
+    avra_test_capture_start()
+    let t = IcShape.Triangle
+    if !(t is .Circle) {
+        println("not a circle")
+    }
+    avra_test_capture_stop()
+}
+
+fn ic_run_struct() -> string {
+    avra_test_capture_start()
+    let tagged = IcTagged { form: IcShape.Square(4), label: "box" }
+    if tagged.form is .Square {
+        println(tagged.label)
+    }
+    avra_test_capture_stop()
+}
+
+spec "is combo" {
+    then "describe circle" {
+        ic_describe(IcShape.Circle(5)) == "circle"
+    }
+    then "describe square" {
+        ic_describe(IcShape.Square(3)) == "square"
+    }
+    then "describe triangle" {
+        ic_describe(IcShape.Triangle) == "triangle"
+    }
+    then "round or none true circle" {
+        ic_is_round_or_none(IcShape.Circle(1), IcOption.IcNone) == true
+    }
+    then "round or none false" {
+        ic_is_round_or_none(IcShape.Square(1), IcOption.Some(1)) == false
+    }
+    then "round or none true none" {
+        ic_is_round_or_none(IcShape.Square(1), IcOption.IcNone) == true
+    }
+    then "count somes" {
+        ic_count_somes([1, 2, 3, 4, 5]) == 5
+    }
+    then "classify circle" {
+        ic_classify(IcShape.Circle(10)) == "confirmed circle r=10"
+    }
+    then "classify non-circle" {
+        ic_classify(IcShape.Triangle) == "not circle"
+    }
+    then "chained is" {
+        ic_run_chained() == "both circles"
+    }
+    then "negated is" {
+        ic_run_negated() == "not a circle"
+    }
+    then "is with struct field" {
+        ic_run_struct() == "box"
+    }
+}

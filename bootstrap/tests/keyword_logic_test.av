@@ -1,0 +1,15 @@
+spec "keyword logic" {
+    then "and not" {
+        let a = true
+        let b = false
+        a and not b
+    }
+    then "or" {
+        let b = false
+        let a = true
+        b or a
+    }
+    then "not false" {
+        not false
+    }
+}

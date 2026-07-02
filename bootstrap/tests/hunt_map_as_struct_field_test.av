@@ -1,0 +1,21 @@
+spec "hunt map as struct field" {
+    then "map operations" {
+        mut m = {}
+        m.set("host", "localhost")
+        m.set("port", "8080")
+        m.get("host") == "localhost"
+    }
+    then "map length" {
+        mut m = {}
+        m.set("host", "localhost")
+        m.set("port", "8080")
+        m.length == 2
+    }
+    then "map keys length" {
+        mut m = {}
+        m.set("host", "localhost")
+        m.set("port", "8080")
+        let keys = m.keys()
+        keys.length == 2
+    }
+}

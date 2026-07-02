@@ -1,0 +1,592 @@
+// WHY: Pass-1 of the new module-resolution architecture (epic y4n1.4).
+//
+// Today's resolver (resolver.av) walks the AST and produces a wrapped
+// AST with `Module("@scope") { Module(name) { ... } }` for every
+// imported package. Name resolution then hunts through that wrapped
+// AST at lookup time. The wrapping is what breaks multi-file packages
+// like @std.avrac: a `use codegen.{X}` written inside the
+// package gets reinterpreted against the consumer's top-level scope,
+// because nothing told the resolver that the path is anchored at
+// std-avrac's package root.
+//
+// This file implements the structural pass: walk every `mod X` and
+// `use X.Y.{Z}` statement starting from `entry_file`, populate a
+// ModuleGraph, and rewrite each `use` path to a ResolvedPath whose
+// anchor is captured at parse time. After this, wrapping cannot
+// change a path's meaning — the anchor is fixed.
+//
+// y4n1.8 cuts name resolution over to consume this graph and deletes
+// the wrapped-AST path entirely. y4n1.4 (the cli/main.av split) then
+// becomes a one-line config change.
+//
+// This pass is intentionally additive: the legacy resolver still
+// runs, and `make test` still uses it. The graph builder is only
+// exercised by the diff-harness spec test in this ticket and by the
+// cutover in y4n1.8.
+
+use core.{Stmt, SStmt, SExpr, Expr, ParamEntry, ValueType, Annotation}
+use core.{
+    ModuleGraph, ModuleGraphNode, ResolvedPath,
+    StringInterner, InternResult,
+    module_graph_new, module_graph_add, module_graph_find_by_file,
+    module_graph_add_package_root, module_graph_package_root,
+    module_graph_link_child, module_graph_child_id,
+    module_graph_alloc_item, module_graph_add_item,
+    module_graph_set_canonical, module_graph_find_by_canonical,
+    module_graph_set_export, module_graph_is_exported,
+    module_graph_append_item,
+    interner_intern,
+    ID_NONE,
+}
+use core.{avra_selfhost_file_exists, avra_selfhost_read_file}
+use parse.{parse_program_source}
+use list_ops.{list_any}
+use features.modules.{
+    modules_dirname, find_packages_dir, resolve_package_path,
+    is_package_use, package_module_name, extract_use_path,
+}
+
+// ── Public API ───────────────────────────────────────────────────────
+
+/// Result of `build_module_graph`.
+///
+/// @field graph         — populated ModuleGraph: every `mod X`
+///                         encountered (including transitive package
+///                         imports) is a node with a stable id.
+/// @field uses          — every `use X.Y.{Z}` rewritten to ResolvedPath
+///                         with its anchor captured. The list is
+///                         intentionally unordered; consumers index by
+///                         (origin_module, segments) when they need it.
+/// @field had_error     — 1 when the build hit a missing-file or
+///                         missing-package failure.
+/// @field error_message — first error encountered. Empty on success.
+export type BuildGraphResult = {
+    graph: ModuleGraph,
+    uses: List<UseEdge>,
+    had_error: int,
+    error_message: string,
+}
+
+/// One resolved-and-anchored `use` edge. Used by name resolution
+/// (y4n1.8) to bind imported names against the graph.
+///
+/// @field origin    — ModuleId of the file that wrote the `use`.
+/// @field path      — anchored path. Variant tells the resolver
+///                     which root to walk from.
+/// @field bindings  — `{X, Y, Z}` in `use a.b.{X, Y, Z}` — interned.
+export type UseEdge = {
+    origin: int,
+    path: ResolvedPath,
+    bindings: List<int>,
+}
+
+/// Build the module graph starting from `entry_file`. The entry file
+/// becomes package 0's root module. Every transitively-loaded `mod X`
+/// is a separate node; every transitively-loaded `@scope.name` package
+/// becomes a separate package with its own root.
+///
+/// Pure on the AST side — only file I/O is reading the .av files we
+/// resolve along the way. No exit() calls; failures surface via
+/// `had_error` + `error_message` so callers can decide.
+export fn build_module_graph(entry_file: string) -> BuildGraphResult {
+    if avra_selfhost_file_exists(entry_file) == 0 {
+        return BuildGraphResult {
+            graph: module_graph_new(),
+            uses: [],
+            had_error: 1,
+            error_message: "entry file not found: ${entry_file}",
+        }
+    }
+    // Allocate package + root module atomically. The chicken/egg
+    // (package needs a root id; root needs a package id) is solved by
+    // module_graph_add_package_root.
+    let pr = module_graph_add_package_root(module_graph_new(), entry_file)
+    let content = avra_selfhost_read_file(entry_file)
+    let parsed = parse_program_source(content)
+    if parsed.had_error || parsed.stmts == null {
+        return BuildGraphResult {
+            graph: pr.graph,
+            uses: [],
+            had_error: 1,
+            error_message: "parse error in ${entry_file}: ${parsed.error_message}",
+        }
+    }
+    let entry_dir = modules_dirname(entry_file)
+    // The entry file is the program root — canonical path "".
+    let g_canon = module_graph_set_canonical(pr.graph, "", pr.mod_id)
+    walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, "", entry_dir, [])
+}
+
+// ── Internal walker ──────────────────────────────────────────────────
+
+/// Recursive walker. Visits each top-level statement of a parsed file
+/// in order. `mod X` declarations spawn child modules + recurse into
+/// the loaded file's statements. `use X.Y.{Z}` declarations are
+/// rewritten to ResolvedPath and accumulated.
+///
+/// `parent_id` is the ModuleId currently being populated (the file
+/// these stmts came from). `pkg_id` is its package. `dir` is the
+/// directory of `parent_id`'s source file — used for sibling lookup.
+fn walk_stmts(g: ModuleGraph, stmts: List<SStmt>, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+    mut cur_g = g
+    mut cur_uses = uses
+    mut i = 0
+    while i < stmts.length {
+        let head = walk_stmt(cur_g, stmts[i], parent_id, pkg_id, canon, dir, cur_uses)
+        if head.had_error { return head }
+        cur_g = head.graph
+        cur_uses = head.uses
+        i = i + 1
+    }
+    BuildGraphResult { graph: cur_g, uses: cur_uses, had_error: 0, error_message: "" }
+}
+
+/// Visit one statement. Dispatches on its kind:
+///   - `.Module(name, _)`  → load `name.av` or `name/mod.av` from
+///                            `dir`, register node, recurse into body.
+///   - `.Use(path, names)` → classify + record a UseEdge (and load
+///                            the package file if it's `@scope.name`).
+///   - `.Annotated(_, inner)` → unwrap and recurse — doc comments
+///                            and attributes don't affect resolution.
+///   - everything else     → no-op (decls become items at y4n1.8;
+///                            for now we only build structure).
+fn walk_stmt(g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+    match ss.node {
+        .Module(name, body) -> walk_mod_decl(g, name, body, parent_id, pkg_id, canon, dir, uses)
+        .Use(path, names) -> walk_use_stmt(g, path, names, parent_id, pkg_id, dir, uses)
+        .Annotated(_, inner) -> {
+            let wrapped = inner
+            walk_stmt(g, wrapped, parent_id, pkg_id, canon, dir, uses)
+        }
+        // Top-level decls register as items in this module so name
+        // resolution can look them up by ItemId. We only allocate ids;
+        // bodies aren't stored in the graph (the AST keeps them).
+        .Function(name, _, _, _, _) -> register_item(g, parent_id, name, uses)
+        .ExternFn(name, _, _) -> register_item(g, parent_id, name, uses)
+        .TypeDecl(name, _, _) -> register_item(g, parent_id, name, uses)
+        .NewtypeDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .UnionAliasDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .ShapeDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .EnumDecl(name, _, _) -> register_item(g, parent_id, name, uses)
+        .TraitDecl(name, _) -> register_item(g, parent_id, name, uses)
+        .Const(name, _, _) -> register_item(g, parent_id, name, uses)
+        _ -> BuildGraphResult { graph: g, uses, had_error: 0, error_message: "" }
+    }
+}
+
+/// Allocate an ItemId and store it under `name` in the parent
+/// module's items strmap. Used by every top-level decl arm in
+/// walk_stmt above. The ItemId itself is opaque — what matters for
+/// resolution is "this name exists in this module".
+fn register_item(g: ModuleGraph, parent_id: int, name: string, uses: List<UseEdge>) -> BuildGraphResult {
+    let alloc = module_graph_alloc_item(g)
+    let g_with_item = module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
+    BuildGraphResult { graph: g_with_item, uses, had_error: 0, error_message: "" }
+}
+
+/// Handle a `mod X` declaration. Locates `X.av` or `X/mod.av` as a
+/// sibling of `dir`, parses it, allocates a new ModuleGraphNode child
+/// of `parent_id`, and recurses into the loaded body.
+///
+/// Dedup: if the same file path has already been registered as a
+/// graph node, we skip re-parsing and just wire up the parent→child
+/// edge against the existing id. Cycles are impossible here because
+/// `mod X` always references a distinct file.
+fn walk_mod_decl(g: ModuleGraph, name: string, _body: List<SStmt>, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+    let sibling = "${dir}${name}.av"
+    let dir_mod = "${dir}${name}/mod.av"
+    mut mod_path = ""
+    if avra_selfhost_file_exists(sibling) != 0 { mod_path = sibling }
+    if mod_path == "" && avra_selfhost_file_exists(dir_mod) != 0 { mod_path = dir_mod }
+    if mod_path == "" {
+        return BuildGraphResult {
+            graph: g, uses, had_error: 1,
+            error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})",
+        }
+    }
+    // Compute canonical path for this child: parent_canon::name.
+    let child_canon = if canon == "" { name } else { "${canon}::${name}" }
+    // Dedup: already-loaded files just wire the parent→child edge.
+    let existing = module_graph_find_by_file(g, mod_path)
+    if existing != ID_NONE {
+        let g_linked = module_graph_link_child(g, parent_id, name, existing)
+        let g_canon = module_graph_set_canonical(g_linked, child_canon, existing)
+        return BuildGraphResult { graph: g_canon, uses, had_error: 0, error_message: "" }
+    }
+    // Allocate a fresh node and register parent→child edge + canonical.
+    let added = module_graph_add(g, mod_path, parent_id, pkg_id)
+    let linked = module_graph_link_child(added.graph, parent_id, name, added.id)
+    let g_canon = module_graph_set_canonical(linked, child_canon, added.id)
+    // Parse + recurse.
+    let content = avra_selfhost_read_file(mod_path)
+    let parsed = parse_program_source(content)
+    if parsed.had_error || parsed.stmts == null {
+        return BuildGraphResult {
+            graph: g_canon, uses, had_error: 1,
+            error_message: "parse error in module `${name}` (${mod_path}): ${parsed.error_message}",
+        }
+    }
+    let mod_dir = modules_dirname(mod_path)
+    walk_stmts(g_canon, parsed.stmts!, added.id, pkg_id, child_canon, mod_dir, uses)
+}
+
+/// Handle a `use X.Y.{Z}` statement. Classifies the path:
+///   - `@scope.name.X.Y` → PackageRoot(pkg_id, [X, Y])
+///                          and ensures the package is loaded.
+///   - `X.Y`            → SelfRelative(origin_pkg, [X, Y])
+///                          — anchor is the originating file's package
+///                          root, fixed at parse time.
+///
+/// Records a UseEdge so name resolution can later bind the imported
+/// names against the graph.
+fn walk_use_stmt(g: ModuleGraph, path: string, names: List<ParamEntry>, parent_id: int, pkg_id: int, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+    if is_package_use(path) {
+        // @scope.name.X.Y — load the package, build PackageRoot.
+        let pkg_load = ensure_package_loaded(g, path, dir)
+        if pkg_load.had_error {
+            return BuildGraphResult {
+                graph: pkg_load.graph, uses,
+                had_error: 1, error_message: pkg_load.error_message,
+            }
+        }
+        let interned = intern_path_segments_after_pkg(pkg_load.graph, path)
+        let bindings = intern_param_names(interned.graph, names)
+        let edge = UseEdge {
+            origin: parent_id,
+            path: ResolvedPath.PackageRoot(pkg_load.pkg_id, interned.segments),
+            bindings: bindings.list,
+        }
+        mut new_uses = uses
+        new_uses.push(edge)
+        return BuildGraphResult {
+            graph: bindings.graph,
+            uses: new_uses,
+            had_error: 0, error_message: "",
+        }
+    }
+    // X.Y — SelfRelative against the originating file's package root.
+    let interned = intern_path_segments(g, path)
+    let bindings = intern_param_names(interned.graph, names)
+    let edge = UseEdge {
+        origin: parent_id,
+        path: ResolvedPath.SelfRelative(pkg_id, interned.segments),
+        bindings: bindings.list,
+    }
+    mut new_uses = uses
+    new_uses.push(edge)
+    BuildGraphResult {
+        graph: bindings.graph,
+        uses: new_uses,
+        had_error: 0, error_message: "",
+    }
+}
+
+// ── Package loading ──────────────────────────────────────────────────
+
+type EnsurePackageResult = {
+    graph: ModuleGraph,
+    pkg_id: int,
+    had_error: int,
+    error_message: string,
+}
+
+/// Locate the file backing `@scope.name`, ensure it's registered as a
+/// package in the graph, and return the package id. Idempotent: if
+/// the package's entry file is already a node, reuse its package id.
+fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> EnsurePackageResult {
+    let pkg_mod_name = package_module_name(use_path)
+    let packages_dir = find_packages_dir(dir)
+    if packages_dir == "" {
+        return EnsurePackageResult {
+            graph: g, pkg_id: ID_NONE, had_error: 1,
+            error_message: "cannot resolve package `${pkg_mod_name}`: no packages/ directory found",
+        }
+    }
+    let pkg_file = resolve_package_path(pkg_mod_name, packages_dir)
+    if pkg_file == "" {
+        return EnsurePackageResult {
+            graph: g, pkg_id: ID_NONE, had_error: 1,
+            error_message: "package `${pkg_mod_name}` not found",
+        }
+    }
+    // Already loaded? Reuse.
+    let existing = module_graph_find_by_file(g, pkg_file)
+    if existing != ID_NONE {
+        // Find the package whose root is `existing`. Linear search
+        // through allocated package ids — packages count is tiny so
+        // this is fine.
+        let pid = find_package_for_root(g, existing)
+        return EnsurePackageResult {
+            graph: g, pkg_id: pid, had_error: 0, error_message: "",
+        }
+    }
+    // Allocate a new package + root module atomically, parse + walk.
+    let pr = module_graph_add_package_root(g, pkg_file)
+    // Canonical for the package root mirrors how name resolution
+    // expects to address it (e.g. "@std::avrac"). pkg_mod_name is
+    // dotted (`@std.avrac`); convert dots to `::`.
+    let pkg_canon = pkg_dots_to_colons(pkg_mod_name)
+    let g_canon = module_graph_set_canonical(pr.graph, pkg_canon, pr.mod_id)
+    let content = avra_selfhost_read_file(pkg_file)
+    let parsed = parse_program_source(content)
+    if parsed.had_error || parsed.stmts == null {
+        return EnsurePackageResult {
+            graph: g_canon, pkg_id: pr.pkg_id,
+            had_error: 1,
+            error_message: "parse error in package `${pkg_mod_name}` (${pkg_file}): ${parsed.error_message}",
+        }
+    }
+    let pkg_dir = modules_dirname(pkg_file)
+    let walked = walk_stmts(g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, [])
+    EnsurePackageResult {
+        graph: walked.graph, pkg_id: pr.pkg_id,
+        had_error: walked.had_error, error_message: walked.error_message,
+    }
+}
+
+// ── Build from already-parsed AST ────────────────────────────────────
+//
+// `build_module_graph` reads files from disk. The compile pipeline,
+// however, has already parsed + wrapped the program (via
+// resolve_module_files) by the time name resolution runs. Building the
+// graph from those stmts directly avoids re-reading + re-parsing every
+// file. This is what name resolution actually consumes.
+
+/// Build a ModuleGraph from a fully-resolved AST statement list.
+/// `stmts` should be the output of `resolve_module_files` — every
+/// `mod X` body is already attached, every `@scope.pkg` import has
+/// been wrapped + hoisted.
+///
+/// Walks every `Stmt.Module(name, body)` and registers it as a
+/// ModuleGraphNode with its canonical path (e.g. `core::ast`,
+/// `@std::avrac::codegen::escape`). Top-level decls register as
+/// items. The result has the same structural information as the
+/// AST tree built by `resolve/names.av::build_module_tree` but
+/// indexed by ModuleId for O(1) lookup.
+///
+/// Returned graph is "anchored at the program root" — there's no
+/// package allocation here because the AST already encodes packages
+/// as wrapped Modules with `@`-prefixed names.
+export fn build_graph_from_stmts(stmts: List<SStmt>) -> ModuleGraph {
+    let g0 = module_graph_new()
+    // Allocate the root module with file="" — it represents the
+    // program root, not any specific source file.
+    let root = module_graph_add(g0, "", ID_NONE, 0)
+    let g1 = module_graph_set_canonical(root.graph, "", root.id)
+    walk_ast_stmts(g1, stmts, root.id, "")
+}
+
+fn walk_ast_stmts(g: ModuleGraph, stmts: List<SStmt>, parent_id: int, canon: string) -> ModuleGraph {
+    mut cur = g
+    mut i = 0
+    while i < stmts.length {
+        cur = walk_ast_stmt(cur, stmts[i].node, parent_id, canon)
+        i = i + 1
+    }
+    cur
+}
+
+fn walk_ast_stmt(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string) -> ModuleGraph {
+    walk_ast_stmt_with_export(g, stmt, parent_id, canon, 0)
+}
+
+/// Worker for `walk_ast_stmt` that threads an `exported` flag down
+/// from `Annotated(@export, …)` wrappers. Each registered item
+/// records its exported state in the graph's `item_exports` strmap so
+/// the resolver can enforce visibility without the AST tree.
+fn walk_ast_stmt_with_export(g: ModuleGraph, stmt: Stmt, parent_id: int, canon: string, exported: bool) -> ModuleGraph {
+    match stmt {
+        .Module(name, body) -> {
+            let child_canon = if canon == "" { name } else { "${canon}::${name}" }
+            let existing = module_graph_find_by_canonical(g, child_canon)
+            if existing != ID_NONE {
+                walk_ast_stmts(g, body, existing, child_canon)
+            } else {
+                let added = module_graph_add(g, "", parent_id, 0)
+                let linked = module_graph_link_child(added.graph, parent_id, name, added.id)
+                let g_canon = module_graph_set_canonical(linked, child_canon, added.id)
+                walk_ast_stmts(g_canon, body, added.id, child_canon)
+            }
+        }
+        .Annotated(annots, inner) -> {
+            let is_export = annotation_list_has_export(annots)
+            let merged = if is_export { 1 } else { exported }
+            walk_ast_stmt_with_export(g, inner.node, parent_id, canon, merged)
+        }
+        .Function(name, _, _, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        // Extern fn keeps its bare C ABI name as the alias canonical;
+        // is_extern=true short-circuits the qualification step below.
+        .ExternFn(name, _, _) -> register_item_typed(g, parent_id, canon, name, 1, true)
+        .TypeDecl(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .NewtypeDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .UnionAliasDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .ShapeDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .EnumDecl(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        .TraitDecl(name, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        // Module-level consts get the same registration treatment as
+        // fns so `use mod.{CONST_NAME}` resolves the name. Without this
+        // arm an `export const` is silently invisible at import sites.
+        .Const(name, _, _) -> register_item_typed(g, parent_id, canon, name, exported, false)
+        _ -> g
+    }
+}
+
+/// Register an item with explicit extern handling. Normal items get
+/// `mod::name` as their alias canonical; externs get the bare name
+/// (C ABI requirement). Both go into `all_items` for global-index
+/// construction and `item_exports` for visibility checks.
+fn register_item_typed(g: ModuleGraph, parent_id: int, canon: string, name: string, exported: bool, is_extern: bool) -> ModuleGraph {
+    let alloc = module_graph_alloc_item(g)
+    let g1 = module_graph_add_item(alloc.graph, parent_id, name, alloc.item_id)
+    let item_canon = if canon == "" { name } else { "${canon}::${name}" }
+    let g2 = module_graph_set_export(g1, item_canon, exported)
+    let alias_canon = if is_extern { name } else { item_canon }
+    module_graph_append_item(g2, name, alias_canon, exported)
+}
+
+/// True iff `annots` contains the `@export` marker. Mirrors the
+/// `annotation_has_export` check in resolve/names.av's tree builder.
+fn annotation_list_has_export(annots: List<Annotation>) -> bool {
+    list_any(annots, (a: Annotation) -> a.name == "export")
+}
+
+/// Look up a module by canonical path with ancestor walk: tries
+/// the absolute path first, then walks up `current_module`'s
+/// ancestor chain (starting at `current_module` itself) looking
+/// for a match.
+///
+/// Starting at `current_module` lets `mod X / use X.{...}` resolve
+/// X to the just-declared sibling — the canonical pattern in test
+/// fixtures (`mod mathlib / use mathlib.{add}`). Disambiguation
+/// between an immediate child and a same-named ancestor sibling is
+/// the job of `qualify_uses_recursively` — it anchors internal use
+/// paths at the package root, turning `use codegen.X` (inside
+/// std-avrac) into `use @std.avrac.codegen.X` so the absolute
+/// lookup wins before the parent walk runs.
+///
+/// Returns the resolved canonical path string. Returns the input
+/// `path` unchanged when no match is found, so the caller's
+/// "import not found" diagnostic still has a useful path to report.
+export fn graph_find_use_path(g: ModuleGraph, current_module: string, path: string) -> string {
+    if module_graph_find_by_canonical(g, path) != ID_NONE { return path }
+    mut search = current_module
+    while search != "" {
+        let scoped = "${search}::${path}"
+        if scoped != current_module && module_graph_find_by_canonical(g, scoped) != ID_NONE {
+            return scoped
+        }
+        search = strip_last_canonical_segment(search)
+    }
+    path
+}
+
+/// Drop the trailing `::name` from a canonical path. Returns "" if
+/// no `::` separator. Used by graph_find_use_path's ancestor walk.
+fn strip_last_canonical_segment(path: string) -> string {
+    mut last = -1
+    mut i = 0
+    while i < path.length - 1 {
+        if path[i] == ":" && path[i + 1] == ":" { last = i }
+        i = i + 1
+    }
+    if last < 0 { "" } else { path.substring(0, last) }
+}
+
+/// Convert `@std.avrac.foo` → `@std::avrac::foo`. Used to align the
+/// graph's canonical-path keys with the `::` form name resolution
+/// uses everywhere else.
+fn pkg_dots_to_colons(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        if s[i] == "." {
+            out = "${out}::"
+        } else {
+            out = "${out}${s[i]}"
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Linear search: which package id has its root set to `root_id`?
+/// Used by ensure_package_loaded for already-cached packages.
+fn find_package_for_root(g: ModuleGraph, root_id: int) -> int {
+    mut pid = 0
+    while pid < g.next_package_id {
+        if module_graph_package_root(g, pid) == root_id { return pid }
+        pid = pid + 1
+    }
+    ID_NONE
+}
+
+// ── Path / name interning ────────────────────────────────────────────
+
+type PathSegmentsResult = { graph: ModuleGraph, segments: List<int> }
+
+/// Intern every dot-separated segment of `path` into the graph's
+/// interner. Used for SelfRelative paths (`X.Y.Z`).
+fn intern_path_segments(g: ModuleGraph, path: string) -> PathSegmentsResult {
+    intern_segments_iter(g, path, 0)
+}
+
+/// Intern every segment AFTER the `@scope.name.` prefix. Used for
+/// PackageRoot paths — the prefix identifies the package, the
+/// segments after identify the module path inside it.
+fn intern_path_segments_after_pkg(g: ModuleGraph, path: string) -> PathSegmentsResult {
+    // path looks like `@scope.name.X.Y` — strip up to and including
+    // the second `.` after the leading `@`.
+    let without_at = path.substring(1, path.length)
+    let dot1 = without_at.index_of(".")
+    if dot1 < 0 {
+        return PathSegmentsResult { graph: g, segments: [] }
+    }
+    let after_scope = without_at.substring(dot1 + 1, without_at.length)
+    let dot2 = after_scope.index_of(".")
+    if dot2 < 0 {
+        // Path was just `@scope.name` — no segments after the package.
+        return PathSegmentsResult { graph: g, segments: [] }
+    }
+    let after_pkg = after_scope.substring(dot2 + 1, after_scope.length)
+    intern_segments_iter(g, after_pkg, 0)
+}
+
+/// Iterative segment interner. Splits `path` on `.` starting at
+/// `start`, interns each segment, and pushes the resulting sym ids
+/// into a List<int> in source order. The previous version used a
+/// recursive prepend + reverse_symbol_list dance; .push gives the
+/// same result with one walk.
+fn intern_segments_iter(g: ModuleGraph, path: string, start: int) -> PathSegmentsResult {
+    mut graph = g
+    mut segments: List<int> = []
+    mut cursor = start
+    let len = path.length
+    while cursor < len {
+        let rest = path.substring(cursor, len)
+        let dot = rest.index_of(".")
+        let segment = if dot < 0 { rest } else { rest.substring(0, dot) }
+        let r = interner_intern(graph.interner, segment)
+        graph = graph with { interner: r.interner }
+        segments.push(r.sym)
+        cursor = if dot < 0 { len } else { cursor + dot + 1 }
+    }
+    PathSegmentsResult { graph: graph, segments: segments }
+}
+
+type ParamNamesResult = { graph: ModuleGraph, list: List<int> }
+
+/// Intern every `name` from a `List<ParamEntry>` — used for `use a.b.{X, Y, Z}`
+/// where each name in the braces becomes a binding in the importing
+/// module's scope. Source-order via .push.
+fn intern_param_names(g: ModuleGraph, params: List<ParamEntry>) -> ParamNamesResult {
+    mut graph = g
+    mut out: List<int> = []
+    mut i = 0
+    while i < params.length {
+        let r = interner_intern(graph.interner, params[i].name)
+        graph = graph with { interner: r.interner }
+        out.push(r.sym)
+        i = i + 1
+    }
+    ParamNamesResult { graph: graph, list: out }
+}

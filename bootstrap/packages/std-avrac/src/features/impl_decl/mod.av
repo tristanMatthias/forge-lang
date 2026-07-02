@@ -1,0 +1,13 @@
+// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surfaces flat at `features.impl_decl.{...}`
+use core.{feature_new, Feature}
+
+/// Register the `impl` block feature. Picks up the `impl` keyword
+/// (both inherent — `impl Type { ... }` — and trait —
+/// `impl Trait for Type { ... }`) and routes to the parser's
+/// `parse_impl_declaration`.
+export fn impl_decl_feature() -> Feature {
+    feature_new("impl_decl") with {
+        decl_keyword: "kw_impl",
+        parse_decl: (p: Parser) -> p.parse_impl_declaration(),
+    }
+}

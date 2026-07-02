@@ -1,0 +1,208 @@
+// Phase 2 of Components V2 (vez6.2 slice B): exercise the comptime
+// fold driver. Builds a small registry by hand, constructs call ASTs
+// with literal args, and asserts that `try_fold_call` produces the
+// expected literal Expr.
+
+use @std.avrac.core.{Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, BinOp, render_expr}
+use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
+
+// `fn add(x: int, y: int) -> int { return x + y }`
+fn mk_add_fn() -> CompTimeFn {
+    let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Return(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y")))),
+    ]
+    CompTimeFn {
+        name: "add",
+        params: [
+            ParamEntry { name: "x", vtype: ValueType.Int },
+            ParamEntry { name: "y", vtype: ValueType.Int },
+        ],
+        ret_ty: ValueType.Int,
+        body,
+    }
+}
+
+fn add_registry() -> CompTimeRegistry {
+    // Reuse comptime_registry_new for the default-field values so this
+    // doesn't need to know the registry's internal field set. Override
+    // `fns`, then re-prepare to seed the runtime + name index.
+    let empty = comptime_registry_new()
+    let staged = empty with { fns: [mk_add_fn()] }
+    prepare_runtime(staged)
+}
+
+// `add(2, 3)` as an Expr.Call AST.
+fn mk_call(name: string, args: List<SExpr>) -> Expr {
+    Expr.Call(Expr.Ident(name), args)
+}
+
+// Helper: extract the Number text from an Expr literal, or "" if it isn't a Number.
+fn number_text_of(e: Expr) -> string {
+    match e {
+        .Number(text) -> text
+        _ -> ""
+    }
+}
+
+spec "comptime.try_fold_call: basic arithmetic" {
+    then "add(2, 3) folds to 5" {
+        let args: List<SExpr> = [sexpr_dummy(Expr.Number("2")), sexpr_dummy(Expr.Number("3"))]
+        let folded = try_fold_call(add_registry(), mk_call("add", args))
+        folded != null && number_text_of(folded!) == "5"
+    }
+    then "add(10, 20) folds to 30" {
+        let args: List<SExpr> = [sexpr_dummy(Expr.Number("10")), sexpr_dummy(Expr.Number("20"))]
+        let folded = try_fold_call(add_registry(), mk_call("add", args))
+        folded != null && number_text_of(folded!) == "30"
+    }
+}
+
+spec "comptime.try_fold_call: not a call" {
+    then "non-call expr returns null" {
+        try_fold_call(add_registry(), Expr.Number("42")) == null
+    }
+}
+
+spec "comptime.try_fold_call: unknown callee" {
+    then "call to unregistered fn returns null" {
+        let args: List<SExpr> = [sexpr_dummy(Expr.Number("1"))]
+        try_fold_call(add_registry(), mk_call("missing", args)) == null
+    }
+}
+
+spec "comptime.try_fold_call: non-literal args refuse to fold" {
+    then "call with Ident arg returns null (can't fold a runtime variable)" {
+        let args: List<SExpr> = [sexpr_dummy(Expr.Ident("user_var")), sexpr_dummy(Expr.Number("5"))]
+        try_fold_call(add_registry(), mk_call("add", args)) == null
+    }
+}
+
+// vez6.6.4: macro fns return AST values via `quote`-lowered EnumCtor
+// chains. The fold needs to decode the resulting kind="enum" Value
+// back into an Expr literal so it can splice into the surrounding AST.
+
+// `fn make_ident() -> Expr { return Expr.Ident("x") }` — captured as
+// the EnumCtor shape that lower_quotes would have produced.
+fn mk_make_ident_fn() -> CompTimeFn {
+    let arg: List<SExpr> = [sexpr_dummy(Expr.String("\"x\""))]
+    let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Ident", arg))),
+    ]
+    CompTimeFn {
+        name: "make_ident",
+        params: [],
+        ret_ty: ValueType.Unknown,
+        body,
+    }
+}
+
+fn make_ident_registry() -> CompTimeRegistry {
+    let staged = comptime_registry_new() with { fns: [mk_make_ident_fn()] }
+    prepare_runtime(staged)
+}
+
+spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4 / vez6.6.5)" {
+    then "make_ident() folds to an Expr.EnumCtor for `Expr.Ident(\"x\")`" {
+        // vez6.6.5: the fold output is now the EnumCtor source form
+        // (so the spliced result evaluates to the original Expr value
+        // at runtime), not the post-resolve Ident AST. Rendering the
+        // EnumCtor pins the variant + payload contents.
+        let folded = try_fold_call(make_ident_registry(), mk_call("make_ident", []))
+        folded != null
+            && render_expr(folded!) == "(ctor @std::avrac::core::Expr.Ident (\"x\"))"
+    }
+}
+
+// `fn make_sum() -> Expr { return Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2")) }`
+// — captured as the EnumCtor shape lower_quotes produces for
+// `quote { 1 + 2 }`. Exercises the structural-variant decoder added
+// to enum_value_to_expr.
+fn mk_make_sum_fn() -> CompTimeFn {
+    let one_arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"1\""))]
+    let two_arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"2\""))]
+    let one_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_str)
+    let two_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", two_arg_str)
+    let empty_args: List<SExpr> = []
+    let add_op = Expr.EnumCtor("@std::avrac::core::BinOp", "Add", empty_args)
+    let bin_args: List<SExpr> = [sexpr_dummy(one_expr), sexpr_dummy(add_op), sexpr_dummy(two_expr)]
+    let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Binary", bin_args))),
+    ]
+    CompTimeFn {
+        name: "make_sum",
+        params: [],
+        ret_ty: ValueType.Unknown,
+        body,
+    }
+}
+
+fn make_sum_registry() -> CompTimeRegistry {
+    let staged = comptime_registry_new() with { fns: [mk_make_sum_fn()] }
+    prepare_runtime(staged)
+}
+
+spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4 / vez6.6.5)" {
+    then "make_sum() folds to an Expr.EnumCtor for `Expr.Binary(Number(1), Add, Number(2))`" {
+        // The render output is the source-form of the EnumCtor that
+        // codegen will turn into a runtime Expr.Binary value. Inner
+        // operands are themselves EnumCtors (Number ctors), and the
+        // operator is a BinOp ctor — vez6.6.5's generic decoder
+        // rebuilds the whole nested shape.
+        let folded = try_fold_call(make_sum_registry(), mk_call("make_sum", []))
+        folded != null
+            && render_expr(folded!).contains("@std::avrac::core::Expr.Binary")
+            && render_expr(folded!).contains("@std::avrac::core::BinOp.Add")
+            && render_expr(folded!).contains("\"1\"")
+            && render_expr(folded!).contains("\"2\"")
+    }
+}
+
+// `fn make_call() -> Expr { return Expr.Call(Expr.Ident("f"), [Expr.Number("7")]) }`
+// — exercises the Call + list-arg decoders. The arg list construct
+// in lower.av builds an Expr.ListLit whose runtime eval produces a
+// kind="list" Value; the decoder reads it back via list_value_to_expr_list.
+fn mk_make_call_fn() -> CompTimeFn {
+    let arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"7\""))]
+    let inner_num = Expr.EnumCtor("@std::avrac::core::Expr", "Number", arg_str)
+    // Build the arg-list as an Expr.ListLit whose single element is a
+    // Call to sexpr_dummy wrapping the inner Number ctor. Mirrors the
+    // shape construct_expr_list emits post-lkze.9 #18.
+    let sexpr_dummy_args: List<SExpr> = [sexpr_dummy(inner_num)]
+    let sexpr_dummy_call = Expr.Call(
+        Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
+        sexpr_dummy_args)
+    let args_list_elems: List<SExpr> = [sexpr_dummy(sexpr_dummy_call)]
+    let args_list = Expr.ListLit(args_list_elems)
+    let f_ident_str: List<SExpr> = [sexpr_dummy(Expr.String("\"f\""))]
+    let callee_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Ident", f_ident_str)
+    let call_payload: List<SExpr> = [sexpr_dummy(callee_expr), sexpr_dummy(args_list)]
+    let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Call", call_payload))),
+    ]
+    CompTimeFn {
+        name: "make_call",
+        params: [],
+        ret_ty: ValueType.Unknown,
+        body,
+    }
+}
+
+fn make_call_registry() -> CompTimeRegistry {
+    let staged = comptime_registry_new() with { fns: [mk_make_call_fn()] }
+    prepare_runtime(staged)
+}
+
+spec "comptime.try_fold_call: Call + List<SExpr> decode (vez6.6.4 / vez6.6.5)" {
+    then "make_call() folds to an Expr.EnumCtor for `Expr.Call(Ident(f), [Number(7)])`" {
+        // The Call rebuild contains the callee Ident EnumCtor, an
+        // outer Call EnumCtor, and the ListLit ctor for the
+        // single arg. Both the f-name and 7-arg literal appear in
+        // the rendered form.
+        let folded = try_fold_call(make_call_registry(), mk_call("make_call", []))
+        folded != null
+            && render_expr(folded!).contains("@std::avrac::core::Expr.Call")
+            && render_expr(folded!).contains("@std::avrac::core::Expr.Ident")
+            && render_expr(folded!).contains("\"f\"")
+            && render_expr(folded!).contains("\"7\"")
+    }
+}

@@ -1,0 +1,79 @@
+// WHY: Wires `[body for var in coll if filter]` through the
+// resolve/typeck/codegen pipeline as a first-class language feature.
+//
+// Until yhoe shipped, ListComp was AST-desugared into a Block with
+// `mut __lc: Unknown = []; for var in coll { __lc.push(body) }; __lc`.
+// The desugar carried no type info, so the result was always
+// `List<Unknown>` — nested comprehensions and any downstream typed
+// op (.length on `nested[0]`, .map on the result, …) collapsed at
+// codegen with a "non-list" error.
+//
+// The feature instead:
+//   - resolve binds `var` in body+filter scope (collection sees outer)
+//   - typeck infers result as `List<typeof(body)>` with
+//     `var: elem_of(coll)` bound during body+filter check
+//   - codegen `emit_list_comp` lowers directly to LLVM IR (forin loop
+//     allocating a fresh result list, optional cond_br filter, push)
+// so the result list is typed end-to-end.
+
+use core.{Expr, VarBinding, Stmt, feature_new, Feature, vtype_list_elem}
+use codegen.{Ctx, EmitValue, err_emit}
+use resolve.{Resolver, declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr}
+use typeck.{TC, ExprResult, tc_er, tc_bind, tc_enter, tc_exit, check_expr}
+
+/// Register ListComp as a first-class feature. Sentinel
+/// `Expr.ListComp(Null, "", Null, null)` pins the variant tag so
+/// the registry routes dispatch to the hooks defined below.
+export fn list_comp_feature() -> Feature {
+    feature_new("list_comp") with {
+        expr_tag: Expr.ListComp(Expr.None, "", Expr.None, null),
+        emit_expr: list_comp_emit_expr,
+        resolve_expr: list_comp_resolve_expr,
+        check_expr: list_comp_check_expr,
+    }
+}
+
+/// Resolver hook: bind `var` in body+filter scope so its identifiers
+/// resolve to the loop binding (and so capture analysis treats them
+/// as local). Collection is resolved in the *outer* scope — `var`
+/// can't reference itself in its own initializer.
+fn list_comp_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .ListComp(body, variable, collection, filter) -> {
+            let after_coll = resolve_expr(r, collection)
+            let entered = enter_resolve_scope(after_coll)
+            let bound = define_name(declare_name(entered, variable), variable)
+            let after_filter = if filter != null { resolve_expr(bound, filter!) } else { bound }
+            let after_body = resolve_expr(after_filter, body)
+            exit_resolve_scope(after_body)
+        }
+        _ -> r
+    }
+}
+
+/// Type-check hook: infer result as `List<typeof(body)>` with
+/// `var: elem_of(coll)` bound during body+filter check. Without
+/// this, downstream `.length` / index / map calls on a comp result
+/// see `List<Unknown>` and fall through to codegen errors.
+fn list_comp_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .ListComp(body, variable, collection, filter) -> {
+            let c = check_expr(tc, collection)
+            let elem_ty = vtype_list_elem(c.ty)
+            let inner = tc_enter(c.tc)
+            let bound = tc_bind(inner, variable, elem_ty)
+            let after_filter = if filter != null { check_expr(bound, filter!).tc } else { bound }
+            let body_r = check_expr(after_filter, body)
+            tc_er(tc_exit(body_r.tc), .List(body_r.ty))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// Codegen hook: dispatches to `emit_list_comp` (sibling file).
+fn list_comp_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .ListComp(body, variable, collection, filter) -> emit_list_comp(ctx, env, body, variable, collection, filter)
+        _ -> err_emit("expected ListComp")
+    }
+}

@@ -1,0 +1,999 @@
+// WHY: emits LLVM IR for `match` as both a statement and an expression.
+
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types, vtype_is_optional, vtype_strip_optional}
+use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type, emit_optional_is_none, emit_optional_unwrap, emit_if_optional_canon}
+use core.{vtype_from_name, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
+use codegen.{ok_sr, err_sr}
+use features.union_type.{emit_union_tag, emit_union_extract}
+use diagnostics.{DiagCode}
+
+/// Wrap a unified arm type as a successful Result. Codegen-side
+/// helper used by the recursive arm walker.
+fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> { Result.Ok(ty) }
+/// Companion failure helper for arm type unification.
+fn err_match_ty(message: string) -> Result<ValueType, string> { Result.Err(message) }
+
+/// Emit a codegen-time F1000 when arm bodies disagree on type.
+/// Surfaced as a warning rather than an error so generic / Void
+/// arms keep compiling.
+fn warn_arm_type_mismatch(ctx: Ctx, body_ty: ValueType, rest_ty: ValueType) {
+    ctx.warn(DiagCode.TypeMismatch, "match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+}
+
+/// Wrap a string into the EmitValue Result.Err shape — used to
+/// forward arm-walker failures up to the public emit fn.
+fn forward_emit_err(message: string) -> Result<EmitValue, string> { Result.Err(message) }
+
+/// Wrap a string into the StmtResult Result.Err shape — used to
+/// forward arm-walker failures up to the public stmt-emit fn.
+fn forward_stmt_err(message: string) -> Result<StmtResult, string> {
+    err_sr(message)
+}
+
+// ── Match as expression ──
+
+/// Emit `match expr { arms... }` as a value-producing
+/// expression. Dispatches on subject type:
+/// - Union → `emit_union_match_expr` (tag-based dispatch);
+/// - Enum  → `emit_match_expr_arms` (variant-tag dispatch);
+/// - Else  → `emit_primitive_match_expr` (literal compare).
+/// Allocates a result slot, fills it from each matching arm,
+/// and merges via a final phi-block.
+export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: List<MatchArm>) -> Result<EmitValue, string> {
+    match ctx.emit(env, subject) {
+        .Err(msg) -> forward_emit_err(msg)
+        .Ok(r) -> {
+            // Union type match: tag-based dispatch on union values
+            if vtype_is_union(emit_value_ty(r)) {
+                return emit_union_match_expr(ctx, env, r, arms)
+            }
+            // Optional subject: `T?` is not an enum (no tag), so route to
+            // the present/none dispatch that reuses the optional primitives.
+            if vtype_is_optional(emit_value_ty(r)) {
+                return emit_optional_match_expr(ctx, env, r, arms)
+            }
+            mut enum_name = vtype_enum_name(emit_value_ty(r))
+            // When subject type is Unknown, try to infer enum type from pattern variant names.
+            // This handles cases where type resolution returns Unknown for generic params
+            // or unresolved types — the pattern variants unambiguously identify the enum.
+            if enum_name == "" {
+                let inferred = infer_enum_from_arms(ctx, arms)
+                if inferred != "" { enum_name = inferred }
+            }
+            if enum_name == "" {
+                if arms_have_type_pattern(arms) {
+                    return forward_emit_err("type patterns like `int(n)` are only valid on union types, but subject has type `${vtype_display(emit_value_ty(r))}`")
+                }
+                return emit_primitive_match_expr(ctx, env, r, arms)
+            }
+            let lookup = ctx.lookup_enum(enum_name)
+            if !lookup.found { return err_emit("unknown enum `${enum_name}`") }
+            let st_ty = ctx.get_type(enum_name)
+            let subj_ptr = ctx.to_ptr(emit_value_ptr(r), "match_subj")
+            let tag_val = ctx.enum_tag(emit_value_ptr(r), enum_name)
+            let result_slot = ctx.alloca_i64("match_result")
+            ctx.store(ctx.i64(0), result_slot)
+            let merge_bb = ctx.bb("match_end")
+            let result_ty = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)?
+            ctx.position(merge_bb)
+            let loaded = ctx.load_i64(result_slot, "match_val")
+            ok_emit(loaded, result_ty)
+        }
+    }
+}
+
+// ── Optional match ──
+// `match (x: T?) { let v -> … , none -> … }` — the parser lowers the
+// present-bind `let v` to `.Some(v)` and `none` to `.None`. `T?` has no
+// enum tag (it's the dual niche/tagged optional repr), so the normal enum
+// path can't dispatch it. We branch on present/absent — reusing the same
+// present-test (`emit_optional_is_none`) and unwrap (`emit_optional_unwrap`)
+// the `?` / `??` operators emit — then walk the arms IN ORDER within each
+// branch, so guards and literal patterns over the present value behave
+// exactly as they do in an ordinary primitive `match`.
+
+/// Shared tail of an optional-match arm: emit the body into `body_bb`,
+/// store-and-branch its value to the merge, and reposition at `next_bb`.
+/// Returns the body's type (the walkers keep the FIRST as the match's
+/// result type).
+fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    ctx.position(body_bb)
+    let br = ctx.emit(env, arm.body.node)?
+    ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+    ctx.position(next_bb)
+    ok_match_ty(emit_value_ty(br))
+}
+
+/// Present-branch arm walk: the optional is known present and unwrapped to
+/// `v: inner`. Arms run IN ORDER — `let v` binds the value and is a
+/// (guard-aware) catch-all; literal patterns match the present value; `_`
+/// is a catch-all; `none` arms belong to the absent branch and are skipped.
+/// Structural patterns over the inner value (inner-enum variants, nested,
+/// type patterns) are not supported here — unwrap first with `if let` — and
+/// raise a clear error rather than silently dropping the arm. On no match
+/// (no catch-all), traps like any non-exhaustive primitive match.
+fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: ValueType, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    let subj = EmitValue { value: v, ty: inner }
+    mut first_ty: ValueType = ValueType.Unknown
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let p = arm.pattern
+        if !pattern_is_optional_absent(p) {
+            let body_bb = ctx.bb("optm_some_body")
+            let next_bb = ctx.bb("optm_some_next")
+            mut arm_env = env
+            mut is_catch_all = false
+            if pattern_is_optional_present(p) {
+                let name = pattern_optional_binding(p)
+                arm_env = if name != "" { ctx.bind(env, name, v, inner) } else { env }
+                if arm.guard != null {
+                    let gr = ctx.emit(arm_env, arm.guard!.node)?
+                    ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_sg"), body_bb, next_bb)
+                } else {
+                    ctx.br(body_bb)
+                    is_catch_all = true
+                }
+            } else if p is .Wildcard {
+                if arm.guard != null {
+                    let gr = ctx.emit(env, arm.guard!.node)?
+                    ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_swg"), body_bb, next_bb)
+                } else {
+                    ctx.br(body_bb)
+                    is_catch_all = true
+                }
+            } else if is_literal_pattern(p) {
+                let cmp = emit_literal_cmp(ctx, subj, p)
+                if arm.guard != null {
+                    let lit_bb = ctx.bb("optm_lit")
+                    ctx.cond_br(cmp, lit_bb, next_bb)
+                    ctx.position(lit_bb)
+                    let gr = ctx.emit(env, arm.guard!.node)?
+                    ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_lg"), body_bb, next_bb)
+                } else {
+                    ctx.cond_br(cmp, body_bb, next_bb)
+                }
+            } else {
+                return err_match_ty("matching the inner value of an optional with this pattern isn't supported — unwrap first: `if let v = x { match v { … } }`. Optional `match` supports `let <name>` (present), `none` (absent), `_`, and literal patterns.")
+            }
+            let body_ty = emit_optional_arm_body(ctx, arm_env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            if vtype_is_unknown(first_ty) { first_ty = body_ty }
+            if is_catch_all {
+                // Unguarded catch-all: the trailing block is unreachable.
+                ctx.br_if_open(merge_bb)
+                return ok_match_ty(first_ty)
+            }
+        }
+        i = i + 1
+    }
+    // Present value matched no arm — non-exhaustive. Exhaustiveness is the
+    // typechecker's job (it rejects this before codegen); trap here, as a
+    // primitive match does, in case codegen is reached without that gate.
+    ctx.match_trap(ctx.i64(0 - 1))
+    ok_match_ty(first_ty)
+}
+
+/// Absent-branch arm walk: the optional is known `none`. Only `none` and
+/// `_` arms apply (guard-aware, in order); everything else is skipped. On
+/// no match, traps like any non-exhaustive match.
+fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+    mut first_ty: ValueType = ValueType.Unknown
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let p = arm.pattern
+        if pattern_is_optional_absent(p) || (p is .Wildcard) {
+            let body_bb = ctx.bb("optm_none_body")
+            let next_bb = ctx.bb("optm_none_next")
+            mut is_catch_all = false
+            if arm.guard != null {
+                let gr = ctx.emit(env, arm.guard!.node)?
+                ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_ng"), body_bb, next_bb)
+            } else {
+                ctx.br(body_bb)
+                is_catch_all = true
+            }
+            let body_ty = emit_optional_arm_body(ctx, env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            if vtype_is_unknown(first_ty) { first_ty = body_ty }
+            if is_catch_all {
+                ctx.br_if_open(merge_bb)
+                return ok_match_ty(first_ty)
+            }
+        }
+        i = i + 1
+    }
+    ctx.match_trap(ctx.i64(0 - 1))
+    ok_match_ty(first_ty)
+}
+
+/// Present/absent dispatch: branch on the optional, walk the arms in each
+/// branch (storing bodies into `result_slot`), then merge. A `{T, none}`
+/// arm-type mix (e.g. `match x { let v -> v + 1, none -> none }` returning
+/// `T?`) is canonicalised to `T?` exactly as a value `if`/`else` is — box
+/// the present arm, keep `none` the null pointer. Leaves the builder at the
+/// merged block and returns the result value (the stmt wrapper discards it).
+fn emit_optional_match_core(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<EmitValue, string> {
+    let inner = vtype_strip_optional(emit_value_ty(subj))
+    let opt = emit_value_ptr(subj)
+    let is_none = emit_optional_is_none(ctx, opt)
+    let some_bb = ctx.bb("optm_some")
+    let none_bb = ctx.bb("optm_none")
+    ctx.cond_br(is_none, none_bb, some_bb)
+    ctx.position(some_bb)
+    let v = emit_optional_unwrap(ctx, inner, opt)
+    let present_ty = emit_optional_some_arms(ctx, env, v, inner, arms, result_slot, merge_bb)?
+    ctx.position(none_bb)
+    let none_ty = emit_optional_none_arms(ctx, env, arms, result_slot, merge_bb)?
+    ctx.position(merge_bb)
+    // `is_none` selects the branch (true → none arm, false → present arm), so
+    // it maps to the canon's (then = none_ty, else = present_ty).
+    let canon = emit_if_optional_canon(ctx, is_none, result_slot, none_ty, present_ty)
+    if canon != none { return ok_emit(canon!.value, canon!.ty) }
+    let rty = if !vtype_is_unknown(present_ty) { present_ty } else { none_ty }
+    ok_emit(ctx.load_i64(result_slot, "optm_val"), rty)
+}
+
+fn emit_optional_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
+    let result_slot = ctx.alloca_i64("optm_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("optm_end")
+    emit_optional_match_core(ctx, env, subj, arms, result_slot, merge_bb)
+}
+
+/// Statement position is the expression emit with the value discarded.
+fn emit_optional_match_stmt(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
+    emit_optional_match_expr(ctx, env, subj, arms)?
+    ok_sr(ctx, env)
+}
+
+// ── Union match expression ──
+
+/// Emit a union-typed match expression. Loads the wrapper's
+/// tag, builds a dispatch chain across the union members, then
+/// delegates per-arm emission to `emit_union_match_arms`.
+fn emit_union_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
+    let tag_val = emit_union_tag(ctx, emit_value_ptr(subj))
+    let result_slot = ctx.alloca_i64("union_match_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("union_match_end")
+    let union_types = vtype_union_types(emit_value_ty(subj))
+    let result_ty = emit_union_match_arms(ctx, env, arms, emit_value_ptr(subj), tag_val, union_types, merge_bb, result_slot)?
+    ctx.position(merge_bb)
+    let loaded = ctx.load_i64(result_slot, "union_match_val")
+    ok_emit(loaded, result_ty)
+}
+
+/// Per-union-arm emitter. Compares the loaded tag against
+/// each arm's expected type-hash; on match, extracts the
+/// payload typed correctly and runs the arm body. Merges all
+/// arm exits at `merge_bb` and stores results in `result_slot`.
+fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, subj_val: ptr, tag_val: ptr, union_types: List<ValueType>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    // Source-order arm walk. Each iteration positions the IR
+    // builder either at the arm's body block (on tag match) or at
+    // the fall-through `next_bb` (no match). The wildcard arm
+    // short-circuits — bodies after it are unreachable, so we stop
+    // the walk and skip the fall-through trap. The reported type is
+    // the FIRST arm's body type (matches the prior outermost-wraps
+    // recursion semantics — every level returned its own body type,
+    // and the outermost was the first arm).
+    mut first_ty: ValueType = ValueType.Unknown
+    mut first_ty_set = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let body = arm.body
+        let result_for_arm = match arm.pattern {
+            .TypePattern(type_name, binding) -> {
+                let arm_bb = ctx.bb("union_arm")
+                let next_bb = ctx.bb("union_next")
+                let expected_tag = ctx.i64(avra_variant_hash(type_name))
+                let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
+                ctx.cond_br(cmp, arm_bb, next_bb)
+                ctx.position(arm_bb)
+                let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(type_name))
+                let extracted = emit_union_extract(ctx, subj_val, member_ty)
+                let arm_env = ctx.bind(env, binding, extracted.value, member_ty)
+                if arm.guard != null {
+                    match ctx.emit(arm_env, arm.guard!.node) {
+                        .Err(msg) -> return err_match_ty(msg)
+                        .Ok(guard_r) -> {
+                            let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                            let guard_pass_bb = ctx.bb("guard_pass")
+                            ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                            ctx.position(guard_pass_bb)
+                        }
+                    }
+                }
+                match ctx.emit(arm_env, body.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(body_result) -> {
+                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.position(next_bb)
+                        emit_value_ty(body_result)
+                    }
+                }
+            }
+            .Wildcard -> {
+                // Wildcard matches everything — emit body directly,
+                // no branch needed. Subsequent arms are unreachable.
+                match ctx.emit(env, body.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(body_result) -> {
+                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        // Cap the type and exit early — no trap
+                        // (everything is matched) and no further arms
+                        // would execute. If this is the very first
+                        // arm, its type is what we report; otherwise
+                        // the already-captured `first_ty` wins.
+                        let ty = emit_value_ty(body_result)
+                        return ok_match_ty(if first_ty_set { first_ty } else { ty })
+                    }
+                }
+            }
+            // Treat .Variant(name, bindings) as a type pattern on unions
+            .Variant(vname, bindings) -> {
+                let binding = match bindings { .Node(n, _, _) -> n, .End -> "_" }
+                let arm_bb = ctx.bb("union_arm")
+                let next_bb = ctx.bb("union_next")
+                let expected_tag = ctx.i64(avra_variant_hash(vname))
+                let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
+                ctx.cond_br(cmp, arm_bb, next_bb)
+                ctx.position(arm_bb)
+                let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(vname))
+                let extracted = emit_union_extract(ctx, subj_val, member_ty)
+                let arm_env = if binding != "_" { ctx.bind(env, binding, extracted.value, member_ty) } else { env }
+                match ctx.emit(arm_env, body.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(body_result) -> {
+                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.position(next_bb)
+                        emit_value_ty(body_result)
+                    }
+                }
+            }
+            _ -> return err_match_ty("union match requires type patterns like `int(n)` or `.Variant(binding)`, or `_` wildcard")
+        }
+        if !first_ty_set {
+            first_ty = result_for_arm
+            first_ty_set = true
+        }
+        i = i + 1
+    }
+    // Fell through every arm (no wildcard) — trap on unmatched tag.
+    ctx.match_trap(tag_val)
+    ok_match_ty(first_ty)
+}
+
+/// True when any arm uses a type-pattern (`int(n)` /
+/// `string(s)`). Used to recognise union-shaped matches when
+/// the subject's static type is opaque.
+fn arms_have_type_pattern(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            .TypePattern(_, _) -> return true
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
+// Infer the enum type from match arm patterns by looking up variant names in the enum registry.
+/// Infer the subject's enum name from the variant patterns
+/// when the subject's declared type is missing or `Unknown`
+/// (e.g. when matching a generic). Looks up the first variant
+/// in the enum registry to pick a canonical name.
+fn infer_enum_from_arms(ctx: Ctx, arms: List<MatchArm>) -> string {
+    mut i = 0
+    while i < arms.length {
+        let vname = match arms[i].pattern {
+            .Variant(name, _) -> name
+            .NestedVariant(name, _) -> name
+            _ -> ""
+        }
+        if vname != "" {
+            let found = enum_reg_find_by_variant(ctx.enums, vname)
+            if found != "" { return found }
+        }
+        i = i + 1
+    }
+    ""
+}
+
+/// Per-arm enum match emitter. Builds the tag-compare branch
+/// chain via `emit_pattern_tag_branch`, binds payload captures
+/// via `bind_pattern_payload`, then emits the arm body and
+/// stores its result. Wildcards skip the tag check entirely.
+fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    // Source-order arm walk: emit the branch/check/body for each
+    // arm in turn. The prior cons recursion threaded type-mismatch
+    // warnings between adjacent arms — we keep the same behavior
+    // by remembering the previous arm's body type (`prev_ty`) and
+    // comparing the current arm against it when both are typed.
+    //
+    // The reported type is the FIRST arm's body type, matching the
+    // outermost-wraps semantics of the prior recursive shape.
+    mut first_ty: ValueType = ValueType.Unknown
+    mut first_ty_set = false
+    mut prev_ty: ValueType = ValueType.Unknown
+    mut prev_ty_set = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let arm_bb = ctx.bb("march_arm")
+        let next_bb = ctx.bb("march_next")
+        emit_pattern_tag_branch(ctx, arm.pattern, tag_val, variants, arm_bb, next_bb)
+        ctx.position(arm_bb)
+        // For nested patterns, check inner variant tags before binding
+        emit_nested_tag_checks(ctx, arm.pattern, st_ty, subj_ptr, variants, next_bb)
+        let arm_env = bind_pattern_payload(ctx, env, arm.pattern, st_ty, subj_ptr, variants)
+        // Guard: if present, check condition; if false, skip to
+        // the next arm via `next_bb`.
+        if arm.guard != null {
+            match ctx.emit(arm_env, arm.guard!.node) {
+                .Err(msg) -> return err_match_ty(msg)
+                .Ok(guard_r) -> {
+                    let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                    let guard_pass_bb = ctx.bb("guard_pass")
+                    ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                    ctx.position(guard_pass_bb)
+                }
+            }
+        }
+        ctx.cov_match_arm(arm.body.line)
+        let body_ty = match ctx.emit(arm_env, arm.body.node) {
+            .Err(msg) -> return err_match_ty(msg)
+            .Ok(body_result) -> {
+                ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                ctx.position(next_bb)
+                emit_value_ty(body_result)
+            }
+        }
+        // Cross-arm type mismatch warning — paired with the
+        // previous arm's body type when both are known. Prior cons
+        // recursion compared each arm against its tail; the
+        // adjacent-pair comparison preserves that fanout.
+        if prev_ty_set && !vtype_is_unknown(body_ty) && !vtype_eq(body_ty, prev_ty) {
+            warn_arm_type_mismatch(ctx, prev_ty, body_ty)
+        }
+        prev_ty = body_ty
+        prev_ty_set = true
+        if !first_ty_set {
+            first_ty = body_ty
+            first_ty_set = true
+        }
+        i = i + 1
+    }
+    ctx.match_trap(tag_val)
+    ok_match_ty(first_ty)
+}
+
+// ── Match as statement ──
+
+/// Emit `match expr { arms... }` in statement position. Same
+/// dispatch shape as `emit_match_expr` but no value is
+/// produced — bodies are emitted for side effects only.
+export fn emit_match(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: List<MatchArm>) -> Result<StmtResult, string> {
+    match ctx.emit(env, subject) {
+        .Err(msg) -> forward_stmt_err(msg)
+        .Ok(r) -> {
+            // Union type match
+            if vtype_is_union(emit_value_ty(r)) {
+                let ur = emit_union_match_expr(ctx, env, r, arms)?
+                return ok_sr(ctx, env)
+            }
+            // Optional subject: present/none dispatch (see emit_match_expr).
+            if vtype_is_optional(emit_value_ty(r)) {
+                return emit_optional_match_stmt(ctx, env, r, arms)
+            }
+            let enum_name = vtype_enum_name(emit_value_ty(r))
+            if enum_name == "" {
+                if arms_have_type_pattern(arms) {
+                    return forward_stmt_err("type patterns like `int(n)` are only valid on union types, but subject has type `${vtype_display(emit_value_ty(r))}`")
+                }
+                return emit_primitive_match_stmt(ctx, env, r, arms)
+            }
+            let lookup = ctx.lookup_enum(enum_name)
+            if !lookup.found { return err_sr("codegen error: unknown enum `${enum_name}`") }
+            let st_ty = ctx.get_type(enum_name)
+            let subj_ptr = ctx.to_ptr(emit_value_ptr(r), "match_subj")
+            let tag_val = ctx.enum_tag(emit_value_ptr(r), enum_name)
+            let merge_bb = ctx.bb("match_end")
+            let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)?
+            ctx.position(merge_bb)
+            ok_sr(ctx, env)
+        }
+    }
+}
+
+/// Statement-position arm emitter. Mirror of
+/// `emit_match_expr_arms` but doesn't store arm results — bodies
+/// are evaluated for side effects only.
+fn emit_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: List<Variant>, merge_bb: ptr) -> Result<StmtResult, string> {
+    // Reuse the expression arm emitter with a dummy result_slot.
+    // The slot is written to but never loaded (statements discard the value).
+    let dummy_slot = ctx.alloca_i64("match_stmt_discard")
+    emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, variants, merge_bb, dummy_slot)?
+    ok_sr(ctx, env)
+}
+
+// ── Pattern payload binding ──
+
+// Shared tag dispatch: compare pattern's variant tag against subject's tag.
+/// Extract a single variant name from a pattern. Returns "" for
+/// wildcards / literals / or-patterns / nested constructors —
+/// callers handle those shapes specially.
+fn pattern_variant_name(pattern: Pattern) -> string {
+    match pattern {
+        .Variant(vname, _) -> vname
+        .NestedVariant(vname, _) -> vname
+        _ -> ""
+    }
+}
+
+/// Emit a tag comparison and branch instruction for a single
+/// arm. On match, control transfers to `arm_bb`; otherwise to
+/// `next_bb` (next arm). Wildcards branch unconditionally to
+/// `arm_bb`.
+fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: List<Variant>, arm_bb: ptr, next_bb: ptr) -> ptr {
+    match pattern {
+        .Or(left, right) -> {
+            // Try left alternative; if it fails, try right.
+            let mid_bb = ctx.bb("or_mid")
+            emit_pattern_tag_branch(ctx, left, tag_val, variants, arm_bb, mid_bb)
+            ctx.position(mid_bb)
+            emit_pattern_tag_branch(ctx, right, tag_val, variants, arm_bb, next_bb)
+        }
+        _ -> {
+            let vname = pattern_variant_name(pattern)
+            if vname == "" {
+                // Wildcard or literal: always take arm
+                return ctx.br(arm_bb)
+            }
+            let v = variant_lookup(variants, vname)
+            if !v.found {
+                return ctx.br(next_bb)
+            }
+            let cmp = ctx.eq(tag_val, ctx.i64(v.tag), "tag_eq")
+            ctx.cond_br(cmp, arm_bb, next_bb)
+        }
+    }
+}
+
+// Emit runtime checks for inner variant tags in nested patterns.
+// If the inner tag doesn't match, branch to next_bb (skip this arm).
+/// Emit additional tag checks for nested constructor patterns
+/// (e.g. `.Some(.Ok(x))`). Each level of nesting compares the
+/// inner payload's tag and routes mismatches to `next_bb`.
+fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>, next_bb: ptr) {
+    match pattern {
+        .NestedVariant(vname, sub_pats) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found { return }
+            let fields = ctx.resolve_fields(v.fields)
+            emit_nested_tag_check_list(ctx, st_ty, subj_ptr, sub_pats, fields, 0, next_bb)
+        }
+        _ -> {}
+    }
+}
+
+/// Recursive worker for `emit_nested_tag_checks` — walks the
+/// pattern list pairwise with the variant's field list, emitting
+/// tag-compare branches for each constructor sub-pattern.
+fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int, next_bb: ptr) {
+    for (i, pat) in pats.enumerate() {
+        // Per-iteration field cursor (was a `mut current_fields`
+        // threaded through `advance_field_list(...)`). With
+        // `List<FieldEntry>` indexed access, the i-th field is just
+        // `fields[i]`, so `field_resolved_at(fields, i)` replaces
+        // the old head-only `field_resolved_at(current_fields, 0)`.
+        match pat {
+            .Variant(inner_vname, _) -> {
+                let inner_ty = field_resolved_at(fields, i)
+                let enum_name = vtype_enum_name(inner_ty)
+                if enum_name != "" {
+                    let lookup = ctx.lookup_enum(enum_name)
+                    if lookup.found {
+                        let iv = variant_lookup(lookup.variants, inner_vname)
+                        if iv.found {
+                            let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx + i, inner_ty, "inner_i64")
+                            let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
+                            let inner_struct_ty = ctx.get_type(enum_name)
+                            let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
+                            let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
+                            let want = ctx.i64(iv.tag)
+                            let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
+                            let pass_bb = ctx.bb("inner_pass")
+                            ctx.cond_br(cmp, pass_bb, next_bb)
+                            ctx.position(pass_bb)
+                        }
+                    }
+                }
+            }
+            .NestedVariant(inner_vname, _) -> {
+                let inner_ty = field_resolved_at(fields, i)
+                let enum_name = vtype_enum_name(inner_ty)
+                if enum_name != "" {
+                    let lookup = ctx.lookup_enum(enum_name)
+                    if lookup.found {
+                        let iv = variant_lookup(lookup.variants, inner_vname)
+                        if iv.found {
+                            let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx + i, inner_ty, "inner_i64")
+                            let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
+                            let inner_struct_ty = ctx.get_type(enum_name)
+                            let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
+                            let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
+                            let want = ctx.i64(iv.tag)
+                            let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
+                            let pass_bb = ctx.bb("inner_pass")
+                            ctx.cond_br(cmp, pass_bb, next_bb)
+                            ctx.position(pass_bb)
+                        }
+                    }
+                }
+            }
+            _ -> {}
+        }
+    }
+}
+
+// Load payload field at index `idx` from an enum value with the correct type.
+/// Load slot `idx` from the subject's variant payload. Used by
+/// the binding pass to extract per-field values for capture.
+fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, field_ty: ValueType, label: string) -> ptr {
+    let pay_gep = ctx.gep(st_ty, subj_ptr, 1, "pay_slot")
+    let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "payload")
+    ctx.load_slot_typed(pay_ptr, idx, field_ty, label)
+}
+
+/// Once an arm's pattern matches, bind every named capture in
+/// it to the right payload slot. Variants with named bindings
+/// drop straight in; nested patterns recurse into
+/// `bind_nested_patterns`.
+fn bind_pattern_payload(ctx: Ctx, env: List<VarBinding>, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>) -> List<VarBinding> {
+    match pattern {
+        .Wildcard -> env
+        .Variant(vname, bindings) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found { return env }
+            let fields = ctx.resolve_fields(v.fields)
+            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, bindings, fields, 0)
+        }
+        .NestedVariant(vname, sub_pats) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found { return env }
+            let fields = ctx.resolve_fields(v.fields)
+            bind_nested_patterns(ctx, env, st_ty, subj_ptr, sub_pats, fields, 0)
+        }
+        .Or(_, _) -> env  // OR patterns don't bind variables
+        _ -> env  // Literal patterns don't bind variables
+    }
+}
+
+/// Recursive worker for `bind_pattern_payload`. Walks
+/// the binding list pairwise with the variant's fields, loading
+/// each payload slot and adding it to the env. Wildcards
+/// (`_`) bypass the bind step.
+fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, bindings: List<ParamEntry>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
+    mut cur_env = env
+    // Pairwise walk: the i-th binding matches the (idx + i)-th payload
+    // field. Wildcards (`_`) bypass the bind step.
+    for (i, b) in bindings.enumerate() {
+        let name = b.name
+        if name != "_" {
+            let slot = idx + i
+            let field_ty = field_resolved_at(fields, slot)
+            let loaded = load_payload_field(ctx, st_ty, subj_ptr, slot, field_ty, name)
+            if vtype_is_ptr_type(field_ty) {
+                let as_ptr = ctx.int_to_ptr(loaded, "retain_payload")
+                ctx.rc_retain(as_ptr)
+            }
+            cur_env = ctx.bind(cur_env, name, loaded, field_ty)
+        }
+    }
+    cur_env
+}
+
+// Bind nested sub-patterns: each list element matches against the
+// corresponding payload field of the outer variant.
+/// Binder for nested constructor patterns. For each
+/// sub-pattern, loads the matching field slot and either binds
+/// it directly (single-name capture) or recurses into deeper
+/// constructor patterns.
+fn bind_nested_patterns(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
+    mut acc = env
+    for (i, pat) in pats.enumerate() {
+        // The i-th sub-pattern matches the i-th payload field; with
+        // indexed fields, the prior `mut current_fields = ...;
+        // advance_field_list(...)` pattern collapses to direct
+        // `field_resolved_at(fields, i)`.
+        let field_ty = field_resolved_at(fields, i)
+        let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx + i, field_ty, "npat_val")
+        acc = bind_single_sub_pattern(ctx, acc, pat, loaded, field_ty)
+    }
+    acc
+}
+
+// Bind a single sub-pattern against a value extracted from a payload field.
+/// Bind a single sub-pattern (one slot of a nested
+/// constructor) into the env. Wildcards skip; single-name
+/// patterns bind; nested patterns recurse with `value` as
+/// the new subject.
+fn bind_single_sub_pattern(ctx: Ctx, env: List<VarBinding>, pat: Pattern, value: ptr, ty: ValueType) -> List<VarBinding> {
+    match pat {
+        .Wildcard -> env
+        .Variant(vname, bindings) -> {
+            // Inner variant: extract its payload. The value is an i64
+            // holding a pointer to the inner enum struct.
+            let enum_name = vtype_enum_name(ty)
+            if enum_name == "" {
+                // Not an enum type — try to bind directly
+                return bind_first_param(ctx, env, bindings, value, ty)
+            }
+            let lookup = ctx.lookup_enum(enum_name)
+            if !lookup.found { return env }
+            let inner_ptr = ctx.to_ptr(value, "inner_ptr")
+            let inner_ty = ctx.get_type(enum_name)
+            let v = variant_lookup(lookup.variants, vname)
+            if !v.found { return env }
+            bind_pattern_payload_loop(ctx, env, inner_ty, inner_ptr, bindings, v.fields, 0)
+        }
+        .NestedVariant(vname, sub_pats) -> {
+            let enum_name = vtype_enum_name(ty)
+            if enum_name == "" { return env }
+            let lookup = ctx.lookup_enum(enum_name)
+            if !lookup.found { return env }
+            let inner_ptr = ctx.to_ptr(value, "inner_ptr")
+            let inner_ty = ctx.get_type(enum_name)
+            let v = variant_lookup(lookup.variants, vname)
+            if !v.found { return env }
+            bind_nested_patterns(ctx, env, inner_ty, inner_ptr, sub_pats, v.fields, 0)
+        }
+        _ -> env  // Literal sub-patterns don't bind
+    }
+}
+
+/// Bind the first entry of a `List<ParamEntry>` to `value` as
+/// a simple variable binding. Used by the nested-pattern path
+/// when a single-payload variant is bound to a single capture name.
+fn bind_first_param(ctx: Ctx, env: List<VarBinding>, bindings: List<ParamEntry>, value: ptr, ty: ValueType) -> List<VarBinding> {
+    if bindings.length == 0 { return env }
+    let name = bindings[0].name
+    if name == "_" { return env }
+    ctx.bind(env, name, value, ty)
+}
+
+// ── Primitive match (non-enum) ──
+// When the match subject is not an enum, arms are treated as a
+// guard-based if-else chain. Only wildcard patterns are allowed.
+// The subject value is available in the guard via the original variable.
+
+/// Emit a match-expression on a primitive subject (Int / Bool /
+/// Float / Str). Each arm's literal pattern compiles to an
+/// equality comparison; results unify into a phi-merge.
+fn emit_primitive_match_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<EmitValue, string> {
+    let result_slot = ctx.alloca_i64("pmatch_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("pmatch_end")
+    let result_ty = emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, result_slot)?
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(result_slot, "pmatch_val"), result_ty)
+}
+
+// Generate a boolean comparison for a literal pattern against the subject.
+/// Emit an equality comparison between the subject and a
+/// literal-pattern value. Returns the i1 SSA value used as the
+/// branch condition for that arm.
+fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
+    match pattern {
+        .LitInt(val) -> {
+            ctx.eq(emit_value_ptr(subj), ctx.i64(val), "lit_eq")
+        }
+        .LitBool(val) -> {
+            // Bool subjects may be i1 or i64 depending on source. Normalize
+            // to i1 via truthy, then compare against the literal.
+            let subj_bool = ctx.truthy(emit_value_ptr(subj), "bool_subj")
+            if val {
+                // match true: check if subject is truthy
+                subj_bool
+            } else {
+                // match false: check if subject is falsy (xor with 1)
+                avra_llvm_build_xor(ctx.builder, subj_bool, avra_llvm_const_int(ctx.i1_type, 1, 0), "bool_neg")
+            }
+        }
+        .LitString(val) -> {
+            let subj_ptr = ctx.to_ptr(emit_value_ptr(subj), "lit_str_ptr")
+            let lit_ptr = ctx.global_str(val, ".lit_str")
+            let cmp_result = ctx.call("strcmp", [subj_ptr, lit_ptr])
+            // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
+            let cmp_ext = ctx.sext(cmp_result, ctx.i64_type, "strcmp_sext")
+            ctx.eq(cmp_ext, ctx.i64(0), "str_eq")
+        }
+        .LitFloat(val) -> {
+            let lit_str = ctx.global_str(val, ".flit_str")
+            let lit_bits = ctx.call("avra_float_parse", [lit_str])
+            let subj_f64 = ctx.to_f64(emit_value_ptr(subj), "subj_f64")
+            let lit_f64 = ctx.to_f64(lit_bits, "lit_f64")
+            ctx.fcmp(1, subj_f64, lit_f64, "flit_eq")
+        }
+        .Or(left, right) -> {
+            // OR two i1 comparison results — both sub-patterns are literals
+            let l = emit_literal_cmp(ctx, subj, left)
+            let r = emit_literal_cmp(ctx, subj, right)
+            ctx.bit_or(l, r, "or_cmp")
+        }
+        _ -> {
+            // Wildcard / Variant — should not reach here
+            ctx.i64(1)
+        }
+    }
+}
+
+/// True when a pattern is a primitive literal (Int / Bool /
+/// String). Drives the literal-vs-variant dispatch in
+/// `emit_primitive_arms_expr`.
+fn is_literal_pattern(pattern: Pattern) -> bool {
+    match pattern {
+        .LitString(_) -> true
+        .LitInt(_) -> true
+        .LitBool(_) -> true
+        .LitFloat(_) -> true
+        .Or(left, _) -> is_literal_pattern(left)
+        _ -> false
+    }
+}
+
+/// Per-arm emitter for a primitive-subject match expression.
+/// Compares literal patterns one-by-one, unconditionally
+/// branches into wildcard arms, then runs the body and stores
+/// its result.
+fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    // Source-order arm walk. Same adjacent-pair type-mismatch
+    // warning as the enum-side emitter; reported type is the FIRST
+    // arm's body type (outermost-wraps semantics of the prior
+    // recursive shape).
+    mut first_ty: ValueType = ValueType.Unknown
+    mut first_ty_set = false
+    mut prev_ty: ValueType = ValueType.Unknown
+    mut prev_ty_set = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let body_bb = ctx.bb("parm_body")
+        let next_bb = ctx.bb("parm_next")
+
+        if is_literal_pattern(arm.pattern) {
+            let cmp = emit_literal_cmp(ctx, subj, arm.pattern)
+            if arm.guard != null {
+                // Literal + guard: both must hold.
+                let lit_pass_bb = ctx.bb("lit_guard")
+                ctx.cond_br(cmp, lit_pass_bb, next_bb)
+                ctx.position(lit_pass_bb)
+                match ctx.emit(env, arm.guard!.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                        ctx.cond_br(guard_bool, body_bb, next_bb)
+                    }
+                }
+            } else {
+                ctx.cond_br(cmp, body_bb, next_bb)
+            }
+        } else if arm.pattern is .Wildcard {
+            if arm.guard != null {
+                // Guarded wildcard: if guard { body } else { next arm }.
+                match ctx.emit(env, arm.guard!.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                        ctx.cond_br(guard_bool, body_bb, next_bb)
+                    }
+                }
+            } else {
+                // Unguarded wildcard: always matches (catch-all).
+                ctx.br(body_bb)
+            }
+        } else {
+            // A variant pattern (`.Some(x)`, or the present-bind `let x ->` /
+            // `none ->` surface) on a primitive subject. Reject cleanly — the
+            // old code treated it as a catch-all, leaving the binding undefined
+            // and crashing codegen (F9999) rather than diagnosing the misuse.
+            return err_match_ty("a variant pattern like `.Some(x)` needs an enum or optional subject, not `${vtype_display(emit_value_ty(subj))}` — present-bind (`let x ->` / `none ->`) requires the subject to be an optional `T?`")
+        }
+
+        ctx.position(body_bb)
+        let body_ty = match ctx.emit(env, arm.body.node) {
+            .Err(msg) -> return err_match_ty(msg)
+            .Ok(body_r) -> {
+                ctx.store_br_if_open(emit_value_ptr(body_r), result_slot, merge_bb)
+                ctx.position(next_bb)
+                emit_value_ty(body_r)
+            }
+        }
+        if prev_ty_set && !vtype_is_unknown(body_ty) && !vtype_eq(body_ty, prev_ty) {
+            warn_arm_type_mismatch(ctx, prev_ty, body_ty)
+        }
+        prev_ty = body_ty
+        prev_ty_set = true
+        if !first_ty_set {
+            first_ty = body_ty
+            first_ty_set = true
+        }
+        i = i + 1
+    }
+    ctx.match_trap(ctx.i64(-1))
+    ctx.position(merge_bb)
+    ok_match_ty(first_ty)
+}
+
+/// Statement-position primitive match. Mirror of
+/// `emit_primitive_match_expr` but no result slot — bodies run
+/// for side effects only.
+fn emit_primitive_match_stmt(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, arms: List<MatchArm>) -> Result<StmtResult, string> {
+    // Reuse the expression arm emitter with a dummy result_slot.
+    let merge_bb = ctx.bb("pmatch_end")
+    let dummy_slot = ctx.alloca_i64("pmatch_stmt_discard")
+    emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, dummy_slot)?
+    ok_sr(ctx, env)
+}
+
+// ── Subjectless match (when) as expression ──
+// Emits: check cond1 → arm1_bb | check2_bb; check cond2 → arm2_bb | ...
+// Result stored in alloca, loaded at merge_bb.
+
+/// Codegen for `when { cond -> body, ... }` (subjectless
+/// match). Each arm evaluates a Bool condition; the first true
+/// arm runs and stores the result. Compiles to a chained-if
+/// dispatch.
+export fn emit_when_expr(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>) -> Result<EmitValue, string> {
+    let merge_bb = ctx.bb("when_end")
+    let result_slot = ctx.alloca_i64("when_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let ty = emit_when_arms(ctx, env, arms, 0, merge_bb, result_slot)?
+    ctx.position(merge_bb)
+    let loaded = ctx.load_i64(result_slot, "when_val")
+    ok_emit(loaded, ty)
+}
+
+/// Recursive worker for `emit_when_expr`. Threads through each
+/// arm emitting its condition + body and unifying result types
+/// across arms via `warn_arm_type_mismatch` on disagreement.
+fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    if idx >= arms.length {
+        // No (more) arms matched. Terminate the trailing `when_next`
+        // fallthrough block by branching to merge, where the result
+        // slot's default (0/null) is loaded — the defined value for a
+        // non-exhaustive `when` expression. Without this branch the
+        // final fallthrough block is left unterminated, producing
+        // malformed IR (LLVM rejects "block does not have terminator";
+        // an optimizer that DCEs the unreachable block merely hides it).
+        ctx.br_if_open(merge_bb)
+        return ok_match_ty(.Unknown)
+    }
+    let arm = arms[idx]
+    ctx.cov_match_arm(arm.body.line)
+    if arm.cond == null {
+        // Else arm — emit body directly, store, branch to merge
+        let r = ctx.emit(env, arm.body.node)?
+        ctx.store(emit_value_ptr(r), result_slot)
+        ctx.br_if_open(merge_bb)
+        ok_match_ty(emit_value_ty(r))
+    } else {
+        let cond_r = ctx.emit(env, arm.cond!.node)?
+        let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
+        let arm_bb = ctx.bb("when_arm")
+        let next_bb = ctx.bb("when_next")
+        ctx.cond_br(cond_i1, arm_bb, next_bb)
+        // Arm body
+        ctx.position(arm_bb)
+        let body_r = ctx.emit(env, arm.body.node)?
+        ctx.store(emit_value_ptr(body_r), result_slot)
+        let arm_ty = emit_value_ty(body_r)
+        ctx.br_if_open(merge_bb)
+        // Check next arm
+        ctx.position(next_bb)
+        let rest_ty = emit_when_arms(ctx, env, arms, idx + 1, merge_bb, result_slot)?
+        if vtype_is_unknown(arm_ty) { ok_match_ty(rest_ty) } else { ok_match_ty(arm_ty) }
+    }
+}

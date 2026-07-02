@@ -1,0 +1,42 @@
+// The parallel runner's stall detector: when no unit completes
+// inside the stall window, the collector names every in-flight unit
+// on stderr — a hung test surfaces as attribution instead of a
+// silent hang. Exercised end-to-end here by assembling a real
+// two-unit bundle where one unit sleeps past a deliberately tiny
+// AVRA_TEST_STALL_MS, then asserting the stall line names the slow
+// unit (and only fires once per quiet period).
+
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_mkdir_p(path: string) -> int
+
+spec "stall detector names wedged units" {
+    given "a two-unit bundle where one unit sleeps past the window" {
+        then "the stall line appears and cites the slow unit" {
+            let dir = "build/cache/_stall_fixture"
+            let _ = avra_mkdir_p(dir)
+            write_fixture("${dir}/quick_probe_test.av",
+                "spec \"quick\" {\n" +
+                "    then \"done\" { true }\n" +
+                "}\n")
+            write_fixture("${dir}/slowpoke_probe_test.av",
+                "extern fn avra_sleep_ms(ms: int)\n" +
+                "spec \"slowpoke\" {\n" +
+                "    then \"eventually\" {\n" +
+                "        avra_sleep_ms(700)\n" +
+                "        true\n" +
+                "    }\n" +
+                "}\n")
+            // Stall window far below the sleep so the detector must
+            // fire while slowpoke is the only in-flight unit. Stderr
+            // joins stdout via 2>&1 (the stall line is stderr-only —
+            // stdout is sink-captured per unit).
+            let out = avra_shell_exec(
+                "AVRA_TEST_STALL_MS=150 AVRA_TEST_JOBS=4 ./build/bs2 test --bundled '${dir}' 2>&1 || true")
+            out.contains("[test-runner] no unit completed in 150ms")
+                && out.contains("slowpoke_probe_test")
+                && !out.contains("still running: quick_probe_test")
+        }
+    }
+}

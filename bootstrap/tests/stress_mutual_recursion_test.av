@@ -1,0 +1,27 @@
+fn smr_is_even(n: int) -> bool {
+    if n == 0 { return true }
+    smr_is_odd(n - 1)
+}
+
+fn smr_is_odd(n: int) -> bool {
+    if n == 0 { return false }
+    smr_is_even(n - 1)
+}
+
+fn smr_collatz_len(n: int) -> int {
+    if n <= 1 { return 0 }
+    if n % 2 == 0 { 1 + smr_collatz_len(n / 2) }
+    else { 1 + smr_collatz_len(3 * n + 1) }
+}
+
+spec "stress mutual recursion" {
+    then "even 100" {
+        smr_is_even(100) == true
+    }
+    then "odd 100" {
+        smr_is_odd(100) == false
+    }
+    then "collatz 27" {
+        smr_collatz_len(27) == 111
+    }
+}

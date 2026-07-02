@@ -1,0 +1,388 @@
+// WHY: hygienic identifier rewriter for AST values produced by `quote { ... }`
+// (Phase 5 of Components V2, vez6.5).
+//
+// Macros that build AST via quote risk colliding with identifiers in
+// the call site:
+//
+//     @comptime fn make_pair(body: Expr) -> Stmt {
+//         quote stmt { let result = compute_thing(); ~body + result }
+//     }
+//
+// If the caller already has `let result = ...`, naively splicing the
+// macro's AST shadows that binding. Hygiene fixes this by renaming
+// every locally-introduced identifier (let / mut / const / for / lambda
+// param / pattern binding) to a unique suffix at expansion time.
+// Caller's `result` keeps its name; macro's `result` becomes
+// `result_$0` and stays distinct.
+//
+// The rewriter walks the AST, tracking a scope chain of
+// (orig → renamed) entries. Every `let x = ...` extends the chain
+// for the REST of the enclosing block; bindings drop off when the
+// block / fn / arm ends. Free variables (idents with no enclosing
+// binding) pass through verbatim — those are the splice points and
+// other refs to caller-level state.
+//
+// Pipeline position: applied by the @expand pass (Phase 6) after a
+// macro fn returns its AST value, BEFORE the value is spliced into
+// the call site's AST. Standalone use is also fine — call
+// hygiene_rename_expr / hygiene_rename_stmts on any AST value.
+
+use core.{
+    Stmt, SStmt, sstmt_at,
+    Expr, SExpr, sexpr,
+    FieldInit,
+    ParamEntry, Pattern,
+    BinOp, UnOp, LogicOp,
+    ValueType,
+}
+use list_ops.{list_push_copy}
+
+// ── Scope chain + context ──
+
+/// Per-name link in the rename map. `orig` is the original source
+/// name; `renamed` is the suffix-suffixed form (`x` → `x_$N` for some
+/// monotonic N). The active scope is a `List<HygieneBinding>` —
+/// most-recently-pushed binding sits at the largest index.
+type HygieneBinding = { orig: string, renamed: string }
+
+/// State threaded through the rewriter. `counter` is monotonic
+/// across the whole hygienic transformation, ensuring every fresh
+/// suffix is globally unique within the rewrite. `scope` is a
+/// snapshot — push on binding-intro by returning a fresh copy with
+/// the new binding appended, drop by returning the caller's ctx
+/// after the scope ends.
+type HygieneCtx = { scope: List<HygieneBinding>, counter: int }
+
+// Result wrappers — Avra has no first-class tuples in fn returns,
+// so these structs carry the (rewritten-form, updated-ctx) pair.
+type RenameExprResult = { expr: Expr, ctx: HygieneCtx }
+type RenameStmtResult = { stmt: Stmt, ctx: HygieneCtx }
+type RenameStmtListResult = { list: List<SStmt>, ctx: HygieneCtx }
+type RenameExprListResult = { list: List<SExpr>, ctx: HygieneCtx }
+type RenameFieldInitsResult = { list: List<FieldInit>, ctx: HygieneCtx }
+type RenameParamsResult = { params: List<ParamEntry>, ctx: HygieneCtx }
+type FreshResult = { name: string, ctx: HygieneCtx }
+
+// ── Public entry points ──
+
+/// Rename every locally-introduced identifier inside `e` to a unique
+/// suffix; free identifiers pass through verbatim.
+export fn hygiene_rename_expr(e: Expr) -> Expr {
+    let r = rename_expr(empty_ctx(), e)
+    r.expr
+}
+
+/// Like hygiene_rename_expr, for a Stmt.
+export fn hygiene_rename_stmt(s: Stmt) -> Stmt {
+    let r = rename_stmt(empty_ctx(), s)
+    r.stmt
+}
+
+/// Like hygiene_rename_expr, for a List<SStmt> — typical entry for
+/// macro-built blocks.
+export fn hygiene_rename_stmts(stmts: List<SStmt>) -> List<SStmt> {
+    let r = rename_stmt_list(empty_ctx(), stmts)
+    r.list
+}
+
+fn empty_ctx() -> HygieneCtx {
+    let empty: List<HygieneBinding> = []
+    HygieneCtx { scope: empty, counter: 0 }
+}
+
+// ── Fresh-name + scope helpers ──
+
+/// Allocate a fresh suffix for `orig` and push a (orig → renamed)
+/// entry onto the scope chain. The returned ctx is what subsequent
+/// rewrites must thread through.
+fn fresh_name(ctx: HygieneCtx, orig: string) -> FreshResult {
+    let id = ctx.counter
+    let renamed = "${orig}_$${string(id)}"
+    // COPY scope before appending — the parent's binding may still be
+    // used after this scope returns (sibling rewrites, restore_scope
+    // unwind). In-place .push would corrupt that snapshot.
+    let new_scope = list_push_copy(ctx.scope, HygieneBinding { orig, renamed })
+    FreshResult { name: renamed, ctx: HygieneCtx { scope: new_scope, counter: id + 1 } }
+}
+
+/// Look up `name` in the scope chain. Walks tail-to-head so the
+/// innermost (most-recently-pushed) binding shadows older ones.
+/// Returns the renamed form if found, or null otherwise (free
+/// variable — pass through).
+fn lookup_scope(scope: List<HygieneBinding>, name: string) -> string? {
+    mut i = scope.length - 1
+    while i >= 0 {
+        let b = scope[i]
+        if b.orig == name { return b.renamed }
+        i = i - 1
+    }
+    null
+}
+
+/// Exit a nested scope: keep the parent's `scope` snapshot (drops
+/// the child's bindings) but propagate the child's `counter` so
+/// suffix IDs stay monotonic across the whole rewrite. Without this,
+/// two sibling scopes (e.g. then + else branches of an `if`) would
+/// reuse the same counter and produce identical suffixes for
+/// distinct bindings — defeating uniqueness.
+fn restore_scope(parent_scope: List<HygieneBinding>, child_ctx: HygieneCtx) -> HygieneCtx {
+    HygieneCtx { scope: parent_scope, counter: child_ctx.counter }
+}
+
+// ── Statement walker ──
+
+fn rename_stmt_list(ctx: HygieneCtx, list: List<SStmt>) -> RenameStmtListResult {
+    mut out: List<SStmt> = []
+    mut cur = ctx
+    for ss in list {
+        let r1 = rename_stmt(cur, ss.node)
+        out.push(sstmt_at(r1.stmt, ss.line, ss.col, ss.file))
+        cur = r1.ctx
+    }
+    RenameStmtListResult { list: out, ctx: cur }
+}
+
+fn rename_stmt(ctx: HygieneCtx, s: Stmt) -> RenameStmtResult {
+    match s {
+        // Bindings: rewrite the init in the CURRENT ctx (init can't see
+        // the new binding), then introduce the rename for subsequent
+        // stmts in the same scope.
+        .Let(name, vt, init) -> {
+            let ri = rename_expr(ctx, init)
+            let f = fresh_name(ri.ctx, name)
+            RenameStmtResult { stmt: Stmt.Let(f.name, vt, ri.expr), ctx: f.ctx }
+        }
+        .Mut(name, vt, init) -> {
+            let ri = rename_expr(ctx, init)
+            let f = fresh_name(ri.ctx, name)
+            RenameStmtResult { stmt: Stmt.Mut(f.name, vt, ri.expr), ctx: f.ctx }
+        }
+        .Const(name, vt, init) -> {
+            let ri = rename_expr(ctx, init)
+            let f = fresh_name(ri.ctx, name)
+            RenameStmtResult { stmt: Stmt.Const(f.name, vt, ri.expr), ctx: f.ctx }
+        }
+        .Expr(e) -> {
+            let r = rename_expr(ctx, e)
+            RenameStmtResult { stmt: Stmt.Expr(r.expr), ctx: r.ctx }
+        }
+        .Return(e) -> {
+            let r = rename_expr(ctx, e)
+            RenameStmtResult { stmt: Stmt.Return(r.expr), ctx: r.ctx }
+        }
+        // Block: nested scope. Bindings inside don't escape to caller,
+        // but the counter must propagate so subsequent siblings see
+        // unique IDs.
+        .Block(body) -> {
+            let r = rename_stmt_list(ctx, body)
+            RenameStmtResult { stmt: Stmt.Block(r.list), ctx: restore_scope(ctx.scope, r.ctx) }
+        }
+        .If(cond, then_b, else_b) -> {
+            let rc = rename_expr(ctx, cond)
+            let rt = rename_stmt(rc.ctx, then_b)
+            let after_then = restore_scope(rc.ctx.scope, rt.ctx)
+            if else_b != null {
+                let re = rename_stmt(after_then, else_b!)
+                let after_else = restore_scope(rc.ctx.scope, re.ctx)
+                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, re.stmt), ctx: after_else }
+            } else {
+                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, null), ctx: after_then }
+            }
+        }
+        .While(cond, body) -> {
+            let rc = rename_expr(ctx, cond)
+            let rb = rename_stmt(rc.ctx, body)
+            RenameStmtResult { stmt: Stmt.While(rc.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
+        }
+        // For introduces the loop variable for the body only.
+        .For(v, start, end, body) -> {
+            let rs = rename_expr(ctx, start)
+            let re = rename_expr(rs.ctx, end)
+            let f = fresh_name(re.ctx, v)
+            let rb = rename_stmt(f.ctx, body)
+            RenameStmtResult { stmt: Stmt.For(f.name, rs.expr, re.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
+        }
+        .ForIn(v, coll, body) -> {
+            let rc = rename_expr(ctx, coll)
+            let f = fresh_name(rc.ctx, v)
+            let rb = rename_stmt(f.ctx, body)
+            RenameStmtResult { stmt: Stmt.ForIn(f.name, rc.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
+        }
+        .Defer(body) -> {
+            let r = rename_expr(ctx, body)
+            RenameStmtResult { stmt: Stmt.Defer(r.expr), ctx: r.ctx }
+        }
+        .Errdefer(body) -> {
+            let r = rename_expr(ctx, body)
+            RenameStmtResult { stmt: Stmt.Errdefer(r.expr), ctx: r.ctx }
+        }
+        // Decl-level + complex Stmts not handled in v1 — pass through.
+        // Match arm pattern bindings would need a separate walker.
+        _ -> RenameStmtResult { stmt: s, ctx }
+    }
+}
+
+// ── Expression walker ──
+
+fn rename_expr(ctx: HygieneCtx, e: Expr) -> RenameExprResult {
+    match e {
+        .Ident(name) -> {
+            let renamed = lookup_scope(ctx.scope, name)
+            if renamed != null {
+                RenameExprResult { expr: Expr.Ident(renamed!), ctx }
+            } else {
+                RenameExprResult { expr: e, ctx }
+            }
+        }
+        .Assign(name, value) -> {
+            let rv = rename_expr(ctx, value)
+            let renamed = lookup_scope(ctx.scope, name)
+            let target = if renamed != null { renamed! } else { name }
+            RenameExprResult { expr: Expr.Assign(target, rv.expr), ctx: rv.ctx }
+        }
+        .Binary(l, op, r) -> {
+            let rl = rename_expr(ctx, l)
+            let rr = rename_expr(rl.ctx, r)
+            RenameExprResult { expr: Expr.Binary(rl.expr, op, rr.expr), ctx: rr.ctx }
+        }
+        .Unary(op, r) -> {
+            let rr = rename_expr(ctx, r)
+            RenameExprResult { expr: Expr.Unary(op, rr.expr), ctx: rr.ctx }
+        }
+        .Logical(l, op, r) -> {
+            let rl = rename_expr(ctx, l)
+            let rr = rename_expr(rl.ctx, r)
+            RenameExprResult { expr: Expr.Logical(rl.expr, op, rr.expr), ctx: rr.ctx }
+        }
+        .Grouping(inner) -> {
+            let r = rename_expr(ctx, inner)
+            RenameExprResult { expr: Expr.Grouping(r.expr), ctx: r.ctx }
+        }
+        .Call(callee, args) -> {
+            let rc = rename_expr(ctx, callee)
+            let ra = rename_expr_list(rc.ctx, args)
+            RenameExprResult { expr: Expr.Call(rc.expr, ra.list), ctx: ra.ctx }
+        }
+        .Index(obj, idx) -> {
+            let ro = rename_expr(ctx, obj)
+            let ri = rename_expr(ro.ctx, idx)
+            RenameExprResult { expr: Expr.Index(ro.expr, ri.expr), ctx: ri.ctx }
+        }
+        .FieldAccess(obj, field) -> {
+            let r = rename_expr(ctx, obj)
+            RenameExprResult { expr: Expr.FieldAccess(r.expr, field), ctx: r.ctx }
+        }
+        .FieldAssign(obj, field, value) -> {
+            let ro = rename_expr(ctx, obj)
+            let rv = rename_expr(ro.ctx, value)
+            RenameExprResult { expr: Expr.FieldAssign(ro.expr, field, rv.expr), ctx: rv.ctx }
+        }
+        .IfExpr(c, t, el) -> {
+            let rc = rename_expr(ctx, c)
+            let rt = rename_expr(rc.ctx, t)
+            let re = rename_expr(rt.ctx, el)
+            RenameExprResult { expr: Expr.IfExpr(rc.expr, rt.expr, re.expr), ctx: re.ctx }
+        }
+        .NullCoalesce(l, r) -> {
+            let rl = rename_expr(ctx, l)
+            let rr = rename_expr(rl.ctx, r)
+            RenameExprResult { expr: Expr.NullCoalesce(rl.expr, rr.expr), ctx: rr.ctx }
+        }
+        .OptionalChain(obj, field) -> {
+            let r = rename_expr(ctx, obj)
+            RenameExprResult { expr: Expr.OptionalChain(r.expr, field), ctx: r.ctx }
+        }
+        .OptionalMethodCall(obj, method, args) -> {
+            let ro = rename_expr(ctx, obj)
+            let ra = rename_expr_list(ro.ctx, args)
+            RenameExprResult { expr: Expr.OptionalMethodCall(ro.expr, method, ra.list), ctx: ra.ctx }
+        }
+        .Try(inner) -> {
+            let r = rename_expr(ctx, inner)
+            RenameExprResult { expr: Expr.Try(r.expr), ctx: r.ctx }
+        }
+        .Tuple(elems) -> {
+            let r = rename_expr_list(ctx, elems)
+            RenameExprResult { expr: Expr.Tuple(r.list), ctx: r.ctx }
+        }
+        .ListLit(elems) -> {
+            let r = rename_expr_list(ctx, elems)
+            RenameExprResult { expr: Expr.ListLit(r.list), ctx: r.ctx }
+        }
+        .MapLit(entries) -> {
+            let r = rename_expr_list(ctx, entries)
+            RenameExprResult { expr: Expr.MapLit(r.list), ctx: r.ctx }
+        }
+        .StructLit(name, inits) -> {
+            let r = rename_field_inits(ctx, inits)
+            RenameExprResult { expr: Expr.StructLit(name, r.list), ctx: r.ctx }
+        }
+        .EnumCtor(tn, variant, args) -> {
+            let r = rename_expr_list(ctx, args)
+            RenameExprResult { expr: Expr.EnumCtor(tn, variant, r.list), ctx: r.ctx }
+        }
+        .Block(body) -> {
+            let r = rename_stmt_list(ctx, body)
+            // Block bindings don't escape; restore scope, keep counter.
+            RenameExprResult { expr: Expr.Block(r.list), ctx: restore_scope(ctx.scope, r.ctx) }
+        }
+        // Lambda introduces its parameters for the body only.
+        .Lambda(params, body) -> {
+            let rp = rename_param_list(ctx, params)
+            let rb = rename_expr(rp.ctx, body)
+            // Params + body bindings don't escape into the surrounding
+            // expression; restore scope, keep counter.
+            RenameExprResult { expr: Expr.Lambda(rp.params, rb.expr), ctx: restore_scope(ctx.scope, rb.ctx) }
+        }
+        .Spawn(body) -> {
+            let r = rename_expr(ctx, body)
+            RenameExprResult { expr: Expr.Spawn(r.expr), ctx: r.ctx }
+        }
+        // Splice is opaque — its target evaluates at expansion time
+        // to a runtime AST value. We don't recurse into the target's
+        // shape; if hygiene is wanted on the spliced-in tree, the
+        // caller applies hygiene_rename_* to the spliced value before
+        // splicing.
+        .Splice(_) -> RenameExprResult { expr: e, ctx }
+        // Quote should not normally appear at this stage (lowering
+        // strips it). If it does, leave intact — its body is opaque.
+        .Quote(_, _) -> RenameExprResult { expr: e, ctx }
+        // Leaves and complex variants we don't yet rewrite (Match arms
+        // need Pattern walking, ListComp introduces a binding, Catch
+        // introduces an error binding) — pass through.
+        _ -> RenameExprResult { expr: e, ctx }
+    }
+}
+
+fn rename_expr_list(ctx: HygieneCtx, list: List<SExpr>) -> RenameExprListResult {
+    mut acc = ctx
+    mut out: List<SExpr> = []
+    for se in list {
+        let r = rename_expr(acc, se.node)
+        acc = r.ctx
+        out.push(sexpr(r.expr, se.line, se.col))
+    }
+    RenameExprListResult { list: out, ctx: acc }
+}
+
+fn rename_field_inits(ctx: HygieneCtx, inits: List<FieldInit>) -> RenameFieldInitsResult {
+    mut acc = ctx
+    mut out: List<FieldInit> = []
+    for init in inits {
+        let r = rename_expr(acc, init.value.node)
+        out.push(FieldInit { name: init.name, value: sexpr(r.expr, init.value.line, init.value.col) })
+        acc = r.ctx
+    }
+    RenameFieldInitsResult { list: out, ctx: acc }
+}
+
+fn rename_param_list(ctx: HygieneCtx, params: List<ParamEntry>) -> RenameParamsResult {
+    mut out: List<ParamEntry> = []
+    mut cur = ctx
+    for p in params {
+        let f = fresh_name(cur, p.name)
+        out.push(ParamEntry { name: f.name, vtype: p.vtype })
+        cur = f.ctx
+    }
+    RenameParamsResult { params: out, ctx: cur }
+}

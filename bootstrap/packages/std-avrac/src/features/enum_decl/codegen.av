@@ -1,0 +1,133 @@
+// WHY: emits enum constructors (heap-allocated tagged unions) and
+// enum value comparison (tag equality via struct GEP).
+
+use core.{SExpr, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
+use core.{type_registry_id_for, variant_payload_name, vtype_strip_optional}
+use codegen.{needs_optional_box, emit_optional_some}
+
+/// Codegen for `EnumName.Variant(args)` and the leading-dot
+/// shorthand `.Variant(args)`. Allocates the outer
+/// `{tag, payload}` struct, writes the variant's djb2-hash tag,
+/// and (for variants with fields) allocates + fills the typed
+/// payload struct. The leading-dot form uses arity-aware lookup
+/// so two enums with same-named variants of different arity
+/// don't collide.
+export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    // Contextual resolution: `.Variant` with empty type_name.
+    // Use arity-aware lookup to disambiguate variants with the same
+    // name but different field counts.
+    let arg_count = args.length
+    let resolved_name = if type_name == "" {
+        let found = enum_reg_find_by_variant_arity(ctx.enums, variant, arg_count)
+        if found == "" {
+            // Fallback: try without arity check (for zero-arg variants)
+            let fallback = enum_reg_find_by_variant(ctx.enums, variant)
+            if fallback == "" {
+                return err_emit("no enum has variant `${variant}`")
+            }
+            fallback
+        } else {
+            found
+        }
+    } else {
+        type_name
+    }
+    let enum_l = ctx.lookup_enum(resolved_name)
+    if !enum_l.found {
+        return err_emit("undefined enum type `${resolved_name}`")
+    }
+    let v = variant_lookup(enum_l.variants, variant)
+    if !v.found {
+        return err_emit("enum `${resolved_name}` has no variant `${variant}`")
+    }
+    let st_ty = ctx.get_type(resolved_name)
+    if st_ty == null {
+        return err_emit("LLVM enum type `${resolved_name}` not declared")
+    }
+    // Enum layout: {i8 tag, ptr payload}
+    // Allocate outer struct (always 16 bytes)
+    let buf = ctx.arena_alloc(ctx.i64(16))
+    let tag_gep = ctx.gep(st_ty, buf, 0, "tag_ptr")
+    ctx.store(ctx.i64(v.tag), tag_gep)
+
+    // Allocate typed payload struct for variants with fields.
+    let num_fields = v.fields.length
+    let payload_gep = ctx.gep(st_ty, buf, 1, "pay_ptr")
+    if num_fields == 0 {
+        ctx.store(ctx.zero_for(ValueType.Ptr), payload_gep)
+    } else {
+        let pay_buf = ctx.arena_alloc(ctx.i64(num_fields * 8))
+        ctx.store(pay_buf, payload_gep)
+        let resolved_fields = ctx.resolve_fields(v.fields)
+        let fill = fill_enum_payload(ctx, env, pay_buf, resolved_fields, args, 0)?
+    }
+    let as_i64 = ctx.to_i64(buf, "enum_i64")
+    let empty_args: List<ValueType> = []
+    ok_emit(as_i64, .Enum(resolved_name, empty_args, type_registry_id_for(ctx.type_reg, resolved_name)))
+}
+
+/// Allocate the fixed 16-byte `{tag, payload}` outer struct.
+/// `variants` parameter is unused — kept for symmetry with the
+/// struct-side `malloc_struct_bytes`.
+export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
+    // Fixed size: {i8 tag, ptr payload} = 16 bytes always
+    ctx.arena_alloc(ctx.i64(16))
+}
+
+/// Untyped payload-fill: walks the args, emitting each and
+/// storing it at the right slot via `ctx.store_slot`. Used as
+/// the lightweight path; `fill_enum_payload_typed` is the GEP-
+/// based variant when the payload struct type is known.
+fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    for (i, arg) in args.enumerate() {
+        let slot = idx + i
+        let r = ctx.emit(env, arg.node)?
+        let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
+        // Box a present value-inner arg into a `T?` field (guarded).
+        let v = if needs_optional_box(r.ty, fld_ty) {
+            emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)
+        } else {
+            r.value
+        }
+        ctx.store_slot(payload_ptr, slot, v, fld_ty)
+    }
+    ok_emit(null_ptr_val(), .Void)
+}
+
+/// Type-safe payload fill via GEP into the per-variant struct
+/// type. Lets `store_field` truncate / cast each value to its
+/// declared field type so packed bool / float fields don't get
+/// clobbered.
+fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    for (i, arg) in args.enumerate() {
+        let slot = idx + i
+        let r = ctx.emit(env, arg.node)?
+        let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
+        let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
+        // Box a present value-inner arg into a `T?` field (guarded).
+        let v = if needs_optional_box(r.ty, fld_ty) {
+            emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)
+        } else {
+            r.value
+        }
+        ctx.store_field(v, fld_gep, fld_ty)
+    }
+    ok_emit(null_ptr_val(), .Void)
+}
+
+/// Compare two enum values by their tag field. Returns Bool.
+/// Used by `emit_binary` for `==` / `!=` on enum types — `pred`
+/// is the LLVM icmp predicate (32 = EQ, 33 = NE).
+export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> Result<EmitValue, string> {
+    let enum_name = vtype_enum_name(ty)
+    let st_ty = ctx.get_type(enum_name)
+    let lhs_ptr = ctx.to_ptr(lhs, "enum_l")
+    let rhs_ptr = ctx.to_ptr(rhs, "enum_r")
+    let l_gep = ctx.gep(st_ty, lhs_ptr, 0, "ltag_ptr")
+    let r_gep = ctx.gep(st_ty, rhs_ptr, 0, "rtag_ptr")
+    let l_tag = ctx.load_i64(l_gep, "ltag")
+    let r_tag = ctx.load_i64(r_gep, "rtag")
+    let cmp = ctx.icmp(pred, l_tag, r_tag, "tag_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "tag_cmp_ext"), .Bool)
+}

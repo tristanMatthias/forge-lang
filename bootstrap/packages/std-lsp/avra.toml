@@ -1,0 +1,10 @@
+# @std/lsp — Language Server Protocol primitives.
+
+[package]
+name        = "@std/lsp"
+version     = "0.1.0"
+description = "LSP types + symbol graph used by the bootstrap LSP server"
+
+[lib]
+name = "std-lsp"
+path = "src/lsp.av"

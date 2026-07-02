@@ -1,0 +1,40 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 11.
+// `ctx_lookup_type` resolves a source-level type name against the
+// active resolver state and returns a `ResolvedType` value. Null
+// for unknown names.
+//
+// The macro looks up two names — one known (`Foo`), one not
+// (`Nonexistent`) — and emits a Stmt that prints both results. The
+// runtime output proves the lookup actually returned data, not
+// the stub it used to.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_lookup_type resolves declared types" {
+    then "known type returns its canonical name; unknown returns null" {
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_lookup_type_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let r = ctx_lookup_type(ctx, \"Foo\")\n" +
+            "    let n = ctx_lookup_type(ctx, \"Nonexistent\")\n" +
+            "    mut known = \"NULL\"\n" +
+            "    if r != null { known = r!.canonical_name }\n" +
+            "    mut unknown = \"NULL\"\n" +
+            "    if n != null { unknown = n!.canonical_name }\n" +
+            "    let msg = \"known=\" + known + \"; unknown=\" + unknown\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("known=Foo") && out.contains("unknown=NULL")
+    }
+}

@@ -1,0 +1,376 @@
+// WHY: codegen for null safety operators `??`, `?.`, and `?`.
+//
+// `a ?? b`   → short-circuit: if a != 0 then a else b
+// `a?.field` → if a == 0 then 0 else a.field
+// `a?`       → two modes:
+//              1. Result enum: check tag, extract Ok value or return Err
+//              2. Nullable: if a == 0, return 0 from enclosing fn
+//
+// In the bootstrap's everything-is-i64 model, null == 0. These
+// operators compile to i64 null-check or enum-tag-check branches.
+
+use core.{Expr, VarBinding, FieldEntry, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, vtype_nominal_name, vtype_enum_type_args, variant_lookup, vtype_strip_optional, vtype_is_optional}
+use core.{is_result_enum_name, is_result_shaped_enum}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, field_resolved_at, vtype_is_ptr_type}
+use codegen.{emit_optional_unwrap, emit_optional_some, needs_optional_box}
+use core.{vtype_wrap_optional}
+use features.defer_stmt.{emit_defers_on_error}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
+use features.struct_decl.{emit_field_on_value}
+use features.fn_decl.{emit_method_on_value}
+
+/// Codegen for `left ?? right`. Branch on whether `left` is
+/// null/zero, picking it when non-null or falling through to
+/// `right` otherwise. Phi-merges the two branches into a single
+/// SSA value. Result type widens Str when the left side is
+/// Unknown/Void and the right is Str.
+export fn emit_null_coalesce(ctx: Ctx, env: List<VarBinding>, left: Expr, right: Expr) -> Result<EmitValue, string> {
+    let l = ctx.emit(env, left)?
+
+    // Short-circuit: if left != 0/null (non-null), skip right.
+    let l_ptr = ctx.is_ptr_value(l.value)
+    let is_null = if l_ptr {
+        ctx.eq(l.value, ctx.zero_for(ValueType.Str), "nc_null")
+    } else {
+        ctx.eq(l.value, ctx.i64(0), "nc_null")
+    }
+    let present_bb = ctx.bb("nc_present")
+    let then_bb = ctx.bb("nc_rhs")
+    let merge_bb = ctx.bb("nc_end")
+    let result_slot = ctx.alloca_i64("nc_result")
+    ctx.cond_br(is_null, then_bb, present_bb)
+
+    // RHS (fallback) — emit FIRST so its type defines the `??` result type.
+    // The fallback type is what flows out: a plain `T` for `opt ?? value`, but
+    // an OPTIONAL `T?` for a chained `a ?? b ?? c` (the inner `a ?? b` must stay
+    // nullable so the outer `?? c` can still see `none`). Only executed when
+    // left is none.
+    ctx.position(then_bb)
+    let r = ctx.emit(env, right)?
+    let result_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { r.ty }
+    let r_final = if needs_optional_box(r.ty, result_ty) {
+        emit_optional_some(ctx, vtype_strip_optional(result_ty), r.value)
+    } else { r.value }
+    ctx.store(ctx.to_i64(r_final, "nc_rhs"), result_slot)
+    ctx.br(merge_bb)
+
+    // Present path (left is non-none): unwrap the box to the inner value (the
+    // unwrap MUST live here, not the entry block — unwrapping a `none` box
+    // would load from null), then RE-BOX when the result type is itself
+    // optional (chained `??`). Non-optional/niche left unwraps to itself.
+    ctx.position(present_bb)
+    let l_inner_val = if vtype_is_optional(l.ty) {
+        emit_optional_unwrap(ctx, vtype_strip_optional(l.ty), l.value)
+    } else { l.value }
+    let l_inner_ty = if vtype_is_optional(l.ty) { vtype_strip_optional(l.ty) } else { l.ty }
+    let l_final = if needs_optional_box(l_inner_ty, result_ty) {
+        emit_optional_some(ctx, vtype_strip_optional(result_ty), l_inner_val)
+    } else { l_inner_val }
+    ctx.store(ctx.to_i64(l_final, "nc_lhs"), result_slot)
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    let loaded = ctx.load_i64(result_slot, "nc_val")
+    ok_emit(loaded, result_ty)
+}
+
+/// Codegen for `obj?.field`. Null-checks the receiver: when null,
+/// produces null without touching the field; otherwise GEPs into
+/// the struct and loads. Falls back to a passthrough on non-
+/// struct receivers (e.g. strings).
+export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, obj)?
+
+    // If the object is null, produce null without accessing.
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "oc_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "oc_null")
+    }
+    let access_bb = ctx.bb("oc_access")
+    let merge_bb = ctx.bb("oc_end")
+    let result_slot = ctx.alloca_i64("oc_result")
+    ctx.store(ctx.i64(0), result_slot)
+    ctx.cond_br(is_null, merge_bb, access_bb)
+
+    // Access the field/property (only reached when obj is non-null). The
+    // niche `Struct?`/`str?`/… value IS the inner pointer, so emit the access
+    // on the UNWRAPPED receiver through the shared field accessor — the same
+    // dispatch a plain `.field` uses (struct GEP, str/list/map `.length`, …).
+    // Previously a non-struct receiver was stubbed: it ignored the field and
+    // returned the receiver, so `s?.length` yielded the string, not its length.
+    ctx.position(access_bb)
+    let recv_ty = vtype_strip_optional(r.ty)
+    let recv = EmitValue { value: r.value, ty: recv_ty }
+    // Route a RESOLVABLE receiver (struct field, str/list/map `.length`, …)
+    // through the shared field accessor. When the receiver type can't resolve
+    // the field — a bare `ptr` of unknown layout, whose only sound `?.` use is
+    // the null short-circuit (this branch is then dead) — fall back to the
+    // legacy passthrough so such code keeps compiling rather than erroring on
+    // dead IR.
+    match emit_field_on_value(ctx, recv, obj, field) {
+        .Ok(accessed) -> {
+            ctx.store(ctx.to_i64(emit_optional_some(ctx, accessed.ty, accessed.value), "oc_box"), result_slot)
+            ctx.br(merge_bb)
+            ctx.position(merge_bb)
+            ok_emit(ctx.load_i64(result_slot, "oc_val"), vtype_wrap_optional(accessed.ty))
+        }
+        .Err(_) -> {
+            ctx.store(ctx.to_i64(emit_optional_some(ctx, recv_ty, r.value), "oc_box"), result_slot)
+            ctx.br(merge_bb)
+            ctx.position(merge_bb)
+            ok_emit(ctx.load_i64(result_slot, "oc_val"), vtype_wrap_optional(recv_ty))
+        }
+    }
+}
+
+/// Codegen for `obj?.method(args)`. Same null-check-and-wrap scaffold as
+/// emit_optional_chain, but the present branch calls the method on the
+/// unwrapped receiver via the shared emit_method_on_value. None receiver
+/// short-circuits to `none`; the result wraps to the method return's `U?`.
+export fn emit_optional_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, obj)?
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "omc_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "omc_null")
+    }
+    let access_bb = ctx.bb("omc_access")
+    let merge_bb = ctx.bb("omc_end")
+    let result_slot = ctx.alloca_i64("omc_result")
+    ctx.store(ctx.i64(0), result_slot)
+    ctx.cond_br(is_null, merge_bb, access_bb)
+
+    ctx.position(access_bb)
+    let recv = EmitValue { value: r.value, ty: vtype_strip_optional(r.ty) }
+    let called = emit_method_on_value(ctx, env, recv, method, args)?
+    ctx.store(ctx.to_i64(emit_optional_some(ctx, called.ty, called.value), "omc_box"), result_slot)
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(result_slot, "omc_val"), vtype_wrap_optional(called.ty))
+}
+
+/// Codegen for the `?` try operator. Two modes based on the
+/// inner expression's type:
+/// - `Result<T, E>`: tag-check the wrapped value; on Ok, extract
+///   the payload and continue; on Err, run errdefers and return
+///   the Err verbatim from the enclosing fn.
+/// - Nullable `T?`: zero/null short-circuits to a null return;
+///   non-null falls through with the unwrapped value.
+/// Inner-codegen failures (a `Result.Err` from `ctx.emit`)
+/// propagate to the host normally — this only handles the
+/// runtime-level try semantics.
+export fn emit_try(ctx: Ctx, env: List<VarBinding>, inner: Expr) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, inner)?
+
+    // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
+    // Check tag: Ok → extract payload value, Err → return Result.
+    // Nominal name is read ACROSS kinds: a Result reached through a prior
+    // `?`-extraction can be classified `Struct("Result__T__E")` (the
+    // `vtype_from_name` default for an un-upgraded name) rather than Enum.
+    // Without the kind-agnostic name, Mode 1 is skipped and the WHOLE
+    // Result leaks out unextracted (Mode 3), surfacing as a `Result.Ok`
+    // value where a plain `T` is expected.
+    let enum_name = vtype_nominal_name(r.ty)
+    if is_result_shaped_enum(ctx.type_reg, enum_name) {
+        let enum_ty = ctx.get_type(enum_name)
+        let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
+        let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "try_tag_ptr")
+        let tag = ctx.load_i64(tag_gep, "try_tag")
+        let ok_tag = ctx.i64(avra_variant_hash("Ok"))
+        let is_ok = ctx.eq(tag, ok_tag, "try_is_ok")
+        let ok_bb = ctx.bb("try_ok")
+        let err_bb = ctx.bb("try_err")
+        ctx.cond_br(is_ok, ok_bb, err_bb)
+
+        ctx.position(err_bb)
+        emit_defers_on_error(ctx, env)
+        let try_fn_ret = ctx.current_fn_ret()
+        // ── Auto-widening: if inner error type is narrower than outer, wrap ──
+        let outer_enum_name = vtype_enum_name(try_fn_ret)
+        let ret_val = if outer_enum_name != "" && outer_enum_name != enum_name {
+            // Inner and outer Result are different monomorphizations.
+            // Extract error payload from inner, widen if needed, build outer Result.
+            let inner_err_ty = ctx.resolve_err_type(enum_name)
+            let outer_err_ty = ctx.resolve_err_type(outer_enum_name)
+            if needs_union_wrap(inner_err_ty, outer_err_ty) {
+                // Extract error payload from inner Result
+                let err_pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_widen_pay_slot")
+                let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "try_widen_payload")
+                let err_val = ctx.load_i64(err_pay_ptr, "try_err_val")
+                // Wrap the concrete error in the wider union type
+                let wrapped = emit_union_wrap(ctx, err_val, inner_err_ty, outer_err_ty)?
+                // Build a new outer Result enum: {tag=Err, payload=wrapped_err}
+                let outer_st_ty = ctx.get_type(outer_enum_name)
+                let outer_buf = ctx.arena_alloc(ctx.i64(16))
+                let outer_tag_gep = ctx.gep(outer_st_ty, outer_buf, 0, "try_widen_tag")
+                ctx.store(ctx.i64(avra_variant_hash("Err")), outer_tag_gep)
+                let outer_pay_buf = ctx.arena_alloc(ctx.i64(8))
+                ctx.store_slot(outer_pay_buf, 0, wrapped.value, outer_err_ty)
+                let outer_pay_gep = ctx.gep(outer_st_ty, outer_buf, 1, "try_widen_pay")
+                ctx.store(outer_pay_buf, outer_pay_gep)
+                ctx.to_i64(outer_buf, "try_widened_result")
+            } else {
+                r.value
+            }
+        } else {
+            r.value
+        }
+        ctx.ret(ret_val, try_fn_ret)
+
+        ctx.position(ok_bb)
+        let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
+        let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "try_payload")
+        let ok_val = ctx.load_i64(pay_ptr, "try_ok_val")
+        // nce6.3: prefer r.ty's type_args (concrete monomorphisation)
+        // over the enum registry's generic payload type — the
+        // registry has Ok(value: T) before substitution, while
+        // r.ty carries the substituted (concrete) T after typeck.
+        // Upgrade the resolved Ok type through the registry so a name that
+        // `resolve_ok_type` left as `Struct("E")` (the vtype_from_name default
+        // for an un-upgraded name) becomes `Enum("E")` when `E` is actually a
+        // registered enum. Without this, a `?`-extracted enum value is typed
+        // Struct, and a subsequent `match` on it emits struct-layout matching
+        // on an enum value — silently taking the wrong arm.
+        let ok_ty = ctx.resolve_codegen_vtype(ctx.resolve_ok_type_with(enum_name, vtype_enum_type_args(r.ty)))
+        // Retain the extracted Ok value so it survives Result wrapper release.
+        // The release function recursively releases inner fields; without
+        // this retain, ptr-type Ok payloads are freed while still in use.
+        if vtype_is_ptr_type(ok_ty) {
+            let ok_ptr = ctx.int_to_ptr(ok_val, "try_ok_ptr")
+            ctx.rc_retain(ok_ptr)
+        }
+        return ok_emit(ok_val, ok_ty)
+    }
+
+    // ── Mode 2: Struct with `had_error` field ──
+    // Check field: if true, return the struct (propagate). Otherwise
+    // the expression evaluates to the struct itself.
+    let struct_name = vtype_struct_name(r.ty)
+    if struct_name != "" {
+        let lookup = ctx.lookup_struct(struct_name)
+        if lookup.found {
+            let err_idx = field_index_of(lookup.fields, "had_error")
+            if err_idx >= 0 {
+                let st_ty = ctx.get_type(struct_name)
+                let obj_ptr = ctx.to_ptr(r.value, "try_ptr")
+                let gep = ctx.gep(st_ty, obj_ptr, err_idx, "try_err_ptr")
+                let err_val = ctx.load_i64(gep, "try_had_error")
+                // icmp ne (not-equal to 0) = truthy = had error
+                let is_err = ctx.truthy(err_val, "try_is_err")
+                let cont_bb = ctx.bb("try_ok")
+                let ret_bb = ctx.bb("try_err")
+                ctx.cond_br(is_err, ret_bb, cont_bb)
+
+                ctx.position(ret_bb)
+                emit_defers_on_error(ctx, env)
+                let s_fn_ret = ctx.current_fn_ret()
+                ctx.ret(r.value, s_fn_ret)
+
+                ctx.position(cont_bb)
+                return ok_emit(r.value, r.ty)
+            }
+        }
+    }
+
+    // ── Mode 3: Nullable ──
+    // If value is null/0, return null from enclosing fn.
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "try_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "try_null")
+    }
+    let cont_bb = ctx.bb("try_ok")
+    let ret_bb = ctx.bb("try_ret")
+    ctx.cond_br(is_null, ret_bb, cont_bb)
+
+    ctx.position(ret_bb)
+    emit_defers_on_error(ctx, env)
+    let fn_ret = ctx.current_fn_ret()
+    ctx.ret_void(fn_ret)
+
+    ctx.position(cont_bb)
+    ok_emit(r.value, r.ty)
+}
+
+/// Codegen for `expr() catch { fallback }`. Branches on the
+/// fallible expression's tag: on Ok, extract the payload and
+/// merge with the fallback path on a phi; on Err, evaluate
+/// `body` (with the optional error binding in scope) and merge.
+/// Both paths feed into a single result slot so the caller sees
+/// one SSA value typed as the `Ok` payload.
+export fn emit_catch(ctx: Ctx, env: List<VarBinding>, inner: Expr, binding: string, body: Expr) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, inner)?
+
+    // Result enum: check tag, Ok → extract value, Err → evaluate catch body
+    let enum_name = vtype_enum_name(r.ty)
+    if is_result_shaped_enum(ctx.type_reg, enum_name) {
+        let enum_ty = ctx.get_type(enum_name)
+        let enum_ptr = ctx.to_ptr(r.value, "catch_res_ptr")
+        let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "catch_tag_ptr")
+        let tag = ctx.load_i64(tag_gep, "catch_tag")
+        let ok_tag = ctx.i64(avra_variant_hash("Ok"))
+        let is_ok = ctx.eq(tag, ok_tag, "catch_is_ok")
+        let ok_bb = ctx.bb("catch_ok")
+        let err_bb = ctx.bb("catch_err")
+        let merge_bb = ctx.bb("catch_merge")
+        let result_slot = ctx.alloca_i64("catch_result")
+        ctx.cond_br(is_ok, ok_bb, err_bb)
+
+        // Ok path: extract payload
+        ctx.position(ok_bb)
+        let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "catch_pay_slot")
+        let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "catch_payload")
+        let ok_val = ctx.load_i64(pay_ptr, "catch_ok_val")
+        ctx.store(ok_val, result_slot)
+        ctx.br(merge_bb)
+
+        // Err path: evaluate catch body, optionally binding the error
+        ctx.position(err_bb)
+        let err_env = if binding.length > 0 {
+            // Extract error payload and bind it with the Err variant's type
+            let err_pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "catch_err_pay_slot")
+            let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "catch_err_payload")
+            let err_val = ctx.load_i64(err_pay_ptr, "catch_err_val")
+            let lookup = ctx.lookup_enum(enum_name)
+            let empty_fields: List<FieldEntry> = []
+            let err_fields = if lookup.found { variant_lookup(lookup.variants, "Err").fields } else { empty_fields }
+            let err_ty = field_resolved_at(err_fields, 0)
+            ctx.bind(env, binding, err_val, err_ty)
+        } else { env }
+        let catch_r = ctx.emit(err_env, body)?
+        ctx.store(ctx.to_i64(catch_r.value, "catch_body_val"), result_slot)
+        ctx.br_if_open(merge_bb)
+
+        ctx.position(merge_bb)
+        let merged = ctx.load_i64(result_slot, "catch_merged")
+        return ok_emit(merged, ctx.resolve_ok_type(enum_name))
+    }
+
+    // Nullable: if null, evaluate catch body
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "catch_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "catch_null")
+    }
+    let ok_bb = ctx.bb("catch_ok")
+    let null_bb = ctx.bb("catch_null_body")
+    let merge_bb = ctx.bb("catch_merge")
+    let result_slot = ctx.alloca_i64("catch_result")
+    ctx.store(ctx.to_i64(r.value, "catch_lhs"), result_slot)
+    ctx.cond_br(is_null, null_bb, ok_bb)
+
+    ctx.position(null_bb)
+    let null_env = if binding.length > 0 { ctx.bind(env, binding, ctx.i64(0), .Unknown) } else { env }
+    let catch_r = ctx.emit(null_env, body)?
+    ctx.store(ctx.to_i64(catch_r.value, "catch_null_val"), result_slot)
+    ctx.br_if_open(merge_bb)
+
+    ctx.position(ok_bb)
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    let merged = ctx.load_i64(result_slot, "catch_merged")
+    ok_emit(merged, r.ty)
+}

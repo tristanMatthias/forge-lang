@@ -1,0 +1,736 @@
+// WHY: L1 node-model foundation (ps3t.3.2 + the ingest half of the shim
+// ps3t.3.7 / spine §14.1, §14.6) plus the byte-offset SPAN side-table
+// (ps3t.3.3 / spine §14.2). Per-type arena stores + typed-id newtypes for
+// ALL FOUR node kinds (Expr/Stmt/Pattern/ValueType), a RECURSIVE, id-based
+// ingest that flattens the live pointer-tree into the arenas (child/cross
+// references become typed ids — the array-of-nodes-now form, §14.1), and the
+// per-node EDGE and SPAN facts kept in dense, id-keyed side-tables (§14.2:
+// spans live OFF the node; line/col are recomputed on demand from a LineIndex,
+// never stored — see core/span.av).
+//
+// Each arena is `{ nodes, edges, spans }`: `nodes` is the primary append-only
+// store; `edges` and `spans` are `DenseTable<Id, …>` (core/side_table.av) — the
+// shared dense side-table, so the per-node bookkeeping is one reusable structure
+// rather than the hand-rolled parallel `edges`/`span_lo`/`span_hi` arrays this
+// originally carried (ps3t.3.6 dogfood: the spine §14.3 consolidation). Build an
+// empty arena with `new_{expr,stmt,pat,type}_arena()`.
+//
+// ADDITIVE (bootstrap window, §14.6 step 1): lands ALONGSIDE the existing
+// SExpr/SStmt; changes no variant and adds no surface syntax. The data-oriented
+// end-state — nodes literally holding child *ids* (Binary(ExprId,op,ExprId)),
+// the compiler PASSES reading from here instead of the pointer-tree, and
+// diagnostics rendering via span_of(id) + to_linecol (retiring the on-node
+// .line/.col) — is the seed-gated pass migration that §14.6 stages AFTER this
+// foundation (tickets ps3t.3.7 + per-pass work). Concretely for §14.2: this
+// foundation records REAL byte-offset spans for the top-level statements (whose
+// position the parser preserves on the SStmt wrapper) AND, via the span-aware
+// `all_children_spanned()` walker (A2), for every WRAPPED nested node — the
+// children that ride an SExpr/SStmt wrapper (call/ctor args, list/tuple/map
+// elems, block/fn/impl/… bodies, Annotated.inner). Truly BARE children (a
+// Binary operand, a Grouping/If/Assign/Lambda sub-expr, any Pattern/ValueType
+// child — no wrapper carries their offset) keep the byte_span_none() sentinel
+// until the parser builds the arena directly and threads a precise span through
+// every production (the tracer's model, scratch/tracer_bullet.av).
+//
+// Typed ids are OPAQUE HANDLES (compare / look up, never inspect): typeck
+// keeps ExprId / StmtId / PatId / TypeId nominally distinct (passing a
+// StmtId where an ExprId is wanted is a type error — see arena_test.av), and
+// each side-table is keyed by its own id kind, so a Stmt edge/span table
+// rejects an ExprId. Construct `StmtId(i)`, peel with `.raw()` inside this
+// module only.
+//
+// The recursion is driven by the derive_walker-generated `all_children_spanned()`
+// method on each AST enum (features/walker) — the CROSS-TYPE walker, so a
+// `Stmt`'s `Expr`/`Pattern`/`ValueType` children are reached too, not just
+// its same-type `Stmt` children — and SPAN-AWARE: each child arrives paired
+// with the (line, col) of the wrapper it came from (A2), which `child_span`
+// lifts into a real byte-offset span. (Callers wanting just the position-free
+// node list strip the spans with `strip_spans` — e.g. the kind-tag probes.) It
+// needs no per-variant hand-rolled match here and stays correct as variants are
+// added. Because a child can land in
+// any of the four arenas, the recursion lives on `NodeStore` (which owns all
+// four), not on a lone arena. The per-node edge list is the one-field
+// `NodeEdges` wrapper (a `List<NodeRef>`) rather than `List<List<…>>`: the
+// current seed lexes the closing `>>` as a shift token, so nested generics
+// are seed-gated — the wrapper is the additive equivalent (and the
+// side-table value type).
+
+use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild, strip_spans, SStmt, sstmt_at}
+use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
+use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
+use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
+
+/// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
+export type ExprId = int
+/// Index into the Stmt arena.
+export type StmtId = int
+/// Index into the Pattern arena.
+export type PatId = int
+/// Index into the ValueType arena.
+export type TypeId = int
+
+// A node's child edges are the cross-type `NodeEdges` (defined below, next to
+// `NodeRef`) — one heterogeneous, order-preserving list, the single edge
+// representation. (The earlier same-type `*Edges` wrappers are gone: storing a
+// node's children twice — once same-type, once cross-type — would be two
+// sources of truth; A1 keeps exactly one, the faithful cross-type list.)
+
+// ── Cross-type node model (A1: faithful cross-type ingest) ──
+//
+// The per-type `*Edges` above hold only SAME-type child ids — enough for the
+// stmt-only parallel index the arena was, but not for a faithful tree, where a
+// `Stmt` has `Expr` children, an `Expr` has `Stmt`/`Pattern`/`ValueType`
+// children, etc. `NodeRef` is the cross-type child reference (a typed id into
+// whichever arena owns that child), and `NodeEdges` is one node's ordered,
+// heterogeneous child list — order preserved so reconstruction is faithful.
+
+/// A typed reference to a node in one of the four arenas — the cross-type edge
+/// payload. Opaque handle: compare / look up, never inspect the inner int.
+export enum NodeRef {
+    ExprRef(id: ExprId),
+    StmtRef(id: StmtId),
+    PatRef(id: PatId),
+    TypeRef(id: TypeId),
+}
+
+// `AnyNode` (the boxed-child node inside each `SpannedChild` that
+// `all_children_spanned()` yields) lives in
+// core/ast.av, next to the Expr/Stmt/Pattern/ValueType enums and the
+// unwrap_node_* walker helpers — so the derive-generated walker code can name
+// it without arena.av importing ast.av back (avoiding a core-file cycle).
+
+/// One node's direct children as an ordered, heterogeneous `NodeRef` list
+/// (wrapper dodges `List<List<>>`, mirroring `*Edges`). Replaces the same-type
+/// `*Edges` once a node kind is ingested cross-type.
+export type NodeEdges = { refs: List<NodeRef> }
+
+/// One-letter tag for an AnyNode's kind — E/S/P/T. The exhaustive match (no
+/// wildcard) makes a new node kind a compile error here.
+export fn any_node_tag(n: AnyNode) -> string {
+    match n {
+        .AnyExpr(_) -> "E"
+        .AnyStmt(_) -> "S"
+        .AnyPat(_) -> "P"
+        .AnyType(_) -> "T"
+    }
+}
+
+/// One-letter kind tag (E/S/P/T) of a child edge — the `NodeRef` analogue of
+/// `any_node_tag`, for probes/diagnostics (and the unwrap messages below) that
+/// report which arena an edge points into.
+export fn noderef_tag(r: NodeRef) -> string {
+    match r {
+        .ExprRef(_) -> "E"
+        .StmtRef(_) -> "S"
+        .PatRef(_) -> "P"
+        .TypeRef(_) -> "T"
+    }
+}
+
+// Peel a child edge to the id of the arena it points into. A consumer walks
+// `children_of` knowing each position's kind from the parent node's structure,
+// so a wrong kind is an arena-construction bug, not a recoverable case: these
+// abort loudly rather than return a sentinel id that would index out of bounds
+// downstream. When the kind is genuinely unknown, `match` on `NodeRef` instead.
+export fn expr_ref_id(r: NodeRef) -> ExprId {
+    match r {
+        .ExprRef(id) -> id
+        _ -> panic("expr_ref_id: expected an ExprRef edge, got ${noderef_tag(r)}")
+    }
+}
+export fn stmt_ref_id(r: NodeRef) -> StmtId {
+    match r {
+        .StmtRef(id) -> id
+        _ -> panic("stmt_ref_id: expected a StmtRef edge, got ${noderef_tag(r)}")
+    }
+}
+export fn pat_ref_id(r: NodeRef) -> PatId {
+    match r {
+        .PatRef(id) -> id
+        _ -> panic("pat_ref_id: expected a PatRef edge, got ${noderef_tag(r)}")
+    }
+}
+export fn type_ref_id(r: NodeRef) -> TypeId {
+    match r {
+        .TypeRef(id) -> id
+        _ -> panic("type_ref_id: expected a TypeRef edge, got ${noderef_tag(r)}")
+    }
+}
+
+/// The kind-tags (E/S/P/T) of a node's cross-type children, in order — the
+/// shared body of the per-kind probes below. `strip_spans` drops the
+/// per-child (line, col) the spanned walker carries (irrelevant to kind/order);
+/// it lives in @std, where these probes can resolve it (a user enum's generated
+/// `all_children_spanned` never references it, only the `SpannedChild` type).
+fn child_tags_of(children: List<SpannedChild>) -> string {
+    mut out = ""
+    for c in strip_spans(children) { out = out + any_node_tag(c) }
+    out
+}
+
+// Diagnostic/test probes: the kind-tags of a node's cross-type children, in
+// order, via the derive-generated `all_children_spanned()` — one per node kind
+// so a consumer shard (which can't call the generated method on a core type
+// directly) can assert count + kinds + order through the @std API for any kind.
+export fn stmt_child_tags(s: Stmt) -> string { child_tags_of(s.all_children_spanned()) }
+export fn expr_child_tags(e: Expr) -> string { child_tags_of(e.all_children_spanned()) }
+export fn pat_child_tags(p: Pattern) -> string { child_tags_of(p.all_children_spanned()) }
+export fn type_child_tags(t: ValueType) -> string { child_tags_of(t.all_children_spanned()) }
+
+// The B1 inverse-walker (with_children) ROUND-TRIP oracle — the §8 property law:
+// rebuilding a node from its OWN extracted children reproduces it,
+// `with_children(self, all_children_spanned(self)) == self`. A consumer shard
+// can't call the generated methods on a core type directly, so these @std probes
+// run the round-trip and compare structurally: render-equality for Expr/Stmt/
+// Pattern (structure — spans are tested separately, A2); `vtype_eq_deep` for
+// ValueType (deep-compares FnTyped params+ret, so a mis-ordered/mis-partitioned
+// rebuild is caught). True ⇒ the inverse walker faithfully inverts the walker.
+export fn wc_roundtrip_expr(e: Expr) -> bool { render_expr(e.with_children(e.all_children_spanned())) == render_expr(e) }
+export fn wc_roundtrip_stmt(s: Stmt) -> bool { render_stmt(s.with_children(s.all_children_spanned())) == render_stmt(s) }
+export fn wc_roundtrip_pat(p: Pattern) -> bool { render_pattern(p.with_children(p.all_children_spanned())) == render_pattern(p) }
+export fn wc_roundtrip_type(t: ValueType) -> bool { vtype_eq_deep(t.with_children(t.all_children_spanned()), t) }
+
+// ── B1 faithfulness oracle ──
+// The migration invariant the flip relies on: a row's RECORDED edges must
+// mirror the walker's view of its boxed payload — same arity, same kinds, in
+// order — and each edge's target payload must be the same node the boxed
+// child is, recursively down the subtree. Compared by render equality per
+// kind (vtype_eq_deep for types), the same comparison the with_children
+// round-trip law uses. Walker-opaque nodes (e.g. `When`, whose WhenArm isn't
+// a registered container) hold trivially: zero walker children, zero edges.
+
+/// True iff the subtree rooted at expr row `id` is walker-faithful (see
+/// the B1 faithfulness oracle note above).
+export fn store_expr_subtree_faithful(store: NodeStore, id: ExprId) -> bool {
+    store_children_faithful(store, store.exprs.get(id).all_children_spanned(), store.exprs.children_of(id))
+}
+/// Stmt-kind entry of the B1 faithfulness oracle.
+export fn store_stmt_subtree_faithful(store: NodeStore, id: StmtId) -> bool {
+    store_children_faithful(store, store.stmts.get(id).all_children_spanned(), store.stmts.children_of(id))
+}
+/// Pattern-kind entry of the B1 faithfulness oracle.
+export fn store_pat_subtree_faithful(store: NodeStore, id: PatId) -> bool {
+    store_children_faithful(store, store.pats.get(id).all_children_spanned(), store.pats.children_of(id))
+}
+/// Type-kind entry of the B1 faithfulness oracle.
+export fn store_type_subtree_faithful(store: NodeStore, id: TypeId) -> bool {
+    store_children_faithful(store, store.types.get(id).all_children_spanned(), store.types.children_of(id))
+}
+
+fn store_children_faithful(store: NodeStore, kids: List<SpannedChild>, refs: List<NodeRef>) -> bool {
+    if kids.length != refs.length { return false }
+    for (i, kid) in kids.enumerate() {
+        let ok = match kid.node {
+            .AnyExpr(e) -> match refs[i] {
+                .ExprRef(cid) -> render_expr(store.exprs.get(cid)) == render_expr(e) && store_expr_subtree_faithful(store, cid)
+                _ -> false
+            }
+            .AnyStmt(s) -> match refs[i] {
+                .StmtRef(cid) -> render_stmt(store.stmts.get(cid)) == render_stmt(s) && store_stmt_subtree_faithful(store, cid)
+                _ -> false
+            }
+            .AnyPat(p) -> match refs[i] {
+                .PatRef(cid) -> render_pattern(store.pats.get(cid)) == render_pattern(p) && store_pat_subtree_faithful(store, cid)
+                _ -> false
+            }
+            .AnyType(t) -> match refs[i] {
+                .TypeRef(cid) -> vtype_eq_deep(store.types.get(cid), t) && store_type_subtree_faithful(store, cid)
+                _ -> false
+            }
+        }
+        if !ok { return false }
+    }
+    true
+}
+
+/// Append-only arena of `Expr` nodes, addressed by `ExprId`. `nodes[i]` is the
+/// boxed node (array-of-nodes-now, §14.1); `edges` and `spans` are dense,
+/// id-keyed side-tables (core/side_table.av): `edges` holds each node's direct
+/// child `NodeRef`s (cross-type — an `Expr` may have `Stmt`/`Pattern`/`ValueType`
+/// children), `spans` its byte-offset SPAN (§14.2). Both keyed by the same id, so
+/// a child-list or a span is a lookup, never a field on the node — and the
+/// dense-column bookkeeping is the shared DenseTable, not hand-rolled parallel
+/// arrays.
+export type ExprArena = { nodes: List<Expr>, edges: DenseTable<ExprId, NodeEdges>, spans: DenseTable<ExprId, ByteSpan> }
+impl ExprArena {
+    /// Append `node` with its (already-ingested) cross-type child `edges` and
+    /// `sp` span, returning its id. The post-order recursion that produces
+    /// `edges` lives on `NodeStore.ingest_expr` — a lone arena can't place a
+    /// node's cross-type children.
+    fn add(self, node: Expr, edges: NodeEdges, sp: ByteSpan) -> ExprId {
+        let id = ExprId(self.nodes.length)
+        self.nodes.push(node)
+        // Empty edges / the sentinel span ARE the DenseTable `fill`, so an
+        // unwritten slot reads back identically — skip those writes and a
+        // leaf row costs one list push.
+        if edges.refs.length > 0 { self.edges.set(id, edges) }
+        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
+        id
+    }
+    /// Append a LEAF row (no children, no source span): one list push, none
+    /// of the caller-side edge/span allocations `add` requires. The hot path
+    /// for literal/ident rows — the majority of expr nodes.
+    fn add_leaf(self, node: Expr) -> ExprId {
+        let id = ExprId(self.nodes.length)
+        self.nodes.push(node)
+        id
+    }
+    fn get(self, id: ExprId) -> Expr { self.nodes[id.raw()] }
+    /// Navigate by id, not by pointer — the L1 access discipline. Cross-type:
+    /// a child `NodeRef` may point into any of the four arenas.
+    fn children_of(self, id: ExprId) -> List<NodeRef> { self.edges.get(id).refs }
+    /// The node's byte-offset span (§14.2) — a side-table lookup.
+    fn span_of(self, id: ExprId) -> ByteSpan { self.spans.get(id) }
+    /// Roll back to `n` rows — nodes and their parallel id-keyed columns
+    /// (edges, spans) truncate together so the arena stays consistent. The
+    /// speculative-parse rollback primitive (B1): O(rows dropped).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
+    fn count(self) -> int { self.nodes.length }
+}
+
+/// Construct an empty `ExprArena`. The dense side-tables are built in typed
+/// `let`s so the annotation supplies their phantom key type (a struct-field
+/// initializer can't yet — bug pf15), then assembled into the arena.
+export fn new_expr_arena() -> ExprArena {
+    let edges: DenseTable<ExprId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
+    let spans: DenseTable<ExprId, ByteSpan> = new_dense_table(byte_span_none())
+    ExprArena { nodes: [], edges: edges, spans: spans }
+}
+
+/// Append-only arena of `Stmt` nodes, addressed by `StmtId`. `edges`/`spans`
+/// are dense, id-keyed side-tables (see ExprArena).
+export type StmtArena = { nodes: List<Stmt>, edges: DenseTable<StmtId, NodeEdges>, spans: DenseTable<StmtId, ByteSpan> }
+impl StmtArena {
+    /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
+    fn add(self, node: Stmt, edges: NodeEdges, sp: ByteSpan) -> StmtId {
+        let id = StmtId(self.nodes.length)
+        self.nodes.push(node)
+        // Fill-valued edges/spans skip the write (see ExprArena.add).
+        if edges.refs.length > 0 { self.edges.set(id, edges) }
+        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
+        id
+    }
+    fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw()] }
+    fn children_of(self, id: StmtId) -> List<NodeRef> { self.edges.get(id).refs }
+    fn span_of(self, id: StmtId) -> ByteSpan { self.spans.get(id) }
+    fn count(self) -> int { self.nodes.length }
+    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
+}
+
+/// Construct an empty `StmtArena` (see `new_expr_arena`).
+export fn new_stmt_arena() -> StmtArena {
+    let edges: DenseTable<StmtId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
+    let spans: DenseTable<StmtId, ByteSpan> = new_dense_table(byte_span_none())
+    StmtArena { nodes: [], edges: edges, spans: spans }
+}
+
+/// Append-only arena of `Pattern` nodes, addressed by `PatId`. `edges`/`spans`
+/// are dense, id-keyed side-tables (see ExprArena).
+export type PatArena = { nodes: List<Pattern>, edges: DenseTable<PatId, NodeEdges>, spans: DenseTable<PatId, ByteSpan> }
+impl PatArena {
+    /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
+    fn add(self, node: Pattern, edges: NodeEdges, sp: ByteSpan) -> PatId {
+        let id = PatId(self.nodes.length)
+        self.nodes.push(node)
+        // Fill-valued edges/spans skip the write (see ExprArena.add).
+        if edges.refs.length > 0 { self.edges.set(id, edges) }
+        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
+        id
+    }
+    fn get(self, id: PatId) -> Pattern { self.nodes[id.raw()] }
+    fn children_of(self, id: PatId) -> List<NodeRef> { self.edges.get(id).refs }
+    fn span_of(self, id: PatId) -> ByteSpan { self.spans.get(id) }
+    fn count(self) -> int { self.nodes.length }
+    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
+}
+
+/// Construct an empty `PatArena` (see `new_expr_arena`).
+export fn new_pat_arena() -> PatArena {
+    let edges: DenseTable<PatId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
+    let spans: DenseTable<PatId, ByteSpan> = new_dense_table(byte_span_none())
+    PatArena { nodes: [], edges: edges, spans: spans }
+}
+
+/// Append-only arena of `ValueType` nodes, addressed by `TypeId` — the
+/// fourth node kind (§14.1: "Expr/Stmt/Pattern/ValueType, each in its own
+/// dense arena"). Type trees flatten the same way (e.g. `List<T>`'s element
+/// type becomes a child `TypeId`). `edges`/`spans` are dense side-tables.
+export type TypeArena = { nodes: List<ValueType>, edges: DenseTable<TypeId, NodeEdges>, spans: DenseTable<TypeId, ByteSpan> }
+impl TypeArena {
+    /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
+    fn add(self, node: ValueType, edges: NodeEdges, sp: ByteSpan) -> TypeId {
+        let id = TypeId(self.nodes.length)
+        self.nodes.push(node)
+        // Fill-valued edges/spans skip the write (see ExprArena.add).
+        if edges.refs.length > 0 { self.edges.set(id, edges) }
+        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
+        id
+    }
+    fn get(self, id: TypeId) -> ValueType { self.nodes[id.raw()] }
+    fn children_of(self, id: TypeId) -> List<NodeRef> { self.edges.get(id).refs }
+    fn span_of(self, id: TypeId) -> ByteSpan { self.spans.get(id) }
+    fn count(self) -> int { self.nodes.length }
+    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
+}
+
+/// Construct an empty `TypeArena` (see `new_expr_arena`).
+export fn new_type_arena() -> TypeArena {
+    let edges: DenseTable<TypeId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
+    let spans: DenseTable<TypeId, ByteSpan> = new_dense_table(byte_span_none())
+    TypeArena { nodes: [], edges: edges, spans: spans }
+}
+
+/// The L1 store: one dense arena per node kind, the data-oriented
+/// replacement for the boxed pointer-tree, plus the file's `LineIndex` so a
+/// node's (line, col) can be recomputed on demand from its span (§14.2) —
+/// the only place line/col is derived once the pass migration lands. Built
+/// by `ingest_program`.
+/// The four arenas' row counts at a moment in time — a speculative-parse
+/// snapshot handle (B1). Taken with `NodeStore.mark()`, rolled back with
+/// `NodeStore.truncate_to_mark()`.
+export type StoreMark = { exprs: int, stmts: int, pats: int, types: int }
+
+export type NodeStore = {
+    exprs: ExprArena,
+    stmts: StmtArena,
+    pats: PatArena,
+    types: TypeArena,
+    lines: LineIndex,
+    // The top-level statement ids, in source order — the program's entry
+    // points into the StmtArena. `ingest_program` records them (the returned
+    // root id of each top-level ingest); `program_from_store` reads them back.
+    // Without these the arena has no "where does the program start" handle.
+    roots: List<StmtId>,
+    // Per-node provenance (§14.3): the StmtIds whose source `SStmt` carried
+    // `from_macro = true`. Recorded SPARSELY — only macro-introduced nodes get
+    // an entry, so the table is empty for an ordinary program. The presence of
+    // an id IS the fact (`from_macro`), read via `.has`, so the reverse shim
+    // restores provenance instead of flattening every node to non-macro.
+    provenance: SparseTable<StmtId, bool>,
+}
+
+impl NodeStore {
+    /// Ingest one boxed child into the arena that owns its kind, returning the
+    /// cross-type `NodeRef`. The dispatch that fuses the four arenas into one
+    /// tree (an `Expr`'s `Stmt`/`Pattern`/`ValueType` children land in their
+    /// own arenas, referenced back by id).
+    fn ingest_any(self, n: AnyNode, sp: ByteSpan) -> NodeRef {
+        match n {
+            .AnyExpr(node) -> NodeRef.ExprRef(self.ingest_expr(node, sp))
+            .AnyStmt(node) -> NodeRef.StmtRef(self.ingest_stmt(node, sp))
+            .AnyPat(node) -> NodeRef.PatRef(self.ingest_pat(node, sp))
+            .AnyType(node) -> NodeRef.TypeRef(self.ingest_type(node, sp))
+        }
+    }
+    /// Turn one spanned child's wrapper-derived (line, col) into a REAL
+    /// byte-offset span (§14.2 / A2). A WRAPPED child (an SExpr/SStmt entry —
+    /// call/ctor args, list/tuple/map elems, block/fn/… bodies, Annotated.inner)
+    /// carries the (line, col) the parser preserved on its wrapper, lifted here
+    /// via the file's LineIndex. A BARE child (`line < 1`, e.g. a Binary operand,
+    /// a Grouping/If sub-expr, any Pattern/ValueType child — no wrapper carries
+    /// its offset) records the synthesised-node sentinel. The end byte (extent)
+    /// is deferred to the parser-builds-arena step (B): a wrapper exposes only a
+    /// START position, so the span is zero-width [lo, lo) here — a real caret
+    /// position, the same end-byte residual the top-level conservative extent
+    /// carries in `ingest_program`.
+    fn child_span(self, sc: SpannedChild) -> ByteSpan {
+        if sc.line < 1 { return byte_span_none() }
+        let lo = self.lines.offset_of(sc.line, sc.col)
+        byte_span(lo, lo)
+    }
+    /// Ingest each spanned child (of ANY kind) post-order into its owning arena,
+    /// returning the ordered cross-type `NodeRef` edges — the shared body of the
+    /// four `ingest_*` recursions, driven by the derive-generated span-aware
+    /// `all_children_spanned()` so wrapped nested nodes get real spans (A2).
+    fn ingest_children(self, scs: List<SpannedChild>) -> List<NodeRef> {
+        mut refs: List<NodeRef> = []
+        for sc in scs { refs.push(self.ingest_any(sc.node, self.child_span(sc))) }
+        refs
+    }
+    /// Recursively ingest an `Expr` subtree into the store (post-order: every
+    /// child — of ANY kind — gets an id before the parent records its edges),
+    /// recording `sp` as this node's span. WRAPPED children get their real
+    /// wrapper-derived span; bare children get byte_span_none() (see
+    /// `child_span`). Returns the new `ExprId`.
+    fn ingest_expr(self, node: Expr, sp: ByteSpan) -> ExprId {
+        self.exprs.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
+    }
+    /// Recursively ingest a `Stmt` subtree (see `ingest_expr`).
+    fn ingest_stmt(self, node: Stmt, sp: ByteSpan) -> StmtId {
+        self.stmts.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
+    }
+    /// Register `node` as a top-level root WITHOUT ingesting its subtree or a
+    /// span — the shallow, source-free counterpart of `ingest_stmt`. No child
+    /// edges and `byte_span_none()`, so no `LineIndex` is consulted and no span
+    /// is fabricated. `get(id)` returns the boxed node whose inline children a
+    /// consumer still walks directly. Used by `ingest_roots_spanless`.
+    fn add_root_shallow(self, node: Stmt) -> StmtId {
+        self.stmts.add(node, NodeEdges { refs: [] }, byte_span_none())
+    }
+    /// Recursively ingest a `Pattern` subtree (see `ingest_expr`).
+    fn ingest_pat(self, node: Pattern, sp: ByteSpan) -> PatId {
+        self.pats.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
+    }
+    /// Recursively ingest a `ValueType` subtree (see `ingest_expr`).
+    fn ingest_type(self, node: ValueType, sp: ByteSpan) -> TypeId {
+        self.types.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
+    }
+    /// 1-based (line, col) of a byte-span — the on-demand conversion §14.2 says
+    /// happens only at diagnostic-render / reconstruct time, never from a stored
+    /// field. A synthesised node (span_none) maps to (0, 0) — the "no attribution"
+    /// coordinate the renderer treats as "skip the caret".
+    fn linecol_of_span(self, sp: ByteSpan) -> LineCol {
+        if byte_span_is_none(sp) {
+            return LineCol { line: 0, col: 0 }
+        }
+        self.lines.to_linecol(sp.lo)
+    }
+    /// Recompute a statement node's (line, col) from its recorded span.
+    fn stmt_linecol(self, id: StmtId) -> LineCol {
+        self.linecol_of_span(self.stmts.span_of(id))
+    }
+    /// Recompute an expression node's (line, col) from its recorded span.
+    fn expr_linecol(self, id: ExprId) -> LineCol {
+        self.linecol_of_span(self.exprs.span_of(id))
+    }
+    /// Recompute a pattern node's (line, col) from its recorded span.
+    fn pat_linecol(self, id: PatId) -> LineCol {
+        self.linecol_of_span(self.pats.span_of(id))
+    }
+    /// Recompute a type node's (line, col) from its recorded span.
+    fn type_linecol(self, id: TypeId) -> LineCol {
+        self.linecol_of_span(self.types.span_of(id))
+    }
+    /// Snapshot the four arenas' row counts — the store half of a speculative-
+    /// parse snapshot (B1). Pair with `truncate_to_mark` on backtrack so an
+    /// abandoned parse leaves no rows.
+    fn mark(self) -> StoreMark {
+        StoreMark {
+            exprs: self.exprs.count(),
+            stmts: self.stmts.count(),
+            pats: self.pats.count(),
+            types: self.types.count(),
+        }
+    }
+    /// Roll all four arenas back to `m` — each arena truncates its nodes and
+    /// parallel id-keyed columns together. O(rows allocated since the mark).
+    fn truncate_to_mark(self, m: StoreMark) {
+        self.exprs.truncate_to(m.exprs)
+        self.stmts.truncate_to(m.stmts)
+        self.pats.truncate_to(m.pats)
+        self.types.truncate_to(m.types)
+    }
+
+    // ── reconstruct: rebuild the boxed tree from arena EDGES (B1) ──
+    //
+    // The inverse of ingest: given a node id, rebuild its boxed node from its
+    // EDGE ids (not the stored boxed children) recursively, via the derive-
+    // generated `with_children`. SCOPE: edges cover every WALKER-REACHABLE child;
+    // children embedded in plain structs (a match arm's pattern/guard/body, a
+    // field-init's value, a param's type) are NOT walked, so they have no edge and
+    // `with_children` carries them through from the stored node unchanged. Within
+    // that scope the edges are a faithful representation — the boxed-view shim the
+    // id-children rep flip stands on (descending into the struct carriers is the
+    // rep-flip step proper, not this shim). Each child arrives as a `SpannedChild`
+    // carrying the (line, col) recovered from the span side-table, so
+    // `with_children` rebuilds SExpr/SStmt wrappers with their position.
+
+    /// Rebuild one child edge into a `SpannedChild`: its node (recursively, from
+    /// ITS edges) paired with its (line, col) recovered from the span side-table.
+    fn reconstruct_ref(self, r: NodeRef) -> SpannedChild {
+        match r {
+            .ExprRef(id) -> {
+                let lc = self.linecol_of_span(self.exprs.span_of(id))
+                spanned_child(AnyNode.AnyExpr(self.reconstruct_expr(id)), lc.line, lc.col)
+            }
+            .StmtRef(id) -> {
+                let lc = self.linecol_of_span(self.stmts.span_of(id))
+                spanned_child(AnyNode.AnyStmt(self.reconstruct_stmt(id)), lc.line, lc.col)
+            }
+            .PatRef(id) -> {
+                let lc = self.linecol_of_span(self.pats.span_of(id))
+                spanned_child(AnyNode.AnyPat(self.reconstruct_pat(id)), lc.line, lc.col)
+            }
+            .TypeRef(id) -> {
+                let lc = self.linecol_of_span(self.types.span_of(id))
+                spanned_child(AnyNode.AnyType(self.reconstruct_type(id)), lc.line, lc.col)
+            }
+        }
+    }
+    /// Rebuild a node's ordered children from its edge list — the input
+    /// `with_children` reassembles into the parent's slots.
+    fn reconstruct_kids(self, refs: List<NodeRef>) -> List<SpannedChild> {
+        mut out: List<SpannedChild> = []
+        for r in refs { out.push(self.reconstruct_ref(r)) }
+        out
+    }
+    /// Rebuild an `Expr` from its arena id: its variant + scalars from the stored
+    /// node, its children rebuilt from the edges (NOT the stored boxed children).
+    fn reconstruct_expr(self, id: ExprId) -> Expr {
+        self.exprs.get(id).with_children(self.reconstruct_kids(self.exprs.children_of(id)))
+    }
+    /// Rebuild a `Stmt` from its arena id (see `reconstruct_expr`).
+    fn reconstruct_stmt(self, id: StmtId) -> Stmt {
+        self.stmts.get(id).with_children(self.reconstruct_kids(self.stmts.children_of(id)))
+    }
+    /// Rebuild a `Pattern` from its arena id (see `reconstruct_expr`).
+    fn reconstruct_pat(self, id: PatId) -> Pattern {
+        self.pats.get(id).with_children(self.reconstruct_kids(self.pats.children_of(id)))
+    }
+    /// Rebuild a `ValueType` from its arena id (see `reconstruct_expr`).
+    fn reconstruct_type(self, id: TypeId) -> ValueType {
+        self.types.get(id).with_children(self.reconstruct_kids(self.types.children_of(id)))
+    }
+}
+
+/// Construct an empty store carrying `lines` (the per-file LineIndex used to
+/// turn spans back into line/col on demand).
+export fn new_node_store(lines: LineIndex) -> NodeStore {
+    let roots: List<StmtId> = []
+    let provenance: SparseTable<StmtId, bool> = new_sparse_table()
+    NodeStore {
+        exprs: new_expr_arena(),
+        stmts: new_stmt_arena(),
+        pats: new_pat_arena(),
+        types: new_type_arena(),
+        lines,
+        roots,
+        provenance,
+    }
+}
+
+/// Compat shim (ingest direction, ps3t.3.7): flatten a parsed statement list
+/// into the store, recursively and CROSS-TYPE (A1) — every descendant node, of
+/// ANY kind, gets an id in its owning arena (a stmt's expr/type/pattern
+/// children among them), and each node's edges record those children as typed
+/// `NodeRef`s. So after ingest the four arenas together hold the whole
+/// WALKER-REACHABLE tree by id, not just the top-level statements. (Reachable =
+/// what `all_children_spanned()` traverses: the four AST enum kinds and their
+/// SExpr/SStmt wrappers. Nodes embedded in plain STRUCTS — match arms, struct-
+/// lit fields, params — are not yet ingested, because the derive walker stops at
+/// non-node-kind fields, same as `children()`; they arrive when the parser
+/// assigns ids directly, the B/id-children step.) The first reachable consumer
+/// of the store is the gated AVRA_L1_INGEST probe in parse_or_fail (main.av);
+/// later increments migrate passes to read from it instead of the SStmt
+/// pointer-tree. `source` builds the LineIndex and lifts each top-level
+/// statement's preserved (line, col) into a REAL byte-offset span (§14.2);
+/// WRAPPED nested nodes get real (zero-width) spans too, lifted from their
+/// SExpr/SStmt wrapper by `child_span` (A2). Only truly-bare children stay
+/// byte_span_none() until the parser builds the arena directly.
+export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
+    let lines = build_line_index(source)
+    let store = new_node_store(lines)
+    mut roots: List<StmtId> = []
+    mut provenance: SparseTable<StmtId, bool> = new_sparse_table()
+    for (k, s) in stmts.enumerate() {
+        // A synthesised top-level statement (line == 0, e.g. injected
+        // intrinsics) has no source position — record the sentinel, never a
+        // fabricated offset.
+        let sp = if s.line < 1 {
+            byte_span_none()
+        } else {
+            let lo = lines.offset_of(s.line, s.col)
+            // The precise end-of-statement byte arrives with the parser
+            // migration (per-production offset tracking, the tracer's model).
+            // Until then use a conservative real-position-derived extent: up to
+            // the next SOURCE-BEARING statement's start, else end of file.
+            // Skip any interspersed synthesised statements (line < 1) — a
+            // synthesised neighbour must not stretch this span to EOF.
+            let mut next = k + 1
+            while next < stmts.length && stmts[next].line < 1 {
+                next = next + 1
+            }
+            let hi = if next < stmts.length {
+                lines.offset_of(stmts[next].line, stmts[next].col)
+            } else {
+                source.length
+            }
+            byte_span(lo, hi)
+        }
+        let root_id = store.ingest_stmt(s.node, sp)
+        roots.push(root_id)
+        // Record provenance only for macro-introduced roots (§14.3) — the table
+        // stays empty for an ordinary program, and presence == `from_macro`.
+        if s.from_macro { provenance.set(root_id, true) }
+    }
+    store with { roots, provenance }
+}
+
+/// Ingest ONLY the top-level statements as arena roots — no subtrees, no spans,
+/// no source. For consumers that read root nodes by `StmtId` but take source
+/// positions from elsewhere (the resolver reads them from the boxed `SStmt`
+/// wrapper), there is nothing to build a real `LineIndex` from, so no span is
+/// fabricated — every root records `byte_span_none()` (contrast `ingest_program`,
+/// which derives spans from `source`; feeding it `""` would stamp invalid spans).
+/// `roots` is in source order (one per `SStmt`), so `stmts.get(roots[k])` returns
+/// `stmts[k].node` verbatim; the consumer still walks that node's inline children.
+export fn ingest_roots_spanless(stmts: List<SStmt>) -> NodeStore {
+    let store = new_node_store(build_line_index(""))
+    mut roots: List<StmtId> = []
+    for s in stmts { roots.push(store.add_root_shallow(s.node)) }
+    store with { roots }
+}
+
+/// Assemble the top-level `List<SStmt>` from the store's roots — the shared spine
+/// of `program_from_store` / `reconstruct_program`. Each root's boxed node comes
+/// from `node_of` (the stored node, or one rebuilt from edges); its (line, col),
+/// provenance (`.has` returns a concrete bool — presence == from_macro, which
+/// `sstmt_at` would otherwise flatten to false), and `file` come from the
+/// side-tables either way.
+fn roots_to_sstmts(store: NodeStore, file: string, node_of: fn(StmtId) -> Stmt) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for id in store.roots {
+        let lc = store.stmt_linecol(id)
+        let from_macro = store.provenance.has(id)
+        out.push(SStmt { node: node_of(id), line: lc.line, col: lc.col, file, from_macro })
+    }
+    out
+}
+
+/// Compat shim (reverse direction): rebuild the top-level statement list from the
+/// arena — the inverse of `ingest_program`, so a pass migrated to read from the
+/// store can still hand the un-migrated passes an `SStmt` tree. Each root is its
+/// stored boxed node, re-wrapped with (line, col) recomputed from the span
+/// side-table (§14.2) and `from_macro` restored from the provenance side-table
+/// (§14.3). Faithful for node structure + line/col + provenance at this migration
+/// phase (nodes still retain their boxed children, which carry their own
+/// positions); `file` is threaded in (the arena is single-source) so this stays
+/// behind `AVRA_L1_INGEST` until per-node file lands for multi-file units.
+export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
+    roots_to_sstmts(store, file, (id: StmtId) -> store.stmts.get(id))
+}
+
+/// Rebuild the top-level statement list from arena edges (B1) — the inverse of
+/// `ingest_program`. Unlike `program_from_store` (which returns the stored boxed
+/// root nodes with recomputed positions), each root's subtree is reconstructed
+/// from its edge ids via `reconstruct_stmt`, exercising the edges as the source of
+/// every WALKER-REACHABLE child (struct-embedded children — match arms, field-init
+/// values, params — are carried through from the stored node; see the reconstruct
+/// block above). The boxed-view shim the id-children rep flip stands on. Each
+/// root's own (line, col) + `from_macro` + `file` are patched here from the
+/// side-tables; nested wrappers keep the placeholder `file = ""` that `respan_*`
+/// stamps (single-file ingest makes `file` uniform, and `render_*` — the round-
+/// trip oracle — ignores it). Proven structurally faithful by the gated round-trip
+/// check; behind `AVRA_L1_INGEST` until the pass migration.
+export fn reconstruct_program(store: NodeStore, file: string) -> List<SStmt> {
+    roots_to_sstmts(store, file, (id: StmtId) -> store.reconstruct_stmt(id))
+}

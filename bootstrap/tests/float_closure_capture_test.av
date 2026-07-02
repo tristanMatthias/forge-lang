@@ -1,0 +1,7 @@
+spec "float closure capture" {
+    then "closure captures outer float and multiplies" {
+        let factor = 10.0
+        let f = (x) -> x * factor
+        f(2.0) == 20.0
+    }
+}

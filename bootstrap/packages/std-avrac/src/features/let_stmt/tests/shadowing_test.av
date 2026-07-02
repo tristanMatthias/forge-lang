@@ -1,0 +1,12 @@
+spec "shadowing" {
+    then "outer binding visible" {
+        let x = 10
+        x == 10
+    }
+    then "inner shadow does not affect outer" {
+        let x = 10
+        let x = 20
+        let x = 30
+        x == 30
+    }
+}

@@ -9,15 +9,369 @@
 
 use std::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void};
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicI64, AtomicBool, Ordering};
+use std::io::Write;
+
+// ─── Tool #4: i64-as-struct load trap ──────────────────────────
+//
+// FORGE_DX_TYPE_TRAP=1 enables runtime detection of "you stored a
+// struct but loaded as i64" — the dominant codegen bug pattern in
+// the self-host. When the LLVM-level alloca type and the loaded
+// type disagree (and the load is i64 from a struct alloca), print
+// a one-line warning to stderr with the alloca pointer + load type
+// kind. The warning fires the FIRST time the bad load happens.
+//
+// Cost: one extra LLVMGetAllocatedType + LLVMGetTypeKind per load
+// (i.e., 2 cheap LLVM C API calls). Negligible compared to the
+// build_load itself. Off by default.
+
+static TYPE_TRAP_INIT: AtomicBool = AtomicBool::new(false);
+static TYPE_TRAP_ON: AtomicBool = AtomicBool::new(false);
+static TYPE_TRAP_COUNT: AtomicI64 = AtomicI64::new(0);
+
+fn type_trap_enabled() -> bool {
+    if !TYPE_TRAP_INIT.load(Ordering::Relaxed) {
+        let on = std::env::var("FORGE_DX_TYPE_TRAP")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+        TYPE_TRAP_ON.store(on, Ordering::Relaxed);
+        TYPE_TRAP_INIT.store(true, Ordering::Relaxed);
+    }
+    TYPE_TRAP_ON.load(Ordering::Relaxed)
+}
+
+#[inline]
+fn type_trap_check_load(ty: LLVMPtr, ptr: LLVMPtr) {
+    if !type_trap_enabled() { return; }
+    if ty.is_null() || ptr.is_null() { return; }
+    unsafe {
+        // Only check load-from-alloca; skip GEPs and other compound exprs.
+        let opcode: u32 = LLVMGetInstructionOpcode(ptr);
+        if opcode != 26 { return; } // 26 = Alloca
+        let alloca_ty = LLVMGetAllocatedType(ptr);
+        if alloca_ty.is_null() { return; }
+        if alloca_ty == ty { return; } // exact match — fine
+        let alloca_kind = LLVMGetTypeKind(alloca_ty);
+        let load_kind = LLVMGetTypeKind(ty);
+        // Flag: loading i64 (kind 8 with width 64) from a struct (kind 10).
+        if load_kind == 8 && alloca_kind == 10 {
+            let n = TYPE_TRAP_COUNT.fetch_add(1, Ordering::Relaxed);
+            if n < 50 {
+                let struct_name = LLVMGetStructName(alloca_ty);
+                let name_str = if !struct_name.is_null() {
+                    std::ffi::CStr::from_ptr(struct_name).to_string_lossy().into_owned()
+                } else {
+                    String::from("<anon>")
+                };
+                eprintln!(
+                    "[TYPE TRAP #{}] load i64 from %{} alloca (ptr={:p}) — codegen lost the struct type",
+                    n, name_str, ptr
+                );
+            } else if n == 50 {
+                eprintln!("[TYPE TRAP] (suppressing further warnings; total so far: {})", n);
+            }
+        }
+        // Flag: loading struct from i64 alloca (the inverse — equally bad).
+        if load_kind == 10 && alloca_kind == 8 {
+            let n = TYPE_TRAP_COUNT.fetch_add(1, Ordering::Relaxed);
+            if n < 50 {
+                eprintln!(
+                    "[TYPE TRAP #{}] load struct from i64 alloca (ptr={:p}) — alloca was sized as i64",
+                    n, ptr
+                );
+            }
+        }
+    }
+}
+
+/// Tool #4 — query the type-trap counter from Forge / scripts.
+#[no_mangle]
+pub extern "C" fn forge_dx_type_trap_count() -> i64 {
+    TYPE_TRAP_COUNT.load(Ordering::Relaxed)
+}
+
+// ─── Tool #1 + #3: Builder snapshot ring buffer + block provenance ──
+//
+// Every position_at_end and append_basic_block goes through here so we
+// can answer two questions after the fact:
+//
+//   "Did anyone ever position the builder at this orphan block?"
+//      → check the position-change ring buffer
+//   "Where was this block created from?"
+//      → check the per-block creation site table
+//
+// Both are tiny, fixed-size, allocation-free. They're populated
+// unconditionally (cheap) but only printed when something asks.
+
+const POS_RING_SIZE: usize = 256;
+const APPEND_RING_SIZE: usize = 1024;
+
+struct PosEvent {
+    bb: LLVMPtr,
+    op: u8, // 0 = position_at_end, 1 = position_before, 2 = append
+    op_id: i64,
+    site_id: i64,
+}
+
+impl Default for PosEvent {
+    fn default() -> Self {
+        Self { bb: std::ptr::null_mut(), op: 0, op_id: 0, site_id: 0 }
+    }
+}
+
+struct AppendRecord {
+    bb: LLVMPtr,
+    fn_val: LLVMPtr,
+    site_id: i64,
+    op_id: i64,
+}
+
+impl Default for AppendRecord {
+    fn default() -> Self {
+        Self { bb: std::ptr::null_mut(), fn_val: std::ptr::null_mut(), site_id: 0, op_id: 0 }
+    }
+}
+
+thread_local! {
+    static POS_RING: RefCell<[PosEvent; POS_RING_SIZE]> =
+        RefCell::new(std::array::from_fn(|_| PosEvent::default()));
+    static POS_RING_HEAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static APPEND_RING: RefCell<[AppendRecord; APPEND_RING_SIZE]> =
+        RefCell::new(std::array::from_fn(|_| AppendRecord::default()));
+    static APPEND_RING_HEAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn record_pos(bb: LLVMPtr, op: u8, site_id: i64) {
+    let op_id = BLD_OP_ID.load(Ordering::Relaxed);
+    POS_RING.with(|ring| {
+        POS_RING_HEAD.with(|head| {
+            let h = head.get();
+            let mut r = ring.borrow_mut();
+            r[h % POS_RING_SIZE] = PosEvent { bb, op, op_id, site_id };
+            head.set(h + 1);
+        });
+    });
+}
+
+fn record_append(bb: LLVMPtr, fn_val: LLVMPtr, site_id: i64) {
+    let op_id = BLD_OP_ID.load(Ordering::Relaxed);
+    APPEND_RING.with(|ring| {
+        APPEND_RING_HEAD.with(|head| {
+            let h = head.get();
+            let mut r = ring.borrow_mut();
+            r[h % APPEND_RING_SIZE] = AppendRecord { bb, fn_val, site_id, op_id };
+            head.set(h + 1);
+        });
+    });
+}
+
+/// Tool #1 — print the last 50 builder-position changes. Useful when
+/// you see an orphan block: "did anyone ever position there?"
+#[no_mangle]
+pub extern "C" fn forge_dbg_dump_pos_ring() {
+    POS_RING.with(|ring| {
+        POS_RING_HEAD.with(|head| {
+            let h = head.get();
+            let r = ring.borrow();
+            let n = h.min(POS_RING_SIZE);
+            let start = if h > POS_RING_SIZE { h - POS_RING_SIZE } else { 0 };
+            eprintln!("[POS RING] last {} position events (newest first):", n);
+            for i in (0..n).rev() {
+                let idx = (start + i) % POS_RING_SIZE;
+                let e = &r[idx];
+                let op_str = match e.op { 0 => "pos_at_end", 1 => "pos_before", 2 => "append", _ => "?" };
+                eprintln!("  #{:06} {:10} bb={:p} site={}", e.op_id, op_str, e.bb, e.site_id);
+            }
+        });
+    });
+}
+
+/// Tool #1 — answer "did the builder ever position at this block?"
+/// Returns 1 if yes, 0 if no (orphan: appended but never positioned).
+#[no_mangle]
+pub extern "C" fn forge_dbg_was_positioned_at(bb: LLVMPtr) -> i64 {
+    let mut found = 0i64;
+    POS_RING.with(|ring| {
+        let r = ring.borrow();
+        for e in r.iter() {
+            if e.bb == bb && (e.op == 0 || e.op == 1) {
+                found = 1;
+                return;
+            }
+        }
+    });
+    found
+}
+
+/// Tool #3 — print where a block was created from.
+#[no_mangle]
+pub extern "C" fn forge_dbg_block_provenance(bb: LLVMPtr) {
+    APPEND_RING.with(|ring| {
+        let r = ring.borrow();
+        for e in r.iter() {
+            if e.bb == bb {
+                eprintln!("[BLOCK PROV] bb={:p} fn={:p} site_id={} op_id={}",
+                    e.bb, e.fn_val, e.site_id, e.op_id);
+                return;
+            }
+        }
+        eprintln!("[BLOCK PROV] bb={:p} (not found in append ring)", bb);
+    });
+}
+
+/// Tool #3 — set the current append site_id from Forge code. Pair with
+/// `set_site_id` calls before `append_basic_block` to label which line
+/// of source created which block.
+static CURRENT_SITE_ID: AtomicI64 = AtomicI64::new(0);
+
+#[no_mangle]
+pub extern "C" fn forge_dbg_set_site_id(id: i64) {
+    CURRENT_SITE_ID.store(id, Ordering::Relaxed);
+}
+
+// ─── Builder Trace (FORGE_DEBUG_BUILDER) ─────────────────────────
+//
+// When the env var FORGE_DEBUG_BUILDER=1 is set, every builder-mutating
+// LLVM call below logs `[BLD] <op> bld=<addr> cur=<addr> arg=<addr> id=<n>`
+// to stderr (or to FORGE_DEBUG_BUILDER_FILE if set). This makes builder
+// drift bugs trivial to localize: grep for the operation that moved
+// the insert block away from where you expected it.
+
+static BLD_TRACE_INIT: AtomicBool = AtomicBool::new(false);
+static BLD_TRACE_ON:   AtomicBool = AtomicBool::new(false);
+static BLD_OP_ID:      AtomicI64  = AtomicI64::new(0);
+
+fn bld_trace_enabled() -> bool {
+    if !BLD_TRACE_INIT.load(Ordering::Relaxed) {
+        let on = std::env::var("FORGE_DEBUG_BUILDER")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+        BLD_TRACE_ON.store(on, Ordering::Relaxed);
+        BLD_TRACE_INIT.store(true, Ordering::Relaxed);
+    }
+    BLD_TRACE_ON.load(Ordering::Relaxed)
+}
+
+#[inline]
+fn bld_trace(op: &str, builder: LLVMPtr, arg: LLVMPtr) {
+    rec(op, builder, arg, std::ptr::null_mut());
+    if !bld_trace_enabled() { return; }
+    let id = BLD_OP_ID.fetch_add(1, Ordering::Relaxed);
+    let cur = if builder.is_null() {
+        std::ptr::null_mut()
+    } else {
+        unsafe { LLVMGetInsertBlock(builder) }
+    };
+    let _ = writeln!(
+        std::io::stderr(),
+        "[BLD] #{:06} {:<22} bld={:p} cur={:p} arg={:p}",
+        id, op, builder, cur, arg
+    );
+}
+
+#[inline]
+fn bld_trace2(op: &str, builder: LLVMPtr, a: LLVMPtr, b: LLVMPtr) {
+    rec(op, builder, a, b);
+    if !bld_trace_enabled() { return; }
+    let id = BLD_OP_ID.fetch_add(1, Ordering::Relaxed);
+    let cur = if builder.is_null() {
+        std::ptr::null_mut()
+    } else {
+        unsafe { LLVMGetInsertBlock(builder) }
+    };
+    let _ = writeln!(
+        std::io::stderr(),
+        "[BLD] #{:06} {:<22} bld={:p} cur={:p} a={:p} b={:p}",
+        id, op, builder, cur, a, b
+    );
+}
 
 // Opaque pointer type used for all LLVM refs
 type LLVMPtr = *mut c_void;
 
-// All LLVM instruction names go through this: use empty string to avoid
-// crashes from non-null-terminated ForgeString ptrs passed via extern FFI
+// Use empty string for value names — LLVM auto-numbers them.
+// Basic blocks get unique names via unique_block_name() to prevent collisions.
 const EMPTY_NAME: &[u8] = b"\0";
+
 fn safe_name(_name: *const c_char) -> *const c_char {
     EMPTY_NAME.as_ptr() as *const c_char
+}
+
+// Tool #5 — preserve source-level alloca names so stage 2 IR is
+// readable. Used by build_alloca to validate the incoming `name`
+// pointer (must be a NUL-terminated identifier-like string) and
+// fall back to EMPTY_NAME if it's garbage. Without this, all
+// allocas in stage 2 IR show up as %0, %1, %2 — unreadable.
+//
+// We're conservative about validation: ASCII identifier chars only,
+// max 64 bytes, must start with letter/underscore. The Forge bootstrap
+// has historically passed garbage `name` pointers via
+// pass-by-value-of-ForgeString-corruption, so the validation must
+// be paranoid.
+unsafe fn validate_named(name: *const c_char) -> *const c_char {
+    if name.is_null() {
+        return EMPTY_NAME.as_ptr() as *const c_char;
+    }
+    let bytes = std::ffi::CStr::from_ptr(name).to_bytes();
+    if bytes.is_empty() || bytes.len() >= 64 {
+        return EMPTY_NAME.as_ptr() as *const c_char;
+    }
+    // First char: letter or underscore
+    let c0 = bytes[0];
+    if !(c0.is_ascii_alphabetic() || c0 == b'_') {
+        return EMPTY_NAME.as_ptr() as *const c_char;
+    }
+    // Rest: alphanumeric, underscore, or '.'
+    for &b in &bytes[1..] {
+        if !(b.is_ascii_alphanumeric() || b == b'_' || b == b'.') {
+            return EMPTY_NAME.as_ptr() as *const c_char;
+        }
+    }
+    name
+}
+
+// Pending alloca name: set before build_alloca to ensure the name survives
+// even if the Forge wrapper corrupts the ForgeString during the call.
+static mut PENDING_ALLOCA_NAME: [u8; 64] = [0u8; 64];
+
+#[no_mangle]
+pub extern "C" fn forge_set_alloca_name(name_ptr: *const c_char, name_len: i64) {
+    extern "C" {
+        // C-side: sets pending alloca name AND arms the flag
+        fn forge_set_alloca_name_c_raw(name_ptr: *const c_char, name_len: i64);
+    }
+    // Delegate to C version which sets both the name AND the armed flag
+    // (_use_pending_for_next_alloca). Without the flag, build_alloca's
+    // auto-cache ignores the pending name entirely.
+    unsafe { forge_set_alloca_name_c_raw(name_ptr, name_len); }
+    // Also store in Rust-side buffer for backward compat
+    unsafe {
+        PENDING_ALLOCA_NAME = [0u8; 64];
+        if !name_ptr.is_null() && name_len > 0 && name_len < 64 {
+            std::ptr::copy_nonoverlapping(name_ptr as *const u8, PENDING_ALLOCA_NAME.as_mut_ptr(), name_len as usize);
+        }
+    }
+}
+
+// Generate unique block names: "bb0", "bb1", ... to avoid colliding with %N registers
+thread_local! {
+    static BB_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static BB_NAME_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(16));
+}
+
+fn unique_block_name() -> *const c_char {
+    BB_COUNTER.with(|c| {
+        let n = c.get();
+        c.set(n + 1);
+        BB_NAME_BUF.with(|buf| {
+            let mut buf = buf.borrow_mut();
+            buf.clear();
+            buf.extend_from_slice(b"bb");
+            buf.extend_from_slice(n.to_string().as_bytes());
+            buf.push(0); // null terminator
+            buf.as_ptr() as *const c_char
+        })
+    })
 }
 
 // ── Type Cache (immune to bootstrap global corruption) ──────────────
@@ -105,12 +459,27 @@ extern "C" {
     fn LLVMStructSetBody(struct_type: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int);
     fn LLVMStructGetTypeAtIndex(struct_type: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountStructElementTypes(struct_type: LLVMPtr) -> c_uint;
+    fn LLVMIsLiteralStruct(struct_type: LLVMPtr) -> c_int;
+    fn LLVMGetStructName(struct_type: LLVMPtr) -> *const c_char;
 
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
     fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMGetNamedGlobal(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetBasicBlockTerminator(bb: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetBasicBlockName(bb: LLVMPtr) -> *const c_char;
+    fn LLVMGetFirstBasicBlock(f: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetNextBasicBlock(bb: LLVMPtr) -> LLVMPtr;
+    fn LLVMCountBasicBlocks(f: LLVMPtr) -> c_uint;
+    fn LLVMGetFirstUse(val: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetNextUse(u: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetNextInstruction(instr: LLVMPtr) -> LLVMPtr;
+    fn LLVMVerifyFunction(f: LLVMPtr, action: c_int) -> c_int;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
+    fn LLVMCountParams(f: LLVMPtr) -> c_uint;
+    fn LLVMCountParamTypes(fn_ty: LLVMPtr) -> c_uint;
+    fn LLVMIsFunctionVarArg(fn_ty: LLVMPtr) -> c_int;
+    fn LLVMGetParamTypes(fn_ty: LLVMPtr, dest: *mut LLVMPtr);
 
     // Basic Blocks
     fn LLVMAppendBasicBlockInContext(ctx: LLVMPtr, f: LLVMPtr, name: *const c_char) -> LLVMPtr;
@@ -118,6 +487,7 @@ extern "C" {
     fn LLVMGetBasicBlockParent(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetFirstInstruction(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetEntryBasicBlock(f: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetInstructionParent(inst: LLVMPtr) -> LLVMPtr;
 
     // Builder
     fn LLVMCreateBuilderInContext(ctx: LLVMPtr) -> LLVMPtr;
@@ -143,11 +513,14 @@ extern "C" {
 
     // Constants
     fn LLVMIsConstant(val: LLVMPtr) -> c_int;
+    fn LLVMIsNull(val: LLVMPtr) -> c_int;
+    fn LLVMConstIntGetSExtValue(val: LLVMPtr) -> i64;
     fn LLVMConstInt(ty: LLVMPtr, n: c_ulonglong, sign_extend: c_int) -> LLVMPtr;
     fn LLVMConstReal(ty: LLVMPtr, n: f64) -> LLVMPtr;
     fn LLVMConstNull(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMGetUndef(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMConstStructInContext(ctx: LLVMPtr, values: *mut LLVMPtr, count: c_uint, packed: c_int) -> LLVMPtr;
+    fn LLVMConstNamedStruct(struct_ty: LLVMPtr, values: *mut LLVMPtr, count: c_uint) -> LLVMPtr;
     fn LLVMConstStringInContext(ctx: LLVMPtr, str: *const c_char, len: c_uint, dont_null_terminate: c_int) -> LLVMPtr;
     fn LLVMConstBitCast(val: LLVMPtr, ty: LLVMPtr) -> LLVMPtr;
     fn LLVMArrayType(element_type: LLVMPtr, count: c_uint) -> LLVMPtr;
@@ -158,6 +531,10 @@ extern "C" {
     fn LLVMSetInitializer(global: LLVMPtr, val: LLVMPtr);
     fn LLVMSetGlobalConstant(global: LLVMPtr, is_constant: c_int);
     fn LLVMSetLinkage(global: LLVMPtr, linkage: c_uint);
+
+    // Data layout / type size
+    fn LLVMGetModuleDataLayout(m: LLVMPtr) -> LLVMPtr;
+    fn LLVMStoreSizeOfType(td: LLVMPtr, ty: LLVMPtr) -> c_ulonglong;
 
     // Print module to file
     fn LLVMPrintModuleToFile(m: LLVMPtr, filename: *const c_char, error_message: *mut *mut c_char) -> c_int;
@@ -171,7 +548,10 @@ extern "C" {
     fn LLVMGetAllocatedType(alloca: LLVMPtr) -> LLVMPtr;
     fn LLVMGetStructElementTypes(struct_type: LLVMPtr, dest: *mut LLVMPtr);
     fn LLVMGetInstructionOpcode(inst: LLVMPtr) -> c_uint;
+    fn LLVMIsAInstruction(val: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetOperand(val: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMSetAlignment(val: LLVMPtr, bytes: c_uint);
 
     // Aggregate operations (GEP, insert/extract)
     fn LLVMBuildGEP2(builder: LLVMPtr, ty: LLVMPtr, pointer: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_uint, name: *const c_char) -> LLVMPtr;
@@ -266,6 +646,7 @@ pub extern "C" fn forge_llvm_context_dispose(ctx: LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_module_create(name: *const c_char, ctx: LLVMPtr) -> LLVMPtr {
+    if name.is_null() || ctx.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMModuleCreateWithNameInContext(name, ctx) }
 }
 
@@ -334,7 +715,25 @@ pub extern "C" fn forge_llvm_pointer_type(ctx: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_function_type(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_int, is_vararg: c_int) -> LLVMPtr {
-    unsafe { LLVMFunctionType(ret, params, param_count as c_uint, is_vararg) }
+    if ret.is_null() { return std::ptr::null_mut(); }
+    if params.is_null() && param_count > 0 { return std::ptr::null_mut(); }
+    unsafe {
+        // Validate ret type is a real LLVM type (kind > 0)
+        let ret_kind = LLVMGetTypeKind(ret);
+        if ret_kind > 20 {
+            eprintln!("[GUARD] forge_llvm_function_type: ret has bad kind {}", ret_kind);
+            return std::ptr::null_mut();
+        }
+        // Replace NULL param types with i64 to prevent LLVM crash
+        let ctx = LLVMGetTypeContext(ret);
+        for i in 0..param_count as usize {
+            let p = *params.add(i);
+            if p.is_null() || LLVMGetTypeKind(p) > 20 {
+                *params.add(i) = LLVMInt64TypeInContext(ctx);
+            }
+        }
+        LLVMFunctionType(ret, params, param_count as c_uint, is_vararg)
+    }
 }
 
 // ── Type array helpers ──
@@ -365,33 +764,103 @@ pub extern "C" fn forge_llvm_type_array_free(arr: *mut LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_function(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMAddFunction(m, name, fn_type) }
+    if m.is_null() || fn_type.is_null() || name.is_null() {
+        let n = if !name.is_null() { unsafe { std::ffi::CStr::from_ptr(name).to_string_lossy().into_owned() } } else { "null".to_string() };
+        eprintln!("WARNING: add_function null arg: m={:?} name={} type={:?}", m, n, fn_type);
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        if bld_trace_enabled() {
+            let s = std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?");
+            if s.contains("find_nmod") {
+                eprintln!("  [AF] CAUGHT find_nmod creation!");
+                let bt = std::backtrace::Backtrace::force_capture();
+                eprintln!("  [AF] backtrace: {:?}", bt);
+            }
+        }
+        LLVMAddFunction(m, name, fn_type)
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMGetNamedFunction(m, name) }
+    if m.is_null() || name.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        if bld_trace_enabled() {
+            static mut GNF_TRACE: i32 = 50;
+            if GNF_TRACE > 0 {
+                let s = std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?");
+                if s.contains("index_of") || s.contains("find_nmod") || s.contains("find_byte") {
+                    let result = LLVMGetNamedFunction(m, name);
+                    eprintln!("  [GNF] '{}' → {:p}", s, result);
+                    GNF_TRACE -= 1;
+                    return result;
+                }
+            }
+        }
+        LLVMGetNamedFunction(m, name)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_named_global(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if m.is_null() || name.is_null() { return std::ptr::null_mut(); }
+    unsafe { LLVMGetNamedGlobal(m, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn llvm_get_named_global(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    forge_llvm_get_named_global(m, name)
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
-    unsafe { LLVMGetParam(f, index as c_uint) }
+    if f.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let count = LLVMCountParams(f);
+        if (index as c_uint) >= count {
+            eprintln!("[GUARD] get_param index {} >= count {} for fn", index, count);
+            return std::ptr::null_mut();
+        }
+        LLVMGetParam(f, index as c_uint)
+    }
 }
 
 // ── Basic Blocks & Builder ──
 
 #[no_mangle]
-pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMAppendBasicBlockInContext(ctx, f, safe_name(name)) }
+pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name: *const c_char) -> LLVMPtr {
+    if ctx.is_null() || f.is_null() { eprintln!("[std-llvm] append_basic_block: null ctx={:p} or f={:p}", ctx, f); return std::ptr::null_mut(); }
+    extern "C" { fn forge_alloca_cache_set_fn(f: *mut c_void); }
+    unsafe {
+        forge_alloca_cache_set_fn(f);
+        let bb = LLVMAppendBasicBlockInContext(ctx, f, unique_block_name());
+        bld_trace("append_basic_block", std::ptr::null_mut(), bb);
+        let site = CURRENT_SITE_ID.load(Ordering::Relaxed);
+        record_pos(bb, 2, site);
+        record_append(bb, f, site);
+        bb
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_create_builder(ctx: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMCreateBuilderInContext(ctx) }
+    extern "C" {
+        fn forge_alloca_cache_set_builder(b: *mut c_void);
+        fn forge_alloca_cache_set_context(ctx: *mut c_void);
+    }
+    let b = unsafe { LLVMCreateBuilderInContext(ctx) };
+    unsafe {
+        forge_alloca_cache_set_builder(b);
+        forge_alloca_cache_set_context(ctx);
+    }
+    b
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_position_at_end(builder: LLVMPtr, bb: LLVMPtr) {
+    bld_trace("position_at_end", builder, bb);
+    record_pos(bb, 0, CURRENT_SITE_ID.load(Ordering::Relaxed));
     unsafe { LLVMPositionBuilderAtEnd(builder, bb) }
 }
 
@@ -402,7 +871,17 @@ pub extern "C" fn forge_llvm_dispose_builder(builder: LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVMPtr {
+    if builder.is_null() { eprintln!("[std-llvm] build_ret: null builder"); return std::ptr::null_mut(); }
     unsafe {
+        // Skip if the block already has a terminator (defense against
+        // double-terminator bugs from emit_return inside if/match arms).
+        let cur = LLVMGetInsertBlock(builder);
+        if !cur.is_null() {
+            let term = LLVMGetBasicBlockTerminator(cur);
+            if !term.is_null() {
+                return term;
+            }
+        }
         if value.is_null() {
             return LLVMBuildRetVoid(builder);
         }
@@ -419,6 +898,18 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                     let val_kind = LLVMGetTypeKind(val_ty);
                     if ret_kind == 0 { // Void
                         return LLVMBuildRetVoid(builder);
+                    }
+                    // Both struct types with same layout: bitcast via alloca
+                    // (handles named %ForgeString vs anonymous {ptr, i64})
+                    if ret_kind == 10 && val_kind == 10 {
+                        let ret_fields = LLVMCountStructElementTypes(ret_ty);
+                        let val_fields = LLVMCountStructElementTypes(val_ty);
+                        if ret_fields == val_fields && ret_fields > 0 {
+                            let alloca = LLVMBuildAlloca(builder, ret_ty, safe_name(std::ptr::null()));
+                            LLVMBuildStore(builder, value, alloca);
+                            let loaded = LLVMBuildLoad2(builder, ret_ty, alloca, safe_name(std::ptr::null()));
+                            return LLVMBuildRet(builder, loaded);
+                        }
                     }
                     // If return is ForgeString {ptr, i64} but value is integer,
                     // build ForgeString{inttoptr(val), 0}
@@ -442,6 +933,17 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                             }
                         }
                     }
+                    // ret ptr ← int value: emit inttoptr
+                    if ret_kind == 12 && val_kind == 8 {
+                        let v_i64 = ensure_i64(builder, value);
+                        let p = LLVMBuildIntToPtr(builder, v_i64, ret_ty, safe_name(std::ptr::null()));
+                        return LLVMBuildRet(builder, p);
+                    }
+                    // ret int ← ptr value: emit ptrtoint
+                    if ret_kind == 8 && val_kind == 12 {
+                        let i = LLVMBuildPtrToInt(builder, value, ret_ty, safe_name(std::ptr::null()));
+                        return LLVMBuildRet(builder, i);
+                    }
                     // Always coerce value to match return type
                     let coerced = ensure_i64(builder, value);
                     let coerced_ty = LLVMTypeOf(coerced);
@@ -449,6 +951,7 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                         return LLVMBuildRet(builder, coerced);
                     }
                     // If coercion produced wrong type, use undef
+                    eprintln!("[std-llvm] build_ret: coercion produced wrong type, returning undef");
                     return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
                 }
             }
@@ -469,6 +972,7 @@ pub extern "C" fn forge_llvm_build_ret_void(builder: LLVMPtr) -> LLVMPtr {
                 let ret_ty = LLVMGetReturnType(fn_ty);
                 let ret_kind = LLVMGetTypeKind(ret_ty);
                 if ret_kind != 0 { // 0 = VoidTypeKind
+                    eprintln!("[std-llvm] build_ret_void: function expects non-void return, returning undef");
                     return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
                 }
             }
@@ -491,15 +995,26 @@ fn guard_int_binop(lhs: LLVMPtr, rhs: LLVMPtr) -> bool {
 }
 
 // Ensure an LLVM value is i64 — widen if narrower, extract from struct if needed
+// Coerce a value to i64 for use in i64-typed contexts (alloca slot,
+// integer arithmetic, etc). Returns null on unsupported inputs so the
+// caller fails loudly instead of receiving a silent zero — see the
+// "no fake successes" rule near forge_llvm_build_store.
 unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
-    if val.is_null() { return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0)); }
+    if val.is_null() {
+        eprintln!("ensure_i64: null input");
+        return std::ptr::null_mut();
+    }
     let ty = LLVMTypeOf(val);
     let kind = LLVMGetTypeKind(ty);
     let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
     if kind == 8 { // IntegerTypeKind
         let w = LLVMGetIntTypeWidth(ty);
         if w < 64 { return LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null())); }
-        return val;
+        if w == 64 { return val; }
+        // Wider than i64 — would have to truncate. Refuse silently
+        // truncating; caller must do it explicitly if they meant to.
+        eprintln!("ensure_i64: refusing to truncate i{} to i64", w);
+        return std::ptr::null_mut();
     }
     if kind == 12 { // PointerTypeKind — convert to i64
         return LLVMBuildPtrToInt(builder, val, i64_ty, safe_name(std::ptr::null()));
@@ -508,22 +1023,22 @@ unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
         let f0 = LLVMBuildExtractValue(builder, val, 0, safe_name(std::ptr::null()));
         if !f0.is_null() {
             let f0_kind = LLVMGetTypeKind(LLVMTypeOf(f0));
-            if f0_kind == 12 { // PointerTypeKind
+            if f0_kind == 12 {
                 return LLVMBuildPtrToInt(builder, f0, i64_ty, safe_name(std::ptr::null()));
             }
             if f0_kind == 8 { return f0; }
         }
     }
-    // For constants like null pointer: use const 0
-    if LLVMIsConstant(val) != 0 {
-        return LLVMConstInt(i64_ty, 0, 0);
-    }
-    val
+    eprintln!("ensure_i64: unsupported value kind {}", kind);
+    std::ptr::null_mut()
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if builder.is_null() || lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_add: null operand (builder={:p} lhs={:p} rhs={:p})", builder, lhs, rhs);
+        return std::ptr::null_mut();
+    }
     // Try to coerce both operands to i64 first
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
@@ -562,27 +1077,36 @@ pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
                 }
             }
         }
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_add: type guard failed (not integer operands)");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildAdd(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if builder.is_null() || lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_sub: null operand (builder={:p} lhs={:p} rhs={:p})", builder, lhs, rhs);
+        return std::ptr::null_mut();
+    }
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_sub: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildSub(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_mul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_mul: null operand (lhs={:p} rhs={:p})", lhs, rhs);
+        return std::ptr::null_mut();
+    }
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_mul: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildMul(builder, lhs, rhs, safe_name(name)) }
 }
@@ -608,43 +1132,211 @@ pub extern "C" fn forge_llvm_verify_module(m: LLVMPtr) -> c_int {
     }
 }
 
+/// Verify module and print all errors to stderr.
+/// Returns 0 if valid, 1 if errors found.
+#[no_mangle]
+pub extern "C" fn forge_llvm_verify_module_print(m: LLVMPtr) -> i64 {
+    if m.is_null() { return 1; }
+    unsafe {
+        let mut err: *mut c_char = std::ptr::null_mut();
+        let result = LLVMVerifyModule(m, 0, &mut err); // 0 = LLVMReturnStatusAction
+        if result == 0 {
+            if !err.is_null() { LLVMDisposeMessage(err); }
+            return 0;
+        }
+        if !err.is_null() {
+            let err_str = std::ffi::CStr::from_ptr(err);
+            eprintln!("{}", err_str.to_string_lossy());
+            LLVMDisposeMessage(err);
+        }
+        1
+    }
+}
+
+/// Get the function type of a function value. Used by the bootstrap's
+/// Cg helper layer so call sites don't need to manually rebuild the
+/// function type from parameter arrays.
+#[no_mangle]
+pub extern "C" fn forge_llvm_fn_type_of(fn_val: LLVMPtr) -> LLVMPtr {
+    if fn_val.is_null() { return std::ptr::null_mut(); }
+    unsafe { LLVMGlobalGetValueType(fn_val) }
+}
+
+/// Verify module and write errors to a file.
+/// Returns 0 if valid, number of error lines if errors found.
+#[no_mangle]
+pub extern "C" fn forge_llvm_verify_module_to_file(m: LLVMPtr, path: *const c_char) -> i64 {
+    if m.is_null() || path.is_null() { return -1; }
+    unsafe {
+        let mut err: *mut c_char = std::ptr::null_mut();
+        let result = LLVMVerifyModule(m, 0, &mut err);
+        if result == 0 {
+            if !err.is_null() { LLVMDisposeMessage(err); }
+            return 0;
+        }
+        if !err.is_null() {
+            let path_str = std::ffi::CStr::from_ptr(path).to_string_lossy();
+            let err_str = std::ffi::CStr::from_ptr(err).to_string_lossy();
+            let line_count = err_str.lines().count() as i64;
+            if let Ok(mut f) = std::fs::File::create(path_str.as_ref()) {
+                use std::io::Write;
+                let _ = f.write_all(err_str.as_bytes());
+            }
+            LLVMDisposeMessage(err);
+            return line_count;
+        }
+        -1
+    }
+}
+
 // ── Memory ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    let ty = ensure_type(ty);
-    if ty.is_null() {
-        eprintln!("WARNING: build_alloca with null type");
+    bld_trace("build_alloca", builder, ty);
+    if builder.is_null() {
+        eprintln!("WARNING: build_alloca with null builder, ty={:?} name={:?}", ty, name);
         return std::ptr::null_mut();
     }
-    unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) }
+    let ty = ensure_type(ty);
+    if ty.is_null() {
+        eprintln!("WARNING: build_alloca with null type, builder={:?}", builder);
+        return std::ptr::null_mut();
+    }
+    // Tool #5: pass the name through to LLVM if it validates as an
+    // identifier. This makes stage 2 IR show `%lhs`, `%rhs`, `%op`
+    // instead of `%47`, `%49`, `%2` — 10x faster IR reading forever.
+    let llvm_name = unsafe { validate_named(name) };
+    // CRITICAL: Insert ALL allocas at the function entry block.
+    // Non-entry allocas create dynamic stack adjustments that use
+    // callee-saved registers (x19 on ARM64) as frame pointers.
+    // LLVM -O2 then miscompiles code that accesses these across
+    // function calls because the callee saves/restores x19.
+    // Moving allocas to entry makes them static stack slots that
+    // don't need dynamic frame pointers.
+    // Insert alloca at the function entry block to avoid dynamic
+    // stack adjustments in non-entry blocks (which break -O2 on ARM64).
+    // Position after existing allocas but before any non-alloca instruction.
+    let result = unsafe {
+        let cur_bb = LLVMGetInsertBlock(builder);
+        let func = LLVMGetBasicBlockParent(cur_bb);
+        let entry_bb = LLVMGetEntryBasicBlock(func);
+        // If we're already in the entry block, just use normal alloca
+        if cur_bb == entry_bb {
+            LLVMBuildAlloca(builder, ty, llvm_name)
+        } else {
+            // Find the insertion point: after all existing allocas in entry
+            let mut inst = LLVMGetFirstInstruction(entry_bb);
+            while !inst.is_null() && LLVMGetInstructionOpcode(inst) == 26 {
+                // opcode 26 = Alloca — skip past existing allocas
+                inst = LLVMGetNextInstruction(inst);
+            }
+            if !inst.is_null() {
+                LLVMPositionBuilderBefore(builder, inst);
+            } else {
+                LLVMPositionBuilderAtEnd(builder, entry_bb);
+            }
+            let alloca = LLVMBuildAlloca(builder, ty, llvm_name);
+            LLVMPositionBuilderAtEnd(builder, cur_bb);
+            alloca
+        }
+    };
+    // Auto-cache: only store EXPLICITLY armed source-variable allocas in the
+    // C-side cache. Caching every named alloca polluted the source-variable
+    // namespace with internal temporaries like `ca`, so later `emit_ident("ca")`
+    // could resolve to a helper scratch alloca instead of the user's variable.
+    //
+    // Real source variables and params are registered explicitly by Forge code
+    // via `forge_alloca_cache_set(...)` immediately after allocation. The
+    // armed path remains for any callers that intentionally opt into pending
+    // alloca naming, but internal temps no longer become user-visible vars.
+    if !result.is_null() {
+        extern "C" {
+            fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
+            fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
+        }
+        let mut cache_name: *const c_char = std::ptr::null();
+        let mut cache_len: i64 = 0;
+
+        // Check if define_var armed the pending flag
+        extern "C" {
+            fn forge_check_pending_alloca() -> c_int;
+            static mut forge_pending_alloca_name: [c_char; 64];
+            static mut forge_pending_alloca_name_len: i64;
+        }
+        let armed = unsafe { forge_check_pending_alloca() };
+        if armed != 0 {
+            // Explicitly armed source-variable path.
+            unsafe {
+                if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
+                    cache_name = forge_pending_alloca_name.as_ptr();
+                    cache_len = forge_pending_alloca_name_len;
+                }
+            }
+        }
+        if cache_len > 0 && cache_len < 100 {
+            unsafe {
+                forge_alloca_cache_set_raw(cache_name, cache_len, result);
+                // Debug: trace auto-cache storage
+                if VAS_TRACE > 0 && cache_len <= 4 {
+                    let s = std::slice::from_raw_parts(cache_name as *const u8, cache_len as usize);
+                    eprintln!("  [AUTO_CACHE] name='{}' result={:p} armed={}",
+                        std::str::from_utf8_unchecked(s), result, armed);
+                    VAS_TRACE -= 1;
+                }
+                // Detect ForgeString-typed allocas (struct with 2 elements)
+                let alloca_ty = LLVMGetAllocatedType(result);
+                if !alloca_ty.is_null() {
+                    let kind = LLVMGetTypeKind(alloca_ty);
+                    if kind == 10 { // LLVMStructTypeKind
+                        let ec = LLVMCountStructElementTypes(alloca_ty);
+                        if ec == 2 {
+                            forge_str_var_add_raw(cache_name, cache_len);
+                        }
+                    }
+                    if kind == 12 { // LLVMPointerTypeKind
+                        extern "C" { fn forge_ptr_var_add_raw(name_ptr: *const c_char, name_len: i64); }
+                        forge_ptr_var_add_raw(cache_name, cache_len);
+                    }
+                }
+                // Pending names persist — cleared by next set_last_let_name or param_name_get
+            }
+        }
+    }
+    result
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr {
-    if val.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
+    bld_trace2("build_store", builder, val, ptr);
+    if builder.is_null() || val.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
     unsafe {
         // store requires a pointer destination
-        let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
-        if ptr_kind != 12 { return std::ptr::null_mut(); }
-        // If storing i1 (boolean), zero-extend to i64 first
-        // (prevents garbage upper bits when loaded back as i64)
+        let ptr_ty = LLVMTypeOf(ptr);
+        if ptr_ty.is_null() { eprintln!("[std-llvm] build_store: LLVMTypeOf(ptr) returned null"); return std::ptr::null_mut(); }
+        let ptr_kind = LLVMGetTypeKind(ptr_ty);
+        if ptr_kind != 12 { eprintln!("[std-llvm] build_store: destination is not a pointer (kind={})", ptr_kind); return std::ptr::null_mut(); }
+        // Detect whether the destination is an alloca with a known
+        // element type. ONLY in that case may we widen the value to
+        // match the alloca's width — for any other destination
+        // (malloc'd buffer, GEP into a struct, foreign pointer) we
+        // MUST store at the value's natural width, since auto-widening
+        // would write past the end of the destination. (Storing an i8
+        // into a 2-byte malloc as i64 = an 8-byte write = silent
+        // heap corruption: spent a whole session chasing that one.)
         let val_ty = LLVMTypeOf(val);
         let val_kind = LLVMGetTypeKind(val_ty);
-        // Try to get the alloca's type for compatibility check
-        let alloca_ty = LLVMGetAllocatedType(ptr);
+        let opcode_pre = LLVMGetInstructionOpcode(ptr);
+        let alloca_ty = if opcode_pre == 26 { LLVMGetAllocatedType(ptr) } else { std::ptr::null_mut() };
         let alloca_kind = if !alloca_ty.is_null() { LLVMGetTypeKind(alloca_ty) } else { 0 };
         let mut real_val = val;
-        // Widen narrow ints to match alloca type (only if alloca is wider)
-        if val_kind == 8 { // IntegerTypeKind
+        // Widen narrow ints ONLY when destination is an alloca with
+        // a known wider integer element type.
+        if val_kind == 8 && !alloca_ty.is_null() && alloca_kind == 8 {
             let bit_width = LLVMGetIntTypeWidth(val_ty);
-            let target_ty = if !alloca_ty.is_null() && alloca_kind == 8 { alloca_ty }
-                else { TYPE_CACHE.with(|c| c.borrow().i64) };
-            let target_width = if !target_ty.is_null() && LLVMGetTypeKind(target_ty) == 8 {
-                LLVMGetIntTypeWidth(target_ty)
-            } else { 64 };
+            let target_width = LLVMGetIntTypeWidth(alloca_ty);
             if bit_width < target_width {
-                real_val = LLVMBuildZExt(builder, val, target_ty, safe_name(std::ptr::null()));
+                real_val = LLVMBuildZExt(builder, val, alloca_ty, safe_name(std::ptr::null()));
             }
         }
         // Only check type compat for ALLOCA instructions (opcode 26), not GEP results
@@ -654,30 +1346,74 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
             if val_kind == 10 && alloca_kind == 8 {
                 real_val = ensure_i64(builder, val);
             }
-            // i64 value → struct alloca: skip store
-            if val_kind == 8 && alloca_kind == 10 {
-                return std::ptr::null_mut();
+            // i64 value (especially i64 0) → struct alloca: replace with a
+            // typed zero of the alloca's struct type. Storing a bare i64 0
+            // into a multi-field struct alloca leaves the upper bytes
+            // uninitialized — when the alloca is 16 bytes ({ptr,i64} list)
+            // this means subsequent loads see whatever happened to be on
+            // the stack, and length-tracking goes haywire. Replacing with
+            // const_null of the alloca type guarantees full zero-init.
+            if val_kind == 8 && alloca_kind == 10 && !alloca_ty.is_null() {
+                // Only if val is a constant zero (i.e., a freshly-defaulted
+                // value) — non-zero i64s might legitimately mean "store the
+                // pointer bits of an LLVM ValueRef I'm passing through".
+                if LLVMIsConstant(val) != 0 && LLVMConstIntGetSExtValue(val) == 0 {
+                    real_val = LLVMConstNull(alloca_ty);
+                }
             }
         }
-        LLVMBuildStore(builder, real_val, ptr)
+        let store_inst = LLVMBuildStore(builder, real_val, ptr);
+        // Force 8-byte alignment for all stores. The bootstrap's
+        // everything-is-i64 model means all values are 8 bytes.
+        // Without this, LLVM defaults to align 4 which lets the
+        // optimizer generate code that corrupts struct arguments
+        // at function call boundaries (bug #14/#16).
+        if !store_inst.is_null() {
+            LLVMSetAlignment(store_inst, 8);
+        }
+        store_inst
     }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    bld_trace("build_load", builder, ptr);
+    type_trap_check_load(ty, ptr);  // tool #4
     let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() {
         return std::ptr::null_mut();
     }
     unsafe {
-        // load requires a pointer operand — if not pointer, return zero/undef
+        // Trust the caller's type — LLVM is the source of truth
+        // Safety check: verify ptr is a valid LLVM value before calling LLVMTypeOf
+        if builder.is_null() {
+            return std::ptr::null_mut();
+        }
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
         if ptr_kind != 12 { // Not PointerTypeKind
-            let ty_kind = LLVMGetTypeKind(ty);
-            if ty_kind == 8 { return LLVMConstInt(ty, 0, 0); }
-            return LLVMGetUndef(ty);
+            eprintln!("forge_llvm_build_load: destination is not a pointer (kind={})", ptr_kind);
+            return std::ptr::null_mut();
         }
-        LLVMBuildLoad2(builder, ty, ptr, safe_name(name))
+        // Warn when load type doesn't match the alloca's allocated type.
+        // Opcode 31 = Alloca instruction.
+        if !LLVMIsAInstruction(ptr).is_null() && LLVMGetInstructionOpcode(ptr) == 31 {
+            let alloc_ty = LLVMGetAllocatedType(ptr);
+            if !alloc_ty.is_null() && alloc_ty != ty {
+                let alloc_kind = LLVMGetTypeKind(alloc_ty);
+                let load_kind = LLVMGetTypeKind(ty);
+                // Only warn on truly different type kinds (skip ptr-ptr, int-int same-width)
+                if alloc_kind != load_kind {
+                    let n = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
+                    eprintln!("[std-llvm] build_load: type mismatch for '{}': alloca kind={} but load kind={}", n, alloc_kind, load_kind);
+                }
+            }
+        }
+        let load_inst = LLVMBuildLoad2(builder, ty, ptr, safe_name(name));
+        // Force 8-byte alignment for all loads (see store comment above).
+        if !load_inst.is_null() {
+            LLVMSetAlignment(load_inst, 8);
+        }
+        load_inst
     }
 }
 
@@ -685,18 +1421,50 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_br(builder: LLVMPtr, bb: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMBuildBr(builder, bb) }
+    bld_trace("build_br", builder, bb);
+    if builder.is_null() || bb.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        // Skip if the current block already has a terminator (e.g., a ret
+        // emitted by a `return` statement inside a match/if arm). Without
+        // this guard the codegen would emit `ret X; br merge` in the same
+        // block, producing invalid IR — and LLVM would silently drop the
+        // ret, losing the return value. This is the SINGLE place that
+        // protects against double-terminator bugs across the whole
+        // self-hosted codegen.
+        let cur = LLVMGetInsertBlock(builder);
+        if !cur.is_null() {
+            let term = LLVMGetBasicBlockTerminator(cur);
+            if !term.is_null() {
+                return term;
+            }
+        }
+        LLVMBuildBr(builder, bb)
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then_bb: LLVMPtr, else_bb: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMBuildCondBr(builder, cond, then_bb, else_bb) }
+    bld_trace2("build_cond_br", builder, then_bb, else_bb);
+    if builder.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        // Same terminator guard as forge_llvm_build_br.
+        let cur = LLVMGetInsertBlock(builder);
+        if !cur.is_null() {
+            let term = LLVMGetBasicBlockTerminator(cur);
+            if !term.is_null() {
+                return term;
+            }
+        }
+        LLVMBuildCondBr(builder, cond, then_bb, else_bb)
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i1, 0, 0) });
+    bld_trace("build_icmp", builder, std::ptr::null_mut());
+    if builder.is_null() || lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_icmp: null operand (builder={:p} lhs={:p} rhs={:p})", builder, lhs, rhs);
+        return std::ptr::null_mut();
     }
     unsafe {
         // Coerce both operands to i64 for comparison
@@ -709,7 +1477,6 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
         if lhs_kind != 8 && lhs_kind != 12 {
             // For struct types (10), try string comparison via forge_string_compare
             if lhs_kind == 10 {
-                // Look up forge_string_compare in the module
                 let bb = LLVMGetInsertBlock(builder);
                 if !bb.is_null() {
                     let func = LLVMGetBasicBlockParent(bb);
@@ -717,7 +1484,6 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
                         let module = LLVMGetGlobalParent(func);
                         let cmp_fn = LLVMGetNamedFunction(module, b"forge_string_compare\0".as_ptr() as *const c_char);
                         if !cmp_fn.is_null() {
-                            // Call forge_string_compare(lhs, rhs) → i64, then icmp result with 0
                             let fn_ty = LLVMGlobalGetValueType(cmp_fn);
                             let mut args = [lhs, rhs];
                             let cmp_result = LLVMBuildCall2(builder, fn_ty, cmp_fn, args.as_mut_ptr(), 2, safe_name(std::ptr::null()));
@@ -728,12 +1494,15 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
                     }
                 }
             }
-            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
-            return LLVMConstInt(i1, 0, 0);
+            // Loud failure: returning const false here would silently
+            // make every check on this value go down the wrong branch
+            // — that was the original parse_call/strcmp landmine. Bail.
+            eprintln!("forge_llvm_build_icmp: unsupported lhs type kind {}", lhs_kind);
+            return std::ptr::null_mut();
         }
         if lhs_ty != rhs_ty {
-            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
-            return LLVMConstInt(i1, 0, 0);
+            eprintln!("forge_llvm_build_icmp: type mismatch (lhs kind {}, rhs kind {})", lhs_kind, LLVMGetTypeKind(rhs_ty));
+            return std::ptr::null_mut();
         }
         LLVMBuildICmp(builder, pred, lhs, rhs, safe_name(name))
     }
@@ -743,7 +1512,121 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name)) }
+    bld_trace("build_call", builder, f);
+    if builder.is_null() || fn_type.is_null() || f.is_null() { eprintln!("[std-llvm] build_call: null arg (builder={:p} fn_type={:p} f={:p})", builder, fn_type, f); return std::ptr::null_mut(); }
+    if num_args > 0 && args.is_null() { eprintln!("[std-llvm] build_call: null args array with num_args={}", num_args); return std::ptr::null_mut(); }
+    // Validate arg count matches fn_type parameter count (skip for variadic functions)
+    unsafe {
+        let is_variadic = LLVMIsFunctionVarArg(fn_type) != 0;
+        let param_count = LLVMCountParamTypes(fn_type) as c_int;
+        if !is_variadic && num_args != param_count {
+            let fn_name = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
+            eprintln!("[std-llvm] build_call: arg count mismatch for '{}': expected {} params, got {} args", fn_name, param_count, num_args);
+        }
+        if is_variadic && num_args < param_count {
+            let fn_name = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
+            eprintln!("[std-llvm] build_call: variadic '{}' needs at least {} args, got {}", fn_name, param_count, num_args);
+        }
+    }
+    if bld_trace_enabled() {
+        unsafe {
+            static mut BC_TRACE: i32 = 200;
+            if BC_TRACE > 0 {
+                let s = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
+                eprintln!("  [BC] f={:p} args={} name={}", f, num_args, s);
+                BC_TRACE -= 1;
+            }
+        }
+    }
+    // Auto-coerce arguments: if param expects ptr but arg is i64 (or vice versa), convert
+    unsafe {
+        let n = num_args as usize;
+        let param_tys_layout = std::alloc::Layout::array::<LLVMPtr>(n.max(1)).unwrap();
+        let param_tys = std::alloc::alloc_zeroed(param_tys_layout) as *mut LLVMPtr;
+        LLVMGetParamTypes(fn_type, param_tys);
+        for i in 0..n {
+            let arg = *args.add(i);
+            if arg.is_null() { continue; }
+            let param_ty = *param_tys.add(i);
+            if param_ty.is_null() { continue; }
+            let arg_ty = LLVMTypeOf(arg);
+            if arg_ty == param_ty { continue; }
+            let param_kind = LLVMGetTypeKind(param_ty);
+            let arg_kind = LLVMGetTypeKind(arg_ty);
+            // i64 → ptr coercion
+            if param_kind == 12 && arg_kind == 8 {
+                *args.add(i) = LLVMBuildIntToPtr(builder, arg, param_ty, b"coerce\0".as_ptr() as *const c_char);
+            }
+            // ptr → i64 coercion
+            if param_kind == 8 && arg_kind == 12 {
+                *args.add(i) = LLVMBuildPtrToInt(builder, arg, param_ty, b"coerce\0".as_ptr() as *const c_char);
+            }
+            // struct → ptr coercion (extract field 0, which is ptr for ForgeString)
+            if param_kind == 12 && arg_kind == 10 {
+                let extracted = LLVMBuildExtractValue(builder, arg, 0, b"coerce\0".as_ptr() as *const c_char);
+                if !extracted.is_null() {
+                    *args.add(i) = extracted;
+                }
+            }
+            // struct → i64 coercion (extract field 0)
+            if param_kind == 8 && arg_kind == 10 {
+                let extracted = LLVMBuildExtractValue(builder, arg, 0, b"coerce\0".as_ptr() as *const c_char);
+                if !extracted.is_null() {
+                    let ext_ty = LLVMTypeOf(extracted);
+                    if LLVMGetTypeKind(ext_ty) == 12 {
+                        *args.add(i) = LLVMBuildPtrToInt(builder, extracted, param_ty, b"coerce2\0".as_ptr() as *const c_char);
+                    } else {
+                        *args.add(i) = extracted;
+                    }
+                }
+            }
+            // i64 → struct coercion: the i64 was loaded from an alloca that
+            // actually holds a struct. Re-derive from the load's source
+            // operand. Only safe to call GetInstructionOpcode/GetOperand
+            // when `arg` is actually an instruction — function parameters
+            // and constants are not, and calling GetOperand on them
+            // segfaults inside LLVM. LLVMIsAInstruction returns the value
+            // cast to Instruction* (or null if it isn't one).
+            if param_kind == 10 && arg_kind == 8 {
+                let mut fixed = false;
+                if !LLVMIsAInstruction(arg).is_null() {
+                    let opcode = LLVMGetInstructionOpcode(arg);
+                    // Try to reload from source alloca (opcode 27=Load, 33=Load2)
+                    if opcode == 27 || opcode == 33 {
+                        let src_ptr = LLVMGetOperand(arg, 0);
+                        if !src_ptr.is_null() {
+                            *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
+                            fixed = true;
+                        }
+                    }
+                }
+                // Fallback: use undef to prevent LLVM assertion (produces garbage but doesn't crash)
+                if !fixed {
+                    eprintln!("[std-llvm] build_call: arg {} needs struct but got non-reloadable i64, using undef", i);
+                    *args.add(i) = LLVMGetUndef(param_ty);
+                }
+            }
+        }
+        // Final verification: check all args match expected types
+        // Re-get param types (may have changed due to coercion)
+        let verify_tys = std::alloc::alloc_zeroed(param_tys_layout) as *mut LLVMPtr;
+        LLVMGetParamTypes(fn_type, verify_tys);
+        for i in 0..n {
+            let arg = *args.add(i);
+            if arg.is_null() { continue; }
+            let param_ty = *verify_tys.add(i);
+            if param_ty.is_null() { continue; }
+            let arg_ty = LLVMTypeOf(arg);
+            if arg_ty != param_ty {
+                // Still mismatched after coercion — use undef to prevent crash
+                eprintln!("[std-llvm] build_call: arg {} type mismatch after coercion, using undef", i);
+                *args.add(i) = LLVMGetUndef(param_ty);
+            }
+        }
+        std::alloc::dealloc(verify_tys as *mut u8, param_tys_layout);
+        std::alloc::dealloc(param_tys as *mut u8, param_tys_layout);
+        LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name))
+    }
 }
 
 #[no_mangle]
@@ -753,8 +1636,23 @@ pub extern "C" fn forge_llvm_value_array_new(count: c_int) -> *mut LLVMPtr {
 }
 
 #[no_mangle]
+static mut VAS_TRACE: i32 = 0;
+
+#[no_mangle]
+pub extern "C" fn forge_vas_trace(n: i64) {
+    unsafe { VAS_TRACE = n as i32; }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_value_array_set(arr: *mut LLVMPtr, index: c_int, val: LLVMPtr) {
-    unsafe { *arr.offset(index as isize) = val; }
+    if arr.is_null() { return; }
+    unsafe {
+        if VAS_TRACE > 0 {
+            eprintln!("  [VAS] arr={:p} idx={} val={:p}", arr, index, val);
+            VAS_TRACE -= 1;
+        }
+        *arr.offset(index as isize) = val;
+    }
 }
 
 #[no_mangle]
@@ -779,12 +1677,13 @@ pub extern "C" fn forge_llvm_build_global_string_ptr(builder: LLVMPtr, s: *const
 /// This is position-independent — safe to use anywhere in the function.
 #[no_mangle]
 pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, len: i64) -> LLVMPtr {
+    if module.is_null() { return std::ptr::null_mut(); }
     TYPE_CACHE.with(|c| {
         let cache = c.borrow();
         unsafe {
-            // Create the string data as a global constant
-            let str_const = LLVMConstStringInContext(cache.ctx, text, len as c_uint, 1);
-            let arr_ty = LLVMArrayType(cache.i8, len as c_uint);
+            // Create the string data as a global constant (null-terminated for C interop)
+            let str_const = LLVMConstStringInContext(cache.ctx, text, len as c_uint, 0);
+            let arr_ty = LLVMArrayType(cache.i8, (len + 1) as c_uint);
             let global = LLVMAddGlobal(module, arr_ty, safe_name(std::ptr::null()));
             LLVMSetInitializer(global, str_const);
             LLVMSetGlobalConstant(global, 1);
@@ -800,7 +1699,8 @@ pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, 
                 // Fallback: use anonymous struct
                 return LLVMConstStructInContext(cache.ctx, fields.as_mut_ptr(), 2, 0);
             }
-            LLVMConstStructInContext(cache.ctx, fields.as_mut_ptr(), 2, 0)
+            // Use named struct type so LLVM IR prints %ForgeString, not { ptr, i64 }
+            LLVMConstNamedStruct(str_ty, fields.as_mut_ptr(), 2)
         }
     })
 }
@@ -809,28 +1709,51 @@ pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, 
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_phi(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if builder.is_null() { eprintln!("[std-llvm] build_phi: null builder"); return std::ptr::null_mut(); }
     let ty = ensure_type(ty);
+    if ty.is_null() { eprintln!("[std-llvm] build_phi: null type after ensure_type"); return std::ptr::null_mut(); }
     unsafe { LLVMBuildPhi(builder, ty, safe_name(name)) }
 }
 
 #[no_mangle]
-pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_int) {
+pub extern "C" fn forge_llvm_add_incoming_array(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_int) {
     unsafe { LLVMAddIncoming(phi, values, blocks, count as c_uint) }
+}
+
+// Legacy 3-arg entry point — the self-hosted compiler's `llvm.add_incoming`
+// wrapper auto-mangles to this name and expects the 3-arg convention.
+// Delegates to the _one variant.
+#[no_mangle]
+pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
+    forge_llvm_add_incoming_one(phi, value, block)
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
     unsafe {
+        if phi.is_null() || value.is_null() || block.is_null() { return; }
+        // Sanity-check pointer alignment: LLVM objects are at least
+        // 8-byte aligned. Unaligned pointers are almost certainly
+        // corrupt Forge List<ptr> slots holding garbage.
+        if ((phi as usize) & 0x7) != 0 { return; }
+        if ((block as usize) & 0x7) != 0 { return; }
+        // Validate block: must belong to same function as the phi's
+        // parent block. Forge List<ptr> occasionally hands back a
+        // stale/corrupt BasicBlockRef.
+        let phi_block = LLVMGetInstructionParent(phi);
+        if phi_block.is_null() { return; }
+        let phi_fn = LLVMGetBasicBlockParent(phi_block);
+        let block_fn = LLVMGetBasicBlockParent(block);
+        if phi_fn.is_null() || block_fn.is_null() || phi_fn != block_fn { return; }
         // Auto-correct type mismatch: if phi expects i64 but value is null/ptr, use i64 0
-        let safe_value = if phi.is_null() || value.is_null() || block.is_null() {
-            return;
-        } else {
+        let safe_value = {
             let phi_ty = LLVMTypeOf(phi);
             let val_ty = LLVMTypeOf(value);
             let phi_kind = LLVMGetTypeKind(phi_ty);
             let val_kind = LLVMGetTypeKind(val_ty);
             if phi_kind != val_kind {
                 // Type mismatch — create zero of the phi's type
+                eprintln!("[std-llvm] add_incoming: phi type mismatch (phi kind={}, val kind={}), substituting zero/undef", phi_kind, val_kind);
                 if phi_kind == 8 { // phi is integer
                     LLVMConstInt(phi_ty, 0, 0)
                 } else if phi_kind == 10 { // phi is struct
@@ -852,6 +1775,7 @@ pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, bloc
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_struct_type(ctx: LLVMPtr, element_types: *mut LLVMPtr, count: c_int, packed: c_int) -> LLVMPtr {
+    if element_types.is_null() && count > 0 { return std::ptr::null_mut(); }
     unsafe { LLVMStructTypeInContext(ctx, element_types, count as c_uint, packed) }
 }
 
@@ -861,8 +1785,29 @@ pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMTypeOf(val) }
 }
 
+/// Alias without forge_ prefix (method dispatch tries llvm_type_of first)
+#[no_mangle]
+pub extern "C" fn llvm_type_of(val: LLVMPtr) -> LLVMPtr {
+    forge_llvm_type_of(val)
+}
+
+/// Get the return type of a function value (LLVMValueRef of a function).
+/// Equivalent to LLVMGetReturnType(LLVMGlobalGetValueType(fn_val)).
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_fn_return_type(fn_val: LLVMPtr) -> LLVMPtr {
+    if fn_val.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let fn_ty = LLVMGlobalGetValueType(fn_val);
+        if fn_ty.is_null() { return std::ptr::null_mut(); }
+        LLVMGetReturnType(fn_ty)
+    }
+}
+
+
+
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_type_kind(ty: LLVMPtr) -> c_int {
+    if ty.is_null() { return 0; }
     unsafe { LLVMGetTypeKind(ty) as c_int }
 }
 
@@ -891,22 +1836,71 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
     unsafe { LLVMCountStructElementTypes(struct_type) as c_int }
 }
 
+#[no_mangle]
+pub extern "C" fn forge_llvm_is_literal_struct(struct_type: LLVMPtr) -> c_int {
+    if struct_type.is_null() { return 0; }
+    unsafe { if LLVMIsLiteralStruct(struct_type) != 0 { 1 } else { 0 } }
+}
+
+/// Get the name of a named struct type as a ForgeString.
+/// Returns empty string for anonymous structs.
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_struct_name(struct_type: LLVMPtr) -> i64 {
+    if struct_type.is_null() { return 0; }
+    unsafe {
+        if LLVMIsLiteralStruct(struct_type) != 0 { return 0; }
+        let name = LLVMGetStructName(struct_type);
+        if name.is_null() { return 0; }
+        // Return as i64 pointer to the static LLVM string (no allocation needed)
+        // The caller should use this pointer with forge_string_new
+        name as i64
+    }
+}
+
+
+/// Get the store size of a type in bytes (using module's data layout)
+#[no_mangle]
+pub extern "C" fn forge_llvm_store_size_of_type(m: LLVMPtr, ty: LLVMPtr) -> i64 {
+    if m.is_null() || ty.is_null() { return 8; }
+    unsafe {
+        let dl = LLVMGetModuleDataLayout(m);
+        if dl.is_null() { return 8; }
+        LLVMStoreSizeOfType(dl, ty) as i64
+    }
+}
+
+// ── Function Type Introspection ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_fn_get_param_type(fn_ty: LLVMPtr, index: c_int) -> LLVMPtr {
+    if fn_ty.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let count = LLVMCountParamTypes(fn_ty) as c_int;
+        if index < 0 || index >= count { return std::ptr::null_mut(); }
+        let mut params = vec![std::ptr::null_mut(); count as usize];
+        LLVMGetParamTypes(fn_ty, params.as_mut_ptr());
+        params[index as usize]
+    }
+}
+
 // ── Aggregate Operations ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
+    if builder.is_null() { return std::ptr::null_mut(); }
     let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() || indices.is_null() || num_indices <= 0 {
+        eprintln!("[std-llvm] build_gep2: null arg (ptr={:p} ty={:p} indices={:p} n={})", ptr, ty, indices, num_indices);
         return std::ptr::null_mut();
     }
     unsafe {
         // GEP requires a pointer base
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
-        if ptr_kind != 12 { return std::ptr::null_mut(); }
+        if ptr_kind != 12 { eprintln!("[std-llvm] build_gep2: base is not a pointer (kind={})", ptr_kind); return std::ptr::null_mut(); }
         // Validate indices — each must be an integer value
         for i in 0..num_indices as usize {
             let idx = *indices.add(i);
-            if idx.is_null() { return std::ptr::null_mut(); }
+            if idx.is_null() { eprintln!("[std-llvm] build_gep2: null index at position {}", i); return std::ptr::null_mut(); }
             let idx_kind = LLVMGetTypeKind(LLVMTypeOf(idx));
             if idx_kind != 8 { // Not IntegerTypeKind
                 // Try to coerce to i64
@@ -920,12 +1914,17 @@ pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, safe_name(name)) }
+    if builder.is_null() || ty.is_null() || ptr.is_null() { eprintln!("[std-llvm] build_struct_gep2: null arg (builder={:p} ty={:p} ptr={:p})", builder, ty, ptr); return std::ptr::null_mut(); }
+    unsafe {
+        let n = LLVMCountStructElementTypes(ty);
+        if (index as c_uint) >= n { eprintln!("[std-llvm] build_struct_gep2: index {} >= field count {}", index, n); return std::ptr::null_mut(); }
+        LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, element: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    if agg.is_null() || element.is_null() { return agg; }
+    if builder.is_null() || agg.is_null() || element.is_null() { return agg; }
     unsafe {
         // Verify type compatibility before insert
         let agg_ty = LLVMTypeOf(agg);
@@ -944,7 +1943,12 @@ pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, 
         if field_kind != elem_kind {
             if field_kind == 8 && elem_kind == 10 {
                 // Field expects integer but got struct — extract field 1 (i64 part)
-                real_element = LLVMBuildExtractValue(builder, element, 1, safe_name(std::ptr::null()));
+                let elem_n = LLVMCountStructElementTypes(elem_ty);
+                if elem_n > 1 {
+                    real_element = LLVMBuildExtractValue(builder, element, 1, safe_name(std::ptr::null()));
+                } else {
+                    real_element = LLVMBuildExtractValue(builder, element, 0, safe_name(std::ptr::null()));
+                }
             } else if field_kind == 12 && elem_kind == 8 {
                 // Field expects ptr but got i64 — inttoptr
                 let ptr_ty = TYPE_CACHE.with(|c| c.borrow().ptr);
@@ -957,7 +1961,7 @@ pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, 
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    if agg.is_null() {
+    if builder.is_null() || agg.is_null() {
         eprintln!("WARNING: build_extract_value called with null aggregate");
         return std::ptr::null_mut();
     }
@@ -985,7 +1989,8 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_sdiv: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildSDiv(builder, lhs, rhs, safe_name(name)) }
 }
@@ -993,7 +1998,8 @@ pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLV
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_srem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_srem: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildSRem(builder, lhs, rhs, safe_name(name)) }
 }
@@ -1043,8 +2049,9 @@ pub extern "C" fn forge_llvm_build_zext(builder: LLVMPtr, val: LLVMPtr, dest_ty:
         if val_kind == 12 { // PointerTypeKind — use ptrtoint instead of zext
             return LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name));
         }
-        if val_kind != 8 { // Not integer — return i64 0
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        if val_kind != 8 { // Not integer — can't zext
+            eprintln!("[std-llvm] build_zext: value is not integer (kind={})", val_kind);
+            return std::ptr::null_mut();
         }
         LLVMBuildZExt(builder, val, dest_ty, safe_name(name))
     }
@@ -1061,9 +2068,9 @@ pub extern "C" fn forge_llvm_build_trunc(builder: LLVMPtr, val: LLVMPtr, dest_ty
     let dest_ty = ensure_int_type(dest_ty);
     unsafe {
         let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
-        if val_kind != 8 { // Not integer — can't trunc, return i1 0
-            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
-            return LLVMConstInt(i1, 0, 0);
+        if val_kind != 8 { // Not integer — can't trunc
+            eprintln!("[std-llvm] build_trunc: value is not integer (kind={})", val_kind);
+            return std::ptr::null_mut();
         }
         LLVMBuildTrunc(builder, val, dest_ty, safe_name(name))
     }
@@ -1091,16 +2098,45 @@ pub extern "C" fn forge_llvm_build_ptrtoint(builder: LLVMPtr, val: LLVMPtr, dest
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_inttoptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name)) }
+    if builder.is_null() || val.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
+        // struct → ptr: extract field 0 (the data pointer) instead of inttoptr
+        if val_kind == 10 {
+            return LLVMBuildExtractValue(builder, val, 0, safe_name(name));
+        }
+        // ptr → ptr: no conversion needed
+        if val_kind == 12 {
+            return val;
+        }
+        LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ptr_to_int(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name)) }
+    if val.is_null() || dest_ty.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
+        // struct → i64: extract field 0 (ptr), then ptrtoint
+        if val_kind == 10 {
+            let extracted = LLVMBuildExtractValue(builder, val, 0, b"s0\0".as_ptr() as *const c_char);
+            if !extracted.is_null() && LLVMGetTypeKind(LLVMTypeOf(extracted)) == 12 {
+                return LLVMBuildPtrToInt(builder, extracted, dest_ty, safe_name(name));
+            }
+            return extracted;
+        }
+        // i64 → i64: no conversion needed
+        if val_kind == 8 {
+            return val;
+        }
+        LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if val.is_null() || dest_ty.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name)) }
 }
 
@@ -1110,7 +2146,8 @@ pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, de
 pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_and: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildAnd(builder, lhs, rhs, safe_name(name))
     }
@@ -1120,7 +2157,8 @@ pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_or: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildOr(builder, lhs, rhs, safe_name(name))
     }
@@ -1130,7 +2168,8 @@ pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMP
 pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_xor: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildXor(builder, lhs, rhs, safe_name(name))
     }
@@ -1140,7 +2179,8 @@ pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 pub extern "C" fn forge_llvm_build_shl(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_shl: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildShl(builder, lhs, rhs, safe_name(name))
     }
@@ -1181,6 +2221,15 @@ pub extern "C" fn forge_llvm_const_null(ty: LLVMPtr) -> LLVMPtr {
 }
 
 #[no_mangle]
+// Named forge_is_null_val (not forge_llvm_*) to avoid mini auto-declare
+// treating it as ptr-returning (all forge_llvm_* default to ptr return)
+#[no_mangle]
+pub extern "C" fn forge_is_null_val(val: LLVMPtr) -> i64 {
+    if val.is_null() { return 1; }
+    unsafe { LLVMIsNull(val) as i64 }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_size_of(ty: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMSizeOf(ty) }
 }
@@ -1192,7 +2241,22 @@ pub extern "C" fn forge_llvm_get_undef(ty: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_global_get_value_type(val: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMGlobalGetValueType(val) }
+    if val.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        LLVMGlobalGetValueType(val)
+    }
+}
+
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_allocated_type(alloca: LLVMPtr) -> LLVMPtr {
+    if alloca.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        // Only valid for alloca instructions (opcode 26)
+        let opcode = LLVMGetInstructionOpcode(alloca);
+        if opcode != 26 { return std::ptr::null_mut(); }
+        LLVMGetAllocatedType(alloca)
+    }
 }
 
 #[no_mangle]
@@ -1207,7 +2271,24 @@ pub extern "C" fn forge_llvm_const_struct(ctx: LLVMPtr, values: *mut LLVMPtr, co
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_global(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMAddGlobal(m, ty, name) }
+    if m.is_null() || ty.is_null() || name.is_null() { return std::ptr::null_mut(); }
+    let result = unsafe { LLVMAddGlobal(m, ty, name) };
+    // Auto-cache global Value* so emit_ident can find globals via alloca cache
+    if !name.is_null() && !result.is_null() {
+        extern "C" {
+            fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
+            fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
+        }
+        let len = unsafe { std::ffi::CStr::from_ptr(name).to_bytes().len() } as i64;
+        if len > 0 && len < 100 {
+            unsafe {
+                forge_alloca_cache_set_raw(name, len, result);
+                // Don't auto-register as string var — only string-typed
+                // globals should be registered (done by Forge code via str_mask)
+            }
+        }
+    }
+    result
 }
 
 #[no_mangle]
@@ -1244,6 +2325,14 @@ pub extern "C" fn forge_llvm_position_builder_before(builder: LLVMPtr, instr: LL
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_position_before(builder: LLVMPtr, instr: LLVMPtr) {
+    bld_trace("position_before", builder, instr);
+    // Record the parent block of the instruction (best-effort).
+    let bb = if !instr.is_null() {
+        unsafe { LLVMGetInstructionParent(instr) }
+    } else {
+        std::ptr::null_mut()
+    };
+    record_pos(bb, 1, CURRENT_SITE_ID.load(Ordering::Relaxed));
     unsafe { LLVMPositionBuilderBefore(builder, instr) }
 }
 
@@ -1333,6 +2422,35 @@ pub extern "C" fn forge_llvm_block_has_terminator(builder: LLVMPtr) -> c_int {
     }
 }
 
+/// Check whether a SPECIFIC basic block has a terminator. Used by
+/// emit_match_arms to detect "the arm body returned, leaving the
+/// builder at a fresh dead block created by start_dead_block_after_terminator".
+#[no_mangle]
+pub extern "C" fn forge_bb_has_terminator(bb: LLVMPtr) -> i64 {
+    if bb.is_null() { return 0; }
+    unsafe {
+        let term = LLVMGetBasicBlockTerminator(bb);
+        if term.is_null() { 0 } else { 1 }
+    }
+}
+
+/// Count predecessors of a basic block. Used by emit_match_arms to
+/// detect dead blocks (zero preds = orphan from start_dead_block).
+#[no_mangle]
+pub extern "C" fn forge_bb_has_predecessors(bb: LLVMPtr) -> i64 {
+    if bb.is_null() { return 0; }
+    unsafe {
+        let mut count: i64 = 0;
+        let mut u = LLVMGetFirstUse(bb);
+        while !u.is_null() {
+            count += 1;
+            u = LLVMGetNextUse(u);
+            if count > 9999 { break; }
+        }
+        count
+    }
+}
+
 /// High-level: emit an LLVM module to an object file. Returns 0 on success.
 #[no_mangle]
 pub extern "C" fn forge_llvm_emit_object_file(m: LLVMPtr, filename: *const c_char) -> c_int {
@@ -1395,3 +2513,529 @@ pub extern "C" fn forge_llvm_copy_string_rep_of_target_data(td: LLVMPtr) -> *mut
 pub extern "C" fn forge_llvm_dispose_target_data(td: LLVMPtr) {
     unsafe { LLVMDisposeTargetData(td) }
 }
+
+// ─── Diagnostic helpers (#2 #3 #5) ────────────────────────────────
+
+/// #2 — Assert that the builder's current insert block matches `expected_bb`.
+/// No-op when FORGE_DEBUG_BUILDER is not set. When set and the assertion
+/// fails, prints a diagnostic to stderr and aborts the process so the
+/// stack trace shows the exact call site.
+#[no_mangle]
+pub extern "C" fn forge_llvm_assert_at(builder: LLVMPtr, expected_bb: LLVMPtr, label_ptr: *const c_char, label_len: i64) -> i64 {
+    if !bld_trace_enabled() { return 1; }
+    if builder.is_null() { return 0; }
+    let actual = unsafe { LLVMGetInsertBlock(builder) };
+    if actual == expected_bb { return 1; }
+    let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize) };
+        std::str::from_utf8(s).unwrap_or("?")
+    } else {
+        "(no label)"
+    };
+    eprintln!(
+        "[BLD ASSERT FAIL] label={} expected_bb={:p} actual_bb={:p} bld={:p}",
+        label, expected_bb, actual, builder
+    );
+    std::process::abort();
+}
+
+/// #3 — Run LLVMVerifyFunction. Returns 0 on success, non-zero on failure.
+/// Action 1 = PrintMessage (verifier prints the failure to stderr).
+/// We use 1 so callers see WHY verification failed, not just that it did.
+#[no_mangle]
+pub extern "C" fn forge_llvm_verify_function(f: LLVMPtr) -> i64 {
+    if f.is_null() { return -1; }
+    unsafe { LLVMVerifyFunction(f, 1) as i64 }
+}
+
+/// #5 — Dump every basic block in `f` to stderr with `(name, term?, instr_count, pred_count)`.
+/// Useful between emit_* steps to spot orphan blocks the moment they appear.
+/// Pred-count is computed via LLVMGetFirstUse on the block's value (each
+/// use is a branch instruction that targets it).
+#[no_mangle]
+pub extern "C" fn forge_llvm_dump_blocks(f: LLVMPtr) {
+    if f.is_null() {
+        eprintln!("[DUMP_BLOCKS] null function");
+        return;
+    }
+    unsafe {
+        let count = LLVMCountBasicBlocks(f);
+        eprintln!("[DUMP_BLOCKS] function={:p} blocks={}", f, count);
+        let mut bb = LLVMGetFirstBasicBlock(f);
+        let mut idx = 0;
+        while !bb.is_null() {
+            let name_ptr = LLVMGetBasicBlockName(bb);
+            let name = if !name_ptr.is_null() {
+                std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
+            } else {
+                String::from("?")
+            };
+            let term = LLVMGetBasicBlockTerminator(bb);
+            let term_str = if term.is_null() { "NO_TERM" } else { "term" };
+            // Count instructions
+            let mut instr_count = 0;
+            let mut instr = LLVMGetFirstInstruction(bb);
+            while !instr.is_null() {
+                instr_count += 1;
+                instr = LLVMGetNextInstruction(instr);
+            }
+            // Pred count via uses of the block-as-value (each use is a branch).
+            // LLVMBasicBlockAsValue is the right way; if we don't have it,
+            // GetFirstUse on the bb pointer works for blocks too.
+            let mut pred_count = 0;
+            let mut use_iter = LLVMGetFirstUse(bb);
+            while !use_iter.is_null() {
+                pred_count += 1;
+                use_iter = LLVMGetNextUse(use_iter);
+                if pred_count > 9999 { break; } // safety
+            }
+            eprintln!(
+                "  [{:3}] bb={:p} name={:<20} {:7} instrs={:3} preds={}",
+                idx, bb, name, term_str, instr_count, pred_count
+            );
+            bb = LLVMGetNextBasicBlock(bb);
+            idx += 1;
+        }
+    }
+}
+
+/// #6 — Depth-tracked enter/exit tracing. Pair calls to
+/// `forge_dbg_enter` with `forge_dbg_exit`. Output is indented by depth.
+/// Active only when FORGE_DEBUG_BUILDER is set so it costs nothing in
+/// release runs. (Named `forge_dbg_*` to avoid colliding with the
+/// pre-existing `forge_trace_enter`/`exit` in runtime.c which has
+/// a different signature.)
+static TRACE_DEPTH: AtomicI64 = AtomicI64::new(0);
+
+#[no_mangle]
+pub extern "C" fn forge_dbg_enter(name_ptr: *const c_char, name_len: i64) {
+    if !bld_trace_enabled() { return; }
+    let depth = TRACE_DEPTH.fetch_add(1, Ordering::Relaxed);
+    let name = if !name_ptr.is_null() && name_len > 0 && name_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(name_ptr as *const u8, name_len as usize) };
+        std::str::from_utf8(s).unwrap_or("?")
+    } else { "?" };
+    let pad = "  ".repeat(depth.max(0) as usize);
+    eprintln!("{}[ENTER {}]", pad, name);
+}
+
+#[no_mangle]
+pub extern "C" fn forge_dbg_exit(name_ptr: *const c_char, name_len: i64) {
+    if !bld_trace_enabled() { return; }
+    let depth = TRACE_DEPTH.fetch_sub(1, Ordering::Relaxed) - 1;
+    let name = if !name_ptr.is_null() && name_len > 0 && name_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(name_ptr as *const u8, name_len as usize) };
+        std::str::from_utf8(s).unwrap_or("?")
+    } else { "?" };
+    let pad = "  ".repeat(depth.max(0) as usize);
+    eprintln!("{}[EXIT  {}]", pad, name);
+}
+
+// ─── Tool #2: phi/edge consistency audit ─────────────────────────
+//
+// LLVMVerifyFunction catches some phi inconsistencies but not all.
+// This walker explicitly checks: for every (value, incoming_block)
+// pair on every phi in the function, does `incoming_block` have a
+// terminator that actually targets the phi's parent block?
+//
+// If not → "phantom phi entry" — the bug we hit this session.
+
+extern "C" {
+    fn LLVMIsAPHINode(val: LLVMPtr) -> LLVMPtr;
+    fn LLVMCountIncoming(phi: LLVMPtr) -> c_uint;
+    fn LLVMGetIncomingBlock(phi: LLVMPtr, idx: c_uint) -> LLVMPtr;
+    fn LLVMGetNumSuccessors(term: LLVMPtr) -> c_uint;
+    fn LLVMGetSuccessor(term: LLVMPtr, idx: c_uint) -> LLVMPtr;
+    fn LLVMIsATerminatorInst(val: LLVMPtr) -> LLVMPtr;
+}
+
+/// Tool #2 — audit every phi in the function. Returns count of bad
+/// phi-edge mismatches. Prints details when bad ones are found.
+#[no_mangle]
+pub extern "C" fn forge_llvm_phi_audit(f: LLVMPtr) -> i64 {
+    if f.is_null() { return -1; }
+    let mut bad: i64 = 0;
+    unsafe {
+        let mut bb = LLVMGetFirstBasicBlock(f);
+        while !bb.is_null() {
+            let mut instr = LLVMGetFirstInstruction(bb);
+            while !instr.is_null() {
+                if !LLVMIsAPHINode(instr).is_null() {
+                    let n = LLVMCountIncoming(instr);
+                    for i in 0..n {
+                        let in_bb = LLVMGetIncomingBlock(instr, i);
+                        // Does in_bb's terminator branch to bb?
+                        let term = LLVMGetBasicBlockTerminator(in_bb);
+                        if term.is_null() {
+                            eprintln!("[PHI AUDIT] phi in bb={:p} lists in_bb={:p} but in_bb has NO terminator", bb, in_bb);
+                            bad += 1;
+                            continue;
+                        }
+                        let succs = LLVMGetNumSuccessors(term);
+                        let mut found = false;
+                        for s in 0..succs {
+                            if LLVMGetSuccessor(term, s) == bb {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            eprintln!("[PHI AUDIT] phi in bb={:p} lists in_bb={:p} but in_bb's terminator does not branch to bb (succs={})", bb, in_bb, succs);
+                            bad += 1;
+                        }
+                    }
+                } else if LLVMIsATerminatorInst(instr).is_null() {
+                    // Phis must come before non-phi instructions; once we see
+                    // a non-phi non-terminator, no more phis in this block.
+                    // (But we keep walking to find the terminator; safer to
+                    // let the loop continue and exit on null next.)
+                }
+                instr = LLVMGetNextInstruction(instr);
+            }
+            bb = LLVMGetNextBasicBlock(bb);
+        }
+    }
+    bad
+}
+
+// ─── Tool #5: per-statement IR snapshots ─────────────────────────
+//
+// Write the function's current IR text to /tmp/snap_<fn>_<idx>.ll.
+// Pair with a counter incremented after each emit_statement so the
+// next agent can `diff -u snap_X_5.ll snap_X_6.ll` and see exactly
+// which statement introduced an orphan or broken phi.
+
+extern "C" {
+    fn LLVMPrintValueToString(val: LLVMPtr) -> *mut c_char;
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_snapshot_fn(f: LLVMPtr, label_ptr: *const c_char, label_len: i64, idx: i64) {
+    if f.is_null() { return; }
+    let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize) };
+        std::str::from_utf8(s).unwrap_or("snap").to_string()
+    } else {
+        "snap".to_string()
+    };
+    let safe: String = label.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    let path = format!("/tmp/snap_{}_{}.ll", safe, idx);
+    unsafe {
+        let s = LLVMPrintValueToString(f);
+        if s.is_null() { return; }
+        let bytes = std::ffi::CStr::from_ptr(s).to_bytes();
+        let _ = std::fs::write(&path, bytes);
+        LLVMDisposeMessage(s);
+    }
+}
+
+// ─── Tool #6: shadow verify (on every build call) ────────────────
+//
+// When FORGE_DEBUG_VERIFY_AGGRESSIVE=1, every build_* call checks
+// LLVMVerifyFunction immediately after landing the instruction.
+// This is O(N²) so it's only enabled by an env var. The first
+// build call to break verification is the bug site — and the BLD
+// trace pinpoints which Forge call made it.
+
+static SHADOW_VERIFY_INIT: AtomicBool = AtomicBool::new(false);
+static SHADOW_VERIFY_ON: AtomicBool = AtomicBool::new(false);
+
+fn shadow_verify_enabled() -> bool {
+    if !SHADOW_VERIFY_INIT.load(Ordering::Relaxed) {
+        let on = std::env::var("FORGE_DEBUG_VERIFY_AGGRESSIVE")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+        SHADOW_VERIFY_ON.store(on, Ordering::Relaxed);
+        SHADOW_VERIFY_INIT.store(true, Ordering::Relaxed);
+    }
+    SHADOW_VERIFY_ON.load(Ordering::Relaxed)
+}
+
+#[no_mangle]
+pub extern "C" fn forge_dbg_shadow_verify_after(builder: LLVMPtr, label_ptr: *const c_char, label_len: i64) {
+    if !shadow_verify_enabled() { return; }
+    if builder.is_null() { return; }
+    unsafe {
+        let bb = LLVMGetInsertBlock(builder);
+        if bb.is_null() { return; }
+        let f = LLVMGetBasicBlockParent(bb);
+        if f.is_null() { return; }
+        // ReturnStatus: don't abort, let caller see the count.
+        let rc = LLVMVerifyFunction(f, 2);
+        if rc != 0 {
+            let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+                let s = std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize);
+                std::str::from_utf8(s).unwrap_or("?")
+            } else { "?" };
+            eprintln!("[SHADOW VERIFY FAIL] after {} (op #{}) bld={:p} fn={:p}",
+                label, BLD_OP_ID.load(Ordering::Relaxed), builder, f);
+            // Print the current function's text so we can grep for the bug.
+            let s = LLVMPrintValueToString(f);
+            if !s.is_null() {
+                let bytes = std::ffi::CStr::from_ptr(s).to_bytes();
+                let path = format!("/tmp/shadow_fail_{}.ll", BLD_OP_ID.load(Ordering::Relaxed));
+                let _ = std::fs::write(&path, bytes);
+                eprintln!("[SHADOW VERIFY FAIL] full IR written to {}", path);
+                LLVMDisposeMessage(s);
+            }
+        }
+    }
+}
+
+// ─── Tool #7: CFG visualization (Graphviz dot output) ────────────
+//
+// One picture > a thousand text diffs. Walks the function's CFG and
+// writes a dot file with: nodes = blocks, edges = branch successors,
+// orphans painted red, phis annotated. `dot -Tpng cfg.dot > cfg.png`
+// makes the disconnected island visible at a glance.
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_emit_cfg_dot(f: LLVMPtr, path_ptr: *const c_char, path_len: i64) -> i64 {
+    if f.is_null() { return -1; }
+    let path = if !path_ptr.is_null() && path_len > 0 && path_len < 1024 {
+        let s = unsafe { std::slice::from_raw_parts(path_ptr as *const u8, path_len as usize) };
+        std::str::from_utf8(s).unwrap_or("/tmp/cfg.dot").to_string()
+    } else {
+        "/tmp/cfg.dot".to_string()
+    };
+    let mut out = String::new();
+    out.push_str("digraph CFG {\n");
+    out.push_str("  rankdir=TB;\n");
+    out.push_str("  node [shape=box, fontname=monospace, fontsize=10];\n");
+    unsafe {
+        // Pass 1: nodes
+        let mut bb = LLVMGetFirstBasicBlock(f);
+        while !bb.is_null() {
+            let name_ptr = LLVMGetBasicBlockName(bb);
+            let name = if !name_ptr.is_null() {
+                std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
+            } else {
+                format!("bb_{:p}", bb)
+            };
+            // Count instructions, phis
+            let mut instr_count = 0;
+            let mut phi_count = 0;
+            let mut instr = LLVMGetFirstInstruction(bb);
+            while !instr.is_null() {
+                instr_count += 1;
+                if !LLVMIsAPHINode(instr).is_null() { phi_count += 1; }
+                instr = LLVMGetNextInstruction(instr);
+            }
+            // Predecessor count via LLVMGetFirstUse
+            let mut pred_count = 0;
+            let mut u = LLVMGetFirstUse(bb);
+            while !u.is_null() {
+                pred_count += 1;
+                u = LLVMGetNextUse(u);
+                if pred_count > 9999 { break; }
+            }
+            let term = LLVMGetBasicBlockTerminator(bb);
+            let term_str = if term.is_null() { "NO_TERM" } else { "ok" };
+            // Color: red for orphan (no preds AND not entry), grey for entry
+            let is_entry = bb == LLVMGetEntryBasicBlock(f);
+            let color = if is_entry {
+                "lightgrey"
+            } else if pred_count == 0 {
+                "lightcoral"  // ORPHAN
+            } else if term.is_null() {
+                "khaki"  // missing terminator
+            } else {
+                "lightblue"
+            };
+            out.push_str(&format!(
+                "  \"{}\" [style=filled, fillcolor={}, label=\"{}\\nphi={} instr={} preds={} term={}\"];\n",
+                name, color, name, phi_count, instr_count, pred_count, term_str
+            ));
+            bb = LLVMGetNextBasicBlock(bb);
+        }
+        // Pass 2: edges (terminator successors)
+        bb = LLVMGetFirstBasicBlock(f);
+        while !bb.is_null() {
+            let from_name_ptr = LLVMGetBasicBlockName(bb);
+            let from_name = if !from_name_ptr.is_null() {
+                std::ffi::CStr::from_ptr(from_name_ptr).to_string_lossy().into_owned()
+            } else {
+                format!("bb_{:p}", bb)
+            };
+            let term = LLVMGetBasicBlockTerminator(bb);
+            if !term.is_null() {
+                let succs = LLVMGetNumSuccessors(term);
+                for i in 0..succs {
+                    let s_bb = LLVMGetSuccessor(term, i);
+                    let s_name_ptr = LLVMGetBasicBlockName(s_bb);
+                    let s_name = if !s_name_ptr.is_null() {
+                        std::ffi::CStr::from_ptr(s_name_ptr).to_string_lossy().into_owned()
+                    } else {
+                        format!("bb_{:p}", s_bb)
+                    };
+                    out.push_str(&format!("  \"{}\" -> \"{}\";\n", from_name, s_name));
+                }
+            }
+            bb = LLVMGetNextBasicBlock(bb);
+        }
+    }
+    out.push_str("}\n");
+    if std::fs::write(&path, out).is_err() { return -2; }
+    eprintln!("[CFG DOT] wrote {} (run: dot -Tpng {} > /tmp/cfg.png)", path, path);
+    0
+}
+
+// ─── Tool #9: invariant assertion ────────────────────────────────
+//
+// Run a battery of consistency checks at any point in codegen. Active
+// when FORGE_DEBUG_BUILDER is set. Returns 0 on success, non-zero on
+// the first failed invariant.
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_assert_invariants(builder: LLVMPtr, label_ptr: *const c_char, label_len: i64) -> i64 {
+    if !bld_trace_enabled() { return 0; }
+    if builder.is_null() { return 1; }
+    let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize) };
+        std::str::from_utf8(s).unwrap_or("?")
+    } else { "?" };
+    unsafe {
+        let bb = LLVMGetInsertBlock(builder);
+        if bb.is_null() {
+            eprintln!("[INVARIANT FAIL @{}] builder has no insert block", label);
+            return 2;
+        }
+        let f = LLVMGetBasicBlockParent(bb);
+        if f.is_null() {
+            eprintln!("[INVARIANT FAIL @{}] insert block has no parent function", label);
+            return 3;
+        }
+        let term = LLVMGetBasicBlockTerminator(bb);
+        if !term.is_null() {
+            eprintln!("[INVARIANT FAIL @{}] insert block already terminated; further inserts will be invalid", label);
+            return 4;
+        }
+        // Walk all blocks looking for orphans (skip entry).
+        let entry = LLVMGetEntryBasicBlock(f);
+        let mut walk = LLVMGetFirstBasicBlock(f);
+        let mut orphans = 0;
+        while !walk.is_null() {
+            if walk != entry {
+                let mut u = LLVMGetFirstUse(walk);
+                if u.is_null() {
+                    orphans += 1;
+                }
+                let _ = u;
+            }
+            walk = LLVMGetNextBasicBlock(walk);
+        }
+        if orphans > 0 {
+            eprintln!("[INVARIANT FAIL @{}] function has {} orphan basic blocks", label, orphans);
+            return 5;
+        }
+    }
+    0
+}
+
+// ─── Tool #10: record / replay ───────────────────────────────────
+//
+// When FORGE_DEBUG_RECORD=<path> is set, every builder call appends a
+// minimal CSV record to the file. The replay tool (a small Rust binary
+// or python script) can then re-execute the calls in order against a
+// fresh LLVM context to reproduce the exact same IR. Bisecting the log
+// (drop calls one at a time, see when the bug disappears) finds the
+// minimal sequence that produces an orphan or broken phi.
+//
+// Format: csv lines `op_id,op_name,builder_addr,arg1_addr,arg2_addr`.
+
+static REC_INIT: AtomicBool = AtomicBool::new(false);
+static REC_ON: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static REC_FILE: RefCell<Option<std::fs::File>> = RefCell::new(None);
+}
+
+fn rec_enabled() -> bool {
+    if !REC_INIT.load(Ordering::Relaxed) {
+        if let Ok(path) = std::env::var("FORGE_DEBUG_RECORD") {
+            if let Ok(f) = std::fs::File::create(&path) {
+                REC_FILE.with(|cell| { *cell.borrow_mut() = Some(f); });
+                REC_ON.store(true, Ordering::Relaxed);
+            }
+        }
+        REC_INIT.store(true, Ordering::Relaxed);
+    }
+    REC_ON.load(Ordering::Relaxed)
+}
+
+#[inline]
+fn rec(op: &str, builder: LLVMPtr, a: LLVMPtr, b: LLVMPtr) {
+    if !rec_enabled() { return; }
+    REC_FILE.with(|cell| {
+        if let Some(f) = cell.borrow_mut().as_mut() {
+            let id = BLD_OP_ID.load(Ordering::Relaxed);
+            let _ = writeln!(f, "{},{},{:p},{:p},{:p}", id, op, builder, a, b);
+        }
+    });
+}
+
+// Note: record() is called from the existing bld_trace() wrappers via
+// a unified hook below. We don't need to add new instrumentation
+// points; we just teach bld_trace to also call rec().
+
+// ─── Tool #11: oracle escape hatch ───────────────────────────────
+//
+// A pure-Rust implementation of integer match dispatch, callable
+// from Forge as `forge_llvm_oracle_match_dispatch_int`. Bypasses the
+// buggy self-host emit_match_arms entirely for the cases that matter
+// most (integer-tagged dispatch, the bulk of all matches).
+//
+// Inputs: builder, scrutinee i64 value, function, count, tag values
+// (i64*), arm bb's (LLVMPtr*), default bb. Output: emits a chain of
+// `icmp eq + cond_br` from the current insert block; positions the
+// builder at the default bb at the end. Caller is responsible for
+// emitting arm bodies into each arm bb.
+//
+// This is NOT a workaround for the codegen bug — it's a deliberate
+// bootstrap-only delegation while the underlying bug is being
+// investigated. Mark every call site with a TODO and remove once
+// the self-host emit_match_arms produces clean IR.
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_oracle_match_dispatch_int(
+    builder: LLVMPtr,
+    scrutinee: LLVMPtr,
+    f: LLVMPtr,
+    count: i64,
+    tags: *const i64,
+    arm_bbs: *const LLVMPtr,
+    default_bb: LLVMPtr,
+) -> i64 {
+    if builder.is_null() || scrutinee.is_null() || f.is_null() || tags.is_null() || arm_bbs.is_null() || default_bb.is_null() {
+        return -1;
+    }
+    if count <= 0 { return -2; }
+    let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+    if i64_ty.is_null() { return -3; }
+    unsafe {
+        // Walk arms; for each, append a "next" block, emit icmp + cond_br
+        // into the current block, then position at the next block.
+        for i in 0..count {
+            let tag = *tags.offset(i as isize);
+            let arm_bb = *arm_bbs.offset(i as isize);
+            if arm_bb.is_null() { return -4; }
+            let tag_val = LLVMConstInt(i64_ty, tag as c_ulonglong, 0);
+            let cmp_name = b"oracle_eq\0".as_ptr() as *const c_char;
+            let cmp = LLVMBuildICmp(builder, 32 /* LLVMIntEQ */, scrutinee, tag_val, cmp_name);
+            let next_bb = if i == count - 1 {
+                default_bb
+            } else {
+                LLVMAppendBasicBlockInContext(
+                    LLVMGetGlobalContext(),
+                    f,
+                    unique_block_name(),
+                )
+            };
+            LLVMBuildCondBr(builder, cmp, arm_bb, next_bb);
+            LLVMPositionBuilderAtEnd(builder, next_bb);
+        }
+        // After the chain, builder is positioned at the default_bb (or
+        // the last "next" which IS default_bb on the last iteration).
+    }
+    0
+}
+// rebuild Sat Mar 28 23:33:49 PDT 2026

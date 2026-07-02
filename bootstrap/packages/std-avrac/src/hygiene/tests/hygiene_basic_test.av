@@ -1,0 +1,164 @@
+// Phase 5 (vez6.5): hygiene rename pass for AST values.
+
+use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_stmt_list}
+use @std.avrac.hygiene.{hygiene_rename_expr, hygiene_rename_stmt, hygiene_rename_stmts}
+
+spec "hygiene: free variables pass through" {
+    then "bare ident with no binding stays unchanged" {
+        let e = Expr.Ident("free_var")
+        let renamed = hygiene_rename_expr(e)
+        render_expr(renamed) == "free_var"
+    }
+    then "binary expression of two free variables" {
+        let e = quote { x + y }
+        let renamed = hygiene_rename_expr(e)
+        render_expr(renamed) == "(+ x y)"
+    }
+    then "function call with free args" {
+        let e = quote { f(a, b) }
+        let renamed = hygiene_rename_expr(e)
+        render_expr(renamed) == "(call f (a, b))"
+    }
+}
+
+spec "hygiene: let bindings get suffix" {
+    then "let x rewrites x and references" {
+        let e = quote {
+            let x = 5
+            x + 1
+        }
+        let renamed = hygiene_rename_expr(e)
+        // After rename: `let x_$0 = 5; x_$0 + 1`. The `5` is a literal
+        // so unchanged. The `x` reference becomes the renamed form.
+        render_expr(renamed).contains("x_$0") && !render_expr(renamed).contains("(+ x ")
+    }
+    then "two lets get distinct suffixes" {
+        let e = quote {
+            let a = 1
+            let b = 2
+        }
+        let renamed = hygiene_rename_stmts(extract_stmt_list(e))
+        let r = render_stmt_list(renamed)
+        r.contains("a_$0") && r.contains("b_$1")
+    }
+}
+
+spec "hygiene: scope discipline" {
+    then "free var inside let body keeps free name" {
+        let e = quote {
+            let x = 5
+            x + y
+        }
+        let renamed = hygiene_rename_expr(e)
+        // x → x_$0, y stays free
+        let r = render_expr(renamed)
+        r.contains("x_$0") && r.contains("y")
+    }
+    then "lambda param renames body refs" {
+        let e = quote { (x) -> x + 1 }
+        let renamed = hygiene_rename_expr(e)
+        // `(x_$0) -> x_$0 + 1` — both the param and its body ref renamed.
+        render_expr(renamed) == "(lambda (x_$0) (+ x_$0 1))"
+    }
+}
+
+spec "hygiene: bindings don't escape their scope" {
+    then "block-introduced binding doesn't leak" {
+        // Outer y is free; inner x is renamed and confined.
+        let e = quote {
+            let x = 1
+            y + x
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        // y is free → stays as y. x → x_$0 in the body.
+        r.contains("y") && r.contains("x_$0")
+    }
+}
+
+// ── Red-team / edge-case (vez6.5.3) ──
+
+spec "hygiene: complex bindings" {
+    then "for-loop variable + body refs renamed" {
+        let e = quote {
+            for i in xs {
+                i + 1
+            }
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        // i → i_$0 in both binding position and body refs.
+        r.contains("i_$0") && r.contains("xs")
+    }
+    then "nested lets shadow correctly" {
+        let e = quote {
+            let x = 1
+            let x = 2
+            x
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        r.contains("x_$0") && r.contains("x_$1")
+    }
+    then "while body bindings stay confined" {
+        let e = quote {
+            while cond {
+                let tmp = 1
+                tmp
+            }
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        r.contains("cond") && r.contains("tmp_$0")
+    }
+    then "if-else branches don't leak bindings" {
+        let e = quote {
+            if test {
+                let a = 1
+            } else {
+                let a = 2
+            }
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        r.contains("a_$0") && r.contains("a_$1")
+    }
+    then "nested lambdas — outer + inner params get distinct suffixes" {
+        let e = quote { (x) -> (y) -> x + y }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        r.contains("x_$0") && r.contains("y_$1")
+    }
+    then "free var in deep nesting stays free" {
+        let e = quote {
+            let a = 1
+            let b = 2
+            { let c = 3
+              a + b + c + free }
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        r.contains("a_$0") && r.contains("b_$1") && r.contains("c_$2") && r.contains("free")
+    }
+    then "splice target is opaque" {
+        let target: Expr = Expr.Ident("not_renamed")
+        let e = quote {
+            let x = 1
+            ~target + x
+        }
+        let renamed = hygiene_rename_expr(e)
+        let r = render_expr(renamed)
+        r.contains("x_$0") && r.contains("not_renamed")
+    }
+}
+
+// Small helper for tests — extracts the List<SStmt> from a Block-shaped Expr.
+fn extract_stmt_list(e: Expr) -> List<SStmt> {
+    match e {
+        .Block(stmts) -> stmts
+        _ -> {
+            let empty: List<SStmt> = []
+            empty
+        }
+    }
+}

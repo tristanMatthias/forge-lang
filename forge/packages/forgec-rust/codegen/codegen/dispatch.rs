@@ -20,17 +20,20 @@ impl<'ctx> Codegen<'ctx> {
         }
         // Handle json.parse() and json.stringify() intrinsics
         if let Expr::Ident(name, _) = object {
-            if crate::registry::BuiltinFnRegistry::get_namespace_method(name, method).map_or(false, |m| m.feature_id == "json_builtins") {
+            if crate::registry::BuiltinFnRegistry::get_namespace_method(name, method)
+                .map_or(false, |m| m.feature_id == "json_builtins")
+            {
                 match method {
                     "parse" => {
-                        let target = self.json_parse_hint.take()
-                            .or_else(|| self.current_fn_return_type.as_ref().and_then(|t| match t {
+                        let target = self.json_parse_hint.take().or_else(|| {
+                            self.current_fn_return_type.as_ref().and_then(|t| match t {
                                 Type::Nullable(inner) => Some(inner.as_ref().clone()),
                                 Type::List(inner) => Some(Type::List(inner.clone())),
                                 other => Some(other.clone()),
-                            }));
+                            })
+                        });
                         return self.compile_json_parse_call(args, target.as_ref());
-                    },
+                    }
                     "stringify" => return self.compile_json_stringify_call(args),
                     _ => {}
                 }
@@ -55,13 +58,26 @@ impl<'ctx> Codegen<'ctx> {
 
                                 // Auto-stringify list args to JSON when extern fn expects ptr or string
                                 if let Type::List(_) = &arg_type {
-                                    if let Some((list_ptr, list_len)) = self.extract_list_fields(&val) {
-                                        let json_str = self.call_runtime("forge_list_to_json", &[list_ptr.into(), list_len.into()], "list_json").unwrap();
+                                    if let Some((list_ptr, list_len)) =
+                                        self.extract_list_fields(&val)
+                                    {
+                                        let json_str = self
+                                            .call_runtime(
+                                                "forge_list_to_json",
+                                                &[list_ptr.into(), list_len.into()],
+                                                "list_json",
+                                            )
+                                            .unwrap();
                                         // If param expects ptr, extract the ptr from ForgeString
                                         if param_type.is_pointer_type() {
-                                            let str_ptr = self.builder.build_extract_value(
-                                                json_str.into_struct_value(), 0, "json_ptr"
-                                            ).unwrap();
+                                            let str_ptr = self
+                                                .builder
+                                                .build_extract_value(
+                                                    json_str.into_struct_value(),
+                                                    0,
+                                                    "json_ptr",
+                                                )
+                                                .unwrap();
                                             compiled_args.push(str_ptr.into());
                                         } else {
                                             compiled_args.push(json_str.into());
@@ -95,7 +111,10 @@ impl<'ctx> Codegen<'ctx> {
                     // Pad missing args with default "{}" string (for opts params)
                     while compiled_args.len() < param_count {
                         let default_str = self.build_string_literal("{}");
-                        let param_type = func.get_nth_param(compiled_args.len() as u32).unwrap().get_type();
+                        let param_type = func
+                            .get_nth_param(compiled_args.len() as u32)
+                            .unwrap()
+                            .get_type();
                         let val = self.coerce_value(default_str.into(), param_type);
                         compiled_args.push(val.into());
                     }
@@ -112,7 +131,9 @@ impl<'ctx> Codegen<'ctx> {
                             // If type_args present, parse JSON result into target struct
                             if let Some(type_arg) = type_args.first() {
                                 if let TypeExpr::Named(type_name) = type_arg {
-                                    if let Some(named_type) = self.named_types.get(type_name).cloned() {
+                                    if let Some(named_type) =
+                                        self.named_types.get(type_name).cloned()
+                                    {
                                         return self.parse_json_ptr_to_struct(ptr_val, &named_type);
                                     }
                                 }
@@ -132,28 +153,48 @@ impl<'ctx> Codegen<'ctx> {
 
         // Handle EnumName.variant(args) constructor BEFORE compiling object
         if let Expr::Ident(name, _) = object {
-            if let Some(Type::Enum { variants, .. }) = self.type_checker.env.enum_types.get(name).cloned() {
+            if let Some(Type::Enum { variants, .. }) =
+                self.type_checker.env.enum_types.get(name).cloned()
+            {
                 return self.compile_enum_constructor(name, method, args, &variants);
             }
         }
 
         // Handle req.params.get("key") -> forge_params_get(params_json, "key")
         if method == "get" {
-            if let Expr::MemberAccess { object: inner_obj, field: inner_field, .. } = object {
+            if let Expr::MemberAccess {
+                object: inner_obj,
+                field: inner_field,
+                ..
+            } = object
+            {
                 if inner_field == "params" {
                     if let Expr::Ident(_, _) = inner_obj.as_ref() {
                         // Look up __req_params_json variable
                         if let Some((params_ptr, _)) = self.lookup_var("__req_params_json") {
                             let ptr_type = self.context.ptr_type(AddressSpace::default());
-                            let params_json = self.builder.build_load(ptr_type, params_ptr, "params_json").unwrap().into_pointer_value();
+                            let params_json = self
+                                .builder
+                                .build_load(ptr_type, params_ptr, "params_json")
+                                .unwrap()
+                                .into_pointer_value();
                             if let Some(arg) = args.first() {
                                 if let Expr::StringLit(key, _) = &arg.value {
-                                    let key_str = self.builder.build_global_string_ptr(key, "param_key").unwrap();
-                                    let raw_ptr = self.call_runtime(
-                                        "forge_params_get",
-                                        &[params_json.into(), key_str.as_pointer_value().into()],
-                                        "param_val",
-                                    ).unwrap().into_pointer_value();
+                                    let key_str = self
+                                        .builder
+                                        .build_global_string_ptr(key, "param_key")
+                                        .unwrap();
+                                    let raw_ptr = self
+                                        .call_runtime(
+                                            "forge_params_get",
+                                            &[
+                                                params_json.into(),
+                                                key_str.as_pointer_value().into(),
+                                            ],
+                                            "param_val",
+                                        )
+                                        .unwrap()
+                                        .into_pointer_value();
                                     // Convert raw C string ptr to ForgeString
                                     return self.wrap_ptr_as_string(raw_ptr);
                                 }
@@ -169,12 +210,21 @@ impl<'ctx> Codegen<'ctx> {
 
         match &obj_type {
             Type::String => self.compile_string_method(obj_val, method, args),
-            Type::List(inner) => self.dispatch_list_method(object, &obj_val, &obj_type, inner, method, args),
-            Type::Map(key_type, val_type) => self.dispatch_map_method(&obj_val, key_type, val_type, method, args),
-            Type::DynTrait(trait_name) => self.dispatch_dyn_trait_method(obj_val, trait_name, method, args),
+            Type::List(inner) => {
+                self.dispatch_list_method(object, &obj_val, &obj_type, inner, method, args)
+            }
+            Type::Map(key_type, val_type) => {
+                self.dispatch_map_method(&obj_val, key_type, val_type, method, args)
+            }
+            Type::DynTrait(trait_name) => {
+                self.dispatch_dyn_trait_method(obj_val, trait_name, method, args)
+            }
             _ => {
                 // Handle channel method calls (channel is represented as int)
-                if obj_type == Type::Int || obj_type == Type::Unknown || matches!(obj_type, Type::Channel(_)) {
+                if obj_type == Type::Int
+                    || obj_type == Type::Unknown
+                    || matches!(obj_type, Type::Channel(_))
+                {
                     if let Some(result) = self.dispatch_channel_method(obj_val, method) {
                         return Some(result);
                     }
@@ -189,13 +239,18 @@ impl<'ctx> Codegen<'ctx> {
 
                     // Handle Display trait's display method
                     if method == "display" {
-                        if let Some(result) = self.call_impl_method(&type_name, "display", obj_val, args) {
+                        if let Some(result) =
+                            self.call_impl_method(&type_name, "display", obj_val, args)
+                        {
                             return Some(result);
                         }
                     }
 
                     // Check if type has mut fields — if so, pass pointer instead of value
-                    let has_mut_fields = self.type_checker.mutable_fields.iter()
+                    let has_mut_fields = self
+                        .type_checker
+                        .mutable_fields
+                        .iter()
                         .any(|(tn, _)| tn == &type_name);
                     if has_mut_fields {
                         // Get the alloca pointer for the object variable
@@ -205,21 +260,28 @@ impl<'ctx> Codegen<'ctx> {
                             // For non-Ident objects (e.g. self.env), alloca the value
                             // so we can pass a pointer for mut-self methods
                             let obj_llvm_ty = obj_val.get_type();
-                            let alloca = self.builder.build_alloca(obj_llvm_ty.into_struct_type(), "mut_self_tmp").unwrap();
+                            let alloca = self
+                                .builder
+                                .build_alloca(obj_llvm_ty.into_struct_type(), "mut_self_tmp")
+                                .unwrap();
                             self.builder.build_store(alloca, obj_val).unwrap();
                             Some(alloca)
                         };
                         if let Some(ptr) = self_ptr {
-                            let mut call_args: Vec<BasicMetadataValueEnum> = vec![ptr.into()];
-                            for arg in args {
-                                if let Some(val) = self.compile_expr(&arg.value) {
-                                    call_args.push(val.into());
-                                }
-                            }
                             let mangled = self.find_impl_method(&type_name, method);
                             if let Some(mangled) = mangled {
                                 if let Some(func) = self.functions.get(&mangled).copied() {
-                                    let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
+                                    let mut call_args: Vec<BasicMetadataValueEnum> =
+                                        vec![ptr.into()];
+                                    for arg in args {
+                                        if let Some(val) = self.compile_expr(&arg.value) {
+                                            call_args.push(val.into());
+                                        }
+                                    }
+                                    let result = self
+                                        .builder
+                                        .build_call(func, &call_args, "method_call")
+                                        .unwrap();
                                     return result.try_as_basic_value().basic();
                                 }
                             }
@@ -253,7 +315,10 @@ impl<'ctx> Codegen<'ctx> {
                 call_args.push(val.into());
             }
         }
-        let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
+        let result = self
+            .builder
+            .build_call(func, &call_args, "method_call")
+            .unwrap();
         result.try_as_basic_value().basic()
     }
 
@@ -272,9 +337,15 @@ impl<'ctx> Codegen<'ctx> {
                 let (data_ptr, _) = self.extract_list_fields(&obj_val)?;
                 let idx = idx_val.into_int_value();
                 let elem_ptr = unsafe {
-                    self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "elem_ptr").unwrap()
+                    self.builder
+                        .build_gep(elem_llvm_ty, data_ptr, &[idx], "elem_ptr")
+                        .unwrap()
                 };
-                Some(self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap())
+                Some(
+                    self.builder
+                        .build_load(elem_llvm_ty, elem_ptr, "elem")
+                        .unwrap(),
+                )
             }
             Type::Map(key_type, val_type) => {
                 // Map index access returns nullable — same as map.get(key)

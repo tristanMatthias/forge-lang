@@ -1,0 +1,112 @@
+// Spec coverage for bytes-as-raw-octets: must hold embedded NULs
+// (0x00) without truncating, must round-trip arbitrary binary data,
+// and must support write/build via the new bytes_make + bytes_set
+// primitives. Closes the 73wa gap where bytes was a strlen-truncated
+// alias for string.
+//
+// Tracking ticket: forge-crafting-intepreters-iinq (the metadata.bin
+// format depends on this — every length-prefix in the format will
+// hit zeros embedded inside the buffer).
+
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_make(len: int) -> bytes
+extern fn avra_bytes_set(b: bytes, idx: int, val: int)
+extern fn avra_bytes_to_hex(b: bytes) -> string
+
+spec "bytes: embedded NUL survives" {
+    then "bytes_make(8) reports length 8, not 0 (no strlen truncation)" {
+        let b = avra_bytes_make(8)
+        b.length == 8
+    }
+    then "every byte of a fresh bytes_make is zero" {
+        let b = avra_bytes_make(4)
+        b.byte(0) == 0 && b.byte(1) == 0 && b.byte(2) == 0 && b.byte(3) == 0
+    }
+    then "set + read round-trips arbitrary octets including 0x00" {
+        let b = avra_bytes_make(3)
+        avra_bytes_set(b, 0, 0xFF)
+        avra_bytes_set(b, 1, 0x00)
+        avra_bytes_set(b, 2, 0x42)
+        b.byte(0) == 255 && b.byte(1) == 0 && b.byte(2) == 66
+    }
+}
+
+spec "bytes: hex rendering" {
+    then "to_hex of empty buffer is empty string" {
+        let b = avra_bytes_make(0)
+        avra_bytes_to_hex(b) == ""
+    }
+    then "to_hex of all-zero 4-byte buffer is 00000000" {
+        let b = avra_bytes_make(4)
+        avra_bytes_to_hex(b) == "00000000"
+    }
+    then "to_hex matches a hand-built hex pattern" {
+        let b = avra_bytes_make(3)
+        avra_bytes_set(b, 0, 0xDE)
+        avra_bytes_set(b, 1, 0xAD)
+        avra_bytes_set(b, 2, 0xBE)
+        avra_bytes_to_hex(b) == "deadbe"
+    }
+    then "from_string('abc') hex matches ASCII" {
+        let b = avra_bytes_from_string("abc")
+        avra_bytes_to_hex(b) == "616263"
+    }
+}
+
+spec "bytes: length is exact, not strlen" {
+    then "bytes built around an embedded NUL keeps full length" {
+        let b = avra_bytes_make(5)
+        avra_bytes_set(b, 0, 0x41)  // 'A'
+        avra_bytes_set(b, 1, 0x00)  // NUL — would truncate strlen
+        avra_bytes_set(b, 2, 0x42)  // 'B'
+        avra_bytes_set(b, 3, 0x00)
+        avra_bytes_set(b, 4, 0x43)  // 'C'
+        b.length == 5
+    }
+    then "byte(2) past an embedded NUL is reachable" {
+        let b = avra_bytes_make(5)
+        avra_bytes_set(b, 1, 0x00)
+        avra_bytes_set(b, 2, 0x42)
+        b.byte(2) == 0x42
+    }
+}
+
+spec "bytes: bounds checking" {
+    then "byte(idx) past the end returns 0 (sentinel, not a crash)" {
+        let b = avra_bytes_make(2)
+        avra_bytes_set(b, 0, 0xAA)
+        avra_bytes_set(b, 1, 0xBB)
+        b.byte(99) == 0
+    }
+    then "byte(-1) returns 0 (negative index sentinel)" {
+        let b = avra_bytes_make(2)
+        b.byte(0 - 1) == 0
+    }
+}
+
+spec "bytes: concat preserves embedded NULs" {
+    then "concat of two bytes containing 0x00 keeps the full payload" {
+        let a = avra_bytes_make(2)
+        avra_bytes_set(a, 0, 0x01)
+        avra_bytes_set(a, 1, 0x00)
+        let b = avra_bytes_make(2)
+        avra_bytes_set(b, 0, 0x00)
+        avra_bytes_set(b, 1, 0x02)
+        let c = a.concat(b)
+        c.length == 4 && c.byte(0) == 1 && c.byte(1) == 0 && c.byte(2) == 0 && c.byte(3) == 2
+    }
+}
+
+spec "bytes: slice across an embedded NUL" {
+    then "slice extracts the requested range, NUL and all" {
+        let b = avra_bytes_make(5)
+        avra_bytes_set(b, 0, 0x10)
+        avra_bytes_set(b, 1, 0x20)
+        avra_bytes_set(b, 2, 0x00)
+        avra_bytes_set(b, 3, 0x40)
+        avra_bytes_set(b, 4, 0x50)
+        let s = b.slice(1, 4)
+        s.length == 3 && s.byte(0) == 0x20 && s.byte(1) == 0x00 && s.byte(2) == 0x40
+    }
+}

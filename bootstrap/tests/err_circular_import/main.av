@@ -1,0 +1,3 @@
+mod amod
+mod bmod
+fn main() { println("should not reach here") }

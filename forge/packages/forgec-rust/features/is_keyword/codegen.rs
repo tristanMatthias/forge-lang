@@ -11,11 +11,12 @@ use super::types::IsData;
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile an `is` expression via the Feature dispatch system.
-    pub(crate) fn compile_is_feature(
-        &mut self,
-        fe: &FeatureExpr,
-    ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, IsData, |data| self.compile_is(&data.value, &data.pattern, data.negated))
+    pub(crate) fn compile_is_feature(&mut self, fe: &FeatureExpr) -> Option<BasicValueEnum<'ctx>> {
+        feature_codegen!(self, fe, IsData, |data| self.compile_is(
+            &data.value,
+            &data.pattern,
+            data.negated
+        ))
     }
 
     pub(crate) fn compile_is(
@@ -40,11 +41,19 @@ impl<'ctx> Codegen<'ctx> {
 
                 if subject_val.is_struct_value() {
                     let struct_val = subject_val.into_struct_value();
-                    let tag = self.builder.build_extract_value(struct_val, 0, "tag").ok()?;
+                    let tag = self
+                        .builder
+                        .build_extract_value(struct_val, 0, "tag")
+                        .ok()?;
                     let expected = self.context.i8_type().const_int(tag_val, false);
                     Some(
                         self.builder
-                            .build_int_compare(IntPredicate::EQ, tag.into_int_value(), expected, "is_result")
+                            .build_int_compare(
+                                IntPredicate::EQ,
+                                tag.into_int_value(),
+                                expected,
+                                "is_result",
+                            )
                             .unwrap(),
                     )
                 } else {
@@ -52,15 +61,25 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             // Nullable type: check tag for null (0) or present (1)
-            (Type::Nullable(_), Pattern::Literal(expr)) if matches!(expr.as_ref(), Expr::NullLit(_)) => {
+            (Type::Nullable(_), Pattern::Literal(expr))
+                if matches!(expr.as_ref(), Expr::NullLit(_)) =>
+            {
                 // Check if tag == 0 (null)
                 if subject_val.is_struct_value() {
                     let struct_val = subject_val.into_struct_value();
-                    let tag = self.builder.build_extract_value(struct_val, 0, "tag").ok()?;
+                    let tag = self
+                        .builder
+                        .build_extract_value(struct_val, 0, "tag")
+                        .ok()?;
                     let zero = self.context.i8_type().const_zero();
                     Some(
                         self.builder
-                            .build_int_compare(IntPredicate::EQ, tag.into_int_value(), zero, "is_null")
+                            .build_int_compare(
+                                IntPredicate::EQ,
+                                tag.into_int_value(),
+                                zero,
+                                "is_null",
+                            )
                             .unwrap(),
                     )
                 } else {
@@ -72,11 +91,19 @@ impl<'ctx> Codegen<'ctx> {
                 // Check if tag != 0 (not null = has value)
                 if subject_val.is_struct_value() {
                     let struct_val = subject_val.into_struct_value();
-                    let tag = self.builder.build_extract_value(struct_val, 0, "tag").ok()?;
+                    let tag = self
+                        .builder
+                        .build_extract_value(struct_val, 0, "tag")
+                        .ok()?;
                     let zero = self.context.i8_type().const_zero();
                     Some(
                         self.builder
-                            .build_int_compare(IntPredicate::NE, tag.into_int_value(), zero, "is_type")
+                            .build_int_compare(
+                                IntPredicate::NE,
+                                tag.into_int_value(),
+                                zero,
+                                "is_type",
+                            )
                             .unwrap(),
                     )
                 } else {
@@ -105,7 +132,8 @@ impl<'ctx> Codegen<'ctx> {
 
         let final_val = if negated {
             let zero = self.context.i8_type().const_zero();
-            let is_zero = self.builder
+            let is_zero = self
+                .builder
                 .build_int_compare(IntPredicate::EQ, result_i8, zero, "is_neg")
                 .unwrap();
             self.builder

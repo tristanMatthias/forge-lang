@@ -1,0 +1,59 @@
+// Regression: cross-fn return inference must preserve `List<T>` /
+// `Task<T>` parametrization through the monomorphizer's
+// vtype_render_full → vtype_from_type_string round-trip. Before
+// the fix in mono.av:vtype_from_type_string, "List<int>" was being
+// reconstructed as ValueType.Enum("List", [Int], 0), which made
+// vtype_is_list return false and codegen of `xs.length` crash with
+// `field access on non-struct value (ty=List, ...)`.
+//
+// Tracking ticket: forge-crafting-intepreters-gvq3.
+
+fn xs_one() -> List<int> {
+    mut xs: List<int> = []
+    xs = xs.push(11)
+    xs
+}
+
+fn xs_three() -> List<int> {
+    mut xs: List<int> = []
+    xs = xs.push(1)
+    xs = xs.push(2)
+    xs = xs.push(3)
+    xs
+}
+
+type IntList = List<int>
+
+fn xs_nested() -> List<IntList> {
+    let inner = xs_three()
+    mut outer: List<IntList> = []
+    outer = outer.push(inner)
+    outer
+}
+
+spec "List<T> survives cross-fn return inference (gvq3)" {
+    then ".length on inferred binding from non-generic fn" {
+        let xs = xs_one()
+        xs.length == 1
+    }
+    then ".length on three-element inferred binding" {
+        let xs = xs_three()
+        xs.length == 3
+    }
+    then "iteration over inferred binding works" {
+        mut sum = 0
+        let xs = xs_three()
+        for v in xs {
+            sum = sum + v
+        }
+        sum == 6
+    }
+    then "nested List<List<int>> survives round-trip too" {
+        let outer = xs_nested()
+        outer.length == 1
+    }
+    then "explicit annotation still works (control)" {
+        let xs: List<int> = xs_one()
+        xs.length == 1
+    }
+}

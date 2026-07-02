@@ -1,0 +1,43 @@
+/// Test fixture: apply a function-typed argument. Verifies the
+/// codegen handles a call through a `fn(int) -> int` parameter.
+fn ft_apply(f: fn(int) -> int, x: int) -> int { f(x) }
+
+/// Test fixture: returns a closure that adds `n` — verifies
+/// captures + fn-returning fn signatures.
+fn ft_make_adder(n: int) -> fn(int) -> int { (x) -> x + n }
+
+/// Test fixture: classic compose. Returns a fresh closure that
+/// applies `g` then `f`.
+fn ft_compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
+    (x) -> f(g(x))
+}
+
+/// Test fixture: struct field carrying a function pointer.
+/// Verifies fn types can be stored on struct fields.
+///
+/// @field name   — handler label.
+/// @field action — int→int callback.
+type FtHandler = { name: string, action: fn(int) -> int }
+
+spec "fn types" {
+    then "higher-order fn with inline lambda" {
+        ft_apply((x) -> x * 3, 7) == 21
+    }
+    then "explicit fn-typed binding" {
+        let negate: fn(int) -> int = (x) -> 0 - x
+        negate(42) == 0 - 42
+    }
+    then "make_adder returns capturing closure" {
+        let add10 = ft_make_adder(10)
+        add10(5) == 15 && add10(20) == 30
+    }
+    then "compose pipeline" {
+        let inc = (x) -> x + 1
+        let dbl = (x) -> x * 2
+        ft_compose(dbl, inc)(5) == 12
+    }
+    then "fn-typed struct field invoked through field access" {
+        let h = FtHandler { name: "sq", action: (x) -> x * x }
+        h.action(7) == 49
+    }
+}

@@ -1,0 +1,78 @@
+// yhoe: list comprehension `[body for var in coll if filter]`
+// flows through resolve/typeck/codegen as a first-class feature.
+// Previously AST-desugared into an untyped Block, which collapsed
+// type info for the result list — nested comps and any typed
+// downstream op (`.length` on `nested[0]`, `.map`, …) crashed.
+
+spec "ListComp: simple map" {
+    then "doubles each element" {
+        let xs = [1, 2, 3]
+        let doubled = [x * 2 for x in xs]
+        doubled.length == 3 && doubled[0] == 2 && doubled[1] == 4 && doubled[2] == 6
+    }
+    then "preserves order" {
+        let xs = [10, 20, 30, 40]
+        let same = [x for x in xs]
+        same[0] == 10 && same[3] == 40
+    }
+    then "empty input → empty output" {
+        let xs: List<int> = []
+        let out = [x + 1 for x in xs]
+        out.length == 0
+    }
+}
+
+spec "ListComp: filter" {
+    then "keeps elements satisfying predicate" {
+        let xs = [1, 2, 3, 4, 5]
+        let big = [x for x in xs if x > 2]
+        big.length == 3 && big[0] == 3 && big[1] == 4 && big[2] == 5
+    }
+    then "filter to empty when all rejected" {
+        let xs = [1, 2, 3]
+        let big = [x for x in xs if x > 100]
+        big.length == 0
+    }
+    then "filter combined with body transform" {
+        let xs = [1, 2, 3, 4]
+        let doubled_evens = [x * 2 for x in xs if x > 2]
+        doubled_evens.length == 2 && doubled_evens[0] == 6 && doubled_evens[1] == 8
+    }
+}
+
+spec "ListComp: nested comprehensions" {
+    then "outer body is another comp — types preserved end-to-end" {
+        let outer = [[1, 2], [3, 4]]
+        let nested = [[y * 10 for y in inner] for inner in outer]
+        nested.length == 2 && nested[0][0] == 10 && nested[0][1] == 20 && nested[1][0] == 30 && nested[1][1] == 40
+    }
+    then "indexing the result is typed (no .length crash)" {
+        let outer = [[1, 2], [3, 4]]
+        let nested = [inner for inner in outer]
+        let first = nested[0]
+        first.length == 2 && first[0] == 1
+    }
+}
+
+spec "ListComp: chains with list methods" {
+    then "result list supports .length" {
+        let xs = [1, 2, 3]
+        let doubled = [x * 2 for x in xs]
+        doubled.length == 3
+    }
+    then "result list supports indexing" {
+        let xs = [1, 2, 3]
+        let doubled = [x * 2 for x in xs]
+        let first = doubled[0]
+        first == 2
+    }
+}
+
+spec "ListComp: body references outer binding" {
+    then "captures outer let inside body" {
+        let factor = 7
+        let xs = [1, 2, 3]
+        let scaled = [x * factor for x in xs]
+        scaled[0] == 7 && scaled[1] == 14 && scaled[2] == 21
+    }
+}

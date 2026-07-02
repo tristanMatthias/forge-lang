@@ -1,0 +1,28 @@
+// WHY: a struct literal nested inside another struct literal
+// (`Outer { val: Inner { .. } }`) must allocate the inner on its OWN storage.
+// The Copy-type stack-allocation optimization (spec 9.12) threads a
+// `copy_alloc_target` stack slot through Ctx so a non-escaping struct literal
+// writes directly into the local's alloca instead of heap-allocating. The bug:
+// that target stayed set while FILLING the outer's fields, so the inner literal
+// re-grabbed the SAME slot — the inner wrote field 0, then the outer overwrote
+// field 0 with a self-pointer, corrupting both. The fix clears the target once
+// the outer has claimed it (struct_decl + with_expr codegen), so each nested
+// literal gets fresh storage. These cases all read THROUGH the nesting to prove
+// the inner data survived construction.
+
+type Inner = { val: int }
+type Outer = { val: Inner }
+type Deep = { mid: Outer }
+type Two = { a: Inner, b: int }
+
+fn read_nested() -> int { let o = Outer { val: Inner { val: 9 } }  o.val.val }
+fn read_triple() -> int { let d = Deep { mid: Outer { val: Inner { val: 4 } } }  d.mid.val.val }
+fn read_sibling() -> int { let t = Two { a: Inner { val: 3 }, b: 5 }  t.a.val + t.b }
+fn with_nested() -> int { let o = Outer { val: Inner { val: 1 } }  let p = o with { val: Inner { val: 8 } }  p.val.val }
+
+spec "nested struct literals allocate independent storage" {
+    then "Outer { val: Inner { .. } } reads through both levels" { read_nested() == 9 }
+    then "three levels of nesting survive construction" { read_triple() == 4 }
+    then "a struct-typed field beside a scalar field" { read_sibling() == 8 }
+    then "`with` overriding a struct-typed field with a nested literal" { with_nested() == 8 }
+}

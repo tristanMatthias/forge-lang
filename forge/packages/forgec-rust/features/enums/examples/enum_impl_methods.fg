@@ -1,0 +1,39 @@
+/// # Enum Impl Methods
+///
+/// Enum types can have impl blocks with methods.
+/// Methods are dispatched via mangled names (EnumName_methodName).
+///
+/// expect: red
+/// expect: green
+/// expect: blue
+/// expect: Color is: red
+
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+impl Color {
+    fn name(self) -> string {
+        match self {
+            .Red -> "red"
+            .Green -> "green"
+            .Blue -> "blue"
+        }
+    }
+
+    fn display(self) -> string {
+        "Color is: " + self.name()
+    }
+}
+
+fn main() {
+    let r = Color.Red
+    let g = Color.Green
+    let b = Color.Blue
+    println(r.name())
+    println(g.name())
+    println(b.name())
+    println(r.display())
+}

@@ -13,11 +13,7 @@ impl Parser {
         self.skip_newlines();
         let body = self.parse_spec_body()?;
 
-        Some(Statement::SpecBlock {
-            name,
-            body,
-            span,
-        })
+        Some(Statement::SpecBlock { name, body, span })
     }
 
     /// Parse `given "name" { body }` — test grouping block
@@ -29,11 +25,7 @@ impl Parser {
         self.skip_newlines();
         let body = self.parse_spec_body()?;
 
-        Some(Statement::GivenBlock {
-            name,
-            body,
-            span,
-        })
+        Some(Statement::GivenBlock { name, body, span })
     }
 
     /// Parse `then "name" [modifier] { expr }` — test assertion block
@@ -70,11 +62,7 @@ impl Parser {
                         self.advance(); // consume 'should_fail'
                         self.skip_newlines();
                         let body = self.parse_spec_body()?;
-                        return Some(Statement::ThenShouldFail {
-                            name,
-                            body,
-                            span,
-                        });
+                        return Some(Statement::ThenShouldFail { name, body, span });
                     }
                     "where" => {
                         self.advance(); // consume 'where'
@@ -97,11 +85,7 @@ impl Parser {
         }
 
         let body = self.parse_spec_body()?;
-        Some(Statement::ThenBlock {
-            name,
-            body,
-            span,
-        })
+        Some(Statement::ThenBlock { name, body, span })
     }
 
     /// Parse `skip "name" { ... }` or `skip "name"` — skipped test

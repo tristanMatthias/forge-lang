@@ -1,0 +1,144 @@
+// WHY: directory-as-module primitives (g2eo.1).
+//
+// The Avra module system today requires explicit `mod foo`
+// declarations: a parent file lists every submodule by name, and
+// the resolver walks those declarations to find files on disk. The
+// directory-as-module redesign collapses that two-step into one —
+// the directory IS the module, every `.av` file in it is a sibling
+// in a flat namespace, and the parent never declares anything.
+//
+// This file provides the primitive helpers that future resolver
+// passes will use to load a directory's worth of `.av` files. It
+// deliberately doesn't change any existing semantics yet — the
+// resolver still follows `mod foo` decls. These helpers exist so
+// the next phase can wire them in without re-writing filesystem
+// walks at every call site.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.1.
+
+use core.{avra_readdir, avra_is_dir, avra_str_ends_with}
+
+/// True iff `name` looks like an Avra source file we want to
+/// include in a directory's module body. Excludes:
+///   - hidden files (start with `.`) — readdir already filters
+///     `.` and `..` but third-party tools may drop dotfiles
+///   - test fixtures (`*_test.av`) — those compile separately via
+///     the spec/given/then test harness
+///   - `mod.av` — for now, the legacy `mod foo` system still uses
+///     `<dir>/mod.av` as a parent that may declare children. Once
+///     the migration completes (g2eo.1 Phase D), `mod.av` becomes
+///     just another sibling and this exclusion goes away.
+fn is_avra_module_source(name: string) -> bool {
+    if name == "" { return false }
+    if name.byte(0) == 0x2E { return false }  // dotfile
+    if avra_str_ends_with(name, "_test.av") != 0 { return false }
+    if name == "mod.av" { return false }
+    avra_str_ends_with(name, ".av") != 0
+}
+
+/// List the `.av` files in `dir` that should be loaded as part of
+/// the directory's module body. Returns absolute or trailing-slash
+/// joined paths so callers can pass them straight to the parser.
+///
+/// Returns an empty list when `dir` doesn't exist or isn't a
+/// directory — the caller decides whether that's an error or a
+/// silently-empty module.
+///
+/// Subdirectories are NOT recursed into. Each subdirectory is its
+/// own module with its own files; recursion is the build driver's
+/// job (level above this primitive).
+export fn list_avra_module_files(dir: string) -> List<string> {
+    if avra_is_dir(dir) == 0 { return [] }
+    let entries = avra_readdir(dir)
+    let prefix = if dir.length > 0 && dir.byte(dir.length - 1) == 0x2F {
+        dir
+    } else {
+        dir + "/"
+    }
+    mut out: List<string> = []
+    mut i = 0
+    while i < entries.length {
+        let name = entries[i]
+        if is_avra_module_source(name) {
+            out.push(prefix + name)
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// List the immediate subdirectories of `dir` that look like Avra
+/// modules: each entry must contain at least one `.av` source file
+/// at its top level (per `list_avra_module_files`'s filter — `mod.av`,
+/// `_test.av`, dotfiles excluded). Returns the joined directory
+/// paths. Used by the build driver to enumerate sub-modules of a
+/// parent module's directory.
+///
+/// Skipped:
+///   - dotfiles (`.git`, `.cache`, …) — readdir already filters
+///     `.` and `..`, but third-party dotfiles still appear
+///   - `tests` — fixtures compile through the spec/given/then test
+///     harness, not as part of their parent module
+///   - subdirs containing zero source `.av` files (e.g. a feature
+///     stub whose only contents are `tests/` or `examples/`). Those
+///     directories are not yet — or never — modules in their own
+///     right; auto-loading them as empty `Module`s would wrap
+///     unrelated children (test fixtures, error-message examples)
+///     into the parent's namespace.
+///
+/// We deliberately do NOT filter out `build` even though some
+/// projects use a top-level `build/` dir for artifact output: the
+/// callers of this function only ever walk `<pkg>/src/` (or one
+/// level below), and a `build/` directory at that depth is
+/// legitimate source — `@std/avrac` ships its build system at
+/// `packages/std-avrac/src/build/`. Filtering by name was the
+/// g2eo.1.2.1 bug: dropping `mod build` from avrac.av silently
+/// elided the entire build subsystem.
+export fn list_avra_module_subdirs(dir: string) -> List<string> {
+    if avra_is_dir(dir) == 0 { return [] }
+    let entries = avra_readdir(dir)
+    let prefix = if dir.length > 0 && dir.byte(dir.length - 1) == 0x2F {
+        dir
+    } else {
+        dir + "/"
+    }
+    mut out: List<string> = []
+    mut i = 0
+    while i < entries.length {
+        let name = entries[i]
+        if name == "" || name.byte(0) == 0x2E {
+            i = i + 1
+            continue
+        }
+        if name == "tests" {
+            i = i + 1
+            continue
+        }
+        let path = prefix + name
+        if avra_is_dir(path) != 0 && dir_has_any_av_at_top(path) {
+            out.push(path)
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// True iff `dir` contains any `.av` file at its top level — used by
+/// `list_avra_module_subdirs` to decide whether a child directory is
+/// a module. Includes `mod.av` (legacy single-file modules), excludes
+/// dotfiles. Subdirectories don't count: a child with only nested
+/// `tests/`, `examples/`, or `fixtures/` is not itself a module — its
+/// contents belong to a different pipeline (test runner, doc fixtures).
+fn dir_has_any_av_at_top(dir: string) -> bool {
+    if avra_is_dir(dir) == 0 { return false }
+    let entries = avra_readdir(dir)
+    mut i = 0
+    while i < entries.length {
+        let name = entries[i]
+        if name != "" && name.byte(0) != 0x2E && avra_str_ends_with(name, ".av") != 0 {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}

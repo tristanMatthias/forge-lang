@@ -1,0 +1,49 @@
+// Resolver's metadata fast-path now gates on a fingerprint check:
+// a `<src>.meta.bin` is only consumed when its stored sha256 matches
+// the current source file's sha256. A stale .meta.bin (source edited
+// after metadata emission) is rejected and the resolver falls back
+// to a fresh parse — preventing silent old-API consumption.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn smr_run() -> string {
+    cached_fixture_run("tests/stale_metadata_rejection_fixtures/sample.av")
+}
+
+spec "g2eo stale metadata rejection: matching fingerprint takes the fast-path" {
+    then "initial compile produces meta.bin" {
+        smr_run().contains("PROBE initial_compile_rc_zero: ok")
+    }
+    then "sub-mod foo.av.meta.bin lands" {
+        smr_run().contains("PROBE foo_meta_present: ok")
+    }
+    then "second compile under AVRA_USE_METADATA succeeds" {
+        smr_run().contains("PROBE matching_compile_rc_zero: ok")
+    }
+    then "deps sidecar records foo.av (proves fast-path was taken)" {
+        smr_run().contains("PROBE matching_meta_WAS_taken: ok")
+    }
+}
+
+spec "g2eo stale metadata rejection: post-edit, the cached meta is bypassed" {
+    then "compile after source edit still succeeds (falls back to parse)" {
+        smr_run().contains("PROBE stale_compile_rc_zero: ok")
+    }
+    then "deps sidecar does NOT record foo.av (fast-path was skipped)" {
+        smr_run().contains("PROBE stale_meta_was_NOT_taken: ok")
+    }
+}
+
+spec "g2eo stale metadata rejection: regen restores fast-path eligibility" {
+    then "regen compile produces fresh meta.bin" {
+        smr_run().contains("PROBE regen_compile_rc_zero: ok")
+    }
+    then "compile under AVRA_USE_METADATA succeeds again" {
+        smr_run().contains("PROBE fresh_compile_rc_zero: ok")
+    }
+    then "deps sidecar records foo.av again (fast-path taken)" {
+        smr_run().contains("PROBE fresh_meta_WAS_taken: ok")
+    }
+}

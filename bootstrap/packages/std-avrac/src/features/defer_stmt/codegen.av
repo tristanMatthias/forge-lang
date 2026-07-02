@@ -1,0 +1,50 @@
+// WHY: codegen for `defer`, `errdefer`, and RC release (spec Axis 9.11, 12.7).
+// All three use a single unified stack so they interleave in LIFO declaration
+// order. defer = Frame (always runs), errdefer = ErrFrame (error only),
+// Release = RC cleanup for ptr-typed locals.
+// The stack lives on Ctx.defers — no mutable global needed.
+
+use core.{VarBinding}
+use codegen.{Ctx, DeferEntry}
+use codegen.{emit_rc_release_typed}
+
+/// Emit scope-exit cleanup for a normal return. Walks the defer
+/// list in LIFO order, running every `Frame` (defer body) and
+/// `Release` (RC drop) entry — but skipping `ErrFrame` (errdefer)
+/// entries which only fire on error returns.
+export fn emit_defers(ctx: Ctx, env: List<VarBinding>) {
+    emit_stack_filtered(ctx, env, ctx.defers, false)
+}
+
+/// Emit scope-exit cleanup for an error return. Walks the defer
+/// list in LIFO order running every entry (Frame + ErrFrame +
+/// Release) — `errdefer` is the only kind that this path activates
+/// beyond what `emit_defers` does.
+export fn emit_defers_on_error(ctx: Ctx, env: List<VarBinding>) {
+    emit_stack_filtered(ctx, env, ctx.defers, true)
+}
+
+/// LIFO worker shared by `emit_defers` and `emit_defers_on_error`.
+/// Walks the List<DeferEntry> tail-to-head — push appended so the
+/// most-recently-declared entry sits at the largest index.
+fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>, is_error: int) {
+    mut i = stack.length - 1
+    while i >= 0 {
+        match stack[i] {
+            .Frame(body) -> {
+                // defer always runs
+                ctx.emit(env, body.node)
+            }
+            .ErrFrame(body) -> {
+                // errdefer only runs on error path
+                if is_error { ctx.emit(env, body.node) }
+            }
+            .Release(name, alloca, ty) -> {
+                // RC release — load and release the value
+                let val = ctx.load_typed(ty, alloca, "${name}_cleanup")
+                emit_rc_release_typed(ctx, val, ty)
+            }
+        }
+        i = i - 1
+    }
+}

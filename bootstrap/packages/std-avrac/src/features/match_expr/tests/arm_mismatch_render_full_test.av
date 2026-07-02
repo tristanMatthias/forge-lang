@@ -1,0 +1,27 @@
+// Continuation of the vtype_render_full sweep. The "match expression
+// arms have different types" diagnostic at typeck.av:468 used to
+// render both halves with `vtype_display`, so a tuple-vs-tuple
+// mismatch printed `(tuple)` vs `(tuple)` — same trap that pry2's
+// return-check exposed for explicit returns.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "match-arm type mismatch shows full element types" {
+    then "(int, int) vs (string, string) — not bare `(tuple)`" {
+        let fixture = "/tmp/avra_match_arm_mismatch_test.av"
+        write_fixture(fixture,
+            "fn main() -> int {\n" +
+            "    let pair = match 1 {\n" +
+            "        1 -> (1, 2)\n" +
+            "        _ -> (\"a\", \"b\")\n" +
+            "    }\n" +
+            "    0\n" +
+            "}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        // Pre-fix this read `(tuple)` vs `(tuple)`; post-fix it must
+        // contain the actual element types of both sides.
+        out.contains("(int, int)") && out.contains("(string, string)")
+            && !out.contains("`(tuple)` vs `(tuple)`")
+    }
+}

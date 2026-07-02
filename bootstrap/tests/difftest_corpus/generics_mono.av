@@ -1,0 +1,16 @@
+// WHY: diff-test corpus — exercises generic fn monomorphization across
+// multiple instantiations, with both inferred and explicit (`f<int>(x)`)
+// type arguments. The compiler's own source covers much of this, but the
+// corpus pins it independently of the selfhost pass.
+fn identity<T>(x: T) -> T { x }
+
+fn first<T>(a: T, b: T) -> T { a }
+
+fn main() {
+    let i = identity<int>(7)
+    let s = identity("hi")
+    let b = first(true, false)
+    println(string(i))
+    println(s)
+    println(string(b))
+}

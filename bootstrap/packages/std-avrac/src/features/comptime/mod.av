@@ -1,0 +1,262 @@
+// WHY: Compile-time evaluator (Phase 2 of Components V2 / vez6.2).
+//
+// `@comptime fn foo(...)` marks a function as evaluable at compile
+// time. When such a fn is called with comptime-known arguments
+// (literals or other comptime calls), the rewrite pass evaluates the
+// call and replaces it with the resulting AST node — no runtime
+// fn-call survives.
+//
+// This file is the entry point + registry. Folding lives in eval.av;
+// the program-walker lives in rewrite.av. Pipeline:
+// resolve_names → run_comptime → typecheck_program.
+//
+// Performance shape:
+// - `run_comptime` short-circuits when no @comptime fns exist
+//   (the common case for current programs — saves a full AST walk).
+// - The shared evaluator Runtime is built once per program; folding
+//   reuses it across every call site instead of re-registering fns.
+//
+// Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
+
+use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation}
+use features.eval.{Runtime, runtime_new, execute_stmt}
+use features.comptime.{rewrite_program}
+use parse.{parse_body_source}
+
+// String → int hashmap, same C-runtime primitive resolve/names + module_graph
+// use. Stores name → index-into-`reg.fns` so `comptime_lookup` is O(1) per
+// call site instead of O(N).
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+// ── Top-level entry ──
+
+/// Single-call high-level entry point. Walks `stmts`, collects every
+/// `@comptime` fn declaration, then rewrites every foldable comptime
+/// call site with its evaluated literal. Idempotent.
+///
+/// Inserted into the compile pipeline AFTER `resolve_names` and
+/// BEFORE `typecheck_program` so the typechecker sees the post-fold
+/// AST (calls have collapsed into literals).
+///
+/// Fast path: when the program has no @comptime fns we short-circuit
+/// without walking the AST at all.
+export fn run_comptime(stmts: List<SStmt>) -> List<SStmt> {
+    let reg = collect_comptime_fns(stmts)
+    if reg.fns.length == 0 { return stmts }
+    rewrite_program(stmts, reg)
+}
+
+/// Construct a fresh empty registry — no comptime fns, blank runtime,
+/// empty name index. Tests and external callers that build registries
+/// by hand should use this rather than the raw struct literal so
+/// internal fields can evolve without touching call sites.
+export fn comptime_registry_new() -> CompTimeRegistry {
+    CompTimeRegistry { fns: [], runtime: runtime_new(), name_index: avra_map_new_cstr() }
+}
+
+/// Seed `reg.runtime` with every comptime fn AND build the name → index
+/// hashmap. Returns a new registry — pure with respect to the input.
+/// Idempotent: re-preparing rebuilds from `reg.fns`, fine but wasteful.
+/// Callers usually go through `collect_comptime_fns` which returns a
+/// fully-prepared registry.
+export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
+    mut rt = runtime_new()
+    let idx = avra_map_new_cstr()
+    mut i = 0
+    for f in reg.fns {
+        let empty_tp: List<TypeParamEntry> = []
+        let fn_stmt = Stmt.Function(f.name, empty_tp, f.params, f.ret_ty, f.body)
+        rt = execute_stmt(rt, fn_stmt).runtime
+        avra_map_set_cstr(idx, f.name, i)
+        i = i + 1
+    }
+    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx }
+}
+
+// ── Types ──
+
+/// One `@comptime`-annotated function declaration. Carries enough
+/// AST to invoke the body at compile time: name, params, return
+/// type, body.
+///
+/// @field name    — fn identifier (used for call-site lookup).
+/// @field params  — formal parameter list.
+/// @field ret_ty  — declared return type.
+/// @field body    — fn body statement list.
+export type CompTimeFn = {
+    name: string,
+    params: List<ParamEntry>,
+    ret_ty: ValueType,
+    body: List<SStmt>,
+}
+
+/// Registry of every `@comptime` fn discovered in the program,
+/// plus a pre-built evaluator Runtime AND a name → index hashmap
+/// for O(1) lookup at call sites. Built once per compile by
+/// `collect_comptime_fns`; folding reuses everything across every
+/// call site — no per-call-site setup work.
+///
+/// @field fns        — every @comptime fn, in source order.
+/// @field runtime    — eval Runtime with every fn pre-registered.
+/// @field name_index — name → index-in-`fns` hashmap.
+export type CompTimeRegistry = {
+    fns: List<CompTimeFn>,
+    runtime: Runtime,
+    name_index: ptr,
+}
+
+// ── Discovery ──
+
+/// Walk a program's statement list and collect every fn carrying
+/// the `@comptime` annotation into a fully-prepared `CompTimeRegistry`.
+/// The returned registry's runtime is seeded; callers fold immediately
+/// without a separate `prepare_runtime` step.
+///
+/// Recurses into Module bodies so package-internal comptime fns are
+/// found. Pure: doesn't mutate the AST.
+export fn collect_comptime_fns(stmts: List<SStmt>) -> CompTimeRegistry {
+    let fns = gather_fns(stmts, [])
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(), name_index: avra_map_new_cstr() })
+}
+
+/// Internal: walk `stmts`, append matching @comptime fns to the
+/// running accumulator. Recurses into Module bodies. Threading the
+/// accumulator through the recursion avoids the per-Module list-copy
+/// that an outer-merge approach would do.
+fn gather_fns(stmts: List<SStmt>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
+    mut fns = acc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let entry = comptime_fn_from_stmt(ss.node)
+        if entry != null { fns.push(entry!) }
+        match ss.node {
+            .Module(_, body) -> { fns = gather_fns(body, fns) }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    fns
+}
+
+/// If `stmt` is an `@comptime`-annotated fn, return a CompTimeFn
+/// describing it. Returns null otherwise. Peels through arbitrary
+/// nesting of `Annotated` wrappers (`@doc @export @comptime fn` etc).
+fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
+    match stmt {
+        .Annotated(annots, inner) -> {
+            if annotation_present(annots, "comptime") {
+                fn_payload(inner.node)
+            } else {
+                comptime_fn_from_stmt(inner.node)
+            }
+        }
+        _ -> null
+    }
+}
+
+/// Recursively peel further annotation layers and extract the
+/// Function payload. Returns null if the underlying decl isn't a fn.
+fn fn_payload(stmt: Stmt) -> CompTimeFn? {
+    match stmt {
+        .Annotated(_, inner) -> fn_payload(inner.node)
+        .Function(name, _, params, ret_ty, body) -> CompTimeFn { name, params, ret_ty, body }
+        _ -> null
+    }
+}
+
+/// True when `annots` contains a `@<name>` annotation. Iterative
+/// (consistent with the rest of the file's loop pattern).
+fn annotation_present(annots: List<Annotation>, name: string) -> bool {
+    mut i = 0
+    while i < annots.length {
+        if annots[i].name == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+// ── Lookup ──
+
+/// Find a comptime fn by name. Returns null when not registered —
+/// caller treats that as "not a comptime call, leave it alone."
+/// O(1) hashmap lookup via `reg.name_index`.
+export fn comptime_lookup(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
+    if avra_map_has_cstr(reg.name_index, name) == 0 { return null }
+    reg.fns[avra_map_get_cstr(reg.name_index, name)]
+}
+
+/// True when `name` is registered as a comptime fn. Constant-time —
+/// avoids the full `comptime_lookup` round-trip when callers only
+/// care about presence, not the fn body.
+export fn comptime_has(reg: CompTimeRegistry, name: string) -> bool {
+    avra_map_has_cstr(reg.name_index, name) != 0
+}
+
+// 9p1d: the metadata-side counterpart to `avra_lazy_comptime_set` in
+// metadata_synthesize.av. When a consumer loads std-avrac (or any
+// package shipping @comptime fns) from `.meta.bin`, the synthesizer
+// stashes the body source string here keyed by the fn's qualified
+// name. The consumer's `collect_comptime_fns` finds the empty-body
+// stub (the metadata synthesizes `@comptime fn foo(...) {}`), and
+// the first `comptime_lookup_lazy` call rehydrates it from the
+// stash. Subsequent lookups hit the populated registry.
+//
+// Cost shape: package-level cost (parse + register every lazy
+// @comptime fn from this package) is paid ONCE per consumer that
+// actually invokes any @expand from the package. Consumers that
+// never @expand from this package pay zero parse cost.
+extern fn avra_lazy_comptime_get(qn: string) -> string
+extern fn avra_lazy_comptime_has(qn: string) -> int
+
+/// Rehydrate every empty-body stub in `reg.fns` that has a stash
+/// entry. Called once by `invoke_macro` before evaluating a macro
+/// body — the macro may call helper @comptime fns that the eval
+/// runtime dispatches internally (no lazy hook in eval's Call path),
+/// so they must all be populated before evaluation begins. Idempotent:
+/// already-rehydrated entries short-circuit in `comptime_lookup_lazy`.
+export fn comptime_drain_lazy(reg: CompTimeRegistry) {
+    for f in reg.fns {
+        if f.body.length == 0 && avra_lazy_comptime_has(f.name) != 0 {
+            let _ = comptime_lookup_lazy(reg, f.name)
+        }
+    }
+}
+
+/// Lookup that rehydrates lazy-shipped @comptime fns on demand. When
+/// `comptime_lookup` returns a stub (empty body) AND the lazy registry
+/// has source for the same name, parse the source, replace the stub
+/// in `reg.fns` in-place, register the body with `reg.runtime`, and
+/// return the rehydrated entry. Otherwise behaves like
+/// `comptime_lookup`. Used by `invoke_macro` so the @expand pipeline
+/// pays the parse cost ONLY for macros it actually invokes.
+export fn comptime_lookup_lazy(reg: CompTimeRegistry, name: string) -> CompTimeFn? {
+    let direct = comptime_lookup(reg, name)
+    if direct != null && direct!.body.length > 0 { return direct }
+    if avra_lazy_comptime_has(name) == 0 { return direct }
+    let source = avra_lazy_comptime_get(name)
+    if source == "" { return direct }
+    let body = parse_body_source(source)
+    if body.length == 0 { return direct }
+    if avra_map_has_cstr(reg.name_index, name) == 0 { return direct }
+    let idx = avra_map_get_cstr(reg.name_index, name)
+    let stub = reg.fns[idx]
+    let rehydrated = CompTimeFn {
+        name: stub.name,
+        params: stub.params,
+        ret_ty: stub.ret_ty,
+        body: body,
+    }
+    // List/Runtime are heap-allocated reference shapes — mutating
+    // through a mut-bound alias updates the registry the caller holds.
+    mut fns = reg.fns
+    fns.set(idx, rehydrated)
+    let empty_tp: List<TypeParamEntry> = []
+    let fn_stmt = Stmt.Function(stub.name, empty_tp, stub.params, stub.ret_ty, body)
+    let _ = execute_stmt(reg.runtime, fn_stmt)
+    rehydrated
+}
+

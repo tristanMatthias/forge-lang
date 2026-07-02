@@ -1,0 +1,225 @@
+// WHY: program walker that rewrites every foldable @comptime call
+// in a program AST. Bottom-up traversal: inner expressions fold
+// first, so `add(mul(2, 3), 5)` collapses to `add(6, 5)` then `11`.
+//
+// The structural-walker pattern mirrors desugar/mod.av — same shape,
+// different rewrite hook (`try_fold_call` instead of
+// dispatch-on-callee-name). The duplication is real tech debt; see
+// the bd ticket on a generic AST visitor.
+//
+// Phase 2 of Components V2 (vez6.2). Plumbed into 4 compile-pipeline
+// sites in packages/cli/src/main.av between resolve_names and
+// typecheck_program.
+
+use core.{Stmt, SStmt, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
+use features.comptime.{CompTimeRegistry, try_fold_call}
+
+// ── Public entry ──
+
+/// Walk every statement and expression in `stmts`, replacing each
+/// foldable @comptime call with its evaluated literal. Returns a
+/// new List<SStmt> — the input AST is never mutated.
+export fn rewrite_program(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
+    rewrite_stmt_list(stmts, reg)
+}
+
+// ── Statement walker ──
+
+fn rewrite_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(rewrite_stmt(ss.node, reg), ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
+}
+
+fn rewrite_stmt(stmt: Stmt, reg: CompTimeRegistry) -> Stmt {
+    match stmt {
+        .Let(name, vt, init) -> .Let(name, vt, rewrite_expr(init, reg))
+        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_expr(init, reg))
+        .Const(name, vt, init) -> .Const(name, vt, rewrite_expr(init, reg))
+        .Expr(e) -> .Expr(rewrite_expr(e, reg))
+        .Return(e) -> .Return(rewrite_expr(e, reg))
+        .Block(body) -> .Block(rewrite_stmt_list(body, reg))
+        .If(cond, then_b, else_b) -> {
+            if else_b != null {
+                .If(rewrite_expr(cond, reg), rewrite_stmt(then_b, reg), rewrite_stmt(else_b!, reg))
+            } else {
+                .If(rewrite_expr(cond, reg), rewrite_stmt(then_b, reg), null)
+            }
+        }
+        .While(cond, body) -> .While(rewrite_expr(cond, reg), rewrite_stmt(body, reg))
+        .For(v, start, end, body) -> .For(v, rewrite_expr(start, reg), rewrite_expr(end, reg), rewrite_stmt(body, reg))
+        .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, reg), rewrite_stmt(body, reg))
+        .Match(subj, arms) -> .Match(rewrite_expr(subj, reg), rewrite_match_arms(arms, reg))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, rewrite_stmt_list(body, reg))
+        .Impl(type_name, methods) -> .Impl(type_name, rewrite_stmt_list(methods, reg))
+        .TraitDecl(name, methods) -> .TraitDecl(name, rewrite_stmt_list(methods, reg))
+        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(init, reg))
+        .Defer(body) -> .Defer(rewrite_expr(body, reg))
+        .Errdefer(body) -> .Errdefer(rewrite_expr(body, reg))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_stmt(inner.node, reg) })
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(body, reg))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(body, reg))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(cond, reg))
+        .Select(arms) -> .Select(rewrite_select_arms(arms, reg))
+        .Parallel(body) -> .Parallel(rewrite_stmt_list(body, reg))
+        .Module(name, body) -> .Module(name, rewrite_stmt_list(body, reg))
+        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, rewrite_stmt_list(body, reg))
+        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, rewrite_stmt_list(body, reg))
+        // Leaves and decl-only statements pass through untouched.
+        _ -> stmt
+    }
+}
+
+// ── Expression walker ──
+
+/// Bottom-up rewrite: descend into children first, then attempt to
+/// fold THIS expression. Folding the outer-most after the children
+/// lets nested comptime calls collapse in one pass.
+///
+/// Fast path: only Call expressions can fold. Non-Call shapes skip
+/// the `try_fold_call` round-trip entirely — saves a fn call per
+/// expression in the AST. The walker is the hot loop here.
+fn rewrite_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
+    let with_children = walk_expr(expr, reg)
+    match with_children {
+        .Call(_, _) -> {
+            let folded = try_fold_call(reg, with_children)
+            if folded != null { return folded! }
+            with_children
+        }
+        _ -> with_children
+    }
+}
+
+/// Structural walk: recurse `rewrite_expr` into every sub-expression
+/// of `expr`. Mirror of desugar's `walk_expr` — same shape, different
+/// hook function.
+fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
+    match expr {
+        .Binary(l, op, r) -> .Binary(rewrite_expr(l, reg), op, rewrite_expr(r, reg))
+        .Unary(op, r) -> .Unary(op, rewrite_expr(r, reg))
+        .Logical(l, op, r) -> .Logical(rewrite_expr(l, reg), op, rewrite_expr(r, reg))
+        .Call(callee, args) -> .Call(rewrite_expr(callee, reg), rewrite_expr_list(args, reg))
+        .GenericCall(callee, type_args, args) -> .GenericCall(rewrite_expr(callee, reg), type_args, rewrite_expr_list(args, reg))
+        .StructLit(name, inits) -> .StructLit(name, rewrite_field_inits(inits, reg))
+        .Grouping(inner) -> .Grouping(rewrite_expr(inner, reg))
+        .Assign(name, val) -> .Assign(name, rewrite_expr(val, reg))
+        .Index(obj, idx) -> .Index(rewrite_expr(obj, reg), rewrite_expr(idx, reg))
+        .FieldAccess(obj, field) -> .FieldAccess(rewrite_expr(obj, reg), field)
+        .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr(obj, reg), field, rewrite_expr(val, reg))
+        .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, rewrite_expr_list(args, reg))
+        .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(c, reg), rewrite_expr(t, reg), rewrite_expr(e, reg))
+        .Block(body) -> .Block(rewrite_stmt_list(body, reg))
+        .MatchExpr(subj, arms) -> .MatchExpr(rewrite_expr(subj, reg), rewrite_match_arms(arms, reg))
+        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, reg), rewrite_expr(r, reg))
+        .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr(obj, reg), field)
+        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(rewrite_expr(obj, reg), method, rewrite_expr_list(args, reg))
+        .Try(inner) -> .Try(rewrite_expr(inner, reg))
+        .Tuple(elems) -> .Tuple(rewrite_expr_list(elems, reg))
+        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr(obj, reg), idx)
+        .With(obj, overrides) -> .With(rewrite_expr(obj, reg), rewrite_field_inits(overrides, reg))
+        .ListLit(elems) -> .ListLit(rewrite_expr_list(elems, reg))
+        .Lambda(params, body) -> .Lambda(params, rewrite_expr(body, reg))
+        .MapLit(entries) -> .MapLit(rewrite_expr_list(entries, reg))
+        .Slice(obj, s, e) -> .Slice(rewrite_expr(obj, reg), rewrite_expr(s, reg), rewrite_expr(e, reg))
+        .IsCheck(subj, variant) -> .IsCheck(rewrite_expr(subj, reg), variant)
+        .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, reg), rewrite_expr_list(items, reg))
+        .ListComp(body, variable, collection, filter) -> {
+            .ListComp(rewrite_expr(body, reg), variable, rewrite_expr(collection, reg), rewrite_opt_expr(filter, reg))
+        }
+        .When(arms) -> .When(rewrite_when_arms(arms, reg))
+        .Catch(inner, binding, body, line, col) -> .Catch(rewrite_expr(inner, reg), binding, rewrite_expr(body, reg), line, col)
+        .Spawn(body) -> .Spawn(rewrite_expr(body, reg))
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, reg)) }
+        }
+        .Isolated(body) -> .Isolated(rewrite_expr(body, reg))
+        .Quote(kind, body) -> .Quote(kind, rewrite_expr(body, reg))
+        .Splice(target) -> .Splice(rewrite_expr(target, reg))
+        // Number, String, Bool, Null, Ident, QualifiedIdent, FloatLit
+        // are leaves with no sub-expressions to recurse into.
+        _ -> expr
+    }
+}
+
+// ── List / sub-structure helpers ──
+
+fn rewrite_opt_expr(opt: Expr?, reg: CompTimeRegistry) -> Expr? {
+    if opt == none { return none }
+    rewrite_expr(opt!, reg)
+}
+
+fn rewrite_expr_list(list: List<SExpr>, reg: CompTimeRegistry) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        out.push(sexpr(rewrite_expr(se.node, reg), se.line, se.col))
+        i = i + 1
+    }
+    out
+}
+
+fn rewrite_field_inits(inits: List<FieldInit>, reg: CompTimeRegistry) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let new_val = sexpr(rewrite_expr(init.value.node, reg), init.value.line, init.value.col)
+        out.push(FieldInit { name: init.name, value: new_val })
+        i = i + 1
+    }
+    out
+}
+
+fn rewrite_match_arms(arms: List<MatchArm>, reg: CompTimeRegistry) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_guard = if arm.guard != null {
+            sexpr(rewrite_expr(arm.guard!.node, reg), arm.guard!.line, arm.guard!.col)
+        } else { null }
+        let new_body = sexpr(rewrite_expr(arm.body.node, reg), arm.body.line, arm.body.col)
+        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        i = i + 1
+    }
+    out
+}
+
+fn rewrite_when_arms(arms: List<WhenArm>, reg: CompTimeRegistry) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond != null {
+            sexpr(rewrite_expr(arm.cond!.node, reg), arm.cond!.line, arm.cond!.col)
+        } else { null }
+        out.push(WhenArm {
+            cond: new_cond,
+            body: sexpr(rewrite_expr(arm.body.node, reg), arm.body.line, arm.body.col),
+        })
+        i = i + 1
+    }
+    out
+}
+
+fn rewrite_select_arms(arms: List<SelectArm>, reg: CompTimeRegistry) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        out.push(SelectArm {
+            binding: arm.binding,
+            chan: rewrite_expr(arm.chan, reg),
+            body: rewrite_stmt_list(arm.body, reg),
+        })
+        i = i + 1
+    }
+    out
+}

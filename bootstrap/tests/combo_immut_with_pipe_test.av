@@ -1,0 +1,56 @@
+type CiwpVec = { x: int, y: int }
+
+fn ciwp_classify(n: int) -> string {
+    match n {
+        _ if n > 100 -> "huge"
+        _ if n > 10 -> "big"
+        _ if n > 0 -> "small"
+        _ if n == 0 -> "zero"
+        _ -> "negative"
+    }
+}
+
+fn ciwp_scale(v: CiwpVec, factor: int) -> CiwpVec {
+    v with { x: v.x * factor, y: v.y * factor }
+}
+
+spec "combo immut with pipe" {
+    then "with does not mutate original" {
+        let v = CiwpVec { x: 1, y: 2 }
+        let v2 = v with { x: 10 }
+        v.x == 1
+    }
+    then "with creates updated copy" {
+        let v = CiwpVec { x: 1, y: 2 }
+        let v2 = v with { x: 10 }
+        v2.x == 10
+    }
+    then "classify huge" {
+        ciwp_classify(150) == "huge"
+    }
+    then "classify big" {
+        ciwp_classify(50) == "big"
+    }
+    then "classify small" {
+        ciwp_classify(5) == "small"
+    }
+    then "classify zero" {
+        ciwp_classify(0) == "zero"
+    }
+    then "classify negative" {
+        ciwp_classify(-10) == "negative"
+    }
+    then "with in if-expression" {
+        let base = CiwpVec { x: 0, y: 0 }
+        let moved = if true { base with { x: 100 } } else { base with { y: 100 } }
+        moved.x == 100
+    }
+    then "scale struct" {
+        let v3 = ciwp_scale(CiwpVec { x: 3, y: 4 }, 5)
+        v3.x == 15
+    }
+    then "scale struct y" {
+        let v3 = ciwp_scale(CiwpVec { x: 3, y: 4 }, 5)
+        v3.y == 20
+    }
+}

@@ -1,0 +1,77 @@
+// Stress: many map entries, overwrite, keys
+
+fn stm_build_map_length() -> int {
+    mut m = {}
+    for i in 0..50 {
+        m.set(string(i), string(i * i))
+    }
+    m.length
+}
+
+fn stm_lookup_square() -> string {
+    mut m = {}
+    for i in 0..50 {
+        m.set(string(i), string(i * i))
+    }
+    m.get("7")
+}
+
+fn stm_overwrite_lookup() -> string {
+    mut m = {}
+    for i in 0..50 {
+        m.set(string(i), string(i * i))
+    }
+    for i in 0..50 {
+        m.set(string(i), string(i + 100))
+    }
+    m.get("7")
+}
+
+fn stm_overwrite_length() -> int {
+    mut m = {}
+    for i in 0..50 {
+        m.set(string(i), string(i * i))
+    }
+    for i in 0..50 {
+        m.set(string(i), string(i + 100))
+    }
+    m.length
+}
+
+spec "stress maps" {
+    then "50 entries" {
+        stm_build_map_length() == 50
+    }
+    then "lookup square" {
+        stm_lookup_square() == "49"
+    }
+    then "overwrite length unchanged" {
+        stm_overwrite_length() == 50
+    }
+    then "overwrite value" {
+        stm_overwrite_lookup() == "107"
+    }
+    then "keys list length" {
+        mut m = {}
+        for i in 0..50 {
+            m.set(string(i), string(i))
+        }
+        let k = m.keys()
+        k.length == 50
+    }
+    then "empty string key" {
+        mut weird = {}
+        weird.set("", "empty_key")
+        weird.get("") == "empty_key"
+    }
+    then "empty string key has" {
+        mut weird2 = {}
+        weird2.set("", "empty_key")
+        weird2.has("") == 1
+    }
+    then "non-existent key has" {
+        mut m2 = {}
+        m2.set("a", "b")
+        m2.has("999") == 0
+    }
+}

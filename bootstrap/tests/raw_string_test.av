@@ -1,0 +1,11 @@
+spec "raw string" {
+    then "backslashes preserved" {
+        r"C:\Users\test\file.txt" == "C:\\Users\\test\\file.txt"
+    }
+    then "no newline escape" {
+        r"hello\nworld" == "hello\\nworld"
+    }
+    then "multiple escapes" {
+        r"\t\r\n" == "\\t\\r\\n"
+    }
+}

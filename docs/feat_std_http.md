@@ -1,4 +1,4 @@
-# Forge — @std/http + @std/model Comprehensive TDD Spec
+# Avra — @std/http + @std/model Comprehensive TDD Spec
 
 Everything discussed about HTTP servers, models, auth, middleware, validation, relations, CRUD generation, websockets, SSE, type operators, annotations, and ownership — consolidated into one spec with tests.
 
@@ -10,7 +10,7 @@ New language feature. Type-level operations for deriving types from other types.
 
 ## Test 1.1: without — remove fields
 
-```forge
+```avra
 type User = {
   id: int,
   name: string,
@@ -30,7 +30,7 @@ fn main() {
 
 ## Test 1.2: with — add fields
 
-```forge
+```avra
 type Point = { x: float, y: float }
 type Point3D = Point with { z: float }
 
@@ -42,7 +42,7 @@ fn main() {
 
 ## Test 1.3: only — pick fields
 
-```forge
+```avra
 type User = { id: int, name: string, email: string, password: string }
 type UserPublic = User only {id, name, email}
 
@@ -55,7 +55,7 @@ fn main() {
 
 ## Test 1.4: as partial — all fields optional
 
-```forge
+```avra
 type User = { name: string, email: string, age: int }
 type UserUpdate = User only {name, email, age} as partial
 
@@ -68,7 +68,7 @@ fn main() {
 
 ## Test 1.5: Chaining operators
 
-```forge
+```avra
 type User = { id: int, name: string, email: string, password: string, role: string }
 
 type UpdateUser = User without {id, password} as partial
@@ -94,7 +94,7 @@ fn main() {
 
 ## Test 1.6: Works on model-generated types
 
-```forge
+```avra
 use @std.model
 
 model User {
@@ -116,7 +116,7 @@ fn main() {
 
 ## Test 1.7: Shorthand field syntax
 
-```forge
+```avra
 fn main() {
   let name = "alice"
   let email = "alice@test.com"
@@ -136,7 +136,7 @@ Annotations are metadata on declarations. Declared by components with explicit t
 
 ## Test 2.1: Field annotations on model
 
-```forge
+```avra
 use @std.model
 
 model User {
@@ -153,14 +153,14 @@ fn main() {
 
 ## Test 2.2: Invalid annotation — compile error
 
-```forge
+```avra
 model User {
   name: string @primary_key    // wrong annotation name
 }
 ```
 
 ```bash
-forge build test_bad_annotation.fg 2>&1
+avra build test_bad_annotation.av 2>&1
 ```
 
 ```
@@ -177,7 +177,7 @@ forge build test_bad_annotation.fg 2>&1
 
 ## Test 2.3: Model-level annotations
 
-```forge
+```avra
 model Post {
   @table("blog_posts")
 
@@ -194,7 +194,7 @@ fn main() {
 
 ## Test 2.4: Annotation on wrong target — compile error
 
-```forge
+```avra
 model User {
   name: string @table("custom")   // @table is model-level, not field-level
 }
@@ -216,7 +216,7 @@ model User {
 
 ## Test 2.5: Route annotations
 
-```forge
+```avra
 use @std.http
 use @std.auth
 
@@ -241,7 +241,7 @@ server :8080 {
 
 ## Test 2.6: Custom annotation in a package
 
-```forge
+```avra
 // In a custom component definition
 component api(name: string) {
   annotation route deprecated(reason: string)
@@ -263,7 +263,7 @@ component api(name: string) {
 
 ## Test 3.1: Min/max string length
 
-```forge
+```avra
 model User {
   name: string @min(1) @max(100)
 }
@@ -276,7 +276,7 @@ fn main() {
 
 ## Test 3.2: Validation error has structured fields
 
-```forge
+```avra
 model User {
   name: string @min(1)
   email: string @validate(email)
@@ -303,7 +303,7 @@ fn main() {
 
 ## Test 3.3: Custom validator
 
-```forge
+```avra
 model User {
   email: string @validate((val) -> {
     if val.ends_with("@competitor.com") {
@@ -322,7 +322,7 @@ fn main() {
 
 ## Test 3.4: Skip validation
 
-```forge
+```avra
 model User {
   name: string @min(1)
 }
@@ -336,7 +336,7 @@ fn main() {
 
 ## Test 3.5: Validation runs on update too
 
-```forge
+```avra
 model User {
   name: string @min(1)
 }
@@ -354,7 +354,7 @@ fn main() {
 
 ## Test 4.1: belongs_to
 
-```forge
+```avra
 model Post {
   id: int @primary @auto_increment
   title: string
@@ -379,7 +379,7 @@ fn main() {
 
 ## Test 4.2: has_many
 
-```forge
+```avra
 fn main() {
   let user = User.create({ name: "alice" })?
   Post.create({ title: "Post 1", author_id: user.id })?
@@ -393,7 +393,7 @@ fn main() {
 
 ## Test 4.3: has_many through (many-to-many)
 
-```forge
+```avra
 model Post {
   id: int @primary @auto_increment
   title: string
@@ -413,20 +413,20 @@ model PostTag {
 
 fn main() {
   let post = Post.create({ title: "Hello" })?
-  let tag1 = Tag.create({ name: "forge" })?
+  let tag1 = Tag.create({ name: "avra" })?
   let tag2 = Tag.create({ name: "lang" })?
   PostTag.create({ post_id: post.id, tag_id: tag1.id })?
   PostTag.create({ post_id: post.id, tag_id: tag2.id })?
 
   let loaded = Post.get(post.id)?.include(tags)?
   println(string(loaded.tags.length))    // 2
-  println(loaded.tags.map(it.name).sorted().join(", "))  // forge, lang
+  println(loaded.tags.map(it.name).sorted().join(", "))  // avra, lang
 }
 ```
 
 ## Test 4.4: Nested includes
 
-```forge
+```avra
 fn main() {
   let post = Post.get(1)?.include(
     author,
@@ -443,7 +443,7 @@ fn main() {
 
 ## Test 4.5: N+1 compile warning
 
-```forge
+```avra
 fn main() {
   let posts = Post.where(status: .published)
   posts.each(p -> println(p.author.name))    // WARNING: N+1
@@ -468,7 +468,7 @@ fn main() {
 
 ## Test 5.1: Where with named params
 
-```forge
+```avra
 fn main() {
   let posts = Post.where(status: .published, author_id: 1)
   println(string(posts.length))
@@ -477,7 +477,7 @@ fn main() {
 
 ## Test 5.2: Comparison operators
 
-```forge
+```avra
 fn main() {
   let recent = Post.where(created_at: after(now() - 7d))
   let popular = Post.where(views: gt(100))
@@ -488,7 +488,7 @@ fn main() {
 
 ## Test 5.3: Chained query builder
 
-```forge
+```avra
 fn main() {
   let results = Post
     .where(status: .published)
@@ -503,7 +503,7 @@ fn main() {
 
 ## Test 5.4: Or queries
 
-```forge
+```avra
 fn main() {
   let results = Post
     .where(status: .published)
@@ -516,11 +516,11 @@ fn main() {
 
 ## Test 5.5: Search
 
-```forge
+```avra
 fn main() {
   let results = Post
     .where(status: .published)
-    .search(title: "forge", body: "forge")
+    .search(title: "avra", body: "avra")
     .limit(20)
 
   println(string(results.length))
@@ -529,7 +529,7 @@ fn main() {
 
 ## Test 5.6: Paginate
 
-```forge
+```avra
 fn main() {
   let page = Post
     .where(status: .published)
@@ -546,7 +546,7 @@ fn main() {
 
 ## Test 5.7: Count and aggregate
 
-```forge
+```avra
 fn main() {
   let count = Post.where(status: .published).count()
   println(string(count))
@@ -561,7 +561,7 @@ fn main() {
 
 ## Test 5.8: Compile-time field validation
 
-```forge
+```avra
 fn main() {
   Post.where(titel: "hello")    // COMPILE ERROR: typo
 }
@@ -580,13 +580,13 @@ fn main() {
 
 ## Test 5.9: Raw SQL escape hatch
 
-```forge
+```avra
 fn main() {
   let results = sql<List<Post>> `
     SELECT p.* FROM posts p
     JOIN post_tags pt ON pt.post_id = p.id
     JOIN tags t ON t.id = pt.tag_id
-    WHERE t.name = ${"forge"}
+    WHERE t.name = ${"avra"}
     ORDER BY p.created_at DESC
   `
 
@@ -596,7 +596,7 @@ fn main() {
 
 ## Test 5.10: find_by
 
-```forge
+```avra
 fn main() {
   let user = User.find_by(email: "alice@test.com")
   println(string(user is Some))     // true
@@ -612,7 +612,7 @@ fn main() {
 
 ## Test 6.1: before_create modifies data
 
-```forge
+```avra
 model Post {
   id: int @primary @auto_increment
   title: string
@@ -631,7 +631,7 @@ fn main() {
 
 ## Test 6.2: after_create side effect
 
-```forge
+```avra
 let events = channel<string>(100)
 
 model User {
@@ -653,7 +653,7 @@ fn main() {
 
 ## Test 6.3: before_update modifies changes
 
-```forge
+```avra
 model Post {
   id: int @primary @auto_increment
   title: string
@@ -680,7 +680,7 @@ fn main() {
 
 ## Test 6.4: before_delete can prevent deletion
 
-```forge
+```avra
 model User {
   id: int @primary @auto_increment
   name: string
@@ -708,7 +708,7 @@ fn main() {
 
 ## Test 7.1: Simple @owner
 
-```forge
+```avra
 model Post {
   id: int @primary @auto_increment
   title: string
@@ -722,7 +722,7 @@ model Post {
 
 ## Test 7.2: Owner through relation
 
-```forge
+```avra
 model Document {
   id: int @primary @auto_increment
   title: string
@@ -740,7 +740,7 @@ model Team {
 
 ## Test 7.3: Custom authorize event
 
-```forge
+```avra
 model AuditLog {
   id: int @primary @auto_increment
   action: string
@@ -758,7 +758,7 @@ model AuditLog {
 
 ## Test 8.1: JWT auth setup
 
-```forge
+```avra
 use @std.auth
 
 auth {
@@ -787,7 +787,7 @@ auth {
 
 ## Test 8.2: Login endpoint
 
-```forge
+```avra
 server :8080 {
   @public
   POST /login -> (req) {
@@ -808,7 +808,7 @@ curl -X POST localhost:8080/login -d '{"email":"alice@test.com","password":"secr
 
 ## Test 8.3: Protected route
 
-```forge
+```avra
 server :8080 {
   @auth(member, editor, admin)
   GET /me -> (req) {
@@ -830,7 +830,7 @@ curl localhost:8080/me -H "Authorization: Bearer eyJ..."
 
 ## Test 8.4: Role-based access
 
-```forge
+```avra
 server :8080 {
   @auth(admin)
   DELETE /users/:id -> (req) {
@@ -851,7 +851,7 @@ curl -X DELETE localhost:8080/users/1 -H "Authorization: Bearer admin-token"
 
 ## Test 8.5: Ownership enforcement
 
-```forge
+```avra
 server :8080 {
   @auth(member)
   PUT /posts/:id -> (req) {
@@ -877,7 +877,7 @@ curl -X PUT localhost:8080/posts/1 -H "Authorization: Bearer user2-token" -d '{"
 
 ## Test 9.1: Basic crud
 
-```forge
+```avra
 server :8080 {
   crud User, Post
 }
@@ -907,7 +907,7 @@ curl -X POST localhost:8080/users -d '{"name":"bob","email":"bob@test.com"}'
 
 ## Test 9.2: CRUD with auth
 
-```forge
+```avra
 server :8080 {
   crud User, Post {
     auth required
@@ -923,7 +923,7 @@ server :8080 {
 
 ## Test 9.3: CRUD with expose
 
-```forge
+```avra
 server :8080 {
   crud User {
     expose { id, name, email, role, created_at }   // hide password
@@ -939,7 +939,7 @@ curl localhost:8080/users/1
 
 ## Test 9.4: CRUD with custom handler override
 
-```forge
+```avra
 server :8080 {
   crud User {
     GET /users/:id -> (req) {
@@ -952,7 +952,7 @@ server :8080 {
 
 ## Test 9.5: CRUD with nested routes
 
-```forge
+```avra
 server :8080 {
   crud Post, Comment {
     nest Comment under Post at /posts/:post_id/comments
@@ -970,7 +970,7 @@ curl -X POST localhost:8080/posts/1/comments -d '{"body":"Nice!"}'
 
 ## Test 9.6: CRUD with hooks
 
-```forge
+```avra
 server :8080 {
   crud Post {
     on before_create(data, req) {
@@ -986,7 +986,7 @@ server :8080 {
 
 ## Test 9.7: CRUD pagination
 
-```forge
+```avra
 server :8080 {
   crud Post {
     paginate 20
@@ -1012,7 +1012,7 @@ curl "localhost:8080/posts?page=2&per=10"
 
 ## Test 10.1: Logger middleware
 
-```forge
+```avra
 server :8080 {
   middleware logger {
     on request(req) {
@@ -1038,7 +1038,7 @@ curl localhost:8080/health
 
 ## Test 10.2: Rate limiter
 
-```forge
+```avra
 server :8080 {
   middleware rate_limit {
     window 1m
@@ -1063,7 +1063,7 @@ curl localhost:8080/api   # 429 {"error":"too many requests"}
 
 ## Test 10.3: Middleware execution order
 
-```forge
+```avra
 let order = channel<string>(10)
 
 server :8080 {
@@ -1090,7 +1090,7 @@ Onion model: first middleware wraps second.
 
 ## Test 10.4: Scoped middleware with under
 
-```forge
+```avra
 server :8080 {
   middleware logger { ... }    // global
 
@@ -1118,7 +1118,7 @@ curl localhost:8080/api/users    # 401 (auth required)
 
 ## Test 10.5: Nested under blocks
 
-```forge
+```avra
 server :8080 {
   under /api {
     under /v1 {
@@ -1142,7 +1142,7 @@ curl localhost:8080/api/v2/users   # v2 response
 
 ## Test 11.1: Model validation errors auto-format
 
-```forge
+```avra
 model User {
   name: string @min(1)
   email: string @validate(email)
@@ -1167,7 +1167,7 @@ curl -X POST localhost:8080/users -d '{"name":"","email":"bad"}'
 
 ## Test 11.2: Custom error handler
 
-```forge
+```avra
 server :8080 {
   on error(err, req) {
     match err {
@@ -1194,7 +1194,7 @@ curl localhost:8080/users/999
 
 ## Test 11.3: Request body type checking
 
-```forge
+```avra
 type CreatePostInput = {
   title: string,
   body: string,
@@ -1225,7 +1225,7 @@ curl -X POST localhost:8080/posts -d '{"title":42,"body":"text"}'
 
 ## Test 12.1: Basic websocket
 
-```forge
+```avra
 server :8080 {
   ws /echo -> (client) {
     on message(msg) {
@@ -1237,7 +1237,7 @@ server :8080 {
 
 ## Test 12.2: Chat room with channels
 
-```forge
+```avra
 let room = channel<{from: string, text: string}>(1000)
 
 server :8080 {
@@ -1263,7 +1263,7 @@ server :8080 {
 
 ## Test 12.3: Authenticated websocket
 
-```forge
+```avra
 server :8080 {
   @auth(member)
   ws /private -> (client) {
@@ -1277,7 +1277,7 @@ server :8080 {
 
 ## Test 12.4: Raw binary websocket
 
-```forge
+```avra
 server :8080 {
   ws /binary -> (client) {
     on message(raw: bytes) {
@@ -1298,7 +1298,7 @@ server :8080 {
 
 ## Test 13.1: Basic SSE
 
-```forge
+```avra
 let events = channel<{type: string, data: string}>(1000)
 
 server :8080 {
@@ -1317,7 +1317,7 @@ server :8080 {
 
 ## Test 13.2: Filtered SSE per user
 
-```forge
+```avra
 server :8080 {
   @auth(member)
   sse /my-events -> (stream, req) {
@@ -1334,7 +1334,7 @@ server :8080 {
 
 ## Test 14.1: File upload
 
-```forge
+```avra
 server :8080 {
   POST /upload -> (req) {
     let file = req.file("document")?
@@ -1351,7 +1351,7 @@ server :8080 {
 
 ## Test 14.2: File download / static files
 
-```forge
+```avra
 server :8080 {
   // Serve static directory
   static "/assets" from "./public/assets"
@@ -1367,7 +1367,7 @@ server :8080 {
 
 ## Test 14.3: Streaming upload
 
-```forge
+```avra
 server :8080 {
   POST /upload/large -> (req, stream) {
     let output = path("uploads") / req.header("X-Filename")
@@ -1387,7 +1387,7 @@ server :8080 {
 
 ## Test 15.1: SSE with AI streaming
 
-```forge
+```avra
 server :8080 {
   GET /ai/summarize/:id -> (req) {
     let post = Post.get(req.params.id)?
@@ -1406,7 +1406,7 @@ server :8080 {
 
 ## Test 16.1: Health endpoint with dependencies
 
-```forge
+```avra
 server :8080 {
   GET /health -> {
     {
@@ -1421,7 +1421,7 @@ server :8080 {
 
 ## Test 16.2: Request timing headers
 
-```forge
+```avra
 server :8080 {
   middleware timing {
     on response(req, res, elapsed) {
@@ -1437,7 +1437,7 @@ server :8080 {
 
 Everything together. This is the target — all features composed.
 
-```forge
+```avra
 use @std.http
 use @std.model
 use @std.auth

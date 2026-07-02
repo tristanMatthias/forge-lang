@@ -1,0 +1,18 @@
+trait OiGreetable {
+    fn greet(self) -> string
+}
+
+type OiDog = { name: string }
+
+impl OiGreetable for OiDog {
+    fn greet(self) -> string {
+        "woof from " + self.name
+    }
+}
+
+spec "orphan impl" {
+    then "trait method works" {
+        let d = OiDog { name: "Rex" }
+        d.greet() == "woof from Rex"
+    }
+}

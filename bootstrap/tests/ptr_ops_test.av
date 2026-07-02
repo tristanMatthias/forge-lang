@@ -1,0 +1,43 @@
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+extern fn avra_ptr_store_byte(p: ptr, offset: int, val: int)
+
+fn po_setup_hello() -> ptr {
+    let buf: ptr = malloc(32)
+    avra_ptr_store_byte(buf, 0, 72)
+    avra_ptr_store_byte(buf, 1, 101)
+    avra_ptr_store_byte(buf, 2, 108)
+    avra_ptr_store_byte(buf, 3, 108)
+    avra_ptr_store_byte(buf, 4, 111)
+    avra_ptr_store_byte(buf, 5, 0)
+    buf
+}
+
+spec "ptr ops" {
+    then "read first byte after store" {
+        let buf = po_setup_hello()
+        let v = buf[0]
+        free(buf)
+        v == 72
+    }
+    then "read fifth byte" {
+        let buf = po_setup_hello()
+        let v = buf[4]
+        free(buf)
+        v == 111
+    }
+    then "ptr arithmetic: offset + index" {
+        let buf = po_setup_hello()
+        let third: ptr = buf + 2
+        let v = third[0]
+        free(buf)
+        v == 108
+    }
+    then "ptr subtraction yields byte distance" {
+        let buf = po_setup_hello()
+        let endp: ptr = buf + 5
+        let diff = endp - buf
+        free(buf)
+        diff == 5
+    }
+}

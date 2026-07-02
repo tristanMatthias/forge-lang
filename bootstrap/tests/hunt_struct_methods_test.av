@@ -1,0 +1,33 @@
+type HsmVec2 = { x: int, y: int }
+
+impl HsmVec2 {
+    fn add(self, other: HsmVec2) -> HsmVec2 {
+        HsmVec2 { x: self.x + other.x, y: self.y + other.y }
+    }
+    fn scale(self, factor: int) -> HsmVec2 {
+        HsmVec2 { x: self.x * factor, y: self.y * factor }
+    }
+    fn to_str(self) -> string {
+        `(${string(self.x)}, ${string(self.y)})`
+    }
+}
+
+spec "hunt struct methods" {
+    then "add vectors" {
+        let a = HsmVec2 { x: 1, y: 2 }
+        let b = HsmVec2 { x: 3, y: 4 }
+        let c = a.add(b)
+        c.to_str() == "(4, 6)"
+    }
+    then "scale vector" {
+        let a = HsmVec2 { x: 1, y: 2 }
+        let b = HsmVec2 { x: 3, y: 4 }
+        let c = a.add(b)
+        let d = c.scale(2)
+        d.to_str() == "(8, 12)"
+    }
+    then "method chaining" {
+        let e = HsmVec2 { x: 1, y: 1 }.scale(5).add(HsmVec2 { x: 10, y: 10 })
+        e.to_str() == "(15, 15)"
+    }
+}

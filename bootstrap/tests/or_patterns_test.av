@@ -1,0 +1,39 @@
+enum OpSize { Small, Medium, Large, XLarge }
+
+fn op_classify(s: OpSize) -> string {
+    match s {
+        .Small or .Medium -> {
+            match s { .Small -> "small", _ -> "medium" }
+        }
+        .Large or .XLarge -> "big"
+    }
+}
+
+fn op_check_guard(x: int) -> string {
+    match x {
+        _ if x > 0 -> "positive " + string(x)
+        _ if x < 0 -> "negative " + string(x)
+        _ -> "zero"
+    }
+}
+
+spec "or patterns" {
+    then "small" {
+        op_classify(OpSize.Small) == "small"
+    }
+    then "medium" {
+        op_classify(OpSize.Medium) == "medium"
+    }
+    then "large is big" {
+        op_classify(OpSize.Large) == "big"
+    }
+    then "guarded positive" {
+        op_check_guard(5) == "positive 5"
+    }
+    then "guarded zero" {
+        op_check_guard(0) == "zero"
+    }
+    then "guarded negative" {
+        op_check_guard(-3) == "negative -3"
+    }
+}

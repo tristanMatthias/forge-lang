@@ -1,0 +1,34 @@
+// swgx: identifier-position splice. `quote stmt { type ~name = {...} }`
+// — the leading `~` is parser-recognised inside quote bodies, encoded
+// as a "~" prefix on the TypeDecl.name field, and decoded by lower
+// to emit Expr.Ident(rest) instead of a string literal. Result: at
+// expansion time, the runtime variable `name` provides the type name.
+
+use @std.avrac.core.{Stmt, Expr, render_stmt}
+use @std.avrac.parse.{parse_program_source}
+
+// Helper: extract the first stmt out of a parsed program for shape checks.
+fn first_stmt(src: string) -> Stmt? {
+    let parsed = parse_program_source(src)
+    if parsed.had_error || parsed.stmts == null { return null }
+    let ss = parsed.stmts!
+    if ss.length == 0 { null } else { ss[0].node }
+}
+
+spec "swgx: parser accepts ~ident in type-decl name slot inside quote" {
+    then "quote stmt { type ~name = { x: int } } parses without error" {
+        let src = "fn make() -> Stmt { quote stmt { type ~name = { x: int } } }"
+        let parsed = parse_program_source(src)
+        !parsed.had_error
+    }
+    then "outside a quote, type ~name is still a parse error" {
+        let src = "type ~name = { x: int }"
+        let parsed = parse_program_source(src)
+        parsed.had_error
+    }
+}
+
+// The deeper end-to-end check (compile + run the splice macro and
+// observe the synthesized type name) is exercised by the full
+// expand pipeline; the parser-level shape covered here is the
+// primary contract change.

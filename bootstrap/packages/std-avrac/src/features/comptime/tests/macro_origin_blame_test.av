@@ -1,0 +1,65 @@
+// so07.3 / T3 Phase 1: when a @comptime fn produces a synthetic
+// declaration whose body fails typeck, the diagnostic should
+// surface the macro's name (and point its span at the @expand
+// annotation), not silently blame the synthesised fn in
+// isolation.
+//
+// Why this observes the fix: the test fixture defines a @comptime
+// fn `bad_macro` that emits a fn returning `string` from a body
+// producing `int` — a deliberate F1000. Pre-T3 the diagnostic
+// only said something like "function `introduced_bad` returns
+// `string`, but body produces `int` (in function `introduced_bad`)"
+// and the user had no signal that a macro had produced it. Post-T3
+// the same compilation surfaces "[from @expand(bad_macro)] …" so
+// the macro's identity is in the user-facing error.
+//
+// Reverting `tc_report_at`'s macro_origin_lookup branch (or the
+// build_origins call in expand_macro) flips the assertion: the
+// "[from @expand(bad_macro)]" prefix disappears.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn run_capture(source: string) -> string {
+    // The fixture defines a @comptime fn inline; metadata mode strips
+    // @comptime bodies (per walker_basic_test.av's docs), so the
+    // macro evaluator never sees `bad_macro`. Force the source-driven
+    // path so the @expand site dispatches via the live interpreter.
+    write_fixture_and_run_no_metadata("/tmp/avra_t3_macro_blame.av", source)
+}
+
+spec "so07.3 / T3: typeck blames the macro on synthetic-fn errors" {
+    then "diagnostic surfaces `@expand(bad_macro)` when the macro emits a bad fn" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, ValueType, ParamEntry, TypeParamEntry, SStmt, sstmt_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
+            "use @std.avrac.diagnostics.{Span}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn bad_macro(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
+            "    let empty_tp: List<TypeParamEntry> = []\n" +
+            "    let empty_params: List<ParamEntry> = []\n" +
+            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Number(\"42\")))]\n" +
+            "    let bad_fn = Stmt.Function(\"introduced_bad\", empty_tp, empty_params, ValueType.Str, body)\n" +
+            "    let decls: List<SStmt> = [sstmt_dummy(target.stmt), sstmt_dummy(bad_fn)]\n" +
+            "    let no_introduces: List<DeclSymbol> = []\n" +
+            "    ResolvedDecls {\n" +
+            "        decls,\n" +
+            "        introduces: no_introduces,\n" +
+            "        provenance: MacroProvenance {\n" +
+            "            macro_name: \"bad_macro\",\n" +
+            "            target_canonical: \"\",\n" +
+            "            target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: \"\" },\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(bad_macro)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // F1000 (return-type vs body mismatch) MUST still fire, and
+        // the rewritten message MUST include the macro name.
+        out.contains("from @expand(bad_macro)")
+            && out.contains("introduced_bad")
+    }
+}

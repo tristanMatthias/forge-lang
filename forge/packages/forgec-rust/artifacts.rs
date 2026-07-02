@@ -12,20 +12,30 @@ pub const TARGETS: &[&str] = &[
 /// Detect the current platform's target triple
 pub fn current_target() -> &'static str {
     #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-    { "x86_64-unknown-linux-gnu" }
+    {
+        "x86_64-unknown-linux-gnu"
+    }
     #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
-    { "aarch64-unknown-linux-gnu" }
+    {
+        "aarch64-unknown-linux-gnu"
+    }
     #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
-    { "x86_64-apple-darwin" }
+    {
+        "x86_64-apple-darwin"
+    }
     #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-    { "aarch64-apple-darwin" }
+    {
+        "aarch64-apple-darwin"
+    }
     #[cfg(not(any(
         all(target_arch = "x86_64", target_os = "linux"),
         all(target_arch = "aarch64", target_os = "linux"),
         all(target_arch = "x86_64", target_os = "macos"),
         all(target_arch = "aarch64", target_os = "macos"),
     )))]
-    { "unknown" }
+    {
+        "unknown"
+    }
 }
 
 /// Type of pre-compiled artifact
@@ -44,7 +54,7 @@ pub struct ArtifactInfo {
     pub version: String,
     pub target: String,
     pub kind: ArtifactKind,
-    pub hash: String,       // SHA-256
+    pub hash: String, // SHA-256
     pub size_bytes: u64,
     pub path: PathBuf,
 }
@@ -59,7 +69,11 @@ pub fn find_cached_artifact(
     let artifacts_dir = cache_dir.join("artifacts");
 
     // Check for static lib (.a)
-    let lib_name = format!("lib{}_{}.a", package.replace('-', "_"), target.replace('-', "_"));
+    let lib_name = format!(
+        "lib{}_{}.a",
+        package.replace('-', "_"),
+        target.replace('-', "_")
+    );
     let lib_path = artifacts_dir.join(&lib_name);
     if lib_path.exists() {
         let size = std::fs::metadata(&lib_path).ok()?.len();
@@ -75,7 +89,11 @@ pub fn find_cached_artifact(
     }
 
     // Check for bitcode (.bc)
-    let bc_name = format!("{}_{}.bc", package.replace('-', "_"), target.replace('-', "_"));
+    let bc_name = format!(
+        "{}_{}.bc",
+        package.replace('-', "_"),
+        target.replace('-', "_")
+    );
     let bc_path = artifacts_dir.join(&bc_name);
     if bc_path.exists() {
         let size = std::fs::metadata(&bc_path).ok()?.len();
@@ -120,10 +138,7 @@ pub fn download_artifact(
 }
 
 /// Verify an artifact's hash matches expected
-pub fn verify_artifact(
-    artifact: &ArtifactInfo,
-    expected_hash: &str,
-) -> Result<(), String> {
+pub fn verify_artifact(artifact: &ArtifactInfo, expected_hash: &str) -> Result<(), String> {
     if expected_hash.is_empty() || artifact.hash.is_empty() {
         return Ok(()); // Skip verification if no hash available
     }
@@ -131,8 +146,7 @@ pub fn verify_artifact(
     if artifact.hash != expected_hash {
         return Err(format!(
             "artifact hash mismatch for {} v{} (target: {})\n  expected: {}\n  got: {}",
-            artifact.package, artifact.version, artifact.target,
-            expected_hash, artifact.hash
+            artifact.package, artifact.version, artifact.target, expected_hash, artifact.hash
         ));
     }
 
@@ -199,7 +213,11 @@ mod tests {
     fn test_current_target_is_known() {
         let target = current_target();
         assert_ne!(target, "unknown", "target should be detected");
-        assert!(TARGETS.contains(&target), "target {} should be in TARGETS list", target);
+        assert!(
+            TARGETS.contains(&target),
+            "target {} should be in TARGETS list",
+            target
+        );
     }
 
     #[test]

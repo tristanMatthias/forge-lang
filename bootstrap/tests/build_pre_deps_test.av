@@ -1,0 +1,32 @@
+// `bs2 build --emit_metadata` pre-builds each path-dep as a lib
+// before the root build. Validates multi-unit orchestration in
+// run_build_command's pre_build_path_deps loop.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn pd_run() -> string {
+    cached_fixture_run("tests/build_pre_deps_fixtures/sample.av")
+}
+
+spec "build pre-deps: orchestrates multi-unit build" {
+    then "bs2 build --emit_metadata from app/ succeeds (dep pre-built)" {
+        pd_run().contains("PROBE orchestrated_build_rc_zero: ok")
+    }
+    then "dep's .meta.bin lands during pre-build" {
+        pd_run().contains("PROBE dep_meta_bin_present: ok")
+    }
+    then "dep's .ll cache entry lands during pre-build" {
+        pd_run().contains("PROBE dep_ll_present: ok")
+    }
+    then "app's .ll lands after dep pre-build completes" {
+        pd_run().contains("PROBE app_ll_present: ok")
+    }
+    then "default build (no --emit_metadata) preserves single-unit cycle" {
+        pd_run().contains("PROBE default_build_rc_zero: ok")
+    }
+    then "without --emit_metadata, dep's .meta.bin is NOT produced" {
+        pd_run().contains("PROBE dep_meta_NOT_present_without_flag: ok")
+    }
+}

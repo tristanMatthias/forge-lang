@@ -1,0 +1,33 @@
+enum GcResult<T, E> { Ok(value: T), Err(error: E) }
+
+fn gc_safe_div(a: int, b: int) -> GcResult<int, string> {
+    if b == 0 { return GcResult.Err("bad") }
+    GcResult.Ok(a / b)
+}
+
+fn gc_wrap<T>(x: T) -> T { x }
+fn gc_double_wrap<T>(x: T) -> T { gc_wrap(x) }
+
+fn gc_transform<T>(x: T, f: fn(T) -> T) -> T { f(x) }
+
+fn gc_describe(r: GcResult<int, string>) -> string {
+    match r {
+        .Ok(v) -> "ok: " + string(v)
+        .Err(e) -> "err: " + e
+    }
+}
+
+spec "generic combo" {
+    then "generic fn returning generic enum (Ok)" {
+        gc_describe(gc_safe_div(84, 2)) == "ok: 42"
+    }
+    then "generic fn returning generic enum (Err)" {
+        gc_describe(gc_safe_div(1, 0)) == "err: bad"
+    }
+    then "chained generic fn calls" {
+        gc_double_wrap(3) == 3
+    }
+    then "generic with closure transform" {
+        gc_transform(21, (y) -> y * 2) == 42
+    }
+}

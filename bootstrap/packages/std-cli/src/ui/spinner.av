@@ -1,0 +1,365 @@
+// WHY: terminal progress UI for long-running shell commands.
+//
+// Two flavours:
+//   * `run_with_spinner(cmd, label)` — single-line braille spinner
+//     that updates in place. For commands with no per-step
+//     visibility (linker, llc, etc.).
+//   * `run_with_progress(cmd, label, total)` — multi-line sticky
+//     UI driven by per-module timing events the child appends to
+//     a /tmp file. The parent polls the file every 100 ms (no
+//     blocking on pipe buffers) and renders:
+//       <package-header>                        ← scrollback
+//         ✓ <module>          0.4s              ← scrollback
+//         ✓ <module>          0.2s              ← scrollback
+//         ⠋ <current>         1.6s              ← sticky line 1
+//       [============------]  47/235            ← sticky line 2
+//     The sticky zone is 2 lines; scrollback grows above it as
+//     each `done` event arrives.
+//
+// File polling instead of stdout reading because bs2's stdout is
+// fully buffered when piped (4 KB chunks) — events would freeze
+// the UI between buffer flushes. Appending to a regular file is
+// per-call flushed and the parent can tick at any cadence
+// regardless of compile speed.
+//
+// Both fall through to a silent `avra_shell_exec` on a non-TTY so
+// CI logs stay byte-clean.
+
+extern fn avra_isatty_stdout() -> int
+extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_is_alive(handle: int) -> int
+extern fn avra_process_wait(handle: int) -> string
+extern fn avra_sleep_ms(ms: int)
+extern fn avra_uptime_ms() -> int
+extern fn avra_stdout_write(s: string)
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_parse_int(s: string) -> int
+
+use @std.json.{json_str}
+use @std.avrac.build.{pool_extract_rc}
+
+/// True when stdout is an interactive terminal — gates spinner /
+/// progress rendering so CI logs (which pipe stdout) stay byte-clean.
+export fn is_tty() -> bool {
+    avra_isatty_stdout() != 0
+}
+
+/// Emit `\x1b[<n>A` to move cursor up + `\x1b[J` to clear from
+/// cursor to end of screen. Skipped when n == 0 — first-render
+/// avoids a stray upward jump.
+export fn clear_lines(prev_lines: int) {
+    if prev_lines <= 0 { return }
+    avra_stdout_write("\x1b[${string(prev_lines)}A\r\x1b[J")
+}
+
+fn spinner_frames() -> List<string> {
+    ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+}
+
+/// Run `cmd` via `/bin/sh -c <cmd>` while rendering a single-line
+/// `<label>  <spin> <elapsed>s` indicator on stdout.
+export fn run_with_spinner(cmd: string, label: string) -> int {
+    if !is_tty() {
+        let _ = avra_shell_exec(cmd)
+        return 0
+    }
+    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
+    if handle < 0 {
+        let _ = avra_shell_exec(cmd)
+        return 0
+    }
+    let frames = spinner_frames()
+    let t_start = avra_uptime_ms()
+    mut tick = 0
+    mut prev_lines = 0
+    while avra_process_is_alive(handle) != 0 {
+        let elapsed = avra_uptime_ms() - t_start
+        let secs = elapsed / 1000
+        let tenths = (elapsed / 100) - (secs * 10)
+        let frame = frames[tick % frames.length]
+        clear_lines(prev_lines)
+        avra_stdout_write("${label}  ${frame} ${string(secs)}.${string(tenths)}s\n")
+        prev_lines = 1
+        tick = tick + 1
+        avra_sleep_ms(100)
+    }
+    let final_json = avra_process_wait(handle)
+    let elapsed = avra_uptime_ms() - t_start
+    let secs = elapsed / 1000
+    let tenths = (elapsed / 100) - (secs * 10)
+    clear_lines(prev_lines)
+    let rc = pool_extract_rc(final_json)
+    if rc == 0 {
+        println("${label} done in ${string(secs)}.${string(tenths)}s")
+    } else {
+        println("${label} failed (rc=${string(rc)} after ${string(secs)}.${string(tenths)}s)")
+        emit_failure_output(final_json)
+    }
+    rc
+}
+
+/// Multi-line sticky progress UI. Spawns `cmd` with
+/// AVRA_BUILD_PROGRESS_FILE set to a fresh /tmp path; the resolver
+/// inside bs2 appends `start <path>` / `done <path> <ms>` lines to
+/// that file as each module is loaded. Parent polls every 100 ms,
+/// drains new events, redraws the sticky zone, and writes scrollback
+/// (one `✓ <name> <X>s` per completed module, with a package-header
+/// line when the package changes).
+export fn run_with_progress(cmd: string, label: string, total: int) -> int {
+    if !is_tty() {
+        let _ = avra_shell_exec(cmd)
+        return 0
+    }
+    let progress_file = "/tmp/avra_progress_${string(avra_uptime_ms())}.log"
+    let _ = avra_shell_exec("rm -f ${progress_file}; touch ${progress_file}")
+    let progress_cmd = "AVRA_BUILD_PROGRESS_FILE='${progress_file}' ${cmd}"
+    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(progress_cmd)}]", "")
+    if handle < 0 {
+        let _ = avra_shell_exec(cmd)
+        return 0
+    }
+    let t_start = avra_uptime_ms()
+    mut active = ""               // currently-parsing module
+    mut active_t_start = 0        // when active became active (0 = no active)
+    mut count = 0                 // completed count
+    mut last_pkg = ""             // last printed package header
+    mut bytes_seen = 0            // file offset already processed
+    mut prev_lines = 0            // sticky zone height
+    mut tick = 0
+    while avra_process_is_alive(handle) != 0 {
+        // Clear the sticky zone BEFORE draining so any new scrollback
+        // emitted by drain lands cleanly above where the sticky will
+        // redraw. Doing it the other way around leaves the previous
+        // sticky lines stranded in scrollback.
+        clear_lines(prev_lines)
+        prev_lines = 0
+        let drained = drain_progress_file(progress_file, bytes_seen, active, active_t_start, last_pkg, count)
+        bytes_seen = drained.bytes_seen
+        active = drained.active
+        active_t_start = drained.active_t_start
+        last_pkg = drained.last_pkg
+        count = drained.count
+        prev_lines = render_sticky(active, active_t_start, t_start, count, total, tick)
+        tick = tick + 1
+        avra_sleep_ms(100)
+    }
+    // One final drain to catch events that landed between the last
+    // poll and the child exiting.
+    clear_lines(prev_lines)
+    prev_lines = 0
+    let drained = drain_progress_file(progress_file, bytes_seen, active, active_t_start, last_pkg, count)
+    active = drained.active
+    last_pkg = drained.last_pkg
+    count = drained.count
+    let final_json = avra_process_wait(handle)
+    let total_elapsed = avra_uptime_ms() - t_start
+    let tsec = total_elapsed / 1000
+    let ttenths = (total_elapsed / 100) - (tsec * 10)
+    let rc = pool_extract_rc(final_json)
+    let _ = avra_shell_exec("rm -f ${progress_file}")
+    if rc == 0 {
+        println("${label} done · ${string(count)} modules · ${string(tsec)}.${string(ttenths)}s")
+    } else {
+        println("${label} failed (rc=${string(rc)} after ${string(tsec)}.${string(ttenths)}s · ${string(count)} modules)")
+        emit_failure_output(final_json)
+    }
+    rc
+}
+
+type DrainResult = {
+    bytes_seen: int,
+    active: string,
+    active_t_start: int,
+    last_pkg: string,
+    count: int,
+}
+
+/// Read the progress file from `bytes_seen` to EOF, parse new
+/// `start`/`done` events, print scrollback for each `done`, and
+/// return updated state. Idempotent on the file (caller tracks
+/// bytes_seen).
+fn drain_progress_file(path: string, bytes_seen: int, active_in: string, active_t_in: int,
+                        last_pkg_in: string, count_in: int) -> DrainResult {
+    if avra_selfhost_file_exists(path) == 0 {
+        return DrainResult { bytes_seen: bytes_seen, active: active_in, active_t_start: active_t_in,
+                             last_pkg: last_pkg_in, count: count_in }
+    }
+    let buf = avra_selfhost_read_file(path)
+    if buf.length <= bytes_seen {
+        return DrainResult { bytes_seen: bytes_seen, active: active_in, active_t_start: active_t_in,
+                             last_pkg: last_pkg_in, count: count_in }
+    }
+    mut active = active_in
+    mut active_t = active_t_in
+    mut last_pkg = last_pkg_in
+    mut count = count_in
+    mut start = bytes_seen
+    mut i = bytes_seen
+    while i < buf.length {
+        if buf.byte(i) == 0x0A {
+            // Process this line
+            let line = buf.substring(start, i)
+            if line.starts_with("start ") {
+                active = line.substring(6, line.length)
+                active_t = avra_uptime_ms()
+            } else if line.starts_with("done ") {
+                // done <path> <ms>
+                let rest = line.substring(5, line.length)
+                let last_sp = last_index_of_byte(rest, 0x20)
+                if last_sp > 0 {
+                    let path_part = rest.substring(0, last_sp)
+                    let ms_part = rest.substring(last_sp + 1, rest.length)
+                    let ms = avra_parse_int(ms_part)
+                    let pkg = package_of(path_part)
+                    if pkg != last_pkg {
+                        println("\x1b[1;36m${pkg}\x1b[0m")
+                        last_pkg = pkg
+                    }
+                    let display = display_name(path_part, pkg)
+                    let secs = ms / 1000
+                    let tenths = (ms / 100) - (secs * 10)
+                    println("  \x1b[32m✓\x1b[0m ${pad_right(display, 36)} ${string(secs)}.${string(tenths)}s")
+                    count = count + 1
+                    if active == path_part {
+                        active = ""
+                        active_t = 0
+                    }
+                }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    DrainResult { bytes_seen: start, active: active, active_t_start: active_t, last_pkg: last_pkg, count: count }
+}
+
+/// Render the sticky bottom region: spinner + progress bar.
+/// `t_overall_start` is the wall-clock start of the whole compile —
+/// used as the elapsed reference when no module is currently active
+/// (the post-resolve typeck/mono/codegen phase emits no per-file
+/// events, so we show overall elapsed there instead of a stale
+/// per-file counter).
+fn render_sticky(active: string, active_t_start: int, t_overall_start: int, count: int, total: int, tick: int) -> int {
+    let frames = spinner_frames()
+    let frame = frames[tick % frames.length]
+    let label = if active == "" {
+        "post-parse: typecheck + codegen"
+    } else {
+        display_name(active, package_of(active))
+    }
+    let ref_t = if active_t_start == 0 || active == "" { t_overall_start } else { active_t_start }
+    let elapsed = avra_uptime_ms() - ref_t
+    let secs = elapsed / 1000
+    let tenths = (elapsed / 100) - (secs * 10)
+    avra_stdout_write("  ${frame} ${pad_right(label, 36)} ${string(secs)}.${string(tenths)}s\n")
+    avra_stdout_write("${render_bar(count, total)}  \x1b[1m${string(count)}/${string(total)}\x1b[0m\n")
+    2
+}
+
+/// 30-char progress bar `[========------]`. Caps at 100% even when
+/// count > total (caller's estimate was low).
+fn render_bar(count: int, total: int) -> string {
+    let width = 30
+    let denom = if total <= 0 { 1 } else { total }
+    let raw = count * width / denom
+    let filled = if raw > width { width } else if raw < 0 { 0 } else { raw }
+    mut bar = "["
+    mut i = 0
+    while i < filled {
+        bar = bar + "="
+        i = i + 1
+    }
+    while i < width {
+        bar = bar + "-"
+        i = i + 1
+    }
+    bar + "]"
+}
+
+/// Detect the package name from a file path, used as the group
+/// header in the scrollback. `packages/std-avrac/src/core/ast.av`
+/// → `@std/avrac`. `packages/cli/src/main.av` → `cli`. Falls back
+/// to the file's parent dir name when no package prefix matches.
+fn package_of(path: string) -> string {
+    let pkg_marker = "packages/"
+    let pi = path.index_of(pkg_marker)
+    if pi < 0 {
+        // Extract parent dir name
+        let p = trim_trailing_av(path)
+        mut end = p.length
+        while end > 0 && p.byte(end - 1) != 0x2F { end = end - 1 }
+        if end == 0 { return "(root)" }
+        let dir = p.substring(0, end - 1)
+        let mut s = dir.length
+        while s > 0 && dir.byte(s - 1) != 0x2F { s = s - 1 }
+        return dir.substring(s, dir.length)
+    }
+    let after = path.substring(pi + pkg_marker.length, path.length)
+    let slash = after.index_of("/")
+    let pkg_dir = if slash < 0 { after } else { after.substring(0, slash) }
+    // Map `std-avrac` / `std-cli` / etc → `@std/avrac` for nicer headers.
+    if pkg_dir.starts_with("std-") {
+        return "@std/" + pkg_dir.substring(4, pkg_dir.length)
+    }
+    pkg_dir
+}
+
+/// Strip the package prefix from the path so the scrollback entry
+/// is short: `packages/std-avrac/src/core/ast.av` + pkg `@std/avrac`
+/// → `core/ast.av`.
+fn display_name(path: string, pkg: string) -> string {
+    let pkg_marker = "packages/"
+    let pi = path.index_of(pkg_marker)
+    if pi < 0 { return path }
+    let after = path.substring(pi + pkg_marker.length, path.length)
+    let slash = after.index_of("/")
+    if slash < 0 { return after }
+    // Skip `<pkg-dir>/src/` prefix when present so the display starts
+    // at the meaningful sub-path.
+    let rest = after.substring(slash + 1, after.length)
+    if rest.starts_with("src/") {
+        return rest.substring(4, rest.length)
+    }
+    rest
+}
+
+fn last_index_of_byte(s: string, ch: int) -> int {
+    mut i = s.length - 1
+    while i >= 0 {
+        if s.byte(i) == ch { return i }
+        i = i - 1
+    }
+    -1
+}
+
+fn trim_trailing_av(s: string) -> string {
+    if s.ends_with(".av") { return s.substring(0, s.length - 3) }
+    s
+}
+
+fn pad_right(s: string, width: int) -> string {
+    if s.length > width {
+        return s.substring(0, width - 1) + "…"
+    }
+    mut out = s
+    mut pad = width - s.length
+    while pad > 0 {
+        out = out + " "
+        pad = pad - 1
+    }
+    out
+}
+
+fn emit_failure_output(final_json: string) {
+    let stdout_marker = "\"stdout\":\""
+    let sidx = final_json.index_of(stdout_marker)
+    if sidx < 0 { return }
+    let from = sidx + stdout_marker.length
+    let stderr_marker = "\",\"stderr\":\""
+    let to = final_json.index_of(stderr_marker)
+    if to > from {
+        println(final_json.substring(from, to))
+    }
+}

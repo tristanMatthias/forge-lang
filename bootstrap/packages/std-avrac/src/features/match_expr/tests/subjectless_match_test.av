@@ -1,0 +1,37 @@
+fn subjless_classify(n: int) -> string {
+    match {
+        n < 0  -> "negative"
+        n == 0 -> "zero"
+        n < 10 -> "small"
+        _      -> "large"
+    }
+}
+
+fn subjless_fizzbuzz(n: int) -> string {
+    match {
+        n % 15 == 0 -> "fizzbuzz"
+        n % 3 == 0  -> "fizz"
+        n % 5 == 0  -> "buzz"
+        _           -> string(n)
+    }
+}
+
+fn subjless_grade(score: int) -> string {
+    match {
+        score >= 90 -> "pass"
+        _           -> "fail"
+    }
+}
+
+spec "subjectless match" {
+    then "negative" { subjless_classify(-5) == "negative" }
+    then "zero" { subjless_classify(0) == "zero" }
+    then "small" { subjless_classify(7) == "small" }
+    then "large" { subjless_classify(100) == "large" }
+    then "fizzbuzz" { subjless_fizzbuzz(15) == "fizzbuzz" }
+    then "fizz" { subjless_fizzbuzz(9) == "fizz" }
+    then "buzz" { subjless_fizzbuzz(10) == "buzz" }
+    then "plain number" { subjless_fizzbuzz(7) == "7" }
+    then "pass" { subjless_grade(95) == "pass" }
+    then "fail" { subjless_grade(50) == "fail" }
+}

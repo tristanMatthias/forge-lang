@@ -1,0 +1,346 @@
+// WHY: Phase 1 build-driver wrapper — compose fingerprint + cache
+// over the existing single-unit compile.
+//
+// The CLI's `bs2 build` subcommand calls into `decide_build` to learn
+// whether the cache already has the artifact for the given source +
+// flags; if so, the CLI uses the cached IR and skips the compile +
+// codegen pipeline entirely (the slow path). On a miss, the CLI
+// runs the compile as it does today and then `record_build_result`
+// publishes the artifact into the cache so the next no-op rebuild
+// is sub-second.
+//
+// Phase 1 deliberately treats the entire cli/main.av input as a
+// single unit. The dep-graph extractor in Phase 2 carves this into
+// per-package or per-module units; the driver's surface (decide /
+// record) does not need to change for that.
+//
+// Layering:
+//   * fingerprint.av    — hash inputs to a stable digest
+//   * cache.av          — content-addressed disk layout
+//   * driver.av (this)  — orchestrate the decision
+//   * cli/main.av       — actually run compile / link / report
+
+use build.fingerprint.{
+    Fingerprint, fp_for_unit, fp_eq, fp_short,
+    compiler_hash_for, profile_key_of, strlist_length,
+}
+use build.cache.{
+    Cache, PublishResult, cache_for, cache_init, cache_has,
+    cache_publish, cache_read_ll,
+    entry_dir_for, entry_ll_path,
+    cache_has_test, cache_publish_test, cache_bin_path_for,
+}
+use core.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+}
+use @std.crypto.{sha256_file}
+
+/// Inputs the driver needs to decide a build outcome. The CLI fills
+/// this in from avra.toml + argv + the bs2 binary's own path.
+///
+/// `unit_name` distinguishes targets within the same project (e.g.
+/// the bin vs the lib). Callers commonly use the manifest's [bin]
+/// / [lib] / [test] name. This participates in the fingerprint so
+/// two targets with identical sources do not stomp on each other's
+/// cache entries.
+///
+/// `kind` is the build-target kind: "bin", "lib", or "test". Drives
+/// which cache sentinel decide_build checks (and which artifacts
+/// `record_build_result` publishes).
+///
+/// `sources` is the canonical, ordered list of every input file
+/// whose contents may affect the output. For "bin"/"lib" targets
+/// this is `[entry_path]`; for "test" targets it's the
+/// glob-expanded test set + every `@std/avrac/src/**.av` + the
+/// reporter + the runtime objects. Order matters — `fp_for_unit`
+/// hashes in iteration order.
+///
+/// `entry_path` is the human-named primary source (sources[0] for
+/// bin/lib, the synthesized test entry for test). Used in --explain
+/// diagnostics; not part of the fingerprint by itself (the file is
+/// hashed via `sources`).
+///
+/// `compiler_path` is the bs2 binary that will (or did) produce
+/// the artifact. Hashed to invalidate the cache when bs2 changes.
+///
+/// `profile_name` selects [profile.<name>] from the manifest;
+/// `opt_level` / `debug` / `overflow_checks` / `coverage` are the
+/// resolved flags from that profile.
+export type BuildInputs = {
+    project_root: string,
+    unit_name: string,
+    kind: string,
+    sources: List<string>,
+    entry_path: string,
+    compiler_path: string,
+    target_triple: string,
+    profile_name: string,
+    opt_level: int,
+    debug: bool,
+    overflow_checks: bool,
+    coverage: bool,
+    // AVRA_LIB_PKG_ROOT for this build. Library mode (a non-empty root)
+    // EMITS ONLY the symbols qualified under that root (fn_belongs_to_lib /
+    // type_belongs), so the same sources compiled under two different roots
+    // produce DIFFERENT objects. It must therefore key the cache — otherwise
+    // a build under root A silently reuses a build under root B's filtered
+    // `.ll` (e.g. a whole-program "" build, or a mistyped root, poisons the
+    // lib slot). "" for whole-program builds.
+    lib_pkg_root: string,
+}
+
+/// Outcome of consulting the cache for a unit.
+///
+/// `Hit(fp, artifact_path)`: a complete entry already exists. For
+/// kind=="bin"/"lib" the path points at the cached `unit.ll`; for
+/// kind=="test" it points at the cached `unit.bin`. Callers branch
+/// on the kind they passed in.
+///
+/// `Miss(fp, profile_key, reason)`: no cached entry. The CLI runs
+/// the compile pipeline; on success it calls `record_build_result`
+/// to publish into the cache. `reason` is a one-line human
+/// description so `--explain` can surface it without re-deriving.
+export enum BuildOutcome {
+    Hit(fp: Fingerprint, artifact_path: string),
+    Miss(fp: Fingerprint, profile_key: string, reason: string),
+}
+
+/// Compute the fingerprint and check the cache.
+///
+/// Side effects: ensures the cache directory tree exists (a missing
+/// /build/cache/ on the first build is created here, not on publish
+/// — keeps `record_build_result` idempotent and fast).
+///
+/// Returns `Miss` with a populated `reason` attributing the rebuild
+/// to the first input axis that differs from the previous successful
+/// build's recorded inputs (compiler, profile, target, source).
+/// Returns "no previous build" when there is no record to diff
+/// against. The previous inputs are read from
+/// `<root>/build/cache/last/<unit_name>.txt`, written by
+/// `record_build_result`.
+///
+/// Kind-driven sentinel: `bin`/`lib` look up the `.ll` slot;
+/// `test` looks up the `.bin` slot. Each kind has its own artifact
+/// shape but shares the same fingerprint discipline + cache
+/// directory layout.
+export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
+    let cache = cache_for(inputs.project_root)
+    let _ = cache_init(cache)
+
+    let profile_key = profile_key_of(
+        inputs.profile_name,
+        inputs.opt_level,
+        inputs.debug,
+        inputs.overflow_checks,
+        inputs.coverage,
+    )
+    let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let fp = fp_for_unit(
+        inputs.unit_name,
+        inputs.sources,
+        compiler_hash,
+        profile_key,
+        inputs.target_triple,
+        inputs.lib_pkg_root,
+        [],
+    )
+
+    if inputs.kind == "test" {
+        if cache_has_test(cache, fp) {
+            return BuildOutcome.Hit(fp, cache_bin_path_for(cache, fp))
+        }
+    } else {
+        if cache_has(cache, fp) {
+            // Refresh the `last` sidecar even on a HIT. collect_workspace_lib_objs
+            // resolves a package's producer .o through this unit's `last` fp, and the
+            // fingerprint is now root-aware (lib_pkg_root) — but `last` was written only
+            // on publish. Without this, a hit after a DIFFERENT-root build leaves `last`
+            // pointing at the wrong-root slot, so collect links a producer .o missing this
+            // root's symbols (`undefined symbol` at link). bin/lib only: the `test` last
+            // isn't a producer-obj source, and `compiler_hash_for` re-sha256s the binary,
+            // so refreshing it per test-shard hit isn't worth the cost.
+            let _ = write_last_inputs(cache, inputs, fp)
+            return BuildOutcome.Hit(fp, entry_ll_path(cache, fp))
+        }
+    }
+    let reason = miss_reason(cache, inputs, compiler_hash, profile_key)
+    BuildOutcome.Miss(fp, profile_key, reason)
+}
+
+/// Diff the current fingerprint inputs against the recorded previous
+/// inputs (if any) and return the most specific attribution. Used by
+/// decide_build to populate Miss.reason for `bs2 build --explain`.
+///
+/// Single-source units (bin/lib) attribute to a specific source
+/// path via its content digest; multi-source units (test) attribute
+/// to the source-set count (a per-file diff lives in the cache key
+/// itself, not in this human label).
+fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key: string) -> string {
+    let path = last_inputs_path(c, inputs.unit_name)
+    if !avra_selfhost_file_exists(path) {
+        return "no previous build for unit `" + inputs.unit_name + "`"
+    }
+    let prior = avra_selfhost_read_file(path)
+    let prev_compiler = read_field(prior, "compiler:")
+    if prev_compiler != "" && prev_compiler != compiler_hash {
+        return "compiler binary changed"
+    }
+    let prev_profile = read_field(prior, "profile:")
+    if prev_profile != "" && prev_profile != profile_key {
+        return "profile flags changed (" + prev_profile + " → " + profile_key + ")"
+    }
+    let prev_target = read_field(prior, "target:")
+    if prev_target != "" && prev_target != inputs.target_triple {
+        return "target triple changed (" + prev_target + " → " + inputs.target_triple + ")"
+    }
+    let prev_lib_root = read_field(prior, "lib_root:")
+    if prev_lib_root != "" && prev_lib_root != inputs.lib_pkg_root {
+        return "library root changed (" + prev_lib_root + " → " + inputs.lib_pkg_root + ")"
+    }
+    if inputs.sources.length == 1 {
+        let entry_digest = sha256_file(inputs.sources[0])
+        let prev_entry_digest = read_field(prior, "src_digest:")
+        if prev_entry_digest != "" && prev_entry_digest != entry_digest {
+            return "source changed: " + inputs.sources[0]
+        }
+    } else {
+        let prev_count = read_field(prior, "src_count:")
+        let cur_count = string(inputs.sources.length)
+        if prev_count != "" && prev_count != cur_count {
+            return "source set size changed (" + prev_count + " → " + cur_count + ")"
+        }
+        return "sources changed"
+    }
+    "inputs changed (no specific axis matched — check transitive deps)"
+}
+
+fn last_inputs_path(c: Cache, unit_name: string) -> string {
+    c.cache_dir + "last/" + unit_name + ".txt"
+}
+
+/// Pull a single value from the prior-inputs text file. Format is
+/// `key:value` per line. We do a simple substring search rather than
+/// a tokenised parse — values are themselves keyword-free hex /
+/// path strings, so collisions are not a concern. Returns "" when
+/// the key is absent so callers can treat that as "no prior data
+/// for this axis."
+fn read_field(text: string, key: string) -> string {
+    let idx = text.index_of(key)
+    if idx < 0 { return "" }
+    let after = idx + key.length
+    let nl = find_newline(text, after)
+    let end = if nl < 0 { text.length } else { nl }
+    text.substring(after, end)
+}
+
+/// Linear scan for the next \n at or after `from`. Returns -1 when
+/// there is no newline in the rest of the string.
+fn find_newline(s: string, from: int) -> int {
+    mut i = from
+    while i < s.length {
+        if s.byte(i) == 10 { return i }
+        i = i + 1
+    }
+    0 - 1
+}
+
+/// Publish a freshly-compiled unit into the cache. Called by the CLI
+/// after a successful compile + codegen + (link, for test). `staging_id`
+/// is a per-build-invocation discriminator so concurrent builds do not
+/// collide on the same staging path (typically the bs2 PID rendered
+/// as a string by the caller).
+///
+/// Kind-driven artifact selection:
+///   * "bin"/"lib" → publish `ll_content` + `o_path` + `metadata` via
+///     `cache_publish` (the historical .ll/.o/.metadata triple).
+///   * "test" → publish the linked binary at `bin_path` via
+///     `cache_publish_test`. `ll_content`/`o_path`/`metadata` are
+///     ignored for test units.
+///
+/// Returns the cache.PublishResult — the CLI surfaces failures as
+/// diagnostics rather than swallowing them; a publish failure is
+/// recoverable (the build itself succeeded), but the no-op rebuild
+/// optimisation is lost until the next successful publish.
+export fn record_build_result(
+    inputs: BuildInputs,
+    fp: Fingerprint,
+    ll_content: string,
+    o_path: string,
+    metadata: string,
+    bin_path: string,
+    staging_id: string,
+) -> PublishResult {
+    let cache = cache_for(inputs.project_root)
+    let pr = if inputs.kind == "test" {
+        let manifest = render_unit_manifest(inputs, fp)
+        cache_publish_test(cache, fp, bin_path, manifest, staging_id)
+    } else {
+        cache_publish(cache, fp, ll_content, o_path, metadata, staging_id)
+    }
+    if pr.success {
+        // Write the per-unit "last inputs" sidecar used by --explain
+        // attribution. Best-effort: a write failure here doesn't
+        // negate the publish — it just costs us specific axis
+        // diagnostics on the next miss.
+        let _ = write_last_inputs(cache, inputs, fp)
+    }
+    pr
+}
+
+/// Render a small, human-readable manifest describing a test entry's
+/// distinguishing inputs. Lives alongside the binary so `bs2 cache ls`
+/// can identify what produced an entry without re-deriving.
+fn render_unit_manifest(inputs: BuildInputs, fp: Fingerprint) -> string {
+    let mut body = "kind: " + inputs.kind + "\n"
+    body = body + "fp: " + fp.hex + "\n"
+    body = body + "unit: " + inputs.unit_name + "\n"
+    body = body + "target: " + inputs.target_triple + "\n"
+    body = body + "compiler: " + inputs.compiler_path + "\n"
+    body = body + "src_count: " + string(inputs.sources.length) + "\n"
+    body
+}
+
+fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
+    let last_dir = c.cache_dir + "last/"
+    if avra_mkdir_p(last_dir) == 0 { return false }
+    let profile_key = profile_key_of(
+        inputs.profile_name,
+        inputs.opt_level,
+        inputs.debug,
+        inputs.overflow_checks,
+        inputs.coverage,
+    )
+    let compiler_hash = compiler_hash_for(inputs.compiler_path)
+    let mut body = "fp:" + fp.hex + "\n"
+        + "compiler:" + compiler_hash + "\n"
+        + "profile:" + profile_key + "\n"
+        + "target:" + inputs.target_triple + "\n"
+        + "lib_root:" + inputs.lib_pkg_root + "\n"
+        + "kind:" + inputs.kind + "\n"
+        + "src_count:" + string(inputs.sources.length) + "\n"
+    if inputs.sources.length == 1 {
+        // Single-source units (bin/lib) record the entry path +
+        // its content digest so --explain can name the file that
+        // changed. Multi-source units (test) skip this — the
+        // per-file content lives in the fingerprint itself.
+        let entry_digest = sha256_file(inputs.sources[0])
+        body = body
+            + "src:" + inputs.sources[0] + "\n"
+            + "src_digest:" + entry_digest + "\n"
+    }
+    let path = last_inputs_path(c, inputs.unit_name)
+    avra_selfhost_write_file(path, body) != 0
+}
+
+/// Helper for tooling and tests: read the cached IR for a fingerprint
+/// directly. Returns the empty string when the entry is missing.
+/// Wraps cache.cache_read_ll so callers don't need to reach for the
+/// cache module independently.
+export fn cached_ll_for(inputs: BuildInputs, fp: Fingerprint) -> string {
+    let cache = cache_for(inputs.project_root)
+    cache_read_ll(cache, fp)
+}
+

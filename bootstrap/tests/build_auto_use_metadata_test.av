@@ -1,0 +1,34 @@
+// `bs2 build --emit_metadata` automatically activates the resolver's
+// metadata fast-path (AVRA_USE_METADATA=1) for the root compile when
+// the manifest declares path-deps. Without this, the path-dep
+// pre-build's .meta.bin output was wasted unless the user manually
+// exported AVRA_USE_METADATA=1 every invocation.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn baum_run() -> string {
+    cached_fixture_run("tests/build_auto_use_metadata_fixtures/sample.av")
+}
+
+spec "g2eo auto-AVRA_USE_METADATA: --emit_metadata + path-deps activates fast-path automatically" {
+    then "build rc is zero" {
+        baum_run().contains("PROBE build_rc_zero: ok")
+    }
+    then "path-dep meta.bin lands via the recursive pre-build" {
+        baum_run().contains("PROBE dep_meta_pre_built: ok")
+    }
+    then "fast-path is taken without setting AVRA_USE_METADATA manually" {
+        baum_run().contains("PROBE fast_path_taken_by_default: ok")
+    }
+}
+
+spec "g2eo auto-AVRA_USE_METADATA: behaviour unchanged without --emit_metadata" {
+    then "plain build rc is zero" {
+        baum_run().contains("PROBE plain_build_rc_zero: ok")
+    }
+    then "fast-path is NOT taken when --emit_metadata is absent" {
+        baum_run().contains("PROBE plain_build_no_fast_path: ok")
+    }
+}

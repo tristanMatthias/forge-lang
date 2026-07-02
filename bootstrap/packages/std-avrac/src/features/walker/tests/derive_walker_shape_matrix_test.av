@@ -1,0 +1,99 @@
+// so07.9 / T8: shape-matrix property test for derive_walker.
+//
+// derive_walker's bug surface is the cross-product of variant count
+// × per-variant field-kind composition (n_scalar, n_direct_self,
+// n_list_self). Past bugs surfaced only when someone happened to
+// try a specific shape (e.g. the Mix(ret: Shape, params: List<Shape>)
+// repro in /tmp/derive_walker_repro4.av). This file covers a
+// deterministic 30-shape corpus so a regression that breaks any one
+// of them is caught at test time.
+//
+// Cost-of-running design choice: the corpus bundles into ONE fixture
+// and validates with ONE `bs2 check` invocation. Per-shape `then`
+// blocks would force 30 separate `bs2 check` runs; bundled, the same
+// coverage lands in one shard. Regressions still pinpoint the
+// breaking shape via the F-code's source line in the captured
+// output — each enum is named to identify its shape (E1S1 = 1
+// variant scalar 1 field, E2LN = 2-variant Leaf/Node, E3X = 3-
+// variant Mix, …).
+//
+// AVRA_USE_METADATA must be stripped because @comptime fn bodies
+// aren't preserved across the metadata roundtrip (9p1d).
+//
+// 1h9l: routed through cached_fixture_check_no_metadata instead of
+// a raw avra_shell_exec. The fixture uses @expand(derive_walker)
+// from @std.avrac.features.walker, so it can't run through in-
+// process check_source (which skips file-based module loading).
+// The content-keyed cache makes warm reruns return cached stdout
+// in ~10ms instead of paying a full bs2 compile (~14s) each time.
+//
+// Coverage axes:
+//   * variant counts: 1 / 2 / 3
+//   * scalar (s), direct-self (d), list-self (l) fields per variant
+//   * (s,d,l) combinations from the {0,1,2}^3 corpus listed in the
+//     ticket: 0/0/0, 1/0/0, 0/1/0, 0/0/1, 1/1/0, 1/0/1, 0/1/1,
+//     1/1/1, 0/2/0, 0/0/2, 0/2/2 — plus multi-variant mixes
+//   * edge cases: empty enum, single empty-payload, wide-scalar (10
+//     fields), wide-list-self (5 fields), all-empty (5 variants),
+//     and a mixed-primitives variant
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+fn shape_corpus() -> string {
+    "use @std.avrac.features.walker.{derive_walker}\n" +
+    "\n" +
+    // Single-variant shapes — 11 enums covering (s,d,l) corners.
+    "@expand(derive_walker) enum E1S1 { Only(v: int) }\n" +
+    "@expand(derive_walker) enum E1S5 { Only(a: int, b: string, c: bool, d: float, e: int) }\n" +
+    "@expand(derive_walker) enum E1D1 { Wrap(inner: E1D1) }\n" +
+    "@expand(derive_walker) enum E1D2 { Pair(l: E1D2, r: E1D2) }\n" +
+    "@expand(derive_walker) enum E1L1 { Many(xs: List<E1L1>) }\n" +
+    "@expand(derive_walker) enum E1L2 { Two(xs: List<E1L2>, ys: List<E1L2>) }\n" +
+    "@expand(derive_walker) enum E1SD { Mix(tag: int, child: E1SD) }\n" +
+    "@expand(derive_walker) enum E1SL { Mix(tag: int, kids: List<E1SL>) }\n" +
+    "@expand(derive_walker) enum E1DL { Mix(head: E1DL, tail: List<E1DL>) }\n" +
+    "@expand(derive_walker) enum E1SDL { Mix(tag: int, ret: E1SDL, params: List<E1SDL>) }\n" +
+    "@expand(derive_walker) enum E1DL2 { Quad(a: E1DL2, b: E1DL2, xs: List<E1DL2>, ys: List<E1DL2>) }\n" +
+    // Two-variant shapes — Leaf/Node patterns + empty-payload mixes.
+    "@expand(derive_walker) enum E2LN { Leaf(v: int), Node(l: E2LN, r: E2LN) }\n" +
+    "@expand(derive_walker) enum E2SL { A(x: int), B(xs: List<E2SL>) }\n" +
+    "@expand(derive_walker) enum E2ES { Nothing, Some(v: int) }\n" +
+    "@expand(derive_walker) enum E2ED { Nil, Cons(head: E2ED) }\n" +
+    "@expand(derive_walker) enum E2EL { Nil, Cons(rest: List<E2EL>) }\n" +
+    "@expand(derive_walker) enum E2M { Leaf(tag: int, h: E2M), Node(c: E2M, xs: List<E2M>) }\n" +
+    "@expand(derive_walker) enum E2X { A(tag: int, r: E2X, ps: List<E2X>), B(name: string, h: E2X, ks: List<E2X>) }\n" +
+    // Three-variant shapes — Pattern/Stmt-like fanout.
+    "@expand(derive_walker) enum E3SDL { S(v: int), D(c: E3SDL), L(xs: List<E3SDL>) }\n" +
+    "@expand(derive_walker) enum E3P { Leaf(v: int), Pair(l: E3P, r: E3P), ListNode(xs: List<E3P>) }\n" +
+    "@expand(derive_walker) enum E3E { A, B, C }\n" +
+    "@expand(derive_walker) enum E3SSL { A(v: int), B(s: string), Many(xs: List<E3SSL>) }\n" +
+    "@expand(derive_walker) enum E3M2 { S(v: int), D2(a: E3M2, b: E3M2), L2(xs: List<E3M2>, ys: List<E3M2>) }\n" +
+    "@expand(derive_walker) enum E3X { A(t: int, r: E3X, p: List<E3X>), B(t: int, r: E3X, p: List<E3X>), C(t: int, r: E3X, p: List<E3X>) }\n" +
+    // Edge cases.
+    "@expand(derive_walker) enum EEmpty { }\n" +
+    "@expand(derive_walker) enum E1E { Solo }\n" +
+    "@expand(derive_walker) enum EWS { Big(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int) }\n" +
+    "@expand(derive_walker) enum EWL { Big(a: List<EWL>, b: List<EWL>, c: List<EWL>, d: List<EWL>, e: List<EWL>) }\n" +
+    "@expand(derive_walker) enum E5E { A, B, C, D, F }\n" +
+    "@expand(derive_walker) enum EMP { K(a: int, b: string, c: bool, d: float, e: bytes) }\n" +
+    "\n" +
+    "fn main() -> int { 0 }\n"
+}
+
+spec "T8 shape matrix: 30 derive_walker shapes type-check clean" {
+    then "no F1xxx / F3xxx / F9999 from any shape in the corpus" {
+        let fixture = "/tmp/avra_t8_shape_matrix.av"
+        write_fixture(fixture, shape_corpus())
+        let out = cached_fixture_check_no_metadata(fixture)
+        // On regression, the F-code source line in `out` names the
+        // breaking enum (e.g. `enum E1SDL` for the s+d+l mix shape).
+        // F1000 = typeck, F1003 = Display strictness on Unknown,
+        // F3xxx = resolver, F9999 = ICE. Any of those means a shape
+        // broke and the source location identifies which.
+        out.contains("ok")
+            && !out.contains("F1000")
+            && !out.contains("F1003")
+            && !out.contains("F3")
+            && !out.contains("F9999")
+    }
+}

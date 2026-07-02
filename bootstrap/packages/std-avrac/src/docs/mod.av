@@ -1,0 +1,1292 @@
+// `avra docs` — project documentation rendered from the @std/lsp
+// SymbolGraph.
+//
+// History: this file used to carry a private `DocSym` shape adapted
+// from the original line-based regex extractor. Ticket
+// forge-crafting-intepreters-ovm8.1 collapsed that — the renderer now
+// reads @std/lsp's portable `Sym` records directly, so symbol shape
+// stays consistent across the docs CLI, future LSP server, and any
+// other consumer.
+//
+// Pipeline:
+//   parse each .av in PWD → indexer.extract_from_ast → SymList
+//   renderers below filter / format / paginate that list
+//
+// Renderer surface (kept compatible with the prior CLI flags):
+//   show_overview        avra docs                (no args)
+//   show_symbol          avra docs <name>
+//   show_short           avra docs --short <name>
+//   show_symbols         avra docs --symbols
+//   show_search          avra docs --search <q>
+//   show_llm             avra docs --llm
+//   validate_docs        avra docs --validate
+
+// dir-as-module (g2eo.1): gen.av + corpus.av auto-load as siblings,
+// surface flat at `docs.{...}`.
+
+use core.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
+use parse.{parse_program_source}
+use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
+use @std.lsp.{Sym, SymKind, CallEdge}
+use @std.json.{json_str}
+use render.{bold, dim, cyan, green, yellow, red,
+            pad_right, truncate_str, rule, first_line, icase_eq, pct}
+use pathutil.{relativise, qualified_leaf, qualified_breadcrumbs, count_path_seps}
+
+// ── Project walk ─────────────────────────────────────────────────────
+
+/// Bundle of everything the doc renderers need from a project tree:
+/// the symbol graph for `avra docs <name>` queries and the call-edge
+/// list for `--callers` reverse-lookup. Walking once produces both,
+/// so requesting callers doesn't double-parse.
+///
+/// @field syms  — symbol graph extracted by `extract_from_ast_at`.
+/// @field calls — call edges extracted by `extract_calls_from_ast_at`.
+export type DocsCorpus = {
+    syms: List<Sym>,
+    calls: List<CallEdge>
+}
+
+/// Walk every `.av` file under `dir`, parse it, and build the
+/// project DocsCorpus. Skips `build/`, `.beads/`, `seed/` and any
+/// file that fails to parse — tooling shouldn't fail loudly on a
+/// half-edited source tree; the compiler's primary error path will
+/// surface parse errors when it runs.
+export fn extract_project_corpus(dir: string) -> DocsCorpus {
+    let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
+    let files_text = avra_shell_exec(cmd)
+    if files_text == "" {
+        return DocsCorpus { syms: [], calls: [] }
+    }
+
+    mut syms: List<Sym> = []
+    mut calls: List<CallEdge> = []
+    for path in files_text.split("\n") {
+        if path == "" { continue }
+        let content = avra_selfhost_read_file(path)
+        if content == "" { continue }
+        let parsed = parse_program_source(content)
+        if parsed.had_error || parsed.stmts == null {
+            // Tooling shouldn't fail on a syntactically broken
+            // source file; the compiler's primary error path will
+            // surface the parse error in its own time.
+            continue
+        }
+        let rel = relativise(path, dir)
+        let file_syms = extract_from_ast_at(parsed.stmts!, rel)
+        let file_calls = extract_calls_from_ast_at(parsed.stmts!, rel)
+        for s in file_syms { syms.push(s) }
+        for c in file_calls { calls.push(c) }
+    }
+    DocsCorpus { syms, calls }
+}
+
+/// Backwards-compat wrapper for callers that only need the symbol
+/// list half of `extract_project_corpus`.
+export fn extract_project_docs_ast(dir: string) -> List<Sym> {
+    extract_project_corpus(dir).syms
+}
+
+// ── Kind classification ─────────────────────────────────────────────
+//
+// Renderers group symbols into four buckets matching the prior CLI
+// output: Functions / Types / Enums / Constants. The prior code used
+// a `kind: int` discriminant; we now derive the bucket from SymKind.
+// A 0-bucket means "skip in the renderer" (Trait / Impl / ErrorCode /
+// Keyword / Module — surfaced by future flags).
+
+/// Map a Sym to its render bucket: 1=Functions, 2=Types, 3=Enums,
+/// 4=Constants/Muts/Lets. Returns 0 for kinds the CLI doesn't
+/// surface (Trait/Impl/ErrorCode/Keyword/Module).
+fn bucket_of(s: Sym) -> int {
+    match s.kind {
+        .Fn(_, _) -> 1
+        .Type(_) -> 2
+        .Enum(_) -> 3
+        .Const(_) -> 4
+        .Mut(_) -> 4
+        .Let(_) -> 4
+        _ -> 0
+    }
+}
+
+/// True when the Sym lives in the Functions bucket.
+fn is_fn(s: Sym) -> bool { bucket_of(s) == 1 }
+/// True when the Sym lives in the Types bucket.
+fn is_type(s: Sym) -> bool { bucket_of(s) == 2 }
+/// True when the Sym lives in the Enums bucket.
+fn is_enum(s: Sym) -> bool { bucket_of(s) == 3 }
+/// True when the Sym lives in the Constants bucket (const/mut/let).
+fn is_var(s: Sym) -> bool { bucket_of(s) == 4 }
+/// True when the Sym belongs to one of the renderable buckets — i.e.
+/// the renderers should consider it. False filters out Trait/Impl
+/// and friends that show up via dedicated flags.
+fn is_renderable(s: Sym) -> bool { bucket_of(s) != 0 }
+/// True when the Sym has any /// doc-comment attached.
+fn has_doc(s: Sym) -> bool { s.doc != "" }
+
+// ── List traversal ──────────────────────────────────────────────────
+
+/// Count how many Syms in `list` satisfy `pred`. Indexed walk over
+/// the built-in `List<Sym>`.
+fn count_syms(list: List<Sym>, pred: fn(Sym) -> bool) -> int {
+    mut n = 0
+    for item in list {
+        if pred(item) { n = n + 1 }
+    }
+    n
+}
+
+/// Total renderable Syms in `list`.
+fn count_total(list: List<Sym>) -> int {
+    count_syms(list, is_renderable)
+}
+
+/// Number of renderable Syms in `list` that have a /// doc.
+fn count_documented(list: List<Sym>) -> int {
+    count_syms(list, (item: Sym) -> is_renderable(item) && has_doc(item))
+}
+
+/// Number of Syms in `list` belonging to `want_bucket` that have a
+/// /// doc.
+fn count_documented_in(list: List<Sym>, want_bucket: int) -> int {
+    count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket && has_doc(item))
+}
+
+/// Number of Syms in `list` belonging to `want_bucket`.
+fn count_in_bucket(list: List<Sym>, want_bucket: int) -> int {
+    count_syms(list, (item: Sym) -> bucket_of(item) == want_bucket)
+}
+
+// ── Rendering ────────────────────────────────────────────────────────
+
+/// One-line header for the summary view: signature for fns,
+/// "type Name" for types, "Name { variants }" for enums, and
+/// "kind name: type" for vars. Used by the overview and search
+/// renderers so they share the same formatting.
+fn summary_head(s: Sym) -> string {
+    match s.kind {
+        .Fn(sig, _) -> sig
+        .Type(_) -> s.name
+        .Enum(csv) -> {
+            if csv == "" {
+                s.name
+            } else {
+                let vs = "{ ${csv} }"
+                "${s.name}  ${dim(vs)}"
+            }
+        }
+        .Const(ty) -> var_signature("const", s.name, ty)
+        .Mut(ty) -> var_signature("mut", s.name, ty)
+        .Let(ty) -> var_signature("let", s.name, ty)
+        _ -> s.name
+    }
+}
+
+/// Render a Sym's declaration line ("type Foo" / "enum Bar" / fn
+/// signature). Used by `--symbols` and the detail view as the
+/// header above the doc body.
+fn declaration_line(s: Sym) -> string {
+    match s.kind {
+        .Fn(sig, _) -> sig
+        .Type(_) -> "type ${s.name}"
+        .Enum(_) -> "enum ${s.name}"
+        .Const(ty) -> var_signature("const", s.name, ty)
+        .Mut(ty) -> var_signature("mut", s.name, ty)
+        .Let(ty) -> var_signature("let", s.name, ty)
+        _ -> s.name
+    }
+}
+
+/// Format a `<kind_str> <name>: <ty>` line for vars, suppressing
+/// `: <ty>` when the type is unknown / blank.
+fn var_signature(kind_str: string, name: string, ty: string) -> string {
+    if ty == "" || ty == "<unknown>" {
+        "${kind_str} ${name}"
+    } else {
+        "${kind_str} ${name}: ${ty}"
+    }
+}
+
+/// Render the trailing `[export]` tag in dim grey when `s` is
+/// exported. Empty string otherwise.
+fn export_tag(s: Sym) -> string {
+    if s.exported { dim(" [export]") } else { "" }
+}
+
+/// Print a single Sym's summary row to stdout: header + first line
+/// of doc preview + export tag, padded for alignment.
+fn print_summary_row(s: Sym) {
+    let head = summary_head(s)
+    let preview = first_line(s.doc)
+    if preview == "" {
+        println("    ${head}${export_tag(s)}")
+    } else {
+        let head_padded = pad_right(head, 44)
+        println("    ${head_padded} ${dim(truncate_str(preview, 30))}${export_tag(s)}")
+    }
+}
+
+/// Walk the symbol list, calling `print_summary_row` on every Sym
+/// whose bucket matches `want_bucket`.
+fn print_summary_kind(list: List<Sym>, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            print_summary_row(item)
+        }
+    }
+}
+
+/// Human-readable label for each renderable bucket. Used by every
+/// renderer so the strings stay in lockstep — bumping the bucket
+/// numbering here updates the entire CLI.
+fn kind_label(bucket: int) -> string {
+    match bucket {
+        1 -> "Functions"
+        2 -> "Types"
+        3 -> "Enums"
+        4 -> "Constants"
+        _ -> "Unknown"
+    }
+}
+
+// ── Overview (`avra docs`) ──────────────────────────────────────────
+
+/// Top-level overview view (`avra docs` with no args). Prints a
+/// per-bucket symbol summary plus a coverage line. Empty projects
+/// get a friendly "no source files found" message instead of an
+/// empty table.
+export fn show_overview(docs: List<Sym>) {
+    println("")
+    println("  ${bold("avra docs")} ${dim("—")} Project Documentation")
+    println("  ${dim(rule(37))}")
+
+    if count_total(docs) == 0 {
+        println("")
+        println("  ${dim("!")} No Avra source files found in the current directory.")
+        println("  Add ${cyan("///")} doc comments to your functions and types.")
+        println("")
+        return
+    }
+
+    for bucket in 1..5 {
+        let n = count_in_bucket(docs, bucket)
+        if n > 0 {
+            println("")
+            println("  ${bold(kind_label(bucket))} (${string(n)})")
+            println("")
+            print_summary_kind(docs, bucket)
+        }
+    }
+
+    let total = count_total(docs)
+    let documented = count_documented(docs)
+    println("")
+    if documented < total {
+        println("  ${yellow("Coverage:")} ${string(documented)}/${string(total)} symbols documented")
+    } else {
+        println("  ${bold("Coverage:")} ${string(documented)}/${string(total)} symbols documented")
+    }
+    println("")
+    println("  Detail: ${cyan("avra docs <name>")}")
+    println("")
+}
+
+// ── --symbols (flat reference with locations) ───────────────────────
+
+/// Render the flat `--symbols` reference: every renderable Sym in
+/// every bucket, paired with its `file:line` location. Used by
+/// editors / users who want a project-wide symbol index.
+export fn show_symbols(docs: List<Sym>) {
+    println("")
+    println("  ${bold("Symbol Reference")}")
+    println("  ${dim(rule(16))}")
+    println("")
+
+    for bucket in 1..5 {
+        if count_in_bucket(docs, bucket) > 0 {
+            println("  ${bold(kind_label(bucket))}")
+            print_with_loc_kind(docs, bucket)
+            println("")
+        }
+    }
+
+    if count_total(docs) == 0 {
+        println("    ${dim("(no symbols found)")}")
+        println("")
+    }
+}
+
+/// Worker for `show_symbols`: print every Sym in `want_bucket` as
+/// `<header>  <file>:<line>`. Iterative.
+fn print_with_loc_kind(list: List<Sym>, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            let head = declaration_line(item)
+            let loc = "${item.file}:${string(item.span.start.line)}"
+            println("    ${pad_right(head, 44)} ${dim(loc)}")
+        }
+    }
+}
+
+// ── Symbol detail (`avra docs <name>`) ──────────────────────────────
+
+// ── Callers (`--callers`) ───────────────────────────────────────────
+//
+// Given a target symbol name, walk the CallList for edges whose
+// callee matches and render their call sites. Same shape as the
+// LSP `avra/callers` request — see protocol_test.av for the
+// equivalent end-to-end test.
+
+/// `--callers <name>` view. Looks up the target Sym, then walks the
+/// CallList for edges whose callee matches and renders their call
+/// sites. Returns false when the symbol isn't in the project (so
+/// the caller can show a "did you mean?" suggestion).
+export fn show_callers(query: string, corpus: DocsCorpus) -> bool {
+    let target = sym_by_name(corpus.syms, query)
+    if target == null { return false }
+
+    let edges = call_edges_to(corpus.calls, query)
+    println("")
+    println("  ${bold(declaration_line(target!))}")
+    println("  ${dim("Used by:")}")
+
+    if edges.length == 0 {
+        println("    ${dim("(no callers in project)")}")
+        println("")
+        return true
+    }
+
+    print_call_edges(edges)
+    println("    ${dim("(${string(edges.length)} callers)")}")
+    println("")
+    true
+}
+
+/// Case-insensitive lookup of a Sym by bare name. Returns the
+/// first renderable match or `null`.
+fn sym_by_name(list: List<Sym>, name: string) -> Sym? {
+    let want = name.to_lower()
+    for item in list {
+        if is_renderable(item) && item.name.to_lower() == want {
+            return item
+        }
+    }
+    null
+}
+
+/// Filter the project-wide `List<CallEdge>` to just the edges whose
+/// `callee` matches `target`. Used by `show_callers` to find every
+/// call site of a fn.
+fn call_edges_to(calls: List<CallEdge>, target: string) -> List<CallEdge> {
+    mut acc: List<CallEdge> = []
+    for edge in calls {
+        if edge.callee == target { acc.push(edge) }
+    }
+    acc
+}
+
+/// Print each call edge in `edges` as `<caller>  <file>:<line>`.
+/// Worker for `show_callers`.
+fn print_call_edges(edges: List<CallEdge>) {
+    for edge in edges {
+        let loc = "${edge.file}:${string(edge.line)}"
+        println("    ${pad_right(edge.caller, 36)} ${dim(loc)}")
+    }
+}
+
+// ── Hierarchical addressing (`avra docs core::ast::Expr`) ──────────
+//
+// qualified_leaf / qualified_breadcrumbs / count_path_seps imported
+// from pathutil — they operate on `::`-separated paths and live with
+// the rest of the path-manipulation helpers.
+
+/// Look up a Sym by either bare name OR qualified path. When the
+/// query contains `::`, tries an exact qualified match first, then
+/// falls back to suffix matching so partial paths resolve
+/// (`ast::Expr` finds `core::ast::Expr`).
+fn sym_by_path(list: List<Sym>, path: string) -> Sym? {
+    if !path.contains("::") {
+        return sym_by_name(list, path)
+    }
+    // Exact qualified match first.
+    for item in list {
+        if is_renderable(item) && item.qualified == path { return item }
+    }
+    // Suffix match: `ast::Expr` matches `core::ast::Expr`.
+    let suffix = "::${path}"
+    for item in list {
+        if is_renderable(item) && item.qualified.ends_with(suffix) { return item }
+    }
+    null
+}
+
+/// Print every direct child of a module path. Direct = one level
+/// deeper, not transitive. Returns false when no descendants exist
+/// at any depth — distinguishes "real but childless prefix" from
+/// "no such prefix anywhere".
+export fn show_module(prefix: string, docs: List<Sym>) -> bool {
+    let direct = direct_children(docs, prefix)
+    if direct.length == 0 && !has_any_descendant(docs, prefix) {
+        return false
+    }
+
+    let header = if prefix == "" {
+        "${bold("avra docs")} ${dim("—")} project root"
+    } else {
+        "${bold(qualified_breadcrumbs(prefix))}"
+    }
+    println("")
+    println("  ${header}")
+    println("  ${dim(rule(prefix.length + 8))}")
+    println("")
+
+    print_module_children(direct, docs)
+    println("")
+    true
+}
+
+/// True when at least one Sym in `list` has a qualified path
+/// starting with `prefix::`. Used by `show_module` to distinguish
+/// real-but-childless modules from typos.
+fn has_any_descendant(list: List<Sym>, prefix: string) -> bool {
+    let pfx_dot = "${prefix}::"
+    for item in list {
+        if item.qualified.starts_with(pfx_dot) { return true }
+    }
+    false
+}
+
+/// Filter `list` to just the Syms that are direct children of
+/// `prefix` — exactly one path segment deeper, not transitive
+/// descendants. The empty prefix matches top-level (no `::`) syms.
+fn direct_children(list: List<Sym>, prefix: string) -> List<Sym> {
+    let pfx_dot = "${prefix}::"
+    let pfx_depth = if prefix == "" { -1 } else { count_path_seps(prefix) }
+    sym_list_filter_local(list,
+        (item: Sym) -> is_direct_child_of(item, prefix, pfx_dot, pfx_depth))
+}
+
+/// Predicate used by `direct_children`: true when `item.qualified`
+/// is exactly one segment deeper than `prefix`. The depth check
+/// distinguishes children from grandchildren in transitive trees.
+fn is_direct_child_of(item: Sym, prefix: string, pfx_dot: string, pfx_depth: int) -> bool {
+    let q = item.qualified
+    if prefix == "" {
+        !q.contains("::")
+    } else {
+        q.starts_with(pfx_dot) && count_path_seps(q) == pfx_depth + 1
+    }
+}
+
+/// Local `List<Sym>` filter — produces a new `List<Sym>` in the
+/// original source order.
+fn sym_list_filter_local(list: List<Sym>, pred: fn(Sym) -> bool) -> List<Sym> {
+    mut acc: List<Sym> = []
+    for item in list {
+        if pred(item) { acc.push(item) }
+    }
+    acc
+}
+
+/// Worker for `show_module`: print one row per direct child with
+/// its leaf name, descendant count, and doc preview. `all` is
+/// passed in so each row's grandchildren count can be looked up.
+fn print_module_children(direct: List<Sym>, all: List<Sym>) {
+    for item in direct {
+        let leaf = qualified_leaf(item.qualified)
+        let kid_count = direct_children(all, item.qualified).length
+        let count_str = if kid_count > 0 { dim(" (${string(kid_count)})") } else { "" }
+        let preview = first_line(item.doc)
+        if preview == "" {
+            println("    ${leaf}${count_str}")
+        } else {
+            println("    ${pad_right(leaf, 36)}${count_str} ${dim(truncate_str(preview, 40))}")
+        }
+    }
+}
+
+/// "Did you mean?" — best-scoring sym name above threshold, or `""`
+/// when no candidate is plausibly close. Threshold matches
+/// `@std/lsp`'s `did_you_mean` default (200): silence beats a
+/// misleading suggestion.
+export fn suggest_similar(query: string, docs: List<Sym>) -> string {
+    mut best_score = 199
+    mut best_name = ""
+    for item in docs {
+        if is_renderable(item) {
+            let s = fuzzy_score(query, item.name)
+            if s > best_score {
+                best_score = s
+                best_name = item.name
+            }
+        }
+    }
+    best_name
+}
+
+/// Show full detail for a single symbol: header, doc body,
+/// variants (for enums), location, and exported flag. Used by
+/// `avra docs <name>`. Returns false when no matching Sym exists.
+export fn show_symbol(query: string, docs: List<Sym>) -> bool {
+    let direct = sym_by_path(docs, query)
+    if direct != null {
+        show_one(direct!, docs)
+        return true
+    }
+    // Fallback: case-insensitive bare-name match.
+    for item in docs {
+        if is_renderable(item) && icase_eq(item.name, query) {
+            show_one(item, docs)
+            return true
+        }
+    }
+    false
+}
+
+/// Worker for `show_symbol`: render the detail view for a single
+/// Sym. The full DocsCorpus is passed in so `@see` references can
+/// be resolved against it.
+fn show_one(s: Sym, docs: List<Sym>) {
+    let header = declaration_line(s)
+    let rule_len = if header.length > 20 { header.length } else { 20 }
+
+    println("")
+    if s.qualified != s.name {
+        println("  ${dim(qualified_breadcrumbs(s.qualified))}")
+    }
+    println("  ${bold(header)}")
+    println("  ${dim(rule(rule_len))}")
+
+    if s.doc != "" {
+        let doc = parse_doc(s.doc)
+        render_doc_block(doc, docs)
+    }
+
+    print_variant_block(s)
+
+    println("")
+    println("  ${dim("Defined in")} ${s.file}:${string(s.span.start.line)}")
+    if s.exported {
+        println("  ${dim("Exported")}")
+    }
+    println("")
+}
+
+/// For enum Syms, render the variants list as a block under the
+/// detail view. No-op for other kinds.
+fn print_variant_block(s: Sym) {
+    match s.kind {
+        .Enum(csv) -> {
+            if csv != "" {
+                println("")
+                println("  ${bold("Variants")}")
+                for v in csv.split(",") {
+                    println("    ${v.trim()}")
+                }
+            }
+        }
+        _ -> {}
+    }
+}
+
+// ── Short one-liner (`--short`) ─────────────────────────────────────
+
+/// `--short` view: print one line — `name: first-line-of-doc` —
+/// for the matching Sym. Returns false when no match. Designed for
+/// shell tools and editors wanting a quick lookup.
+export fn show_short(query: string, docs: List<Sym>) -> bool {
+    let s = sym_by_path(docs, query)
+    if s != null {
+        let line = first_line(s!.doc)
+        let desc = if line == "" { "(undocumented)" } else { line }
+        println("  ${s!.name}: ${desc}")
+        return true
+    }
+    for item in docs {
+        if is_renderable(item) && icase_eq(item.name, query) {
+            let line = first_line(item.doc)
+            let desc = if line == "" { "(undocumented)" } else { line }
+            println("  ${item.name}: ${desc}")
+            return true
+        }
+    }
+    false
+}
+
+// ── Search (`--search`) ─────────────────────────────────────────────
+//
+// Composed scoring tiers (highest first), mirrored from @std/lsp's
+// fuzzy_score so `--search` gets typo-tolerant + subsequence matching:
+//
+//   1000  exact         800  case-insensitive exact
+//    600  prefix         400  subsequence ("iu" matches "init_user")
+//    300  substring      200  Levenshtein ≤ 2
+//      0  no match
+//
+// The doc body is checked too — at half the score of a name match —
+// so `avra docs --search auth` still surfaces a fn whose name doesn't
+// contain "auth" but whose doc does.
+//
+// Duplicates @std/lsp's fuzzy_score body verbatim because the
+// bootstrap module resolver dedupes function imports: a second
+// `use @std.lsp.{fuzzy_score}` from this file would silently lose the
+// binding (TYPE imports cross fine, FN imports don't, see ovm8.1
+// commit comment in 4df15e0e). Once the resolver bug is fixed, this
+// can become a one-line re-import.
+
+/// Score a Sym against a search query. Falls through `fuzzy_score`
+/// on the name first, then a tier-100 contains-match against the
+/// doc body so `--search` can still surface matches when the user
+/// only remembers a description, not the symbol name.
+fn score_match(name: string, doc: string, q: string) -> int {
+    let s = fuzzy_score(q, name)
+    if s > 0 { return s }
+    // Doc-body fallback: any contains-match in the doc body counts as
+    // a tier-100 hit so `--search` still surfaces undeclared-named
+    // matches when the user remembers a description not a symbol.
+    if doc.to_lower().contains(q.to_lower()) { return 100 }
+    0
+}
+
+/// Composed-tier scorer mirrored verbatim from `@std/lsp` (see the
+/// "Duplicates `@std/lsp`" comment above). Tiers (highest first):
+/// 1000 exact, 800 case-insensitive, 600 prefix, 400 subsequence,
+/// 300 substring, 200 Levenshtein ≤ 2, 0 otherwise.
+fn fuzzy_score(query: string, candidate: string) -> int {
+    if query == candidate { return 1000 }
+    let ql = query.to_lower()
+    let cl = candidate.to_lower()
+    if ql == cl { return 800 }
+    if cl.starts_with(ql) {
+        let len_diff = candidate.length - query.length
+        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
+        return 600 - pen
+    }
+    if is_subsequence(ql, cl) {
+        let pen = candidate.length - query.length
+        return 400 - if pen > 0 { pen } else { 0 - pen }
+    }
+    if cl.contains(ql) {
+        let pos_pen = cl.index_of(ql)
+        return 300 - pos_pen
+    }
+    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
+    if dist <= 2 { return 200 - dist * 50 }
+    0
+}
+
+/// True when every character of `needle` appears in order somewhere
+/// in `haystack` (the abbreviation-match heuristic — "iu" matches
+/// "init_user"). Powers tier 400 of `fuzzy_score`.
+fn is_subsequence(needle: string, haystack: string) -> bool {
+    if needle.length == 0 { return true }
+    mut ni = 0
+    mut hi = 0
+    while hi < haystack.length {
+        if needle.substring(ni, ni + 1) == haystack.substring(hi, hi + 1) {
+            ni = ni + 1
+            if ni == needle.length { return true }
+        }
+        hi = hi + 1
+    }
+    false
+}
+
+/// `--search <query>` view. Runs `score_match` over every
+/// renderable Sym and prints the matches grouped by bucket. Empty
+/// projects and zero-hit queries get a "No results" message instead
+/// of an empty table.
+export fn show_search(query: string, docs: List<Sym>) {
+    if count_total(docs) == 0 {
+        println("")
+        println("  No results for \"${query}\".")
+        println("  Try: ${cyan("avra docs")}")
+        println("")
+        return
+    }
+
+    mut total_hits = 0
+    for bucket in 1..5 {
+        total_hits = total_hits + count_search_in_bucket(docs, query, bucket)
+    }
+
+    if total_hits == 0 {
+        println("")
+        println("  No results for \"${query}\".")
+        println("  Try: ${cyan("avra docs")}")
+        println("")
+        return
+    }
+
+    println("")
+    println("  Search results for \"${query}\"")
+    println("  ${dim(rule(20 + query.length))}")
+    println("")
+
+    for bucket in 1..5 {
+        if count_search_in_bucket(docs, query, bucket) > 0 {
+            println("  ${bold(kind_label(bucket))}")
+            print_search_kind(docs, query, bucket)
+            println("")
+        }
+    }
+
+    println("  ${dim("Hint: avra docs <name> for full docs")}")
+    println("")
+}
+
+/// Count Syms in `list` that belong to `want_bucket` AND
+/// score-match `q` (any tier > 0). Used by `show_search` to decide
+/// whether to print each bucket header.
+fn count_search_in_bucket(list: List<Sym>, q: string, want_bucket: int) -> int {
+    count_syms(list, (item: Sym) ->
+        bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0)
+}
+
+/// Worker for `show_search`: print one row per matching Sym in the
+/// requested bucket, with name + truncated doc preview.
+fn print_search_kind(list: List<Sym>, q: string, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket && score_match(item.name, item.doc, q) > 0 {
+            let desc = truncate_str(first_line(item.doc), 50)
+            println("    ${pad_right(item.name, 24)} ${dim(desc)}")
+        }
+    }
+}
+
+// ── LLM-friendly dump (`--llm`) ─────────────────────────────────────
+
+/// `--llm` view: render every symbol as plain markdown headings,
+/// suitable for piping into an LLM context. Used by AI tooling that
+/// wants a coherent summary of the project's exported surface.
+export fn show_llm(docs: List<Sym>) {
+    println("# Project Documentation (LLM-friendly)")
+    println("")
+
+    for bucket in 1..5 {
+        if count_in_bucket(docs, bucket) > 0 {
+            println("## ${kind_label(bucket)}")
+            print_llm_kind(docs, bucket)
+            println("")
+        }
+    }
+}
+
+/// Worker for `show_llm`: print one entry per Sym in the bucket
+/// with its declaration line and first doc line.
+fn print_llm_kind(list: List<Sym>, want_bucket: int) {
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            let head = llm_head(item)
+            let exp = if item.exported { " [export]" } else { "" }
+            println("${head}${exp}")
+            if item.doc != "" {
+                println("# ${first_line(item.doc)}")
+            }
+        }
+    }
+}
+
+/// LLM-rendering header: like `summary_head` but uses bare keyword
+/// prefixes (`type Foo`, `enum Bar`, etc.) so the markdown output
+/// reads like familiar Avra source.
+fn llm_head(s: Sym) -> string {
+    match s.kind {
+        .Fn(sig, _) -> sig
+        .Type(_) -> "type ${s.name}"
+        .Enum(csv) -> {
+            if csv == "" {
+                "enum ${s.name}"
+            } else {
+                "enum ${s.name} { ${csv} }"
+            }
+        }
+        .Const(ty) -> var_signature("const", s.name, ty)
+        .Mut(ty) -> var_signature("mut", s.name, ty)
+        .Let(ty) -> var_signature("let", s.name, ty)
+        _ -> s.name
+    }
+}
+
+// ── Validation (`--validate`) ───────────────────────────────────────
+
+/// `--validate` view. Walks the project, prints per-bucket
+/// documented/total counts, and lists every undocumented symbol.
+/// CI uses the exit signal to enforce a coverage threshold.
+export fn validate_docs(dir: string) {
+    let docs = extract_project_docs_ast(dir)
+    let total = count_total(docs)
+    let documented = count_documented(docs)
+
+    println("")
+    println("  ${bold("Project Documentation Coverage")}")
+    println("  ${dim(rule(30))}")
+    println("")
+    println("  Symbols found: ${string(total)}")
+
+    for bucket in 1..5 {
+        print_validation_kind(docs, bucket, kind_label(bucket))
+    }
+
+    let undocumented = total - documented
+    let coverage = if total == 0 { 100 } else { pct(documented, total) }
+
+    println("")
+    println("  ${bold("Summary")}")
+    println("    ${pad_right("Documented:", 16)} ${string(documented)}/${string(total)} symbols (${string(coverage)}%)")
+    if undocumented > 0 {
+        println("    ${pad_right("Undocumented:", 16)} ${string(undocumented)} symbols")
+    }
+    println("")
+}
+
+/// Worker for `validate_docs`: print one section per bucket with
+/// documented count, percentage, and the comma-separated list of
+/// undocumented names.
+fn print_validation_kind(list: List<Sym>, want_bucket: int, label: string) {
+    let total = count_in_bucket(list, want_bucket)
+    if total == 0 { return }
+    let doc_n = count_documented_in(list, want_bucket)
+    let coverage = pct(doc_n, total)
+
+    println("")
+    println("  ${bold(label)}: ${string(total)} total")
+    println("    ${green("✓")} documented: ${string(doc_n)} (${string(coverage)}%)")
+
+    let undoc_n = total - doc_n
+    if undoc_n > 0 {
+        let names = collect_undocumented_names(list, want_bucket)
+        println("    ${red("✗")} undocumented: ${names}")
+    }
+}
+
+/// Build a comma-separated string of every undocumented Sym name
+/// in `want_bucket`. Used by `print_validation_kind` so the output
+/// stays diff-friendly (one line per bucket).
+fn collect_undocumented_names(list: List<Sym>, want_bucket: int) -> string {
+    mut acc = ""
+    for item in list {
+        if bucket_of(item) == want_bucket && !has_doc(item) {
+            acc = if acc == "" { item.name } else { acc + ", " + item.name }
+        }
+    }
+    acc
+}
+
+/// Resolve an `@see` reference against the `List<Sym>`. Found
+/// symbols render in cyan with their `file:line` suffix; unresolved
+/// ones get a red `⚠ unresolved` marker so doc rot is visible at a
+/// glance.
+fn render_see_ref(name: string, docs: List<Sym>) -> string {
+    let target = sym_by_path(docs, name)
+    if target == null {
+        return "${dim(name)} ${red("⚠ unresolved")}"
+    }
+    let s = target!
+    let loc = "${s.file}:${string(s.span.start.line)}"
+    "${cyan(s.qualified)} ${dim(loc)}"
+}
+
+// ── Format-as-JSON (`--format=json`) ────────────────────────────────
+//
+// Render the SymList as a JSON array — one record per Sym with
+// name / qualified / kind / detail / doc / file / line / exported.
+// Consumed by IDE plugins, MCP clients, CI tooling, anything that
+// wants structured output. Schema is stable; bumping it is a
+// breaking change worth a major version.
+
+/// `--format=json` exporter. Walks the SymList and produces a
+/// JSON array — one record per renderable Sym with name /
+/// qualified / kind / detail / doc / file / line / exported.
+/// Schema is stable; bumping it is a breaking change.
+export fn render_json(docs: List<Sym>) -> string {
+    mut out = "["
+    mut first = true
+    for item in docs {
+        if is_renderable(item) {
+            let row = render_sym_json(item)
+            if first {
+                out = "${out}${row}"
+                first = false
+            } else {
+                out = "${out},${row}"
+            }
+        }
+    }
+    "${out}]"
+}
+
+/// Render a single Sym as one JSON object (no trailing comma).
+/// Used by `render_json` for both the array element and the
+/// MCP/LSP single-symbol responses that need the same shape.
+fn render_sym_json(s: Sym) -> string {
+    let kind_tag = sym_kind_tag(s)
+    let detail = json_str(declaration_line(s))
+    let name = json_str(s.name)
+    let qual = json_str(s.qualified)
+    let doc = json_str(s.doc)
+    let file = json_str(s.file)
+    let exp = if s.exported { "true" } else { "false" }
+    "{\"name\":${name},\"qualified\":${qual},\"kind\":${json_str(kind_tag)},\"detail\":${detail},\"doc\":${doc},\"file\":${file},\"line\":${string(s.span.start.line)},\"exported\":${exp}}"
+}
+
+/// Map a SymKind to its lowercase tag used in JSON output ("fn",
+/// "type", "enum", …). Stable identifiers — clients can switch on
+/// them.
+fn sym_kind_tag(s: Sym) -> string {
+    match s.kind {
+        .Fn(_, _) -> "fn"
+        .Type(_) -> "type"
+        .Enum(_) -> "enum"
+        .Trait(_) -> "trait"
+        .Impl(_, _) -> "impl"
+        .Const(_) -> "const"
+        .Mut(_) -> "mut"
+        .Let(_) -> "let"
+        .ErrorCode(_) -> "error"
+        .Keyword(_) -> "keyword"
+        .Module -> "module"
+    }
+}
+
+// ── Format-as-markdown (`--format=markdown`) ────────────────────────
+//
+// Plain markdown — no ANSI codes — suitable for pasting into a
+// GitHub README or piping into `glow`. Mirrors show_llm's structure
+// but without the "LLM-friendly" framing.
+
+/// `--format=markdown` exporter. Plain markdown — no ANSI codes —
+/// suitable for pasting into a GitHub README or piping into `glow`.
+/// Mirrors `show_llm`'s structure but without the LLM framing.
+export fn render_markdown(docs: List<Sym>) -> string {
+    mut out = "# Project Documentation\n\n"
+    for bucket in 1..5 {
+        if count_in_bucket(docs, bucket) > 0 {
+            out = "${out}## ${kind_label(bucket)}\n\n${render_md_kind(docs, bucket)}"
+        }
+    }
+    out
+}
+
+/// Worker for `render_markdown`: emit one `### ...` block per Sym
+/// in the bucket, with code-fenced declaration, doc body, and
+/// italicised location footer.
+fn render_md_kind(list: List<Sym>, want_bucket: int) -> string {
+    mut out = ""
+    for item in list {
+        if bucket_of(item) == want_bucket {
+            let head = declaration_line(item)
+            let exp = if item.exported { " *(exported)*" } else { "" }
+            out = out + "### `" + head + "`" + exp + "\n\n"
+            if item.doc != "" {
+                out = out + item.doc + "\n\n"
+            }
+            out = out + "_" + item.file + ":" + string(item.span.start.line) + "_\n\n"
+        }
+    }
+    out
+}
+
+// ── Doctests (`--doctest`) ──────────────────────────────────────────
+//
+// Walk every Sym, extract fenced ```avra``` examples from /// blocks,
+// try to parse each as Avra source. Parse failures print as doctest
+// failures so stale examples get caught at CI time.
+
+/// `--doctest` view. Walk every Sym, extract fenced `avra` code
+/// blocks from its /// body, parse each, and report pass/fail. CI
+/// uses this to catch stale doc examples. Returns true when every
+/// block parsed cleanly.
+export fn run_doctests(docs: List<Sym>) -> bool {
+    mut total = 0
+    mut passed = 0
+    println("")
+    println("  ${bold("Doctests")}")
+    println("  ${dim(rule(20))}")
+    for item in docs {
+        if is_renderable(item) && item.doc != "" {
+            let block = parse_doc(item.doc)
+            mut idx = 0
+            while idx < block.examples.length {
+                total = total + 1
+                let ex = block.examples[idx]
+                let ok = doctest_check(ex)
+                if ok {
+                    passed = passed + 1
+                    println("    ${green("✓")} ${item.qualified} [${string(idx)}]")
+                } else {
+                    println("    ${red("✗")} ${item.qualified} [${string(idx)}] failed to parse")
+                }
+                idx = idx + 1
+            }
+        }
+    }
+    println("")
+    if total == 0 {
+        println("  ${dim("(no doctests found)")}")
+        println("")
+        return true
+    }
+    if passed == total {
+        println("  ${green("All doctests passed")} (${string(passed)}/${string(total)})")
+    } else {
+        println("  ${red("Doctest failures")} (${string(passed)}/${string(total)})")
+    }
+    println("")
+    passed == total
+}
+
+/// Parse-only check used by `run_doctests`. Wrapping bare-
+/// expression examples in a synthetic `__doctest_main` keeps things
+/// like `square(5)` from triggering "expression at top level"
+/// errors. Examples that declare their own top-level fns are left
+/// alone via `source_has_top_decl`.
+fn doctest_check(source: string) -> bool {
+    let wrapped = wrap_doctest_source(source)
+    let parsed = parse_program_source(wrapped)
+    !parsed.had_error && parsed.stmts != null
+}
+
+/// Wrap a bare-expression doctest source in a synthetic main fn so
+/// the parser treats it as a valid program. No-op when `source`
+/// already contains a top-level decl.
+fn wrap_doctest_source(source: string) -> string {
+    if source_has_top_decl(source) {
+        return source
+    }
+    "fn __doctest_main() {\n${source}\n}\n"
+}
+
+/// True when any non-comment line starts with a top-level decl
+/// keyword. Cheap heuristic — false negatives just mean we wrap
+/// the example, which is harmless for fn-only examples.
+fn source_has_top_decl(source: string) -> bool {
+    for raw in source.split("\n") {
+        let line = raw.trim()
+        if line == "" || line.starts_with("//") { continue }
+        if line.starts_with("fn ") || line.starts_with("export fn ")
+            || line.starts_with("type ") || line.starts_with("export type ")
+            || line.starts_with("enum ") || line.starts_with("export enum ")
+            || line.starts_with("trait ") || line.starts_with("impl ")
+            || line.starts_with("const ") || line.starts_with("export const ")
+            || line.starts_with("let ") || line.starts_with("mut ") {
+            return true
+        }
+    }
+    false
+}
+
+// ── DocBlock parser ─────────────────────────────────────────────────
+//
+// Parse a /// body into structured sections so renderers can show
+// summaries, params, returns, examples, and metadata distinctly. Free-
+// form prose still works — anything not recognised as a directive
+// rolls into the summary or `body` overflow.
+//
+// Supported directives (one per line):
+//   @param NAME DESC    parameter description
+//   @returns DESC       return-value description
+//   @see PATH           cross-reference (resolved by x35m.4)
+//   @since VERSION
+//   @deprecated REASON
+//   @example LANG       inline single-line example fence (rare)
+//
+// Plus fenced examples:
+//   ```avra
+//   ... body ...
+//   ```
+//
+// First non-blank, non-directive paragraph becomes the summary. The
+// rest accumulates as the body for renderers that want the whole tail.
+
+/// Parsed structure of a `///` block. Renderers use this so they
+/// can format summary, params, returns, examples, and metadata
+/// distinctly. Free-form prose still works — anything not
+/// recognised as a directive rolls into `body`.
+///
+/// @field summary    — first non-blank, non-directive paragraph.
+/// @field body       — remaining prose after the summary.
+/// @field params     — `@param NAME DESC` lines.
+/// @field returns    — `@returns DESC` text.
+/// @field examples   — fenced ```avra``` example bodies.
+/// @field see        — `@see PATH` cross-references.
+/// @field since      — `@since VERSION` value.
+/// @field deprecated — `@deprecated REASON` value.
+export type DocBlock = {
+    summary: string,
+    body: string,
+    params: List<string>,
+    returns: string,
+    examples: List<string>,
+    see: List<string>,
+    since: string,
+    deprecated: string
+}
+
+/// Build a zeroed DocBlock — the parser uses this as its starting
+/// point and fills in fields as it reads each directive line.
+export fn empty_doc_block() -> DocBlock {
+    DocBlock {
+        summary: "",
+        body: "",
+        params: [],
+        returns: "",
+        examples: [],
+        see: [],
+        since: "",
+        deprecated: ""
+    }
+}
+
+/// Parse a /// body into a structured DocBlock. Recognises every
+/// directive listed in the section header above; everything else
+/// rolls into `summary` (until the first blank line) or `body`.
+/// Fenced code blocks open with ```` ``` ```` and close on the next ```` ``` ````.
+export fn parse_doc(text: string) -> DocBlock {
+    if text == "" { return empty_doc_block() }
+    mut block = empty_doc_block()
+    mut summary_done = false
+    mut summary_buf = ""
+    mut body_buf = ""
+    mut in_fence = false
+    mut fence_buf = ""
+    let lines = text.split("\n")
+    mut i = 0
+    while i < lines.length {
+        let raw = lines[i]
+        i = i + 1
+        let line = raw.trim()
+
+        // Fenced code block: ```avra ... ```
+        if line.starts_with("```") {
+            if in_fence {
+                in_fence = false
+                block.examples.push(fence_buf)
+                fence_buf = ""
+            } else {
+                in_fence = true
+                fence_buf = ""
+                summary_done = true
+            }
+            continue
+        }
+        if in_fence {
+            fence_buf = if fence_buf == "" { raw } else { fence_buf + "\n" + raw }
+            continue
+        }
+
+        // Directives.
+        if line.starts_with("@param ") {
+            block.params.push(line.substring(7, line.length).trim())
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@returns ") {
+            block.returns = line.substring(9, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@return ") {
+            block.returns = line.substring(8, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@see ") {
+            block.see.push(line.substring(5, line.length).trim())
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@since ") {
+            block.since = line.substring(7, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line.starts_with("@deprecated ") {
+            block.deprecated = line.substring(12, line.length).trim()
+            summary_done = true
+            continue
+        }
+        if line == "@deprecated" {
+            block.deprecated = "(deprecated)"
+            summary_done = true
+            continue
+        }
+
+        // Plain prose. Empty line ends the summary section.
+        if line == "" {
+            if summary_buf != "" { summary_done = true }
+            if summary_done {
+                body_buf = if body_buf == "" { "" } else { body_buf + "\n" }
+            }
+            continue
+        }
+        if summary_done {
+            body_buf = if body_buf == "" { line } else { body_buf + "\n" + line }
+        } else {
+            summary_buf = if summary_buf == "" { line } else { summary_buf + " " + line }
+        }
+    }
+    block.summary = summary_buf
+    block.body = body_buf
+    block
+}
+
+/// Render a parsed DocBlock to stdout. Sections appear only when
+/// non-empty: summary, body, parameters, returns, examples, see-
+/// also, since, deprecated. The full DocsCorpus is passed in so
+/// `@see` references can be resolved.
+fn render_doc_block(block: DocBlock, docs: List<Sym>) {
+    if block.summary != "" {
+        println("")
+        println("  ${block.summary}")
+    }
+    if block.body != "" {
+        println("")
+        for line in block.body.split("\n") {
+            println("  ${line}")
+        }
+    }
+    if block.params.length > 0 {
+        println("")
+        println("  ${bold("Parameters")}")
+        mut i = 0
+        while i < block.params.length {
+            println("    ${block.params[i]}")
+            i = i + 1
+        }
+    }
+    if block.returns != "" {
+        println("")
+        println("  ${bold("Returns")}")
+        println("    ${block.returns}")
+    }
+    if block.examples.length > 0 {
+        println("")
+        println("  ${bold("Examples")}")
+        mut i = 0
+        while i < block.examples.length {
+            for line in block.examples[i].split("\n") {
+                println("    ${line}")
+            }
+            i = i + 1
+        }
+    }
+    if block.see.length > 0 {
+        println("")
+        println("  ${bold("See also")}")
+        mut i = 0
+        while i < block.see.length {
+            println("    ${render_see_ref(block.see[i], docs)}")
+            i = i + 1
+        }
+    }
+    if block.since != "" {
+        println("")
+        println("  ${dim("since ${block.since}")}")
+    }
+    if block.deprecated != "" {
+        println("")
+        println("  ${red("⚠ deprecated:")} ${block.deprecated}")
+    }
+}

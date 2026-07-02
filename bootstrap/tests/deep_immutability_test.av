@@ -1,0 +1,23 @@
+// Test: deep immutability — let is immutable, mut allows field assignment.
+
+type DiPoint = { x: int, y: int }
+
+fn di_immutable_read() -> int {
+    let p = DiPoint { x: 42, y: 0 }
+    p.x
+}
+
+fn di_mutable_update() -> int {
+    mut q = DiPoint { x: 1, y: 2 }
+    q.x = 99
+    q.x
+}
+
+spec "deep immutability" {
+    then "immutable binding read works" {
+        di_immutable_read() == 42
+    }
+    then "mutable binding field assignment works" {
+        di_mutable_update() == 99
+    }
+}

@@ -1,0 +1,62 @@
+enum GuardShape {
+    Circle(radius: int),
+    Rect(w: int, h: int),
+}
+
+fn guard_classify_shape(s: GuardShape) -> string {
+    match s {
+        .Circle(r) if r > 10 -> "big circle"
+        .Circle(r) if r > 5 -> "medium circle"
+        .Circle(_) -> "small circle"
+        .Rect(w, h) if w == h -> "square"
+        .Rect(_, _) -> "rectangle"
+    }
+}
+
+fn guard_check(x: int) -> string {
+    match x {
+        _ if x > 100 -> "huge"
+        _ if x > 0 -> "positive"
+        _ -> "non-positive"
+    }
+}
+
+enum GuardResult {
+    Ok(value: int),
+    Err(code: int),
+}
+
+fn guard_describe_result(r: GuardResult) -> string {
+    match r {
+        .Ok(v) if v > 0 -> `ok: ${string(v)}`
+        .Ok(_) -> "ok: zero or negative"
+        .Err(c) if c == 404 -> "not found"
+        .Err(c) -> `error: ${string(c)}`
+    }
+}
+
+fn guard_greet(name: string) -> string {
+    match name {
+        _ if name == "Alice" -> "Hello Alice!"
+        _ if name.starts_with("B") -> `Hey ${name}!`
+        _ -> `Hi ${name}!`
+    }
+}
+
+spec "match guards" {
+    then "big circle" { guard_classify_shape(GuardShape.Circle(15)) == "big circle" }
+    then "medium circle" { guard_classify_shape(GuardShape.Circle(7)) == "medium circle" }
+    then "small circle" { guard_classify_shape(GuardShape.Circle(2)) == "small circle" }
+    then "square" { guard_classify_shape(GuardShape.Rect(5, 5)) == "square" }
+    then "rectangle" { guard_classify_shape(GuardShape.Rect(3, 7)) == "rectangle" }
+    then "huge" { guard_check(200) == "huge" }
+    then "positive" { guard_check(50) == "positive" }
+    then "non-positive" { guard_check(-5) == "non-positive" }
+    then "ok positive" { guard_describe_result(GuardResult.Ok(42)) == "ok: 42" }
+    then "ok zero or negative" { guard_describe_result(GuardResult.Ok(-1)) == "ok: zero or negative" }
+    then "not found" { guard_describe_result(GuardResult.Err(404)) == "not found" }
+    then "error other" { guard_describe_result(GuardResult.Err(500)) == "error: 500" }
+    then "greet Alice" { guard_greet("Alice") == "Hello Alice!" }
+    then "greet Bob" { guard_greet("Bob") == "Hey Bob!" }
+    then "greet Carol" { guard_greet("Carol") == "Hi Carol!" }
+}

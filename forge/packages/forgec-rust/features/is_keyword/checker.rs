@@ -15,5 +15,4 @@ impl TypeChecker {
         }
         Type::Bool
     }
-
 }

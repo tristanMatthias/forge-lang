@@ -10,12 +10,11 @@
 // - ptr.from_string(s): extract_value 0 from string struct
 // - null guard: check ptr is null before GEP, panic if so
 
-use inkwell::IntPredicate;
 use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::parser::ast::*;
-
 
 impl<'ctx> Codegen<'ctx> {
     // ── ptr[index] read ────────────────────────────────────────────
@@ -33,27 +32,26 @@ impl<'ctx> Codegen<'ctx> {
 
         // GEP to byte at offset
         let byte_ptr = unsafe {
-            self.builder.build_gep(
-                self.context.i8_type(),
-                ptr_val,
-                &[idx],
-                "ptr_byte_ptr",
-            ).unwrap()
+            self.builder
+                .build_gep(self.context.i8_type(), ptr_val, &[idx], "ptr_byte_ptr")
+                .unwrap()
         };
 
         // Load i8
-        let byte_val = self.builder.build_load(
-            self.context.i8_type(),
-            byte_ptr,
-            "ptr_byte",
-        ).unwrap();
+        let byte_val = self
+            .builder
+            .build_load(self.context.i8_type(), byte_ptr, "ptr_byte")
+            .unwrap();
 
         // Zero-extend i8 → i64
-        let int_val = self.builder.build_int_z_extend(
-            byte_val.into_int_value(),
-            self.context.i64_type(),
-            "ptr_byte_ext",
-        ).unwrap();
+        let int_val = self
+            .builder
+            .build_int_z_extend(
+                byte_val.into_int_value(),
+                self.context.i64_type(),
+                "ptr_byte_ext",
+            )
+            .unwrap();
 
         Some(int_val.into())
     }
@@ -85,20 +83,16 @@ impl<'ctx> Codegen<'ctx> {
 
         // GEP to byte at offset
         let byte_ptr = unsafe {
-            self.builder.build_gep(
-                self.context.i8_type(),
-                ptr_val,
-                &[idx],
-                "ptr_store_ptr",
-            ).unwrap()
+            self.builder
+                .build_gep(self.context.i8_type(), ptr_val, &[idx], "ptr_store_ptr")
+                .unwrap()
         };
 
         // Truncate i64 → i8
-        let byte_val = self.builder.build_int_truncate(
-            val,
-            self.context.i8_type(),
-            "ptr_trunc_byte",
-        ).unwrap();
+        let byte_val = self
+            .builder
+            .build_int_truncate(val, self.context.i8_type(), "ptr_trunc_byte")
+            .unwrap();
 
         // Store
         self.builder.build_store(byte_ptr, byte_val).unwrap();
@@ -117,12 +111,9 @@ impl<'ctx> Codegen<'ctx> {
         let offset = rhs.into_int_value();
 
         let result = unsafe {
-            self.builder.build_gep(
-                self.context.i8_type(),
-                ptr_val,
-                &[offset],
-                "ptr_offset",
-            ).unwrap()
+            self.builder
+                .build_gep(self.context.i8_type(), ptr_val, &[offset], "ptr_offset")
+                .unwrap()
         };
 
         Some(result.into())
@@ -139,19 +130,20 @@ impl<'ctx> Codegen<'ctx> {
         let lhs_ptr = lhs.into_pointer_value();
         let rhs_ptr = rhs.into_pointer_value();
 
-        let lhs_int = self.builder.build_ptr_to_int(
-            lhs_ptr,
-            self.context.i64_type(),
-            "ptr_to_int_l",
-        ).unwrap();
+        let lhs_int = self
+            .builder
+            .build_ptr_to_int(lhs_ptr, self.context.i64_type(), "ptr_to_int_l")
+            .unwrap();
 
-        let rhs_int = self.builder.build_ptr_to_int(
-            rhs_ptr,
-            self.context.i64_type(),
-            "ptr_to_int_r",
-        ).unwrap();
+        let rhs_int = self
+            .builder
+            .build_ptr_to_int(rhs_ptr, self.context.i64_type(), "ptr_to_int_r")
+            .unwrap();
 
-        let diff = self.builder.build_int_sub(lhs_int, rhs_int, "ptr_diff").unwrap();
+        let diff = self
+            .builder
+            .build_int_sub(lhs_int, rhs_int, "ptr_diff")
+            .unwrap();
         Some(diff.into())
     }
 
@@ -164,17 +156,33 @@ impl<'ctx> Codegen<'ctx> {
         op: &BinaryOp,
         rhs: BasicValueEnum<'ctx>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let lhs_int = self.builder.build_ptr_to_int(
-            lhs.into_pointer_value(),
-            self.context.i64_type(),
-            "ptr_cmp_l",
-        ).unwrap();
+        // Handle both pointer and integer values (ptr vars may be stored as i64)
+        let lhs_int = if lhs.is_pointer_value() {
+            self.builder
+                .build_ptr_to_int(
+                    lhs.into_pointer_value(),
+                    self.context.i64_type(),
+                    "ptr_cmp_l",
+                )
+                .unwrap()
+        } else {
+            lhs.into_int_value()
+        };
 
-        let rhs_int = self.builder.build_ptr_to_int(
-            rhs.into_pointer_value(),
-            self.context.i64_type(),
-            "ptr_cmp_r",
-        ).unwrap();
+        let rhs_int = if rhs.is_pointer_value() {
+            self.builder
+                .build_ptr_to_int(
+                    rhs.into_pointer_value(),
+                    self.context.i64_type(),
+                    "ptr_cmp_r",
+                )
+                .unwrap()
+        } else if rhs.is_int_value() {
+            rhs.into_int_value()
+        } else {
+            // rhs is a struct (null literal) — use zero
+            self.context.i64_type().const_zero()
+        };
 
         let pred = match op {
             BinaryOp::Eq => IntPredicate::EQ,
@@ -182,12 +190,14 @@ impl<'ctx> Codegen<'ctx> {
             _ => return None,
         };
 
-        let cmp = self.builder.build_int_compare(pred, lhs_int, rhs_int, "ptr_cmp").unwrap();
-        let result = self.builder.build_int_z_extend(
-            cmp,
-            self.context.i8_type(),
-            "ptr_cmp_ext",
-        ).unwrap();
+        let cmp = self
+            .builder
+            .build_int_compare(pred, lhs_int, rhs_int, "ptr_cmp")
+            .unwrap();
+        let result = self
+            .builder
+            .build_int_z_extend(cmp, self.context.i8_type(), "ptr_cmp_ext")
+            .unwrap();
 
         Some(result.into())
     }
@@ -199,10 +209,16 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         args: &[Expr],
     ) -> Option<BasicValueEnum<'ctx>> {
-        if args.len() != 2 { return None; }
+        if args.len() != 2 {
+            return None;
+        }
         let ptr_val = self.compile_expr(&args[0])?;
         let len_val = self.compile_expr(&args[1])?;
-        self.call_runtime("forge_string_new", &[ptr_val.into(), len_val.into()], "str_from_ptr")
+        self.call_runtime(
+            "forge_string_new",
+            &[ptr_val.into(), len_val.into()],
+            "str_from_ptr",
+        )
     }
 
     // ── ptr.from_string(string) ────────────────────────────────────
@@ -212,10 +228,15 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         args: &[Expr],
     ) -> Option<BasicValueEnum<'ctx>> {
-        if args.len() != 1 { return None; }
+        if args.len() != 1 {
+            return None;
+        }
         let str_val = self.compile_expr(&args[0])?;
         let struct_val = str_val.into_struct_value();
-        let ptr_val = self.builder.build_extract_value(struct_val, 0, "str_ptr").ok()?;
+        let ptr_val = self
+            .builder
+            .build_extract_value(struct_val, 0, "str_ptr")
+            .ok()?;
         Some(ptr_val)
     }
 
@@ -223,24 +244,35 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Emit a null check before ptr[i] access. If null, abort with message.
     fn emit_ptr_null_guard(&mut self, ptr_val: PointerValue<'ctx>) {
-        let ptr_int = self.builder.build_ptr_to_int(
-            ptr_val,
-            self.context.i64_type(),
-            "null_check",
-        ).unwrap();
+        let ptr_int = self
+            .builder
+            .build_ptr_to_int(ptr_val, self.context.i64_type(), "null_check")
+            .unwrap();
 
-        let is_null = self.builder.build_int_compare(
-            IntPredicate::EQ,
-            ptr_int,
-            self.context.i64_type().const_zero(),
-            "is_null",
-        ).unwrap();
+        let is_null = self
+            .builder
+            .build_int_compare(
+                IntPredicate::EQ,
+                ptr_int,
+                self.context.i64_type().const_zero(),
+                "is_null",
+            )
+            .unwrap();
 
-        let current_fn = self.builder.get_insert_block().unwrap().get_parent().unwrap();
-        let panic_block = self.context.append_basic_block(current_fn, "ptr_null_panic");
+        let current_fn = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+        let panic_block = self
+            .context
+            .append_basic_block(current_fn, "ptr_null_panic");
         let ok_block = self.context.append_basic_block(current_fn, "ptr_ok");
 
-        self.builder.build_conditional_branch(is_null, panic_block, ok_block).unwrap();
+        self.builder
+            .build_conditional_branch(is_null, panic_block, ok_block)
+            .unwrap();
 
         // Panic block: call abort
         self.builder.position_at_end(panic_block);

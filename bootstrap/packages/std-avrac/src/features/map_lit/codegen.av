@@ -1,0 +1,72 @@
+// WHY: codegen for map literals {"key": value, ...} and map operations.
+// Maps are backed by the C-runtime avra_map_*_cstr functions.
+
+use core.{Expr, SExpr, VarBinding, ValueType}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{emit_single_arg}
+
+/// Codegen for `{k: v, k: v, ...}`. Allocates a fresh
+/// `avra_map_new_cstr` and inserts every entry via
+/// `insert_map_entries`. Result type is `Map`.
+export fn emit_map_lit(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>) -> Result<EmitValue, string> {
+    let map = ctx.call("avra_map_new_cstr", [])
+    insert_map_entries(ctx, env, entries, map)
+}
+
+/// Walk the entries list pairwise, emitting each (key, value)
+/// pair and pushing it into `map` via `avra_map_set_cstr`. Errors
+/// on dangling keys (odd number of entries — means the parser
+/// produced malformed input).
+fn insert_map_entries(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>, map: ptr) -> Result<EmitValue, string> {
+    mut i = 0
+    mut val_ty: ValueType = .Unknown
+    while i < entries.length {
+        let key_r = ctx.emit(env, entries[i].node)?
+        if i + 1 >= entries.length { return err_emit("map literal has key without value") }
+        let val_r = ctx.emit(env, entries[i + 1].node)?
+        // Pin the literal's value type from the FIRST entry, matching the
+        // type checker (map_lit_check_expr) so the emitted Map<string, V>
+        // type agrees across phases.
+        if i == 0 { val_ty = val_r.ty }
+        ctx.call("avra_map_set_cstr", [map, ctx.to_ptr(key_r.value, "map_key"), val_r.value])
+        i = i + 2
+    }
+    ok_emit(map, .Map(.Str, val_ty))
+}
+
+/// Dispatch a method call on a Map value. Maps method names to
+/// the corresponding `avra_map_*_cstr` runtime call. Unknown
+/// methods produce a "not implemented" error.
+export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    match method {
+        "get" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("avra_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Unknown)
+        }
+        "has" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("avra_map_has_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Bool)
+        }
+        "set" -> return emit_map_set(ctx, env, map_ptr, args)
+        "len" or "length" -> return ok_emit(ctx.call("avra_map_len_cstr", [map_ptr]), .Int)
+        "keys" -> return ok_emit(ctx.call("avra_map_keys_cstr", [map_ptr]), .List(.Str))
+        "values" -> return ok_emit(ctx.call("avra_map_values_cstr", [map_ptr]), .List(.Unknown))
+        "remove" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("avra_map_remove_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Void)
+        }
+        _ -> err_emit("map method `${method}` not implemented")
+    }
+}
+
+/// Codegen for `map.set(key, val)`. Two-arg variant — emits
+/// both, casts the key to ptr, and forwards to `avra_map_set_cstr`.
+/// Returns the map unchanged so the call chains.
+fn emit_map_set(ctx: Ctx, env: List<VarBinding>, map: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length < 2 { return err_emit("map.set expects 2 arguments: key and value") }
+    let key_r = ctx.emit(env, args[0].node)?
+    let val_r = ctx.emit(env, args[1].node)?
+    let key_ptr = ctx.to_ptr(key_r.value, "set_key")
+    ctx.call("avra_map_set_cstr", [map, key_ptr, val_r.value])
+    ok_emit(map, .Map(.Str, val_r.ty))
+}

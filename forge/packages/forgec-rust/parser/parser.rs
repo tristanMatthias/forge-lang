@@ -60,7 +60,10 @@ impl Parser {
         }
     }
 
-    pub fn new_with_components(tokens: Vec<Token>, components: HashMap<String, ComponentMeta>) -> Self {
+    pub fn new_with_components(
+        tokens: Vec<Token>,
+        components: HashMap<String, ComponentMeta>,
+    ) -> Self {
         Self {
             tokens,
             pos: 0,
@@ -203,7 +206,14 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Let { name, type_ann, type_ann_span, value, exported, span: start })
+        Some(Statement::Let {
+            name,
+            type_ann,
+            type_ann_span,
+            value,
+            exported,
+            span: start,
+        })
     }
 
     pub(crate) fn parse_let(&mut self) -> Option<Statement> {
@@ -350,9 +360,17 @@ impl Parser {
     }
 
     pub(crate) fn parse_mut_with_export(&mut self, exported: bool) -> Option<Statement> {
-        self.parse_binding_with_export(exported, |name, type_ann, type_ann_span, value, exported, span| {
-            Statement::Mut { name, type_ann, type_ann_span, value, exported, span }
-        })
+        self.parse_binding_with_export(
+            exported,
+            |name, type_ann, type_ann_span, value, exported, span| Statement::Mut {
+                name,
+                type_ann,
+                type_ann_span,
+                value,
+                exported,
+                span,
+            },
+        )
     }
 
     pub(crate) fn parse_mut(&mut self) -> Option<Statement> {
@@ -360,9 +378,17 @@ impl Parser {
     }
 
     pub(crate) fn parse_const_with_export(&mut self, exported: bool) -> Option<Statement> {
-        self.parse_binding_with_export(exported, |name, type_ann, type_ann_span, value, exported, span| {
-            Statement::Const { name, type_ann, type_ann_span, value, exported, span }
-        })
+        self.parse_binding_with_export(
+            exported,
+            |name, type_ann, type_ann_span, value, exported, span| Statement::Const {
+                name,
+                type_ann,
+                type_ann_span,
+                value,
+                exported,
+                span,
+            },
+        )
     }
 
     pub(crate) fn parse_const(&mut self) -> Option<Statement> {
@@ -713,7 +739,12 @@ impl Parser {
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = next(self)?;
-            left = Expr::Binary { left: Box::new(left), op, right: Box::new(right), span };
+            left = Expr::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+                span,
+            };
         }
         Some(left)
     }
@@ -728,15 +759,22 @@ impl Parser {
 
     pub(crate) fn parse_equality(&mut self) -> Option<Expr> {
         self.parse_binary_level(
-            &[(TokenKind::EqEq, BinaryOp::Eq), (TokenKind::NotEq, BinaryOp::NotEq)],
+            &[
+                (TokenKind::EqEq, BinaryOp::Eq),
+                (TokenKind::NotEq, BinaryOp::NotEq),
+            ],
             Self::parse_comparison,
         )
     }
 
     pub(crate) fn parse_comparison(&mut self) -> Option<Expr> {
         self.parse_binary_level(
-            &[(TokenKind::Lt, BinaryOp::Lt), (TokenKind::LtEq, BinaryOp::LtEq),
-              (TokenKind::Gt, BinaryOp::Gt), (TokenKind::GtEq, BinaryOp::GtEq)],
+            &[
+                (TokenKind::Lt, BinaryOp::Lt),
+                (TokenKind::LtEq, BinaryOp::LtEq),
+                (TokenKind::Gt, BinaryOp::Gt),
+                (TokenKind::GtEq, BinaryOp::GtEq),
+            ],
             Self::parse_bitwise_or,
         )
     }
@@ -764,7 +802,10 @@ impl Parser {
 
     pub(crate) fn parse_bitwise_shift(&mut self) -> Option<Expr> {
         self.parse_binary_level(
-            &[(TokenKind::ShiftLeft, BinaryOp::Shl), (TokenKind::ShiftRight, BinaryOp::Shr)],
+            &[
+                (TokenKind::ShiftLeft, BinaryOp::Shl),
+                (TokenKind::ShiftRight, BinaryOp::Shr),
+            ],
             Self::parse_range,
         )
     }
@@ -772,15 +813,21 @@ impl Parser {
 
     pub(crate) fn parse_addition(&mut self) -> Option<Expr> {
         self.parse_binary_level(
-            &[(TokenKind::Plus, BinaryOp::Add), (TokenKind::Minus, BinaryOp::Sub)],
+            &[
+                (TokenKind::Plus, BinaryOp::Add),
+                (TokenKind::Minus, BinaryOp::Sub),
+            ],
             Self::parse_multiplication,
         )
     }
 
     pub(crate) fn parse_multiplication(&mut self) -> Option<Expr> {
         self.parse_binary_level(
-            &[(TokenKind::Star, BinaryOp::Mul), (TokenKind::Slash, BinaryOp::Div),
-              (TokenKind::Percent, BinaryOp::Mod)],
+            &[
+                (TokenKind::Star, BinaryOp::Mul),
+                (TokenKind::Slash, BinaryOp::Div),
+                (TokenKind::Percent, BinaryOp::Mod),
+            ],
             Self::parse_unary,
         )
     }
@@ -830,7 +877,8 @@ impl Parser {
             if self.check(&TokenKind::LParen) {
                 let span = self.advance()?.span;
                 self.skip_newlines();
-                let args = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_call_arg())?;
+                let args =
+                    self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_call_arg())?;
                 expr = Expr::Call {
                     callee: Box::new(expr),
                     args,
@@ -842,7 +890,8 @@ impl Parser {
                     // try_parse_call_type_args guarantees LParen follows on success
                     let span = self.advance()?.span;
                     self.skip_newlines();
-                    let args = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_call_arg())?;
+                    let args =
+                        self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_call_arg())?;
                     expr = Expr::Call {
                         callee: Box::new(expr),
                         args,
@@ -861,13 +910,17 @@ impl Parser {
                     // For `ident }` (shorthand single field), require uppercase type name to avoid
                     // ambiguity with `condition { block }` patterns like `if a > b { x }`.
                     // Use peek_at_meaningful to skip newlines inside { ... }
-                    let next_is_ident = self.peek_at_meaningful(1).map(|t| matches!(&t.kind, TokenKind::Ident(_))).unwrap_or(false);
+                    let next_is_ident = self
+                        .peek_at_meaningful(1)
+                        .map(|t| matches!(&t.kind, TokenKind::Ident(_)))
+                        .unwrap_or(false);
                     let after_ident = self.peek_at_meaningful(2).map(|t| &t.kind);
-                    let is_struct = next_is_ident && match after_ident {
-                        Some(&TokenKind::Colon) | Some(&TokenKind::Comma) => true,
-                        Some(&TokenKind::RBrace) => type_name.starts_with(char::is_uppercase),
-                        _ => false,
-                    };
+                    let is_struct = next_is_ident
+                        && match after_ident {
+                            Some(&TokenKind::Colon) | Some(&TokenKind::Comma) => true,
+                            Some(&TokenKind::RBrace) => type_name.starts_with(char::is_uppercase),
+                            _ => false,
+                        };
                     if is_struct {
                         self.advance(); // {
                         self.skip_newlines();
@@ -888,11 +941,13 @@ impl Parser {
                 }
                 break;
             } else if self.check(&TokenKind::Dot)
-                || (!self.no_newline_dot_chain && Self::is_chainable_expr(&expr) && self.next_meaningful_is(&TokenKind::Dot))
+                || (!self.no_newline_dot_chain
+                    && Self::is_chainable_expr(&expr)
+                    && self.next_meaningful_is(&TokenKind::Dot))
             {
                 self.skip_newlines();
                 let span = self.advance()?.span; // consume '.'
-                // Handle numeric tuple field access: p.0, p.1
+                                                 // Handle numeric tuple field access: p.0, p.1
                 if let Some(tok) = self.peek() {
                     if let TokenKind::IntLiteral(n) = &tok.kind {
                         let field = n.to_string();
@@ -932,10 +987,16 @@ impl Parser {
                     let end_expr = self.parse_addition()?;
                     self.skip_newlines();
                     self.expect(&TokenKind::RBracket)?;
-                    expr = feature_expr("slicing", "Slice",
+                    expr = feature_expr(
+                        "slicing",
+                        "Slice",
                         Box::new(crate::features::slicing::types::SliceData {
-                            object: Box::new(expr), start: None, end: Some(Box::new(end_expr)),
-                        }), span);
+                            object: Box::new(expr),
+                            start: None,
+                            end: Some(Box::new(end_expr)),
+                        }),
+                        span,
+                    );
                 } else {
                     let start_expr = self.parse_addition()?;
                     self.skip_newlines();
@@ -944,22 +1005,38 @@ impl Parser {
                         self.skip_newlines();
                         if self.check(&TokenKind::RBracket) {
                             self.expect(&TokenKind::RBracket)?;
-                            expr = feature_expr("slicing", "Slice",
+                            expr = feature_expr(
+                                "slicing",
+                                "Slice",
                                 Box::new(crate::features::slicing::types::SliceData {
-                                    object: Box::new(expr), start: Some(Box::new(start_expr)), end: None,
-                                }), span);
+                                    object: Box::new(expr),
+                                    start: Some(Box::new(start_expr)),
+                                    end: None,
+                                }),
+                                span,
+                            );
                         } else {
                             let end_expr = self.parse_addition()?;
                             self.skip_newlines();
                             self.expect(&TokenKind::RBracket)?;
-                            expr = feature_expr("slicing", "Slice",
+                            expr = feature_expr(
+                                "slicing",
+                                "Slice",
                                 Box::new(crate::features::slicing::types::SliceData {
-                                    object: Box::new(expr), start: Some(Box::new(start_expr)), end: Some(Box::new(end_expr)),
-                                }), span);
+                                    object: Box::new(expr),
+                                    start: Some(Box::new(start_expr)),
+                                    end: Some(Box::new(end_expr)),
+                                }),
+                                span,
+                            );
                         }
                     } else {
                         self.expect(&TokenKind::RBracket)?;
-                        expr = Expr::Index { object: Box::new(expr), index: Box::new(start_expr), span };
+                        expr = Expr::Index {
+                            object: Box::new(expr),
+                            index: Box::new(start_expr),
+                            span,
+                        };
                     }
                 }
             } else if self.check(&TokenKind::Question) {
@@ -968,9 +1045,11 @@ impl Parser {
                 expr = Expr::Feature(crate::feature::FeatureExpr {
                     feature_id: "error_propagation",
                     kind: "ErrorPropagate",
-                    data: Box::new(crate::features::error_propagation::types::ErrorPropagateData {
-                        operand: Box::new(expr),
-                    }),
+                    data: Box::new(
+                        crate::features::error_propagation::types::ErrorPropagateData {
+                            operand: Box::new(expr),
+                        },
+                    ),
                     span,
                 });
             } else if self.check(&TokenKind::Not) {
@@ -1104,7 +1183,10 @@ impl Parser {
                 }),
                 span,
             );
-            return Some(CallArg { name: None, value: closure });
+            return Some(CallArg {
+                name: None,
+                value: closure,
+            });
         }
 
         Some(CallArg { name: None, value })
@@ -1172,7 +1254,9 @@ impl Parser {
                     let mut lexer = Lexer::new(&s);
                     let tokens = lexer.tokenize();
                     let mut parser = Parser::new(tokens);
-                    parser.parse_type_expr().unwrap_or(TypeExpr::Named("unknown".to_string()))
+                    parser
+                        .parse_type_expr()
+                        .unwrap_or(TypeExpr::Named("unknown".to_string()))
                 });
                 self.parse_typed_tagged_template(tag, parts, type_param, span)
             }
@@ -1306,18 +1390,19 @@ impl Parser {
             self.skip_newlines();
         }
         self.expect(&TokenKind::RBrace)?;
-        Some(Expr::Block(Block {
-            statements,
-            span,
-        }))
+        Some(Expr::Block(Block { statements, span }))
     }
 
     pub(crate) fn is_struct_literal(&self) -> bool {
         // { ident : expr } is struct literal
-        // { ident , ... } or { ident } is shorthand struct literal
+        // { ident , ... } is shorthand struct literal with multiple fields
+        // NOTE: { ident } alone is NOT treated as a struct literal — it
+        // collides with a block whose tail expression is `ident` (very
+        // common in match arm bodies like `.IntLit(n, _) -> { n }`).
+        // Single-field struct shorthand must be written `{ ident, }`.
         if let Some(TokenKind::Ident(_)) = self.peek().map(|t| &t.kind) {
             if let Some(next) = self.peek_at(1).map(|t| &t.kind) {
-                if matches!(next, TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace) {
+                if matches!(next, TokenKind::Colon | TokenKind::Comma) {
                     return true;
                 }
             }
@@ -1451,14 +1536,25 @@ impl Parser {
                     self.advance();
                     self.skip_newlines();
                     let fields = self.parse_delimited_until(&TokenKind::RBrace, |p| {
-                        let mutable = if p.check(&TokenKind::Mut) { p.advance(); p.skip_newlines(); true } else { false };
+                        let mutable = if p.check(&TokenKind::Mut) {
+                            p.advance();
+                            p.skip_newlines();
+                            true
+                        } else {
+                            false
+                        };
                         let name = p.expect_ident()?;
                         p.skip_newlines();
                         p.expect(&TokenKind::Colon)?;
                         p.skip_newlines();
                         let type_expr = p.parse_type_expr()?;
                         let annotations = p.parse_type_field_annotations();
-                        Some(StructFieldDef { name, type_expr, annotations, mutable })
+                        Some(StructFieldDef {
+                            name,
+                            type_expr,
+                            annotations,
+                            mutable,
+                        })
                     })?;
                     ty = TypeExpr::TypeWith {
                         base: Box::new(ty),
@@ -1579,7 +1675,8 @@ impl Parser {
                 // Tuple type or function type: (int, string) or (int, int) -> int
                 self.advance();
                 self.skip_newlines();
-                let types = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_type_expr())?;
+                let types =
+                    self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_type_expr())?;
                 self.skip_newlines();
 
                 if self.check(&TokenKind::Arrow) {
@@ -1599,7 +1696,8 @@ impl Parser {
                 self.advance(); // consume `fn`
                 self.expect(&TokenKind::LParen)?;
                 self.skip_newlines();
-                let params = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_type_expr())?;
+                let params =
+                    self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_type_expr())?;
                 self.skip_newlines();
 
                 let return_type = if self.check(&TokenKind::Arrow) {
@@ -1634,7 +1732,12 @@ impl Parser {
                     p.skip_newlines();
                     let type_expr = p.parse_type_expr()?;
                     let annotations = p.parse_type_field_annotations();
-                    Some(StructFieldDef { name, type_expr, annotations, mutable })
+                    Some(StructFieldDef {
+                        name,
+                        type_expr,
+                        annotations,
+                        mutable,
+                    })
                 })?;
                 Some(TypeExpr::Struct { fields })
             }
@@ -1720,7 +1823,10 @@ impl Parser {
     /// This method splits it into two `>` closes.
     fn parse_generic_type_args(&mut self) -> Option<Vec<TypeExpr>> {
         let mut args = Vec::new();
-        while !self.check(&TokenKind::Gt) && !self.check(&TokenKind::ShiftRight) && !self.is_at_end() {
+        while !self.check(&TokenKind::Gt)
+            && !self.check(&TokenKind::ShiftRight)
+            && !self.is_at_end()
+        {
             self.skip_newlines();
             if self.check(&TokenKind::Gt) || self.check(&TokenKind::ShiftRight) {
                 break;
@@ -1734,7 +1840,10 @@ impl Parser {
         if self.check(&TokenKind::ShiftRight) {
             // Split >> into > + >: consume the ShiftRight and replace it with a single Gt
             let span = self.tokens[self.pos].span;
-            self.tokens[self.pos] = Token::new(TokenKind::Gt, Span::new(span.start + 1, span.end, span.line, span.col + 1));
+            self.tokens[self.pos] = Token::new(
+                TokenKind::Gt,
+                Span::new(span.start + 1, span.end, span.line, span.col + 1),
+            );
             // Don't advance — the remaining `>` stays for the outer context
         } else {
             self.expect(&TokenKind::Gt)?;
@@ -1793,7 +1902,10 @@ impl Parser {
             self.advance()
         } else {
             let span = self.current_span();
-            let found = self.peek().map(|t| format!("{:?}", t.kind)).unwrap_or("EOF".into());
+            let found = self
+                .peek()
+                .map(|t| format!("{:?}", t.kind))
+                .unwrap_or("EOF".into());
             self.diagnostics.push(Diagnostic::error(
                 "F0001",
                 format!("expected {:?}, found {}", kind, found),
@@ -1880,12 +1992,15 @@ impl Parser {
     /// Only identifiers, calls, member accesses, indexes, and list/map literals should chain.
     pub(crate) fn is_chainable_expr(expr: &Expr) -> bool {
         match expr {
-            Expr::Ident(_, _) |
-            Expr::Call { .. } |
-            Expr::MemberAccess { .. } |
-            Expr::Index { .. } => true,
+            Expr::Ident(_, _)
+            | Expr::Call { .. }
+            | Expr::MemberAccess { .. }
+            | Expr::Index { .. } => true,
             // Feature variants for NullPropagate, ErrorPropagate, ListLit, MapLit
-            Expr::Feature(fe) => matches!(fe.kind, "NullPropagate" | "ErrorPropagate" | "ListLit" | "MapLit"),
+            Expr::Feature(fe) => matches!(
+                fe.kind,
+                "NullPropagate" | "ErrorPropagate" | "ListLit" | "MapLit"
+            ),
             _ => false,
         }
     }
@@ -1962,8 +2077,15 @@ impl Parser {
         let call = Expr::Call {
             callee: Box::new(Expr::Ident("assert".to_string(), start)),
             args: vec![
-                CallArg { name: None, value: condition },
-                CallArg { name: None, value: message.unwrap_or(Expr::StringLit("assertion failed".to_string(), start)) },
+                CallArg {
+                    name: None,
+                    value: condition,
+                },
+                CallArg {
+                    name: None,
+                    value: message
+                        .unwrap_or(Expr::StringLit("assertion failed".to_string(), start)),
+                },
             ],
             type_args: vec![],
             span: start,
@@ -1971,5 +2093,4 @@ impl Parser {
 
         Some(Statement::Expr(call))
     }
-
 }

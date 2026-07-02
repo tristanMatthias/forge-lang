@@ -1,0 +1,37 @@
+// vez6.8.4.B slice 3 — TypeDecl + ComponentBlock decoders.
+// Split out of expand_macro_test.av for shard-parallel speed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_typedecl_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+spec "vez6.8.4.B slice 3: Stmt.TypeDecl decodes from macro output" {
+    then "macro emitting `type Foo_inst = { ... }` lands the type" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_type() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        type Foo_inst = { name: string, count: int }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_type)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("type Foo_inst")
+            && out.contains("name")
+            && out.contains("count")
+            && !out.contains("fn placeholder")
+    }
+}

@@ -39,8 +39,8 @@ impl ForgeProject {
         let toml_content = std::fs::read_to_string(&toml_path)
             .map_err(|e| format!("cannot read forge.toml: {}", e))?;
 
-        let config: ForgeToml = toml::from_str(&toml_content)
-            .map_err(|e| format!("invalid forge.toml: {}", e))?;
+        let config: ForgeToml =
+            toml::from_str(&toml_content).map_err(|e| format!("invalid forge.toml: {}", e))?;
 
         let entry_rel = config
             .project

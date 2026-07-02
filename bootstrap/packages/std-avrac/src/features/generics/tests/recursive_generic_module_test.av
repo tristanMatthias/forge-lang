@@ -1,0 +1,44 @@
+// Recursive generic enum (variant payload of type Self<T>) inside a
+// Module-wrapped test — the test runner wraps each *_test.av file in
+// `Stmt.Module(file_basename, body)`, which qualifies type names. The
+// resolver rewrites `RgmList` → `mod::RgmList`; mono now mangles
+// FieldAccess(QualifiedIdent("mod::RgmList"), Variant) and the
+// matching collect-inst path. Regression for forge-crafting-intepreters-uqay.
+
+enum RgmList<T> {
+    End,
+    Node(value: T, next: RgmList<T>)
+}
+
+fn rgm_sum(list: RgmList<int>) -> int {
+    match list {
+        .End -> 0
+        .Node(v, next) -> v + rgm_sum(next)
+    }
+}
+
+fn rgm_length(list: RgmList<int>) -> int {
+    match list {
+        .End -> 0
+        .Node(_, next) -> 1 + rgm_length(next)
+    }
+}
+
+spec "recursive generic in module" {
+    then "linked list of ints via generic enum sums correctly" {
+        let list = RgmList.Node(1, RgmList.Node(2, RgmList.Node(3, RgmList.End)))
+        rgm_sum(list) == 6
+    }
+    then "match on generic recursive enum reaches the End arm" {
+        let empty = RgmList.End
+        rgm_sum(empty) == 0
+    }
+    then "match on Node arm extracts both payload fields" {
+        let one = RgmList.Node(42, RgmList.End)
+        rgm_sum(one) == 42
+    }
+    then "second function over the same generic instantiation works" {
+        let three = RgmList.Node(1, RgmList.Node(2, RgmList.Node(3, RgmList.End)))
+        rgm_length(three) == 3
+    }
+}

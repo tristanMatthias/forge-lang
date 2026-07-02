@@ -1,0 +1,78 @@
+// so07.7.17 / T6.A: vtype_eq's Trait / Newtype / NarrowedEnum arms
+// now mirror Struct/Enum's id-first-with-name-fallback pattern.
+// Pre-fix they only compared names via nominal_names_match. Once
+// resolver assigns ids reliably (T6.B) the name path drops out and
+// vtype_eq goes id-only (T6.C). This test pins the new hybrid: id
+// match wins when both sides have id>0; name fallback fires only
+// when at least one side has id=0.
+//
+// Why each case observes the fix:
+//   - id-precedence cases (mismatching id + matching name → !eq;
+//     matching id + mismatching name → eq) would FAIL with the
+//     pre-fix code that ignored ids entirely and compared names.
+//   - the legacy name fallback (id=0 on both sides) preserves the
+//     bare/FQN tolerance the resolver still depends on today.
+use @std.avrac.core.{vtype_eq, ValueType}
+
+spec "T6.A: vtype_eq Trait id-first" {
+    then "matching ids win over mismatching names" {
+        let a = ValueType.Trait("A", 5)
+        let b = ValueType.Trait("B", 5)
+        vtype_eq(a, b)
+    }
+    then "mismatching ids lose to matching names" {
+        let a = ValueType.Trait("A", 5)
+        let b = ValueType.Trait("A", 7)
+        !vtype_eq(a, b)
+    }
+    then "both ids zero → name match fallback" {
+        let a = ValueType.Trait("Foo", 0)
+        let b = ValueType.Trait("Foo", 0)
+        vtype_eq(a, b)
+    }
+    then "both ids zero + bare-vs-FQN no longer tolerates (T6.D)" {
+        // Pre-T6.D, nominal_names_match would suffix-match the bare
+        // "Foo" against "@x::Foo" and report equal. T6.D drops the
+        // tolerance — the resolver+stamp pipeline qualifies every
+        // nominal canonically so name fallbacks are exact-match.
+        let a = ValueType.Trait("@x::Foo", 0)
+        let b = ValueType.Trait("Foo", 0)
+        !vtype_eq(a, b)
+    }
+}
+
+spec "T6.A: vtype_eq Newtype id-first" {
+    then "matching ids + matching inner → eq even with name mismatch" {
+        let a = ValueType.Newtype("A", ValueType.Int, 9)
+        let b = ValueType.Newtype("B", ValueType.Int, 9)
+        vtype_eq(a, b)
+    }
+    then "matching ids but mismatching inner → !eq" {
+        let a = ValueType.Newtype("A", ValueType.Int, 9)
+        let b = ValueType.Newtype("A", ValueType.Str, 9)
+        !vtype_eq(a, b)
+    }
+    then "mismatching ids lose to matching names + matching inner" {
+        let a = ValueType.Newtype("Wrap", ValueType.Int, 5)
+        let b = ValueType.Newtype("Wrap", ValueType.Int, 7)
+        !vtype_eq(a, b)
+    }
+}
+
+spec "T6.A: vtype_eq NarrowedEnum id-first" {
+    then "matching ids + matching variant → eq even with name mismatch" {
+        let a = ValueType.NarrowedEnum("A", "V", 5)
+        let b = ValueType.NarrowedEnum("B", "V", 5)
+        vtype_eq(a, b)
+    }
+    then "matching ids but mismatching variant → !eq" {
+        let a = ValueType.NarrowedEnum("A", "V1", 5)
+        let b = ValueType.NarrowedEnum("A", "V2", 5)
+        !vtype_eq(a, b)
+    }
+    then "both ids zero → name+variant match fallback" {
+        let a = ValueType.NarrowedEnum("Stmt", "Let", 0)
+        let b = ValueType.NarrowedEnum("Stmt", "Let", 0)
+        vtype_eq(a, b)
+    }
+}

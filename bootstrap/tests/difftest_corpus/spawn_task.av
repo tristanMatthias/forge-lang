@@ -1,0 +1,9 @@
+// WHY: diff-test corpus — a small standalone repro exercising `spawn { ... }`
+// green-thread codegen and the returned Task's `.await`. Also reached by the
+// selfhost pass (the build driver spawns workers); isolated here so a
+// divergence in the spawn/await lowering points at ~8 lines.
+fn main() {
+    let task = spawn { 40 + 2 }
+    let r = task.await
+    println(string(r))
+}

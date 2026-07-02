@@ -1,0 +1,179 @@
+// WHY: compile-time evaluation of @comptime-annotated fns.
+//
+// `try_fold_call(reg, call_expr)` — given a registered comptime fn
+// and a call expression with literal args, runs the fn body via the
+// tree-walk evaluator (features/eval) and returns the result as an
+// Expr AST literal. Returns null when the call can't be folded
+// (callee not registered, args not literals, or body errors).
+//
+// Phase 2 of Components V2 (vez6.2). The program-walker that calls
+// this on every call site lives in rewrite.av.
+//
+// The Value→AST decoder that used to live here (value_to_stmt
+// / enum_value_to_stmt / enum_value_to_expr / enum_value_to_value_type
+// and their helpers) moved to the eval boundary in features/eval —
+// eval_enum_ctor boxes Stmt/Expr/ValueType natively so consumers
+// unwrap in O(1) instead of re-decoding. This file keeps only the
+// fold path (Value → construct-expression source form) and the
+// Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
+
+use core.{Expr, SExpr, sexpr_dummy, Stmt, FieldInit}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind}
+use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
+use features.quote_expr.{construct_stmt}
+
+// ── Public API ──
+
+/// Try to fold a call expression at compile time. Returns the
+/// folded literal Expr on success, null when the call can't be
+/// reduced (callee unknown, args non-literal, body errored, etc).
+///
+/// Caller pattern:
+///   match try_fold_call(reg, expr) {
+///     null      -> emit the call as-is
+///     folded    -> emit `folded`
+///   }
+export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
+    // Early-exit gates, fastest-first:
+    //   1. Not a Call(Ident(_), _) — common (most exprs are not calls)
+    //   2. Callee not in the comptime registry — O(1) hashmap miss
+    //   3. Args not all literals — handled by literal_args_to_values
+    //      returning null. Single walk; serves both as gate AND as
+    //      conversion to Value form for the direct-call eval path.
+    // Only after all three pass do we run the tree-walk evaluator.
+    match call {
+        .Call(callee, args) -> {
+            match callee {
+                .Ident(name) -> {
+                    let fn_def_opt = comptime_lookup_lazy(reg, name)
+                    if fn_def_opt == none { return none }
+                    let arg_values_opt = literal_args_to_values(args)
+                    if arg_values_opt == none { return none }
+                    fold_call(reg, fn_def_opt!, arg_values_opt!)
+                }
+                _ -> null
+            }
+        }
+        _ -> null
+    }
+}
+
+// ── Folding driver ──
+
+/// Run the comptime fn body with pre-resolved Value args bound to
+/// params. Uses the pre-built `reg.runtime` (seeded with every
+/// comptime fn) and the direct-call path that bypasses eval's
+/// Call-dispatch overhead (no name lookup, no Expr.Call wrapper,
+/// no per-arg eval_expr round-trip).
+fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
+    let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
+    if step_had_error(result) != 0 { return null }
+    value_to_expr(step_value(result))
+}
+
+// ── Value → Expr (construct-expression) conversion ──
+
+/// Normalise a Value's kind for the fold reconstructor. AST nodes
+/// boxed at the eval boundary (so07.8) carry kind="stmt"/"expr"/
+/// "value_type" but keep their enum_* fields populated, so the fold
+/// path treats them exactly like a plain "enum" Value.
+fn fold_kind(v: Value) -> string {
+    if is_boxed_ast_kind(v.kind) { return "enum" }
+    v.kind
+}
+
+/// Turn a tree-walk evaluator Value into an AST literal Expr so
+/// we can splice it into the surrounding program. Returns null
+/// for shapes that don't have a literal AST representation —
+/// caller treats null as "can't fold, leave the call alone".
+///
+/// Enum values produced by `quote { ... }`-style macro fns are
+/// decoded back to a value-construction expression (`Expr.EnumCtor`
+/// source form) so the spliced fold result reads as the construction
+/// of the original Value rather than a post-resolve raw AST node.
+fn value_to_expr(v: Value) -> Expr? {
+    match fold_kind(v) {
+        "number" -> Expr.Number(v.number_text)
+        "string" -> Expr.String("\"${v.text}\"")
+        "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
+        "null"   -> Expr.None
+        "enum"   -> value_to_construct_expr(v)
+        _        -> null
+    }
+}
+
+/// Convert a Value back into an Expr representing a runtime
+/// reconstruction of the value. For enum Values this yields
+/// `Expr.EnumCtor(type, variant, args)` matching the shape
+/// `lower_quotes` would emit for the equivalent `quote { ... }`
+/// source. Primitives reuse the fast-path forms in `value_to_expr`.
+fn value_to_construct_expr(v: Value) -> Expr? {
+    match fold_kind(v) {
+        "number" -> Expr.Number(v.number_text)
+        "string" -> Expr.String("\"${v.text}\"")
+        "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
+        "null"   -> Expr.None
+        "enum"   -> {
+            let args_opt = payload_to_args(v.enum_payload, 0)
+            if args_opt == none { return none }
+            Expr.EnumCtor(v.enum_type, v.enum_variant, args_opt!)
+        }
+        // fwyx: a list Value reconstructs as Expr.ListLit, mirroring
+        // the construct_expr_list output that produced it.
+        "list" -> {
+            let elems_opt = payload_to_args(v.list_payload, 0)
+            if elems_opt == none { return none }
+            Expr.ListLit(elems_opt!)
+        }
+        // fwyx: a struct Value reconstructs as Expr.StructLit, mirroring
+        // the struct_lit_2 output (every FieldInit recurses).
+        "struct" -> {
+            mut inits: List<FieldInit> = []
+            for f in v.struct_payload {
+                let inner_opt = value_to_construct_expr(f.value)
+                if inner_opt == none { return none }
+                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner_opt!) })
+            }
+            Expr.StructLit(v.struct_type, inits)
+        }
+        _ -> null
+    }
+}
+
+/// Convert a payload List<Value> into a `List<SExpr>` whose elements
+/// reconstruct each value at runtime. Each value is wrapped via
+/// `sexpr_dummy` — same as `lower_quotes` does when it builds
+/// construct-expression payloads.
+fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
+    mut out: List<SExpr> = []
+    mut j = i
+    while j < payload.length {
+        let inner_opt = value_to_construct_expr(payload[j])
+        if inner_opt == none { return none }
+        out.push(sexpr_dummy(inner_opt!))
+        j = j + 1
+    }
+    out
+}
+
+// ── Stmt → Value encoder ──
+//
+// The @expand pass boxes a wrapped Stmt as a Value before
+// invoking a 1-arg (or 2-arg) macro fn. Implementation reuses the
+// quote-lowering pipeline: `construct_stmt(s)` produces an
+// Expr.EnumCtor whose runtime evaluation builds the Value the macro
+// pattern-matches on. Because eval boxes AST EnumCtors natively
+// the resulting Value carries both the enum_* representation
+// (for the macro's `match`) and the native node (for value_to_stmt).
+// Returns null when evaluation errors — caller falls back to a
+// zero-arg invocation.
+
+/// Encode a Stmt as a Value for passing into a comptime fn arg.
+/// Uses the runtime stored on the comptime registry — same one
+/// that try_fold_call seeds via prepare_runtime.
+export fn stmt_to_value(runtime: Runtime, s: Stmt) -> Value? {
+    let expr = construct_stmt(s)
+    let result = eval_expr(runtime, expr)
+    if step_had_error(result) != 0 { return null }
+    step_value(result)
+}

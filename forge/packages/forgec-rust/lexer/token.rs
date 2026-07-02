@@ -75,7 +75,7 @@ pub enum TokenKind {
     Not,
     Pipe,
     Arrow,
-    LeftArrow,  // <-
+    LeftArrow, // <-
     Question,
     QuestionDot,
     DoubleQuestion,

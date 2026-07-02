@@ -1,0 +1,25 @@
+// vez6.6.5/sum — Expr-typed comptime fn folds to runtime Expr (sum).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+
+spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value (sum)" {
+    then "make_sum() yields a runtime Expr.Binary that renders as `(+ 1 2)`" {
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_expr_sum_test.av", 
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_sum() -> Expr {\n" +
+            "    return quote { 1 + 2 }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_sum()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("(+ 1 2)")
+    }
+}

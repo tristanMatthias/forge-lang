@@ -1,0 +1,23 @@
+// Continuation of 96e78778 / 57d160eb: another diagnostic-detail
+// site that used `vtype_display` (kind-only) where the user needs
+// the element type to fix their code. `while xs { … }` where `xs`
+// is a `List<int>` previously reported `got `List`` — confusing
+// because every list reports the same thing. With `vtype_render_full`
+// the message names the element type so the fix path is obvious.
+
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_shell_exec}
+
+spec "while-condition mismatch shows full type" {
+    then "got `List<int>` not bare `List`" {
+        let fixture = "/tmp/avra_while_cond_render_test.av"
+        write_fixture(fixture,
+            "fn main() -> int {\n" +
+            "    let xs: List<int> = []\n" +
+            "    while xs { return 1 }\n" +
+            "    0\n" +
+            "}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        out.contains("got `List<int>`") && !out.contains("got `List`,")
+    }
+}

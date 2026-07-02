@@ -1,4 +1,4 @@
-# Forge — Package Architecture Refactor & Codegen Restructuring
+# Avra — Package Architecture Refactor & Codegen Restructuring
 
 **Context:** Phase 3 is complete. The compiler has working `@std/model` and `@std/http` support, but the codegen has package-specific logic baked in. This spec refactors to a clean package architecture and restructures the codegen module.
 
@@ -23,7 +23,7 @@ codegen/
 codegen/
 ├── mod.rs               # Public API: compile(ast) -> LLVM module
 ├── context.rs           # CodegenContext: holds LLVM module, builder, type maps, symbol table
-├── types.rs             # Forge type → LLVM type mapping
+├── types.rs             # Avra type → LLVM type mapping
 ├── literals.rs          # Int, float, bool, string, list, map, struct, tuple literals
 ├── expressions.rs       # Binary ops, unary ops, member access, index, calls
 ├── statements.rs        # Let, mut, const, assign, return, defer, errdefer
@@ -38,7 +38,7 @@ codegen/
 ├── traits.rs            # Trait method resolution, monomorphization
 ├── extern_ffi.rs        # extern fn → LLVM external declaration + call marshaling
 ├── json.rs              # JSON serialize/deserialize generation
-├── package_blocks.rs   # Generic package keyword block codegen (desugared via types.fg)
+├── package_blocks.rs   # Generic package keyword block codegen (desugared via types.av)
 └── linker.rs            # Object emission, linking .a files + runtime
 ```
 
@@ -64,10 +64,10 @@ pub fn compile(program: &TypedProgram, ctx: &mut CodegenContext) {
 
 ### Key: `extern_ffi.rs`
 
-This is the bridge between Forge and native libraries. It handles one thing: when the compiler sees `extern fn foo(x: int) -> string`, generate:
+This is the bridge between Avra and native libraries. It handles one thing: when the compiler sees `extern fn foo(x: int) -> string`, generate:
 
 1. An LLVM external function declaration with the right C ABI types
-2. A Forge-callable wrapper that marshals Forge types → C types on the way in and C types → Forge types on the way out
+2. A Avra-callable wrapper that marshals Avra types → C types on the way in and C types → Avra types on the way out
 
 Every package goes through this. No special cases.
 
@@ -76,10 +76,10 @@ Every package goes through this. No special cases.
 This handles package keyword blocks. But it doesn't know anything about HTTP or models. It just:
 
 1. Looks up the keyword in the package registry
-2. Finds the corresponding desugared Forge code (from `types.fg`)
-3. Compiles that Forge code normally
+2. Finds the corresponding desugared Avra code (from `types.av`)
+3. Compiles that Avra code normally
 
-If `types.fg` defines how `server` works in terms of regular Forge function calls, then `package_blocks.rs` just triggers that Forge code. The complexity lives in `types.fg`, not in the compiler.
+If `types.av` defines how `server` works in terms of regular Avra function calls, then `package_blocks.rs` just triggers that Avra code. The complexity lives in `types.av`, not in the compiler.
 
 ---
 
@@ -93,23 +93,23 @@ A package is a directory containing three things:
 my-package/
 ├── package.toml           # Metadata: name, version, keywords, native lib name
 ├── src/
-│   └── package.fg         # Entry point: types, extern fns, keyword expansions, helpers
-│       (or split into multiple files and re-export from package.fg)
+│   └── package.av         # Entry point: types, extern fns, keyword expansions, helpers
+│       (or split into multiple files and re-export from package.av)
 └── lib/
     └── <platform>/
         └── libmy_package.a    # Native library with C ABI exports (any language)
 ```
 
-For larger packages, split the Forge code:
+For larger packages, split the Avra code:
 
 ```
 my-package/
 ├── package.toml
 ├── src/
-│   ├── package.fg         # Entry point — re-exports everything
-│   ├── types.fg            # Type definitions
-│   ├── keywords.fg         # Keyword expansions
-│   └── helpers.fg          # Utility functions
+│   ├── package.av         # Entry point — re-exports everything
+│   ├── types.av            # Type definitions
+│   ├── keywords.av         # Keyword expansions
+│   └── helpers.av          # Utility functions
 └── lib/
     └── <platform>/
         └── libmy_package.a
@@ -125,12 +125,12 @@ version = "0.1.0"
 description = "HTTP server and routing"
 
 [native]
-library = "forge_http"
+library = "avra_http"
 
 # Keywords this package registers
 # kind:
-#   "block"    — has { } body with config/schema/blocks, needs keyword expansion in package.fg
-#   "function" — scoped function call, no special parsing, calls an exported fn from package.fg
+#   "block"    — has { } body with config/schema/blocks, needs keyword expansion in package.av
+#   "function" — scoped function call, no special parsing, calls an exported fn from package.av
 # context: where it's valid — "top_level" or name of a parent keyword block
 # body: (block only) what's inside — "mixed" (config + schema + blocks)
 # syntax: (block only) custom syntax for the opening line
@@ -160,11 +160,11 @@ That's it. The TOML declares:
 - What native library to link
 - What keywords it registers with their context and body type
 
-All the interesting stuff lives in `package.fg`.
+All the interesting stuff lives in `package.av`.
 
-### 2.3 package.fg — The Package's Heart
+### 2.3 package.av — The Package's Heart
 
-This is where the package defines everything: types, native bridges, keyword expansions, and helper functions. It's just Forge code with one addition — the `keyword` block for compile-time expansion.
+This is where the package defines everything: types, native bridges, keyword expansions, and helper functions. It's just Avra code with one addition — the `keyword` block for compile-time expansion.
 
 A keyword expansion has three sections that run in order:
 1. **Setup** — creates scope: variables and functions available inside the block
@@ -173,18 +173,18 @@ A keyword expansion has three sections that run in order:
 
 No explicit `body` placement needed. The user's code always runs between setup and lifecycle hooks.
 
-**@std/http — complete package.fg:**
+**@std/http — complete package.av:**
 
-```forge
-// packages/std-http/src/package.fg
+```avra
+// packages/std-http/src/package.av
 
 // ── Native bridge ──
-extern fn forge_http_create_server(port: int) -> int
-extern fn forge_http_start_all()
-extern fn forge_http_add_route(server_id: int, method: string, path: string, handler: fn(string, string, string, string) -> string)
-extern fn forge_http_enable_cors(server_id: int)
-extern fn forge_http_enable_logging(server_id: int)
-extern fn forge_http_set_rate_limit(server_id: int, rps: int)
+extern fn avra_http_create_server(port: int) -> int
+extern fn avra_http_start_all()
+extern fn avra_http_add_route(server_id: int, method: string, path: string, handler: fn(string, string, string, string) -> string)
+extern fn avra_http_enable_cors(server_id: int)
+extern fn avra_http_enable_logging(server_id: int)
+extern fn avra_http_set_rate_limit(server_id: int, rps: int)
 
 // ── Types ──
 export type Request = {
@@ -214,15 +214,15 @@ keyword server(port: int, config, schema) {
   }
 
   // Setup — creates scope for the user's block body
-  let id = forge_http_create_server(port)
-  if config.cors { forge_http_enable_cors(id) }
-  if config.logging { forge_http_enable_logging(id) }
-  if config.rate_limit > 0 { forge_http_set_rate_limit(id, config.rate_limit) }
+  let id = avra_http_create_server(port)
+  if config.cors { avra_http_enable_cors(id) }
+  if config.logging { avra_http_enable_logging(id) }
+  if config.rate_limit > 0 { avra_http_set_rate_limit(id, config.rate_limit) }
 
   // Functions available inside the server block
   // They close over `id` — no self, no classes, just lexical scope
   fn route(method: string, path: string, handler: fn(Request) -> any) {
-    forge_http_add_route(id, method, path, (raw_method, raw_path, raw_body, raw_params) -> {
+    avra_http_add_route(id, method, path, (raw_method, raw_path, raw_body, raw_params) -> {
       let req = Request {
         method: raw_method,
         path: raw_path,
@@ -255,25 +255,25 @@ keyword server(port: int, config, schema) {
 
   // Lifecycle
   on main_end {
-    forge_http_start_all()
+    avra_http_start_all()
   }
 }
 ```
 
-**@std/model — complete package.fg:**
+**@std/model — complete package.av:**
 
-```forge
-// packages/std-model/src/package.fg
+```avra
+// packages/std-model/src/package.av
 
 // ── Native bridge ──
-extern fn forge_model_init(db_path: string)
-extern fn forge_model_exec(sql: string) -> int
-extern fn forge_model_insert(table: string, data_json: string) -> string
-extern fn forge_model_get_by_id(table: string, id: int) -> string
-extern fn forge_model_list(table: string, filter_json: string) -> string
-extern fn forge_model_update(table: string, id: int, changes_json: string) -> string
-extern fn forge_model_delete(table: string, id: int) -> int
-extern fn forge_model_count(table: string, filter_json: string) -> int
+extern fn avra_model_init(db_path: string)
+extern fn avra_model_exec(sql: string) -> int
+extern fn avra_model_insert(table: string, data_json: string) -> string
+extern fn avra_model_get_by_id(table: string, id: int) -> string
+extern fn avra_model_list(table: string, filter_json: string) -> string
+extern fn avra_model_update(table: string, id: int, changes_json: string) -> string
+extern fn avra_model_delete(table: string, id: int) -> int
+extern fn avra_model_count(table: string, filter_json: string) -> int
 
 // ── Keywords ──
 
@@ -296,34 +296,34 @@ keyword model(name: string, config, schema) {
   })
 
   on startup {
-    forge_model_init(config("database.path", "./data/forge.db"))
-    forge_model_exec(`CREATE TABLE IF NOT EXISTS ${config.table_name} (${columns.join(", ")})`)
+    avra_model_init(config("database.path", "./data/avra.db"))
+    avra_model_exec(`CREATE TABLE IF NOT EXISTS ${config.table_name} (${columns.join(", ")})`)
   }
 
   // Generated CRUD functions — available globally as Model.method()
   fn ${name}.create(data) -> ${name} {
-    json.parse(forge_model_insert(config.table_name, json.stringify(data)))
+    json.parse(avra_model_insert(config.table_name, json.stringify(data)))
   }
 
   fn ${name}.get(id: int) -> ${name}? {
-    let raw = forge_model_get_by_id(config.table_name, id)
+    let raw = avra_model_get_by_id(config.table_name, id)
     if raw == "" { null } else { json.parse(raw) }
   }
 
   fn ${name}.list() -> List<${name}> {
-    json.parse(forge_model_list(config.table_name, "{}"))
+    json.parse(avra_model_list(config.table_name, "{}"))
   }
 
   fn ${name}.update(record: ${name}, changes) -> ${name} {
-    json.parse(forge_model_update(config.table_name, record.id, json.stringify(changes)))
+    json.parse(avra_model_update(config.table_name, record.id, json.stringify(changes)))
   }
 
   fn ${name}.delete(id: int) -> bool {
-    forge_model_delete(config.table_name, id) > 0
+    avra_model_delete(config.table_name, id) > 0
   }
 
   fn ${name}.count() -> int {
-    forge_model_count(config.table_name, "{}")
+    avra_model_count(config.table_name, "{}")
   }
 
   // No user body — model blocks are purely declarative
@@ -372,28 +372,28 @@ fn sql_type(t: string) -> string {
 
 **A simple library package (no keywords) — @community/redis:**
 
-```forge
-// packages/community-redis/src/package.fg
+```avra
+// packages/community-redis/src/package.av
 
-extern fn forge_redis_connect(url: string)
-extern fn forge_redis_get(key: string) -> string?
-extern fn forge_redis_set(key: string, value: string)
-extern fn forge_redis_del(key: string) -> bool
+extern fn avra_redis_connect(url: string)
+extern fn avra_redis_get(key: string) -> string?
+extern fn avra_redis_set(key: string, value: string)
+extern fn avra_redis_del(key: string) -> bool
 
 export fn connect(url: string) {
-  forge_redis_connect(url)
+  avra_redis_connect(url)
 }
 
 export fn get(key: string) -> string? {
-  forge_redis_get(key)
+  avra_redis_get(key)
 }
 
 export fn set(key: string, value: string) {
-  forge_redis_set(key, value)
+  avra_redis_set(key, value)
 }
 
 export fn del(key: string) -> bool {
-  forge_redis_del(key)
+  avra_redis_del(key)
 }
 ```
 
@@ -402,7 +402,7 @@ export fn del(key: string) -> bool {
 A keyword block has three kinds of content, distinguished by syntax:
 
 **Config** — `key value` (no colon, no parentheses):
-```forge
+```avra
 cors true
 logging true
 rate_limit 100
@@ -410,7 +410,7 @@ table_name "custom_users"
 ```
 
 **Schema** — `key: type @annotations` (has colon):
-```forge
+```avra
 id: int @primary @auto_increment
 name: string
 email: string @unique @validate(email)
@@ -418,7 +418,7 @@ role: string @default("member")
 ```
 
 **Blocks** — nested keywords, event handlers, function calls:
-```forge
+```avra
 route("GET", "/health", (req) -> { status: "ok" })
 mount(TodoService, "/todos")
 on before_create(record) { assert record.name.length > 0 }
@@ -432,7 +432,7 @@ The parser distinguishes them syntactically:
 
 The keyword expansion receives config and schema as arguments. The user's block body (function calls, event handlers, nested blocks) is inserted automatically after setup:
 
-```forge
+```avra
 keyword my_keyword(name: string, config, schema) {
   config {
     cors: bool = false        // declares what config keys are valid + defaults
@@ -461,19 +461,19 @@ Keywords that are purely declarative (like `model`) don't need a user body — t
 - How to parse keyword blocks into config/schema/blocks
 - How to execute `keyword` expansion blocks at compile time
 - How to compile `extern fn` declarations into LLVM external symbols
-- How to marshal Forge types to C ABI types
+- How to marshal Avra types to C ABI types
 - How to link `.a` files
 
 **Compiler does NOT know:**
 - What HTTP, SQL, queues, AI, or any domain concept means
 - What any specific native function does
-- How any specific package's keywords should expand (that's in package.fg)
+- How any specific package's keywords should expand (that's in package.av)
 
 **Package knows:**
 - Its domain (HTTP, databases, queues, etc.)
 - Its native function implementations
-- How its keywords expand into Forge code
-- Its Forge types
+- How its keywords expand into Avra code
+- Its Avra types
 
 **Package does NOT know:**
 - How the compiler works
@@ -489,27 +489,27 @@ Say someone wants to create `@community/redis`:
 ```rust
 // src/lib.rs
 #[no_mangle]
-pub extern "C" fn forge_redis_connect(url: *const c_char) { ... }
+pub extern "C" fn avra_redis_connect(url: *const c_char) { ... }
 
 #[no_mangle]
-pub extern "C" fn forge_redis_get(key: *const c_char) -> *const c_char { ... }
+pub extern "C" fn avra_redis_get(key: *const c_char) -> *const c_char { ... }
 
 #[no_mangle]
-pub extern "C" fn forge_redis_set(key: *const c_char, value: *const c_char) { ... }
+pub extern "C" fn avra_redis_set(key: *const c_char, value: *const c_char) { ... }
 ```
 
-**Step 2:** Write `package.fg`:
+**Step 2:** Write `package.av`:
 
-```forge
-extern fn forge_redis_connect(url: string)
-extern fn forge_redis_get(key: string) -> string?
-extern fn forge_redis_set(key: string, value: string)
-extern fn forge_redis_del(key: string) -> bool
+```avra
+extern fn avra_redis_connect(url: string)
+extern fn avra_redis_get(key: string) -> string?
+extern fn avra_redis_set(key: string, value: string)
+extern fn avra_redis_del(key: string) -> bool
 
-export fn connect(url: string) { forge_redis_connect(url) }
-export fn get(key: string) -> string? { forge_redis_get(key) }
-export fn set(key: string, value: string) { forge_redis_set(key, value) }
-export fn del(key: string) -> bool { forge_redis_del(key) }
+export fn connect(url: string) { avra_redis_connect(url) }
+export fn get(key: string) -> string? { avra_redis_get(key) }
+export fn set(key: string, value: string) { avra_redis_set(key, value) }
+export fn del(key: string) -> bool { avra_redis_del(key) }
 ```
 
 **Step 3:** Write `package.toml`:
@@ -521,7 +521,7 @@ namespace = "community"
 version = "0.1.0"
 
 [native]
-library = "forge_redis"
+library = "avra_redis"
 ```
 
 No keywords needed. That's the entire package.
@@ -531,44 +531,44 @@ No keywords needed. That's the entire package.
 ```bash
 cargo build --release
 mkdir -p lib/aarch64-macos
-cp target/release/libforge_redis.a lib/aarch64-macos/
+cp target/release/libavra_redis.a lib/aarch64-macos/
 ```
 
 **Step 5:** Users use it:
 
-```forge
+```avra
 use @community.redis
 
 fn main() {
   redis.connect("redis://localhost:6379")
-  redis.set("greeting", "hello forge")
+  redis.set("greeting", "hello avra")
   let val = redis.get("greeting")
-  println(val ?? "not found")    // hello forge
+  println(val ?? "not found")    // hello avra
 }
 ```
 
 ### 2.7 Two Kinds of Packages
 
-**Library packages** (like redis): just `extern fn` + Forge wrapper functions. No keywords, no `package.toml` keyword section. Used with regular `use` imports and function calls. Easy to write — most community packages will be this.
+**Library packages** (like redis): just `extern fn` + Avra wrapper functions. No keywords, no `package.toml` keyword section. Used with regular `use` imports and function calls. Easy to write — most community packages will be this.
 
-**Keyword packages** (like http, model): register custom keywords with special syntax via `keyword` blocks in `package.fg`. More powerful, enable declarative DSL-like syntax. The compiler parses keyword blocks into config/schema/blocks and the `keyword` expansion defines what to generate.
+**Keyword packages** (like http, model): register custom keywords with special syntax via `keyword` blocks in `package.av`. More powerful, enable declarative DSL-like syntax. The compiler parses keyword blocks into config/schema/blocks and the `keyword` expansion defines what to generate.
 
 ### 2.8 How The Compiler Loads Packages
 
 ```
-1. Read forge.toml → list of packages
+1. Read avra.toml → list of packages
 2. For each package:
-   a. Find package directory ($FORGE_HOME/packages/<namespace>/<name>/)
+   a. Find package directory ($AVRA_HOME/packages/<namespace>/<name>/)
    b. Read package.toml → get keyword registrations + native lib name
-   c. Parse package.fg → add types, extern fns, and keyword expansions
+   c. Parse package.av → add types, extern fns, and keyword expansions
    d. Register keywords in the parser (if any declared in package.toml)
    e. Record native lib path for the linker
 3. Parse user's source files (package keywords now recognized)
 4. Type check (package types now available)
 5. For each keyword block in user code:
    a. Parse body into config / schema / blocks
-   b. Execute the keyword expansion from package.fg
-   c. Compile the expanded Forge code normally
+   b. Execute the keyword expansion from package.av
+   c. Compile the expanded Avra code normally
 6. Codegen (extern fns generate external LLVM declarations)
 7. Link: user code + runtime + all package .a files → binary
 ```
@@ -587,28 +587,28 @@ fn main() {
 - Create `extern_ffi.rs`
 - Move all FFI/external function declaration and call marshaling code here
 - The `extern fn` keyword should be the ONLY way native functions enter the compiler
-- Remove any direct references to `forge_http_*` or `forge_model_*` from the compiler codegen
+- Remove any direct references to `avra_http_*` or `avra_model_*` from the compiler codegen
 
 ### Step 3: Implement keyword expansion engine
 - Create `package_keywords.rs`
 - Implement the `keyword(name, config, schema, blocks)` compile-time expansion
 - The parser detects keyword blocks → parses body into config/schema/blocks → hands off to the expansion engine
-- The expansion engine evaluates the `keyword` block from `package.fg` with the parsed data
-- Expanded Forge code is compiled through the normal pipeline
+- The expansion engine evaluates the `keyword` block from `package.av` with the parsed data
+- Expanded Avra code is compiled through the normal pipeline
 
 ### Step 4: Create package loading
 - Read `package.toml` for keyword registration
-- Parse `package.fg` and inject types, extern fns, and keyword definitions into the compilation
+- Parse `package.av` and inject types, extern fns, and keyword definitions into the compilation
 - Resolve `.a` file paths for the linker
 
 ### Step 5: Move @std/model out of the compiler
-- Create `packages/std-model/` directory with `package.toml`, `src/package.fg`, and native Rust library
-- Write the `keyword model(...)` and `keyword service(...)` expansions in `package.fg`
+- Create `packages/std-model/` directory with `package.toml`, `src/package.av`, and native Rust library
+- Write the `keyword model(...)` and `keyword service(...)` expansions in `package.av`
 - The compiler loads it through the package system, not special-cased code
 
 ### Step 6: Move @std/http out of the compiler
 - Same as Step 5 for HTTP
-- Write the `keyword server(...)` expansion in `package.fg`
+- Write the `keyword server(...)` expansion in `package.av`
 - `route` and `mount` become regular exported functions, not keywords
 - After this step, the compiler has zero package-specific code
 
@@ -625,9 +625,9 @@ fn main() {
 2. No single codegen file exceeds ~500 lines
 3. All `@std/model` code lives in `packages/std-model/`, not the compiler
 4. All `@std/http` code lives in `packages/std-http/`, not the compiler
-5. Package loading works through `package.toml` + `package.fg` + `.a` file
-6. Keyword blocks parse into config/schema/blocks and expand via `package.fg`
-7. A library package (no keywords) can be created with just `package.fg` + `.a` file + toml
-8. A keyword package can define its expansion entirely in `package.fg`
+5. Package loading works through `package.toml` + `package.av` + `.a` file
+6. Keyword blocks parse into config/schema/blocks and expand via `package.av`
+7. A library package (no keywords) can be created with just `package.av` + `.a` file + toml
+8. A keyword package can define its expansion entirely in `package.av`
 9. All Phase 1-3 tests pass with zero regressions
 10. The compiler binary itself doesn't link against rusqlite or tiny_http

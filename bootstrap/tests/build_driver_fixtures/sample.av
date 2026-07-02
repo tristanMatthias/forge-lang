@@ -1,0 +1,160 @@
+// Fixture program exercising the @std.avrac.build.driver decide /
+// record flow end-to-end. Compiled and run by build_driver_test.av;
+// the parent test asserts on PROBE lines.
+//
+// Each probe validates one driver property:
+//   1. First decide() against an empty cache returns Miss.
+//   2. record_build_result publishes the artifact.
+//   3. Second decide() against the now-populated cache returns Hit.
+//   4. Hit's ll_path resolves to a readable cached file.
+//   5. Changing the source content forces a Miss.
+//   6. Changing the profile flags forces a Miss.
+//   7. Changing the unit_name forces a Miss.
+
+use @std.avrac.build.{
+    BuildInputs, BuildOutcome,
+    decide_build, record_build_result, cached_ll_for,
+}
+use @std.avrac.build.{Fingerprint}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn write_fixture(path: string, body: string) -> string {
+    avra_shell_exec("printf '%s' '" + body + "' > " + path)
+}
+
+fn build_inputs(project: string, entry: string, profile: string, opt: int) -> BuildInputs {
+    BuildInputs {
+        project_root: project,
+        unit_name: "u",
+        kind: "bin",
+        sources: [entry],
+        entry_path: entry,
+        compiler_path: entry,    // hash any stable file as the compiler proxy
+        target_triple: "test-triple",
+        profile_name: profile,
+        opt_level: opt,
+        debug: true,
+        overflow_checks: true,
+        coverage: false,
+        lib_pkg_root: "",
+    }
+}
+
+fn is_miss(o: BuildOutcome) -> bool {
+    match o { .Miss(_, _, _) -> true, _ -> false }
+}
+
+fn is_hit(o: BuildOutcome) -> bool {
+    match o { .Hit(_, _) -> true, _ -> false }
+}
+
+fn fp_of(o: BuildOutcome) -> Fingerprint {
+    match o {
+        .Miss(fp, _, _) -> fp,
+        .Hit(fp, _) -> fp,
+    }
+}
+
+fn ll_path_of(o: BuildOutcome) -> string {
+    match o {
+        .Hit(_, p) -> p,
+        .Miss(_, _, _) -> "",
+    }
+}
+
+fn main() -> int {
+    let project = "/tmp/avra_driver_fixture/"
+    let entry = project + "main.av"
+    avra_shell_exec("rm -rf " + project)
+    avra_shell_exec("mkdir -p " + project)
+    let _w1 = write_fixture(entry, "fn main() -> int { 0 }")
+
+    let inputs = build_inputs(project, entry, "dev", 0)
+
+    // Probe 1: fresh cache → Miss.
+    let out1 = decide_build(inputs)
+    if is_miss(out1) {
+        println("PROBE first_miss: ok")
+    } else {
+        println("PROBE first_miss: FAIL")
+    }
+
+    // Probe 2: record_build_result publishes the artifact.
+    avra_shell_exec("printf 'pretend obj' > /tmp/avra_driver_obj.o")
+    let pr = record_build_result(inputs, fp_of(out1), "; pretend IR\n", "/tmp/avra_driver_obj.o", "meta", "", "1")
+    avra_shell_exec("rm -f /tmp/avra_driver_obj.o")
+    if pr.success {
+        println("PROBE publish: ok")
+    } else {
+        println("PROBE publish: FAIL " + pr.error)
+    }
+
+    // Probe 3: second decide → Hit (same fingerprint, cache populated).
+    let out2 = decide_build(inputs)
+    if is_hit(out2) {
+        println("PROBE second_hit: ok")
+    } else {
+        println("PROBE second_hit: FAIL")
+    }
+
+    // Probe 4: Hit's ll_path is the cached IR.
+    let cached = cached_ll_for(inputs, fp_of(out2))
+    if cached == "; pretend IR\n" {
+        println("PROBE cached_read: ok")
+    } else {
+        println("PROBE cached_read: FAIL")
+    }
+
+    // Probe 5: changed source → different fp → Miss again.
+    let _w2 = write_fixture(entry, "fn main() -> int { 42 }")
+    let out3 = decide_build(inputs)
+    if is_miss(out3) {
+        println("PROBE source_change_miss: ok")
+    } else {
+        println("PROBE source_change_miss: FAIL")
+    }
+
+    // Restore the original source so subsequent probes share the
+    // baseline fingerprint, then rebuild the entry's cache so we can
+    // test profile/unit perturbations independently.
+    let _w3 = write_fixture(entry, "fn main() -> int { 0 }")
+    avra_shell_exec("printf 'pretend obj' > /tmp/avra_driver_obj.o")
+    let _pr2 = record_build_result(inputs, fp_of(decide_build(inputs)), "; pretend IR\n", "/tmp/avra_driver_obj.o", "meta", "", "2")
+    avra_shell_exec("rm -f /tmp/avra_driver_obj.o")
+
+    // Probe 6: changing profile flags → different fp → Miss.
+    let release_inputs = build_inputs(project, entry, "release", 2)
+    let out4 = decide_build(release_inputs)
+    if is_miss(out4) {
+        println("PROBE profile_change_miss: ok")
+    } else {
+        println("PROBE profile_change_miss: FAIL")
+    }
+
+    // Probe 7: changing unit_name → different fp → Miss.
+    let other_unit = BuildInputs {
+        project_root: project,
+        unit_name: "other_unit",
+        kind: "bin",
+        sources: [entry],
+        entry_path: entry,
+        compiler_path: entry,
+        target_triple: "test-triple",
+        profile_name: "dev",
+        opt_level: 0,
+        debug: true,
+        overflow_checks: true,
+        coverage: false,
+        lib_pkg_root: "",
+    }
+    let out5 = decide_build(other_unit)
+    if is_miss(out5) {
+        println("PROBE unit_change_miss: ok")
+    } else {
+        println("PROBE unit_change_miss: FAIL")
+    }
+
+    avra_shell_exec("rm -rf " + project)
+    0
+}

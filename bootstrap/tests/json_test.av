@@ -1,0 +1,35 @@
+extern fn avra_json_stringify_int(value: int) -> string
+extern fn avra_json_stringify_string(s: string) -> string
+extern fn avra_json_stringify_bool(value: bool) -> string
+extern fn avra_json_get_int(json: string, key: string) -> int
+extern fn avra_json_get_string(json: string, key: string) -> string
+extern fn avra_json_get_bool(json: string, key: string) -> bool
+
+fn js_obj() -> string { "{\"name\": \"Alice\", \"age\": 30, \"active\": true}" }
+
+spec "json" {
+    then "stringify int" {
+        avra_json_stringify_int(42) == "42"
+    }
+    then "stringify string adds quotes" {
+        avra_json_stringify_string("hello") == "\"hello\""
+    }
+    then "stringify bool true" {
+        avra_json_stringify_bool(true) == "true"
+    }
+    then "stringify bool false" {
+        avra_json_stringify_bool(false) == "false"
+    }
+    then "parse string field" {
+        avra_json_get_string(js_obj(), "name") == "Alice"
+    }
+    then "parse int field" {
+        avra_json_get_int(js_obj(), "age") == 30
+    }
+    then "parse bool field" {
+        avra_json_get_bool(js_obj(), "active")
+    }
+    then "stringify escapes embedded quotes" {
+        avra_json_stringify_string("say \"hi\"") == "\"say \\\"hi\\\"\""
+    }
+}

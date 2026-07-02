@@ -1,0 +1,53 @@
+// End-to-end @std.avrac.build.cache tests.
+//
+// Compiles and runs tests/build_cache_fixtures/sample.av, which exercises
+// every public surface of the cache module (cache_for / cache_init /
+// cache_has / cache_publish / cache_read_ll / cache_evict / path
+// helpers / re-publish after evict). Each property prints a PROBE
+// line; this test asserts on those lines.
+//
+// Why a fixture program rather than a unit test directly? Same
+// reason as fingerprint_test.av: the resolver currently duplicates
+// `@std.avrac.X` Module wrappers when a test file imports from
+// inside @std/avrac (filed under the resolver-dedup ticket). The
+// fixture is a single-program compile, so there's only ever one
+// copy of @std.avrac in its scope.
+//
+// Memoised at the shell level so each `then` does not re-compile
+// the fixture. See fingerprint_test.av for the same pattern.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn cache_run_fixture() -> string {
+    cached_fixture_run("tests/build_cache_fixtures/sample.av")
+}
+
+spec "cache: end-to-end via bs2 compile+run" {
+    then "PROBE init — cache_init creates the directory tree" {
+        cache_run_fixture().contains("PROBE init: ok")
+    }
+    then "PROBE miss_before_publish — fresh cache reports no entry" {
+        cache_run_fixture().contains("PROBE miss_before_publish: ok")
+    }
+    then "PROBE publish — atomic publish succeeds" {
+        cache_run_fixture().contains("PROBE publish: ok")
+    }
+    then "PROBE hit_after_publish — cache_has flips to true after publish" {
+        cache_run_fixture().contains("PROBE hit_after_publish: ok")
+    }
+    then "PROBE read_roundtrip — cached IR reads back byte-identical" {
+        cache_run_fixture().contains("PROBE read_roundtrip: ok")
+    }
+    then "PROBE path_layout — entry paths are stable and consistent" {
+        cache_run_fixture().contains("PROBE path_layout: ok")
+    }
+    then "PROBE evict — eviction makes cache_has go back to false" {
+        cache_run_fixture().contains("PROBE evict: ok")
+    }
+    then "PROBE republish — publishing again after evict succeeds" {
+        cache_run_fixture().contains("PROBE republish: ok")
+    }
+    then "no probe failed" {
+        !cache_run_fixture().contains(": FAIL")
+    }
+}

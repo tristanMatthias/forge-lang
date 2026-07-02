@@ -1,0 +1,112 @@
+// WHY: sealed read-only handle macros use to query the resolver
+// from inside @comptime evaluation. Mirrors how `Runtime` is
+// threaded through eval — opaque handle dispatched through Avra
+// fns that read from the C-side state stack.
+//
+// Step 5 of docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md.
+//
+// The ResolverCtx struct holds a single opaque `id` field that
+// the compiler uses to look up the live resolver state for the
+// active @expand invocation. All queries are free fns; macros
+// call them as `ctx_lookup_type(ctx, "Expr")` rather than
+// `ctx.lookup_type("Expr")`.
+//
+// Type shapes:
+//   ResolverCtx { id: int } — opaque handle.
+//   ResolvedType { canonical_name, kind, fields?, variants? } —
+//     full hierarchical shape for struct/enum introspection.
+//   ResolvedField { name, ty } — one struct field.
+//   ResolvedVariant { name, fields } — one enum variant + its
+//     positional fields.
+
+use core.{TypeKind}
+
+export type ResolverCtx = { id: int }
+
+export type ResolvedType = {
+    canonical_name: string,
+    kind: TypeKind,
+    fields: List<ResolvedField>?,
+    variants: List<ResolvedVariant>?,
+}
+
+export type ResolvedField = {
+    name: string,
+    ty: ResolvedType,
+}
+
+export type ResolvedVariant = {
+    name: string,
+    fields: List<ResolvedField>,
+}
+
+// ── Runtime extern fns ──
+//
+// The fresh-id counter lives in `runtime.c`. ctx_fresh_ident
+// reads from it directly (the other ctx_* fns route through
+// eval_resolver_ctx_call which reads from the avra_rd_* layer).
+
+extern fn avra_resolver_fresh_id() -> int
+
+// ── Public ctx_* operations ──
+//
+// These are the user-facing entry points macros call. Implemented
+// as regular Avra fns (not `extern fn`) so the comptime eval
+// treats them as standard calls — no special-case dispatch in
+// eval_call needed.
+
+// ── Public ctx_* surface ──
+//
+// All five ctx_* fns below have STUB bodies (null / "" / []). The
+// real semantics come from eval intercept in features/eval/mod.av:
+// `eval_resolver_ctx_call` recognises the call by name and routes
+// it through the C-side resolver-data layer (avra_rd_*) populated
+// by expand_macro.av before each macro invocation. The stub bodies
+// here remain as a defensive fallback for any path that bypasses
+// the intercept (e.g. a macro calling ctx_lookup_type from a
+// non-comptime context, which the resolver would block anyway).
+// ctx_fresh_ident's body has the real impl because it doesn't need
+// resolver-data — just the monotonic C-side counter.
+
+/// Module the annotated decl lives in (e.g. "@std::avrac::core").
+/// Returns "" when the @expand site is at top-level.
+export fn ctx_current_module(ctx: ResolverCtx) -> string {
+    ""
+}
+
+/// Look up a type by source-level name, qualifying through the
+/// active scope's imports. Returns the canonical resolved type or
+/// null if the name doesn't resolve to a known type.
+export fn ctx_lookup_type(ctx: ResolverCtx, name: string) -> ResolvedType? {
+    null
+}
+
+/// Resolve an identifier the same way `Expr.Ident` would resolve at
+/// this scope. Returns the QualifiedIdent path or null when the
+/// name doesn't bind.
+export fn ctx_qualify_ident(ctx: ResolverCtx, name: string) -> string? {
+    null
+}
+
+/// Synthesise a fresh identifier guaranteed not to collide with any
+/// name visible in this scope. Uniqueness scope: this compile.
+/// Format: `__avra_fresh_<n>` where n is a monotonic per-process
+/// counter. The hint is currently ignored — uniqueness is the
+/// hard guarantee, readability is best-effort.
+export fn ctx_fresh_ident(ctx: ResolverCtx, hint: string) -> string {
+    let id = avra_resolver_fresh_id()
+    "__avra_fresh_${string(id)}"
+}
+
+/// Returns the field-access chain to dig from `t` to a value of type
+/// `target`. Examples:
+///   ctx_unwrap_path_to(SExpr, "Expr")    -> ["node"]
+///   ctx_unwrap_path_to(FieldInit, "Expr") -> ["value", "node"]
+///   ctx_unwrap_path_to(string, "Expr")   -> []
+///   ctx_unwrap_path_to(Expr, "Expr")     -> []
+/// BFS over the field graph; depth-capped at 8 + visited-set
+/// cycle protection so recursive types terminate.
+export fn ctx_unwrap_path_to(ctx: ResolverCtx, t: ResolvedType, target: string) -> List<string> {
+    let empty: List<string> = []
+    empty
+}

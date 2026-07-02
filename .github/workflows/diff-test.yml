@@ -1,0 +1,72 @@
+# HRN differential-test gate.
+#
+# Every PR into the integration branch must be behaviour-preserving at the
+# IR level: the compiler built from the PR (NEW) and from the integration
+# branch (OLD, the oracle) must emit BYTE-IDENTICAL IR for the same inputs
+# — the whole compiler source (selfhost) plus the test corpus. This is the
+# go-hard safety net of the AST-source-of-truth program (spine doc sec 8):
+# rip the foundation out and instantly catch drift. Logic lives in
+# bootstrap/scripts/diagnose.sh --diff-test; this workflow only provisions
+# the toolchain and invokes it.
+#
+# A legitimate IR change (e.g. an intentional codegen improvement) trips
+# this gate by design — confirm run-results match and advance the oracle.
+name: diff-test
+
+on:
+  pull_request:
+    branches: [feat/crafting-intepreters]
+
+# Least privilege: a trust gate that builds + runs PR code — read only.
+permissions:
+  contents: read
+
+concurrency:
+  group: diff-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diff-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow is a trust gate.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Read-only workflow — never let the token outlive checkout.
+          persist-credentials: false
+          # Full history: the harness resolves the integration base ref,
+          # its seed blob, and the merge-base.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      # Restore the seed binary (content-keyed): both the OLD (base) and NEW
+      # (HEAD) compiler builds reuse it instead of re-running the seed `llc`.
+      # `id: seed` exposes its fail-closed LLVM version for the difftest key below.
+      - id: seed
+        uses: ./.github/actions/cache-seed
+
+      # Persist the per-ref compiler build cache across runs. dt_build_compiler
+      # gates reuse on window_fingerprint (seed identity + compiler-source
+      # blob-shas), so a restored compiler is reused ONLY when its source + seed
+      # are byte-identical: the OLD (base) compiler survives a PR's force-pushes
+      # (base source unchanged) — saving the ~6 min base rebuild — while NEW
+      # rebuilds whenever HEAD's source changes. The github.sha suffix saves a
+      # fresh entry per run; restore-keys restores the most recent same-(seed,
+      # LLVM) prefix match. Correctness is the marker's (not the key's), and
+      # diff-test's own byte-identical IR comparison is the backstop.
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: bootstrap/build/difftest
+          key: avra-difftest-${{ runner.os }}-llvm${{ steps.seed.outputs.llvm_ver }}-${{ hashFiles('bootstrap/seed/seed.lock') }}-${{ github.sha }}
+          restore-keys: |
+            avra-difftest-${{ runner.os }}-llvm${{ steps.seed.outputs.llvm_ver }}-${{ hashFiles('bootstrap/seed/seed.lock') }}-
+
+      - name: Differential test (OLD=integration vs NEW=HEAD)
+        env:
+          # Indirection keeps the ref out of shell parsing — branch names
+          # are validated by GitHub, but pass data as data.
+          BASE_REF: ${{ github.base_ref }}
+        run: bash bootstrap/scripts/diagnose.sh --diff-test --base "origin/${BASE_REF}" --new HEAD

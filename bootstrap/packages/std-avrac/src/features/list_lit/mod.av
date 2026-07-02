@@ -1,0 +1,45 @@
+// dir-as-module (g2eo.1): codegen.av + parser.av + typeck.av auto-load
+// as siblings, surface flat at `features.list_lit.{...}`. emit_list_lit
+// + check_list_lit are in scope without self-imports.
+use codegen.{err_emit}
+use core.{feature_new, Feature}
+use resolve.{resolve_expr_list}
+use typeck.{tc_er}
+
+/// Register the `[a, b, c]` list literal feature. Wires up
+/// resolver, type-checker, and codegen via the standard registry.
+export fn list_lit_feature() -> Feature {
+    feature_new("list_lit") with {
+        expr_tag: Expr.ListLit([]),
+        emit_expr: list_lit_emit_expr,
+        resolve_expr: list_lit_resolve_expr,
+        check_expr: list_lit_check_expr,
+    }
+}
+
+/// Resolver hook for `ListLit`. Walks every element expression.
+fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .ListLit(elements) -> resolve_expr_list(r, elements)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `ListLit`. Forwards to `check_list_lit`,
+/// which infers the element type from the entries.
+fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .ListLit(elements) -> check_list_lit(tc, elements)
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+
+/// Codegen hook for `ListLit`. Pattern-matches the AST node and
+/// forwards to `emit_list_lit`.
+fn list_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .ListLit(elements) -> emit_list_lit(ctx, env, elements)
+        _ -> err_emit("expected ListLit")
+    }
+}

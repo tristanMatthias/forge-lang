@@ -3,10 +3,9 @@
 /// The lockfile (`forge.lock`) records the exact resolved versions, sources,
 /// and content hashes of every dependency so that builds are reproducible
 /// across machines and over time.
-
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 // ── Public types ────────────────────────────────────────────────────
 
@@ -27,7 +26,7 @@ pub struct LockfileMetadata {
 pub struct LockedPackage {
     pub name: String,
     pub version: String,
-    pub source: String, // "registry", "git+url@rev", "path+/local/path"
+    pub source: String,       // "registry", "git+url@rev", "path+/local/path"
     pub content_hash: String, // sha256:...
     pub artifact_hash: Option<String>,
     pub capabilities: Vec<String>,
@@ -136,13 +135,19 @@ impl Lockfile {
                 out.push_str(&format!("artifact_hash = \"{}\"\n", ah));
             }
             if !pkg.capabilities.is_empty() {
-                let caps: Vec<String> =
-                    pkg.capabilities.iter().map(|c| format!("\"{}\"", c)).collect();
+                let caps: Vec<String> = pkg
+                    .capabilities
+                    .iter()
+                    .map(|c| format!("\"{}\"", c))
+                    .collect();
                 out.push_str(&format!("capabilities = [{}]\n", caps.join(", ")));
             }
             if !pkg.dependencies.is_empty() {
-                let deps: Vec<String> =
-                    pkg.dependencies.iter().map(|d| format!("\"{}\"", d)).collect();
+                let deps: Vec<String> = pkg
+                    .dependencies
+                    .iter()
+                    .map(|d| format!("\"{}\"", d))
+                    .collect();
                 out.push_str(&format!("dependencies = [{}]\n", deps.join(", ")));
             }
             out.push('\n');
@@ -366,10 +371,7 @@ mod tests {
 
         let http = parsed.find("http-client").unwrap();
         assert_eq!(http.version, "2.1.0");
-        assert_eq!(
-            http.artifact_hash.as_deref(),
-            Some("sha256:def456")
-        );
+        assert_eq!(http.artifact_hash.as_deref(), Some("sha256:def456"));
     }
 
     #[test]

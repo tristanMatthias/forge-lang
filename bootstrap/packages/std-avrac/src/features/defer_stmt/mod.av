@@ -1,0 +1,126 @@
+// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// surface flat at `features.defer_stmt.{...}`.
+use core.{sexpr_dummy}
+use codegen.{StmtResult}
+use codegen.{ok_sr, err_sr}
+use features.eval.{error_result, ok_result, value_null}
+use core.{feature_new, Feature}
+use resolve.{resolve_expr}
+use codegen.{DeferEntry}
+use list_ops.{list_push_copy}
+use typeck.{check_expr}
+
+// All handlers are private.
+
+/// Codegen hook for `defer body`. Pushes a `Frame` entry onto the
+/// scoped DeferStack so the emitted body runs at scope exit in
+/// LIFO order. The body itself isn't emitted here — `emit_defers`
+/// (called from return / scope-exit emitters) materializes it.
+fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .Defer(body) -> {
+            let updated = ctx with { defers: list_push_copy(ctx.defers, DeferEntry.Frame(sexpr_dummy(body))) }
+            ok_sr(updated, env)
+        }
+        _ -> err_sr("expected Defer")
+    }
+}
+
+/// Resolver hook for `defer`. Walks the body so any names it
+/// references resolve in the current scope.
+fn defer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r }
+}
+
+/// Type-check hook for `defer`. Checks the body for errors but
+/// doesn't constrain its type — defer bodies are evaluated for
+/// side effects only.
+fn defer_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Defer(body) -> {
+            let r = check_expr(tc, body)
+            r.tc
+        }
+        _ -> tc
+    }
+}
+
+/// Tree-walk evaluator hook for `defer`. The eval path doesn't
+/// model deferred execution yet — return null and let the body
+/// evaluate normally on entry.
+fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Defer(_) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Defer")
+    }
+}
+
+/// Codegen hook for `errdefer body`. Same shape as `defer_emit`
+/// but pushes an `ErrFrame` so the body only runs on early-error
+/// returns (`Err(...)` or `null` for nullable-returning fns).
+fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .Errdefer(body) -> {
+            let updated = ctx with { defers: list_push_copy(ctx.defers, DeferEntry.ErrFrame(sexpr_dummy(body))) }
+            ok_sr(updated, env)
+        }
+        _ -> err_sr("expected Errdefer")
+    }
+}
+
+/// Resolver hook for `errdefer`. Mirror of `defer_resolve`.
+fn errdefer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Errdefer(body) -> resolve_expr(r, body), _ -> r }
+}
+
+/// Type-check hook for `errdefer`. Mirror of `defer_check`.
+fn errdefer_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Errdefer(body) -> {
+            let r = check_expr(tc, body)
+            r.tc
+        }
+        _ -> tc
+    }
+}
+
+/// Tree-walk evaluator hook for `errdefer`. Same as defer_eval —
+/// no deferred-execution model in the evaluator yet.
+fn errdefer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Errdefer(_) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Errdefer")
+    }
+}
+
+// ── Exported features ──
+
+/// Register the `defer` statement feature. Defers run in LIFO
+/// order at scope exit (every path — normal return AND early
+/// error). Spec Axis 9.4.
+export fn defer_feature() -> Feature {
+    feature_new("defer") with {
+        stmt_tag: Stmt.Defer(Expr.None),
+        stmt_keyword: "kw_defer",
+        parse_stmt: (p: Parser) -> p.parse_defer_statement(),
+        emit_stmt: defer_emit,
+        resolve_stmt: defer_resolve,
+        check_stmt: defer_check,
+        eval_stmt: defer_eval,
+    }
+}
+
+/// Register the `errdefer` statement feature. Same LIFO scope-
+/// exit ordering as `defer`, but only fires on early error
+/// returns (Err(...) / null nullable returns). Spec Axis 9.4.
+export fn errdefer_feature() -> Feature {
+    feature_new("errdefer") with {
+        stmt_tag: Stmt.Errdefer(Expr.None),
+        stmt_keyword: "kw_errdefer",
+        parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
+        emit_stmt: errdefer_emit,
+        resolve_stmt: errdefer_resolve,
+        check_stmt: errdefer_check,
+        eval_stmt: errdefer_eval,
+    }
+}

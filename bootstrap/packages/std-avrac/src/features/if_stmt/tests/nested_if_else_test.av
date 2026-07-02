@@ -1,0 +1,29 @@
+/// Test fixture: classify an int via a chain of `if`/`else if`
+/// — exercises sequential branch lowering and the early-exit
+/// path through nested else blocks.
+fn classify(n: int) -> string {
+    if n < 0 {
+        "negative"
+    } else if n == 0 {
+        "zero"
+    } else if n < 10 {
+        "small"
+    } else {
+        "big"
+    }
+}
+
+spec "nested if else" {
+    then "negative" {
+        classify(-5) == "negative"
+    }
+    then "zero" {
+        classify(0) == "zero"
+    }
+    then "small positive" {
+        classify(7) == "small"
+    }
+    then "big positive" {
+        classify(100) == "big"
+    }
+}

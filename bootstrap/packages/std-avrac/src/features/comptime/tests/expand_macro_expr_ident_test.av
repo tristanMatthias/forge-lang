@@ -1,0 +1,25 @@
+// vez6.6.5/ident — Expr-typed comptime fn folds to runtime Expr (ident).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+
+spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value (ident)" {
+    then "make_ident() yields a runtime Expr that renders as `my_var`" {
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_expr_ident_test.av", 
+            "use @std.avrac.core.{Expr, render_expr}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_ident() -> Expr {\n" +
+            "    return quote { my_var }\n" +
+            "}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "    let e: Expr = make_ident()\n" +
+            "    println(render_expr(e))\n" +
+            "}\n")
+        out.contains("my_var")
+    }
+}

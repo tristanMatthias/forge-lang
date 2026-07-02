@@ -3,7 +3,6 @@
 /// Reads `[dependencies]` from forge.toml, resolves versions using semver
 /// range matching, detects conflicts and cycles, and produces a resolved
 /// dependency graph.
-
 use std::collections::{HashMap, HashSet};
 
 use crate::errors::CompileError;
@@ -67,17 +66,28 @@ impl SemVer {
 
         let parts: Vec<&str> = version_part.split('.').collect();
         if parts.len() != 3 {
-            return Err(format!("invalid semver: '{}' (expected MAJOR.MINOR.PATCH)", s));
+            return Err(format!(
+                "invalid semver: '{}' (expected MAJOR.MINOR.PATCH)",
+                s
+            ));
         }
 
-        let major = parts[0].parse::<u64>()
+        let major = parts[0]
+            .parse::<u64>()
             .map_err(|_| format!("invalid major version in '{}'", s))?;
-        let minor = parts[1].parse::<u64>()
+        let minor = parts[1]
+            .parse::<u64>()
             .map_err(|_| format!("invalid minor version in '{}'", s))?;
-        let patch = parts[2].parse::<u64>()
+        let patch = parts[2]
+            .parse::<u64>()
             .map_err(|_| format!("invalid patch version in '{}'", s))?;
 
-        Ok(SemVer { major, minor, patch, pre })
+        Ok(SemVer {
+            major,
+            minor,
+            patch,
+            pre,
+        })
     }
 
     fn is_prerelease(&self) -> bool {
@@ -87,7 +97,8 @@ impl SemVer {
 
 impl Ord for SemVer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.major.cmp(&other.major)
+        self.major
+            .cmp(&other.major)
             .then(self.minor.cmp(&other.minor))
             .then(self.patch.cmp(&other.patch))
             .then_with(|| {
@@ -113,7 +124,11 @@ impl std::fmt::Display for SemVer {
         if self.pre.is_empty() {
             write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
         } else {
-            write!(f, "{}.{}.{}-{}", self.major, self.minor, self.patch, self.pre)
+            write!(
+                f,
+                "{}.{}.{}-{}",
+                self.major, self.minor, self.patch, self.pre
+            )
         }
     }
 }
@@ -241,7 +256,9 @@ fn comparator_matches(comp: &Comparator, ver: &SemVer) -> bool {
                 return false;
             }
             // Pre-release versions only match if same major.minor.patch
-            if ver.is_prerelease() && (ver.major, ver.minor, ver.patch) != (req.major, req.minor, req.patch) {
+            if ver.is_prerelease()
+                && (ver.major, ver.minor, ver.patch) != (req.major, req.minor, req.patch)
+            {
                 return false;
             }
             // ^1.2.3 => >=1.2.3, <2.0.0
@@ -312,11 +329,12 @@ fn resolve_one(
         return Err(CompileError::CircularDependency { chain });
     }
 
-    let req = VersionReq::parse(range_str).map_err(|e| CompileError::VersionRangeUnsatisfiable {
-        package: name.to_string(),
-        range: range_str.to_string(),
-        available: vec![format!("(parse error: {})", e)],
-    })?;
+    let req =
+        VersionReq::parse(range_str).map_err(|e| CompileError::VersionRangeUnsatisfiable {
+            package: name.to_string(),
+            range: range_str.to_string(),
+            available: vec![format!("(parse error: {})", e)],
+        })?;
 
     // If already resolved, check compatibility
     if let Some(existing) = resolved.get(name) {
@@ -328,7 +346,10 @@ fn resolve_one(
             dependency: name.to_string(),
             requesters: vec![
                 (requester.to_string(), range_str.to_string()),
-                ("(previously resolved)".to_string(), existing.version.clone()),
+                (
+                    "(previously resolved)".to_string(),
+                    existing.version.clone(),
+                ),
             ],
         });
     }
@@ -336,7 +357,10 @@ fn resolve_one(
     // Query available versions
     let pkg_versions = available(name).ok_or_else(|| CompileError::DependencyNotFound {
         name: name.to_string(),
-        detail: format!("no versions found for '{}' (required by {})", name, requester),
+        detail: format!(
+            "no versions found for '{}' (required by {})",
+            name, requester
+        ),
     })?;
 
     // Find the newest version that satisfies the range
@@ -349,13 +373,13 @@ fn resolve_one(
 
     candidates.sort();
 
-    let best = candidates.last().ok_or_else(|| {
-        CompileError::VersionRangeUnsatisfiable {
+    let best = candidates
+        .last()
+        .ok_or_else(|| CompileError::VersionRangeUnsatisfiable {
             package: name.to_string(),
             range: range_str.to_string(),
             available: pkg_versions.versions.clone(),
-        }
-    })?;
+        })?;
 
     let best_str = best.to_string();
 
@@ -548,7 +572,11 @@ pub fn scan_local_packages(packages_dir: &std::path::Path) -> HashMap<String, Pa
         version_deps.insert(version.clone(), deps);
 
         // Register under multiple keys so lookups work with different naming styles
-        let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let dir_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
         let qualified = format!("@{}/{}", namespace, pkg_name);
 
         let pv = PackageVersions {
@@ -702,10 +730,14 @@ mod tests {
 
     #[test]
     fn test_resolve_not_found() {
-        let deps: HashMap<String, String> =
-            [("nonexistent".into(), "^1.0.0".into())].into_iter().collect();
+        let deps: HashMap<String, String> = [("nonexistent".into(), "^1.0.0".into())]
+            .into_iter()
+            .collect();
         let result = resolve(&deps, &make_available());
-        assert!(matches!(result, Err(CompileError::DependencyNotFound { .. })));
+        assert!(matches!(
+            result,
+            Err(CompileError::DependencyNotFound { .. })
+        ));
     }
 
     #[test]
@@ -713,7 +745,10 @@ mod tests {
         let deps: HashMap<String, String> =
             [("alpha".into(), "^5.0.0".into())].into_iter().collect();
         let result = resolve(&deps, &make_available());
-        assert!(matches!(result, Err(CompileError::VersionRangeUnsatisfiable { .. })));
+        assert!(matches!(
+            result,
+            Err(CompileError::VersionRangeUnsatisfiable { .. })
+        ));
     }
 
     #[test]
@@ -750,7 +785,10 @@ mod tests {
         .collect();
 
         let result = resolve(&deps, &available);
-        assert!(matches!(result, Err(CompileError::DependencyConflict { .. })));
+        assert!(matches!(
+            result,
+            Err(CompileError::DependencyConflict { .. })
+        ));
     }
 
     #[test]
@@ -785,10 +823,12 @@ mod tests {
             }
         };
 
-        let deps: HashMap<String, String> =
-            [("a".into(), "^1.0.0".into())].into_iter().collect();
+        let deps: HashMap<String, String> = [("a".into(), "^1.0.0".into())].into_iter().collect();
         let result = resolve(&deps, &available);
-        assert!(matches!(result, Err(CompileError::CircularDependency { .. })));
+        assert!(matches!(
+            result,
+            Err(CompileError::CircularDependency { .. })
+        ));
     }
 
     // -- Tree display --
@@ -796,20 +836,26 @@ mod tests {
     #[test]
     fn test_format_dep_tree() {
         let mut packages = HashMap::new();
-        packages.insert("http".into(), ResolvedDep {
-            name: "http".into(),
-            version: "0.1.0".into(),
-            source: DepSource::Registry,
-            dependencies: vec![],
-            capabilities: vec![],
-        });
-        packages.insert("graphql".into(), ResolvedDep {
-            name: "graphql".into(),
-            version: "3.1.0".into(),
-            source: DepSource::Registry,
-            dependencies: vec!["http".into()],
-            capabilities: vec![],
-        });
+        packages.insert(
+            "http".into(),
+            ResolvedDep {
+                name: "http".into(),
+                version: "0.1.0".into(),
+                source: DepSource::Registry,
+                dependencies: vec![],
+                capabilities: vec![],
+            },
+        );
+        packages.insert(
+            "graphql".into(),
+            ResolvedDep {
+                name: "graphql".into(),
+                version: "3.1.0".into(),
+                source: DepSource::Registry,
+                dependencies: vec!["http".into()],
+                capabilities: vec![],
+            },
+        );
 
         let graph = ResolvedGraph {
             packages,

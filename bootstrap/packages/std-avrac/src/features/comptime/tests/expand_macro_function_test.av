@@ -1,0 +1,39 @@
+// vez6.8.4.B slice 2 — Function decode lands the inner method body.
+// Split out of expand_macro_test.av for shard-parallel speed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_function_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+spec "vez6.8.4.B slice 2: Stmt.Function decodes inside macro-emitted impl" {
+    then "fn body lands intact in expanded output" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type Foo = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_impl() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        impl Foo {\n" +
+            "            fn bar(self) -> int { return 42 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_impl)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn Foo__bar")
+            && out.contains("return 42")
+    }
+}

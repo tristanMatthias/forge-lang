@@ -1,0 +1,22 @@
+extern fn avra_toml_get_string(toml: string, key: string) -> string
+extern fn avra_toml_get_int(toml: string, key: string) -> int
+extern fn avra_toml_get_bool(toml: string, key: string) -> bool
+
+fn toml_config() -> string {
+    "name = \"avra\"\nversion = \"1.2.3\"\noptimize = true\nmax_errors = 10\n"
+}
+
+spec "toml" {
+    then "parses string keys" {
+        avra_toml_get_string(toml_config(), "name") == "avra"
+    }
+    then "parses semver string" {
+        avra_toml_get_string(toml_config(), "version") == "1.2.3"
+    }
+    then "parses bool" {
+        avra_toml_get_bool(toml_config(), "optimize")
+    }
+    then "parses int" {
+        avra_toml_get_int(toml_config(), "max_errors") == 10
+    }
+}

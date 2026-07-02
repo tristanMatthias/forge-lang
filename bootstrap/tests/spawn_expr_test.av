@@ -1,0 +1,41 @@
+extern fn avra_thread_join(handle: int)
+
+mut spawn_log: int = 0
+
+fn spawn_basic() -> int {
+    spawn_log = 0
+    let h = spawn { spawn_log = spawn_log + 1 }
+    avra_thread_join(h)
+    spawn_log
+}
+
+fn spawn_capture() -> int {
+    spawn_log = 0
+    let inc = 7
+    let h = spawn { spawn_log = spawn_log + inc }
+    avra_thread_join(h)
+    spawn_log
+}
+
+fn spawn_three() -> int {
+    spawn_log = 0
+    let h1 = spawn { spawn_log = spawn_log + 1 }
+    avra_thread_join(h1)
+    let h2 = spawn { spawn_log = spawn_log + 2 }
+    avra_thread_join(h2)
+    let h3 = spawn { spawn_log = spawn_log + 4 }
+    avra_thread_join(h3)
+    spawn_log
+}
+
+spec "spawn expr" {
+    then "basic spawn runs the body" {
+        spawn_basic() == 1
+    }
+    then "spawn captures outer values" {
+        spawn_capture() == 7
+    }
+    then "three sequential spawns each run" {
+        spawn_three() == 7
+    }
+}

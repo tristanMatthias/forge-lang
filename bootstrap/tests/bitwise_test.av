@@ -1,0 +1,26 @@
+spec "bitwise" {
+    then "AND" {
+        (0xFF & 0x0F) == 15
+    }
+    then "OR" {
+        (0xF0 | 0x0F) == 255
+    }
+    then "XOR" {
+        (0xFF ^ 0x0F) == 240
+    }
+    then "left shift" {
+        (1 << 4) == 16
+    }
+    then "right shift" {
+        (256 >> 4) == 16
+    }
+    then "NOT" {
+        (~0) == -1
+    }
+    then "modulo" {
+        (10 % 3) == 1
+    }
+    then "modulo 17 % 5" {
+        (17 % 5) == 2
+    }
+}

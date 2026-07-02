@@ -1,0 +1,25 @@
+enum ExprDir { N, S, E, W }
+
+fn mexpr_double(n: int) -> int { n * 2 }
+
+spec "match as expr" {
+    then "match as function argument" {
+        let d = ExprDir.E
+        mexpr_double(match d { .N -> 1, .S -> 2, .E -> 3, .W -> 4 }) == 6
+    }
+    then "match as initializer" {
+        let d = ExprDir.E
+        let label = match d {
+            .N -> "north"
+            .S -> "south"
+            .E -> "east"
+            .W -> "west"
+        }
+        label == "east"
+    }
+    then "match in binary expression" {
+        let d = ExprDir.E
+        let score = 100 + match d { .N -> 1, .S -> 2, .E -> 3, .W -> 4 }
+        score == 103
+    }
+}

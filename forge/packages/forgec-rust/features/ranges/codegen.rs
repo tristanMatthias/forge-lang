@@ -13,7 +13,11 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, RangeData, |data| self.compile_range(&data.start, &data.end, data.inclusive))
+        feature_codegen!(self, fe, RangeData, |data| self.compile_range(
+            &data.start,
+            &data.end,
+            data.inclusive
+        ))
     }
 
     /// Compile a range expression.

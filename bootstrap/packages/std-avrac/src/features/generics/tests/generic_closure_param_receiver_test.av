@@ -1,0 +1,93 @@
+// WHY: regression spec for generic method/field dispatch on a CLOSURE-PARAMETER
+// receiver — `(x: Box<int>) -> x.count()` (452k).
+//
+// A closure's param type annotation slipped through both passes that rewrite a
+// declared generic-instance type to its monomorphized name, so a method/field
+// on the param dispatched to the BARE generic name and failed codegen
+// (`undefined method Box.count`, or `mymod::Box.count` inside a module):
+//   - the resolver's `Lambda` arm bound the params into the body scope but left
+//     their TYPE annotations un-qualified (a fn decl's params get qualified).
+//   - the monomorphizer's `Lambda` arm rewrote the body but passed the params
+//     through un-mangled (a fn decl's params get mangled).
+//
+// The fix rewrites the closure's param types in BOTH passes exactly as fn params
+// are — qualify in the resolver, mangle in mono — so the closure-bound receiver
+// dispatches like a direct local one, in module and non-module contexts alike.
+// Covers generic structs and enums, method and field access, a generic param
+// mixed with a scalar one, a two-type-arg instance (both args mangled into the
+// slug), two distinct generic params in one closure, and — composed with the
+// sibling Optional-descent fix — an optional generic-struct param.
+//
+// (`Box<int>` is built via the return-annotated `box_of`: a direct `Box { … }`
+// struct literal does not infer `V` in a spec/then context, a separate pre-
+// existing inference gap. `EBox.Wrap(n)` infers `T` from its payload inline.)
+
+type Box<V> = { items: List<V> }
+impl Box<V> { fn count(self) -> int { self.items.length } }
+
+enum EBox<T> { Wrap(value: T) }
+impl EBox<T> { fn unwrap_or(self, d: T) -> T { match self { .Wrap(value) -> value } } }
+
+// Two type params: the closure param's slug must mangle BOTH (`Pair__int__string`).
+type Pair<A, B> = { fst: A, snd: B }
+impl Pair<A, B> { fn first(self) -> A { self.fst } }
+
+fn box_of(xs: List<int>) -> Box<int> { Box { items: xs } }
+fn a_pair() -> Pair<int, string> { Pair { fst: 7, snd: "x" } }
+
+fn via_closure_method(xs: List<int>) -> int {
+    let g = (x: Box<int>) -> x.count()
+    g(box_of(xs))
+}
+fn via_closure_field(xs: List<int>) -> int {
+    let g = (x: Box<int>) -> x.items.length
+    g(box_of(xs))
+}
+fn via_closure_two_params(xs: List<int>, k: int) -> int {
+    let g = (x: Box<int>, d: int) -> x.count() + d
+    g(box_of(xs), k)
+}
+fn via_closure_enum(n: int) -> int {
+    let g = (x: EBox<int>) -> x.unwrap_or(0)
+    g(EBox.Wrap(n))
+}
+// The capstone of the non-local-receiver story: a closure param that is BOTH a
+// generic instance AND `Optional`. Needs this fix's closure-param rewrite AND
+// the sibling Optional-descent rewrite (which makes `rewrite_instance_vtype`
+// recurse into `Optional`) — exercises them composed.
+fn via_opt_closure(xs: List<int>) -> int {
+    let h = (x: Box<int>?) -> x?.count() ?? -1
+    h(box_of(xs))
+}
+fn via_two_arg_generic() -> int {
+    let g = (x: Pair<int, string>) -> x.first()
+    g(a_pair())
+}
+fn via_two_distinct_generics(xs: List<int>) -> int {
+    let g = (x: Box<int>, y: Pair<int, string>) -> x.count() + y.first()
+    g(box_of(xs), a_pair())
+}
+
+spec "a generic method on a closure-parameter receiver dispatches monomorphized" {
+    then "closure whose param is a generic struct, calling a method" {
+        via_closure_method([1, 2, 3]) == 3
+    }
+    then "closure whose param is a generic struct, accessing a field" {
+        via_closure_field([1, 2]) == 2
+    }
+    then "a generic closure param alongside a scalar param" {
+        via_closure_two_params([1, 2, 3], 10) == 13
+    }
+    then "closure whose param is a generic enum, calling a method" {
+        via_closure_enum(7) == 7
+    }
+    then "an optional generic-struct closure param composes with the Optional fix" {
+        via_opt_closure([1, 2, 3, 4, 5]) == 5
+    }
+    then "a two-type-arg generic closure param mangles both args" {
+        via_two_arg_generic() == 7
+    }
+    then "two distinct generic closure params in one closure" {
+        via_two_distinct_generics([1, 2, 3]) == 10
+    }
+}

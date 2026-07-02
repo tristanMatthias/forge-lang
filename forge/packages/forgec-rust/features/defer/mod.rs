@@ -32,7 +32,7 @@ early returns and error propagation with `?`.",
     category: "Special",
 }
 
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
 pub mod types;

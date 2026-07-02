@@ -1,12 +1,12 @@
-# Forge — Pointer Operations (TDD)
+# Avra — Pointer Operations (TDD)
 
-`ptr` gets two operations: `+` for offset and `[]` for byte read/write. Plus `string.from_ptr()` and `ptr.from_string()` for bridging between safe Forge strings and raw memory. These operations are unchecked — when `systems` blocks ship later, they become restricted to those scopes.
+`ptr` gets two operations: `+` for offset and `[]` for byte read/write. Plus `string.from_ptr()` and `ptr.from_string()` for bridging between safe Avra strings and raw memory. These operations are unchecked — when `systems` blocks ship later, they become restricted to those scopes.
 
 ---
 
 ## Test 1: Allocate and free
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 
@@ -19,7 +19,7 @@ fn main() {
 
 ## Test 2: Write and read bytes
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 
@@ -37,7 +37,7 @@ fn main() {
 
 ## Test 3: Pointer arithmetic
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 
@@ -60,7 +60,7 @@ fn main() {
 
 ## Test 4: ptr to string conversion
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 
@@ -82,7 +82,7 @@ fn main() {
 
 ## Test 5: string to ptr conversion
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 extern fn write(fd: int, buf: ptr, count: int) -> int
@@ -98,7 +98,7 @@ fn main() {
 
 ## Test 6: Read from stdin (libc read)
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 extern fn read(fd: int, buf: ptr, count: int) -> int
@@ -118,13 +118,13 @@ fn main() {
 ```
 
 ```bash
-echo "hello" | forge run test_read.fg
+echo "hello" | avra run test_read.av
 # got: hello
 ```
 
 ## Test 7: Read line implementation
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 extern fn read(fd: int, buf: ptr, count: int) -> int
@@ -152,13 +152,13 @@ fn main() {
 ```
 
 ```bash
-echo "hello world" | forge run test_readline.fg
+echo "hello world" | avra run test_readline.av
 # line: hello world
 ```
 
 ## Test 8: Write to stderr
 
-```forge
+```avra
 extern fn write(fd: int, buf: ptr, count: int) -> int
 
 fn eprintln(msg: string) {
@@ -174,16 +174,16 @@ fn main() {
 ```
 
 ```bash
-forge run test_stderr.fg 2>/dev/null
+avra run test_stderr.av 2>/dev/null
 # this goes to stdout
 
-forge run test_stderr.fg 1>/dev/null
+avra run test_stderr.av 1>/dev/null
 # this goes to stderr
 ```
 
 ## Test 9: Pointer comparison
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 
 fn main() {
@@ -204,7 +204,7 @@ fn main() {
 
 ## Test 10: Null ptr check
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 
@@ -219,7 +219,7 @@ fn main() {
 ```
   ╭─[panic] Null pointer access
   │
-  │  ╭─[test_null.fg:6:11]
+  │  ╭─[test_null.av:6:11]
   │  │
   │  │    6 │   let b = buf[0]
   │  │      │           ──────
@@ -230,7 +230,7 @@ fn main() {
 
 ## Test 11: Pointer subtraction (distance)
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 
 fn main() {
@@ -244,7 +244,7 @@ fn main() {
 
 ## Test 12: Copy memory between pointers
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 extern fn memcpy(dest: ptr, src: ptr, n: int) -> ptr
@@ -266,9 +266,9 @@ fn main() {
 }
 ```
 
-## Test 13: Build a simple buffer type in pure Forge
+## Test 13: Build a simple buffer type in pure Avra
 
-```forge
+```avra
 extern fn malloc(size: int) -> ptr
 extern fn free(p: ptr)
 extern fn memcpy(dest: ptr, src: ptr, n: int) -> ptr
@@ -310,10 +310,10 @@ fn main() {
 }
 ```
 
-## Test 14: Pure Forge IO package (no Rust, no native lib)
+## Test 14: Pure Avra IO package (no Rust, no native lib)
 
-```forge
-// This is what @std/io would look like — pure Forge calling libc directly
+```avra
+// This is what @std/io would look like — pure Avra calling libc directly
 
 extern fn read(fd: int, buf: ptr, count: int) -> int
 extern fn write(fd: int, buf: ptr, count: int) -> int
@@ -368,7 +368,7 @@ export fn eprintln(msg: string) {
 }
 ```
 
-```forge
+```avra
 // Usage
 use @std.io
 
@@ -380,8 +380,8 @@ fn main() {
 ```
 
 ```bash
-echo "Forge" | forge run test_io.fg
-# Enter your name: Hello, Forge!
+echo "Avra" | avra run test_io.av
+# Enter your name: Hello, Avra!
 ```
 
 ---
@@ -403,7 +403,7 @@ echo "Forge" | forge run test_io.fg
 
 | Function | Signature | Meaning |
 |---|---|---|
-| `string.from_ptr` | `(ptr, int) -> string` | Create Forge string from raw bytes + length |
+| `string.from_ptr` | `(ptr, int) -> string` | Create Avra string from raw bytes + length |
 | `ptr.from_string` | `(string) -> ptr` | Get raw pointer to string's bytes |
 
 ### Parser changes
@@ -423,7 +423,7 @@ echo "Forge" | forge run test_io.fg
 ### Feature registration
 
 ```rust
-#[forge_feature(
+#[avra_feature(
     name = "Pointer Operations",
     status = "draft",
     depends = ["types_core", "extern_ffi"],
@@ -439,7 +439,7 @@ pub mod ptr_ops;
 
 When `systems` blocks ship, pointer operations become restricted:
 
-```forge
+```avra
 // Application level — compile error
 let buf = malloc(4096)
 buf[0] = 65           // ERROR: pointer operations require a systems block

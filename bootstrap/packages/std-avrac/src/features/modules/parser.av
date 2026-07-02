@@ -1,0 +1,64 @@
+// WHY: parses module declarations (`mod name`) and use imports
+// (`use path.{name1, name2}`). Part of the modules feature.
+
+use core.{Stmt, SStmt, ParamEntry, ValueType}
+use parse.{Parser}
+use core.{Tk}
+
+impl Parser {
+    // Parse `mod name` — produces an unresolved Stmt.Module with an
+    // empty body. The module resolution pass fills in the body by
+    // reading the file from disk. The parser stays pure — no I/O.
+    fn parse_module_declaration(self) -> Result<Stmt, string> {
+        self.advance()  // consume `mod`
+        let name = self.consume_identifier("expected module name after `mod`")?
+        let empty_body: List<SStmt> = []
+        .Ok(Stmt.Module(name, empty_body))
+    }
+
+    // Parse `use path.{name1, name2, ...}` — an import declaration.
+    // Supports package imports: `use @std.cli.{name1, name2}`
+    fn parse_use_declaration(self) -> Result<Stmt, string> {
+        self.advance()  // consume `use`
+        mut path = ""
+        if self.check(Tk.At) {
+            self.advance()  // consume `@`
+            let pkg_scope = self.consume_identifier("expected package scope after `@`")?
+            path = "@${pkg_scope}"
+            if !self.consume(Tk.Dot, "expected `.` after package scope") {
+                return .Err("parse error")
+            }
+            let pkg_name = self.consume_identifier("expected package name")?
+            path = "${path}.${pkg_name}"
+        } else {
+            path = self.consume_identifier("expected module path after `use`")?
+        }
+        while self.check(Tk.Dot) {
+            self.advance()
+            if self.check(Tk.LeftBrace) { break }
+            let segment = self.consume_identifier("expected path segment")?
+            path = "${path}.${segment}"
+        }
+        if !self.consume(Tk.LeftBrace, "expected `{` in use declaration") {
+            return .Err("parse error")
+        }
+        let names = self.parse_use_name_list()?
+        if !self.consume(Tk.RightBrace, "expected `}` in use declaration") {
+            return .Err("parse error")
+        }
+        .Ok(Stmt.Use(path, names))
+    }
+
+    // Parse comma-separated identifier list inside `use path.{...}`.
+    fn parse_use_name_list(self) -> Result<List<ParamEntry>, string> {
+        mut out: List<ParamEntry> = []
+        while !self.check(Tk.RightBrace) {
+            let name = self.consume_identifier("expected import name")?
+            out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+            if self.check(Tk.Comma) {
+                self.advance()
+            }
+        }
+        .Ok(out)
+    }
+}

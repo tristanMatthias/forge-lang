@@ -1,0 +1,33 @@
+extern fn avra_toml_get_section_string(toml: string, section: string, key: string) -> string
+extern fn avra_toml_has_section(toml: string, section: string) -> int
+
+fn toml_sec_config() -> string {
+    "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\n\n[dependencies]\n@std/io = \"1.0\"\n@std/json = \"1.0\"\n"
+}
+
+spec "toml sections" {
+    then "section-aware string extraction: package.name" {
+        avra_toml_get_section_string(toml_sec_config(), "package", "name") == "my-app"
+    }
+    then "section-aware string extraction: package.version" {
+        avra_toml_get_section_string(toml_sec_config(), "package", "version") == "0.1.0"
+    }
+    then "scoped namespaced key in dependencies" {
+        avra_toml_get_section_string(toml_sec_config(), "dependencies", "@std/io") == "1.0"
+    }
+    then "second namespaced key in dependencies" {
+        avra_toml_get_section_string(toml_sec_config(), "dependencies", "@std/json") == "1.0"
+    }
+    then "has_section true for present section" {
+        avra_toml_has_section(toml_sec_config(), "package") == 1
+    }
+    then "has_section true for second section" {
+        avra_toml_has_section(toml_sec_config(), "dependencies") == 1
+    }
+    then "has_section false for missing section" {
+        avra_toml_has_section(toml_sec_config(), "missing") == 0
+    }
+    then "missing key in section returns empty string" {
+        avra_toml_get_section_string(toml_sec_config(), "package", "author") == ""
+    }
+}

@@ -1,0 +1,26 @@
+# Build artifacts — per-file IR, coverage, binaries — produced by bs2/bs3
+# compile + link for any .av source. Covers tests/, packages/, src/.
+**/*.av.ll
+**/*.av.cov.ll
+**/*.av.ll.cov.ll
+**/*.av.covmap.json
+**/*.bin
+**/*.bin.o
+**/*.profraw
+**/*.profdata
+# Ignore any directory named `build/` (catches the top-level artifact
+# dir AND any per-package build/ such as packages/std-lsp/build/),
+# but RE-INCLUDE the legitimate build-driver source module that lives
+# at packages/std-avrac/src/build/.
+**/build/
+!packages/std-avrac/src/build/
+!packages/std-avrac/src/build/**
+# Per-file cache fingerprints — re-exclude inside the whitelisted source dir
+packages/std-avrac/src/build/**/*.avra-sha256
+# Build cache artifacts created when running builds from inside the package
+# (e.g. `cd packages/std-avrac && bs2 build`) — NOT source, must stay ignored.
+packages/std-avrac/src/build/cache/
+dogfood_progress.csv
+
+# Generated language reference (rebuild with 'avra lang')
+target/

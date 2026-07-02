@@ -1,0 +1,33 @@
+// y9y4.5: @expand(derive_walker) applied to the real `Pattern` enum
+// in core/ast.av. Verifies the macro fires through Module-wrapped
+// imports — fix for 1pre (any_expand_annotation didn't recurse into
+// Module bodies, so iter 0 saw has_exp=false even when std-avrac's
+// own Pattern carried @expand, and the synth'd Pattern__children
+// was missing at consumer codegen).
+//
+// Bypasses metadata mode at fixture invocation — 9p1d: metadata
+// strips @comptime annotations + bodies. Until that lands, consumers
+// of std-avrac-shipped @comptime macros opt out at the bs2
+// invocation.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: applied to core/ast.av's Pattern enum" {
+    then "Pattern.children() — structural counts (so07.7.14)" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_pattern_test.av", 
+            "use @std.avrac.core.{Pattern, ParamEntry}\n" +
+            "fn main() {\n" +
+            "    let wild_ok = Pattern.Wildcard.children().length == 0\n" +
+            "    let lit_ok  = Pattern.LitInt(42).children().length == 0\n" +
+            "    // Or holds two direct Patterns — both contribute as children.\n" +
+            "    let or_pat = Pattern.Or(Pattern.LitInt(1), Pattern.LitInt(2))\n" +
+            "    let or_ok = or_pat.children().length == 2\n" +
+            "    // NestedVariant carries List<Pattern>; children = input.length.\n" +
+            "    let inner: List<Pattern> = [Pattern.Wildcard, Pattern.LitInt(1)]\n" +
+            "    let nested = Pattern.NestedVariant(\"Some\", inner)\n" +
+            "    let nested_ok = nested.children().length == inner.length\n" +
+            "    println(\"all=\" + string(wild_ok && lit_ok && or_ok && nested_ok))\n" +
+            "}\n")
+        out.contains("all=true")
+    }
+}

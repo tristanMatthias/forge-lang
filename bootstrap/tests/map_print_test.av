@@ -1,0 +1,12 @@
+fn debug_run() -> string {
+    let m = {"x": "42"}
+    let v = m.get("x")
+    let n = int(v)
+    string(n)
+}
+
+spec "map print" {
+    then "converts ok" {
+        debug_run() == "42"
+    }
+}

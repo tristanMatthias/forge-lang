@@ -1,0 +1,72 @@
+// g2eo.1 — directory-as-module primitives.
+//
+// `list_avra_module_files` walks a directory and returns the .av
+// files that should constitute the directory's auto-loaded module
+// body (excluding mod.av, _test.av, dotfiles, non-.av entries).
+// `list_avra_module_subdirs` returns the directory's immediate
+// child directories (excluding tests/, build/, dotfile dirs).
+//
+// These are the primitives the future build driver will use to
+// enumerate compile units when no `mod foo` declarations exist.
+// This test pins their behaviour as a fixture-driven contract;
+// editing either function and breaking a probe will fail the
+// test before any consumer ever sees the regression.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.1.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn dirmod_run() -> string {
+    cached_fixture_run("tests/dir_module_fixtures/sample.av")
+}
+
+spec "dir_module: list_avra_module_files filters correctly" {
+    then "exactly two .av files included" {
+        dirmod_run().contains("PROBE two_av_files: ok")
+    }
+    then "foo.av included" {
+        dirmod_run().contains("PROBE foo_included: ok")
+    }
+    then "bar.av included" {
+        dirmod_run().contains("PROBE bar_included: ok")
+    }
+    then "mod.av excluded" {
+        dirmod_run().contains("PROBE mod_av_excluded: ok")
+    }
+    then "_test.av excluded" {
+        dirmod_run().contains("PROBE test_av_excluded: ok")
+    }
+    then "dotfiles excluded" {
+        dirmod_run().contains("PROBE dotfiles_excluded: ok")
+    }
+    then "non-.av files excluded" {
+        dirmod_run().contains("PROBE non_av_excluded: ok")
+    }
+}
+
+spec "dir_module: list_avra_module_subdirs filters correctly" {
+    then "exactly two subdirs included" {
+        dirmod_run().contains("PROBE two_subdirs: ok")
+    }
+    then "sub_a included" {
+        dirmod_run().contains("PROBE sub_a_included: ok")
+    }
+    then "sub_b included" {
+        dirmod_run().contains("PROBE sub_b_included: ok")
+    }
+    then "tests dir excluded" {
+        dirmod_run().contains("PROBE tests_dir_excluded: ok")
+    }
+    then "build dir included (g2eo.1.2.1: legitimate source subdir name)" {
+        dirmod_run().contains("PROBE build_dir_included: ok")
+    }
+}
+
+spec "dir_module: edge cases" {
+    then "missing dir returns empty list (not error)" {
+        dirmod_run().contains("PROBE missing_dir_empty: ok")
+    }
+    then "trailing slash equivalent to no slash" {
+        dirmod_run().contains("PROBE trailing_slash_agnostic: ok")
+    }
+}

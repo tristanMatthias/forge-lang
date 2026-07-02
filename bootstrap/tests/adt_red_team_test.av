@@ -1,0 +1,88 @@
+// ADT red team: enums with payloads, recursive enums, Result, is operator
+
+enum ArtShape {
+    Circle(radius: float)
+    Rect(w: float, h: float)
+}
+
+fn art_area(s: ArtShape) -> float {
+    match s {
+        .Circle(r) -> 3.14 * r * r
+        .Rect(w, h) -> w * h
+    }
+}
+
+enum ArtOption { ArtSome(value: int), ArtNone }
+
+fn art_find_index(items: List<string>, target: string) -> ArtOption {
+    let idx = items.index_of(target)
+    if idx >= 0 { ArtOption.ArtSome(idx) } else { ArtOption.ArtNone }
+}
+
+enum ArtIntList { ArtNil, ArtCons(head: int, tail: ArtIntList) }
+
+fn art_sum_list(l: ArtIntList) -> int {
+    match l {
+        .ArtNil -> 0
+        .ArtCons(h, t) -> h + art_sum_list(t)
+    }
+}
+
+enum ArtResult { ArtOk(value: string), ArtErr(error: string) }
+
+fn art_maybe_hello(fail: bool) -> ArtResult {
+    if fail { return ArtResult.ArtErr("oops") }
+    ArtResult.ArtOk("hello")
+}
+
+fn art_try_it(fail: bool) -> ArtResult {
+    let r = art_maybe_hello(fail)
+    match r {
+        .ArtOk(v) -> ArtResult.ArtOk(v)
+        .ArtErr(e) -> ArtResult.ArtErr(e)
+    }
+}
+
+enum ArtColor { ArtRed, ArtGreen, ArtBlue }
+
+fn art_describe_match(r: ArtResult) -> string {
+    match r {
+        .ArtOk(v) -> "Ok: " + v
+        .ArtErr(e) -> "Err: " + e
+    }
+}
+
+fn art_find_match(opt: ArtOption) -> string {
+    match opt {
+        .ArtSome(idx) -> "found at " + string(idx)
+        .ArtNone -> "not found"
+    }
+}
+
+spec "adt red team" {
+    then "circle area" {
+        art_area(ArtShape.Circle(5.0)) == 78.5
+    }
+    then "rect area" {
+        art_area(ArtShape.Rect(3.0, 4.0)) == 12.0
+    }
+    then "find index found" {
+        art_find_match(art_find_index(["apple", "banana", "cherry"], "banana")) == "found at 1"
+    }
+    then "find index not found" {
+        art_find_match(art_find_index(["apple", "banana"], "grape")) == "not found"
+    }
+    then "recursive enum sum" {
+        art_sum_list(ArtIntList.ArtCons(1, ArtIntList.ArtCons(2, ArtIntList.ArtCons(3, ArtIntList.ArtCons(4, ArtIntList.ArtCons(5, ArtIntList.ArtNil)))))) == 15
+    }
+    then "result ok" {
+        art_describe_match(art_try_it(false)) == "Ok: hello"
+    }
+    then "result err" {
+        art_describe_match(art_try_it(true)) == "Err: oops"
+    }
+    then "is operator" {
+        let c = ArtColor.ArtRed
+        c is .ArtRed
+    }
+}

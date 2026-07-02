@@ -1,0 +1,36 @@
+enum CigPriority { Low, Medium, High(level: int) }
+
+type CigTask = { name: string, priority: CigPriority, done: int }
+
+fn cig_run() -> string {
+    let tasks = table<CigTask> {
+        name     | priority             | done
+        "design" | CigPriority.High(5)  | 0
+        "code"   | CigPriority.High(3)  | 1
+        "test"   | CigPriority.Medium   | 0
+        "docs"   | CigPriority.Low      | 0
+    }
+
+    mut urgent_count = 0
+    avra_test_capture_start()
+    for t in tasks {
+        let is_urgent = match t.priority {
+            .High(lvl) if lvl >= 4 -> 1
+            _ -> 0
+        }
+        if is_urgent == 1 && t.done == 0 {
+            urgent_count = urgent_count + 1
+            println(t.name)
+        }
+    }
+    println(string(urgent_count))
+    let undone = tasks.filter((t) -> t.done == 0)
+    println(string(undone.length))
+    avra_test_capture_stop()
+}
+
+spec "combo immut guard" {
+    then "immutability plus match guards" {
+        cig_run() == "design\n1\n3"
+    }
+}

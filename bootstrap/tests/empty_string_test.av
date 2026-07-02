@@ -1,0 +1,19 @@
+spec "empty string" {
+    then "empty length" {
+        "".length == 0
+    }
+    then "empty equals empty" {
+        "" == ""
+    }
+    then "empty not equals hello" {
+        "" != "hello"
+    }
+    then "concat with empty" {
+        let result = "" + "hello" + "" + " world" + ""
+        result == "hello world"
+    }
+    then "concat length" {
+        let result = "" + "hello" + "" + " world" + ""
+        result.length == 11
+    }
+}

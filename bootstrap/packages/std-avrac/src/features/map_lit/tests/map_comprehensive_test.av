@@ -1,0 +1,33 @@
+spec "map comprehensive" {
+    then "length" {
+        let m = {"x": "10", "y": "20", "z": "30"}
+        m.length == 3
+    }
+    then "get values" {
+        let m = {"x": "10", "y": "20", "z": "30"}
+        m.get("x") == "10" && m.get("z") == "30"
+    }
+    then "has and has not" {
+        let m = {"x": "10", "y": "20", "z": "30"}
+        m.has("x") && !m.has("w")
+    }
+    then "set overwrites" {
+        mut m = {"x": "10", "y": "20", "z": "30"}
+        m.set("x", "99")
+        m.get("x") == "99"
+    }
+    then "empty map has nothing" {
+        let e = {}
+        e.length == 0 && !e.has("anything")
+    }
+    then "keys list length" {
+        let m = {"x": "10", "y": "20", "z": "30"}
+        let k = m.keys()
+        k.length == 3
+    }
+    then "numeric values sum" {
+        let nums = {"a": 1, "b": 2, "c": 3}
+        let sum = nums.get("a") + nums.get("b") + nums.get("c")
+        sum == 6
+    }
+}

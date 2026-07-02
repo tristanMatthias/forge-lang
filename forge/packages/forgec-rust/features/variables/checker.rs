@@ -13,13 +13,20 @@ impl TypeChecker {
                     let val_type = self.check_expr(&data.value);
                     let ty = if let Some(ann) = &data.type_ann {
                         let ann_type = self.resolve_type_expr(ann);
-                        self.check_type_mismatch_ctx(&ann_type, &val_type, fe.span, data.type_ann_span, Some(&data.value));
+                        self.check_type_mismatch_ctx(
+                            &ann_type,
+                            &val_type,
+                            fe.span,
+                            data.type_ann_span,
+                            Some(&data.value),
+                        );
                         ann_type
                     } else {
                         val_type
                     };
                     let mutable = matches!(data.kind, VarKind::Mut);
-                    self.env.define_with_span(data.name.clone(), ty, mutable, fe.span);
+                    self.env
+                        .define_with_span(data.name.clone(), ty, mutable, fe.span);
                 }
             }
             "LetDestructure" => {

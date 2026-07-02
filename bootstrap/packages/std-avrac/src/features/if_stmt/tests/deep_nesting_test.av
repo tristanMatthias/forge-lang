@@ -1,0 +1,41 @@
+/// Test fixture: deeply nested `if`/`else` chain — exercises
+/// the codegen's basic-block layout under multi-level branching.
+fn deep_if(n: int) -> int {
+    if n > 10 {
+        if n > 20 {
+            if n > 30 {
+                if n > 40 {
+                    if n > 50 {
+                        return 5
+                    }
+                    return 4
+                }
+                return 3
+            }
+            return 2
+        }
+        return 1
+    }
+    0
+}
+
+spec "deep nesting" {
+    then "below all thresholds" {
+        deep_if(5) == 0
+    }
+    then "above 10" {
+        deep_if(15) == 1
+    }
+    then "above 20" {
+        deep_if(25) == 2
+    }
+    then "above 30" {
+        deep_if(35) == 3
+    }
+    then "above 40" {
+        deep_if(45) == 4
+    }
+    then "above 50" {
+        deep_if(55) == 5
+    }
+}

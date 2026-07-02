@@ -147,8 +147,7 @@ pub fn yank_local(
 
     let yanked_path = yanked_toml_path();
     if let Some(parent) = yanked_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot create cache dir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create cache dir: {}", e))?;
     }
 
     // Read existing contents (if any)

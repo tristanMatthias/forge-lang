@@ -1,0 +1,210 @@
+// WHY: emits LLVM IR for `let` and `mut` variable bindings.
+// Handles trait boxing: `let d: Describable = Circle { ... }` creates
+// a trait object with a vtable for dynamic dispatch.
+
+use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
+use core.{type_registry_id_for, method_mangled_name}
+use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
+use features.trait_decl.{box_for_trait}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
+use features.list_lit.{emit_list_lit_expected}
+use codegen.{emit_optional_coerce, emit_optional_ctor_value}
+use diagnostics.{DiagCode}
+
+/// Codegen for `let / mut / const name = init`. Handles four
+/// orthogonal special cases on top of the bare alloca + store:
+/// (1) Copy-type stack allocation when the type qualifies and
+///     the local is non-escaping (spec 9.12);
+/// (2) trait boxing when the declared type is a `Trait`;
+/// (3) `List<Trait>` element-by-element boxing;
+/// (4) union-wrapping when the declared type is a Union and
+///     the value is a concrete member.
+export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: ValueType, initializer: Expr) -> Result<List<VarBinding>, string> {
+    // Copy-type stack allocation (spec 9.12): if the initializer is
+    // a struct literal, the type is Copy, and the local is releasable
+    // (non-escaping), pre-allocate a stack buffer and pass it through
+    // Ctx so emit_struct_lit writes directly into it. No heap alloc needed.
+    let copy_target = try_copy_stack_target(ctx, name, ty_vt, initializer)
+    let emit_ctx = if copy_target.active {
+        ctx with { copy_alloc_target: copy_target.alloca_ptr }
+    } else {
+        ctx
+    }
+    // Annotated `List<T?>` literal: box each element into the declared
+    // optional element type at construction. The generic `emit_list_lit`
+    // only boxes when the literal itself contains a `none`, so an
+    // all-present `let xs: List<int?> = [1, 2, 3]` would otherwise push raw
+    // scalars that crash on a later unwrap.
+    if !vtype_is_unknown(ty_vt) {
+        let decl = ctx.resolve_codegen_vtype(ty_vt)
+        if vtype_is_list(decl) && vtype_is_optional(vtype_list_elem(decl)) {
+            match initializer {
+                .ListLit(elements) -> {
+                    let boxed = emit_list_lit_expected(ctx, env, elements, vtype_list_elem(decl))?
+                    return ok_stmt(ctx.bind(env, name, boxed.value, decl))
+                }
+                _ -> {}
+            }
+        }
+        // Subjectless Option ctor into a `T?` slot is the optional repr — NOT a
+        // same-named user enum's variant. emit_enum_ctor resolves a bare `.Some` /
+        // `.None` by variant-NAME lookup, with no access to the expected type, so
+        // it would ICE (no registered Option enum) or wrongly bind a shadowing
+        // user enum. The slot type is known here, so disambiguate by it — the
+        // same expected-type-directed pattern the `List<T?>` literal above uses.
+        if vtype_is_optional(decl) {
+            match initializer {
+                .EnumCtor(tn, variant, args) if tn == "" && variant_is_optional_ctor(variant, args.length) -> {
+                    let r = emit_optional_ctor_value(emit_ctx, env, variant, args, decl)?
+                    return ok_stmt(ctx.bind(env, name, r.value, decl))
+                }
+                _ -> {}
+            }
+        }
+    }
+    mut r = emit_ctx.emit(env, initializer)?
+    // Use the type annotation when present, otherwise infer from initializer.
+    let var_ty = if !vtype_is_unknown(ty_vt) {
+        ctx.resolve_codegen_vtype(ty_vt)
+    } else {
+        r.ty
+    }
+    // Optional box/unbox: a present value-inner `T` landing in a `T?` slot is
+    // boxed so `none` stays distinct from `Some(0)`; a boxed `T?` landing in a
+    // non-optional slot is unboxed (permissive narrow). `emit_optional_coerce`
+    // is a no-op when neither applies, so no guard is needed.
+    r = emit_optional_coerce(ctx, r, var_ty)
+    // Trait boxing: `let d: Trait = concrete_value`
+    let trait_name = vtype_trait_name(var_ty)
+    if trait_name != "" {
+        let concrete_name = resolve_concrete_name(r.ty)
+        if concrete_name != "" {
+            let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
+            return ok_stmt(ctx.bind(env, name, obj_i64, var_ty))
+        }
+    }
+    // List<Trait> boxing: `let xs: List<Trait> = [concrete1, concrete2]`
+    // Each element must be individually boxed as a trait object.
+    if vtype_is_list(var_ty) {
+        let elem_ty = vtype_list_elem(var_ty)
+        let elem_trait = vtype_trait_name(elem_ty)
+        if elem_trait != "" {
+            match initializer {
+                .ListLit(elements) -> {
+                    let boxed_list = emit_trait_boxed_list(ctx, env, elements, elem_trait)?
+                    return ok_stmt(ctx.bind(env, name, boxed_list, var_ty))
+                }
+                _ -> {
+                    ctx.warn(DiagCode.TypeMismatch, "List<${elem_trait}> binding requires a list literal for trait boxing — variable assignment skips boxing")
+                }
+            }
+        }
+    }
+    // Union wrapping: `let x: int | string = 42` → wrap into discriminated union
+    if needs_union_wrap(r.ty, var_ty) {
+        let wrapped = emit_union_wrap(ctx, r.value, r.ty, var_ty)?
+        return ok_stmt(ctx.bind(env, name, wrapped.value, var_ty))
+    }
+    // For Copy-type stack allocations, bind without RC cleanup.
+    // The struct data is on the stack — no heap free needed.
+    if copy_target.active {
+        let sn = vtype_struct_name(var_ty)
+        if sn != "" {
+            return ok_stmt(ctx.bind_copy_stack(env, name, r.value, var_ty, sn))
+        }
+    }
+    ok_stmt(ctx.bind(env, name, r.value, var_ty))
+}
+
+/// Result of the Copy-type stack-allocation probe. `active`
+/// is true when the optimisation fires; `alloca_ptr` then holds
+/// the pre-allocated stack buffer that the struct/with emitter
+/// should write into directly.
+///
+/// @field active     — 1 when stack allocation should happen.
+/// @field alloca_ptr — pre-built stack buffer.
+type CopyTarget = { active: bool, alloca_ptr: ptr }
+
+/// Probe whether `let name = init` qualifies for Copy-type
+/// stack allocation. Returns an inactive CopyTarget unless
+/// `init` is a struct literal / `with` expr targeting a Copy
+/// type and `name` is non-escaping (releasable). Spec 9.12.
+fn try_copy_stack_target(ctx: Ctx, name: string, ty_vt: ValueType, init: Expr) -> CopyTarget {
+    let n: ptr = null
+    if !releasable_has(ctx.rc_releasable, name) {
+        return CopyTarget { active: false, alloca_ptr: n }
+    }
+    match init {
+        .StructLit(sname, _) -> try_copy_for_struct(ctx, name, ty_vt, sname)
+        .With(_, _) -> {
+            let var_ty = ctx.resolve_codegen_vtype(ty_vt)
+            let sname = vtype_struct_name(var_ty)
+            if sname != "" {
+                return try_copy_for_struct(ctx, name, ty_vt, sname)
+            }
+            CopyTarget { active: false, alloca_ptr: n }
+        }
+        _ -> CopyTarget { active: false, alloca_ptr: n }
+    }
+}
+
+/// Decide whether a struct-typed binding gets Copy stack
+/// allocation. Skips when the struct has a custom `drop` impl
+/// (drops require heap so RC can release them), otherwise
+/// `alloca`s a fresh stack buffer of the struct's LLVM type.
+fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) -> CopyTarget {
+    let n: ptr = null
+    let drop_fn = ctx.get_fn(method_mangled_name(sname, "drop"))
+    if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
+    let var_ty = if !vtype_is_unknown(ty_vt) { ctx.resolve_codegen_vtype(ty_vt) } else { vtype_struct(sname, type_registry_id_for(ctx.type_reg, sname)) }
+    if vtype_is_copy(var_ty, ctx.copy_types) {
+        let st_ty = ctx.get_type(sname)
+        if st_ty != null {
+            let buf = ctx.alloca(st_ty, "${name}_copy")
+            return CopyTarget { active: true, alloca_ptr: buf }
+        }
+    }
+    CopyTarget { active: false, alloca_ptr: n }
+}
+
+/// Pull the concrete type name from a `Struct(name)` or
+/// `Enum(name)` ValueType. Returns "" for everything else —
+/// caller falls back to no-op boxing.
+fn resolve_concrete_name(ty: ValueType) -> string {
+    let s = vtype_struct_name(ty)
+    if s != "" { return s }
+    let e = vtype_enum_name(ty)
+    if e != "" { return e }
+    ""
+}
+
+/// Build a `List<Trait>` list-literal where each element gets
+/// boxed as a trait object before being pushed. Used for
+/// `let xs: List<Trait> = [c1, c2]` so callers see one type at
+/// runtime even when the elements have different concrete types.
+fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, trait_name: string) -> Result<ptr, string> {
+    let arr = ctx.array_new()
+    push_boxed_elements(ctx, env, arr, elements, trait_name)
+}
+
+/// Recursive worker for `emit_trait_boxed_list`. Emits each
+/// element, boxes it for the trait when its type is concrete,
+/// and pushes the result onto `arr`.
+fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: List<SExpr>, trait_name: string) -> Result<ptr, string> {
+    mut i = 0
+    while i < elements.length {
+        let r = ctx.emit(env, elements[i].node)?
+        let concrete_name = resolve_concrete_name(r.ty)
+        let boxed = if concrete_name != "" {
+            box_for_trait(ctx, r.value, trait_name, concrete_name)
+        } else {
+            // Already boxed or unknown type — push as-is
+            r.value
+        }
+        ctx.array_push(arr, boxed)
+        i = i + 1
+    }
+    .Ok(arr)
+}
+
+// build_vtable and push_vtable_entries removed — use box_for_trait from codegen/mod.av

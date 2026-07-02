@@ -1,0 +1,41 @@
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.in_operator.{...}`
+use core.{feature_new, Feature}
+use resolve.{resolve_expr, resolve_expr_list}
+use features.in_operator.codegen.{emit_in_check}
+use typeck.{check_expr, check_expr_list, tc_er}
+
+/// Register the `in` operator feature. Used for membership tests
+/// (`x in [1, 2, 3]` and `n in 0..10`). Returns Bool.
+export fn in_operator_feature() -> Feature {
+    feature_new("in") with {
+        expr_tag: Expr.InCheck(Expr.None, []),
+        emit_expr: emit_in_check,
+        resolve_expr: in_resolve,
+        check_expr: in_check,
+    }
+}
+
+/// Resolver hook for `InCheck`. Recurses into the needle and the
+/// items list so any names they reference get resolved.
+fn in_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .InCheck(needle, items) -> {
+            let r2 = resolve_expr(r, needle)
+            resolve_expr_list(r2, items)
+        }
+        _ -> r
+    }
+}
+
+/// Type-check hook for `InCheck`. Walks the needle and items so
+/// their errors are reported, then declares the result Bool.
+fn in_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .InCheck(needle, items) -> {
+            let s = check_expr(tc, needle)
+            let s2 = check_expr_list(s.tc, items)
+            tc_er(s2, .Bool)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}

@@ -34,7 +34,7 @@ landmine.",
     category_order: Primary,
 }
 
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
 pub mod types;

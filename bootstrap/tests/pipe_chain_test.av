@@ -1,0 +1,22 @@
+// Chained pipe operator
+
+fn pch_add1(n: int) -> int { n + 1 }
+fn pch_double(n: int) -> int { n * 2 }
+fn pch_square(n: int) -> int { n * n }
+fn pch_add(a: int, b: int) -> int { a + b }
+fn pch_to_str(n: int) -> string { string(n) }
+
+spec "pipe chain" {
+    then "triple pipe" {
+        let result = 5 |> pch_add1 |> pch_double |> pch_square
+        result == 144
+    }
+    then "pipe with extra arg" {
+        let r2 = 10 |> pch_add(5)
+        r2 == 15
+    }
+    then "pipe into string" {
+        let s = 42 |> pch_to_str
+        s == "42"
+    }
+}

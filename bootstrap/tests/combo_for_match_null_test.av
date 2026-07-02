@@ -1,0 +1,35 @@
+type CfmnEntry = { key: string, value: int }
+
+enum CfmnMaybeEntry {
+    None,
+    Some(entry: CfmnEntry),
+}
+
+fn cfmn_lookup(entries: CfmnMaybeEntry) -> int {
+    match entries {
+        .None -> -1
+        .Some(e) -> e.value
+    }
+}
+
+fn cfmn_run() -> int {
+    mut total = 0
+    for i in 0..5 {
+        let entry = if i == 2 || i == 4 {
+            CfmnMaybeEntry.Some(CfmnEntry { key: "found", value: (i + 1) * 10 })
+        } else {
+            CfmnMaybeEntry.None
+        }
+        let val = cfmn_lookup(entry)
+        if val > 0 {
+            total = total + val
+        }
+    }
+    total
+}
+
+spec "combo for match null" {
+    then "sparse sequence sum is 80" {
+        cfmn_run() == 80
+    }
+}

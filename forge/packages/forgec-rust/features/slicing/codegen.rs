@@ -3,8 +3,8 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::{feature_codegen, feature_check};
 use crate::typeck::types::Type;
+use crate::{feature_check, feature_codegen};
 
 use super::types::SliceData;
 
@@ -69,14 +69,28 @@ impl<'ctx> Codegen<'ctx> {
         // Call forge_list_slice(data_ptr, list_len, start, end, elem_size)
         let result = self.call_runtime(
             "forge_list_slice",
-            &[data_ptr.into(), list_len.into(), start_val.into(), end_val.into(), elem_size.into()],
+            &[
+                data_ptr.into(),
+                list_len.into(),
+                start_val.into(),
+                end_val.into(),
+                elem_size.into(),
+            ],
             "slice_result",
         )?;
 
         // Result is a {ptr, i64} struct. Extract fields and build a proper list struct.
         let result_struct = result.into_struct_value();
-        let new_data_ptr = self.builder.build_extract_value(result_struct, 0, "slice_data").ok()?.into_pointer_value();
-        let new_len = self.builder.build_extract_value(result_struct, 1, "slice_len").ok()?.into_int_value();
+        let new_data_ptr = self
+            .builder
+            .build_extract_value(result_struct, 0, "slice_data")
+            .ok()?
+            .into_pointer_value();
+        let new_len = self
+            .builder
+            .build_extract_value(result_struct, 1, "slice_len")
+            .ok()?
+            .into_int_value();
 
         let new_list = self.build_list_struct(elem_type, new_data_ptr, new_len);
         Some(new_list.into())
@@ -102,7 +116,10 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             // Use the string length as the end
             let str_struct = str_val.into_struct_value();
-            let len = self.builder.build_extract_value(str_struct, 1, "str_len").ok()?;
+            let len = self
+                .builder
+                .build_extract_value(str_struct, 1, "str_len")
+                .ok()?;
             len
         };
 

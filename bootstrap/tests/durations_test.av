@@ -1,0 +1,29 @@
+// Duration literals: Ns, Nm, Nh, Nd, Nms -> milliseconds
+
+spec "durations" {
+    then "1 second" {
+        1s == 1000
+    }
+    then "5 minutes" {
+        5m == 300000
+    }
+    then "2 hours" {
+        2h == 7200000
+    }
+    then "1 day" {
+        1d == 86400000
+    }
+    then "500 milliseconds" {
+        500ms == 500
+    }
+    then "duration in binding" {
+        let timeout = 30s
+        timeout == 30000
+    }
+    then "duration arithmetic add" {
+        1h + 30m == 5400000
+    }
+    then "duration arithmetic sub" {
+        2d - 12h == 129600000
+    }
+}

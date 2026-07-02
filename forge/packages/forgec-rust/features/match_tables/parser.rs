@@ -8,7 +8,11 @@ impl Parser {
     /// Parse a match table expression. Called from `parse_match_expr` when
     /// the `table` keyword is found after the subject expression.
     /// The subject and starting span have already been parsed.
-    pub(crate) fn parse_match_table(&mut self, subject: Expr, span: crate::lexer::Span) -> Option<Expr> {
+    pub(crate) fn parse_match_table(
+        &mut self,
+        subject: Expr,
+        span: crate::lexer::Span,
+    ) -> Option<Expr> {
         // `table` keyword already peeked — consume it
         self.advance(); // table
         self.skip_newlines();
@@ -19,7 +23,10 @@ impl Parser {
         // First token should be the identifier "pattern"
         let first_header = self.expect_ident()?;
         if first_header != "pattern" {
-            self.error(&format!("expected 'pattern' as first column header, got '{}'", first_header));
+            self.error(&format!(
+                "expected 'pattern' as first column header, got '{}'",
+                first_header
+            ));
             return None;
         }
 

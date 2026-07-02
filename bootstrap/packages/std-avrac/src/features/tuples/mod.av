@@ -1,0 +1,94 @@
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
+// flat at `features.tuples.{...}`.
+use core.{vtype_tuple_at}
+use core.{feature_new, Feature}
+use resolve.{resolve_expr, resolve_expr_list}
+use typeck.{check_expr, check_expr_list_types, tc_er}
+use features.eval.{Runtime, StepResult, Value, eval_expr, ok_result, error_result, value_list}
+
+/// Register the `(a, b, c)` tuple literal feature. Wires up
+/// resolver, type-checker, codegen, and the tree-walk evaluator.
+export fn tuple_feature() -> Feature {
+    feature_new("tuple") with {
+        expr_tag: Expr.Tuple([]),
+        emit_expr: emit_tuple,
+        resolve_expr: tuple_resolve,
+        check_expr: tuple_check,
+        eval_expr: tuple_eval,
+    }
+}
+
+/// Tree-walk evaluator hook for `(a, b, c)`. Evaluates each element
+/// left-to-right and packs the results into a list-kind Value — the
+/// same representation `let (a, b) = …` destructures, so tuples work
+/// uniformly in @comptime macros.
+fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Tuple(elements) -> {
+            mut vals: List<Value> = []
+            mut cur = rt
+            for el in elements {
+                let r = eval_expr(cur, el.node)
+                if r.had_error { return r }
+                cur = r.runtime
+                vals = vals.push(r.value)
+            }
+            ok_result(cur, value_list(vals))
+        }
+        _ -> error_result(rt, "expected Tuple")
+    }
+}
+
+/// Register the `t.0`, `t.1`, ... tuple-indexing feature.
+/// Distinct AST tag from field access on structs because tuple
+/// elements are positional.
+export fn tuple_index_feature() -> Feature {
+    feature_new("tuple_index") with {
+        expr_tag: Expr.TupleIndex(Expr.None, 0),
+        emit_expr: emit_tuple_index,
+        resolve_expr: tuple_index_resolve,
+        check_expr: tuple_index_check,
+    }
+}
+
+/// Resolver hook for `Tuple` literals. Walks every element.
+fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Tuple(elements) -> resolve_expr_list(r, elements)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `Tuple` literals. Type-checks each element
+/// and packs the resulting types into a `Tuple<T0, T1, ...>`.
+fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Tuple(elements) -> {
+            let pair = check_expr_list_types(tc, elements)
+            tc_er(pair.tc, .Tuple(pair.types))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+
+/// Resolver hook for `TupleIndex`. Only the receiver expression
+/// needs name resolution — the index is a literal.
+fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .TupleIndex(obj, _) -> resolve_expr(r, obj)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `TupleIndex`. Pulls the element type out
+/// of the receiver's `Tuple<...>` type using the literal index.
+fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .TupleIndex(obj, idx) -> {
+            let o = check_expr(tc, obj)
+            tc_er(o.tc, vtype_tuple_at(o.ty, idx))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}

@@ -1,0 +1,47 @@
+trait TfrShape {
+    fn area(self) -> float
+    fn name(self) -> string
+}
+
+type TfrCircle = { r: float }
+type TfrRect = { w: float, h: float }
+
+impl TfrShape for TfrCircle {
+    fn area(self) -> float { 3.14 * self.r * self.r }
+    fn name(self) -> string { "circle" }
+}
+
+impl TfrShape for TfrRect {
+    fn area(self) -> float { self.w * self.h }
+    fn name(self) -> string { "rect" }
+}
+
+fn tfr_describe(s: TfrShape) -> string {
+    s.name() + " area=" + string(s.area())
+}
+
+trait TfrHasPerimeter {
+    fn perimeter(self) -> float
+    fn label(self) -> string
+}
+
+impl TfrHasPerimeter for TfrCircle {
+    fn perimeter(self) -> float { 2.0 * 3.14 * self.r }
+    fn label(self) -> string { "circle" }
+}
+
+fn tfr_show_perimeter(s: TfrHasPerimeter) -> string {
+    s.label() + " perimeter=" + string(s.perimeter())
+}
+
+spec "trait float return" {
+    then "circle area" {
+        tfr_describe(TfrCircle { r: 2.0 }) == "circle area=12.56"
+    }
+    then "rect area" {
+        tfr_describe(TfrRect { w: 2.0, h: 3.0 }) == "rect area=6"
+    }
+    then "circle perimeter" {
+        tfr_show_perimeter(TfrCircle { r: 1.0 }) == "circle perimeter=6.28"
+    }
+}

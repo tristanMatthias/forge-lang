@@ -1,0 +1,112 @@
+// WHY: acceptance spec for the L1 side-table infrastructure (ps3t.3.6 /
+// spine §14.3). Two id-keyed side-tables let analysis passes record DERIVED
+// facts about a node WITHOUT mutating it (the immutable-pass model):
+//   - DenseTable<Id, V>  for facts most nodes carry (resolved type, span)
+//   - SparseTable<Id, V> for facts few nodes carry (provenance, name-res)
+//
+// HOW THIS IS TESTED: the tables are generic structs, and a generic instance
+// can't yet be CONSTRUCTED across a package boundary (its type-args are dropped
+// in the metadata codec — bug nsvk), while a test file is always a separate
+// package (`use @std.avrac.core`). So we exercise the real RUNTIME behaviour
+// through the gated `AVRA_L1_INGEST` probe (main.av), which builds the tables
+// inside @std on the arena's real StmtIds and prints a summary — the same
+// shell-out pattern arena_test.av uses for the L1 ingest. The summary asserts:
+//   - dense=<n>   : a DenseTable<StmtId,int> has one slot per ingested stmt
+//                   (set + grow + count over the arena's ids)
+//   - nonleaf=<k> : a SparseTable<StmtId,int> stored only the non-leaf stmts
+//                   (sparse set + len)
+// followed by an exhaustive op-coverage matrix over fresh deterministic tables
+// (side_table_ops_check) — these can't be constructed in the cross-package test
+// directly (nsvk), so they ride the in-@std probe:
+//   - gap=y     : a dense id in range but never written reads the fill default
+//   - end=y     : a dense id past the high-water mark reads the fill default
+//   - over=y    : a dense overwrite replaces the value without growing count
+//   - present=y : sparse get_or on a recorded id returns the stored value
+//   - absent=y  : sparse get_or on an unrecorded id returns the fallback
+//   - upsert=y  : re-recording a present sparse id overwrites in place (len fixed)
+//   - scale=y   : the sparse intmap grows past 256 + the dense table to a high id
+//   - ptrv=y    : a pointer-typed value (string, like the real ValueType) round-trips
+// The facts live entirely in the side-tables, keyed by node id — no node is
+// mutated, which IS the §14.3 guarantee.
+//
+// The type-safety facet ("keyed by node-id") is a typeck error, caught before
+// codegen/construction, so it tests cleanly cross-package: a DenseTable keyed by
+// one id kind rejects another kind's id (F1000).
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+// 3 top-level fns -> 6 stmt nodes once bodies are flattened recursively
+// (3 fn decls + 3 body stmts). Under the CROSS-TYPE ingest (A1) a node's
+// children span all four kinds, so a fn decl (ret-type + body children) AND a
+// value-returning body stmt (its expr child) are both non-leaf — only a
+// CHILDLESS stmt is a leaf. `fn c() { return }`'s bare `return` (ReturnEmpty,
+// no fields) is exactly that, so 5 of the 6 are non-leaf and the sparse table
+// genuinely holds a SUBSET (nonleaf 5 < dense 6) — the point of the sparse/dense
+// split. (Were every stmt non-leaf, nonleaf would equal dense and a "records
+// everything" bug would slip past this assertion.)
+fn l1_sidetable_output() -> string {
+    let fixture = "build/_l1_sidetable_fixture.av"
+    let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() { return }\n")
+    avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "L1 side-tables record derived facts over the arena's ids (wired)" {
+    then "a dense child-count table has one slot per ingested statement" {
+        l1_sidetable_output().contains("[l1-sidetable] dense=6")
+    }
+    then "a sparse non-leaf table stores only the 5 non-leaf statements" {
+        l1_sidetable_output().contains("nonleaf=5")
+    }
+}
+
+spec "L1 side-table op coverage (dense + sparse)" {
+    then "dense: in-range-unwritten and past-end ids both read the fill default" {
+        let out = l1_sidetable_output()
+        out.contains("gap=y") && out.contains("end=y")
+    }
+    then "dense: an overwrite replaces the value without growing count" {
+        l1_sidetable_output().contains("over=y")
+    }
+    then "sparse: get_or returns the stored value when present, the fallback when absent" {
+        let out = l1_sidetable_output()
+        out.contains("present=y") && out.contains("absent=y")
+    }
+    then "sparse: re-recording a present id overwrites in place (len unchanged)" {
+        l1_sidetable_output().contains("upsert=y")
+    }
+    then "scale: the sparse intmap grows past 256 and the dense table to a high id" {
+        l1_sidetable_output().contains("scale=y")
+    }
+    then "pointer-typed values (not just int) round-trip through both tables" {
+        l1_sidetable_output().contains("ptrv=y")
+    }
+}
+
+// The "keyed by node-id" guarantee, statically enforced: a DenseTable keyed by
+// ExprId rejects a StmtId. This is a typeck error (F1000), caught before any
+// construction, so it's testable cross-package even though constructing the
+// generic instance at runtime cross-package isn't yet (nsvk).
+fn st_mixup_output() -> string {
+    let fixture = "build/_st_mixup.av"
+    let src = "use @std.avrac.core.{DenseTable, new_dense_table, ExprId, StmtId}\n" +
+        "fn main() {\n" +
+        "    let mut t: DenseTable<ExprId, int> = new_dense_table(0)\n" +
+        "    t.set(StmtId(0), 1)\n" +
+        "}\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "L1 side-table keys are nominally typed" {
+    then "indexing an ExprId-keyed table with a StmtId is an F1000 type error" {
+        // Assert the diagnostic's own `expects … got …` wording, not the bare
+        // kind names — those also appear in the echoed fixture source, so they'd
+        // match even if the F1000 fired for some other reason. `expects`/`got`
+        // occur only in the parameter-type-mismatch message, so together with
+        // both kind names they prove the mismatch was reported with the right
+        // expected (ExprId) and actual (StmtId) key kinds.
+        let out = st_mixup_output()
+        out.contains("F1000") && out.contains("expects") && out.contains("got")
+            && out.contains("ExprId") && out.contains("StmtId")
+    }
+}

@@ -1,5 +1,5 @@
-use inkwell::values::BasicValueEnum;
 use crate::codegen::codegen::Codegen;
+use inkwell::values::BasicValueEnum;
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile process_uptime() — returns milliseconds since program start as i64

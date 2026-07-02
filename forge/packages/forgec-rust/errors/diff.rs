@@ -42,7 +42,10 @@ impl DiffResult {
         let before_total = self.fixed.len() + self.remaining.len();
         let after_total = self.new.len() + self.remaining.len();
         out.push('\n');
-        out.push_str(&format!("  Summary: {} before, {} after\n", before_total, after_total));
+        out.push_str(&format!(
+            "  Summary: {} before, {} after\n",
+            before_total, after_total
+        ));
         if before_total > 0 {
             let progress = self.fixed.len() as f64 / before_total as f64 * 100.0;
             out.push_str(&format!("  Progress: {:.0}% fixed\n", progress));
@@ -68,7 +71,12 @@ fn extract_diagnostics(json_str: &str) -> Result<Vec<(DiagKey, String)>, String>
         let message = diag["message"].as_str().unwrap_or("").to_string();
         let display = format!("[{}] line {}:{} {}", code, line, col, message);
         result.push((
-            DiagKey { code, line, col, message },
+            DiagKey {
+                code,
+                line,
+                col,
+                message,
+            },
             display,
         ));
     }
@@ -100,7 +108,11 @@ pub fn diff_json(before_json: &str, after_json: &str) -> Result<DiffResult, Stri
         .map(|(_, d)| d.clone())
         .collect();
 
-    Ok(DiffResult { fixed, new, remaining })
+    Ok(DiffResult {
+        fixed,
+        new,
+        remaining,
+    })
 }
 
 #[cfg(test)]

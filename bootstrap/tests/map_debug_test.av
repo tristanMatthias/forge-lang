@@ -1,0 +1,11 @@
+fn debug_run() -> int {
+    let m = {"x": "42"}
+    let v = m.get("x")
+    int(v)
+}
+
+spec "map debug" {
+    then "get and convert" {
+        debug_run() == 42
+    }
+}

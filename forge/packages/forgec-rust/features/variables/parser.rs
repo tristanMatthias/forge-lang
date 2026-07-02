@@ -31,7 +31,10 @@ impl Parser {
             self.skip_newlines();
             let ty = self.parse_type_expr()?;
             let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
-            (Some(ty), Some(crate::lexer::Span::new(colon_pos, end_pos, 0, 0)))
+            (
+                Some(ty),
+                Some(crate::lexer::Span::new(colon_pos, end_pos, 0, 0)),
+            )
         } else {
             (None, None)
         };
@@ -68,7 +71,10 @@ impl Parser {
             self.skip_newlines();
             let ty = self.parse_type_expr()?;
             let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
-            (Some(ty), Some(crate::lexer::Span::new(colon_pos, end_pos, 0, 0)))
+            (
+                Some(ty),
+                Some(crate::lexer::Span::new(colon_pos, end_pos, 0, 0)),
+            )
         } else {
             (None, None)
         };
@@ -105,7 +111,10 @@ impl Parser {
             self.skip_newlines();
             let ty = self.parse_type_expr()?;
             let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
-            (Some(ty), Some(crate::lexer::Span::new(colon_pos, end_pos, 0, 0)))
+            (
+                Some(ty),
+                Some(crate::lexer::Span::new(colon_pos, end_pos, 0, 0)),
+            )
         } else {
             (None, None)
         };

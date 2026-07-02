@@ -18,31 +18,37 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         feature_codegen!(self, fe, MatchTableData, |data| {
             // Desugar: build match arms where each arm body is a struct literal
-            let arms: Vec<MatchArm> = data.rows.iter().map(|row| {
-                // Build struct literal fields from column names + row values
-                let fields: Vec<(String, Expr)> = data.columns.iter()
-                    .zip(row.values.iter())
-                    .map(|(col, val)| (col.clone(), val.clone()))
-                    .collect();
+            let arms: Vec<MatchArm> = data
+                .rows
+                .iter()
+                .map(|row| {
+                    // Build struct literal fields from column names + row values
+                    let fields: Vec<(String, Expr)> = data
+                        .columns
+                        .iter()
+                        .zip(row.values.iter())
+                        .map(|(col, val)| (col.clone(), val.clone()))
+                        .collect();
 
-                let body = feature_expr(
-                    "structs",
-                    "StructLit",
-                    Box::new(crate::features::structs::types::StructLitData {
-                        name: None,
-                        fields,
+                    let body = feature_expr(
+                        "structs",
+                        "StructLit",
+                        Box::new(crate::features::structs::types::StructLitData {
+                            name: None,
+                            fields,
+                            span: fe.span,
+                        }),
+                        fe.span,
+                    );
+
+                    MatchArm {
+                        pattern: row.pattern.clone(),
+                        guard: None,
+                        body,
                         span: fe.span,
-                    }),
-                    fe.span,
-                );
-
-                MatchArm {
-                    pattern: row.pattern.clone(),
-                    guard: None,
-                    body,
-                    span: fe.span,
-                }
-            }).collect();
+                    }
+                })
+                .collect();
 
             self.compile_match(&data.subject, &arms)
         })
@@ -51,7 +57,9 @@ impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of a match table expression.
     pub(crate) fn infer_match_table_feature_type(&self, fe: &FeatureExpr) -> Type {
         feature_check!(self, fe, MatchTableData, |data| {
-            let fields: Vec<(String, Type)> = data.columns.iter()
+            let fields: Vec<(String, Type)> = data
+                .columns
+                .iter()
                 .enumerate()
                 .map(|(i, name)| {
                     // Infer from the first row's values

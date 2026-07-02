@@ -1,0 +1,70 @@
+// Typeck id-stamp invariant: every nominal-type reference whose
+// name is in the TypeRegistry must carry a non-zero TypeRegistry id
+// after the stamp pass at typeck entry. Residual id=0 nominals are
+// allowed only for type-param placeholders (T, U, S, …) which are
+// legitimately not registered.
+//
+// Why the invariant matters: a leak means codegen falls back to
+// name-based lookup (slower, breaks under name aliasing) and any
+// caller doing id-based equality mis-compares. The bulk of the test
+// suite catches downstream symptoms when the stamp pass regresses,
+// but this test pins the invariant DIRECTLY against the post-
+// typecheck AST so a future change can't move the failure surface
+// across a stage boundary without anyone noticing.
+//
+// Replaces the prior shell-out + env-gated stderr probe pair
+// (t6b_probe_test / t6c_stamp_test, both AVRA_T6_PROBE-gated).
+// Runs in-process via @std.avrac.check.typecheck_source —
+// observable, no subprocess, no env-var dance.
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.typeck.{unstamped_registered_nominals}
+use @std.avrac.core.{count_id_zero_nominals_stmts}
+
+spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
+    then "minimal struct-using fixture has no registered-name leaks" {
+        let r = typecheck_source(
+            "type Box = { v: int }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int {\n" +
+            "    let b = Box { v: 7 }\n" +
+            "    println(string(use_box(b)))\n" +
+            "    0\n" +
+            "}\n")
+        unstamped_registered_nominals(r.stmts, r.type_reg).length == 0
+    }
+    then "enum-using fixture has no registered-name leaks" {
+        let r = typecheck_source(
+            "enum Tree { Leaf(v: int), Node(l: Tree, r: Tree) }\n" +
+            "fn sum(t: Tree) -> int {\n" +
+            "    match t {\n" +
+            "        .Leaf(v) -> v\n" +
+            "        .Node(l, r) -> sum(l) + sum(r)\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() -> int {\n" +
+            "    println(string(sum(Tree.Leaf(3))))\n" +
+            "    0\n" +
+            "}\n")
+        unstamped_registered_nominals(r.stmts, r.type_reg).length == 0
+    }
+    then "newtype-using fixture has no registered-name leaks" {
+        let r = typecheck_source(
+            "type UserId = newtype int\n" +
+            "fn unwrap_id(u: UserId) -> int { u as int }\n" +
+            "fn main() -> int {\n" +
+            "    let id: UserId = (7 as UserId)\n" +
+            "    println(string(unwrap_id(id)))\n" +
+            "    0\n" +
+            "}\n")
+        unstamped_registered_nominals(r.stmts, r.type_reg).length == 0
+    }
+    then "fixture with no nominals at all has zero residual id=0 nominals" {
+        // Sanity floor: a program that touches only primitives must
+        // also pass the invariant. Catches a regression where the
+        // counter accidentally fires on Int / Bool / Str (none of
+        // which are nominals).
+        let r = typecheck_source("fn main() -> int { 0 }\n")
+        count_id_zero_nominals_stmts(r.stmts) == 0
+    }
+}

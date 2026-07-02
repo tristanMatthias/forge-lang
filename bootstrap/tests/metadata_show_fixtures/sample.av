@@ -1,0 +1,43 @@
+// Fixture: emit metadata.bin via `bs2 compile --emit_metadata`, then
+// inspect it via `bs2 metadata_show`. Verifies the consumer-side
+// pipeline (read → synthesize → render) handles a real producer
+// output end-to-end.
+//
+// Tracking ticket: forge-crafting-intepreters-xtvc.
+
+use @std.avrac.features.modules.{meta_cache_path_for_source}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let tmp = "/tmp/avra_xtvc_show"
+    avra_shell_exec("rm -rf ${tmp}")
+    avra_shell_exec("mkdir -p ${tmp}")
+
+    let src = "${tmp}/u.av"
+    avra_shell_exec("printf 'type Pair = { a: int, b: int }\\n\\nexport fn add(p: Pair) -> int { p.a + p.b }\\n\\nconst KEY: int = 7\\n' > ${src}")
+
+    // Step 1: emit metadata.bin
+    let bs2 = "build/bs2"
+    let rc1 = avra_shell_exec_status("${bs2} compile --emit_metadata ${src}")
+    probe("emit_rc_zero", rc1 == 0)
+
+    // Step 2: round-trip via metadata_show (cache path)
+    let out = avra_shell_exec("${bs2} metadata_show ${meta_cache_path_for_source(src)}")
+    probe("show_has_unit_marker", out.contains("metadata for unit"))
+    probe("show_has_module_node", out.contains("(module"))
+    probe("show_has_pair_type", out.contains("Pair"))
+    probe("show_has_add_fn", out.contains("add"))
+    probe("show_has_int_param", out.contains("int"))
+    probe("show_has_const_key", out.contains("KEY"))
+    probe("show_has_const_value_7", out.contains("7"))
+    probe("show_has_fingerprint_marker", out.contains("// fingerprint:"))
+
+    0
+}

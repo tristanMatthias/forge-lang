@@ -1,0 +1,208 @@
+// WHY: emits LLVM IR for `if` as statement and expression.
+// Also handles flow-sensitive type narrowing: when condition is
+// `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
+
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for}
+use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
+use codegen.{emit_stmt, ok_sr}
+use codegen.{emit_if_optional_canon, cond_if_true, emit_cond_truthy}
+use core.{avra_covmap_next_branch_id}
+use features.union_type.{emit_union_wrap}
+
+/// Pull the variable name out of an `IsCheck` condition (the
+/// thing being narrowed). Returns "" when the condition isn't an
+/// `is`-on-bare-ident shape.
+fn is_check_var_name(condition: Expr) -> string {
+    match condition {
+        .IsCheck(subj, _) -> match subj {
+            .Ident(vn) -> vn
+            _ -> ""
+        }
+        _ -> ""
+    }
+}
+
+/// Pull the variant name out of an `IsCheck` condition. Returns
+/// "" when the condition isn't an `is`-check.
+fn is_check_variant_name(condition: Expr) -> string {
+    match condition {
+        .IsCheck(_, vn) -> vn
+        _ -> ""
+    }
+}
+
+/// Build a narrowed List<VarBinding> for the then-branch of an
+/// `if x is .Variant` condition. The narrowed env rebinds `x`
+/// with `NarrowedEnum` so payload-extracting code in the body
+/// sees the more specific type. Falls back to the un-narrowed
+/// env when the condition isn't an `is`-on-ident or `x` isn't an
+/// enum-typed binding. Checks both local and top-level scopes.
+export fn narrow_env_for_is(ctx: Ctx, env: List<VarBinding>, condition: Expr) -> List<VarBinding> {
+    let var_name = is_check_var_name(condition)
+    if var_name == "" { return env }
+    let vname = is_check_variant_name(condition)
+    if vname == "" { return env }
+    // Try local env first
+    let lu = env_lookup(env, var_name)
+    if lu.found {
+        let en = vtype_enum_name(lu.ty)
+        if en != "" {
+            return env_extend(env, var_name, lu.alloca, ValueType.NarrowedEnum(en, vname, type_registry_id_for(ctx.type_reg, en)))
+        }
+        return env
+    }
+    // Try top-level vars
+    let g = ctx.lookup_toplevel(var_name)
+    if g.found {
+        let en = vtype_enum_name(g.ty)
+        if en != "" {
+            return env_extend(env, var_name, g.llvm_global, ValueType.NarrowedEnum(en, vname, type_registry_id_for(ctx.type_reg, en)))
+        }
+    }
+    env
+}
+
+/// Codegen for `if cond { then } else { else }` as a statement.
+/// Emits both branches into named blocks, falls through to the
+/// merge block when neither branch terminated. Branch coverage
+/// counters fire on each side. The then-branch sees a narrowed
+/// env when the condition is an `is`-check.
+export fn emit_if(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
+    ctx.cov_line()
+    let branch_id = avra_covmap_next_branch_id()
+    let cond = ctx.emit(env, condition)?
+    let merge_bb = ctx.bb("ifcont")
+    let else_bb = cond_if_true(ctx, emit_value_ptr(cond), emit_value_ty(cond), "if")
+
+    ctx.cov_branch_then(branch_id)
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let then_sr = emit_stmt(ctx, then_env, then_branch)?
+    ctx.br_if_open(merge_bb)
+
+    ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
+    if else_branch != null {
+        let else_sr = emit_stmt(ctx, env, else_branch!)?
+    }
+    ctx.br_if_open(merge_bb)
+
+    ctx.position(merge_bb)
+    ok_sr(ctx, env)
+}
+
+/// True when a type is safe for automatic union inference at an
+/// expression-position `if`. Excludes Int because it doubles as
+/// null and the typeck's fallback for unresolved expressions —
+/// auto-unioning Int+something would generate spurious unions.
+fn is_union_safe_type(ty: ValueType) -> bool {
+    match ty {
+        .Str -> true
+        .Bool -> true
+        .Float -> true
+        .Struct(_, _, _) -> true
+        .Enum(_, _, _) -> true
+        .Union(_) -> true
+        .Newtype(_, _, _) -> true
+        _ -> false
+    }
+}
+
+/// Codegen for `if cond { then } else { else }` in expression
+/// position. Emits both branches into a result slot, then merges.
+/// When both branches produce different but union-safe concrete
+/// types, re-emits a wrapping pass so the result is typed as
+/// `Union<Then, Else>`. Otherwise loads the raw value.
+export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
+    ctx.cov_line()
+    let branch_id = avra_covmap_next_branch_id()
+    let cond = ctx.emit(env, condition)?
+    let result_slot = ctx.alloca_i64("ife_result")
+    let merge_bb = ctx.bb("ife_end")
+    let else_bb = cond_if_true(ctx, emit_value_ptr(cond), emit_value_ty(cond), "ife")
+
+    ctx.cov_branch_then(branch_id)
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let t = ctx.emit(then_env, then_branch)?
+    let t_ty = emit_value_ty(t)
+    // store_br_if_open: skip the store + br when the branch's emit
+    // already terminated the block (e.g. body was `return X`). Without
+    // this guard the codegen produces invalid LLVM IR — two terminators
+    // in one basic block. The bare `store` followed by `br_if_open`
+    // pattern is a footgun: br checks but store doesn't.
+    ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
+
+    // ── Else branch (with coverage) ──
+    ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
+    let e = ctx.emit(env, else_branch)?
+    let e_ty = emit_value_ty(e)
+    ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
+
+    // ── Merge ──
+    ctx.position(merge_bb)
+
+    // Optional mix: one branch a value-inner (tagged) optional or its inner,
+    // the other `null` (none) → canonicalise the whole if-expr to `T?` so a
+    // present value is BOXED and `none` stays the null pointer. Without this,
+    // `if c { 6 } else { null }` would yield a bare `int` (6 or 0), losing the
+    // none/Some(0) distinction once stored into a `T?` slot downstream. Shared
+    // with the statement-value `if` path (codegen/blocks.av) via optional_repr.
+    let canon = emit_if_optional_canon(ctx, emit_value_ptr(cond), result_slot, t_ty, e_ty)
+    if canon != none { return ok_emit(canon!.value, canon!.ty) }
+
+    // Same type or non-union-safe: load raw value. Two values of the same
+    // nominal enum/struct are the SAME type even when their type_args or
+    // registry id differ superficially (e.g. a `?`-extracted `Ok` payload
+    // typed `E` vs a directly-constructed `E` carrying empty type_args) —
+    // forming `E | E` is meaningless, so never union-wrap that case. Without
+    // this, `let x = if c { E.B(..) } else { f()? }` spuriously boxes `x` in
+    // a `__union`, corrupting it downstream.
+    // Nominal name is compared ACROSS kinds: a `?`-extracted `Ok` payload is
+    // often resolved as `Struct("E")` (the `vtype_from_name` default for an
+    // un-upgraded name) while the directly-constructed value is `Enum("E")`.
+    // Same nominal name = same type, regardless of enum/struct classification.
+    let t_nom = vtype_nominal_name(t_ty)
+    let e_nom = vtype_nominal_name(e_ty)
+    let same_nominal = t_nom != "" && t_nom == e_nom
+    if vtype_eq(t_ty, e_ty) || same_nominal || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
+        let result = ctx.load_i64(result_slot, "ife_val")
+        return ok_emit(result, t_ty)
+    }
+
+    // Mixed user-facing types: re-emit with wrapping baked into each branch.
+    // We can't go back and insert wrapping into already-emitted branches,
+    // so we emit fresh branches that wrap directly. The condition SSA value
+    // persists across basic blocks in LLVM, so reusing it is correct.
+    mut union_members: List<ValueType> = []
+    union_members.push(t_ty)
+    union_members.push(e_ty)
+    let union_ty = ValueType.Union(union_members)
+    let wrap_slot = ctx.alloca_i64("ife_wrap")
+    let wrap_merge = ctx.bb("ife_wrap_end")
+    // Branch tag: 0 = then, 1 = else. Stored during initial emission.
+    let tag_slot = ctx.alloca_i64("ife_branch_tag")
+    // We need to store the tag in the original branches. But those branches
+    // already terminated. Instead, use the raw value + its known type:
+    // the then branch stored a value of type t_ty, the else stored e_ty.
+    // At merge, the raw_val is one or the other. We wrap BOTH ways and
+    // select based on the original condition.
+    //
+    // Since LLVM SSA values survive across blocks, emit_value_ptr(cond) is
+    // still valid here. This is NOT re-evaluation — it's reusing the same
+    // i1 value computed earlier. No side effects, no redundant computation.
+    let raw_val = ctx.load_i64(result_slot, "ife_raw")
+    let wrap_else = cond_if_true(ctx, emit_value_ptr(cond), emit_value_ty(cond), "ife_wrap")
+
+    // Then-type wrap (condition was true)
+    let t_wrapped = emit_union_wrap(ctx, raw_val, t_ty, union_ty)?
+    ctx.store_br_if_open(emit_value_ptr(t_wrapped), wrap_slot, wrap_merge)
+
+    // Else-type wrap (condition was false)
+    ctx.position(wrap_else)
+    let e_wrapped = emit_union_wrap(ctx, raw_val, e_ty, union_ty)?
+    ctx.store_br_if_open(emit_value_ptr(e_wrapped), wrap_slot, wrap_merge)
+
+    ctx.position(wrap_merge)
+    let result = ctx.load_i64(wrap_slot, "ife_union_val")
+    ok_emit(result, union_ty)
+}

@@ -1,0 +1,64 @@
+trait CevDescribable {
+    fn describe(self) -> string
+}
+
+type CevPoint = { x: int, y: int }
+
+impl CevDescribable for CevPoint {
+    fn describe(self) -> string {
+        `(${string(self.x)}, ${string(self.y)})`
+    }
+}
+
+enum CevShape {
+    Circle(center: CevPoint, radius: int),
+    Rect(origin: CevPoint, w: int, h: int),
+}
+
+fn cev_area(s: CevShape) -> int {
+    match s {
+        .Circle(_, r) -> r * r * 3
+        .Rect(_, w, h) -> w * h
+    }
+}
+
+fn cev_make_shapes() -> int {
+    let shapes = (
+        CevShape.Circle(CevPoint { x: 0, y: 0 }, 5),
+        CevShape.Rect(CevPoint { x: 1, y: 1 }, 4, 6)
+    )
+    mut total = 0
+    let a0 = cev_area(shapes.0)
+    let a1 = cev_area(shapes.1)
+    total = a0 + a1
+    total
+}
+
+fn cev_safe_div(a: int, b: int) -> int? {
+    if b == 0 { return null }
+    a / b
+}
+
+fn cev_double(n: int) -> int { n * 2 }
+
+spec "combo everything" {
+    then "shape areas sum" {
+        cev_make_shapes() == 99
+    }
+    then "safe div success" {
+        cev_safe_div(100, 4) ?? -1 == 25
+    }
+    then "safe div by zero" {
+        cev_safe_div(100, 0) ?? -1 == -1
+    }
+    then "pipe with tuple" {
+        let val = 5 |> cev_double
+        let pair = (val, val + 1)
+        pair.0 == 10
+    }
+    then "tuple second element" {
+        let val = 5 |> cev_double
+        let pair = (val, val + 1)
+        pair.1 == 11
+    }
+}

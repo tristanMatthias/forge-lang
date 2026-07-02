@@ -1,0 +1,2 @@
+export fn helper_add(a: int, b: int) -> int { a + b }
+export fn helper_greet(name: string) -> string { "hi " + name }

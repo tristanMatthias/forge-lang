@@ -1,0 +1,25 @@
+/// Test fixture: identity helper for the if-expression complex
+/// test — used as the body of one branch so the test asserts on
+/// observed string identity through the if-expr path.
+fn echo_msg(msg: string) -> string { msg }
+
+type Pair = { a: int, b: int }
+
+spec "if expr complex" {
+    then "nested ternary-style if expression" {
+        let x = 15
+        let label = if x > 20 { "high" } else if x > 10 { "mid" } else { "low" }
+        label == "mid"
+    }
+    then "if expression in function call" {
+        echo_msg(if true { "yes" } else { "no" }) == "yes"
+    }
+    then "if expression as struct field true branch" {
+        let p = Pair { a: if true { 1 } else { 0 }, b: if false { 1 } else { 0 } }
+        p.a == 1
+    }
+    then "if expression as struct field false branch" {
+        let p = Pair { a: if true { 1 } else { 0 }, b: if false { 1 } else { 0 } }
+        p.b == 0
+    }
+}

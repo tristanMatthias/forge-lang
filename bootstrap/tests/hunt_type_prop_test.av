@@ -1,0 +1,35 @@
+enum HtpColor { Red, Green, Blue }
+
+fn htp_color_name(c: HtpColor) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+fn htp_repeat(s: string, n: int) -> string {
+    if n <= 0 { return "" }
+    s + htp_repeat(s, n - 1)
+}
+
+type HtpPerson = { name: string, age: int }
+
+spec "hunt type prop" {
+    then "match returning string" {
+        let name = htp_color_name(HtpColor.Red)
+        `color: ${name}` == "color: red"
+    }
+    then "recursive string concat" {
+        htp_repeat("ha", 3) == "hahaha"
+    }
+    then "null coalescing type" {
+        let maybe: string? = null
+        let result = maybe ?? "default"
+        result == "default"
+    }
+    then "struct field type" {
+        let p = HtpPerson { name: "Alice", age: 30 }
+        `${p.name} is ${string(p.age)}` == "Alice is 30"
+    }
+}

@@ -1,0 +1,76 @@
+// WHY: forge-crafting-intepreters-wjme — check_method_call's user-defined-method
+// branch (the `if r.found` block in typeck/mod.av) once returned the method's
+// substituted return type but NEVER validated the call ARGS against the method's
+// declared parameter types. So a layout-mismatched arg passed to a user method
+// slipped through as a wild store — free functions ran the per-arg gate
+// (tc_check_newtype_args), methods bypassed it entirely.
+//
+// The gate now runs for methods too: check_method_call calls
+// tc_check_newtype_args(gated_params, args) — the SAME per-arg
+// generic_args_layout_conflict / int_into_pointer_slot predicates the free-fn
+// path uses (the call was added by y9y4.16, the params receiver-instantiated by
+// rs0b). This file guards wjme's distinct CONCRETE-param cases: a `Box<string>`
+// or bare `string` parameter on a NON-generic receiver. The receiver-BOUND
+// generic case (`Holder<T>.add(x: T)`, wjme's W5) is covered by
+// rs0b_receiver_type_param_gate_test — not duplicated here.
+//
+// Driven through `bs2 check`: wjme is purely a TYPECK gate, so a check is enough
+// and isolates it from unrelated lowering.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Type-check the source; emit a success sentinel ONLY on a clean check, so a
+// valid program is distinguishable from one that merely produced no F1000.
+fn wjme_out(source: string) -> string {
+    let path = "/tmp/avra_wjme_gate.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "wjme: a generic-typed method param rejects a layout-mismatched arg" {
+    then "Box<int> into a Box<string> method param is F1000" {
+        let out = wjme_out("type Box<T> = { val: T }
+type Holder = { x: int }
+impl Holder { fn take(self, b: Box<string>) -> int { self.x } }
+fn main() {
+    let h = Holder { x: 1 }
+    h.take(Box { val: 9 })
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "wjme: a scalar method param rejects a layout-mismatched arg" {
+    then "int into a string method param is F1000" {
+        let out = wjme_out("type Holder = { x: int }
+impl Holder { fn take(self, s: string) -> int { self.x } }
+fn main() {
+    let h = Holder { x: 1 }
+    h.take(9)
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "wjme: valid method-arg calls still type-check (no false positives)" {
+    then "Box<string> into a Box<string> method param checks clean" {
+        let out = wjme_out("type Box<T> = { val: T }
+type Holder = { x: int }
+impl Holder { fn take(self, b: Box<string>) -> int { self.x } }
+fn main() {
+    let h = Holder { x: 1 }
+    h.take(Box { val: \"ok\" })
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "string into a string method param checks clean" {
+        let out = wjme_out("type Holder = { x: int }
+impl Holder { fn take(self, s: string) -> int { self.x } }
+fn main() {
+    let h = Holder { x: 1 }
+    h.take(\"ok\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}

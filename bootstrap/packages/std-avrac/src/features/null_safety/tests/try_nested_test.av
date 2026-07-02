@@ -1,0 +1,25 @@
+// `?`-split: none-propagation across fn boundaries, written with explicit
+// none-guards (the post-`?`-split idiom; `?` is Result-only now).
+
+/// Test fixture: always-none returning fn — the deepest link.
+fn nstn_inner() -> int? { none }
+/// Test fixture: middle layer that propagates the inner none.
+fn nstn_middle() -> int? {
+    let v = nstn_inner()
+    if v == none { return none }
+    v
+}
+/// Test fixture: outer caller — verifies none propagation crosses
+/// multiple fn boundaries cleanly.
+fn nstn_outer() -> int? {
+    let v = nstn_middle()
+    if v == none { return none }
+    v
+}
+
+spec "try nested" {
+    then "none propagates through chain" {
+        let r = nstn_outer()
+        r ?? -1 == -1
+    }
+}

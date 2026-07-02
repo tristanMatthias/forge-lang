@@ -1,0 +1,17 @@
+spec "nested tuple" {
+    then "first nested pair" {
+        let outer = ((1, 2), (3, 4))
+        let (a, b) = outer.0
+        a == 1
+    }
+    then "second nested pair" {
+        let outer = ((1, 2), (3, 4))
+        let (a, b) = outer.0
+        b == 2
+    }
+    then "second pair sum" {
+        let outer = ((1, 2), (3, 4))
+        let (c, d) = outer.1
+        c + d == 7
+    }
+}

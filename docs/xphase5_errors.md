@@ -1,4 +1,4 @@
-# Forge — World-Class Error System
+# Avra — World-Class Error System
 
 ## Philosophy
 
@@ -10,12 +10,12 @@ Inspired by: Rust (structured diagnostics with codes), Elm (friendly explanation
 
 ## 1. Error Anatomy
 
-Every Forge error has these parts:
+Every Avra error has these parts:
 
 ```
   ╭─[error[F0012]] Type mismatch
   │
-  │  ╭─[src/main.fg:23:14]
+  │  ╭─[src/main.av:23:14]
   │  │
   │  │   22 │ let user = UserService.get(id)
   │  │   23 │ let name: int = user.name
@@ -29,7 +29,7 @@ Every Forge error has these parts:
   │  │   23 │ let name: string = user.name
   │  │      │           ~~~~~~
   │  │
-  │  ├── docs: https://forgelang.dev/errors/F0012
+  │  ├── docs: https://avralang.dev/errors/F0012
   │  │
   │  ╰── tip: user.name comes from the User model where name is declared as string
   │
@@ -139,7 +139,7 @@ message = "`{name}` is {type} which may be null"
 help = "use `?.` for safe access, `??` for a default, or check for null first"
 doc = """
 You're accessing a property or calling a method on a value that might be null.
-Forge requires you to handle the null case explicitly.
+Avra requires you to handle the null case explicitly.
 """
 examples = [
   { code = "let name: string? = null\nname.upper()", error_at = 25, fix = "name?.upper() ?? \"default\"" },
@@ -188,11 +188,11 @@ a catch-all.
 ### Generating Docs from Registry
 
 ```bash
-forge docs errors           # generate error reference docs from registry.toml
-forge explain F0012         # print the full explanation for an error code
+avra docs errors           # generate error reference docs from registry.toml
+avra explain F0012         # print the full explanation for an error code
 ```
 
-The `forge explain` command prints the doc, examples, and fix suggestions directly in the terminal. The docs website auto-generates an error index from `registry.toml`.
+The `avra explain` command prints the doc, examples, and fix suggestions directly in the terminal. The docs website auto-generates an error index from `registry.toml`.
 
 ---
 
@@ -205,7 +205,7 @@ Levenshtein distance matching for misspelled identifiers:
 ```
   ╭─[error[F0020]] Undefined variable
   │
-  │  ╭─[src/main.fg:5:10]
+  │  ╭─[src/main.av:5:10]
   │  │
   │  │    5 │ println(uesr.name)
   │  │      │         ────
@@ -224,7 +224,7 @@ Levenshtein distance matching for misspelled identifiers:
 ```
   ╭─[error[F0040]] Undefined type `Request`
   │
-  │  ╭─[src/main.fg:3:15]
+  │  ╭─[src/main.av:3:15]
   │  │
   │  │    3 │ fn handle(req: Request) -> Response {
   │  │      │                ───────
@@ -241,7 +241,7 @@ Levenshtein distance matching for misspelled identifiers:
 ```
   ╭─[error[F0012]] Type mismatch
   │
-  │  ╭─[src/main.fg:8:20]
+  │  ╭─[src/main.av:8:20]
   │  │
   │  │    8 │ let port: string = 8080
   │  │      │           ──────   ────
@@ -261,7 +261,7 @@ Levenshtein distance matching for misspelled identifiers:
 ```
   ╭─[error[F0091]] Non-exhaustive match
   │
-  │  ╭─[src/main.fg:12:3]
+  │  ╭─[src/main.av:12:3]
   │  │
   │  │   12 │ match status {
   │  │   13 │   .active -> "active"
@@ -288,7 +288,7 @@ Packages can register custom error messages for common mistakes:
 ```
   ╭─[error[F0071]] Unknown config option
   │
-  │  ╭─[src/main.fg:3:3]
+  │  ╭─[src/main.av:3:3]
   │  │
   │  │    2 │ server :8080 {
   │  │    3 │   ssl true
@@ -300,14 +300,14 @@ Packages can register custom error messages for common mistakes:
   │  │
   │  │   available options: cors, logging, rate_limit, tls
   │  │
-  │  ╰── docs: https://forgelang.dev/packages/std-http#server-config
+  │  ╰── docs: https://avralang.dev/packages/std-http#server-config
 ```
 
 ---
 
 ## 5. JSON Output
 
-`forge build --error-format=json` produces machine-parseable output for agents:
+`avra build --error-format=json` produces machine-parseable output for agents:
 
 ```json
 {
@@ -317,7 +317,7 @@ Packages can register custom error messages for common mistakes:
       "level": "error",
       "title": "Type mismatch",
       "message": "expected int, found string",
-      "file": "src/main.fg",
+      "file": "src/main.av",
       "span": {
         "start": { "line": 23, "col": 14, "offset": 456 },
         "end": { "line": 23, "col": 23, "offset": 465 }
@@ -346,7 +346,7 @@ Packages can register custom error messages for common mistakes:
           "confidence": 0.95
         }
       ],
-      "docs_url": "https://forgelang.dev/errors/F0012",
+      "docs_url": "https://avralang.dev/errors/F0012",
       "tip": "user.name comes from the User model where name is declared as string"
     }
   ]
@@ -375,7 +375,7 @@ Don't stop at the first error. Collect and report multiple errors in one pass, b
   ╰──
 
   Found 2 errors and 1 warning.
-  Run `forge explain F0012` for more information about type mismatches.
+  Run `avra explain F0012` for more information about type mismatches.
 ```
 
 Max errors per build: 20 (configurable with `--max-errors`). After hitting the limit: "... and N more errors. Fix the above first."
@@ -399,7 +399,7 @@ Warnings don't prevent compilation but surface potential issues:
 ```
   ╭─[warning[F0801]] Unused variable
   │
-  │  ╭─[src/main.fg:5:7]
+  │  ╭─[src/main.av:5:7]
   │  │
   │  │    5 │ let result = compute()
   │  │      │     ──────
@@ -564,10 +564,10 @@ When the compiler hits an unexpected state (a bug in the compiler itself), it mu
 ```
   ╭─[internal[F9999]] Compiler bug
   │
-  │  This is a bug in the Forge compiler, not in your code.
-  │  Please report it at https://github.com/forge-lang/forge/issues
+  │  This is a bug in the Avra compiler, not in your code.
+  │  Please report it at https://github.com/avra-lang/avra/issues
   │
-  │  Context: codegen failed to lower match arm at src/main.fg:12:5
+  │  Context: codegen failed to lower match arm at src/main.av:12:5
   │  Compiler location: codegen/pattern_match.rs:142
   │
   ╰──
@@ -603,7 +603,7 @@ Errors from package native libraries are caught at the FFI boundary and wrapped 
 ```
   ╭─[error[F0700]] Package error
   │
-  │  ╭─[src/main.fg:14:3]
+  │  ╭─[src/main.av:14:3]
   │  │
   │  │   14 │ emails.send({ to: "alice@test.com" })
   │  │      │ ─────────────────────────────────────
@@ -628,9 +628,9 @@ LLVM can fail during codegen or linking. These are always wrapped:
   │  This is likely a compiler bug.
   │
   │  LLVM error: "Cannot select: intrinsic %llvm.experimental.vector.reduce.add"
-  │  While compiling: src/main.fg, function main()
+  │  While compiling: src/main.av, function main()
   │
-  │  Please report at https://github.com/forge-lang/forge/issues
+  │  Please report at https://github.com/avra-lang/avra/issues
   │
   ╰──
 ```
@@ -701,8 +701,8 @@ echo "=== All error checks passed ==="
 
 1. All existing error codes use the new diagnostic system with full labels and suggestions
 2. `errors/registry.toml` contains every error code with title, doc, and examples
-3. `forge explain F0012` prints the full explanation
-4. `forge build --error-format=json` produces valid, parseable JSON with suggestions
+3. `avra explain F0012` prints the full explanation
+4. `avra build --error-format=json` produces valid, parseable JSON with suggestions
 5. Did-you-mean works for identifiers, types, and config options
 6. Missing import suggestions work for all package exports
 7. Non-exhaustive match lists missing variants

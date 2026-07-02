@@ -59,16 +59,14 @@ pub fn field_error_type() -> Type {
 pub fn validation_error_type() -> Type {
     Type::Struct {
         name: Some("ValidationError".to_string()),
-        fields: vec![
-            ("fields".to_string(), Type::List(Box::new(field_error_type()))),
-        ],
+        fields: vec![(
+            "fields".to_string(),
+            Type::List(Box::new(field_error_type())),
+        )],
     }
 }
 
 /// Build Result<T, ValidationError> for a given ok type.
 pub fn validation_result_type(ok_type: &Type) -> Type {
-    Type::Result(
-        Box::new(ok_type.clone()),
-        Box::new(validation_error_type()),
-    )
+    Type::Result(Box::new(ok_type.clone()), Box::new(validation_error_type()))
 }

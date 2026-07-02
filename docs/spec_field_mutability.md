@@ -1,4 +1,4 @@
-# Forge — Per-Field Mutability
+# Avra — Per-Field Mutability
 
 Fields declare their own mutability. Immutable by default, opt into `mut`.
 
@@ -15,7 +15,7 @@ Fields declare their own mutability. Immutable by default, opt into `mut`.
 
 ## Test 1: Basic field mutability
 
-```forge
+```avra
 type Counter = {
   mut count: int,
   name: string,
@@ -41,7 +41,7 @@ fn main() {
 
 ## Test 2: let vs mut on bindings — reassignment only
 
-```forge
+```avra
 type Point = { mut x: int, mut y: int }
 
 fn main() {
@@ -57,7 +57,7 @@ fn main() {
 
 ## Test 3: Methods mutate mut fields — no special syntax needed
 
-```forge
+```avra
 type Counter = {
   mut count: int,
   name: string,
@@ -83,7 +83,7 @@ fn main() {
 
 ## Test 4: Method trying to mutate immutable field — compile error
 
-```forge
+```avra
 type Counter = {
   mut count: int,
   name: string,
@@ -110,7 +110,7 @@ impl Counter {
 
 ## Test 5: Fully immutable struct — no mut fields
 
-```forge
+```avra
 type Color = {
   r: int,
   g: int,
@@ -129,7 +129,7 @@ fn main() {
 
 ## Test 6: Fully mutable struct — all fields mut
 
-```forge
+```avra
 type Cursor = {
   mut x: int,
   mut y: int,
@@ -146,7 +146,7 @@ fn main() {
 
 ## Test 7: Reading is always allowed — mut only affects writes
 
-```forge
+```avra
 type User = {
   name: string,
   mut login_count: int,
@@ -163,7 +163,7 @@ fn main() {
 
 ## Test 8: Nested struct field mutability
 
-```forge
+```avra
 type Config = {
   host: string,
   port: int,
@@ -198,7 +198,7 @@ fn main() {
 
 ## Test 9: Nested struct — mut parent unlocks child field mutation
 
-```forge
+```avra
 type Config = {
   host: string,
   mut port: int,
@@ -221,22 +221,22 @@ fn main() {
 
 ## Test 10: Components — internal state is mut, config is not
 
-```forge
+```avra
 component queue(name: string) {
   config { retries: int = 3 }
 
   mut id: int
 
   fn init() {
-    self.id = forge_queue_create(self.name, self.config.retries)
+    self.id = avra_queue_create(self.name, self.config.retries)
   }
 
   fn send(data: json) {
-    forge_queue_send(self.id, data)
+    avra_queue_send(self.id, data)
   }
 
   fn drop() {
-    forge_queue_shutdown(self.id)
+    avra_queue_shutdown(self.id)
   }
 }
 
@@ -249,7 +249,7 @@ orders.name = "other"              // ERROR — name is not mut
 
 ## Test 11: Model fields
 
-```forge
+```avra
 model User {
   id: int @primary @auto_increment         // immutable
   username: string @unique                  // immutable
@@ -270,7 +270,7 @@ fn main() {
 
 ## Test 12: Type operators preserve field mutability
 
-```forge
+```avra
 type Base = {
   id: int,
   mut status: string,
@@ -290,7 +290,7 @@ fn main() {
 
 ## Test 13: with expression works on any field — creates a new value
 
-```forge
+```avra
 type User = {
   name: string,
   email: string,
@@ -312,7 +312,7 @@ fn main() {
 
 ## Test 14: Passing structs to functions
 
-```forge
+```avra
 type Player = {
   name: string,
   mut score: int,
@@ -337,7 +337,7 @@ fn main() {
 
 ## Test 15: Lists of structs with mut fields
 
-```forge
+```avra
 type Todo = {
   title: string,
   mut done: bool,
@@ -359,7 +359,7 @@ fn main() {
 
 ## Test 16: Trait methods respect field mutability
 
-```forge
+```avra
 trait Resettable {
   fn reset(self)
 }
@@ -383,7 +383,7 @@ fn reset_all(items: List<Resettable>) {
 
 ## Test 17: Enum variants with mut fields
 
-```forge
+```avra
 enum Shape {
   circle { mut radius: float },
   rect { mut width: float, mut height: float },
@@ -401,7 +401,7 @@ fn main() {
 
 ## Test 18: Constructor sets all fields — mut doesn't affect construction
 
-```forge
+```avra
 type Config = {
   name: string,
   version: string,
@@ -421,7 +421,7 @@ fn main() {
 
 ## Test 19: Compound assignment operators on mut fields
 
-```forge
+```avra
 type Stats = {
   mut hits: int,
   mut total_bytes: int,
@@ -438,7 +438,7 @@ fn main() {
 
 ## Test 20: Pattern matching doesn't bypass mutability
 
-```forge
+```avra
 type Pair = {
   key: string,
   mut value: int,

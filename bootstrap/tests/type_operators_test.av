@@ -1,0 +1,15 @@
+type TopUser = { id: int, name: string, email: string, password: string }
+
+type CreateTopUser = TopUser without {id}
+type PublicTopUser = TopUser only {name, email}
+
+spec "type operators" {
+    then "without removes the field" {
+        let c = CreateTopUser { name: "alice", email: "a@test.com", password: "secret" }
+        c.name == "alice" && c.email == "a@test.com"
+    }
+    then "only restricts to listed fields" {
+        let p = PublicTopUser { name: "bob", email: "b@test.com" }
+        p.name == "bob" && p.email == "b@test.com"
+    }
+}

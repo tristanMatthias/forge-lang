@@ -1,0 +1,42 @@
+extern fn avra_spawn(closure: int) -> int
+extern fn avra_thread_join(handle: int)
+extern fn avra_channel_new() -> ptr
+extern fn avra_channel_send(ch: ptr, value: int)
+extern fn avra_channel_recv(ch: ptr) -> int
+extern fn avra_channel_close(ch: ptr)
+
+mut sch_ch: ptr = null
+
+fn sch_producer() {
+    avra_channel_send(sch_ch, 1)
+    avra_channel_send(sch_ch, 2)
+    avra_channel_send(sch_ch, 3)
+}
+
+spec "std channel" {
+    then "channel send/recv: three values delivered" {
+        sch_ch = avra_channel_new()
+        let h = avra_spawn(sch_producer)
+        let a = avra_channel_recv(sch_ch)
+        let b = avra_channel_recv(sch_ch)
+        let c = avra_channel_recv(sch_ch)
+        avra_thread_join(h)
+        a + b + c == 6
+    }
+    then "channel close does not panic" {
+        let ch = avra_channel_new()
+        avra_channel_close(ch)
+        true
+    }
+    then "select picks the ready channel" {
+        let ch1 = avra_channel_new()
+        let ch2 = avra_channel_new()
+        avra_channel_send(ch1, 100)
+        mut got = 0
+        select {
+            v <- ch1 -> { got = v }
+            v <- ch2 -> { got = 0 - v }
+        }
+        got == 100
+    }
+}

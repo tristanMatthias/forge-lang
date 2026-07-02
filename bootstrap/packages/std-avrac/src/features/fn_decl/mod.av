@@ -1,0 +1,13 @@
+// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// surface flat at `features.fn_decl.{...}`.
+use core.{feature_new, Feature}
+
+/// Register the `fn` declaration feature. Routes the `fn`
+/// keyword to the parser's `parse_function_declaration`. Codegen
+/// for function bodies and call sites lives in `codegen.av`.
+export fn fn_decl_feature() -> Feature {
+    feature_new("fn_decl") with {
+        decl_keyword: "kw_fn",
+        parse_decl: (p: Parser) -> p.parse_function_declaration(),
+    }
+}

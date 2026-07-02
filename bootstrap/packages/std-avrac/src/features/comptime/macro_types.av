@@ -1,0 +1,58 @@
+// WHY: type definitions for the 2-arg @expand macro contract.
+// Step 5 of docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md.
+//
+// A 2-arg macro has the signature
+//     fn(AnnotatedDecl, ResolverCtx) -> ResolvedDecls
+// and gives the macro everything it needs to introspect the
+// surrounding decl + scope and return a structured batch of
+// decls + provenance.
+//
+// Fields:
+//   AnnotatedDecl.stmt — the decl (unwrapped from Annotated layers).
+//   AnnotatedDecl.annotation — the @expand(...) annotation itself.
+//   AnnotatedDecl.canonical_path — qualified path to the decl
+//     (e.g. "@user::ast::Foo").
+//   ResolvedDecls.decls — decls to splice into the parent stmt list.
+//   ResolvedDecls.introduces — names this batch adds to parent scope.
+//   ResolvedDecls.provenance — provenance trail (jump-to-source).
+//   DeclSymbol.name — unqualified name (e.g. "children").
+//   DeclSymbol.kind — DeclKind for the introduced decl.
+//   DeclSymbol.canonical_path — post-resolution name.
+//   DeclKind variants: Function / Type / Impl / Method(of) / Const.
+//   MacroProvenance fields — macro_name, target_canonical,
+//     target_source_span.
+
+use core.{Stmt, SStmt, Annotation}
+use diagnostics.{Span}
+
+export type AnnotatedDecl = {
+    stmt: Stmt,
+    annotation: Annotation,
+    canonical_path: string,
+}
+
+export type ResolvedDecls = {
+    decls: List<SStmt>,
+    introduces: List<DeclSymbol>,
+    provenance: MacroProvenance,
+}
+
+export type DeclSymbol = {
+    name: string,
+    kind: DeclKind,
+    canonical_path: string,
+}
+
+export enum DeclKind {
+    Function
+    Type
+    Impl
+    Method(of: string)
+    Const
+}
+
+export type MacroProvenance = {
+    macro_name: string,
+    target_canonical: string,
+    target_source_span: Span,
+}

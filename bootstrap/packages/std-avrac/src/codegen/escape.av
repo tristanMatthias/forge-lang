@@ -1,0 +1,555 @@
+// WHY: escape analysis for RC — determines which locals' values
+// escape their defining scope. A local is "releasable" if its ONLY
+// uses are field reads (p.x, p.y). Any other use (return, pass as
+// argument, store into struct, etc.) means the value might be
+// referenced elsewhere and must NOT be released at scope exit.
+//
+// Conservative: if in doubt, mark as escaped (don't release).
+
+use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
+use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
+use list_ops.{list_push_copy}
+
+/// Add `name` to the releasable set, deduplicating. Returns a fresh
+/// copy when name is new — callers reusing `set` elsewhere stay
+/// correct.
+fn releasable_add(set: List<string>, name: string) -> List<string> {
+    if releasable_has(set, name) { set } else { list_push_copy(set, name) }
+}
+
+/// Remove every occurrence of `name` from the releasable set.
+/// Returns a fresh list so callers reusing the old reference
+/// elsewhere stay correct. Used when a use-site proves the local
+/// escapes (return, arg pass, etc.).
+fn releasable_remove(set: List<string>, name: string) -> List<string> {
+    mut out: List<string> = []
+    for n in set {
+        if n != name { out = out.push(n) }
+    }
+    out
+}
+
+/// Analyze a function body and return the set of locals whose values
+/// can safely be RC-released at scope exit. A local is releasable
+/// only when:
+/// 1. Its initializer is an allocation (struct lit, enum ctor,
+///    tuple, with-expr) — see `is_allocating_expr`.
+/// 2. Its only uses are field reads (not returned, passed as arg,
+///    captured in a closure, etc.).
+///
+/// Single-pass insight: declarations appear before uses in statement
+/// order, so the algorithm walks the list once — a `let` adds the
+/// name; later uses only ever remove. Forward references therefore
+/// work without a second pass.
+export fn analyze_releasable(body: List<SStmt>) -> List<string> {
+    let empty: List<string> = []
+    single_pass_escape(body, empty)
+}
+
+/// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
+/// blocks have no bindings to release; otherwise descend into the
+/// inner List<SStmt>.
+export fn analyze_releasable_expr(body: Expr) -> List<string> {
+    match body {
+        .Block(stmts) -> analyze_releasable(stmts)
+        _ -> {
+            let empty: List<string> = []
+            empty
+        }
+    }
+}
+
+/// Single-pass escape analysis worker. Walks `stmts` left-to-right,
+/// folding `single_pass_stmt` over the running List<string>.
+fn single_pass_escape(stmts: List<SStmt>, set: List<string>) -> List<string> {
+    mut cur = set
+    mut i = 0
+    while i < stmts.length {
+        cur = single_pass_stmt(stmts[i].node, cur)
+        i = i + 1
+    }
+    cur
+}
+
+/// Process a `let`/`mut`/`const` binding: add the name when its
+/// initializer is allocating, then sweep the initializer for any
+/// uses of names already in the set (which would mark them escaped).
+fn analyze_binding(name: string, init: Expr, set: List<string>) -> List<string> {
+    let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+    remove_escaped_expr(init, s1)
+}
+
+/// Per-statement worker. Bindings call `analyze_binding`; control-
+/// flow statements recurse into their bodies; everything else is
+/// only checked for escaping uses inside its expressions. Decl-only
+/// statements (TypeDecl, TraitDecl, …) are pass-through.
+fn single_pass_stmt(stmt: Stmt, set: List<string>) -> List<string> {
+    let inner = stmt_unwrap(stmt)
+    match inner {
+        .Let(name, _, init) -> analyze_binding(name, init, set)
+        .Mut(name, _, init) -> analyze_binding(name, init, set)
+        .Const(name, _, init) -> analyze_binding(name, init, set)
+        // Recurse into blocks
+        .Block(body) -> single_pass_escape(body, set)
+        .If(cond, then_b, else_b) -> {
+            let s1 = remove_escaped_expr(cond, set)
+            let s2 = single_pass_stmt(then_b, s1)
+            if else_b != null { single_pass_stmt(else_b!, s2) } else { s2 }
+        }
+        // Everything else: just check for escapes (same as remove_escaped_stmt)
+        .Return(expr) -> remove_escaped_expr(expr, set)
+        .Expr(expr) -> remove_escaped_expr(expr, set)
+        .While(cond, body) -> single_pass_stmt(body, remove_escaped_expr(cond, set))
+        .For(_, start, end, body) -> {
+            let s1 = remove_escaped_expr(start, set)
+            let s2 = remove_escaped_expr(end, s1)
+            single_pass_stmt(body, s2)
+        }
+        .ForIn(_, coll, body) -> single_pass_stmt(body, remove_escaped_expr(coll, set))
+        // Same bug as the MatchExpr arm in remove_escaped_expr: walk
+        // the arm guards + bodies so an h returned from a match arm
+        // body gets removed from rc_releasable (otherwise scope-exit
+        // releases h before the caller of the fn sees the value).
+        .Match(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
+        .Defer(body) -> remove_escaped_expr(body, set)
+        .Errdefer(body) -> remove_escaped_expr(body, set)
+        .Annotated(_, inner) -> single_pass_stmt(inner.node, set)
+        .LetDestructure(_, init) -> remove_escaped_expr(init, set)
+        .Function(_, _, _, _, _) -> set
+        .ReturnEmpty -> set
+        .TypeDecl(_, _, _) -> set
+        .NewtypeDecl(_, _) -> set
+        .UnionAliasDecl(_, _) -> set
+        .ShapeDecl(_, _) -> set
+        .EnumDecl(_, _, _) -> set
+        .ExternFn(_, _, _) -> set
+        .TraitDecl(_, _) -> set
+        .Impl(_, _) -> set
+        .NoOp -> set
+        .Break -> set
+        .Continue -> set
+        .SpecBlock(_, _) -> set
+        .GivenBlock(_, _) -> set
+        .ThenBlock(_, _) -> set
+        .Select(_) -> set
+        .Parallel(_) -> set
+        .Module(_, _) -> set
+        .Use(_, _) -> set
+        .AssocType(_, _) -> set
+        .ComponentDef(_, _, _, _, _, _) -> set
+        .ComponentBlock(_, _, _, _) -> set
+    }
+}
+
+
+/// True when `expr` produces a freshly allocated heap object the
+/// binding owns. Currently: struct literal, enum constructor, tuple,
+/// with-expr. Add new allocating forms here when introduced.
+fn is_allocating_expr(expr: Expr) -> bool {
+    match expr {
+        .StructLit(_, _) -> true
+        .EnumCtor(_, _, _) -> true
+        .Tuple(_) -> true
+        .With(_, _) -> true
+        _ -> false
+    }
+}
+
+/// Walk an expression and remove names from the releasable set when
+/// they're used in a way that escapes the local. The only safe
+/// pattern is `.FieldAccess(Ident(name), _)` (reading a field). Any
+/// other use of `Ident(name)` removes it.
+fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
+    match expr {
+        // Field access is safe — reading a field doesn't escape the struct
+        .FieldAccess(obj, _) -> match obj {
+            .Ident(_) -> set  // p.x is safe — don't remove p
+            _ -> remove_escaped_expr(obj, set)  // nested: (expr).field
+        }
+        // These are escaping uses:
+        .Ident(name) -> releasable_remove(set, name)
+        // Recurse into sub-expressions
+        .Call(callee, args) -> {
+            let s1 = remove_escaped_expr(callee, set)
+            remove_escaped_args(args, s1)
+        }
+        .GenericCall(callee, _, args) -> {
+            let s1 = remove_escaped_expr(callee, set)
+            remove_escaped_args(args, s1)
+        }
+        .Binary(left, _, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
+        .Unary(_, inner) -> remove_escaped_expr(inner, set)
+        .Logical(left, _, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
+        .Grouping(inner) -> remove_escaped_expr(inner, set)
+        .Index(obj, idx) -> remove_escaped_expr(idx, remove_escaped_expr(obj, set))
+        .Assign(_, val) -> remove_escaped_expr(val, set)
+        .FieldAssign(obj, _, val) -> remove_escaped_expr(val, remove_escaped_expr(obj, set))
+        .StructLit(_, inits) -> remove_escaped_field_inits(inits, set)
+        .ListLit(elems) -> remove_escaped_args(elems, set)
+        // `with` reads obj field-by-field and emits rc_retain on ptr
+        // fields the new struct keeps (see with_expr/codegen.av).
+        // So `let u = h with { ... }` is a READ of `h` — the new
+        // struct's retains keep h's ptr fields alive independently,
+        // and h is still owned by its binding. Treat `Ident(h)` here
+        // like FieldAccess does, so the source stays releasable and
+        // its own __release_<Struct> fires at scope exit.
+        .With(obj, inits) -> {
+            let s1 = match obj { .Ident(_) -> set, _ -> remove_escaped_expr(obj, set) }
+            remove_escaped_field_inits(inits, s1)
+        }
+        .Lambda(_, body) -> remove_escaped_expr(body, set)
+        .Block(body) -> single_pass_escape(body, set)
+        .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))
+        // Match arms must be walked: a variable used in an arm body
+        // (especially as the arm's return value, which escapes) needs
+        // to be removed from the releasable set. Without this the
+        // scope-exit release path frees a struct the match expression
+        // returned — UAF on the returned value.
+        .MatchExpr(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
+        .Tuple(elems) -> remove_escaped_args(elems, set)
+        .TupleIndex(obj, _) -> remove_escaped_expr(obj, set)
+        .MapLit(entries) -> remove_escaped_args(entries, set)
+        .Slice(obj, start, end) -> remove_escaped_expr(end, remove_escaped_expr(start, remove_escaped_expr(obj, set)))
+        .Try(inner) -> remove_escaped_expr(inner, set)
+        .Catch(inner, _, body, _, _) -> remove_escaped_expr(body, remove_escaped_expr(inner, set))
+        .NullCoalesce(left, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
+        .OptionalChain(obj, _) -> remove_escaped_expr(obj, set)
+        .OptionalMethodCall(obj, _, args) -> remove_escaped_args(args, remove_escaped_expr(obj, set))
+        .IsCheck(subj, _) -> remove_escaped_expr(subj, set)
+        .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
+        .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
+        .Spawn(body) -> remove_escaped_expr(body, set)
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { set } else { remove_escaped_expr(capacity!, set) }
+        }
+        .Isolated(body) -> remove_escaped_expr(body, set)
+        .Quote(_, body) -> remove_escaped_expr(body, set)
+        .Splice(target) -> remove_escaped_expr(target, set)
+        // Same as MatchExpr: when arms' bodies/conditions can escape
+        // variables (return value of the arm, or pass to a fn). The
+        // old "no escapes at this level" comment was wrong.
+        .When(arms) -> remove_escaped_when_arms(arms, set)
+        .ListComp(body, _, coll, filter) -> {
+            let s1 = remove_escaped_expr(body, set)
+            let s2 = remove_escaped_expr(coll, s1)
+            if filter != null { remove_escaped_expr(filter!, s2) } else { s2 }
+        }
+        // Leaf expressions — no idents to escape
+        .Number(_) -> set
+        .FloatLit(_) -> set
+        .String(_) -> set
+        .Bool(_) -> set
+        .None -> set
+        .QualifiedIdent(_) -> set
+    }
+}
+
+/// Walk each match arm's guard + body checking for escapes.
+fn remove_escaped_match_arms(arms: List<MatchArm>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null {
+            acc = remove_escaped_expr(arm.guard!.node, acc)
+        }
+        acc = remove_escaped_expr(arm.body.node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Walk each when-arm's cond + body checking for escapes.
+fn remove_escaped_when_arms(arms: List<WhenArm>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.cond != null {
+            acc = remove_escaped_expr(arm.cond!.node, acc)
+        }
+        acc = remove_escaped_expr(arm.body.node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Apply `remove_escaped_expr` to every element of a `List<SExpr>`.
+fn remove_escaped_args(args: List<SExpr>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < args.length {
+        acc = remove_escaped_expr(args[i].node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Apply `remove_escaped_expr` to every value in a struct-literal
+/// `List<FieldInit>`. Used on `Foo { x: a, y: b }` and `with` exprs.
+fn remove_escaped_field_inits(inits: List<FieldInit>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < inits.length {
+        acc = remove_escaped_expr(inits[i].value.node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+// ── Arena eligibility (spec Axis 9.6) ─────────────────────────────
+//
+// A for-loop body is arena-eligible if it contains at least one
+// allocating binding (struct lit, enum ctor, etc.) AND all such
+// bindings are non-escaping (releasable). This means every allocation
+// in the loop iteration can safely live in a bump arena that is
+// freed in bulk at scope exit.
+
+/// Sum the count of allocating expressions across a statement list.
+fn count_allocating_in_stmts(stmts: List<SStmt>) -> int {
+    mut total = 0
+    mut i = 0
+    while i < stmts.length {
+        total = total + count_allocating_in_stmt_single(stmts[i].node)
+        i = i + 1
+    }
+    total
+}
+
+/// How many allocating expressions one statement contributes — 1 for
+/// an allocating binding, recursive for control-flow statements,
+/// 0 otherwise.
+fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
+    match stmt_unwrap(stmt) {
+        .Block(inner) -> count_allocating_in_stmts(inner)
+        .Let(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Mut(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Const(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .If(_, then_b, _) -> count_allocating_in_stmt_single(then_b)
+        .While(_, wb) -> count_allocating_in_stmt_single(wb)
+        .For(_, _, _, fb) -> count_allocating_in_stmt_single(fb)
+        .ForIn(_, _, fib) -> count_allocating_in_stmt_single(fib)
+        .Expr(_) -> 0
+        .Return(_) -> 0
+        .ReturnEmpty -> 0
+        .Function(_, _, _, _, _) -> 0
+        .TypeDecl(_, _, _) -> 0
+        .NewtypeDecl(_, _) -> 0
+        .UnionAliasDecl(_, _) -> 0
+        .ShapeDecl(_, _) -> 0
+        .EnumDecl(_, _, _) -> 0
+        .Match(_, _) -> 0
+        .Impl(_, _) -> 0
+        .NoOp -> 0
+        .ExternFn(_, _, _) -> 0
+        .Break -> 0
+        .Continue -> 0
+        .TraitDecl(_, _) -> 0
+        .LetDestructure(_, _) -> 0
+        .Defer(_) -> 0
+        .Errdefer(_) -> 0
+        .Annotated(_, _) -> 0
+        .SpecBlock(_, _) -> 0
+        .GivenBlock(_, _) -> 0
+        .ThenBlock(_, _) -> 0
+        .Select(_) -> 0
+        .Parallel(_) -> 0
+        .Module(_, _) -> 0
+        .Use(_, _) -> 0
+        .AssocType(_, _) -> 0
+        .ComponentDef(_, _, _, _, _, _) -> 0
+        .ComponentBlock(_, _, _, _) -> 0
+    }
+}
+
+/// True when a for-loop body can be wrapped in a per-iteration
+/// bump arena (spec Axis 9.6). Eligibility: the body has at least
+/// one allocating binding AND every allocating binding is
+/// non-escaping. Bulk freeing the arena at scope exit then replaces
+/// per-allocation RC drops.
+export fn is_arena_eligible(body: Stmt) -> bool {
+    let inner = stmt_unwrap(body)
+    match inner {
+        .Block(stmts) -> {
+            // Must have at least one allocation
+            let owned_count = count_allocating_in_stmts(stmts)
+            if owned_count == 0 { return false }
+            // All allocations must be releasable (non-escaping)
+            let empty: List<string> = []
+            single_pass_escape(stmts, empty).length > 0
+        }
+        .Let(_, _, init) -> is_allocating_expr(init)
+        .Mut(_, _, init) -> is_allocating_expr(init)
+        .Const(_, _, init) -> is_allocating_expr(init)
+        .Expr(_) -> false
+        .Return(_) -> false
+        .ReturnEmpty -> false
+        .Function(_, _, _, _, _) -> false
+        .TypeDecl(_, _, _) -> false
+        .NewtypeDecl(_, _) -> false
+        .UnionAliasDecl(_, _) -> false
+        .ShapeDecl(_, _) -> false
+        .EnumDecl(_, _, _) -> false
+        .Match(_, _) -> false
+        .Impl(_, _) -> false
+        .NoOp -> false
+        .ExternFn(_, _, _) -> false
+        .Break -> false
+        .Continue -> false
+        .TraitDecl(_, _) -> false
+        .LetDestructure(_, _) -> false
+        .Defer(_) -> false
+        .Errdefer(_) -> false
+        .Annotated(_, _) -> false
+        .SpecBlock(_, _) -> false
+        .GivenBlock(_, _) -> false
+        .ThenBlock(_, _) -> false
+        .Select(_) -> false
+        .Parallel(_) -> false
+        .Module(_, _) -> false
+        .Use(_, _) -> false
+        .AssocType(_, _) -> false
+        .If(_, _, _) -> false
+        .While(_, _) -> false
+        .For(_, _, _, _) -> false
+        .ForIn(_, _, _) -> false
+        .ComponentDef(_, _, _, _, _, _) -> false
+        .ComponentBlock(_, _, _, _) -> false
+    }
+}
+
+// ── Copy trait auto-derivation (spec 9.12) ────────────────────────
+//
+// A type is Copy if it contains only primitive (non-heap) fields.
+// Primitives: int, float, bool. Structs/enums are Copy if ALL their
+// fields recursively resolve to Copy types. Str, List, Map, Ptr,
+// Closure, Fn, Trait are NOT Copy (heap-managed).
+//
+// The analysis uses a fixed-point iteration: start with all
+// struct/enum names as Copy candidates, then repeatedly remove any
+// whose fields reference non-Copy types until stable.
+
+/// Compute the Copy auto-derivation set (spec 9.12). A type is Copy
+/// when every (recursive) field resolves to a Copy primitive.
+/// Seeds the candidate set with every named struct + enum and runs
+/// `fixpoint_copy` to remove anything that touches a non-Copy
+/// primitive (Str, List, Map, Ptr, Closure, Trait, Union, …).
+export fn analyze_copy_types(structs: StructReg, enums: EnumReg) -> List<string> {
+    let empty: List<string> = []
+    let candidates = seed_struct_candidates(structs, seed_enum_candidates(enums, empty))
+    fixpoint_copy(candidates, structs, enums)
+}
+
+/// Seed every struct name as a Copy candidate.
+fn seed_struct_candidates(reg: StructReg, set: List<string>) -> List<string> {
+    mut out = set
+    for m in reg.ord { out = out.push(m.name) }
+    out
+}
+
+/// Seed every enum name as a Copy candidate.
+fn seed_enum_candidates(reg: EnumReg, set: List<string>) -> List<string> {
+    mut out = set
+    for m in reg.ord { out = out.push(m.name) }
+    out
+}
+
+/// Iterate `refine_copy` until the candidate set is stable. Every
+/// pass shrinks the set (or matches the prior pass), so this
+/// terminates after at most `len(candidates)` passes.
+fn fixpoint_copy(candidates: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
+    let refined = refine_copy(candidates, structs, enums)
+    if copy_set_eq(refined, candidates) { refined }
+    else { fixpoint_copy(refined, structs, enums) }
+}
+
+/// One pass of the Copy fixpoint: keep only those candidates whose
+/// fields/variants are themselves Copy under the current set.
+fn refine_copy(candidates: List<string>, structs: StructReg, enums: EnumReg) -> List<string> {
+    mut out: List<string> = []
+    for name in candidates {
+        if is_name_copy(name, candidates, structs, enums) {
+            out = out.push(name)
+        }
+    }
+    out
+}
+
+/// True when `name` is registered as a struct/enum and all of its
+/// fields/variants are Copy under the current candidate set.
+fn is_name_copy(name: string, candidates: List<string>, structs: StructReg, enums: EnumReg) -> bool {
+    let sl = struct_reg_lookup(structs, name)
+    if sl.found { return fields_all_copy(sl.fields, candidates) }
+    let el = enum_reg_lookup(enums, name)
+    if el.found { return variants_all_copy(el.variants, candidates) }
+    false
+}
+
+/// True when every field in `fields` has a Copy ValueType under
+/// the current candidate set.
+fn fields_all_copy(fields: List<FieldEntry>, candidates: List<string>) -> bool {
+    for f in fields {
+        if !vtype_is_copy_in_set(f.resolved, candidates) { return false }
+    }
+    true
+}
+
+/// True when every variant of an enum has Copy fields under the
+/// current candidate set.
+fn variants_all_copy(variants: List<Variant>, candidates: List<string>) -> bool {
+    for v in variants {
+        if !fields_all_copy(v.fields, candidates) { return false }
+    }
+    true
+}
+
+/// Local Copy classifier used during the fixpoint analysis. Differs
+/// from `types.av`'s `vtype_is_copy` by treating struct/enum/newtype
+/// names as Copy purely based on candidate-set membership (since the
+/// outer set isn't final yet). Renamed `*_in_set` to avoid colliding
+/// with `vtype_is_copy` from types.av now that codegen/ is a flat
+/// dir-as-module namespace (g2eo.1).
+fn vtype_is_copy_in_set(vt: ValueType, candidates: List<string>) -> bool {
+    match vt {
+        .Int -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        .Float -> true
+        .Bool -> true
+        .Str -> false
+        .Bytes -> false
+        .Ptr -> false
+        .List(_) -> false
+        .Map(_, _) -> false
+        .Fn(_) -> false
+        .FnTyped(_, _) -> false
+        .Closure(_, _) -> false
+        .Struct(name, _, _) -> copy_set_has(candidates, name)
+        .Enum(name, _, _) -> copy_set_has(candidates, name)
+        .Newtype(name, _, _) -> copy_set_has(candidates, name)
+        .Trait(_, _) -> false
+        .Union(_) -> false
+        .Tuple(_) -> false
+        _ -> false
+    }
+}
+
+/// Copy-set equality used by `fixpoint_copy` to detect convergence.
+/// Two sets are equal when same length and one is a subset of the
+/// other — order doesn't matter.
+fn copy_set_eq(a: List<string>, b: List<string>) -> bool {
+    a.length == b.length && copy_set_subset(a, b)
+}
+
+/// True when every name in `a` also appears in `b`. O(|a| × |b|).
+fn copy_set_subset(a: List<string>, b: List<string>) -> bool {
+    for name in a {
+        if !copy_set_has(b, name) { return false }
+    }
+    true
+}

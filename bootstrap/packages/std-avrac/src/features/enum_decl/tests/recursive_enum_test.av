@@ -1,0 +1,29 @@
+enum RecIntList {
+    Nil,
+    Cons(head: int, tail: RecIntList),
+}
+
+fn list_sum(list: RecIntList) -> int {
+    match list {
+        .Nil -> 0
+        .Cons(head, tail) -> head + list_sum(tail)
+    }
+}
+
+fn list_length(list: RecIntList) -> int {
+    match list {
+        .Nil -> 0
+        .Cons(_, tail) -> 1 + list_length(tail)
+    }
+}
+
+spec "recursive enum" {
+    then "sum of linked list" {
+        let list = RecIntList.Cons(1, RecIntList.Cons(2, RecIntList.Cons(3, RecIntList.Cons(4, RecIntList.Nil))))
+        list_sum(list) == 10
+    }
+    then "length of linked list" {
+        let list = RecIntList.Cons(1, RecIntList.Cons(2, RecIntList.Cons(3, RecIntList.Cons(4, RecIntList.Nil))))
+        list_length(list) == 4
+    }
+}

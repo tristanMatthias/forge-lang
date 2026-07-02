@@ -1,0 +1,44 @@
+// `bs2 build --release` flag. Split from cli_build_flags_test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn bs2_path() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+fn setup_project() -> string {
+    let project = "/tmp/avra_build_release_fixture/"
+    avra_shell_exec(
+        "rm -rf " + project + " && " +
+        "mkdir -p " + project + "build && " +
+        "ln -s " + bs2_path() + " " + project + "build/bs2 && " +
+        "printf '[package]\nname = \"flags-fixture\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"flags-fixture\"\npath = \"main.av\"\n' > " + project + "avra.toml && " +
+        "printf '" + "fn " + "main() -> int { 0 }\\n' > " + project + "main.av")
+    project
+}
+
+fn teardown_project(project: string) -> string {
+    avra_shell_exec("rm -rf " + project)
+}
+
+spec "bs2 build --release: dev and release profiles cache to different fingerprints" {
+    then "first dev build then release build both miss the cache" {
+        let project = setup_project()
+        let dev = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --explain 2>&1 || true")
+        let rel = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --release --explain 2>&1 || true")
+        let _ = teardown_project(project)
+        dev.contains("rebuild ") && rel.contains("rebuild ")
+    }
+}
+
+spec "bs2 build --release: prints [pkg] line + builds successfully" {
+    then "release build emits the package banner and a fingerprint" {
+        let project = setup_project()
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --release 2>&1 || true")
+        let _ = teardown_project(project)
+        out.contains("[pkg]") && out.contains("Built ")
+    }
+}

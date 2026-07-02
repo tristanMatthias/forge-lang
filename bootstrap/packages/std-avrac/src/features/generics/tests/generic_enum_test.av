@@ -1,0 +1,30 @@
+enum GenOpt<T> {
+    None,
+    Some(value: T),
+}
+
+// Each instantiation gets its own fully-applied param type. A bare `GenOpt`
+// (no type arg) is rejected by F1004 — it determines no payload layout, so a
+// single body could not serve both `GenOpt<int>` and `GenOpt<string>`.
+fn ge_show_int(opt: GenOpt<int>) -> string {
+    match opt {
+        .None -> "none"
+        .Some(v) -> string(v)
+    }
+}
+
+fn ge_show_str(opt: GenOpt<string>) -> string {
+    match opt {
+        .None -> "none"
+        .Some(v) -> v
+    }
+}
+
+spec "generic enum" {
+    then "Some(int) extracts int value" {
+        ge_show_int(GenOpt.Some(42)) == "42"
+    }
+    then "Some(string) extracts string value" {
+        ge_show_str(GenOpt.Some("hello")) == "hello"
+    }
+}

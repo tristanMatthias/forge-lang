@@ -1,0 +1,55 @@
+// WHY: pyly — an enum constructor with a wrong-typed payload (e.g.
+// `Holder.One(42)` where the field is declared as a struct) MUST be a
+// gating compile error. Before this, the mismatch slipped past the type
+// checker and corrupted memory at runtime (a 112-byte enum value stored
+// where a ptr is expected → SIGSEGV). typeck now checks each ctor
+// argument against the variant's declared field type
+// (tc_check_enum_ctor_args), skipping fields whose type mentions a type
+// param (those bind via inference) and Unknown types.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Built at runtime so the discovery glob doesn't treat embedded fixtures
+// (which carry their own entry) as compiled programs.
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_compile_capture(source: string) -> string {
+    let path = "/tmp/avra_enum_ctor_payload_gating_test.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "pyly: enum-ctor payload type gating" {
+    then "wrong concrete payload type is a compile error" {
+        let out = run_compile_capture(
+            "type Inner = { x: int }
+enum Holder { Empty, One(item: Inner) }
+fn make_bad() -> Holder { Holder.One(42) }
+${MAIN_HEADER} { let h = make_bad() }")
+        out.contains("Holder.One") && out.contains("expects") && out.contains("Inner")
+    }
+    then "correct payload type compiles cleanly" {
+        let out = run_compile_capture(
+            "type Inner = { x: int }
+enum Holder { Empty, One(item: Inner) }
+fn make_ok() -> Holder { Holder.One(Inner { x: 1 }) }
+${MAIN_HEADER} { let h = make_ok() }")
+        !out.contains("expects")
+    }
+    then "payload-less variant is unaffected" {
+        let out = run_compile_capture(
+            "type Inner = { x: int }
+enum Holder { Empty, One(item: Inner) }
+fn make_empty() -> Holder { Holder.Empty }
+${MAIN_HEADER} { let h = make_empty() }")
+        !out.contains("expects")
+    }
+    then "generic field (type param) is not falsely rejected" {
+        let out = run_compile_capture(
+            "enum GBox<T> { GNone, GSome(value: T) }
+fn make_box() -> bool { match GBox.GSome(5) { .GSome(_) -> true, .GNone -> false } }
+${MAIN_HEADER} { let b = make_box() }")
+        !out.contains("expects")
+    }
+}

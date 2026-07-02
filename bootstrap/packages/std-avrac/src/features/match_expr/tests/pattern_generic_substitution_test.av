@@ -1,0 +1,62 @@
+// so07.7.4: when matching on a generic enum's variant whose
+// subject_ty carries concrete type-args, pattern bindings get
+// the substituted concrete type via the enum decl's type-params
+// + the subject's type_args.
+//
+// Two fundamental bugs were uncovered while landing this:
+//
+//   1. Stmt.Match (statement-position match) was running ONLY
+//      exhaustiveness — pattern bindings + arm bodies were never
+//      type-checked. The inline arm in typeck/mod.av's check_stmt
+//      pre-empted the registered match_check_stmt feature handler
+//      that does the full job. The inline arm got removed so the
+//      registry dispatch fires.
+//
+//   2. fmt_stmt was using vtype_display (lossy on List/Tuple
+//      generic args) when serialising generic-fn bodies for the
+//      metadata fast-path. The Unknown wildcard in
+//      assignable_with_unknowns masked the resulting type-coherence
+//      breakage. so07.7.3 fixed fmt to use vtype_render_full and
+//      removed the wildcard.
+//
+// With both fixed, W4's substitution is observable: arm bodies type-
+// check, and the binding's substituted type is enforced.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+enum WResult<T, E> {
+    Ok(value: T)
+    Err(error: E)
+}
+
+fn wresult_unwrap_ok(r: WResult<int, int>) -> int {
+    match r {
+        .Ok(value) -> value + 1
+        .Err(_) -> 0
+    }
+}
+
+fn wresult_unwrap_err(r: WResult<int, int>) -> int {
+    match r {
+        .Err(error) -> error - 2
+        .Ok(_) -> 0
+    }
+}
+
+spec "pattern binding substitutes generic type-args (so07.7.4)" {
+    then "match on Ok(7) binds value as int, runtime arithmetic flows" {
+        wresult_unwrap_ok(WResult.Ok(7)) == 8
+    }
+    then "match on Err(42) binds error as int, runtime arithmetic flows" {
+        wresult_unwrap_err(WResult.Err(42)) == 40
+    }
+    then "binding's substituted type observable via strict-arg warning" {
+        // AVRA_STRICT_ARGS=1 + the W4 substitution: `value` binds as
+        // int from FResult<int, _>.Ok, then `want_str(value)` fires
+        // F9004 because int is not assignable to string. Without W4
+        // the binding would be Unknown, and the strict-arg check
+        // skips Unknown (still being resolved). Without the .Match-
+        // dispatch fix the arm body wouldn't be type-checked at all.
+        avra_shell_exec("cat > /tmp/avra_w4_observable_fixture.av <<'EOF'\nenum FResult<T, E> {\n    Ok(value: T)\n    Err(error: E)\n}\n\nfn want_str(s: string) -> string { s }\n\nfn misuse(r: FResult<int, int>) -> string {\n    match r {\n        .Ok(value) -> want_str(value)\n        .Err(_) -> \"\"\n    }\n}\n\nfn main() -> int { 0 }\nEOF\nAVRA_STRICT_ARGS=1 ./build/bs2 check /tmp/avra_w4_observable_fixture.av 2>&1 || true").contains("F9004")
+    }
+}

@@ -1,0 +1,41 @@
+fn gec_identity<T>(x: T) -> T { x }
+fn gec_double_identity<T>(x: T) -> T { gec_identity(x) }
+
+type GecPair<A, B> = { first: A, second: B }
+
+fn gec_inc<T>(x: T) -> T { x }
+
+fn gec_apply<T>(x: T, f: fn(T) -> T) -> T { f(x) }
+
+fn gec_show(x: int) -> string { "value: ${string(x)}" }
+
+fn gec_print_all_capture(items: List<int>) -> string {
+    avra_test_capture_start()
+    for item in items {
+        println(string(item))
+    }
+    avra_test_capture_stop()
+}
+
+spec "generic edge cases" {
+    then "chained generic call" {
+        gec_double_identity(42) == 42
+    }
+    then "multi-field generic struct" {
+        let p = GecPair { first: "hello", second: 10 }
+        p.first == "hello" && p.second == 10
+    }
+    then "pipe through generic fn" {
+        let piped = 84 |> gec_inc
+        piped == 84
+    }
+    then "generic with closure" {
+        gec_apply(21, (x) -> x * 2) == 42
+    }
+    then "string interpolation in generic-adjacent fn" {
+        gec_show(42) == "value: 42"
+    }
+    then "generic fn over List<int>" {
+        gec_print_all_capture([1, 2, 3]) == "1\n2\n3"
+    }
+}

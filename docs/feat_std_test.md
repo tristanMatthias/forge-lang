@@ -6,7 +6,7 @@
 
 ## Test 1: Basic spec/given/then
 
-```forge
+```avra
 use @std.test
 
 spec "arithmetic" {
@@ -21,7 +21,7 @@ spec "arithmetic" {
 ```
 
 ```bash
-forge test
+avra test
 ```
 
 ```
@@ -35,13 +35,13 @@ forge test
 
 ## Test 2: Failing test shows expression diff
 
-```forge
+```avra
 spec "strings" {
   given "a greeting" {
-    let name = "forge"
+    let name = "avra"
 
     then "is uppercase" {
-      name == "FORGE"
+      name == "AVRA"
     }
   }
 }
@@ -52,16 +52,16 @@ spec "strings" {
     given a greeting
       ✖ is uppercase
 
-        name == "FORGE"
+        name == "AVRA"
         │       │
-        "forge" expected "FORGE"
+        "avra" expected "AVRA"
 
-        at tests/string_test.fg:6
+        at tests/string_test.av:6
 ```
 
 ## Test 3: Nested given blocks
 
-```forge
+```avra
 spec "shopping cart" {
   given "an empty cart" {
     let cart = Cart.new()
@@ -103,7 +103,7 @@ spec "shopping cart" {
 
 ## Test 4: Each `then` gets fresh state
 
-```forge
+```avra
 spec "isolation" {
   given "a counter" {
     mut count = 0
@@ -132,7 +132,7 @@ spec "isolation" {
 
 ## Test 5: `where` with table — parameterized tests
 
-```forge
+```avra
 spec "email validation" {
   then "validates correctly" where table {
     input              | expected
@@ -164,7 +164,7 @@ spec "email validation" {
 
 ## Test 6: `should_fail` — expects an error
 
-```forge
+```avra
 spec "input validation" {
   given "invalid data" {
     then "negative age fails" should_fail {
@@ -197,7 +197,7 @@ spec "input validation" {
 
 ## Test 7: `should_fail_with` — expects specific error
 
-```forge
+```avra
 spec "error messages" {
   given "invalid input" {
     then "mentions field name" should_fail_with "name" {
@@ -222,7 +222,7 @@ spec "error messages" {
 
 ## Test 8: `is` in assertions
 
-```forge
+```avra
 spec "result handling" {
   given "a division function" {
     fn divide(a: int, b: int) -> Result<int, string> {
@@ -247,7 +247,7 @@ spec "result handling" {
 
 ## Test 9: `roughly` — approximate matching
 
-```forge
+```avra
 spec "calculations" {
   then "pi approximation" {
     let pi = calculate_pi(1000)
@@ -263,7 +263,7 @@ spec "calculations" {
 
 ## Test 10: `eventually` — poll until true
 
-```forge
+```avra
 spec "async operations" {
   given "a background job" {
     let counter = channel<int>(10)
@@ -290,7 +290,7 @@ spec "async operations" {
 
 ## Test 11: `snapshot` — value snapshots
 
-```forge
+```avra
 spec "API response format" {
   given "a user" {
     let user = User.create({ name: "alice", email: "alice@test.com" })
@@ -309,7 +309,7 @@ spec "API response format" {
 First run: creates `.snap` files alongside the test:
 ```
 tests/
-├── user_test.fg
+├── user_test.av
 └── user_test.snap/
     ├── user_json.snap
     └── user_fields.snap
@@ -325,12 +325,12 @@ Subsequent runs: compares against saved snapshot. Mismatch = failure:
     - {"id":1,"name":"alice","email":"alice@test.com"}
     + {"id":1,"name":"alice","email":"alice@test.com","created_at":"2026-03-12"}
 
-    Run `forge test --update-snapshots` to accept the new value
+    Run `avra test --update-snapshots` to accept the new value
 ```
 
 ## Test 12: `fuzz` — property-based testing
 
-```forge
+```avra
 spec "sorting" {
   fuzz "length preserved" (input: List<int>) {
     input.sorted().length == input.length
@@ -370,7 +370,7 @@ On failure, shows the shrunk minimal case:
 
 ## Test 13: `bench` — built-in benchmarking
 
-```forge
+```avra
 spec "performance" {
   bench "list sort" {
     let data = (0..1000).map(_ -> random_int())
@@ -385,7 +385,7 @@ spec "performance" {
 ```
 
 ```bash
-forge test --bench
+avra test --bench
 ```
 
 ```
@@ -396,7 +396,7 @@ forge test --bench
 
 ## Test 14: `skip` and `todo` markers
 
-```forge
+```avra
 spec "user service" {
   then "creates user" {
     User.create({ name: "alice" }) is Ok
@@ -424,7 +424,7 @@ spec "user service" {
 
 ## Test 15: Multiple specs in one file
 
-```forge
+```avra
 spec "User model" {
   given "valid data" {
     then "creates successfully" { User.create({ name: "alice" }) is Ok }
@@ -452,7 +452,7 @@ spec "Task model" {
 
 ## Test 16: Struct diff on failure
 
-```forge
+```avra
 spec "user fields" {
   given "a created user" {
     let user = User.create({ name: "alice", email: "alice@test.com" })
@@ -478,7 +478,7 @@ spec "user fields" {
 
 ## Test 17: List diff on failure
 
-```forge
+```avra
 spec "sorting" {
   then "sorts correctly" {
     let result = [3, 1, 4, 1, 5].sorted()
@@ -500,22 +500,22 @@ spec "sorting" {
 
 ```bash
 # Run all specs
-forge test
+avra test
 
 # Run one file
-forge test tests/user_test.fg
+avra test tests/user_test.av
 
 # Run specs matching a pattern
-forge test --filter "user"
+avra test --filter "user"
 
 # Run only a specific then block
-forge test --filter "creates user"
+avra test --filter "creates user"
 
 # Run only fuzz tests
-forge test --fuzz
+avra test --fuzz
 
 # Run only benchmarks
-forge test --bench
+avra test --bench
 ```
 
 ---
@@ -530,7 +530,7 @@ version = "0.1.0"
 description = "Test primitives: spec, given, then, fuzz, bench, snapshot"
 
 [native]
-library = "forge_test"
+library = "avra_test"
 
 [components.spec]
 kind = "block"
@@ -538,20 +538,20 @@ context = "top_level"
 body = "mixed"
 ```
 
-## package.fg
+## package.av
 
-```forge
-extern fn forge_test_start_spec(name: string)
-extern fn forge_test_start_given(name: string)
-extern fn forge_test_run_then(name: string, result: bool, file: string, line: int)
-extern fn forge_test_run_then_should_fail(name: string, did_error: bool, error_msg: string, expected_msg: string, file: string, line: int)
-extern fn forge_test_skip(name: string)
-extern fn forge_test_todo(name: string)
-extern fn forge_test_snapshot_check(name: string, value: string) -> bool
-extern fn forge_test_snapshot_update(name: string, value: string)
-extern fn forge_test_fuzz_run(name: string, iterations: int, test_fn: fn(string) -> bool) -> string
-extern fn forge_test_bench_run(name: string, iterations: int, bench_fn: fn() -> void) -> string
-extern fn forge_test_summary()
+```avra
+extern fn avra_test_start_spec(name: string)
+extern fn avra_test_start_given(name: string)
+extern fn avra_test_run_then(name: string, result: bool, file: string, line: int)
+extern fn avra_test_run_then_should_fail(name: string, did_error: bool, error_msg: string, expected_msg: string, file: string, line: int)
+extern fn avra_test_skip(name: string)
+extern fn avra_test_todo(name: string)
+extern fn avra_test_snapshot_check(name: string, value: string) -> bool
+extern fn avra_test_snapshot_update(name: string, value: string)
+extern fn avra_test_fuzz_run(name: string, iterations: int, test_fn: fn(string) -> bool) -> string
+extern fn avra_test_bench_run(name: string, iterations: int, bench_fn: fn() -> void) -> string
+extern fn avra_test_summary()
 
 component spec(name: string) {
   config {}
@@ -560,26 +560,26 @@ component spec(name: string) {
   event after_all()
 
   fn given(name: string, body: fn()) {
-    forge_test_start_given(name)
+    avra_test_start_given(name)
     body()
   }
 
   fn then(name: string, body: fn() -> bool) {
     let result = body()
-    forge_test_run_then(name, result, __file__, __line__)
+    avra_test_run_then(name, result, __file__, __line__)
   }
 
   @syntax("{name} should_fail")
   fn then_should_fail(name: string, body: fn()) {
     let did_error = (body() catch { true }) is bool
-    forge_test_run_then_should_fail(name, did_error, "", "", __file__, __line__)
+    avra_test_run_then_should_fail(name, did_error, "", "", __file__, __line__)
   }
 
   @syntax("{name} should_fail_with {expected}")
   fn then_should_fail_with(name: string, expected: string, body: fn()) {
     let error_msg = body() catch { err.message }
     let did_error = error_msg is string
-    forge_test_run_then_should_fail(name, did_error, error_msg ?? "", expected, __file__, __line__)
+    avra_test_run_then_should_fail(name, did_error, error_msg ?? "", expected, __file__, __line__)
   }
 
   @syntax("{name} where {data}")
@@ -587,7 +587,7 @@ component spec(name: string) {
     for row in data {
       // Bind row fields as local variables, run body
       let result = body_with_bindings(row)
-      forge_test_run_then(
+      avra_test_run_then(
         `${name} (${row_summary(row)})`,
         result, __file__, __line__
       )
@@ -604,28 +604,28 @@ component spec(name: string) {
       if body() { passed = true; break }
       sleep(p)
     }
-    forge_test_run_then(name, passed, __file__, __line__)
+    avra_test_run_then(name, passed, __file__, __line__)
   }
 
   fn skip(name: string, body: fn() -> bool) {
-    forge_test_skip(name)
+    avra_test_skip(name)
   }
 
   fn todo(name: string) {
-    forge_test_todo(name)
+    avra_test_todo(name)
   }
 
   fn snapshot(name: string, value: string) -> bool {
-    forge_test_snapshot_check(name, value)
+    avra_test_snapshot_check(name, value)
   }
 
   fn fuzz(name: string, iterations: int = 100, test_fn: fn(string) -> bool) {
-    let result = forge_test_fuzz_run(name, iterations, test_fn)
+    let result = avra_test_fuzz_run(name, iterations, test_fn)
     // native lib handles shrinking and reporting
   }
 
   fn bench(name: string, iterations: int = 100, body: fn()) {
-    let result = forge_test_bench_run(name, iterations, body)
+    let result = avra_test_bench_run(name, iterations, body)
     // native lib handles timing and reporting
   }
 
@@ -633,8 +633,8 @@ component spec(name: string) {
     (actual - expected).abs() <= tolerance
   }
 
-  on startup { forge_test_start_spec(name) }
-  on main_end { forge_test_summary() }
+  on startup { avra_test_start_spec(name) }
+  on main_end { avra_test_summary() }
 }
 ```
 
@@ -681,17 +681,17 @@ The spec says each `then` block should run in isolation so side effects don't le
 The spec wants `a + b == expected` to print `"expected 30, got 25"` on failure. This requires the compiler to introspect expressions at compile time — decompose `==` into LHS/RHS, stringify each side, and emit code that captures both values before comparison. This is a compiler transform (macro-like expansion), not a runtime feature. It's doable but touches core expression codegen.
 
 ### `eventually` / Async Polling
-`eventually(timeout) { condition }` needs a sleep/retry loop. Forge has no `sleep()` runtime function yet. Adding one to `@std/process` is straightforward (`std::thread::sleep`), but the polling interval and timeout semantics need design — fixed interval? exponential backoff? configurable?
+`eventually(timeout) { condition }` needs a sleep/retry loop. Avra has no `sleep()` runtime function yet. Adding one to `@std/process` is straightforward (`std::thread::sleep`), but the polling interval and timeout semantics need design — fixed interval? exponential backoff? configurable?
 
 ## Questions for Design
 
-1. **Snapshot storage**: Where do `.snap` files live? Next to the test file? In a `.forge-snapshots/` dir? What's the update workflow — a CLI flag like `--update-snapshots`?
+1. **Snapshot storage**: Where do `.snap` files live? Next to the test file? In a `.avra-snapshots/` dir? What's the update workflow — a CLI flag like `--update-snapshots`?
 
 2. **Fuzz testing scope**: Full property-based testing (QuickCheck-style with shrinking) is a large undertaking. Should we start with simple random input generation and add shrinking later? What types get generators — just primitives, or also structs/tables?
 
-3. **Bench timing**: `bench "name" { expr }` needs warm-up runs, multiple iterations, and statistical reporting (min/max/median/stddev). Should this be a separate `forge bench` command or integrated into `forge test`?
+3. **Bench timing**: `bench "name" { expr }` needs warm-up runs, multiple iterations, and statistical reporting (min/max/median/stddev). Should this be a separate `avra bench` command or integrated into `avra test`?
 
-4. **CLI `--filter`**: The `forge test --filter "pattern"` flag needs the test runner to pass filter strings to the native runtime. Should filtering happen at compile time (skip codegen for non-matching tests) or runtime (check filter before executing each test)?
+4. **CLI `--filter`**: The `avra test --filter "pattern"` flag needs the test runner to pass filter strings to the native runtime. Should filtering happen at compile time (skip codegen for non-matching tests) or runtime (check filter before executing each test)?
 
 ## Ideas
 

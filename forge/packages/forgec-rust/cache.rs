@@ -312,8 +312,8 @@ pub fn cache_prefetch(project_dir: &Path) -> Result<String, String> {
         );
     }
 
-    let content = std::fs::read_to_string(&lockfile)
-        .map_err(|e| format!("cannot read forge.lock: {}", e))?;
+    let content =
+        std::fs::read_to_string(&lockfile).map_err(|e| format!("cannot read forge.lock: {}", e))?;
 
     let base = forge_cache_dir();
     let mut out = String::new();
@@ -343,7 +343,10 @@ pub fn cache_prefetch(project_dir: &Path) -> Result<String, String> {
             .unwrap_or("0.0.0");
 
         // Check Tier 1: does an artifact exist?
-        let artifact_exists = base.join("artifacts").join(format!("{}-{}.a", name, version)).exists()
+        let artifact_exists = base
+            .join("artifacts")
+            .join(format!("{}-{}.a", name, version))
+            .exists()
             || base.join("artifacts").join(name).exists();
 
         if artifact_exists {
@@ -366,9 +369,7 @@ pub fn cache_prefetch(project_dir: &Path) -> Result<String, String> {
         cached, missing
     ));
     if missing > 0 {
-        out.push_str(
-            "  \x1b[2mrun `forge build` when online to populate the cache\x1b[0m\n",
-        );
+        out.push_str("  \x1b[2mrun `forge build` when online to populate the cache\x1b[0m\n");
     }
 
     Ok(out)

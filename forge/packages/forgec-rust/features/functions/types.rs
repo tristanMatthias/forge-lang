@@ -12,9 +12,16 @@ pub struct FnDeclData {
 }
 
 impl crate::feature::FeatureNode for FnDeclData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(FnDeclData {
             name: (fns.sub_ident)(&self.name),
             type_params: self.type_params.clone(),
@@ -33,9 +40,16 @@ pub struct ReturnData {
 }
 
 impl crate::feature::FeatureNode for ReturnData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(ReturnData {
             value: self.value.as_ref().map(|v| (fns.sub_expr)(v)),
         })

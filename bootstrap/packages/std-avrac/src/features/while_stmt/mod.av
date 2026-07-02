@@ -1,0 +1,73 @@
+// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// surface flat at `features.while_stmt.{...}`.
+use core.{vtype_render_full, vtype_eq, vtype_is_unknown}
+use features.eval.{error_result}
+use features.eval.{execute_while}
+use core.{feature_new, Feature}
+use resolve.{resolve_expr, resolve_stmt}
+use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
+
+/// Resolver hook for `while`. Resolves the condition first, then
+/// the body in the post-condition scope so any names bound in the
+/// condition (rare but legal) flow into the body.
+fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .While(condition, body) -> {
+            let after_cond = resolve_expr(r, condition)
+            resolve_stmt(after_cond, body)
+        }
+        _ -> r
+    }
+}
+
+/// Type-check hook for `while`. The condition must be Bool (Int
+/// accepted for legacy compatibility); anything else surfaces as
+/// `F1000 TypeMismatch`. The body is checked unconditionally.
+fn while_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .While(cond, body) -> {
+            let c = check_expr(tc, cond)
+            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `${vtype_render_full(c.ty)}`")
+            } else { c.tc }
+            let guard = narrow_guard_of(cond)
+            // Fast path: no `none`-guard → check the body directly.
+            if guard.var == "" { return check_stmt(after_cond, body) }
+            // Optional flow-narrowing: in `while x != none { … }` the body
+            // only runs while `x` is present, so narrow it to `T` for the
+            // body, then reset the env so the narrowing does not leak past
+            // the loop. Only `!= none` narrows — a `while x == none` body
+            // runs while `x` is absent. (Permissive variable-narrowing;
+            // see the `tc_narrow_present` block in typeck for the
+            // soundness caveat.)
+            let baseline = after_cond.types
+            let after_body = check_stmt(tc_narrow_true_branch(after_cond, guard), body)
+            after_body with { types: baseline }
+        }
+        _ -> tc
+    }
+}
+
+/// Tree-walking evaluator hook for `while`. Forwards to the eval
+/// loop's `execute_while` worker. Used by the `avra check` /
+/// repl-style tooling that doesn't go through codegen.
+fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .While(condition, body) -> execute_while(rt, condition, body)
+        _ -> error_result(rt, "expected While")
+    }
+}
+
+/// Register the `while` loop feature. Wires up parser, resolver,
+/// type-checker, codegen, and eval hooks via the feature registry.
+export fn while_feature() -> Feature {
+    feature_new("while") with {
+        stmt_tag: Stmt.While(Expr.None, Stmt.NoOp),
+        stmt_keyword: "kw_while",
+        parse_stmt: (p: Parser) -> p.parse_while_statement(),
+        emit_stmt: emit_while,
+        resolve_stmt: while_resolve,
+        check_stmt: while_check,
+        eval_stmt: while_eval,
+    }
+}

@@ -1,0 +1,1211 @@
+// WHY: resolves module file references. Walks the AST, finds
+// Stmt.Module stubs, reads the corresponding .av files, parses
+// them, and attaches the parsed bodies. This is the bridge between
+// the pure parser (no I/O) and the file system.
+
+use core.{Stmt, SStmt, sstmt, sstmt_at, sstmt_dummy, Annotation, SExpr}
+use parse.{parse_program_source, parse_program_source_at}
+use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
+use build.{metadata_read, metadata_file_exists, synthesize_unit_body, stamp_stub_spans}
+use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
+use @std.crypto.{sha256_hex, sha256_file}
+use features.modules.{list_avra_module_files, list_avra_module_subdirs}
+use list_ops.{list_concat, list_push_copy, list_any, list_map, list_contains_str}
+
+extern fn avra_bytes_to_hex(b: bytes) -> string
+extern fn avra_uptime_ms() -> int
+
+/// Emit per-module timing events to AVRA_BUILD_PROGRESS_FILE for
+/// the parent's build-progress UI to consume. No-op unless the env
+/// var is set — keeps the standard compile output byte-clean for CI.
+///
+/// File-based instead of stdout-based because bs2's stdout is fully
+/// buffered when piped to a parent (4 KB blocks), which would freeze
+/// the live progress display until each block fills. Appending to a
+/// regular file flushes per-call, so the parent's 100 ms poll sees
+/// events promptly regardless of how fast or slow individual modules
+/// parse.
+fn emit_progress_start(path: string) {
+    let pf = avra_process_env_get("AVRA_BUILD_PROGRESS_FILE")
+    if pf == "" { return }
+    let _ = avra_selfhost_append_file(pf, "start ${path}\n")
+}
+
+fn emit_progress_done(path: string, t_start_ms: int) {
+    let pf = avra_process_env_get("AVRA_BUILD_PROGRESS_FILE")
+    if pf == "" { return }
+    let elapsed = avra_uptime_ms() - t_start_ms
+    let _ = avra_selfhost_append_file(pf, "done ${path} ${string(elapsed)}\n")
+}
+
+/// Compare the fingerprint stored in `<src>.meta.bin` with the
+/// current sha256 of `src`. Returns true only when they match —
+/// i.e. the source hasn't changed since the metadata was emitted,
+/// so stubs synthesised from the .meta.bin are safe to substitute
+/// for a fresh parse. The fast path is gated on this so an edit
+/// to a .av file (without re-running the producer) doesn't silently
+/// load stale stubs that elide the user's changes (g2eo).
+///
+/// Uses `avra_bytes_to_hex` to avoid bytes-vs-string comparison
+/// quirks: metadata stores the fp as 32 raw bytes; sha256_file
+/// returns 64-char hex. Both round-trip through hex equality.
+fn meta_fingerprint_matches_source(meta_path: string, src_path: string) -> bool {
+    let m = metadata_read(meta_path)
+    let stored_hex = avra_bytes_to_hex(m.fingerprint)
+    let current_hex = sha256_file(src_path)
+    stored_hex == current_hex
+}
+
+/// 0qmm: locate the meta sidecar for a single source file in the
+/// content-addressed cache slot (build/cache/meta/<sha256(src)>/
+/// unit.meta.bin). Stale hits are impossible — the path itself
+/// embeds sha256(source). No legacy sidecar fallback: producer
+/// always writes here, consumer always reads here.
+///
+/// Used by the `mod foo` (per-file) lookup path; the `use @pkg`
+/// path uses `package_meta_cache_path` (whole-package fingerprint)
+/// because the package-level meta aggregates every file's surface
+/// and must invalidate when any contributing file changes (2wfp).
+///
+/// Returns "" when the cache slot is absent.
+fn source_meta_cache_path(pkg_file: string) -> string {
+    let pkg_root = package_root_for_file(pkg_file)
+    if pkg_root == "" { return "" }
+    let hex = sha256_file(pkg_file)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
+    if metadata_file_exists(cache_path) { return cache_path }
+    ""
+}
+
+/// 2wfp: locate the package-aggregated meta sidecar in the
+/// content-addressed cache slot keyed on `package_source_fingerprint`.
+/// Producer writes here when emitting unit-level metadata for a
+/// package; consumer (use @pkg path) reads here. Stale hits impossible
+/// — change ANY .av file under the package's src/, change the
+/// fingerprint, change the path.
+fn package_meta_cache_path(pkg_file: string) -> string {
+    let pkg_root = package_root_for_file(pkg_file)
+    if pkg_root == "" { return "" }
+    let hex = package_source_fingerprint(pkg_root)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
+    if metadata_file_exists(cache_path) { return cache_path }
+    ""
+}
+
+/// Return the directory portion of a path (including the trailing
+/// slash), or `""` when `path` has no directory part. Used to
+/// build sibling/child paths during module resolution.
+export fn modules_dirname(path: string) -> string {
+    let len = path.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if path[prev] == "/" {
+            return path.substring(0, i)
+        }
+        i = prev
+    }
+    ""
+}
+
+// Record a producer source path that the metadata fast-path
+// substituted for. When `AVRA_DEPS_OUT=<path>` is set, append
+// `<source>.av.o\n` to the file so a downstream linker can pick
+// up the right cached object without re-implementing the resolver's
+// substitution logic.
+//
+// Convention: `<consumer.av.ll>` is co-located with `<producer.av.ll>`
+// and llc produces `<source>.av.o` from each, so the linker just
+// needs the list. No content beyond paths.
+fn record_meta_dep(producer_path: string) {
+    let deps_out = avra_process_env_get("AVRA_DEPS_OUT")
+    if deps_out == "" { return }
+    let line = "${producer_path}.o\n"
+    let _ = avra_selfhost_append_file(deps_out, line)
+}
+
+/// Set of file paths the resolver has already loaded — prevents
+/// double-parsing when two modules import the same file. Backed by
+/// `List<string>`; queried for membership, never iterated.
+
+/// Membership test for `LoadedPaths`.
+fn loaded_has(paths: List<string>, path: string) -> bool {
+    list_any(paths, (p: string) -> p == path)
+}
+
+/// Result of resolving a list of statements that may contain
+/// `Module`/`Use` items.
+///
+/// @field stmts         — the resolved statements (with module
+///                         bodies attached).
+/// @field loaded        — running set of already-loaded files.
+/// @field had_error     — 1 when resolution failed.
+/// @field error_message — diagnostic when `had_error` is set.
+export type ModListResult = {
+    stmts: List<SStmt>,
+    loaded: List<string>,
+    had_error: int,
+    error_message: string,
+}
+
+/// Result of resolving a single statement. Same shape as
+/// `ModListResult` but with one statement instead of a list.
+///
+/// @field stmt          — the resolved single statement.
+/// @field loaded        — running set of already-loaded files.
+/// @field had_error     — 1 when resolution failed.
+/// @field error_message — diagnostic when `had_error` is set.
+type ModStmtResult = {
+    stmt: Stmt,
+    loaded: List<string>,
+    had_error: int,
+    error_message: string,
+}
+
+/// Stack of files currently being resolved — for circular-import
+/// detection. Separate from `LoadedPaths` (which tracks ALL resolved
+/// files); this only tracks the active resolution chain. Backed by
+/// `List<string>`, ordered most-recently-pushed last.
+
+/// Membership test for the import stack. Used to detect cycles.
+fn stack_has(stack: List<string>, path: string) -> bool {
+    list_any(stack, (p: string) -> p == path)
+}
+
+/// Render the import stack as `a.av -> b.av -> a.av` for cycle-
+/// import error messages. Stops at the first occurrence of
+/// `cycle_path`, since that's where the cycle closes. Walk from the
+/// most-recently-pushed back to the cycle root, prepending each
+/// path to the rendered chain.
+fn render_cycle(stack: List<string>, cycle_path: string) -> string {
+    mut parts = cycle_path
+    mut i = stack.length - 1
+    while i >= 0 {
+        let p = stack[i]
+        parts = "${p} -> ${parts}"
+        if p == cycle_path { return parts }
+        i = i - 1
+    }
+    parts
+}
+
+/// 0qmm: package root for a source file. For files inside a
+/// `<pkg>/src/...` layout, returns the `<pkg>` parent. For flat-
+/// layout files (ephemeral /tmp test fixtures, ad-hoc compiles),
+/// returns the file's containing directory (without trailing slash).
+///
+/// Producer + consumer agree on the same root, which means the
+/// cache slot built from `cache_for(root)` + `sha256(source)` is
+/// the canonical home for the meta sidecar — no fixed-path
+/// legacy sidecar needed.
+/// 0qmm: compute the content-addressed cache path for a source
+/// file's meta sidecar. Exported so fixtures can probe the
+/// canonical location without re-implementing the path derivation.
+/// Returns "" if the source file can't be hashed (missing on disk).
+///
+/// This computes the PER-FILE slot (keyed on src_path's sha256).
+/// For package-level aggregated meta, use `package_meta_path_for`
+/// — that slot is keyed on the whole-package fingerprint per 2wfp.
+export fn meta_cache_path_for_source(src_path: string) -> string {
+    let pkg_root = package_root_for_file(src_path)
+    if pkg_root == "" { return "" }
+    let hex = sha256_file(src_path)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    entry_source_meta_path(cache, Fingerprint { hex })
+}
+
+/// 2wfp: compute the content-addressed cache path for a package's
+/// aggregated unit meta. Producer (`bs2 compile --emit_metadata` from
+/// the package root) writes here; consumer (`use @pkg` resolver path)
+/// reads here. Fixtures probing for "did the package's meta land?"
+/// should call this, not meta_cache_path_for_source — the package
+/// slot is keyed on the whole-package fingerprint, not the entry
+/// file's sha256.
+export fn package_meta_path_for(pkg_root: string) -> string {
+    if pkg_root == "" { return "" }
+    let hex = package_source_fingerprint(pkg_root)
+    if hex == "" { return "" }
+    let cache = cache_for(pkg_root)
+    entry_source_meta_path(cache, Fingerprint { hex })
+}
+
+export fn package_root_for_file(file_path: string) -> string {
+    // Canonicalise to an absolute path first — producer and consumer
+    // run from different cwds, so a relative path from one side
+    // resolves to a different string than the other and they'd
+    // disagree on the cache slot. PWD prepend normalises both.
+    let abs = to_absolute_path(file_path)
+    let marker = "/src/"
+    let idx = abs.index_of(marker)
+    if idx >= 0 {
+        return abs.substring(0, idx)
+    }
+    // Flat layout: use the file's directory as the package root.
+    // `<dir>/build/cache/meta/<fp>/unit.meta.bin` works the same.
+    let dir = modules_dirname(abs)
+    if dir == "" { return "" }
+    if dir[dir.length - 1] == "/" { return dir.substring(0, dir.length - 1) }
+    dir
+}
+
+/// Resolve `p` to an absolute path. Leaves already-absolute paths
+/// unchanged. For relative paths, prepends $PWD; if PWD is empty
+/// (shouldn't happen in practice) returns the input unchanged.
+fn to_absolute_path(p: string) -> string {
+    if p.length > 0 && p[0] == "/" { return p }
+    let pwd = avra_process_env_get("PWD")
+    if pwd == "" { return p }
+    let prefix = if pwd[pwd.length - 1] == "/" { pwd } else { "${pwd}/" }
+    "${prefix}${p}"
+}
+
+/// Find the packages directory by searching upward from `dir`.
+/// Three strategies in order: (1) look for `/packages/` in the
+/// path itself, (2) probe `packages/std-cli/src/cli.av` from the
+/// CWD, (3) walk upward looking for an ancestor `packages/`. The
+/// `std-cli` probe is the canonical sentinel — if it doesn't
+/// exist, the directory isn't a packages root.
+export fn find_packages_dir(dir: string) -> string {
+    // Strategy 1: look for `/packages/` in the path itself (when compiling from within packages/)
+    let marker = "/packages/"
+    let idx = dir.index_of(marker)
+    if idx >= 0 {
+        return dir.substring(0, idx + marker.length)
+    }
+    // Strategy 2: check common relative locations from the working directory.
+    // This handles relative paths like "regress/foo/" where walking up
+    // from the relative path can't find the repo root. Returns an
+    // ABSOLUTE path (PWD-prefixed) so loaded_has() comparisons stay
+    // consistent with Strategy 1 — under dnq4 a mix of absolute and
+    // relative pkg_file strings caused @std.json to be loaded twice
+    // and emitted duplicate function definitions at codegen.
+    let cwd_probe = "packages/std-cli/src/cli.av"
+    if avra_selfhost_file_exists(cwd_probe) {
+        let pwd_canonical = avra_process_env_get("PWD")
+        if pwd_canonical != "" {
+            mut prefix = pwd_canonical
+            if prefix[prefix.length - 1] != "/" { prefix = "${prefix}/" }
+            return "${prefix}packages/"
+        }
+        return "packages/"
+    }
+    // Strategy 2b: walk up from $PWD looking for sibling packages/. Lets
+    // `bs2 build --lib` work from inside packages/std-avrac/ where the
+    // local cwd-relative probe fails (no packages/std-avrac/packages/)
+    // but the parent does have packages/std-cli/. Step toward 2f54.
+    let cwd = avra_process_env_get("PWD")
+    if cwd != "" {
+        mut walk = cwd
+        if walk[walk.length - 1] != "/" { walk = "${walk}/" }
+        while walk.length > 1 {
+            let cand = "${walk}packages/"
+            if avra_selfhost_file_exists("${cand}std-cli/src/cli.av") {
+                return cand
+            }
+            // Strip trailing slash, then drop last segment.
+            let trimmed = walk.substring(0, walk.length - 1)
+            mut last = -1
+            mut wi = trimmed.length - 1
+            while wi >= 0 {
+                if trimmed[wi] == "/" {
+                    last = wi
+                    break
+                }
+                wi = wi - 1
+            }
+            if last < 0 { break }
+            walk = trimmed.substring(0, last + 1)
+        }
+    }
+    // Strategy 3: walk upward from dir looking for a sibling `packages/` directory
+    mut search = dir
+    while search.length > 1 {
+        let candidate = "${search}packages/"
+        let probe = "${candidate}std-cli/src/cli.av"
+        if avra_selfhost_file_exists(probe) {
+            return candidate
+        }
+        // Go up one directory: strip trailing slash, then find last slash
+        mut trimmed = search
+        if trimmed.length > 0 && trimmed[trimmed.length - 1] == "/" {
+            trimmed = trimmed.substring(0, trimmed.length - 1)
+        }
+        // Find last slash by scanning backward
+        mut last_slash = -1
+        mut si = trimmed.length - 1
+        while si >= 0 {
+            if trimmed[si] == "/" {
+                last_slash = si
+                break
+            }
+            si = si - 1
+        }
+        if last_slash < 0 { break }
+        search = trimmed.substring(0, last_slash + 1)
+    }
+    ""
+}
+
+/// Map a @-scoped package path like `@std.cli` to its on-disk
+/// file: `${packages_dir}/std-cli/src/cli.av` or, when that
+/// doesn't exist, `${packages_dir}/std-cli/src/mod.av`. Returns
+/// `""` when neither file exists or `packages_dir` is empty.
+export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string {
+    // pkg_path is like "@std.cli" — extract scope ("std") and name ("cli")
+    if packages_dir == "" { return "" }
+    // Skip the "@" prefix
+    let without_at = pkg_path.substring(1, pkg_path.length)
+    // Split on first "."
+    let dot = without_at.index_of(".")
+    if dot < 0 { return "" }
+    let scope = without_at.substring(0, dot)
+    let name = without_at.substring(dot + 1, without_at.length)
+    // Check for sub-path (e.g., "@std.cli.sub" → name="cli", sub="sub")
+    let name_dot = name.index_of(".")
+    mut pkg_name = name
+    if name_dot >= 0 {
+        pkg_name = name.substring(0, name_dot)
+    }
+    let pkg_dir = "${packages_dir}${scope}-${pkg_name}/src/"
+    // Try the package-name file first, then mod.av
+    let entry = "${pkg_dir}${pkg_name}.av"
+    if avra_selfhost_file_exists(entry) { return entry }
+    let mod_entry = "${pkg_dir}mod.av"
+    if avra_selfhost_file_exists(mod_entry) { return mod_entry }
+    ""
+}
+
+/// Resolve every `Stmt.Module` stub in `stmts` by reading the
+/// matching .av file, parsing it, and attaching the parsed body.
+/// Cycles are detected via an internal ImportStack.
+///
+/// The result has every `@`-prefixed package wrapper hoisted to
+/// the top of the program. Without that step a `use @std.lsp.{X}`
+/// at the cli's main.av could fail to resolve because the @std.lsp
+/// wrapper got emitted inside a deep submodule (e.g. inside
+/// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
+/// guarantees package paths exist at root regardless of where they
+/// were first imported.
+export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<string>) -> ModListResult {
+    let empty_stack: List<string> = []
+    let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack)
+    if inner.had_error { return inner }
+    let split = hoist_package_modules(inner.stmts)
+    // Dedup hoisted package wrappers by qualified name. Without this,
+    // a program that imports two sibling sub-packages of the same
+    // scope (e.g. cli/main imports @std.json directly while @std.avrac
+    // also imports @std.json internally) ends up with two
+    // Module("@std", ...) wrappers — registered as two distinct nominal
+    // scopes, which causes F1000 type-identity collisions and duplicate
+    // function definitions at codegen. Tracking ticket
+    // forge-crafting-intepreters-dnq4.
+    let deduped = dedup_modules(split.packages)
+    ModListResult {
+        stmts: list_concat(deduped, split.body),
+        loaded: inner.loaded,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+/// Directory-as-module loader (g2eo.1).
+///
+/// Walks every `.av` file in `dir` (per `list_avra_module_files`'s
+/// filtering: skip `mod.av`, `_test.av`, dotfiles, non-.av), parses
+/// each one, and concatenates their statement lists into a single
+/// flat body. Files already present in `loaded` are skipped — same
+/// dedup contract the rest of the resolver follows so two imports
+/// of the same dir don't produce duplicate decls.
+///
+/// This is the directory-as-module primitive: callers wrap the
+/// returned body in their own `Stmt.Module(name, body)` (or use
+/// it as the implicit body of one) so the directory's `.av` files
+/// share one flat namespace, no `mod foo` declarations required.
+///
+/// The body is **not recursively resolved** — `Module` and `Use`
+/// stubs remain intact. The caller threads the body through
+/// `resolve_module_files_inner` (or equivalent) to finish the job.
+/// Splitting parse-and-stitch from resolve keeps the loader pure
+/// w.r.t. the resolver's environment + import-stack state, so it
+/// can be exercised standalone in fixtures.
+///
+/// Errors short-circuit on the first parse failure: the stmts
+/// field returns whatever was assembled so far (so partial output
+/// is still introspectable in tools), and `had_error` flips to
+/// true with a diagnostic.
+export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListResult {
+    let files = list_avra_module_files(dir)
+    mut acc: List<SStmt> = []
+    mut acc_loaded = loaded
+    for path in files {
+        if loaded_has(acc_loaded, path) { continue }
+        let source = avra_selfhost_read_file(path)
+        let parsed = parse_program_source_at(source, path)
+        if parsed.had_error || parsed.stmts == null {
+            return ModListResult {
+                stmts: acc,
+                loaded: acc_loaded,
+                had_error: true,
+                error_message: "error in `${path}`: ${parsed.error_message}",
+            }
+        }
+        acc_loaded = list_push_copy(acc_loaded, path)
+        acc = list_concat(acc, parsed.stmts!)
+    }
+    acc = list_concat(acc, synthesize_subdir_module_decls(dir))
+    ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
+}
+
+/// Synthesize bare `Stmt.Module(<name>, [])` decls for every
+/// immediate child directory of `dir`. The resolver's `.Module(name, _)`
+/// arm descends into each subdir, so callers can drop `mod foo` decls
+/// for dirs they want auto-discovered. Skips any subdir whose name is
+/// already declared in `existing` — produces NO duplicates with
+/// explicit `mod foo` decls, so dedup_modules doesn't have to merge
+/// (avoids a dedup-idempotency bug in the program-outer pass).
+export fn synthesize_subdir_module_decls_filtered(dir: string, existing: List<SStmt>) -> List<SStmt> {
+    let subdirs = list_avra_module_subdirs(dir)
+    mut acc: List<SStmt> = []
+    mut j = 0
+    while j < subdirs.length {
+        let sd = subdirs[j]
+        let name = path_basename(sd)
+        if name != "" && !stmts_have_module_named(existing, name) {
+            let empty_body: List<SStmt> = []
+            acc.push(sstmt_dummy(Stmt.Module(name, empty_body)))
+        }
+        j = j + 1
+    }
+    acc
+}
+
+/// Backwards-compat alias for the unfiltered variant — used by
+/// resolve_dir_module_body's call site, where the body has no existing
+/// Module decls to filter against (the file just got parsed and
+/// concatenated).
+export fn synthesize_subdir_module_decls(dir: string) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    synthesize_subdir_module_decls_filtered(dir, empty)
+}
+
+// True iff `stmts` contains a top-level `Module(name, _)` matching
+// `target_name`. Used by synthesize_subdir_module_decls_filtered to
+// avoid producing duplicates with explicit decls.
+fn stmts_have_module_named(stmts: List<SStmt>, target_name: string) -> bool {
+    list_any(stmts, (ss: SStmt) -> match ss.node {
+        .Module(name, _) -> name == target_name
+        .Annotated(_, inner) -> match inner.node {
+            .Module(name, _) -> name == target_name
+            _ -> false
+        }
+        _ -> false
+    })
+}
+
+// Trailing-segment of a path (after the last '/'). Returns the input
+// when there's no slash, "" when the input is empty. Used to derive
+// the bare directory name from a path like `packages/std-cli/src/ui`.
+fn path_basename(p: string) -> string {
+    if p.length == 0 { return "" }
+    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
+    let len = trimmed.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if trimmed.byte(prev) == 0x2F {
+            return trimmed.substring(i, len)
+        }
+        i = prev
+    }
+    trimmed
+}
+
+// True iff `stmts` contains at least one `mod foo` declaration with
+// an empty body — the parser-emitted shape that triggers a
+// filesystem load. Used by the AVRA_DIR_MODULE wiring to back off
+// from auto-load when mod.av already enumerates its children
+// explicitly: mixing the two would either duplicate decls or hide
+// children behind a now-empty Module wrapper. Annotated wrappers
+// pass through.
+fn stmts_have_mod_decl(stmts: List<SStmt>) -> bool {
+    list_any(stmts, (ss: SStmt) -> match ss.node {
+        .Module(_, body) -> body.length == 0
+        .Annotated(_, inner) -> match inner.node {
+            .Module(_, body) -> body.length == 0
+            _ -> false
+        }
+        _ -> false
+    })
+}
+
+/// Merge duplicate `Module(name, body)` nodes by qualified name.
+/// Two import paths leading to the same package both produce a
+/// nested Module wrapper, and after `hoist_package_modules` lifts
+/// them to the program root we end up with multiple Modules of the
+/// same name. The resolver registers each as a distinct nominal
+/// scope, so leaving duplicates causes F1000 type-identity
+/// collisions and duplicate function definitions at codegen.
+///
+/// This pass walks the list, groups Modules by name (preserving
+/// first-occurrence order), recursively dedupes each merged inner
+/// body, and emits one Module per unique name. Non-Module statements
+/// pass through in place.
+///
+/// Tracking ticket: forge-crafting-intepreters-dnq4.
+export fn dedup_modules(stmts: List<SStmt>) -> List<SStmt> {
+    flatten_groups(group_by_module_name(stmts))
+}
+
+/// One slot in the dedup intermediate. `Group(name, body, line, col)`
+/// accumulates a Module by qualified name; `Pass(ss)` carries a
+/// non-Module statement through in source order. Replaces the prior
+/// 3-variant `ModGroupList` cons-list (lkze.10).
+enum ModGroupItem {
+    /// Accumulated Module group: every `Module(name, …)` with the
+    /// same `name` folds into one entry. The first SStmt to emit a
+    /// given name owns `line`/`col` so diagnostics still reference
+    /// a real source location after merging.
+    Group(name: string, body: List<SStmt>, line: int, col: int)
+    /// Pass-through for non-Module statements that must keep their
+    /// original list position relative to neighbouring Modules
+    /// (e.g. an extern declaration sitting between two package
+    /// wrappers should not be reordered after dedup).
+    Pass(stmt: SStmt)
+}
+
+/// Walk `stmts`, building a `List<ModGroupItem>` that merges every
+/// repeated `Module(name)` and preserves non-Module statements as
+/// `Pass` entries. Used by `dedup_modules`. Linear-time except for
+/// the inner group-name scan, which is O(unique-modules-seen) per
+/// step — fine because dedup runs on the small program-root list,
+/// not on bodies.
+fn group_by_module_name(stmts: List<SStmt>) -> List<ModGroupItem> {
+    mut acc: List<ModGroupItem> = []
+    for ss in stmts {
+        match ss.node {
+            .Module(name, body) -> mod_group_merge(acc, name, body, ss.line, ss.col)
+            _ -> acc.push(ModGroupItem.Pass(ss))
+        }
+    }
+    acc
+}
+
+/// Either append a fresh group at the tail or fold `body` into the
+/// existing group's accumulated body when `name` already appears.
+/// First occurrence's `line`/`col` win — later merges keep content
+/// but lose span identity (fine: inner SStmts retain their own
+/// spans). Mutates `acc` in place.
+fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<SStmt>, line: int, col: int) {
+    mut local = acc
+    for (i, item) in local.enumerate() {
+        match item {
+            .Group(n, b, l, c) if n == name -> {
+                local.set(i, ModGroupItem.Group(n, list_concat(b, body), l, c))
+                return
+            }
+            _ -> {}
+        }
+    }
+    local.push(ModGroupItem.Group(name, body, line, col))
+}
+
+/// Emit one `Module(name, dedup_modules(body))` per Group, keeping
+/// Pass entries in place. Recursive dedup on each merged body deals
+/// with nested duplicates like `@std → avrac → indexer` showing up
+/// under both `@std → avrac` instances.
+///
+/// wd48 fix — also dedup by span. When the test runner bundles many
+/// test files, each test file's resolve loads packages independently,
+/// producing identical re-parses of the same source. Merging those
+/// bodies leaves duplicate stmts with identical (file, line, col)
+/// tuples — span-equality means they're literally the same source
+/// position, so dropping the duplicate is safe.
+fn flatten_groups(items: List<ModGroupItem>) -> List<SStmt> {
+    mut acc: List<SStmt> = []
+    mut i = 0
+    while i < items.length {
+        match items[i] {
+            .Group(name, body, line, col) -> {
+                // Hoisted package wrappers are virtual scopes — no
+                // source file owns them — so file="" is correct
+                // here. Body stmts retain their own SStmt.file from
+                // the original parse.
+                let merged = sstmt(Stmt.Module(name, dedup_modules(dedup_by_span(body))), line, col)
+                acc.push(merged)
+            }
+            .Pass(ss) -> acc.push(ss)
+        }
+        i = i + 1
+    }
+    acc
+}
+
+/// Drop stmts whose (file, line, col) span has already appeared
+/// earlier in the list. wd48: re-parses of the same source file
+/// produce stmts with identical spans; deduping on span identity
+/// is precise (no risk of dropping distinct decls that happen to
+/// share a name across files). Stmts with empty file (synthesized,
+/// no source location) are always kept.
+fn dedup_by_span(stmts: List<SStmt>) -> List<SStmt> {
+    mut acc: List<SStmt> = []
+    mut seen: List<string> = []
+    mut idx = 0
+    while idx < stmts.length {
+        let ss = stmts[idx]
+        idx = idx + 1
+        if ss.file == "" {
+            acc.push(ss)
+            continue
+        }
+        let key = "${ss.file}:${ss.line}:${ss.col}"
+        if list_contains_str(seen, key) { continue }
+        seen.push(key)
+        acc.push(ss)
+    }
+    acc
+}
+
+/// Helper: collect linked List<SStmt> into List<SStmt> for indexed walk.
+/// Buckets produced by `hoist_package_modules`: every `@`-prefixed
+/// `Module` lives in `packages`, the rest in `body`. The two get
+/// concatenated to put package wrappers at the program root.
+/// Exported because the test runner needs the same partitioning to
+/// accumulate package wrappers across separately-resolved test
+/// files (each test file resolves independently, then the runner
+/// stitches a single program from all their bodies plus a deduped
+/// packages list).
+export type HoistSplit = {
+    packages: List<SStmt>,
+    body: List<SStmt>,
+}
+
+/// Walk the resolved stmt list and pull every `@`-prefixed Module
+/// (package wrapper) out to a separate list. Only @-prefixed
+/// Modules are rebuilt; other statements pass through unchanged so
+/// the post-resolve AST stays byte-identical to the legacy path
+/// when no hoisting is needed (preserves the bs2/bs3 fixed point).
+/// Recurses into both `@`-prefixed and regular Module bodies so a
+/// sub-package wrapper that landed inside another package (e.g.
+/// `@std.lsp` inside `@std.avrac.indexer`) also reaches the root.
+export fn hoist_package_modules(stmts: List<SStmt>) -> HoistSplit {
+    mut packages: List<SStmt> = []
+    mut body: List<SStmt> = []
+    for ss in stmts {
+        match ss.node {
+            .Module(name, mbody) if name.length > 0 && name[0] == "@" -> {
+                let inner = hoist_package_modules(mbody)
+                let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
+                for p in inner.packages { packages.push(p) }
+                packages.push(cleaned)
+            }
+            .Module(name, mbody) -> {
+                let inner = hoist_package_modules(mbody)
+                if has_no_packages(inner) {
+                    body.push(ss)
+                } else {
+                    let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
+                    for p in inner.packages { packages.push(p) }
+                    body.push(cleaned)
+                }
+            }
+            _ -> body.push(ss)
+        }
+    }
+    HoistSplit { packages, body }
+}
+
+/// True iff the inner hoist split produced no @-prefixed modules
+/// to lift. Used to short-circuit the rebuild of regular Module
+/// nodes when nothing inside them needed hoisting — the original
+/// SStmt can pass through verbatim, preserving span identity.
+fn has_no_packages(split: HoistSplit) -> bool {
+    split.packages.length == 0
+}
+
+/// True when the use path is a `@scope.pkg` package import
+/// (rather than a relative `mod.sub` reference).
+export fn is_package_use(path: string) -> bool {
+    path.length > 0 && path[0] == "@"
+}
+
+/// Reduce a use path to its top-level package module name.
+/// Examples: `@std.cli` → `@std.cli`,
+/// `@std.cli.sub` → `@std.cli`. Used to load each package once
+/// even when multiple sub-paths import from it.
+export fn package_module_name(path: string) -> string {
+    // Skip "@" prefix, find scope.name
+    let without_at = path.substring(1, path.length)
+    let dot = without_at.index_of(".")
+    if dot < 0 { return path }
+    let scope = without_at.substring(0, dot)
+    let rest = without_at.substring(dot + 1, without_at.length)
+    let next_dot = rest.index_of(".")
+    if next_dot >= 0 {
+        let name = rest.substring(0, next_dot)
+        return "@${scope}.${name}"
+    }
+    path
+}
+
+/// Walk every statement (recursing into Module bodies) inside a
+/// package's resolved AST and rewrite each non-`@`-prefixed
+/// `use X.Y.{...}` to `use ${pkg_qual}.X.Y.{...}`. This anchors
+/// internal paths to the package's own root so they survive the
+/// `Module("@scope") { Module(name) { ... } }` wrapping the consumer
+/// puts around the package — without it, a `use codegen.X` written
+/// inside std-avrac would resolve against the consumer's top-level
+/// scope (and miss, or worse, latch onto a same-named local sibling
+/// during the parent-walk in `resolve_use_aliases_in`).
+///
+/// Skips uses that are already package-qualified (`@scope.pkg.…`)
+/// and uses already qualified to *this* package — those carry their
+/// anchor explicitly. The recursion goes into every Module body so
+/// sub-files (e.g. `features/match_expr/typeck.av`) get anchored
+/// just like the package's top-level body does.
+fn qualify_uses_recursively(stmts: List<SStmt>, pkg_qual: string) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> qualify_use_in_stmt(ss, pkg_qual))
+}
+
+/// Per-statement worker: rewrite `Use` (handling Annotated wrappers)
+/// and recurse into `Module` bodies. Other statements pass through.
+/// Annotated wrappers transparently delegate to the inner stmt's
+/// rewrite, then re-attach the annotation — `Use` and `Module`
+/// arms don't need to know about Annotated.
+fn qualify_use_in_stmt(ss: SStmt, pkg_qual: string) -> SStmt {
+    sstmt_at(qualify_inner_stmt(ss.node, pkg_qual), ss.line, ss.col, ss.file)
+}
+
+fn qualify_inner_stmt(stmt: Stmt, pkg_qual: string) -> Stmt {
+    match stmt {
+        .Use(up, names) -> Stmt.Use(anchor_use_path(up, pkg_qual), names)
+        .Module(name, body) -> Stmt.Module(name, qualify_uses_recursively(body, pkg_qual))
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, inner with { node: qualify_inner_stmt(inner.node, pkg_qual) })
+        _ -> stmt
+    }
+}
+
+/// Decide whether a use path needs the `${pkg_qual}.` prefix:
+///   - Already starts with `@` → cross-package, leave alone.
+///   - Already starts with `${pkg_qual}.` → already anchored.
+///   - Otherwise → prepend `${pkg_qual}.`.
+fn anchor_use_path(up: string, pkg_qual: string) -> string {
+    if up.length > 0 && up[0] == "@" { return up }
+    let prefix = "${pkg_qual}."
+    if up.length >= prefix.length && up.substring(0, prefix.length) == prefix { return up }
+    "${pkg_qual}.${up}"
+}
+
+/// Recursive worker for `resolve_module_files`. Walks each
+/// statement, resolving `Module` and `Use` stubs in place;
+/// non-import statements pass through unchanged. Threads the
+/// LoadedPaths set + ImportStack through every recursive call.
+fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
+    mut out: List<SStmt> = []
+    mut cur_loaded = loaded
+    for (i, ss) in stmts.enumerate() {
+        // Check for package use statements — auto-load the package module
+        // Unwrap Annotated wrappers (e.g., doc comments) to find Use statements
+        let is_pkg = match ss.node {
+            .Use(up, _) -> is_package_use(up)
+            .Annotated(_, inner) -> match inner.node {
+                .Use(up, _) -> is_package_use(up)
+                _ -> false
+            }
+            _ -> false
+        }
+        if is_pkg {
+            // Slice the remaining stmts (i+1..end) so the package-use
+            // helper can drive the rest of the walk.
+            mut next: List<SStmt> = []
+            mut k = i + 1
+            while k < stmts.length {
+                next.push(stmts[k])
+                k = k + 1
+            }
+            let pkg_res = resolve_package_use_and_continue(ss, next, dir, cur_loaded, stack)
+            if pkg_res.had_error { return pkg_res }
+            // Merge already-accumulated out with pkg_res.stmts (which
+            // already includes the package wrapper + the resolved rest).
+            mut merged: List<SStmt> = []
+            mut a = 0
+            while a < out.length {
+                merged.push(out[a])
+                a = a + 1
+            }
+            mut b = 0
+            while b < pkg_res.stmts.length {
+                merged.push(pkg_res.stmts[b])
+                b = b + 1
+            }
+            return ModListResult {
+                stmts: merged,
+                loaded: pkg_res.loaded,
+                had_error: false,
+                error_message: "",
+            }
+        }
+        let head = resolve_module_stmt(ss.node, dir, cur_loaded, stack)
+        if head.had_error {
+            let empty: List<SStmt> = []
+            return ModListResult { stmts: empty, loaded: head.loaded, had_error: true, error_message: head.error_message }
+        }
+        cur_loaded = head.loaded
+        out.push(sstmt_at(head.stmt, ss.line, ss.col, ss.file))
+    }
+    ModListResult { stmts: out, loaded: cur_loaded, had_error: false, error_message: "" }
+}
+
+/// Pull the use-path string out of a `Use` statement, peeling
+/// any `Annotated` wrappers (doc comments, attributes) along the
+/// way. Returns `""` when `stmt` isn't a Use.
+export fn extract_use_path(stmt: Stmt) -> string {
+    match stmt {
+        .Use(up, _) -> up
+        .Annotated(_, inner) -> extract_use_path(inner.node)
+        _ -> ""
+    }
+}
+
+/// Handle a `use @pkg` statement: locate the package source
+/// file, parse it, wrap the parsed body in nested
+/// `Module("@scope") { Module(name) { ... } }` so the resolver
+/// sees the package's symbols at their qualified path. Continue
+/// resolution on the rest of the input list.
+fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
+    let use_path = extract_use_path(ss.node)
+    let pkg_mod = package_module_name(use_path)
+    let packages_dir = find_packages_dir(dir)
+    if packages_dir == "" {
+        let empty: List<SStmt> = []
+        return ModListResult { stmts: empty, loaded, had_error: true, error_message: "cannot resolve package `${pkg_mod}`: no packages/ directory found in path" }
+    }
+    let pkg_file = resolve_package_path(pkg_mod, packages_dir)
+    if pkg_file == "" {
+        let empty: List<SStmt> = []
+        return ModListResult { stmts: empty, loaded, had_error: true, error_message: "package `${pkg_mod}` not found" }
+    }
+    if loaded_has(loaded, pkg_file) {
+        // Already loaded — just pass through the use statement
+        let rest = resolve_module_files_inner(next, dir, loaded, stack)
+        if rest.had_error { return rest }
+        mut combined: List<SStmt> = [ss]
+        mut bi = 0
+        while bi < rest.stmts.length {
+            combined.push(rest.stmts[bi])
+            bi = bi + 1
+        }
+        return ModListResult {
+            stmts: combined,
+            loaded: rest.loaded,
+            had_error: false,
+            error_message: "",
+        }
+    }
+    // Load the package's stmts. xtvc fast-path: when AVRA_USE_METADATA
+    // is set AND <pkg_file>.meta.bin exists, decode that and synthesise
+    // stubs in place of re-parsing the source. Skips the parse / type
+    // / mono / codegen-bodies cost for unchanged dependencies — the
+    // producing unit's compiled .o supplies bodies at link time
+    // (forge-crafting-intepreters-2f54). Source-on-disk path remains
+    // the default; opt-in keeps the existing behaviour intact while
+    // the multi-unit cache plumbing matures.
+    let new_loaded = list_push_copy(loaded, pkg_file)
+    let pkg_dir = modules_dirname(pkg_file)
+    let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
+    // 2wfp: package-level lookup uses the WHOLE-PACKAGE fingerprint
+    // (every .av under <pkg_root>/src/), not just the entry file's
+    // sha256. The aggregated unit meta this slot holds covers every
+    // file's exports — so it must invalidate when ANY contributing
+    // file changes, not just the entry. Producer writes to the same
+    // package-fp slot when emitting unit-level metadata.
+    //
+    // Gate the cache-slot computation on use_meta — the fingerprint
+    // walk (~50ms cold for a package the size of @std/avrac) is pure
+    // waste for the default path (no AVRA_USE_METADATA set).
+    let meta_path = if use_meta { package_meta_cache_path(pkg_file) } else { "" }
+    let take_meta_fast_path = use_meta && meta_path != "" && metadata_file_exists(meta_path)
+    emit_progress_start(pkg_file)
+    let pkg_t_start = avra_uptime_ms()
+    let pkg_stmts = if take_meta_fast_path {
+        record_meta_dep(pkg_file)
+        let m = metadata_read(meta_path)
+        stamp_stub_spans(synthesize_unit_body(m), meta_path)
+    } else {
+        let pkg_source = avra_selfhost_read_file(pkg_file)
+        // _at keeps SStmt.file pointed at the package's entry-point
+        // path so cross-package diagnostics + per-file metadata
+        // discovery (g2eo) attribute decls correctly.
+        let parsed = parse_program_source_at(pkg_source, pkg_file)
+        if parsed.had_error || parsed.stmts == null {
+            let empty: List<SStmt> = []
+            return ModListResult { stmts: empty, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
+        }
+        parsed.stmts!
+    }
+    emit_progress_done(pkg_file, pkg_t_start)
+    // g2eo.1: when the package entry's body has no `mod foo` decls,
+    // auto-load every sibling `.av` in the same `src/` directory as
+    // part of the package body. This collapses one-package-per-mod
+    // shape (std-crypto's `mod sha256_pure`) into pure dir-as-module
+    // — the package's surface = entry exports + every sibling's
+    // exports, flat. Same gate the per-mod path uses (modules_decl
+    // present → keep legacy nested behaviour).
+    let pkg_decls_present = stmts_have_mod_decl(pkg_stmts)
+    let pkg_dir_load = if !take_meta_fast_path && !pkg_decls_present {
+        resolve_dir_module_body(pkg_dir, new_loaded)
+    } else {
+        let empty: List<SStmt> = []
+        ModListResult { stmts: empty, loaded: new_loaded, had_error: false, error_message: "" }
+    }
+    if pkg_dir_load.had_error {
+        return pkg_dir_load
+    }
+    // g2eo.1.2 partial migrations: subdir synthesis runs unconditionally
+    // (independent of pkg_decls_present), so a package that has SOME
+    // explicit `mod foo` decls can still drop OTHERS — the dropped ones
+    // get auto-discovered. Duplicates with explicit decls are merged by
+    // dedup_modules at the program-outer level. Skipped on the metadata
+    // fast-path because the metadata stubs already enumerate every
+    // submodule that contributed to the cached unit.
+    let empty_subdir: List<SStmt> = []
+    let pkg_subdir_decls = if take_meta_fast_path { empty_subdir } else { synthesize_subdir_module_decls_filtered(pkg_dir, pkg_stmts) }
+    let pkg_combined_stmts = list_concat(list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
+    let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack)
+    if resolved.had_error { return resolved }
+    // Create a nested module structure: @std → cli → {body}
+    let without_at = pkg_mod.substring(1, pkg_mod.length)
+    let dot = without_at.index_of(".")
+    let scope_name = without_at.substring(0, dot)
+    let pkg_name = without_at.substring(dot + 1, without_at.length)
+    // Anchor every internal `use X.Y` inside the loaded body to this
+    // package's root before wrapping. Same effect graph_find_use_path's
+    // ancestor walk would deliver, but doing it upfront eliminates
+    // a class of corner cases where the parent walk picks a same-named
+    // local sub-module before reaching the intended top-level package
+    // member. Once name resolution drops the parallel ModuleNode tree
+    // entirely, this upfront pass can be removed in favour of the
+    // graph's lazy resolution.
+    let pkg_qual = "@${scope_name}.${pkg_name}"
+    let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual)
+    let inner_mod = Stmt.Module(pkg_name, qualified_body)
+    let outer_body: List<SStmt> = [sstmt_at(inner_mod, ss.line, ss.col, ss.file)]
+    let outer_mod = Stmt.Module("@${scope_name}", outer_body)
+    // Continue processing rest of the statement list
+    let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack)
+    if rest.had_error { return rest }
+    // Emit: [module_decl, use_stmt, ...rest]
+    mut emitted: List<SStmt> = [sstmt_at(outer_mod, ss.line, ss.col, ss.file), ss]
+    mut ri = 0
+    while ri < rest.stmts.length {
+        emitted.push(rest.stmts[ri])
+        ri = ri + 1
+    }
+    ModListResult {
+        stmts: emitted,
+        loaded: rest.loaded,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+/// Resolve a single `mod name` statement: locate `name.av` or
+/// `name/mod.av` relative to `dir`, parse it, recursively resolve
+/// nested modules, and return a populated `Stmt.Module(name, body)`.
+/// Detects circular imports via `stack` and returns F3103 in that
+/// case. `Annotated` wrappers around the module decl pass through.
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: List<string>) -> ModStmtResult {
+    match stmt {
+        // Pre-populated Module wrapper: cli's --module_path produces
+        // `Stmt.Module(name, body)` with body already filled in.
+        // Recurse into the body to resolve internal `mod foo` stubs,
+        // then anchor cross-mod `use foo.X` paths to the wrap's
+        // namespace so they resolve under <name>.foo.X. Mirrors
+        // qualify_uses_recursively in the package-load path; the
+        // dotted form (e.g. `@std.avrac`) is what use-paths use, while
+        // the Module name itself stays in `::` form for codegen.
+        //
+        // g2eo.1.2: when this is the package-root wrapper (name starts
+        // with `@`), also synthesize Module decls for subdirs of `dir`
+        // that aren't already declared in body — same partial-migration
+        // semantics as the package-load path. This is how `bs2 build
+        // --lib --emit_metadata` picks up subdirs the entry file no
+        // longer enumerates explicitly (e.g. avrac.av dropping
+        // `mod build`). Without this branch, the lib-build path
+        // diverges from the `use @scope.pkg` path: an external
+        // consumer sees the build subsystem via auto-discovery, but
+        // the package's own --module_path compile doesn't.
+        //
+        // The `@` prefix gate matters: this branch ALSO fires for
+        // inner-module wrappers whose body came from metadata (e.g.
+        // a fast-path `Module("core", core_decls_from_unit_meta)`).
+        // Synthesizing into those would inject every sibling subdir
+        // inside one inner module, producing phantom paths like
+        // `@std::avrac::core::features::eval`. Top-level package
+        // wrappers are uniquely identifiable by the `@` they carry.
+        //
+        // The @-prefixed wrapper also fires the synthesis when body
+        // is EMPTY — that's the all-mod-decls-dropped case. Without
+        // this branch, the empty-body fall-through below would search
+        // for `<dir>/@std.avrac.av` (which doesn't exist) and fail.
+        // The package's content comes entirely from auto-discovered
+        // subdirs in `dir`.
+        .Module(name, body) if (name.length > 0 && name[0] == "@") || !body.length == 0 -> {
+            let combined = if name.length > 0 && name[0] == "@" {
+                list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
+            } else {
+                body
+            }
+            let resolved = resolve_module_files_inner(combined, dir, loaded, stack)
+            if resolved.had_error {
+                return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+            }
+            let pkg_qual_dot = name.replace("::", ".")
+            let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual_dot)
+            ModStmtResult { stmt: Stmt.Module(name, qualified_body), loaded: resolved.loaded, had_error: false, error_message: "" }
+        }
+        .Module(name, _) -> {
+            let sibling = "${dir}${name}.av"
+            let dir_mod = "${dir}${name}/mod.av"
+            let dir_only = "${dir}${name}/"
+            mut mod_path = ""
+            if avra_selfhost_file_exists(sibling) { mod_path = sibling }
+            if mod_path == "" && avra_selfhost_file_exists(dir_mod) { mod_path = dir_mod }
+            // g2eo.1 Phase D: when neither `name.av` nor `name/mod.av`
+            // exists but `name/` IS a directory, treat the directory
+            // itself as the module — auto-load its .av siblings flat
+            // into a synthesized body. Lets parents drop `mod foo`
+            // decls for subdirectories that don't have their own
+            // mod.av.
+            if mod_path == "" && avra_is_dir(dir_only) != 0 {
+                let dir_load = resolve_dir_module_body(dir_only, loaded)
+                if dir_load.had_error {
+                    return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
+                }
+                let new_stack = list_push_copy(stack, dir_only)
+                let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack)
+                if resolved.had_error {
+                    return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+                }
+                return ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+            }
+            if mod_path == "" {
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
+            }
+            // Circular import detection: if mod_path is on the import
+            // stack, we have a cycle. Report a clear error.
+            if stack_has(stack, mod_path) {
+                let cycle = render_cycle(stack, mod_path)
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "[F3103] circular import detected: ${cycle}" }
+            }
+            if loaded_has(loaded, mod_path) {
+                let empty: List<SStmt> = []
+                return ModStmtResult { stmt: Stmt.Module(name, empty), loaded, had_error: false, error_message: "" }
+            }
+            let new_loaded = list_push_copy(loaded, mod_path)
+            let new_stack = list_push_copy(stack, mod_path)
+            let mod_dir = modules_dirname(mod_path)
+            // xtvc fast-path (mirrors the package-load path): when
+            // AVRA_USE_METADATA is set AND `<mod_path>.meta.bin`
+            // exists AND its fingerprint matches the source's current
+            // sha256, substitute synthesised stubs for the source
+            // parse. Producer's compiled .o is expected at link time
+            // (forge-crafting-intepreters-2f54). The fingerprint check
+            // (g2eo) ensures we don't load stale metadata when the
+            // .av source has been edited since the .meta.bin was
+            // produced — a stale hit would silently elide the user's
+            // most recent changes from the consumer's compile.
+            let use_meta = avra_process_env_get("AVRA_USE_METADATA") != ""
+            // 0qmm: cache-keyed meta lookup (see source_meta_cache_path).
+            // Gate on use_meta — the sha256_file of mod_path is small
+            // (~5ms) but called per `mod foo` import; the lookup is
+            // pure waste when AVRA_USE_METADATA is unset.
+            let meta_path = if use_meta { source_meta_cache_path(mod_path) } else { "" }
+            let take_meta = use_meta && meta_path != "" && metadata_file_exists(meta_path)
+            emit_progress_start(mod_path)
+            let mod_t_start = avra_uptime_ms()
+            let mod_stmts = if take_meta {
+                record_meta_dep(mod_path)
+                let m = metadata_read(meta_path)
+                stamp_stub_spans(synthesize_unit_body(m), meta_path)
+            } else {
+                let mod_source = avra_selfhost_read_file(mod_path)
+                // Use _at so every parsed stmt carries `mod_path` in
+                // SStmt.file. Without it, sub-mod stmts would land
+                // with file="" — diagnostics lose their origin and
+                // the per-file source-discovery path (g2eo) can't
+                // attribute decls to the file they came from.
+                let parsed = parse_program_source_at(mod_source, mod_path)
+                if parsed.had_error || parsed.stmts == null {
+                    return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `${name}`: ${parsed.error_message}" }
+                }
+                parsed.stmts!
+            }
+            emit_progress_done(mod_path, mod_t_start)
+            // g2eo.1 directory-as-module: when mod_path is the subdir
+            // form (`<dir>/<name>/mod.av`) AND mod.av does NOT itself
+            // declare any `mod foo` children, ALSO auto-load every
+            // sibling `.av` file in that subdir as part of the module's
+            // body. This collapses the legacy two-step (`mod foo`
+            // declares + `mod.av` body declares children) into one
+            // filesystem walk: every file in the dir contributes to
+            // the module's flat namespace.
+            //
+            // The "no mod decls" gate makes migration per-directory:
+            // a package author drops the `mod foo` lines from mod.av
+            // (often emptying it entirely) to opt that directory in.
+            // Mixed packages keep working — directories that still
+            // enumerate children stay nested, directories with empty
+            // mod.av flatten. No global flag-day required.
+            //
+            // Always-on (no env-flag gate): the per-directory mod-decl
+            // detection is the only gate. AVRA_DIR_MODULE=0 still
+            // forces auto-load OFF for users who need to bisect a
+            // regression to the new behaviour, but the default is on.
+            //
+            // Skipped on the metadata fast-path: when `<mod>.meta.bin`
+            // is being substituted for a fresh parse, sibling auto-load
+            // would produce extra decls the metadata doesn't have.
+            let dir_mode = avra_process_env_get("AVRA_DIR_MODULE") != "0"
+            let is_subdir_form = mod_path == dir_mod
+            let mod_decls_present = stmts_have_mod_decl(mod_stmts)
+            let dir_load = if dir_mode && is_subdir_form && !take_meta && !mod_decls_present {
+                resolve_dir_module_body(mod_dir, new_loaded)
+            } else {
+                let empty: List<SStmt> = []
+                ModListResult { stmts: empty, loaded: new_loaded, had_error: false, error_message: "" }
+            }
+            if dir_load.had_error {
+                return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
+            }
+            let combined_stmts = list_concat(mod_stmts, dir_load.stmts)
+            let post_dir_loaded = dir_load.loaded
+            let resolved = resolve_module_files_inner(combined_stmts, mod_dir, post_dir_loaded, new_stack)
+            if resolved.had_error {
+                return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+            }
+            // Mark the Module wrapper @external_unit when its body
+            // came from metadata, so codegen knows to declare-only
+            // (no __init_<name> body, no per-fn body — those live in
+            // the producer's compiled .o which the linker resolves).
+            let module_stmt = Stmt.Module(name, resolved.stmts)
+            let final_stmt = if take_meta {
+                let ext_args: List<SExpr> = []
+                let ext_annots: List<Annotation> = [Annotation { name: "external_unit", args: ext_args }]
+                Stmt.Annotated(ext_annots, sstmt_dummy(module_stmt))
+            } else {
+                module_stmt
+            }
+            ModStmtResult { stmt: final_stmt, loaded: resolved.loaded, had_error: false, error_message: "" }
+        }
+        .Annotated(annotations, inner) -> {
+            let r = resolve_module_stmt(inner.node, dir, loaded, stack)?
+            ModStmtResult { stmt: Stmt.Annotated(annotations, inner with { node: r.stmt }), loaded: r.loaded, had_error: false, error_message: "" }
+        }
+        _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
+    }
+}

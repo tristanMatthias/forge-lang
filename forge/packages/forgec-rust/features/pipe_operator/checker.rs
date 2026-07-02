@@ -9,7 +9,8 @@ use super::types::PipeData;
 impl TypeChecker {
     /// Type-check a pipe expression via the Feature dispatch system.
     pub(crate) fn check_pipe_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, PipeData, |data| self.check_pipe(&data.left, &data.right))
+        feature_check!(self, fe, PipeData, |data| self
+            .check_pipe(&data.left, &data.right))
     }
 
     /// Type-check a pipe expression.

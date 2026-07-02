@@ -1,0 +1,61 @@
+// WHY: ordering an optional (`<` `<=` `>` `>=`) is a compile error (F1204).
+// A `none` has no position in an ordering, so silently answering would
+// defeat the purpose of `T?` — and it's where non-null-by-default is headed.
+// Two latent bugs motivated the reject: both-present tagged ordering compared
+// BOX POINTERS (so `Some(5) < Some(3)` read true), and a `none` side blindly
+// unwrapped the null box and trapped at runtime. Equality (`==`/`!=`) stays
+// permissive — it IS well-defined on optionals (see optional_equality_test).
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+spec "ordering an optional is rejected (F1204)" {
+    then "`a < b` on two int? operands is F1204" {
+        let f = "/tmp/avra_ord_pair.av"
+        write_fixture(f,
+            "fn g(a: int?, b: int?) -> bool { a < b }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1204")
+    }
+    then "`a > 5` on an optional vs a bare literal is F1204" {
+        let f = "/tmp/avra_ord_lit.av"
+        write_fixture(f,
+            "fn g(a: int?) -> bool { a > 5 }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1204")
+    }
+    then "`<=` and `>=` are covered too" {
+        let f = "/tmp/avra_ord_le.av"
+        write_fixture(f,
+            "fn g(a: int?, b: int?) -> bool { a <= b }\n" +
+            "fn h(a: float?, b: float?) -> bool { a >= b }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1204")
+    }
+    then "the remedy compiles: unwrap both sides, then order" {
+        let f = "/tmp/avra_ord_ok.av"
+        write_fixture(f,
+            "fn g(a: int?, b: int?) -> bool { a! < b! }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1204")
+    }
+    then "ordering two NON-optionals is unaffected" {
+        let f = "/tmp/avra_ord_plain.av"
+        write_fixture(f,
+            "fn g(a: int, b: int) -> bool { a < b }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1204")
+    }
+    then "equality on optionals stays allowed (only ordering is rejected)" {
+        let f = "/tmp/avra_ord_eq.av"
+        write_fixture(f,
+            "fn g(a: int?, b: int?) -> bool { a == b }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1204")
+    }
+}

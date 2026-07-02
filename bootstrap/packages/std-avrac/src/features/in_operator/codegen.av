@@ -1,0 +1,32 @@
+// WHY: codegen for `expr in [a, b, c]` — expands to `expr == a || expr == b || expr == c`.
+// Uses emit_binary(Eq) for each comparison so enum tags, strings, etc. are handled correctly.
+
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{emit_binary}
+use core.{Expr, SExpr, BinOp, VarBinding}
+
+/// Codegen entry for `x in [a, b, c]`. Pattern-matches the
+/// `InCheck` AST node and forwards to `emit_in_items`.
+export fn emit_in_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .InCheck(needle, items) -> emit_in_items(ctx, env, needle, items)
+        _ -> err_emit("expected InCheck")
+    }
+}
+
+/// Expand `x in [a, b, c]` into `x == a || x == b || x == c` by
+/// folding `BinOp.Eq` over the items list with bitwise-or. Uses
+/// the regular binary emitter so enum/string equality work.
+fn emit_in_items(ctx: Ctx, env: List<VarBinding>, needle: Expr, items: List<SExpr>) -> Result<EmitValue, string> {
+    if items.length == 0 { return ok_emit(ctx.i64(0), .Int) }
+    mut acc = ctx.i64(0)
+    for (i, item) in items.enumerate() {
+        let cmp = emit_binary(ctx, env, needle, BinOp.Eq, item.node)?
+        if i == 0 {
+            acc = cmp.value
+        } else {
+            acc = ctx.bit_or(acc, cmp.value, "in_or")
+        }
+    }
+    ok_emit(acc, .Bool)
+}

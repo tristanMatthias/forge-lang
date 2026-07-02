@@ -1,0 +1,12 @@
+/// Negative example: `const` initialised by a fn call rather
+/// than a constant expression. The diagnostics test harness
+/// asserts the type checker rejects this.
+///
+/// expect-error: const` requires a compile-time constant expression
+/// Test fixture used as the non-constant initializer.
+fn get_time() -> int { 42 }
+/// Test fixture: violates the const-only-constants rule.
+fn main() {
+    const now = get_time()
+    println(string(now))
+}

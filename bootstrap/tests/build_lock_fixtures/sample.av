@@ -1,0 +1,89 @@
+// Fixture program exercising @std.avrac.build.lock end-to-end.
+//
+// Builds a synthetic 3-unit dep tree at /tmp, asks build_graph for
+// the topological order, calls lockfile_from_graph + write_lock to
+// emit avra.lock, then reads it back and verifies:
+//   1. The lockfile parses correctly (entries match).
+//   2. lock_is_fresh returns true when the manifests are unchanged.
+//   3. Mutating one of the manifests flips lock_is_fresh to false.
+//
+// Tracking ticket: forge-crafting-intepreters-8tts.
+
+use @std.avrac.build.{build_graph}
+use @std.avrac.build.{
+    Lockfile, LockEntry,
+    read_lock, write_lock, lockfile_from_graph, render_lock, lock_is_fresh,
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn write_manifest(dir: string, name: string, deps: string) -> string {
+    avra_shell_exec("mkdir -p " + dir)
+    let body = "[package]\nname = \"" + name + "\"\nversion = \"0.1.0\"\n\n" + deps + "\n"
+    avra_shell_exec("printf '%s' '" + body + "' > " + dir + "/avra.toml")
+}
+
+fn count_entries(xs: List<LockEntry>) -> int {
+    xs.length
+}
+
+fn main() -> int {
+    let root_dir = "/tmp/avra_lock_fixture/"
+    avra_shell_exec("rm -rf " + root_dir)
+
+    let _ = write_manifest(root_dir + "leaf", "leaf", "")
+    let _ = write_manifest(root_dir + "mid", "mid",
+        "[dependencies]\n\"leaf\" = { path = \"../leaf\" }")
+    let _ = write_manifest(root_dir + "root", "root",
+        "[dependencies]\n\"mid\" = { path = \"../mid\" }")
+
+    let g = build_graph(root_dir + "root/")
+    if g.had_error {
+        println("PROBE graph: FAIL " + g.error)
+        avra_shell_exec("rm -rf " + root_dir)
+        return 0
+    }
+    println("PROBE graph: ok")
+
+    let fresh_lock = lockfile_from_graph(root_dir + "root/", g)
+    if count_entries(fresh_lock.entries) == 3 {
+        println("PROBE three_entries: ok")
+    } else {
+        println("PROBE three_entries: FAIL count=" + string(count_entries(fresh_lock.entries)))
+    }
+
+    if write_lock(fresh_lock, "test fixture") {
+        println("PROBE write: ok")
+    } else {
+        println("PROBE write: FAIL")
+    }
+
+    let read_back = read_lock(root_dir + "root/")
+    if read_back.found {
+        println("PROBE read_found: ok")
+    } else {
+        println("PROBE read_found: FAIL")
+    }
+    if count_entries(read_back.entries) == 3 {
+        println("PROBE read_three: ok")
+    } else {
+        println("PROBE read_three: FAIL")
+    }
+
+    if lock_is_fresh(read_back) {
+        println("PROBE fresh_unchanged: ok")
+    } else {
+        println("PROBE fresh_unchanged: FAIL")
+    }
+
+    // Mutate leaf's manifest — should invalidate.
+    avra_shell_exec("printf '%s' '[package]\nname = \"leaf\"\nversion = \"0.2.0\"\n' > " + root_dir + "leaf/avra.toml")
+    if !lock_is_fresh(read_back) {
+        println("PROBE fresh_after_change: ok")
+    } else {
+        println("PROBE fresh_after_change: FAIL")
+    }
+
+    avra_shell_exec("rm -rf " + root_dir)
+    0
+}

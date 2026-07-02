@@ -1,0 +1,26 @@
+type GmWidget = { name: string }
+impl GmWidget {
+    fn gm_greet(self) -> string { "hello " + self.name }
+}
+
+type GmPoint = { x: int, y: int }
+impl GmPoint {
+    fn show(self) -> string { string(self.x) + "," + string(self.y) }
+}
+
+fn gm_call_method(x: GmWidget) -> string {
+    x.gm_greet()
+}
+
+fn gm_show_it(x: GmPoint) -> string {
+    x.show()
+}
+
+spec "generic method" {
+    then "call greet on widget" {
+        gm_call_method(GmWidget { name: "world" }) == "hello world"
+    }
+    then "call show on point" {
+        gm_show_it(GmPoint { x: 1, y: 2 }) == "1,2"
+    }
+}

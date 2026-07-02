@@ -1,0 +1,73 @@
+// y9y4.2 — derive_walker emits Type__map(self, f) -> Type. Per
+// variant the body reconstructs the constructor with f applied to
+// direct-Self fields and list_map(field, f) over List<Self>. Scalars
+// pass through; wrapper-list fields pass through unchanged (the
+// outer Stmt__visit covers their inner Stmt graph).
+//
+// Observable: build a tree, run map() with a leaf-doubling fn, and
+// check that ONLY the leaf payload changed. Without map() emission
+// the fixture would fail to typecheck (`undefined method
+// MTree.map`); with a wrong-shape emission (e.g. forgetting to
+// list_map over List<Self>) the leaf count would mismatch.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "y9y4.2: derive_walker emits Type__map" {
+    then "map(id) is identity on a Leaf-shaped tree" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", 
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum MTree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Node(l: MTree, r: MTree),\n" +
+            "}\n" +
+            "\n" +
+            "fn id_tree(t: MTree) -> MTree { t }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let n = MTree.Node(MTree.Leaf(7), MTree.Leaf(11))\n" +
+            "    let m = n.map(id_tree)\n" +
+            "    let v = match m {\n" +
+            "        .Node(l, r) -> match l { .Leaf(x) -> x, _ -> -1 }\n" +
+            "        _ -> -1\n" +
+            "    }\n" +
+            "    println(\"v=\" + string(v))\n" +
+            "}\n")
+        out.contains("v=7")
+    }
+    then "map(double_leaf) doubles every Leaf value via per-arm reconstruction" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", 
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum MTree2 {\n" +
+            "    Leaf(v: int),\n" +
+            "    Node(l: MTree2, r: MTree2),\n" +
+            "}\n" +
+            "\n" +
+            "fn double_leaf(t: MTree2) -> MTree2 {\n" +
+            "    match t {\n" +
+            "        .Leaf(v) -> MTree2.Leaf(v * 2)\n" +
+            "        .Node(l, r) -> MTree2.Node(l.map(double_leaf), r.map(double_leaf))\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn sum_leaves(t: MTree2) -> int {\n" +
+            "    match t {\n" +
+            "        .Leaf(v) -> v\n" +
+            "        .Node(l, r) -> sum_leaves(l) + sum_leaves(r)\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let n = MTree2.Node(MTree2.Leaf(3), MTree2.Leaf(4))\n" +
+            "    let m = n.map(double_leaf)\n" +
+            "    // double_leaf takes a tree, recurses, doubles leaves.\n" +
+            "    // n.map(double_leaf) applies double_leaf to direct children\n" +
+            "    // (each Leaf in this shape), so sum should be 6 + 8 = 14.\n" +
+            "    println(\"sum=\" + string(sum_leaves(m)))\n" +
+            "}\n")
+        out.contains("sum=14")
+    }
+}

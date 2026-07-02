@@ -1,0 +1,54 @@
+// Test: hash-based enum tags — variant order doesn't matter.
+
+enum EhtColor { Blue, Red, Green }
+
+fn eht_color_name(c: EhtColor) -> string {
+    match c {
+        .Red -> "red"
+        .Blue -> "blue"
+        .Green -> "green"
+    }
+}
+
+enum EhtShape {
+    Triangle(base: int, height: int)
+    Circle(radius: int)
+    Square(side: int)
+}
+
+fn eht_area(s: EhtShape) -> int {
+    match s {
+        .Circle(r) -> r * r * 3
+        .Triangle(b, h) -> b * h / 2
+        .Square(s) -> s * s
+    }
+}
+
+enum EhtToken { A, B, C, D, E, F, G, H, I, J, K, L, M }
+
+fn eht_token_check(t: EhtToken) -> bool {
+    match t {
+        .C -> true
+        _ -> false
+    }
+}
+
+enum EhtDir { Up, Down, Left, Right }
+
+spec "enum hash tags" {
+    then "color name matches Red" {
+        eht_color_name(EhtColor.Red) == "red"
+    }
+    then "circle area" {
+        eht_area(EhtShape.Circle(5)) == 75
+    }
+    then "match expr finds 42" {
+        (match EhtColor.Red { .Red -> 42, _ -> 0 }) == 42
+    }
+    then "token C is true" {
+        eht_token_check(EhtToken.C)
+    }
+    then "dir equality and inequality" {
+        EhtDir.Up == EhtDir.Up && EhtDir.Left != EhtDir.Right
+    }
+}

@@ -1,0 +1,111 @@
+// WHY: type checking for null-safety features (catch, null coalesce).
+
+use core.{Expr, ValueType, vtype_eq, vtype_render_full, vtype_assignable, vtype_is_optional, vtype_strip_optional}
+use core.{is_result_enum_name}
+use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_result_ok_payload, tc_report_at, tc_report}
+use diagnostics.{DiagCode}
+
+/// Type-check a `expr() catch { fallback }`. The catch body must
+/// produce a value assignable to the fallible expression's `Ok`
+/// type — anything else surfaces as an F1000 mismatch with a
+/// span pointing at the catch keyword.
+export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Catch(inner, _, body, cl, cc) -> {
+            let ci = check_expr(tc, inner)
+            let cb = check_expr(ci.tc, body)
+            let maybe_ok = tc_catch_ok_type(ci.tc, inner)
+            if maybe_ok != null {
+                let ok_ty = maybe_ok!
+                if !vtype_eq(ok_ty, cb.ty) && !vtype_assignable(cb.ty, ok_ty) {
+                    let msg = "catch body type `${vtype_render_full(cb.ty)}` does not match expected type `${vtype_render_full(ok_ty)}`"
+                    return tc_er(tc_report_at(cb.tc, DiagCode.TypeMismatch, msg, cl, cc, 5), ok_ty)
+                }
+                return tc_er(cb.tc, ok_ty)
+            }
+            tc_er(cb.tc, cb.ty)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// Type-check a `expr?` try operator. Valid on `Result<T, E>`
+/// (unwraps to `T`, propagates `E`) and on `T?` nullable
+/// (unwraps to `T`, propagates null). Generic enums and Unknown
+/// types pass through unchanged so generic code that uses `?`
+/// type-checks at the use site.
+export fn check_try(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Try(inner) -> {
+            let r = check_expr(tc, inner)
+            // `?`-split (spec Axis 10 §1.3): `?` is Result-only. Applying it to
+            // an optional `T?` is F1202 — absence is handled with `??`, `?.`,
+            // force-unwrap `!`, or `match`, never `?`. The recursive-descent
+            // parser and the @comptime Value->AST decoder were migrated off
+            // `?`-on-optional to `Result` so this gate is build-safe.
+            if vtype_is_optional(r.ty) {
+                let msg = "`?` cannot be applied to an optional `${vtype_render_full(r.ty)}` — `?` propagates `Result` errors, not absence; use `?? default`, `?.field`, force-unwrap `!`, or `match`"
+                return tc_er(tc_report(r.tc, DiagCode.TryOnOptional, msg), vtype_strip_optional(r.ty))
+            }
+            // Two extraction paths for Result: (1) structural — peel
+            // the first type-arg off the inner expression's
+            // ValueType (works for method calls, indexed-list
+            // returns, anything whose .ty is already a concrete
+            // `Result<Ok, Err>`); (2) name-based — look up the
+            // callee's registered return type. Always prefer
+            // structural — `tc_catch_ok_type` can only see the
+            // fn's pre-substitution ret_ty, which loses generic
+            // bindings for method calls and chained generic calls.
+            match r.ty {
+                .Enum(name, args, _) if is_result_enum_name(name) -> {
+                    if args.length > 0 {
+                        let ok_ty = args[0]
+                        if !vtype_is_unknown(ok_ty) { return tc_er(r.tc, ok_ty) }
+                    }
+                }
+                _ -> {}
+            }
+            let inner_name = match r.ty { .Enum(n, _, _) -> n, _ -> "" }
+            if is_result_enum_name(inner_name) {
+                let maybe_ok = tc_catch_ok_type(r.tc, inner)
+                if maybe_ok != null {
+                    return tc_er(r.tc, maybe_ok!)
+                }
+            }
+            // User-defined Result-shaped enums (Ok+Err variants, no
+            // type_args — the Ok payload lives in the variant declaration,
+            // not type_args): peel the Ok variant's payload type so
+            // `let x = userResult()?` types x as the success type, matching
+            // codegen's runtime unwrap.
+            if inner_name != "" {
+                let ok_payload = tc_result_ok_payload(r.tc, inner_name)
+                if ok_payload != null {
+                    return tc_er(r.tc, ok_payload!)
+                }
+            }
+            // For enums, nullable types, and Unknown — pass through (? is valid)
+            tc_er(r.tc, r.ty)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+/// Type-check `left ?? right`. Result type is the right side
+/// (the guaranteed non-null fallback) when both sides are known;
+/// falls back to whichever side has a non-Unknown type
+/// otherwise.
+export fn check_null_coalesce(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .NullCoalesce(left, right) -> {
+            let l = check_expr(tc, left)
+            let r = check_expr(l.tc, right)
+            // `left ?? right` — result type is the right side (fallback value).
+            // If both sides have known non-Unknown types, prefer the more specific one.
+            if l.ty is .Unknown { return tc_er(r.tc, r.ty) }
+            if r.ty is .Unknown { return tc_er(r.tc, l.ty) }
+            // Both known — use right side (the guaranteed non-null fallback)
+            tc_er(r.tc, r.ty)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}

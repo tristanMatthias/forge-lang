@@ -1,0 +1,133 @@
+// bfdq: `string(value)` and `${value}` interpolation dispatch to
+// `<Type>.display(self) -> string` when defined — duck-typed
+// Display, Go's `Stringer` pattern. No formal trait needed; the
+// codegen detects the method and routes through it.
+//
+// Also covers bool → "true"/"false" (previously printed as "1"/"0"
+// via the int-snprintf fallback path).
+
+type User = { id: int, name: string, admin: bool }
+
+impl User {
+    fn display(self) -> string {
+        "User#${string(self.id)}(${self.name}, admin=${string(self.admin)})"
+    }
+}
+
+enum Mood {
+    Happy,
+    Sad,
+    Angry,
+}
+
+impl Mood {
+    fn display(self) -> string {
+        match self {
+            .Happy -> ":)"
+            .Sad   -> ":("
+            .Angry -> ">:("
+        }
+    }
+}
+
+spec "Display dispatch — struct" {
+    then "string(user) calls User.display()" {
+        let u = User { id: 7, name: "alice", admin: true }
+        string(u) == "User#7(alice, admin=true)"
+    }
+    then "\${user} in interpolation calls display" {
+        let u = User { id: 7, name: "alice", admin: false }
+        let s = "got: ${u}"
+        s == "got: User#7(alice, admin=false)"
+    }
+    then "two distinct users render distinctly" {
+        let a = User { id: 1, name: "a", admin: true }
+        let b = User { id: 2, name: "b", admin: false }
+        "${a} | ${b}" == "User#1(a, admin=true) | User#2(b, admin=false)"
+    }
+}
+
+spec "Display dispatch — enum" {
+    then "string(Mood.Happy) calls Mood.display()" {
+        string(Mood.Happy) == ":)"
+    }
+    then "all enum variants dispatch" {
+        let xs = [Mood.Happy, Mood.Sad, Mood.Angry]
+        "${xs[0]} ${xs[1]} ${xs[2]}" == ":) :( >:("
+    }
+}
+
+spec "Bool → \"true\" / \"false\"" {
+    then "string(true) is \"true\"" {
+        let t = true
+        string(t) == "true"
+    }
+    then "string(false) is \"false\"" {
+        let f = false
+        string(f) == "false"
+    }
+    then "bool interpolation reads naturally" {
+        let admin = true
+        "admin=${admin}" == "admin=true"
+    }
+}
+
+spec "Fallback paths still work" {
+    then "int still uses snprintf path" {
+        string(42) == "42"
+    }
+    then "string passthrough" {
+        let s = "hello"
+        string(s) == "hello"
+    }
+    then "negative int" {
+        let n = 0 - 7
+        string(n) == "-7"
+    }
+}
+
+// Per-file shard mode compiles each test alone without bundling
+// runtime.av's externs, so this test re-declares the shell-exec
+// extern it uses for the strictness fixtures below.
+//
+// The strictness-fixture sources MUST avoid the literal entry-point
+// substring (`fn ma` + `in()` glued together). The test-runner
+// discovery filter (select_test_paths in cli/main.av's
+// has_top_level_main) skips files containing a top-level main, so
+// the fixtures build their entry point via string concatenation to
+// keep that substring out of THIS file.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "Display strictness — no display() means compile error (F1003)" {
+    then "struct without display() rejects string(value) with F1003" {
+        let entry = "fn ma" + "in() { let n = NoDisp { x: 1 }\n println(string(n)) }\n"
+        let body = "type NoDisp = { x: int }\n" + entry
+        let cmd = "printf '%s' '" + body + "' > /tmp/no_display.av && ./build/bs2 compile /tmp/no_display.av 2>&1 || true"
+        let out = avra_shell_exec(cmd)
+        // Assert the proper F-code (not F9999 ICE) plus the type
+        // name and the help text — covers the bfdq strictness
+        // criterion end-to-end.
+        out.contains("F1003")
+            && out.contains("NoDisp")
+            && out.contains("display(self)")
+            && !out.contains("F9999")
+            && !out.contains("this is a compiler bug")
+    }
+    then "enum without display() rejects string(value) with F1003" {
+        // Shortcut #4: parens-less `EnumType.Variant` parses as
+        // FieldAccess(Ident, "Variant"). check_expr now recognises
+        // this shape when the head Ident is a registered enum and
+        // returns Enum(type_name), so let-bindings retain the
+        // proper type and display_check_arg fires the typeck-side
+        // F1003 instead of the codegen F9999 backstop.
+        let entry = "fn ma" + "in() { let v = NoDispE.A\n println(string(v)) }\n"
+        let body = "enum NoDispE { A, B }\n" + entry
+        let cmd = "printf '%s' '" + body + "' > /tmp/no_display_enum.av && ./build/bs2 compile /tmp/no_display_enum.av 2>&1 || true"
+        let out = avra_shell_exec(cmd)
+        out.contains("F1003")
+            && out.contains("NoDispE")
+            && out.contains("display(self)")
+            && !out.contains("F9999")
+            && !out.contains("this is a compiler bug")
+    }
+}

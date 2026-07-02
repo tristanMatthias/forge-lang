@@ -1,0 +1,65 @@
+// Regression for forge-crafting-intepreters-3r6q / -atai: a bare
+// `.UpperIdent(...)` on the line AFTER `if ... else { ... }` was
+// being eaten as a method-call postfix on the else-block's result.
+//
+// Example that used to fail:
+//
+//   let new_filter = if filter != null { rewrite(filter!) } else { null }
+//   .B(0, new_filter)   // ← parser treated this as `null.B(...)`
+//
+// The resolver then complained "cannot read variable `new_filter` in
+// its own initializer" because the whole next statement was sucked
+// into the let initializer.
+//
+// Fix: in parse/mod.av, `.UpperIdent` postfix is suppressed across a
+// newline. Lowercase method postfix (`xs.filter(...)\n.map(...)`) still
+// chains, because only the constructor shape is dangerous.
+
+enum E3r6q {
+    A,
+    B(body: int, var_name: string, coll: int, filter: int?),
+}
+
+fn rewrite(e: int) -> int { e + 1 }
+
+/// Reproducer for the exact shape that broke desugar/mod.av's
+/// ListComp walker. The bare `.B(...)` on the line after the
+/// `else { null }` must be parsed as a fresh enum-ctor statement.
+fn walk(expr: E3r6q, filter: int?) -> E3r6q {
+    match expr {
+        .A -> .A
+        .B(body, var_name, coll, _) -> {
+            let new_filter = if filter != null { rewrite(filter!) } else { null }
+            .B(body, var_name, coll, new_filter)
+        }
+    }
+}
+
+spec "newline before .EnumCtor doesn't bleed into prior let initializer" {
+    given "match-arm body: let X = if ... else null, then .Ctor(X)" {
+        then "the let resolves cleanly and X is in scope on the next line" {
+            let r = walk(E3r6q.B(7, "x", 3, null), 5)
+            match r {
+                .A -> false
+                .B(_, _, _, f) -> f == 6
+            }
+        }
+
+        then "the null-filter branch threads null through unchanged" {
+            let r = walk(E3r6q.B(7, "x", 3, null), null)
+            match r {
+                .A -> false
+                .B(_, _, _, f) -> f == null
+            }
+        }
+    }
+
+    given "lowercase method postfix still chains across newlines" {
+        then "xs.length on a new line is consumed as postfix" {
+            let xs = [1, 2, 3]
+            let n = xs
+                .length
+            n == 3
+        }
+    }
+}

@@ -1,0 +1,160 @@
+// WHY: shared AST→binary pipeline. Both `bs2 test` and (eventually)
+// `bs2 compile` need the same chain — lower_quotes → desugar →
+// inject_intrinsics → expand_components → resolve_names →
+// expand_macros → run_comptime → typecheck_program → monomorphize →
+// codegen → link. Before this module that chain was inlined in both
+// callers, drifting independently. Now there's one canonical
+// implementation; callers do their input-specific assembly and call
+// build_binary.
+//
+// Filed under: 03hx (extraction tracking ticket).
+
+use core.{avra_process_forward, avra_shell_exec}
+use features.quote_expr.{lower_quotes}
+use desugar.{desugar_program, inject_intrinsics}
+use features.component_decl.{expand_components}
+use features.marshal.{derive_marshal}
+use features.comptime.{resolve_and_expand_program, run_comptime}
+use typeck.{typecheck_program}
+use features.generics.{monomorphize}
+use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
+use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov}
+use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
+
+/// Inputs for build_binary. The caller owns assembly (parse +
+/// resolve_module_files + any test-specific wrapping) and passes the
+/// final List<SStmt>; this module owns everything from quote-lowering
+/// through linked binary.
+export type CompileTarget = {
+    program: List<SStmt>,
+    bin_path: string,           // final linked binary location
+    project_dir: string,        // for runtime.o, llvm_wrapper.o
+    diag_filename: string,      // displayed in error diagnostics
+    coverage: bool,
+    // 6owa library-mode: extra .o files to link against (e.g. the
+    // pre-built @std/* package libs). Per-shard test binaries
+    // populate this from AVRA_LIB_OBJS so AVRA_USE_METADATA=1
+    // resolved call sites have their symbols at link time. Empty
+    // for whole-program builds.
+    extra_objs: List<string>,
+}
+
+/// Run the post-assembly pipeline and link a binary. Returns Ok(bin_path)
+/// on success or Err(message) after rendering the diagnostic bag inline.
+///
+/// Quote-lowering runs first so identifiers inside `quote { … }` bodies
+/// aren't seen by resolve as runtime references — they're captured as
+/// string-typed AST literals. The post-desugar program carries every
+/// loaded module's contents (callers must have resolved file-based
+/// modules upstream), so inject_intrinsics's program_declares_enum
+/// recursion sees stdlib's Result and skips the synthetic when it's
+/// present.
+/// Per-stage error guard: if the pass's bag carries errors, render
+/// it against `diag_filename` and surface `error_msg` as a Result.Err
+/// so the caller (build_binary's `?` propagation) bails cleanly.
+/// Returns Ok(()) on success — the caller threads it via `let _ = … ?`
+/// at every pipeline stage.
+fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Result<int, string> {
+    if bag_has_errors(bag) {
+        render_bag("", diag_filename, bag)
+        return Result.Err(error_msg)
+    }
+    Result.Ok(0)
+}
+
+export fn build_binary(target: CompileTarget) -> Result<string, string> {
+    let post_quote = lower_quotes(target.program)
+    let desugared = desugar_program(post_quote)
+    let with_intrinsics = inject_intrinsics(desugared)
+    let comp = expand_components(with_intrinsics)
+    let _ = guard_bag(comp.bag, target.diag_filename, "component validation failed")?
+    // @marshal derive: synthesise `impl T { to_bytes; from_bytes }`
+    // next to every `@marshal type T` so the resolver sees the type
+    // AND its methods in the same pass. Zero-cost when no
+    // @marshal annotation exists (early-out).
+    let with_marshal = derive_marshal(comp.stmts)
+    // Option C pipeline: macro-introduced decls register before
+    // scope validation runs. Single source of truth in
+    // features/comptime/expand_macro.av.
+    let named = resolve_and_expand_program(with_marshal)
+    if bag_has_errors(named.bag) || named.had_error {
+        render_bag("", target.diag_filename, named.bag)
+        return Result.Err(named.error_message)
+    }
+    let post_comptime = run_comptime(named.stmts)
+    let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
+    let _ = guard_bag(tc_result.bag, target.diag_filename, "type check failed")?
+    let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+    let _ = guard_bag(mono.bag, target.diag_filename, "monomorphization failed")?
+
+    let build_dir = "${target.project_dir}/build"
+    if !target.coverage {
+        let obj_path = strip_bin_suffix(target.bin_path) + ".o"
+        let _ = codegen_and_emit_object(mono.stmts, obj_path, named.type_reg)?
+        let link_objs = prepend_extra_objs([obj_path], target.extra_objs)
+        if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
+                        target.bin_path, default_link_options()) != 0 {
+            return Result.Err("link failed")
+        }
+        return Result.Ok(target.bin_path)
+    }
+
+    // Coverage path: lower instrprof intrinsics via opt, then llc to
+    // .o, then link with clang_rt.profile_osx. The 16K-page-aligned
+    // profile sections are essential on Darwin/arm64 — without them
+    // llvm-profdata reports zero counters.
+    let stem = strip_bin_suffix(target.bin_path)
+    let ir_path = "${stem}.ll"
+    let cov_ll = "${stem}.cov.ll"
+    let obj_path = "${stem}.o"
+    let cov_dir = "${build_dir}/coverage"
+    avra_shell_exec("mkdir -p ${cov_dir}")
+    let _ = codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${stem}.av")?
+    let llvm_prefix = llvm_prefix_dir()
+    let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
+    if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
+        return Result.Err("opt instrprof lowering failed")
+    }
+    let llc_args = "[\"-O2\", \"-relocation-model=pic\", \"-filetype=obj\", \"${cov_ll}\", \"-o\", \"${obj_path}\"]"
+    if avra_process_forward("${llvm_prefix}/bin/llc", llc_args, "") != 0 {
+        return Result.Err("llc failed")
+    }
+    let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
+    let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
+    let cov_libs = "-L${prof_lib_dir}"
+    let cov_link_objs = prepend_extra_objs([obj_path], target.extra_objs)
+    if link_objects_with_coverage(cov_link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
+                                  target.bin_path, cov_libs, default_link_options()) != 0 {
+        return Result.Err("link failed (coverage)")
+    }
+    Result.Ok(target.bin_path)
+}
+
+/// Combine the per-shard's own .o with any extra producer-library
+/// .o paths. The shard's own .o stays first so its `main` (and any
+/// per-test symbols) take precedence over duplicates from a stale
+/// dep .o. Returns a fresh list — input lists aren't mutated.
+fn prepend_extra_objs(own: List<string>, extras: List<string>) -> List<string> {
+    if extras.length == 0 { return own }
+    mut out = own
+    mut i = 0
+    while i < extras.length {
+        out.push(extras[i])
+        i = i + 1
+    }
+    out
+}
+
+/// Drop a trailing `.bin` so callers can build sibling intermediate
+/// paths (`.o`, `.ll`). Returns the input unchanged when there's no
+/// suffix — caller passed a stem already.
+fn strip_bin_suffix(path: string) -> string {
+    let suffix = ".bin"
+    if path.length >= suffix.length {
+        let tail = path.substring(path.length - suffix.length, path.length)
+        if tail == suffix {
+            return path.substring(0, path.length - suffix.length)
+        }
+    }
+    path
+}

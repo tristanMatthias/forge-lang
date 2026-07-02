@@ -1,0 +1,240 @@
+// WHY: @std/json — single canonical JSON encoder + targeted decoder
+// for the Avra toolchain.
+//
+// Before this package existed, every consumer (the LSP server, the
+// diagnostics renderer, the runtime's subprocess wrapper) hand-rolled
+// its own escape rules and string-builder. This package is THE place
+// JSON shape decisions are made; consumers import what they need.
+//
+// We do NOT ship a general-purpose parser — JSON parsing in pure Avra
+// is expensive and we never need the full grammar. Instead we ship:
+//   - escape / unescape per-char tables
+//   - whole-string escape and quote helpers
+//   - targeted field extraction (`json_extract_string` /
+//     `json_extract_int`) for well-shaped LSP / RPC / config bodies
+//   - JSON-RPC envelope builders
+//   - small primitives (build_object, build_array) for assembling
+//     bigger documents from pre-rendered field strings
+//
+// Anything that wants a "parse arbitrary JSON" surface should keep
+// extending this file rather than forking — that's the whole point.
+
+// ── Escape / unescape per-char ──────────────────────────────────────
+
+/// Encode one source char as its JSON escape sequence, or pass it
+/// through unchanged. Handles `"`, `\`, `\n`, `\r`, `\t`. Non-ASCII
+/// passes through (LSP allows utf-8 directly inside JSON strings).
+export fn json_escape_char(ch: string) -> string {
+    match ch {
+        "\"" -> "\\\""
+        "\\" -> "\\\\"
+        "\n" -> "\\n"
+        "\r" -> "\\r"
+        "\t" -> "\\t"
+        _ -> ch
+    }
+}
+
+/// Decode one JSON escape sequence (`"`, `\\`, `n`, `r`, `t`).
+/// Returns the unescaped char, or the raw char as a fallback —
+/// matches what well-formed payloads we see in practice.
+export fn json_unescape_char(c: string) -> string {
+    match c {
+        "\"" -> "\""
+        "\\" -> "\\"
+        "n" -> "\n"
+        "r" -> "\r"
+        "t" -> "\t"
+        _ -> c
+    }
+}
+
+// ── String-level escape / emit ──────────────────────────────────────
+
+/// Escape every char of `s` for direct embedding inside a JSON string
+/// literal. Does NOT add the surrounding quotes — call `json_str` for
+/// that.
+export fn json_escape(s: string) -> string {
+    map_chars(s, json_escape_char)
+}
+
+/// Walk `s` char-by-char, applying `f` to each. Shared helper for any
+/// "encode every char with a substitution table" pass.
+export fn map_chars(s: string, f: fn(string) -> string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        out = "${out}${f(s.substring(i, i + 1))}"
+        i = i + 1
+    }
+    out
+}
+
+/// JSON string literal: surround `s` in double quotes with the body
+/// escaped.
+export fn json_str(s: string) -> string {
+    "\"${json_escape(s)}\""
+}
+
+// ── JSON-RPC envelopes ──────────────────────────────────────────────
+//
+// JSON-RPC 2.0 — used by the LSP stdio loop and any future MCP-style
+// query interface that speaks the same shape.
+
+/// Success response with already-rendered `result_body`. `id` is the
+/// raw JSON form of the request id (string with quotes, integer
+/// without) so the response echoes the client's shape exactly —
+/// JSON-RPC requires id preservation, not normalisation.
+export fn jsonrpc_response(id: string, result_body: string) -> string {
+    "{\"jsonrpc\":\"2.0\",\"id\":${id},\"result\":${result_body}}"
+}
+
+/// Error response. `code` and `message` follow the JSON-RPC 2.0 error
+/// shape (-32601 for method-not-found, -32602 for invalid-params,
+/// etc.).
+export fn jsonrpc_error(id: string, code: int, message: string) -> string {
+    "{\"jsonrpc\":\"2.0\",\"id\":${id},\"error\":{\"code\":${string(code)},\"message\":${json_str(message)}}}"
+}
+
+// ── Targeted field extraction ───────────────────────────────────────
+//
+// Find a top-level field by key and return its value. Matches
+// `"<key>":<value>` looking past whitespace; doesn't handle deeply
+// nested structures but suffices for well-shaped LSP / config blobs.
+
+/// Index of the first non-whitespace char of `key`'s value, or -1
+/// if the key is missing. Shared preamble for `json_extract_string`
+/// and `json_extract_int` so neither has to re-implement the scan.
+export fn json_value_start(body: string, key: string) -> int {
+    let needle = "\"${key}\""
+    let pos = body.index_of(needle)
+    if pos < 0 { return -1 }
+    mut i = pos + needle.length
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == ":" {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+        i = i + 1
+    }
+    if i >= body.length { return -1 }
+    i
+}
+
+/// Extract a string-typed field. Returns "" if the key is missing
+/// or if the value isn't a string.
+export fn json_extract_string(body: string, key: string) -> string {
+    mut i = json_value_start(body, key)
+    if i < 0 { return "" }
+    if body.substring(i, i + 1) != "\"" { return "" }
+    i = i + 1
+    mut out = ""
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == "\\" && i + 1 < body.length {
+            out = "${out}${json_unescape_char(body.substring(i + 1, i + 2))}"
+            i = i + 2
+            continue
+        }
+        if ch == "\"" { return out }
+        out = "${out}${ch}"
+        i = i + 1
+    }
+    out
+}
+
+/// Extract an integer-typed field. Returns 0 if missing or non-numeric.
+export fn json_extract_int(body: string, key: string) -> int {
+    mut i = json_value_start(body, key)
+    if i < 0 { return 0 }
+    mut digits = ""
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == "-" || (ch >= "0" && ch <= "9") {
+            digits = "${digits}${ch}"
+            i = i + 1
+        } else {
+            break
+        }
+    }
+    if digits == "" || digits == "-" { return 0 }
+    int(digits)
+}
+
+// ── Document builders ───────────────────────────────────────────────
+//
+// Assemble pre-rendered fields into JSON objects / arrays. Take
+// already-encoded values so callers can mix string-literal, numeric,
+// and nested-object children without this layer doing typing.
+
+/// Build a `{}` object from a list of (key, encoded_value) pairs.
+/// Each pair's value is inserted *as-is* — caller is responsible for
+/// json_str-quoting strings and string-encoding numbers. Pairs render
+/// in the order they were added — `json_pair_add` appends.
+export fn json_object(pairs: List<JsonPair>) -> string {
+    "{${render_pairs(pairs)}}"
+}
+
+/// Build a `[]` array from a list of pre-rendered element strings.
+/// Items render in the order they were added — `json_item_add` appends.
+export fn json_array(items: List<string>) -> string {
+    "[${render_items(items)}]"
+}
+
+/// One key/value pair for `json_object`. `encoded_value` is already
+/// JSON-encoded (string with quotes, number bare, nested object /
+/// array verbatim) — this layer doesn't infer or quote.
+export type JsonPair = {
+    key: string,
+    encoded_value: string
+}
+
+/// Empty pair list — start point for `json_pair_add` chains.
+export fn json_pairs() -> List<JsonPair> { [] }
+
+/// Append a key/already-encoded-value pair to a List<JsonPair>.
+/// Source-order semantics: the first add prints first. The previous
+/// linked-list shape with `Node(item, list)` was a prepend, so the
+/// historical render order was reverse-add — this version matches
+/// what the doc strings always claimed.
+export fn json_pair_add(list: List<JsonPair>, key: string, encoded_value: string) -> List<JsonPair> {
+    mut out = list
+    out.push(JsonPair { key, encoded_value })
+    out
+}
+
+/// Empty item list — start point for `json_item_add` chains.
+export fn json_items() -> List<string> { [] }
+
+/// Append a pre-encoded item to a List<string>. Source-order
+/// semantics — see `json_pair_add`.
+export fn json_item_add(list: List<string>, encoded: string) -> List<string> {
+    mut out = list
+    out.push(encoded)
+    out
+}
+
+/// Comma-join the pairs, prefixing each one with its quoted key.
+fn render_pairs(list: List<JsonPair>) -> string {
+    mut out = ""
+    for (i, pair) in list.enumerate() {
+        let entry = "${json_str(pair.key)}:${pair.encoded_value}"
+        out = if i == 0 { entry } else { "${out},${entry}" }
+    }
+    out
+}
+
+/// Comma-join the items.
+fn render_items(list: List<string>) -> string {
+    mut out = ""
+    for (i, encoded) in list.enumerate() {
+        out = if i == 0 { encoded } else { "${out},${encoded}" }
+    }
+    out
+}

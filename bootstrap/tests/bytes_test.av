@@ -1,0 +1,114 @@
+// Spec coverage for the `bytes` value type. Distinct from `string`
+// (typeck enforces) but shares heap layout under the hood today.
+//
+// Surface:
+//   bytes_from_string(s)          → bytes
+//   string_from_bytes(b)          → string  (or b.to_string())
+//   b.length                      → int
+//   b.byte(i)                     → int 0..255
+//   b.concat(other)               → bytes
+//   b.slice(start, end)           → bytes
+//
+// Tracking ticket: forge-crafting-intepreters-73wa under the
+// in-language-crypto epic forge-crafting-intepreters-ayq3.
+
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+
+spec "bytes: from_string round-trip" {
+    then "length matches the source string length" {
+        let b = avra_bytes_from_string("abc")
+        b.length == 3
+    }
+    then "byte(0) of \"abc\" is 0x61 ('a')" {
+        let b = avra_bytes_from_string("abc")
+        b.byte(0) == 97
+    }
+    then "byte(2) of \"abc\" is 0x63 ('c')" {
+        let b = avra_bytes_from_string("abc")
+        b.byte(2) == 99
+    }
+    then "to_string round-trips back to the original" {
+        let b = avra_bytes_from_string("hello")
+        avra_string_from_bytes(b) == "hello"
+    }
+    then "every byte agrees with the source string" {
+        let s = "hello"
+        let b = avra_bytes_from_string(s)
+        mut all_match = true
+        mut i = 0
+        while i < s.length {
+            if b.byte(i) != s.byte(i) { all_match = false }
+            i = i + 1
+        }
+        all_match
+    }
+}
+
+spec "bytes: empty input boundary" {
+    then "empty bytes has length 0" {
+        let b = avra_bytes_from_string("")
+        b.length == 0
+    }
+    then "byte() out of bounds returns 0" {
+        let b = avra_bytes_from_string("ab")
+        b.byte(5) == 0
+    }
+    then "byte() with negative index returns 0" {
+        let b = avra_bytes_from_string("ab")
+        b.byte(0 - 1) == 0
+    }
+}
+
+spec "bytes: concat" {
+    then "concatenating two bytes preserves length" {
+        let a = avra_bytes_from_string("foo")
+        let b = avra_bytes_from_string("bar")
+        a.concat(b).length == 6
+    }
+    then "concatenated bytes contain the source bytes in order" {
+        let a = avra_bytes_from_string("hi")
+        let b = avra_bytes_from_string("ya")
+        let c = a.concat(b)
+        c.byte(0) == 104 && c.byte(1) == 105 && c.byte(2) == 121 && c.byte(3) == 97
+    }
+    then "concat with empty is identity" {
+        let a = avra_bytes_from_string("foo")
+        let e = avra_bytes_from_string("")
+        a.concat(e).to_string() == "foo" && e.concat(a).to_string() == "foo"
+    }
+}
+
+spec "bytes: slice" {
+    then "slice(0, length) is identity" {
+        let a = avra_bytes_from_string("hello")
+        a.slice(0, 5).to_string() == "hello"
+    }
+    then "slice extracts middle bytes" {
+        let a = avra_bytes_from_string("hello")
+        a.slice(1, 4).to_string() == "ell"
+    }
+    then "slice with start == end is empty" {
+        let a = avra_bytes_from_string("hello")
+        a.slice(2, 2).length == 0
+    }
+    then "slice clamps to length" {
+        let a = avra_bytes_from_string("hi")
+        a.slice(0, 100).to_string() == "hi"
+    }
+}
+
+spec "bytes: type distinct from string" {
+    // bytes and string have the same heap layout but are nominally
+    // distinct. The compiler must reject assigning bytes to string
+    // and vice versa via direct binding (without the conversion fn).
+    // We can't easily express a compile-fail in spec; rely on the
+    // separate compile-error test files for that. Here we verify
+    // the round-trip works.
+    then "roundtrip through string and back preserves bytes" {
+        let a = avra_bytes_from_string("xyz")
+        let s = avra_string_from_bytes(a)
+        let b = avra_bytes_from_string(s)
+        b.length == 3 && b.byte(0) == 120 && b.byte(2) == 122
+    }
+}

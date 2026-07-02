@@ -1,0 +1,67 @@
+// Slice operations on lists
+
+fn slb_mid_len() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let mid = nums[1..4]
+    mid.length
+}
+
+fn slb_mid_first() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let mid = nums[1..4]
+    mid[0]
+}
+
+fn slb_mid_last() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let mid = nums[1..4]
+    mid[2]
+}
+
+fn slb_from_start_len() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let first2 = nums[0..2]
+    first2.length
+}
+
+fn slb_to_end_val() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let last2 = nums[3..5]
+    last2[0]
+}
+
+fn slb_empty_len() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let empty_s = nums[2..2]
+    empty_s.length
+}
+
+fn slb_full_copy_len() -> int {
+    let nums = [10, 20, 30, 40, 50]
+    let copy = nums[0..5]
+    copy.length
+}
+
+spec "slice basic" {
+    then "mid slice length" {
+        slb_mid_len() == 3
+    }
+    then "mid slice first" {
+        slb_mid_first() == 20
+    }
+    then "mid slice last" {
+        slb_mid_last() == 40
+    }
+    then "slice from start" {
+        slb_from_start_len() == 2
+    }
+    then "slice to end" {
+        slb_to_end_val() == 40
+    }
+    then "empty slice" {
+        slb_empty_len() == 0
+    }
+    then "full slice copy" {
+        slb_full_copy_len() == 5
+    }
+}

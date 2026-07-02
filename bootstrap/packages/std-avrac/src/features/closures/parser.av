@@ -1,0 +1,89 @@
+// WHY: closure/lambda parser helpers.
+// `expr_contains_it` supports the implicit `it` parameter sugar:
+//   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
+// `parse_lambda_body` handles lambda body parsing (block or single expression).
+
+use core.{Expr, SExpr, SStmt, Stmt, ParamEntry, ValueType, ExprId}
+use parse.{Parser}
+use core.{Tk}
+use list_ops.{list_any}
+
+/// True when `expr` references the implicit `it` pronoun. Used
+/// by `wrap_in_it_lambda` to recognise method-call sugar like
+/// `xs.map(it * 2)` and rewrite it as `xs.map((it) -> it * 2)`.
+export fn expr_contains_it(expr: Expr) -> bool {
+    match expr {
+        .Ident(n) -> n == "it"
+        .Binary(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .Unary(_, r) -> expr_contains_it(r)
+        .Logical(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .Call(callee, args) -> expr_contains_it(callee) || expr_list_contains_it(args)
+        .Grouping(inner) -> expr_contains_it(inner)
+        .IfExpr(c, t, e) -> expr_contains_it(c) || expr_contains_it(t) || expr_contains_it(e)
+        .Block(stmts) -> stmt_list_contains_it(stmts)
+        .Index(obj, idx) -> expr_contains_it(obj) || expr_contains_it(idx)
+        .FieldAccess(obj, _) -> expr_contains_it(obj)
+        .FieldAssign(obj, _, val) -> expr_contains_it(obj) || expr_contains_it(val)
+        .Assign(_, val) -> expr_contains_it(val)
+        .NullCoalesce(l, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .OptionalChain(obj, _) -> expr_contains_it(obj)
+        .OptionalMethodCall(obj, _, args) -> expr_contains_it(obj) || expr_list_contains_it(args)
+        .Try(inner) -> expr_contains_it(inner)
+        .Tuple(elems) -> expr_list_contains_it(elems)
+        .TupleIndex(obj, _) -> expr_contains_it(obj)
+        .With(obj, _) -> expr_contains_it(obj)
+        .ListLit(elems) -> expr_list_contains_it(elems)
+        .MapLit(entries) -> expr_list_contains_it(entries)
+        .Slice(obj, s, e) -> expr_contains_it(obj) || expr_contains_it(s) || expr_contains_it(e)
+        .MatchExpr(subj, _) -> expr_contains_it(subj)
+        .Catch(inner, _, body, _, _) -> expr_contains_it(inner) || expr_contains_it(body)
+        _ -> false
+    }
+}
+
+/// Map `expr_contains_it` over a `List<SExpr>`.
+export fn expr_list_contains_it(list: List<SExpr>) -> bool {
+    list_any(list, (se: SExpr) -> expr_contains_it(se.node))
+}
+
+/// Map `expr_contains_it` over the expression payload of every
+/// statement. Block bodies need this so an `it` reference deep
+/// inside a `let`-init or `return` triggers the lambda wrap.
+export fn stmt_list_contains_it(list: List<SStmt>) -> bool {
+    list_any(list, (ss: SStmt) -> stmt_contains_it(ss.node))
+}
+
+/// Per-statement `it`-presence check. Pulled out of the inline
+/// match in `stmt_list_contains_it` so the predicate passed to
+/// `list_any` stays a one-liner.
+fn stmt_contains_it(s: Stmt) -> bool {
+    match s {
+        .Expr(e) -> expr_contains_it(e)
+        .Let(_, _, init) -> expr_contains_it(init)
+        .Mut(_, _, init) -> expr_contains_it(init)
+        .Return(val) -> expr_contains_it(val)
+        _ -> false
+    }
+}
+
+/// Wrap a body that mentions `it` in an implicit
+/// `(it) -> body` lambda. The parameter type is left as
+/// `Unknown` so the regular type-inference path picks it up.
+export fn wrap_in_it_lambda(expr: Expr) -> Expr {
+    let ps: List<ParamEntry> = [ParamEntry { name: "it", vtype: ValueType.Unknown }]
+    Expr.Lambda(ps, expr)
+}
+
+impl Parser {
+    fn parse_lambda_body(self) -> Result<ExprId, string> {
+        // Lambda body: either a block { ... } or a single expression.
+        if self.check(Tk.LeftBrace) {
+            // Block bodies carry statements — still boxed producers, so the
+            // block subtree enters the store via the glue bridge here, at
+            // its own boundary.
+            let block = self.parse_block_expression()?
+            return .Ok(self.glue_ingest_expr(block))
+        }
+        self.parse_expression()
+    }
+}

@@ -7,7 +7,7 @@ impl Parser {
     /// function call statement: `__component_<fn_name>(captured_args...)`.
     /// For list captures (`{...name}`), returns multiple statements wrapped in a block.
     pub(crate) fn try_syntax_match(&mut self, meta: &ComponentMeta) -> Option<Statement> {
-        use crate::features::components::expand::syntax::{SyntaxPattern, PatternSegment};
+        use crate::features::components::expand::syntax::{PatternSegment, SyntaxPattern};
 
         let start_pos = self.pos;
         let span = self.peek()?.span;
@@ -21,12 +21,17 @@ impl Parser {
                 let sentinel = format!("__component_{}", pat_def.fn_name);
 
                 // Build base args from regular captures
-                let base_args: Vec<CallArg> = pattern.segments.iter()
+                let base_args: Vec<CallArg> = pattern
+                    .segments
+                    .iter()
                     .filter_map(|seg| {
                         if let PatternSegment::Placeholder(name) = seg {
                             let captured_tokens = result.captures.get(name)?;
-                            let text: String = captured_tokens.iter()
-                                .map(|t| crate::features::components::expand::syntax::token_to_string(t))
+                            let text: String = captured_tokens
+                                .iter()
+                                .map(|t| {
+                                    crate::features::components::expand::syntax::token_to_string(t)
+                                })
                                 .collect::<Vec<_>>()
                                 .join("");
                             Some(CallArg {
@@ -41,9 +46,8 @@ impl Parser {
 
                 // If there are list captures, expand into N calls (one per list item)
                 if !result.list_captures.is_empty() {
-                    return self.expand_list_syntax_match(
-                        &sentinel, &base_args, &pattern, &result, span,
-                    );
+                    return self
+                        .expand_list_syntax_match(&sentinel, &base_args, &pattern, &result, span);
                 }
 
                 // Regular (non-list) match: single call
@@ -78,14 +82,19 @@ impl Parser {
 
         // Find the list placeholder name
         let list_name = pattern.segments.iter().find_map(|seg| {
-            if let PatternSegment::ListPlaceholder(name) = seg { Some(name.clone()) } else { None }
+            if let PatternSegment::ListPlaceholder(name) = seg {
+                Some(name.clone())
+            } else {
+                None
+            }
         })?;
 
         let items = result.list_captures.get(&list_name)?;
         let mut stmts = Vec::new();
 
         for item_tokens in items {
-            let text: String = item_tokens.iter()
+            let text: String = item_tokens
+                .iter()
                 .map(|t| crate::features::components::expand::syntax::token_to_string(t))
                 .collect::<Vec<_>>()
                 .join("");
@@ -109,7 +118,10 @@ impl Parser {
         }
 
         // Wrap multiple statements in a block expression
-        Some(Statement::Expr(Expr::Block(Block { statements: stmts, span })))
+        Some(Statement::Expr(Expr::Block(Block {
+            statements: stmts,
+            span,
+        })))
     }
 
     /// Refine syntax pattern capture args: if a captured param name is "handler"

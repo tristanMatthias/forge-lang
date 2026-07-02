@@ -1,0 +1,14 @@
+// WHY: defines Result<T, E> enum for error propagation with ? operator.
+
+/// Canonical fallible-value type used across the compiler and
+/// surfaced to user code. The `?` operator destructures `Ok(v)`
+/// (binding `v`) and propagates `Err(e)` to the enclosing fn —
+/// see spec Axis 12.
+///
+/// Variants:
+/// - `Ok(value: T)`  — successful result.
+/// - `Err(error: E)` — failure carrying an `E`-typed reason.
+export enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}

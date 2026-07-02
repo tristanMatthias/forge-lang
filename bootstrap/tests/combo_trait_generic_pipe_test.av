@@ -1,0 +1,31 @@
+// Combo: trait + pipe + templates
+
+trait CtgpDescribable {
+    fn describe(self) -> string
+}
+
+type CtgpCircle = { radius: int }
+type CtgpSquare = { side: int }
+
+impl CtgpDescribable for CtgpCircle {
+    fn describe(self) -> string {
+        "circle(" + string(self.radius) + ")"
+    }
+}
+
+impl CtgpDescribable for CtgpSquare {
+    fn describe(self) -> string {
+        "square(" + string(self.side) + ")"
+    }
+}
+
+spec "combo trait generic pipe" {
+    then "circle describe" {
+        let c = CtgpCircle { radius: 5 }
+        c.describe() == "circle(5)"
+    }
+    then "square describe" {
+        let s = CtgpSquare { side: 4 }
+        s.describe() == "square(4)"
+    }
+}

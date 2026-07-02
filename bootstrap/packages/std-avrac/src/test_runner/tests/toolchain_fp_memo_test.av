@@ -1,0 +1,44 @@
+// 4szi.1 — process-local memo for the test-runner's toolchain fp.
+// Before this memo, every cached_fixture_capture call fed
+// read_or_compute_toolchain_fp, which always ran a `find -newer`
+// shell-exec to validate the sidecar. The fp is invariant within
+// any one bs2 invocation, so the memo holds for the whole process
+// after the first compute.
+//
+// What this verifies — the WRITE-ONCE contract, NOT a marker round-trip.
+// The memo (g_test_toolchain_fp_memo) is process-GLOBAL and shared with
+// read_or_compute_toolchain_fp, which every fixture-using test warms via
+// avra_test_toolchain_fp_set. Under the shared-process parallel runner
+// (d4jv — test files run as @deferred_init units across worker threads in
+// ONE process), a sibling fixture test sharded before this one publishes
+// the real fp FIRST. A "set marker; get == marker" round-trip is therefore
+// unobservable: write-once makes our set a no-op and get() returns the
+// sibling's value (the failure that flaked the seed-train per shard order).
+//
+// So we assert the property that holds regardless of who wrote first:
+// after any set the memo is published (non-empty), and a second, distinct
+// set NEVER changes it. This is deterministic whether the memo was cold (we
+// win the write) or already warmed (a sibling won) — once published the
+// value is immutable, so there is no race between get() and the later set.
+
+extern fn avra_test_toolchain_fp_get() -> string
+extern fn avra_test_toolchain_fp_set(fp: string)
+
+spec "4szi.1: toolchain fp memo is write-once (first writer wins)" {
+    then "a set publishes a non-empty value" {
+        // Our set wins only if the memo is still cold; otherwise it is a
+        // no-op and the value is whatever a sibling fixture already wrote.
+        // Either way the memo is now non-empty.
+        avra_test_toolchain_fp_set("4szi1-probe-cafebabe")
+        avra_test_toolchain_fp_get() != ""
+    }
+    then "a second distinct set never changes the published value (write-once)" {
+        // Capture whatever is published (ours, or a sibling's first write),
+        // then prove a deliberately different set does not stick. Write-once
+        // means the captured value is already frozen, so this holds with no
+        // free-behind-the-reader hazard for concurrent getters.
+        let published = avra_test_toolchain_fp_get()
+        avra_test_toolchain_fp_set("4szi1-second-must-not-stick")
+        published != "" && avra_test_toolchain_fp_get() == published
+    }
+}

@@ -1,0 +1,33 @@
+// WHY: codegen for `isolated { body }`. Wraps the body in a zero-
+// arg closure and calls `avra_isolated_run(closure)`, returning the
+// status-framed bytes payload the runtime hands back.
+//
+// Body must produce `bytes` so the runtime can pipe it back. The
+// stdlib wrappers (`isolated_int`, `isolated_string`,
+// `isolated_bytes`) marshal scalars and unframe the payload into
+// `Result<T, IsolatedError>`. Future `@marshal` derive (nce6.C)
+// makes the keyword work with arbitrary `Result<T, ...>` returns.
+
+use codegen.{ok_emit, err_emit, EmitValue}
+use features.closures.{emit_lambda}
+use core.{ParamEntry}
+
+/// Codegen entry for `isolated { body }`. Pattern-matches the
+/// `Isolated` AST node and forwards to `emit_isolated`.
+export fn isolated_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Isolated(body) -> emit_isolated(ctx, env, body)
+        _ -> err_emit("isolated_emit_expr: expected Isolated")
+    }
+}
+
+/// Wrap the body in a zero-arg lambda producing bytes, hand the
+/// closure pointer to `avra_isolated_run`, return the framed
+/// payload as a `bytes` value. Caller (stdlib) is responsible for
+/// unframing into a `Result`.
+fn emit_isolated(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, string> {
+    let empty_p: List<ParamEntry> = []
+    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body))?
+    let payload = ctx.call("avra_isolated_run", [closure.value])
+    ok_emit(payload, .Bytes)
+}

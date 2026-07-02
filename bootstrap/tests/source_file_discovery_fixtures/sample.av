@@ -1,0 +1,92 @@
+// Fixture: validates collect_source_files (g2eo prep). Builds a tiny
+// multi-file package, parses + resolves it, then asserts the source
+// discovery util returns every contributing .av file. This is the
+// foundation for emitting per-file metadata sidecars — without a
+// reliable file list the build driver can't decide what to invalidate
+// when one mod changes.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(name: string) -> string
+
+use @std.avrac.parse.{parse_program_source, parse_program_source_at}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname}
+use @std.avrac.build.{collect_source_files}
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn str_list_contains(xs: List<string>, target_suffix: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let s = xs[i]
+        if s.length >= target_suffix.length {
+            let tail = s.substring(s.length - target_suffix.length, s.length)
+            if tail == target_suffix { return true }
+        }
+        i = i + 1
+    }
+    false
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_g2eo_filescan"
+    avra_shell_exec("rm -rf ${root}")
+    avra_shell_exec("mkdir -p ${root}")
+
+    // A two-mod package: top.av declares `mod foo`, foo.av declares its own
+    // type. resolve_module_files inlines foo.av's body inside top.av's AST,
+    // each stmt carrying its origin file in SStmt.file.
+    avra_shell_exec("printf 'mod foo\\nfn entry() -> int { 0 }\\n' > ${root}/top.av")
+    avra_shell_exec("printf 'export type Foo = { value: int }\\n' > ${root}/foo.av")
+
+    let top_path = "${root}/top.av"
+    let top_src = "mod foo\nfn entry() -> int { 0 }\n"
+    let parsed = parse_program_source(top_src)
+    probe("parse_succeeded", !parsed.had_error)
+
+    let stmts_opt = parsed.stmts
+    if stmts_opt == null {
+        probe("stmts_present", false)
+        return 1
+    }
+    probe("stmts_present", true)
+
+    // Stitch in the parsed top.av source by re-parsing through the
+    // resolver. The resolver finds `mod foo` and reads ${root}/foo.av,
+    // attaching its body to the Module stub with each SStmt.file
+    // pointing at the actual source file.
+    let entry_dir = modules_dirname(top_path)
+    // Bootstrap the file field on parsed stmts manually: the parser
+    // sets self.file from the source pathway it reads, but our
+    // parse_program_source path doesn't know the path — we exercise
+    // the resolver flow instead, where the on-disk read happens.
+    avra_shell_exec("cd ${root} && true")  // ensure dir exists
+
+    // Read the file via the resolver path. resolve_module_files uses
+    // avra_selfhost_read_file under the hood, which is what stamps
+    // SStmt.file properly during the foo.av re-parse.
+    use @std.avrac.core.{avra_selfhost_read_file}
+    let resolved_top = parse_program_source_at(avra_selfhost_read_file(top_path), top_path)
+    if resolved_top.stmts == null {
+        probe("resolver_input_valid", false)
+        return 1
+    }
+    let empty: List<string> = []
+    let mod_resolved = resolve_module_files(resolved_top.stmts!, entry_dir, empty)
+    probe("resolver_succeeded", !mod_resolved.had_error)
+
+    let files = collect_source_files(mod_resolved.stmts)
+    let count = files.length
+    // We expect both top.av AND foo.av in the discovered list — top
+    // was parsed via parse_program_source_at, foo via the resolver's
+    // mod-load path which now also stamps SStmt.file (g2eo prep).
+    probe("top_av_discovered", str_list_contains(files, "/top.av"))
+    probe("foo_av_discovered", str_list_contains(files, "/foo.av"))
+    probe("two_files_discovered", count == 2)
+
+    0
+}

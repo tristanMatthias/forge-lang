@@ -1,0 +1,160 @@
+// nce6 phase B DX-completion: list + float marshaling, tuple-
+// returning reader, captures the full struct round-trip pattern
+// callers will write until `@marshal` derives it (Phase C).
+// Lives under @std/avrac/core/tests because the test bundle
+// loads @std/avrac universally; @std/process isn't pulled in.
+
+extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
+extern fn avra_int_to_bytes_le(n: int) -> bytes
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_float_to_bytes_le(f: float) -> bytes
+extern fn avra_bytes_to_float_le(b: bytes, offset: int) -> float
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_empty() -> bytes
+extern fn abort() -> int
+
+// Locally re-declared minimum reader so the test runs without
+// pulling @std/process into the bundle. @std/process surface is
+// covered indirectly by exercising the same wire protocol.
+
+type Reader = { buf: bytes, pos: int }
+
+fn reader_int(r: Reader) -> (int, Reader) {
+    let v = avra_bytes_to_int_le(r.buf, r.pos)
+    (v, Reader { buf: r.buf, pos: r.pos + 8 })
+}
+
+fn reader_float(r: Reader) -> (float, Reader) {
+    let v = avra_bytes_to_float_le(r.buf, r.pos)
+    (v, Reader { buf: r.buf, pos: r.pos + 8 })
+}
+
+fn reader_string(r: Reader) -> (string, Reader) {
+    let len = avra_bytes_to_int_le(r.buf, r.pos)
+    let start = r.pos + 8
+    let sb = avra_bytes_slice(r.buf, start, start + len)
+    (avra_string_from_bytes(sb), Reader { buf: r.buf, pos: start + len })
+}
+
+fn reader_bool(r: Reader) -> (bool, Reader) {
+    let (n, next) = reader_int(r)
+    (n != 0, next)
+}
+
+fn reader_int_list(r: Reader) -> (List<int>, Reader) {
+    let (count, after_count) = reader_int(r)
+    mut xs: List<int> = []
+    mut cur = after_count
+    mut i = 0
+    while i < count {
+        let (v, next) = reader_int(cur)
+        xs = xs.push(v)
+        cur = next
+        i = i + 1
+    }
+    (xs, cur)
+}
+
+fn reader_string_list(r: Reader) -> (List<string>, Reader) {
+    let (count, after_count) = reader_int(r)
+    mut xs: List<string> = []
+    mut cur = after_count
+    mut i = 0
+    while i < count {
+        let (v, next) = reader_string(cur)
+        xs = xs.push(v)
+        cur = next
+        i = i + 1
+    }
+    (xs, cur)
+}
+
+type Profile = {
+    id: int,
+    name: string,
+    score: float,
+    admin: bool,
+    tags: List<string>,
+    flags: List<int>,
+}
+
+fn marshal_profile(p: Profile) -> bytes {
+    let id_b = avra_int_to_bytes_le(p.id)
+    let name_b = avra_bytes_from_string(p.name)
+    let name_len_b = avra_int_to_bytes_le(name_b.length)
+    let score_b = avra_float_to_bytes_le(p.score)
+    let admin_b = avra_int_to_bytes_le(if p.admin { 1 } else { 0 })
+
+    mut tags_b = avra_int_to_bytes_le(p.tags.length)
+    for t in p.tags {
+        let tb = avra_bytes_from_string(t)
+        tags_b = avra_bytes_concat(tags_b, avra_int_to_bytes_le(tb.length))
+        tags_b = avra_bytes_concat(tags_b, tb)
+    }
+
+    mut flags_b = avra_int_to_bytes_le(p.flags.length)
+    for f in p.flags {
+        flags_b = avra_bytes_concat(flags_b, avra_int_to_bytes_le(f))
+    }
+
+    let buf1 = avra_bytes_concat(id_b, name_len_b)
+    let buf2 = avra_bytes_concat(buf1, name_b)
+    let buf3 = avra_bytes_concat(buf2, score_b)
+    let buf4 = avra_bytes_concat(buf3, admin_b)
+    let buf5 = avra_bytes_concat(buf4, tags_b)
+    avra_bytes_concat(buf5, flags_b)
+}
+
+fn unmarshal_profile(b: bytes) -> Profile {
+    let r = Reader { buf: b, pos: 0 }
+    let (id, r) = reader_int(r)
+    let (name, r) = reader_string(r)
+    let (score, r) = reader_float(r)
+    let (admin, r) = reader_bool(r)
+    let (tags, r) = reader_string_list(r)
+    let (flags, _) = reader_int_list(r)
+    Profile { id, name, score, admin, tags, flags }
+}
+
+spec "isolated_run round-trips structured payloads (nce6.B)" {
+    then "full Profile with int + string + float + bool + lists" {
+        let original = Profile {
+            id: 7,
+            name: "alice",
+            score: 99.5,
+            admin: true,
+            tags: ["one", "two", "three"],
+            flags: [10, 20, 30, 40],
+        }
+        let payload = avra_isolated_run(() -> marshal_profile(original))
+        let status = avra_bytes_to_int_le(payload, 0)
+        if status != 0 { return false }
+        let len = avra_bytes_to_int_le(payload, 8)
+        let inner = avra_bytes_slice(payload, 16, 16 + len)
+        let p = unmarshal_profile(inner)
+        p.id == 7
+            && p.name == "alice"
+            && p.score > 99.4 && p.score < 99.6
+            && p.admin
+            && p.tags.length == 3
+            && p.tags[0] == "one" && p.tags[2] == "three"
+            && p.flags.length == 4
+            && p.flags[3] == 40
+    }
+    then "empty lists round-trip cleanly" {
+        let original = Profile {
+            id: 0, name: "", score: 0.0, admin: false,
+            tags: [], flags: [],
+        }
+        let payload = avra_isolated_run(() -> marshal_profile(original))
+        let status = avra_bytes_to_int_le(payload, 0)
+        if status != 0 { return false }
+        let len = avra_bytes_to_int_le(payload, 8)
+        let inner = avra_bytes_slice(payload, 16, 16 + len)
+        let p = unmarshal_profile(inner)
+        p.tags.length == 0 && p.flags.length == 0 && p.score == 0.0
+    }
+}

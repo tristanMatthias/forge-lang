@@ -1,0 +1,55 @@
+// WHY: matching a NESTED generic enum — a `Maybe<Maybe<int>>` whose `.Just(i)`
+// payload `i` is itself a `Maybe<int>` you match again — used to fail. Two bugs
+// stacked:
+//   1. typeck bound the outer payload `i` to the WHOLE subject type
+//      (`Maybe<Maybe<int>>`) instead of `Maybe<int>`: the self-recursive-field
+//      shortcut in pattern_binding_type fired on a same-NOMINAL field
+//      (`Maybe`) regardless of type-args, so a `Maybe<int>` field inside a
+//      `Maybe<Maybe<int>>` subject was treated as self-reference. Now it
+//      requires the same INSTANTIATION (args too), so `i` types as `Maybe<int>`.
+//   2. monomorphization then dropped the inner `Maybe<int>` instance:
+//      scope_insts_for_ret, swapping in the return-type inst
+//      (`Maybe__Maybe__int`), blanket-removed every `Maybe` inst — including the
+//      legitimately-collected inner `Maybe__int` the inner match dispatches on.
+//      It now removes only UNDER-RESOLVED insts, keeping distinct ones.
+// (Constructed in a regular fn and matched in another — the normal pattern;
+// a nested ctor written directly as a match subject, and 3+ levels of nesting,
+// both depend on typeck propagating the expected type THROUGH nested ctors,
+// which is a separate inference gap tracked separately. Two levels — the common
+// case — work because their two instances are covered without a middle one.)
+
+type Box<T> = { val: T }
+enum Maybe<T> { Just(v: T), Nothing }
+enum Res<T, E> { Ok(v: T), Err(e: E) }
+
+fn mk_int() -> Maybe<Maybe<int>> { Maybe.Just(Maybe.Just(9)) }
+fn mk_str() -> Maybe<Maybe<string>> { Maybe.Just(Maybe.Just("hi")) }
+fn mk_inner_none() -> Maybe<Maybe<int>> { Maybe.Just(Maybe.Nothing) }
+fn mk_in_res() -> Res<Maybe<int>, string> { Res.Ok(Maybe.Just(4)) }
+fn mk_of_struct() -> Maybe<Box<int>> { Maybe.Just(Box { val: 8 }) }
+
+fn read_int() -> int {
+    match mk_int() { .Just(i) -> match i { .Just(n) -> n, .Nothing -> 0 }, .Nothing -> 0 }
+}
+fn read_str() -> string {
+    match mk_str() { .Just(i) -> match i { .Just(s) -> s, .Nothing -> "" }, .Nothing -> "" }
+}
+fn read_inner_none() -> int {
+    match mk_inner_none() { .Just(i) -> match i { .Just(n) -> n, .Nothing -> -1 }, .Nothing -> -2 }
+}
+// a generic enum nested inside a DIFFERENT generic enum (Res<Maybe<int>, _>)
+fn read_in_res() -> int {
+    match mk_in_res() { .Ok(m) -> match m { .Just(n) -> n, .Nothing -> 0 }, .Err(e) -> -1 }
+}
+// the nested payload is a generic STRUCT, field-accessed in the arm
+fn read_of_struct() -> int {
+    match mk_of_struct() { .Just(b) -> b.val, .Nothing -> 0 }
+}
+
+spec "nested generic enum match" {
+    then "Maybe<Maybe<int>> reads through both levels" { read_int() == 9 }
+    then "Maybe<Maybe<string>> is a distinct instantiation" { read_str() == "hi" }
+    then "the inner Nothing branch is reachable" { read_inner_none() == -1 }
+    then "a generic enum nested in a different generic enum" { read_in_res() == 4 }
+    then "a generic-struct payload is field-accessed in the arm" { read_of_struct() == 8 }
+}

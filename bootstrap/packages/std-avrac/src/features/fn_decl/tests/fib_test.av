@@ -1,0 +1,19 @@
+/// Test fixture: classic recursive Fibonacci. Exercises
+/// self-recursion and the codegen's call-frame setup under
+/// reasonable depth (fib(10) → 55).
+fn fib(n: int) -> int {
+    if n < 2 { return n }
+    fib(n - 1) + fib(n - 2)
+}
+
+spec "fibonacci" {
+    then "fib(10) is 55" {
+        fib(10) == 55
+    }
+    then "fib(0) is 0" {
+        fib(0) == 0
+    }
+    then "fib(1) is 1" {
+        fib(1) == 1
+    }
+}

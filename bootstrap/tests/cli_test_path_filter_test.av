@@ -1,0 +1,29 @@
+// CLI smoke test: `bs2 test --list <path>` must:
+//   1. Reach the discovery pipeline at all (i.e. the arg-parser sees
+//      --list and the positional path).
+//   2. Apply the path filter to the discovered set (covered as a unit
+//      test against filter_by_path in
+//      packages/std-avrac/src/test_runner/tests/discovery_filter_test
+//      .av — no need to re-prove the filter logic here).
+//   3. Render one line per discovered spec via print_discovered.
+//
+// One end-to-end shell invocation is enough to verify the wiring;
+// the three pre-existing cases that each shelled out separately
+// collapsed into one smoke + the pure-fn unit tests cited above.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "bs2 test --list <path>: CLI wires arg -> discovery -> filter -> render" {
+    then "named test file shows up in the listing output" {
+        let cwd = avra_shell_exec("pwd").trim()
+        let cmd = cwd + "/build/bs2 test --list packages/std-avrac/src/features/generics/tests/generics_test.av 2>&1 || true"
+        let out = avra_shell_exec(cmd)
+        // Listing format is `<path>:<line>: spec "<name>"` — assert
+        // the path we asked for shows up in the output. Anything
+        // else (other test files leaking through, missing entries)
+        // means the wiring regressed; the underlying filter logic
+        // is covered by the discovery_filter_test unit specs.
+        out.contains("generics_test.av")
+            && !out.contains("generic_struct_test.av")
+    }
+}

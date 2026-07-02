@@ -1,0 +1,30 @@
+spec "tuples" {
+    then "pair indexing first" {
+        let pair = (10, 20)
+        pair.0 == 10
+    }
+    then "pair indexing second" {
+        let pair = (10, 20)
+        pair.1 == 20
+    }
+    then "triple element sum" {
+        let triple = (1, 2, 3)
+        triple.0 + triple.1 + triple.2 == 6
+    }
+    then "destructuring" {
+        let (x, y) = (100, 200)
+        x == 100
+    }
+    then "destructuring second" {
+        let (x, y) = (100, 200)
+        y == 200
+    }
+    then "mixed type int" {
+        let mixed = (42, "hello")
+        mixed.0 == 42
+    }
+    then "mixed type string" {
+        let mixed = (42, "hello")
+        mixed.1 == "hello"
+    }
+}

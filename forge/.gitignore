@@ -1,10 +1,14 @@
 # Build output
 /target/
+/build/
 *.a
 *.o
 *.so
 *.dylib
 *.dSYM/
+*.out
+*.ll
+/main
 
 # Dolt database files (added by bd init)
 .dolt/

@@ -1,0 +1,57 @@
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av +
+// resolver.av auto-load as siblings, surface flat at
+// `features.select_stmt.{...}`. Sibling exports are in scope without
+// explicit self-imports.
+use core.{feature_new, Feature}
+use typeck.{check_expr, check_stmts, tc_enter, tc_exit, tc_bind}
+
+/// Resolver hook for `select`. Forwards to `resolve_select_arms`
+/// which walks each channel expression and arm body.
+fn select_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r }
+}
+
+/// Type-check hook for `select`. Each arm's channel expression is
+/// checked in the enclosing scope; a typed channel (Channel<elem>)
+/// gives the arm binding `elem`, a legacy raw-extern channel (ptr)
+/// leaves it Unknown — same permissiveness the pre-typed runtime
+/// surface had. Arm bodies are checked in a fresh scope with the
+/// binding visible (they previously skipped typecheck entirely).
+fn select_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Select(arms) -> {
+            mut cur = tc
+            mut i = 0
+            while i < arms.length {
+                let arm = arms[i]
+                let c = check_expr(cur, arm.chan)
+                let elem = match c.ty {
+                    .Channel(e) -> e
+                    _ -> ValueType.Unknown
+                }
+                let inner = tc_enter(c.tc)
+                let bound = tc_bind(inner, arm.binding, elem)
+                let after = check_stmts(bound, arm.body)
+                cur = tc_exit(after)
+                i = i + 1
+            }
+            cur
+        }
+        _ -> tc
+    }
+}
+
+/// Register the `select { ... }` channel-multiplexing feature.
+/// Spec Axis 18: blocks until one of the listed channels is
+/// ready, then runs the matching arm.
+export fn select_feature() -> Feature {
+    let empty_arms: List<SelectArm> = []
+    feature_new("select") with {
+        stmt_tag: Stmt.Select(empty_arms),
+        decl_keyword: "kw_select",
+        parse_decl: (p: Parser) -> p.parse_select_statement(),
+        emit_stmt: select_emit_stmt,
+        resolve_stmt: select_resolve,
+        check_stmt: select_check,
+    }
+}

@@ -1,0 +1,17 @@
+spec "null coalesce" {
+    then "null left uses right" {
+        let x: ptr = null
+        let y = x ?? 42
+        y == 42
+    }
+    then "non-null left keeps left" {
+        let z = 10 ?? 99
+        z == 10
+    }
+    then "chained coalesce" {
+        let a: ptr = null
+        let b: ptr = null
+        let c = a ?? b ?? 7
+        c == 7
+    }
+}

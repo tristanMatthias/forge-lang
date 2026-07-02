@@ -1,0 +1,60 @@
+// AVRA_TIMINGS_JSON gates a structured per-phase timings emission to
+// stderr. Schema is byte-stable (CI dashboards parse this) — every
+// expected key checked individually so regressions point straight at
+// the dropped field.
+//
+// Tracking ticket: forge-crafting-intepreters-kkgf.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn tj_run() -> string {
+    cached_fixture_run("tests/timings_json_fixtures/sample.av")
+}
+
+spec "kkgf timings JSON: opt-in via AVRA_TIMINGS_JSON, off by default" {
+    then "default compile rc is zero" {
+        tj_run().contains("PROBE default_compile_rc_zero: ok")
+    }
+    then "default compile leaves stderr clean of JSON timings" {
+        tj_run().contains("PROBE default_no_json_in_stderr: ok")
+    }
+    then "AVRA_TIMINGS_JSON=1 compile rc is zero" {
+        tj_run().contains("PROBE json_compile_rc_zero: ok")
+    }
+}
+
+spec "kkgf timings JSON: schema is stable across all phases" {
+    then "JSON includes file key" {
+        tj_run().contains("PROBE json_has_file_key: ok")
+    }
+    then "JSON includes total_ms" {
+        tj_run().contains("PROBE json_has_total_ms: ok")
+    }
+    then "JSON includes parse_ms" {
+        tj_run().contains("PROBE json_has_parse_ms: ok")
+    }
+    then "JSON includes desugar_ms" {
+        tj_run().contains("PROBE json_has_desugar_ms: ok")
+    }
+    then "JSON includes resolve_mods_ms" {
+        tj_run().contains("PROBE json_has_resolve_mods_ms: ok")
+    }
+    then "JSON includes expand_ms" {
+        tj_run().contains("PROBE json_has_expand_ms: ok")
+    }
+    then "JSON includes resolve_names_ms" {
+        tj_run().contains("PROBE json_has_resolve_names_ms: ok")
+    }
+    then "JSON includes typeck_ms" {
+        tj_run().contains("PROBE json_has_typeck_ms: ok")
+    }
+    then "JSON includes monomorphize_ms" {
+        tj_run().contains("PROBE json_has_monomorphize_ms: ok")
+    }
+    then "JSON includes codegen_ms" {
+        tj_run().contains("PROBE json_has_codegen_ms: ok")
+    }
+    then "exactly one JSON object per compile (single-line contract)" {
+        tj_run().contains("PROBE json_emitted_exactly_once: ok")
+    }
+}

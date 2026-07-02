@@ -1,0 +1,900 @@
+// WHY: codegen for lambda/closure expressions.
+//
+// A lambda `(x, y) -> expr` is compiled to:
+// 1. A lifted top-level function `__lambda_N(x, y) -> i64`
+// 2. A pointer to that function (returned as i64)
+//
+// Closures that capture variables from the enclosing scope pack
+// the captures into a heap-allocated environment. The lifted
+// function takes the environment as an extra first argument.
+// The closure value is (fn_ptr, env_ptr) — a 2-element tuple.
+//
+// For non-capturing lambdas (the common case), the closure value
+// is just the function pointer with a null environment.
+
+use core.{Expr, SExpr, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
+use codegen.{emit_expr}
+use codegen.{analyze_releasable_expr}
+use core.{avra_llvm_set_linkonce_odr}
+
+// ── Capture detection ──
+
+/// One captured variable for a lambda. The lifted fn reaches back
+/// to the enclosing scope via this record: `alloca` is the original
+/// binding's storage, `ty` carries its type into the lifted fn's
+/// signature, and `is_mut` flips on after `mark_mutable_captures`
+/// when the lambda body assigns to the capture.
+type Capture = {
+    name: string,
+    alloca: ptr,
+    ty: ValueType,
+    is_mut: bool,
+}
+
+/// True when `name` is one of the lambda's declared parameters.
+/// Used by capture detection to skip params (they're not
+/// captures of the enclosing scope).
+fn is_param(params: List<ParamEntry>, name: string) -> bool {
+    mut i = 0
+    while i < params.length {
+        if params[i].name == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Return a fresh list = `params` with `extra` appended. Used when
+/// extending the in-scope param set across a Let/Mut/Const/For
+/// without mutating the caller's view.
+fn copy_params_with(params: List<ParamEntry>, extra: ParamEntry) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        out.push(params[i])
+        i = i + 1
+    }
+    out.push(extra)
+    out
+}
+
+/// Same as copy_params_with but appends a whole list.
+fn copy_params_append(params: List<ParamEntry>, more: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        out.push(params[i])
+        i = i + 1
+    }
+    mut j = 0
+    while j < more.length {
+        out.push(more[j])
+        j = j + 1
+    }
+    out
+}
+
+/// Membership test for the capture list. Stops capture detection
+/// from re-adding the same name twice.
+fn is_captured(captures: List<Capture>, name: string) -> bool {
+    mut i = 0
+    while i < captures.length {
+        if captures[i].name == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// True when `expr` contains an assignment that targets `target`.
+/// Drives the mutability inference for captured bindings —
+/// captures that get assigned must be tracked as mutable so the
+/// closure write-back path runs.
+fn expr_assigns(expr: Expr, target: string) -> bool {
+    match expr {
+        .Assign(name, val) -> name == target || expr_assigns(val, target)
+        .Binary(l, _, r) -> expr_assigns(l, target) || expr_assigns(r, target)
+        .Unary(_, r) -> expr_assigns(r, target)
+        .Logical(l, _, r) -> expr_assigns(l, target) || expr_assigns(r, target)
+        .Grouping(inner) -> expr_assigns(inner, target)
+        .Call(callee, args) -> expr_assigns(callee, target) || expr_list_assigns(args, target)
+        .Block(body) -> stmt_list_assigns(body, target)
+        .IfExpr(c, t, e) -> expr_assigns(c, target) || expr_assigns(t, target) || expr_assigns(e, target)
+        .Lambda(_, body) -> expr_assigns(body, target)
+        _ -> false
+    }
+}
+
+/// True when any element of a `List<SExpr>` assigns to `target`.
+fn expr_list_assigns(list: List<SExpr>, target: string) -> bool {
+    mut i = 0
+    while i < list.length {
+        if expr_assigns(list[i].node, target) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// True when any statement in `stmts` assigns to `target`.
+fn stmt_list_assigns(stmts: List<SStmt>, target: string) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if stmt_assigns(stmts[i].node, target) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Per-statement assignment detector. Recognises `Assign`,
+/// `FieldAssign`, and recurses into containing expressions /
+/// nested bodies so deep mutations don't slip through.
+fn stmt_assigns(stmt: Stmt, target: string) -> bool {
+    match stmt {
+        .Expr(e) -> expr_assigns(e, target)
+        .Return(e) -> expr_assigns(e, target)
+        .Block(body) -> stmt_list_assigns(body, target)
+        .If(c, t, e) -> expr_assigns(c, target) || stmt_assigns(t, target) || (if e != null { stmt_assigns(e!, target) } else { false })
+        .While(c, body) -> expr_assigns(c, target) || stmt_assigns(body, target)
+        .For(_, s, e, body) -> expr_assigns(s, target) || expr_assigns(e, target) || stmt_assigns(body, target)
+        .ForIn(_, coll, body) -> expr_assigns(coll, target) || stmt_assigns(body, target)
+        _ -> false
+    }
+}
+
+// Mark captures as mutable if the lambda body assigns to them.
+/// Walk the capture list re-flagging any entry that gets assigned
+/// inside the lambda body. Mutable captures need a write-back path
+/// so the enclosing scope sees their updated values. Mutates the
+/// list in place via .set — there's no need for a fresh copy.
+fn mark_mutable_captures(captures: List<Capture>, body: Expr) {
+    mut local = captures
+    for (i, c) in local.enumerate() {
+        let is_mut = expr_assigns(body, c.name)
+        if is_mut != c.is_mut {
+            local.set(i, c with { is_mut: is_mut })
+        }
+    }
+}
+
+/// Walk an expression collecting captured names. A name is a
+/// capture when it's referenced in the body, isn't one of the
+/// declared params, isn't already in the capture list, and
+/// resolves to an entry in the enclosing env. Recurses into
+/// every compound expression form so nested calls and blocks
+/// work. Mutates `captures` in place — no `c1`/`c2` thread-state
+/// dance, just one shared list reference.
+fn find_captures(expr: Expr, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    match expr {
+        .Ident(name) -> {
+            if is_param(params, name) { return }
+            if is_captured(captures, name) { return }
+            let lookup = env_lookup(env, name)
+            if !lookup.found { return }
+            mut local = captures
+            local.push(Capture { name: name, alloca: lookup.alloca, ty: lookup.ty, is_mut: false })
+        }
+        .Binary(left, _, right) -> {
+            find_captures(left, params, env, captures)
+            find_captures(right, params, env, captures)
+        }
+        .Unary(_, right) -> find_captures(right, params, env, captures)
+        .Logical(left, _, right) -> {
+            find_captures(left, params, env, captures)
+            find_captures(right, params, env, captures)
+        }
+        .Call(callee, args) -> {
+            find_captures(callee, params, env, captures)
+            find_captures_list(args, params, env, captures)
+        }
+        .Grouping(inner) -> find_captures(inner, params, env, captures)
+        .IfExpr(c, t, e) -> {
+            find_captures(c, params, env, captures)
+            find_captures(t, params, env, captures)
+            find_captures(e, params, env, captures)
+        }
+        .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
+        .Assign(_, value) -> find_captures(value, params, env, captures)
+        .Index(obj, idx) -> {
+            find_captures(obj, params, env, captures)
+            find_captures(idx, params, env, captures)
+        }
+        .MatchExpr(subj, arms) -> {
+            find_captures(subj, params, env, captures)
+            find_captures_arms(arms, params, env, captures)
+        }
+        .EnumCtor(_, _, args) -> find_captures_list(args, params, env, captures)
+        .StructLit(_, inits) -> find_captures_field_inits(inits, params, env, captures)
+        .FieldAccess(obj, _) -> find_captures(obj, params, env, captures)
+        .FieldAssign(obj, _, val) -> {
+            find_captures(obj, params, env, captures)
+            find_captures(val, params, env, captures)
+        }
+        .NullCoalesce(l, r) -> {
+            find_captures(l, params, env, captures)
+            find_captures(r, params, env, captures)
+        }
+        .Try(inner) -> find_captures(inner, params, env, captures)
+        .ListLit(elems) -> find_captures_list(elems, params, env, captures)
+        .Tuple(elems) -> find_captures_list(elems, params, env, captures)
+        .MapLit(entries) -> find_captures_list(entries, params, env, captures)
+        .With(obj, inits) -> {
+            // Walk both obj AND field initialisers — closure that
+            // uses `bag with { f: outer_var }` must capture outer_var.
+            find_captures(obj, params, env, captures)
+            find_captures_field_inits(inits, params, env, captures)
+        }
+        .Slice(obj, s, e) -> {
+            find_captures(obj, params, env, captures)
+            find_captures(s, params, env, captures)
+            find_captures(e, params, env, captures)
+        }
+        .IsCheck(subj, _) -> find_captures(subj, params, env, captures)
+        .InCheck(needle, items) -> {
+            find_captures(needle, params, env, captures)
+            find_captures_list(items, params, env, captures)
+        }
+        .OptionalChain(obj, _) -> find_captures(obj, params, env, captures)
+        .OptionalMethodCall(obj, _, args) -> {
+            find_captures(obj, params, env, captures)
+            find_captures_list(args, params, env, captures)
+        }
+        .TupleIndex(obj, _) -> find_captures(obj, params, env, captures)
+        .ListComp(body, var, coll, filter) -> {
+            // Collection is evaluated in the outer scope.
+            find_captures(coll, params, env, captures)
+            // Body + filter run with `var` bound — extend params so a
+            // reference to the loop variable isn't flagged as a capture.
+            let inner_params = copy_params_with(params, ParamEntry { name: var, vtype: ValueType.Unknown })
+            find_captures(body, inner_params, env, captures)
+            if filter != null { find_captures(filter!, inner_params, env, captures) }
+        }
+        .Catch(inner, _, body, _, _) -> {
+            find_captures(inner, params, env, captures)
+            find_captures(body, params, env, captures)
+        }
+        .When(arms) -> find_captures_when_arms(arms, params, env, captures)
+        .GenericCall(callee, _, args) -> {
+            find_captures(callee, params, env, captures)
+            find_captures_list(args, params, env, captures)
+        }
+        // Spawn/Isolated/Quote/Splice/Lambda were missing — closure
+        // bodies that wrap their work in any of these would silently
+        // skip captures for vars referenced inside.
+        .Spawn(body) -> find_captures(body, params, env, captures)
+        .Isolated(body) -> find_captures(body, params, env, captures)
+        .Quote(_, body) -> find_captures(body, params, env, captures)
+        .Splice(target) -> find_captures(target, params, env, captures)
+        .Lambda(inner_params, inner_body) -> {
+            // Inner lambda's body — its OWN params shadow the outer's
+            // for capture detection, but captures inside it that come
+            // from the outer environment must still bubble up.
+            let merged = copy_params_append(params, inner_params)
+            find_captures(inner_body, merged, env, captures)
+        }
+        _ -> {}  // Number, String, Bool, FloatLit, Null, QualifiedIdent — leaf nodes
+    }
+}
+
+/// Recurse `find_captures` through every match-arm body.
+fn find_captures_arms(arms: List<MatchArm>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null { find_captures(arm.guard!.node, params, env, captures) }
+        find_captures(arm.body.node, params, env, captures)
+        i = i + 1
+    }
+}
+
+/// Recurse `find_captures` through every value in a struct
+/// literal / `with` override list.
+fn find_captures_field_inits(inits: List<FieldInit>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    mut i = 0
+    while i < inits.length {
+        find_captures(inits[i].value.node, params, env, captures)
+        i = i + 1
+    }
+}
+
+/// Recurse `find_captures` through every condition + body in a
+/// `when` arm list.
+fn find_captures_when_arms(arms: List<WhenArm>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.cond != null { find_captures(arm.cond!.node, params, env, captures) }
+        find_captures(arm.body.node, params, env, captures)
+        i = i + 1
+    }
+}
+
+/// Recurse `find_captures` across a `List<SExpr>` — call args,
+/// list literals, etc.
+fn find_captures_list(exprs: List<SExpr>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    mut i = 0
+    while i < exprs.length {
+        find_captures(exprs[i].node, params, env, captures)
+        i = i + 1
+    }
+}
+
+/// Per-statement capture finder. Recurses into expression
+/// payloads + nested bodies. Decl-only statements pass through.
+fn find_captures_stmt_body(stmt: Stmt, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    match stmt {
+        .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
+        .Expr(e) -> find_captures(e, params, env, captures)
+        .Return(e) -> find_captures(e, params, env, captures)
+        .Let(_, _, init) -> find_captures(init, params, env, captures)
+        .Mut(_, _, init) -> find_captures(init, params, env, captures)
+        .If(cond, then_b, else_b) -> {
+            find_captures(cond, params, env, captures)
+            find_captures_stmt_body(then_b, params, env, captures)
+            if else_b != null { find_captures_stmt_body(else_b!, params, env, captures) }
+        }
+        .While(cond, body) -> {
+            find_captures(cond, params, env, captures)
+            find_captures_stmt_body(body, params, env, captures)
+        }
+        .For(_, start, end, body) -> {
+            find_captures(start, params, env, captures)
+            find_captures(end, params, env, captures)
+            find_captures_stmt_body(body, params, env, captures)
+        }
+        .ForIn(_, coll, body) -> {
+            find_captures(coll, params, env, captures)
+            find_captures_stmt_body(body, params, env, captures)
+        }
+        .Match(subj, arms) -> {
+            find_captures(subj, params, env, captures)
+            find_captures_arms(arms, params, env, captures)
+        }
+        .Defer(body) -> find_captures(body, params, env, captures)
+        .Errdefer(body) -> find_captures(body, params, env, captures)
+        .Const(_, _, init) -> find_captures(init, params, env, captures)
+        .LetDestructure(_, init) -> find_captures(init, params, env, captures)
+        .Annotated(_, inner) -> find_captures_stmt_body(inner.node, params, env, captures)
+        .Parallel(body) -> find_captures_stmts(body, params, env, captures)
+        _ -> {}  // NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, etc.
+    }
+}
+
+/// Walk a List<SStmt> collecting captures via
+/// `find_captures_stmt_body`.
+fn find_captures_stmts(stmts: List<SStmt>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+    mut cur_params = params
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        // Process this statement for captures using the shared handler.
+        find_captures_stmt_body(ss.node, cur_params, env, captures)
+        // If this statement binds a local name, add it to params so subsequent
+        // uses of the name won't be treated as captures from the outer scope.
+        let extra: ParamEntry? = match ss.node {
+            .Let(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+            .Mut(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+            .Const(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
+            .For(vname, _, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
+            .ForIn(vname, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
+            _ -> null
+        }
+        if extra != null { cur_params = copy_params_with(cur_params, extra!) }
+        i = i + 1
+    }
+}
+
+// ── Parameter type inference ──
+//
+// When a lambda has no explicit parameter types (the common case), we
+// infer types from the body. If a parameter appears in a binary
+// expression with a Float-typed variable (from captures or the enclosing
+// env), we infer the parameter as Float. This prevents the lambda from
+// treating float bits (passed as i64) as integer values and applying
+// sitofp instead of bitcast.
+
+/// Look up the declared type of a name in the enclosing env.
+/// Falls through to top-level globals when the local lookup
+/// misses. Returns `Unknown` if the name doesn't exist.
+fn env_type_of(ctx: Ctx, env: List<VarBinding>, name: string) -> ValueType {
+    let lookup = env_lookup(env, name)
+    if lookup.found { return lookup.ty }
+    let g = ctx.lookup_toplevel(name)
+    if g.found { return g.ty }
+    ValueType.Unknown
+}
+
+/// Look up a capture's declared type by name. Returns `Unknown`
+/// when not in the list — callers then fall back to env lookup.
+fn capture_type_of(captures: List<Capture>, name: string) -> ValueType {
+    mut i = 0
+    while i < captures.length {
+        let c = captures[i]
+        if c.name == name { return c.ty }
+        i = i + 1
+    }
+    ValueType.Unknown
+}
+
+// Check if an expression contains a Float-typed identifier (from captures, env, or globals).
+/// True when `expr` references at least one float-typed name —
+/// used by `infer_param_types` to widen otherwise-untyped lambda
+/// params to Float when they participate in float arithmetic.
+fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+    match expr {
+        .Ident(name) -> {
+            if is_param(params, name) { return false }
+            let ty = capture_type_of(captures, name)
+            if vtype_eq(ty, .Float) { return true }
+            let ety = env_type_of(ctx, env, name)
+            vtype_eq(ety, .Float)
+        }
+        .FloatLit(_) -> true
+        .Binary(left, _, right) -> {
+            has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+        }
+        .Unary(_, inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .Grouping(inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .Call(callee, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
+        .GenericCall(callee, _, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
+        .FieldAccess(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
+        .Index(obj, idx) -> has_float_ident(obj, ctx, env, captures, params) || has_float_ident(idx, ctx, env, captures, params)
+        .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
+        .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+        .Try(inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
+        .TupleIndex(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
+        _ -> false
+    }
+}
+
+/// Map `has_float_ident` over a `List<SExpr>`.
+fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+    mut i = 0
+    while i < exprs.length {
+        if has_float_ident(exprs[i].node, ctx, env, captures, params) { return true }
+        i = i + 1
+    }
+    false
+}
+
+// Check if a parameter is used in a binary expression with a Float value.
+/// True when `param_name` appears alongside a float operand in
+/// an arithmetic expression. Drives the heuristic that promotes
+/// otherwise-untyped lambda params to Float so `(x) -> x + 1.5`
+/// works without explicit type annotations.
+fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+    match expr {
+        .Binary(left, _, right) -> {
+            let left_is_param = match left { .Ident(n) -> n == param_name, _ -> false }
+            let right_is_param = match right { .Ident(n) -> n == param_name, _ -> false }
+            if left_is_param && has_float_ident(right, ctx, env, captures, params) { return true }
+            if right_is_param && has_float_ident(left, ctx, env, captures, params) { return true }
+            param_used_with_float(param_name, left, ctx, env, captures, params) || param_used_with_float(param_name, right, ctx, env, captures, params)
+        }
+        .Unary(_, inner) -> param_used_with_float(param_name, inner, ctx, env, captures, params)
+        .Grouping(inner) -> param_used_with_float(param_name, inner, ctx, env, captures, params)
+        .Call(callee, args) -> {
+            param_used_with_float(param_name, callee, ctx, env, captures, params) || param_used_with_float_list(param_name, args, ctx, env, captures, params)
+        }
+        .Block(stmts) -> param_used_with_float_stmts(param_name, stmts, ctx, env, captures, params)
+        .IfExpr(c, t, e) -> {
+            param_used_with_float(param_name, c, ctx, env, captures, params) || param_used_with_float(param_name, t, ctx, env, captures, params) || param_used_with_float(param_name, e, ctx, env, captures, params)
+        }
+        _ -> false
+    }
+}
+
+/// Map `param_used_with_float` over a `List<SExpr>`.
+fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+    mut i = 0
+    while i < exprs.length {
+        if param_used_with_float(param_name, exprs[i].node, ctx, env, captures, params) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Map `param_used_with_float` through a statement list,
+/// recursing into expression payloads + nested bodies.
+fn param_used_with_float_stmts(param_name: string, stmts: List<SStmt>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        let found = match stmts[i].node {
+            .Expr(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
+            .Return(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
+            .Let(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+            .Mut(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+            _ -> false
+        }
+        if found { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Infer types for unannotated lambda params by scanning the
+/// body. Defaults to Int; promotes to Float when the param is
+/// used alongside another float operand. Result is a
+/// `List<ValueType>` matched 1:1 to the input param list.
+fn infer_param_types(params: List<ParamEntry>, body: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let ty = if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
+            ctx.resolve_codegen_vtype(p.vtype)
+        } else if param_used_with_float(p.name, body, ctx, env, captures, params) {
+            ValueType.Float
+        } else {
+            ValueType.Unknown
+        }
+        out.push(ty)
+        i = i + 1
+    }
+    out
+}
+
+// Global lambda counter for unique names.
+// This is the ONE allowed mutable global — it's a monotonic counter
+// Unique lambda ID generation — uses a C-side counter to avoid mutable globals.
+extern fn avra_next_lambda_id() -> int
+
+// Compile a lambda with default parameter types (all Int).
+/// Public entry for lambda codegen. Forwards to
+/// `emit_lambda_typed` after letting the heuristic
+/// `infer_param_types` pick a default per param.
+export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Lambda(params, body) -> {
+            let empty_types: List<ValueType> = []
+            emit_lambda_typed(ctx, env, params, body, empty_types)
+        }
+        _ -> err_emit("expected Lambda")
+    }
+}
+
+// Compile a lambda with explicit parameter types.
+// Used by .map/.filter/.reduce to pass the list's element type
+// so that int(x) / x.length / etc. work correctly inside the lambda.
+/// Lambda codegen with explicit param types. Builds a lifted
+/// top-level `__lambda_N` function with a hidden env-pointer
+/// param prepended; emits the body inside; allocates a closure
+/// array `[TAG, fn_ptr, capture0, capture1, ...]` and returns
+/// it as the call's value. Non-capturing lambdas get a single-
+/// slot closure with the function pointer only.
+export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<ParamEntry>, body: Expr, param_types: List<ValueType>) -> Result<EmitValue, string> {
+    let id = avra_next_lambda_id()
+    // Library-mode: prefix the lambda name with the lib_pkg_root
+    // (e.g. `@std::lsp::__lambda_3`) so two different units that
+    // both happen to emit `__lambda_3` don't collide. The lambda
+    // ID counter is process-local — without the prefix, shard's
+    // `__lambda_3` and producer's `__lambda_3` are completely
+    // different bodies that the linker would pick one of and
+    // crash the unpicked caller at runtime.
+    let lambda_prefix = if ctx.lib_pkg_root == "" {
+        ""
+    } else {
+        ctx.lib_pkg_root + "::"
+    }
+    let name = "${lambda_prefix}__lambda_${string(id)}"
+    let params = ctx.resolve_params(raw_params)
+
+    // Detect captured variables from the enclosing scope.
+    // Mark captures as mutable if the lambda body assigns to them.
+    mut captures: List<Capture> = []
+    find_captures(body, params, env, captures)
+    mark_mutable_captures(captures, body)
+    let num_captures = captures.length
+    let num_declared = params.length
+    let arity = num_declared + num_captures
+
+    // Compute effective parameter types BEFORE creating the LLVM function,
+    // so we can build a properly-typed LLVM function signature.
+    // Empty caller-supplied list means "infer from the body".
+    let effective_types = if param_types.length == 0 {
+        infer_param_types(params, body, ctx, env, captures)
+    } else {
+        param_types
+    }
+
+    // Build typed LLVM function: declared params use effective_types, captures use i64.
+    let param_arr = avra_llvm_type_array_new(arity)
+    ctx.fill_typed_lambda_params(param_arr, effective_types, 0, arity)
+    let fn_type = ctx.fn_type(ctx.i64_type, param_arr, arity)
+    ctx.type_array_free(param_arr)
+    let fn_val = ctx.add_function(name, fn_type)
+
+    let saved_bb = ctx.current_bb()
+
+    let entry = ctx.bb_in(fn_val, "entry")
+    ctx.position(entry)
+    let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, effective_types)
+    let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
+
+    mut body_ctx = ctx.with_fn(fn_val, name)
+    body_ctx.cov_fn_entry()
+    // with_fn resets defers/rc_cleanup/rc_releasable to .End, so lambda body starts fresh.
+    body_ctx.rc_releasable = analyze_releasable_expr(body)
+    mut result = EmitValue { value: ctx.i64(0), ty: .Int }
+    match emit_expr(body_ctx, body_env, body) {
+        .Ok(v) -> { result = v }
+        .Err(e) -> {
+            ctx.position(saved_bb)
+            return err_emit(e)
+        }
+    }
+
+    if !ctx.has_terminator() {
+        let lambda_ret = body_ctx.current_fn_ret()
+        ctx.ret(result.value, lambda_ret)
+    }
+    body_ctx.cov_finalize_fn()
+
+    ctx.position(saved_bb)
+
+    // If there are captures, we need to pass the captured values at call time.
+    // Pack: [fn_ptr, cap1, cap2, ...] into an array. The C runtime's
+    // ALL lambdas use closure arrays: [TAG, fn_ptr, cap1, cap2, ...]
+    // Even non-capturing ones get [TAG, fn_ptr] so the C-side
+    // avra_closure_call_* trampolines can safely inspect them.
+    // Only named function references (let f = my_fn) are bare pointers.
+    let fn_ptr_i64 = ctx.ptr_to_int(fn_val, "lambda_ptr")
+    let closure_arr = ctx.closure_array(fn_ptr_i64)
+    if num_captures > 0 {
+        push_captured_values(ctx, captures, closure_arr)
+    }
+    let closure_i64 = ctx.to_i64(closure_arr, "closure_i64")
+    ok_emit(closure_i64, ValueType.Closure(num_captures, result.ty))
+}
+
+/// Bind every captured value as an extra parameter in the
+/// lifted lambda's body env. Captures appear after the user-
+/// declared params in the LLVM signature, so the body can read
+/// them transparently via env lookup. `start_idx` is the LLVM
+/// param slot where captures begin.
+fn bind_captures_as_params(ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, fn_val: ptr, start_idx: int) -> List<VarBinding> {
+    mut current_env = env
+    for (i, c) in captures.enumerate() {
+        let param_val = ctx.get_param(fn_val, start_idx + i)
+        current_env = if c.is_mut {
+            // Mutable capture: param is an alloca POINTER — use directly
+            let alloca = ctx.int_to_ptr(param_val, "cap_alloca")
+            env_extend(current_env, c.name, alloca, c.ty)
+        } else {
+            // Immutable capture: param is a value — create local alloca
+            ctx.bind(current_env, c.name, param_val, c.ty)
+        }
+    }
+    current_env
+}
+
+/// Walk the capture list pushing each captured value onto the
+/// closure's array (slots 2+ after the marker + fn pointer).
+/// Loads from each capture's alloca so the snapshot reflects
+/// the current value at closure-creation time.
+fn push_captured_values(ctx: Ctx, captures: List<Capture>, arr: ptr) {
+    mut i = 0
+    while i < captures.length {
+        let c = captures[i]
+        if c.is_mut {
+            // Mutable capture: pass alloca POINTER so writes propagate
+            let ptr_val = ctx.to_i64(c.alloca, "cap_ptr")
+            ctx.array_push(arr, ptr_val)
+        } else {
+            // Immutable capture: pass current VALUE (copy)
+            let val = ctx.load_i64(c.alloca, "cap_val")
+            ctx.array_push(arr, val)
+        }
+        i = i + 1
+    }
+}
+
+// Emit a lambda argument with typed parameters. If the argument
+// expression is a Lambda, compile it with explicit param types so
+// that type-dependent operations (int(x), x.length, x.upper())
+// work correctly inside the lambda body.
+/// Emit the first arg from `args`, but if it's a Lambda,
+/// compile it against the supplied `param_types` instead of
+/// using the heuristic. Used by higher-order list methods
+/// (`map`, `filter`, …) that know their callback's expected
+/// param types.
+export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>, param_types: List<ValueType>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("expected 1 argument, got 0") }
+    let se = args[0]
+    match se.node {
+        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, param_types)
+        _ -> ctx.emit(env, se.node)
+    }
+}
+
+// Call a function pointer stored in a local variable.
+// Load the pointer, cast to fn ptr, build indirect call.
+/// Codegen for calling a fn-typed local variable. Loads the
+/// closure pointer from the alloca and dispatches via
+/// `emit_closure_call` (which handles env-pointer prepend +
+/// arity coercion).
+export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    let fn_i64 = ctx.load_i64(alloca, name)
+    let local = env_lookup(env, name)
+    let ret_ty = vtype_fn_ret(local.ty)
+    // Closure values (lambda expressions) are arrays that need unpacking.
+    // Fn values (named function refs) are bare pointers that can be called directly.
+    if vtype_is_closure(local.ty) {
+        let num_caps = vtype_closure_captures(local.ty)
+        // num_caps < 0 means "closure with unknown capture count" —
+        // use the trampoline which resolves captures at runtime.
+        if num_caps >= 0 {
+            return emit_closure_call_typed(ctx, env, fn_i64, args, num_caps, ret_ty)
+        }
+    }
+    emit_indirect_call_typed(ctx, env, fn_i64, args, ret_ty)
+}
+
+/// Same as `emit_indirect_call` but loads the closure pointer
+/// from a top-level global instead of a local alloca. Used when
+/// a fn is exported as a `mut` global.
+export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global: ptr, name: string, args: List<SExpr>, ty: ValueType) -> Result<EmitValue, string> {
+    let fn_i64 = ctx.load_i64(global, name)
+    let ret_ty = vtype_fn_ret(ty)
+    if vtype_is_closure(ty) {
+        let num_caps = vtype_closure_captures(ty)
+        if num_caps >= 0 {
+            return emit_closure_call_typed(ctx, env, fn_i64, args, num_caps, ret_ty)
+        }
+    }
+    emit_indirect_call_typed(ctx, env, fn_i64, args, ret_ty)
+}
+
+// AvraArray:
+// [0] = fn_ptr, [1..N] = captured values.
+// We unpack fn_ptr, evaluate user args, append captures, and call.
+/// Core indirect-call logic for closures. Reads the function
+/// pointer from slot 1 of the closure array, builds the arg
+/// array (prepending captured values when `num_captures > 0`),
+/// and calls via `avra_closure_call_N` for the right arity.
+fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: List<SExpr>, num_captures: int) -> Result<EmitValue, string> {
+    // Closure array layout: [TAG, fn_ptr, cap1, cap2, ...]
+    // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
+    let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
+    // Load fn_ptr from closure array[1] (index 0 is the TAG)
+    let get_fn_call = ctx.array_get(closure_ptr, ctx.i64(1))
+    let fn_ptr = ctx.int_to_ptr(get_fn_call, "fn_ptr")
+
+    let user_arg_count = args.length
+    let total_args = user_arg_count + num_captures
+
+    // Fill the value array first so we can read each emitted value's
+    // actual LLVM type. The lambda was declared with typed declared
+    // params + i64 captures (see fill_typed_lambda_params); the call
+    // site fn_type must mirror that signature or LLVM's verifier
+    // flags every closure invocation as a parameter-type mismatch.
+    // Tracking ticket: forge-crafting-intepreters-og68.
+    let val_arr = ctx.value_array(total_args)
+    match fill_lambda_args(ctx, env, val_arr, args, 0) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.value_array_free(val_arr)
+            return err_emit(e)
+        }
+    }
+    // Fill captures from closure array (start at index 2)
+    fill_closure_captures(ctx, val_arr, closure_ptr, user_arg_count, num_captures)
+
+    // Build the param-type array: declared params take whatever LLVM
+    // type their emitted value carries (ptr for Expr/string/struct,
+    // i64 for int/bool, double for float); captures are always i64
+    // because that's what closure_array stores them as.
+    let param_arr = ctx.value_array_param_types(val_arr, user_arg_count, num_captures)
+    let fn_type = ctx.fn_type(ctx.i64_type, param_arr, total_args)
+    ctx.type_array_free(param_arr)
+
+    let result = ctx.build_call(fn_type, fn_ptr, val_arr, total_args, "closure_call")
+    ctx.value_array_free(val_arr)
+    ok_emit(result, .Int)
+}
+
+/// Copy `count` capture slots out of the closure array into
+/// the call's value array starting at `start_idx`. Used by
+/// `emit_closure_call` to materialise the env-pointer prepend.
+fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int) {
+    // Captures start at array index 2 (after TAG and fn_ptr)
+    for i in 0..count {
+        let cap_val = ctx.array_get(closure_val, ctx.i64(i + 2))
+        ctx.value_array_set(val_arr, start_idx + i, cap_val)
+    }
+}
+
+/// Indirect call where the caller already has the closure as an
+/// SSA i64 and knows the expected return type. Skips the
+/// alloca-load step and dispatches straight through.
+export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>, ret_ty: ValueType) -> Result<EmitValue, string> {
+    let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
+    ok_emit(r.value, ret_ty)
+}
+
+/// Variant of `emit_closure_call` for callers that already have
+/// the SSA i64 and know both the capture count and return type.
+/// Saves a load and types the result for the caller.
+export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
+    let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
+    ok_emit(r.value, ret_ty)
+}
+
+/// Indirect call against an i64-shaped closure value when the
+/// caller doesn't yet know the expected return type. Used in
+/// generic call paths where typing is deferred.
+export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+    // Indirect call for values with unknown closure status at compile time.
+    // This happens when a fn returns a closure but the return type says
+    // Fn/FnTyped (the type system can't distinguish bare ptrs from
+    // closure arrays through function boundaries).
+    //
+    // Uses avra_closure_call_N trampolines which handle both bare
+    // function pointers and closure arrays at runtime via
+    // avra_closure_dispatch in runtime.c. Supports up to 8 total
+    // args (user + captures).
+    let user_arg_count = args.length
+    if user_arg_count == 0 {
+        return ok_emit(ctx.call("avra_closure_call_0", [fn_i64]), .Int)
+    }
+    if user_arg_count == 1 {
+        let a0 = ctx.emit(env, args[0].node)?
+        return ok_emit(ctx.call("avra_closure_call_1", [fn_i64, a0.value]), .Int)
+    }
+    if user_arg_count == 2 {
+        let a0 = ctx.emit(env, args[0].node)?
+        let a1 = ctx.emit(env, args[1].node)?
+        return ok_emit(ctx.call("avra_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
+    }
+    if user_arg_count == 3 {
+        let a0 = ctx.emit(env, args[0].node)?
+        let a1 = ctx.emit(env, args[1].node)?
+        let a2 = ctx.emit(env, args[2].node)?
+        return ok_emit(ctx.call("avra_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
+    }
+    err_emit("indirect calls with ${string(user_arg_count)} args not yet supported")
+}
+
+/// Walk a `List<SExpr>` emitting each arg into successive slots of
+/// `arr`. Lambda call paths use this to pack user-supplied
+/// arguments into the value array passed to
+/// `avra_closure_call_N`.
+fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+    for (i, arg) in args.enumerate() {
+        let r = ctx.emit(env, arg.node)?
+        ctx.value_array_set(arr, idx + i, r.value)
+    }
+    ok_emit(null_ptr_val(), .Void)
+}
+
+/// Bind each lambda parameter as an alloca + env entry,
+/// pulling its declared type from the supplied `types` list (or
+/// falling back to the param's annotation when the type list is
+/// short). Mirror of `bind_params_inline` for closure bodies.
+fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: List<ParamEntry>, fn_val: ptr, idx: int, types: List<ValueType>) -> List<VarBinding> {
+    mut cur_env = env
+    mut i = idx
+    mut type_idx = 0
+    mut pi = 0
+    while pi < params.length {
+        let p = params[pi]
+        let param_val = ctx.get_param(fn_val, i)
+        let ty = if type_idx < types.length {
+            // Canonicalize caller-provided expected types too: mono's
+            // string-roundtripped instantiation types can carry BARE
+            // nominal names (Struct("CompConfig", 0)); binding them
+            // unresolved makes every later field access miss the
+            // registry's module-qualified entry. resolve_codegen_vtype
+            // is idempotent on already-qualified types.
+            ctx.resolve_codegen_vtype(types[type_idx])
+        } else if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
+            ctx.resolve_codegen_vtype(p.vtype)
+        } else {
+            ValueType.Unknown
+        }
+        cur_env = ctx.bind(cur_env, p.name, param_val, ty)
+        i = i + 1
+        type_idx = type_idx + 1
+        pi = pi + 1
+    }
+    cur_env
+}

@@ -10,9 +10,16 @@ pub struct TypeDeclData {
 }
 
 impl crate::feature::FeatureNode for TypeDeclData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(TypeDeclData {
             name: (fns.sub_ident)(&self.name),
             type_params: self.type_params.clone(),
@@ -31,12 +38,23 @@ pub struct StructLitData {
 }
 
 impl crate::feature::FeatureNode for StructLitData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(StructLitData {
             name: self.name.as_ref().map(|n| (fns.sub_ident)(n)),
-            fields: self.fields.iter().map(|(k, v)| (k.clone(), (fns.sub_expr)(v))).collect(),
+            fields: self
+                .fields
+                .iter()
+                .map(|(k, v)| (k.clone(), (fns.sub_expr)(v)))
+                .collect(),
             span: self.span,
         })
     }

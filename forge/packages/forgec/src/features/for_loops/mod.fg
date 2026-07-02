@@ -6,28 +6,32 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_emit_stmt}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, codegen_new}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
 export fn parse_for(p: Parser) -> Statement? {
-    let start = p.advance().span
+    let start = p.advance_span()
     p.skip_newlines()
     let var_name = p.expect_ident()
     if var_name == "" { return null }
-    if p.expect(.In) == null { return null }
+    if p.expect_id(29) == null { return null }  // In
     p.skip_newlines()
     let iterable = p.parse_expr()
     if iterable == null { return null }
     p.skip_newlines()
     let body = p.parse_block()
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     Statement.For(var_name, iterable!, body, start)
 }
 
 export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Block) {
-    let lv = cg.emit_expr(iterable)
-    let ia = llvm.build_alloca(CG_B, CG_I64, "fi")
+    let lv = cg.emit_expr(iterable).val
+    if lv == null {
+        eprintln("  WARN: for-in iterable is null, skipping")
+        return
+    }
+    let ia = llvm.build_alloca(CG_B, CG_I64, "__fi")
     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), ia)
     let la = llvm.value_array_new(1)
     llvm.value_array_set(la, 0, lv)
@@ -42,10 +46,7 @@ export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Bloc
     let fb = llvm.append_basic_block(CG_CTX, fn_val, "fb")
     let fx = llvm.append_basic_block(CG_CTX, fn_val, "fx")
     let fe = llvm.append_basic_block(CG_CTX, fn_val, "fe")
-    let oc = WHILE_COND_BB
-    let oe = WHILE_END_BB
-    WHILE_COND_BB = fx
-    WHILE_END_BB = fe
+    forge_loop_push(fx, fe)
     llvm.build_br(CG_B, fc)
     llvm.position_at_end(CG_B, fc)
     let ci = llvm.build_load(CG_B, CG_I64, ia, "ci")
@@ -61,8 +62,8 @@ export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Bloc
     let ev = llvm.build_load(CG_B, CG_I64, ep, "ev")
     let va = llvm.build_alloca(CG_B, CG_I64, "iv")
     llvm.build_store(CG_B, ev, va)
-    CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
-    CG_VAR_PTRS = CG_VAR_PTRS.push(va)
+    forge_alloca_cache_set(var_name, va)
+    forge_alloca_cache_set_var_type(var_name, "int")
     cg.emit_block(body)
     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, fx) }
     llvm.position_at_end(CG_B, fx)
@@ -70,8 +71,7 @@ export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Bloc
     let ni = llvm.build_add(CG_B, ic, llvm.const_int(CG_I64, 1, 0), "ni")
     llvm.build_store(CG_B, ni, ia)
     llvm.build_br(CG_B, fc)
-    WHILE_COND_BB = oc
-    WHILE_END_BB = oe
+    forge_loop_pop()
     llvm.position_at_end(CG_B, fe)
 }
 

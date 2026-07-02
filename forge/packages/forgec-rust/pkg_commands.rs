@@ -2,7 +2,6 @@
 ///
 /// Operates on `forge.toml` files using string-based TOML editing to preserve
 /// comments and formatting. Calls into `crate::resolver` for version resolution.
-
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -31,7 +30,10 @@ pub enum DepSourceSpec {
 }
 
 /// Parse a CLI package specifier string into a `PackageSpec`.
-pub fn parse_package_spec(input: &str, version_override: Option<&str>) -> Result<PackageSpec, String> {
+pub fn parse_package_spec(
+    input: &str,
+    version_override: Option<&str>,
+) -> Result<PackageSpec, String> {
     let input = input.trim();
     if input.is_empty() {
         return Err("empty package specifier".to_string());
@@ -48,7 +50,9 @@ pub fn parse_package_spec(input: &str, version_override: Option<&str>) -> Result
         return Ok(PackageSpec {
             name,
             version: version_override.unwrap_or("*").to_string(),
-            source: DepSourceSpec::Git { url: url.to_string() },
+            source: DepSourceSpec::Git {
+                url: url.to_string(),
+            },
         });
     }
 
@@ -62,7 +66,9 @@ pub fn parse_package_spec(input: &str, version_override: Option<&str>) -> Result
         return Ok(PackageSpec {
             name,
             version: version_override.unwrap_or("*").to_string(),
-            source: DepSourceSpec::Path { path: path.to_string() },
+            source: DepSourceSpec::Path {
+                path: path.to_string(),
+            },
         });
     }
 
@@ -125,9 +131,7 @@ fn read_manifest(project_dir: &Path) -> Result<String, String> {
 /// Write forge.toml content back to disk.
 fn write_manifest(project_dir: &Path, content: &str) -> Result<(), String> {
     let path = project_dir.join("forge.toml");
-    std::fs::write(&path, content).map_err(|e| {
-        format!("cannot write forge.toml: {}", e)
-    })
+    std::fs::write(&path, content).map_err(|e| format!("cannot write forge.toml: {}", e))
 }
 
 /// Find the byte range of the `[dependencies]` section in the TOML content.
@@ -212,10 +216,16 @@ fn set_dep_in_manifest(content: &str, name: &str, spec: &PackageSpec) -> String 
             format!("{} = \"{}\"", name, spec.version)
         }
         DepSourceSpec::Git { url } => {
-            format!("{} = {{ git = \"{}\", version = \"{}\" }}", name, url, spec.version)
+            format!(
+                "{} = {{ git = \"{}\", version = \"{}\" }}",
+                name, url, spec.version
+            )
         }
         DepSourceSpec::Path { path } => {
-            format!("{} = {{ path = \"{}\", version = \"{}\" }}", name, path, spec.version)
+            format!(
+                "{} = {{ path = \"{}\", version = \"{}\" }}",
+                name, path, spec.version
+            )
         }
     };
 
@@ -248,7 +258,12 @@ fn set_dep_in_manifest(content: &str, name: &str, spec: &PackageSpec) -> String 
             new_section.push('\n');
         }
 
-        format!("{}{}{}", &content[..sec_start], new_section, &content[sec_end..])
+        format!(
+            "{}{}{}",
+            &content[..sec_start],
+            new_section,
+            &content[sec_end..]
+        )
     } else {
         // No [dependencies] section — append one
         let mut result = content.to_string();
@@ -285,7 +300,12 @@ fn remove_dep_from_manifest(content: &str, name: &str) -> (String, bool) {
         }
 
         (
-            format!("{}{}{}", &content[..sec_start], new_section, &content[sec_end..]),
+            format!(
+                "{}{}{}",
+                &content[..sec_start],
+                new_section,
+                &content[sec_end..]
+            ),
             found,
         )
     } else {
@@ -329,10 +349,7 @@ pub fn add_dependency(
 }
 
 /// Remove a dependency from forge.toml.
-pub fn remove_dependency(
-    project_dir: &Path,
-    package: &str,
-) -> Result<(), String> {
+pub fn remove_dependency(project_dir: &Path, package: &str) -> Result<(), String> {
     let content = read_manifest(project_dir)?;
 
     let (new_content, found) = remove_dep_from_manifest(&content, package);
@@ -415,8 +432,8 @@ pub fn list_deps(project_dir: &Path, flat: bool) -> Result<(), String> {
     let content = read_manifest(project_dir)?;
 
     // Read project name/version from [package] section
-    let config: toml::Value = toml::from_str(&content)
-        .map_err(|e| format!("invalid forge.toml: {}", e))?;
+    let config: toml::Value =
+        toml::from_str(&content).map_err(|e| format!("invalid forge.toml: {}", e))?;
 
     let project_name = config
         .get("package")
@@ -484,11 +501,7 @@ pub fn list_outdated(project_dir: &Path) -> Result<Vec<(String, String, String)>
                 let req = crate::resolver::VersionReq::parse(current_range);
                 let is_satisfied = req.as_ref().map(|r| r.matches(latest)).unwrap_or(false);
                 if !is_satisfied {
-                    outdated.push((
-                        name.to_string(),
-                        current_range.to_string(),
-                        latest.clone(),
-                    ));
+                    outdated.push((name.to_string(), current_range.to_string(), latest.clone()));
                 }
             }
         }
@@ -635,7 +648,8 @@ mod tests {
 
     #[test]
     fn test_parse_deps_inline_table() {
-        let content = "[dependencies]\nmypkg = { version = \"^1.0.0\", git = \"https://example.com\" }\n";
+        let content =
+            "[dependencies]\nmypkg = { version = \"^1.0.0\", git = \"https://example.com\" }\n";
         let deps = parse_deps_section(content);
         assert_eq!(deps["mypkg"], "^1.0.0");
     }
@@ -692,7 +706,9 @@ mod tests {
             },
         };
         let result = set_dep_in_manifest(content, "mylib", &spec);
-        assert!(result.contains("mylib = { git = \"https://github.com/user/mylib.git\", version = \"^1.0.0\" }"));
+        assert!(result.contains(
+            "mylib = { git = \"https://github.com/user/mylib.git\", version = \"^1.0.0\" }"
+        ));
     }
 
     #[test]

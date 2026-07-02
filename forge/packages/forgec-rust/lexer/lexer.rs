@@ -260,11 +260,14 @@ impl<'a> Lexer<'a> {
             }
             '/' => {
                 // Check for doc comment: /// (but not ////)
-                if self.peek_at(1) == Some('/') && self.peek_at(2) == Some('/') && self.peek_at(3) != Some('/') {
+                if self.peek_at(1) == Some('/')
+                    && self.peek_at(2) == Some('/')
+                    && self.peek_at(3) != Some('/')
+                {
                     self.advance(); // /
                     self.advance(); // /
                     self.advance(); // /
-                    // Skip optional single leading space
+                                    // Skip optional single leading space
                     if self.peek() == Some(' ') {
                         self.advance();
                     }
@@ -385,7 +388,10 @@ impl<'a> Lexer<'a> {
                     let expr_line = self.line;
                     let expr_col = self.col;
                     let expr = self.capture_interpolation_expr();
-                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
+                    parts.push(TemplatePart::Expr(
+                        expr,
+                        Span::new(expr_start, self.pos, expr_line, expr_col),
+                    ));
                 }
                 Some('"') => {
                     self.advance();
@@ -446,7 +452,10 @@ impl<'a> Lexer<'a> {
                     let expr_line = self.line;
                     let expr_col = self.col;
                     let expr = self.capture_interpolation_expr();
-                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
+                    parts.push(TemplatePart::Expr(
+                        expr,
+                        Span::new(expr_start, self.pos, expr_line, expr_col),
+                    ));
                 }
                 Some('\\') => {
                     self.advance();
@@ -513,9 +522,19 @@ impl<'a> Lexer<'a> {
                 Some('\\') => {
                     self.advance();
                     match self.peek() {
-                        Some('"') => { self.advance(); current.push('"'); }
-                        Some('\\') => { self.advance(); current.push('\\'); }
-                        Some(c) => { self.advance(); current.push('\\'); current.push(c); }
+                        Some('"') => {
+                            self.advance();
+                            current.push('"');
+                        }
+                        Some('\\') => {
+                            self.advance();
+                            current.push('\\');
+                        }
+                        Some(c) => {
+                            self.advance();
+                            current.push('\\');
+                            current.push(c);
+                        }
                         None => {}
                     }
                 }
@@ -530,7 +549,10 @@ impl<'a> Lexer<'a> {
                     let expr_line = self.line;
                     let expr_col = self.col;
                     let expr = self.capture_interpolation_expr();
-                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
+                    parts.push(TemplatePart::Expr(
+                        expr,
+                        Span::new(expr_start, self.pos, expr_line, expr_col),
+                    ));
                 }
                 Some('"') => {
                     self.advance();
@@ -585,7 +607,10 @@ impl<'a> Lexer<'a> {
                     let expr_line = self.line;
                     let expr_col = self.col;
                     let expr = self.capture_interpolation_expr();
-                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
+                    parts.push(TemplatePart::Expr(
+                        expr,
+                        Span::new(expr_start, self.pos, expr_line, expr_col),
+                    ));
                 }
                 Some(c) => {
                     self.advance();
@@ -626,14 +651,39 @@ impl<'a> Lexer<'a> {
                 Some('\\') => {
                     self.advance();
                     match self.peek() {
-                        Some('`') => { self.advance(); current.push('`'); }
-                        Some('\\') => { self.advance(); current.push('\\'); }
-                        Some('$') => { self.advance(); current.push('$'); }
-                        Some('n') => { self.advance(); current.push('\n'); }
-                        Some('t') => { self.advance(); current.push('\t'); }
-                        Some('r') => { self.advance(); current.push('\r'); }
-                        Some('0') => { self.advance(); current.push('\0'); }
-                        Some(c) => { self.advance(); current.push('\\'); current.push(c); }
+                        Some('`') => {
+                            self.advance();
+                            current.push('`');
+                        }
+                        Some('\\') => {
+                            self.advance();
+                            current.push('\\');
+                        }
+                        Some('$') => {
+                            self.advance();
+                            current.push('$');
+                        }
+                        Some('n') => {
+                            self.advance();
+                            current.push('\n');
+                        }
+                        Some('t') => {
+                            self.advance();
+                            current.push('\t');
+                        }
+                        Some('r') => {
+                            self.advance();
+                            current.push('\r');
+                        }
+                        Some('0') => {
+                            self.advance();
+                            current.push('\0');
+                        }
+                        Some(c) => {
+                            self.advance();
+                            current.push('\\');
+                            current.push(c);
+                        }
                         None => {}
                     }
                 }
@@ -648,7 +698,10 @@ impl<'a> Lexer<'a> {
                     let expr_line = self.line;
                     let expr_col = self.col;
                     let expr = self.capture_interpolation_expr();
-                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
+                    parts.push(TemplatePart::Expr(
+                        expr,
+                        Span::new(expr_start, self.pos, expr_line, expr_col),
+                    ));
                 }
                 Some(c) => {
                     self.advance();
@@ -664,7 +717,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Lex tag<Type>`...` — tagged template literal with type parameter
-    fn lex_typed_tagged_template(&mut self, tag: String, type_param: String, start: usize, line: u32, col: u32) -> Token {
+    fn lex_typed_tagged_template(
+        &mut self,
+        tag: String,
+        type_param: String,
+        start: usize,
+        line: u32,
+        col: u32,
+    ) -> Token {
         self.advance(); // skip opening `
         let mut parts = Vec::new();
         let mut current = String::new();
@@ -689,14 +749,39 @@ impl<'a> Lexer<'a> {
                 Some('\\') => {
                     self.advance();
                     match self.peek() {
-                        Some('`') => { self.advance(); current.push('`'); }
-                        Some('\\') => { self.advance(); current.push('\\'); }
-                        Some('$') => { self.advance(); current.push('$'); }
-                        Some('n') => { self.advance(); current.push('\n'); }
-                        Some('t') => { self.advance(); current.push('\t'); }
-                        Some('r') => { self.advance(); current.push('\r'); }
-                        Some('0') => { self.advance(); current.push('\0'); }
-                        Some(c) => { self.advance(); current.push('\\'); current.push(c); }
+                        Some('`') => {
+                            self.advance();
+                            current.push('`');
+                        }
+                        Some('\\') => {
+                            self.advance();
+                            current.push('\\');
+                        }
+                        Some('$') => {
+                            self.advance();
+                            current.push('$');
+                        }
+                        Some('n') => {
+                            self.advance();
+                            current.push('\n');
+                        }
+                        Some('t') => {
+                            self.advance();
+                            current.push('\t');
+                        }
+                        Some('r') => {
+                            self.advance();
+                            current.push('\r');
+                        }
+                        Some('0') => {
+                            self.advance();
+                            current.push('\0');
+                        }
+                        Some(c) => {
+                            self.advance();
+                            current.push('\\');
+                            current.push(c);
+                        }
                         None => {}
                     }
                 }
@@ -782,19 +867,35 @@ impl<'a> Lexer<'a> {
                     // Only match if the suffix char is NOT followed by an alphanumeric or underscore
                     // (to avoid matching identifiers like `5min` or variable patterns)
                     let multiplier = match self.peek() {
-                        Some('d') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                        Some('d')
+                            if !self
+                                .peek_at(1)
+                                .map_or(false, |c| c.is_alphanumeric() || c == '_') =>
+                        {
                             self.advance();
                             Some(86_400_000i64) // days -> ms
                         }
-                        Some('h') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                        Some('h')
+                            if !self
+                                .peek_at(1)
+                                .map_or(false, |c| c.is_alphanumeric() || c == '_') =>
+                        {
                             self.advance();
                             Some(3_600_000i64) // hours -> ms
                         }
-                        Some('m') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                        Some('m')
+                            if !self
+                                .peek_at(1)
+                                .map_or(false, |c| c.is_alphanumeric() || c == '_') =>
+                        {
                             self.advance();
                             Some(60_000i64) // minutes -> ms
                         }
-                        Some('s') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                        Some('s')
+                            if !self
+                                .peek_at(1)
+                                .map_or(false, |c| c.is_alphanumeric() || c == '_') =>
+                        {
                             self.advance();
                             Some(1_000i64) // seconds -> ms
                         }
@@ -824,7 +925,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-
     fn lex_hex(&mut self, start: usize, line: u32, col: u32) -> Token {
         self.advance(); // '0'
         self.advance(); // 'x' or 'X'
@@ -840,33 +940,60 @@ impl<'a> Lexer<'a> {
             } else if c.is_alphanumeric() {
                 let bad = c;
                 self.advance();
-                while self.peek().map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                while self
+                    .peek()
+                    .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                {
                     self.advance();
                 }
                 self.diagnostics.push(
-                    Diagnostic::error("F0006", format!("invalid hex digit '{}'", bad), Span::new(start, self.pos, line, col))
-                        .with_help("hex digits are 0-9 and a-f"),
+                    Diagnostic::error(
+                        "F0006",
+                        format!("invalid hex digit '{}'", bad),
+                        Span::new(start, self.pos, line, col),
+                    )
+                    .with_help("hex digits are 0-9 and a-f"),
                 );
-                return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+                return Token::new(
+                    TokenKind::IntLiteral(0),
+                    Span::new(start, self.pos, line, col),
+                );
             } else {
                 break;
             }
         }
         if !has_digits {
             self.diagnostics.push(
-                Diagnostic::error("F0006", "hex literal must have at least one digit after '0x'", Span::new(start, self.pos, line, col))
-                    .with_help("try: 0x0 or 0xFF"),
+                Diagnostic::error(
+                    "F0006",
+                    "hex literal must have at least one digit after '0x'",
+                    Span::new(start, self.pos, line, col),
+                )
+                .with_help("try: 0x0 or 0xFF"),
             );
-            return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+            return Token::new(
+                TokenKind::IntLiteral(0),
+                Span::new(start, self.pos, line, col),
+            );
         }
         match i64::from_str_radix(&digits, 16) {
-            Ok(v) => Token::new(TokenKind::IntLiteral(v), Span::new(start, self.pos, line, col)),
+            Ok(v) => Token::new(
+                TokenKind::IntLiteral(v),
+                Span::new(start, self.pos, line, col),
+            ),
             Err(_) => {
                 self.diagnostics.push(
-                    Diagnostic::error("F0006", format!("hex literal out of range: 0x{}", digits), Span::new(start, self.pos, line, col))
-                        .with_help("maximum value is 0x7FFFFFFFFFFFFFFF (i64 max)"),
+                    Diagnostic::error(
+                        "F0006",
+                        format!("hex literal out of range: 0x{}", digits),
+                        Span::new(start, self.pos, line, col),
+                    )
+                    .with_help("maximum value is 0x7FFFFFFFFFFFFFFF (i64 max)"),
                 );
-                Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col))
+                Token::new(
+                    TokenKind::IntLiteral(0),
+                    Span::new(start, self.pos, line, col),
+                )
             }
         }
     }
@@ -886,33 +1013,60 @@ impl<'a> Lexer<'a> {
             } else if c.is_alphanumeric() {
                 let bad = c;
                 self.advance();
-                while self.peek().map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                while self
+                    .peek()
+                    .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                {
                     self.advance();
                 }
                 self.diagnostics.push(
-                    Diagnostic::error("F0006", format!("invalid binary digit '{}'", bad), Span::new(start, self.pos, line, col))
-                        .with_help("binary digits are 0 and 1"),
+                    Diagnostic::error(
+                        "F0006",
+                        format!("invalid binary digit '{}'", bad),
+                        Span::new(start, self.pos, line, col),
+                    )
+                    .with_help("binary digits are 0 and 1"),
                 );
-                return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+                return Token::new(
+                    TokenKind::IntLiteral(0),
+                    Span::new(start, self.pos, line, col),
+                );
             } else {
                 break;
             }
         }
         if !has_digits {
             self.diagnostics.push(
-                Diagnostic::error("F0006", "binary literal must have at least one digit after '0b'", Span::new(start, self.pos, line, col))
-                    .with_help("try: 0b0 or 0b1010"),
+                Diagnostic::error(
+                    "F0006",
+                    "binary literal must have at least one digit after '0b'",
+                    Span::new(start, self.pos, line, col),
+                )
+                .with_help("try: 0b0 or 0b1010"),
             );
-            return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+            return Token::new(
+                TokenKind::IntLiteral(0),
+                Span::new(start, self.pos, line, col),
+            );
         }
         match i64::from_str_radix(&digits, 2) {
-            Ok(v) => Token::new(TokenKind::IntLiteral(v), Span::new(start, self.pos, line, col)),
+            Ok(v) => Token::new(
+                TokenKind::IntLiteral(v),
+                Span::new(start, self.pos, line, col),
+            ),
             Err(_) => {
                 self.diagnostics.push(
-                    Diagnostic::error("F0006", format!("binary literal out of range: 0b{}", digits), Span::new(start, self.pos, line, col))
-                        .with_help("maximum value is 63 binary digits (i64 max)"),
+                    Diagnostic::error(
+                        "F0006",
+                        format!("binary literal out of range: 0b{}", digits),
+                        Span::new(start, self.pos, line, col),
+                    )
+                    .with_help("maximum value is 63 binary digits (i64 max)"),
                 );
-                Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col))
+                Token::new(
+                    TokenKind::IntLiteral(0),
+                    Span::new(start, self.pos, line, col),
+                )
             }
         }
     }
@@ -932,33 +1086,60 @@ impl<'a> Lexer<'a> {
             } else if c.is_alphanumeric() {
                 let bad = c;
                 self.advance();
-                while self.peek().map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                while self
+                    .peek()
+                    .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                {
                     self.advance();
                 }
                 self.diagnostics.push(
-                    Diagnostic::error("F0006", format!("invalid octal digit '{}'", bad), Span::new(start, self.pos, line, col))
-                        .with_help("octal digits are 0-7"),
+                    Diagnostic::error(
+                        "F0006",
+                        format!("invalid octal digit '{}'", bad),
+                        Span::new(start, self.pos, line, col),
+                    )
+                    .with_help("octal digits are 0-7"),
                 );
-                return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+                return Token::new(
+                    TokenKind::IntLiteral(0),
+                    Span::new(start, self.pos, line, col),
+                );
             } else {
                 break;
             }
         }
         if !has_digits {
             self.diagnostics.push(
-                Diagnostic::error("F0006", "octal literal must have at least one digit after '0o'", Span::new(start, self.pos, line, col))
-                    .with_help("try: 0o0 or 0o755"),
+                Diagnostic::error(
+                    "F0006",
+                    "octal literal must have at least one digit after '0o'",
+                    Span::new(start, self.pos, line, col),
+                )
+                .with_help("try: 0o0 or 0o755"),
             );
-            return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+            return Token::new(
+                TokenKind::IntLiteral(0),
+                Span::new(start, self.pos, line, col),
+            );
         }
         match i64::from_str_radix(&digits, 8) {
-            Ok(v) => Token::new(TokenKind::IntLiteral(v), Span::new(start, self.pos, line, col)),
+            Ok(v) => Token::new(
+                TokenKind::IntLiteral(v),
+                Span::new(start, self.pos, line, col),
+            ),
             Err(_) => {
                 self.diagnostics.push(
-                    Diagnostic::error("F0006", format!("octal literal out of range: 0o{}", digits), Span::new(start, self.pos, line, col))
-                        .with_help("maximum value is 0o777777777777777777777 (i64 max)"),
+                    Diagnostic::error(
+                        "F0006",
+                        format!("octal literal out of range: 0o{}", digits),
+                        Span::new(start, self.pos, line, col),
+                    )
+                    .with_help("maximum value is 0o777777777777777777777 (i64 max)"),
                 );
-                Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col))
+                Token::new(
+                    TokenKind::IntLiteral(0),
+                    Span::new(start, self.pos, line, col),
+                )
             }
         }
     }
@@ -978,13 +1159,51 @@ impl<'a> Lexer<'a> {
         // If identifier is immediately followed by backtick (no whitespace), lex as tagged template
         if self.peek() == Some('`') {
             // Only treat as tagged template if it's an identifier (not a keyword)
-            let is_keyword = matches!(text.as_str(),
-                "let" | "mut" | "const" | "fn" | "return" | "if" | "else" | "match" |
-                "for" | "in" | "while" | "loop" | "break" | "continue" | "enum" |
-                "type" | "use" | "mod" | "as" | "export" | "emit" | "on" | "trait" | "impl" |
-                "defer" | "errdefer" | "spawn" | "parallel" | "with" | "without" |
-                "only" | "partial" | "catch" | "select" | "component" | "is" |
-                "table" | "true" | "false" | "null" | "Ok" | "Err" | "_"
+            let is_keyword = matches!(
+                text.as_str(),
+                "let"
+                    | "mut"
+                    | "const"
+                    | "fn"
+                    | "return"
+                    | "if"
+                    | "else"
+                    | "match"
+                    | "for"
+                    | "in"
+                    | "while"
+                    | "loop"
+                    | "break"
+                    | "continue"
+                    | "enum"
+                    | "type"
+                    | "use"
+                    | "mod"
+                    | "as"
+                    | "export"
+                    | "emit"
+                    | "on"
+                    | "trait"
+                    | "impl"
+                    | "defer"
+                    | "errdefer"
+                    | "spawn"
+                    | "parallel"
+                    | "with"
+                    | "without"
+                    | "only"
+                    | "partial"
+                    | "catch"
+                    | "select"
+                    | "component"
+                    | "is"
+                    | "table"
+                    | "true"
+                    | "false"
+                    | "null"
+                    | "Ok"
+                    | "Err"
+                    | "_"
             );
             if !is_keyword {
                 return self.lex_tagged_template(text, start, line, col);
@@ -994,13 +1213,51 @@ impl<'a> Lexer<'a> {
         // Check for typed tagged template: ident<Type>`...`
         // Look for < followed by matching > then backtick
         if self.peek() == Some('<') {
-            let is_keyword = matches!(text.as_str(),
-                "let" | "mut" | "const" | "fn" | "return" | "if" | "else" | "match" |
-                "for" | "in" | "while" | "loop" | "break" | "continue" | "enum" |
-                "type" | "use" | "mod" | "as" | "export" | "emit" | "on" | "trait" | "impl" |
-                "defer" | "errdefer" | "spawn" | "parallel" | "with" | "without" |
-                "only" | "partial" | "catch" | "select" | "component" | "is" |
-                "table" | "true" | "false" | "null" | "Ok" | "Err" | "_"
+            let is_keyword = matches!(
+                text.as_str(),
+                "let"
+                    | "mut"
+                    | "const"
+                    | "fn"
+                    | "return"
+                    | "if"
+                    | "else"
+                    | "match"
+                    | "for"
+                    | "in"
+                    | "while"
+                    | "loop"
+                    | "break"
+                    | "continue"
+                    | "enum"
+                    | "type"
+                    | "use"
+                    | "mod"
+                    | "as"
+                    | "export"
+                    | "emit"
+                    | "on"
+                    | "trait"
+                    | "impl"
+                    | "defer"
+                    | "errdefer"
+                    | "spawn"
+                    | "parallel"
+                    | "with"
+                    | "without"
+                    | "only"
+                    | "partial"
+                    | "catch"
+                    | "select"
+                    | "component"
+                    | "is"
+                    | "table"
+                    | "true"
+                    | "false"
+                    | "null"
+                    | "Ok"
+                    | "Err"
+                    | "_"
             );
             if !is_keyword {
                 // Look ahead: find matching > then backtick
@@ -1009,7 +1266,10 @@ impl<'a> Lexer<'a> {
                 let mut found_type_param = false;
                 while let Some(c) = self.peek_at(lookahead) {
                     match c {
-                        '<' => { depth += 1; lookahead += 1; }
+                        '<' => {
+                            depth += 1;
+                            lookahead += 1;
+                        }
                         '>' => {
                             depth -= 1;
                             lookahead += 1;
@@ -1022,7 +1282,9 @@ impl<'a> Lexer<'a> {
                             }
                         }
                         '\n' | '\r' => break, // type params don't span lines
-                        _ => { lookahead += 1; }
+                        _ => {
+                            lookahead += 1;
+                        }
                     }
                 }
                 if found_type_param {
@@ -1031,14 +1293,24 @@ impl<'a> Lexer<'a> {
                     let mut depth = 1;
                     loop {
                         match self.peek() {
-                            Some('<') => { depth += 1; type_str.push('<'); self.advance(); }
+                            Some('<') => {
+                                depth += 1;
+                                type_str.push('<');
+                                self.advance();
+                            }
                             Some('>') => {
                                 depth -= 1;
-                                if depth == 0 { self.advance(); break; }
+                                if depth == 0 {
+                                    self.advance();
+                                    break;
+                                }
                                 type_str.push('>');
                                 self.advance();
                             }
-                            Some(c) => { type_str.push(c); self.advance(); }
+                            Some(c) => {
+                                type_str.push(c);
+                                self.advance();
+                            }
                             None => break,
                         }
                     }

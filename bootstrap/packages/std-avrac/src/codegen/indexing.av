@@ -1,0 +1,56 @@
+// WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
+
+use core.{Expr, ValueType, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full}
+use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
+
+/// Codegen for `obj[idx]`. Dispatches by container type:
+/// - `Ptr` → load byte at `ptr + idx`, zext to Int.
+/// - `List` → `avra_array_get`, returns the list's element type.
+/// - `Str` → allocate a 2-byte buffer (one char + NUL) and return
+///   the single-character substring.
+/// Anything else is a codegen error.
+export fn emit_index(ctx: Ctx, env: List<VarBinding>, obj: Expr, idx: Expr) -> Result<EmitValue, string> {
+    let r = ctx.emit_member(env, obj)?
+    // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
+    if vtype_eq(r.ty, .Ptr) {
+        let i_r = ctx.emit(env, idx)?
+        let off = ctx.add(ctx.to_i64(r.value, "ptr_base"), i_r.value, "ptr_off")
+        let off_ptr = ctx.to_ptr(off, "ptr_idx")
+        let byte = ctx.load_i8(off_ptr, "ptr_byte")
+        return ok_emit(ctx.zext(byte, ctx.i64_type, "ptr_byte_ext"), .Int)
+    }
+    // List indexing: list[i] → avra_array_get(list, i)
+    if vtype_is_list(r.ty) {
+        let i_r = ctx.emit(env, idx)?
+        let elem = ctx.array_get(r.value, i_r.value)
+        return ok_emit(elem, vtype_list_elem(r.ty))
+    }
+    if !vtype_is_str(r.ty) {
+        return err_emit("indexing on non-string/list value (ty=${vtype_render_full(r.ty)})")
+    }
+    let i_r = ctx.emit(env, idx)?
+    // Route to `avra_str_char_at` which bounds-checks against strlen.
+    // The inline pointer-arithmetic path was unchecked — `s[5]` on
+    // `"hi"` happily loaded a heap byte from past the NUL terminator
+    // and returned it as a "string". Fix routes through the helper so
+    // OOB indices return "" instead of leaking memory contents.
+    let result = ctx.call("avra_str_char_at", [r.value, i_r.value])
+    ok_emit(result, .Str)
+}
+
+/// Codegen for `obj[start..end]`. Forwards to `avra_str_substring`
+/// for Strings or `avra_array_slice` for Lists. Result keeps the
+/// input ValueType (a substring is still a Str, a sublist of `[T]`
+/// is still `[T]`).
+export fn emit_slice(ctx: Ctx, env: List<VarBinding>, obj: Expr, start: Expr, end: Expr) -> Result<EmitValue, string> {
+    let obj_r = ctx.emit(env, obj)?
+    let start_r = ctx.emit(env, start)?
+    let end_r = ctx.emit(env, end)?
+    if vtype_is_str(obj_r.ty) {
+        let result = ctx.call("avra_str_substring", [obj_r.value, start_r.value, end_r.value])
+        return ok_emit(result, ValueType.Str)
+    }
+    let result = ctx.call("avra_array_slice", [obj_r.value, start_r.value, end_r.value])
+    ok_emit(result, obj_r.ty)
+}
+

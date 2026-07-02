@@ -1,0 +1,47 @@
+// `bs2 compile --emit_metadata --per_file_metadata` writes both the
+// entry's whole-unit metadata.bin AND a per-file slice for every
+// other contributing source file. This is the on-disk artifact half
+// of g2eo level-1 — the build driver picks the sidecars up via the
+// resolver's existing AVRA_USE_METADATA fast-path on subsequent
+// builds, skipping parse for unchanged files.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn pfme_run() -> string {
+    cached_fixture_run("tests/per_file_metadata_emit_fixtures/sample.av")
+}
+
+spec "g2eo per-file metadata emit: --per_file_metadata produces both entry and sub-mod sidecars" {
+    then "compile rc is zero" {
+        pfme_run().contains("PROBE compile_rc_zero: ok")
+    }
+    then "entry-point top.av.meta.bin lands" {
+        pfme_run().contains("PROBE top_meta_present: ok")
+    }
+    then "entry meta is non-empty" {
+        pfme_run().contains("PROBE top_meta_non_empty: ok")
+    }
+    then "sub-mod foo.av.meta.bin lands" {
+        pfme_run().contains("PROBE foo_meta_present: ok")
+    }
+    then "sub-mod meta is non-empty" {
+        pfme_run().contains("PROBE foo_meta_non_empty: ok")
+    }
+    then "per-file slice is smaller than the whole-unit slice (proper slicing, not duplication)" {
+        pfme_run().contains("PROBE foo_slice_smaller_than_whole: ok")
+    }
+}
+
+spec "g2eo per-file metadata emit: default behaviour unchanged when flag absent" {
+    then "compile without --per_file_metadata still succeeds" {
+        pfme_run().contains("PROBE compile2_rc_zero: ok")
+    }
+    then "without the flag, foo.av.meta.bin is NOT written" {
+        pfme_run().contains("PROBE default_no_per_file_meta: ok")
+    }
+    then "without the flag, the entry-point meta is still written" {
+        pfme_run().contains("PROBE default_still_emits_top_meta: ok")
+    }
+}

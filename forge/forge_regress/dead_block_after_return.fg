@@ -1,0 +1,6 @@
+fn classify(k: int) -> int {
+    if k == 1 { return 100 }
+    if k == 2 { return 200 }
+    0
+}
+fn main() { println(string(classify(2))) }

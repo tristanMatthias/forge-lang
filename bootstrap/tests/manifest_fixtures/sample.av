@@ -1,0 +1,4 @@
+// Minimal source that bs2 can `check` against. Exists so the
+// manifest test has something to point bs2 at — the test asserts
+// the manifest banner, not anything about this code.
+fn main() -> int { 0 }

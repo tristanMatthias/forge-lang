@@ -1,7 +1,7 @@
-use inkwell::AddressSpace;
-use inkwell::IntPredicate;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
+use inkwell::AddressSpace;
+use inkwell::IntPredicate;
 
 use crate::codegen::codegen::{Codegen, GenericFnInfo};
 use crate::feature::FeatureStmt;
@@ -21,7 +21,12 @@ impl<'ctx> Codegen<'ctx> {
                     if !data.type_params.is_empty() {
                         return;
                     }
-                    self.compile_fn(&data.name, &data.params, data.return_type.as_ref(), &data.body);
+                    self.compile_fn(
+                        &data.name,
+                        &data.params,
+                        data.return_type.as_ref(),
+                        &data.body,
+                    );
                 }
             }
             "Return" => {
@@ -36,14 +41,16 @@ impl<'ctx> Codegen<'ctx> {
                                 if let crate::typeck::types::Type::Nullable(_) = &ret_ty {
                                     let expected = self.type_to_llvm_basic(&ret_ty);
                                     if v.get_type() != expected {
-                                        let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                        let wrapped = self.maybe_wrap_nullable(v, &ret_ty);
                                         self.builder.build_return(Some(&wrapped)).unwrap();
                                     } else {
                                         self.builder.build_return(Some(&v)).unwrap();
                                     }
                                 } else {
                                     // Use LLVM function's actual return type for coercion
-                                    let fn_ret = self.builder.get_insert_block()
+                                    let fn_ret = self
+                                        .builder
+                                        .get_insert_block()
                                         .and_then(|bb| bb.get_parent())
                                         .and_then(|f| f.get_type().get_return_type());
                                     if let Some(fr) = fn_ret {
@@ -96,12 +103,15 @@ impl<'ctx> Codegen<'ctx> {
             "FnDecl" => {
                 if let Some(data) = feature_data!(fe, FnDeclData) {
                     if !data.type_params.is_empty() {
-                        self.generic_fns.insert(data.name.clone(), GenericFnInfo {
-                            type_params: data.type_params.clone(),
-                            params: data.params.clone(),
-                            return_type: data.return_type.clone(),
-                            body: data.body.clone(),
-                        });
+                        self.generic_fns.insert(
+                            data.name.clone(),
+                            GenericFnInfo {
+                                type_params: data.type_params.clone(),
+                                params: data.params.clone(),
+                                return_type: data.return_type.clone(),
+                                body: data.body.clone(),
+                            },
+                        );
                     }
                 }
             }
@@ -160,7 +170,12 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn compile_module_functions_feature(&mut self, fe: &FeatureStmt, prefix: &str) {
         if let Some(data) = feature_data!(fe, FnDeclData) {
             let mangled = format!("{}_{}", prefix, data.name);
-            self.compile_fn(&mangled, &data.params, data.return_type.as_ref(), &data.body);
+            self.compile_fn(
+                &mangled,
+                &data.params,
+                data.return_type.as_ref(),
+                &data.body,
+            );
         }
     }
 
@@ -181,21 +196,27 @@ impl<'ctx> Codegen<'ctx> {
         // Handle namespace method builtins that need special codegen here
         if let Expr::MemberAccess { object, field, .. } = callee {
             if let Expr::Ident(obj_name, _) = object.as_ref() {
-                if let Some(ns_method) = crate::registry::BuiltinFnRegistry::get_namespace_method(obj_name, field) {
+                if let Some(ns_method) =
+                    crate::registry::BuiltinFnRegistry::get_namespace_method(obj_name, field)
+                {
                     match (ns_method.namespace, ns_method.method) {
                         ("channel", "tick") => {
                             let interval_ms = self.compile_expr(&args[0].value)?;
                             return self.call_runtime_expect(
-                                "forge_channel_tick_create", &[interval_ms.into()], "tick_ch",
+                                "forge_channel_tick_create",
+                                &[interval_ms.into()],
+                                "tick_ch",
                                 "forge_channel_tick_create not declared",
                             );
                         }
                         ("string", "from_ptr") => {
-                            let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                            let arg_exprs: Vec<Expr> =
+                                args.iter().map(|a| a.value.clone()).collect();
                             return self.compile_string_from_ptr(&arg_exprs);
                         }
                         ("ptr", "from_string") => {
-                            let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                            let arg_exprs: Vec<Expr> =
+                                args.iter().map(|a| a.value.clone()).collect();
                             return self.compile_ptr_from_string(&arg_exprs);
                         }
                         _ => {} // Fall through to compile_method_call for json.parse etc.
@@ -207,8 +228,9 @@ impl<'ctx> Codegen<'ctx> {
         // Handle special built-in functions
         if let Expr::Ident(name, _) = callee {
             // Dispatch built-in functions via registry
+            // If the feature handler returns None, fall through to generic call path
             if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
-                return match def.feature_id {
+                let builtin_result = match def.feature_id {
                     "printing" => match name.as_str() {
                         "println" => self.compile_println(args),
                         "print" => self.compile_print(args),
@@ -273,27 +295,41 @@ impl<'ctx> Codegen<'ctx> {
                             }
                         };
                         self.call_runtime_expect(
-                            "forge_channel_create", &[capacity], "ch",
+                            "forge_channel_create",
+                            &[capacity],
+                            "ch",
                             "forge_channel_create not declared - did you `use @std.channel`?",
                         )
-                    },
+                    }
                     _ => None,
                 };
+                if builtin_result.is_some() {
+                    return builtin_result;
+                }
+                // Fall through to generic call path for unhandled runtime functions
             }
 
             // Handle enum constructors: EnumName.variant(args)
             // Handle regular function calls
-            if let Some(func) = self.functions.get(name).copied()
+            if let Some(func) = self
+                .functions
+                .get(name)
+                .copied()
                 .or_else(|| self.module.get_function(name))
             {
                 // Get parameter types from type checker for struct target hints
-                let param_types: Vec<Type> = if let Some(Type::Function { params, .. }) = self.type_checker.env.functions.get(name).cloned() {
+                let param_types: Vec<Type> = if let Some(Type::Function { params, .. }) =
+                    self.type_checker.env.functions.get(name).cloned()
+                {
                     params
                 } else {
                     Vec::new()
                 };
                 let compiled_args = self.compile_call_args_with_types(args, func, &param_types)?;
-                let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
+                let result = self
+                    .builder
+                    .build_call(func, &compiled_args, "call")
+                    .unwrap();
                 let val = result.try_as_basic_value().basic();
                 // Auto-wrap ptr → ForgeString for extern fns declared with `-> string`
                 // Skip when suppress_string_wrap is set (caller wants raw ptr, e.g. `let x: ptr = ...`)
@@ -312,11 +348,17 @@ impl<'ctx> Codegen<'ctx> {
             // Check if this is a generic function that needs monomorphization
             if self.generic_fns.contains_key(name.as_str()) {
                 if let Some(type_args) = self.infer_type_args(name, args) {
-                    let type_args_refs: Vec<(&str, Type)> = type_args.iter().map(|(n, t)| (n.as_str(), t.clone())).collect();
+                    let type_args_refs: Vec<(&str, Type)> = type_args
+                        .iter()
+                        .map(|(n, t)| (n.as_str(), t.clone()))
+                        .collect();
                     if let Some(mangled) = self.monomorphize_fn(name, &type_args_refs) {
                         if let Some(func) = self.functions.get(&mangled).copied() {
                             let compiled_args = self.compile_call_args(args, func)?;
-                            let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
+                            let result = self
+                                .builder
+                                .build_call(func, &compiled_args, "call")
+                                .unwrap();
                             return result.try_as_basic_value().basic();
                         }
                     }
@@ -326,10 +368,17 @@ impl<'ctx> Codegen<'ctx> {
 
             // Maybe it's a variable holding a function pointer
             if let Some((ptr, ty)) = self.lookup_var(name) {
-                if let Type::Function { ref params, ref return_type } = &ty {
+                if let Type::Function {
+                    ref params,
+                    ref return_type,
+                } = &ty
+                {
                     let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                    let fn_ptr = self.builder.build_load(ptr_type, ptr, "fn_ptr")
-                        .unwrap().into_pointer_value();
+                    let fn_ptr = self
+                        .builder
+                        .build_load(ptr_type, ptr, "fn_ptr")
+                        .unwrap()
+                        .into_pointer_value();
 
                     // Build the LLVM function type from the Forge type
                     let llvm_params: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = params
@@ -340,24 +389,38 @@ impl<'ctx> Codegen<'ctx> {
                     let ret_llvm = self.type_to_llvm_basic(return_type);
                     let fn_type = match ret_llvm {
                         inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&llvm_params, false),
-                        inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&llvm_params, false),
-                        inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&llvm_params, false),
-                        inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&llvm_params, false),
-                        inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&llvm_params, false),
-                        inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&llvm_params, false),
-                        inkwell::types::BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
+                        inkwell::types::BasicTypeEnum::FloatType(t) => {
+                            t.fn_type(&llvm_params, false)
+                        }
+                        inkwell::types::BasicTypeEnum::StructType(t) => {
+                            t.fn_type(&llvm_params, false)
+                        }
+                        inkwell::types::BasicTypeEnum::PointerType(t) => {
+                            t.fn_type(&llvm_params, false)
+                        }
+                        inkwell::types::BasicTypeEnum::ArrayType(t) => {
+                            t.fn_type(&llvm_params, false)
+                        }
+                        inkwell::types::BasicTypeEnum::VectorType(t) => {
+                            t.fn_type(&llvm_params, false)
+                        }
+                        inkwell::types::BasicTypeEnum::ScalableVectorType(_) => {
+                            panic!("unsupported type: scalable vector")
+                        }
                     };
 
                     // Compile arguments
-                    let mut compiled_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = Vec::new();
+                    let mut compiled_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
+                        Vec::new();
                     for arg in args {
                         let val = self.compile_expr(&arg.value)?;
                         compiled_args.push(val.into());
                     }
 
-                    let result = self.builder.build_indirect_call(
-                        fn_type, fn_ptr, &compiled_args, "closure_call"
-                    ).unwrap();
+                    let result = self
+                        .builder
+                        .build_indirect_call(fn_type, fn_ptr, &compiled_args, "closure_call")
+                        .unwrap();
                     return result.try_as_basic_value().basic();
                 }
             }
@@ -404,7 +467,9 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(Type::DynTrait(ref trait_name)) = param_types.get(i) {
                     let concrete_type = self.infer_type(&arg.value);
                     if !matches!(concrete_type, Type::DynTrait(_)) {
-                        if let Some(fat) = self.build_trait_fat_pointer(val, &concrete_type, trait_name) {
+                        if let Some(fat) =
+                            self.build_trait_fat_pointer(val, &concrete_type, trait_name)
+                        {
                             compiled.push(fat.into());
                         } else {
                             compiled.push(val.into());
@@ -430,6 +495,69 @@ impl<'ctx> Codegen<'ctx> {
         Some(compiled)
     }
 
+    /// Like coerce_value, but always reinterprets struct values whose LLVM
+    /// types differ — even if the structural shape happens to match. Named
+    /// vs anonymous structs (e.g. `%ForgeString` vs `{ ptr, i64 }`) compare
+    /// non-equal at the inkwell level, so callers needing the exact named
+    /// shape must use this variant. Falls through to coerce_value otherwise.
+    pub(crate) fn coerce_value_strict(
+        &self,
+        val: BasicValueEnum<'ctx>,
+        target_type: BasicTypeEnum<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        // For struct values, always round-trip through memory using the
+        // target's struct type. LLVM 19 unifies structurally identical
+        // anonymous and named structs (e.g. `{ ptr, i64 }` and
+        // `%ForgeString`) into the same Type pointer, so an equality check
+        // can return true even though the call site needs the named form.
+        // Forcing the round-trip materializes a fresh SSA value typed as
+        // `target_type`, which build_call then accepts unchanged.
+        if val.is_struct_value() && target_type.is_struct_type() {
+            let target_st = target_type.into_struct_type();
+            // Bail if there's no insert block, or if the current block has
+            // already been terminated. Inserting alloca/store/load after a
+            // terminator produces dead instructions whose loaded value
+            // looks valid but is poison at runtime — that's exactly what
+            // was crashing parse_int compilation in stage 2 binary.
+            let cur_bb = match self.builder.get_insert_block() {
+                Some(bb) => bb,
+                None => return val,
+            };
+            if cur_bb.get_terminator().is_some() {
+                return val;
+            }
+            // Hoist the alloca into the function's entry block so its
+            // SSA value dominates any later use of the loaded result,
+            // regardless of which block we're inserting the load into.
+            let func = match cur_bb.get_parent() {
+                Some(f) => f,
+                None => return val,
+            };
+            let entry = match func.get_first_basic_block() {
+                Some(bb) => bb,
+                None => return val,
+            };
+            match entry.get_first_instruction() {
+                Some(first) => self.builder.position_before(&first),
+                None => self.builder.position_at_end(entry),
+            }
+            let alloca = self
+                .builder
+                .build_alloca(target_st, "coerce_strict")
+                .unwrap();
+            self.builder.position_at_end(cur_bb);
+            self.builder.build_store(alloca, val).unwrap();
+            return self
+                .builder
+                .build_load(target_st, alloca, "coerced_strict")
+                .unwrap();
+        }
+        if val.get_type() == target_type {
+            return val;
+        }
+        self.coerce_value(val, target_type)
+    }
+
     pub(crate) fn coerce_value(
         &self,
         val: BasicValueEnum<'ctx>,
@@ -445,16 +573,47 @@ impl<'ctx> Codegen<'ctx> {
             let val_int = val.into_int_value();
             let target_int = target_type.into_int_type();
             if val_int.get_type().get_bit_width() < target_int.get_bit_width() {
-                return self.builder.build_int_s_extend(val_int, target_int, "coerce").unwrap().into();
+                return self
+                    .builder
+                    .build_int_s_extend(val_int, target_int, "coerce")
+                    .unwrap()
+                    .into();
             } else if val_int.get_type().get_bit_width() > target_int.get_bit_width() {
-                return self.builder.build_int_truncate(val_int, target_int, "coerce").unwrap().into();
+                return self
+                    .builder
+                    .build_int_truncate(val_int, target_int, "coerce")
+                    .unwrap()
+                    .into();
             }
+        }
+
+        // int -> ptr (for C functions returning handles as i64)
+        if val.is_int_value() && target_type.is_pointer_type() {
+            return self
+                .builder
+                .build_int_to_ptr(val.into_int_value(), target_type.into_pointer_type(), "i2p")
+                .unwrap()
+                .into();
+        }
+
+        // ptr -> int
+        if val.is_pointer_value() && target_type.is_int_type() {
+            return self
+                .builder
+                .build_ptr_to_int(val.into_pointer_value(), target_type.into_int_type(), "p2i")
+                .unwrap()
+                .into();
         }
 
         // int -> float
         if val.is_int_value() && target_type.is_float_type() {
-            return self.builder
-                .build_signed_int_to_float(val.into_int_value(), target_type.into_float_type(), "itof")
+            return self
+                .builder
+                .build_signed_int_to_float(
+                    val.into_int_value(),
+                    target_type.into_float_type(),
+                    "itof",
+                )
                 .unwrap()
                 .into();
         }
@@ -464,15 +623,39 @@ impl<'ctx> Codegen<'ctx> {
             let string_type = self.string_type();
             if val.into_struct_value().get_type() == string_type {
                 // ForgeString → extract ptr field for extern FFI
-                return self.builder
+                return self
+                    .builder
                     .build_extract_value(val.into_struct_value(), 0, "str_to_ptr")
                     .unwrap()
                     .into();
             }
             // Other structs → alloca and return pointer
-            let alloca = self.builder.build_alloca(val.get_type(), "struct_to_ptr").unwrap();
+            let alloca = self
+                .builder
+                .build_alloca(val.get_type(), "struct_to_ptr")
+                .unwrap();
             self.builder.build_store(alloca, val).unwrap();
             return alloca.into();
+        }
+
+        // int/ptr → struct: write the scalar into a zero-init struct alloca
+        // and load it back as the target struct. Handles cases like
+        // `return some_i64_value` from a `-> Program` function — the
+        // self-host wraps complex types in i64/ptr handles, so we need to
+        // splat the bits into the struct's first slot rather than emit
+        // `ret <struct> undef` (which crashes any caller that uses the
+        // result). Better to return a zeroed struct than an undef.
+        if (val.is_int_value() || val.is_pointer_value()) && target_type.is_struct_type() {
+            let target_st = target_type.into_struct_type();
+            let alloca = self.builder.build_alloca(target_st, "i2s").unwrap();
+            self.builder
+                .build_store(alloca, target_st.const_zero())
+                .unwrap();
+            // Stash the scalar bits at offset 0 — most self-host structs
+            // are i64-prefixed, so the value survives if the caller treats
+            // the struct as opaque storage.
+            self.builder.build_store(alloca, val).ok();
+            return self.builder.build_load(target_st, alloca, "i2s_l").unwrap();
         }
 
         // Struct → different struct: alloca + store + load to bitcast
@@ -480,15 +663,25 @@ impl<'ctx> Codegen<'ctx> {
             let target_st = target_type.into_struct_type();
             let alloca = self.builder.build_alloca(target_st, "coerce_tmp").unwrap();
             // Zero-initialize to avoid garbage in padding
-            self.builder.build_store(alloca, target_st.const_zero()).unwrap();
+            self.builder
+                .build_store(alloca, target_st.const_zero())
+                .unwrap();
             // Store the smaller value at the same address (reinterpret)
-            let src_ptr = self.builder.build_bit_cast(
-                alloca,
-                self.context.ptr_type(inkwell::AddressSpace::default()),
-                "coerce_ptr",
-            ).unwrap();
-            self.builder.build_store(src_ptr.into_pointer_value(), val).unwrap();
-            return self.builder.build_load(target_st, alloca, "coerced").unwrap();
+            let src_ptr = self
+                .builder
+                .build_bit_cast(
+                    alloca,
+                    self.context.ptr_type(inkwell::AddressSpace::default()),
+                    "coerce_ptr",
+                )
+                .unwrap();
+            self.builder
+                .build_store(src_ptr.into_pointer_value(), val)
+                .unwrap();
+            return self
+                .builder
+                .build_load(target_st, alloca, "coerced")
+                .unwrap();
         }
 
         val
@@ -528,7 +721,11 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Shared helper for compile_println and compile_print.
     /// `prefix` is either "forge_println" or "forge_print".
-    fn compile_print_dispatch(&mut self, args: &[CallArg], prefix: &str) -> Option<BasicValueEnum<'ctx>> {
+    fn compile_print_dispatch(
+        &mut self,
+        args: &[CallArg],
+        prefix: &str,
+    ) -> Option<BasicValueEnum<'ctx>> {
         let arg = &args[0];
         let val = self.compile_expr(&arg.value)?;
         let resolved = self.resolve_runtime_type(&arg.value, &val);
@@ -539,7 +736,11 @@ impl<'ctx> Codegen<'ctx> {
             Type::Float => "_float",
             Type::Bool => "_bool",
             _ => {
-                if val.is_struct_value() { "_string" } else { return None; }
+                if val.is_struct_value() {
+                    "_string"
+                } else {
+                    return None;
+                }
             }
         };
 
@@ -548,7 +749,9 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     pub(crate) fn compile_assert(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
-        if args.len() < 2 { return None; }
+        if args.len() < 2 {
+            return None;
+        }
 
         // Get the span of the assert call for source location
         let call_span = args[0].value.span();
@@ -562,13 +765,23 @@ impl<'ctx> Codegen<'ctx> {
             if iv.get_type().get_bit_width() == 8 {
                 iv
             } else if iv.get_type().get_bit_width() == 1 {
-                self.builder.build_int_z_extend(iv, self.context.i8_type(), "assert_ext").unwrap()
+                self.builder
+                    .build_int_z_extend(iv, self.context.i8_type(), "assert_ext")
+                    .unwrap()
             } else {
                 // Truncate i64 comparison result
-                let cmp = self.builder.build_int_compare(
-                    IntPredicate::NE, iv, iv.get_type().const_zero(), "assert_cmp",
-                ).unwrap();
-                self.builder.build_int_z_extend(cmp, self.context.i8_type(), "assert_ext").unwrap()
+                let cmp = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::NE,
+                        iv,
+                        iv.get_type().const_zero(),
+                        "assert_cmp",
+                    )
+                    .unwrap();
+                self.builder
+                    .build_int_z_extend(cmp, self.context.i8_type(), "assert_ext")
+                    .unwrap()
             }
         } else {
             return None;
@@ -577,43 +790,86 @@ impl<'ctx> Codegen<'ctx> {
         // Get string ptr and len from ForgeString
         if msg_val.is_struct_value() {
             let msg_struct = msg_val.into_struct_value();
-            let msg_ptr = self.builder.build_extract_value(msg_struct, 0, "msg_ptr").unwrap();
-            let msg_len = self.builder.build_extract_value(msg_struct, 1, "msg_len").unwrap();
+            let msg_ptr = self
+                .builder
+                .build_extract_value(msg_struct, 0, "msg_ptr")
+                .unwrap();
+            let msg_len = self
+                .builder
+                .build_extract_value(msg_struct, 1, "msg_len")
+                .unwrap();
 
             // Build file name as a global string constant
             let file_str = &self.source_file;
-            let file_global = self.builder.build_global_string_ptr(
-                if file_str.is_empty() { "<unknown>" } else { file_str },
-                "assert_file",
-            ).unwrap();
+            let file_global = self
+                .builder
+                .build_global_string_ptr(
+                    if file_str.is_empty() {
+                        "<unknown>"
+                    } else {
+                        file_str
+                    },
+                    "assert_file",
+                )
+                .unwrap();
             let file_len_val = self.context.i64_type().const_int(
-                if file_str.is_empty() { 9 } else { file_str.len() as u64 },
+                if file_str.is_empty() {
+                    9
+                } else {
+                    file_str.len() as u64
+                },
                 false,
             );
-            let line_val = self.context.i64_type().const_int(call_span.line as u64, false);
-            let col_val = self.context.i64_type().const_int(call_span.col as u64, false);
+            let line_val = self
+                .context
+                .i64_type()
+                .const_int(call_span.line as u64, false);
+            let col_val = self
+                .context
+                .i64_type()
+                .const_int(call_span.col as u64, false);
 
             let assert_fn = self.module.get_function("forge_assert").unwrap_or_else(|| {
                 let i8t = self.context.i8_type();
                 let ptrt = self.context.ptr_type(AddressSpace::default());
                 let i64t = self.context.i64_type();
                 let ft = self.context.void_type().fn_type(
-                    &[i8t.into(), ptrt.into(), i64t.into(), ptrt.into(), i64t.into(), i64t.into(), i64t.into()],
+                    &[
+                        i8t.into(),
+                        ptrt.into(),
+                        i64t.into(),
+                        ptrt.into(),
+                        i64t.into(),
+                        i64t.into(),
+                        i64t.into(),
+                    ],
                     false,
                 );
                 self.module.add_function("forge_assert", ft, None)
             });
-            self.builder.build_call(assert_fn, &[
-                cond_i8.into(), msg_ptr.into(), msg_len.into(),
-                file_global.as_pointer_value().into(), file_len_val.into(),
-                line_val.into(), col_val.into(),
-            ], "").unwrap();
+            self.builder
+                .build_call(
+                    assert_fn,
+                    &[
+                        cond_i8.into(),
+                        msg_ptr.into(),
+                        msg_len.into(),
+                        file_global.as_pointer_value().into(),
+                        file_len_val.into(),
+                        line_val.into(),
+                        col_val.into(),
+                    ],
+                    "",
+                )
+                .unwrap();
         }
         None
     }
 
     pub(crate) fn compile_sleep(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
-        if args.is_empty() { return None; }
+        if args.is_empty() {
+            return None;
+        }
         let val = self.compile_expr(&args[0].value)?;
         // If the arg is an int, treat it as milliseconds
         if val.is_int_value() {

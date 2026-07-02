@@ -1,0 +1,32 @@
+spec "list ops" {
+    then "list length" {
+        let nums = [10, 20, 30]
+        nums.length == 3
+    }
+    then "list indexing" {
+        let nums = [10, 20, 30]
+        nums[0] == 10 && nums[1] == 20 && nums[2] == 30
+    }
+    then "push increases length" {
+        mut nums = [10, 20, 30]
+        nums.push(40)
+        nums.length == 4 && nums[3] == 40
+    }
+    then "pop returns last" {
+        mut nums = [10, 20, 30, 40]
+        let last = nums.pop()
+        last == 40 && nums.length == 3
+    }
+    then "empty list" {
+        let empty = []
+        empty.length == 0
+    }
+    then "list sum via loop" {
+        let nums = [10, 20, 30]
+        mut sum = 0
+        for i in 0..nums.length {
+            sum = sum + nums[i]
+        }
+        sum == 60
+    }
+}

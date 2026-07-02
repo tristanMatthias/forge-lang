@@ -1,0 +1,60 @@
+// WHY: module system feature — mod declarations, use imports, export
+// visibility.
+//
+// dir-as-module (g2eo.1): parser.av + resolver.av + package.av +
+// graph_build.av + dir_module.av auto-load as siblings, surface flat
+// at `features.modules.{...}`.
+use features.eval.{ok_result, value_null}
+use core.{feature_new, Feature}
+use resolve.{resolve_stmt_list}
+
+/// Resolver hook for `mod`. Recursively resolves the body — name
+/// resolution within the module is local to its scope.
+fn mod_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r }
+}
+
+/// Tree-walk evaluator hook for `mod`. The evaluator doesn't yet
+/// model module scoping — return null and let body evaluation
+/// fall back to the surrounding scope.
+fn mod_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Module(_, _) -> ok_result(rt, value_null())
+        _ -> ok_result(rt, value_null())
+    }
+}
+
+/// Tree-walk evaluator hook for `use`. `use` is a compile-time
+/// directive only — the evaluator returns null without effect.
+fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Use(_, _) -> ok_result(rt, value_null())
+        _ -> ok_result(rt, value_null())
+    }
+}
+
+/// Register the `mod` declaration feature. Wires up the parser,
+/// resolver, and eval hooks. Codegen is provided implicitly by
+/// the codegen pipeline emitting `__init_<name>()` per module.
+export fn mod_feature() -> Feature {
+    let empty_body: List<SStmt> = []
+    feature_new("mod") with {
+        stmt_tag: Stmt.Module("", empty_body),
+        decl_keyword: "kw_mod",
+        parse_decl: (p: Parser) -> p.parse_module_declaration(),
+        resolve_stmt: mod_resolve,
+        eval_stmt: mod_eval,
+    }
+}
+
+/// Register the `use` import feature. Routes to the parser's
+/// `parse_use_declaration`. Resolution / linking happens in the
+/// resolver's name-rewriting pass.
+export fn use_feature() -> Feature {
+    feature_new("use") with {
+        stmt_tag: Stmt.Use("", []),
+        decl_keyword: "kw_use",
+        parse_decl: (p: Parser) -> p.parse_use_declaration(),
+        eval_stmt: use_eval,
+    }
+}

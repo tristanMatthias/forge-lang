@@ -13,7 +13,11 @@ Based on the ideas that:
 4. Escape hatches built in to everything when you don't want magic
 5. DX/Ergonomics is a feature, not an afterthought (errors, docs, tooling, etc) and optmized for LLMs
 
+## Things to build
 - Layers of abstracted intent: Notebook like document that starts with goals and ends in code (tree like structure)
+- Netface
+- TUI game
+- Simple ERP for Avanci
 
 # TODO
 - Move "provider" naming to "package"
@@ -22,7 +26,11 @@ Based on the ideas that:
 # Language
 - Pascal's const recurision declaration
 - Pascal's if i in [0..3, 7, 9, 12..15] 
-
+- Enforce types for every variable (params too)
+- Needed for md5 Crypto etc
+  1. Sized integer types — u8, u16, u32, u64, i8, i16, i32. Wrapping arithmetic is the default for unsigned per spec convention. The codegen already has the LLVM types (i32, i8 are first-class in LLVM); the surface language just needs to expose them.
+  2. A bytes type (or just [u8]) — distinct from string. Strings are UTF-8 character data; bytes are raw octets. Crypto, binary protocols, and file I/O all want raw bytes. Today everything is shoehorned through string.
+  3. string.byte(i) -> u8 and bytes_from_string(s) -> [u8] — or whatever the spec settles on. The conversion has to be cheap.
 # Std libs
 - @std/config
 - @@std/logs
@@ -38,6 +46,8 @@ std/mobile
 - @std/observability
 - @std.cli
   - Typed args based on sub commands
+- Import / compile Typespec projects
+- Ternaries
 
 - # Compiler
 - Single output compiler
@@ -52,6 +62,8 @@ std/mobile
   - @syntax should be removed and just part of component creation
 - What could be done with control flow graphs? Vizualize? Deployment analytics? 
 - Remove "self" in components
+- Read up more on https://martinfowler.com/articles/mechanical-sympathy-principles.html and this entire website
+
 ### New compiler (forgec)
 - new_thing/thing_new is an antipattern, we need a better init/constructor story
 
@@ -69,7 +81,8 @@ std/mobile
   - Take 2/3 features of the Language and generate an inspiring example. expose this as a dropdown on the homepage 
 - Package registry (install from registry or github like go)
 - Version management and changelogs
-
+- avra learn:
+  - Interactive REPL / book with chapters for learning Avra
 # Deployment targets:
 - Fly.io 
 - Render

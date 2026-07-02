@@ -1,0 +1,268 @@
+// WHY: in-Avra worker pool — drop-in replacement for `xargs -P`
+// style parallel-N execution. Each command runs in its own
+// subprocess (hermetic isolation: a crash in one job can't poison
+// the others), up to `jobs` concurrent workers. As workers finish,
+// the pool reaps them and dispatches the next queued command.
+//
+// Foundation for the future per-mod build dispatcher (g2eo level-2):
+// once each .av file is its own unit with its own fingerprint, the
+// build driver feeds N `bs2 compile` commands into pool_run and
+// waits. Cargo-style hermetic worker isolation per spec axis 18.
+//
+// Tracking ticket: forge-crafting-intepreters-e20h.
+//
+// Key shape contracts:
+//   - Commands are full shell strings; the pool wraps each in
+//     `/bin/sh -c <cmd>` so callers can compose `cd path && build...`
+//     without escaping arg lists.
+//   - Returns the worst exit code observed across all workers (0 iff
+//     every worker exited 0). Callers wanting per-job rc need a
+//     marker-file pattern.
+//   - Polling cadence is 50ms — small enough that short jobs reap
+//     promptly, large enough to not burn CPU on the polling loop.
+
+extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_is_alive(handle: int) -> int
+extern fn avra_process_wait(handle: int) -> string
+extern fn avra_sleep_ms(ms: int)
+extern fn avra_parse_int(s: string) -> int
+
+use @std.json.{json_str}
+
+fn pool_max_rc(a: int, b: int) -> int {
+    if a > b { a } else { b }
+}
+
+// Worker slot. `handle = -1` means idle; otherwise it's the handle
+// returned by avra_process_spawn_bg. `started_idx` is the queue
+// index that worker is processing (only used for diagnostics).
+type Worker = {
+    handle: int,
+    started_idx: int,
+}
+
+fn idle_worker() -> Worker { Worker { handle: 0 - 1, started_idx: 0 - 1 } }
+
+fn workers_init(n: int) -> List<Worker> {
+    mut ws: List<Worker> = []
+    mut i = 0
+    while i < n {
+        ws.push(idle_worker())
+        i = i + 1
+    }
+    ws
+}
+
+fn workers_has_idle(ws: List<Worker>) -> bool {
+    mut i = 0
+    while i < ws.length {
+        if ws[i].handle < 0 { return true }
+        i = i + 1
+    }
+    false
+}
+
+// Replace the first idle worker with a freshly-spawned one. Mutates
+// the list in-place via `.set` — no rebuild-on-every-dispatch like
+// the prior linked-list shape required.
+fn workers_dispatch(ws: List<Worker>, handle: int, started_idx: int) {
+    mut local = ws
+    for (i, w) in local.enumerate() {
+        if w.handle < 0 {
+            local.set(i, Worker { handle, started_idx })
+            return
+        }
+    }
+}
+
+type ReapResult = {
+    completed: int,
+    max_rc: int,
+}
+
+// Walk every active worker; when avra_process_is_alive returns 0 the
+// child has exited, so wait() collects its rc and the slot is freed
+// in-place (idle_worker overwrites the entry). The shared `ws` list
+// is mutated; caller threads its own state across reap calls.
+fn workers_reap(ws: List<Worker>) -> ReapResult {
+    mut local = ws
+    mut completed = 0
+    mut max_rc = 0
+    for (i, w) in local.enumerate() {
+        if w.handle >= 0 && avra_process_is_alive(w.handle) == 0 {
+            let json = avra_process_wait(w.handle)
+            let rc = pool_extract_rc(json)
+            local.set(i, idle_worker())
+            completed = completed + 1
+            max_rc = pool_max_rc(max_rc, rc)
+        }
+    }
+    ReapResult { completed, max_rc }
+}
+
+// avra_process_wait returns JSON `{"stdout":...,"stderr":...,"code":N}`.
+// Pull the int after the `"code":` key. Defaults to 0 if the key is
+// absent (won't happen in practice but keep the failure mode safe).
+export fn pool_extract_rc(wait_json: string) -> int {
+    let key = "\"code\":"
+    let idx = wait_json.index_of(key)
+    if idx < 0 { return 0 }
+    let from = idx + key.length
+    mut to = from
+    while to < wait_json.length {
+        let c = wait_json.byte(to)
+        if c < 0x30 || c > 0x39 {
+            if to == from {
+                // Allow a leading minus for negative codes.
+                if c == 0x2D { to = to + 1 }
+                else { break }
+            } else {
+                break
+            }
+        } else {
+            to = to + 1
+        }
+    }
+    if to == from { return 0 }
+    avra_parse_int(wait_json.substring(from, to))
+}
+
+/// Run `commands` in parallel, capping concurrency at `jobs`. Each
+/// command is spawned via `/bin/sh -c <cmd>`; the pool reaps
+/// completed workers and dispatches new commands until every entry
+/// in the queue has been run. Returns the worst exit code seen.
+///
+/// Takes a built-in `List<string>` (Avra's standard generic list)
+/// so callers can pass any string list shape — list-literals,
+/// builders, results from comprehensions — without wrapping in a
+/// custom enum. `.length` and `[idx]` give O(1) random access for
+/// the dispatcher's index walk.
+export fn pool_run(commands: List<string>, jobs: int) -> int {
+    pool_run_with_progress(commands, [], jobs, "")
+}
+
+/// Variant of `pool_run` that also writes per-job progress markers
+/// into `marker_dir`. Each entry in `slugs` corresponds 1:1 with
+/// `commands`; before a command spawns, the dispatcher touches
+/// `<marker_dir>/<slug>.running`, and after the worker reaps it
+/// touches `<marker_dir>/<slug>.done` (and removes `.running`).
+/// A separate UI loop in another thread/process can poll these
+/// markers to render a TTY progress bar without coupling to the
+/// pool's internal state — this is how `run_pre_deps_with_progress`
+/// (TTY branch of pre_build_path_deps) hooks into the pool without
+/// the marker-protocol being baked into the pool's API surface.
+///
+/// Pass `marker_dir == ""` (or empty `slugs`) to disable markers —
+/// callers that don't need progress just call `pool_run` directly.
+/// When markers are enabled, `slugs.length` MUST equal
+/// `commands.length`; mismatched shapes fall back to the no-marker
+/// path so a one-off bug doesn't leak truncated state to the UI.
+///
+/// Tracking: forge-crafting-intepreters-e20h Phase 2 unification.
+export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
+    if jobs <= 0 { return 0 }
+    let want_markers = marker_dir != "" && slugs.length == commands.length
+    let workers = workers_init(jobs)
+    let started_slugs = workers_started_slugs_init(jobs)
+    let total = commands.length
+    mut next_idx = 0
+    mut completed = 0
+    mut max_rc = 0
+    while completed < total {
+        let reaped = workers_reap_with_markers(workers, started_slugs, marker_dir, want_markers)
+        completed = completed + reaped.completed
+        max_rc = pool_max_rc(max_rc, reaped.max_rc)
+        if completed >= total { return max_rc }
+        let dispatched_count = dispatch_batch(commands, slugs, next_idx, total, workers, started_slugs, marker_dir, want_markers)
+        next_idx = next_idx + dispatched_count
+        if dispatched_count == 0 && completed < total {
+            avra_sleep_ms(50)
+        }
+    }
+    max_rc
+}
+
+// Per-worker slug list, mirrors workers[]. Empty string means the
+// worker is idle (no slug currently in flight). Used so the reap
+// path knows which slug to flip from .running → .done — without
+// this, the pool would have to re-derive the slug from the cmd
+// string, which is brittle.
+fn workers_started_slugs_init(n: int) -> List<string> {
+    mut ss: List<string> = []
+    mut i = 0
+    while i < n { ss.push("") i = i + 1 }
+    ss
+}
+
+// Dispatch up to `total - idx` queued commands into `workers`'s idle
+// slots. Returns the number of slots filled this call so the caller
+// advances `next_idx` accordingly. When markers are enabled, also
+// touches `<marker_dir>/<slug>.running` per dispatched job and
+// stashes the slug in `slugs_state` so the reap can find it.
+fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int, workers: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool) -> int {
+    mut filled = 0
+    mut i = idx
+    while i < total && workers_has_idle(workers) {
+        let cmd = cmds[i]
+        let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
+        if handle < 0 {
+            // Spawn failure: skip the slot (rc is reported as -1 via
+            // wait elsewhere; here the worst case is we under-count).
+            // Advance to keep draining the queue.
+            i = i + 1
+            continue
+        }
+        workers_dispatch(workers, handle, i)
+        if want_markers {
+            let slug = slugs[i]
+            workers_record_slug(workers, slugs_state, handle, slug)
+            avra_shell_exec("touch ${marker_dir}/${slug}.running")
+        }
+        filled = filled + 1
+        i = i + 1
+    }
+    filled
+}
+
+// Set the slug in slugs_state at the slot whose handle just got
+// dispatched. Linear scan because `workers_dispatch` returns nothing
+// — we re-find by handle. Tiny lists (jobs typically 4-16) so the
+// O(N) cost is irrelevant.
+fn workers_record_slug(ws: List<Worker>, slugs_state: List<string>, handle: int, slug: string) {
+    mut local = slugs_state
+    for (i, w) in ws.enumerate() {
+        if w.handle == handle {
+            local.set(i, slug)
+            return
+        }
+    }
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+// Marker-aware reap: for each completed worker, flip its slug
+// from .running → .done. Falls back to the plain reap when markers
+// aren't requested.
+fn workers_reap_with_markers(ws: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool) -> ReapResult {
+    if !want_markers { return workers_reap(ws) }
+    mut local = ws
+    mut state = slugs_state
+    mut completed = 0
+    mut max_rc = 0
+    for (i, w) in local.enumerate() {
+        if w.handle >= 0 && avra_process_is_alive(w.handle) == 0 {
+            let json = avra_process_wait(w.handle)
+            let rc = pool_extract_rc(json)
+            let slug = state[i]
+            if slug != "" {
+                avra_shell_exec("rm -f ${marker_dir}/${slug}.running && touch ${marker_dir}/${slug}.done")
+                state.set(i, "")
+            }
+            local.set(i, idle_worker())
+            completed = completed + 1
+            max_rc = pool_max_rc(max_rc, rc)
+        }
+    }
+    ReapResult { completed, max_rc }
+}
+

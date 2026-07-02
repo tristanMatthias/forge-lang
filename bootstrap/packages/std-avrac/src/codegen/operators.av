@@ -1,0 +1,396 @@
+// WHY: codegen for operators — binary, unary, logical, float.
+
+use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int, vtype_is_optional, vtype_strip_optional}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use core.{avra_covmap_next_decision_id}
+use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
+use codegen.{is_null_literal}
+use codegen.{optional_repr_tagged, emit_optional_unwrap, emit_optional_is_none, emit_cond_truthy}
+use features.enum_decl.{emit_enum_tag_cmp}
+
+/// Codegen for unary operators (`-x`, `!x`, `~x`).
+///
+/// `Neg` chooses fneg on Float, integer subtraction-from-zero
+/// otherwise. `Not` is logical negation (returns Bool). `BitNot` is
+/// bitwise NOT on i64.
+export fn emit_unary(ctx: Ctx, env: List<VarBinding>, op: UnOp, right: Expr) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, right)?
+
+    match op {
+        .Neg -> {
+            if vtype_eq(r.ty, .Float) {
+                let fval = ctx.to_f64(r.value, "fneg_in")
+                let neg = ctx.fneg(fval, "fneg")
+                return ok_emit(ctx.cast_to(neg, .Float), .Float)
+            }
+            ok_emit(ctx.sub(ctx.i64(0), r.value, "neg"), .Int)
+        }
+        .Not -> {
+            // Negate the TRUTHINESS, not the raw bits: a tagged optional is a
+            // box pointer, so `!Some(false)` under a raw zero-compare read
+            // "non-null ⇒ false". emit_cond_truthy unwraps optionals first.
+            let t = emit_cond_truthy(ctx, r.value, r.ty, "not_in")
+            ok_emit(ctx.icmp_eq(ctx.to_i64(t, "not_t64"), ctx.i64(0), "not_cmp"), .Bool)
+        }
+        .BitNot -> ok_emit(ctx.bit_not(r.value, "bnot"), .Int)
+    }
+}
+
+/// Codegen for binary operators. Resolves both operands, normalizes
+/// ptr / i64 mismatches (`x == null`), then dispatches by operand
+/// type: floats route through `emit_float_binary`, strings to
+/// `emit_concat` / `emit_str_eq` / `emit_str_cmp`, enums to
+/// `emit_enum_tag_cmp`, pointers to integer arithmetic with
+/// re-cast, everything else to plain integer ops.
+///
+/// Division and modulo emit a `avra_div_by_zero_trap` guard at the
+/// call site (via `ctx.div_zero_trap`).
+export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, right: Expr) -> Result<EmitValue, string> {
+    let left_result = ctx.emit(env, left)?
+    mut lhs = left_result.value
+
+    let right_result = ctx.emit(env, right)?
+    mut rhs = right_result.value
+
+    let l_opt = vtype_is_optional(left_result.ty)
+    let r_opt = vtype_is_optional(right_result.ty)
+
+    // Either side optional + `==`/`!=`: equality must be none-safe and
+    // inner-aware. Two equal present TAGGED values live in distinct boxes
+    // (a raw icmp reads "ne"); a present niche string must strcmp like a
+    // plain string; an `enum?` pair must tag-compare; and a `none` side
+    // must answer false/true — never unwrap (a blind unwrap loads the null
+    // box and traps). `x == none` literals keep the dedicated null-test
+    // path below.
+    if (l_opt || r_opt) && ((op is .Eq) || (op is .Ne)) && !is_null_literal(left) && !is_null_literal(right) {
+        let l_inner = vtype_strip_optional(left_result.ty)
+        if vtype_eq(l_inner, vtype_strip_optional(right_result.ty)) {
+            return emit_optional_eq(ctx, lhs, rhs, l_opt, r_opt, l_inner, op is .Ne)
+        }
+    }
+
+    // Optional unbox for mixed operands: when one side is a value-inner
+    // (tagged/boxed) optional and the other is a concrete non-`null` value,
+    // unbox the optional so the operator sees the inner value (e.g.
+    // `some_int_opt < 6`). `== null` / `!= null` are left as a none-check
+    // (the box is non-null, `none` is the null pointer). Permissive — strict
+    // non-null gating will require an explicit unwrap instead.
+    if l_opt && !r_opt && !is_null_literal(right) && optional_repr_tagged(vtype_strip_optional(left_result.ty)) {
+        lhs = emit_optional_unwrap(ctx, vtype_strip_optional(left_result.ty), lhs)
+    }
+    if r_opt && !l_opt && !is_null_literal(left) && optional_repr_tagged(vtype_strip_optional(right_result.ty)) {
+        rhs = emit_optional_unwrap(ctx, vtype_strip_optional(right_result.ty), rhs)
+    }
+
+    // Normalize types for comparison: if one operand is ptr and the
+    // other is i64 (e.g. null == 0), cast to match.
+    let l_is_ptr = ctx.is_ptr_value(lhs)
+    let r_is_ptr = ctx.is_ptr_value(rhs)
+    if l_is_ptr && !r_is_ptr {
+        rhs = ctx.int_to_ptr(rhs, "rhs_ptr")
+    }
+    if r_is_ptr && !l_is_ptr {
+        lhs = ctx.int_to_ptr(lhs, "lhs_ptr")
+    }
+
+    let null_cmp = is_null_literal(left) || is_null_literal(right)
+    let is_str = vtype_is_str(left_result.ty) || vtype_is_str(right_result.ty)
+    let is_float = vtype_eq(left_result.ty, .Float) || vtype_eq(right_result.ty, .Float)
+
+    if is_float {
+        return emit_float_binary(ctx, lhs, rhs, op, left_result.ty, right_result.ty)
+    }
+
+    // Sized-int width normalisation: when one side is a narrow sized
+    // int (u8/u16/u32/i8/i16/i32) and the other is bare i64 (an
+    // integer literal post-typeck), cast both to the narrow side's
+    // width. Without this, `let a:u8=200; a + 50` emits
+    // `add i8 %a, i64 50` and LLVM's verifier rejects mismatched
+    // widths. The same applies to comparisons (icmp i8, i64).
+    if is_unsigned_compare(left_result.ty, right_result.ty) || is_signed_narrow(left_result.ty, right_result.ty) {
+        let narrow_ty = if is_narrow(left_result.ty) { left_result.ty } else { right_result.ty }
+        if !vtype_eq(left_result.ty, narrow_ty) {
+            lhs = ctx.cast_to(lhs, narrow_ty)
+        }
+        if !vtype_eq(right_result.ty, narrow_ty) {
+            rhs = ctx.cast_to(rhs, narrow_ty)
+        }
+    }
+
+    let is_ptr = vtype_eq(left_result.ty, .Ptr) || vtype_eq(right_result.ty, .Ptr)
+
+    match op {
+        .Add -> {
+            if is_str { return emit_concat(ctx, lhs, rhs) }
+            if is_ptr {
+                // Pointer arithmetic requires i64 operands, then cast back to ptr.
+                let l_i64 = ctx.to_i64(lhs, "padd_l")
+                let r_i64 = ctx.to_i64(rhs, "padd_r")
+                return ok_emit(ctx.int_to_ptr(ctx.add(l_i64, r_i64, "ptr_add"), "ptr_sum"), .Ptr)
+            }
+            ok_emit(ctx.add(lhs, rhs, "add"), .Int)
+        }
+        .Sub -> {
+            if is_ptr {
+                let l_i64 = ctx.to_i64(lhs, "psub_l")
+                let r_i64 = ctx.to_i64(rhs, "psub_r")
+                return ok_emit(ctx.int_to_ptr(ctx.sub(l_i64, r_i64, "ptr_sub"), "ptr_diff"), .Ptr)
+            }
+            ok_emit(ctx.sub(lhs, rhs, "sub"), .Int)
+        }
+        .Mul -> ok_emit(ctx.mul(lhs, rhs, "mul"), .Int)
+        .Div -> {
+            ctx.div_zero_trap(rhs)
+            // Pick UDiv when either operand is unsigned (kxvn): SDiv
+            // would interpret the high bit as sign, so a u8 value of
+            // 200 / 4 reads as -56 / 4 = -14 = 242 instead of 50.
+            let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
+                ctx.udiv(lhs, rhs, "udiv")
+            } else {
+                ctx.sdiv(lhs, rhs, "div")
+            }
+            ok_emit(v, .Int)
+        }
+        .Mod -> {
+            ctx.div_zero_trap(rhs)
+            let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
+                ctx.urem(lhs, rhs, "urem")
+            } else {
+                ctx.srem(lhs, rhs, "mod")
+            }
+            ok_emit(v, .Int)
+        }
+        .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"), .Int)
+        .BitOr -> ok_emit(ctx.bit_or(lhs, rhs, "bor"), .Int)
+        .BitXor -> ok_emit(ctx.bit_xor(lhs, rhs, "bxor"), .Int)
+        // Shift codegen for sized ints. The width-normalisation pass
+        // at the top already casts rhs to lhs's type when either is
+        // narrow; here we just pick LShr (logical, zero-fill) for
+        // unsigned and ASHR (arithmetic, sign-fill) for signed.
+        .Shl -> ok_emit(ctx.shl(lhs, rhs, "shl"), .Int)
+        .Shr -> {
+            let v = if is_unsigned_compare(left_result.ty, right_result.ty) {
+                ctx.lshr(lhs, rhs, "lshr")
+            } else {
+                ctx.ashr(lhs, rhs, "ashr")
+            }
+            ok_emit(v, .Int)
+        }
+        .Eq -> {
+            if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
+            let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
+            if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 32) }
+            ok_emit(ctx.icmp_eq(lhs, rhs, "eq"), .Bool)
+        }
+        .Ne -> {
+            if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, true) }
+            let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
+            if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 33) }
+            ok_emit(ctx.icmp_ne(lhs, rhs, "ne"), .Bool)
+        }
+        // Pick unsigned ICmp predicates when either operand is a u8/
+        // u16/u32/u64. Without this, a `let a:u8=255; a<200` reads
+        // 255 as -1 under the default signed compare and returns the
+        // wrong answer. Tracking ticket: forge-crafting-intepreters-kxvn.
+        // LLVMIntPredicate values: U{LT,LE,GT,GE}=36/37/34/35,
+        // S{LT,LE,GT,GE}=40/41/38/39.
+        .Lt -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 40) }
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 36 } else { 40 }
+            ctx.icmp_bool(pred, lhs, rhs, "lt")
+        }
+        .Le -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 41) }
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 37 } else { 41 }
+            ctx.icmp_bool(pred, lhs, rhs, "le")
+        }
+        .Gt -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 38) }
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 34 } else { 38 }
+            ctx.icmp_bool(pred, lhs, rhs, "gt")
+        }
+        .Ge -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 39) }
+            let pred = if is_unsigned_compare(left_result.ty, right_result.ty) { 35 } else { 39 }
+            ctx.icmp_bool(pred, lhs, rhs, "ge")
+        }
+    }
+}
+
+/// Value equality when either operand is an optional (`==` / `!=`).
+/// Three-way and none-safe: when either side is `none`, the result is
+/// "both none" (a non-optional side is never none), so no unwrap ever
+/// touches a null box. When both are present, the inners compare by KIND
+/// via `emit_inner_eq_i1`. `negate` flips the result for `!=`.
+fn emit_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, l_opt: bool, r_opt: bool, inner: ValueType, negate: bool) -> Result<EmitValue, string> {
+    let l_none = if l_opt { emit_optional_is_none(ctx, lhs) } else { ctx.const_i1(0) }
+    let r_none = if r_opt { emit_optional_is_none(ctx, rhs) } else { ctx.const_i1(0) }
+    let slot = ctx.alloca_i64("opteq_slot")
+    let merge_bb = ctx.bb("opteq_end")
+    let present_bb = ctx.bb("opteq_present")
+    let absent_bb = ctx.bb("opteq_absent")
+    ctx.cond_br(ctx.bit_or(l_none, r_none, "opteq_any_none"), absent_bb, present_bb)
+    ctx.position(absent_bb)
+    let both_none = ctx.bit_and(l_none, r_none, "opteq_both_none")
+    ctx.store_br_if_open(ctx.to_i64(both_none, "opteq_abs"), slot, merge_bb)
+    ctx.position(present_bb)
+    let lv = if l_opt { emit_optional_unwrap(ctx, inner, lhs) } else { lhs }
+    let rv = if r_opt { emit_optional_unwrap(ctx, inner, rhs) } else { rhs }
+    let inner_eq = emit_inner_eq_i1(ctx, lv, rv, inner)?
+    ctx.store_br_if_open(ctx.to_i64(inner_eq, "opteq_pres"), slot, merge_bb)
+    ctx.position(merge_bb)
+    let eq64 = ctx.load_i64(slot, "opteq_val")
+    if negate {
+        ok_emit(ctx.icmp_eq(eq64, ctx.i64(0), "opteq_ne"), .Bool)
+    } else {
+        ok_emit(ctx.icmp_ne(eq64, ctx.i64(0), "opteq_eq"), .Bool)
+    }
+}
+
+/// Present-values equality as a raw `i1`, dispatched by inner KIND so an
+/// optional's `==` matches its non-optional counterpart: strings strcmp,
+/// enums tag-compare, floats fcmp; value scalars compare by value and the
+/// remaining reference types by pointer identity (both an integer icmp).
+fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr, string> {
+    if vtype_is_str(inner) {
+        let cmp = ctx.call("strcmp", [ctx.to_ptr(lv, "opteq_ls"), ctx.to_ptr(rv, "opteq_rs")])
+        let ext = ctx.sext(cmp, ctx.i64_type, "opteq_strcmp")
+        return .Ok(ctx.eq(ext, ctx.i64(0), "opteq_streq"))
+    }
+    if vtype_enum_name(inner) != "" {
+        let tag_eq = emit_enum_tag_cmp(ctx, lv, rv, inner, 32)?
+        return .Ok(ctx.truthy(tag_eq.value, "opteq_enumeq"))
+    }
+    if vtype_eq(inner, .Float) {
+        return .Ok(ctx.fcmp(1, ctx.to_f64(lv, "opteq_lf"), ctx.to_f64(rv, "opteq_rf"), "opteq_feq"))
+    }
+    .Ok(ctx.eq(ctx.to_i64(lv, "opteq_li"), ctx.to_i64(rv, "opteq_ri"), "opteq_ieq"))
+}
+
+/// True iff `ty` is any narrow sized-integer variant — used to
+/// detect when a binary op needs width normalisation.
+fn is_narrow(ty: ValueType) -> bool {
+    vtype_is_unsigned_int(ty) || vtype_is_signed_narrow_int(ty)
+}
+
+/// True iff a binary comparison should use unsigned ICmp. Either
+/// operand being unsigned forces unsigned semantics (mixing
+/// unsigned with `int` should never happen post-typeck, but the
+/// branch is cheap and keeps the codegen robust).
+fn is_unsigned_compare(lty: ValueType, rty: ValueType) -> bool {
+    vtype_is_unsigned_int(lty) || vtype_is_unsigned_int(rty)
+}
+
+/// True iff at least one operand is a signed narrow type. Used
+/// alongside `is_unsigned_compare` to gate the width-normalisation
+/// pre-pass — both signed and unsigned narrow types need rhs casting.
+fn is_signed_narrow(lty: ValueType, rty: ValueType) -> bool {
+    vtype_is_signed_narrow_int(lty) || vtype_is_signed_narrow_int(rty)
+}
+
+/// Coerce an LLVM value to f64. If it's already Float we just bit-
+/// cast through the type system; otherwise we run a signed-int-to-fp
+/// conversion. Used by `emit_float_binary` to widen integer operands
+/// in mixed Int+Float arithmetic.
+export fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
+    if vtype_eq(ty, .Float) { return ctx.to_f64(val, "coerce_f64") }
+    ctx.sitofp(val, "coerce_f64")
+}
+
+/// Codegen for binary ops where at least one operand is Float.
+/// Both sides are widened to f64, then arithmetic uses the LLVM
+/// float intrinsics. Comparisons return Bool via `fcmp_bool` with
+/// LLVM's ordered predicate codes (OEQ=1, OGT=2, OGE=3, OLT=4,
+/// OLE=5, ONE=6).
+export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueType, rty: ValueType) -> Result<EmitValue, string> {
+    let fl = coerce_to_f64(ctx, lhs, lty)
+    let fr = coerce_to_f64(ctx, rhs, rty)
+    match op {
+        .Add -> ok_emit(ctx.cast_to(ctx.fadd(fl, fr, "fadd"), .Float), .Float)
+        .Sub -> ok_emit(ctx.cast_to(ctx.fsub(fl, fr, "fsub"), .Float), .Float)
+        .Mul -> ok_emit(ctx.cast_to(ctx.fmul(fl, fr, "fmul"), .Float), .Float)
+        .Div -> ok_emit(ctx.cast_to(ctx.fdiv(fl, fr, "fdiv"), .Float), .Float)
+        .Mod -> ok_emit(ctx.cast_to(ctx.frem(fl, fr, "frem"), .Float), .Float)
+        // fcmp ordered predicates: OEQ=1, OGT=2, OGE=3, OLT=4, OLE=5, ONE=6
+        .Eq -> ctx.fcmp_bool(1, fl, fr, "feq")
+        .Ne -> ctx.fcmp_bool(6, fl, fr, "fne")
+        .Lt -> ctx.fcmp_bool(4, fl, fr, "flt")
+        .Le -> ctx.fcmp_bool(5, fl, fr, "fle")
+        .Gt -> ctx.fcmp_bool(2, fl, fr, "fgt")
+        .Ge -> ctx.fcmp_bool(3, fl, fr, "fge")
+        _ -> ok_emit(ctx.add(lhs, rhs, "add"), .Int)
+    }
+}
+
+/// Codegen for short-circuiting `&&` and `||`. Emits a phi-merge so
+/// the result is a single Bool SSA value, and threads MC/DC
+/// condition coverage counters through the true/false branches so
+/// `--coverage` produces accurate decision telemetry.
+///
+/// Branch shape: evaluate left → on early-exit go straight to merge
+/// with the short-circuit constant; on through-path evaluate right
+/// and phi the two block ends. Each side records its true/false
+/// condition via `ctx.cov_condition_*`.
+export fn emit_logical(ctx: Ctx, env: List<VarBinding>, left: Expr, op: LogicOp, right: Expr) -> Result<EmitValue, string> {
+    let decision_id = avra_covmap_next_decision_id()
+    let left_result = ctx.emit(env, left)?
+
+    let l_bool = emit_cond_truthy(ctx, left_result.value, left_result.ty, "l_bool")
+    let left_bb = ctx.current_bb()
+
+    let rhs_bb = ctx.bb("sc_rhs")
+    let sc_bb = ctx.bb("sc_short")
+    let merge_bb = ctx.bb("sc_merge")
+
+    match op {
+        .And -> ctx.cond_br(l_bool, rhs_bb, sc_bb)
+        .Or -> ctx.cond_br(l_bool, sc_bb, rhs_bb)
+    }
+
+    // Short-circuit path: left condition determined the outcome
+    ctx.position(sc_bb)
+    match op {
+        .And -> ctx.cov_condition_false(decision_id)
+        .Or -> ctx.cov_condition_true(decision_id)
+    }
+    ctx.br(merge_bb)
+
+    // Right-hand side: left was true (&&) or false (||), evaluate right
+    ctx.position(rhs_bb)
+    match op {
+        .And -> ctx.cov_condition_true(decision_id)
+        .Or -> ctx.cov_condition_false(decision_id)
+    }
+    let right_result = ctx.emit(env, right)?
+    let r_bool = emit_cond_truthy(ctx, right_result.value, right_result.ty, "r_bool")
+
+    // Right condition true/false counters
+    let r_true_bb = ctx.bb("sc_r_true")
+    let r_false_bb = ctx.bb("sc_r_false")
+    let r_merge_bb = ctx.bb("sc_r_merge")
+    ctx.cond_br(r_bool, r_true_bb, r_false_bb)
+
+    ctx.position(r_true_bb)
+    ctx.cov_condition_true(decision_id)
+    ctx.br(r_merge_bb)
+
+    ctx.position(r_false_bb)
+    ctx.cov_condition_false(decision_id)
+    ctx.br(r_merge_bb)
+
+    ctx.position(r_merge_bb)
+    let rhs_end_bb = ctx.current_bb()
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    let phi = ctx.phi_i1("sc_phi")
+    let sc_val = match op {
+        .And -> ctx.const_i1(0)
+        .Or -> ctx.const_i1(1)
+    }
+    ctx.add_incoming(phi, sc_val, sc_bb)
+    ctx.add_incoming(phi, r_bool, rhs_end_bb)
+
+    ok_emit(ctx.zext(phi, ctx.i64_type, "sc_ext"), .Bool)
+}
+

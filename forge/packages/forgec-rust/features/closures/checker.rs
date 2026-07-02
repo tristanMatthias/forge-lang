@@ -9,7 +9,8 @@ use super::types::ClosureData;
 impl TypeChecker {
     /// Type-check a closure via Feature dispatch.
     pub(crate) fn check_closure_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, ClosureData, |data| self.check_closure(&data.params, &data.body))
+        feature_check!(self, fe, ClosureData, |data| self
+            .check_closure(&data.params, &data.body))
     }
 
     /// Type-check a closure expression.

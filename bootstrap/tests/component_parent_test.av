@@ -1,0 +1,40 @@
+component root_comp_p {
+    config {
+        label: string = ""
+    }
+    fn init() {
+        println("root: ${self.name}")
+    }
+}
+
+component child_comp_p {
+    config {
+        tag: string = ""
+    }
+    fn init() {
+        println("child: ${self.name} parent=${self.__parent_name}")
+    }
+}
+
+fn cp_run() -> string {
+    avra_test_capture_start()
+    component root_comp_p main_app {
+        label "test"
+
+        component child_comp_p sub1 {
+            tag "first"
+        }
+
+        component child_comp_p sub2 {
+            tag "second"
+        }
+    }
+    println("done")
+    avra_test_capture_stop()
+}
+
+spec "component parent" {
+    then "__parent_name threaded into nested children" {
+        cp_run() == "root: main_app\nchild: sub1 parent=main_app\nchild: sub2 parent=main_app\ndone"
+    }
+}

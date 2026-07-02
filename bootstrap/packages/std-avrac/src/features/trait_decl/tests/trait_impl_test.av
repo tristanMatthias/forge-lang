@@ -1,0 +1,39 @@
+trait TraitPrintable {
+    fn display(self) -> string
+}
+
+/// Test fixture: simple struct used to exercise the
+/// `impl TraitPrintable for TraitDog` codegen path.
+///
+/// @field name — the dog's name.
+type TraitDog = { name: string }
+
+impl TraitPrintable for TraitDog {
+    fn display(self) -> string {
+        self.name
+    }
+}
+
+/// Test fixture: a second TraitPrintable implementer with a
+/// different display body — verifies trait dispatch routes to
+/// the right concrete impl per type.
+///
+/// @field name — the cat's name.
+type TraitCat = { name: string }
+
+impl TraitPrintable for TraitCat {
+    fn display(self) -> string {
+        "meow from " + self.name
+    }
+}
+
+spec "trait impl" {
+    then "dog display" {
+        let d = TraitDog { name: "Rex" }
+        d.display() == "Rex"
+    }
+    then "cat display" {
+        let c = TraitCat { name: "Whiskers" }
+        c.display() == "meow from Whiskers"
+    }
+}

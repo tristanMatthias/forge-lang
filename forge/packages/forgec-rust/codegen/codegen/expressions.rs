@@ -7,16 +7,49 @@ impl<'ctx> Codegen<'ctx> {
             Expr::FloatLit(f, _) => Some(self.context.f64_type().const_float(*f).into()),
             Expr::BoolLit(b, _) => Some(self.context.i8_type().const_int(*b as u64, false).into()),
             Expr::NullLit(_) => {
-                let inner_ty = if let Some(Type::Nullable(inner)) = &self.current_fn_return_type {
-                    self.type_to_llvm_basic(inner)
-                } else {
-                    self.context.i64_type().into()
-                };
-                let null_struct = self.context.struct_type(
-                    &[self.context.i8_type().into(), inner_ty.into()],
-                    false,
-                );
-                Some(null_struct.const_zero().into())
+                // The shape of `null` depends on its target context:
+                //  - in a `ptr`-typed slot → an actual null pointer
+                //  - in a `T?` slot       → a `{i8, T}` zero (Optional.None)
+                //  - otherwise            → a `{i8, i64}` zero (legacy fallback)
+                //
+                // The hint comes from the most-specific surrounding target,
+                // checked in priority order:
+                //   1. struct_target_type (when initializing a typed local)
+                //   2. json_parse_hint    (let with explicit type annotation)
+                //   3. current_fn_return_type
+                let target = self
+                    .struct_target_type
+                    .as_ref()
+                    .or(self.json_parse_hint.as_ref())
+                    .cloned()
+                    .or_else(|| self.current_fn_return_type.clone());
+
+                match target {
+                    Some(Type::Ptr) => Some(
+                        self.context
+                            .ptr_type(AddressSpace::default())
+                            .const_null()
+                            .into(),
+                    ),
+                    Some(Type::Nullable(inner)) => {
+                        let inner_ty = self.type_to_llvm_basic(&inner);
+                        let null_struct = self
+                            .context
+                            .struct_type(&[self.context.i8_type().into(), inner_ty.into()], false);
+                        Some(null_struct.const_zero().into())
+                    }
+                    _ => {
+                        // Legacy fallback: a generic {i8, i64} null nullable.
+                        let null_struct = self.context.struct_type(
+                            &[
+                                self.context.i8_type().into(),
+                                self.context.i64_type().into(),
+                            ],
+                            false,
+                        );
+                        Some(null_struct.const_zero().into())
+                    }
+                }
             }
             Expr::StringLit(s, _) => Some(self.build_string_literal(s)),
             Expr::TemplateLit { parts, .. } => self.compile_template(parts),
@@ -35,7 +68,9 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
 
-            Expr::Binary { left, op, right, .. } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 // Short-circuit evaluation for && and ||
                 if matches!(op, BinaryOp::And | BinaryOp::Or) {
                     return self.compile_short_circuit(left, *op, right);
@@ -68,12 +103,10 @@ impl<'ctx> Codegen<'ctx> {
                     UnaryOp::Not => {
                         let int_val = val.into_int_value();
                         let zero = self.context.i8_type().const_zero();
-                        let cmp = self.builder.build_int_compare(
-                            IntPredicate::EQ,
-                            int_val,
-                            zero,
-                            "not",
-                        ).unwrap();
+                        let cmp = self
+                            .builder
+                            .build_int_compare(IntPredicate::EQ, int_val, zero, "not")
+                            .unwrap();
                         Some(
                             self.builder
                                 .build_int_z_extend(cmp, self.context.i8_type(), "not_ext")
@@ -83,17 +116,17 @@ impl<'ctx> Codegen<'ctx> {
                     }
                     UnaryOp::BitNot => {
                         let int_val = val.into_int_value();
-                        Some(
-                            self.builder
-                                .build_not(int_val, "bitnot")
-                                .unwrap()
-                                .into(),
-                        )
+                        Some(self.builder.build_not(int_val, "bitnot").unwrap().into())
                     }
                 }
             }
 
-            Expr::Call { callee, args, type_args, .. } => self.compile_call(callee, args, type_args),
+            Expr::Call {
+                callee,
+                args,
+                type_args,
+                ..
+            } => self.compile_call(callee, args, type_args),
             Expr::MemberAccess { object, field, .. } => self.compile_member_access(object, field),
             Expr::Index { object, index, .. } => self.compile_index_access(object, index),
             Expr::Block(block) => {
@@ -123,7 +156,10 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Dispatch a feature-owned expression to the appropriate feature's codegen.
-    pub(crate) fn compile_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Option<BasicValueEnum<'ctx>> {
+    pub(crate) fn compile_feature_expr(
+        &mut self,
+        fe: &crate::feature::FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
         crate::dispatch_feature_expr!(self, fe, {
             ("spawn", _)                       => compile_spawn_feature,
             ("ranges", _)                      => compile_range_feature,
@@ -183,7 +219,9 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         // Handle EnumName.variant (no-arg constructor)
         if let Expr::Ident(name, _) = object {
-            if let Some(Type::Enum { variants, .. }) = self.type_checker.env.enum_types.get(name).cloned() {
+            if let Some(Type::Enum { variants, .. }) =
+                self.type_checker.env.enum_types.get(name).cloned()
+            {
                 return self.compile_enum_constructor(name, field, &[], &variants);
             }
         }
@@ -203,7 +241,10 @@ impl<'ctx> Codegen<'ctx> {
                 if obj_val.is_struct_value() {
                     let struct_val = obj_val.into_struct_value();
                     // List is {ptr, len} - length is at index 1
-                    return self.builder.build_extract_value(struct_val, 1, "list_length").ok();
+                    return self
+                        .builder
+                        .build_extract_value(struct_val, 1, "list_length")
+                        .ok();
                 }
             }
         }
@@ -215,7 +256,10 @@ impl<'ctx> Codegen<'ctx> {
                 if obj_val.is_struct_value() {
                     let struct_val = obj_val.into_struct_value();
                     // Map is {keys_ptr, values_ptr, length} - length at index 2
-                    return self.builder.build_extract_value(struct_val, 2, "map_length").ok();
+                    return self
+                        .builder
+                        .build_extract_value(struct_val, 2, "map_length")
+                        .ok();
                 }
             }
         }
@@ -227,7 +271,10 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_val = self.compile_expr(object)?;
                     if obj_val.is_struct_value() {
                         let struct_val = obj_val.into_struct_value();
-                        return self.builder.build_extract_value(struct_val, idx, &format!("tuple_{}", idx)).ok();
+                        return self
+                            .builder
+                            .build_extract_value(struct_val, idx, &format!("tuple_{}", idx))
+                            .ok();
                     }
                 }
             }
@@ -239,7 +286,10 @@ impl<'ctx> Codegen<'ctx> {
                 let obj_val = self.compile_expr(object)?;
                 if obj_val.is_struct_value() {
                     let struct_val = obj_val.into_struct_value();
-                    return self.builder.build_extract_value(struct_val, idx as u32, field).ok();
+                    return self
+                        .builder
+                        .build_extract_value(struct_val, idx as u32, field)
+                        .ok();
                 }
             }
         }
@@ -253,9 +303,20 @@ impl<'ctx> Codegen<'ctx> {
                     if obj_val.is_struct_value() {
                         let struct_val = obj_val.into_struct_value();
                         // Unwrap optional: extract inner value at index 1
-                        if let Some(inner_val) = self.builder.build_extract_value(struct_val, 1, "opt_inner").ok() {
+                        if let Some(inner_val) = self
+                            .builder
+                            .build_extract_value(struct_val, 1, "opt_inner")
+                            .ok()
+                        {
                             if inner_val.is_struct_value() {
-                                return self.builder.build_extract_value(inner_val.into_struct_value(), idx as u32, field).ok();
+                                return self
+                                    .builder
+                                    .build_extract_value(
+                                        inner_val.into_struct_value(),
+                                        idx as u32,
+                                        field,
+                                    )
+                                    .ok();
                             }
                         }
                     }
@@ -265,7 +326,10 @@ impl<'ctx> Codegen<'ctx> {
 
         // Handle channel property access (channel is represented as int)
         // ch.is_closed, ch.length, ch.capacity, ch.is_empty, ch.is_full
-        if obj_type == Type::Int || obj_type == Type::Unknown || matches!(obj_type, Type::Channel(_)) {
+        if obj_type == Type::Int
+            || obj_type == Type::Unknown
+            || matches!(obj_type, Type::Channel(_))
+        {
             let channel_fn_name = match field {
                 "is_closed" => Some("forge_channel_is_closed"),
                 "length" => Some("forge_channel_length"),
@@ -277,7 +341,10 @@ impl<'ctx> Codegen<'ctx> {
             if let Some(fn_name) = channel_fn_name {
                 if let Some(func) = self.module.get_function(fn_name) {
                     let obj_val = self.compile_expr(object)?;
-                    let result = self.builder.build_call(func, &[obj_val.into()], field).unwrap();
+                    let result = self
+                        .builder
+                        .build_call(func, &[obj_val.into()], field)
+                        .unwrap();
                     return result.try_as_basic_value().basic();
                 }
             }
@@ -332,11 +399,15 @@ impl<'ctx> Codegen<'ctx> {
         match op {
             BinaryOp::And => {
                 // &&: if left is false, skip right (result = false)
-                self.builder.build_conditional_branch(lhs_bool, rhs_bb, merge_bb).unwrap();
+                self.builder
+                    .build_conditional_branch(lhs_bool, rhs_bb, merge_bb)
+                    .unwrap();
             }
             BinaryOp::Or => {
                 // ||: if left is true, skip right (result = true)
-                self.builder.build_conditional_branch(lhs_bool, merge_bb, rhs_bb).unwrap();
+                self.builder
+                    .build_conditional_branch(lhs_bool, merge_bb, rhs_bb)
+                    .unwrap();
             }
             _ => unreachable!(),
         }
@@ -369,7 +440,10 @@ impl<'ctx> Codegen<'ctx> {
 
         // Merge with phi
         self.builder.position_at_end(merge_bb);
-        let phi = self.builder.build_phi(self.context.bool_type(), "sc_result").unwrap();
+        let phi = self
+            .builder
+            .build_phi(self.context.bool_type(), "sc_result")
+            .unwrap();
 
         match op {
             BinaryOp::And => {
@@ -392,16 +466,23 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Extend to i8 (Forge bool type)
-        let result = self.builder.build_int_z_extend(
-            phi.as_basic_value().into_int_value(),
-            self.context.i8_type(),
-            "sc_ext",
-        ).unwrap();
+        let result = self
+            .builder
+            .build_int_z_extend(
+                phi.as_basic_value().into_int_value(),
+                self.context.i8_type(),
+                "sc_ext",
+            )
+            .unwrap();
 
         Some(result.into())
     }
 
-    pub(crate) fn value_to_cstring_ptr(&mut self, val: BasicValueEnum<'ctx>, expr: &Expr) -> BasicValueEnum<'ctx> {
+    pub(crate) fn value_to_cstring_ptr(
+        &mut self,
+        val: BasicValueEnum<'ctx>,
+        expr: &Expr,
+    ) -> BasicValueEnum<'ctx> {
         let resolved = self.resolve_runtime_type(expr, &val);
 
         // Convert non-string types to ForgeString first
@@ -415,7 +496,10 @@ impl<'ctx> Codegen<'ctx> {
         // Extract ptr from ForgeString (either converted or original)
         let target = str_val.unwrap_or(val);
         if target.is_struct_value() {
-            self.builder.build_extract_value(target.into_struct_value(), 0, "str_ptr").unwrap().into()
+            self.builder
+                .build_extract_value(target.into_struct_value(), 0, "str_ptr")
+                .unwrap()
+                .into()
         } else {
             target
         }

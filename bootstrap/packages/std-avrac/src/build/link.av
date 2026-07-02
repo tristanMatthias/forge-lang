@@ -1,0 +1,190 @@
+// WHY: N-file linker step — extends the existing single-object link
+// to consume an arbitrary list of pre-built `.o` files plus the
+// fixed C-side helpers (runtime.o + llvm_wrapper.o) and the LLVM
+// shared library. Each .o on the input side may come from a fresh
+// compile or a cache hit; the link layer doesn't care which.
+//
+// Tracked under forge-crafting-intepreters-k21v.
+
+extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_host_os() -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+use @std.json.{json_array, json_str}
+
+/// True on macOS. Gates the macOS-only linker conventions (ld64
+/// `-stack_size`, libc++) against the Linux ones (LLD, libstdc++).
+fn host_is_macos() -> bool { avra_host_os() == "macos" }
+
+/// Per-link options. Defaults are the bootstrap's current behaviour:
+/// stack_size_hex 0x2000000 (32 MiB — needed for deep parser recursion),
+/// llvm_prefix empty (falls back to LLVM_PREFIX env or
+/// /opt/homebrew/opt/llvm), coverage off (set true for `avra build
+/// --coverage` to pull in clang_rt.profile_osx).
+export type LinkOptions = {
+    stack_size_hex: string,
+    llvm_prefix: string,
+    coverage: bool,
+}
+
+/// Sensible defaults — match the values the cli/main.av link line
+/// has been hard-coding. Production callers override on demand
+/// rather than editing the defaults.
+export fn default_link_options() -> LinkOptions {
+    LinkOptions {
+        stack_size_hex: "0x2000000",
+        llvm_prefix: "",
+        coverage: false,
+    }
+}
+
+/// Resolve the LLVM toolchain install root. The single source of
+/// truth for every Avra-side site that shells out to llc/opt/
+/// llvm-profdata or links against libLLVM — without this, each site
+/// grew its own env-or-homebrew fallback and `bs2 test` could not
+/// link shards on a Linux box where LLVM_PREFIX wasn't exported.
+///
+/// `LLVM_PREFIX` env wins; otherwise probe the platform install
+/// locations for the pinned LLVM major (20 — kept in sync with
+/// scripts/bootstrap.sh and diagnose.sh), then fall back to the macOS
+/// Homebrew default so behaviour on existing dev machines is unchanged.
+export fn llvm_prefix_dir() -> string {
+    let env = avra_process_env_get("LLVM_PREFIX")
+    if env != "" { return env }
+    // Pinned-major (llvm-20) prefixes only — the unversioned Homebrew
+    // path is the final fallback below, never a candidate, so a stray
+    // non-20 `/opt/homebrew/opt/llvm` can't shadow a real LLVM 20 install
+    // when both are present.
+    let candidates = [
+        "/usr/lib/llvm-20",
+        "/usr/lib64/llvm20",
+        "/usr/local/llvm-20",
+        "/opt/llvm-20",
+        "/usr/local/opt/llvm@20",
+    ]
+    for c in candidates {
+        if avra_selfhost_file_exists("${c}/bin/llvm-config") == 1 { return c }
+    }
+    // Last probe before the macOS default: a toolchain whose bin dir is
+    // already on PATH (custom prefix the candidates don't know). The
+    // prefix is the bin dir's parent. Pinned-major candidates run FIRST
+    // so a stray older llvm-config on PATH cannot shadow a proper
+    // LLVM 20 install.
+    for entry in avra_process_env_get("PATH").split(":") {
+        if entry.ends_with("/bin") && avra_selfhost_file_exists("${entry}/llvm-config") == 1 {
+            return entry.substring(0, entry.length - 4)
+        }
+    }
+    "/opt/homebrew/opt/llvm"
+}
+
+/// Shell command that compiles LLVM IR `ll` to object `obj` ATOMICALLY.
+/// llc writes to a process-unique temp sibling (`<obj>.tmp.<pid>`); only a
+/// SUCCESSFUL compile is renamed onto `obj`, and any failure removes the
+/// temp. So a killed/OOM'd/failed llc leaves `obj` untouched — the old
+/// complete object or nothing — never a truncated `obj`. This matters
+/// wherever a later run reuses `obj` by mtime freshness: a partial object
+/// carrying a fresh mtime would otherwise be linked (or archived) as if
+/// complete, surfacing as baffling "undefined symbol" errors far from the
+/// interrupted build that caused them. `pid` (e.g. avra_getpid())
+/// discriminates concurrent producers; llc's own output is captured to `log`.
+export fn atomic_obj_llc_cmd(llc_bin: string, opt: string, ll: string, obj: string, log: string, pid: int) -> string {
+    let tmp = "${obj}.tmp.${string(pid)}"
+    "${llc_bin} ${opt} -relocation-model=pic -filetype=obj '${ll}' -o '${tmp}' > '${log}' 2>&1" + atomic_rename_tail(tmp, obj)
+}
+
+/// The shared tail of a materialise-then-rename shell command: on success
+/// rename the temp onto the destination; on ANY failure remove the temp and
+/// preserve a non-zero exit. Centralises the atomic-publish discipline —
+/// write to a temp, swap it in only when whole — across the producers here.
+fn atomic_rename_tail(tmp: string, dest: string) -> string {
+    " && mv -f '${tmp}' '${dest}' || { rm -f '${tmp}'; false; }"
+}
+
+/// Shell command that copies `src` onto `dst` ATOMICALLY: a binary-safe `cp`
+/// to a process-unique temp sibling (`<dst>.tmp.<pid>`), then rename onto
+/// `dst` only on success (temp removed on failure). For BINARY artifacts
+/// (e.g. metadata.bin) that can't go through the NUL-truncating
+/// avra_selfhost_write_file and that land in a cache slot a later run trusts
+/// by mere existence: a killed `cp` would otherwise leave a partial file the
+/// existence gate serves as complete. `pid` (e.g. avra_getpid()) discriminates
+/// concurrent writers.
+export fn atomic_cp_cmd(src: string, dst: string, pid: int) -> string {
+    let tmp = "${dst}.tmp.${string(pid)}"
+    "cp '${src}' '${tmp}'" + atomic_rename_tail(tmp, dst)
+}
+
+/// Resolve the LLVM install root for one link. Honours an explicit
+/// `opts.llvm_prefix` first, then the shared `llvm_prefix_dir()`
+/// probe. Centralised so every linker call ends up with the same
+/// `-L` / runtime-library directory.
+fn resolve_llvm_prefix(opts: LinkOptions) -> string {
+    if opts.llvm_prefix != "" { return opts.llvm_prefix }
+    llvm_prefix_dir()
+}
+
+/// Build the JSON args array `cc` expects. Object files come first
+/// (the order the linker resolves symbols in), then the C-side
+/// helpers, then `-o out`, then the boilerplate trailing flags.
+/// Coverage adds the profile-runtime library when `opts.coverage`.
+fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                   out: string, opts: LinkOptions, coverage_libs: string) -> string {
+    mut items: List<string> = []
+    mut i = 0
+    while i < objs.length {
+        items.push(json_str(objs[i]))
+        i = i + 1
+    }
+    items.push(json_str(runtime_o))
+    items.push(json_str(llvm_wrapper_o))
+    items.push(json_str("-o"))
+    items.push(json_str(out))
+    let is_mac = host_is_macos()
+    // Main-thread stack size: macOS pins it at link time via ld64's
+    // `-stack_size`; Linux derives it from RLIMIT_STACK (the driver
+    // raises the soft limit), so the flag is macOS-only.
+    if is_mac {
+        items.push(json_str("-Wl,-stack_size,${opts.stack_size_hex}"))
+    }
+    let llvm_prefix = resolve_llvm_prefix(opts)
+    items.push(json_str("-L${llvm_prefix}/lib"))
+    items.push(json_str("-lLLVM"))
+    // C++ runtime libLLVM was built against, plus the linker. macOS:
+    // libc++ + default ld64. Linux: libstdc++ + LLD (GNU ld mis-parses
+    // the `@`-prefixed mangled symbols as version separators).
+    if is_mac {
+        items.push(json_str("-lc++"))
+    } else {
+        items.push(json_str("-lstdc++"))
+        items.push(json_str("-fuse-ld=lld"))
+    }
+    if opts.coverage && coverage_libs != "" {
+        items.push(json_str(coverage_libs))
+    }
+    json_array(items)
+}
+
+/// Link N object files plus the fixed C helpers into `out`. Returns
+/// the linker's exit code (0 on success). Caller decides what to do
+/// with non-zero — usually fail() and emit the captured stderr.
+export fn link_objects(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                       out: string, opts: LinkOptions) -> int {
+    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts, "")
+    avra_process_forward("cc", args, "")
+}
+
+/// Coverage variant — same surface as `link_objects` but threads the
+/// clang-rt profile-runtime library through. `coverage_libs` is
+/// expected to be a single `-L<dir>` flag pointing at the darwin
+/// runtime; `-lclang_rt.profile_osx` is appended automatically.
+export fn link_objects_with_coverage(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                                     out: string, coverage_libs: string, opts: LinkOptions) -> int {
+    let opts_with_cov = LinkOptions {
+        stack_size_hex: opts.stack_size_hex,
+        llvm_prefix: opts.llvm_prefix,
+        coverage: true,
+    }
+    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts_with_cov, coverage_libs)
+    avra_process_forward("cc", args, "")
+}

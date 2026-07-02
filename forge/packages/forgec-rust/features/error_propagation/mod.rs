@@ -32,7 +32,7 @@ prevents the \"exception from nowhere\" problem.",
     category: "Null Safety",
 }
 
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
 pub mod types;

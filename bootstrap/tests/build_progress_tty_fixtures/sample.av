@@ -1,0 +1,81 @@
+// Fixture: validates 5gvp TTY-aware build progress bar.
+// Sets up a small project with 2 path-deps and runs `bs2 build
+// --emit_metadata` under both pipe stdout (CI shape) and a forced-TTY
+// (via `script -q`) so we can assert:
+//   * non-TTY → no \x1b[ escape codes (CI logs stay clean)
+//   * TTY    → escape codes appear (cursor up + erase) AND a final
+//             `built N deps in Xs` summary line lands
+//
+// Tracking ticket: forge-crafting-intepreters-5gvp.
+
+use @std.avrac.features.modules.{package_meta_path_for}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_host_os() -> string
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_5gvp_tty"
+    avra_shell_exec("rm -rf ${root}")
+    avra_shell_exec("mkdir -p ${root}/dep1/src ${root}/dep2/src ${root}/app/src")
+
+    // Two independent dep packages, each a small lib.
+    avra_shell_exec("printf '[package]\\nname = \"@test/dep1\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"dep1\"\\npath = \"src/lib.av\"\\n' > ${root}/dep1/avra.toml")
+    avra_shell_exec("printf 'export fn dep1_value() -> int { 11 }\\n' > ${root}/dep1/src/lib.av")
+    avra_shell_exec("printf '[package]\\nname = \"@test/dep2\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"dep2\"\\npath = \"src/lib.av\"\\n' > ${root}/dep2/avra.toml")
+    avra_shell_exec("printf 'export fn dep2_value() -> int { 22 }\\n' > ${root}/dep2/src/lib.av")
+
+    // App with two deps.
+    avra_shell_exec("printf '[package]\\nname = \"@test/app\"\\nversion = \"0.1.0\"\\n[bin]\\nname = \"app\"\\npath = \"src/main.av\"\\n[dependencies]\\n\"@test/dep1\" = { path = \"../dep1\" }\\n\"@test/dep2\" = { path = \"../dep2\" }\\n' > ${root}/app/avra.toml")
+    avra_shell_exec("printf 'fn main() -> int { 0 }\\n' > ${root}/app/src/main.av")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // ── Case 1: pipe stdout (CI shape). The progress bar must NOT render. ──
+    avra_shell_exec("rm -rf ${root}/dep1/build/cache/meta ${root}/dep2/build/cache/meta")
+    let pipe_log = "/tmp/avra_5gvp_pipe.log"
+    let rc_pipe = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata > ${pipe_log} 2>&1")
+    probe("pipe_build_rc_zero", rc_pipe == 0)
+    probe("pipe_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1")) != 0)
+    probe("pipe_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2")) != 0)
+    // The inner `bs2 build` may emit colored diagnostic warnings, so a
+    // bare \x1b grep over-matches. Look for the progress bar's unique
+    // header instead — that string only ever lands when the bar runs.
+    let pipe_has_progress = avra_shell_exec_status("grep -q 'building 2 deps' ${pipe_log}")
+    // grep returns 1 when no match — exactly what we want for pipe.
+    probe("pipe_log_no_progress_bar", pipe_has_progress != 0)
+
+    // ── Case 2: TTY (forced via `script -q`). Progress bar must render. ──
+    avra_shell_exec("rm -rf ${root}/dep1/build/cache/meta ${root}/dep2/build/cache/meta")
+    let tty_log = "/tmp/avra_5gvp_tty.log"
+    // `script` allocates a PTY for stdout, but its CLI differs by platform:
+    // BSD/macOS takes the command positionally (`script -q FILE cmd…`),
+    // util-linux takes it via `-c` (`script -q -c "cmd" FILE`).
+    let inner = "cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata"
+    let tty_cmd = if avra_host_os() == "macos" {
+        "script -q ${tty_log} sh -c '${inner}' > /dev/null 2>&1"
+    } else {
+        "script -q -c '${inner}' ${tty_log} > /dev/null 2>&1"
+    }
+    let rc_tty = avra_shell_exec_status(tty_cmd)
+    probe("tty_build_rc_zero", rc_tty == 0)
+    probe("tty_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1")) != 0)
+    probe("tty_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2")) != 0)
+    // Portable ESC-`[` search: `$'…'` ANSI-C quoting is a bashism that
+    // breaks under dash (/bin/sh on many Linuxes). Generate the CSI bytes
+    // with printf and match them as a fixed string instead.
+    let tty_has_esc = avra_shell_exec_status("grep -qF \"$(printf '\\033[')\" ${tty_log}")
+    probe("tty_log_has_escape_codes", tty_has_esc == 0)
+    let tty_has_summary = avra_shell_exec_status("grep -q 'built 2 deps' ${tty_log}")
+    probe("tty_log_has_summary_line", tty_has_summary == 0)
+
+    0
+}

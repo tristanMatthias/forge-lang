@@ -1,0 +1,1334 @@
+// WHY: lowering pass for `quote { body }` (Phase 3 of Components V2).
+//
+// Each `Expr.Quote(kind, body)` becomes an Expr that, when evaluated,
+// constructs `body` as a runtime AST value. So `quote { 5 }` evaluates
+// to an `Expr.Number("5")` value, not the integer 5.
+//
+// Pipeline position: after resolve_names, before typecheck. Same slot
+// the comptime pass uses, for the same reason — typeck sees the
+// post-lowering AST (no Quote nodes survive).
+//
+// Phase 3 first slice: covers the literal + identifier + binary / unary
+// expression shapes. More variants land in subsequent commits driven by
+// tests that exercise them. The walker is the structural-walker pattern
+// that desugar.av and comptime/rewrite.av use; once the generic-AST-
+// visitor ticket lands (93k3) all three should share a single visitor.
+
+use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{NodeStore, ExprId}
+use list_ops.{list_map}
+
+// ── Public entry ──
+
+/// Walk every statement and expression in `stmts`, replacing each
+/// `Expr.Quote` node with an AST-construction expression that evaluates
+/// to the captured AST. Returns a new List<SStmt>.
+///
+/// Fast-path: most files contain zero `quote { ... }` expressions, so
+/// a non-allocating presence scan up-front lets the rewrite walker
+/// skip. The scan does the same recursion shape but without building
+/// a new tree, so the worst case (file *with* quotes) is one extra
+/// O(N) traversal — accepted in exchange for the common-case win
+/// where we never allocate a single new Stmt/Expr node.
+///
+/// Callers that hold the parse-time NodeStore for `stmts` should prefer
+/// `lower_quotes_via_store` (flat arena scan). This boxed entry remains for
+/// storeless callers (in-process check, the incremental build path) and for
+/// trees merged from more than one parse (sibling-file loading) — its scan
+/// and the arena scan must stay presence-equivalent (spec-guarded).
+export fn lower_quotes(stmts: List<SStmt>) -> List<SStmt> {
+    if !any_quote_in_stmt_list(stmts) { return stmts }
+    lower_stmt_list(stmts)
+}
+
+/// `lower_quotes` for a caller that already holds the parse-time `NodeStore`
+/// for `stmts` (the arena `parse_or_fail` builds). The presence scan becomes a
+/// FLAT pass over the expr arena — no recursion, no tree walk: every Expr in
+/// the program (including those embedded in match arms and struct-field
+/// inits) is a row, so "any quote?" is one linear read of dense rows. Strictly
+/// covers at least the positions the boxed scan reaches; the lowering itself
+/// is unchanged. ONLY valid when `store` was ingested from these exact
+/// `stmts` — a store from a superset/subset tree (e.g. after sibling-file
+/// merging) would scan the wrong program; such callers use `lower_quotes`.
+export fn lower_quotes_via_store(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
+    if !store_has_quote(store) { return stmts }
+    lower_stmt_list(stmts)
+}
+
+/// True iff any `Expr.Quote` row exists in the store's expr arena. The
+/// data-oriented form of the presence scan: O(#exprs) over a dense array.
+fn store_has_quote(store: NodeStore) -> bool {
+    mut i = 0
+    let n = store.exprs.count()
+    while i < n {
+        if store.exprs.get(ExprId(i)) is .Quote { return true }
+        i = i + 1
+    }
+    false
+}
+
+// ── Fast-path: non-allocating presence scan ──
+
+/// True iff any Expr.Quote node appears anywhere in `stmts`.
+/// Walks the same shape as lower_stmt_list but allocates nothing.
+fn any_quote_in_stmt_list(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        if any_quote_in_stmt(stmts[i].node) { return true }
+        i = i + 1
+    }
+    false
+}
+
+fn any_quote_in_stmt(stmt: Stmt) -> bool {
+    match stmt {
+        .Let(_, _, init) -> any_quote_in_expr(init)
+        .Mut(_, _, init) -> any_quote_in_expr(init)
+        .Const(_, _, init) -> any_quote_in_expr(init)
+        .Expr(e) -> any_quote_in_expr(e)
+        .Return(e) -> any_quote_in_expr(e)
+        .Block(body) -> any_quote_in_stmt_list(body)
+        .If(cond, then_b, else_b) -> {
+            if any_quote_in_expr(cond) { return true }
+            if any_quote_in_stmt(then_b) { return true }
+            if else_b != null { return any_quote_in_stmt(else_b!) }
+            false
+        }
+        .While(cond, body) -> any_quote_in_expr(cond) || any_quote_in_stmt(body)
+        .For(_, start, end, body) -> any_quote_in_expr(start) || any_quote_in_expr(end) || any_quote_in_stmt(body)
+        .ForIn(_, coll, body) -> any_quote_in_expr(coll) || any_quote_in_stmt(body)
+        .Function(_, _, _, _, body) -> any_quote_in_stmt_list(body)
+        .Impl(_, methods) -> any_quote_in_stmt_list(methods)
+        .Annotated(_, inner) -> any_quote_in_stmt(inner.node)
+        .Module(_, body) -> any_quote_in_stmt_list(body)
+        .ComponentDef(_, _, _, _, _, body) -> any_quote_in_stmt_list(body)
+        .ComponentBlock(_, _, _, body) -> any_quote_in_stmt_list(body)
+        .SpecBlock(_, body) -> any_quote_in_stmt_list(body)
+        .GivenBlock(_, body) -> any_quote_in_stmt_list(body)
+        .ThenBlock(_, cond) -> any_quote_in_expr(cond)
+        .Match(subj, arms) -> any_quote_in_expr(subj) || any_quote_in_match_arms(arms)
+        .Defer(body) -> any_quote_in_expr(body)
+        .Errdefer(body) -> any_quote_in_expr(body)
+        .LetDestructure(_, init) -> any_quote_in_expr(init)
+        .TraitDecl(_, methods) -> any_quote_in_stmt_list(methods)
+        .Parallel(body) -> any_quote_in_stmt_list(body)
+        _ -> false
+    }
+}
+
+fn any_quote_in_expr(expr: Expr) -> bool {
+    match expr {
+        .Quote(_, _) -> true
+        .Splice(target) -> any_quote_in_expr(target)
+        .Binary(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
+        .Unary(_, r) -> any_quote_in_expr(r)
+        .Logical(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
+        .Call(callee, args) -> any_quote_in_expr(callee) || any_quote_in_expr_list(args)
+        .GenericCall(callee, _, args) -> any_quote_in_expr(callee) || any_quote_in_expr_list(args)
+        .Grouping(inner) -> any_quote_in_expr(inner)
+        .Block(body) -> any_quote_in_stmt_list(body)
+        .IfExpr(c, t, e) -> any_quote_in_expr(c) || any_quote_in_expr(t) || any_quote_in_expr(e)
+        .Assign(_, v) -> any_quote_in_expr(v)
+        .StructLit(_, inits) -> any_quote_in_field_inits(inits)
+        .FieldAccess(obj, _) -> any_quote_in_expr(obj)
+        .FieldAssign(obj, _, v) -> any_quote_in_expr(obj) || any_quote_in_expr(v)
+        .EnumCtor(_, _, args) -> any_quote_in_expr_list(args)
+        .Index(obj, idx) -> any_quote_in_expr(obj) || any_quote_in_expr(idx)
+        .NullCoalesce(l, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
+        .OptionalChain(obj, _) -> any_quote_in_expr(obj)
+        .OptionalMethodCall(obj, _, args) -> any_quote_in_expr(obj) || any_quote_in_expr_list(args)
+        .Try(inner) -> any_quote_in_expr(inner)
+        .Tuple(elems) -> any_quote_in_expr_list(elems)
+        .TupleIndex(obj, _) -> any_quote_in_expr(obj)
+        .With(obj, overrides) -> any_quote_in_expr(obj) || any_quote_in_field_inits(overrides)
+        .ListLit(elems) -> any_quote_in_expr_list(elems)
+        .Lambda(_, body) -> any_quote_in_expr(body)
+        .MapLit(entries) -> any_quote_in_expr_list(entries)
+        .Slice(obj, s, e) -> any_quote_in_expr(obj) || any_quote_in_expr(s) || any_quote_in_expr(e)
+        .IsCheck(subj, _) -> any_quote_in_expr(subj)
+        .InCheck(needle, items) -> any_quote_in_expr(needle) || any_quote_in_expr_list(items)
+        .Spawn(body) -> any_quote_in_expr(body)
+        .Isolated(body) -> any_quote_in_expr(body)
+        .MatchExpr(subj, arms) -> any_quote_in_expr(subj) || any_quote_in_match_arms(arms)
+        _ -> false
+    }
+}
+
+fn any_quote_in_expr_list(list: List<SExpr>) -> bool {
+    mut i = 0
+    while i < list.length {
+        if any_quote_in_expr(list[i].node) { return true }
+        i = i + 1
+    }
+    false
+}
+
+fn any_quote_in_field_inits(list: List<FieldInit>) -> bool {
+    mut i = 0
+    while i < list.length {
+        if any_quote_in_expr(list[i].value.node) { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// cai8: the presence scan must walk match-arm guards + bodies too.
+/// Without this, a program whose ONLY Quote is inside a match arm
+/// hits the fast-path early-return and skips lowering entirely —
+/// the un-lowered Quote nodes then survive into eval and trigger
+/// `no eval_expr handler`. Same shape as `lower_match_arms`.
+fn any_quote_in_match_arms(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null && any_quote_in_expr(arm.guard!.node) { return true }
+        if any_quote_in_expr(arm.body.node) { return true }
+        i = i + 1
+    }
+    false
+}
+
+// ── Top-level walker (mirrors comptime/rewrite.av structure) ──
+
+fn lower_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> sstmt_at(lower_stmt(ss.node), ss.line, ss.col, ss.file))
+}
+
+fn lower_stmt(stmt: Stmt) -> Stmt {
+    match stmt {
+        .Let(name, vt, init) -> .Let(name, vt, lower_expr(init))
+        .Mut(name, vt, init) -> .Mut(name, vt, lower_expr(init))
+        .Const(name, vt, init) -> .Const(name, vt, lower_expr(init))
+        .Expr(e) -> .Expr(lower_expr(e))
+        .Return(e) -> .Return(lower_expr(e))
+        .Block(body) -> .Block(lower_stmt_list(body))
+        .If(cond, then_b, else_b) -> {
+            if else_b != null {
+                .If(lower_expr(cond), lower_stmt(then_b), lower_stmt(else_b!))
+            } else {
+                .If(lower_expr(cond), lower_stmt(then_b), null)
+            }
+        }
+        .While(cond, body) -> .While(lower_expr(cond), lower_stmt(body))
+        .For(v, start, end, body) -> .For(v, lower_expr(start), lower_expr(end), lower_stmt(body))
+        .ForIn(v, coll, body) -> .ForIn(v, lower_expr(coll), lower_stmt(body))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_stmt_list(body))
+        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(methods))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: lower_stmt(inner.node) })
+        .Module(name, body) -> .Module(name, lower_stmt_list(body))
+        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, lower_stmt_list(body))
+        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, lower_stmt_list(body))
+        .SpecBlock(name, body) -> .SpecBlock(name, lower_stmt_list(body))
+        .GivenBlock(name, body) -> .GivenBlock(name, lower_stmt_list(body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, lower_expr(cond))
+        .Match(subj, arms) -> .Match(lower_expr(subj), lower_match_arms(arms))
+        .Defer(body) -> .Defer(lower_expr(body))
+        .Errdefer(body) -> .Errdefer(lower_expr(body))
+        .LetDestructure(names, init) -> .LetDestructure(names, lower_expr(init))
+        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(methods))
+        .TraitDecl(name, methods) -> .TraitDecl(name, lower_stmt_list(methods))
+        .Parallel(body) -> .Parallel(lower_stmt_list(body))
+        _ -> stmt
+    }
+}
+
+/// Walk an Expr, replacing any Quote node with its AST-construction
+/// form. Recurses into every container variant so an inner
+/// `quote { ... }` nested inside (e.g.) a struct-literal field or
+/// match-arm body is also lowered. Leaves (Number/String/Bool/Null/
+/// Ident/QualifiedIdent/FloatLit) hit the catch-all and pass through.
+fn lower_expr(expr: Expr) -> Expr {
+    match expr {
+        .Quote(kind, body) -> dispatch_quote_kind(kind, body)
+        .Binary(l, op, r) -> .Binary(lower_expr(l), op, lower_expr(r))
+        .Unary(op, r) -> .Unary(op, lower_expr(r))
+        .Logical(l, op, r) -> .Logical(lower_expr(l), op, lower_expr(r))
+        .Call(callee, args) -> .Call(lower_expr(callee), lower_expr_list(args))
+        .GenericCall(callee, ta, args) -> .GenericCall(lower_expr(callee), ta, lower_expr_list(args))
+        .Grouping(inner) -> .Grouping(lower_expr(inner))
+        .Block(body) -> .Block(lower_stmt_list(body))
+        .IfExpr(c, t, e) -> .IfExpr(lower_expr(c), lower_expr(t), lower_expr(e))
+        .Assign(name, v) -> .Assign(name, lower_expr(v))
+        .StructLit(name, inits) -> .StructLit(name, lower_field_inits(inits))
+        .FieldAccess(obj, field) -> .FieldAccess(lower_expr(obj), field)
+        .FieldAssign(obj, field, v) -> .FieldAssign(lower_expr(obj), field, lower_expr(v))
+        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, lower_expr_list(args))
+        .Index(obj, idx) -> .Index(lower_expr(obj), lower_expr(idx))
+        .NullCoalesce(l, r) -> .NullCoalesce(lower_expr(l), lower_expr(r))
+        .OptionalChain(obj, field) -> .OptionalChain(lower_expr(obj), field)
+        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(lower_expr(obj), method, lower_expr_list(args))
+        .Try(inner) -> .Try(lower_expr(inner))
+        .Tuple(elems) -> .Tuple(lower_expr_list(elems))
+        .TupleIndex(obj, idx) -> .TupleIndex(lower_expr(obj), idx)
+        .With(obj, overrides) -> .With(lower_expr(obj), lower_field_inits(overrides))
+        .ListLit(elems) -> .ListLit(lower_expr_list(elems))
+        .Lambda(params, body) -> .Lambda(params, lower_expr(body))
+        .MapLit(entries) -> .MapLit(lower_expr_list(entries))
+        .Slice(obj, s, e) -> .Slice(lower_expr(obj), lower_expr(s), lower_expr(e))
+        .IsCheck(subj, vname) -> .IsCheck(lower_expr(subj), vname)
+        .InCheck(needle, items) -> .InCheck(lower_expr(needle), lower_expr_list(items))
+        .Spawn(body) -> .Spawn(lower_expr(body))
+        .Isolated(body) -> .Isolated(lower_expr(body))
+        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(subj), lower_match_arms(arms))
+        .Splice(target) -> .Splice(lower_expr(target))
+        _ -> expr
+    }
+}
+
+fn lower_expr_list(list: List<SExpr>) -> List<SExpr> {
+    list_map(list, (se: SExpr) -> sexpr(lower_expr(se.node), se.line, se.col))
+}
+
+/// b85m: lower every Quote in match-arm guards + bodies. Without
+/// this, an inline `return quote stmt { ... }` inside a match
+/// arm body keeps its un-lowered Expr.Quote node, which the
+/// tree-walk evaluator can't handle — the macro expansion
+/// silently fails to fire.
+fn lower_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
+    list_map(arms, (arm: MatchArm) -> {
+        let lowered_body = sexpr(lower_expr(arm.body.node), arm.body.line, arm.body.col)
+        let lowered_guard = if arm.guard == null { null } else {
+            let g = arm.guard!
+            sexpr(lower_expr(g.node), g.line, g.col)
+        }
+        MatchArm { pattern: arm.pattern, guard: lowered_guard, body: lowered_body }
+    })
+}
+
+fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
+    list_map(inits, (init: FieldInit) -> FieldInit {
+        name: init.name,
+        value: sexpr(lower_expr(init.value.node), init.value.line, init.value.col),
+    })
+}
+
+// ── Quote kind dispatch (vez6.3.10) ──
+
+/// Dispatch on the quote kind keyword to produce the right AST type.
+/// Default `expr` constructs an Expr. `stmt` extracts the single Stmt
+/// inside the body block and constructs it. `stmts` constructs the
+/// whole `List<SStmt>`. `decl` is currently an alias for `stmt` since
+/// decls in Avra are Stmts. `type` recognizes primitive type names
+/// (int / bool / float / string / bytes / void) by Ident shape —
+/// generic types and structural type expressions need a parser path
+/// that invokes parse_type_expr inside the braces (vez6.3.13 follow-up).
+fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
+    if kind == "stmt" || kind == "decl" {
+        let single = extract_single_stmt(body)
+        if single != null { return construct_stmt(single!) }
+        // Block has 0 or 2+ statements — fall back to constructing
+        // the List<SStmt> as if `stmts` was used. The user gets a
+        // list instead of a Stmt, which surfaces the mismatch.
+        return construct_stmt_list(extract_stmt_list(body))
+    }
+    if kind == "stmts" {
+        return construct_stmt_list(extract_stmt_list(body))
+    }
+    if kind == "type" {
+        return construct_value_type_from_body(body)
+    }
+    if kind == "arm" {
+        // The parser wrapped the arm in a single-armed MatchExpr so
+        // the Quote(body) shape stays uniform. Unbox it here and
+        // construct the MatchArm value programmatically.
+        let arm = extract_single_match_arm(body)
+        if arm != null { return construct_match_arm(arm!) }
+        // Malformed `quote arm { ... }` (no arm parsed) — emit a null
+        // pattern arm so codegen has something well-typed; the parser
+        // already reported the syntax error.
+        return construct_match_arm_null()
+    }
+    // Default: kind == "expr" or unrecognized.
+    construct_expr(unwrap_quote_body(body))
+}
+
+/// Pull the single MatchArm out of the synthetic `MatchExpr(Null, [arm])`
+/// the parser uses to carry `quote arm { ... }` content through the
+/// shared `Expr.Quote(kind, body)` envelope.
+fn extract_single_match_arm(body: Expr) -> MatchArm? {
+    match body {
+        .MatchExpr(_, arms) -> {
+            if arms.length == 1 { arms[0] } else { null }
+        }
+        _ -> null
+    }
+}
+
+fn construct_match_arm_null() -> Expr {
+    let no_guard = Expr.None
+    let body_expr = Expr.None
+    construct_match_arm(MatchArm {
+        pattern: Pattern.Wildcard,
+        guard: null,
+        body: sexpr_dummy(body_expr),
+    })
+}
+
+/// Recognize the body of `quote type { ... }` as a ValueType by
+/// matching the body's Ident text against the primitive names.
+/// Anything else falls through to ValueType.Unknown — generic +
+/// structural type expressions are tracked under vez6.3.13.
+fn construct_value_type_from_body(body: Expr) -> Expr {
+    let inner = unwrap_quote_body(body)
+    match inner {
+        .Ident(name) -> primitive_value_type(name)
+        _ -> construct_value_type_unknown()
+    }
+}
+
+fn primitive_value_type(name: string) -> Expr {
+    if name == "int" { return value_type_ctor("Int") }
+    if name == "bool" { return value_type_ctor("Bool") }
+    if name == "float" { return value_type_ctor("Float") }
+    if name == "string" { return value_type_ctor("Str") }
+    if name == "bytes" { return value_type_ctor("Bytes") }
+    if name == "void" { return value_type_ctor("Void") }
+    if name == "ptr" { return value_type_ctor("Ptr") }
+    construct_value_type_unknown()
+}
+
+fn value_type_ctor(variant: string) -> Expr {
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::ValueType", variant, empty)
+}
+
+/// Extract the single Stmt from a `Block(List<SStmt>)` of length 1.
+/// Returns null if the block is empty or has multiple statements.
+fn extract_single_stmt(body: Expr) -> Stmt? {
+    match body {
+        .Block(stmts) -> {
+            if stmts.length == 1 { stmts[0].node } else { null }
+        }
+        _ -> null
+    }
+}
+
+/// Extract the List<SStmt> from a Block; otherwise empty.
+fn extract_stmt_list(body: Expr) -> List<SStmt> {
+    match body {
+        .Block(stmts) -> stmts
+        _ -> {
+            let empty: List<SStmt> = []
+            empty
+        }
+    }
+}
+
+// ── Quote body unwrapping ──
+
+/// `parse_quote` currently captures the body via parse_block_expression,
+/// which wraps single expressions in a Block of one Stmt.Expr.
+/// For a single-expr body, peel that off so `quote { 5 }` lowers to the
+/// AST of the literal 5, not the AST of a one-stmt Block.
+fn unwrap_quote_body(body: Expr) -> Expr {
+    match body {
+        .Block(stmts) -> {
+            if stmts.length == 1 {
+                match stmts[0].node {
+                    .Expr(inner) -> inner
+                    _ -> body
+                }
+            } else {
+                body
+            }
+        }
+        _ -> body
+    }
+}
+
+// ── AST construction ──
+
+/// Given an AST Expr `e`, produce another Expr that constructs `e` as
+/// a runtime value when evaluated. So `construct_expr(Number("5"))`
+/// returns the AST shape of `Expr.Number("5")` — i.e. an EnumCtor for
+/// the Expr.Number variant carrying a string-literal arg "5".
+///
+/// Covers all leaf + structural variants needed for `quote { expr }`.
+/// Block / MatchExpr / StructLit need `List<SStmt>` / `List<FieldInit>`
+/// / `List<MatchArm>` constructors — landing in the next slice driven
+/// by tests that need them. Other variants pass through unchanged for
+/// now; downstream stages will see the raw AST and surface the missing
+/// case naturally.
+export fn construct_expr(e: Expr) -> Expr {
+    match e {
+        .Number(v) -> expr_ctor("Number", string_arg(v))
+        .String(v) -> expr_ctor("String", string_arg(v))
+        .Bool(v) -> expr_ctor("Bool", string_arg(v))
+        .None -> {
+            let empty: List<SExpr> = []
+            expr_ctor("None", empty)
+        }
+        .Ident(name) -> expr_ctor("Ident", string_arg(name))
+        .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
+        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(value)))
+        .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr(l), construct_binop(op), construct_expr(r)))
+        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(op), construct_expr(r)))
+        .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr(l), construct_logicop(op), construct_expr(r)))
+        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr(inner)))
+        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr(callee), construct_expr_list(args)))
+        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr(obj), string_lit_expr(field)))
+        .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr(obj), construct_expr(idx)))
+        .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr(c), construct_expr(t), construct_expr(el)))
+        .Tuple(elements) -> expr_ctor("Tuple", one_arg(construct_expr_list(elements)))
+        .ListLit(elements) -> expr_ctor("ListLit", one_arg(construct_expr_list(elements)))
+        .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr(l), construct_expr(r)))
+        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
+        .OptionalMethodCall(obj, method, args) -> expr_ctor("OptionalMethodCall", three_args(construct_expr(obj), string_lit_expr(method), construct_expr_list(args)))
+        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(inner)))
+        .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
+        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(name), construct_field_init_list(inits)))
+        .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
+        .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(entries)))
+        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr(subj), string_lit_expr(vname)))
+        .InCheck(needle, items) -> expr_ctor("InCheck", two_args(construct_expr(needle), construct_expr_list(items)))
+        .Slice(obj, start, end) -> expr_ctor("Slice", three_args(construct_expr(obj), construct_expr(start), construct_expr(end)))
+        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr(obj), Expr.Number(string(idx))))
+        .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(obj), construct_field_init_list(overrides)))
+        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(obj), string_lit_expr(field), construct_expr(value)))
+        .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(params), construct_expr(body)))
+        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(body)))
+        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr(body)))
+        .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(body)))
+        // MatchExpr inside a quote — subject + arms become a runtime
+        // `Expr.MatchExpr` value. The arm list goes through
+        // `construct_match_arm_list` which expands `~arms` sentinels
+        // into `list_concat` calls.
+        .MatchExpr(subject, arms) -> expr_ctor("MatchExpr",
+            two_args(construct_expr(subject), construct_match_arm_list(arms)))
+        // Splice (~target) — the target evaluates at expansion time
+        // to a runtime AST value of the right shape, so we emit it
+        // straight through without a construct_expr wrap. That's the
+        // whole point of splice: skip construction, paste the value.
+        .Splice(target) -> target
+        // Nested Quote: `quote { ... quote { x } ... }` collapses one
+        // level — the inner quote's BODY is what gets constructed, as
+        // if the user had written `quote { ... x ... }` directly. This
+        // matches the user's likely intent (inner construction is
+        // already an AST-build expression) and avoids needing a meta-
+        // quote machinery. Proper meta-quote (outer captures inner
+        // Quote form verbatim) is a separate language design call.
+        .Quote(_, body) -> construct_expr(unwrap_quote_body(body))
+        .When(_) -> e
+        _ -> e
+    }
+}
+
+/// Shorthand for `Expr.EnumCtor("@std::avrac::core::Expr", variant, args)`
+/// — the canonical type name appears 25+ times in construct_expr, so
+/// extracting it removes a thick band of visual noise and centralizes
+/// the path constant.
+fn expr_ctor(variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Expr", variant, args)
+}
+
+/// Build an Expr that, when evaluated, produces a `List<ParamEntry>`
+/// AST value. Each entry is a `ParamEntry { name, vtype }` struct
+/// literal. Quote captures pre-resolve, so vtype is always Unknown —
+/// the resolver fills it in when the lowered AST is re-resolved.
+fn construct_param_list(params: List<ParamEntry>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::ParamEntry",
+                                      "name", string_lit_expr(p.name),
+                                      "vtype", construct_param_vtype(p.vtype))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build a two-field struct-literal Expr `Type { k1: v1, k2: v2 }`.
+/// Centralises the `Expr.StructLit(type_name, List<FieldInit> { ... })`
+/// construction used by every `construct_*_list` below for the inner
+/// per-entry struct literal.
+fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -> Expr {
+    mut inits: List<FieldInit> = []
+    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
+    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
+    Expr.StructLit(type_name, inits)
+}
+
+/// Three-field sister to `struct_lit_2` — used by `MatchArm`
+/// (pattern, guard, body) construction. Keep the parallel shape so
+/// future N-field helpers slot in next to it.
+fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k3: string, v3: Expr) -> Expr {
+    mut inits: List<FieldInit> = []
+    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
+    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
+    inits.push(FieldInit { name: k3, value: sexpr_dummy(v3) })
+    Expr.StructLit(type_name, inits)
+}
+
+/// Build an Expr that, when evaluated, produces a `Pattern` AST
+/// value. Mirrors the variant shape of `core::ast::Pattern` —
+/// emits an `Expr.EnumCtor("Pattern", VariantName, [args])` for
+/// each case. Used by `construct_match_arm` and (in the future)
+/// by quote_expr's pattern-position splices.
+fn construct_pattern(p: Pattern) -> Expr {
+    match p {
+        .Wildcard -> pattern_ctor("Wildcard", [])
+        .Variant(name, bindings) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(string_lit_expr(name)),
+                sexpr_dummy(construct_param_list(bindings)),
+            ]
+            pattern_ctor("Variant", args)
+        }
+        .LitString(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(string_lit_expr(value))]
+            pattern_ctor("LitString", args)
+        }
+        .LitInt(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(Expr.Number(string(value)))]
+            pattern_ctor("LitInt", args)
+        }
+        .LitBool(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(Expr.Number(string(value)))]
+            pattern_ctor("LitBool", args)
+        }
+        .LitFloat(value) -> {
+            let args: List<SExpr> = [sexpr_dummy(string_lit_expr(value))]
+            pattern_ctor("LitFloat", args)
+        }
+        .NestedVariant(name, sub_patterns) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(string_lit_expr(name)),
+                sexpr_dummy(construct_pattern_list(sub_patterns)),
+            ]
+            pattern_ctor("NestedVariant", args)
+        }
+        .Or(left, right) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(construct_pattern(left)),
+                sexpr_dummy(construct_pattern(right)),
+            ]
+            pattern_ctor("Or", args)
+        }
+        .TypePattern(type_name, binding) -> {
+            let args: List<SExpr> = [
+                sexpr_dummy(string_lit_expr(type_name)),
+                sexpr_dummy(string_lit_expr(binding)),
+            ]
+            pattern_ctor("TypePattern", args)
+        }
+    }
+}
+
+fn pattern_ctor(variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Pattern", variant, args)
+}
+
+fn construct_pattern_list(patterns: List<Pattern>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < patterns.length {
+        elems.push(sexpr_dummy(construct_pattern(patterns[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces a `MatchArm` AST
+/// value. Emits `Expr.StructLit("MatchArm", { pattern, guard, body })`
+/// — guard is null when the source had no `if` guard, otherwise the
+/// constructed SExpr.
+fn construct_match_arm(arm: MatchArm) -> Expr {
+    let pattern_expr = construct_pattern(arm.pattern)
+    let guard_expr = if arm.guard != null { construct_sexpr(arm.guard!) } else { Expr.None }
+    let body_expr = construct_sexpr(arm.body)
+    struct_lit_3("@std::avrac::core::MatchArm",
+        "pattern", pattern_expr,
+        "guard", guard_expr,
+        "body", body_expr)
+}
+
+/// Build an Expr that, when evaluated, produces a `List<MatchArm>`
+/// AST value. Walks the arm list partitioning into segments around
+/// any splice-sentinel arms — the segments between sentinels become
+/// `ListLit` of arm struct lits, the sentinels emit their splice
+/// target directly, and the whole result is wired together via
+/// `list_concat` calls.
+///
+/// qa6i probe 2: `~target` in match-arm position lands here as a
+/// sentinel `MatchArm { pattern: TypePattern("__quote_splice_arms__", ""),
+/// body: Splice(target) }` produced by `parse_match_arm_list` when
+/// inside a quote.
+fn construct_match_arm_list(arms: List<MatchArm>) -> Expr {
+    mut result_opt: Expr? = null
+    mut current_seg: List<SExpr> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let is_sentinel = is_arm_splice_sentinel(arm)
+        if is_sentinel {
+            let seg_lit = Expr.ListLit(current_seg)
+            result_opt = if result_opt == null { seg_lit } else { list_concat_call(result_opt!, seg_lit) }
+            let splice_body = arm.body
+            let splice_target = extract_splice_target(splice_body.node)
+            result_opt = list_concat_call(result_opt!, splice_target)
+            current_seg = []
+        } else {
+            let arm_lit = construct_match_arm(arm)
+            current_seg = current_seg.push(sexpr_dummy(arm_lit))
+        }
+        i = i + 1
+    }
+    let final_seg = Expr.ListLit(current_seg)
+    if result_opt == null { final_seg } else { list_concat_call(result_opt!, final_seg) }
+}
+
+/// Detect the splice-sentinel arm produced by `parse_match_arm_list`
+/// inside a quote when it sees `~target` in arm position.
+fn is_arm_splice_sentinel(arm: MatchArm) -> bool {
+    match arm.pattern {
+        .TypePattern(tn, _) -> tn == "__quote_splice_arms__"
+        _ -> false
+    }
+}
+
+/// Unwrap the splice expression from a sentinel arm's body slot.
+/// The parser stores it as `Expr.Splice(target)`; we want just the
+/// target so its runtime value (a `List<MatchArm>`) flows into
+/// `list_concat` directly.
+fn extract_splice_target(body: Expr) -> Expr {
+    match body {
+        .Splice(t) -> t
+        _ -> body
+    }
+}
+
+/// Emit `@std::avrac::list_ops::list_concat(left, right)` as a Call
+/// expression. The runtime fn is monomorphized per-element-type by
+/// the existing generic dispatch, so the resulting AST type-checks
+/// against whatever element type the surrounding context expects.
+fn list_concat_call(left: Expr, right: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(left), sexpr_dummy(right)]
+    Expr.Call(Expr.QualifiedIdent("@std::avrac::list_ops::list_concat"), args)
+}
+
+/// Build an Expr that, when evaluated, produces a single
+/// `Annotation { name, args }` value. Step 4 — needed so a macro's
+/// quote-emitted `@expand(...)` annotation roundtrips through the
+/// expand pass's fixpoint loop and the inner @expand re-fires.
+fn construct_annotation(a: Annotation) -> Expr {
+    struct_lit_2("@std::avrac::core::Annotation",
+        "name", string_lit_expr(a.name),
+        "args", construct_expr_list(a.args))
+}
+
+/// Build an Expr producing a `List<Annotation>` AST value at
+/// runtime. Each entry uses `construct_annotation`.
+fn construct_annotation_list(annots: List<Annotation>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < annots.length {
+        elems.push(sexpr_dummy(construct_annotation(annots[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces a
+/// `List<TypeParamEntry>` AST value. Each entry is a struct literal
+/// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
+/// so codegen materializes a real list at runtime.
+fn construct_type_param_list(tp: List<TypeParamEntry>) -> Expr {
+    // Walk source order, pushing each struct-literal SExpr into the
+    // ListLit element list.
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < tp.length {
+        let e = tp[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::TypeParamEntry",
+            "name", string_lit_expr(e.name),
+            "bounds", string_lit_expr(e.bounds))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces a `List<FieldEntry>`
+/// AST value. Each entry is a struct literal `FieldEntry { name,
+/// resolved }`; the result is an `Expr.ListLit` so codegen
+/// materializes a real list at runtime. Quote captures pre-resolve
+/// so every entry's `resolved` slot is encoded as
+/// `ValueType.Unknown` — sister convention to `construct_param_list`.
+fn construct_field_list(fields: List<FieldEntry>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        // Preserve the field's actual `resolved` ValueType — pre-resolve
+        // quote-captured fields are still Unknown (and encode as such);
+        // post-resolve 2-arg @expand macros receive fields with real
+        // types so they can introspect variants without needing a
+        // separate resolver query per field.
+        let struct_lit = struct_lit_2("@std::avrac::core::FieldEntry",
+            "name", string_lit_expr(e.name),
+            "resolved", construct_value_type(e.resolved))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces a `List<Variant>` AST
+/// value. Each entry is a struct literal `Variant { name, fields }`
+/// where `fields` reuses `construct_field_list`. Mirrors
+/// `construct_field_list`'s shape so the decoder side can roundtrip
+/// EnumDecl payloads via `list_value_to_variant_list`.
+fn construct_variant_list(variants: List<Variant>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::Variant",
+            "name", string_lit_expr(v.name),
+            "fields", construct_field_list(v.fields))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces a
+/// `List<CompConfigPair>` AST value. Each entry is a struct
+/// literal `CompConfigPair { key, value }`; the result is an
+/// `Expr.ListLit` so codegen materializes a real list at runtime.
+fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let pair = list[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::CompConfigPair",
+            "key", string_lit_expr(pair.key),
+            "value", construct_expr(pair.value))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Emit `ValueType.Unknown` — quote captures pre-resolve, so all types
+/// are Unknown until the lowered AST is type-checked. Avoids the
+/// complexity of constructing every ValueType variant.
+/// Encode a ParamEntry's vtype for quote lowering. Splice case
+/// (qa6i probe 3): when the vtype is `ValueType.Struct(name, _)`
+/// with `name` starting with `~`, the parser captured a `~ident`
+/// splice in type position — emit a runtime `ValueType.Struct(<ident>, 0)`
+/// ctor whose first arg is an `Expr.Ident` referencing the macro's
+/// local. Otherwise fall back to `ValueType.Unknown` (preserving the
+/// existing quote-captures-pre-resolve convention so the lowered AST
+/// re-resolves through the normal pipeline).
+fn construct_param_vtype(vt: ValueType) -> Expr {
+    match vt {
+        .Struct(name, type_args, id) -> {
+            if is_splice_name(name) {
+                value_type_ctor_args("Struct",
+                    three_args(name_or_splice(name),
+                               construct_value_type_list(type_args),
+                               int_lit_expr(id)))
+            } else {
+                construct_value_type_unknown()
+            }
+        }
+        _ -> construct_value_type_unknown()
+    }
+}
+
+fn construct_value_type_unknown() -> Expr {
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty)
+}
+
+/// Build an Expr that, when evaluated, produces a `ValueType` Value
+/// matching `vt`. Sister to the decoder `enum_value_to_value_type` at
+/// the eval boundary (features/eval/mod.av) — pin the
+/// encoder/decoder contract for every declared ValueType variant so
+/// future quote-surface work can preserve typed positions without
+/// re-deriving the mapping.
+///
+/// Currently unused by the quote-lowering passes (which keep emitting
+/// `construct_value_type_unknown` to preserve pre-resolve semantics);
+/// available for callers that want to embed a typed ValueType literal
+/// without round-tripping through quote.
+fn construct_value_type(vt: ValueType) -> Expr {
+    match vt {
+        .Int     -> value_type_ctor("Int")
+        .U8      -> value_type_ctor("U8")
+        .U16     -> value_type_ctor("U16")
+        .U32     -> value_type_ctor("U32")
+        .U64     -> value_type_ctor("U64")
+        .I8      -> value_type_ctor("I8")
+        .I16     -> value_type_ctor("I16")
+        .I32     -> value_type_ctor("I32")
+        .Bool    -> value_type_ctor("Bool")
+        .Float   -> value_type_ctor("Float")
+        .Str     -> value_type_ctor("Str")
+        .Bytes   -> value_type_ctor("Bytes")
+        .Void    -> value_type_ctor("Void")
+        .Ptr     -> value_type_ctor("Ptr")
+        .Map(key, value) -> value_type_ctor_args("Map",
+            two_args(construct_value_type(key),
+                     construct_value_type(value)))
+        .Unknown -> value_type_ctor("Unknown")
+        .Struct(name, type_args, id) -> value_type_ctor_args("Struct",
+            three_args(name_or_splice(name),
+                       construct_value_type_list(type_args),
+                       int_lit_expr(id)))
+        .Enum(name, type_args, id) -> value_type_ctor_args("Enum",
+            three_args(string_lit_expr(name),
+                       construct_value_type_list(type_args),
+                       int_lit_expr(id)))
+        .Tuple(elements) -> value_type_ctor_args("Tuple",
+            one_arg(construct_value_type_list(elements)))
+        .List(elem) -> value_type_ctor_args("List",
+            one_arg(construct_value_type(elem)))
+        .Fn(ret) -> value_type_ctor_args("Fn",
+            one_arg(construct_value_type(ret)))
+        .Closure(num_captures, ret) -> value_type_ctor_args("Closure",
+            two_args(int_lit_expr(num_captures), construct_value_type(ret)))
+        .FnTyped(params, ret) -> value_type_ctor_args("FnTyped",
+            two_args(construct_value_type_list(params),
+                     construct_value_type(ret)))
+        .Trait(name, id) -> value_type_ctor_args("Trait",
+            two_args(string_lit_expr(name), int_lit_expr(id)))
+        .Union(types) -> value_type_ctor_args("Union",
+            one_arg(construct_value_type_list(types)))
+        .Newtype(name, inner, id) -> value_type_ctor_args("Newtype",
+            three_args(string_lit_expr(name),
+                       construct_value_type(inner),
+                       int_lit_expr(id)))
+        .NarrowedEnum(enum_name, variant_name, id) -> value_type_ctor_args("NarrowedEnum",
+            three_args(string_lit_expr(enum_name),
+                       string_lit_expr(variant_name),
+                       int_lit_expr(id)))
+        .Task(result_ty) -> value_type_ctor_args("Task",
+            one_arg(construct_value_type(result_ty)))
+        .Channel(elem) -> value_type_ctor_args("Channel",
+            one_arg(construct_value_type(elem)))
+        .Optional(inner) -> value_type_ctor_args("Optional",
+            one_arg(construct_value_type(inner)))
+    }
+}
+
+/// Variant with payload args. Sister to value_type_ctor for the
+/// payload-bearing arms above.
+fn value_type_ctor_args(variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::ValueType", variant, args)
+}
+
+/// Build an Expr that produces a `List<ValueType>` Value at runtime.
+/// Mirrors construct_field_list / construct_type_param_list: ListLit
+/// of constructed entries.
+fn construct_value_type_list(types: List<ValueType>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < types.length {
+        elems.push(sexpr_dummy(construct_value_type(types[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build `Expr.Number("<n>")` — used by construct_value_type for the
+/// integer id slots on Struct / Enum / Trait / Newtype / NarrowedEnum.
+fn int_lit_expr(n: int) -> Expr {
+    Expr.Number(string(n))
+}
+
+/// Build an Expr that, when evaluated, produces a
+/// `List<FieldInit>` AST value. Each entry materialises as a
+/// `FieldInit { name, value }` struct literal; the result is an
+/// `Expr.ListLit` so codegen produces a real list at runtime.
+/// Mirrors `construct_type_param_list` shape — same pattern, same
+/// reverse-walk-to-preserve-source-order.
+fn construct_field_init_list(list: List<FieldInit>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let init = list[i]
+        let struct_lit = struct_lit_2("@std::avrac::core::FieldInit",
+            "name", string_lit_expr(init.name),
+            "value", construct_sexpr(init.value))
+        elems.push(sexpr_dummy(struct_lit))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an `Expr.String` whose runtime arg-after-strip_quotes is
+/// exactly `s`. Codegen unwraps one outer quote pair, so we wrap with
+/// exactly one. Used both bare and via `string_arg(s)` (which wraps
+/// the result in a one-element `List<SExpr>` for ctor() args).
+///
+/// For inputs whose `s` ALREADY contains source-form quotes (parser's
+/// Expr.String.value), the same wrap is correct: the runtime value
+/// after strip_quotes is just `s` itself, including the inner quotes.
+/// That's the round-trip property — programmatic AST construction
+/// safely embeds literal `"` chars without re-parsing.
+fn string_lit_expr(s: string) -> Expr {
+    Expr.String("\"${s}\"")
+}
+
+/// Identifier-position splice. The parser records a name slot that
+/// contained `~ident` by embedding `~ident` directly in the stored name
+/// string. This happens in four places:
+///   - a type's name:            `type ~T = { ... }`     → `~T`
+///   - an impl target:           `impl Tr for ~T { ... }`→ `Tr:~T`
+///   - an impl method (mangled): the same impl's methods → `~T__method`
+///   - a struct-literal ctor:    `~T { ... }`            → `~T`
+///
+/// At expansion time each `~ident` must resolve to the live value of the
+/// macro's local `ident`. This builds an Expr that, when evaluated,
+/// reconstructs the final name: literal chunks become string literals,
+/// each `~ident` becomes `Expr.Ident(ident)`, and the pieces are joined
+/// with `+`. A name with no `~` is a plain string literal (fast path).
+///
+/// Splice boundaries are unambiguous — an identifier ends at the first
+/// `__` (the method / variant mangling separator, which spec Axis 28
+/// forbids inside hand-written names) or at any non-identifier char
+/// (e.g. the `:` separating an impl's trait from its target). The `__`
+/// separator is a guaranteed delimiter, so this needs no heuristics.
+fn name_or_splice(name: string) -> Expr {
+    if !is_splice_name(name) {
+        return string_lit_expr(name)
+    }
+    let pieces = split_name_splices(name)
+    mut joined = pieces[0]
+    mut i = 1
+    while i < pieces.length {
+        joined = Expr.Binary(joined, BinOp.Add, pieces[i])
+        i = i + 1
+    }
+    joined
+}
+
+/// True when `name` carries a `~ident` splice marker anywhere.
+fn is_splice_name(name: string) -> bool {
+    name.contains("~")
+}
+
+/// Break a name into its alternating literal / `~ident`-splice pieces,
+/// each rendered as an Expr (a string literal, or `Expr.Ident` for a
+/// splice). Empty literal runs are dropped so the join reads as
+/// `literal + ident + literal + ...`.
+fn split_name_splices(name: string) -> List<Expr> {
+    mut pieces: List<Expr> = []
+    mut literal = ""
+    mut i = 0
+    let n = name.length
+    while i < n {
+        let ch = name.substring(i, i + 1)
+        if ch != "~" {
+            literal = literal + ch
+            i = i + 1
+            continue
+        }
+        // Flush the pending literal, then read the spliced identifier:
+        // ident chars up to the first `__` separator or non-ident char.
+        if literal.length > 0 {
+            pieces.push(string_lit_expr(literal))
+            literal = ""
+        }
+        mut ident = ""
+        mut j = i + 1
+        while j < n {
+            let c = name.substring(j, j + 1)
+            if !is_ident_char(c) { break }
+            if c == "_" && j + 1 < n && name.substring(j + 1, j + 2) == "_" { break }
+            ident = ident + c
+            j = j + 1
+        }
+        pieces.push(Expr.Ident(ident))
+        i = j
+    }
+    if literal.length > 0 {
+        pieces.push(string_lit_expr(literal))
+    }
+    pieces
+}
+
+/// A character that may appear inside an Avra identifier.
+fn is_ident_char(c: string) -> bool {
+    (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
+}
+
+/// Build an Expr that, when evaluated, produces a `List<SExpr>` AST
+/// value matching `list`. Emits `Expr.ListLit([sexpr_call_0, ...])`
+/// — each element is a Call to `sexpr_dummy(construct_expr(item))`,
+/// so at runtime the ListLit eval produces a list of SExpr values
+/// shaped like the original `List<SExpr>`. Decoded by
+/// `list_value_to_expr_list` in comptime/eval.av.
+fn construct_expr_list(list: List<SExpr>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        let se = list[i]
+        elems.push(sexpr_dummy(construct_sexpr(se)))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces an SExpr wrapping the
+/// runtime value of the given Expr. Uses `sexpr_dummy(e)` rather than
+/// a struct literal to avoid having to track ValueType / file fields.
+fn construct_sexpr(se: SExpr) -> Expr {
+    sexpr_dummy_call(construct_expr(se.node))
+}
+
+/// `sexpr_dummy(arg)` as a Call expression. Helper for constructing
+/// SExpr values at runtime without introducing struct-literal concerns.
+/// Uses QualifiedIdent so the lowered AST round-trips through resolve
+/// without needing the test file to import sexpr_dummy.
+fn sexpr_dummy_call(arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
+    Expr.Call(
+        Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
+        args
+    )
+}
+
+/// `sstmt_dummy(arg)` as a Call expression — sister to sexpr_dummy_call
+/// for SStmt construction. Used when wrapping a runtime Stmt value in
+/// the spanned carrier required by `List<SStmt>` entries.
+fn sstmt_dummy_call(arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
+    Expr.Call(
+        Expr.QualifiedIdent("@std::avrac::core::sstmt_dummy"),
+        args
+    )
+}
+
+// ── Statement construction (vez6.3.9) ──
+
+/// Build an Expr that, when evaluated, produces a `List<SStmt>` AST value.
+/// Mirrors construct_expr_list / construct_field_init_list shape:
+/// emits `Expr.ListLit([construct_sstmt(s0), construct_sstmt(s1), ...])`.
+fn construct_stmt_list(list: List<SStmt>) -> Expr {
+    mut elems: List<SExpr> = []
+    mut i = 0
+    while i < list.length {
+        elems.push(sexpr_dummy(construct_sstmt(list[i])))
+        i = i + 1
+    }
+    Expr.ListLit(elems)
+}
+
+/// Build an Expr that, when evaluated, produces an SStmt wrapping the
+/// runtime value of `ss.node`.
+fn construct_sstmt(ss: SStmt) -> Expr {
+    sstmt_dummy_call(construct_stmt(ss.node))
+}
+
+/// Build an Expr that, when evaluated, produces a Stmt AST value
+/// matching `stmt`. Variants we support: bindings, control flow,
+/// returns, blocks, defers, traits, parallel — everything common
+/// inside multi-stmt quote bodies. Decl-only variants (TypeDecl,
+/// EnumDecl, NewtypeDecl, ShapeDecl, UnionAliasDecl, Function,
+/// ExternFn, Annotated) and Match (needs MatchArmList construction)
+/// pass through unchanged for now — they belong to vez6.3.10
+/// (`quote decl { ... }`).
+/// vez6.8.4.A: exposed so the @expand pass can box a Stmt as a Value
+/// (via construct_stmt + eval_expr) when invoking a 1-arg macro.
+/// Arity, encoding, and split between encoded vs. passthrough variants
+/// stay an internal detail — callers should treat this as opaque.
+export fn construct_stmt(stmt: Stmt) -> Expr {
+    match stmt {
+        // Preserve the declared/resolved type slot. Quote-emitted code
+        // typically leaves it Unknown (resolver fills in), but macros
+        // emitting a typed `let x: List<Self> = []` rely on the
+        // annotation surviving the roundtrip — without it, scalar
+        // match-arms returning `[]` can't unify with list_concat-typed
+        // sibling arms and the typeck fires F1000 "arms have different
+        // types: List vs List". The encoder now handles ValueType
+        // construction generically; non-typed quote callers pass
+        // ValueType.Unknown which encodes as the same Unknown ctor.
+        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
+        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
+        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
+        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(e)))
+        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(body)))
+        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(e)))
+        .ReturnEmpty -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("ReturnEmpty", empty)
+        }
+        .NoOp -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("NoOp", empty)
+        }
+        .Break -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("Break", empty)
+        }
+        .Continue -> {
+            let empty: List<SExpr> = []
+            stmt_ctor("Continue", empty)
+        }
+        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr(body)))
+        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr(body)))
+        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(cond), construct_stmt(body)))
+        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr(start), construct_expr(end), construct_stmt(body)))
+        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr(coll), construct_stmt(body)))
+        // If has a nullable else_branch — encode null as Expr.None at
+        // the AST level so the constructed runtime gets back the
+        // null-discriminant.
+        .If(cond, then_b, else_b) -> {
+            if else_b != null {
+                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), construct_stmt(else_b!)))
+            } else {
+                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), Expr.None))
+            }
+        }
+        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_list(methods)))
+        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(methods)))
+        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(body)))
+        .Function(name, tp, params, rvt, body) -> stmt_ctor("Function",
+            five_args(name_or_splice(name),
+                      construct_type_param_list(tp),
+                      construct_param_list(params),
+                      construct_value_type(rvt),
+                      construct_stmt_list(body)))
+        .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
+            three_args(name_or_splice(name),
+                       construct_type_param_list(tp),
+                       construct_field_list(fields)))
+        .EnumDecl(name, tp, variants) -> stmt_ctor("EnumDecl",
+            three_args(name_or_splice(name),
+                       construct_type_param_list(tp),
+                       construct_variant_list(variants)))
+        .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor("ComponentBlock",
+            four_args(string_lit_expr(comp_name),
+                      string_lit_expr(instance),
+                      construct_comp_config_pair_list(config),
+                      construct_stmt_list(body)))
+        // Step 4 nested @expand: a macro returning code that itself
+        // carries an @expand annotation needs the Annotated layer to
+        // roundtrip through quote construction so the outer expand
+        // pass sees the new @expand site on the next fixpoint iter.
+        .Annotated(annots, inner) -> stmt_ctor("Annotated",
+            two_args(construct_annotation_list(annots), construct_stmt(inner.node)))
+        _ -> stmt_passthrough(stmt)
+    }
+}
+
+/// Catch-all for Stmt variants we haven't taught construct_stmt yet
+/// (decls, complex Match arms). Returns a synthesized Stmt.NoOp at the
+/// AST level — at runtime the user gets a NoOp instead of a crash, and
+/// the missing variant becomes a feature request rather than a silent
+/// corruption. Filed as vez6.3.10 (`quote decl`) for completion.
+fn stmt_passthrough(stmt: Stmt) -> Expr {
+    let empty: List<SExpr> = []
+    stmt_ctor("NoOp", empty)
+}
+
+/// Sister to expr_ctor for Stmt.
+fn stmt_ctor(variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Stmt", variant, args)
+}
+
+fn four_args(a: Expr, b: Expr, c: Expr, d: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c), sexpr_dummy(d)]
+}
+
+fn five_args(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c), sexpr_dummy(d), sexpr_dummy(e)]
+}
+
+fn construct_binop(op: BinOp) -> Expr {
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::BinOp", op_variant_name_bin(op), empty)
+}
+fn construct_unop(op: UnOp) -> Expr {
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::UnOp", op_variant_name_un(op), empty)
+}
+fn construct_logicop(op: LogicOp) -> Expr {
+    let empty: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::LogicOp", op_variant_name_logic(op), empty)
+}
+
+/// Map BinOp variants to their constructor-name string. binop_str
+/// returns the source-text form ("+", "==", etc.); we need the
+/// enum-variant name ("Add", "Eq", etc.) for the AST construction.
+fn op_variant_name_bin(op: BinOp) -> string {
+    match op {
+        .Add -> "Add"
+        .Sub -> "Sub"
+        .Mul -> "Mul"
+        .Div -> "Div"
+        .Mod -> "Mod"
+        .Eq -> "Eq"
+        .Ne -> "Ne"
+        .Lt -> "Lt"
+        .Le -> "Le"
+        .Gt -> "Gt"
+        .Ge -> "Ge"
+        _ -> "Add"
+    }
+}
+fn op_variant_name_un(op: UnOp) -> string {
+    match op {
+        .Neg -> "Neg"
+        .Not -> "Not"
+        _ -> "Neg"
+    }
+}
+fn op_variant_name_logic(op: LogicOp) -> string {
+    match op {
+        .And -> "And"
+        .Or -> "Or"
+        _ -> "And"
+    }
+}
+
+// ── Constructor-call helpers ──
+
+fn ctor(type_name: string, variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor(type_name, variant, args)
+}
+
+/// One-element `List<SExpr>` wrapping `string_lit_expr(s)` — the
+/// string-arg form for ctor() invocations. Both ident-like inputs
+/// and parser-form String.value (already-quoted) inputs round-trip
+/// through this wrap; see `string_lit_expr` for why one wrap suffices.
+fn string_arg(s: string) -> List<SExpr> {
+    [sexpr_dummy(string_lit_expr(s))]
+}
+
+fn one_arg(a: Expr) -> List<SExpr> {
+    [sexpr_dummy(a)]
+}
+fn two_args(a: Expr, b: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b)]
+}
+fn three_args(a: Expr, b: Expr, c: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c)]
+}
+
+/// Escape every `"` and `\` in `s` for embedding in a string-literal
+/// source form. The parser stores Expr.String values with their outer
+/// quotes; nesting one inside another needs the inner pair escaped.
+fn escape_string(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "\"" {
+            out = out + "\\\""
+        } else {
+            if ch == "\\" {
+                out = out + "\\\\"
+            } else {
+                out = out + ch
+            }
+        }
+        i = i + 1
+    }
+    out
+}

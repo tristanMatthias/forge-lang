@@ -1,0 +1,8 @@
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "err import private" {
+    then "F3102 reported when importing a non-exported name" {
+        let out = avra_shell_exec("./build/bs2 compile tests/err_import_private/main.av 2>&1 || true")
+        out.contains("F3102")
+    }
+}

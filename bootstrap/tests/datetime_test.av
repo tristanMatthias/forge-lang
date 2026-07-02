@@ -1,0 +1,36 @@
+extern fn avra_datetime_now() -> int
+extern fn avra_datetime_year(epoch: int) -> int
+extern fn avra_datetime_month(epoch: int) -> int
+extern fn avra_datetime_day(epoch: int) -> int
+extern fn avra_datetime_hour(epoch: int) -> int
+extern fn avra_datetime_minute(epoch: int) -> int
+extern fn avra_datetime_second(epoch: int) -> int
+
+spec "datetime" {
+    then "epoch is positive" {
+        avra_datetime_now() > 0
+    }
+    then "year is at least 2026" {
+        avra_datetime_year(avra_datetime_now()) >= 2026
+    }
+    then "month is in 1..=12" {
+        let m = avra_datetime_month(avra_datetime_now())
+        m >= 1 && m <= 12
+    }
+    then "day is in 1..=31" {
+        let d = avra_datetime_day(avra_datetime_now())
+        d >= 1 && d <= 31
+    }
+    then "hour is in 0..=23" {
+        let h = avra_datetime_hour(avra_datetime_now())
+        h >= 0 && h <= 23
+    }
+    then "minute is in 0..=59" {
+        let m = avra_datetime_minute(avra_datetime_now())
+        m >= 0 && m <= 59
+    }
+    then "second is in 0..=59" {
+        let s = avra_datetime_second(avra_datetime_now())
+        s >= 0 && s <= 59
+    }
+}

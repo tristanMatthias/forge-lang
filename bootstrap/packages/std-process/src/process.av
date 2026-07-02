@@ -1,0 +1,731 @@
+// WHY: @std/process — subprocess execution, environment, and process control.
+// Port of the Rust std-process package. All functions backed by C runtime.
+//
+// Usage:
+//   use @std.process.{run, spawn, env_get}
+//
+// Process.run returns a ProcessResult with stdout, stderr, and exit code.
+// Process.spawn returns a handle for async process management.
+
+extern fn avra_process_run(cmd: string, args_json: string, opts_json: string) -> string
+extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_kill(handle: int) -> int
+extern fn avra_process_wait(handle: int) -> string
+extern fn avra_process_read_line(handle: int) -> string
+extern fn avra_process_wait_for_output(handle: int, pattern: string, timeout_ms: int) -> int
+extern fn avra_process_is_alive(handle: int) -> int
+extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn avra_process_pipe(input: string, cmd: string, args_json: string) -> string
+extern fn avra_process_env_get(key: string) -> string
+extern fn avra_process_exit(code: int)
+extern fn avra_process_self_dir() -> string
+
+// ── Result parsing ──
+// avra_process_run returns JSON: {"stdout":"...","stderr":"...","code":N}
+// These helpers extract fields without a full JSON parser.
+
+export type ProcessResult = {
+    stdout: string,
+    stderr: string,
+    code: int,
+}
+
+fn extract_json_field(json: string, field: string) -> string {
+    let key = "\"${field}\":\""
+    let start = json.index_of(key)
+    if start < 0 { return "" }
+    let val_start = start + key.length
+    mut val_end = val_start
+    while val_end < json.length {
+        let ch = json[val_end]
+        if ch == "\\" {
+            val_end = val_end + 2
+            continue
+        }
+        if ch == "\"" { break }
+        val_end = val_end + 1
+    }
+    json.substring(val_start, val_end)
+}
+
+fn extract_json_int(json: string, field: string) -> int {
+    let key = "\"${field}\":"
+    let start = json.index_of(key)
+    if start < 0 { return -1 }
+    let val_start = start + key.length
+    mut val_end = val_start
+    while val_end < json.length {
+        let ch = json[val_end]
+        if ch == "}" || ch == "," { break }
+        val_end = val_end + 1
+    }
+    let num_str = json.substring(val_start, val_end)
+    // Simple int parse
+    avra_parse_int(num_str)
+}
+
+extern fn avra_parse_int(s: string) -> int
+
+fn parse_result(json: string) -> ProcessResult {
+    ProcessResult {
+        stdout: extract_json_field(json, "stdout"),
+        stderr: extract_json_field(json, "stderr"),
+        code: extract_json_int(json, "code"),
+    }
+}
+
+// ── Public API ──
+
+/// Run a command synchronously. Returns ProcessResult with stdout, stderr, code.
+export fn run(cmd: string, args: string, opts: string) -> ProcessResult {
+    let json = avra_process_run(cmd, args, opts)
+    parse_result(json)
+}
+
+/// Run a command with just a string array of args (no opts).
+export fn exec(cmd: string, args: string) -> ProcessResult {
+    run(cmd, args, "")
+}
+
+/// Run a simple command with no args.
+export fn exec_simple(cmd: string) -> ProcessResult {
+    run(cmd, "[]", "")
+}
+
+/// Spawn a background process. Returns handle. Named `spawn_bg`
+/// rather than `spawn` because `spawn` is a reserved keyword for
+/// the `spawn { body }` pthread primitive.
+export fn spawn_bg(cmd: string, args: string, opts: string) -> int {
+    avra_process_spawn_bg(cmd, args, opts)
+}
+
+/// Kill a spawned process.
+export fn kill(handle: int) -> bool {
+    avra_process_kill(handle) != 0
+}
+
+/// Wait for a spawned process to complete. Returns ProcessResult.
+export fn wait(handle: int) -> ProcessResult {
+    let json = avra_process_wait(handle)
+    parse_result(json)
+}
+
+/// Read a line from a spawned process's stdout.
+export fn read_line(handle: int) -> string {
+    avra_process_read_line(handle)
+}
+
+/// Wait for a pattern in stdout. Returns true if found before timeout.
+export fn wait_for(handle: int, pattern: string, timeout_ms: int) -> bool {
+    avra_process_wait_for_output(handle, pattern, timeout_ms) != 0
+}
+
+/// Check if a spawned process is still running.
+export fn is_alive(handle: int) -> bool {
+    avra_process_is_alive(handle) != 0
+}
+
+/// Run with inherited stdio (passthrough). Returns exit code.
+export fn forward(cmd: string, args: string, opts: string) -> int {
+    avra_process_forward(cmd, args, opts)
+}
+
+/// Pipe input string to a command's stdin. Returns ProcessResult.
+export fn pipe_to(input: string, cmd: string, args: string) -> ProcessResult {
+    let json = avra_process_pipe(input, cmd, args)
+    parse_result(json)
+}
+
+/// Get an environment variable. Returns null if not set.
+export fn env_get(key: string) -> string? {
+    let val = avra_process_env_get(key)
+    if val == "\0NULL" { return null }
+    val
+}
+
+/// Exit the process.
+export fn exit(code: int) {
+    avra_process_exit(code)
+}
+
+/// Get the directory containing the current executable.
+export fn self_dir() -> string {
+    avra_process_self_dir()
+}
+
+// ── Process isolation ──
+//
+// `isolated_*(body)` runs `body` in a forked subprocess. The child
+// inherits parent memory via copy-on-write — closure captures
+// travel for free, only the *return value* crosses the IPC
+// boundary. Crash-safe: SIGSEGV / abort / non-zero exit in the
+// child leaves the parent alive; the parent receives a typed
+// `Result.Err(IsolatedError.Crashed)` instead of a sentinel value.
+//
+// Modelled after Rust's `std::process::Command::output() -> Result<Output, io::Error>`,
+// Go's `cmd.Output() (output []byte, err error)`, Python's
+// `subprocess.run` returning a `CompletedProcess` with `returncode`,
+// and Swift's `Process` API — every other systems language treats
+// "process failed" as a distinct value, not a magic return.
+//
+// Phase A of the `isolated { body }` epic (forge-crafting-intepreters-nce6):
+//   raw `int`-typed primitive
+// Phase B (this commit):
+//   - Unified `avra_isolated_run` runtime that returns a
+//     status-framed payload so OK-with-empty-data ≠ crash-no-data
+//   - Result-returning stdlib API for int / string / bytes
+//   - BytesBuilder / BytesReader for hand-rolled marshalers
+//     (replaced by `@marshal`-derived ones in Phase C)
+// Phase C: `@marshal` annotation generates `to_bytes`/`from_bytes`
+//   per declared type so callers stop touching the bytes layer.
+// Phase D: `isolated { body }` keyword sugar.
+
+/// nce6.1 / shortcut-cleanup #1: the canonical Marshal trait
+/// every `@marshal`-annotated type conforms to. The synthesised
+/// `impl Marshal for T` carries the `to_bytes` method declared
+/// here. `from_bytes_<T>` stays as a top-level fn (no Self
+/// type in Avra yet, so it can't be a trait method).
+///
+/// Future `isolated<T: Marshal>(body)` will use this trait
+/// bound to route through `T.to_bytes` and `from_bytes_<T>`
+/// without per-type synthesis.
+export trait Marshal {
+    fn to_bytes(self) -> bytes
+}
+
+extern fn avra_isolated_run(body: fn() -> bytes) -> bytes
+extern fn avra_int_to_bytes_le(n: int) -> bytes
+extern fn avra_bytes_to_int_le(b: bytes, offset: int) -> int
+extern fn avra_float_to_bytes_le(f: float) -> bytes
+extern fn avra_bytes_to_float_le(b: bytes, offset: int) -> float
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+extern fn avra_bytes_concat(a: bytes, b: bytes) -> bytes
+extern fn avra_bytes_slice(b: bytes, start: int, end: int) -> bytes
+extern fn avra_bytes_empty() -> bytes
+
+/// Why a subprocess invocation failed. Caller pattern-matches to
+/// recover or surface a typed diagnostic. Mirrors the granularity
+/// other languages settle on (Rust's io::ErrorKind, Python's
+/// subprocess exceptions): just enough to act on, not so much that
+/// every caller has to spell out a wildcard arm.
+export enum IsolatedError {
+    /// Child died from a signal (SIGSEGV, SIGABRT, …) or returned
+    /// a non-zero exit code. By far the common case the caller
+    /// will want to handle.
+    Crashed,
+    /// `fork(2)` returned -1 (out of pids, ulimit, etc.). Generally
+    /// fatal at the orchestrator level.
+    ForkFailed,
+    /// The IPC pipe broke mid-transfer — usually means kernel
+    /// buffers were exhausted or the FD got closed unexpectedly.
+    /// Child crashes always surface as `Crashed`, not this.
+    PipeFailed,
+}
+
+impl IsolatedError {
+    /// Display impl — invoked by `string(err)` and `"${err}"`.
+    /// Mirrors Rust's `std::fmt::Display`, Go's `error.Error()`,
+    /// Swift's `LocalizedError.errorDescription`.
+    fn display(self) -> string {
+        match self {
+            .Crashed -> "child process crashed (SIGSEGV, SIGABRT, or non-zero exit)"
+            .ForkFailed -> "fork(2) failed — typically out of pids or memory pressure"
+            .PipeFailed -> "IPC pipe broke mid-transfer"
+        }
+    }
+}
+
+/// Run `body` in a forked subprocess and recover its bytes payload.
+/// Returns `Ok(bytes)` on success (the payload may legitimately be
+/// empty), `Err(IsolatedError)` if the child crashed or IPC failed.
+///
+/// **Size cap**: payloads are limited to 1 GiB. The runtime treats
+/// a larger declared length as a malformed frame and returns
+/// `Err(PipeFailed)`. If your workload needs more, file a ticket
+/// — the cap is a sanity guard, not a hard architectural limit.
+///
+/// Body return shape: pure `bytes` so the caller controls the
+/// serialisation. Use `isolated_int` / `isolated_string` for the
+/// primitive shortcuts; use `BytesBuilder` / `BytesReader` (or, in
+/// Phase C, `@marshal`-generated codecs) for structured types.
+export fn isolated_bytes(body: fn() -> bytes) -> Result<bytes, IsolatedError> {
+    unframe_isolated(avra_isolated_run(body))
+}
+
+/// Primitive shortcut: marshal an i64 to/from bytes for the caller.
+/// `isolated_int(() -> compute())` is equivalent to
+/// `isolated_bytes(() -> avra_int_to_bytes_le(compute()))` plus the
+/// reverse decode — bundled as one call so the caller never
+/// touches the bytes layer for a single int.
+export fn isolated_int(body: fn() -> int) -> Result<int, IsolatedError> {
+    match isolated_bytes(() -> avra_int_to_bytes_le(body())) {
+        .Ok(b) -> Result.Ok(avra_bytes_to_int_le(b, 0))
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+/// Primitive shortcut for text payloads — JSON output, log
+/// capture, paths to compiled artefacts. Same machinery as
+/// `isolated_bytes` with UTF-8 marshaling baked in.
+export fn isolated_string(body: fn() -> string) -> Result<string, IsolatedError> {
+    match isolated_bytes(() -> avra_bytes_from_string(body())) {
+        .Ok(b) -> Result.Ok(avra_string_from_bytes(b))
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+/// `isolated_int` with a caller-supplied fallback. Skips the
+/// pattern-match for the "I don't care, give me the value or this
+/// default" case — the common one for best-effort isolation
+/// (probes, monitors, optional features). Mirrors Rust's
+/// `Result::unwrap_or`.
+export fn isolated_int_or(body: fn() -> int, fallback: int) -> int {
+    match isolated_int(body) {
+        .Ok(n) -> n
+        .Err(_) -> fallback
+    }
+}
+
+/// `isolated_string` with a caller-supplied fallback.
+export fn isolated_string_or(body: fn() -> string, fallback: string) -> string {
+    match isolated_string(body) {
+        .Ok(s) -> s
+        .Err(_) -> fallback
+    }
+}
+
+/// `isolated_bytes` with a caller-supplied fallback.
+export fn isolated_bytes_or(body: fn() -> bytes, fallback: bytes) -> bytes {
+    match isolated_bytes(body) {
+        .Ok(b) -> b
+        .Err(_) -> fallback
+    }
+}
+
+// Wire format constants — must match `AVRA_ISOLATED_STATUS_*` in
+// runtime.c. The runtime writes one of these as the first i64 of
+// every isolated payload; the stdlib decodes here to a typed
+// `IsolatedError`. Single source of truth: if a status code is
+// ever added, update both sides together.
+const ISOLATED_STATUS_OK: int = 0
+const ISOLATED_STATUS_CRASH: int = 1
+const ISOLATED_STATUS_FORK_FAILED: int = 2
+const ISOLATED_STATUS_PIPE_FAILED: int = 3
+
+/// Header size of an isolated payload: `[i64 status][i64 len]`,
+/// payload bytes follow. Used for slice-offset arithmetic in
+/// `unframe_isolated`.
+const ISOLATED_HEADER_BYTES: int = 16
+
+/// Unframe the `[i64 status][i64 len][payload...]` wire format the
+/// runtime hands back. Centralised so every primitive shortcut
+/// pivots on the same status decode.
+fn unframe_isolated(raw: bytes) -> Result<bytes, IsolatedError> {
+    if raw.length < ISOLATED_HEADER_BYTES { return Result.Err(IsolatedError.PipeFailed) }
+    let status = avra_bytes_to_int_le(raw, 0)
+    let len = avra_bytes_to_int_le(raw, 8)
+    if status == ISOLATED_STATUS_OK {
+        if len == 0 { return Result.Ok(avra_bytes_empty()) }
+        return Result.Ok(avra_bytes_slice(raw, ISOLATED_HEADER_BYTES, ISOLATED_HEADER_BYTES + len))
+    }
+    if status == ISOLATED_STATUS_CRASH { return Result.Err(IsolatedError.Crashed) }
+    if status == ISOLATED_STATUS_FORK_FAILED { return Result.Err(IsolatedError.ForkFailed) }
+    Result.Err(IsolatedError.PipeFailed)
+}
+
+// ── Marshaler helpers ──
+//
+// Hand-rolled marshaling is the bridge until `@marshal` (Phase C)
+// generates these calls automatically. `BytesBuilder` is an
+// immutable chainable buffer; each `write_*` returns a new builder
+// so the marshaler reads as a linear sequence of writes. Mirrors
+// Rust's `bytes::BufMut` / Go's `bytes.Buffer.Write*` ergonomics.
+//
+//     fn marshal_user(u: User) -> bytes {
+//         bytes_builder()
+//             .write_int(u.id)
+//             .write_string(u.name)
+//             .write_bool(u.admin)
+//             .write_string_list(u.tags)
+//             .finish()
+//     }
+//
+// `BytesReader` is the dual: each `read_*` returns a
+// `Result<(value, advanced_reader), MarshalError>` so a truncated
+// or mis-typed buffer fails at the read site instead of silently
+// returning zero. Chain via `?` for the natural flat shape:
+//
+//     fn unmarshal_user(b: bytes) -> Result<User, MarshalError> {
+//         let r = bytes_reader(b)
+//         let (id, r)    = r.read_int()?
+//         let (name, r)  = r.read_string()?
+//         let (admin, r) = r.read_bool()?
+//         let (tags, r)  = r.read_string_list()?
+//         r.expect_done()?
+//         Result.Ok(User { id, name, admin, tags })
+//     }
+
+/// Immutable byte-buffer builder.
+export type BytesBuilder = { buf: bytes }
+
+/// Construct an empty builder.
+export fn bytes_builder() -> BytesBuilder {
+    BytesBuilder { buf: avra_bytes_empty() }
+}
+
+impl BytesBuilder {
+    /// Append an i64 little-endian (8 bytes).
+    fn write_int(self, n: int) -> BytesBuilder {
+        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_int_to_bytes_le(n)) }
+    }
+
+    /// Append a float (IEEE-754 double, 8 bytes).
+    fn write_float(self, f: float) -> BytesBuilder {
+        BytesBuilder { buf: avra_bytes_concat(self.buf, avra_float_to_bytes_le(f)) }
+    }
+
+    /// Append a length-prefixed UTF-8 string: 8-byte length, then
+    /// the raw bytes.
+    fn write_string(self, s: string) -> BytesBuilder {
+        let s_bytes = avra_bytes_from_string(s)
+        let with_len = avra_bytes_concat(self.buf, avra_int_to_bytes_le(s_bytes.length))
+        BytesBuilder { buf: avra_bytes_concat(with_len, s_bytes) }
+    }
+
+    /// Append raw bytes, length-prefixed (8-byte len + payload). Used
+    /// by nested @marshal struct fields: outer.to_bytes() embeds
+    /// inner.to_bytes()'s payload here so the cursor stays
+    /// self-describing on the reader side.
+    fn write_bytes(self, payload: bytes) -> BytesBuilder {
+        let with_len = avra_bytes_concat(self.buf, avra_int_to_bytes_le(payload.length))
+        BytesBuilder { buf: avra_bytes_concat(with_len, payload) }
+    }
+
+    /// Append a bool as a single i64 (1 or 0). Wastes 7 bytes per
+    /// bool but keeps every primitive 8-byte-aligned so readers
+    /// don't track sub-byte position.
+    fn write_bool(self, b: bool) -> BytesBuilder {
+        self.write_int(if b { 1 } else { 0 })
+    }
+
+    /// Append a `List<int>`: 8-byte count, then count × 8-byte ints.
+    fn write_int_list(self, xs: List<int>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_int(x) }
+        b
+    }
+
+    /// Append a `List<string>`: 8-byte count, then count
+    /// length-prefixed strings (matches `write_string` per element).
+    fn write_string_list(self, xs: List<string>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for s in xs { b = b.write_string(s) }
+        b
+    }
+
+    /// Append a `List<bool>`: 8-byte count + count × 8-byte bool (1 or 0).
+    fn write_bool_list(self, xs: List<bool>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_bool(x) }
+        b
+    }
+
+    /// Append a `List<float>`: 8-byte count + count × 8-byte IEEE-754.
+    fn write_float_list(self, xs: List<float>) -> BytesBuilder {
+        mut b = self.write_int(xs.length)
+        for x in xs { b = b.write_float(x) }
+        b
+    }
+
+    /// Hand back the underlying bytes — caller passes this to
+    /// `isolated_bytes(() -> finish())` for the IPC trip.
+    fn finish(self) -> bytes {
+        self.buf
+    }
+}
+
+/// Immutable read cursor over a `bytes` payload. Each `read_*`
+/// returns `(value, advanced_reader)`. Destructure and re-bind
+/// `r` to keep the read sequence flat — same shape as Rust's
+/// mut-cursor reader without giving up immutability.
+///
+/// **Note**: the plain `read_*` family doesn't bounds-check
+/// or error on truncation — they silently produce zero values
+/// past the end. For fail-fast validation, use the parallel
+/// `try_read_*` family (nce6.3.1) which returns
+/// `Result<(value, BytesReader), MarshalError>` and bails on
+/// underrun. The plain family stays exported for the
+/// @marshal-synthesised codecs (where the schema fixes the
+/// layout) and for cases where the caller has already
+/// guaranteed the cursor is well-formed.
+export type BytesReader = { buf: bytes, pos: int }
+
+/// Typed failure mode for the `try_read_*` reader family.
+/// Distinguishes the three loss-of-integrity cases a
+/// truncated or malformed buffer can surface.
+export enum MarshalError {
+    /// Reader ran past the end of `buf` — needed more bytes than
+    /// remained.
+    Underrun,
+    /// `expect_done()` was called on a reader that still has
+    /// bytes left; the producer wrote more than the consumer
+    /// expected.
+    TrailingBytes,
+    /// A length-prefix or count field was negative — likely a
+    /// torn write or a wrong-type payload.
+    NegativeLength,
+}
+
+/// Construct a reader positioned at the start of `b`.
+export fn bytes_reader(b: bytes) -> BytesReader {
+    BytesReader { buf: b, pos: 0 }
+}
+
+impl BytesReader {
+    /// Read an i64 little-endian (8 bytes). Returns `(value, next)`.
+    fn read_int(self) -> (int, BytesReader) {
+        (
+            avra_bytes_to_int_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        )
+    }
+
+    /// Read a float (IEEE-754 double, 8 bytes).
+    fn read_float(self) -> (float, BytesReader) {
+        (
+            avra_bytes_to_float_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        )
+    }
+
+    /// Read a length-prefixed UTF-8 string. Pairs with
+    /// `BytesBuilder.write_string()`.
+    fn read_string(self) -> (string, BytesReader) {
+        let len = avra_bytes_to_int_le(self.buf, self.pos)
+        let start = self.pos + 8
+        let s_bytes = avra_bytes_slice(self.buf, start, start + len)
+        (
+            avra_string_from_bytes(s_bytes),
+            BytesReader { buf: self.buf, pos: start + len },
+        )
+    }
+
+    /// Read raw length-prefixed bytes. Pairs with
+    /// `BytesBuilder.write_bytes()`. The returned `bytes` slice is
+    /// suitable for handing straight to a nested type's
+    /// `from_bytes_<T>(...)` constructor.
+    fn read_bytes(self) -> (bytes, BytesReader) {
+        let len = avra_bytes_to_int_le(self.buf, self.pos)
+        let start = self.pos + 8
+        let payload = avra_bytes_slice(self.buf, start, start + len)
+        (payload, BytesReader { buf: self.buf, pos: start + len })
+    }
+
+    /// Read a bool stored as an i64 (1 → true, 0 → false).
+    fn read_bool(self) -> (bool, BytesReader) {
+        let (n, r) = self.read_int()
+        (n != 0, r)
+    }
+
+    /// Read a `List<int>` (matches `write_int_list`).
+    fn read_int_list(self) -> (List<int>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<int> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_int()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<string>` (matches `write_string_list`).
+    fn read_string_list(self) -> (List<string>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<string> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_string()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<bool>` (matches `write_bool_list`).
+    fn read_bool_list(self) -> (List<bool>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<bool> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_bool()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// Read a `List<float>` (matches `write_float_list`).
+    fn read_float_list(self) -> (List<float>, BytesReader) {
+        let (count, after_count) = self.read_int()
+        mut xs: List<float> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, next) = r.read_float()
+            xs = xs.push(v)
+            r = next
+            i = i + 1
+        }
+        (xs, r)
+    }
+
+    /// True when the cursor has consumed every byte in `buf`.
+    fn at_end(self) -> bool {
+        self.pos == self.buf.length
+    }
+
+    /// Bytes remaining (informational sanity check).
+    fn remaining(self) -> int {
+        self.buf.length - self.pos
+    }
+
+    // ── nce6.3.1 try_read_* family ──
+    //
+    // Bounds-checked counterparts to the plain read_* methods.
+    // Each returns Result<(value, BytesReader), MarshalError>:
+    // Underrun when the cursor would walk past the end,
+    // NegativeLength when a length-prefix or count is < 0.
+    // Designed for `?` propagation in unmarshalers:
+    //
+    //     let (n, r) = r.try_read_int()?
+    //     let (s, r) = r.try_read_string()?
+    //     r.expect_done()?
+
+    fn try_read_int(self) -> Result<(int, BytesReader), MarshalError> {
+        if self.pos + 8 > self.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        Result.Ok((
+            avra_bytes_to_int_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        ))
+    }
+
+    fn try_read_float(self) -> Result<(float, BytesReader), MarshalError> {
+        if self.pos + 8 > self.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        Result.Ok((
+            avra_bytes_to_float_le(self.buf, self.pos),
+            BytesReader { buf: self.buf, pos: self.pos + 8 },
+        ))
+    }
+
+    fn try_read_bool(self) -> Result<(bool, BytesReader), MarshalError> {
+        let (n, r) = self.try_read_int()?
+        Result.Ok((n != 0, r))
+    }
+
+    fn try_read_string(self) -> Result<(string, BytesReader), MarshalError> {
+        let (len, after_len) = self.try_read_int()?
+        if len < 0 { return Result.Err(MarshalError.NegativeLength) }
+        if after_len.pos + len > after_len.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        let s_bytes = avra_bytes_slice(after_len.buf, after_len.pos, after_len.pos + len)
+        Result.Ok((
+            avra_string_from_bytes(s_bytes),
+            BytesReader { buf: after_len.buf, pos: after_len.pos + len },
+        ))
+    }
+
+    fn try_read_bytes(self) -> Result<(bytes, BytesReader), MarshalError> {
+        let (len, after_len) = self.try_read_int()?
+        if len < 0 { return Result.Err(MarshalError.NegativeLength) }
+        if after_len.pos + len > after_len.buf.length {
+            return Result.Err(MarshalError.Underrun)
+        }
+        let payload = avra_bytes_slice(after_len.buf, after_len.pos, after_len.pos + len)
+        Result.Ok((payload, BytesReader { buf: after_len.buf, pos: after_len.pos + len }))
+    }
+
+    fn try_read_int_list(self) -> Result<(List<int>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<int> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_int()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    fn try_read_string_list(self) -> Result<(List<string>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<string> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_string()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    fn try_read_bool_list(self) -> Result<(List<bool>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<bool> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_bool()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    fn try_read_float_list(self) -> Result<(List<float>, BytesReader), MarshalError> {
+        let (count, after_count) = self.try_read_int()?
+        if count < 0 { return Result.Err(MarshalError.NegativeLength) }
+        mut xs: List<float> = []
+        mut r = after_count
+        mut i = 0
+        while i < count {
+            let (v, r2) = r.try_read_float()?
+            xs = xs.push(v)
+            r = r2
+            i = i + 1
+        }
+        Result.Ok((xs, r))
+    }
+
+    /// Fail when bytes remain past the cursor — call at the end
+    /// of an unmarshaler to assert the producer wrote what the
+    /// consumer expected. Mirrors Rust's `Cursor.read_to_end`
+    /// followed by an empty check.
+    fn expect_done(self) -> Result<BytesReader, MarshalError> {
+        if self.pos != self.buf.length {
+            return Result.Err(MarshalError.TrailingBytes)
+        }
+        Result.Ok(self)
+    }
+}

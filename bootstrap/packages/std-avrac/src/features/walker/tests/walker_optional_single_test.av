@@ -1,0 +1,127 @@
+// derive_walker recognises NULLABLE single children — `Self?`
+// (OptionalDirectSelf) and `Wrapper<Self>?` (OptionalWrapperOfSelf,
+// e.g. `else_branch: SStmt?`).
+//
+//   - children() none-guards: an absent (`none`) child contributes
+//     nothing; a present child contributes exactly one (projected
+//     through `.node` for the wrapper case).
+//   - map() none-guards: `none` stays `none`; a present child is
+//     descended into with f. Scalar siblings and the wrapper's span
+//     are preserved.
+//
+// Concrete proof that once the walker handles a nullable single spanned
+// child, a field like `Stmt.If.else_branch` can migrate to `SStmt?` and
+// still walk/rewrite mechanically.
+//
+// Bypasses metadata mode so derive_walker + the wrapper struct decl are
+// both visible to the @comptime discovery path (mirrors
+// walker_wrapper_single_test.av).
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
+    then "children() omits none + includes present; map descends present + leaves none" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
+            "\n" +
+            "export type SNode = { node: Tree, span: int }\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    OptSelf(tag: int, child: Tree?),\n" +
+            "    OptWrap(w: SNode?),\n" +
+            "}\n" +
+            "\n" +
+            "fn sn(t: Tree) -> SNode { SNode { node: t, span: 7 } }\n" +
+            "fn bump(t: Tree) -> Tree { match t { .Leaf(v) -> Tree.Leaf(v + 100), _ -> t } }\n" +
+            "fn lv(t: Tree) -> int { match t { .Leaf(v) -> v, _ -> -1 } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let present = Tree.OptSelf(9, Tree.Leaf(1))\n" +
+            "    let absent = Tree.OptSelf(9, none)\n" +
+            "    println(\"present=\" + string(present.children().length))\n" +
+            "    println(\"absent=\" + string(absent.children().length))\n" +
+            "    let wp = Tree.OptWrap(sn(Tree.Leaf(2)))\n" +
+            "    let wa = Tree.OptWrap(none)\n" +
+            "    println(\"wp=\" + string(wp.children().length))\n" +
+            "    println(\"wa=\" + string(wa.children().length))\n" +
+            "    let mk = present.map(bump).children()\n" +
+            "    println(\"mapped=\" + string(lv(mk[0])))\n" +
+            "    println(\"mapped_absent=\" + string(absent.map(bump).children().length))\n" +
+            "    println(\"wmapped=\" + string(lv(wp.map(bump).children()[0])))\n" +
+            "    println(\"wmapped_absent=\" + string(wa.map(bump).children().length))\n" +
+            "}\n")
+        out.contains("present=1") && out.contains("absent=0") &&
+            out.contains("wp=1") && out.contains("wa=0") &&
+            out.contains("mapped=101") && out.contains("mapped_absent=0") &&
+            out.contains("wmapped=102") && out.contains("wmapped_absent=0")
+    }
+
+    then "optional child mixed with list-of-self + scalar siblings; deep nesting descends without overflow" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_mixed_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Mix(n: int, opt: Tree?, kids: List<Tree>),\n" +
+            "}\n" +
+            "\n" +
+            "fn lv(t: Tree) -> int { match t { .Leaf(v) -> v, _ -> -1 } }\n" +
+            "fn bump(t: Tree) -> Tree { match t { .Leaf(v) -> Tree.Leaf(v + 100), _ -> t } }\n" +
+            "fn deep_bump(t: Tree) -> Tree {\n" +
+            "    let t2 = match t { .Leaf(v) -> Tree.Leaf(v + 1), _ -> t }\n" +
+            "    t2.map(deep_bump)\n" +
+            "}\n" +
+            "fn innermost(t: Tree) -> int { match t { .Leaf(v) -> v, .Mix(_, o, _) -> if o != none { innermost(o!) } else { -9 }, _ -> -1 } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let m = Tree.Mix(5, Tree.Leaf(1), [Tree.Leaf(2), Tree.Leaf(3)])\n" +
+            "    println(\"mix_kids=\" + string(m.children().length))\n" +     // opt(1) + kids(2) = 3
+            "    let ma = Tree.Mix(5, none, [Tree.Leaf(2)])\n" +
+            "    println(\"mix_absent_kids=\" + string(ma.children().length))\n" + // 0 + 1 = 1
+            "    match m.map(bump) {\n" +
+            "        .Mix(n, o, ks) -> println(\"mapped=\" + string(n) + \",\" + string(if o != none { lv(o!) } else { -9 }) + \",\" + string(lv(ks[0])) + \",\" + string(lv(ks[1]))),\n" +
+            "        _ -> println(\"notmix\")\n" +
+            "    }\n" +
+            "    mut deep = Tree.Leaf(0)\n" +
+            "    for i in 0..250 { deep = Tree.Mix(i, deep, []) }\n" +
+            "    println(\"deep=\" + string(innermost(deep.map(deep_bump))))\n" +  // 1
+            "}\n")
+        out.contains("mix_kids=3") && out.contains("mix_absent_kids=1") &&
+            out.contains("mapped=5,101,102,103") && out.contains("deep=1")
+    }
+
+    then "optional of a non-Self type (int?) stays a Scalar — never walked as a child" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_scalar_fixture.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "export enum Tree {\n" +
+            "    Leaf(v: int),\n" +
+            "    Mix(maybe_num: int?, child: Tree?),\n" +
+            "}\n" +
+            "\n" +
+            "fn bump(t: Tree) -> Tree { match t { .Leaf(v) -> Tree.Leaf(v + 100), _ -> t } }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    // child (Tree?) is the only walkable child; maybe_num (int?) is a scalar.\n" +
+            "    let both = Tree.Mix(5, Tree.Leaf(1))\n" +
+            "    println(\"both=\" + string(both.children().length))\n" +       // 1
+            "    let no_num = Tree.Mix(none, Tree.Leaf(1))\n" +
+            "    println(\"no_num=\" + string(no_num.children().length))\n" +    // 1 — int? absent, child present
+            "    let no_child = Tree.Mix(5, none)\n" +
+            "    println(\"no_child=\" + string(no_child.children().length))\n" + // 0 — scalar-optional never a child
+            "    match both.map(bump) {\n" +
+            "        .Mix(mn, c) -> println(\"kept=\" + string(if mn != none { mn! } else { -1 })),\n" +
+            "        _ -> println(\"notmix\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("both=1") && out.contains("no_num=1") &&
+            out.contains("no_child=0") && out.contains("kept=5")
+    }
+}

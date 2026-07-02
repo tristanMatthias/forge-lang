@@ -1,0 +1,31 @@
+/// Test fixture: returns a closure that multiplies by `n`.
+/// Verifies captures survive across the fn-return boundary.
+fn frf_make_multiplier(n: int) -> fn(int) -> int {
+    (x) -> x * n
+}
+
+/// Test fixture: classic compose. Mirror of `ft_compose` from
+/// the fn-types test, kept here so this file is self-contained.
+fn frf_compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
+    (x) -> f(g(x))
+}
+
+spec "fn returns fn" {
+    then "lambda returns lambda" {
+        let make: fn(int) -> fn(int) -> int = (n) -> {
+            (x) -> x + n
+        }
+        let add5 = make(5)
+        add5(10) == 15 && add5(20) == 25
+    }
+    then "named fn returns closure capturing param" {
+        let triple = frf_make_multiplier(3)
+        triple(7) == 21
+    }
+    then "compose pipeline applies g then f" {
+        let inc = (x) -> x + 1
+        let dbl = (x) -> x * 2
+        let pipeline = frf_compose(dbl, inc)
+        pipeline(5) == 12
+    }
+}

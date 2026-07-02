@@ -1,0 +1,7 @@
+extern fn avra_uptime_ms() -> int
+
+spec "extern decl example" {
+    then "extern fn declared and callable" {
+        avra_uptime_ms() >= 0
+    }
+}

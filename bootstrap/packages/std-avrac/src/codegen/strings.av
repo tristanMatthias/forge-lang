@@ -1,0 +1,112 @@
+// WHY: codegen for string operations — concat, comparison, replace, substring.
+
+use core.{Expr, SExpr, VarBinding}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{strip_quotes}
+
+/// Codegen for the binary `+` operator on Strings. Allocates a
+/// `lhs.length + rhs.length + 1` RC buffer, memcpys both sides plus
+/// the trailing NUL from rhs, and returns it as `.Str`.
+export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue, string> {
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "concat_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "concat_r")
+
+    let lhs_len = ctx.call("strlen", [lhs_ptr])
+    let rhs_len = ctx.call("strlen", [rhs_ptr])
+
+    let total = ctx.add(lhs_len, rhs_len, "concat_total")
+    let alloc_size = ctx.add(total, ctx.i64(1), "concat_size")
+    let buf = ctx.rc_alloc(alloc_size)
+
+    ctx.call("memcpy", [buf, lhs_ptr, lhs_len])
+
+    let buf_int = ctx.to_i64(buf, "buf_int")
+    let dst2 = ctx.to_ptr(ctx.add(buf_int, lhs_len, "dst2_int"), "dst2")
+    ctx.call("memcpy", [dst2, rhs_ptr, ctx.add(rhs_len, ctx.i64(1), "rhs_len_p1")])
+
+    ok_emit(buf, .Str)
+}
+
+/// Codegen for the `replace(self, from, to)` method on String. Emits
+/// both arg expressions, then defers actual replacement to the C
+/// runtime (`avra_str_replace`). Errors when the call site doesn't
+/// supply exactly two args.
+export fn emit_str_replace(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length < 2 { return err_emit("replace expects 2 arguments") }
+    let se_from = args[0]
+    let se_to = args[1]
+    let from_r = ctx.emit(env, se_from.node)?
+    let to_r = ctx.emit(env, se_to.node)?
+    let str_ptr = ctx.to_ptr(str_i64, "rep_self")
+    let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
+    let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
+    let result = ctx.call("avra_str_replace", [str_ptr, from_ptr, to_ptr_v])
+    ok_emit(result, .Str)
+}
+
+/// Codegen for `substring(self, start, end)`. Validates the arg
+/// count and forwards to `emit_substring_inner`.
+///
+/// Why the single match: the host compiler had a bug where
+/// re-matching `args` in nested arms corrupted the inner payload.
+/// Destructuring exactly once dodges that.
+export fn emit_substring(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("substring expects 2 args, got 0") }
+    if args.length == 1 { return err_emit("substring expects 2 args, got 1") }
+    emit_substring_inner(ctx, env, str_i64, args[0].node, args[1].node)
+}
+
+/// Inner emitter for `substring`. Computes `len = end - start`,
+/// allocates `len + 1` bytes via RC, memcpys `[start..end)` into
+/// the buffer, and writes a trailing NUL so it's a valid C string.
+export fn emit_substring_inner(ctx: Ctx, env: List<VarBinding>, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> Result<EmitValue, string> {
+    let start_r = ctx.emit(env, start_arg)?
+    let end_r = ctx.emit(env, end_arg)?
+    let str_ptr = ctx.to_ptr(str_i64, "sub_src")
+    let len = ctx.sub(end_r.value, start_r.value, "sub_len")
+    let one = ctx.i64(1)
+    let alloc_size = ctx.add(len, one, "sub_alloc")
+    // malloc(alloc_size)
+    let buf = ctx.rc_alloc(alloc_size)
+    // memcpy(buf, src + start, len)
+    let src_int = ctx.to_i64(str_ptr, "sub_src_int")
+    let off_int = ctx.add(src_int, start_r.value, "sub_off_int")
+    let off_ptr = ctx.to_ptr(off_int, "sub_off")
+    ctx.call("memcpy", [buf, off_ptr, len])
+    // Null-terminate at buf[len].
+    let buf_int2 = ctx.to_i64(buf, "sub_buf_int")
+    let nul_int = ctx.add(buf_int2, len, "sub_nul_int")
+    let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
+    ctx.store(ctx.i8(0), nul_ptr)
+    ok_emit(buf, .Str)
+}
+
+/// Codegen for ordering comparisons on Strings (`<`, `<=`, `>`,
+/// `>=`). Lowers to libc `strcmp` followed by a signed icmp of the
+/// result against zero, with `pred` being the LLVM icmp predicate.
+///
+/// Why the manual sign-extend: `ctx.icmp` auto-zero-extends i32
+/// operands, which would turn a negative strcmp result into a huge
+/// positive i64 and break signed comparison. We sext to i64 first.
+export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Result<EmitValue, string> {
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "scmp_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "scmp_r")
+    let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
+    let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
+    let zero64 = ctx.i64(0)
+    let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
+}
+
+/// Codegen for String `==` / `!=`. Lowers to libc `strcmp == 0`
+/// (eq) or `strcmp != 0` (ne) via the LLVM predicate codes 32/33.
+/// `invert: true` selects `!=`.
+export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Result<EmitValue, string> {
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
+    let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
+    let pred = if invert { 33 } else { 32 }
+    let cmp = ctx.icmp(pred, result, ctx.i64(0), "streq_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"), .Bool)
+}
+

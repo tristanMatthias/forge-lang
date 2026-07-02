@@ -1,0 +1,27 @@
+type RrrInner = {
+    value: string
+}
+
+type RrrOuter = {
+    name: string,
+    child: RrrInner
+}
+
+fn rrr_test_struct_release() -> string {
+    let outer = RrrOuter { name: "test", child: RrrInner { value: "hello" } }
+    outer.child.value
+}
+
+fn rrr_test_nested() -> string {
+    let deep = RrrOuter { name: "deep", child: RrrInner { value: "world" } }
+    deep.name
+}
+
+spec "rc recursive release" {
+    then "struct release" {
+        rrr_test_struct_release() == "hello"
+    }
+    then "nested access" {
+        rrr_test_nested() == "deep"
+    }
+}

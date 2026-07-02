@@ -1,0 +1,16 @@
+type OcConfig = { host: string, port: int }
+type OcApp = { config: OcConfig }
+
+spec "optional chain" {
+    then "non-null app returns inner host" {
+        let a = OcApp { config: OcConfig { host: "localhost", port: 8080 } }
+        let app: OcApp? = a
+        let host = if app != null { app!.config.host } else { "null fallback" }
+        host == "localhost"
+    }
+    then "null app returns fallback" {
+        let app: OcApp? = null
+        let host = if app != null { app!.config.host } else { "null fallback" }
+        host == "null fallback"
+    }
+}

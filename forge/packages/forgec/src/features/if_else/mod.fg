@@ -8,7 +8,7 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_n
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_PTR, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR, CG_LAST_IS_STR, CG_LAST_ENUM_TYPE, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_nullable_type, wrap_nullable, codegen_new}
+use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, make_nullable_type, wrap_nullable, codegen_new, CG_NULLABLE_VAR_NAMES, coerce_to_fn_return}
 use @std.llvm
 
 // ─── Data Types ──────────────────────────────────
@@ -46,12 +46,7 @@ export fn store_if_expr(condition: Expr, then_block: Block, has_else: bool, else
     feature_expr("if_else", "if_expr", id, span)
 }
 
-// Legacy exports (for old inline-emit code that may still reference these)
-export mut PENDING_IF: bool = false
-export mut CURRENT_IF_COND: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
-export mut CURRENT_IF_THEN: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
-export mut CURRENT_IF_HAS_ELSE: bool = false
-export mut CURRENT_IF_ELSE: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
+// If expressions use Expr.IfExpr AST node — no PENDING_IF globals
 
 // ─── Check ──────────────────────────────────────
 
@@ -96,12 +91,10 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     // Emit then block
     llvm.position_at_end(CG_B, then_bb)
     mut then_val = cg.emit_block(data.then_block)
-    mut then_is_nullable = CG_LAST_IS_NULLABLE == 1
-    // In nullable function context, wrap non-nullable then value before branching
-    if CG_FN_RETURNS_NULLABLE == 1 && !then_is_nullable {
-        then_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, then_val)
-        then_is_nullable = true
-    }
+    // Normalize to the function's expected return type — handles wrap,
+    // pass-through, or typed-null fallback in one place.
+    then_val = coerce_to_fn_return(then_val)
+    let then_is_nullable = forge_fn_nullable_get_flag() == 1
     let then_end_bb = llvm.get_insert_block(CG_B)
     let then_terminated = llvm.block_has_terminator(CG_B)
     if !then_terminated {
@@ -114,12 +107,10 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     if data.has_else {
         else_val = cg.emit_block(data.else_block)
     }
-    mut else_is_nullable = CG_LAST_IS_NULLABLE == 1
-    // In nullable function context, wrap non-nullable else value before branching
-    if data.has_else && CG_FN_RETURNS_NULLABLE == 1 && !else_is_nullable {
-        else_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, else_val)
-        else_is_nullable = true
+    if data.has_else {
+        else_val = coerce_to_fn_return(else_val)
     }
+    let else_is_nullable = forge_fn_nullable_get_flag() == 1
     let else_end_bb = llvm.get_insert_block(CG_B)
     let else_terminated = llvm.block_has_terminator(CG_B)
     if !else_terminated {
@@ -131,12 +122,11 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     // If both branches produced values (if-as-expression), use PHI
     if data.has_else && !then_terminated && !else_terminated {
         // In a nullable function, both branches are now wrapped as {i8, T}
-        if CG_FN_RETURNS_NULLABLE == 1 && (then_is_nullable || else_is_nullable) {
-            let nullable_ty = make_nullable_type(CG_FN_NULLABLE_INNER_TY)
+        if forge_fn_nullable_get_flag() == 1 && (then_is_nullable || else_is_nullable) {
+            let nullable_ty = make_nullable_type(forge_fn_nullable_get_inner())
             let phi = llvm.build_phi(CG_B, nullable_ty, "iv")
             llvm.add_incoming(phi, then_val, then_end_bb)
             llvm.add_incoming(phi, else_val, else_end_bb)
-            CG_LAST_IS_NULLABLE = 1
             return phi
         }
         let phi = llvm.build_phi(CG_B, CG_I64, "iv")

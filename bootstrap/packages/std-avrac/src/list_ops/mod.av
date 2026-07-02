@@ -1,0 +1,88 @@
+// Generic combinators on `List<T>`. The language's built-in List has
+// `.length`, `.push`, `.pop`, and `[idx]`; everything else has to be
+// expressed as a `mut acc = []; for x in xs { acc = acc.push(...) }`
+// loop, which clutters call sites that just want to map/filter/fold.
+//
+// These helpers ride on the monomorphizer's generic-constructor
+// inference (`List<T>`, `fn(T) -> U`) so call sites read like:
+//
+//     let slugs = list_map(paths, (p: string) -> basename_no_ext(p))
+//     let live  = list_filter(shards, (s: Shard) -> s.log_alive())
+//     let sum   = list_fold(numbers, 0, (acc: int, n: int) -> acc + n)
+//
+// no turbofish required.
+
+/// Apply `f` to every element of `xs`, collecting the results.
+/// O(N) in `xs.length`.
+export fn list_map<T, U>(xs: List<T>, f: fn(T) -> U) -> List<U> {
+    mut out: List<U> = []
+    for x in xs { out = out.push(f(x)) }
+    out
+}
+
+/// Keep every element of `xs` for which `pred` is true.
+export fn list_filter<T>(xs: List<T>, pred: fn(T) -> bool) -> List<T> {
+    mut out: List<T> = []
+    for x in xs { if pred(x) { out = out.push(x) } }
+    out
+}
+
+/// Left-fold `xs` into `init` by repeatedly applying `step(acc, x)`.
+/// Use for sums, products, struct-of-totals accumulators, etc.
+export fn list_fold<T, A>(xs: List<T>, init: A, step: fn(A, T) -> A) -> A {
+    mut acc = init
+    for x in xs { acc = step(acc, x) }
+    acc
+}
+
+/// True if `pred` holds for at least one element. Short-circuits on
+/// the first hit.
+export fn list_any<T>(xs: List<T>, pred: fn(T) -> bool) -> bool {
+    for x in xs { if pred(x) { return true } }
+    false
+}
+
+/// True if `pred` holds for every element (vacuously true on `[]`).
+/// Short-circuits on the first miss.
+export fn list_all<T>(xs: List<T>, pred: fn(T) -> bool) -> bool {
+    for x in xs { if !pred(x) { return false } }
+    true
+}
+
+/// Linear membership check on a `List<string>`. Common enough that
+/// every caller writing `list_any(xs, (s: string) -> s == target)`
+/// (or the equivalent for-loop) is more noise than signal — name
+/// the operation here so the intent reads cleanly.
+export fn list_contains_str(xs: List<string>, target: string) -> bool {
+    for x in xs { if x == target { return true } }
+    false
+}
+
+/// Run `step` for its side effects on each element. Useful when the
+/// loop body is a single call and a `for ... { f(x) }` block is
+/// noisier than expressing the intent inline.
+export fn list_each<T>(xs: List<T>, step: fn(T) -> void) {
+    for x in xs { step(x) }
+}
+
+/// Concatenate `a ++ b` into a fresh `List<T>`. Both inputs are
+/// left intact. O(N+M) — copies element references, no deep clone.
+export fn list_concat<T>(a: List<T>, b: List<T>) -> List<T> {
+    mut out: List<T> = []
+    for x in a { out = out.push(x) }
+    for x in b { out = out.push(x) }
+    out
+}
+
+/// Snapshot `xs` and append `x` to the copy. The input is left
+/// intact — for callers that need to retain the un-extended list
+/// (sibling DFS branches, parent scope frames before pushing a
+/// child binding, etc.) where a direct `.push` would corrupt the
+/// shared reference since `List<T>` is heap-backed.
+export fn list_push_copy<T>(xs: List<T>, x: T) -> List<T> {
+    mut out: List<T> = []
+    for e in xs { out = out.push(e) }
+    out = out.push(x)
+    out
+}
+

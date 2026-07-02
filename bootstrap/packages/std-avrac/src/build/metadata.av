@@ -1,0 +1,1515 @@
+// WHY: metadata.bin format — a compact binary record of one
+// compile-unit's *public surface* (exported types, fn signatures,
+// trait/impl tables, generics, constants). Downstream units consume
+// metadata.bin to typecheck against this unit's API without
+// re-parsing or re-typechecking the implementation.
+//
+// Layered build:
+//   - BytesWriter / BytesReader     ← byte-level binary IO (pure Avra)
+//   - encode_u32_le / decode_u32_le ← scalar encoders
+//   - encode_string / decode_string ← length-prefixed UTF-8
+//   - the per-section formats        ← built on top
+//
+// The first three layers are this file. Per-section formats are
+// added as iinq's per-symbol-kind work lands.
+//
+// Tracked under forge-crafting-intepreters-iinq (epic
+// forge-crafting-intepreters-a1el — the build system).
+
+use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry, vtype_struct, content_id_for}
+
+extern fn avra_bytes_make(len: int) -> bytes
+extern fn avra_bytes_set(b: bytes, idx: int, val: int)
+extern fn avra_bytes_to_hex(b: bytes) -> string
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_string_from_bytes(b: bytes) -> string
+
+/// Append-only byte builder. Internally accumulates a list of
+/// chunks and concatenates on `finish()`. Linear in total output
+/// size — fine for metadata.bin (typical unit ~tens of kilobytes).
+///
+/// All write methods mutate via `self.chunks.push(...)`; the chunk
+/// list is heap-allocated, so ownership of the BytesWriter value
+/// can be shared between scopes without breaking the encoding.
+export type BytesWriter = {
+    chunks: List<bytes>,
+}
+
+/// Construct an empty writer ready for `.u8`, `.u32_le`, `.string`,
+/// etc. Idiomatic call site: `let w = writer_new(); w.u32_le(42)`.
+export fn writer_new() -> BytesWriter {
+    BytesWriter { chunks: [] }
+}
+
+// BytesWriter methods. Each `.u*_le(val)` writes one fixed-width
+// scalar in little-endian order; `.string(s)` writes a u32 length
+// prefix followed by the UTF-8 bytes; `.raw(b)` appends without
+// framing. `.finish()` concatenates accumulated chunks into one
+// bytes value.
+impl BytesWriter {
+    fn u8(self, val: int) {
+        let b = avra_bytes_make(1)
+        avra_bytes_set(b, 0, val)
+        self.chunks.push(b)
+    }
+
+    fn u16_le(self, val: int) {
+        let b = avra_bytes_make(2)
+        // `>>` is arithmetic-shift on Avra's signed `int`, but `& 0xFF`
+        // discards the sign-extended high bits — so the bit pattern of
+        // `val` is reproduced byte-for-byte regardless of sign. Plain
+        // `/256` would truncate toward zero on negative values and
+        // disagree with shift on the high bytes.
+        avra_bytes_set(b, 0, val & 0xFF)
+        avra_bytes_set(b, 1, (val >> 8) & 0xFF)
+        self.chunks.push(b)
+    }
+
+    fn u32_le(self, val: int) {
+        let b = avra_bytes_make(4)
+        avra_bytes_set(b, 0, val & 0xFF)
+        avra_bytes_set(b, 1, (val >> 8) & 0xFF)
+        avra_bytes_set(b, 2, (val >> 16) & 0xFF)
+        avra_bytes_set(b, 3, (val >> 24) & 0xFF)
+        self.chunks.push(b)
+    }
+
+    fn u64_le(self, val: int) {
+        let b = avra_bytes_make(8)
+        mut i = 0
+        while i < 8 {
+            avra_bytes_set(b, i, (val >> (i * 8)) & 0xFF)
+            i = i + 1
+        }
+        self.chunks.push(b)
+    }
+
+    fn string(self, s: string) {
+        let b = avra_bytes_from_string(s)
+        self.u32_le(b.length)
+        self.chunks.push(b)
+    }
+
+    fn raw(self, b: bytes) {
+        self.chunks.push(b)
+    }
+
+    fn finish(self) -> bytes {
+        concat_chunks(self.chunks, 0, self.chunks.length)
+    }
+}
+
+/// Divide-and-conquer concatenation of the writer's chunks: O(total · log N)
+/// bytes copied, O(total) peak memory.
+///
+/// The previous implementation folded left — `acc.concat(chunk)` once per
+/// chunk — which is O(N²): every `concat` copies the whole running
+/// accumulator, and the tail recursion kept each intermediate `acc` alive
+/// (one per frame). Serializing the self-hosted compiler's unit metadata
+/// (~576 KB across tens of thousands of fixed-width chunks) peaked at ~14 GB,
+/// OOM-killing the 16 GB seed-train CI on every whole-compiler producer build
+/// (snw0 lever-b). Splitting the range in half bounds both the recursion
+/// depth (log N) and the live accumulators (O(total)).
+fn concat_chunks(chunks: List<bytes>, lo: int, hi: int) -> bytes {
+    if hi <= lo { return avra_bytes_make(0) }
+    if hi - lo == 1 { return chunks[lo] }
+    let mid = lo + (hi - lo) / 2
+    concat_chunks(chunks, lo, mid).concat(concat_chunks(chunks, mid, hi))
+}
+
+// ── Reader ──
+//
+// Cursor over a frozen `bytes` buffer. Each `read_*` advances the
+// cursor in-place. Out-of-bounds reads return 0 (sentinel) — callers
+// gate on `.remaining()` when correctness matters.
+
+/// Cursor over a bytes buffer. The cursor lives in a one-element
+/// List<int> so `.u8()` etc. can advance it without the reader
+/// itself needing to be `mut` (Avra params are immutable). `pos[0]`
+/// is the next byte to read.
+export type BytesReader = {
+    buf: bytes,
+    pos: List<int>,
+}
+
+/// Create a reader positioned at offset 0 of `buf`. Idiomatic call:
+/// `let r = reader_new(buf); let n = r.u32_le()`.
+export fn reader_new(buf: bytes) -> BytesReader {
+    BytesReader { buf: buf, pos: [0] }
+}
+
+// BytesReader methods. Each `.u*_le()` returns one fixed-width
+// scalar and advances the cursor; `.string()` reads a u32 length
+// prefix and the following UTF-8 bytes; `.raw(n)` reads n unframed
+// bytes; `.remaining()` reports the number of unread bytes left.
+impl BytesReader {
+    fn remaining(self) -> int {
+        let rem = self.buf.length - self.pos[0]
+        if rem < 0 { 0 } else { rem }
+    }
+
+    fn u8(self) -> int {
+        let p = self.pos[0]
+        let v = self.buf.byte(p)
+        self.pos.set(0, p + 1)
+        v
+    }
+
+    fn u16_le(self) -> int {
+        let lo = self.u8()
+        let hi = self.u8()
+        lo + hi * 256
+    }
+
+    fn u32_le(self) -> int {
+        let b0 = self.u8()
+        let b1 = self.u8()
+        let b2 = self.u8()
+        let b3 = self.u8()
+        b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+    }
+
+    fn u64_le(self) -> int {
+        mut v = 0
+        mut shift = 1
+        mut i = 0
+        while i < 8 {
+            v = v + self.u8() * shift
+            shift = shift * 256
+            i = i + 1
+        }
+        v
+    }
+
+    fn string(self) -> string {
+        let len = self.u32_le()
+        let start = self.pos[0]
+        let slice = self.buf.slice(start, start + len)
+        self.pos.set(0, start + len)
+        avra_string_from_bytes(slice)
+    }
+
+    fn raw(self, n: int) -> bytes {
+        let start = self.pos[0]
+        let slice = self.buf.slice(start, start + n)
+        self.pos.set(0, start + n)
+        slice
+    }
+}
+
+// ── Stable symbol IDs ──
+//
+// Every cross-unit reference in metadata.bin (a fn calling a type
+// declared in another unit, a trait impl pointing at a foreign type)
+// is recorded as a 64-bit hash of the symbol's fully qualified name.
+// The hash MUST be deterministic across builds — two compiles of the
+// same unit on the same day on the same machine must produce the
+// same id, otherwise downstream units fail to resolve their
+// references after a recompile.
+//
+// This is the SAME identity the type registry now assigns in-process
+// (wc5w unified the two): `sym_id_for` delegates to `core::content_id_for`
+// (FNV-1a-64), so a symbol's on-disk id and its in-process TypeId are one
+// value. The canonical FNV constants live with that single implementation.
+
+/// Hash a fully qualified symbol name (e.g. `@std::avrac::build::cache::Cache`)
+/// to a stable u64 — the content-addressed identity shared with the type
+/// registry. See `core::content_id_for`.
+export fn sym_id_for(qualified_name: string) -> int {
+    content_id_for(qualified_name)
+}
+
+// ── File header + section framing ──
+//
+// Top-level metadata.bin layout:
+//
+//     [u32 magic = 'AVMD' = 0x444D5641 (LE) ]
+//     [u16 version_major]
+//     [u16 version_minor]
+//     [string unit_name           ]   length-prefixed UTF-8
+//     [bytes fingerprint = 32B    ]   sha256 of the unit's source set
+//     [u32 section_count          ]
+//     [ section_0, section_1, ... ]
+//
+// Each section is framed identically:
+//
+//     [u8  section_kind          ]   1=TYPES 2=FNS 3=TRAITS 4=IMPLS 5=CONSTS
+//     [u32 entry_count           ]
+//     [u32 section_body_length   ]
+//     [body...]                       opaque to the framer; per-kind format
+//
+// `entry_count` lets readers skip an entire section when they need
+// to seek past it; `section_body_length` lets readers skip without
+// parsing entries when an unknown section kind appears (forward-compat).
+
+// Magic bytes: ASCII "AVMD" in little-endian u32.
+export const METADATA_MAGIC: int = 0x444D5641
+export const METADATA_VERSION_MAJOR: int = 1
+// Minor 3: VT_MAP now carries key + value ValueType payloads (was a payloadless
+// tag). The compiler-binary fingerprint already invalidates stale caches, but
+// the bump records the wire-format evolution.
+export const METADATA_VERSION_MINOR: int = 3
+
+/// Stable section IDs. Kept in this enum so the byte values are
+/// pinned — adding a new section appends; never reorder or reuse a
+/// retired number, otherwise old metadata.bin files mis-route their
+/// sections to the wrong reader.
+export enum SectionKind {
+    Types,          // tag 1: type declarations (struct / enum / shape / newtype / union alias)
+    Fns,            // tag 2: fn signatures (params + return type + visibility)
+    Traits,         // tag 3: trait declarations
+    Impls,          // tag 4: trait impl table — (Trait,Type) → method list (sigs from trait)
+    Consts,         // tag 5: const declarations (name + type + value bytes)
+    GenericBodies,  // tag 6: source text of every exported generic fn body
+                    //         (P3 library-mode — consumer re-parses + monomorphizes)
+    InherentImpls,  // tag 7: inherent impl blocks (`impl Type { ... }` with no trait)
+                    //         Carries full method sigs inline (no parallel trait to
+                    //         look them up from). bd8n / library-mode P6 phase 2.
+}
+
+fn section_kind_to_byte(k: SectionKind) -> int {
+    match k {
+        .Types -> 1
+        .Fns -> 2
+        .Traits -> 3
+        .Impls -> 4
+        .Consts -> 5
+        .GenericBodies -> 6
+        .InherentImpls -> 7
+    }
+}
+
+fn byte_to_section_kind(b: int) -> SectionKind {
+    match b {
+        2 -> .Fns
+        3 -> .Traits
+        4 -> .Impls
+        5 -> .Consts
+        6 -> .GenericBodies
+        7 -> .InherentImpls
+        _ -> .Types
+    }
+}
+
+// File-header + section-frame writers.
+//   .header(unit, fp, n)   — fixed-prefix file layout (magic, version,
+//                            unit name, 32-byte fingerprint, section_count).
+//   .section(kind, n, body) — single section frame; body is opaque, so
+//                            per-kind encoders can evolve without
+//                            touching the framer.
+impl BytesWriter {
+    fn header(self, unit_name: string, fingerprint: bytes, section_count: int) {
+        self.u32_le(METADATA_MAGIC)
+        self.u16_le(METADATA_VERSION_MAJOR)
+        self.u16_le(METADATA_VERSION_MINOR)
+        self.string(unit_name)
+        self.raw(fingerprint)
+        self.u32_le(section_count)
+    }
+
+    fn section(self, kind: SectionKind, entry_count: int, body: bytes) {
+        self.u8(section_kind_to_byte(kind))
+        self.u32_le(entry_count)
+        self.u32_le(body.length)
+        self.raw(body)
+    }
+}
+
+/// Decoded file header. Mirrors `BytesWriter.header`.
+export type MetadataHeader = {
+    magic: int,
+    version_major: int,
+    version_minor: int,
+    unit_name: string,
+    fingerprint: bytes,
+    section_count: int,
+}
+
+/// Decoded section frame (header + body); the body is left raw for
+/// per-kind decoders to consume separately.
+export type SectionFrame = {
+    kind: SectionKind,
+    entry_count: int,
+    body: bytes,
+}
+
+// ── ValueType encoding ──
+//
+// Every fn signature, every field, every variant payload, every
+// generic argument inside metadata.bin is a ValueType. The encoding
+// is a single tag byte plus variant-specific payload.
+//
+// Tag bytes are pinned. New variants append; never reorder or
+// reuse a retired number, otherwise existing metadata.bin files
+// route to the wrong decoder.
+
+const VT_UNKNOWN: int = 0x00
+const VT_INT: int = 0x01
+const VT_BOOL: int = 0x02
+const VT_FLOAT: int = 0x03
+const VT_STR: int = 0x04
+const VT_BYTES: int = 0x05
+const VT_PTR: int = 0x06
+const VT_MAP: int = 0x07
+const VT_VOID: int = 0x08
+const VT_U8: int = 0x10
+const VT_U16: int = 0x11
+const VT_U32: int = 0x12
+const VT_U64: int = 0x13
+const VT_I8: int = 0x14
+const VT_I16: int = 0x15
+const VT_I32: int = 0x16
+const VT_STRUCT: int = 0x20
+const VT_ENUM: int = 0x21
+const VT_TRAIT: int = 0x22
+const VT_NEWTYPE: int = 0x23
+const VT_NARROWED_ENUM: int = 0x24
+const VT_LIST: int = 0x30
+const VT_TUPLE: int = 0x31
+const VT_UNION: int = 0x32
+const VT_FN: int = 0x33
+const VT_FN_TYPED: int = 0x34
+const VT_CLOSURE: int = 0x35
+const VT_TASK: int = 0x36
+const VT_OPTIONAL: int = 0x37
+const VT_CHANNEL: int = 0x38
+
+impl BytesWriter {
+    fn vtype(self, vt: ValueType) {
+        match vt {
+            .Unknown -> self.u8(VT_UNKNOWN)
+            .Int -> self.u8(VT_INT)
+            .Bool -> self.u8(VT_BOOL)
+            .Float -> self.u8(VT_FLOAT)
+            .Str -> self.u8(VT_STR)
+            .Bytes -> self.u8(VT_BYTES)
+            .Ptr -> self.u8(VT_PTR)
+            .Map(k, v) -> {
+                self.u8(VT_MAP)
+                self.vtype(k)
+                self.vtype(v)
+            }
+            .Void -> self.u8(VT_VOID)
+            .U8 -> self.u8(VT_U8)
+            .U16 -> self.u8(VT_U16)
+            .U32 -> self.u8(VT_U32)
+            .U64 -> self.u8(VT_U64)
+            .I8 -> self.u8(VT_I8)
+            .I16 -> self.u8(VT_I16)
+            .I32 -> self.u8(VT_I32)
+            // Nominal types carry both name and sym_id. Decoders that
+            // already have the local TypeRegistry can rebuild id from
+            // the name; cross-unit decoders use sym_id to follow the
+            // cross-reference.
+            .Struct(name, _, _) -> {
+                self.u8(VT_STRUCT)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+            }
+            .Enum(name, args, _) -> {
+                self.u8(VT_ENUM)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+                self.vtype_list(args)
+            }
+            .Trait(name, _) -> {
+                self.u8(VT_TRAIT)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+            }
+            .Newtype(name, inner, _) -> {
+                self.u8(VT_NEWTYPE)
+                self.string(name)
+                self.u64_le(sym_id_for(name))
+                self.vtype(inner)
+            }
+            .NarrowedEnum(en, v, _) -> {
+                self.u8(VT_NARROWED_ENUM)
+                self.string(en)
+                self.string(v)
+                self.u64_le(sym_id_for(en))
+            }
+            .List(elem) -> {
+                self.u8(VT_LIST)
+                self.vtype(elem)
+            }
+            .Tuple(elements) -> {
+                self.u8(VT_TUPLE)
+                self.vtype_list(elements)
+            }
+            .Union(types) -> {
+                self.u8(VT_UNION)
+                self.vtype_list(types)
+            }
+            .Fn(ret) -> {
+                self.u8(VT_FN)
+                self.vtype(ret)
+            }
+            .FnTyped(params, ret) -> {
+                self.u8(VT_FN_TYPED)
+                self.vtype_list(params)
+                self.vtype(ret)
+            }
+            .Closure(n, ret) -> {
+                self.u8(VT_CLOSURE)
+                self.u32_le(n)
+                self.vtype(ret)
+            }
+            .Task(rt) -> {
+                self.u8(VT_TASK)
+                self.vtype(rt)
+            }
+            .Channel(elem) -> {
+                self.u8(VT_CHANNEL)
+                self.vtype(elem)
+            }
+            .Optional(inner) -> {
+                self.u8(VT_OPTIONAL)
+                self.vtype(inner)
+            }
+        }
+    }
+
+    fn vtype_list(self, types: List<ValueType>) {
+        self.u32_le(types.length)
+        mut i = 0
+        while i < types.length {
+            self.vtype(types[i])
+            i = i + 1
+        }
+    }
+}
+
+// ── Composite list encoders ──
+//
+// List<FieldEntry> / List<Variant> / List<ParamEntry> are the building blocks of the
+// per-section bodies. Each list encodes as `[u32 count][entries]`,
+// where each entry is `[string name][per-element body]`.
+
+impl BytesWriter {
+    fn field_list(self, fields: List<FieldEntry>) {
+        self.u32_le(fields.length)
+        mut i = 0
+        while i < fields.length {
+            let e = fields[i]
+            self.string(e.name)
+            self.vtype(e.resolved)
+            i = i + 1
+        }
+    }
+
+    fn param_list(self, params: List<ParamEntry>) {
+        self.u32_le(params.length)
+        mut i = 0
+        while i < params.length {
+            self.string(params[i].name)
+            self.vtype(params[i].vtype)
+            i = i + 1
+        }
+    }
+
+    fn type_param_list(self, params: List<TypeParamEntry>) {
+        self.u32_le(params.length)
+        mut i = 0
+        while i < params.length {
+            self.string(params[i].name)
+            self.string(params[i].bounds)
+            i = i + 1
+        }
+    }
+
+    fn variant_list(self, variants: List<Variant>) {
+        self.u32_le(variants.length)
+        mut i = 0
+        while i < variants.length {
+            let v = variants[i]
+            self.string(v.name)
+            self.field_list(v.fields)
+            i = i + 1
+        }
+    }
+}
+
+impl BytesReader {
+    fn field_list(self) -> List<FieldEntry> {
+        let count = self.u32_le()
+        mut out: List<FieldEntry> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let vt = self.vtype()
+            out.push(FieldEntry { name, resolved: vt })
+            i = i + 1
+        }
+        out
+    }
+
+    fn param_list(self) -> List<ParamEntry> {
+        let count = self.u32_le()
+        mut out: List<ParamEntry> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let vt = self.vtype()
+            out.push(ParamEntry { name, vtype: vt })
+            i = i + 1
+        }
+        out
+    }
+
+    fn variant_list(self) -> List<Variant> {
+        let count = self.u32_le()
+        mut out: List<Variant> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let fields = self.field_list()
+            out.push(Variant { name, fields })
+            i = i + 1
+        }
+        out
+    }
+
+    fn type_param_list(self) -> List<TypeParamEntry> {
+        let count = self.u32_le()
+        mut out: List<TypeParamEntry> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let bounds = self.string()
+            out.push(TypeParamEntry { name: name, bounds: bounds })
+            i = i + 1
+        }
+        out
+    }
+}
+
+// File-header + section-frame readers. Mirror the BytesWriter impls
+// above. Caller validates `.magic == METADATA_MAGIC` before trusting
+// the rest of the header.
+impl BytesReader {
+    fn vtype(self) -> ValueType {
+        let tag = self.u8()
+        if tag == VT_UNKNOWN { return ValueType.Unknown }
+        if tag == VT_INT { return ValueType.Int }
+        if tag == VT_BOOL { return ValueType.Bool }
+        if tag == VT_FLOAT { return ValueType.Float }
+        if tag == VT_STR { return ValueType.Str }
+        if tag == VT_BYTES { return ValueType.Bytes }
+        if tag == VT_PTR { return ValueType.Ptr }
+        if tag == VT_MAP {
+            let k = self.vtype()
+            let v = self.vtype()
+            return ValueType.Map(k, v)
+        }
+        if tag == VT_VOID { return ValueType.Void }
+        if tag == VT_U8 { return ValueType.U8 }
+        if tag == VT_U16 { return ValueType.U16 }
+        if tag == VT_U32 { return ValueType.U32 }
+        if tag == VT_U64 { return ValueType.U64 }
+        if tag == VT_I8 { return ValueType.I8 }
+        if tag == VT_I16 { return ValueType.I16 }
+        if tag == VT_I32 { return ValueType.I32 }
+        if tag == VT_STRUCT {
+            let name = self.string()
+            let _id = self.u64_le()
+            return vtype_struct(name, 0)
+        }
+        if tag == VT_ENUM {
+            let name = self.string()
+            let _id = self.u64_le()
+            let args = self.vtype_list()
+            return ValueType.Enum(name, args, 0)
+        }
+        if tag == VT_TRAIT {
+            let name = self.string()
+            let _id = self.u64_le()
+            return ValueType.Trait(name, 0)
+        }
+        if tag == VT_NEWTYPE {
+            let name = self.string()
+            let _id = self.u64_le()
+            let inner = self.vtype()
+            return ValueType.Newtype(name, inner, 0)
+        }
+        if tag == VT_NARROWED_ENUM {
+            let en = self.string()
+            let v = self.string()
+            let _id = self.u64_le()
+            return ValueType.NarrowedEnum(en, v, 0)
+        }
+        if tag == VT_LIST {
+            return ValueType.List(self.vtype())
+        }
+        if tag == VT_TUPLE {
+            return ValueType.Tuple(self.vtype_list())
+        }
+        if tag == VT_UNION {
+            return ValueType.Union(self.vtype_list())
+        }
+        if tag == VT_FN {
+            return ValueType.Fn(self.vtype())
+        }
+        if tag == VT_FN_TYPED {
+            let params = self.vtype_list()
+            let ret = self.vtype()
+            return ValueType.FnTyped(params, ret)
+        }
+        if tag == VT_CLOSURE {
+            let n = self.u32_le()
+            return ValueType.Closure(n, self.vtype())
+        }
+        if tag == VT_TASK {
+            return ValueType.Task(self.vtype())
+        }
+        if tag == VT_CHANNEL {
+            return ValueType.Channel(self.vtype())
+        }
+        if tag == VT_OPTIONAL {
+            return ValueType.Optional(self.vtype())
+        }
+        ValueType.Unknown
+    }
+
+    fn vtype_list(self) -> List<ValueType> {
+        let count = self.u32_le()
+        mut out: List<ValueType> = []
+        mut i = 0
+        while i < count {
+            out.push(self.vtype())
+            i = i + 1
+        }
+        out
+    }
+}
+
+impl BytesReader {
+    fn header(self) -> MetadataHeader {
+        let m = self.u32_le()
+        let vmaj = self.u16_le()
+        let vmin = self.u16_le()
+        let name = self.string()
+        let fp = self.raw(32)
+        let n = self.u32_le()
+        MetadataHeader { magic: m, version_major: vmaj, version_minor: vmin, unit_name: name, fingerprint: fp, section_count: n }
+    }
+
+    fn section(self) -> SectionFrame {
+        let k = self.u8()
+        let n = self.u32_le()
+        let len = self.u32_le()
+        let body = self.raw(len)
+        SectionFrame { kind: byte_to_section_kind(k), entry_count: n, body: body }
+    }
+}
+
+// ── TYPES section: declarations of nominal types ──
+//
+// Each entry in the TYPES section body:
+//
+//   [u64 sym_id]                — stable cross-unit reference
+//   [u8  type_decl_kind]        — pinned tag (see TypeDeclKind)
+//   [string canonical_name]
+//   [body]                      — kind-specific
+//
+// Bodies:
+//   StructDecl / ShapeDecl  → field_list
+//   EnumDecl                → variant_list
+//   NewtypeDecl             → vtype inner
+//   UnionAliasDecl          → vtype unioned_type
+//
+// TraitDecl encoding deferred to a follow-up commit (the trait
+// method list is a separate sub-record and lands cleaner on its own).
+
+const TYPE_DECL_STRUCT: int = 1
+const TYPE_DECL_ENUM: int = 2
+const TYPE_DECL_TRAIT: int = 3
+const TYPE_DECL_NEWTYPE: int = 4
+const TYPE_DECL_UNION_ALIAS: int = 5
+const TYPE_DECL_SHAPE: int = 6
+
+export enum TypeDeclKind {
+    StructDecl
+    EnumDecl
+    TraitDecl
+    NewtypeDecl
+    UnionAliasDecl
+    ShapeDecl
+}
+
+fn type_decl_kind_to_byte(k: TypeDeclKind) -> int {
+    if k is .StructDecl { return TYPE_DECL_STRUCT }
+    if k is .EnumDecl { return TYPE_DECL_ENUM }
+    if k is .TraitDecl { return TYPE_DECL_TRAIT }
+    if k is .NewtypeDecl { return TYPE_DECL_NEWTYPE }
+    if k is .UnionAliasDecl { return TYPE_DECL_UNION_ALIAS }
+    if k is .ShapeDecl { return TYPE_DECL_SHAPE }
+    return TYPE_DECL_STRUCT
+}
+
+fn byte_to_type_decl_kind(b: int) -> TypeDeclKind {
+    if b == TYPE_DECL_ENUM { return TypeDeclKind.EnumDecl }
+    if b == TYPE_DECL_TRAIT { return TypeDeclKind.TraitDecl }
+    if b == TYPE_DECL_NEWTYPE { return TypeDeclKind.NewtypeDecl }
+    if b == TYPE_DECL_UNION_ALIAS { return TypeDeclKind.UnionAliasDecl }
+    if b == TYPE_DECL_SHAPE { return TypeDeclKind.ShapeDecl }
+    return TypeDeclKind.StructDecl
+}
+
+export type TypeDeclEntry = {
+    sym_id: int,
+    kind: TypeDeclKind,
+    name: string,
+    type_params: List<TypeParamEntry>,
+    fields: List<FieldEntry>,
+    variants: List<Variant>,
+    inner_vt: ValueType,
+    methods: List<MetaTraitMethod>,
+}
+
+impl BytesWriter {
+    fn type_decl(self, e: TypeDeclEntry) {
+        self.u64_le(e.sym_id)
+        self.u8(type_decl_kind_to_byte(e.kind))
+        self.string(e.name)
+        self.type_param_list(e.type_params)
+        if e.kind is .StructDecl { self.field_list(e.fields) }
+        if e.kind is .ShapeDecl { self.field_list(e.fields) }
+        if e.kind is .EnumDecl { self.variant_list(e.variants) }
+        if e.kind is .NewtypeDecl { self.vtype(e.inner_vt) }
+        if e.kind is .UnionAliasDecl { self.vtype(e.inner_vt) }
+        if e.kind is .TraitDecl { self.meta_trait_method_list(e.methods) }
+    }
+}
+
+impl BytesReader {
+    fn type_decl(self) -> TypeDeclEntry {
+        let sid = self.u64_le()
+        let kind = byte_to_type_decl_kind(self.u8())
+        let name = self.string()
+        let tps = self.type_param_list()
+        mut fields: List<FieldEntry> = []
+        mut variants: List<Variant> = []
+        mut inner = ValueType.Unknown
+        mut methods: List<MetaTraitMethod> = []
+        if kind is .StructDecl { fields = self.field_list() }
+        if kind is .ShapeDecl { fields = self.field_list() }
+        if kind is .EnumDecl { variants = self.variant_list() }
+        if kind is .NewtypeDecl { inner = self.vtype() }
+        if kind is .UnionAliasDecl { inner = self.vtype() }
+        if kind is .TraitDecl { methods = self.meta_trait_method_list() }
+        TypeDeclEntry {
+            sym_id: sid,
+            kind: kind,
+            name: name,
+            type_params: tps,
+            fields: fields,
+            variants: variants,
+            inner_vt: inner,
+            methods: methods,
+        }
+    }
+}
+
+// ── FNS section: fn signatures ──
+//
+// Each entry in the FNS section body:
+//
+//   [u64 sym_id]
+//   [string canonical_name]
+//   [u8  exported]                  — 1 if `export fn`, else 0
+//   [u8  is_extern]                 — 1 for `extern fn`, else 0
+//   [u8  is_comptime]               — 1 for `@comptime fn`, else 0
+//   [type_param_list]
+//   [param_list]
+//   [vtype ret]
+//
+// `exported` and `is_extern` are independent flags: an extern fn is
+// always callable from outside (C ABI), while a regular fn is only
+// reachable to consumers if `export fn`. Both bits are kept so the
+// downstream visibility filter doesn't have to re-derive them.
+
+export type FnDeclEntry = {
+    sym_id: int,
+    name: string,
+    exported: bool,
+    is_extern: bool,
+    is_comptime: bool,
+    type_params: List<TypeParamEntry>,
+    params: List<ParamEntry>,
+    ret: ValueType,
+}
+
+impl BytesWriter {
+    fn fn_decl(self, e: FnDeclEntry) {
+        self.u64_le(e.sym_id)
+        self.string(e.name)
+        self.u8(if e.exported { 1 } else { 0 })
+        self.u8(if e.is_extern { 1 } else { 0 })
+        self.u8(if e.is_comptime { 1 } else { 0 })
+        self.type_param_list(e.type_params)
+        self.param_list(e.params)
+        self.vtype(e.ret)
+    }
+}
+
+impl BytesReader {
+    fn fn_decl(self) -> FnDeclEntry {
+        let sid = self.u64_le()
+        let name = self.string()
+        let exp = self.u8()
+        let ext = self.u8()
+        let cmp = self.u8()
+        let tps = self.type_param_list()
+        let params = self.param_list()
+        let ret = self.vtype()
+        FnDeclEntry {
+            sym_id: sid,
+            name: name,
+            exported: exp == 1,
+            is_extern: ext == 1,
+            is_comptime: cmp == 1,
+            type_params: tps,
+            params: params,
+            ret: ret,
+        }
+    }
+}
+
+// ── CONSTS section: const declarations ──
+//
+// Each entry in the CONSTS section body:
+//
+//   [u64 sym_id]
+//   [string canonical_name]
+//   [u8  exported]
+//   [vtype type]
+//   [u8  value_kind]              — pinned tag (see ConstValueKind)
+//   [value_payload]               — kind-specific
+//
+// Value payloads (cover every literal a const initializer can produce
+// at parse time):
+//   IntValue   → [u64 raw_int_bits]
+//   StrValue   → [string body]
+//   BoolValue  → [u8 0_or_1]
+//   FloatValue → [u64 raw double bits]
+//   Unknown    → no payload (consumer treats as opaque)
+//
+// Anything more complex (a const initialized from an expression that
+// can't be folded to a literal) is encoded as Unknown — the typeck
+// in downstream units sees only the type, not the value, which is
+// the same as today's "import a fn" guarantee.
+
+const CONST_VAL_UNKNOWN: int = 0
+const CONST_VAL_INT: int = 1
+const CONST_VAL_STR: int = 2
+const CONST_VAL_BOOL: int = 3
+const CONST_VAL_FLOAT: int = 4
+
+export enum ConstValueKind {
+    UnknownValue
+    IntValue
+    StrValue
+    BoolValue
+    FloatValue
+}
+
+fn const_value_kind_to_byte(k: ConstValueKind) -> int {
+    if k is .IntValue { return CONST_VAL_INT }
+    if k is .StrValue { return CONST_VAL_STR }
+    if k is .BoolValue { return CONST_VAL_BOOL }
+    if k is .FloatValue { return CONST_VAL_FLOAT }
+    return CONST_VAL_UNKNOWN
+}
+
+fn byte_to_const_value_kind(b: int) -> ConstValueKind {
+    if b == CONST_VAL_INT { return ConstValueKind.IntValue }
+    if b == CONST_VAL_STR { return ConstValueKind.StrValue }
+    if b == CONST_VAL_BOOL { return ConstValueKind.BoolValue }
+    if b == CONST_VAL_FLOAT { return ConstValueKind.FloatValue }
+    return ConstValueKind.UnknownValue
+}
+
+export type ConstDeclEntry = {
+    sym_id: int,
+    name: string,
+    exported: bool,
+    ty: ValueType,
+    value_kind: ConstValueKind,
+    int_value: int,           // populated when value_kind is IntValue / FloatValue (raw bits) / BoolValue (0/1)
+    str_value: string,        // populated when value_kind is StrValue
+}
+
+impl BytesWriter {
+    fn const_decl(self, e: ConstDeclEntry) {
+        self.u64_le(e.sym_id)
+        self.string(e.name)
+        self.u8(if e.exported { 1 } else { 0 })
+        self.vtype(e.ty)
+        self.u8(const_value_kind_to_byte(e.value_kind))
+        if e.value_kind is .IntValue { self.u64_le(e.int_value) }
+        if e.value_kind is .FloatValue { self.u64_le(e.int_value) }
+        if e.value_kind is .BoolValue { self.u8(e.int_value & 1) }
+        if e.value_kind is .StrValue { self.string(e.str_value) }
+    }
+}
+
+impl BytesReader {
+    fn const_decl(self) -> ConstDeclEntry {
+        let sid = self.u64_le()
+        let name = self.string()
+        let exp = self.u8()
+        let ty = self.vtype()
+        let kind = byte_to_const_value_kind(self.u8())
+        mut iv = 0
+        mut sv = ""
+        if kind is .IntValue { iv = self.u64_le() }
+        if kind is .FloatValue { iv = self.u64_le() }
+        if kind is .BoolValue { iv = self.u8() }
+        if kind is .StrValue { sv = self.string() }
+        ConstDeclEntry {
+            sym_id: sid,
+            name: name,
+            exported: exp == 1,
+            ty: ty,
+            value_kind: kind,
+            int_value: iv,
+            str_value: sv,
+        }
+    }
+}
+
+// Trait method entry — one row in a `List<MetaTraitMethod>`. Used
+// to encode TraitDecl bodies in the TYPES section. Replaces the
+// prior bespoke `MetaTraitMethodList` cons-list (lkze.4).
+export type MetaTraitMethod = {
+    name: string,
+    params: List<ParamEntry>,
+    ret: ValueType,
+}
+
+impl BytesWriter {
+    fn meta_trait_method_list(self, ms: List<MetaTraitMethod>) {
+        self.u32_le(ms.length)
+        mut i = 0
+        while i < ms.length {
+            let m = ms[i]
+            self.string(m.name)
+            self.param_list(m.params)
+            self.vtype(m.ret)
+            i = i + 1
+        }
+    }
+}
+
+impl BytesReader {
+    fn meta_trait_method_list(self) -> List<MetaTraitMethod> {
+        let count = self.u32_le()
+        mut out: List<MetaTraitMethod> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let params = self.param_list()
+            let ret = self.vtype()
+            out.push(MetaTraitMethod { name, params, ret })
+            i = i + 1
+        }
+        out
+    }
+}
+
+// ── IMPLS section: trait impls ──
+//
+// Each entry in the IMPLS section body:
+//
+//   [u64 trait_sym_id]
+//   [string trait_name]
+//   [u64 type_sym_id]
+//   [string type_name]
+//   [u32 method_count]
+//   [per method:
+//     [string method_name]
+//     [u64 fn_sym_id]              — points into the FNS section by sym_id
+//   ]
+//
+// `fn_sym_id` is the sym_id of the impl fn (e.g. the
+// `Type__method` entry the codegen emits). Decoders cross-reference
+// the FNS section to recover the full signature without having to
+// re-store params and return type on every impl entry.
+
+// One impl method ref — `List<ImplMethodRef>` rows replace the
+// prior bespoke ImplMethodRefList cons-list (lkze.4).
+export type ImplMethodRef = {
+    method_name: string,
+    fn_sym_id: int,
+}
+
+export type ImplDeclEntry = {
+    trait_sym_id: int,
+    trait_name: string,
+    type_sym_id: int,
+    type_name: string,
+    methods: List<ImplMethodRef>,
+}
+
+impl BytesWriter {
+    fn impl_decl(self, e: ImplDeclEntry) {
+        self.u64_le(e.trait_sym_id)
+        self.string(e.trait_name)
+        self.u64_le(e.type_sym_id)
+        self.string(e.type_name)
+        self.u32_le(e.methods.length)
+        mut i = 0
+        while i < e.methods.length {
+            let m = e.methods[i]
+            self.string(m.method_name)
+            self.u64_le(m.fn_sym_id)
+            i = i + 1
+        }
+    }
+}
+
+impl BytesReader {
+    fn impl_decl(self) -> ImplDeclEntry {
+        let trait_sid = self.u64_le()
+        let trait_name = self.string()
+        let type_sid = self.u64_le()
+        let type_name = self.string()
+        let count = self.u32_le()
+        mut methods: List<ImplMethodRef> = []
+        mut i = 0
+        while i < count {
+            let name = self.string()
+            let fn_id = self.u64_le()
+            methods.push(ImplMethodRef { method_name: name, fn_sym_id: fn_id })
+            i = i + 1
+        }
+        ImplDeclEntry {
+            trait_sym_id: trait_sid,
+            trait_name: trait_name,
+            type_sym_id: type_sid,
+            type_name: type_name,
+            methods: methods,
+        }
+    }
+}
+
+// ── GenericBodies section (P3 library-mode) ──
+//
+// Every exported generic `fn` (i.e. at least one type parameter) ships
+// its body in the GenericBodies section as RAW SOURCE TEXT. The consumer
+// re-parses + re-resolves + typechecks + monomorphizes at consume time —
+// Swift's `.swiftinterface` model. Trade-off vs full-AST serialization:
+//   * Pro: tiny codec (4 fields per entry), AST changes don't break the
+//          metadata format, sub-ms re-parse cost per monomorphization.
+//   * Con: re-parse is strictly slower than deserializing post-resolve
+//          AST. If profiling shows it matters we upgrade later.
+// Same encoding covers default trait method bodies (which also need
+// per-consumer monomorphization).
+//
+// `file` + `byte_offset` keep diagnostics pointing at the producer's
+// source — when a monomorphization-time typeck error fires, we render
+// the producer's location, not a synthesised "in the metadata.bin"
+// pseudo-location.
+
+/// One generic-fn body record. `qualified_name` is the post-resolve
+/// path (e.g. `@std::cli::expand_command`); `source` is the body text
+/// between the opening `{` and the matching `}` (NOT including the
+/// braces themselves — the consumer re-wraps when invoking the parser).
+///
+/// @field qualified_name — canonical fn path, matches FnDeclEntry.qualified_name.
+/// @field source         — fn body source text, brace-content only.
+/// @field file           — producer's source file (for diagnostic spans).
+/// @field byte_offset    — byte offset of the body's first character in
+///                         `file` (so re-parse errors render at the
+///                         original location, not the metadata file).
+export type GenericBodyEntry = {
+    qualified_name: string,
+    source: string,
+    file: string,
+    byte_offset: int,
+}
+
+impl BytesWriter {
+    fn generic_body(self, e: GenericBodyEntry) {
+        self.string(e.qualified_name)
+        self.string(e.source)
+        self.string(e.file)
+        self.u64_le(e.byte_offset)
+    }
+}
+
+impl BytesReader {
+    fn generic_body(self) -> GenericBodyEntry {
+        let qn = self.string()
+        let src = self.string()
+        let fp = self.string()
+        let bo = self.u64_le()
+        GenericBodyEntry {
+            qualified_name: qn,
+            source: src,
+            file: fp,
+            byte_offset: bo,
+        }
+    }
+}
+
+// ── InherentImpls section (bd8n / library-mode P6 phase 2) ──
+//
+// Inherent impls (`impl BytesWriter { fn unit(self, m) { ... } }`)
+// don't have a parallel trait declaration the synthesizer can pull
+// method signatures from. The IMPLS section's ImplMethodRef stores
+// only (method_name, fn_sym_id) — fine for trait impls because the
+// sigs live on the trait's MetaTraitMethod list. Inherent impls need
+// to ship their own sigs inline so consumers can synthesize the
+// `impl Type { ... }` block with the right per-method extern stubs.
+//
+// Wire format per entry:
+//   [u64 type_sym_id]
+//   [string type_name]
+//   [meta_trait_method_list methods]   — reuses the trait-method
+//                                         codec; same shape suffices.
+//
+// Backward-compat: pre-bd8n metadata files don't ship this section
+// (section_count ≤ 6); the reader skips reading it when the header
+// reports fewer than 7 sections.
+
+/// One inherent-impl block. `methods` carries each method's full
+/// signature so the synthesizer can rebuild `impl Type { ... }`
+/// without relying on a parallel trait.
+export type InherentImplEntry = {
+    type_sym_id: int,
+    type_name: string,
+    methods: List<MetaTraitMethod>,
+}
+
+impl BytesWriter {
+    fn inherent_impl(self, e: InherentImplEntry) {
+        self.u64_le(e.type_sym_id)
+        self.string(e.type_name)
+        self.meta_trait_method_list(e.methods)
+    }
+}
+
+impl BytesReader {
+    fn inherent_impl(self) -> InherentImplEntry {
+        let tsid = self.u64_le()
+        let tn = self.string()
+        let ms = self.meta_trait_method_list()
+        InherentImplEntry {
+            type_sym_id: tsid,
+            type_name: tn,
+            methods: ms,
+        }
+    }
+}
+
+// ── Unit-level orchestration ──
+//
+// `UnitMetadata` aggregates everything that goes into metadata.bin
+// for one compile unit: header fields plus per-section entry lists.
+// `write_unit` and `read_unit` compose the per-section codec into a
+// complete file. Higher-level callers (the build driver, downstream
+// consumers) work in terms of UnitMetadata, not raw bytes.
+
+// Section content types — built-in `List<T>` rather than the
+// previous bespoke cons-lists (lkze.3). The writer iterates with a
+// while-loop and the reader pushes into a fresh list — wire format
+// unchanged.
+
+/// Everything that goes into one unit's metadata.bin. The
+/// `unit_name` is the canonical module path (e.g. `@std::avrac::build`);
+/// `fingerprint` is the 32-byte SHA-256 of the unit's source set,
+/// matching what the cache uses today.
+export type UnitMetadata = {
+    unit_name: string,
+    fingerprint: bytes,
+    types: List<TypeDeclEntry>,
+    fns: List<FnDeclEntry>,
+    consts: List<ConstDeclEntry>,
+    impls: List<ImplDeclEntry>,
+    generic_bodies: List<GenericBodyEntry>,
+    inherent_impls: List<InherentImplEntry>,
+}
+
+/// Build an empty metadata bundle. Convenience for incremental
+/// callers that build the lists up step by step.
+export fn unit_metadata_new(unit_name: string, fingerprint: bytes) -> UnitMetadata {
+    UnitMetadata {
+        unit_name: unit_name,
+        fingerprint: fingerprint,
+        types: [],
+        fns: [],
+        consts: [],
+        impls: [],
+        generic_bodies: [],
+        inherent_impls: [],
+    }
+}
+
+// `BytesWriter.unit(m)` serializes a complete UnitMetadata to bytes
+// — header + every section. Empty sections still consume their
+// frame (section_count is fixed at the highest tag, not the count of
+// non-empty sections), keeping the file layout predictable for
+// downstream iteration.
+//
+// Format evolution:
+//   - count=4: pre-P3 (Types, Fns, Consts, Impls only)
+//   - count=5: P3+ adds GenericBodies
+//   - count=6: bd8n / P6 phase 2 adds InherentImpls
+//
+// Readers cap at the count reported in the header and treat any
+// trailing sections as absent — so a consumer linked against an
+// older producer's metadata loads cleanly with empty optional
+// lists. See `BytesReader.unit()` for the gate.
+impl BytesWriter {
+    fn unit(self, m: UnitMetadata) {
+        // Always write all sections, even when empty, so the
+        // section_count field stays predictable and downstream tools
+        // can iterate without skipping unrecognised tags.
+        self.header(m.unit_name, m.fingerprint, 6)
+        self.write_types_section(m.types)
+        self.write_fns_section(m.fns)
+        self.write_consts_section(m.consts)
+        self.write_impls_section(m.impls)
+        self.write_generic_bodies_section(m.generic_bodies)
+        self.write_inherent_impls_section(m.inherent_impls)
+    }
+
+    fn write_types_section(self, xs: List<TypeDeclEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.type_decl(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.Types, xs.length, body_w.finish())
+    }
+
+    fn write_fns_section(self, xs: List<FnDeclEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.fn_decl(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.Fns, xs.length, body_w.finish())
+    }
+
+    fn write_consts_section(self, xs: List<ConstDeclEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.const_decl(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.Consts, xs.length, body_w.finish())
+    }
+
+    fn write_impls_section(self, xs: List<ImplDeclEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.impl_decl(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.Impls, xs.length, body_w.finish())
+    }
+
+    fn write_generic_bodies_section(self, xs: List<GenericBodyEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.generic_body(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.GenericBodies, xs.length, body_w.finish())
+    }
+
+    fn write_inherent_impls_section(self, xs: List<InherentImplEntry>) {
+        let body_w = writer_new()
+        mut i = 0
+        while i < xs.length {
+            body_w.inherent_impl(xs[i])
+            i = i + 1
+        }
+        self.section(SectionKind.InherentImpls, xs.length, body_w.finish())
+    }
+}
+
+// `BytesReader.unit()` decodes a complete metadata.bin — inverse
+// of `BytesWriter.unit`. Section order is fixed (Types, Fns, Consts,
+// Impls, GenericBodies) and matches the writer; magic validation is
+// the caller's responsibility (this is the structural decode, not
+// the policy gate).
+//
+// Backward-compat: pre-P3 metadata files carry section_count=4 and
+// no GenericBodies section. The reader checks `hdr.section_count`
+// and only consumes the 5th frame when it's present, returning an
+// empty generic_bodies list otherwise. New decoders linked against
+// an old binary will see empty bodies and fall back to "import as
+// extern" for any generic fn — same behaviour as if the producer
+// were a non-library-mode unit.
+impl BytesReader {
+    fn unit(self) -> UnitMetadata {
+        let hdr = self.header()
+        let types_frame = self.section()
+        let fns_frame = self.section()
+        let consts_frame = self.section()
+        let impls_frame = self.section()
+        let bodies: List<GenericBodyEntry> = if hdr.section_count >= 5 {
+            let bf = self.section()
+            read_generic_body_list(bf.body, bf.entry_count)
+        } else {
+            []
+        }
+        let inherent: List<InherentImplEntry> = if hdr.section_count >= 6 {
+            let ii = self.section()
+            read_inherent_impl_list(ii.body, ii.entry_count)
+        } else {
+            []
+        }
+        UnitMetadata {
+            unit_name: hdr.unit_name,
+            fingerprint: hdr.fingerprint,
+            types: read_type_decl_list(types_frame.body, types_frame.entry_count),
+            fns: read_fn_decl_list(fns_frame.body, fns_frame.entry_count),
+            consts: read_const_decl_list(consts_frame.body, consts_frame.entry_count),
+            impls: read_impl_decl_list(impls_frame.body, impls_frame.entry_count),
+            generic_bodies: bodies,
+            inherent_impls: inherent,
+        }
+    }
+}
+
+fn read_generic_body_list(body: bytes, count: int) -> List<GenericBodyEntry> {
+    let r = reader_new(body)
+    mut out: List<GenericBodyEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.generic_body())
+        i = i + 1
+    }
+    out
+}
+
+fn read_inherent_impl_list(body: bytes, count: int) -> List<InherentImplEntry> {
+    let r = reader_new(body)
+    mut out: List<InherentImplEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.inherent_impl())
+        i = i + 1
+    }
+    out
+}
+
+fn read_type_decl_list(body: bytes, count: int) -> List<TypeDeclEntry> {
+    let r = reader_new(body)
+    mut out: List<TypeDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.type_decl())
+        i = i + 1
+    }
+    out
+}
+
+fn read_fn_decl_list(body: bytes, count: int) -> List<FnDeclEntry> {
+    let r = reader_new(body)
+    mut out: List<FnDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.fn_decl())
+        i = i + 1
+    }
+    out
+}
+
+fn read_const_decl_list(body: bytes, count: int) -> List<ConstDeclEntry> {
+    let r = reader_new(body)
+    mut out: List<ConstDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.const_decl())
+        i = i + 1
+    }
+    out
+}
+
+fn read_impl_decl_list(body: bytes, count: int) -> List<ImplDeclEntry> {
+    let r = reader_new(body)
+    mut out: List<ImplDeclEntry> = []
+    mut i = 0
+    while i < count {
+        out.push(r.impl_decl())
+        i = i + 1
+    }
+    out
+}
+
+// Decode a hex string to a `bytes` value. Two hex chars → one octet.
+// Used to convert `Fingerprint.hex` (64 chars from sha256_hex) into
+// the 32-byte raw fingerprint metadata.bin's header expects.
+export fn bytes_from_hex(hex: string) -> bytes {
+    let pairs = hex.length / 2
+    let out = avra_bytes_make(pairs)
+    mut i = 0
+    while i < pairs {
+        let hi = hex_digit_value(hex.byte(i * 2))
+        let lo = hex_digit_value(hex.byte(i * 2 + 1))
+        avra_bytes_set(out, i, hi * 16 + lo)
+        i = i + 1
+    }
+    out
+}
+
+fn hex_digit_value(b: int) -> int {
+    if b >= 0x30 && b <= 0x39 { return b - 0x30 }
+    if b >= 0x61 && b <= 0x66 { return b - 0x61 + 10 }
+    if b >= 0x41 && b <= 0x46 { return b - 0x41 + 10 }
+    0
+}
+
+// ── File IO ──
+//
+// `metadata_write` and `metadata_read` are the disk surface for the
+// metadata.bin format. They use the binary-safe selfhost file IO so
+// embedded 0x00 octets (which the codec produces all over —
+// length-prefix bytes, sym_id high zeros, …) survive the round trip
+// to disk. The normal selfhost_read_file / selfhost_write_file path
+// uses strlen and would silently truncate.
+
+extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+/// Write a UnitMetadata to `path`. Returns 1 on success, 0 on
+/// failure (path not writable / parent dir missing / disk full).
+/// Caller decides what to do with a 0 — usually fail() and bail.
+export fn metadata_write(path: string, m: UnitMetadata) -> int {
+    let w = writer_new()
+    w.unit(m)
+    avra_selfhost_write_file_bytes(path, w.finish())
+}
+
+/// Read a UnitMetadata back from `path`. Returns an empty bundle
+/// (unit_name="", every section list empty) when the file is missing
+/// or unreadable — call `metadata_file_exists` first when the
+/// distinction matters.
+export fn metadata_read(path: string) -> UnitMetadata {
+    let buf = avra_selfhost_read_file_bytes(path)
+    if buf.length == 0 {
+        let empty_fp = avra_bytes_make(0)
+        return unit_metadata_new("", empty_fp)
+    }
+    let r = reader_new(buf)
+    r.unit()
+}
+
+/// True iff `path` exists and is readable. Wraps the selfhost
+/// existence check so consumers don't reach for the runtime layer
+/// independently.
+export fn metadata_file_exists(path: string) -> bool {
+    avra_selfhost_file_exists(path) != 0
+}

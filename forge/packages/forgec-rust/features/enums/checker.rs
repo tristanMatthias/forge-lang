@@ -56,7 +56,7 @@ impl TypeChecker {
                                     let is_enum = self.env.enum_types.contains_key(en);
                                     // Also box struct fields that are marked 'p' in the Forge
                                     // field type table (they're too large for inline storage).
-                                    let is_primitive = matches!(en, "int" | "float" | "bool" | "string" | "ptr");
+                                    let is_primitive = matches!(en, "int" | "float" | "bool" | "string" | "ptr" | "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64");
                                     let is_collection = en.starts_with("List") || en.starts_with("Map");
                                     // Box everything that's not a primitive, collection, or Span
                                     // (Span is stored inline as 4 i64 slots using code '4')

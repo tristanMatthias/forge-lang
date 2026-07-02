@@ -1,0 +1,138 @@
+// WHY: forge-crafting-intepreters-rs0b — the method-param layout gate in
+// check_method_call (typeck/mod.av) checked call args against params[1..] but
+// did NOT first instantiate the impl's RECEIVER-bound type params. So
+// `GcStack<string>.push_one(9)` — int 9 into `x: T` where T=string comes from
+// the receiver — passed uncaught (a scalar→pointer wild store: the int 9 stored
+// where a string pointer is expected).
+//
+// FIX: tc_recv_type_bindings zips the receiver's DECLARED type params (from its
+// struct/enum definition, via struct_type_params / enum_type_params) against its
+// concrete `type_args`, and subst_param_types refines the gated params before
+// tc_check_newtype_args. It is GATE-ONLY: the global tc_unify (fn-call inference
+// + monomorphization) is deliberately left without a Struct/Enum arm, so emitted
+// IR is byte-identical and the HRN diff-test stays green — this change only adds
+// rejections for invalid programs. The explicit-type-arg analog `id<string>(9)`
+// was closed in #539 via subst_param_types; this is its receiver-bound twin.
+//
+// Driven through `bs2 check` (not `compile`): rs0b is purely a TYPECK gate, so
+// type-check isolates it from unrelated lowering. Two adjacent gaps are out of
+// scope and intentionally NOT asserted here: (1) the layout gate is directional
+// — it flags scalar→pointer (int→string) and collection→scalar, but NOT
+// pointer→scalar (string→int), for receiver-bound AND plain params alike; (2) an
+// enum typed only by payload inference (`let o = Opt.Some("a")`) carries no
+// `type_args`, so the gate has nothing to instantiate — the enum-ctor-inference
+// gap (forge-crafting-intepreters-enwi). Once enwi pins those args, this gate
+// catches that case for free (it already reads the receiver's type_args).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Type-check the source; emit a success sentinel ONLY on a clean check, so the
+// positive controls assert real success, not merely the absence of an F-code.
+fn rs0b_out(source: string) -> string {
+    let path = "/tmp/avra_rs0b_gate.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "rs0b: a receiver-bound method param is gated (struct)" {
+    then "GcStack<string>.push_one(9) — int into x:T=string — is F1000" {
+        let out = rs0b_out("type GcStack<T> = { items: List<T> }
+impl GcStack<T> { fn push_one(self, x: T) { self.items.push(x) } }
+fn main() {
+    let s = GcStack { items: [\"a\"] }
+    s.push_one(9)
+}")
+        out.contains("F1000")
+    }
+    then "the ticket's Box<string>.m(9) (annotated receiver) is F1000" {
+        let out = rs0b_out("type Box<T> = { val: T }
+impl Box<T> { fn m(self, x: T) -> T { x } }
+fn main() {
+    let b: Box<string> = Box { val: \"a\" }
+    b.m(9)
+}")
+        out.contains("F1000")
+    }
+    then "a T=int receiver still binds: GcStack<int>.push_one([1,2]) (collection into scalar) is F1000" {
+        let out = rs0b_out("type GcStack<T> = { items: List<T> }
+impl GcStack<T> { fn push_one(self, x: T) { self.items.push(x) } }
+fn main() {
+    let s = GcStack { items: [10] }
+    s.push_one([1, 2])
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "rs0b: the gate binds the SECOND type param too (struct)" {
+    then "GcPair<int,string>.set2(9) — int into b:B=string — is F1000" {
+        let out = rs0b_out("type GcPair<A, B> = { first: A, second: B }
+impl GcPair<A, B> { fn set2(self, b: B) { } }
+fn main() {
+    let p = GcPair { first: 7, second: \"x\" }
+    p.set2(9)
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "rs0b: the gate covers enum receivers with a known type" {
+    then "Opt<string>.put(9) (annotated receiver) is F1000" {
+        let out = rs0b_out("enum Opt<T> { Some(v: T), None }
+impl Opt<T> { fn put(self, x: T) -> T { x } }
+fn main() {
+    let o: Opt<string> = Opt.None
+    o.put(9)
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "rs0b: valid receiver-bound calls still type-check (no false positives)" {
+    then "GcStack<int>.push_one(20) checks clean" {
+        let out = rs0b_out("type GcStack<T> = { items: List<T> }
+impl GcStack<T> { fn push_one(self, x: T) { self.items.push(x) } }
+fn main() {
+    let s = GcStack { items: [10] }
+    s.push_one(20)
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "GcStack<string>.push_one(\"b\") checks clean" {
+        let out = rs0b_out("type GcStack<T> = { items: List<T> }
+impl GcStack<T> { fn push_one(self, x: T) { self.items.push(x) } }
+fn main() {
+    let s = GcStack { items: [\"a\"] }
+    s.push_one(\"b\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "GcPair<int,string>.set2(\"ok\") checks clean" {
+        let out = rs0b_out("type GcPair<A, B> = { first: A, second: B }
+impl GcPair<A, B> { fn set2(self, b: B) { } }
+fn main() {
+    let p = GcPair { first: 7, second: \"x\" }
+    p.set2(\"ok\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "Opt<int>.put(9) checks clean" {
+        let out = rs0b_out("enum Opt<T> { Some(v: T), None }
+impl Opt<T> { fn put(self, x: T) -> T { x } }
+fn main() {
+    let o: Opt<int> = Opt.None
+    o.put(9)
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "a non-generic method is unaffected (empty receiver bindings — regression guard)" {
+        let out = rs0b_out("type Plain = { n: int }
+impl Plain { fn m(self, x: int) { } }
+fn main() {
+    let p = Plain { n: 1 }
+    p.m(2)
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}

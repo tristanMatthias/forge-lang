@@ -1,0 +1,176 @@
+// WHY: trait conformance checking — verifies impl blocks provide all required methods.
+
+use core.{Stmt, SStmt, vtype_is_unknown, stmt_unwrap}
+use diagnostics.{DiagCode}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
+use core.{method_mangled_name}
+
+/// Find the byte offset of the single `:` that separates a
+/// `Trait:Type` impl name. Skips `::` (qualified paths) so
+/// `core::fmt::Display:Foo` is split at the colon before `Foo`.
+/// Returns -1 when there's no separator (inherent impl).
+export fn find_trait_separator(name: string) -> int {
+    mut i = 0
+    while i < name.length {
+        if name[i] == ":" {
+            if i + 1 < name.length && name[i + 1] == ":" {
+                i = i + 2
+                continue
+            }
+            return i
+        }
+        i = i + 1
+    }
+    -1
+}
+
+/// Verify an `impl Trait for Type` block. Enforces (a) the
+/// orphan rule from spec Axis 16.5 — at least one of the trait
+/// or the type must be defined locally; (b) every required
+/// method on the trait is implemented; (c) every required
+/// associated type is provided. Inherent impls (no `Trait:`
+/// prefix) bypass conformance checks.
+export fn check_trait_conformance(tc: TC, impl_name: string, methods: List<SStmt>) -> TC {
+    let colon_idx = find_trait_separator(impl_name)
+    if colon_idx < 0 { return tc }
+
+    let trait_name = impl_name.substring(0, colon_idx)
+    let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
+
+    // Orphan rule (spec Axis 16.5): you can only `impl Trait for Type`
+    // if you own either the Trait or the Type. In practice this means
+    // at least one must be defined in the current compilation unit.
+    // Single-walk lookup: trait_get returns found + methods + assoc_types
+    // together so we don't re-traverse the registry three times.
+    let trait_rec = trait_get(tc.traits, trait_name)
+    let owns_type = tc_owns_type(tc, type_name)
+    if !trait_rec.found && !owns_type {
+        return tc_report(tc, DiagCode.OrphanImpl, "orphan impl: neither trait `${trait_name}` nor type `${type_name}` is defined in this compilation unit")
+    }
+
+    if !trait_rec.found {
+        return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `${trait_name}`")
+    }
+
+    let after_methods = check_required_methods(tc, trait_name, type_name, trait_rec.methods, methods)
+    // Check associated types are provided
+    check_required_assoc_types(after_methods, trait_name, type_name, trait_rec.assoc_types, methods)
+}
+
+/// For every associated type the trait declares, verify the
+/// impl block defines a matching `type Name = ...` entry. Missing
+/// associated types surface as F1000 with a message that names
+/// both the trait and the implementing type.
+fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: List<string>, impl_stmts: List<SStmt>) -> TC {
+    mut current = tc
+    mut i = 0
+    while i < required.length {
+        let name = required[i]
+        if !impl_has_assoc_type(impl_stmts, name) {
+            current = tc_report(current, DiagCode.TypeMismatch, "trait `${trait_name}` requires associated type `${name}` but `${type_name}` does not define it")
+        }
+        i = i + 1
+    }
+    current
+}
+
+/// True when `stmts` contains an `AssocType(name, …)` entry with
+/// a resolved (non-Unknown) right-hand side.
+fn impl_has_assoc_type(stmts: List<SStmt>, name: string) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        match stmts[i].node {
+            .AssocType(n, ty_vt) if n == name && !vtype_is_unknown(ty_vt) -> return true
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// For every method the trait requires, check that the impl
+/// supplies a function with the same name (after method-mangling)
+/// and matching arity. Each missing method or arity mismatch
+/// emits its own F1000 diagnostic so users see the full picture.
+fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: List<TraitMethod>, impl_methods: List<SStmt>) -> TC {
+    mut current = tc
+    mut i = 0
+    while i < required.length {
+        let m = required[i]
+        let mangled = method_mangled_name(type_name, m.name)
+        if !impl_has_method(impl_methods, mangled) {
+            current = tc_report(current, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${m.name}` but `${type_name}` does not implement it")
+        } else {
+            // Check parameter count matches (including self)
+            let actual_params = impl_method_param_count(impl_methods, mangled)
+            if actual_params >= 0 && actual_params != m.param_count {
+                current = tc_report(current, DiagCode.TypeMismatch, "method `${m.name}` in `impl ${trait_name} for ${type_name}` has ${string(actual_params)} parameters but trait requires ${string(m.param_count)}")
+            }
+        }
+        i = i + 1
+    }
+    current
+}
+
+/// Look up a method by mangled name and return its parameter
+/// count, or -1 when not found.
+fn impl_method_param_count(methods: List<SStmt>, name: string) -> int {
+    mut i = 0
+    while i < methods.length {
+        match stmt_unwrap(methods[i].node) {
+            .Function(fn_name, _, params, _, _) if fn_name == name -> return params.length
+            _ -> {}
+        }
+        i = i + 1
+    }
+    -1
+}
+
+/// True when `methods` contains a `Function` with the given
+/// (mangled) name. Walks `Annotated` wrappers transparently so
+/// methods carrying `@external_unit` (synthesised from metadata.bin
+/// for cross-unit impls — 9ixv) still register as present.
+fn impl_has_method(methods: List<SStmt>, name: string) -> bool {
+    mut i = 0
+    while i < methods.length {
+        match stmt_unwrap(methods[i].node) {
+            .Function(fn_name, _, _, _, _) if fn_name == name -> return true
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// Walk a trait body and produce the method-signature list of every
+/// `extern fn` (the trait's required signatures). Default-
+/// implemented methods don't count — only the abstract ones.
+export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMethod> {
+    mut out: List<TraitMethod> = []
+    mut i = 0
+    while i < stmts.length {
+        match stmts[i].node {
+            .ExternFn(name, params, _) -> {
+                out.push(TraitMethod { name: name, param_count: params.length })
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Walk a trait body and produce the list of every `type Name`
+/// declaration (associated types — spec Axis 2).
+export fn collect_assoc_types_from_stmts(stmts: List<SStmt>) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    while i < stmts.length {
+        match stmts[i].node {
+            .AssocType(name, _) -> { out.push(name) }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    out
+}

@@ -1,0 +1,41 @@
+enum TrResult { Ok(value: int), Err(error: string) }
+
+fn tr_divide(a: int, b: int) -> TrResult {
+    if b == 0 { return TrResult.Err("division by zero") }
+    TrResult.Ok(a / b)
+}
+
+fn tr_compute_ok() -> TrResult {
+    let x = tr_divide(84, 2)?
+    TrResult.Ok(x)
+}
+
+fn tr_compute_fail() -> TrResult {
+    let x = tr_divide(10, 0)?
+    TrResult.Ok(x)
+}
+
+fn tr_chained() -> TrResult {
+    let a = tr_divide(200, 2)?
+    let b = tr_divide(a, 1)?
+    TrResult.Ok(b)
+}
+
+fn tr_describe(r: TrResult) -> string {
+    match r {
+        .Ok(v) -> "Ok:" + string(v)
+        .Err(e) -> "Err:" + e
+    }
+}
+
+spec "try result" {
+    then "Ok branch unwraps via ?" {
+        tr_describe(tr_compute_ok()) == "Ok:42"
+    }
+    then "Err branch propagates via ?" {
+        tr_describe(tr_compute_fail()) == "Err:division by zero"
+    }
+    then "chained ? operations preserve values" {
+        tr_describe(tr_chained()) == "Ok:100"
+    }
+}

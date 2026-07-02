@@ -1,0 +1,114 @@
+// wc5w (B6): TypeIds are content-addressed — `content_id_for(FQN)` — so the
+// SAME type gets the SAME id in every registry/process/build. This removes
+// the per-registry positional-counter divergence that forced `vtype_eq`'s
+// FQN-string fallback (24yd), letting nominal identity be compared by id,
+// kind-agnostically. These specs pin the load-bearing properties:
+//   1. content_id_for is deterministic and distinguishes distinct names.
+//   2. two INDEPENDENT registries assign the SAME id to the same name —
+//      the cross-process stability that is the whole point of wc5w.
+//   3. the registry round-trips a type by its sparse content id (the
+//      id->index map replacing the old `infos[id-1]` positional access).
+//   4. vtype_eq compares nominal identity by content id KIND-AGNOSTICALLY:
+//      a Newtype and a parser-default Struct of the same FQN, both stamped
+//      to the same content id, are equal (the 24yd regression).
+use @std.avrac.core.{content_id_for, vtype_eq, vtype_eq_deep, ValueType, FieldEntry, Variant}
+use @std.avrac.core.{type_registry_new, type_registry_register, type_registry_lookup, type_registry_id_for, type_registry_has, TypeKind}
+
+spec "wc5w: content_id_for is a deterministic content hash" {
+    then "same name yields the same id" {
+        content_id_for("@std::avrac::core::ExprId") == content_id_for("@std::avrac::core::ExprId")
+    }
+    then "distinct names yield distinct ids" {
+        content_id_for("@std::avrac::core::ExprId") != content_id_for("@std::avrac::core::StmtId")
+    }
+    then "a real name is non-zero (0 stays the no-type sentinel)" {
+        content_id_for("@std::avrac::core::ExprId") != 0
+    }
+    then "empty name hashes deterministically and distinctly from non-empty" {
+        content_id_for("") == content_id_for("") && content_id_for("") != content_id_for("a")
+    }
+}
+
+spec "wc5w: TypeId is stable across independent registries" {
+    then "the same name registers to the same id in two separate registries" {
+        let no_fields: List<FieldEntry> = []
+        let no_variants: List<Variant> = []
+        let r1 = type_registry_new()
+        let r2 = type_registry_new()
+        // r2 registers an unrelated type FIRST: a positional counter would
+        // then have handed the shared name a different id in each registry.
+        type_registry_register(r2, "@m::Decoy", TypeKind.StructKind, no_fields, no_variants, ValueType.Unknown)
+        let id1 = type_registry_register(r1, "@m::Shared", TypeKind.StructKind, no_fields, no_variants, ValueType.Unknown)
+        let id2 = type_registry_register(r2, "@m::Shared", TypeKind.StructKind, no_fields, no_variants, ValueType.Unknown)
+        id1 == id2 && id1 == content_id_for("@m::Shared")
+    }
+}
+
+spec "wc5w: registry round-trips a type by its sparse content id" {
+    then "lookup by the content id returns the registered type" {
+        let no_fields: List<FieldEntry> = []
+        let no_variants: List<Variant> = []
+        let reg = type_registry_new()
+        let id = type_registry_register(reg, "@m::Widget", TypeKind.StructKind, no_fields, no_variants, ValueType.Unknown)
+        let opt = type_registry_lookup(reg, id)
+        type_registry_has(reg, id) && type_registry_id_for(reg, "@m::Widget") == id && opt != null && opt!.name == "@m::Widget"
+    }
+    then "an unregistered content id is absent" {
+        let reg = type_registry_new()
+        !type_registry_has(reg, content_id_for("@m::Never"))
+    }
+    then "many types round-trip via their sparse content ids (id_to_index at scale)" {
+        // Content ids are sparse i64 hashes, not a dense 1..N counter, so the
+        // id->index intmap must tolerate arbitrary keys. Register 100 types and
+        // confirm each one's id is content_id_for(name) AND looks back up to it.
+        let no_fields: List<FieldEntry> = []
+        let no_variants: List<Variant> = []
+        let reg = type_registry_new()
+        mut ok = true
+        mut i = 0
+        while i < 100 {
+            let name = "@m::T" + string(i)
+            let id = type_registry_register(reg, name, TypeKind.StructKind, no_fields, no_variants, ValueType.Unknown)
+            if id != content_id_for(name) { ok = false }
+            let opt = type_registry_lookup(reg, id)
+            if opt == null { ok = false } else { if opt!.name != name { ok = false } }
+            i = i + 1
+        }
+        ok
+    }
+}
+
+spec "wc5w: vtype_eq compares nominal identity by content id, kind-agnostic (24yd)" {
+    then "a Newtype and a parser-default Struct of the same FQN, both stamped, are equal" {
+        let no_args: List<ValueType> = []
+        let id = content_id_for("@std::avrac::core::ExprId")
+        let resolved = ValueType.Newtype("@std::avrac::core::ExprId", ValueType.Int, id)
+        let parser_default = ValueType.Struct("@std::avrac::core::ExprId", no_args, id)
+        vtype_eq(resolved, parser_default)
+    }
+    then "distinct FQNs stay distinct even across kinds" {
+        let no_args: List<ValueType> = []
+        let n = ValueType.Newtype("@m::UserId", ValueType.Int, content_id_for("@m::UserId"))
+        let s = ValueType.Struct("@m::ProductId", no_args, content_id_for("@m::ProductId"))
+        !vtype_eq(n, s)
+    }
+    then "vtype_eq_deep agrees cross-kind, symmetrically (both directions)" {
+        // The deep-equality path must follow the same wc5w cross-kind rule as
+        // vtype_eq, in BOTH argument orders (the bug it guards against was
+        // asymmetric: Struct-vs-Newtype passed but Newtype-vs-Struct did not).
+        let no_args: List<ValueType> = []
+        let id = content_id_for("@std::avrac::core::ExprId")
+        let resolved = ValueType.Newtype("@std::avrac::core::ExprId", ValueType.Int, id)
+        let parser_default = ValueType.Struct("@std::avrac::core::ExprId", no_args, id)
+        vtype_eq_deep(resolved, parser_default) && vtype_eq_deep(parser_default, resolved)
+    }
+    then "vtype_eq_deep deep-compares Fn return types (vtype_eq's shallow `.Fn` ignored ret)" {
+        // `Fn(ret)`'s ret is a walked child, but vtype_eq's `.Fn -> b is .Fn`
+        // ignored it, so Fn(int) == Fn(string) deeply — a vacuous oracle for any
+        // Fn-bearing reconstructed type. The new `.Fn` deep arm distinguishes them,
+        // and the difference must propagate through containers (List<Fn<_>>).
+        !vtype_eq_deep(ValueType.Fn(ValueType.Int), ValueType.Fn(ValueType.Str))
+          && vtype_eq_deep(ValueType.Fn(ValueType.Int), ValueType.Fn(ValueType.Int))
+          && !vtype_eq_deep(ValueType.List(ValueType.Fn(ValueType.Int)), ValueType.List(ValueType.Fn(ValueType.Str)))
+    }
+}

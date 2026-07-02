@@ -1,0 +1,30 @@
+/// Test fixture: newtype wrapping a string. Verifies that
+/// `NeUserId` is nominally distinct from `string` even though
+/// it shares the runtime representation.
+type NeUserId = string
+/// Test fixture: newtype wrapping an int — analogous to
+/// `NeUserId`, used to verify nominal distinction across
+/// numeric units.
+type NeMeters = int
+
+/// Test fixture: greet a user by id. Calls `.raw()` to peel the
+/// newtype back to its inner `string` for concatenation —
+/// exercises the newtype unwrap path.
+fn ne_greet(uid: NeUserId) -> string {
+    "Hello user " + uid.raw()
+}
+
+spec "newtype example" {
+    then "newtype string greeting" {
+        let uid = NeUserId("alice")
+        ne_greet(uid) == "Hello user alice"
+    }
+    then "newtype string raw() unwraps" {
+        let uid = NeUserId("alice")
+        uid.raw() == "alice"
+    }
+    then "newtype int raw()" {
+        let dist = NeMeters(42)
+        dist.raw() == 42
+    }
+}

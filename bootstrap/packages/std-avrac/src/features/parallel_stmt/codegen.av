@@ -1,0 +1,42 @@
+// WHY: codegen for `parallel { fn1(); fn2(); fn3() }`.
+
+use codegen.{ok_stmt, StmtResult}
+use codegen.{ok_sr, err_sr}
+/// Codegen entry for `parallel { ... }`. Pattern-matches the
+/// `Parallel` AST node and forwards to `emit_parallel`.
+export fn parallel_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .Parallel(body) -> emit_parallel(ctx, env, body)
+        _ -> err_sr("parallel_emit_stmt: expected Parallel")
+    }
+}
+
+/// Build an array of closures (one per statement) and hand it to
+/// the runtime's `avra_parallel_run`, which spawns each as a green
+/// thread, waits for completion, and returns to the caller.
+fn emit_parallel(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<StmtResult, string> {
+    let closures = ctx.array_new()
+    let r = collect_parallel_closures(ctx, env, stmts, closures)?
+    ctx.call("avra_parallel_run", [closures])
+    ok_sr(ctx, env)
+}
+
+/// Walk the parallel block's body, emitting each `.Expr` statement
+/// and pushing its closure value into `arr`. Non-expr statements
+/// inside `parallel` are ignored — only callable expressions can
+/// be parallelised.
+fn collect_parallel_closures(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>, arr: ptr) -> Result<List<VarBinding>, string> {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        match ss.node {
+            .Expr(expr) -> {
+                let r = ctx.emit(env, expr)?
+                ctx.array_push(arr, r.value)
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    ok_stmt(env)
+}

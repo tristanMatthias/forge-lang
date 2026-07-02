@@ -1,0 +1,9 @@
+extern fn avra_test_skip(name: string)
+extern fn avra_test_todo(name: string)
+
+spec "testing framework" {
+    given "basic assertions" {
+        then "equality works" { 1 + 1 == 2 }
+        then "inequality works" { 3 != 4 }
+    }
+}

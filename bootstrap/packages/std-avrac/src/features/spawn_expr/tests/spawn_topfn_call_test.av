@@ -1,0 +1,27 @@
+// tjb5: name-qualifier rewrite (resolve/names.av) used to skip the
+// body of Spawn expressions, so identifiers inside `spawn { }` stayed
+// bare while every surrounding reference was mangled to
+// `${module}::${name}`. The bare lookup then missed and the
+// resolver reported F3000 'undefined variable'. Fixed by adding the
+// missing `.Spawn(body) -> .Spawn(rewrite_expr(ctx, body))` arm.
+
+fn spawn_topfn_add_one(x: int) -> int { x + 1 }
+
+spec "tjb5: top-level fn refs inside spawn body resolve correctly" {
+    then "direct call from then resolves" {
+        spawn_topfn_add_one(41) == 42
+    }
+    then "call from explicit lambda inside then resolves" {
+        let f = () -> { spawn_topfn_add_one(41) }
+        f() == 42
+    }
+    then "spawn body invokes top-level fn directly" {
+        let t = spawn { spawn_topfn_add_one(41) }
+        t.await == 42
+    }
+    then "two parallel spawns of top-level fn" {
+        let a = spawn { spawn_topfn_add_one(100) }
+        let b = spawn { spawn_topfn_add_one(200) }
+        a.await + b.await == 302
+    }
+}

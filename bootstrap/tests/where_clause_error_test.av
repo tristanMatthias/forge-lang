@@ -1,0 +1,15 @@
+// Compile-error test: a generic fn with a Trait bound called on a type
+// that doesn't impl the Trait must error. Migrated from shell-out to
+// in-process — check_source now runs monomorphization so where-clause
+// violations are observable in the diagnostic bag.
+
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_errors}
+
+const SOURCE: string = "trait Printable {\n    fn show(self) -> string\n}\n\nfn display<T: Printable>(x: T) -> string {\n    x.show()\n}\n\ntype Plain = { value: int }\n\nfn entry() {\n    let p = Plain { value: 42 }\n    println(display(p))\n}\n"
+
+spec "where clause error" {
+    then "type without trait impl produces compile error" {
+        bag_has_errors(check_source(SOURCE))
+    }
+}

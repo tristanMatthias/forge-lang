@@ -1,0 +1,57 @@
+enum CrcTree {
+    Leaf(value: int)
+    Branch(left: CrcTree, right: CrcTree)
+}
+
+fn crc_tree_sum(t: CrcTree) -> int {
+    match t {
+        .Leaf(v) -> v
+        .Branch(l, r) -> crc_tree_sum(l) + crc_tree_sum(r)
+    }
+}
+
+fn crc_tree_depth(t: CrcTree) -> int {
+    match t {
+        .Leaf(_) -> 1
+        .Branch(l, r) -> {
+            let ld = crc_tree_depth(l)
+            let rd = crc_tree_depth(r)
+            1 + (if ld > rd { ld } else { rd })
+        }
+    }
+}
+
+fn crc_tree_to_string(t: CrcTree) -> string {
+    match t {
+        .Leaf(v) -> string(v)
+        .Branch(l, r) -> `(${crc_tree_to_string(l)} + ${crc_tree_to_string(r)})`
+    }
+}
+
+fn crc_make_tree() -> CrcTree {
+    CrcTree.Branch(
+        CrcTree.Branch(CrcTree.Leaf(1), CrcTree.Leaf(2)),
+        CrcTree.Branch(CrcTree.Leaf(3), CrcTree.Branch(CrcTree.Leaf(4), CrcTree.Leaf(5)))
+    )
+}
+
+spec "combo recursive closure" {
+    then "tree to string" {
+        crc_tree_to_string(crc_make_tree()) == "((1 + 2) + (3 + (4 + 5)))"
+    }
+    then "tree sum" {
+        crc_tree_sum(crc_make_tree()) == 15
+    }
+    then "tree depth" {
+        crc_tree_depth(crc_make_tree()) == 4
+    }
+    then "closure over recursive fn" {
+        let summer = (t) -> { crc_tree_sum(t) }
+        summer(CrcTree.Leaf(99)) == 99
+    }
+    then "list of trees mapped" {
+        let forest = [CrcTree.Leaf(10), CrcTree.Leaf(20), CrcTree.Leaf(30)]
+        let sums = forest.map(it |> crc_tree_sum)
+        sums[0] == 10
+    }
+}

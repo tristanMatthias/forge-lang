@@ -1,0 +1,62 @@
+// vez6.14 — `bs2 expand` CLI prints post-macro-expansion source so
+// users can inspect what `@expand` and `@comptime` produced. Test
+// shells out to the bs2 binary, captures the output, and checks the
+// expanded form contains the expected macro-produced shape.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_expand(source: string) -> string {
+    let path = "/tmp/avra_expand_command_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+spec "vez6.14: bs2 expand prints post-macro-expansion source" {
+    then "macro-replaced decl is visible in the output" {
+        let out = run_expand(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_hello() -> Stmt {\n" +
+            "    return quote stmt { println(\"macro-output\") }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_hello)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        // The macro replaced placeholder with a println call. The
+        // print of "macro-output" should appear in the expanded
+        // source — that's the entire visible-magic point.
+        out.contains("macro-output")
+    }
+    then "@expand annotation is consumed (no longer present in expanded output)" {
+        // After expansion the @expand decl is replaced by the
+        // macro's return value, so the annotation itself shouldn't
+        // remain in the expanded source — the user can see what
+        // ran without re-reading the macro fn.
+        let out = run_expand(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_hello() -> Stmt {\n" +
+            "    return quote stmt { println(\"verify\") }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_hello)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        // The replacement should remove the placeholder fn (and the
+        // @expand annotation that wrapped it). What remains is the
+        // macro output.
+        !out.contains("@expand(make_hello)")
+            && !out.contains("fn placeholder")
+            && out.contains("verify")
+    }
+}

@@ -1,0 +1,72 @@
+// forge-crafting-intepreters-opo3.2: ResolvedDecls.introduces is
+// validated against ResolvedDecls.decls. When a macro returns a
+// DeclSymbol whose name doesn't correspond to any decl in .decls,
+// the compiler emits a warning via stderr.
+//
+// The doc step 4.4: "Register result.introduces with the existing
+// registry." My impl registers via the from_macro=true tag on
+// spliced stmts. Introduces entries without backing decls have no
+// AST to register; emitting a warning surfaces the mismatch
+// without breaking codegen.
+//
+// The test exercises BOTH paths:
+//   (a) introducer's introduces matches its decls → no warning, fn
+//       is callable (the happy path covered by
+//       expand_introduces_registration_test).
+//   (b) introducer lists a phantom name in introduces that isn't in
+//       decls → captured stdout contains the warning, fn is still
+//       callable because the warning is non-fatal.
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_compile_and_run}
+
+// 6w6v: migrated off hand-rolled bs2 compile + llc + cc + run. The
+// cached_fixture_compile_and_run helper preserves the compile-stderr
+// concatenated-with-run-stdout shape this test needs (so we can still
+// assert on BOTH the phantom-name warning and the runtime println),
+// while caching the combined output content-keyed on toolchain_fp +
+// fixture hash. Cold: same ~14s. Warm: ~10ms instead of ~734ms.
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_expand_introduces_validation_test.av"
+    write_fixture(path, source)
+    cached_fixture_compile_and_run(path)
+}
+
+spec "@expand: introduces-vs-decls divergence emits a warning" {
+    then "phantom name in introduces surfaces a stderr warning, real decl still works" {
+        let out = run_capture(
+            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.diagnostics.{Span}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn introducer(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
+            "    let empty_params: List<ParamEntry> = []\n" +
+            "    let empty_tp: List<TypeParamEntry> = []\n" +
+            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Number(\"7\")))]\n" +
+            "    let real_fn = Stmt.Function(\"_real_emitted\", empty_tp, empty_params, ValueType.Int, body)\n" +
+            "    let decls: List<SStmt> = [sstmt_dummy(real_fn)]\n" +
+            "    // introduces lists BOTH the real decl AND a phantom name.\n" +
+            "    let introduces: List<DeclSymbol> = [\n" +
+            "        DeclSymbol { name: \"_real_emitted\", kind: DeclKind.Function, canonical_path: \"_real_emitted\" },\n" +
+            "        DeclSymbol { name: \"_phantom_never_decl\", kind: DeclKind.Function, canonical_path: \"_phantom_never_decl\" }\n" +
+            "    ]\n" +
+            "    let provenance = MacroProvenance {\n" +
+            "        macro_name: \"introducer\",\n" +
+            "        target_canonical: \"placeholder\",\n" +
+            "        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: \"\" }\n" +
+            "    }\n" +
+            "    ResolvedDecls { decls, introduces, provenance }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(introducer)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(string(_real_emitted()))\n" +
+            "}\n")
+        // Two assertions:
+        //   (1) the warning was emitted for the phantom name
+        //   (2) the real decl still works (main prints 7)
+        out.contains("_phantom_never_decl") && out.contains("7")
+    }
+}

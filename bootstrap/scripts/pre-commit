@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# Bootstrap pre-commit hook.
+#
+# Runs the bootstrap spec test suite when any staged file is under
+# bootstrap/ or affects bootstrap's build inputs (avra/stdlib/runtime.c,
+# bootstrap/llvm_wrapper.c). Skips otherwise so commits in unrelated
+# parts of the repo aren't slowed down.
+#
+# Install: ln -sf ../../bootstrap/scripts/pre-commit .git/hooks/pre-commit
+# Skip once: git commit --no-verify  (use sparingly — that's how regressions land)
+
+set -euo pipefail
+
+REPO_DIR=$(git rev-parse --show-toplevel)
+cd "$REPO_DIR"
+
+# u1s0: kill the background test PID on SIGINT / SIGTERM / normal exit.
+# Without this, Ctrl-C'ing during the hook leaves bg `bs2 test --per_file`
+# running to natural completion (~22-380s of CPU), and the user sees the
+# hook exit cleanly while their process table fills up.
+TEST_PID=""
+cleanup() {
+  if [ -n "$TEST_PID" ] && kill -0 "$TEST_PID" 2>/dev/null; then
+    kill "$TEST_PID" 2>/dev/null || true
+    # Give it a moment to drop, then SIGKILL if still alive.
+    sleep 0.2
+    kill -9 "$TEST_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+# Files staged in this commit.
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# Trigger the spec test suite for any bootstrap-affecting change.
+relevant=$(echo "$staged" | grep -E '^(bootstrap/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
+if [ -z "$relevant" ]; then
+  exit 0
+fi
+
+# Trigger the (heavier) self-host fixed-point check only when the
+# bootstrap source itself or its build inputs change. Touching just
+# test files or scripts doesn't require it.
+src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|bootstrap/packages/cli/src/|avra/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
+
+# Test-suite cache marker: same idea as diagnose.sh's `.fp_verified`.
+# When every input that could affect test outcomes is byte-identical
+# to the last successful verify, skip the suite entirely. Set
+# AVRA_FORCE_TESTS=1 to bypass the cache when you suspect drift.
+#
+# Inputs (in addition to bs2 binary, every .av source/test/fixture,
+# runtime.c, llvm_wrapper.c — covered since the cache marker landed):
+#   - scripts/diagnose.sh — used by some fixtures via `diagnose.sh
+#     --run`; a change here can change fixture stdout without
+#     touching bs2 (5hyt).
+#   - seed/seed.ll — staged seed without rebuilt bs2 leaves the bs2
+#     hash old but the seed change real; rebuilds would then differ
+#     (5hyt).
+#   - bootstrap/Makefile — currently the test target just calls bs2
+#     directly, but covering it future-proofs against test-command
+#     changes (5hyt).
+TEST_MARKER="bootstrap/build/.tests_verified"
+TEST_INPUT_HASH=$(
+  { shasum -a 256 bootstrap/build/bs2 2>/dev/null
+    find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
+    shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
+    shasum -a 256 bootstrap/scripts/diagnose.sh bootstrap/seed/seed.ll bootstrap/Makefile 2>/dev/null
+  } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+)
+TESTS_CACHED=0
+if [ "${AVRA_FORCE_TESTS:-0}" != "1" ] && [ -f "$TEST_MARKER" ] \
+   && [ "$(cat "$TEST_MARKER" 2>/dev/null)" = "$TEST_INPUT_HASH" ]; then
+  TESTS_CACHED=1
+fi
+
+# Test suite + fixed-point check run as independent gates that both
+# read the same bs2 binary but write to disjoint cache slots — fp
+# touches `build/.fp_verified` and `build/fp_bs[23].ll`, tests touch
+# `build/test_shards/` and `build/cache/fixture_stdout/`. So they're
+# safe to run in parallel: wall = max(test, fp) instead of sum.
+#
+# Sequential mode (test_cached=0, fp uncached) was ~22s + ~30s = ~52s.
+# Parallel mode is ~30s (fp dominates). When tests are cached the
+# parallel-launch logic still applies but the test branch returns
+# immediately, so wall = fp_time.
+
+# Launch test suite in background if not cached.
+TEST_LOG="/tmp/avra_pre_commit_test.${PPID}.log"
+TEST_TIMEOUT_SEC=1800
+if [ $TESTS_CACHED -eq 1 ]; then
+  echo "[pre-commit] spec test suite cached — bs2 + .av sources + runtime unchanged since last verify"
+  TEST_PID=
+  TEST_START=
+else
+  echo "[pre-commit] bootstrap-affecting changes detected — running spec test suite (--per_file) [bg]"
+  TEST_START=$(date +%s)
+  (
+    perl -e 'alarm shift; exec @ARGV' "$TEST_TIMEOUT_SEC" \
+         sh -c 'cd bootstrap && ./build/bs2 test --per_file'
+  ) > "$TEST_LOG" 2>&1 &
+  TEST_PID=$!
+fi
+
+# Run fp check in foreground (its output is the loud one in the hook
+# log; tail of fixed-point/byte-identical messages should appear inline).
+# Disable `set -e` around diagnose.sh so a non-zero rc doesn't exit
+# before we drain the bg test pid.
+FP_RC=0
+if [ -n "$src_relevant" ]; then
+  echo "[pre-commit] bootstrap source touched — verifying self-host fixed point"
+  set +e
+  bootstrap/scripts/diagnose.sh --check-fixedpoint
+  FP_RC=$?
+  set -e
+  if [ $FP_RC -eq 0 ]; then
+    echo "[pre-commit] self-host fixed point holds"
+  fi
+fi
+
+# Drain the background test suite (if any) before deciding rc. Disable
+# `set -e` around `wait` so a non-zero rc doesn't exit before we
+# format the failure message — re-enable right after.
+TEST_RC=0
+if [ -n "$TEST_PID" ]; then
+  set +e
+  wait "$TEST_PID"
+  TEST_RC=$?
+  set -e
+  TEST_ELAPSED=$(( $(date +%s) - TEST_START ))
+  if [ $TEST_RC -ne 0 ]; then
+    echo
+    if [ $TEST_ELAPSED -ge $TEST_TIMEOUT_SEC ]; then
+      echo "[pre-commit] spec test suite TIMED OUT after ${TEST_ELAPSED}s (limit ${TEST_TIMEOUT_SEC}s) — commit blocked"
+      echo "[pre-commit] baseline ~10-20s warm / ~14min cold; this run exceeded that."
+      echo "[pre-commit] perf regression suspected. Inspect: $TEST_LOG"
+    else
+      echo "[pre-commit] spec test suite failed after ${TEST_ELAPSED}s — commit blocked"
+      echo "[pre-commit] full output: $TEST_LOG"
+      echo "[pre-commit] failures (excerpt):"
+      grep -E "✗|Failures:|tests passed" "$TEST_LOG" | tail -25
+      echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
+    fi
+  else
+    echo "[pre-commit] spec test suite passed in ${TEST_ELAPSED}s"
+    rm -f "$TEST_LOG"
+    # 0o8i: re-hash the inputs immediately before writing the marker.
+    # If the inputs drifted between the captured hash (taken at hook
+    # start) and now, refuse to write — the suite's result no longer
+    # describes the current source state. Mid-suite edits land in
+    # the NEXT commit's coverage, not this one's marker.
+    TEST_INPUT_HASH_NOW=$(
+      { shasum -a 256 bootstrap/build/bs2 2>/dev/null
+        find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
+        shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
+        shasum -a 256 bootstrap/scripts/diagnose.sh bootstrap/seed/seed.ll bootstrap/Makefile 2>/dev/null
+      } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
+    )
+    if [ "$TEST_INPUT_HASH" = "$TEST_INPUT_HASH_NOW" ]; then
+      echo "$TEST_INPUT_HASH" > "$TEST_MARKER"
+    else
+      echo "[pre-commit] inputs drifted during suite — skipping marker write (next commit will re-run tests)"
+    fi
+  fi
+fi
+
+# Bail if either gate failed. Order matters for the user-facing message:
+# tests first (more common failure cause); fp second.
+if [ $TEST_RC -ne 0 ]; then exit 1; fi
+if [ $FP_RC -ne 0 ]; then
+  echo
+  echo "[pre-commit] SELF-HOST FIXED POINT BROKEN — commit blocked"
+  echo "[pre-commit] bs2 and bs3 emit different IR for packages/cli/src/main.av,"
+  echo "[pre-commit] OR bs2 / bs3 couldn't compile main.av at all. Either way the"
+  echo "[pre-commit] staged source is non-self-consistent. Fix or 'git commit --no-verify'."
+  echo "[pre-commit] (a typeck change without a matching seed update lands here —"
+  echo "[pre-commit]  run 'make update-seed' then re-commit if so.)"
+  exit 1
+fi
+
+# Verify the seed pin exists and hasn't been deleted. This is our
+# lifeline — without it we can't bootstrap from scratch. Lock era:
+# seed/seed.lock is the tracked pin and seed/seed.ll is a
+# local materialization; either one present keeps us bootstrappable.
+seed_relevant=$(echo "$staged" | grep -E '^bootstrap/seed/' || true)
+if [ -n "$seed_relevant" ] || [ -n "$src_relevant" ]; then
+  # Validate the git INDEX, not the working tree: an untracked local
+  # seed.ll must not mask a commit that deletes the tracked seed.lock.
+  # Either pin present in what's being committed keeps us bootstrappable.
+  has_seed_pin=0
+  if git cat-file -e :bootstrap/seed/seed.lock 2>/dev/null; then has_seed_pin=1; fi
+  if git cat-file -e :bootstrap/seed/seed.ll 2>/dev/null; then has_seed_pin=1; fi
+  if [ "$has_seed_pin" -eq 0 ]; then
+    echo
+    echo "[pre-commit] SEED PIN MISSING — commit blocked"
+    echo "[pre-commit] Neither bootstrap/seed/seed.lock nor bootstrap/seed/seed.ll is in the index."
+    echo "[pre-commit] The lock (or a checked-in seed) is the bootstrap lifeline —"
+    echo "[pre-commit] without it the project cannot be built from scratch. Restore it."
+    exit 1
+  fi
+fi

@@ -1,6 +1,6 @@
-# Forge — Language Polish Features (TDD)
+# Avra — Language Polish Features (TDD)
 
-Features identified from code review of a real Forge application. These make the difference between "works" and "idiomatic."
+Features identified from code review of a real Avra application. These make the difference between "works" and "idiomatic."
 
 ---
 
@@ -10,7 +10,7 @@ The `.` prefix means "resolve from context." Used everywhere: enum variants, fie
 
 ## Test 1.1: Enum variants (already exists)
 
-```forge
+```avra
 enum Status { active, pending, done }
 
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
 
 ## Test 1.2: Field references in where clauses
 
-```forge
+```avra
 model User {
   name: string
   email: string
@@ -35,7 +35,7 @@ fn main() {
 }
 ```
 
-```forge
+```avra
 // Compile error on invalid field reference
 fn main() {
   User.where(.titel: "alice")
@@ -56,7 +56,7 @@ fn main() {
 
 ## Test 1.3: Role references in annotations
 
-```forge
+```avra
 auth {
   role admin { all }
   role publisher { read, create }
@@ -72,7 +72,7 @@ server :8080 {
 }
 ```
 
-```forge
+```avra
 // Compile error on invalid role
 server :8080 {
   @auth(.superuser)
@@ -92,7 +92,7 @@ server :8080 {
 
 ## Test 1.4: Error variants in match
 
-```forge
+```avra
 fn main() {
   let result = do_thing()
   
@@ -106,7 +106,7 @@ fn main() {
 
 ## Test 1.5: Contextual references in component config
 
-```forge
+```avra
 model Post {
   status: PostStatus @default(.draft)    // .draft resolved from PostStatus
   
@@ -116,7 +116,7 @@ model Post {
 
 ## Test 1.6: Named params — key is property, value is expression
 
-```forge
+```avra
 fn main() {
   let name = "alice"
   
@@ -134,7 +134,7 @@ Match expressions with table syntax. The first column is the pattern, remaining 
 
 ## Test 2.1: Basic match table
 
-```forge
+```avra
 fn describe(status: Status) -> string {
   match status table {
     pattern  | label       | emoji
@@ -156,7 +156,7 @@ fn main() {
 
 ## Test 2.2: Match table expanding into function call
 
-```forge
+```avra
 fn handle_error(err: AppError) {
   respond(match err table {
     pattern        | status | body
@@ -171,7 +171,7 @@ fn handle_error(err: AppError) {
 
 `respond(match err table { ... })` means: match `err` against the table, return a struct with the column values, pass it to `respond`. The header row names map to the function's parameters. Desugars to:
 
-```forge
+```avra
 match err {
   .not_found -> respond(404, { error: "not found" })
   .unauthorized -> respond(401, { error: "unauthorized" })
@@ -183,7 +183,7 @@ match err {
 
 ## Test 2.3: Match table with destructuring result
 
-```forge
+```avra
 fn main() {
   let err = AppError.not_found
 
@@ -202,7 +202,7 @@ Both styles work — `match -> fn()` for direct invocation, or `let {..} = match
 
 ## Test 2.4: Match table with expressions in cells
 
-```forge
+```avra
 fn status_info(s: Status, user: User) -> string {
   let result = match s table {
     pattern  | code | message
@@ -217,7 +217,7 @@ fn status_info(s: Status, user: User) -> string {
 
 ## Test 2.5: Match table compile-time exhaustiveness
 
-```forge
+```avra
 enum Color { red, green, blue }
 
 fn name(c: Color) {
@@ -251,7 +251,7 @@ Functions that return predicates, not values. Used inside `.where()` to build ty
 
 ## Test 3.1: Exact match (default)
 
-```forge
+```avra
 fn main() {
   let user = User.where(.name: "alice")     // exact match
   let users = User.where(.active: true)     // exact match
@@ -260,7 +260,7 @@ fn main() {
 
 ## Test 3.2: Comparison operators
 
-```forge
+```avra
 fn main() {
   let adults = User.where(.age: gt(18))
   let cheap = Product.where(.price: lt(50.0))
@@ -272,18 +272,18 @@ fn main() {
 
 ## Test 3.3: String matching
 
-```forge
+```avra
 fn main() {
   let results = Package.where(.name: like(`%${query}%`))
   let dotcom = User.where(.email: ends_with("@gmail.com"))
   let admins = User.where(.name: starts_with("admin"))
-  let has_tag = Post.where(.tags: contains("forge"))
+  let has_tag = Post.where(.tags: contains("avra"))
 }
 ```
 
 ## Test 3.4: Combining conditions
 
-```forge
+```avra
 fn main() {
   let results = Post
     .where(.status: .published)
@@ -296,7 +296,7 @@ fn main() {
 
 ## Test 3.5: Invalid operator — compile error
 
-```forge
+```avra
 fn main() {
   User.where(.name: gt(5))    // name is string, gt takes numeric
 }
@@ -321,7 +321,7 @@ When variable name matches field name, write it once.
 
 ## Test 4.1: In struct literals
 
-```forge
+```avra
 fn main() {
   let name = "alice"
   let email = "alice@test.com"
@@ -337,7 +337,7 @@ fn main() {
 
 ## Test 4.2: Mixed shorthand and explicit
 
-```forge
+```avra
 fn main() {
   let name = "alice"
   let user = { name, email: "custom@test.com", age: 30 }
@@ -348,7 +348,7 @@ fn main() {
 
 ## Test 4.3: In function calls
 
-```forge
+```avra
 fn create_user(name: string, email: string) -> User {
   User.create({ name, email })
 }
@@ -362,15 +362,15 @@ fn main() {
 
 ## Test 4.4: In json.stringify
 
-```forge
+```avra
 fn main() {
   let action = "publish"
-  let package = "forge-http"
+  let package = "avra-http"
   let version = "0.1.0"
 
   let json = json.stringify({ action, package, version })
   println(json)
-  // {"action":"publish","package":"forge-http","version":"0.1.0"}
+  // {"action":"publish","package":"avra-http","version":"0.1.0"}
 }
 ```
 
@@ -382,11 +382,11 @@ The `path()` type should be used instead of raw string manipulation for file ope
 
 ## Test 5.1: Replace raw fs calls
 
-```forge
+```avra
 // BAD — calling raw extern fns
 fn old_way() {
-  forge_fs_mkdir("data/packages", true)
-  let content = forge_fs_read("data/packages/meta.json")
+  avra_fs_mkdir("data/packages", true)
+  let content = avra_fs_read("data/packages/meta.json")
 }
 
 // GOOD — using path type
@@ -399,18 +399,18 @@ fn new_way() {
 
 ## Test 5.2: Path operations chain
 
-```forge
+```avra
 fn main() {
   let base = path("data")
-  let pkg_dir = base / "packages" / "forge-http"
+  let pkg_dir = base / "packages" / "avra-http"
   let meta = pkg_dir / "meta.json"
   let versions = pkg_dir / "versions"
 
   pkg_dir.mkdir()?
-  meta.write(json.stringify({ name: "forge-http" }))?
+  meta.write(json.stringify({ name: "avra-http" }))?
   
   println(string(meta.exists))     // true
-  println(meta.read()?)            // {"name":"forge-http"}
+  println(meta.read()?)            // {"name":"avra-http"}
 }
 ```
 
@@ -430,7 +430,7 @@ These are distinct: `?` is the error path, `?.` and `??` are the null path. `?? 
 
 ## Test 6.1: Throw on null
 
-```forge
+```avra
 fn main() {
   let user = User.find_by(.email: "alice@test.com") ?? throw .not_found
   println(user.name)
@@ -439,7 +439,7 @@ fn main() {
 
 Desugars to:
 
-```forge
+```avra
 let user = match User.find_by(.email: "alice@test.com") {
   Some(u) -> u
   null -> throw .not_found
@@ -448,7 +448,7 @@ let user = match User.find_by(.email: "alice@test.com") {
 
 ## Test 6.2: Throw with custom message
 
-```forge
+```avra
 fn main() {
   let pkg = Package.find_by(.name: "nonexistent") 
     ?? throw .not_found("package not found")
@@ -459,7 +459,7 @@ fn main() {
 
 ## Test 6.3: Chain with method calls
 
-```forge
+```avra
 fn main() {
   let version = Package.find_by(.name: req.params.name)
     ?? throw .not_found
@@ -478,7 +478,7 @@ Common HTTP response patterns as ergonomic functions.
 
 ## Test 7.1: respond() with status and body
 
-```forge
+```avra
 server :8080 {
   GET /health -> { status: "ok" }                    // 200 implicit
 
@@ -495,7 +495,7 @@ server :8080 {
 
 ## Test 7.2: Error handler with match table
 
-```forge
+```avra
 server :8080 {
   on error(err, req) {
     respond(match err table {
@@ -519,7 +519,7 @@ server :8080 {
 
 Use `@hidden` on fields that should never be exposed, or use type operators for custom response shapes:
 
-```forge
+```avra
 model User {
   id: int @primary @auto_increment
   name: string
@@ -544,7 +544,7 @@ server :8080 {
 
 Relations are declared on models with `@belongs_to`. Nested routes use `under` — standard language, no custom `nest` keyword:
 
-```forge
+```avra
 model Version {
   id: int @primary @auto_increment
   version: string
@@ -580,7 +580,7 @@ server :8080 {
 
 ## Test 8.3: CRUD publish with hooks and channel-based logging
 
-```forge
+```avra
 type AuditEvent = {
   action: string,
   package: string,
@@ -631,9 +631,9 @@ server :8080 {
 
 `?.` is null-safe access — `find_by` returns `Package?` (nullable), so `?.include()` only runs if the package was found. This is not error propagation (`?`) — it's null chaining.
 
-```forge
+```avra
 fn main() {
-  let pkg = Package.find_by(.name: "forge-http")
+  let pkg = Package.find_by(.name: "avra-http")
     ?.include(.versions)    // ?. = safe access on nullable Package?
 
   println(string(pkg?.versions.length))   // pkg is still Package?, so ?. again
@@ -642,7 +642,7 @@ fn main() {
 
 ## Test 9.2: Nested includes
 
-```forge
+```avra
 fn main() {
   let post = Post.find_by(.slug: "hello-world")
     ?.include(.author, .comments.include(.author), .tags)
@@ -660,7 +660,7 @@ Standard pattern for token-based auth that uses the model system.
 
 ## Test 10.1: Token auth with crypto
 
-```forge
+```avra
 use @std.auth
 use @std.crypto
 
@@ -684,7 +684,7 @@ auth {
 
 `?? throw .unauthorized` — `find_by` returns `User?` (nullable). `??` triggers on null. `.unauthorized` resolves from the server's error handler context — the `on error` handler defines what error variants exist. `throw` converts a null into that error, which the error handler catches and returns as a 401.
 
-```forge
+```avra
 server :8080 {
   @public
   POST /auth/token -> (req) {
@@ -707,7 +707,7 @@ Structured append-only logging using channels, typed structs, and path type. No 
 
 ## Test 11.1: Typed channel-based logging
 
-```forge
+```avra
 type AppEvent = {
   action: string,
   detail: string,
@@ -734,7 +734,7 @@ fn main() {
 
 ## Test 11.2: Reading logs back with typed parsing
 
-```forge
+```avra
 fn main() {
   let log = path("data/events.jsonl")
   let entries = log.lines()?
@@ -747,7 +747,7 @@ fn main() {
 
 ## Test 11.3: Generic log function (no any)
 
-```forge
+```avra
 fn log_to_file<T>(file: Path, data: T) {
   file.append(json.stringify(data) + "\n")
 }
@@ -765,7 +765,7 @@ fn main() {
 
 What the LLM should generate when it knows all these features:
 
-```forge
+```avra
 use @std.http
 use @std.model
 use @std.auth
@@ -995,12 +995,12 @@ server :8080 {
 
 ## Features LLMs Need to Know About
 
-These already exist but weren't used in the generated code. Need to be registered with `forge features` and documented so LLMs use them:
+These already exist but weren't used in the generated code. Need to be registered with `avra features` and documented so LLMs use them:
 
 | Feature | What the LLM should write | What it wrote instead |
 |---|---|---|
-| Path type | `path("data") / "file.json"` | `forge_fs_join("data", "file.json")` |
-| Path methods | `meta.read()?`, `dir.mkdir()?` | `forge_fs_read(path)`, `forge_fs_mkdir(path, true)` |
+| Path type | `path("data") / "file.json"` | `avra_fs_join("data", "file.json")` |
+| Path methods | `meta.read()?`, `dir.mkdir()?` | `avra_fs_read(path)`, `avra_fs_mkdir(path, true)` |
 | json.stringify | `json.stringify({ name, version })` | Manual string concatenation |
 | `with` expression | `data with { hash: computed }` | Manual struct rebuilding |
 | Model CRUD | `Package.create()`, `.find_by()`, `.where()` | Manual JSON file reading |
@@ -1016,9 +1016,9 @@ These already exist but weren't used in the generated code. Need to be registere
 ## CLAUDE.md Addition
 
 ```markdown
-## Idiomatic Forge Patterns
+## Idiomatic Avra Patterns
 
-When generating Forge code, ALWAYS prefer:
+When generating Avra code, ALWAYS prefer:
 
 - `path("x") / "y"` over string path manipulation
 - `Model.where(.field: value)` over raw queries
@@ -1033,5 +1033,5 @@ When generating Forge code, ALWAYS prefer:
 - `.include(.relation)` for eager loading
 - Contextual `.field` references in where clauses and annotations
 
-Run `forge features` to see all available language features.
+Run `avra features` to see all available language features.
 ```

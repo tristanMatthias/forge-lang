@@ -1,0 +1,14 @@
+spec "string methods extra" {
+    then "repeat ha" {
+        "ha".repeat(3) == "hahaha"
+    }
+    then "repeat dash" {
+        "-".repeat(10) == "----------"
+    }
+    then "reverse hello" {
+        "hello".reverse() == "olleh"
+    }
+    then "reverse abcd" {
+        "abcd".reverse() == "dcba"
+    }
+}

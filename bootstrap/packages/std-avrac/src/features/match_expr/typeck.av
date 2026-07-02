@@ -1,0 +1,689 @@
+// WHY: type checking for match statements and expressions.
+// Exhaustiveness checking, pattern variable binding, arm type unification.
+
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
+use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
+use core.{type_short_name}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
+use core.{vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
+
+// ── Arm type skip logic ──
+// An arm's inferred type should be skipped in type unification when:
+// - The arm diverges (return/break/continue at the end)
+// - The arm's type is Void (side-effecting expression, no value produced)
+// - The arm's type is Unknown (type checker's sentinel for unresolved expressions)
+// - The arm's type is an unresolved named type (empty name from inference gaps)
+
+/// True when an arm should be skipped in type unification.
+/// Drops divergent / Void / Unknown / unresolved-named arms so
+/// the result type comes from the actually-producing arms.
+fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
+    if expr_diverges(body) { return true }
+    if vtype_eq(ty, .Void) { return true }
+    if vtype_is_unknown(ty) { return true }
+    match ty {
+        .Struct(name, _, _) -> name == ""
+        .Enum(name, _, _) -> name == ""
+        _ -> false
+    }
+}
+
+// ── Exhaustiveness checking ──
+
+/// Look up an enum's full variant list by name. Returns an
+/// empty list when the enum isn't registered (typeck's
+/// fallback for generic / unresolved enums).
+fn enum_type_variants(reg: EnumTypeReg, name: string) -> List<Variant> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<Variant> = []
+        return empty
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].variants
+}
+
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+/// True when any arm has a wildcard `_` pattern. Wildcards
+/// satisfy the exhaustiveness check on their own; the F9001
+/// "non-exhaustive match" lint fires when the wildcard hides
+/// more than two uncovered variants.
+fn arms_has_wildcard(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            .Wildcard -> return true
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// Build a comma-separated list of variant names covered by
+/// the arms' patterns. Used by `find_missing_variants` to
+/// compute the difference against the enum's full set.
+fn arms_matched_variants(arms: List<MatchArm>) -> string {
+    // Walk back-to-front: the old cons recursion built `rest` first
+    // (tail variants), then suffixed the head with `${rest}|${vnames}`,
+    // so tail variants appeared before head ones. Reverse iteration
+    // with suffix-append preserves that ordering byte-for-byte.
+    mut out = ""
+    mut i = arms.length - 1
+    while i >= 0 {
+        let vnames = pattern_variant_names(arms[i].pattern)
+        if vnames != "" {
+            if out == "" { out = vnames } else { out = "${out}|${vnames}" }
+        }
+        i = i - 1
+    }
+    out
+}
+
+// Collect all variant names covered by a pattern (handles Or chains).
+/// Extract the variant name(s) from a pattern as a CSV.
+/// Or-patterns expand to multiple names; struct/literal/
+/// wildcard patterns return "".
+fn pattern_variant_names(pattern: Pattern) -> string {
+    match pattern {
+        .Variant(name, _) -> name
+        .NestedVariant(name, _) -> name
+        .TypePattern(type_name, _) -> type_name
+        .Or(left, right) -> {
+            let l = pattern_variant_names(left)
+            let r = pattern_variant_names(right)
+            if l == "" { r } else if r == "" { l } else { "${l}|${r}" }
+        }
+        _ -> ""
+    }
+}
+
+/// Comma-separated CSV membership test. `matched` is built by
+/// `arms_matched_variants`; this checks whether a particular
+/// variant name appears in it.
+fn variant_in_matched(name: string, matched: string) -> bool {
+    if matched == name { return true }
+    if matched.contains("|${name}|") { return true }
+    if matched.length >= name.length + 1 {
+        if matched.substring(0, name.length + 1) == "${name}|" { return true }
+        if matched.substring(matched.length - name.length - 1, matched.length) == "|${name}" { return true }
+    }
+    // Module-qualified name: check short form
+    if name.contains("::") {
+        return variant_in_matched(type_short_name(name), matched)
+    }
+    false
+}
+
+/// Build a CSV of variants the user forgot to match. Used in
+/// the F9001 "non-exhaustive" diagnostic so the user sees
+/// exactly which variants need arms.
+fn find_missing_variants(variants: List<Variant>, matched: string) -> string {
+    // Walk back-to-front, appending each unmatched variant — the
+    // original cons recursion built the tail's string first and
+    // then suffixed the head (`${rest}, .${name}`), so tail names
+    // appear before head names. Reverse iteration with suffix-
+    // append preserves that ordering byte-for-byte.
+    mut out = ""
+    mut i = variants.length - 1
+    while i >= 0 {
+        let name = variants[i].name
+        if !variant_in_matched(name, matched) {
+            if out == "" { out = ".${name}" } else { out = "${out}, .${name}" }
+        }
+        i = i - 1
+    }
+    out
+}
+
+/// Run exhaustiveness analysis (spec Axis 4) for a `match`.
+/// Enums get a variant-by-variant check; unions check that
+/// every member type is matched. Wildcard `_` arms satisfy
+/// the check unconditionally but trigger the F9001 lint when
+/// they hide more than two missing variants.
+export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    // Union exhaustiveness: check all member types are covered
+    if vtype_is_union(subject_ty) {
+        return tc_check_union_exhaustive(tc, subject_ty, arms)
+    }
+    // Optional exhaustiveness: a `T?` match must cover BOTH present and
+    // absent, else the missing case traps at runtime (avra_match_unreachable).
+    if vtype_is_optional(subject_ty) {
+        return tc_check_optional_exhaustive(tc, subject_ty, arms)
+    }
+    let enum_name = vtype_enum_name(subject_ty)
+    if enum_name == "" { return tc }
+    let variants = enum_type_variants(tc.enums, enum_name)
+    if variants.length == 0 { return tc }
+    let matched = arms_matched_variants(arms)
+    let missing = find_missing_variants(variants, matched)
+    if missing == "" { return tc }
+    if tc.current_line == 0 { return tc }
+    // Spec Axis 8.7: wildcard hiding >2 variants = warning (not error)
+    if arms_has_wildcard(arms) {
+        let hidden_count = count_missing(variants, matched)
+        if hidden_count > 2 {
+            let sp = span_new(0, 6 + enum_name.length, tc.current_line, tc.current_col)
+            let msg = "wildcard arm hides ${string(hidden_count)} variants of `${enum_name}`: ${missing}"
+            let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
+            return tc with { bag: bag_report(tc.bag, diag) }
+        }
+        return tc
+    }
+    // No wildcard and missing variants = error (spec Axis 8.4)
+    let msg = "non-exhaustive match on `${enum_name}` — missing: ${missing}"
+    tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
+}
+
+/// Exhaustiveness for an optional `T?` subject (spec Axis 8). The two cases
+/// are present (`let v ->`, lowered to `.Some`) and absent (`none ->`,
+/// lowered to `.None`). Both must be covered — a present catch-all alone
+/// leaves `none` to trap at runtime, and vice versa. A `_` wildcard covers
+/// whatever is left. Literal patterns match only specific present values, so
+/// they never satisfy the present case on their own (a `let v` / `_` is still
+/// required for the other present values).
+fn tc_check_optional_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    if arms_has_wildcard(arms) { return tc }
+    mut has_present = false
+    mut has_absent = false
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            _ -> {
+                if pattern_is_optional_present(arms[i].pattern) { has_present = true }
+                if pattern_is_optional_absent(arms[i].pattern) { has_absent = true }
+            }
+        }
+        i = i + 1
+    }
+    if has_present && has_absent { return tc }
+    if tc.current_line == 0 { return tc }
+    let missing = if !has_present { "the present case (`let <name> ->`)" } else { "the absent case (`none ->`)" }
+    let msg = "non-exhaustive match on `${vtype_render_full(subject_ty)}` — missing ${missing}; add it or a `_` wildcard"
+    tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
+}
+
+/// Count uncovered variants in the missing list. Drives the
+/// F9001 lint threshold (warn when >2 hidden variants).
+fn count_missing(variants: List<Variant>, matched: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i < variants.length {
+        if !variant_in_matched(variants[i].name, matched) { n = n + 1 }
+        i = i + 1
+    }
+    n
+}
+
+// ── Union exhaustiveness ──
+
+/// Union-flavoured exhaustiveness check. Each member type of
+/// the union must be matched (or the match must have a
+/// wildcard). Reports F9001 with the missing types listed.
+fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    let types = vtype_union_types(subject_ty)
+    let matched = arms_matched_variants(arms)
+    let missing = find_missing_union_members(types, matched)
+    if missing == "" { return tc }
+    if tc.current_line == 0 { return tc }
+    if arms_has_wildcard(arms) {
+        let hidden_count = count_missing_union_members(types, matched)
+        if hidden_count > 2 {
+            let type_str = vtype_render_full(subject_ty)
+            let sp = span_new(0, 6 + type_str.length, tc.current_line, tc.current_col)
+            let msg = "wildcard arm hides ${string(hidden_count)} members of `${type_str}`: ${missing}"
+            let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
+            return tc with { bag: bag_report(tc.bag, diag) }
+        }
+        return tc
+    }
+    let type_str = vtype_render_full(subject_ty)
+    let msg = "non-exhaustive match on `${type_str}` — missing: ${missing}"
+    tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
+}
+
+/// CSV of union members the user forgot to match — companion
+/// of `find_missing_variants` for union types.
+fn find_missing_union_members(types: List<ValueType>, matched: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < types.length {
+        let name = vtype_display(types[i])
+        if !variant_in_matched(name, matched) {
+            if out == "" { out = name } else { out = "${out}, ${name}" }
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Count uncovered union members. Mirror of `count_missing`
+/// for union exhaustiveness.
+fn count_missing_union_members(types: List<ValueType>, matched: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i < types.length {
+        let name = vtype_display(types[i])
+        if !variant_in_matched(name, matched) { n = n + 1 }
+        i = i + 1
+    }
+    n
+}
+
+// ── Pattern variable binding ──
+
+/// Walk a single pattern binding every captured name into the
+/// type environment. so07.5 (T5): subject_ty propagates so
+/// constructor-pattern bindings carry the variant's field types
+/// instead of Unknown. Generic call inference in arm bodies can
+/// then pin type-params from those bindings.
+fn tc_bind_pattern(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
+    match pattern {
+        .Wildcard -> tc
+        .Variant(variant_name, bindings) -> {
+            // An optional `T?` subject carries no enum tag, so the present-bind
+            // arm (`let v ->`, lowered to `.Some(v)`) has no variant field to
+            // read its type from. Bind `v` directly to the inner `T` — the same
+            // type codegen unwraps it to — instead of leaking Unknown.
+            if vtype_is_optional(subject_ty) {
+                tc_bind_optional_present(tc, pattern, subject_ty)
+            } else {
+                tc_bind_pattern_params(tc, variant_name, bindings, subject_ty)
+            }
+        }
+        .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats, subject_ty)
+        .TypePattern(type_name, binding) -> tc_bind(tc, binding, resolve_vtype(tc, vtype_from_name(type_name)))
+        _ -> tc  // LitString, LitInt, LitBool, LitFloat — no bindings
+    }
+}
+
+/// Bind the present-bind capture of an optional `match` arm: `v` gets the
+/// inner `T` (exactly what codegen unwraps to). Absence arms and a
+/// `_`-named or empty binding capture nothing. Recognition goes through
+/// the core lowering-contract helpers — no variant-name strings here.
+fn tc_bind_optional_present(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
+    if !pattern_is_optional_present(pattern) { return tc }
+    let n = pattern_optional_binding(pattern)
+    if n == "" { return tc }
+    if n == "_" { return tc }
+    tc_bind(tc, n, vtype_strip_optional(subject_ty))
+}
+
+/// Open a fresh type-check scope for a pattern arm and bind
+/// every capture. `subject_ty` is the type of the matched value;
+/// pass `.Unknown` from callers that don't know it (e.g.
+/// subjectless `when` arms, which never reach the variant binder).
+export fn tc_enter_pattern_scope(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
+    tc_bind_pattern(tc_enter(tc), pattern, subject_ty)
+}
+
+/// Walk a `List<Pattern>` binding captures from every sub-pattern.
+fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>, subject_ty: ValueType) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < pats.length {
+        acc = tc_bind_pattern(acc, pats[i], subject_ty)
+        i = i + 1
+    }
+    acc
+}
+
+/// Bind every named param from a constructor pattern. so07.5 (T5):
+/// Self-recursive fields (`Self` or `List<Self>`) bind to `subject_ty`
+/// / `List<subject_ty>` so generic-call inference inside the arm body
+/// can pin type-params from those bindings.
+///
+/// so07.7.4 step 2: when subject_ty is a generic enum instance like
+/// `.Enum(name, type_args, _)`, build a `<T → concrete>` binding
+/// from the enum's declared type-params and substitute references
+/// in field.resolved before binding. Lets `match r { .Ok(v) -> v }`
+/// type `v` as the concrete `T` from `Result<int, E>` instead of
+/// the generic placeholder.
+///
+/// Underscore names are skipped. Non-Self fields flow through
+/// `pattern_binding_type` which returns the resolved field type
+/// directly (Self fields get projected to subject_ty).
+fn tc_bind_pattern_params(tc: TC, variant_name: string, params: List<ParamEntry>, subject_ty: ValueType) -> TC {
+    let subject_name = vtype_enum_name(subject_ty)
+    let fields = variant_field_list(tc.enums, subject_name, variant_name)
+    let generic_bindings = enum_generic_bindings(tc.enums, subject_name, subject_ty)
+    mut cur = tc
+    for i in 0..params.length {
+        let n = params[i].name
+        if n == "_" { continue }
+        let raw_field_ty = if i < fields.length { fields[i].resolved } else { ValueType.Unknown }
+        let field_ty = if generic_bindings.length > 0 { tc_subst_vtype(raw_field_ty, generic_bindings) } else { raw_field_ty }
+        cur = tc_bind(cur, n, pattern_binding_type(field_ty, subject_ty, subject_name))
+    }
+    cur
+}
+
+/// Build the type-arg binding list pairing the enum decl's
+/// type-params with the concrete args from `.Enum(_, type_args, _)`.
+/// Empty when the enum isn't registered, isn't generic, or the
+/// subject's type_args list is empty (e.g. monomorphized name).
+fn enum_generic_bindings(reg: EnumTypeReg, enum_name: string, subject_ty: ValueType) -> List<TypeArg> {
+    let empty: List<TypeArg> = []
+    if enum_name == "" { return empty }
+    let tp = enum_type_params(reg, enum_name)
+    if tp.length == 0 { return empty }
+    let type_args = vtype_enum_type_args(subject_ty)
+    if type_args.length == 0 { return empty }
+    mut out: List<TypeArg> = []
+    let n = if tp.length < type_args.length { tp.length } else { type_args.length }
+    for i in 0..n {
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: type_args[i] })
+    }
+    out
+}
+
+/// Pick the binding type for a pattern-param field. Self-recursive
+/// fields prefer `subject_ty`'s exact form (avoids bare-vs-qualified
+/// fallout). Otherwise we trust `field_ty` directly — by the time
+/// this fires, generic substitution has run (T→concrete) so a
+/// `field_ty` of `.Enum("Stmt", ...)` / `.Newtype("UserId", …)` /
+/// `.List(.Int)` is the user's actual declared shape. The only
+/// safe fallback is `Unknown` — and only for `.Unknown` itself or
+/// the unresolved `.Struct("T", 0)` shape that means
+/// "type-param never substituted".
+fn pattern_binding_type(field_ty: ValueType, subject_ty: ValueType, subject_name: string) -> ValueType {
+    if subject_name == "" { return ValueType.Unknown }
+    // A genuinely self-recursive field (`tail: List<T>` in a `List<T>` subject)
+    // prefers `subject_ty`'s canonical form to dodge bare-vs-qualified name
+    // fallout. But "same nominal" is NOT enough: a `Maybe<int>` field inside a
+    // `Maybe<Maybe<int>>` subject shares the nominal `Maybe` yet is a DIFFERENT
+    // instantiation — binding it to `subject_ty` would type the payload one
+    // level too deep (the nested-enum-match arm-type mismatch). Require the
+    // type-args to match too, so the shortcut fires only for true self-reference.
+    if nominal_name(field_ty) == subject_name && same_instantiation(field_ty, subject_ty) { return subject_ty }
+    match field_ty {
+        // Self-recursive list-of-Self projects subject_ty into the elem
+        // slot so generic-call inference inside the arm body can pin
+        // type-params from it (so07.5).
+        .List(elem) -> if nominal_name(elem) == subject_name { ValueType.List(subject_ty) } else { field_ty }
+        // Unresolved type-param leak: the generic substitution table
+        // didn't bind this T. Keep Unknown so downstream typeck
+        // doesn't act on a sentinel name.
+        .Unknown -> ValueType.Unknown
+        // .Struct("T", 0) is the unresolved-generic shape — also a
+        // wildcard for downstream typeck.
+        .Struct(_, _, id) if id == 0 -> ValueType.Unknown
+        // Everything else (primitives, fully-resolved nominals,
+        // Tuples, FnTyped, Newtype, Enum, etc.) flows through as-is.
+        _ -> field_ty
+    }
+}
+
+/// True when `field_ty` and `subject_ty` are the SAME generic instantiation —
+/// same number of type-args, each deep-equal. The outer nominal name is checked
+/// by the caller (tolerant of bare-vs-qualified); this guards the type-args so
+/// `Maybe<int>` is not treated as the same instantiation as `Maybe<Maybe<int>>`.
+fn same_instantiation(field_ty: ValueType, subject_ty: ValueType) -> bool {
+    let fa = vtype_type_args(field_ty)
+    let sa = vtype_type_args(subject_ty)
+    if fa.length != sa.length { return false }
+    mut i = 0
+    while i < fa.length {
+        if !vtype_eq_deep(fa[i], sa[i]) { return false }
+        i = i + 1
+    }
+    true
+}
+
+/// Nominal name from `.Struct` / `.Enum`; `""` for other shapes.
+fn nominal_name(t: ValueType) -> string {
+    match t {
+        .Struct(n, _, _) -> n
+        .Enum(n, _, _) -> n
+        _ -> ""
+    }
+}
+
+/// Look up `enum_name`'s `variant_name` field list, trying the name
+/// as-given then its `::`-stripped short form. Returns `[]` on miss.
+fn variant_field_list(reg: EnumTypeReg, enum_name: string, variant_name: string) -> List<FieldEntry> {
+    let empty: List<FieldEntry> = []
+    if enum_name == "" { return empty }
+    let direct = find_variant_fields(reg, enum_name, variant_name)
+    if direct != null { return direct! }
+    let short = type_short_name(enum_name)
+    if short == enum_name { return empty }
+    find_variant_fields(reg, short, variant_name) ?? empty
+}
+
+/// Single-shot variant fields lookup — returns null on miss so
+/// `variant_field_list` can fall through to its alternate-name probe.
+fn find_variant_fields(reg: EnumTypeReg, enum_name: string, variant_name: string) -> List<FieldEntry>? {
+    let v = variant_find(enum_type_variants(reg, enum_name), variant_name)
+    if v == null { return null }
+    v!.fields
+}
+
+// ── Match arm checking ──
+
+/// Open a fresh pattern scope for `arm` (binding every capture per
+/// so07.5) and run its guard if present. Returns the TC ready for
+/// the body check. Shared across check_match_arms,
+/// check_match_expr_arms, and check_match_expr_infer.
+fn enter_arm_with_guard(acc: TC, arm: MatchArm, subject_ty: ValueType) -> TC {
+    let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
+    if arm.guard == null { return with_bindings }
+    check_expr(with_bindings, arm.guard!.node).tc
+}
+
+/// Statement-position arm checker. Type-checks every arm's
+/// guard + body within a fresh pattern-scope; doesn't do type
+/// unification (statements don't produce values).
+/// True for a primitive SCALAR subject type — one that can never carry a
+/// variant pattern (no enum tag, no optional). Strings match via literal
+/// patterns, not variants, so they belong here too.
+fn scalar_match_subject(t: ValueType) -> bool {
+    vtype_is_value_scalar(t) || (t is .Str)
+}
+
+/// Reject a variant / present-bind pattern (`.Some(x)`, or the `let x ->` /
+/// `none ->` surface that lowers to it) on a primitive scalar subject. It is
+/// only meaningful on an enum or optional; on a scalar the codegen would
+/// mis-handle it (treat it as a catch-all, leave the binding undefined →
+/// F9999 ICE), so we diagnose it here with a clear F1000 instead.
+fn tc_reject_variant_on_scalar(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    if !scalar_match_subject(subject_ty) { return tc }
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let vn = pattern_variant_names(arms[i].pattern)
+        if vn != "" {
+            let msg = "a variant pattern `.${vn}` needs an enum or optional subject, not `${vtype_display(subject_ty)}` — present-bind (`let x ->` / `none ->`) requires the subject to be an optional `T?`"
+            acc = tc_report(acc, DiagCode.TypeMismatch, msg)
+        }
+        i = i + 1
+    }
+    acc
+}
+
+export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
+    mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
+    mut i = 0
+    while i < arms.length {
+        let b = check_expr(enter_arm_with_guard(acc, arms[i], subject_ty), arms[i].body.node)
+        acc = tc_exit(b.tc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Conflict-only check for a tail `match` STATEMENT used as an implicit return
+/// (`fn f() -> Box<string> { match c { _ -> Box { val: 9 } } }`). For each
+/// EXPRESSION-bodied arm: bind the arm's pattern in a fresh scope — the SAME
+/// `enter_arm_with_guard` the normal statement pass uses, so pattern vars resolve
+/// correctly (a binding-less re-walk mis-resolves them and breaks pry2) — type
+/// the body, then flag ONLY a generic-arg layout conflict against `declared`.
+/// Deliberately NO arm-type unification: a statement-match is exempt from it
+/// (`is_truthy` returns `int | bool`), and running the full expression check would
+/// wrongly reject that. Block arms carry their own `return`s (validated by
+/// tc_check_explicit_returns) and are skipped. Re-typing the arm bodies is
+/// redundant work but produces no new diagnostics on valid code, so it can't
+/// double-report.
+export fn tc_check_match_tail_conflict(tc: TC, fn_name: string, subject: Expr, arms: List<MatchArm>, declared: ValueType) -> TC {
+    let subject_ty = check_expr(tc, subject).ty
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        match arm.body.node {
+            .Block(_) -> {}
+            _ -> {
+                let br = check_expr(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node)
+                acc = tc_exit(br.tc)
+                // A memory-unsafe arm/return mismatch: a generic-arg conflict, an
+                // int into a string/bytes (scalar→pointer) slot, or a List/Map into
+                // a value-scalar slot (`match c { _ -> [1] }` into `-> int`). The
+                // FULL layout gate — this is a real return slot (unlike a fn param's
+                // extern i64-legacy `int`), so collection→scalar applies. It is NOT
+                // a full `vtype_assignable` check: a statement-match is exempt from
+                // arm-type unification (`is_truthy` legitimately yields `int | bool`),
+                // which assignability would wrongly reject; the scoped predicates
+                // catch the wild stores without that relapse.
+                acc = check_assign_layout(acc, br.ty, declared, "`${fn_name}` match-arm return")
+            }
+        }
+        i = i + 1
+    }
+    acc
+}
+
+// ── Match expression type inference ──
+
+/// Unify a single arm's type against the running seed. Skipping
+/// rules (divergent / Void / Unknown bodies) and bidirectional
+/// vtype_assignable checks live HERE — the three call sites in this
+/// file (`check_match_expr_arms`, `check_match_expr_infer`,
+/// `check_when_arms`) all delegate here so the F1000 rule has a
+/// single source of truth. See so07.1.
+///
+/// `host_tc` is the TC to attach the F1000 diagnostic to — callers
+/// pass either the post-exit `after` (match expressions) or the raw
+/// `b.tc` (when expressions, no pattern scope to exit).
+fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueType) -> TC {
+    if arm_type_skip(arm_body, arm_ty) { return host_tc }
+    if arm_type_skip(arm_body, seed) { return host_tc }
+    if vtype_assignable(arm_ty, seed) || vtype_assignable(seed, arm_ty) { return host_tc }
+    let msg = "match expression arms have different types: `${vtype_render_full(seed)}` vs `${vtype_render_full(arm_ty)}`"
+    tc_report(host_tc, DiagCode.TypeMismatch, msg)
+}
+
+/// Expression-position arm checker. Type-checks each arm and
+/// unifies the result types via `unify_arm_types`. so07.4 (T4):
+/// passes `first_ty` as the expected type for each arm body so
+/// `[]` and `[x]` literals inherit the list element type from the
+/// match's overall expected shape.
+export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
+    mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let b = check_expr_expected(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node, first_ty)
+        acc = unify_arm_types(tc_exit(b.tc), first_ty, arm.body.node, b.ty)
+        i = i + 1
+    }
+    tc_er(acc, first_ty)
+}
+
+/// Wrapper around `check_match_expr_arms` that picks a seed
+/// type from the first non-skip arm. Used when the caller
+/// doesn't have an expected type to seed unification with.
+export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> ExprResult {
+    mut acc = tc
+    mut seed: ValueType = ValueType.Unknown
+    mut found_seed = false
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let with_guard = enter_arm_with_guard(acc, arm, subject_ty)
+        // so07.4 (T4): once a seed is set, thread it as the expected
+        // type so subsequent ListLit arms inherit the element type.
+        // Before the seed is known, fall back to bottom-up inference.
+        let b = if found_seed { check_expr_expected(with_guard, arm.body.node, seed) }
+                else { check_expr(with_guard, arm.body.node) }
+        let after = tc_exit(b.tc)
+        if !found_seed {
+            // First arm whose body actually produces a usable type
+            // seeds the unification target for the remaining arms.
+            if !arm_type_skip(arm.body.node, b.ty) {
+                seed = b.ty
+                found_seed = true
+                acc = after
+                i = i + 1
+                continue
+            }
+            acc = after
+            i = i + 1
+            continue
+        }
+        // Seed is set: unify subsequent arms against it.
+        acc = unify_arm_types(after, seed, arm.body.node, b.ty)
+        i = i + 1
+    }
+    tc_er(acc, seed)
+}
+
+// ── Return type checking in match arms ──
+
+/// For a fn whose body is a `match`, verify every arm's tail
+/// expression is assignable to the fn's declared return type.
+/// Used when the user writes `fn f() -> T = match x { ... }`.
+export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: List<MatchArm>) -> TC {
+    mut acc = tc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        match arm.body.node {
+            .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, stmts)
+            // A non-block arm body's generic-arg conflict against the return type
+            // is handled by `tc_check_match_tail_conflict` (called from
+            // tc_check_implicit_return) — it binds the arm pattern correctly and
+            // skips arm-unification. It must NOT be re-checked HERE: this
+            // return-check context lacks the arm's bindings, so typing an arm body
+            // that references a pattern var (e.g. `@std`'s own `check_stmt` has
+            // `.Annotated(_, inner) -> … inner.node`) mis-resolves it and surfaces a
+            // spurious error — and tc diagnostics are side-effected, so discarding
+            // the probe's tc does NOT suppress them (verified: breaks
+            // pry2_return_local_binding three different ways). So this arm stays a
+            // no-op; the conflict for it is reported by tc_check_match_tail_conflict.
+            _ -> {}
+        }
+        i = i + 1
+    }
+    acc
+}
+
+// ── When expression type checking ──
+// Each condition must be bool-ish; return type unified across arms.
+
+/// Type-check a `when` (subjectless `match`) expression. Each
+/// arm's condition must be Bool; arm bodies unify in the same
+/// way as expression-position match arms.
+export fn check_when_expr(tc: TC, arms: List<WhenArm>) -> ExprResult {
+    if arms.length == 0 { return tc_er(tc, .Unknown) }
+    let first = arms[0]
+    let after_cond = if first.cond == null { tc } else { check_expr(tc, first.cond!.node).tc }
+    let b = check_expr(after_cond, first.body.node)
+    check_when_arms(b.tc, arms, 1, b.ty)
+}
+
+/// Iterative worker for `check_when_expr` — unifies arm body
+/// types against `first_ty` exactly like `check_match_expr_arms`.
+fn check_when_arms(tc: TC, arms: List<WhenArm>, start_idx: int, first_ty: ValueType) -> ExprResult {
+    mut cur = tc
+    mut i = start_idx
+    while i < arms.length {
+        let arm = arms[i]
+        let after_cond = if arm.cond == null { cur } else { check_expr(cur, arm.cond!.node).tc }
+        // so07.4 (T4): thread first_ty so ListLit arms inherit the element type.
+        let b = check_expr_expected(after_cond, arm.body.node, first_ty)
+        cur = unify_arm_types(b.tc, first_ty, arm.body.node, b.ty)
+        i = i + 1
+    }
+    tc_er(cur, first_ty)
+}

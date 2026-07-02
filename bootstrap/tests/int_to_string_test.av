@@ -1,0 +1,6 @@
+spec "int to string" {
+    then "converts int to string" {
+        let x = 42
+        string(x) == "42"
+    }
+}

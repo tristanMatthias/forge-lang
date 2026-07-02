@@ -1,0 +1,56 @@
+type CmesConfig = { mode: string, level: int }
+
+enum CmesAction {
+    Start(config: CmesConfig)
+    Stop
+    Restart(delay: int)
+}
+
+fn cmes_describe_action(a: CmesAction) -> string {
+    match a {
+        .Start(cfg) -> {
+            let mode_desc = match cfg.mode {
+                "debug" -> "DEBUG"
+                "release" -> "RELEASE"
+                _ -> "UNKNOWN"
+            }
+            `Starting in ${mode_desc} mode (level ${string(cfg.level)})`
+        }
+        .Stop -> "Stopping"
+        .Restart(d) -> `Restarting in ${string(d)}s`
+    }
+}
+
+fn cmes_badge(status: int) -> string {
+    let icon = match status {
+        200 -> "ok"
+        404 -> "not found"
+        500 -> "error"
+        _ -> "unknown"
+    }
+    `[${icon}] ${string(status)}`
+}
+
+spec "combo match enum struct" {
+    then "start debug" {
+        cmes_describe_action(CmesAction.Start(CmesConfig { mode: "debug", level: 3 })) == "Starting in DEBUG mode (level 3)"
+    }
+    then "start release" {
+        cmes_describe_action(CmesAction.Start(CmesConfig { mode: "release", level: 1 })) == "Starting in RELEASE mode (level 1)"
+    }
+    then "stop" {
+        cmes_describe_action(CmesAction.Stop) == "Stopping"
+    }
+    then "restart" {
+        cmes_describe_action(CmesAction.Restart(5)) == "Restarting in 5s"
+    }
+    then "badge 200" {
+        cmes_badge(200) == "[ok] 200"
+    }
+    then "badge 404" {
+        cmes_badge(404) == "[not found] 404"
+    }
+    then "badge unknown" {
+        cmes_badge(999) == "[unknown] 999"
+    }
+}

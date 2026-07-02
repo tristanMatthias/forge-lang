@@ -1,0 +1,51 @@
+// WHY: parses list literal `[expr, ...]` and list comprehension
+// `[expr for x in collection if? filter]`. A comprehension is
+// returned as a single-element element list whose only entry is
+// the bare `Expr.ListComp`; the caller in `parse/mod.av` unwraps
+// it so the comp doesn't get a spurious `ListLit` wrapper.
+
+use core.{Expr, SExpr, sexpr, ExprId}
+use parse.{Parser, ArgListIds}
+use core.{Tk}
+
+impl Parser {
+    fn parse_list_elements(self) -> Result<ArgListIds, string> {
+        mut out: List<SExpr> = []
+        mut ids: List<ExprId> = []
+        let expr_id = self.parse_expression()?
+
+        // List comprehension: [expr for x in collection if? filter]
+        if self.check(Tk.KwFor) {
+            self.advance()
+            let var_name = self.consume_identifier("expected variable name after `for`")?
+            if !self.consume(Tk.KwIn, "expected `in` after comprehension variable") { return .Err("parse error") }
+            let collection_id = self.parse_expression()?
+            mut filter: Expr? = none
+            let comp_id = if self.check(Tk.KwIf) {
+                self.advance()
+                let filter_id = self.parse_expression()?
+                filter = self.expr_of(filter_id)
+                let comp = Expr.ListComp(self.expr_of(expr_id), var_name, self.expr_of(collection_id), filter)
+                self.alloc3(comp, expr_id, collection_id, filter_id)
+            } else {
+                let comp = Expr.ListComp(self.expr_of(expr_id), var_name, self.expr_of(collection_id), filter)
+                self.alloc2(comp, expr_id, collection_id)
+            }
+            out.push(sexpr(self.expr_of(comp_id), self.current_line, self.current_column))
+            ids.push(comp_id)
+            return .Ok(ArgListIds { wrapped: out, ids: ids })
+        }
+
+        out.push(sexpr(self.expr_of(expr_id), self.current_line, self.current_column))
+        ids.push(expr_id)
+        // Regular list elements — accumulate in source order
+        while self.check(Tk.Comma) {
+            self.advance()
+            if self.check(Tk.RightBracket) { return .Ok(ArgListIds { wrapped: out, ids: ids }) }
+            let next_id = self.parse_expression()?
+            out.push(sexpr(self.expr_of(next_id), self.current_line, self.current_column))
+            ids.push(next_id)
+        }
+        .Ok(ArgListIds { wrapped: out, ids: ids })
+    }
+}

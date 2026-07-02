@@ -34,6 +34,6 @@ added or removed, making them safe to share across function boundaries without d
 crate::runtime_fn! { name: "forge_list_to_json", feature: "collections", params: [Ptr, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_list_int_to_json", feature: "collections", params: [Ptr, I64], ret: ForgeString }
 
-pub mod types;
-pub mod codegen;
 pub mod checker;
+pub mod codegen;
+pub mod types;

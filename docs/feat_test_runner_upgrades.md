@@ -1,4 +1,4 @@
-# Forge — Test Runner Output Spec
+# Avra — Test Runner Output Spec
 
 Two output modes: human (beautiful terminal UI) and stream (machine-parseable JSON lines). Both emit results in real-time as tests complete.
 
@@ -9,7 +9,7 @@ Two output modes: human (beautiful terminal UI) and stream (machine-parseable JS
 ### Live progress — tests appear as they complete
 
 ```
-  forge test
+  avra test
 
   ◐ User registration                          (3/7)
     given a new user with valid email
@@ -35,7 +35,7 @@ The `◐` spinner rotates live. Each test appears instantly on completion. No wa
         │            │
         .admin       expected .member
 
-        at tests/user_test.fg:14
+        at tests/user_test.av:14
 
     given a user with duplicate email
       ✓ creation fails                          0.3ms
@@ -87,7 +87,7 @@ Failures show the expression diff right there — no scrolling to the bottom.
         │                             │
         true                          expected false
 
-        at tests/email_test.fg:12, row 5
+        at tests/email_test.av:12, row 5
 ```
 
 ### Fuzz tests show progress bar
@@ -133,7 +133,7 @@ On timeout:
     - {"id":1,"name":"alice","email":"alice@test.com"}
     + {"id":1,"name":"alice","email":"alice@test.com","created_at":"2026-03-12"}
 
-    Run `forge test --update-snapshots` to accept
+    Run `avra test --update-snapshots` to accept
 ```
 
 ### Struct diffs
@@ -190,13 +190,13 @@ Always printed at the end. Compact but complete.
 
     1) User registration > given a new user > default role is member
        user.role == .member → got .admin
-       at tests/user_test.fg:14
+       at tests/user_test.av:14
 
     2) email validation > validates correctly (@no-user → false)
        validate_email("@no-user") == false → got true
-       at tests/email_test.fg:12
+       at tests/email_test.av:12
 
-  Run `forge test --filter "default role"` to rerun just this test
+  Run `avra test --filter "default role"` to rerun just this test
 
   ──────────────────────────────────────────────────────
   Duration: 1.2s | Files: 4 | Specs: 6 | Tests: 25
@@ -227,28 +227,28 @@ Always printed at the end. Compact but complete.
 One JSON object per line. Streaming — parseable line by line as events arrive.
 
 ```bash
-forge test --format=stream
+avra test --format=stream
 ```
 
 ### Events
 
 ```json
 {"event":"suite_start","timestamp":"2026-03-12T10:00:00Z","files":4,"specs":6,"tests":24}
-{"event":"file_start","file":"tests/user_test.fg"}
-{"event":"spec_start","spec":"User registration","file":"tests/user_test.fg"}
+{"event":"file_start","file":"tests/user_test.av"}
+{"event":"spec_start","spec":"User registration","file":"tests/user_test.av"}
 {"event":"given_start","name":"a new user with valid email","depth":1}
-{"event":"pass","test":"user is created with an id","duration_ms":0.2,"file":"tests/user_test.fg","line":5}
-{"event":"pass","test":"email is stored lowercase","duration_ms":0.1,"file":"tests/user_test.fg","line":9}
-{"event":"fail","test":"default role is member","duration_ms":0.1,"file":"tests/user_test.fg","line":14,"expected":".member","actual":".admin","expression":"user.role == .member","suggestion":{"message":"User.create sets role to .admin by default","edit":{"file":"src/user.fg","line":8,"old":"role: .admin","new":"role: .member"},"confidence":0.85}}
+{"event":"pass","test":"user is created with an id","duration_ms":0.2,"file":"tests/user_test.av","line":5}
+{"event":"pass","test":"email is stored lowercase","duration_ms":0.1,"file":"tests/user_test.av","line":9}
+{"event":"fail","test":"default role is member","duration_ms":0.1,"file":"tests/user_test.av","line":14,"expected":".member","actual":".admin","expression":"user.role == .member","suggestion":{"message":"User.create sets role to .admin by default","edit":{"file":"src/user.av","line":8,"old":"role: .admin","new":"role: .member"},"confidence":0.85}}
 {"event":"given_end","name":"a new user with valid email"}
 {"event":"given_start","name":"a user with duplicate email","depth":1}
-{"event":"pass","test":"creation fails","duration_ms":0.3,"file":"tests/user_test.fg","line":20}
-{"event":"pass","test":"error mentions email","duration_ms":0.2,"file":"tests/user_test.fg","line":24}
+{"event":"pass","test":"creation fails","duration_ms":0.3,"file":"tests/user_test.av","line":20}
+{"event":"pass","test":"error mentions email","duration_ms":0.2,"file":"tests/user_test.av","line":24}
 {"event":"given_end","name":"a user with duplicate email"}
 {"event":"spec_end","spec":"User registration","passed":4,"failed":1,"skipped":0,"todo":0,"duration_ms":0.9}
-{"event":"skip","test":"deletes user","reason":"skipped — delete not implemented","file":"tests/user_test.fg","line":30}
-{"event":"todo","test":"updates user email","file":"tests/user_test.fg","line":34}
-{"event":"file_end","file":"tests/user_test.fg","passed":4,"failed":1,"skipped":1,"todo":1}
+{"event":"skip","test":"deletes user","reason":"skipped — delete not implemented","file":"tests/user_test.av","line":30}
+{"event":"todo","test":"updates user email","file":"tests/user_test.av","line":34}
+{"event":"file_end","file":"tests/user_test.av","passed":4,"failed":1,"skipped":1,"todo":1}
 {"event":"suite_end","passed":18,"failed":1,"skipped":2,"todo":3,"duration_ms":1200,"files":4}
 ```
 
@@ -283,7 +283,7 @@ The `suggestion` field on `fail` events gives agents everything they need to aut
   "suggestion": {
     "message": "User.create sets role to .admin by default",
     "edit": {
-      "file": "src/user.fg",
+      "file": "src/user.av",
       "line": 8,
       "old": "role: .admin",
       "new": "role: .member"
@@ -300,7 +300,7 @@ Agent workflow: read fail event → apply suggestion edit → rerun test → rep
 ## Watch Mode (--watch)
 
 ```bash
-forge test --watch
+avra test --watch
 ```
 
 ```
@@ -310,7 +310,7 @@ forge test --watch
 On file change:
 
 ```
-  src/user.fg changed → rerunning 3 affected tests
+  src/user.av changed → rerunning 3 affected tests
 
   ✓ User registration > default role is member    0.1ms  (was ✖ failing)
   ✓ User registration > email is stored lowercase  0.1ms
@@ -329,7 +329,7 @@ Rules:
 Stream format for watch mode adds:
 
 ```json
-{"event":"watch_trigger","changed_file":"src/user.fg","rerunning_tests":3}
+{"event":"watch_trigger","changed_file":"src/user.av","rerunning_tests":3}
 {"event":"status_change","test":"default role is member","was":"fail","now":"pass"}
 ```
 
@@ -338,7 +338,7 @@ Stream format for watch mode adds:
 ## Coverage (--coverage)
 
 ```bash
-forge test --coverage
+avra test --coverage
 ```
 
 Appended after the summary:
@@ -346,21 +346,21 @@ Appended after the summary:
 ```
   Coverage: 84%
 
-  src/user.fg          ████████████████████░░░░  87%
-  src/auth.fg          ██████████████░░░░░░░░░░  62%  ← needs attention
-  src/tasks.fg         ████████████████████████  100%
-  src/utils.fg         ███████████████████░░░░░  81%
+  src/user.av          ████████████████████░░░░  87%
+  src/auth.av          ██████████████░░░░░░░░░░  62%  ← needs attention
+  src/tasks.av         ████████████████████████  100%
+  src/utils.av         ███████████████████░░░░░  81%
 
   Uncovered functions:
-    src/auth.fg:23     validate_token()
-    src/auth.fg:45     refresh_session()
-    src/user.fg:67     delete_user()
+    src/auth.av:23     validate_token()
+    src/auth.av:45     refresh_session()
+    src/user.av:67     delete_user()
 ```
 
 Stream format:
 
 ```json
-{"event":"coverage","total_percent":84,"files":[{"file":"src/user.fg","percent":87,"uncovered_lines":[67,68,69,70]},{"file":"src/auth.fg","percent":62,"uncovered_lines":[23,24,25,26,27,28,29,30,31,45,46,47,48,49,50,51,52]}]}
+{"event":"coverage","total_percent":84,"files":[{"file":"src/user.av","percent":87,"uncovered_lines":[67,68,69,70]},{"file":"src/auth.av","percent":62,"uncovered_lines":[23,24,25,26,27,28,29,30,31,45,46,47,48,49,50,51,52]}]}
 ```
 
 ---
@@ -368,7 +368,7 @@ Stream format:
 ## Benchmark Comparison (--bench --compare=branch)
 
 ```bash
-forge test --bench --compare=main
+avra test --bench --compare=main
 ```
 
 ```
@@ -381,10 +381,10 @@ forge test --bench --compare=main
   json parse             2.1ms     2.0ms      ~ no change
 
   ⚠ hash_map_insert regressed by 12%.
-    Run `forge bench hash_map_insert --profile` for details.
+    Run `avra bench hash_map_insert --profile` for details.
 ```
 
-Threshold for `⚠` warning: >10% slower (configurable in forge.toml).
+Threshold for `⚠` warning: >10% slower (configurable in avra.toml).
 
 Stream format:
 
@@ -399,25 +399,25 @@ Stream format:
 ## CLI Flags
 
 ```bash
-forge test                           # run all, human output
-forge test tests/user_test.fg        # run one file
-forge test --filter "user"           # run matching tests
-forge test --format=stream           # JSON lines for agents
-forge test --format=json             # full JSON report (not streaming)
-forge test --format=tap              # TAP protocol for CI
-forge test --watch                   # rerun on file change
-forge test --coverage                # show coverage
-forge test --bench                   # run benchmarks
-forge test --bench --compare=main    # benchmark vs branch
-forge test --fuzz                    # run fuzz tests
-forge test --fuzz --cases=10000      # more fuzz cases
-forge test --update-snapshots        # accept new snapshot values
-forge test --fail-fast               # stop on first failure
-forge test --parallel                # run specs in parallel
-forge test --timeout=30s             # global test timeout
-forge test --no-color                # strip ANSI for piping
-forge test --verbose                 # show passing test expressions too
-forge test --quiet                   # only show failures and summary
+avra test                           # run all, human output
+avra test tests/user_test.av        # run one file
+avra test --filter "user"           # run matching tests
+avra test --format=stream           # JSON lines for agents
+avra test --format=json             # full JSON report (not streaming)
+avra test --format=tap              # TAP protocol for CI
+avra test --watch                   # rerun on file change
+avra test --coverage                # show coverage
+avra test --bench                   # run benchmarks
+avra test --bench --compare=main    # benchmark vs branch
+avra test --fuzz                    # run fuzz tests
+avra test --fuzz --cases=10000      # more fuzz cases
+avra test --update-snapshots        # accept new snapshot values
+avra test --fail-fast               # stop on first failure
+avra test --parallel                # run specs in parallel
+avra test --timeout=30s             # global test timeout
+avra test --no-color                # strip ANSI for piping
+avra test --verbose                 # show passing test expressions too
+avra test --quiet                   # only show failures and summary
 ```
 
 ---
@@ -447,7 +447,7 @@ All colors stripped automatically when output is piped (not a TTY) or `--no-colo
 
 ---
 
-## forge.toml Test Configuration
+## avra.toml Test Configuration
 
 ```toml
 [test]

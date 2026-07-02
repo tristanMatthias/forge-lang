@@ -13,7 +13,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, PipeData, |data| self.compile_pipe(&data.left, &data.right))
+        feature_codegen!(self, fe, PipeData, |data| self
+            .compile_pipe(&data.left, &data.right))
     }
 
     /// Compile a pipe expression: `left |> right`
@@ -28,7 +29,12 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         match right {
             // a |> f(args)  =>  f(a, args) if f is a known function, else a.f(args)
-            Expr::Call { callee, args, type_args, .. } => {
+            Expr::Call {
+                callee,
+                args,
+                type_args,
+                ..
+            } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {
                     // If it's a known function, pipe as first argument: f(a, extra_args...)
                     if let Some(func) = self.functions.get(name).copied() {
@@ -63,21 +69,27 @@ impl<'ctx> Codegen<'ctx> {
                     result.try_as_basic_value().basic()
                 } else if let Some((ptr, _ty)) = self.lookup_var(name) {
                     // Variable holding a function pointer (e.g. closure)
-                    let fn_ptr_val = self.builder.build_load(
-                        self.context.ptr_type(inkwell::AddressSpace::default()),
-                        ptr,
-                        "fn_ptr",
-                    ).unwrap();
-                    let fn_type = self.context.i64_type().fn_type(
-                        &[self.context.i64_type().into()],
-                        false,
-                    );
-                    let result = self.builder.build_indirect_call(
-                        fn_type,
-                        fn_ptr_val.into_pointer_value(),
-                        &[arg.into()],
-                        "pipe_closure_result",
-                    ).unwrap();
+                    let fn_ptr_val = self
+                        .builder
+                        .build_load(
+                            self.context.ptr_type(inkwell::AddressSpace::default()),
+                            ptr,
+                            "fn_ptr",
+                        )
+                        .unwrap();
+                    let fn_type = self
+                        .context
+                        .i64_type()
+                        .fn_type(&[self.context.i64_type().into()], false);
+                    let result = self
+                        .builder
+                        .build_indirect_call(
+                            fn_type,
+                            fn_ptr_val.into_pointer_value(),
+                            &[arg.into()],
+                            "pipe_closure_result",
+                        )
+                        .unwrap();
                     result.try_as_basic_value().basic()
                 } else {
                     None

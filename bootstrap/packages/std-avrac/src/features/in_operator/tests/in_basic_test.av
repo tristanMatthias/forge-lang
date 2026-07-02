@@ -1,0 +1,13 @@
+spec "in operator" {
+    then "int membership" { 3 in [1, 2, 3, 4, 5] }
+    then "string membership" { "hello" in ["hello", "world", "foo"] }
+    then "negative test" { !(99 in [1, 2, 3]) }
+    then "empty list is always false" { !(3 in []) }
+    then "single element" { 3 in [3] }
+    then "in if-expression" {
+        (if 3 in [1, 2, 3] { "small" } else { "big" }) == "small"
+    }
+    then "combined with and" {
+        3 in [1, 2, 3] && "hello" in ["hello", "world"]
+    }
+}

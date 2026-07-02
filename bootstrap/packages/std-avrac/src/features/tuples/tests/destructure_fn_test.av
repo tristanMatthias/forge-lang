@@ -1,0 +1,16 @@
+/// Test fixture: returns a 2-tuple (100, 200) so the test can
+/// destructure the result via `let (a, b) = tdf_get_pair()`.
+fn tdf_get_pair() {
+    (100, 200)
+}
+
+spec "destructure fn" {
+    then "first element" {
+        let (a, b) = tdf_get_pair()
+        a == 100
+    }
+    then "second element" {
+        let (a, b) = tdf_get_pair()
+        b == 200
+    }
+}

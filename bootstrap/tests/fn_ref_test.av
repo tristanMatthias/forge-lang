@@ -1,0 +1,32 @@
+// Test: first-class function references.
+
+fn fref_double(n: int) -> int { n * 2 }
+fn fref_triple(n: int) -> int { n * 3 }
+fn fref_negate(n: int) -> int { 0 - n }
+
+fn fref_apply(f: fn(int) -> int, x: int) -> int { f(x) }
+
+fn fref_pick(use_double: bool) -> fn(int) -> int {
+    if use_double { fref_double } else { fref_triple }
+}
+
+spec "fn ref" {
+    then "store and call" {
+        fref_double(5) == 10
+    }
+    then "pass as argument double" {
+        fref_apply(fref_double, 7) == 14
+    }
+    then "pass as argument triple" {
+        fref_apply(fref_triple, 4) == 12
+    }
+    then "pass as argument negate" {
+        fref_apply(fref_negate, 10) == -10
+    }
+    then "return from function true" {
+        fref_pick(true)(6) == 12
+    }
+    then "return from function false" {
+        fref_pick(false)(6) == 18
+    }
+}

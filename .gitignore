@@ -3,5 +3,52 @@
 .dolt/
 *.db
 
+# Local-only docs Claude tools emit at repo root — keep them on
+# disk but out of git so `git add -A` doesn't drag them in.
+/ONBOARDING.md
+/SHIPPED_THIS_WEEK.md
+
 # Rust build artifacts
 **/target/
+
+# Test-runner artifact emitted when bs2 test is invoked from the repo root
+# (e.g. build/test_shards). Regenerable; never source. bootstrap/build is
+# already ignored via its own entry; this covers the root-level twin.
+/build/
+.ralph/logs/
+.ralph/.claude_session_id
+.ralph/.ralph_session
+.ralph/.call_count
+.ralph/.token_count
+.ralph/.circuit_breaker_history
+.ralph/.circuit_breaker_state
+.ralph/.exit_signals
+.ralph/.last_reset
+.ralph/.loop_start_sha
+.ralph/live.log
+.ralph/progress.json
+.ralph/status.json
+.ralph/docs/
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# sha256_file sidecar cache (mtime-keyed memo, runtime.c)
+*.avra-sha256
+
+# Gate/test logs (transient)
+.gt/
+
+# Pin-don't-vendor: the seed artifact is fetched per seed/seed.lock,
+# not tracked. A locally cycled seed.ll must never be committed either.
+bootstrap/seed/seed.ll
+
+# Agent tool worktree isolation (transient; never commit)
+.claude/worktrees/
+
+# Harness scheduler lock — session-local runtime state, must not be tracked.
+.claude/scheduled_tasks.lock

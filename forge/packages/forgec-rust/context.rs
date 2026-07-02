@@ -3,10 +3,7 @@
 /// Walks the typed AST after parse + type-check and collects all exported
 /// symbols: functions, types, enums, traits, and component blocks.
 /// Outputs a `.fg`-like text format summarizing the public API.
-
-use crate::parser::ast::{
-    ComponentBlockDecl, EnumVariant, Param, Program, Statement, TypeExpr,
-};
+use crate::parser::ast::{ComponentBlockDecl, EnumVariant, Param, Program, Statement, TypeExpr};
 
 /// A collected exported symbol from the AST.
 enum ExportedItem {
@@ -166,7 +163,11 @@ fn format_type_expr(ty: &TypeExpr) -> String {
             return_type,
         } => {
             let param_strs: Vec<String> = params.iter().map(|p| format_type_expr(p)).collect();
-            format!("({}) -> {}", param_strs.join(", "), format_type_expr(return_type))
+            format!(
+                "({}) -> {}",
+                param_strs.join(", "),
+                format_type_expr(return_type)
+            )
         }
         TypeExpr::Struct { fields } => {
             if fields.is_empty() {
@@ -180,14 +181,22 @@ fn format_type_expr(ty: &TypeExpr) -> String {
             }
         }
         TypeExpr::Without { base, fields } => {
-            format!("{} without {{{}}}", format_type_expr(base), fields.join(", "))
+            format!(
+                "{} without {{{}}}",
+                format_type_expr(base),
+                fields.join(", ")
+            )
         }
         TypeExpr::TypeWith { base, fields } => {
             let field_strs: Vec<String> = fields
                 .iter()
                 .map(|f| format!("{}: {}", f.name, format_type_expr(&f.type_expr)))
                 .collect();
-            format!("{} with {{ {} }}", format_type_expr(base), field_strs.join(", "))
+            format!(
+                "{} with {{ {} }}",
+                format_type_expr(base),
+                field_strs.join(", ")
+            )
         }
         TypeExpr::Only { base, fields } => {
             format!("{} only {{{}}}", format_type_expr(base), fields.join(", "))
@@ -217,10 +226,7 @@ fn format_context(items: &[ExportedItem], package_name: Option<&str>) -> String 
     } else {
         out.push_str("// Context\n");
     }
-    out.push_str(&format!(
-        "// Generated: {}\n",
-        chrono_free_timestamp()
-    ));
+    out.push_str(&format!("// Generated: {}\n", chrono_free_timestamp()));
     out.push('\n');
 
     // Group items by category
@@ -301,7 +307,9 @@ fn format_context(items: &[ExportedItem], package_name: Option<&str>) -> String 
         for item in &constants {
             if let ExportedItem::Constant { name, type_ann } = item {
                 match type_ann {
-                    Some(ty) => out.push_str(&format!("export let {}: {}\n", name, format_type_expr(ty))),
+                    Some(ty) => {
+                        out.push_str(&format!("export let {}: {}\n", name, format_type_expr(ty)))
+                    }
                     None => out.push_str(&format!("export let {}\n", name)),
                 }
             }
@@ -335,7 +343,11 @@ fn format_type_decl(name: &str, value: &TypeExpr) -> String {
             } else {
                 let mut s = format!("export type {} = {{\n", name);
                 for f in fields {
-                    s.push_str(&format!("    {}: {}\n", f.name, format_type_expr(&f.type_expr)));
+                    s.push_str(&format!(
+                        "    {}: {}\n",
+                        f.name,
+                        format_type_expr(&f.type_expr)
+                    ));
                 }
                 s.push('}');
                 s
@@ -361,10 +373,7 @@ fn format_enum_decl(name: &str, variants: &[EnumVariant]) -> String {
 }
 
 /// Format a trait declaration.
-fn format_trait_decl(
-    name: &str,
-    methods: &[(String, Vec<Param>, Option<TypeExpr>)],
-) -> String {
+fn format_trait_decl(name: &str, methods: &[(String, Vec<Param>, Option<TypeExpr>)]) -> String {
     let mut s = format!("export trait {} {{\n", name);
     for (mname, params, ret) in methods {
         let param_strs: Vec<String> = params.iter().map(|p| format_param(p)).collect();
@@ -375,11 +384,7 @@ fn format_trait_decl(
                 param_strs.join(", "),
                 format_type_expr(ty)
             )),
-            None => s.push_str(&format!(
-                "    fn {}({})\n",
-                mname,
-                param_strs.join(", ")
-            )),
+            None => s.push_str(&format!("    fn {}({})\n", mname, param_strs.join(", "))),
         }
     }
     s.push('}');

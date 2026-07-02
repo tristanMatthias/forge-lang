@@ -1,0 +1,1935 @@
+// WHY: @std/lsp — language-server foundation for Avra tooling.
+//
+// One typed symbol graph; many consumers. The doc tool, hover,
+// go-to-def, find-references, completion, and `--callers` all read
+// this graph. Tickets in epic forge-crafting-intepreters-rnb9 layer:
+//   .2  fuzzy match utility (next ticket)
+//   .3  AST-based extractor populating the graph
+//   .4  hierarchical addressing
+//   .5  in-process query API (hover/definition/references/callers/completion)
+//   .6  JSON-RPC stdio protocol (`avra lsp`)
+//   .7  incremental, mtime-keyed reindex
+//
+// Layout decision: kept as a single file (.1 skeleton) because the
+// bootstrap module resolver currently mangles type lookup paths when
+// a multi-file package is wrapped by the test runner's outer
+// `Stmt.Module` wrapper. The file is internally sectioned with thick
+// banners that map onto the originally-planned submodules:
+//
+//   ── LspSpan ──     positions, ranges, locations
+//   ── Graph ──    SymKind, Sym, SymbolGraph, queries
+//   ── Corpus ──   trait + IoError + EmptyCorpus default
+//   ── Query ──    Hover, CompletionItem, Scope, Query trait, free fns
+//
+// When the resolver gains proper multi-file package support, split
+// back into span.av / graph.av / corpus.av / query.av — the section
+// boundaries are already aligned for that.
+
+// JSON helpers (json_escape, json_str, jsonrpc_response/error,
+// json_extract_string/int, json_value_start, json_escape_char,
+// json_unescape_char) live in this file. They duplicate the
+// canonical algorithm in @std/json deliberately:
+//
+// The bootstrap module resolver dedupes the second `use @std.json`
+// it encounters across packages — only the first importer gets the
+// bindings injected into its scope. Diagnostics/render.av imports
+// @std/json for the compiler-side json_escape; if @std.lsp also
+// imported @std.json, whichever loaded second would silently lose
+// every helper it asked for. Duplicating the algorithm side-steps
+// the bug. The two implementations are kept in sync by hand —
+// when one changes, update the other.
+//
+// User-facing consumers of JSON (any new code) should import
+// @std/json. @std.lsp's internal json_* are private to the LSP
+// protocol layer.
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              SPAN                                 ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// 1-based positions matching diagnostics + LSP convention.
+// Spans carry no file path — that lives on the enclosing LspLocation, so
+// the same LspSpan can be relativised across consumers.
+
+/// A 1-based file position. Line and column count from 1.
+export type LspPos = {
+    line: int,
+    col: int
+}
+
+/// A half-open range within a single source file: [start, end).
+export type LspSpan = {
+    start: LspPos,
+    end: LspPos
+}
+
+/// A span anchored to a specific file path.
+export type LspLocation = {
+    file: string,
+    span: LspSpan
+}
+
+/// Construct an LspPos. Lines and columns are 1-based, matching the
+/// LSP protocol and the way the indexer reports source positions.
+export fn lsp_pos(line: int, col: int) -> LspPos {
+    LspPos { line, col }
+}
+
+/// The conventional "no position known" sentinel: line 1, column 1.
+/// Use this when an indexer can't attribute a Sym to a specific source
+/// location (e.g. synthesised symbols from generated code).
+export fn lsp_pos_zero() -> LspPos {
+    LspPos { line: 1, col: 1 }
+}
+
+/// Build a span from explicit start / end positions. Half-open:
+/// `start` is inclusive, `end` is exclusive — matches lsp_span_contains.
+export fn lsp_span(start: LspPos, end: LspPos) -> LspSpan {
+    LspSpan { start, end }
+}
+
+/// A single-point span, useful when only the start is known.
+export fn lsp_span_point(p: LspPos) -> LspSpan {
+    LspSpan { start: p, end: p }
+}
+
+/// Pair a span with the source file it lives in. The standard "where
+/// is this symbol?" record returned by definition / hover queries.
+export fn lsp_location(file: string, span: LspSpan) -> LspLocation {
+    LspLocation { file, span }
+}
+
+/// True if `p` falls within `s` (inclusive of start, exclusive of end).
+export fn lsp_span_contains(s: LspSpan, p: LspPos) -> bool {
+    let after_start = p.line > s.start.line
+        || (p.line == s.start.line && p.col >= s.start.col)
+    let before_end = p.line < s.end.line
+        || (p.line == s.end.line && p.col < s.end.col)
+    after_start && before_end
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              GRAPH                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// SymKind variants are *string-typed* — the indexer (.3) renders the
+// AST into prebuilt strings ("fn square(x: int) -> int"). std-lsp
+// itself never imports compiler internals, keeping the package
+// portable to any context that has a parsed source corpus.
+//
+// SymId is a stable djb2 hash of the qualified path. Same module +
+// same name always hashes to the same id, so caches keyed by id
+// survive across runs and across compiler versions. Hash collisions
+// are vanishingly unlikely; `graph_by_qualified` re-checks the string
+// on the way out.
+//
+// The graph is a `List<Sym>` for v1. Linear scans dominate
+// readability; ticket .7 introduces a hash-keyed sidecar for
+// incremental rebuilds.
+
+/// Stable identifier — djb2(qualified_path).
+export type SymId = {
+    value: int
+}
+
+// What kind of thing a symbol *is*. Each variant carries a
+/// pre-rendered signature so consumers don't need the typed AST.
+export enum SymKind {
+    Fn(sig: string, ret: string)
+    Type(rendered: string)
+    Enum(variants_csv: string)
+    Trait(rendered: string)
+    Impl(trait_name: string, type_name: string)
+    Const(ty: string)
+    Mut(ty: string)
+    Let(ty: string)
+    ErrorCode(message: string)
+    Keyword(grammar: string)
+    Module
+}
+
+/// One symbol in the graph.
+export type Sym = {
+    id: SymId,
+    name: string,
+    qualified: string,
+    kind: SymKind,
+    doc: string,
+    file: string,
+    span: LspSpan,
+    exported: bool,
+    tags_csv: string
+}
+
+/// The graph itself. Opaque-ish; consumers go through query helpers.
+export type SymbolGraph = {
+    syms: List<Sym>
+}
+
+// ── Construction ────────────────────────────────────────────────────
+
+/// Empty graph. Build up via `graph_add` or `graph_extend`. Held by
+/// every higher-level API as the canonical symbol-source.
+export fn graph_new() -> SymbolGraph {
+    SymbolGraph { syms: [] }
+}
+
+/// Append a sym. Insertion order is preserved in `syms`.
+export fn graph_add(g: SymbolGraph, s: Sym) -> SymbolGraph {
+    mut out = g.syms
+    out.push(s)
+    g with { syms: out }
+}
+
+/// Append a `List<Sym>` to the graph. Cheaper than repeated
+/// `graph_add` when bulk-loading from a single corpus / file.
+export fn graph_extend(g: SymbolGraph, list: List<Sym>) -> SymbolGraph {
+    g with { syms: sym_list_concat(g.syms, list) }
+}
+
+// ── Identity ────────────────────────────────────────────────────────
+
+// Stable djb2 hash. Avra has no bitshift operator, so the canonical
+/// `(h << 5) + h` is rewritten as `h * 33`.
+export fn sym_id_for(qualified: string) -> SymId {
+    SymId { value: djb2(qualified) }
+}
+
+/// Stable djb2 hash. Avra has no bitshift operator at this layer, so
+/// the canonical `(h << 5) + h` is rewritten as `h * 33`.
+fn djb2(s: string) -> int {
+    mut h = 5381
+    mut i = 0
+    while i < s.length {
+        let c = s.substring(i, i + 1).char_code()
+        h = h * 33 + c
+        i = i + 1
+    }
+    h
+}
+
+/// Convenience: create a Sym with a derived id.
+export fn sym_new(name: string, qualified: string, kind: SymKind,
+                  doc: string, file: string, span: LspSpan,
+                  exported: bool, tags_csv: string) -> Sym {
+    Sym {
+        id: sym_id_for(qualified),
+        name,
+        qualified,
+        kind,
+        doc,
+        file,
+        span,
+        exported,
+        tags_csv
+    }
+}
+
+// ── Queries ─────────────────────────────────────────────────────────
+
+/// All symbols in the graph (in insertion order).
+export fn graph_all(g: SymbolGraph) -> List<Sym> {
+    g.syms
+}
+
+/// Total number of Sym entries in the graph.
+export fn graph_count(g: SymbolGraph) -> int {
+    g.syms.length
+}
+
+/// Lookup by stable id. None if not present.
+export fn graph_by_id(g: SymbolGraph, id: SymId) -> Sym? {
+    sym_list_find_id(g.syms, id)
+}
+
+/// Lookup by display name (case-insensitive). Returns the first match.
+export fn graph_by_name(g: SymbolGraph, name: string) -> Sym? {
+    sym_list_find_name(g.syms, name)
+}
+
+/// Every symbol whose display name equals `name` (modulo case).
+export fn graph_all_by_name(g: SymbolGraph, name: string) -> List<Sym> {
+    collect_by_name(g.syms, name)
+}
+
+/// Lookup by fully-qualified path.
+export fn graph_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
+    let id = sym_id_for(qualified)
+    let found = sym_list_find_id(g.syms, id)
+    if found == null {
+        return null
+    }
+    if found!.qualified == qualified {
+        return found
+    }
+    sym_list_find_qualified(g.syms, qualified)
+}
+
+/// Every symbol whose qualified path is a (transitive) descendant of
+/// `prefix`. `graph_children(g, "core")` returns `core::ast::Expr`,
+/// `core::ast`, `core::ast::vtype_display`, etc. Use
+/// `graph_direct_children` for one-level navigation.
+export fn graph_children(g: SymbolGraph, prefix: string) -> List<Sym> {
+    collect_children(g.syms, prefix)
+}
+
+/// Direct (immediate) children only — one level below `prefix`. So
+/// `graph_direct_children(g, "core")` returns `core::ast` and
+/// `core::runtime` but not `core::ast::Expr`.
+///
+/// This is the navigation primitive for `avra docs <module>`: showing
+/// what's *inside* a module without flattening the tree.
+export fn graph_direct_children(g: SymbolGraph, prefix: string) -> List<Sym> {
+    collect_direct_children(g.syms, prefix)
+}
+
+/// Top-level module roots — symbols whose qualified path has no
+/// `::` separator. Used by `avra docs` (no args) to show the
+/// project's top-level shape instead of dumping every symbol flat.
+export fn graph_module_roots(g: SymbolGraph) -> List<Sym> {
+    collect_module_roots(g.syms)
+}
+
+/// Resolve a possibly-partial path to a Sym.
+///
+/// Accepts three forms:
+///   - fully qualified: "core::ast::Expr"   → exact lookup
+///   - anchored suffix: "ast::Expr"          → unique suffix match
+///   - bare name:       "Expr"               → first exact-name match
+///
+/// Returns the resolved Sym or null. Disambiguation when multiple
+/// matches exist is the caller's job — call `graph_resolve_all` to
+/// see every match.
+export fn graph_resolve(g: SymbolGraph, path: string) -> Sym? {
+    if path.contains("::") {
+        let exact = graph_by_qualified(g, path)
+        if exact != null {
+            return exact
+        }
+        // Anchored suffix: "ast::Expr" matches "core::ast::Expr".
+        let suffix = "::${path}"
+        let candidates = collect_qualified_suffix(g.syms, suffix)
+        if candidates.length > 0 { return candidates[0] }
+        return null
+    }
+    graph_by_name(g, path)
+}
+
+/// Every match for a partial path. Used by `avra docs Expr` to
+/// produce a disambiguation prompt when multiple symbols share a
+/// short name.
+export fn graph_resolve_all(g: SymbolGraph, path: string) -> List<Sym> {
+    if path.contains("::") {
+        let exact = graph_by_qualified(g, path)
+        if exact != null {
+            let single: List<Sym> = [exact!]
+            return single
+        }
+        return collect_qualified_suffix(g.syms, "::${path}")
+    }
+    graph_all_by_name(g, path)
+}
+
+// ── Path utilities ──────────────────────────────────────────────────
+
+/// Drop the last `::`-separated segment, returning the parent path.
+/// `qualified_parent("core::ast::Expr")` → "core::ast".
+/// `qualified_parent("Expr")` → "".
+export fn qualified_parent(qualified: string) -> string {
+    let last = qualified_last_separator(qualified)
+    if last < 0 { return "" }
+    qualified.substring(0, last)
+}
+
+/// Return the leaf segment — the part after the final `::`.
+/// `qualified_leaf("core::ast::Expr")` → "Expr".
+export fn qualified_leaf(qualified: string) -> string {
+    let last = qualified_last_separator(qualified)
+    if last < 0 { return qualified }
+    qualified.substring(last + 2, qualified.length)
+}
+
+/// Depth of the path: number of `::` separators. Top-level = 0.
+export fn qualified_depth(qualified: string) -> int {
+    mut depth = 0
+    mut i = 0
+    while i + 1 < qualified.length {
+        if qualified.substring(i, i + 2) == "::" {
+            depth = depth + 1
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    depth
+}
+
+/// Render breadcrumbs: "core ▸ ast ▸ Expr". Used by detail views
+/// (`avra docs core::ast::Expr` shows the parent chain at the top).
+export fn qualified_breadcrumbs(qualified: string) -> string {
+    if qualified == "" { return "" }
+    mut acc = ""
+    mut start = 0
+    mut i = 0
+    while i + 1 < qualified.length {
+        if qualified.substring(i, i + 2) == "::" {
+            let seg = qualified.substring(start, i)
+            acc = if acc == "" { seg } else { "${acc} ▸ ${seg}" }
+            start = i + 2
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    let last = qualified.substring(start, qualified.length)
+    if acc == "" { last } else { "${acc} ▸ ${last}" }
+}
+
+/// Index of the last `::` in a qualified path, or -1 when absent.
+/// Walks right-to-left so deeply nested modules stay O(name).
+fn qualified_last_separator(qualified: string) -> int {
+    mut i = qualified.length - 2
+    while i >= 0 {
+        if qualified.substring(i, i + 2) == "::" {
+            return i
+        }
+        i = i - 1
+    }
+    -1
+}
+
+// ── Tree rendering ──────────────────────────────────────────────────
+
+/// Render a hierarchy summary for `prefix` (or every top-level when
+/// `prefix == ""`). Each line shows: leaf name, child count.
+/// Lightweight — the docs CLI layers ANSI + truncation on top.
+export fn render_tree_summary(g: SymbolGraph, prefix: string) -> string {
+    let direct = if prefix == "" {
+        graph_module_roots(g)
+    } else {
+        graph_direct_children(g, prefix)
+    }
+    render_tree_lines(g, direct, "")
+}
+
+/// Render `list` as one indented line per node, with child counts.
+/// `indent` is prepended verbatim — callers feed `""` at the root.
+fn render_tree_lines(g: SymbolGraph, list: List<Sym>, indent: string) -> string {
+    mut out = ""
+    for s in list {
+        let leaf = qualified_leaf(s.qualified)
+        let kid_count = graph_direct_children(g, s.qualified).length
+        let count_str = if kid_count > 0 { " (${string(kid_count)})" } else { "" }
+        let line = "${indent}${leaf}${count_str}\n"
+        out = "${out}${line}"
+    }
+    out
+}
+
+// ── Hierarchy collection internals ──────────────────────────────────
+
+/// Filter `list` to immediate children of the qualified `prefix`
+/// (one `::` deeper than `prefix`). When `prefix == ""`, returns
+/// the top-level — symbols with no `::` in their qualified path.
+fn collect_direct_children(list: List<Sym>, prefix: string) -> List<Sym> {
+    let pfx_dot = "${prefix}::"
+    let pfx_depth = if prefix == "" { -1 } else { qualified_depth(prefix) }
+    sym_list_filter(list, (item: Sym) -> {
+        let q = item.qualified
+        if prefix == "" {
+            !q.contains("::")
+        } else {
+            q.starts_with(pfx_dot) && qualified_depth(q) == pfx_depth + 1
+        }
+    })
+}
+
+/// Filter `list` to module-root symbols — those whose qualified
+/// path has no `::`, i.e. top-level types / fns.
+fn collect_module_roots(list: List<Sym>) -> List<Sym> {
+    sym_list_filter(list, (item: Sym) -> !item.qualified.contains("::"))
+}
+
+/// Filter `list` to symbols whose qualified path ends in `suffix`
+/// (the `::leaf` form) or equals the leaf bare. Used by the
+/// hierarchy resolver for ambiguous-name fallback.
+fn collect_qualified_suffix(list: List<Sym>, suffix: string) -> List<Sym> {
+    let leaf = suffix.substring(2, suffix.length)
+    sym_list_filter(list, (item: Sym) -> item.qualified.ends_with(suffix) || item.qualified == leaf)
+}
+
+// ── List helpers ────────────────────────────────────────────────────
+
+/// First Sym matching `pred`, or null. Indexed walk; closure form
+/// lets every caller state its rule inline.
+fn sym_list_find(list: List<Sym>, pred: fn(Sym) -> bool) -> Sym? {
+    mut i = 0
+    while i < list.length {
+        let item = list[i]
+        if pred(item) { return item }
+        i = i + 1
+    }
+    null
+}
+
+/// Find a Sym by stable id (djb2 of qualified path).
+fn sym_list_find_id(list: List<Sym>, id: SymId) -> Sym? {
+    sym_list_find(list, (item: Sym) -> item.id.value == id.value)
+}
+
+/// Find a Sym by short name, case-insensitive.
+fn sym_list_find_name(list: List<Sym>, name: string) -> Sym? {
+    let want = name.to_lower()
+    sym_list_find(list, (item: Sym) -> item.name.to_lower() == want)
+}
+
+/// Find a Sym by exact qualified path. Case-sensitive.
+fn sym_list_find_qualified(list: List<Sym>, qualified: string) -> Sym? {
+    sym_list_find(list, (item: Sym) -> item.qualified == qualified)
+}
+
+/// Filter a `List<Sym>` by predicate, preserving original order.
+/// Closure form replaces what used to be six near-identical
+/// accumulator loops.
+fn sym_list_filter(list: List<Sym>, pred: fn(Sym) -> bool) -> List<Sym> {
+    mut acc: List<Sym> = []
+    for item in list {
+        if pred(item) { acc.push(item) }
+    }
+    acc
+}
+
+/// All Syms whose short name matches `name` case-insensitively.
+fn collect_by_name(list: List<Sym>, name: string) -> List<Sym> {
+    let want = name.to_lower()
+    sym_list_filter(list, (item: Sym) -> item.name.to_lower() == want)
+}
+
+/// All Syms whose qualified path lives under `prefix` (any depth).
+/// Distinct from `collect_direct_children` which restricts to one level.
+fn collect_children(list: List<Sym>, prefix: string) -> List<Sym> {
+    let pfx_dot = "${prefix}::"
+    sym_list_filter(list, (item: Sym) -> item.qualified.starts_with(pfx_dot))
+}
+
+/// Append `b` after `a`. O(n) in `b` — used by `graph_extend`,
+/// the indexer's per-file concatenation, and the docs corpus
+/// scope-merging path.
+export fn sym_list_concat(a: List<Sym>, b: List<Sym>) -> List<Sym> {
+    mut out = a
+    for x in b { out.push(x) }
+    out
+}
+
+// ── Display helpers ─────────────────────────────────────────────────
+
+// One-line rendering of what a symbol is. Used by --short, search
+/// snippets, and any renderer that wants a uniform header.
+export fn sym_kind_render(k: SymKind) -> string {
+    match k {
+        .Fn(sig, _) -> sig
+        .Type(rendered) -> rendered
+        .Enum(variants_csv) -> if variants_csv == "" { "enum" } else { "enum { ${variants_csv} }" }
+        .Trait(rendered) -> rendered
+        .Impl(trait_name, type_name) -> "impl ${trait_name} for ${type_name}"
+        .Const(ty) -> if ty == "" { "const" } else { "const: ${ty}" }
+        .Mut(ty) -> if ty == "" { "mut" } else { "mut: ${ty}" }
+        .Let(ty) -> if ty == "" { "let" } else { "let: ${ty}" }
+        .ErrorCode(message) -> message
+        .Keyword(grammar) -> grammar
+        .Module -> "module"
+    }
+}
+
+/// Short tag for grouping in summaries.
+export fn sym_kind_tag(k: SymKind) -> string {
+    match k {
+        .Fn(_, _) -> "fn"
+        .Type(_) -> "type"
+        .Enum(_) -> "enum"
+        .Trait(_) -> "trait"
+        .Impl(_, _) -> "impl"
+        .Const(_) -> "const"
+        .Mut(_) -> "mut"
+        .Let(_) -> "let"
+        .ErrorCode(_) -> "error"
+        .Keyword(_) -> "keyword"
+        .Module -> "module"
+    }
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              CORPUS                               ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// One trait, many implementations. Tickets layer:
+//   ProjectCorpus    — walks .av files in cwd (.3, replaces docs/mod.av)
+//   LangCorpus       — generated language reference (x35m.7)
+//   ErrorCodeCorpus  — diagnostics F-codes (folded into LangCorpus or split)
+//   StdlibCorpus     — once stdlib stabilises (deferred)
+
+// Errors any corpus extractor can raise. Kept small and self-contained
+/// so std-lsp doesn't pull in the compiler's CompileError machinery.
+export enum IoError {
+    NotFound(path: string)
+    PermissionDenied(path: string)
+    ParseFailed(path: string, message: string)
+    Other(message: string)
+}
+
+// One source of symbols. Methods (parser doesn't yet accept `///`
+// inside trait bodies, so the contract is documented here):
+//   id()          — "project" / "lang" / "errors" / "stdlib"
+//   description() — one-liner for help screens
+///   extract()     — pull every symbol; incremental caching is .7
+export trait Corpus {
+    fn id(self) -> string
+    fn description(self) -> string
+    fn extract(self) -> Result<List<Sym>, IoError>
+}
+
+/// Corpus that yields no symbols. Plays the null-object role for
+/// composition: `build_graph(corpora)` accepts an EmptyCorpus the same
+/// way it accepts any other Corpus impl, so spec tests can fix the
+/// upstream without injecting test doubles.
+/// @field label — short identifier returned by `id()`; defaults to
+///                 "empty" via `empty_corpus_new`.
+export type EmptyCorpus = {
+    label: string
+}
+
+/// Construct an EmptyCorpus with the canonical "empty" label. Use
+/// when a Corpus value is required structurally but the test or
+/// scaffolding shouldn't introduce real symbols.
+export fn empty_corpus_new() -> EmptyCorpus {
+    EmptyCorpus { label: "empty" }
+}
+
+impl Corpus for EmptyCorpus {
+    fn id(self) -> string { self.label }
+    fn description(self) -> string { "yields no symbols (placeholder for tests)" }
+    fn extract(self) -> Result<List<Sym>, IoError> { Result.Ok([]) }
+}
+
+// build_graph(corpora) lives with the unified --scope CLI (epic
+// forge-crafting-intepreters-x35m.6) — composition belongs at the
+// consumer layer, not in std-lsp itself.
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              QUERY                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// The skeleton (.1) declares the API shape. Ticket .5 fills in the
+// non-trivial methods (hover, definition, references, completion,
+// callers) — signatures here are stable so consumers can be written
+// against this file before .5 lands.
+
+// A hover response: documentation rendered for display, with the
+/// authoritative location of the symbol it describes.
+export type Hover = {
+    sym: Sym,
+    rendered: string
+}
+
+// Completion candidate. Ticket .5 expands this with kind icons,
+/// detail (signature), and documentation tail.
+export type CompletionItem = {
+    label: string,
+    detail: string,
+    sym: Sym
+}
+
+/// Scoped enumeration: "all syms", "this file", "this module".
+export enum Scope {
+    All
+    File(path: string)
+    Module(qualified: string)
+}
+
+// The query trait. v1 has free-function variants below; the trait
+// exists so ticket .5 can plug in alternative backends (e.g. an
+/// indexed cache) without changing call sites.
+export trait Query {
+    fn hover(self, file: string, pos: LspPos) -> Hover?
+    fn definition(self, file: string, pos: LspPos) -> LspLocation?
+    fn references(self, sym: SymId) -> List<LspLocation>
+    fn callers(self, sym: SymId) -> List<Sym>
+    fn completion(self, file: string, pos: LspPos, prefix: string) -> List<CompletionItem>
+    fn symbols(self, scope: Scope) -> List<Sym>
+}
+
+// ── v1 query helpers (graph-only, no caching) ───────────────────────
+//
+// These satisfy ticket .1's acceptance criteria for graph access.
+// Position-aware queries (hover/definition by LspPos) need span-indexed
+// lookup that lands in ticket .5.
+
+/// Look up a symbol by stable id.
+export fn query_by_id(g: SymbolGraph, id: SymId) -> Sym? {
+    graph_by_id(g, id)
+}
+
+/// Look up a symbol by display name (case-insensitive).
+export fn query_by_name(g: SymbolGraph, name: string) -> Sym? {
+    graph_by_name(g, name)
+}
+
+/// Look up a symbol by fully-qualified path.
+export fn query_by_qualified(g: SymbolGraph, qualified: string) -> Sym? {
+    graph_by_qualified(g, qualified)
+}
+
+/// Every symbol in the graph.
+export fn query_all(g: SymbolGraph) -> List<Sym> {
+    graph_all(g)
+}
+
+// ── Call graph + references ────────────────────────────────────────
+//
+// One CallEdge per "X uses Y" relationship — function call, type
+// reference, enum-ctor mention. The indexer (rnb9.3) populates these
+// while it walks AST bodies; std-lsp owns the storage and queries.
+//
+// `caller` is the qualified path of the *containing* fn/module that
+// holds the use site. `callee` is the *target* — usually a leaf name,
+// since the AST records identifiers before resolution.
+
+/// One use-site edge: "caller_qual references callee".
+export type CallEdge = {
+    caller: string,
+    callee: string,
+    file: string,
+    line: int,
+    col: int
+}
+
+/// Empty `List<CallEdge>` — preferred over `[]` at call sites for
+/// symmetry with `graph_new` / `calls_add`.
+export fn calls_new() -> List<CallEdge> { [] }
+
+/// Append a CallEdge to the list. O(1) amortised; insertion order
+/// is preserved.
+export fn calls_add(list: List<CallEdge>, edge: CallEdge) -> List<CallEdge> {
+    mut out = list
+    out.push(edge)
+    out
+}
+
+/// Every symbol that *calls* (or otherwise references) `target_name`.
+/// Returns the resolved caller Syms — handy for `avra docs <name>
+/// --callers` rendering.
+export fn query_callers(g: SymbolGraph, calls: List<CallEdge>, target_name: string) -> List<Sym> {
+    let edges = collect_edges_to(calls, target_name)
+    edges_to_caller_syms(g, edges)
+}
+
+/// Every use-site Location of `target_name`. Same edges as
+/// `query_callers` but returned as raw Locations rather than the
+/// caller Sym (for "find references" rendering).
+export fn query_references(g: SymbolGraph, calls: List<CallEdge>, target_name: string) -> List<CallEdge> {
+    collect_edges_to(calls, target_name)
+}
+
+/// Every callee (target name) referenced by `caller_qualified`.
+/// Used by hover detail to show "this fn calls: foo, bar, baz".
+export fn query_callees(calls: List<CallEdge>, caller_qualified: string) -> List<CallEdge> {
+    collect_edges_from(calls, caller_qualified)
+}
+
+/// One traversal helper for every "filter call edges by predicate"
+/// case. Order is preserved (insertion order).
+fn call_list_filter(list: List<CallEdge>, pred: fn(CallEdge) -> bool) -> List<CallEdge> {
+    mut acc: List<CallEdge> = []
+    for edge in list {
+        if pred(edge) { acc.push(edge) }
+    }
+    acc
+}
+
+/// CallEdges whose callee is `target` — backs `query_callers`.
+fn collect_edges_to(list: List<CallEdge>, target: string) -> List<CallEdge> {
+    call_list_filter(list, (edge: CallEdge) -> edge.callee == target)
+}
+
+/// CallEdges whose caller is `caller` — backs `query_callees`.
+fn collect_edges_from(list: List<CallEdge>, caller: string) -> List<CallEdge> {
+    call_list_filter(list, (edge: CallEdge) -> edge.caller == caller)
+}
+
+/// Resolve each CallEdge's caller-name to a Sym via `graph_by_qualified`,
+/// dedup by id (multiple call sites can share a caller fn).
+fn edges_to_caller_syms(g: SymbolGraph, edges: List<CallEdge>) -> List<Sym> {
+    mut out: List<Sym> = []
+    for edge in edges {
+        let s = graph_by_qualified(g, edge.caller)
+        if s != null && !sym_list_contains_id(out, s!.id) {
+            out.push(s!)
+        }
+    }
+    out
+}
+
+/// True iff any Sym in `list` has the given stable id.
+fn sym_list_contains_id(list: List<Sym>, id: SymId) -> bool {
+    mut i = 0
+    while i < list.length {
+        if list[i].id.value == id.value { return true }
+        i = i + 1
+    }
+    false
+}
+
+// ── Position-indexed lookup ────────────────────────────────────────
+//
+// Hover / go-to-definition need "what symbol is at file:line"? We do
+// the cheap thing: scan every Sym whose file matches and pick the one
+// whose start position covers the requested point. Ticket rnb9.7
+// will replace this with a span-keyed sidecar for big projects.
+
+/// Sym at file:line — first match wins. Returns null if no Sym
+/// declares that exact line in that file. Used by IDE hover.
+export fn query_at(g: SymbolGraph, file: string, line: int) -> Sym? {
+    sym_at_position(g.syms, file, line)
+}
+
+/// Find the Sym whose decl span contains `(file, line)`. Backs
+/// `query_at` and the LSP `textDocument/hover` request.
+fn sym_at_position(list: List<Sym>, file: string, line: int) -> Sym? {
+    mut i = 0
+    while i < list.length {
+        let item = list[i]
+        if item.file == file && item.span.start.line == line {
+            return item
+        }
+        i = i + 1
+    }
+    null
+}
+
+// ── Hover / completion ─────────────────────────────────────────────
+
+/// Build a hover record for a Sym — pre-rendered detail string ready
+/// for terminal or IDE display.
+export fn query_hover_for_sym(s: Sym) -> Hover {
+    let header = sym_kind_render(s.kind)
+    let doc = if s.doc == "" { "" } else { "\n\n${s.doc}" }
+    let loc = "\n\nDefined in ${s.file}:${string(s.span.start.line)}"
+    Hover { sym: s, rendered: "${header}${doc}${loc}" }
+}
+
+/// Hover by file:line (IDE flow).
+export fn query_hover(g: SymbolGraph, file: string, line: int) -> Hover? {
+    let s = query_at(g, file, line)
+    if s == null { return null }
+    query_hover_for_sym(s!)
+}
+
+/// Hover by qualified path (CLI flow: `avra docs <name>`).
+export fn query_hover_by_path(g: SymbolGraph, path: string) -> Hover? {
+    let s = graph_resolve(g, path)
+    if s == null { return null }
+    query_hover_for_sym(s!)
+}
+
+/// Top-N completion candidates for `prefix` — uses the fuzzy scorer
+/// from .2. Filtered to exported symbols when `exported_only` is
+/// true (the IDE's default) so private internals don't leak into
+/// editor completion.
+export fn query_completion(g: SymbolGraph, prefix: string, limit: int, exported_only: bool) -> List<CompletionItem> {
+    let candidates = if exported_only {
+        filter_exported(g.syms)
+    } else {
+        g.syms
+    }
+    let scored = fuzzy_search_syms(prefix, candidates, limit)
+    scored_syms_to_completion_items(scored)
+}
+
+/// Keep only `exported: true` Syms — surfaces public-API completion.
+fn filter_exported(list: List<Sym>) -> List<Sym> {
+    sym_list_filter(list, (item: Sym) -> item.exported)
+}
+
+/// Convert a ranked `List<ScoredSym>` into LSP CompletionItem records.
+fn scored_syms_to_completion_items(list: List<ScoredSym>) -> List<CompletionItem> {
+    mut acc: List<CompletionItem> = []
+    for item in list {
+        let detail = sym_kind_render(item.sym.kind)
+        acc.push(CompletionItem { label: item.sym.name, detail, sym: item.sym })
+    }
+    acc
+}
+
+/// Symbols filtered by scope. Used by the LSP's documentSymbol
+/// (per-file outline) and the CLI's `avra docs --symbols` flag.
+export fn query_symbols(g: SymbolGraph, scope: Scope) -> List<Sym> {
+    match scope {
+        .All -> graph_all(g)
+        .File(path) -> filter_by_file(g.syms, path)
+        .Module(qualified) -> graph_children(g, qualified)
+    }
+}
+
+/// Keep only Syms whose `file` field matches `file` exactly. Backs
+/// the LSP `textDocument/documentSymbol` query.
+fn filter_by_file(list: List<Sym>, file: string) -> List<Sym> {
+    sym_list_filter(list, (item: Sym) -> item.file == file)
+}
+
+/// Project-wide search via the composed fuzzy scorer.
+export fn query_search(g: SymbolGraph, query: string, limit: int) -> List<ScoredSym> {
+    fuzzy_search_syms(query, g.syms, limit)
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              FUZZY                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// Composed string-match scoring used by every consumer that needs
+// "find the right thing among many" — search, did-you-mean, completion
+// ranking, import suggestions. Pure scoring; consumers wrap it for
+// their domain (Sym lists, error codes, CLI flag names).
+//
+// Scoring is layered so a pure substring beats a more-distant
+// Levenshtein match. Tiers, highest first:
+//
+//   1000  exact match
+//    800  exact case-insensitive match
+//    600  prefix match (lowercase), penalised by length difference
+//    400  subsequence match in order ("iu" matches "init_user")
+//    300  substring match (any case)
+//    200  Levenshtein distance ≤ 2, penalised by distance
+//      0  no match
+//
+// Ties break: higher score first, then shorter candidate, then lex.
+// `did_you_mean` rejects suggestions below 200 — anything weaker is
+// usually noise that misleads more than helps.
+
+extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
+
+/// Threshold below which `did_you_mean` returns the empty string.
+/// 200 = the Levenshtein-≤2 floor in `fuzzy_score`; anything cheaper
+/// is too speculative to surface as a hint.
+fn fuzzy_did_you_mean_threshold() -> int { 200 }
+
+// Composed score for a single (query, candidate) pair. Pure: same
+/// inputs always yield the same int; safe to cache by (q,c) hash.
+export fn fuzzy_score(query: string, candidate: string) -> int {
+    if query == candidate {
+        return 1000
+    }
+    let ql = query.to_lower()
+    let cl = candidate.to_lower()
+    if ql == cl {
+        return 800
+    }
+    if cl.starts_with(ql) {
+        let len_diff = candidate.length - query.length
+        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
+        return 600 - pen
+    }
+    if fuzzy_is_subsequence(ql, cl) {
+        let pen = candidate.length - query.length
+        return 400 - if pen > 0 { pen } else { 0 - pen }
+    }
+    if cl.contains(ql) {
+        let pos_pen = cl.index_of(ql)
+        return 300 - pos_pen
+    }
+    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
+    if dist <= 2 {
+        return 200 - dist * 50
+    }
+    0
+}
+
+/// Does `needle` occur in `haystack` with characters in order,
+/// allowing gaps? `"iu"` matches `"init_user"` (i…u…), `"uf"` matches
+/// `"use_fn"` (u…f…), but `"fu"` does not match `"use_fn"` (no `f`
+/// before `u`).
+fn fuzzy_is_subsequence(needle: string, haystack: string) -> bool {
+    if needle.length == 0 { return true }
+    mut ni = 0
+    mut hi = 0
+    while hi < haystack.length {
+        if needle.substring(ni, ni + 1) == haystack.substring(hi, hi + 1) {
+            ni = ni + 1
+            if ni == needle.length {
+                return true
+            }
+        }
+        hi = hi + 1
+    }
+    false
+}
+
+/// Scored candidate, paired with its score for sorting.
+export type Scored = {
+    value: string,
+    score: int
+}
+
+// Score every candidate, drop zeros, sort score-desc then lex-asc,
+// truncate to `limit`. Used by --search, completion ranking, and
+/// every "find me the closest matches to X" UX.
+export fn fuzzy_search(query: string, candidates: List<string>, limit: int) -> List<Scored> {
+    let scored = score_all(query, candidates)
+    let sorted = scored_list_sort(scored)
+    scored_list_take(sorted, limit)
+}
+
+// Best single suggestion for `query` among `candidates`. Returns the
+// empty string when no candidate scores ≥ threshold — callers should
+// suppress the "did you mean" line in that case (silence beats a
+/// misleading suggestion).
+export fn did_you_mean(query: string, candidates: List<string>) -> string {
+    mut best_value = ""
+    mut best_score = fuzzy_did_you_mean_threshold() - 1
+    for c in candidates {
+        let s = fuzzy_score(query, c)
+        if s > best_score {
+            best_score = s
+            best_value = c
+        }
+    }
+    best_value
+}
+
+// Top-N suggestions for `query`, used by error renderers that show
+/// up to three "did you mean" candidates instead of just one.
+export fn did_you_mean_n(query: string, candidates: List<string>, n: int) -> List<string> {
+    let scored = scored_take_threshold(score_all(query, candidates), fuzzy_did_you_mean_threshold())
+    let sorted = scored_list_sort(scored)
+    let topn = scored_list_take(sorted, n)
+    scored_to_strs(topn)
+}
+
+// ── internals ───────────────────────────────────────────────────────
+
+/// Score every candidate against `query`, dropping zero-scored
+/// (no-match) entries. Returned in source order; sort via
+/// `scored_list_sort` before consumption.
+fn score_all(query: string, candidates: List<string>) -> List<Scored> {
+    mut acc: List<Scored> = []
+    for c in candidates {
+        let s = fuzzy_score(query, c)
+        if s > 0 { acc.push(Scored { value: c, score: s }) }
+    }
+    acc
+}
+
+/// Drop `List<Scored>` entries whose score falls below `threshold`.
+/// Used by `did_you_mean_n` to keep only confident suggestions.
+fn scored_take_threshold(list: List<Scored>, threshold: int) -> List<Scored> {
+    mut acc: List<Scored> = []
+    for item in list {
+        if item.score >= threshold { acc.push(item) }
+    }
+    acc
+}
+
+/// Sort by score-desc, then value-asc. In-place; returns the list
+/// so the call chains.
+fn scored_list_sort(list: List<Scored>) -> List<Scored> {
+    mut out = list
+    out.sort((a: Scored, b: Scored) -> {
+        if a.score != b.score {
+            b.score - a.score
+        } else if a.value < b.value {
+            -1
+        } else if a.value > b.value {
+            1
+        } else {
+            0
+        }
+    })
+    out
+}
+
+/// First `n` entries of a `List<Scored>` — produces a fresh list,
+/// caps at `n` even if the input is shorter.
+fn scored_list_take(list: List<Scored>, n: int) -> List<Scored> {
+    if n <= 0 { return [] }
+    let stop = if n < list.length { n } else { list.length }
+    mut out: List<Scored> = []
+    mut i = 0
+    while i < stop {
+        out.push(list[i])
+        i = i + 1
+    }
+    out
+}
+
+/// Strip scores, returning the underlying `List<string>` — final
+/// step of `fuzzy_search` after sort + take.
+fn scored_to_strs(list: List<Scored>) -> List<string> {
+    mut out: List<string> = []
+    for item in list { out.push(item.value) }
+    out
+}
+
+// ── Sym-aware wrappers ──────────────────────────────────────────────
+//
+// Bridge fuzzy scoring to the SymbolGraph: search by Sym.name with
+// the same composed scorer. Returns `List<ScoredSym>` ranked by
+// score.
+
+/// Sym paired with the fuzzy-search score that ranked it. Output of
+/// `fuzzy_search_syms`; consumers like `query_completion` discard the
+/// score after the sort, but it stays attached so client code can
+/// surface `did-you-mean` cutoffs ("only show ≥600").
+export type ScoredSym = {
+    sym: Sym,
+    score: int
+}
+
+/// Sym-aware `fuzzy_search`. Scores every Sym's `name` against
+/// `query`, sorts by score-desc / name-asc, and returns the top
+/// `limit` as ScoredSyms.
+export fn fuzzy_search_syms(query: string, syms: List<Sym>, limit: int) -> List<ScoredSym> {
+    let scored = score_syms(query, syms)
+    let sorted = scored_sym_sort(scored)
+    scored_sym_take(sorted, limit)
+}
+
+/// Score every Sym in `syms` against `query`, dropping zero scores.
+/// Returns source order; sort with `scored_sym_sort` for ranked output.
+fn score_syms(query: string, syms: List<Sym>) -> List<ScoredSym> {
+    mut acc: List<ScoredSym> = []
+    for s in syms {
+        let score = fuzzy_score(query, s.name)
+        if score > 0 { acc.push(ScoredSym { sym: s, score }) }
+    }
+    acc
+}
+
+/// Sort by score-desc then `sym.name`-asc. Mirror of
+/// `scored_list_sort` for the ScoredSym shape.
+fn scored_sym_sort(list: List<ScoredSym>) -> List<ScoredSym> {
+    mut out = list
+    out.sort((a: ScoredSym, b: ScoredSym) -> {
+        if a.score != b.score {
+            b.score - a.score
+        } else if a.sym.name < b.sym.name {
+            -1
+        } else if a.sym.name > b.sym.name {
+            1
+        } else {
+            0
+        }
+    })
+    out
+}
+
+/// First `n` entries of a `List<ScoredSym>` — counterpart to
+/// `scored_list_take` for the Sym shape.
+fn scored_sym_take(list: List<ScoredSym>, n: int) -> List<ScoredSym> {
+    if n <= 0 { return [] }
+    let stop = if n < list.length { n } else { list.length }
+    mut out: List<ScoredSym> = []
+    mut i = 0
+    while i < stop {
+        out.push(list[i])
+        i = i + 1
+    }
+    out
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                              CACHE                                ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// Persist the `List<Sym>` between `avra docs` invocations so the
+// second run is sub-50ms instead of re-walking + re-parsing every
+// .av.
+//
+// Layout (`target/lsp/`):
+//   files.tsv  — header + one row per source file:
+//                  # avra-lsp-cache v=<version>
+//                  <path>\t<mtime_ns>\t<sym_count>
+//                ...
+//   syms.tsv   — one row per Sym:
+//                  <file>\t<qualified>\t<kind_tag>\t<sig>\t<doc_b64>\t<line>\t<exported>
+//
+// The cache is *plain text* on purpose — easy to inspect, easy to
+// reproduce, no serialisation library coupling. Doc bodies are
+// base64-light-encoded (newlines → \n literals, tabs → \t literals)
+// so each Sym fits on one line.
+//
+// Freshness: for each file in the project, stat its mtime and compare
+// to the cached row. Files with no row, or with a newer mtime, get
+// re-extracted; their old Syms are evicted from the merged list.
+//
+// Compiler version: callers pass it in (the bootstrap doesn't have a
+// stable version constant yet). When the version field doesn't match
+// the cache's header, the whole cache is invalidated and rebuilt.
+
+extern fn avra_file_mtime(path: string) -> int
+
+/// One per-file cache row: path, last-seen mtime, count of Syms that
+/// were extracted from it. The Syms themselves live in the parallel
+/// `List<Sym>`; the row exists so freshness checks don't need to
+/// scan that list.
+export type CacheFileEntry = {
+    path: string,
+    mtime_ns: int,
+    sym_count: int
+}
+
+/// Loaded cache state — header + per-file rows + the materialised
+/// `List<Sym>`. `version` is empty when no cache file existed.
+export type CacheState = {
+    version: string,
+    files: List<CacheFileEntry>,
+    syms: List<Sym>
+}
+
+/// Empty cache — `version: ""` is the "no cache file existed yet"
+/// sentinel, distinguished from an explicitly-versioned reload.
+export fn cache_empty() -> CacheState {
+    CacheState { version: "", files: [], syms: [] }
+}
+
+/// True if `path` appears in the cache with mtime >= the file's
+/// current mtime — meaning the cached Syms are still fresh.
+export fn cache_is_fresh(state: CacheState, path: string) -> bool {
+    let row = cache_files_find(state.files, path)
+    if row == null { return false }
+    let current = avra_file_mtime(path)
+    if current == 0 { return false }
+    row!.mtime_ns >= current
+}
+
+/// Linear lookup of a CacheFileEntry by `path`, or null. Backs
+/// `cache_is_fresh` and the eviction path.
+fn cache_files_find(list: List<CacheFileEntry>, path: string) -> CacheFileEntry? {
+    mut i = 0
+    while i < list.length {
+        let item = list[i]
+        if item.path == path { return item }
+        i = i + 1
+    }
+    null
+}
+
+/// Drop every Sym whose `file` matches `path`. Used when a file goes
+/// stale: evict its old contribution before re-extracting.
+export fn cache_evict_file(state: CacheState, path: string) -> CacheState {
+    let kept_syms = sym_list_drop_by_file(state.syms, path)
+    let kept_files = file_list_drop(state.files, path)
+    state with { syms: kept_syms, files: kept_files }
+}
+
+/// Add a fresh per-file slice to the cache: the new `List<Sym>` for
+/// `path` plus an updated CacheFileEntry. Caller is responsible for
+/// having evicted any prior slice for the same path.
+export fn cache_add_file(state: CacheState, path: string, mtime_ns: int, syms: List<Sym>) -> CacheState {
+    let count = syms.length
+    let entry = CacheFileEntry { path, mtime_ns, sym_count: count }
+    mut new_files = state.files
+    new_files.push(entry)
+    state with {
+        syms: sym_list_concat(state.syms, syms),
+        files: new_files
+    }
+}
+
+/// Drop every Sym whose `file` equals `path` — half of file eviction.
+fn sym_list_drop_by_file(list: List<Sym>, path: string) -> List<Sym> {
+    sym_list_filter(list, (item: Sym) -> item.file != path)
+}
+
+/// Drop the CacheFileEntry for `path` — the other half of eviction.
+fn file_list_drop(list: List<CacheFileEntry>, path: string) -> List<CacheFileEntry> {
+    mut out: List<CacheFileEntry> = []
+    for item in list {
+        if item.path != path { out.push(item) }
+    }
+    out
+}
+
+// ── TSV encode / decode ─────────────────────────────────────────────
+
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+/// Encode a CacheState into TSV form. `version` is written as a
+/// header line so the loader can detect compiler-version mismatches.
+export fn cache_encode(state: CacheState, version: string) -> string {
+    let header = "# avra-lsp-cache v=${version}\n"
+    let files_section = encode_files(state.files)
+    let syms_section = encode_syms(state.syms)
+    "${header}${files_section}--\n${syms_section}"
+}
+
+/// Encode the file-mtime header section of the cache: one
+/// `path<TAB>mtime<TAB>sym_count` row per CacheFileEntry.
+fn encode_files(list: List<CacheFileEntry>) -> string {
+    mut out = ""
+    for item in list {
+        let line = "${item.path}\t${string(item.mtime_ns)}\t${string(item.sym_count)}\n"
+        out = "${out}${line}"
+    }
+    out
+}
+
+/// Encode the Sym body section of the cache: one TSV row per Sym.
+fn encode_syms(list: List<Sym>) -> string {
+    mut out = ""
+    for item in list {
+        out = "${out}${encode_sym(item)}\n"
+    }
+    out
+}
+
+/// Encode a single Sym as one TSV row. Field order matters — the
+/// decoder is index-based for speed, not name-based.
+fn encode_sym(s: Sym) -> string {
+    let kind_tag = sym_kind_tag(s.kind)
+    let sig = sym_kind_render(s.kind)
+    let doc = escape_field(s.doc)
+    let exp = if s.exported { "1" } else { "0" }
+    "${s.file}\t${s.qualified}\t${kind_tag}\t${escape_field(sig)}\t${doc}\t${string(s.span.start.line)}\t${exp}"
+}
+
+// Tabs and newlines inside doc/sig bodies break the TSV row format.
+// Replace them with literal `\t` and `\n` two-char sequences; the
+// loader does the inverse.
+/// Escape one TSV-significant char (`\`, `\t`, `\n`) into its
+/// `\xx` form. Pass-through for everything else.
+fn tsv_escape_char(ch: string) -> string {
+    match ch {
+        "\t" -> "\\t"
+        "\n" -> "\\n"
+        _ -> ch
+    }
+}
+
+/// Escape every TSV-significant char in `s`. Output is round-trip
+/// safe under `unescape_field`.
+fn escape_field(s: string) -> string {
+    map_chars(s, tsv_escape_char)
+}
+
+// Walk `s` char-by-char, applying `f` to each. Shared helper for
+// json_escape, escape_field, and any other "encode every char with
+// a substitution table" pass.
+/// Apply `f` to each character of `s` and concat. Generic enough
+/// that it powers both `escape_field` and `unescape_field`.
+fn map_chars(s: string, f: fn(string) -> string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        out = "${out}${f(s.substring(i, i + 1))}"
+        i = i + 1
+    }
+    out
+}
+
+/// Inverse of `tsv_escape_char`. Pass-through for chars without an
+/// escape mapping.
+fn tsv_unescape_char(c: string) -> string {
+    match c {
+        "t" -> "\t"
+        "n" -> "\n"
+        _ -> c
+    }
+}
+
+/// Inverse of `escape_field`. Walks `s` looking for `\xx` escape
+/// pairs and substitutes via `tsv_unescape_char`.
+fn unescape_field(s: string) -> string {
+    decode_escaped(s, tsv_unescape_char)
+}
+
+// Walk `s`, copying chars literally except for `\X` pairs which are
+// passed through `decoder`. Shared with the JSON decoder below — the
+// only difference between TSV and JSON is which character maps where.
+/// Generic `\\x` → `decoder(x)` walker. Used by both TSV decode and
+/// JSON decode by passing different per-char decoders.
+fn decode_escaped(s: string, decoder: fn(string) -> string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "\\" && i + 1 < s.length {
+            out = "${out}${decoder(s.substring(i + 1, i + 2))}"
+            i = i + 2
+            continue
+        }
+        out = "${out}${ch}"
+        i = i + 1
+    }
+    out
+}
+
+/// Decode TSV output from `cache_encode` back into CacheState. On
+/// any parse hiccup (header malformed, version field absent), returns
+/// an empty cache so the caller falls back to a full rebuild.
+export fn cache_decode(source: string) -> CacheState {
+    if source.length == 0 { return cache_empty() }
+    let lines = source.split("\n")
+    if lines.length == 0 { return cache_empty() }
+
+    // Header: "# avra-lsp-cache v=<version>"
+    let header = lines[0]
+    if !header.starts_with("# avra-lsp-cache v=") {
+        return cache_empty()
+    }
+    let version = header.substring(19, header.length)
+
+    mut files: List<CacheFileEntry> = []
+    mut syms: List<Sym> = []
+    mut idx = 1
+    mut in_syms = false
+    while idx < lines.length {
+        let line = lines[idx]
+        idx = idx + 1
+        if line == "" { continue }
+        if line == "--" {
+            in_syms = true
+            continue
+        }
+        if in_syms {
+            let parsed = decode_sym(line)
+            if parsed != null { syms.push(parsed!) }
+        } else {
+            let parsed = decode_file_row(line)
+            if parsed != null { files.push(parsed!) }
+        }
+    }
+    CacheState { version, files, syms }
+}
+
+/// Parse one TSV row from the cache header into a CacheFileEntry,
+/// or null when the row is malformed.
+fn decode_file_row(line: string) -> CacheFileEntry? {
+    let parts = line.split("\t")
+    if parts.length < 3 { return null }
+    CacheFileEntry {
+        path: parts[0],
+        mtime_ns: int(parts[1]),
+        sym_count: int(parts[2])
+    }
+}
+
+/// Parse one TSV row from the cache body into a Sym, or null on
+/// malformed input.
+fn decode_sym(line: string) -> Sym? {
+    // file \t qualified \t kind_tag \t sig \t doc \t line \t exported
+    let parts = line.split("\t")
+    if parts.length < 7 { return null }
+    let file = parts[0]
+    let qualified = parts[1]
+    let kind_tag = parts[2]
+    let sig = unescape_field(parts[3])
+    let doc = unescape_field(parts[4])
+    let line_num = int(parts[5])
+    let exported = parts[6] == "1"
+    let kind = decode_kind(kind_tag, sig)
+    let name = qualified_leaf(qualified)
+    let span = lsp_span(lsp_pos(line_num, 1), lsp_pos(line_num, 1))
+    sym_new(name, qualified, kind, doc, file, span, exported, "")
+}
+
+/// Inverse of `sym_kind_tag` (in docs/mod.av) — turn a `(tag, sig)`
+/// pair from the cache TSV back into a SymKind.
+fn decode_kind(tag: string, sig: string) -> SymKind {
+    match tag {
+        "fn" -> SymKind.Fn(sig, "")
+        "type" -> SymKind.Type(sig)
+        "enum" -> {
+            // sig is "enum { A, B, C }" or "enum"; strip wrapper.
+            if sig.starts_with("enum { ") && sig.ends_with(" }") {
+                SymKind.Enum(sig.substring(7, sig.length - 2))
+            } else {
+                SymKind.Enum("")
+            }
+        }
+        "trait" -> SymKind.Trait(sig)
+        "const" -> SymKind.Const(strip_kind_prefix(sig, "const"))
+        "mut" -> SymKind.Mut(strip_kind_prefix(sig, "mut"))
+        "let" -> SymKind.Let(strip_kind_prefix(sig, "let"))
+        "module" -> SymKind.Module
+        _ -> SymKind.Type(sig)
+    }
+}
+
+/// Strip the `kind:` prefix from a serialized SymKind signature so
+/// downstream callers don't have to think about the wire format.
+fn strip_kind_prefix(sig: string, kind: string) -> string {
+    let pfx = "${kind}: "
+    if sig.starts_with(pfx) {
+        sig.substring(pfx.length, sig.length)
+    } else {
+        ""
+    }
+}
+
+// ── Disk persistence ─────────────────────────────────────────────────
+
+/// Read `path` and decode. Returns an empty cache when the file
+/// doesn't exist or fails to parse.
+export fn cache_load(path: string) -> CacheState {
+    if avra_selfhost_file_exists(path) == 0 { return cache_empty() }
+    cache_decode(avra_selfhost_read_file(path))
+}
+
+/// Encode + write. Returns 1 on success, 0 on failure.
+export fn cache_save(state: CacheState, path: string, version: string) -> int {
+    avra_selfhost_write_file(path, cache_encode(state, version))
+}
+
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║                            PROTOCOL                               ║
+// ╚═══════════════════════════════════════════════════════════════════╝
+//
+// JSON-RPC 2.0 over stdio with LSP framing:
+//
+//   Content-Length: <N>\r\n
+//   \r\n
+//   <N bytes of JSON>
+//
+// Server loop reads one frame, parses minimal JSON to recover the
+// `method` name and the request `id`, dispatches to the query API,
+// and writes a framed JSON response. Responses keep the JSON minimal
+// — only the fields LSP clients actually consume.
+//
+// We hand-roll JSON because std-lsp shouldn't drag in a parser
+// library; LSP messages are well-shaped enough that a 200-line
+// extractor handles them. Methods we don't know about are answered
+// with a JSON-RPC `MethodNotFound` (-32601) so the client falls back
+// gracefully.
+
+extern fn avra_stdin_read_bytes(n: int) -> string
+extern fn avra_stdin_read_line() -> string
+extern fn avra_stdout_write(s: string)
+
+/// Wrap a JSON body in LSP framing. The byte-count header must be
+/// the *byte* length, not the char length — for ASCII bodies these
+/// are equal; for messages containing non-ASCII chars (rare in LSP
+/// requests but possible in symbol names), callers should ensure
+/// `body.length` reflects bytes.
+export fn lsp_frame(body: string) -> string {
+    "Content-Length: ${string(body.length)}\r\n\r\n${body}"
+}
+
+/// Read one framed message from stdin. Returns the JSON body, or ""
+/// on EOF / malformed header. The first line we don't recognise as
+/// `Content-Length:` is treated as EOF — clients are well-behaved
+/// in practice.
+export fn lsp_read_frame() -> string {
+    mut content_len = 0
+    while true {
+        let line = avra_stdin_read_line()
+        if line == "" {
+            // Either EOF or the blank header-terminator. If we've
+            // already seen a content-length header, this blank line
+            // means the body comes next.
+            if content_len > 0 {
+                return avra_stdin_read_bytes(content_len)
+            }
+            return ""
+        }
+        if line.starts_with("Content-Length:") {
+            let val = line.substring(16, line.length).trim()
+            content_len = int(val)
+        }
+        // Other headers (Content-Type) are ignored — we always speak
+        // utf-8 JSON.
+    }
+    ""
+}
+
+// ── JSON emit ───────────────────────────────────────────────────────
+//
+// Minimal builder. We never *parse* general JSON in this layer; the
+// dispatch layer does targeted field extraction (`json_extract_*`)
+// from the raw request body, which is more efficient and avoids a
+// full parser.
+
+// Inverse of `json_unescape_char` — encode one char as its JSON
+// escape sequence if needed, otherwise return it unchanged.
+/// JSON escape one char (`"`, `\`, control chars). Pass-through for
+/// printable ASCII, matching RFC 8259.
+fn json_escape_char(ch: string) -> string {
+    match ch {
+        "\"" -> "\\\""
+        "\\" -> "\\\\"
+        "\n" -> "\\n"
+        "\r" -> "\\r"
+        "\t" -> "\\t"
+        _ -> ch
+    }
+}
+
+/// Escape a string for JSON. Mirrors @std/json.json_escape.
+export fn json_escape(s: string) -> string {
+    map_chars(s, json_escape_char)
+}
+
+/// JSON string literal: surrounded by double quotes, body escaped.
+/// Mirrors @std/json.json_str.
+export fn json_str(s: string) -> string {
+    "\"${json_escape(s)}\""
+}
+
+/// JSON-RPC success response. Mirrors @std/json.jsonrpc_response.
+export fn jsonrpc_response(id: string, result_body: string) -> string {
+    "{\"jsonrpc\":\"2.0\",\"id\":${id},\"result\":${result_body}}"
+}
+
+/// JSON-RPC error response. Mirrors @std/json.jsonrpc_error.
+export fn jsonrpc_error(id: string, code: int, message: string) -> string {
+    "{\"jsonrpc\":\"2.0\",\"id\":${id},\"error\":{\"code\":${string(code)},\"message\":${json_str(message)}}}"
+}
+
+// Find the index of the first non-whitespace char of `key`'s value.
+// Mirrors @std/json.json_value_start.
+/// Find the byte offset where `"key":` value begins in `body`, or
+/// -1 when missing. Cheap structural extraction — avoids a full
+/// JSON parse for the few fields the LSP server cares about.
+fn json_value_start(body: string, key: string) -> int {
+    let needle = "\"${key}\""
+    let pos = body.index_of(needle)
+    if pos < 0 { return -1 }
+    mut i = pos + needle.length
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == ":" {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+        i = i + 1
+    }
+    if i >= body.length { return -1 }
+    i
+}
+
+/// Inverse of `json_escape_char` — used by `decode_escaped` when
+/// parsing JSON-encoded strings out of incoming LSP messages.
+fn json_unescape_char(c: string) -> string {
+    match c {
+        "\"" -> "\""
+        "\\" -> "\\"
+        "n" -> "\n"
+        "r" -> "\r"
+        "t" -> "\t"
+        _ -> c
+    }
+}
+
+/// Mirrors @std/json.json_extract_string.
+export fn json_extract_string(body: string, key: string) -> string {
+    mut i = json_value_start(body, key)
+    if i < 0 { return "" }
+    if body.substring(i, i + 1) != "\"" { return "" }
+    i = i + 1
+    mut out = ""
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == "\\" && i + 1 < body.length {
+            out = "${out}${json_unescape_char(body.substring(i + 1, i + 2))}"
+            i = i + 2
+            continue
+        }
+        if ch == "\"" { return out }
+        out = "${out}${ch}"
+        i = i + 1
+    }
+    out
+}
+
+/// Mirrors @std/json.json_extract_int.
+export fn json_extract_int(body: string, key: string) -> int {
+    mut i = json_value_start(body, key)
+    if i < 0 { return 0 }
+    mut digits = ""
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == "-" || (ch >= "0" && ch <= "9") {
+            digits = "${digits}${ch}"
+            i = i + 1
+        } else {
+            break
+        }
+    }
+    if digits == "" || digits == "-" { return 0 }
+    int(digits)
+}
+
+// ── Sym → JSON ──────────────────────────────────────────────────────
+
+/// Render a Sym as JSON-encoded record. Used by hover, definition,
+/// and search responses.
+export fn sym_to_json(s: Sym) -> string {
+    let kind_tag = sym_kind_tag(s.kind)
+    let detail = json_str(sym_kind_render(s.kind))
+    let name = json_str(s.name)
+    let qual = json_str(s.qualified)
+    let doc = json_str(s.doc)
+    let file = json_str(s.file)
+    let exp = if s.exported { "true" } else { "false" }
+    "{\"name\":${name},\"qualified\":${qual},\"kind\":${json_str(kind_tag)},\"detail\":${detail},\"doc\":${doc},\"file\":${file},\"line\":${string(s.span.start.line)},\"exported\":${exp}}"
+}
+
+/// Render a `List<Sym>` as a JSON array.
+export fn symlist_to_json(list: List<Sym>) -> string {
+    mut out = "["
+    mut first = true
+    for item in list {
+        if first {
+            out = "${out}${sym_to_json(item)}"
+            first = false
+        } else {
+            out = "${out},${sym_to_json(item)}"
+        }
+    }
+    "${out}]"
+}
+
+// ── Method dispatch ─────────────────────────────────────────────────
+//
+// The dispatch table the server loop runs. `params` is the raw JSON
+// body of the request's `params` field (or, in our minimal extractor,
+// the full request body — `json_extract_*` doesn't care about depth).
+//
+// Methods served:
+//   initialize / initialized / shutdown / exit (lifecycle)
+//   textDocument/hover         → query_hover
+//   textDocument/definition    → query_at → location
+//   textDocument/documentSymbol → query_symbols(File)
+//   workspace/symbol           → query_search
+//   avra/callers (custom)      → query_callers
+//   avra/callees (custom)      → query_callees
+//
+// Unknown methods get JSON-RPC -32601 "MethodNotFound".
+
+/// Build a JSON-RPC response for `method`. `id` is the request id
+/// (already JSON-encoded — caller passes the raw string value).
+/// `g` and `calls` are the symbol graph and call-edge list.
+export fn lsp_dispatch(g: SymbolGraph, calls: List<CallEdge>, id: string, method: string, params: string) -> string {
+    match method {
+        "initialize" -> jsonrpc_response(id, lsp_initialize_result())
+        "initialized" -> ""
+        "shutdown" -> jsonrpc_response(id, "null")
+        "exit" -> ""
+        "textDocument/hover" -> dispatch_hover(g, id, params)
+        "textDocument/definition" -> dispatch_definition(g, id, params)
+        "textDocument/documentSymbol" -> dispatch_document_symbol(g, id, params)
+        "workspace/symbol" -> dispatch_workspace_symbol(g, id, params)
+        "avra/callers" -> dispatch_callers(g, calls, id, params)
+        "avra/callees" -> dispatch_callees(calls, id, params)
+        _ -> jsonrpc_error(id, -32601, "Method not found: ${method}")
+    }
+}
+
+/// Static `initialize` response: declares which LSP capabilities the
+/// server supports (hover, definition, references, etc.).
+fn lsp_initialize_result() -> string {
+    // Capabilities the server actually implements. Keep the set
+    // honest — clients use this to enable/disable UI features.
+    "{\"capabilities\":{\"hoverProvider\":true,\"definitionProvider\":true,\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true},\"serverInfo\":{\"name\":\"avra-lsp\",\"version\":\"0.1.0\"}}"
+}
+
+/// Handle `textDocument/hover` — find the Sym at the requested
+/// position, render its hover panel.
+fn dispatch_hover(g: SymbolGraph, id: string, params: string) -> string {
+    let uri = json_extract_string(params, "uri")
+    let line = json_extract_int(params, "line")
+    let file = uri_to_file(uri)
+    let h = query_hover(g, file, line + 1)  // LSP positions are 0-based, ours 1-based
+    if h == null {
+        return jsonrpc_response(id, "null")
+    }
+    let body = "{\"contents\":${json_str(h!.rendered)}}"
+    jsonrpc_response(id, body)
+}
+
+/// Handle `textDocument/definition` — return the LspLocation of the
+/// Sym at the requested position.
+fn dispatch_definition(g: SymbolGraph, id: string, params: string) -> string {
+    let uri = json_extract_string(params, "uri")
+    let line = json_extract_int(params, "line")
+    let file = uri_to_file(uri)
+    let s = query_at(g, file, line + 1)
+    if s == null {
+        return jsonrpc_response(id, "null")
+    }
+    let body = sym_to_location_json(s!)
+    jsonrpc_response(id, body)
+}
+
+/// Handle `textDocument/documentSymbol` — list every Sym in the
+/// requested file as a flat array.
+fn dispatch_document_symbol(g: SymbolGraph, id: string, params: string) -> string {
+    let uri = json_extract_string(params, "uri")
+    let file = uri_to_file(uri)
+    let syms = query_symbols(g, Scope.File(file))
+    jsonrpc_response(id, symlist_to_json(syms))
+}
+
+/// Handle `workspace/symbol` — fuzzy-search the entire graph
+/// against the request's `query` string.
+fn dispatch_workspace_symbol(g: SymbolGraph, id: string, params: string) -> string {
+    let q = json_extract_string(params, "query")
+    let scored = query_search(g, q, 50)
+    jsonrpc_response(id, scored_syms_to_json(scored))
+}
+
+/// Handle the custom `avra/callers` request — every Sym that calls
+/// the request's target qualified name.
+fn dispatch_callers(g: SymbolGraph, calls: List<CallEdge>, id: string, params: string) -> string {
+    let name = json_extract_string(params, "name")
+    let callers = query_callers(g, calls, name)
+    jsonrpc_response(id, symlist_to_json(callers))
+}
+
+/// Handle the custom `avra/callees` request — every name called
+/// from the request's caller qualified name.
+fn dispatch_callees(calls: List<CallEdge>, id: string, params: string) -> string {
+    let qualified = json_extract_string(params, "qualified")
+    let edges = query_callees(calls, qualified)
+    jsonrpc_response(id, calls_to_json(edges))
+}
+
+/// Render a Sym as an LSP Location JSON object — used by every
+/// dispatch_* response that returns "where is this symbol?".
+fn sym_to_location_json(s: Sym) -> string {
+    let uri = "file://${s.file}"
+    let line = string(s.span.start.line - 1)  // LSP 0-based
+    "{\"uri\":${json_str(uri)},\"range\":{\"start\":{\"line\":${line},\"character\":0},\"end\":{\"line\":${line},\"character\":0}}}"
+}
+
+/// Strip a leading `file://` from an LSP URI to get a plain path.
+/// Pass-through for non-file URIs.
+fn uri_to_file(uri: string) -> string {
+    if uri.starts_with("file://") {
+        uri.substring(7, uri.length)
+    } else {
+        uri
+    }
+}
+
+/// Serialize a `List<ScoredSym>` as a JSON array of CompletionItems.
+fn scored_syms_to_json(list: List<ScoredSym>) -> string {
+    mut out = "["
+    mut first = true
+    for item in list {
+        if first {
+            out = "${out}${sym_to_json(item.sym)}"
+            first = false
+        } else {
+            out = "${out},${sym_to_json(item.sym)}"
+        }
+    }
+    "${out}]"
+}
+
+/// Serialize a `List<CallEdge>` as a JSON array of Location objects
+/// (one per CallEdge) — used by `dispatch_callees` and references.
+fn calls_to_json(list: List<CallEdge>) -> string {
+    mut out = "["
+    mut first = true
+    for edge in list {
+        let row = "{\"caller\":${json_str(edge.caller)},\"callee\":${json_str(edge.callee)},\"file\":${json_str(edge.file)},\"line\":${string(edge.line)},\"col\":${string(edge.col)}}"
+        if first {
+            out = "${out}${row}"
+            first = false
+        } else {
+            out = "${out},${row}"
+        }
+    }
+    "${out}]"
+}
+
+// ── Server event loop ──────────────────────────────────────────────
+//
+// Block on stdin, frame messages, dispatch, write framed responses,
+// repeat. Caller passes the populated graph + call list. The loop
+// exits on EOF or after an `exit` notification.
+//
+// This is intentionally a thin shell — no async, no debouncing, no
+// did-change overlay. v1 serves a static graph; reindex-on-edit is
+// future work that ticket .7's incremental cache enables.
+
+/// Run the JSON-RPC stdio loop. Reads framed LSP messages from
+/// stdin, dispatches to the appropriate `dispatch_*` handler, and
+/// writes framed responses to stdout. Returns when stdin closes
+/// (typically on the editor's `exit` notification).
+export fn lsp_serve(g: SymbolGraph, calls: List<CallEdge>) {
+    while true {
+        let body = lsp_read_frame()
+        if body == "" { return }
+        let method = json_extract_string(body, "method")
+        let id = extract_id_raw(body)
+        let response = lsp_dispatch(g, calls, id, method, body)
+        if response != "" {
+            avra_stdout_write(lsp_frame(response))
+        }
+        if method == "exit" { return }
+    }
+}
+
+// LSP request ids may be strings or integers. We extract the *raw*
+// JSON form (with quotes if it's a string, bare digits if int) so
+// the response echoes the same shape — JSON-RPC requires id
+// preservation, not normalisation.
+/// Pull the `id` field out of an incoming JSON-RPC envelope as a
+/// raw substring (number or quoted string). Used to thread the id
+/// through into the response so the editor can correlate replies.
+fn extract_id_raw(body: string) -> string {
+    let needle = "\"id\""
+    let pos = body.index_of(needle)
+    if pos < 0 { return "null" }
+    mut i = pos + needle.length
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch == ":" {
+            i = i + 1
+            break
+        }
+        i = i + 1
+    }
+    while i < body.length {
+        let ch = body.substring(i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+        i = i + 1
+    }
+    if i >= body.length { return "null" }
+    let first = body.substring(i, i + 1)
+    if first == "\"" {
+        // Read full quoted string including the quotes.
+        mut end = i + 1
+        while end < body.length {
+            let ch = body.substring(end, end + 1)
+            if ch == "\\" {
+                end = end + 2
+                continue
+            }
+            if ch == "\"" {
+                return body.substring(i, end + 1)
+            }
+            end = end + 1
+        }
+        return "null"
+    }
+    // Numeric id: read digits + optional minus.
+    mut end = i
+    while end < body.length {
+        let ch = body.substring(end, end + 1)
+        if ch == "-" || (ch >= "0" && ch <= "9") {
+            end = end + 1
+        } else {
+            break
+        }
+    }
+    if end == i { return "null" }
+    body.substring(i, end)
+}

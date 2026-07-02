@@ -1,0 +1,26 @@
+spec "edge overflow" {
+    then "max i64" {
+        let big = 9223372036854775807
+        string(big) == "9223372036854775807"
+    }
+    then "negate big" {
+        let big = 9223372036854775807
+        string(-big) == "-9223372036854775807"
+    }
+    then "overflow wraps" {
+        let big = 9223372036854775807
+        string(big + 1) == "-9223372036854775808"
+    }
+    then "shift left 63" {
+        string(1 << 63) == "-9223372036854775808"
+    }
+    then "arithmetic shift right" {
+        string(-1 >> 1) == "-1"
+    }
+    then "zero and zero" {
+        (0 & 0) == 0
+    }
+    then "not zero masked" {
+        (~0 & 0xFF) == 255
+    }
+}

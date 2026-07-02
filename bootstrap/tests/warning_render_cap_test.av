@@ -1,0 +1,50 @@
+// Spec test for the per-F-code warning render cap landed in
+// commit 2a698503.
+//
+// Background: removing the 10-warning total cap (a UX regression
+// fix for buried F-coded warnings) made programs that import
+// std-avrac flood stderr with 2600+ wildcard / unused-import nudges.
+// Per-F-code cap (default 3 instances per unique F-code) preserves
+// rare signals (F4xxx @expand, F1xxx typecheck, F9050 introduces-
+// phantom) while compressing repetitive style codes.
+//
+// This test pins the contract: a noisy compile (many same-code
+// warnings) renders only a few of each F-code in full, then collapses
+// duplicates into a "... and N more — set AVRA_ALL_WARNINGS=1 ..."
+// footer.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+use @std.avrac.test_runner.{write_fixture}
+
+spec "warning render cap: per-F-code dedup + footer" {
+    then "capped run collapses duplicates into footer" {
+        // Produce > per-code-cap (default 3) unused-import warnings —
+        // an unused import is F9002, so 5 of them in a single file
+        // exceeds the cap and triggers the "and N more" collapse.
+        // Pick imports that are guaranteed not to be referenced.
+        write_fixture("/tmp/avra_warn_cap_test.av",
+            "use @std.avrac.core.{Stmt}\n" +
+            "use @std.avrac.core.{Expr}\n" +
+            "use @std.avrac.core.{Span}\n" +
+            "use @std.avrac.core.{Pattern}\n" +
+            "use @std.avrac.core.{MatchArm}\n" +
+            "fn main() { println(\"ok\") }\n")
+        let out = avra_shell_exec("./build/bs2 compile /tmp/avra_warn_cap_test.av 2>&1 || true")
+        // Cap = 3, fixture has 5 F9002 → cap leaves 2 collapsed.
+        out.contains("more warning") && out.contains("AVRA_ALL_WARNINGS=1")
+    }
+    then "uncapped run renders all warnings (AVRA_ALL_WARNINGS=1)" {
+        write_fixture("/tmp/avra_warn_cap_test.av",
+            "use @std.avrac.core.{Stmt}\n" +
+            "use @std.avrac.core.{Expr}\n" +
+            "use @std.avrac.core.{Span}\n" +
+            "use @std.avrac.core.{Pattern}\n" +
+            "use @std.avrac.core.{MatchArm}\n" +
+            "fn main() { println(\"ok\") }\n")
+        let out = avra_shell_exec("AVRA_ALL_WARNINGS=1 ./build/bs2 compile /tmp/avra_warn_cap_test.av 2>&1 || true")
+        // With AVRA_ALL_WARNINGS=1, the "more warnings" footer should
+        // NOT appear (cap is effectively disabled).
+        !out.contains("more warning")
+    }
+}

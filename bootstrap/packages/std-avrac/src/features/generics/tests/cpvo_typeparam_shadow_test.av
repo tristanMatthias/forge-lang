@@ -1,0 +1,74 @@
+// WHY: forge-crafting-intepreters-cpvo — the resolver decided "is this name a
+// type-param?" with a BRITTLE heuristic (resolve_type_in_ctx: "any single
+// uppercase letter is a type-param"). Two consequences: (a) it only matched
+// single letters, so a MULTI-CHAR param like `Elem` fell through and got
+// qualified to a phantom `module::Elem`; (b) a single-letter param `T` was
+// conflated with a user type also named `T`. The fix threads a real type-param
+// SCOPE through the resolver — a name is a type-param iff it's in the enclosing
+// fn / type / impl's declared params — plus a side-table that recovers an impl's
+// `<…>` (which the impl parser discards).
+//
+// CRITICAL — these specs must run in MODULE scope to exercise the bug. The
+// mis-qualification routes through `type_qualified_name(module, name)`, which is
+// a no-op when the module path is "" — so a top-level single-file fixture passes
+// on the PRE-FIX compiler too (an earlier version of this file did exactly that
+// and guarded nothing). `compile --module_path=cpvo` wraps the body in
+// `Module(cpvo, …)` to give a non-empty current_module — the same wrapping the
+// test runner applies to every `*_test.av`. There is no inline-module surface
+// syntax, and `bs2 test` / `bs2 check` do NOT reach the module-scoped resolution
+// path, so `compile --module_path` is the only vehicle. `compile` exits 0 even on
+// error, so a clean compile is detected by the `.ll` it produces.
+//
+// Each fixture below emits F1002/F1000 on the pre-fix compiler and a `.ll` on the
+// post-fix one (verified against both binaries) — a real regression guard.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Compile `source` as module `cpvo` (non-empty current_module). Reports
+// __CPVO_COMPILED__ when codegen produced a `.ll` (clean) and __CPVO_REJECTED__
+// when it did not (the resolver mis-qualified a type-param and typeck rejected).
+fn cpvo_compiles(source: string) -> string {
+    let path = "/tmp/avra_cpvo_mod.av"
+    write_fixture(path, source)
+    avra_shell_exec("rm -f '${path}.ll'; ./build/bs2 compile --module_path=cpvo '${path}' >/dev/null 2>&1; test -f '${path}.ll' && echo __CPVO_COMPILED__ || echo __CPVO_REJECTED__")
+}
+
+spec "cpvo: a generic struct's impl method returns the struct's multi-char param" {
+    then "impl Box<Elem> { fn read(self) -> Elem } compiles in module scope (was F1002)" {
+        // The impl parser drops `impl Box<Elem>`'s `<Elem>`; the side-table
+        // recovers it so the method's return `Elem` stays bare instead of being
+        // qualified to a phantom `cpvo::Elem`.
+        let out = cpvo_compiles("type Box<Elem> = { val: Elem }
+impl Box<Elem> {
+    fn read(self) -> Elem { self.val }
+}
+fn use_box() -> bool {
+    let b = Box { val: 7 }
+    b.read() == 7
+}
+fn main() { println(\"ok\") }")
+        out.contains("__CPVO_COMPILED__")
+    }
+}
+
+spec "cpvo: a standalone generic fn's multi-char param stays bare in module scope" {
+    then "fn identity<Elem>(x: Elem) -> Elem compiles in module scope (was F1000)" {
+        let out = cpvo_compiles("fn identity<Elem>(x: Elem) -> Elem { x }
+fn use_it() -> int { identity(7) }
+fn main() { println(\"ok\") }")
+        out.contains("__CPVO_COMPILED__")
+    }
+}
+
+spec "cpvo: a fn type-param shadows a same-named type in module scope" {
+    then "fn pick<W, Elem> with a user `enum Elem` binds the param, not the type (was F1002)" {
+        // Pre-fix, `Elem` (multi-char) resolved to the registered `cpvo::Elem`
+        // enum instead of staying a bare param, so the param could never bind.
+        let out = cpvo_compiles("enum Elem { A, B }
+fn pick<W, Elem>(x: W, y: Elem) -> Elem { y }
+fn use_it() -> Elem { pick(1, Elem.A) }
+fn main() { println(\"ok\") }")
+        out.contains("__CPVO_COMPILED__")
+    }
+}

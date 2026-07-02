@@ -1,0 +1,424 @@
+// WHY: content-addressed cache for the Avra build system.
+//
+// Each build unit's compile output (LLVM IR + object file + metadata)
+// is keyed by its 64-char hex fingerprint and stored at
+// `<root>/cache/<fp>/{unit.ll, unit.o, metadata.bin}`. A fingerprint
+// match means we already have the artifact — copy/symlink it back
+// into the active build dir and skip the compile.
+//
+// Atomic publishing: writes go to a `<root>/cache/_tmp/<fp>.<pid>/`
+// staging directory, then `avra_rename` moves the whole directory
+// into place when complete. Concurrent readers see either the fully
+// populated entry or none — never a half-written one.
+//
+// The module is filesystem-shaped, not process-shaped: it owns paths
+// and read/write/rename calls, not orchestration. Higher layers
+// (the build driver) decide WHEN to consult the cache; this module
+// answers WHAT is cached and HOW to publish.
+
+use core.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+    avra_rename,
+    avra_remove_file,
+    avra_is_dir,
+    avra_shell_exec_status,
+    avra_file_size,
+    avra_getpid,
+}
+use build.fingerprint.{Fingerprint}
+use build.link.{llvm_prefix_dir}
+
+/// Logical layout of the cache directory tree under a project's
+/// `<root>/build/`. The build driver passes the root path; the cache
+/// module derives the per-fingerprint sub-paths.
+///
+/// Conventions:
+///   * `root` always ends with a trailing slash so path concatenation
+///     stays string-only (no platform separator handling). The
+///     filesystem accepts this on macOS and Linux uniformly.
+///   * Tmp staging lives at `<root>cache/_tmp/` so a sibling rename
+///     into `<root>cache/<fp>/` is atomic on the same filesystem.
+export type Cache = {
+    root: string,           // <project>/build/
+    cache_dir: string,      // <root>cache/
+    tmp_dir: string,        // <root>cache/_tmp/
+}
+
+/// Build a Cache view over `<project>/build/`. Idempotent — calling
+/// it many times produces the same record. Does not touch the
+/// filesystem; use `cache_init` to materialise the directory tree.
+export fn cache_for(project_root: string) -> Cache {
+    let root = ensure_trailing_slash(project_root) + "build/"
+    let cache_dir = root + "cache/"
+    Cache {
+        root: root,
+        cache_dir: cache_dir,
+        tmp_dir: cache_dir + "_tmp/",
+    }
+}
+
+/// Materialise the cache directory tree on disk. Creates `cache/` and
+/// `cache/_tmp/` and any missing parents. Returns true on success;
+/// false (with no other side effect) if the system call fails.
+export fn cache_init(c: Cache) -> bool {
+    if avra_mkdir_p(c.cache_dir) == 0 { return false }
+    if avra_mkdir_p(c.tmp_dir) == 0 { return false }
+    true
+}
+
+/// Path to the per-fingerprint entry directory. Note: returned path
+/// does NOT have a trailing slash, since callers usually need to
+/// build sibling paths (`<entry>/unit.ll`, `<entry>/unit.o`, etc.).
+export fn entry_dir_for(c: Cache, fp: Fingerprint) -> string {
+    c.cache_dir + fp.hex
+}
+
+/// Per-artifact paths inside an entry directory. Centralised so
+/// every consumer agrees on the file names — a typo in either side
+/// silently misses the cache.
+export fn entry_ll_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.ll"
+}
+export fn entry_o_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.o"
+}
+export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/metadata.bin"
+}
+
+/// 0qmm: source-keyed metadata slot. The consolidated home for what
+/// used to live at the fixed path `<file>.meta.bin`. Both producer
+/// (emit_per_file_metas / entry-meta writer) and consumer (resolver's
+/// AVRA_USE_METADATA fast-path) compute the same sha256 from the
+/// source file, so they agree on the cache path without cross-pass
+/// coordination. Stale hits are impossible by construction — change
+/// the source byte, change the path.
+///
+/// Lives under a separate `meta/` sub-namespace inside the cache so
+/// it doesn't collide with the per-fn IR entries (which key on the
+/// richer `fp_for_unit` factoring in compiler + profile + target —
+/// overkill for metadata, which is purely source-derived).
+///
+/// Returns the absolute path to `unit.meta.bin`. Caller is
+/// responsible for creating the parent directory before writing.
+/// `ensure_source_meta_dir` materialises it.
+export fn entry_source_meta_path(c: Cache, source_fp: Fingerprint) -> string {
+    c.cache_dir + "meta/" + source_fp.hex + "/unit.meta.bin"
+}
+
+/// True when the source-keyed metadata slot is populated.
+export fn cache_has_source_meta(c: Cache, source_fp: Fingerprint) -> bool {
+    avra_selfhost_file_exists(entry_source_meta_path(c, source_fp)) == 1
+}
+
+/// Materialise the source-keyed metadata entry directory so a
+/// caller can `metadata_write` (binary-safe) into the slot. Idempotent.
+export fn ensure_source_meta_dir(c: Cache, source_fp: Fingerprint) -> bool {
+    let _ = avra_mkdir_p(c.cache_dir + "meta")
+    avra_mkdir_p(c.cache_dir + "meta/" + source_fp.hex) != 0
+}
+/// Linked binary slot used by the test runner. A test "unit" is the
+/// transitive closure of *_test.av + every @std source file + the
+/// reporter; its action output is a single linked executable. We
+/// store it under the same content-addressed entry directory as
+/// build units so cache eviction, prune, and `--explain` operate
+/// uniformly across both kinds.
+export fn entry_bin_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.bin"
+}
+/// Human-readable manifest for a test entry. Records the action's
+/// distinguishing inputs (filter, coverage, source count) so
+/// `bs2 cache ls` and post-mortem diagnostics can describe what a
+/// given fingerprint represents without re-deriving it.
+export fn entry_manifest_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/manifest.txt"
+}
+
+/// True when a cache slot is COMPLETE: its primary artifact exists and
+/// is non-empty AND its companion artifact is present. cache_publish
+/// stages the pair then renames the staging dir as one unit, so a
+/// complete entry always carries both — a slot missing either is
+/// half-published or externally corrupted (an interrupted publish, a
+/// partial copy) and must be treated as a miss so the caller
+/// rebuilds+republishes rather than restoring a partial producer slot
+/// (kaux). Probing the files (not the directory) also avoids any race
+/// where the entry dir exists but its contents were not yet renamed in.
+///
+/// The primary is size-gated: a 0-byte unit.ll/unit.bin is a
+/// killed-mid-write / disk-full partial (the 378k class — a 0-byte
+/// unit.ll caused mysterious "missing _main" link errors when consumers
+/// wrote the empty bytes back and clang found nothing to link). The
+/// companion is existence-only: an empty-metadata unit legitimately
+/// stages a 0-byte metadata.bin, and the atomic rename guarantees the
+/// file is whole.
+fn slot_complete(primary: string, companion: string) -> bool {
+    // avra_file_size returns -1 for a missing file, so `<= 0` rejects
+    // both absent and 0-byte in a single stat.
+    if avra_file_size(primary) <= 0 { return false }
+    avra_selfhost_file_exists(companion) == 1
+}
+
+/// True when this cache has a complete BUILD entry for `fp`: unit.ll
+/// (present + non-empty) paired with metadata.bin. See slot_complete.
+export fn cache_has(c: Cache, fp: Fingerprint) -> bool {
+    slot_complete(entry_ll_path(c, fp), entry_metadata_path(c, fp))
+}
+
+/// True when this cache has a complete TEST entry for `fp`: unit.bin
+/// (present + non-empty) paired with manifest.txt. Build units publish
+/// unit.ll/metadata.bin without a binary; test units publish
+/// unit.bin/manifest.txt without a .ll — each kind keys off its own
+/// primary so a build entry never satisfies a test lookup or vice
+/// versa. See slot_complete.
+export fn cache_has_test(c: Cache, fp: Fingerprint) -> bool {
+    slot_complete(entry_bin_path(c, fp), entry_manifest_path(c, fp))
+}
+
+/// Outcome of a publish attempt. The build driver inspects this to
+/// decide whether to continue or surface a diagnostic.
+export type PublishResult = {
+    success: bool,
+    error: string,           // human-readable failure reason
+}
+
+/// Publish a freshly-compiled unit into the cache.
+///
+/// Writes the artifacts to a staging directory, then renames the
+/// whole directory into the canonical entry path. The rename is
+/// atomic on the same filesystem so concurrent readers cannot
+/// observe a partially-populated entry.
+///
+/// `staging_id` is a per-build-process discriminator (e.g. PID) so
+/// concurrent build drivers do not collide on the same staging path.
+export fn cache_publish(
+    c: Cache,
+    fp: Fingerprint,
+    ll_content: string,
+    o_path_src: string,         // path to the .o file produced by llc
+    metadata_content: string,
+    staging_id: string,
+) -> PublishResult {
+    // jg3p: reject empty ll_content up-front. Observed bug: a killed
+    // bs2 mid-compile left a 0-byte .ll on disk; the caller then
+    // read_file'd that empty .ll and passed it here, publishing
+    // corrupted state. Future reads hit a 0-byte cached unit.ll →
+    // mysterious "missing _main" link errors across 13+ test fixtures.
+    // The .ll for any real compile is hundreds of KB minimum, so
+    // empty is unambiguously a kill-induced partial.
+    if ll_content == "" {
+        return PublishResult { success: false, error: "refusing to publish empty .ll (likely killed mid-compile)" }
+    }
+    let staging = c.tmp_dir + fp.hex + "." + staging_id
+    if avra_mkdir_p(staging) == 0 {
+        return PublishResult { success: false, error: "mkdir failed: " + staging }
+    }
+    let staged_ll = staging + "/unit.ll"
+    let staged_meta = staging + "/metadata.bin"
+
+    if avra_selfhost_write_file(staged_ll, ll_content) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_ll }
+    }
+    // 378k post-write check: even if write returned success, verify
+    // the on-disk size is non-zero. Disk-full or killed-mid-write
+    // conditions can leave the file shorter than intended; refuse to
+    // publish rather than index a partial entry that cache_has's
+    // own size check would also reject on read.
+    if avra_file_size(staged_ll) <= 0 {
+        let _ = avra_remove_file(staged_ll)
+        return PublishResult { success: false, error: "post-write size check failed (0 bytes): " + staged_ll }
+    }
+    // unit.o is no longer written — every historical caller passed
+    // the .ll path as o_path_src, producing a bit-identical duplicate
+    // of unit.ll wasting ~20MB per slot. Real Mach-O objects live at
+    // unit.realobj.o, materialised lazily on first read by
+    // cache_entry_realobj_path. The o_path_src parameter is retained
+    // for API stability but ignored.
+    let _ = o_path_src
+    if avra_selfhost_write_file(staged_meta, metadata_content) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_meta }
+    }
+
+    let final_dir = entry_dir_for(c, fp)
+    if avra_rename(staging, final_dir) == 0 {
+        // Most likely cause: another process won the race and
+        // already published this fingerprint. Treat that as success
+        // — both ended up with byte-identical content (cache is
+        // content-addressed). Only flag a real failure if neither
+        // path got the entry into place.
+        if cache_has(c, fp) {
+            return PublishResult { success: true, error: "" }
+        }
+        return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+    }
+    PublishResult { success: true, error: "" }
+}
+
+/// Lazy read of a cache slot's `unit.o` as a real Mach-O object.
+/// Library-mode callers (P2+) need actual object files for multi-
+/// object linking; cache_publish today stores the .ll text in the
+/// `unit.o` slot (a historical quirk). This wrapper produces a real
+/// Mach-O sibling at `unit.realobj.o` by running llc on first read;
+/// subsequent calls return the cached path. Returns "" when the
+/// cache slot is absent or llc fails.
+///
+/// Keeping the llc cost on the READ side (rather than the publish
+/// side) means whole-program callers — who never link cached .o
+/// files — pay zero; only library-mode callers pay the llc cost,
+/// and only once per cache slot.
+export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
+    // Require a COMPLETE slot, not merely unit.ll. This producer object is
+    // consumed by library-mode linking, so materialising it from a
+    // half-published slot (one cache_has would reject as a miss) would
+    // punch a hole in the very completeness gate this ticket adds — the
+    // build driver would rebuild the slot while a direct realobj consumer
+    // linked the incomplete one.
+    if !cache_has(c, fp) { return "" }
+    let entry = entry_dir_for(c, fp)
+    let real_o = entry + "/unit.realobj.o"
+    // Trust an existing final only if it is NON-EMPTY. A 0-byte / partial
+    // real_o — e.g. a pre-atomic leftover from a killed direct-to-final
+    // llc, or external corruption — must not be linked: drop it and
+    // re-materialise atomically below.
+    if avra_file_size(real_o) > 0 { return real_o }
+    if avra_selfhost_file_exists(real_o) == 1 { let _ = avra_remove_file(real_o) }
+    let ll = entry_ll_path(c, fp)
+    let llvm_prefix = llvm_prefix_dir()
+    // kaux: materialise ATOMICALLY, mirroring cache_publish's discipline.
+    // llc writes its object to a process-unique temp sibling; only a
+    // complete, non-empty object is renamed onto the canonical path. A
+    // killed/OOM'd llc leaves the temp (GC'd here), never a truncated
+    // unit.realobj.o that a later cache HIT would link as a corrupt
+    // producer object — the "half-published slot served" bug this ticket
+    // closes. Unlike unit.ll/metadata.bin (written via the pid-atomic
+    // avra_selfhost_write_file), llc writes the object file itself, so
+    // the temp+rename must live here. rename is atomic on the same fs;
+    // the per-pid temp keeps concurrent producers (process-level
+    // parallelism) from clobbering each other's staging.
+    let tmp_o = real_o + ".tmp." + string(avra_getpid())
+    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${tmp_o}' 2>/dev/null")
+    if rc != 0 || avra_file_size(tmp_o) <= 0 {
+        let _ = avra_remove_file(tmp_o)
+        return ""
+    }
+    if avra_rename(tmp_o, real_o) == 0 {
+        // A genuine filesystem error (rename atomically REPLACES an
+        // existing target, so a concurrent producer that renamed first
+        // does not fail us here). Drop our temp; still salvage an
+        // already-materialised final if a concurrent producer left one
+        // (it too landed via this atomic path, so it is complete).
+        let _ = avra_remove_file(tmp_o)
+        if avra_file_size(real_o) > 0 { return real_o }
+        return ""
+    }
+    real_o
+}
+
+/// Read a cached unit's IR back. Caller is responsible for checking
+/// `cache_has` first — this returns the empty string when the entry
+/// is missing, which is also the legitimate value of an empty
+/// compile (e.g. an empty unit). Distinguishing those is the
+/// caller's job.
+export fn cache_read_ll(c: Cache, fp: Fingerprint) -> string {
+    avra_selfhost_read_file(entry_ll_path(c, fp))
+}
+
+/// Publish a freshly-linked test binary into the cache.
+///
+/// The test action's output is a single executable; we store it
+/// under the per-fingerprint entry directory alongside a small
+/// human-readable manifest. As with `cache_publish`, writes go
+/// through a tmp staging directory then atomically rename into the
+/// canonical entry path so concurrent readers never see a partial
+/// entry.
+///
+/// Read the binary off disk (rather than through a string parameter)
+/// because executables routinely contain NUL bytes that an Avra
+/// `string` would truncate at. The shell `cp` we use here is
+/// binary-safe.
+///
+/// Race-tolerant: when two concurrent test runs publish the same
+/// fingerprint, the loser's rename fails because the entry already
+/// exists. We treat that as success — both winners produced
+/// byte-identical outputs (cache is content-addressed).
+export fn cache_publish_test(
+    c: Cache,
+    fp: Fingerprint,
+    bin_path_src: string,
+    manifest: string,
+    staging_id: string,
+) -> PublishResult {
+    let staging = c.tmp_dir + fp.hex + "." + staging_id
+    if avra_mkdir_p(staging) == 0 {
+        return PublishResult { success: false, error: "mkdir failed: " + staging }
+    }
+    let staged_bin = staging + "/unit.bin"
+    let staged_manifest = staging + "/manifest.txt"
+
+    // Binary copy via `cp` — avra_selfhost_read_file/write_file goes
+    // through Avra strings (NUL-truncating). Test binaries are full
+    // Mach-O / ELF blobs, so we MUST round-trip them as bytes. Use
+    // `avra_shell_exec_status` so a non-zero rc surfaces as a real
+    // error instead of being smuggled inside captured stdout.
+    let cp_rc = avra_shell_exec_status("cp '" + bin_path_src + "' '" + staged_bin + "'")
+    if cp_rc != 0 {
+        return PublishResult { success: false, error: "cp failed: " + staged_bin + " (rc=" + string(cp_rc) + ")" }
+    }
+
+    if avra_selfhost_write_file(staged_manifest, manifest) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_manifest }
+    }
+
+    let final_dir = entry_dir_for(c, fp)
+    if avra_rename(staging, final_dir) == 0 {
+        if cache_has_test(c, fp) {
+            return PublishResult { success: true, error: "" }
+        }
+        return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+    }
+    PublishResult { success: true, error: "" }
+}
+
+/// Avra-side existence guard. The runtime probe lives in
+/// `cache_has_test`; expose `bin` path retrieval here so the test
+/// driver has a single import surface for replay.
+export fn cache_bin_path_for(c: Cache, fp: Fingerprint) -> string {
+    entry_bin_path(c, fp)
+}
+
+/// Read a cached unit's metadata blob. See `cache_read_ll` re:
+/// missing-vs-empty distinction.
+export fn cache_read_metadata(c: Cache, fp: Fingerprint) -> string {
+    avra_selfhost_read_file(entry_metadata_path(c, fp))
+}
+
+/// Evict a cache entry. Used by `avra cache prune` to GC stale
+/// entries. Returns true when both kinds of sentinel (build .ll and
+/// test .bin) are gone after the call. Cleans up every artifact
+/// that any kind of entry might have produced; an entry with only
+/// a subset is still fully removed.
+export fn cache_evict(c: Cache, fp: Fingerprint) -> bool {
+    let entry = entry_dir_for(c, fp)
+    // Best-effort: remove individual files first, ignore individual
+    // failures (the directory rmdir is what determines overall
+    // success). Error reporting belongs at the GC driver level.
+    let _l = avra_remove_file(entry + "/unit.ll")
+    let _o = avra_remove_file(entry + "/unit.o")
+    let _m = avra_remove_file(entry + "/metadata.bin")
+    let _b = avra_remove_file(entry + "/unit.bin")
+    let _mf = avra_remove_file(entry + "/manifest.txt")
+    // Directory removal is currently best-effort via the runtime —
+    // we model success as "neither sentinel file exists." When a
+    // runtime hook for rmdir lands, evolve this.
+    !cache_has(c, fp) && !cache_has_test(c, fp)
+}
+
+/// Path string ends-with helper. The cache module avoids depending
+/// on @std/avrac's string utilities so it stays self-contained.
+fn ensure_trailing_slash(s: string) -> string {
+    if s.length == 0 { return "/" }
+    let last = s.substring(s.length - 1, s.length)
+    if last == "/" { s } else { s + "/" }
+}

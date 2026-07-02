@@ -1,0 +1,38 @@
+// y9y4.15 (Slice C.any): @expand(derive_walker) emits
+// `Type__any(self, pred) -> bool` that recurses depth-first and
+// short-circuits on the first pred(node) -> true. Returns false
+// when no descendant matches. Same recursive macro emission shape
+// as visit() but with `Stmt.Return(true)` early exits + a trailing
+// `Stmt.Return(false)`.
+//
+// Bypasses metadata mode — forge-crafting-intepreters-9p1d.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_walker: any() short-circuits on first matching descendant" {
+    then "deeply-nested Leaf(42) returns true; absent target returns false" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_any_test.av", 
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "enum Tree {\n" +
+            "    Leaf(value: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "}\n" +
+            "\n" +
+            "fn is_42(t: Tree) -> bool {\n" +
+            "    match t { .Leaf(v) -> v == 42, _ -> false }\n" +
+            "}\n" +
+            "\n" +
+            "fn is_99(t: Tree) -> bool {\n" +
+            "    match t { .Leaf(v) -> v == 99, _ -> false }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let t = Tree.Node(Tree.Leaf(1), Tree.Node(Tree.Leaf(42), Tree.Leaf(3)))\n" +
+            "    println(\"has-42=\" + string(t.any(is_42)))\n" +
+            "    println(\"has-99=\" + string(t.any(is_99)))\n" +
+            "}\n")
+        out.contains("has-42=true") && out.contains("has-99=false")
+    }
+}

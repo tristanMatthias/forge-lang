@@ -1,0 +1,130 @@
+// dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
+// as siblings, surface flat at `features.let_stmt.{...}`. bind_destructure
+// is in scope without a self-import.
+use codegen.{err_stmt, StmtResult}
+use codegen.{ok_sr, err_sr}
+use features.eval.{error_result, ok_result, eval_expr, define_binding, value_null}
+use core.{feature_new, Feature}
+use resolve.{define_param_names, resolve_expr}
+use features.tuples.{emit_let_destructure}
+use typeck.{check_expr}
+
+/// Register the `let (a, b, c) = tuple` destructuring feature.
+/// Wires up resolver, typeck, codegen, and eval hooks.
+export fn let_destructure_feature() -> Feature {
+    feature_new("let_destructure") with {
+        stmt_tag: Stmt.LetDestructure([], Expr.None),
+        emit_stmt: let_destructure_emit_stmt,
+        resolve_stmt: let_destructure_resolve_stmt,
+        check_stmt: let_destructure_check_stmt,
+        eval_stmt: let_destructure_eval_stmt,
+    }
+}
+
+/// Register the `let` keyword feature — immutable bindings.
+/// Routes to the parser's `parse_let_statement`.
+export fn let_keyword_feature() -> Feature {
+    feature_new("let") with {
+        decl_keyword: "kw_let",
+        parse_decl: kw_parse_let,
+    }
+}
+
+/// Register the `const` keyword feature — compile-time constant
+/// bindings. Routes to the parser's `parse_const_statement`.
+export fn const_keyword_feature() -> Feature {
+    feature_new("const") with {
+        decl_keyword: "kw_const",
+        parse_decl: kw_parse_const,
+    }
+}
+
+/// Register the `mut` keyword feature — mutable bindings. Routes
+/// to the parser's `parse_mut_statement`.
+export fn mut_keyword_feature() -> Feature {
+    feature_new("mut") with {
+        decl_keyword: "kw_mut",
+        parse_decl: kw_parse_mut,
+    }
+}
+
+/// Parser dispatch hook for the `let` keyword. Forwards to the
+/// recursive-descent parser's let-statement entry.
+fn kw_parse_let(p: Parser) -> Result<Stmt, string> {
+    p.parse_let_statement()
+}
+
+/// Parser dispatch hook for the `const` keyword.
+fn kw_parse_const(p: Parser) -> Result<Stmt, string> {
+    p.parse_const_statement()
+}
+
+/// Parser dispatch hook for the `mut` keyword.
+fn kw_parse_mut(p: Parser) -> Result<Stmt, string> {
+    p.parse_mut_statement()
+}
+
+/// Resolver hook for `let (a, b, c) = ...`. Resolves the
+/// initializer first, then defines each tuple-position name in
+/// the post-init scope.
+fn let_destructure_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .LetDestructure(names, initializer) -> {
+            let after_init = resolve_expr(r, initializer)
+            define_param_names(after_init, names)
+        }
+        _ -> r
+    }
+}
+
+/// Type-check hook for `let (a, b, c) = ...`. Checks the
+/// initializer then binds each destructured name with its tuple-
+/// position type via `bind_destructure`.
+fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .LetDestructure(names, init) -> {
+            let r = check_expr(tc, init)
+            bind_destructure(r.tc, names, r.ty)
+        }
+        _ -> tc
+    }
+}
+
+/// Tree-walk evaluator hook for `let (a, b) = expr`. Evaluates the
+/// initializer to a tuple/list Value and binds each name to the
+/// matching positional element (missing positions bind null). Tuples
+/// and the index/element pairs from `enumerate()`/`zip()` are both
+/// represented as list-kind Values, so this also powers
+/// `for (i, x) in xs.enumerate()` inside @comptime macros.
+fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .LetDestructure(names, initializer) -> {
+            let init = eval_expr(rt, initializer)
+            if init.had_error { return init }
+            if init.value.kind != "list" {
+                return error_result(init.runtime, "cannot destructure non-tuple value (kind=${init.value.kind})")
+            }
+            let payload = init.value.list_payload
+            mut cur = init.runtime
+            for (i, entry) in names.enumerate() {
+                let v = if i < payload.length { payload[i] } else { value_null() }
+                cur = define_binding(cur, entry.name, false, v)
+            }
+            ok_result(cur, value_null())
+        }
+        _ -> error_result(rt, "expected LetDestructure")
+    }
+}
+
+/// Codegen hook for `let (a, b) = ...`. Forwards to the tuples
+/// feature's `emit_let_destructure`, which emits per-position
+/// loads from the tuple alloca.
+fn let_destructure_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .LetDestructure(names, initializer) -> {
+            let new_env = emit_let_destructure(ctx, env, names, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        _ -> err_sr("expected LetDestructure")
+    }
+}

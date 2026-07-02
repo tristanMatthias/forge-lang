@@ -1,0 +1,149 @@
+// Phase 2 of Components V2 (vez6.2 slice C): exercise the program-
+// walker that finds every comptime call and replaces it with the
+// folded literal. Builds small ASTs by hand, runs rewrite_program,
+// asserts the output AST matches the expected post-fold shape.
+
+use @std.avrac.core.{Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, TypeParamEntry, BinOp, Annotation}
+use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, rewrite_program, collect_comptime_fns, comptime_registry_new}
+
+// `@comptime fn add(x: int, y: int) -> int { return x + y }` as AST.
+fn mk_add_decl() -> Stmt {
+    let body: List<SStmt> = [
+        sstmt_dummy(Stmt.Return(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y")))),
+    ]
+    let empty_tp: List<TypeParamEntry> = []
+    let params: List<ParamEntry> = [
+        ParamEntry { name: "x", vtype: ValueType.Int },
+        ParamEntry { name: "y", vtype: ValueType.Int },
+    ]
+    let fn_decl = Stmt.Function(
+        "add",
+        empty_tp,
+        params,
+        ValueType.Int,
+        body)
+    let empty_args: List<SExpr> = []
+    let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args }]
+    Stmt.Annotated(annots, sstmt_dummy(fn_decl))
+}
+
+// Helpers to build call exprs.
+fn mk_call(name: string, args: List<SExpr>) -> Expr {
+    Expr.Call(Expr.Ident(name), args)
+}
+fn args2(a: Expr, b: Expr) -> List<SExpr> {
+    [sexpr_dummy(a), sexpr_dummy(b)]
+}
+
+// Extract the initializer from a `let x = ...` statement, or null.
+fn let_init_of(stmt: Stmt) -> Expr? {
+    match stmt {
+        .Let(_, _, init) -> init
+        _ -> null
+    }
+}
+
+// Get the nth stmt in a list.
+fn nth_stmt(stmts: List<SStmt>, n: int) -> Stmt {
+    if n < 0 || n >= stmts.length { return Stmt.NoOp }
+    stmts[n].node
+}
+
+// Helper: get the Number text from an Expr literal, or "" otherwise.
+fn number_text_of(e: Expr) -> string {
+    match e {
+        .Number(text) -> text
+        _ -> ""
+    }
+}
+
+// Build a program: [@comptime fn add(...) {...}, let z = add(2, 3)]
+fn program_with_call() -> List<SStmt> {
+    let call_args = args2(Expr.Number("2"), Expr.Number("3"))
+    let let_stmt = Stmt.Let("z", ValueType.Unknown, mk_call("add", call_args))
+    [
+        sstmt_dummy(mk_add_decl()),
+        sstmt_dummy(let_stmt),
+    ]
+}
+
+spec "comptime.rewrite_program: folds top-level call" {
+    then "let z = add(2, 3) becomes let z = 5 after rewrite" {
+        let prog = program_with_call()
+        let reg = collect_comptime_fns(prog)
+        let rewritten = rewrite_program(prog, reg)
+        // Position 1 is the let stmt (position 0 is the @comptime fn).
+        let init = let_init_of(nth_stmt(rewritten, 1))
+        init != null && number_text_of(init!) == "5"
+    }
+    then "non-call expressions are unchanged" {
+        let prog: List<SStmt> = [
+            sstmt_dummy(Stmt.Let("x", ValueType.Unknown, Expr.Number("42"))),
+        ]
+        let reg = collect_comptime_fns(prog)
+        let rewritten = rewrite_program(prog, reg)
+        let init = let_init_of(nth_stmt(rewritten, 0))
+        init != null && number_text_of(init!) == "42"
+    }
+    then "calls to non-comptime fns are unchanged" {
+        // No @comptime fns registered → empty registry → nothing should fold.
+        let call_args = args2(Expr.Number("2"), Expr.Number("3"))
+        let let_stmt = Stmt.Let("z", ValueType.Unknown, mk_call("plain_fn", call_args))
+        let prog: List<SStmt> = [sstmt_dummy(let_stmt)]
+        let reg = comptime_registry_new()
+        let rewritten = rewrite_program(prog, reg)
+        let init = let_init_of(nth_stmt(rewritten, 0))
+        // Should still be a Call, not a Number.
+        match init! {
+            .Call(_, _) -> true
+            _ -> false
+        }
+    }
+}
+
+spec "comptime.rewrite_program: bottom-up folds nested calls" {
+    then "add(add(1, 2), 3) folds all the way to 6" {
+        let inner = mk_call("add", args2(Expr.Number("1"), Expr.Number("2")))
+        let outer = mk_call("add", args2(inner, Expr.Number("3")))
+        let let_stmt = Stmt.Let("z", ValueType.Unknown, outer)
+        let prog: List<SStmt> = [
+            sstmt_dummy(mk_add_decl()),
+            sstmt_dummy(let_stmt),
+        ]
+        let reg = collect_comptime_fns(prog)
+        let rewritten = rewrite_program(prog, reg)
+        let init = let_init_of(nth_stmt(rewritten, 1))
+        init != null && number_text_of(init!) == "6"
+    }
+}
+
+spec "comptime.rewrite_program: descends into fn bodies" {
+    then "comptime call inside another fn body folds" {
+        // fn outer() -> int { return add(2, 3) }
+        let outer_body: List<SStmt> = [
+            sstmt_dummy(Stmt.Return(mk_call("add", args2(Expr.Number("2"), Expr.Number("3"))))),
+        ]
+        let empty_tp2: List<TypeParamEntry> = []
+        let empty_p: List<ParamEntry> = []
+        let outer_fn = Stmt.Function("outer", empty_tp2, empty_p, ValueType.Int, outer_body)
+        let prog: List<SStmt> = [
+            sstmt_dummy(mk_add_decl()),
+            sstmt_dummy(outer_fn),
+        ]
+        let reg = collect_comptime_fns(prog)
+        let rewritten = rewrite_program(prog, reg)
+        // After rewrite: outer's body should be `return 5`.
+        let outer_after = nth_stmt(rewritten, 1)
+        match outer_after {
+            .Function(_, _, _, _, body) -> {
+                if body.length > 0 {
+                    match body[0].node {
+                        .Return(e) -> number_text_of(e) == "5"
+                        _ -> false
+                    }
+                } else { false }
+            }
+            _ -> false
+        }
+    }
+}

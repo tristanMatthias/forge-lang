@@ -1,0 +1,39 @@
+trait TabGreet {
+    fn greet(self) -> string
+}
+
+type TabDog = { name: string }
+type TabCat = { name: string }
+
+impl TabGreet for TabDog {
+    fn greet(self) -> string {
+        "woof from " + self.name
+    }
+}
+
+impl TabGreet for TabCat {
+    fn greet(self) -> string {
+        "meow from " + self.name
+    }
+}
+
+fn tab_say_hi(g: TabGreet) -> string {
+    g.greet()
+}
+
+spec "trait auto box" {
+    then "direct dog" {
+        tab_say_hi(TabDog { name: "Rex" }) == "woof from Rex"
+    }
+    then "direct cat" {
+        tab_say_hi(TabCat { name: "Whiskers" }) == "meow from Whiskers"
+    }
+    then "variable dog" {
+        let d = TabDog { name: "Buddy" }
+        tab_say_hi(d) == "woof from Buddy"
+    }
+    then "variable cat" {
+        let c = TabCat { name: "Luna" }
+        tab_say_hi(c) == "meow from Luna"
+    }
+}

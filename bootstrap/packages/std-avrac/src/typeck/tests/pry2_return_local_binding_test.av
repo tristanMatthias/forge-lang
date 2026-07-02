@@ -1,0 +1,91 @@
+// pry2: typeck's return-check pass (`tc_check_stmt_returns`) used to
+// re-walk a fn body to validate `return X` matched the declared
+// type, but it skipped `.Let / .Mut / .Const` — so locals declared
+// mid-block were absent from the TC when the .Return arm called
+// `check_expr_expected` on the returned expression. That made every
+// field-access through a local fall back to Unknown, and the F1000
+// "but return produces" check passed silently when it shouldn't have
+// (and falsely fired when the user fixture happened to produce a
+// concrete shape via the annotate pass).
+//
+// Why this test observes the fix: the fixture has the minimal shape
+// — a fn with a typed local binding, then a return statement that
+// reads a field through the local. Pre-fix the typeck didn't see
+// the binding, so `o.expand_site` resolved to Unknown and the
+// return-check passed silently — `check_source` reported no errors
+// against code that would later fail at codegen with an Unknown-typed
+// argument. Post-fix the binding is honored, the field-access
+// resolves to its declared `Span`, the tuple-vs-tuple comparison
+// succeeds, and the bag stays clean — but reverting the
+// `.Let / .Mut / .Const` arms in `tc_check_stmt_returns` flips the
+// fixture into an F1000 false positive because the elements no
+// longer match.
+//
+// 1h9l: migrated off `bs2 check` shell-out. The original fixture
+// imported @std.avrac.diagnostics.{Span, MacroFnOrigin}; those types
+// are inlined here as minimal local declarations so the source is
+// self-contained and `check_source` (which skips file-based module
+// loading) can typecheck it. Same bug surface, ~14s → ~10ms.
+
+use @std.avrac.check.{check_source}
+use @std.avrac.diagnostics.{bag_has_errors}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+spec "pry2: tc_check_stmt_returns honours let/mut/const bindings" {
+    then "fn with `let o = list[0]` + return through o.field type-checks clean (inline types)" {
+        let source =
+            "type Span = { line: int, col: int }\n" +
+            "type MacroFnOrigin = { expand_site: Span }\n" +
+            "\n" +
+            "fn decorate(origins: List<MacroFnOrigin>, msg: string, fb: Span) -> (string, Span) {\n" +
+            "    if origins.length > 0 {\n" +
+            "        let o = origins[0]\n" +
+            "        return (msg, o.expand_site)\n" +
+            "    }\n" +
+            "    (msg, fb)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() -> int { 0 }\n"
+        // F1000 = type mismatch on return — fires pre-fix because the
+        // tuple element from `o.expand_site` is Unknown (the let
+        // binding was skipped) and the comparison against the
+        // declared `(string, Span)` reports `(tuple) vs (tuple)`.
+        // Post-fix bag is clean.
+        let bag = check_source(source)
+        !bag_has_errors(bag)
+    }
+}
+
+// hdcg: restore the original package-import path. The inline-types
+// spec above catches the tc_check_stmt_returns bug at <1ms via
+// check_source. This one exercises the SAME bug PLUS the integration
+// of imported @std.avrac.diagnostics types with the return-check
+// pass. If a future regression touches package-imported nominal
+// handling without touching the bare let-binding path, the spec
+// above stays green but this one trips.
+//
+// Routed through cached_fixture_check_no_metadata so warm reruns
+// serve from disk cache. Cold ~14s once per toolchain_fp change.
+spec "pry2: imported-type field access through let-binding still type-checks" {
+    then "the same fix, via @std.avrac.diagnostics imports" {
+        let fixture = "/tmp/avra_pry2_imports_test.av"
+        write_fixture(fixture,
+            "use @std.avrac.diagnostics.{Span, MacroFnOrigin}\n" +
+            "\n" +
+            "fn decorate(origins: List<MacroFnOrigin>, msg: string, fb: Span) -> (string, Span) {\n" +
+            "    if origins.length > 0 {\n" +
+            "        let o = origins[0]\n" +
+            "        return (msg, o.expand_site)\n" +
+            "    }\n" +
+            "    (msg, fb)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(fixture)
+        // `bs2 check` prints "ok" on success, F-codes on failure.
+        // Pre-fix this fixture produced F1000 "(tuple) vs (tuple)";
+        // post-fix o.expand_site resolves to Span and the assertion
+        // holds.
+        out.contains("ok") && !out.contains("F1000")
+    }
+}

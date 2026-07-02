@@ -1,0 +1,46 @@
+/// Test fixture: extract the underlying value from an
+/// `int | string` union via exhaustive type-pattern match.
+fn ex_ut_show(val: int | string) -> string {
+    match val {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+/// Test fixture: variant of `ex_ut_show` that prepends a label
+/// to the unwrapped value — exercises the same union match with
+/// a non-trivial body in each arm.
+fn ex_ut_describe(val: int | string) -> string {
+    match val {
+        int(n) -> "int value: " + string(n)
+        string(s) -> "string value: " + s
+    }
+}
+
+/// Test fixture: union-typed match with one explicit arm and a
+/// wildcard `_` catch-all. Verifies the exhaustiveness checker
+/// still considers the match complete with the wildcard present.
+fn ex_ut_with_wildcard(val: int | string) -> string {
+    match val {
+        int(n) -> "got int: " + string(n)
+        _ -> "matched wildcard"
+    }
+}
+
+spec "union type example" {
+    then "show string branch" {
+        ex_ut_show("hello") == "hello"
+    }
+    then "show int branch" {
+        ex_ut_show(42) == "42"
+    }
+    then "describe int branch" {
+        ex_ut_describe(10) == "int value: 10"
+    }
+    then "describe string branch" {
+        ex_ut_describe("world") == "string value: world"
+    }
+    then "wildcard catches string branch" {
+        ex_ut_with_wildcard("anything") == "matched wildcard"
+    }
+}

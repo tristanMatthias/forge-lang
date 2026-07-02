@@ -1,0 +1,13 @@
+// Numeric underscores in literals
+
+spec "numeric underscores" {
+    then "decimal underscores" {
+        1_000_000 == 1000000
+    }
+    then "hex underscores" {
+        0xFF_FF == 65535
+    }
+    then "binary underscores" {
+        0b1010_0101 == 165
+    }
+}

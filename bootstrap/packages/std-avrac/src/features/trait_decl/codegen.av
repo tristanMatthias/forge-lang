@@ -1,0 +1,184 @@
+// WHY: codegen for trait dynamic dispatch.
+
+use core.{Expr, SExpr, VarBinding, ValueType, vtype_struct_name, vtype_enum_name}
+use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_get_insert_block, avra_llvm_function_type, avra_llvm_add_function, avra_llvm_type_array_new, avra_llvm_type_array_set, avra_llvm_type_array_free, avra_llvm_get_param, avra_llvm_count_params, avra_llvm_build_ret, avra_llvm_build_bitcast, avra_llvm_fn_type_of, avra_llvm_value_array_new, avra_llvm_value_array_set, avra_llvm_value_array_free, avra_llvm_build_call_coerce}
+use codegen.{Ctx, EmitValue, TraitMethodMeta, ok_emit, err_emit, trait_decl_lookup}
+use core.{method_mangled_name, type_registry_id_for, type_registry_name_for}
+use features.fn_decl.{emit_first_arg}
+
+/// Find the position of `name` in a method list. Used
+/// to convert a method name into a vtable slot index. Returns -1
+/// when the method isn't on the trait.
+export fn trait_method_idx(methods: List<TraitMethodMeta>, name: string) -> int {
+    for (i, m) in methods.enumerate() {
+        if m.name == name { return i }
+    }
+    0 - 1
+}
+
+/// Look up a trait method's declared return type. Returns
+/// `Unknown` when the method isn't on the trait.
+fn trait_method_ret_vt(methods: List<TraitMethodMeta>, name: string) -> ValueType {
+    for m in methods {
+        if m.name == name { return m.ret_vt }
+    }
+    ValueType.Unknown
+}
+
+/// Emit a `dyn Trait` method call. Loads the concrete value and
+/// vtable from the trait object, looks up the method's vtable
+/// slot, and dispatches via `avra_closure_call_N` for the right
+/// arity. Up to 4 user arguments (5 closure args including
+/// self) — beyond that, returns an error so the user sees the
+/// limit explicitly.
+export fn emit_trait_dispatch(ctx: Ctx, env: List<VarBinding>, obj_val: ptr, trait_name: string, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
+    let concrete = ctx.call("avra_trait_object_value", [obj_ptr])
+    let vtable = ctx.call("avra_trait_object_vtable", [obj_ptr])
+    let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
+    let idx = trait_method_idx(methods, method)
+    if idx < 0 {
+        return err_emit("trait has no method `${method}`")
+    }
+    // Determine return type from trait declaration
+    let ret_ty = ctx.resolve_codegen_vtype(trait_method_ret_vt(methods, method))
+    let fn_closure = ctx.array_get(vtable, ctx.i64(idx))
+    let user_count = args.length
+    if user_count == 0 {
+        let raw = ctx.call("avra_closure_call_1", [fn_closure, concrete])
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    if user_count == 1 {
+        let first_arg = emit_first_arg(ctx, env, args)?
+        let raw = ctx.call("avra_closure_call_2", [fn_closure, concrete, first_arg.value])
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    if user_count == 2 {
+        let a0 = emit_trait_arg(ctx, env, args, 0)?
+        let a1 = emit_trait_arg(ctx, env, args, 1)?
+        let raw = ctx.call("avra_closure_call_3", [fn_closure, concrete, a0.value, a1.value])
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    if user_count == 3 {
+        let a0 = emit_trait_arg(ctx, env, args, 0)?
+        let a1 = emit_trait_arg(ctx, env, args, 1)?
+        let a2 = emit_trait_arg(ctx, env, args, 2)?
+        let raw = ctx.call("avra_closure_call_4", [fn_closure, concrete, a0.value, a1.value, a2.value])
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    if user_count == 4 {
+        let a0 = emit_trait_arg(ctx, env, args, 0)?
+        let a1 = emit_trait_arg(ctx, env, args, 1)?
+        let a2 = emit_trait_arg(ctx, env, args, 2)?
+        let a3 = emit_trait_arg(ctx, env, args, 3)?
+        let raw = ctx.call("avra_closure_call_5", [fn_closure, concrete, a0.value, a1.value, a2.value, a3.value])
+        return ok_emit(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    err_emit("trait dispatch supports up to 4 user arguments (got ${string(user_count)})")
+}
+
+/// Emit the n-th argument from a trait-dispatch arg list.
+/// Used by `emit_trait_dispatch` to access positional args
+/// without having to destructure the list inline at each call.
+fn emit_trait_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>, n: int) -> Result<EmitValue, string> {
+    if n >= args.length { return err_emit("trait dispatch: missing argument") }
+    ctx.emit(env, args[n].node)
+}
+
+/// Extract the concrete type name from a `Struct` or `Enum`
+/// ValueType. Returns "" for everything else (Int, Bool, Trait,
+/// Union, …) — caller falls back to no-op boxing in that case.
+export fn resolve_concrete_type_name(ty: ValueType) -> string {
+    let s = vtype_struct_name(ty)
+    if s != "" { return s }
+    let e = vtype_enum_name(ty)
+    if e != "" { return e }
+    ""
+}
+
+/// Box a concrete value into a `dyn Trait` trait object. Builds
+/// the per-type vtable on the spot via `push_vtable_entries_call`,
+/// then calls `avra_trait_object_new` to allocate the {value,
+/// vtable} pair. Result is a fresh `dyn Trait` pointer ready for
+/// dispatch.
+export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
+    let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
+    let vtable = ctx.array_new()
+    push_vtable_entries_call(ctx, vtable, methods, concrete_name)
+    let obj_val = ctx.call("avra_trait_object_new", [value, vtable])
+    ctx.to_i64(obj_val, "tobj_i64")
+}
+
+/// Build an i64-returning wrapper around a float-returning vtable
+/// method. `avra_closure_call_N` types every fn pointer as
+/// `int64_t(int64_t, ...)`; calling a `double`-returning function
+/// through that signature produces an ABI mismatch (result lands
+/// in `d0` but the caller reads `x0`). This wrapper bridges by
+/// invoking the real fn through its true signature and bitcasting
+/// the double result to i64. Memoised on `mangled` so repeat
+/// boxing of the same type doesn't re-emit the wrapper.
+fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: int) -> ptr {
+    let wrap_name = "${mangled}__vtable_wrap"
+    // Check if wrapper already exists (e.g., multiple trait objects of same type)
+    let existing = ctx.get_fn(wrap_name)
+    if existing != null { return existing }
+    // Create wrapper: i64 (i64, i64, ...) with `arity` i64 params
+    let param_arr = avra_llvm_type_array_new(arity)
+    for i in 0..arity {
+        avra_llvm_type_array_set(param_arr, i, ctx.i64_type)
+    }
+    let fn_type = avra_llvm_function_type(ctx.i64_type, param_arr, arity, 0)
+    avra_llvm_type_array_free(param_arr)
+    let wrapper = avra_llvm_add_function(ctx.module, wrap_name, fn_type)
+    // Save current builder position
+    let saved_bb = avra_llvm_get_insert_block(ctx.builder)
+    // Build wrapper body
+    let entry = avra_llvm_append_basic_block(ctx.lc, wrapper, "entry")
+    avra_llvm_position_at_end(ctx.builder, entry)
+    // Forward all params to the real function
+    let args = avra_llvm_value_array_new(arity)
+    for i in 0..arity {
+        avra_llvm_value_array_set(args, i, avra_llvm_get_param(wrapper, i))
+    }
+    // Call real fn using its proper type (which returns double)
+    let real_ft = avra_llvm_fn_type_of(real_fn)
+    let result = avra_llvm_build_call_coerce(ctx.builder, real_ft, real_fn, args, arity, "vcall")
+    avra_llvm_value_array_free(args)
+    // Bitcast double → i64
+    let as_i64 = avra_llvm_build_bitcast(ctx.builder, result, ctx.i64_type, "f2i")
+    avra_llvm_build_ret(ctx.builder, as_i64)
+    // Restore builder position
+    avra_llvm_position_at_end(ctx.builder, saved_bb)
+    wrapper
+}
+
+/// Walk the trait method list and append one closure-wrapped fn
+/// pointer per method to `vtable`. Float-returning methods route
+/// through `build_float_vtable_wrapper` to dodge the ABI mismatch.
+/// Falls back to TypeRegistry lookups when the directly-mangled
+/// name isn't found (handles renamed types).
+export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: List<TraitMethodMeta>, concrete_name: string) {
+    for m in methods {
+        let mangled = method_mangled_name(concrete_name, m.name)
+        mut fn_val = ctx.get_fn(mangled)
+        // Fallback: resolve via TypeRegistry
+        if fn_val == null {
+            let tid = type_registry_id_for(ctx.type_reg, concrete_name)
+            let canonical = type_registry_name_for(ctx.type_reg, tid)
+            if canonical != "" {
+                fn_val = ctx.get_fn(method_mangled_name(canonical, m.name))
+            }
+        }
+        // For float-returning methods, use a wrapper to avoid ABI mismatch
+        let ret_vt = ctx.resolve_codegen_vtype(m.ret_vt)
+        let arity = avra_llvm_count_params(fn_val)
+        let target = match ret_vt {
+            .Float -> build_float_vtable_wrapper(ctx, mangled, fn_val, arity)
+            _ -> fn_val
+        }
+        let fn_i64 = ctx.ptr_to_int(target, "vfn_ptr")
+        let closure = ctx.closure_array(fn_i64)
+        ctx.array_push(vtable, ctx.to_i64(closure, "vcl_i64"))
+    }
+}
+

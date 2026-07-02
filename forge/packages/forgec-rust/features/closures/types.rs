@@ -1,8 +1,8 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::{feature_check, feature_data};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
+use crate::{feature_check, feature_data};
 
 /// AST data for a closure expression: `(params) -> body`
 #[derive(Debug, Clone)]
@@ -12,9 +12,16 @@ pub struct ClosureData {
 }
 
 impl crate::feature::FeatureNode for ClosureData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(ClosureData {
             params: self.params.clone(),
             body: Box::new((fns.sub_expr)(&self.body)),
@@ -26,7 +33,8 @@ impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a closure via Feature dispatch.
     pub(crate) fn infer_closure_feature_type(&self, fe: &FeatureExpr) -> Type {
         feature_check!(self, fe, ClosureData, |data| {
-            let param_types: Vec<Type> = data.params
+            let param_types: Vec<Type> = data
+                .params
                 .iter()
                 .map(|p| {
                     p.type_ann
@@ -35,7 +43,8 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap_or(Type::Unknown)
                 })
                 .collect();
-            let param_map: std::collections::HashMap<String, Type> = data.params
+            let param_map: std::collections::HashMap<String, Type> = data
+                .params
                 .iter()
                 .zip(param_types.iter())
                 .map(|(p, t)| (p.name.clone(), t.clone()))
@@ -51,7 +60,11 @@ impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of a closure given its input element type.
     ///
     /// Used by list.map, list.filter, list.reduce, etc. to determine the output element type.
-    pub(crate) fn infer_closure_return_type(&self, closure_arg: &CallArg, input_type: &Type) -> Type {
+    pub(crate) fn infer_closure_return_type(
+        &self,
+        closure_arg: &CallArg,
+        input_type: &Type,
+    ) -> Type {
         let (params, body) = match &closure_arg.value {
             Expr::Feature(fe) if fe.feature_id == "closures" => {
                 if let Some(data) = feature_data!(fe, ClosureData) {
@@ -64,21 +77,33 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         match body {
-            Expr::Binary { op, .. } => {
-                match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
-                        if *input_type == Type::Int { return Type::Int; }
-                        if *input_type == Type::Float { return Type::Float; }
-                    }
-                    BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::LtEq |
-                    BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::And | BinaryOp::Or => {
-                        return Type::Bool;
-                    }
-                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+            Expr::Binary { op, .. } => match op {
+                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                    if *input_type == Type::Int {
                         return Type::Int;
                     }
+                    if *input_type == Type::Float {
+                        return Type::Float;
+                    }
                 }
-            }
+                BinaryOp::Eq
+                | BinaryOp::NotEq
+                | BinaryOp::Lt
+                | BinaryOp::LtEq
+                | BinaryOp::Gt
+                | BinaryOp::GtEq
+                | BinaryOp::And
+                | BinaryOp::Or => {
+                    return Type::Bool;
+                }
+                BinaryOp::BitAnd
+                | BinaryOp::BitOr
+                | BinaryOp::BitXor
+                | BinaryOp::Shl
+                | BinaryOp::Shr => {
+                    return Type::Int;
+                }
+            },
             Expr::Call { callee, .. } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {
                     match name.as_str() {
@@ -90,7 +115,8 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 // Method call on the element
                 if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
-                    let obj_type = if matches!(object.as_ref(), Expr::Ident(n, _) if params.first().map_or(false, |p| p.name == *n)) {
+                    let obj_type = if matches!(object.as_ref(), Expr::Ident(n, _) if params.first().map_or(false, |p| p.name == *n))
+                    {
                         input_type.clone()
                     } else {
                         self.infer_type(object)
@@ -109,7 +135,8 @@ impl<'ctx> Codegen<'ctx> {
             }
             Expr::MemberAccess { object, field, .. } => {
                 // e.g., x -> x.length
-                let obj_type = if matches!(object.as_ref(), Expr::Ident(n, _) if params.first().map_or(false, |p| p.name == *n)) {
+                let obj_type = if matches!(object.as_ref(), Expr::Ident(n, _) if params.first().map_or(false, |p| p.name == *n))
+                {
                     input_type.clone()
                 } else {
                     self.infer_type(object)
@@ -123,7 +150,7 @@ impl<'ctx> Codegen<'ctx> {
                         if let Some((_, ty)) = fields.iter().find(|(n, _)| n == field) {
                             return ty.clone();
                         }
-                    },
+                    }
                     _ => {}
                 }
             }

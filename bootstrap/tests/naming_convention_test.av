@@ -1,0 +1,13 @@
+type NcMyStruct = { x: int }
+
+fn nc_good_func() -> int { 42 }
+
+spec "naming convention" {
+    then "function returns correct value" {
+        nc_good_func() == 42
+    }
+    then "struct field access" {
+        let s = NcMyStruct { x: nc_good_func() }
+        s.x == 42
+    }
+}

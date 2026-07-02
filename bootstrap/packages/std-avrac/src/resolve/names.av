@@ -1,0 +1,1871 @@
+// WHY: module-aware name resolution — builds a module tree from
+// Stmt.Module nodes, resolves `use` imports into alias tables, and
+// rewrites Expr.Ident references to Expr.QualifiedIdent with their
+// fully-qualified canonical paths (e.g. "core::ast::render_expr").
+//
+// After rewriting, calls resolve_program (sibling in resolve/) to
+// validate variable scopes. The two passes are unified under a
+// single `resolve_names` entry point.
+//
+// ── Audit of side effects (doc step 4.1 of EXPAND_PIPELINE_HANDOFF.md) ──
+//
+// register_decls(stmts) — pure with respect to AST. Builds:
+//   - tree: ModuleNode — hierarchical mod path → items (per-stmt scan;
+//     idempotent given the same AST).
+//   - graph: ModuleGraph — flat module/item registry (per-stmt scan;
+//     idempotent; mutates a fresh `interner` it owns; flat-allocates
+//     a string-keyed C-side hashmap via avra_map_new_cstr for the
+//     `by_path` / `by_canonical` / `package_roots` / `item_exports`
+//     maps).
+//   - aliases: List<AliasBinding> — per top-level `use` stmt walk;
+//     diagnostics emitted when an imported name isn't found or is
+//     private. Top-level only (doesn't recurse into Module bodies).
+//   - global_index: GlobalItemReg — flat (short_name → canonical)
+//     map derived from `graph.all_items`. Built via
+//     `avra_map_new_cstr` + per-item insert (idempotent — first-seen
+//     wins, dupes don't overwrite).
+//   - bag — diagnostics accumulator (carries any use-alias errors).
+//
+// rewrite_uses(stmts, state) — pure: returns a new stmt list;
+//   does NOT touch `state`. Walks each stmt, rewriting Idents into
+//   QualifiedIdents per the alias + global_index. No registry
+//   mutation, so calling twice on the same AST is idempotent.
+//
+// register_macro_decls(state, stmts) — additive: appends new
+//   GraphItems to `state.graph.all_items` and new entries to
+//   `state.global_index.idx` (in-place mutation of the C-side
+//   hashmap; first-seen wins so re-running on the same AST is a
+//   no-op). Tree / aliases / type_reg / bag are reused as-is.
+//
+// rewrite_uses_macro_only(stmts, state) — same purity as
+//   rewrite_uses but walks only `from_macro == true` entries
+//   (recursing into Module bodies to find spliced stmts nested
+//   inside a user module).
+//
+//   read this file when:    working on module visibility, use imports,
+//                           or qualified name resolution
+//   do NOT read this file when:   the issue is variable scoping or
+//                                  type checking
+
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
+use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
+use resolve.{resolve_program}
+use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
+use core.{TypeParamEntry, type_param_has}
+use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
+use features.modules.{build_graph_from_stmts, graph_find_use_path}
+use list_ops.{list_any, list_push_copy}
+
+// ── Module tree ──
+//
+// Hierarchical namespace built from Stmt.Module nodes. Each node
+// contains the items (functions, types, enums) defined in that module
+// and links to child modules.
+
+/// One declaration registered inside a module: short name, fully
+/// qualified canonical path, export visibility flag.
+type ModuleItemEntry = {
+    short_name: string,
+    canonical: string,
+    exported: bool,
+}
+
+/// Hierarchical module tree built from `Stmt.Module` nodes. Each
+/// node holds its name, full path, the items declared at that
+/// level, child modules, and a sibling pointer.
+///
+/// Kept as an enum — `ModuleNode` is tree-shaped (each node has
+/// BOTH `children` and `next` pointers), so a flat `List<T>` can't
+/// model it. The `items` payload, however, is a simple list, so
+/// that one moved over to `List<ModuleItemEntry>`.
+enum ModuleNode {
+    End
+    Node(name: string, path: string, items: List<ModuleItemEntry>, children: ModuleNode, next: ModuleNode)
+}
+
+// ── Alias table ──
+//
+// Maps short names to canonical paths within a module scope.
+// Built from `use` declarations.
+
+/// `use mod.{name}` produces one AliasBinding per imported name —
+/// short name → canonical path inside the module.
+type AliasBinding = {
+    short_name: string,
+    canonical: string,
+}
+
+/// Linear search for `name` in the alias list. Returns the
+/// canonical path or "" when not aliased. Scans from the tail
+/// (most-recently-pushed) so the cons-list "newer alias wins"
+/// shadowing semantics carry over — call sites that push the
+/// same short_name twice (e.g. inner-module overrides
+/// outer-module use) keep the inner binding.
+fn alias_lookup(aliases: List<AliasBinding>, name: string) -> string {
+    mut i = aliases.length - 1
+    while i >= 0 {
+        let a = aliases[i]
+        if a.short_name == name { return a.canonical }
+        i = i - 1
+    }
+    ""
+}
+
+// ── Module item lookup ──
+
+/// Linear search for `name` in a module's item list. Returns the
+/// canonical path or "" when not declared.
+fn item_lookup(items: List<ModuleItemEntry>, name: string) -> string {
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        if it.short_name == name { return it.canonical }
+        i = i + 1
+    }
+    ""
+}
+
+// ── Global-index hashmap ──
+//
+// The global index — every item across every module, used by the
+// rewriter to qualify every Ident — was a cons-list searched O(n) per
+// identifier. Bootstrap source has ~5000 items and ~280k identifier
+// references, so item_lookup was nearly quadratic. The reg below
+// caches a cstr_map alongside the cons-list: build once at the top of
+// resolve_names, then every Ident lookup is O(1).
+
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+type GlobalItemReg = {
+    canonicals: List<string>,
+    idx: ptr,
+}
+
+fn global_item_reg_build(items: List<ModuleItemEntry>) -> GlobalItemReg {
+    let idx = avra_map_new_cstr()
+    mut canonicals: List<string> = []
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        // Bind field accesses to locals before passing them to method
+        // calls — the current seed compiler's typeck can't propagate
+        // the struct field type through `canonicals.push(it.canonical)`
+        // directly (it bails with "field access on non-struct value,
+        // ty=<unknown>"). Once a future seed cycle picks up improved
+        // type inference, this can be simplified back to the direct
+        // form.
+        let sn = it.short_name
+        let canon = it.canonical
+        if avra_map_has_cstr(idx, sn) == 0 {
+            let n = canonicals.length
+            canonicals.push(canon)
+            avra_map_set_cstr(idx, sn, n)
+        }
+        i = i + 1
+    }
+    GlobalItemReg { canonicals, idx }
+}
+
+fn global_item_lookup(reg: GlobalItemReg, name: string) -> string {
+    if avra_map_has_cstr(reg.idx, name) == 0 { return "" }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.canonicals[i]
+}
+
+/// True iff `name` is declared in `items` AND marked `export`.
+fn item_is_exported(items: List<ModuleItemEntry>, name: string) -> bool {
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        if it.short_name == name { return it.exported }
+        i = i + 1
+    }
+    false
+}
+
+/// Graph-driven flat index builder: walks the graph's pre-computed
+/// `all_items` list (populated by graph_build's `register_item_typed`)
+/// into a `List<ModuleItemEntry>` the resolver can scan directly.
+/// Avoids the recursive AST walk + per-module `collect_module_items`
+/// pass. Iterates the List<GraphItem> in reverse to preserve the
+/// prepend semantics of the previous cons-list form — graph_build
+/// pushes in source order, so the resulting list has first-seen-last.
+fn build_global_index_from_graph(items: List<GraphItem>) -> List<ModuleItemEntry> {
+    mut out: List<ModuleItemEntry> = []
+    mut i = items.length - 1
+    while i >= 0 {
+        let it = items[i]
+        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported })
+        i = i - 1
+    }
+    out
+}
+
+/// Find a ModuleNode by qualified path (e.g. `"helpers"` or
+/// `"core::ast"`). Returns ModuleNode.End when no match.
+fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
+    match tree {
+        .End -> ModuleNode.End
+        .Node(_, mod_path, _, _, _) if mod_path == path -> tree
+        .Node(_, _, _, children, next) -> {
+            let in_children = module_find(children, path)
+            match in_children {
+                .End -> module_find(next, path)
+                _ -> in_children
+            }
+        }
+    }
+}
+
+// ── Pass 1: Build module tree ──
+//
+// Walk the AST and collect all module-level declarations (fn, type,
+// enum, trait, extern fn) into a hierarchical ModuleNode tree.
+
+/// Root entry for module tree construction. Recurses on every
+/// `Stmt.Module`, building children + sibling links.
+fn build_module_tree(stmts: List<SStmt>, parent_path: string, tree: ModuleNode) -> ModuleNode {
+    mut cur = tree
+    mut i = 0
+    while i < stmts.length {
+        cur = build_tree_from_stmt(stmts[i].node, parent_path, cur)
+        i = i + 1
+    }
+    cur
+}
+
+/// Per-stmt branch of `build_module_tree`. `Module` adds a node
+/// (and recurses for children); `Annotated` strips the wrapper;
+/// everything else passes through unchanged.
+fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> ModuleNode {
+    match stmt {
+        .Module(name, body) -> {
+            let mod_path = type_qualified_name(parent_path, name)
+            // Collect items in this module
+            let items = collect_module_items(body, mod_path)
+            // Recursively build tree for nested modules
+            let children = build_module_tree(body, mod_path, ModuleNode.End)
+            // Add this module to the tree
+            ModuleNode.Node(name, mod_path, items, children, tree)
+        }
+        .Annotated(_, inner) -> build_tree_from_stmt(inner.node, parent_path, tree)
+        _ -> tree
+    }
+}
+
+/// Collect every declaration name in a module's body — fn, type,
+/// enum, trait, newtype, etc. Wraps the per-stmt collector.
+/// Walks stmts in source order, pushing items as they're seen so
+/// the resulting list preserves source order (matching the
+/// previous cons-list which was built head-first by walking the
+/// tail recursively).
+fn collect_module_items(stmts: List<SStmt>, mod_path: string) -> List<ModuleItemEntry> {
+    mut out: List<ModuleItemEntry> = []
+    mut i = 0
+    while i < stmts.length {
+        collect_item_from_stmt(stmts[i].node, mod_path, false, out)
+        i = i + 1
+    }
+    out
+}
+
+/// Per-stmt branch of `collect_module_items` — appends one or
+/// more `ModuleItemEntry`s to `out_ref` for the matched
+/// declaration variants (Function, TypeDecl, EnumDecl, TraitDecl,
+/// etc.). `exported` is threaded down from the enclosing
+/// `Annotated(@export, …)`.
+///
+/// `out_ref` is rebound to a `mut` local before pushing — Avra
+/// params are immutable, but the underlying heap AvraArray is
+/// shared so push mutations reach the caller (same convention as
+/// test_runner/discovery.av).
+fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref: List<ModuleItemEntry>) {
+    mut out = out_ref
+    match stmt {
+        .Function(name, _, _, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .ExternFn(name, _, _) -> {
+            // Extern fns keep bare names (C ABI) but are registered
+            // for visibility tracking
+            out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
+        }
+        .TypeDecl(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .NewtypeDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .UnionAliasDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .ShapeDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .EnumDecl(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .TraitDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        // Module-level consts are visible to `use mod.{NAME}` callers
+        // exactly like fns and types.
+        .Const(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+        }
+        .Impl(_, methods) -> collect_impl_items(methods, mod_path, out)
+        .Annotated(annotations, inner) -> {
+            let is_export = annotation_has_export(annotations)
+            // Re-exports: `export use path.{name1, name2}` makes imported
+            // names visible as exports of the current module.
+            if is_export {
+                match inner.node {
+                    .Use(use_path, names) -> {
+                        // The use path is relative to the current module, so
+                        // prefix with the module path to get the canonical path.
+                        let rel_path = dots_to_colons(use_path)
+                        let canonical_mod = type_qualified_name(mod_path, rel_path)
+                        collect_reexport_items(names, canonical_mod, out)
+                        return
+                    }
+                    _ -> {}
+                }
+            }
+            collect_item_from_stmt(inner.node, mod_path, is_export, out)
+        }
+        _ -> {}
+    }
+}
+
+/// Collect re-exported names from `export use path.{name1, name2}`.
+/// Each imported name becomes an exported item in the current
+/// module, with its canonical path pointing at the source module.
+fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: List<ModuleItemEntry>) {
+    mut out = out_ref
+    mut i = 0
+    while i < names.length {
+        let name = names[i].name
+        let canonical = type_qualified_name(source_mod, name)
+        out.push(ModuleItemEntry { short_name: name, canonical, exported: true })
+        i = i + 1
+    }
+}
+
+/// Collect the methods of an impl block. Methods are stored under
+/// their pre-mangled `Type__method` name so dispatch can grep the
+/// global index directly.
+fn collect_impl_items(stmts: List<SStmt>, mod_path: string, out_ref: List<ModuleItemEntry>) {
+    mut out = out_ref
+    mut i = 0
+    while i < stmts.length {
+        match stmt_unwrap(stmts[i].node) {
+            .Function(name, _, _, _, _) -> {
+                // Impl methods are already mangled as Type__method.
+                // Keep bare name — method call codegen uses Type__method directly.
+                out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+}
+
+/// True iff the annotation list includes `@export`.
+fn annotation_has_export(annotations: List<Annotation>) -> bool {
+    list_any(annotations, (a: Annotation) -> a.name == "export")
+}
+
+// ── Pass 2: Resolve use aliases ──
+//
+// Walk the AST and for each Stmt.Use, look up the imported names in
+// the module tree and build an alias table for the containing scope.
+
+/// Top-level entry for use-alias resolution: process every `use`
+/// statement, building an AliasEntry list keyed off short names.
+fn resolve_use_aliases(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
+    resolve_use_aliases_in(stmts, tree, graph, "")
+}
+
+/// Resolve `use` statements relative to a current module path.
+/// Lookup order:
+///   1. Absolute (root-relative) `canonical_path`.
+///   2. `current_module::canonical_path` and each ancestor scope
+///      walking up to the root.
+/// The ancestor walk is what lets a sub-module of `@std.avrac.indexer`
+/// say `use core.{...}` and have it resolve to the sibling
+/// `@std.avrac.core.runtime` rather than failing because no such
+/// module exists at the program root.
+fn resolve_use_aliases_in(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
+    // Walk in reverse so accumulator semantics match the original
+    // head-recursive cons-cell walk (which built the result on the
+    // way back up the recursion).
+    mut acc = UseResult { aliases: [], bag: bag_new() }
+    mut i = stmts.length - 1
+    while i >= 0 {
+        let ss = stmts[i]
+        let unwrapped = match ss.node {
+            .Annotated(_, inner) -> inner.node
+            _ -> ss.node
+        }
+        acc = match unwrapped {
+            .Use(mod_path, names) -> {
+                let canonical_path = dots_to_colons(mod_path)
+                let sp = span_at(0, 0, ss.line, ss.col, ss.file)
+                // Graph is the source of truth for path resolution;
+                // each module's canonical path was captured at
+                // construction so the ancestor walk runs as a chain
+                // of strmap hits instead of recursive AST traversal.
+                let resolved_path = graph_find_use_path(graph, current_module, canonical_path)
+                resolve_use_names(resolved_path, names, tree, graph, acc, sp)
+            }
+            _ -> acc
+        }
+        i = i - 1
+    }
+    acc
+}
+
+/// Output of `resolve_use_aliases` — the alias list plus any
+/// diagnostics encountered during use-resolution.
+type UseResult = {
+    aliases: List<AliasBinding>,
+    bag: DiagnosticBag,
+}
+
+/// Per-name resolver inside a `use mod.{name1, name2}` clause.
+/// Looks each name up in `mod_path`'s items, emits ImportNotFound /
+/// ImportPrivate when missing or non-exported, and otherwise
+/// prepends an AliasEntry.
+fn resolve_use_names(mod_path: string, names: List<ParamEntry>, tree: ModuleNode, graph: ModuleGraph, result: UseResult, sp: Span) -> UseResult {
+    mut acc = result
+    mut i = 0
+    while i < names.length {
+        let name = names[i].name
+        let name_sp = sp
+        let mod_node = module_find(tree, mod_path)
+        acc = match mod_node {
+            .End -> {
+                let d = diag_error(DiagCode.ImportNotFound, "`use ${mod_path}` — module not found in module tree", sp)
+                UseResult { aliases: acc.aliases, bag: bag_report(acc.bag, d) }
+            }
+            .Node(_, _, items, _, _) -> {
+                let found = item_lookup(items, name)
+                match {
+                    found == "" -> {
+                        let d = diag_error(DiagCode.ImportNotFound, "`${name}` not found in module `${mod_path}`", name_sp)
+                        UseResult { aliases: acc.aliases, bag: bag_report(acc.bag, d) }
+                    }
+                    !is_item_visible(graph, mod_path, name, found, items) -> {
+                        let d = diag_error(DiagCode.ImportPrivate, "`${name}` is private in module `${mod_path}`", name_sp)
+                        UseResult { aliases: acc.aliases, bag: bag_report(acc.bag, d) }
+                    }
+                    _ -> {
+                        mut new_aliases = acc.aliases
+                        new_aliases.push(AliasBinding { short_name: name, canonical: found })
+                        UseResult { aliases: new_aliases, bag: acc.bag }
+                    }
+                }
+            }
+            _ -> acc
+        }
+        i = i + 1
+    }
+    acc
+}
+
+/// Visibility check that prefers the graph but falls back to the AST
+/// items list. Extern-fn items have a bare-name canonical (preserved
+/// for C ABI) that doesn't appear in the graph's `${mod}::${name}`
+/// keying — for those, defer to `item_is_exported(items, name)`.
+fn is_item_visible(graph: ModuleGraph, mod_path: string, name: string, canonical: string, items: List<ModuleItemEntry>) -> bool {
+    let qual = if mod_path == "" { name } else { "${mod_path}::${name}" }
+    if canonical == qual {
+        // Standard case: graph's export bit is the source of truth.
+        module_graph_is_exported(graph, qual)
+    } else {
+        // Extern fn / re-exports / mangled methods: canonical doesn't
+        // match `mod::name` so the graph's keying misses. Fall back
+        // to the AST tree's per-item exported flag.
+        item_is_exported(items, name)
+    }
+}
+
+/// Convert a dotted module path (`a.b.c`) to its `::` form
+/// (`a::b::c`) — bridging the source syntax `use a.b.c` to the
+/// canonical-name representation used in the module tree.
+fn dots_to_colons(path: string) -> string {
+    mut result = ""
+    for i in 0..path.length {
+        let ch = path[i]
+        if ch == "." {
+            result = "${result}::"
+        } else {
+            result = result + ch
+        }
+    }
+    result
+}
+
+// ── Pass 3: Rewrite identifiers ──
+//
+// Walk all expressions in the AST. For each Expr.Ident that references
+// a module-level item (via use aliases or implicit sibling access),
+// rewrite it to Expr.QualifiedIdent with the canonical path.
+//
+// Local variables (let/mut/fn params/for/match bindings) are tracked
+// in a scope stack and are NOT rewritten — they stay as Expr.Ident.
+
+/// Scope stack for the name-resolution pass — tracks the local
+/// variables in scope at each point during the rewrite. Distinct
+/// from the resolver's ScopeBinding because this layer also
+/// carries `defined` for forward-reference handling.
+type LocalBinding = {
+    name: string,
+    mutable: int,
+    defined: int,
+    depth: int,
+}
+
+/// Membership probe for the local scope list.
+fn scope_has(scope: List<LocalBinding>, name: string) -> bool {
+    list_any(scope, (b: LocalBinding) -> b.name == name)
+}
+
+/// True for names the rewriter must NOT qualify even when a global
+/// item shadows them. `println`, `int`, `panic`, etc. always stay
+/// bare so user shadowing of those names doesn't accidentally
+/// trigger unintended dispatch.
+fn is_builtin_name(name: string) -> bool {
+    name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self", FORCE_UNWRAP_FN]
+}
+
+// ── Name resolution context ──
+
+/// State threaded through the rewrite pass. Carries every lookup
+/// surface the rewriter needs: the module tree, current alias chain,
+/// active module path, the local scope stack, and the type registry.
+/// `global_index` is a flat, O(1)-lookup view of all module items —
+/// built once at the start of `resolve_names`.
+type NameCtx = {
+    tree: ModuleNode,
+    graph: ModuleGraph,
+    aliases: List<AliasBinding>,
+    current_module: string,
+    locals: List<LocalBinding>,
+    global_index: GlobalItemReg,
+    type_reg: TypeRegistry,
+    // cpvo: the enclosing generic fn's / type's type-params, in scope as a
+    // LOCAL binding that shadows same-named types. A name is a type-param iff
+    // it's here — replacing the brittle "single uppercase letter" heuristic
+    // that conflated a param `T` with a user type `T`.
+    type_params: List<TypeParamEntry>,
+    // cpvo: every generic TypeDecl/EnumDecl's declared type-params, keyed by
+    // name. The impl parser DROPS `impl Foo<T>`'s `<T>` (it skips the angle
+    // brackets), so an impl method that returns the struct's param `T` would
+    // otherwise have `T` qualified to a phantom `mod::T` while the struct
+    // field's `T` stays bare — a spurious return-type mismatch. rewrite_impl_stmt
+    // recovers the target's type-params from here and threads them into scope.
+    type_decl_tps: List<TypeDeclTpEntry>,
+}
+
+/// One generic type declaration's type-params, indexed for impl-method
+/// scope recovery (cpvo). Keyed by both qualified and short name so an
+/// impl's resolved target (`mod::Foo`) or the parser's bare target
+/// (`Foo`) both find it.
+type TypeDeclTpEntry = {
+    qualified: string,
+    short: string,
+    tp: List<TypeParamEntry>,
+}
+
+/// Functional update: replace the `locals` field.
+fn ctx_with_locals(ctx: NameCtx, locals: List<LocalBinding>) -> NameCtx {
+    ctx with { locals }
+}
+
+/// cpvo: enter a generic fn's / type's type-param scope. MERGES with the
+/// existing scope so a nested generic accumulates (rather than dropping) the
+/// outer type-params.
+fn ctx_with_type_params(ctx: NameCtx, tp: List<TypeParamEntry>) -> NameCtx {
+    if tp.length == 0 { return ctx }
+    ctx with { type_params: concat_type_params(ctx.type_params, tp) }
+}
+
+fn concat_type_params(a: List<TypeParamEntry>, b: List<TypeParamEntry>) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    for p in a { out.push(p) }
+    for p in b { out.push(p) }
+    out
+}
+
+/// cpvo: walk every TypeDecl / EnumDecl (recursing into Module bodies +
+/// Annotated wrappers) and record those carrying type-params. Built once
+/// per resolve pass; lets rewrite_impl_stmt recover an impl target's
+/// `<T>` (which the impl parser discards). Names are short at collect time
+/// — declared_type_name qualifies them only DURING the rewrite — so the
+/// qualified key is computed here from the module path; an already-qualified
+/// name (re-resolve passes) is stored as-is with its short tail.
+fn collect_type_decl_tps(stmts: List<SStmt>, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+    mut out = out_ref
+    mut i = 0
+    while i < stmts.length {
+        collect_type_decl_tp_stmt(stmts[i].node, mod_path, out)
+        i = i + 1
+    }
+}
+
+fn collect_type_decl_tp_stmt(stmt: Stmt, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+    mut out = out_ref
+    match stmt {
+        .TypeDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
+        .EnumDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
+        .Module(name, body) -> collect_type_decl_tps(body, type_qualified_name(mod_path, name), out)
+        .Annotated(_, inner) -> collect_type_decl_tp_stmt(inner.node, mod_path, out)
+        _ -> {}
+    }
+}
+
+fn type_decl_tp_entry(mod_path: string, name: string, tp: List<TypeParamEntry>) -> TypeDeclTpEntry {
+    if name.contains("::") {
+        TypeDeclTpEntry { qualified: name, short: type_short_name(name), tp }
+    } else {
+        TypeDeclTpEntry { qualified: type_qualified_name(mod_path, name), short: name, tp }
+    }
+}
+
+/// cpvo: recover an impl target's declared type-params. Tries the
+/// resolved qualified name first (precise), then the bare short name
+/// the impl parser hands us. Returns [] when the type isn't generic.
+fn type_decl_tp_lookup(list: List<TypeDeclTpEntry>, qualified: string, short: string) -> List<TypeParamEntry> {
+    mut i = 0
+    while i < list.length {
+        if list[i].qualified == qualified { return list[i].tp }
+        i = i + 1
+    }
+    mut j = 0
+    while j < list.length {
+        if list[j].short == short { return list[j].tp }
+        j = j + 1
+    }
+    let empty: List<TypeParamEntry> = []
+    empty
+}
+
+/// Functional update: enter a new module by swapping the active path
+/// and alias chain.
+fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: List<AliasBinding>) -> NameCtx {
+    ctx with { aliases, current_module }
+}
+
+/// Push every parameter name onto the local scope as a defined
+/// variable. Used when entering a fn / lambda body.
+///
+/// CRITICAL: uses list_push_copy so the parent ctx's underlying
+/// locals list is NOT mutated. List<T> is heap-backed; a plain
+/// `acc.locals.push(...)` would alias the parent's list and leak
+/// every fn's params into every sibling fn's scope. That cross-
+/// fn leak silently rewrites bare Ident("foo") into bare-Ident-
+/// stays-bare when `foo` was actually a fn name in a different
+/// module — undefined-variable errors fire in random downstream
+/// fns whose locals had nothing to do with the leaked name.
+fn bind_params_ctx(ctx: NameCtx, params: List<ParamEntry>) -> NameCtx {
+    mut acc = ctx
+    mut i = 0
+    while i < params.length {
+        let new_locals = list_push_copy(acc.locals, LocalBinding { name: params[i].name, mutable: false, defined: true, depth: 0 })
+        acc = ctx_with_locals(acc, new_locals)
+        i = i + 1
+    }
+    acc
+}
+
+/// Bind every binding in a pattern (e.g. `.Some(x, y)` adds `x` and
+/// `y` to the local scope) so the match arm body can reference them.
+fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
+    match pattern {
+        .Wildcard -> ctx
+        .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
+        .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
+        .TypePattern(_, binding) -> {
+            // list_push_copy avoids mutating the parent ctx's
+            // locals — same leak-prevention reasoning as
+            // bind_params_ctx's docstring.
+            let new_locals = list_push_copy(ctx.locals, LocalBinding { name: binding, mutable: false, defined: true, depth: 0 })
+            ctx_with_locals(ctx, new_locals)
+        }
+        _ -> ctx
+    }
+}
+
+/// Apply `bind_pattern_ctx` over a list of patterns — used by
+/// nested-variant destructuring.
+fn bind_pattern_list(ctx: NameCtx, pats: List<Pattern>) -> NameCtx {
+    mut acc = ctx
+    mut i = 0
+    while i < pats.length {
+        acc = bind_pattern_ctx(acc, pats[i])
+        i = i + 1
+    }
+    acc
+}
+
+/// Concat two alias lists. Used to layer per-Module imports onto a
+/// parent's alias environment. The `extra` entries are appended
+/// in order so the last entry has the highest lookup priority
+/// (alias_lookup scans from the tail).
+fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<AliasBinding> {
+    mut out = base
+    mut i = 0
+    while i < extra.length {
+        out.push(extra[i])
+        i = i + 1
+    }
+    out
+}
+
+// ── Public entry point ──
+
+/// Output of `resolve_names` — the rewritten statement tree, error
+/// flags, accumulated diagnostics, the populated type registry, and
+/// the macro-origin table built during @expand splice. Origins are
+/// empty for the bare resolver path; populated by
+/// `resolve_and_expand_program` when macros fire. Consumed by
+/// `typecheck_program` so synthetic fns can blame their macro in
+/// diagnostics (so07.3 / T3).
+export type NameResolveResult = {
+    stmts: List<SStmt>,
+    had_error: int,
+    error_message: string,
+    bag: DiagnosticBag,
+    type_reg: TypeRegistry,
+    macro_origins: List<MacroFnOrigin>,
+}
+
+/// Snapshot produced by `register_decls`: every fact discovered
+/// during the decl-scan half of name resolution, in a shape that
+/// `rewrite_uses` can consume directly. Exported so the @expand
+/// pipeline-eval phase can register macro-emitted decls into the
+/// resolver state and re-run `rewrite_uses` over the spliced AST
+/// without re-walking the originals.
+export type ResolverState = {
+    tree: ModuleNode,
+    graph: ModuleGraph,
+    aliases: List<AliasBinding>,
+    global_index: GlobalItemReg,
+    type_reg: TypeRegistry,
+    bag: DiagnosticBag,
+}
+
+/// Decl-scan half of `resolve_names`: builds the module tree, graph,
+/// use-alias bindings, global index, and a fresh type registry from
+/// `stmts`. Pure with respect to the input AST — returns a
+/// `ResolverState` value, no in-place mutation.
+///
+/// Carved out of the monolithic `resolve_names` so the @expand
+/// pipeline can rebuild the decl context after macro expansion
+/// without re-running the use-site rewrite over already-resolved
+/// originals.
+export fn register_decls(stmts: List<SStmt>) -> ResolverState {
+    let tree = build_module_tree(stmts, "", ModuleNode.End)
+    let graph = build_graph_from_stmts(stmts)
+    let use_result = resolve_use_aliases(stmts, tree, graph)
+    let global_index_list = build_global_index_from_graph(graph.all_items)
+    let global_index = global_item_reg_build(global_index_list)
+    let reg = type_registry_new()
+    ResolverState {
+        tree,
+        graph,
+        aliases: use_result.aliases,
+        global_index,
+        type_reg: reg,
+        bag: use_result.bag,
+    }
+}
+
+/// Use-site rewrite half of `resolve_names`: walks `stmts` and
+/// rewrites each Ident / type name to its canonical qualified form
+/// using the supplied `ResolverState`. Pure: returns a new stmt list,
+/// does not modify `stmts`.
+export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+    mut tps: List<TypeDeclTpEntry> = []
+    collect_type_decl_tps(stmts, "", tps)
+    let ctx = NameCtx {
+        tree: state.tree,
+        graph: state.graph,
+        aliases: state.aliases,
+        current_module: "",
+        locals: [],
+        global_index: state.global_index,
+        type_reg: state.type_reg,
+        type_params: [],
+        type_decl_tps: tps,
+    }
+    rewrite_stmt_list(ctx, stmts)
+}
+
+/// Partial re-resolve (step 4 of expand-pipeline doc): walks `stmts`
+/// and re-rewrites ONLY entries with `from_macro == true` using the
+/// supplied `state`. Hand-written stmts pass through unchanged — they
+/// were already rewritten by the pre-expand pass against the same
+/// alias table, so re-walking them would be redundant work. The
+/// spliced stmts need this pass because their bodies were constructed
+/// at quote-time with bare Idents that must be requalified against
+/// the post-expand registry. Recurses into Module bodies so a
+/// spliced fn inside a user module still gets rewritten.
+export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+    mut tps: List<TypeDeclTpEntry> = []
+    collect_type_decl_tps(stmts, "", tps)
+    let ctx = NameCtx {
+        tree: state.tree,
+        graph: state.graph,
+        aliases: state.aliases,
+        current_module: "",
+        locals: [],
+        global_index: state.global_index,
+        type_reg: state.type_reg,
+        type_params: [],
+        type_decl_tps: tps,
+    }
+    rewrite_macro_stmts(ctx, stmts)
+}
+
+fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    for ss in stmts {
+        if ss.from_macro {
+            out.push(ss with { node: rewrite_stmt(ctx, ss.node) })
+        } else {
+            // Descend into Module bodies so spliced stmts nested
+            // inside a Module wrapper are still picked up.
+            match ss.node {
+                .Module(name, body) -> {
+                    let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name) }
+                    let new_body = rewrite_macro_stmts(mod_ctx, body)
+                    out.push(ss with { node: Stmt.Module(name, new_body) })
+                }
+                _ -> out.push(ss)
+            }
+        }
+    }
+    out
+}
+
+/// Additive register: takes an existing `state` and the full
+/// post-expand stmt list. Walks the list (recursing into Modules)
+/// and appends a `GraphItem` to `state.graph.all_items` + a
+/// `(short_name → canonical)` entry to `state.global_index` for
+/// every `from_macro == true` declaration. Returns a new
+/// `ResolverState` with the augmented graph + global_index, sharing
+/// the tree, aliases, type_reg, and bag from the input state.
+///
+/// Matches the doc's `register_decls(spliced_only, existing_registry)`
+/// — additive, not a fresh rebuild. Avoids re-running
+/// `resolve_use_aliases` (which would re-emit any pre-existing
+/// import diagnostics and double-bag them).
+export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> ResolverState {
+    mut new_items: List<GraphItem> = []
+    collect_macro_items(stmts, "", new_items)
+    if new_items.length == 0 { return state }
+
+    // Augment graph.all_items by appending the new entries.
+    mut updated_all: List<GraphItem> = []
+    for old in state.graph.all_items { updated_all.push(old) }
+    for added in new_items { updated_all.push(added) }
+
+    // Build a FRESH global_index from the augmented item list. We
+    // don't mutate the existing C-side map ptr because
+    // `register_macro_decls` may be called multiple times during a
+    // single compile (once per @expand splice inside the walker, plus
+    // once post-expand from cli/main.av). Re-using the same map ptr
+    // would let stale indices from earlier calls leak into the new
+    // ResolverState's `canonicals` list and produce OOB lookups.
+    mut new_items_list: List<ModuleItemEntry> = []
+    for it in updated_all {
+        let sn = it.short_name
+        let canon = it.canonical
+        let exp = it.exported
+        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp })
+    }
+    let new_global_index = global_item_reg_build(new_items_list)
+
+    state with {
+        graph: state.graph with { all_items: updated_all },
+        global_index: new_global_index,
+    }
+}
+
+fn collect_macro_items(stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
+    mut out = acc
+    for ss in stmts {
+        match ss.node {
+            .Module(name, body) -> {
+                let inner_path = type_qualified_name(mod_path, name)
+                collect_macro_items(body, inner_path, out)
+            }
+            _ -> {
+                if ss.from_macro {
+                    collect_macro_item_from_stmt(ss.node, mod_path, out)
+                }
+            }
+        }
+    }
+}
+
+/// Sister of `collect_item_from_stmt` but emits `GraphItem` directly
+/// — the additive register augments `graph.all_items` which is a
+/// `List<GraphItem>`, not the per-module `ModuleItemEntry` list.
+fn collect_macro_item_from_stmt(stmt: Stmt, mod_path: string, acc: List<GraphItem>) {
+    mut out = acc
+    match stmt {
+        .Function(name, _, _, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .ExternFn(name, _, _) -> {
+            out.push(GraphItem { short_name: name, canonical: name, exported: true })
+        }
+        .TypeDecl(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .EnumDecl(name, _, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .NewtypeDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .UnionAliasDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .ShapeDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .TraitDecl(name, _) -> {
+            let canonical = type_qualified_name(mod_path, name)
+            out.push(GraphItem { short_name: name, canonical, exported: false })
+        }
+        .Annotated(_, inner) -> collect_macro_item_from_stmt(inner.node, mod_path, out)
+        _ -> {}
+    }
+}
+
+/// Result of the pre-expand half of name resolution. Holds the
+/// rewritten stmts plus the live `ResolverState` so the @expand
+/// pipeline can splice macro-emitted decls and re-run `register_decls`
+/// over the spliced AST before scope validation runs.
+export type PreExpandResolve = {
+    stmts: List<SStmt>,
+    state: ResolverState,
+    had_error: int,
+    error_message: string,
+}
+
+/// Pre-expand half of `resolve_names`. Runs `register_decls` and
+/// `rewrite_uses` but DEFERS scope-validation and unused-import
+/// detection to `validate_scopes_after_expand`.
+///
+/// The pipeline-fix lives here: a `@expand` macro that emits a new
+/// top-level decl needs the resolver to register that decl BEFORE
+/// scope-validation runs over the call sites that reference it.
+/// Splitting the two halves lets `cli/main.av` interleave
+/// `expand_macros` between them.
+export fn resolve_names_pre_expand(stmts: List<SStmt>) -> PreExpandResolve {
+    let state = register_decls(stmts)
+    let rewritten = rewrite_uses(stmts, state)
+    let has_errors = bag_has_errors(state.bag)
+    PreExpandResolve {
+        stmts: rewritten,
+        state: state,
+        had_error: if has_errors { 1 } else { 0 },
+        error_message: if has_errors { "module resolution errors" } else { "" },
+    }
+}
+
+/// Scope-validation + unused-import detection. Runs over the
+/// post-expand stmt list, using the resolver state from the most
+/// recent `register_decls` (which is post-expand for macro-bearing
+/// programs and identical to pre-expand for macro-free programs).
+///
+/// Returns a full `NameResolveResult` so call sites can keep their
+/// existing bag-handling path unchanged after the split.
+export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState) -> NameResolveResult {
+    let resolved = resolve_program(stmts)
+    let used = collect_used_paths_stmts(stmts, [])
+    let unused_bag = check_unused_imports(state.aliases, used)
+    let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
+    let has_errors = bag_has_errors(merged_bag) || resolved.had_error
+    let no_origins: List<MacroFnOrigin> = []
+    NameResolveResult {
+        stmts: stmts,
+        had_error: has_errors,
+        error_message: if has_errors {
+            if resolved.had_error { resolved.error_message } else { "module resolution errors" }
+        } else { "" },
+        type_reg: state.type_reg,
+        bag: merged_bag,
+        macro_origins: no_origins,
+    }
+}
+
+/// Top-level entry: build the module tree, resolve `use` aliases,
+/// flatten the global index, rewrite every Ident / type name to its
+/// canonical qualified form, then validate scopes and detect unused
+/// imports. Composed from `resolve_names_pre_expand` and
+/// `validate_scopes_after_expand`; pipelines that interleave
+/// `expand_macros` call the halves directly.
+export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts)
+    validate_scopes_after_expand(pre.stmts, pre.state)
+}
+
+// ── Statement rewriting ──
+
+/// Rewrite every stmt in a list, threading the NameCtx through.
+fn rewrite_stmt_list(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        out.push(sstmt_at(rewrite_stmt(ctx, ss.node), ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Rewrite a single statement: qualify type names in declarations,
+/// register types in the registry, recurse into nested bodies. Each
+/// variant gets its own arm.
+fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
+    match stmt {
+        .Let(name, vt, init) -> .Let(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
+        .Mut(name, vt, init) -> .Mut(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
+        .Expr(e) -> .Expr(rewrite_expr(ctx, e))
+        .Return(e) -> .Return(rewrite_expr(ctx, e))
+        .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
+        .If(cond, then_b, else_b) -> {
+            let new_else = if else_b != null { rewrite_stmt(ctx, else_b!) } else { null }
+            Stmt.If(rewrite_expr(ctx, cond), rewrite_stmt(ctx, then_b), new_else)
+        }
+        .While(cond, body) -> .While(rewrite_expr(ctx, cond), rewrite_stmt(ctx, body))
+        .For(var, start, end, body) -> .For(var, rewrite_expr(ctx, start), rewrite_expr(ctx, end), rewrite_stmt(ctx, body))
+        .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
+        .Function(name, tp, params, rvt, body) -> {
+            let is_impl_method = is_mangled_method(name)
+            // Idempotent qualification: skip if already qualified
+            // (starts with `@`) — the post-expand resolve pass
+            // re-runs rewrite_uses, and already-qualified names from
+            // the first pass must not get doubly-prefixed
+            // (`@std::crypto::foo` → `@std::crypto::@std::crypto::foo`).
+            let already_qualified = name.length > 0 && name.substring(0, 1) == "@"
+            let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
+            let ctx_tp = ctx_with_type_params(ctx, tp)
+            let rp = rewrite_param_types(ctx_tp, params)
+            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
+        }
+        .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
+        .Module(name, body) -> {
+            let mod_path = type_qualified_name(ctx.current_module, name)
+            let mod_uses = resolve_use_aliases_in(body, ctx.tree, ctx.graph, mod_path)
+            Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
+        }
+        .TypeDecl(name, tp, fields) -> {
+            let qn = declared_type_name(ctx, name)
+            let rf = rewrite_field_types(ctx_with_type_params(ctx, tp), fields)
+            let no_variants: List<Variant> = []
+            type_registry_register(ctx.type_reg, qn, TypeKind.StructKind, rf, no_variants, ValueType.Unknown)
+            Stmt.TypeDecl(qn, tp, rf)
+        }
+        .EnumDecl(name, tp, variants) -> {
+            let qn = declared_type_name(ctx, name)
+            let rv = rewrite_variant_types(ctx_with_type_params(ctx, tp), variants)
+            let no_fields: List<FieldEntry> = []
+            type_registry_register(ctx.type_reg, qn, TypeKind.EnumKind, no_fields, rv, ValueType.Unknown)
+            Stmt.EnumDecl(qn, tp, rv)
+        }
+        .TraitDecl(name, body) -> {
+            let qn = declared_type_name(ctx, name)
+            let no_variants: List<Variant> = []
+            let no_fields: List<FieldEntry> = []
+            type_registry_register(ctx.type_reg, qn, TypeKind.TraitKind, no_fields, no_variants, ValueType.Unknown)
+            // Rewrite the body's method signatures so each method's
+            // params/ret_ty pick up the surrounding module's qualifier.
+            // Without this, `fn cause(self) -> EctError` inside
+            // `Module(test) { trait EctError { ... } }` keeps EctError
+            // bare, so the codegen-side lookup of `c.message()` (where
+            // `c = e.cause()`) misses the qualified trait registration
+            // and falls through to the type-name dispatch
+            // (forge-crafting-intepreters-q3gp).
+            Stmt.TraitDecl(qn, rewrite_stmt_list(ctx, body))
+        }
+        .ShapeDecl(name, fields) -> {
+            let qn = declared_type_name(ctx, name)
+            let rf = rewrite_field_types(ctx, fields)
+            let no_variants: List<Variant> = []
+            type_registry_register(ctx.type_reg, qn, TypeKind.ShapeKind, rf, no_variants, ValueType.Unknown)
+            Stmt.ShapeDecl(qn, rf)
+        }
+        .NewtypeDecl(name, inner) -> {
+            let qn = declared_type_name(ctx, name)
+            let ri = rewrite_vtype(ctx, inner)
+            let no_variants: List<Variant> = []
+            let no_fields: List<FieldEntry> = []
+            type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, no_fields, no_variants, ri)
+            Stmt.NewtypeDecl(qn, ri)
+        }
+        .Impl(type_name, methods) -> rewrite_impl_stmt(ctx, type_name, methods)
+        // Rewrite annotation args too — names referenced inside
+        // `@expand(derive_walker)`, `@derive(Foo)` etc. need to get
+        // qualified the same way regular Idents do, otherwise
+        // cross-module @comptime fns are unreachable from the
+        // @expand pass (the registry keys them under the qualified
+        // path; the lookup uses whatever's in the annotation arg).
+        .Annotated(annotations, inner) -> .Annotated(rewrite_annotations(ctx, annotations), inner with { node: rewrite_stmt(ctx, inner.node) })
+        .Defer(body) -> .Defer(rewrite_expr(ctx, body))
+        .Errdefer(body) -> .Errdefer(rewrite_expr(ctx, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
+        .ExternFn(name, params, rvt) -> .ExternFn(name, rewrite_param_types(ctx, params), rewrite_vtype(ctx, rvt))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(ctx, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(ctx, body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(ctx, cond))
+        .Parallel(body) -> .Parallel(rewrite_stmt_list(ctx, body))
+        .Select(arms) -> .Select(rewrite_select_arms(ctx, arms))
+        .Const(name, vt, init) -> .Const(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
+        .UnionAliasDecl(name, vt) -> {
+            let qn = declared_type_name(ctx, name)
+            let rvt = rewrite_vtype(ctx, vt)
+            let no_variants: List<Variant> = []
+            let no_fields: List<FieldEntry> = []
+            type_registry_register(ctx.type_reg, qn, TypeKind.NewtypeKind, no_fields, no_variants, rvt)
+            Stmt.UnionAliasDecl(qn, rvt)
+        }
+        _ -> stmt
+    }
+}
+
+/// Rewrite each arm of a `select { ... }` block — the channel
+/// expression and the body are both walked.
+fn rewrite_select_arms(ctx: NameCtx, arms: List<SelectArm>) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        out.push(SelectArm {
+            binding: arm.binding,
+            chan: rewrite_expr(ctx, arm.chan),
+            body: rewrite_stmt_list(ctx, arm.body),
+        })
+        i = i + 1
+    }
+    out
+}
+
+/// Rewrite an `Impl` statement — qualify the type name (and the
+/// trait name when this is `impl Trait for Type`), then walk every
+/// method to mangle its name into `Type__method` form.
+fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: List<SStmt>) -> Stmt {
+    // Trait impl: "TraitName:TypeName" — qualify both parts separately
+    let sep = find_single_colon(type_name)
+    if sep >= 0 {
+        let trait_part = type_name.substring(0, sep)
+        let type_part = type_name.substring(sep + 1, type_name.length)
+        let rt = resolve_type_in_ctx(ctx, trait_part)
+        let tt = resolve_type_in_ctx(ctx, type_part)
+        // cpvo: a `impl Trait for Foo<T>` impl's methods reference Foo's `<T>`,
+        // dropped by the parser — recover it so `T` stays bare (see below).
+        let impl_ctx = ctx_with_type_params(ctx, type_decl_tp_lookup(ctx.type_decl_tps, tt, type_part))
+        Stmt.Impl(trait_impl_name(rt, tt), rewrite_impl_methods(impl_ctx, tt, methods))
+    } else {
+        let rt = resolve_type_in_ctx(ctx, type_name)
+        // cpvo: the impl parser discards `impl Foo<T>`'s `<T>`. Recover Foo's
+        // declared type-params and put them in scope so a method returning the
+        // struct's param `T` keeps `T` bare (matching the struct field's bare
+        // `T`) instead of qualifying it to a phantom `mod::T`.
+        let impl_ctx = ctx_with_type_params(ctx, type_decl_tp_lookup(ctx.type_decl_tps, rt, type_name))
+        Stmt.Impl(rt, rewrite_impl_methods(impl_ctx, rt, methods))
+    }
+}
+
+// Find single colon (trait:type separator) that isn't part of ::
+/// Find a standalone `:` (trait/type separator) that isn't part of
+/// `::`. Returns -1 when absent. Used by `rewrite_impl_stmt` to
+/// split `"Trait:Type"` into its two halves.
+fn find_single_colon(s: string) -> int {
+    mut i = 0
+    while i < s.length {
+        if s[i] == ":" {
+            if i + 1 < s.length && s[i + 1] == ":" {
+                i = i + 2
+                continue
+            }
+            return i
+        }
+        i = i + 1
+    }
+    -1
+}
+
+/// Qualify a type name at its DECLARATION site. Unlike
+/// `resolve_type_in_ctx` (which qualifies REFERENCES and falls
+/// back to the global index when a name isn't locally defined),
+/// a declaration unambiguously belongs to the surrounding module.
+/// Going through the global index here let imported types from
+/// other packages steal the canonical name (e.g. metadata.av's
+/// `type BytesReader` ended up registered as
+/// `@std::process::BytesReader` when both were in scope, causing
+/// duplicate-symbol FATALs at codegen — yx7b).
+fn declared_type_name(ctx: NameCtx, name: string) -> string {
+    if name.contains("::") { return name }
+    if ctx.current_module != "" {
+        return type_qualified_name(ctx.current_module, name)
+    }
+    name
+}
+
+/// Qualify a bare type name to its canonical path. Tries (in order):
+/// already-qualified pass-through, primitives + single-uppercase
+/// type params, the current module (when it declares the type),
+/// the global index, the alias table, and finally the current
+/// module path as a default. The current-module check comes BEFORE
+/// the global index so a locally-declared type shadows an
+/// identically-named import — without this, an impl block in a
+/// module that shadows a name from another imported package
+/// gets its methods mangled with the OTHER package's prefix,
+/// producing FATAL duplicate-symbol collisions at codegen (yx7b).
+fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
+    if type_name.contains("::") { return type_name }
+    // Primitives stay as-is.
+    if type_name in ["int", "string", "bool", "float", "ptr", "void"] { return type_name }
+    // cpvo: a type-param in scope shadows any same-named type and stays bare
+    // (typeck binds it). Replaces the brittle single-uppercase-letter heuristic
+    // that conflated a param `T` with a user type also named `T`.
+    if type_param_has(ctx.type_params, type_name) { return type_name }
+    if ctx.current_module != "" {
+        let local_qn = type_qualified_name(ctx.current_module, type_name)
+        if type_registry_id_for(ctx.type_reg, local_qn) != 0 {
+            return local_qn
+        }
+    }
+    let canonical = global_item_lookup(ctx.global_index, type_name)
+    if canonical != "" { return canonical }
+    let alias = alias_lookup(ctx.aliases, type_name)
+    if alias != "" { return alias }
+    if ctx.current_module != "" {
+        return type_qualified_name(ctx.current_module, type_name)
+    }
+    type_name
+}
+
+// ── ValueType + param rewriting ──
+// Qualify all type names inside ValueType, `List<ParamEntry>`, and
+// the `List<ValueType>` payloads on ValueType variants. After this pass,
+// every Struct/Enum/Trait/Newtype name is fully qualified.
+
+/// Qualify every type name inside a ValueType. Recurses into
+/// compound shapes (List, Union, Tuple, FnTyped, ...).
+fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
+    match vt {
+        .Struct(name, args, _) if name != "" -> {
+            // qa6i probe 3: a `~ident` splice in type position lowers
+            // to ValueType.Struct(spliced_name, 0). The spliced name
+            // may be a primitive ("int", "string", ...) — re-run
+            // through vtype_from_name so it lands in the right
+            // ValueType variant rather than staying as Struct.
+            let builtin = vtype_from_name(name)
+            match builtin {
+                .Struct(_, _, _) -> {
+                    // Genuinely a struct name; resolve through aliases.
+                    let qn = resolve_type_in_ctx(ctx, name)
+                    ValueType.Struct(qn, rewrite_vtype_list(ctx, args), type_registry_id_for(ctx.type_reg, qn))
+                }
+                _ -> builtin
+            }
+        }
+        .Enum(name, args, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Enum(qn, rewrite_vtype_list(ctx, args), type_registry_id_for(ctx.type_reg, qn))
+        }
+        .Trait(name, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Trait(qn, type_registry_id_for(ctx.type_reg, qn))
+        }
+        .Newtype(name, inner, _) if name != "" -> {
+            let qn = resolve_type_in_ctx(ctx, name)
+            ValueType.Newtype(qn, rewrite_vtype(ctx, inner), type_registry_id_for(ctx.type_reg, qn))
+        }
+        .NarrowedEnum(en, v, _) if en != "" -> {
+            let qn = resolve_type_in_ctx(ctx, en)
+            ValueType.NarrowedEnum(qn, v, type_registry_id_for(ctx.type_reg, qn))
+        }
+        .List(elem) -> .List(rewrite_vtype(ctx, elem))
+        .Channel(elem) -> .Channel(rewrite_vtype(ctx, elem))
+        .Fn(ret) -> .Fn(rewrite_vtype(ctx, ret))
+        .FnTyped(params, ret) -> .FnTyped(rewrite_vtype_list(ctx, params), rewrite_vtype(ctx, ret))
+        .Closure(n, ret) -> .Closure(n, rewrite_vtype(ctx, ret))
+        .Union(types) -> .Union(rewrite_vtype_list(ctx, types))
+        .Task(rt) -> .Task(rewrite_vtype(ctx, rt))
+        .Optional(inner) -> .Optional(rewrite_vtype(ctx, inner))
+        // Tuple inner types need qualifying too — otherwise a fn
+        // returning `(int, MyType)` keeps `MyType` bare, and methods
+        // dispatched on a destructured tuple element fail with
+        // `undefined method <bare>::method` because the registry
+        // stores them under the qualified prefix.
+        .Tuple(types) -> .Tuple(rewrite_vtype_list(ctx, types))
+        _ -> vt
+    }
+}
+
+/// Map `rewrite_vtype` over each ValueType in a `List<ValueType>`.
+fn rewrite_vtype_list(ctx: NameCtx, tl: List<ValueType>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < tl.length {
+        out.push(rewrite_vtype(ctx, tl[i]))
+        i = i + 1
+    }
+    out
+}
+
+/// Map `rewrite_vtype` over each FieldEntry's resolved type.
+fn rewrite_field_types(ctx: NameCtx, fields: List<FieldEntry>) -> List<FieldEntry> {
+    mut out: List<FieldEntry> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        out.push(FieldEntry { name: e.name, resolved: rewrite_vtype(ctx, e.resolved) })
+        i = i + 1
+    }
+    out
+}
+
+/// Map `rewrite_field_types` over each variant's payload list.
+fn rewrite_variant_types(ctx: NameCtx, variants: List<Variant>) -> List<Variant> {
+    mut out: List<Variant> = []
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        out.push(Variant { name: v.name, fields: rewrite_field_types(ctx, v.fields) })
+        i = i + 1
+    }
+    out
+}
+
+/// Map `rewrite_vtype` over each `ParamEntry`'s declared type.
+fn rewrite_param_types(ctx: NameCtx, params: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        out.push(ParamEntry { name: p.name, vtype: rewrite_vtype(ctx, p.vtype) })
+        i = i + 1
+    }
+    out
+}
+
+/// Replace the `self` parameter's bare type with the impl's
+/// qualified type name. Other params pass through unchanged.
+fn qualify_self_param(ctx: NameCtx, params: List<ParamEntry>, qualified_type: string) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        if p.name == "self" {
+            let tid = type_registry_id_for(ctx.type_reg, qualified_type)
+            out.push(ParamEntry { name: "self", vtype: vtype_struct(qualified_type, tid) })
+        } else {
+            out.push(p)
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// Walk the methods of an impl block, mangling each fn name into
+/// `Type__method` and qualifying its self / param / return types.
+/// Peels `Annotated` wrappers (doc comments, @export, etc.) so a
+/// `/// docstring` on an impl method doesn't hide the Function from
+/// the impl-method mangling — without this, doc-commented impl
+/// methods kept the bare `Type__method` name and call sites looking
+/// up the prefixed `@module::Type__method` failed to dispatch
+/// (vez6.7.4).
+fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let new_stmt = rewrite_impl_method_stmt(ctx, qualified_type, ss.node)
+        out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Per-statement worker for rewrite_impl_methods. Recurses through
+/// `Annotated` so doc-commented or annotated impl methods get the
+/// same mangling as bare ones.
+fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) -> Stmt {
+    match stmt {
+        .Function(name, tp, params, rvt, body) -> {
+            let mn = method_from_mangled(name)
+            let qualified_name = method_mangled_name(qualified_type, mn)
+            let ctx_tp = ctx_with_type_params(ctx, tp)
+            let rp = rewrite_param_types(ctx_tp, qualify_self_param(ctx_tp, params, qualified_type))
+            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
+        }
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_impl_method_stmt(ctx, qualified_type, inner.node) })
+        _ -> rewrite_stmt(ctx, stmt)
+    }
+}
+
+// ── Expression rewriting ──
+
+/// Rewrite an expression, qualifying name references to their
+/// canonical paths and recursing into sub-expressions.
+fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
+    if expr == null { return Expr.None }
+    match expr {
+        .Ident(name) -> rewrite_ident(ctx, name, expr)
+        .Call(callee, args) -> {
+            // Qualify uppercase callee in Call context (newtype constructors)
+            let rewritten_callee = match callee {
+                .Ident(name) if name.length > 0 && name[0] in "A".."Z" -> {
+                    let resolved = resolve_type_in_ctx(ctx, name)
+                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, callee) }
+                }
+                _ -> rewrite_expr(ctx, callee)
+            }
+            Expr.Call(rewritten_callee, rewrite_expr_list(ctx, args))
+        }
+        .GenericCall(callee, ta, args) -> .GenericCall(rewrite_expr(ctx, callee), ta, rewrite_expr_list(ctx, args))
+        .Binary(l, op, r) -> .Binary(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
+        .Unary(op, r) -> .Unary(op, rewrite_expr(ctx, r))
+        .Logical(l, op, r) -> .Logical(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
+        .Grouping(inner) -> .Grouping(rewrite_expr(ctx, inner))
+        .Assign(name, val) -> .Assign(name, rewrite_expr(ctx, val))
+        .Index(obj, idx) -> .Index(rewrite_expr(ctx, obj), rewrite_expr(ctx, idx))
+        .Try(inner) -> .Try(rewrite_expr(ctx, inner))
+        .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
+        _ -> rewrite_expr_compound(ctx, expr)
+    }
+}
+
+/// Tail of `rewrite_expr` — handles the long list of compound /
+/// less-frequently-traversed Expr variants (StructLit, Lambda,
+/// Match, ListComp, etc.).
+fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
+    if expr == null { return Expr.None }
+    match expr {
+        .FieldAccess(obj, field) -> {
+            // Qualify uppercase Ident in FieldAccess (enum constructors: ValueType.Unknown)
+            let rewritten_obj = match obj {
+                .Ident(name) if name.length > 0 && name[0] in "A".."Z" -> {
+                    let resolved = resolve_type_in_ctx(ctx, name)
+                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, obj) }
+                }
+                _ -> rewrite_expr(ctx, obj)
+            }
+            Expr.FieldAccess(rewritten_obj, field)
+        }
+        .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr(ctx, obj), field, rewrite_expr(ctx, val))
+        .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(ctx, c), rewrite_expr(ctx, t), rewrite_expr(ctx, e))
+        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(ctx, l), rewrite_expr(ctx, r))
+        .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr(ctx, obj), field)
+        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(rewrite_expr(ctx, obj), method, rewrite_expr_list(ctx, args))
+        .Tuple(elems) -> .Tuple(rewrite_expr_list(ctx, elems))
+        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr(ctx, obj), idx)
+        .ListLit(elems) -> .ListLit(rewrite_expr_list(ctx, elems))
+        .MapLit(entries) -> .MapLit(rewrite_expr_list(ctx, entries))
+        .Slice(obj, s, e) -> .Slice(rewrite_expr(ctx, obj), rewrite_expr(ctx, s), rewrite_expr(ctx, e))
+        .With(obj, overrides) -> .With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
+        .StructLit(name, inits) -> {
+            let qn = if name != "" { resolve_type_in_ctx(ctx, name) } else { name }
+            Expr.StructLit(qn, rewrite_field_inits(ctx, inits))
+        }
+        .EnumCtor(type_name, variant, args) -> {
+            let qt = if type_name != "" { resolve_type_in_ctx(ctx, type_name) } else { type_name }
+            Expr.EnumCtor(qt, variant, rewrite_expr_list(ctx, args))
+        }
+        .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
+        .Lambda(params, body) -> {
+            // Qualify the closure's PARAM type annotations (a generic instance
+            // `Box<int>` -> `mymod::Box<int>`) exactly as a fn decl's params are,
+            // then bind the qualified params into the body scope. Without this a
+            // method/field on the param later resolves against the un-qualified
+            // name and mono can't find the instance (the closure-receiver gap).
+            let rp = rewrite_param_types(ctx, params)
+            Expr.Lambda(rp, rewrite_expr(bind_params_ctx(ctx, rp), body))
+        }
+        .ListComp(body, var, coll, filter) -> {
+            // Collection sees the outer scope; body+filter see `var` bound.
+            // Without binding, an Ident matching `var` could be wrongly
+            // qualified to a module-level identifier of the same name.
+            let comp_params: List<ParamEntry> = [ParamEntry { name: var, vtype: ValueType.Unknown }]
+            let inner = bind_params_ctx(ctx, comp_params)
+            let new_filter = if filter != null { rewrite_expr(inner, filter!) } else { null }
+            Expr.ListComp(rewrite_expr(inner, body), var, rewrite_expr(ctx, coll), new_filter)
+        }
+        .Spawn(body) -> .Spawn(rewrite_expr(ctx, body))
+        .ChannelNew(elem, capacity) -> {
+            // The element type is embedded in the expression — qualify
+            // nominal names exactly like Let/Mut annotations do, so
+            // `channel<Foo>(1)` inside a module resolves Foo to its
+            // module-qualified registry name.
+            let qelem = rewrite_vtype(ctx, elem)
+            if capacity == null { Expr.ChannelNew(qelem, null) } else { .ChannelNew(qelem, rewrite_expr(ctx, capacity!)) }
+        }
+        .Isolated(body) -> .Isolated(rewrite_expr(ctx, body))
+        .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
+        .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
+        .When(arms) -> .When(rewrite_when_arms(ctx, arms))
+        // Catch / Quote / Splice had no arms — identifiers inside
+        // their bodies stayed un-rewritten (raw `helper` Idents instead
+        // of `QualifiedIdent("@pkg::mod::helper")`). Same root cause as
+        // the desugar / mono / escape / closure walker bugs.
+        .Catch(inner, binding, body, line, col) -> {
+            // The `binding` introduces an error name visible only in
+            // body. Bind it so refs to it inside body don't get
+            // mis-qualified as module-level.
+            let body_params: List<ParamEntry> = if binding == "" { [] } else { [ParamEntry { name: binding, vtype: ValueType.Unknown }] }
+            let body_ctx = bind_params_ctx(ctx, body_params)
+            Expr.Catch(rewrite_expr(ctx, inner), binding, rewrite_expr(body_ctx, body), line, col)
+        }
+        .Quote(kind, body) -> Expr.Quote(kind, rewrite_expr(ctx, body))
+        .Splice(target) -> Expr.Splice(rewrite_expr(ctx, target))
+        _ -> expr
+    }
+}
+
+/// Rewrite `Expr.Ident(name)` — keep it as Ident when the name is
+/// in local scope or a builtin; otherwise replace with
+/// `QualifiedIdent(canonical_path)` resolved against the alias
+/// table or global index.
+fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
+    // 1. Local variable — don't rewrite
+    if scope_has(ctx.locals, name) { return original }
+    // 2. Builtin function — don't rewrite
+    if is_builtin_name(name) { return original }
+    // 3. Uppercase = type/enum name — leave for codegen (StructLit/EnumCtor handled separately)
+    if name.length > 0 && name[0] in "A".."Z" { return original }
+    // 4. Use alias (from `use path.{name}`)
+    let from_alias = alias_lookup(ctx.aliases, name)
+    if from_alias != "" { return Expr.QualifiedIdent(from_alias) }
+    // 5. Sibling in current module
+    if ctx.current_module != "" {
+        let mod_node = module_find(ctx.tree, ctx.current_module)
+        let from_sibling = match mod_node {
+            .End -> ""
+            .Node(_, _, items, _, _) -> item_lookup(items, name)
+        }
+        if from_sibling != "" { return Expr.QualifiedIdent(from_sibling) }
+    }
+    // No global fallback. Names must be imported via `use` or defined
+    // in the current module. Unresolved names stay as Expr.Ident.
+    original
+}
+
+/// Map `rewrite_expr` over a `List<SExpr>`.
+fn rewrite_expr_list(ctx: NameCtx, exprs: List<SExpr>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < exprs.length {
+        let se = exprs[i]
+        out.push(sexpr_at(rewrite_expr(ctx, se.node), se.line, se.col, se.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Rewrite each annotation's arg list. Same shape as
+/// `rewrite_expr_list` (the args are SExprs), but applied per-
+/// annotation so the annotation name + cardinality are preserved.
+/// Drives qualified-name resolution for `@expand(macro_name)`,
+/// `@derive(Foo)` and any future name-referencing annotation.
+fn rewrite_annotations(ctx: NameCtx, annots: List<Annotation>) -> List<Annotation> {
+    mut out: List<Annotation> = []
+    mut i = 0
+    while i < annots.length {
+        let a = annots[i]
+        out.push(Annotation { name: a.name, args: rewrite_expr_list(ctx, a.args) })
+        i = i + 1
+    }
+    out
+}
+
+/// Walk a `Foo { f: v, ... }` initializer list, rewriting each
+/// value expression but leaving field names verbatim.
+fn rewrite_field_inits(ctx: NameCtx, inits: List<FieldInit>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        let new_val = sexpr_at(rewrite_expr(ctx, init.value.node), init.value.line, init.value.col, init.value.file)
+        out.push(FieldInit { name: init.name, value: new_val })
+        i = i + 1
+    }
+    out
+}
+
+/// Walk a `List<MatchArm>`, binding pattern captures into the local
+/// scope before rewriting each arm body.
+fn rewrite_match_arms(ctx: NameCtx, arms: List<MatchArm>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let rp = rewrite_pattern(ctx, arm.pattern)
+        let arm_ctx = bind_pattern_ctx(ctx, rp)
+        let new_guard = if arm.guard != null {
+            sexpr_at(rewrite_expr(arm_ctx, arm.guard!.node), arm.guard!.line, arm.guard!.col, arm.guard!.file)
+        } else { null }
+        let new_body = sexpr_at(rewrite_expr(arm_ctx, arm.body.node), arm.body.line, arm.body.col, arm.body.file)
+        out.push(MatchArm { pattern: rp, guard: new_guard, body: new_body })
+        i = i + 1
+    }
+    out
+}
+
+// Qualify type names inside match patterns
+/// True for `int`, `string`, `bool`, `ptr`, `void`, `float` —
+/// the names that should never be qualified.
+fn is_primitive_type(name: string) -> bool {
+    name in ["int", "string", "bool", "float", "ptr", "void"]
+}
+
+/// Qualify type names inside a Pattern (TypePattern's `type_name`,
+/// nested variant payloads). Bindings stay verbatim.
+fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
+    match pattern {
+        // The only node carrying a name to resolve. No Pattern children,
+        // so it's a pure leaf transform.
+        .TypePattern(type_name, binding) -> {
+            if is_primitive_type(type_name) { return pattern }
+            let resolved = resolve_type_in_ctx(ctx, type_name)
+            Pattern.TypePattern(resolved, binding)
+        }
+        // Everything else recurses into its Pattern children, which the
+        // derived Pattern.map does uniformly — NestedVariant sub-patterns,
+        // Or branches, etc. — so a new Pattern variant is walked without a
+        // new arm here. (Only TypePattern carries a resolvable name; the
+        // other patterns are structural, so the recursion is the point, not
+        // any per-variant resolution.)
+        _ -> pattern.map((p) -> rewrite_pattern(ctx, p))
+    }
+}
+
+/// Walk a `when` arm list, rewriting each arm's cond + body.
+fn rewrite_when_arms(ctx: NameCtx, arms: List<WhenArm>) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let new_cond = if arm.cond == null { null } else { sexpr_at(rewrite_expr(ctx, arm.cond!.node), arm.cond!.line, arm.cond!.col, arm.cond!.file) }
+        out.push(WhenArm {
+            cond: new_cond,
+            body: sexpr_at(rewrite_expr(ctx, arm.body.node), arm.body.line, arm.body.col, arm.body.file),
+        })
+        i = i + 1
+    }
+    out
+}
+
+// ── Unused import detection ──
+// After the rewrite pass, collect all QualifiedIdent canonical paths
+// from the rewritten AST, then check each use-imported alias against
+// the used set. Emit warnings for imports that were never referenced.
+
+/// Membership probe for the used-path list — backs the
+/// unused-import detection. The list is a multiset of canonical
+/// paths the rewrite pass emitted as QualifiedIdent (plus
+/// PascalCase Idents); duplicates are fine since this is only
+/// queried for "ever used at all" containment.
+fn used_has(set: List<string>, path: string) -> bool {
+    list_any(set, (s: string) -> s == path)
+}
+
+// Collect all QualifiedIdent paths from the rewritten AST.
+/// Walk a List<SStmt>, accumulating every QualifiedIdent path the
+/// rewrite pass emitted.
+fn collect_used_paths_stmts(stmts: List<SStmt>, acc: List<string>) -> List<string> {
+    mut cur = acc
+    mut i = 0
+    while i < stmts.length {
+        cur = collect_used_paths_stmt(stmts[i].node, cur)
+        i = i + 1
+    }
+    cur
+}
+
+/// Per-stmt branch of `collect_used_paths_stmts`.
+fn collect_used_paths_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
+    match stmt {
+        .Expr(e) -> collect_used_paths_expr(e, acc)
+        .Let(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Mut(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Const(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Return(e) -> collect_used_paths_expr(e, acc)
+        .Block(body) -> collect_used_paths_stmts(body, acc)
+        .Function(_, _, _, _, body) -> collect_used_paths_stmts(body, acc)
+        .If(cond, then_b, else_b) -> {
+            let a = collect_used_paths_expr(cond, acc)
+            let b = collect_used_paths_stmt(then_b, a)
+            if else_b != null { collect_used_paths_stmt(else_b!, b) } else { b }
+        }
+        .While(cond, body) -> collect_used_paths_stmt(body, collect_used_paths_expr(cond, acc))
+        .For(_, start, end, body) -> {
+            let a = collect_used_paths_expr(start, acc)
+            let b = collect_used_paths_expr(end, a)
+            collect_used_paths_stmt(body, b)
+        }
+        .ForIn(_, coll, body) -> collect_used_paths_stmt(body, collect_used_paths_expr(coll, acc))
+        .Match(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
+        .Module(_, body) -> collect_used_paths_stmts(body, acc)
+        .Impl(_, methods) -> collect_used_paths_stmts(methods, acc)
+        .Annotated(_, inner) -> collect_used_paths_stmt(inner.node, acc)
+        .Defer(body) -> collect_used_paths_expr(body, acc)
+        .LetDestructure(_, init) -> collect_used_paths_expr(init, acc)
+        _ -> acc
+    }
+}
+
+/// Per-expr branch of the unused-import sweep — recurses into
+/// every sub-expression to find QualifiedIdent references.
+fn collect_used_paths_expr(expr: Expr, acc_ref: List<string>) -> List<string> {
+    if expr == null { return acc_ref }
+    // Avra params are immutable. Rebind to a `mut` local — the
+    // underlying heap AvraArray is shared, so push mutations reach
+    // the caller (same convention as test_runner/discovery.av).
+    mut acc = acc_ref
+    match expr {
+        .QualifiedIdent(path) -> {
+            acc.push(path)
+            acc
+        }
+        .Call(callee, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
+        .GenericCall(callee, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
+        .Binary(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
+        .Unary(_, r) -> collect_used_paths_expr(r, acc)
+        .Logical(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
+        .Grouping(inner) -> collect_used_paths_expr(inner, acc)
+        .Assign(_, val) -> collect_used_paths_expr(val, acc)
+        .Index(obj, idx) -> collect_used_paths_expr(idx, collect_used_paths_expr(obj, acc))
+        .Block(body) -> collect_used_paths_stmts(body, acc)
+        .FieldAccess(obj, _) -> collect_used_paths_expr(obj, acc)
+        .FieldAssign(obj, _, val) -> collect_used_paths_expr(val, collect_used_paths_expr(obj, acc))
+        .IfExpr(c, t, e) -> collect_used_paths_expr(e, collect_used_paths_expr(t, collect_used_paths_expr(c, acc)))
+        .NullCoalesce(l, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
+        .OptionalChain(obj, _) -> collect_used_paths_expr(obj, acc)
+        .OptionalMethodCall(obj, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(obj, acc))
+        .Try(inner) -> collect_used_paths_expr(inner, acc)
+        .Tuple(elems) -> collect_used_paths_expr_list(elems, acc)
+        .ListLit(elems) -> collect_used_paths_expr_list(elems, acc)
+        .MapLit(entries) -> collect_used_paths_expr_list(entries, acc)
+        .StructLit(sn, inits) -> {
+            acc.push(sn)
+            collect_used_paths_field_inits(inits, acc)
+        }
+        .EnumCtor(tn, _, args) -> {
+            acc.push(tn)
+            collect_used_paths_expr_list(args, acc)
+        }
+        .MatchExpr(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
+        .Lambda(_, body) -> collect_used_paths_expr(body, acc)
+        .With(obj, overrides) -> collect_used_paths_field_inits(overrides, collect_used_paths_expr(obj, acc))
+        .Slice(obj, s, e) -> collect_used_paths_expr(e, collect_used_paths_expr(s, collect_used_paths_expr(obj, acc)))
+        .IsCheck(subj, _) -> collect_used_paths_expr(subj, acc)
+        .InCheck(needle, items) -> collect_used_paths_expr_list(items, collect_used_paths_expr(needle, acc))
+        .Catch(inner, _, body, _, _) -> collect_used_paths_expr(body, collect_used_paths_expr(inner, acc))
+        .Spawn(body) -> collect_used_paths_expr(body, acc)
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { acc } else { collect_used_paths_expr(capacity!, acc) }
+        }
+        .Isolated(body) -> collect_used_paths_expr(body, acc)
+        .Ident(name) -> {
+            // PascalCase identifiers may be imported type/enum names.
+            // Track them as used paths by looking up their alias.
+            if name.length > 0 && name[0] >= "A" && name[0] <= "Z" {
+                acc.push(name)
+                return acc
+            }
+            acc
+        }
+        _ -> acc
+    }
+}
+
+/// Map `collect_used_paths_expr` over a `List<SExpr>`.
+fn collect_used_paths_expr_list(exprs: List<SExpr>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < exprs.length {
+        out = collect_used_paths_expr(exprs[i].node, out)
+        i = i + 1
+    }
+    out
+}
+
+/// Walk a `List<FieldInit>` for the unused-import sweep.
+fn collect_used_paths_field_inits(inits: List<FieldInit>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < inits.length {
+        out = collect_used_paths_expr(inits[i].value.node, out)
+        i = i + 1
+    }
+    out
+}
+
+/// Walk a `List<MatchArm>` for the unused-import sweep — both
+/// guards and bodies contribute.
+fn collect_used_paths_match_arms(arms: List<MatchArm>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard != null {
+            out = collect_used_paths_expr(arm.guard!.node, out)
+        }
+        out = collect_used_paths_expr(arm.body.node, out)
+        i = i + 1
+    }
+    out
+}
+
+// Check each alias in the use_result against the used paths set.
+// Returns a DiagnosticBag with warnings for unused imports.
+/// Compare the alias chain against the used-paths set, emitting
+/// `UnusedImport` warnings for every alias the rewrite never
+/// referenced.
+fn check_unused_imports(aliases: List<AliasBinding>, used: List<string>) -> DiagnosticBag {
+    // Walk top-level Use stmts to match aliases to source spans
+    check_unused_aliases(aliases, used, bag_new())
+}
+
+/// Implementation backing `check_unused_imports` — walks the
+/// alias list, accumulating warnings into the bag.
+fn check_unused_aliases(aliases: List<AliasBinding>, used: List<string>, bag: DiagnosticBag) -> DiagnosticBag {
+    mut acc = bag
+    mut i = 0
+    while i < aliases.length {
+        let a = aliases[i]
+        if !used_has(used, a.canonical) && !used_has(used, a.short_name) {
+            let d = diag_with_confidence(diag_warning(DiagCode.UnusedImport, "unused import `${a.short_name}`", span_dummy()), Confidence.Medium)
+            acc = bag_report(acc, d)
+        }
+        i = i + 1
+    }
+    acc
+}

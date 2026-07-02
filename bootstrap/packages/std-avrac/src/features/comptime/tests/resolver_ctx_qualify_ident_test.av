@@ -1,0 +1,38 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 12.
+// `ctx_qualify_ident` resolves a bare identifier the same way
+// `Expr.Ident` would resolve at the current scope — alias first,
+// then global-index fallback. Returns the canonical path or null
+// for unbound names.
+//
+// The macro qualifies an imported name (`Stmt` ↦
+// `@std::avrac::core::Stmt`) and prints the result so the runtime
+// output proves the lookup hit the alias table.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_qualify_ident hits aliases" {
+    then "imported name resolves to its qualified path" {
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_qualify_ident_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_qualify_ident}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let q = ctx_qualify_ident(ctx, \"Stmt\")\n" +
+            "    let n = ctx_qualify_ident(ctx, \"NoSuchName\")\n" +
+            "    mut qstr = \"NULL\"\n" +
+            "    if q != null { qstr = q! }\n" +
+            "    mut nstr = \"NULL\"\n" +
+            "    if n != null { nstr = n! }\n" +
+            "    let msg = \"Stmt=\" + qstr + \"; missing=\" + nstr\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("Stmt=@std::avrac::core::Stmt") && out.contains("missing=NULL")
+    }
+}

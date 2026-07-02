@@ -1,0 +1,108 @@
+// WHY: parses map literal expressions `{ "key": value, ... }`.
+// is_map_literal does lookahead to disambiguate map literals from blocks.
+
+use core.{Expr, SExpr, sexpr}
+use parse.{Parser}
+use core.{Tk}
+
+impl Parser {
+    // Lookahead: is the current `{` the start of a map literal?
+    // A map starts with `{ "string" :` or `{ }` (empty map).
+    // Expression-position `{`: a bare `{}` is an empty map literal. Partial-save
+    // lookahead (current/start/kind/lexeme only) — deliberately NOT a full
+    // save_state/restore_state. Restoring line/column too would shift the
+    // diagnostic columns the compiler's own spans are computed against here:
+    // folding this into the full snapshot was tried and the selfhost differential
+    // DIVERGED (the compiler compiles itself differently), proving the partial
+    // save is the correct scoped design — not a hand-synced subset. The
+    // statement-position twin (is_stmt_map_literal) re-parses through
+    // parse_statement, so a full restore is right THERE; the two genuinely need
+    // different restore extents.
+    fn is_map_literal(self) -> bool {
+        let saved_pos = self.current
+        let saved_start = self.start
+        let saved_kind = self.current_kind
+        let saved_lex = self.current_lexeme
+
+        self.advance()  // consume {
+        let is_map = self.check(Tk.RightBrace) || (self.at_map_key_token() && {
+            self.advance()  // consume string / interpolated-string key
+            self.check(Tk.Colon)
+        })
+
+        self.current = saved_pos
+        self.start = saved_start
+        self.current_kind = saved_kind
+        self.current_lexeme = saved_lex
+        is_map
+    }
+
+    // Statement-position `{`: only a string-keyed `{ "key": ... }` is a map here —
+    // a bare `{}` stays an empty BLOCK (the compiler's own source uses `{}` block
+    // statements), and a real block (`{ let x = ... }`) is untouched. A map falls
+    // through parse_statement to the expression path (parse_map_literal).
+    //
+    // Token-based via save_state/restore_state, so it is comment-aware: the lexer
+    // skips comments between `{` and the first key, so `{ /* c */ "k": v }` is
+    // recognised. (It previously scanned raw source bytes — comment-blind, so that
+    // misparsed as a block → F0040 — to avoid a save_state lookahead that drifted
+    // because the backtracking infra dropped prev_line. That infra is now fixed,
+    // so the snapshot round-trips: save+restore is a net no-op at every block `{`,
+    // byte-identical to the old no-mutation scan on every input it parsed.)
+    fn is_stmt_map_literal(self) -> bool {
+        let st = self.save_state()
+        self.advance()  // consume {
+        let is_map = self.at_map_key_token() && {
+            self.advance()  // consume string / interpolated-string key
+            self.check(Tk.Colon)
+        }
+        self.restore_state(st)
+        is_map
+    }
+
+    // A map-literal key starts with a string literal OR an interpolated string
+    // (`"a${x}b"`, which lexes as Tk.Template) — both are string-valued keys. The
+    // `{` detection lookahead (is_map_literal / is_stmt_map_literal) recognises a
+    // map by this key token followed by `:`. parse_map_entries already parses the
+    // key via parse_expression, which handles either form, so only the lookahead
+    // was string-only.
+    fn at_map_key_token(self) -> bool {
+        self.check(Tk.String) || self.check(Tk.Template)
+    }
+
+    fn parse_map_literal(self) -> Result<Expr, string> {
+        self.advance()  // consume {
+        if self.check(Tk.RightBrace) {
+            self.advance()
+            let empty: List<SExpr> = []
+            return .Ok(Expr.MapLit(empty))
+        }
+        let entries = self.parse_map_entries()?
+        if !self.consume(Tk.RightBrace, "expected `}` after map") {
+            return .Err("parse error")
+        }
+        .Ok(Expr.MapLit(entries))
+    }
+
+    // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
+    fn parse_map_entries(self) -> Result<List<SExpr>, string> {
+        mut out: List<SExpr> = []
+        mut keep_going = true
+        while keep_going {
+            let key = self.parse_expression_boxed()?
+            if !self.consume(Tk.Colon, "expected `:` after map key") {
+                return .Err("parse error")
+            }
+            let value = self.parse_expression_boxed()?
+            out.push(sexpr(key, self.current_line, self.current_column))
+            out.push(sexpr(value, self.current_line, self.current_column))
+            if self.check(Tk.Comma) {
+                self.advance()
+                if self.check(Tk.RightBrace) { keep_going = false }
+            } else {
+                keep_going = false
+            }
+        }
+        .Ok(out)
+    }
+}

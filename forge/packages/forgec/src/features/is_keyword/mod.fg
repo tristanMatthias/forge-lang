@@ -1,0 +1,6 @@
+use core.ast.{Expr, Span, next_node_id, feature_expr}
+use codegen.{CG_B, CG_CTX, CG_I64, CG_MOD, Codegen, codegen_new, cg_reinit_types, match_enum_tag}
+use @std.llvm
+
+// is_keyword is now handled inline via Expr.IsCheck in codegen/mod.fg.
+// This module is kept for the Rust compiler's feature system compatibility.

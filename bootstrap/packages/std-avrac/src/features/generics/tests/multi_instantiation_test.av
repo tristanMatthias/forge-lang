@@ -1,0 +1,15 @@
+fn mi_identity<T>(x: T) -> T {
+    x
+}
+
+spec "multi instantiation" {
+    then "instantiate with int" {
+        mi_identity(42) == 42
+    }
+    then "instantiate with string" {
+        mi_identity("hello") == "hello"
+    }
+    then "second int instantiation deduplicates" {
+        mi_identity(99) == 99
+    }
+}

@@ -1,0 +1,23 @@
+enum EdsOutcome {
+    EdsGood(value: int)
+    EdsBad(msg: string)
+}
+
+fn eds_success() -> EdsOutcome { .EdsGood(42) }
+fn eds_failure() -> EdsOutcome { .EdsBad("nope") }
+
+fn eds_show(r: EdsOutcome) -> string {
+    match r {
+        .EdsGood(v) -> "ok: " + string(v)
+        .EdsBad(msg) -> "err: " + msg
+    }
+}
+
+spec "enum dot shorthand" {
+    then "success shows ok" {
+        eds_show(eds_success()) == "ok: 42"
+    }
+    then "failure shows err" {
+        eds_show(eds_failure()) == "err: nope"
+    }
+}

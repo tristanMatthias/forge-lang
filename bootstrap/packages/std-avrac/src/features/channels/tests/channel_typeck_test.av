@@ -1,0 +1,66 @@
+// Channel type-check gates. Each fixture pins one
+// rejection path with its stable F-code: element mismatch on send
+// (F1000), non-int capacity (F1000), nullable element type (F1000),
+// unknown method (F1043).
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+spec "channel typeck: send element mismatch is F1000" {
+    given "a string sent into Channel<int>" {
+        then "check reports the element mismatch" {
+            let path = "/tmp/avra_chan_tc_send_mismatch.av"
+            write_fixture(path,
+                "fn main() {\n" +
+                "    let ch = channel<int>(1)\n" +
+                "    ch.send(\"oops\")\n" +
+                "}\n")
+            let out = cached_fixture_check_no_metadata(path)
+            out.contains("F1000") && out.contains("channel carries int")
+        }
+    }
+}
+
+spec "channel typeck: capacity must be int" {
+    given "a string capacity" {
+        then "check reports F1000 with the capacity help" {
+            let path = "/tmp/avra_chan_tc_cap_string.av"
+            write_fixture(path,
+                "fn main() {\n" +
+                "    let ch = channel<int>(\"four\")\n" +
+                "    ch.send(1)\n" +
+                "}\n")
+            let out = cached_fixture_check_no_metadata(path)
+            out.contains("F1000") && out.contains("capacity must be an int")
+        }
+    }
+}
+
+spec "channel typeck: nullable element types are rejected" {
+    given "channel<int?>" {
+        then "check explains the closed-signal ambiguity" {
+            let path = "/tmp/avra_chan_tc_nullable_elem.av"
+            write_fixture(path,
+                "fn main() {\n" +
+                "    let ch = channel<int?>(1)\n" +
+                "    ch.close()\n" +
+                "}\n")
+            let out = cached_fixture_check_no_metadata(path)
+            out.contains("F1000") && out.contains("cannot be nullable")
+        }
+    }
+}
+
+spec "channel typeck: unknown method is F1043" {
+    given "a misspelled method" {
+        then "check lists the available methods" {
+            let path = "/tmp/avra_chan_tc_unknown_method.av"
+            write_fixture(path,
+                "fn main() {\n" +
+                "    let ch = channel<int>(1)\n" +
+                "    ch.shove(1)\n" +
+                "}\n")
+            let out = cached_fixture_check_no_metadata(path)
+            out.contains("F1043") && out.contains(".send(value)")
+        }
+    }
+}

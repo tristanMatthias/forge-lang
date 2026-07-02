@@ -1,0 +1,10 @@
+# Avra bootstrap seed lock — pin-don't-vendor.
+# seed/seed.ll is NOT in git: the build fetches this pinned artifact and
+# verifies the sha256 of the uncompressed IR. The lock advances only on
+# the integration branch (the seed train) via:
+#   bash scripts/diagnose.sh --seed-publish
+# Merge conflict on this file = two train advances raced; take the
+# HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.
+version = 55
+sha256 = f0e0d4a647b5da09f9304993df1486bf340f811ba02f65f9434949224dc0dfbd
+url = https://github.com/tristanMatthias/forge-lang/releases/download/seed/v55/seed.ll.gz

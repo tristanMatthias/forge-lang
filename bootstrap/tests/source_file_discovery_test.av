@@ -1,0 +1,34 @@
+// g2eo prep: collect_source_files walks a resolved StmtList and
+// returns every distinct .av file that contributed a statement.
+// The build driver picks this up to drive per-file metadata
+// emission — editing one .av invalidates only that one mod's
+// parse cache, not the whole package's.
+//
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn sfd_run() -> string {
+    cached_fixture_run("tests/source_file_discovery_fixtures/sample.av")
+}
+
+spec "g2eo source-file discovery: walks resolved StmtList for SStmt.file" {
+    then "fixture parses cleanly" {
+        sfd_run().contains("PROBE parse_succeeded: ok")
+    }
+    then "parser produces a non-null StmtList" {
+        sfd_run().contains("PROBE stmts_present: ok")
+    }
+    then "resolver runs without error on a two-mod package" {
+        sfd_run().contains("PROBE resolver_succeeded: ok")
+    }
+    then "top.av (parsed entry-point) lands in the discovered set" {
+        sfd_run().contains("PROBE top_av_discovered: ok")
+    }
+    then "foo.av (reached only via `mod foo`) lands in the discovered set" {
+        sfd_run().contains("PROBE foo_av_discovered: ok")
+    }
+    then "exactly two files are discovered" {
+        sfd_run().contains("PROBE two_files_discovered: ok")
+    }
+}

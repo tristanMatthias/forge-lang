@@ -1,0 +1,27 @@
+extern fn avra_thread_join(handle: int)
+
+mut spawn_ex_log: string = ""
+
+spec "spawn expr example" {
+    then "spawn body executes" {
+        spawn_ex_log = ""
+        let h = spawn {
+            spawn_ex_log = spawn_ex_log + "hello"
+        }
+        avra_thread_join(h)
+        spawn_ex_log == "hello"
+    }
+    then "spawn captures outer value" {
+        spawn_ex_log = ""
+        let x = 42
+        let h = spawn {
+            spawn_ex_log = string(x)
+        }
+        avra_thread_join(h)
+        spawn_ex_log == "42"
+    }
+    then "spawn returns Task whose .await yields the result" {
+        let task = spawn { 99 }
+        task.await == 99
+    }
+}

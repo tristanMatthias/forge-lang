@@ -1,0 +1,288 @@
+// WHY: central feature registry. Each feature declares a Feature struct
+// with all handlers (emit, resolve, check). Registration uses dummy
+// enum values to derive tags — no magic numbers.
+//
+// To add a new feature:
+//   1. Create features/<name>/mod.av
+//   2. Build a Feature with your handlers
+//   3. Call register_feature() with a dummy Expr/Stmt value
+//   4. One line in build_registry()
+
+use codegen.{err_emit, err_stmt, StmtResult}
+use codegen.{err_sr}
+use features.{init_features}
+use typeck.{tc_er}
+
+// C-side helpers
+extern fn avra_expr_tag(expr: int) -> int
+extern fn avra_stmt_tag(stmt: int) -> int
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+/// One language feature's declarative registration. A Feature
+/// bundles every callback the compiler might invoke for a specific
+/// AST shape — parse, resolve, typecheck, eval (interpreter), and
+/// codegen — so adding a feature is a single decl change at the
+/// registry, no scattered if-chains.
+/// @field name           — for diagnostics / introspection.
+/// @field expr_tag       — sentinel Expr value whose tag this feature
+///                          handles (null when not an expr feature).
+/// @field stmt_tag       — sentinel Stmt value, mirror of expr_tag.
+/// @field decl_keyword   — first token of a top-level decl (e.g. "fn").
+/// @field stmt_keyword   — first token of a stmt-level construct.
+/// @field parse_decl     — parser hook for top-level decls.
+/// @field parse_stmt     — parser hook for stmt-level constructs.
+/// @field emit_expr/stmt — codegen hooks (untyped int slot — fn ptrs
+///                          go through the Result<EmitValue, string>
+///                          shape).
+/// @field resolve_*      — name-resolution pass hooks.
+/// @field check_*        — typecheck pass hooks.
+/// @field eval_*         — tree-walking interpreter hooks (used by
+///                          `bs2 eval`).
+export type Feature = {
+    name: string,
+    expr_tag: Expr?,
+    stmt_tag: Stmt?,
+    decl_keyword: string,
+    stmt_keyword: string,
+    parse_decl: fn(Parser) -> Result<Stmt, string>,
+    parse_stmt: fn(Parser) -> Result<Stmt, string>,
+    emit_expr: int,
+    emit_stmt: int,
+    resolve_expr: fn(Resolver, Expr) -> Resolver,
+    resolve_stmt: fn(Resolver, Stmt) -> Resolver,
+    check_expr: fn(TC, Expr) -> ExprResult,
+    check_stmt: fn(TC, Stmt) -> TC,
+    eval_expr: fn(Runtime, Expr) -> StepResult,
+    eval_stmt: fn(Runtime, Stmt) -> StepResult,
+}
+
+// ── No-op handlers ──
+//
+// Default handlers used by `feature_new` so a Feature only has to
+// override the callbacks it actually implements. The codegen and
+// eval no-ops return a "no handler" error so bugs that route a node
+// to an unregistered feature surface loudly instead of silently;
+// the resolver / typecheck no-ops pass through unchanged because
+// those passes have non-error fallback shapes.
+
+/// Codegen no-op for expressions — `err_emit("no expr handler")`.
+fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
+/// Codegen no-op for statements — `err_sr("no stmt handler")`.
+fn noop_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
+/// Resolver no-op for expressions — pass-through.
+fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
+/// Resolver no-op for statements — pass-through.
+fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
+/// Typecheck no-op for expressions — yields `Unknown`.
+fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
+/// Typecheck no-op for statements — pass-through.
+fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
+/// Eval no-op for expressions — error step ("no eval_expr handler").
+fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_expr handler" }
+}
+/// Eval no-op for statements — error step ("no eval_stmt handler").
+fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_stmt handler" }
+}
+/// Parser no-op — returns null so the parser falls back to the
+/// in-tree dispatch when no feature claims this keyword.
+fn noop_parse(p: Parser) -> Result<Stmt, string> { .Err("no parser registered") }
+
+/// Construct a Feature with no-op handlers. Each feature module
+/// builds on this with `with`-updates to register its own callbacks.
+export fn feature_new(name: string) -> Feature {
+    Feature {
+        name,
+        expr_tag: null,
+        stmt_tag: null,
+        decl_keyword: "",
+        stmt_keyword: "",
+        parse_decl: noop_parse,
+        parse_stmt: noop_parse,
+        emit_expr: noop_emit_expr,
+        emit_stmt: noop_emit_stmt,
+        resolve_expr: noop_resolve_expr,
+        resolve_stmt: noop_resolve_stmt,
+        check_expr: noop_check_expr,
+        check_stmt: noop_check_stmt,
+        eval_expr: noop_eval_expr,
+        eval_stmt: noop_eval_stmt,
+    }
+}
+
+// ── Registry ──
+
+/// Compiled lookup tables for feature dispatch. Each map keys an
+/// integer tag (Expr/Stmt variant tag) or a keyword string to the
+/// corresponding handler `fn` (stored as int — Avra has no fn-ptr
+/// type at this layer, so the cast happens at dispatch time).
+/// Built once via `build_registry()` and consulted by every pass.
+export type Registry = {
+    expr_emitters: ptr,
+    stmt_emitters: ptr,
+    expr_resolvers: ptr,
+    stmt_resolvers: ptr,
+    expr_checkers: ptr,
+    stmt_checkers: ptr,
+    expr_evals: ptr,
+    stmt_evals: ptr,
+    decl_parsers: ptr,
+    stmt_parsers: ptr,
+}
+
+/// Empty registry — every map is freshly allocated. Use `register`
+/// to populate it from Feature records.
+export fn registry_new() -> Registry {
+    Registry {
+        expr_emitters: avra_intmap_new(),
+        stmt_emitters: avra_intmap_new(),
+        expr_resolvers: avra_intmap_new(),
+        stmt_resolvers: avra_intmap_new(),
+        expr_checkers: avra_intmap_new(),
+        stmt_checkers: avra_intmap_new(),
+        expr_evals: avra_intmap_new(),
+        stmt_evals: avra_intmap_new(),
+        decl_parsers: avra_map_new_cstr(),
+        stmt_parsers: avra_map_new_cstr(),
+    }
+}
+
+/// Index `f` into every relevant map. Reads the variant tags off
+/// the sentinel `expr_tag` / `stmt_tag` values when present, plus
+/// the keyword strings for parser dispatch.
+export fn register(reg: Registry, f: Feature) {
+    if f.expr_tag != null {
+        let etag = avra_expr_tag(f.expr_tag!)
+        avra_intmap_set(reg.expr_emitters, etag, f.emit_expr)
+        avra_intmap_set(reg.expr_resolvers, etag, f.resolve_expr)
+        avra_intmap_set(reg.expr_checkers, etag, f.check_expr)
+        avra_intmap_set(reg.expr_evals, etag, f.eval_expr)
+    }
+    if f.stmt_tag != null {
+        let stag = avra_stmt_tag(f.stmt_tag!)
+        avra_intmap_set(reg.stmt_emitters, stag, f.emit_stmt)
+        avra_intmap_set(reg.stmt_resolvers, stag, f.resolve_stmt)
+        avra_intmap_set(reg.stmt_checkers, stag, f.check_stmt)
+        avra_intmap_set(reg.stmt_evals, stag, f.eval_stmt)
+    }
+    if f.decl_keyword.length > 0 {
+        avra_map_set_cstr(reg.decl_parsers, f.decl_keyword, f.parse_decl)
+    }
+    if f.stmt_keyword.length > 0 {
+        avra_map_set_cstr(reg.stmt_parsers, f.stmt_keyword, f.parse_stmt)
+    }
+}
+
+// ── Dispatch ──
+//
+// Each pass calls `has_*` to probe whether a feature is registered
+// for a tag, then `dispatch_*` to invoke the handler. The Option
+// return on dispatch_* lets callers fall back to the legacy in-tree
+// match arms when no feature is registered.
+
+/// True iff a feature has registered an expr-codegen handler for
+/// this Expr-variant tag.
+export fn has_expr_emit(reg: Registry, tag: int) -> bool {
+    avra_intmap_has(reg.expr_emitters, tag) != 0
+}
+
+/// Invoke the registered expr-codegen handler. Caller must verify
+/// `has_expr_emit` first — there's no fallback at this layer.
+export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    let handler: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = avra_intmap_get(reg.expr_emitters, tag)
+    handler(ctx, env, expr)
+}
+
+/// True iff a feature has registered a stmt-codegen handler.
+export fn has_stmt_emit(reg: Registry, tag: int) -> bool {
+    avra_intmap_has(reg.stmt_emitters, tag) != 0
+}
+
+/// Invoke the registered stmt-codegen handler. Caller must verify
+/// `has_stmt_emit` first.
+export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    let handler: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = avra_intmap_get(reg.stmt_emitters, tag)
+    handler(ctx, env, stmt)
+}
+
+/// Invoke the resolver hook for `tag`, or null when none is
+/// registered (resolver falls back to its built-in walker).
+export fn dispatch_expr_resolve(reg: Registry, tag: int, r: Resolver, expr: Expr) -> Resolver? {
+    if avra_intmap_has(reg.expr_resolvers, tag) == 0 { return null }
+    let handler: fn(Resolver, Expr) -> Resolver = avra_intmap_get(reg.expr_resolvers, tag)
+    handler(r, expr)
+}
+
+/// Invoke the typechecker expr hook, or null when not registered.
+export fn dispatch_expr_check(reg: Registry, tag: int, tc: TC, expr: Expr) -> ExprResult? {
+    if avra_intmap_has(reg.expr_checkers, tag) == 0 { return null }
+    let handler: fn(TC, Expr) -> ExprResult = avra_intmap_get(reg.expr_checkers, tag)
+    handler(tc, expr)
+}
+
+/// Invoke the resolver stmt hook, or null when not registered.
+export fn dispatch_stmt_resolve(reg: Registry, tag: int, r: Resolver, stmt: Stmt) -> Resolver? {
+    if avra_intmap_has(reg.stmt_resolvers, tag) == 0 { return null }
+    let handler: fn(Resolver, Stmt) -> Resolver = avra_intmap_get(reg.stmt_resolvers, tag)
+    handler(r, stmt)
+}
+
+/// Invoke the typechecker stmt hook, or null when not registered.
+export fn dispatch_stmt_check(reg: Registry, tag: int, tc: TC, stmt: Stmt) -> TC? {
+    if avra_intmap_has(reg.stmt_checkers, tag) == 0 { return null }
+    let handler: fn(TC, Stmt) -> TC = avra_intmap_get(reg.stmt_checkers, tag)
+    handler(tc, stmt)
+}
+
+/// Invoke the eval expr hook (tree-walking interpreter), or null.
+export fn dispatch_expr_eval(reg: Registry, tag: int, rt: Runtime, expr: Expr) -> StepResult? {
+    if avra_intmap_has(reg.expr_evals, tag) == 0 { return null }
+    let handler: fn(Runtime, Expr) -> StepResult = avra_intmap_get(reg.expr_evals, tag)
+    handler(rt, expr)
+}
+
+/// Invoke the eval stmt hook, or null.
+export fn dispatch_stmt_eval(reg: Registry, tag: int, rt: Runtime, stmt: Stmt) -> StepResult? {
+    if avra_intmap_has(reg.stmt_evals, tag) == 0 { return null }
+    let handler: fn(Runtime, Stmt) -> StepResult = avra_intmap_get(reg.stmt_evals, tag)
+    handler(rt, stmt)
+}
+
+/// Look up a decl parser by leading keyword (e.g. `"fn"`). Returns
+/// the handler-fn-as-int, or null when no feature claims it.
+export fn lookup_decl_parser(reg: Registry, keyword: string) -> int? {
+    if avra_map_has_cstr(reg.decl_parsers, keyword) == 0 { return null }
+    avra_map_get_cstr(reg.decl_parsers, keyword)
+}
+
+/// Look up a stmt parser by leading keyword.
+export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
+    if avra_map_has_cstr(reg.stmt_parsers, keyword) == 0 { return null }
+    avra_map_get_cstr(reg.stmt_parsers, keyword)
+}
+
+/// Register a component name for keyword-free instantiation. After
+/// this, `name instance { ... }` at statement level is parsed as a
+/// ComponentBlock — the component declaration's name acts as a
+/// pseudo-keyword in the stmt parser.
+export fn register_component_name(reg: Registry, name: string, handler: fn(Parser) -> Result<Stmt, string>) {
+    avra_map_set_cstr(reg.stmt_parsers, name, handler)
+}
+
+// ── Build the registry ──
+
+/// Construct + populate the Registry. Called once at compiler
+/// startup; downstream passes look up handlers from the result.
+export fn build_registry() -> Registry {
+    let reg = registry_new()
+    init_features(reg)
+    reg
+}

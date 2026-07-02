@@ -1,0 +1,97 @@
+// Fixture program exercising @std.avrac.build.graph.build_graph
+// against a synthetic dep tree built up at /tmp.
+//
+// Layout:
+//   /tmp/avra_graph_fixture/root/avra.toml      (deps: liba, libb)
+//   /tmp/avra_graph_fixture/liba/avra.toml      (deps: libc)
+//   /tmp/avra_graph_fixture/libb/avra.toml      (deps: libc)
+//   /tmp/avra_graph_fixture/libc/avra.toml      (no deps — leaf)
+//
+// Diamond shape. Topo order must put libc before liba/libb before root.
+
+use @std.avrac.build.{
+    DepGraph, Unit,
+    build_graph,
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn write_manifest(dir: string, name: string, deps: string) -> string {
+    avra_shell_exec("mkdir -p " + dir)
+    let body = "[package]\nname = \"" + name + "\"\nversion = \"0.1.0\"\n\n" + deps + "\n"
+    avra_shell_exec("printf '%s' '" + body + "' > " + dir + "/avra.toml")
+}
+
+fn first_unit(g: DepGraph) -> string {
+    if g.units.length == 0 { return "<empty>" }
+    g.units[0].name
+}
+
+fn nth_unit(units: List<Unit>, idx: int) -> string {
+    if idx < 0 || idx >= units.length { return "<oob>" }
+    units[idx].name
+}
+
+fn main() -> int {
+    let root_dir = "/tmp/avra_graph_fixture/"
+    avra_shell_exec("rm -rf " + root_dir)
+
+    // Build the diamond.
+    let _r1 = write_manifest(root_dir + "libc", "libc", "")
+    let _r2 = write_manifest(root_dir + "liba", "liba",
+        "[dependencies]\n\"libc\" = { path = \"../libc\" }")
+    let _r3 = write_manifest(root_dir + "libb", "libb",
+        "[dependencies]\n\"libc\" = { path = \"../libc\" }")
+    let _r4 = write_manifest(root_dir + "root", "root",
+        "[dependencies]\n\"liba\" = { path = \"../liba\" }\n\"libb\" = { path = \"../libb\" }")
+
+    let g = build_graph(root_dir + "root/")
+
+    if g.had_error {
+        println("PROBE no_error: FAIL " + g.error)
+    } else {
+        println("PROBE no_error: ok")
+    }
+
+    // 4 units total: root, liba, libb, libc.
+    if g.units.length == 4 {
+        println("PROBE four_units: ok")
+    } else {
+        println("PROBE four_units: FAIL count=" + string(g.units.length))
+    }
+
+    // libc must come first (only leaf with no deps).
+    if first_unit(g) == "libc" {
+        println("PROBE libc_first: ok")
+    } else {
+        println("PROBE libc_first: FAIL got=" + first_unit(g))
+    }
+
+    // root must come LAST (depends on liba + libb).
+    let last = nth_unit(g.units, g.units.length - 1)
+    if last == "root" {
+        println("PROBE root_last: ok")
+    } else {
+        println("PROBE root_last: FAIL got=" + last)
+    }
+
+    // Cycle detection: build a cycle (a → b → a) and confirm the
+    // graph reports it without hanging.
+    let cycle_dir = "/tmp/avra_graph_cycle/"
+    avra_shell_exec("rm -rf " + cycle_dir)
+    let _c1 = write_manifest(cycle_dir + "a", "a",
+        "[dependencies]\n\"b\" = { path = \"../b\" }")
+    let _c2 = write_manifest(cycle_dir + "b", "b",
+        "[dependencies]\n\"a\" = { path = \"../a\" }")
+    let cg = build_graph(cycle_dir + "a/")
+    // Either had_error true, OR (defensively) topo-sort detects
+    // the cycle. Both manifest as had_error.
+    if cg.had_error {
+        println("PROBE cycle_detected: ok")
+    } else {
+        println("PROBE cycle_detected: FAIL")
+    }
+
+    avra_shell_exec("rm -rf " + root_dir + " " + cycle_dir)
+    0
+}

@@ -1,0 +1,5 @@
+fn f() -> string? { "x" }
+fn g() -> string? { f() }
+fn h(p: int) -> int? { p }
+fn k(p: int) -> int? { h(p) }
+fn main() {}

@@ -4,12 +4,13 @@ use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
 
-use super::types::{ErrorPropagateData, OkExprData, ErrExprData, CatchData};
+use super::types::{CatchData, ErrExprData, ErrorPropagateData, OkExprData};
 
 impl TypeChecker {
     /// Type-check `expr?` via Feature dispatch.
     pub(crate) fn check_error_propagate_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, ErrorPropagateData, |data| self.check_error_propagate(&data.operand))
+        feature_check!(self, fe, ErrorPropagateData, |data| self
+            .check_error_propagate(&data.operand))
     }
 
     /// Type-check `expr?` — error propagation operator.
@@ -34,7 +35,8 @@ impl TypeChecker {
 
     /// Type-check `err(value)` via Feature dispatch.
     pub(crate) fn check_err_expr_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, ErrExprData, |data| self.check_err_expr(&data.value))
+        feature_check!(self, fe, ErrExprData, |data| self
+            .check_err_expr(&data.value))
     }
 
     /// Type-check `err(value)` — wraps a value in `Result<Unknown, T>`.
@@ -45,11 +47,20 @@ impl TypeChecker {
 
     /// Type-check `expr catch (binding) { handler }` via Feature dispatch.
     pub(crate) fn check_catch_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, CatchData, |data| self.check_catch(&data.expr, &data.binding, &data.handler))
+        feature_check!(self, fe, CatchData, |data| self.check_catch(
+            &data.expr,
+            &data.binding,
+            &data.handler
+        ))
     }
 
     /// Type-check `expr catch (binding) { handler }`.
-    pub(crate) fn check_catch(&mut self, expr: &Expr, binding: &Option<String>, handler: &Block) -> Type {
+    pub(crate) fn check_catch(
+        &mut self,
+        expr: &Expr,
+        binding: &Option<String>,
+        handler: &Block,
+    ) -> Type {
         let expr_type = self.check_expr(expr);
         self.env.push_scope();
         if let Some(name) = binding {

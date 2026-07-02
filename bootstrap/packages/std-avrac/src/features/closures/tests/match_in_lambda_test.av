@@ -1,0 +1,18 @@
+enum MlBox { Val(n: int), Empty }
+
+spec "match in lambda" {
+    then "match inside lambda body returning int" {
+        let unwrap = (b: MlBox) -> match b {
+            .Val(n) -> n
+            .Empty -> 0 - 1
+        }
+        unwrap(MlBox.Val(7)) == 7 && unwrap(MlBox.Empty) == 0 - 1
+    }
+    then "match inside lambda body returning string" {
+        let label = (b: MlBox) -> match b {
+            .Val(_) -> "some"
+            .Empty -> "none"
+        }
+        label(MlBox.Val(0)) == "some" && label(MlBox.Empty) == "none"
+    }
+}

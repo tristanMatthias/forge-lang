@@ -1,0 +1,75 @@
+// Fixture: exercises the N-file linker by building two trivial .o
+// files via clang on small C sources, then linking them together
+// plus runtime/llvm_wrapper into a binary that prints success.
+//
+// Each PROBE line records one assertion the parent test asserts on.
+// Tracking ticket: forge-crafting-intepreters-k21v.
+
+use @std.avrac.build.{LinkOptions, default_link_options, link_objects}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    // Build two C-source object files in /tmp. Each defines a fn
+    // the linker has to reach across; missing either fails the link.
+    let tmp = "/tmp/avra_k21v_link"
+    avra_shell_exec("rm -rf ${tmp}")
+    avra_shell_exec("mkdir -p ${tmp}")
+
+    avra_shell_exec("printf 'int part_a(void) { return 7; }\\n' > ${tmp}/a.c")
+    avra_shell_exec("printf 'extern int part_a(void); int part_b(void) { return part_a() + 35; }\\n' > ${tmp}/b.c")
+    avra_shell_exec("printf '#include <stdio.h>\\nextern int part_b(void); int main(void) { printf(\"sum=%%d\\\\n\", part_b()); return 0; }\\n' > ${tmp}/main.c")
+
+    let cc_status_a = avra_shell_exec_status("cc -c ${tmp}/a.c -o ${tmp}/a.o")
+    let cc_status_b = avra_shell_exec_status("cc -c ${tmp}/b.c -o ${tmp}/b.o")
+    let cc_status_main = avra_shell_exec_status("cc -c ${tmp}/main.c -o ${tmp}/main.o")
+    probe("cc_a", cc_status_a == 0)
+    probe("cc_b", cc_status_b == 0)
+    probe("cc_main", cc_status_main == 0)
+
+    // Empty stub .o files for the runtime / wrapper slots so we don't
+    // depend on the bootstrap's own runtime.o being current. The
+    // linker doesn't pull anything from these — it just consumes
+    // them positionally per the LinkOptions surface.
+    avra_shell_exec("printf '' > ${tmp}/stub.c")
+    let cc_stub = avra_shell_exec_status("cc -c ${tmp}/stub.c -o ${tmp}/stub.o")
+    probe("cc_stub", cc_stub == 0)
+
+    // Link N=3 .o files (main + a + b) plus stubs for runtime/wrapper.
+    // The link helper resolves LLVM_PREFIX from env when llvm_prefix
+    // is empty — which it is in defaults. -lLLVM is on by default; we
+    // don't need it for this fixture, but the link surface is the
+    // same one the bootstrap uses.
+    let opts = LinkOptions {
+        stack_size_hex: "0x100000",
+        llvm_prefix: avra_process_env_get("LLVM_PREFIX"),
+        coverage: false,
+    }
+    let bin = "${tmp}/program"
+    let objs = ["${tmp}/main.o", "${tmp}/a.o", "${tmp}/b.o"]
+    let link_rc = link_objects(objs, "${tmp}/stub.o", "${tmp}/stub.o", bin, opts)
+    probe("link_rc_zero", link_rc == 0)
+    probe("bin_exists", avra_selfhost_file_exists(bin) != 0)
+
+    let out = avra_shell_exec(bin)
+    probe("link_runs_and_outputs_42", out.contains("sum=42"))
+
+    // Single-object link still works (regression — the cli/main.av
+    // path uses the same fn for the test runner today).
+    let solo_bin = "${tmp}/solo"
+    avra_shell_exec("printf '#include <stdio.h>\\nint main(void) { printf(\"solo=ok\\\\n\"); return 0; }\\n' > ${tmp}/solo.c")
+    let cc_solo = avra_shell_exec_status("cc -c ${tmp}/solo.c -o ${tmp}/solo.o")
+    probe("cc_solo", cc_solo == 0)
+    let solo_rc = link_objects(["${tmp}/solo.o"], "${tmp}/stub.o", "${tmp}/stub.o", solo_bin, opts)
+    probe("link_single_obj", solo_rc == 0 && avra_shell_exec(solo_bin).contains("solo=ok"))
+
+    0
+}

@@ -1,0 +1,25 @@
+type TePoint = { x: int, y: int }
+
+fn te_double(n: int) -> int { n * 2 }
+
+fn te_run() -> string {
+    let x = 42
+    let a = 3
+    let b = 4
+    let p = TePoint { x: 10, y: 20 }
+    let name = "world"
+
+    avra_test_capture_start()
+    println(`the answer is ${string(x)}`)
+    println(`${string(a)} + ${string(b)} = ${string(a + b)}`)
+    println(`point: ${string(p.x)}, ${string(p.y)}`)
+    println(`double 5 = ${string(te_double(5))}`)
+    println(`hello ${name}`)
+    avra_test_capture_stop()
+}
+
+spec "template expr" {
+    then "template expressions output" {
+        te_run() == "the answer is 42\n3 + 4 = 7\npoint: 10, 20\ndouble 5 = 10\nhello world"
+    }
+}

@@ -1,0 +1,64 @@
+// Gap 1.A — EnumDecl encoder/decoder roundtrip through the @expand
+// pipeline. Sister test to expand_macro_typedecl_test.av; pins that
+// `quote stmt { enum Foo { ... } }` survives the construct_stmt +
+// value_to_stmt path.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+fn run_expand_e2e(source: string) -> string {
+    let path = "/tmp/avra_expand_macro_enumdecl_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+spec "gap 1.A: Stmt.EnumDecl decodes from macro output (no payloads)" {
+    then "macro emitting `enum Color_inst { Red, Blue }` lands the enum" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_enum() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        enum Color_inst { Red, Blue }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_enum)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("enum Color_inst")
+            && out.contains("Red")
+            && out.contains("Blue")
+            && !out.contains("fn placeholder")
+    }
+}
+
+spec "gap 1.A: Stmt.EnumDecl decodes variant payload fields" {
+    then "variant with payload fields encodes and decodes through quote" {
+        let out = run_expand_e2e(
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_enum() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        enum Shape_inst { Circle(radius: int), Square(side: int) }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_enum)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("enum Shape_inst")
+            && out.contains("Circle")
+            && out.contains("radius")
+            && out.contains("Square")
+            && out.contains("side")
+    }
+}

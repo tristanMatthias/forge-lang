@@ -1,0 +1,71 @@
+// WHY: a subjectless `.Some(x)` / `.None` flowing into an optional slot whose
+// inner is a USER type (or any non-built-in) ICE'd in codegen with F9999 "no
+// enum has variant `Some`": the `T?` optional is a codegen PRIMITIVE
+// (codegen/optional_repr.av), NOT a registered enum, so emit_enum_ctor's
+// variant-NAME lookup found nothing (or, when a user enum declared a same-named
+// variant, the WRONG enum) — it has no access to the expected type.
+//
+// Fix: at the binding site the slot type IS known, so disambiguate by it (the
+// same expected-type-directed pattern emit_var_decl already uses for `List<T?>`
+// literals): a subjectless Option ctor into a `T?` slot lowers to the optional
+// repr (emit_optional_ctor_value), recognised via the variant_is_optional_ctor
+// contract helper in core/ast.av.
+//
+// `Shadow` below DECLARES `Some`/`None` variants on purpose: every `.Some`/`.None`
+// spec here therefore runs WITH a shadowing user enum in scope, proving the
+// disambiguation is by slot type, not by a fragile "no enum claims the variant"
+// fallback (the bundled suite caught exactly that fragility).
+
+type Box = { val: int }
+enum Shadow { Some(v: int), None }
+
+spec "subjectless .Some/.None into a user-type optional compiles + runs" {
+    then "`.Some(Box{...})` is present and carries the payload (niche repr)" {
+        let o: Box? = .Some(Box { val: 9 })
+        let got = o ?? Box { val: -1 }
+        got.val == 9
+    }
+    then "`.None` into a user-type optional is absent (not Shadow.None)" {
+        let e: Box? = .None
+        let got = e ?? Box { val: -1 }
+        got.val == -1
+    }
+}
+
+spec "subjectless .Some/.None into a value-scalar optional (boxed repr)" {
+    then "`.Some(42)` into int? is present (a non-null box, distinct from none)" {
+        let n: int? = .Some(42)
+        let got = n ?? 0
+        got == 42
+    }
+    then "`.Some(0)` into int? is present, NOT none (the boxed-repr invariant)" {
+        let zero: int? = .Some(0)
+        let got = zero ?? -1
+        got == 0
+    }
+    then "`.None` into int? is absent" {
+        let z: int? = .None
+        let got = z ?? -7
+        got == -7
+    }
+}
+
+spec "an explicit user-enum ctor still resolves to the user enum" {
+    // The disambiguation is by slot type for SUBJECTLESS ctors; an explicit
+    // `Shadow.Some` / `Shadow.None` (with the type prefix) is unaffected — it is
+    // the user enum, matched structurally.
+    then "`Shadow.Some(5)` is the user enum, carrying its payload" {
+        let s = Shadow.Some(5)
+        match s {
+            .Some(v) -> v == 5
+            .None -> false
+        }
+    }
+    then "`Shadow.None` is the user enum's None variant" {
+        let s = Shadow.None
+        match s {
+            .Some(_) -> false
+            .None -> true
+        }
+    }
+}

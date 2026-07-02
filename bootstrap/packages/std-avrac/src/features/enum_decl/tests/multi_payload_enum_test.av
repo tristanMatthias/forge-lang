@@ -1,0 +1,29 @@
+// WHY: multi-payload enum variants (two payload fields on one
+// variant) construct and match correctly. The enum is deliberately
+// NOT named Result: assembled test shards share one global type
+// namespace, so a test-local `enum Result` shadows the stdlib
+// Result<T, E> for every batch-mate and breaks their `.Ok(x)`
+// payload types depending on shard packing.
+
+enum FetchOutcome {
+    Ok(value: int),
+    Err(code: int, msg: string),
+}
+
+fn describe_outcome(r: FetchOutcome) -> string {
+    match r {
+        .Ok(v) -> string(v)
+        .Err(code, msg) -> string(code) + ": " + msg
+    }
+}
+
+spec "multi payload enum" {
+    then "ok variant" {
+        let ok = FetchOutcome.Ok(42)
+        describe_outcome(ok) == "42"
+    }
+    then "err variant with two payloads" {
+        let err = FetchOutcome.Err(404, "not found")
+        describe_outcome(err) == "404: not found"
+    }
+}

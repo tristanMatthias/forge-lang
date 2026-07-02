@@ -1,0 +1,29 @@
+enum HreIntList {
+    Nil
+    Cons(head: int, tail: HreIntList)
+}
+
+fn hre_sum(list: HreIntList) -> int {
+    match list {
+        .Nil -> 0
+        .Cons(h, t) -> h + hre_sum(t)
+    }
+}
+
+fn hre_list_to_string(list: HreIntList) -> string {
+    match list {
+        .Nil -> "nil"
+        .Cons(h, t) -> string(h) + " -> " + hre_list_to_string(t)
+    }
+}
+
+spec "hunt recursive enum" {
+    then "list to string" {
+        let my_list = HreIntList.Cons(1, HreIntList.Cons(2, HreIntList.Cons(3, HreIntList.Nil)))
+        hre_list_to_string(my_list) == "1 -> 2 -> 3 -> nil"
+    }
+    then "sum" {
+        let my_list = HreIntList.Cons(1, HreIntList.Cons(2, HreIntList.Cons(3, HreIntList.Nil)))
+        hre_sum(my_list) == 6
+    }
+}

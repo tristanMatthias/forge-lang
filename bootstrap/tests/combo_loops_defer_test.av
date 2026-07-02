@@ -1,0 +1,59 @@
+fn cld_process_items() -> int {
+    defer println("processing complete")
+    mut total = 0
+    for i in 0..5 {
+        total = total + i * i
+    }
+    total
+}
+
+fn cld_find_first_above(threshold: int) -> int {
+    defer println("search complete")
+    mut i = 0
+    while i < 100 {
+        if i * i > threshold {
+            return i
+        }
+        i = i + 1
+    }
+    -1
+}
+
+fn cld_run() -> string {
+    mut found = -1
+    for i in 0..100 {
+        if i * i > 50 {
+            found = i
+            break
+        }
+    }
+
+    let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    mut odd_sum = 0
+    for n in nums {
+        if n % 2 == 0 { continue }
+        odd_sum = odd_sum + n
+    }
+
+    mut result = 0
+    for i in 0..10 {
+        for j in 0..10 {
+            if i + j > 12 { break }
+            result = result + 1
+        }
+    }
+
+    avra_test_capture_start()
+    println(string(found))
+    println(string(odd_sum))
+    println(string(result))
+    println(string(cld_process_items()))
+    println(string(cld_find_first_above(200)))
+    avra_test_capture_stop()
+}
+
+spec "combo loops defer" {
+    then "loops and defer combo" {
+        cld_run() == "8\n25\n79\nprocessing complete\n30\nsearch complete\n15"
+    }
+}

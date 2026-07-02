@@ -1,0 +1,41 @@
+trait DdDescribable {
+    fn describe(self) -> string
+}
+
+type DdCircle = { radius: int }
+type DdSquare = { side: int }
+
+impl DdDescribable for DdCircle {
+    fn describe(self) -> string {
+        "circle r=" + string(self.radius)
+    }
+}
+
+impl DdDescribable for DdSquare {
+    fn describe(self) -> string {
+        "square s=" + string(self.side)
+    }
+}
+
+fn dd_print_thing(d: DdDescribable) -> string {
+    d.describe()
+}
+
+spec "dyn dispatch" {
+    then "circle describe" {
+        let c: DdDescribable = DdCircle { radius: 5 }
+        c.describe() == "circle r=5"
+    }
+    then "square describe" {
+        let s: DdDescribable = DdSquare { side: 3 }
+        s.describe() == "square s=3"
+    }
+    then "pass trait object to function" {
+        let c: DdDescribable = DdCircle { radius: 5 }
+        dd_print_thing(c) == "circle r=5"
+    }
+    then "pass different trait object to function" {
+        let s: DdDescribable = DdSquare { side: 3 }
+        dd_print_thing(s) == "square s=3"
+    }
+}

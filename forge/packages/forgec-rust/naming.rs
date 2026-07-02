@@ -325,7 +325,9 @@ mod tests {
 
     #[test]
     fn empty_org_name() {
-        assert!(validate_org_name("").unwrap_err().contains("cannot be empty"));
+        assert!(validate_org_name("")
+            .unwrap_err()
+            .contains("cannot be empty"));
     }
 
     #[test]

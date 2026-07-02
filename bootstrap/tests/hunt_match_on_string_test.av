@@ -1,0 +1,27 @@
+fn hmos_categorize(s: string) -> string {
+    match s {
+        _ if s == "hello" -> "greeting"
+        _ if s.starts_with("err") -> "error"
+        _ if s.length > 10 -> "long"
+        _ if s.length == 0 -> "empty"
+        _ -> "other"
+    }
+}
+
+spec "hunt match on string" {
+    then "greeting" {
+        hmos_categorize("hello") == "greeting"
+    }
+    then "error" {
+        hmos_categorize("error: bad") == "error"
+    }
+    then "long" {
+        hmos_categorize("this is a very long string") == "long"
+    }
+    then "empty" {
+        hmos_categorize("") == "empty"
+    }
+    then "other" {
+        hmos_categorize("hi") == "other"
+    }
+}

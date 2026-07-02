@@ -12,17 +12,28 @@ pub struct MatchData {
 }
 
 impl crate::feature::FeatureNode for MatchData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(MatchData {
             subject: Box::new((fns.sub_expr)(&self.subject)),
-            arms: self.arms.iter().map(|arm| MatchArm {
-                pattern: arm.pattern.clone(),
-                guard: arm.guard.as_ref().map(|g| (fns.sub_expr)(g)),
-                body: (fns.sub_expr)(&arm.body),
-                span: arm.span,
-            }).collect(),
+            arms: self
+                .arms
+                .iter()
+                .map(|arm| MatchArm {
+                    pattern: arm.pattern.clone(),
+                    guard: arm.guard.as_ref().map(|g| (fns.sub_expr)(g)),
+                    body: (fns.sub_expr)(&arm.body),
+                    span: arm.span,
+                })
+                .collect(),
         })
     }
 }
@@ -30,7 +41,8 @@ impl crate::feature::FeatureNode for MatchData {
 impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of a match expression via the Feature dispatch system.
     pub(crate) fn infer_match_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, MatchData, |data| self.infer_match_type(&data.arms))
+        feature_check!(self, fe, MatchData, |data| self
+            .infer_match_type(&data.arms))
     }
 
     /// Infer the type of a match expression from its first arm.

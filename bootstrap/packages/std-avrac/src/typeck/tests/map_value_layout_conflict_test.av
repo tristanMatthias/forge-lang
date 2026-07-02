@@ -1,0 +1,160 @@
+// WHY: regression for forge-crafting-intepreters-63wu — a wrong generic
+// annotation on a MAP VALUE was an undetectable wild-pointer store. Before this
+// fix `ValueType.Map` was a bare, field-less variant: the annotation
+// `Map<string, Box<string>>` and the literal `{"k": Box{val:9}}` both typed to a
+// contentless `.Map`, so nothing in the type system could compare the declared
+// value type (`Box<string>`) against the literal's (`Box<int>`). mono then built
+// a layout-consistent `Box<int>` the annotation lied about, and a later
+// `m["k"].val` read derefs the int as a pointer.
+//
+// The fix makes `Map` carry `(key, value)` types (mirroring `List(elem)`):
+// the parser fills them from `Map<K,V>` annotations, map-literal inference pins
+// the value type from the entries, and `generic_args_layout_conflict` recurses
+// through a matching `Map` shell (the value analog of its `List` branch). Keys
+// are string-keyed. EVERY value is checked, so a later conflicting entry is
+// flagged too. Sibling of the ry1a scalar↔pointer work — same F1000 path.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Emit a success sentinel ONLY on a clean compile, so positive controls assert
+// real success rather than the mere absence of an F-code.
+fn m63wu_out(source: string) -> string {
+    let path = "/tmp/avra_m63wu_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a wrong generic annotation on a map value is rejected (63wu)" {
+    then "the canonical wild store Map<string, Box<string>> = {\"k\": Box{val:9}} is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>> = {\"k\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
+    then "a later conflicting value is flagged too (every value checked)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>> = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
+    then "an UNANNOTATED heterogeneous literal is rejected (first value pins V)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
+    then "the inverse instantiation Map<string, Box<int>> = {\"k\": Box{val:\"x\"}} is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<int>> = {\"k\": Box { val: \"x\" }} }")
+        out.contains("F1000")
+    }
+    then "a conflict hidden behind a map-value type ALIAS is caught (resolve_vtype recurses into Map)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+type Email = string
+fn main() { let m: Map<string, Box<Email>> = {\"k\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
+    then "a conflict nested in a List-typed map value is caught (recursion through Map then List)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, List<Box<string>>> = {\"k\": [Box { val: 9 }]} }")
+        out.contains("F1000")
+    }
+    then "a conflict nested in a map-in-map value is caught (recursion through Map then Map)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Map<string, Box<string>>> = {\"k\": {\"j\": Box { val: 9 }}} }")
+        out.contains("F1000")
+    }
+    then "a NULLABLE map value still catches the base conflict (Box<int> into Box<string>?)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>?> = {\"k\": Box { val: 9 }} }")
+        out.contains("F1000")
+    }
+}
+
+spec "map-value conflicts are caught across binding positions (63wu)" {
+    then "fn-argument: a map literal arg with a conflicting value is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn want(m: Map<string, Box<string>>) { }
+fn main() { want({\"k\": Box { val: 9 }}) }")
+        out.contains("F1000")
+    }
+    then "return: a conflicting map literal against the return type is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn f() -> Map<string, Box<string>> { return {\"k\": Box { val: 9 }} }
+fn main() { let m = f() }")
+        out.contains("F1000")
+    }
+    then "reassignment: a conflicting map literal into a mut binding is F1000" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() {
+    mut m: Map<string, Box<string>> = {\"k\": Box { val: \"ok\" }}
+    m = {\"k\": Box { val: 9 }}
+}")
+        out.contains("F1000")
+    }
+}
+
+// A generic fn over a map must bind its value type-param from the arg (the
+// typeck twin of mono's unify_param Map branch), so a conflicting annotation
+// on the CALL RESULT is caught — the map analog of the working List behavior.
+spec "map-value conflicts through generic functions (63wu)" {
+    then "generic fn returning Map<string,V>: a conflicting result annotation is F1000" {
+        let out = m63wu_out("fn idm<V>(m: Map<string, V>) -> Map<string, V> { m }
+fn main() {
+    let m: Map<string, int> = {\"a\": 1}
+    let n: Map<string, string> = idm(m)
+}")
+        out.contains("F1000")
+    }
+    then "the same generic fn with a MATCHING result annotation compiles (V bound from arg)" {
+        let out = m63wu_out("fn idm<V>(m: Map<string, V>) -> Map<string, V> { m }
+fn main() {
+    let m: Map<string, int> = {\"a\": 1}
+    let n: Map<string, int> = idm(m)
+    let _ = n.len()
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "valid maps and matching instantiations still compile (63wu — no false positives)" {
+    then "Map<string, int> = {\"k\": 9} compiles" {
+        let out = m63wu_out("fn main() {
+    let m: Map<string, int> = {\"k\": 9}
+    let _ = m.len()
+}")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "Map<string, Box<string>> with a matching string value compiles" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>> = {\"k\": Box { val: \"ok\" }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "Map<string, Box<int>> with a matching int value compiles" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<int>> = {\"k\": Box { val: 9 }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a NULLABLE map value accepts a matching value (Box<string> into Box<string>?)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>?> = {\"k\": Box { val: \"ok\" }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "nullable int values compile (nullable widening, not a conflict)" {
+        let out = m63wu_out("fn main() { let m: Map<string, int?> = {\"k\": 1, \"j\": 2} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an empty map literal adopts the annotation (no values to conflict)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m: Map<string, Box<string>> = {} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an unannotated map literal is never a conflict" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m = {\"k\": Box { val: 9 }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an unannotated HOMOGENEOUS multi-value literal compiles (no false positive)" {
+        let out = m63wu_out("type Box<T> = { val: T }
+fn main() { let m = {\"a\": Box { val: \"ok\" }, \"b\": Box { val: \"y\" }} }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

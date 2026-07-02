@@ -1,0 +1,37 @@
+// Multi-stmt @expand: macro returning `quote stmts { ... }` splices
+// every emitted Stmt into the parent stmt list as siblings. Lets a
+// derive emit several declarations from one annotation (e.g. an enum
+// plus an impl block plus a helper fn) without bypassing @expand the
+// way marshal's hand-rolled pre-resolve pass had to.
+//
+// Before this slice, invoke_macro decoded only a single Stmt — list-
+// returning macros got "could not decode into a Stmt" and the
+// expansion was dropped silently.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+const MAIN_HEADER: string = "fn " + "main()"
+
+
+spec "multi-stmt @expand splices a List<Stmt> into the parent decl list" {
+    then "macro returning quote stmts emits BOTH println sites" {
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_multi_stmt_test.av", 
+            "use @std.avrac.core.{SStmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_two_prints() -> List<SStmt> {\n" +
+            "    return quote stmts {\n" +
+            "        println(\"alpha\")\n" +
+            "        println(\"beta\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_two_prints)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("alpha") && out.contains("beta")
+    }
+}

@@ -11,13 +11,20 @@ impl<'ctx> Codegen<'ctx> {
         struct_val: inkwell::values::StructValue<'ctx>,
         label: &str,
     ) -> Option<IntValue<'ctx>> {
-        let tag = self.builder.build_extract_value(struct_val, 0, &format!("{}_tag", label)).ok()?;
-        Some(self.builder.build_int_compare(
-            IntPredicate::NE,
-            tag.into_int_value(),
-            self.context.i8_type().const_zero(),
-            &format!("{}_is_set", label),
-        ).unwrap())
+        let tag = self
+            .builder
+            .build_extract_value(struct_val, 0, &format!("{}_tag", label))
+            .ok()?;
+        Some(
+            self.builder
+                .build_int_compare(
+                    IntPredicate::NE,
+                    tag.into_int_value(),
+                    self.context.i8_type().const_zero(),
+                    &format!("{}_is_set", label),
+                )
+                .unwrap(),
+        )
     }
 
     /// Extract payload (index 1) from a tagged struct.
@@ -26,6 +33,8 @@ impl<'ctx> Codegen<'ctx> {
         struct_val: inkwell::values::StructValue<'ctx>,
         label: &str,
     ) -> Option<BasicValueEnum<'ctx>> {
-        self.builder.build_extract_value(struct_val, 1, &format!("{}_val", label)).ok()
+        self.builder
+            .build_extract_value(struct_val, 1, &format!("{}_val", label))
+            .ok()
     }
 }

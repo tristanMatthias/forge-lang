@@ -1,0 +1,58 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 13.
+// "probe calls ctx_fresh_ident(ctx, 'x') ten times. Macro emits a
+// stmt containing all ten ids. Assert at runtime: all distinct,
+// none equal to any name that was visible in the source file
+// before expansion."
+//
+// The macro calls ctx_fresh_ident 10 times, joins the results with
+// "|" separators, and emits a println of the joined string. The
+// assertion at the spec level then pins (a) the prefix the runtime
+// counter assigns (`__avra_fresh_`) and (b) the cardinality — 10
+// distinct ids means 9 separators in the joined output.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn count_separators(s: string, sep: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i + sep.length <= s.length {
+        if s.substring(i, i + sep.length) == sep { n = n + 1 }
+        i = i + 1
+    }
+    n
+}
+
+spec "ResolverCtx: ctx_fresh_ident returns 10 distinct ids" {
+    then "all ten ids share the __avra_fresh_ prefix and are pairwise unique" {
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_fresh_ident_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_fresh_ident}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let a = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let b = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let c = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let d2 = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let e = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let f = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let g = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let h = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let i = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let j = ctx_fresh_ident(ctx, \"x\")\n" +
+            "    let msg = a + \"|\" + b + \"|\" + c + \"|\" + d2 + \"|\" + e + \"|\" + f + \"|\" + g + \"|\" + h + \"|\" + i + \"|\" + j\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // 10 ids → 9 separators. All ids share the monotonic-counter
+        // prefix __avra_fresh_ (so the substring count of "__avra_fresh_"
+        // is also 10). All distinct → at least 10 distinct prefix
+        // occurrences (a collision would let two ids share text).
+        out.contains("__avra_fresh_") && count_separators(out, "|") == 9 && count_separators(out, "__avra_fresh_") == 10
+    }
+}

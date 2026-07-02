@@ -1,0 +1,773 @@
+// WHY: `@marshal` derive — Phase C of the `isolated { body }` epic
+// (nce6.C / nce6.1.A). When a user annotates a `type` declaration
+// with `@marshal`, this pass synthesises an `impl T { fn to_bytes;
+// fn from_bytes }` block next to it so callers can ship typed
+// values across an `isolated` fork boundary without hand-rolling
+// the bytes layer.
+//
+// Phase 1 scope (this slice):
+//   - Struct TypeDecls with fields of type int / bool / string.
+//   - Generates `fn to_bytes(self) -> bytes` only.
+//   - `from_bytes` + nested types + List<T> + enums live in
+//     follow-up sub-tickets (nce6.1.B–F).
+//
+// Pipeline placement: this pass runs after expand_components and
+// before resolve_names. Synthesising pre-resolution lets the
+// resolver bind both the original TypeDecl and the synthesised
+// methods in the same pass; the call sites in the generated bodies
+// use unqualified names (`bytes_builder`, `write_int`) that the
+// resolver wires up to @std/process the same way a hand-written
+// impl would.
+
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct}
+
+// ── Public entry ──
+
+/// Walk `stmts`, emit a paired `impl` next to every `@marshal`-
+/// annotated TypeDecl. Original decls stay in place — the resolver
+/// sees the type AND its methods together.
+///
+/// Fast-path: when no `@marshal` annotation is present, returns
+/// the input unchanged (matches the expand_macros zero-cost
+/// pattern).
+export fn derive_marshal(stmts: List<SStmt>) -> List<SStmt> {
+    if !any_marshal_annotation(stmts) { return stmts }
+    walk(stmts)
+}
+
+fn walk(stmts: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        // Module bodies host TypeDecls too — recurse so a
+        // `@marshal type T` declared inside a submodule still
+        // gets its impl synthesised. Match on the PEELED node so
+        // annotated module wrappers (e.g. the test assembler's
+        // @deferred_init) stay transparent, and rebuild inside
+        // the original annotation layers so the wrapper survives.
+        match stmt_unwrap(ss.node) {
+            .Module(name, body) -> {
+                let walked = walk(body)
+                let new_mod = rewrap_annotations(ss.node, Stmt.Module(name, walked))
+                out.push(sstmt_dummy(new_mod))
+            }
+            _ -> {
+                out.push(ss)
+                let derived = derive_for(ss.node)
+                mut di = 0
+                while di < derived.length {
+                    out.push(derived[di])
+                    di = di + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    out
+}
+
+// ── Annotation detection ──
+
+fn any_marshal_annotation(stmts: List<SStmt>) -> bool {
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        if has_marshal(ss.node) { return true }
+        match stmt_unwrap(ss.node) {
+            .Module(_, body) -> {
+                if any_marshal_annotation(body) { return true }
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
+fn has_marshal(stmt: Stmt) -> bool {
+    find_annotation(stmt, "marshal") != null
+}
+
+// ── Synthesis ──
+
+/// If `stmt` is an `@marshal`-annotated TypeDecl, return the
+/// synthesised `[impl T {...}, fn from_bytes_T(b) -> T {...}]`
+/// List<SStmt>. Empty list when no synthesis applies.
+fn derive_for(stmt: Stmt) -> List<SStmt> {
+    let empty: List<SStmt> = []
+    if !has_marshal(stmt) { return empty }
+    let inner = stmt_unwrap(stmt)
+    match inner {
+        .TypeDecl(name, _, fields) -> derive_stmts(name, fields)
+        .EnumDecl(name, _, variants) -> derive_enum_stmts(name, variants)
+        _ -> empty
+    }
+}
+
+
+/// Build the synthesised stmts for a `@marshal type T = {...}`:
+///   - `impl T { fn to_bytes(self) -> bytes { ... } }` (instance method)
+///   - `fn from_bytes_T(b: bytes) -> T { ... }` (top-level fn)
+///
+/// from_bytes lives at module scope (not inside impl) because
+/// Avra has no static-method syntax — `T.from_bytes(...)` parses
+/// as enum-variant access. The naming convention `<Type>_from_bytes`
+/// mirrors what generic `isolated<T: Marshal>(body)` will look up
+/// once nce6.1.E lands.
+///
+/// Field types outside {int, bool, string} fall through to a
+/// no-op write so the impl still type-checks but the round-trip
+/// would be lossy; nce6.1.B/C/D extend the codec table to handle
+/// List<T> / nested @marshal / enums.
+///
+/// Returns a 3-element List<SStmt>: [impl_stmt, from_bytes_fn, isolated_fn].
+fn derive_stmts(type_name: string, fields: List<FieldEntry>) -> List<SStmt> {
+    let to_bytes_fn = build_to_bytes_fn(fields)
+    let methods: List<SStmt> = [sstmt_dummy(to_bytes_fn)]
+    // Cleanup #1: emit `impl Marshal for T` instead of bare `impl T`
+    // so @marshal-annotated types are nominal members of the
+    // Marshal trait — unblocks `fn f<T: Marshal>(...)` bounds.
+    let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
+    let from_bytes_fn = build_from_bytes_fn(type_name, fields)
+    let isolated_fn = build_isolated_fn(type_name, vtype_struct(type_name, 0))
+    [sstmt_dummy(impl_stmt), sstmt_dummy(from_bytes_fn), sstmt_dummy(isolated_fn)]
+}
+
+fn build_to_bytes_fn(fields: List<FieldEntry>) -> Stmt {
+    // Body: return bytes_builder().write_X(self.f1).write_Y(self.f2)…finish()
+    let chain = build_chain(fields)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(chain))]
+    let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
+}
+
+fn build_chain(fields: List<FieldEntry>) -> Expr {
+    // Qualified call so callers don't need `use bytes_builder`. The
+    // resolver short-circuits on QualifiedIdent and binds straight
+    // to @std::process. Bare Ident here would force every consumer
+    // of @marshal to import the byte primitives explicitly.
+    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
+    let written = chain_writes(start, fields, true)
+    // Cap with `.finish()` so the chain produces a `bytes` value.
+    Expr.Call(Expr.FieldAccess(written, "finish"), [])
+}
+
+/// `from_self == true` references each field via `self.<name>`
+/// (struct-method codegen); `false` references the bare `<name>`
+/// binding (enum-variant codegen, where match-arm bindings expose
+/// payload fields as local idents). Iterates source-order with a
+/// mutable accumulator `base`, replacing the prior tail-recursive
+/// cons walk.
+fn chain_writes(base: Expr, fields: List<FieldEntry>, from_self: bool) -> Expr {
+    mut acc = base
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        let name = e.name
+        let ty = e.resolved
+        let value_expr = if from_self {
+            Expr.FieldAccess(Expr.Ident("self"), name)
+        } else {
+            Expr.Ident(name)
+        }
+        // Nested @marshal struct (nce6.1.C): the field's own
+        // to_bytes() returns a `bytes` payload that we embed
+        // length-prefixed via the parent's write_bytes. We
+        // optimistically emit the recursive call without
+        // checking the inner type has @marshal — if it
+        // doesn't, the type-checker will catch the undefined
+        // `to_bytes` later with a clear error.
+        if ty is .Struct {
+            let inner_bytes = Expr.Call(Expr.FieldAccess(value_expr, "to_bytes"), [])
+            let args = [sexpr_dummy(inner_bytes)]
+            acc = Expr.Call(Expr.FieldAccess(acc, "write_bytes"), args)
+            i = i + 1
+            continue
+        }
+        // List<NestedMarshalStruct>: BytesBuilder doesn't have a
+        // generic write_struct_list (would need a trait-bound
+        // method), so we inline a for-loop in a block-expr that
+        // yields the final builder for the chain to continue.
+        let list_struct = match ty {
+            .List(elem) -> elem is .Struct
+            _ -> false
+        }
+        if list_struct {
+            acc = list_of_struct_block(acc, value_expr, name)
+        } else {
+            let writer = writer_for(ty)
+            if writer != "" {
+                // Unsupported field type (writer == "") skips so
+                // the impl still type-checks; round-trip is lossy
+                // until follow-up sub-tickets extend the table.
+                let args = [sexpr_dummy(value_expr)]
+                acc = Expr.Call(Expr.FieldAccess(acc, writer), args)
+            }
+        }
+        i = i + 1
+    }
+    acc
+}
+
+/// Build a block-expr that returns a BytesBuilder after appending
+/// every nested-struct element's `to_bytes()` payload to `base`:
+///
+///     {
+///         mut __b_<n> = base.write_int(value_expr.length)
+///         for __x_<n> in value_expr {
+///             __b_<n> = __b_<n>.write_bytes(__x_<n>.to_bytes())
+///         }
+///         __b_<n>
+///     }
+///
+/// The chained writer reuses this block-expr as its new base, so
+/// downstream field writes append naturally. Unique-per-field
+/// variable names keep multiple List<Struct> fields in the same
+/// struct from colliding on the accumulator.
+fn list_of_struct_block(base: Expr, value_expr: Expr, field_name: string) -> Expr {
+    let bvar = "__b_" + field_name
+    let xvar = "__x_" + field_name
+    // mut __b_<n> = base.write_int(value_expr.length)
+    let len_expr = Expr.FieldAccess(value_expr, "length")
+    let init_call = Expr.Call(Expr.FieldAccess(base, "write_int"),
+        [sexpr_dummy(len_expr)])
+    let init_stmt = Stmt.Mut(bvar, ValueType.Unknown, init_call)
+    // body: __b_<n> = __b_<n>.write_bytes(__x_<n>.to_bytes())
+    let x_to_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(xvar), "to_bytes"), [])
+    let new_b = Expr.Call(Expr.FieldAccess(Expr.Ident(bvar), "write_bytes"),
+        [sexpr_dummy(x_to_bytes)])
+    let assign_stmt = Stmt.Expr(Expr.Assign(bvar, new_b))
+    let assign_body: List<SStmt> = [sstmt_dummy(assign_stmt)]
+    let body = Stmt.Block(assign_body)
+    let for_stmt = Stmt.ForIn(xvar, value_expr, body)
+    let yield_stmt = Stmt.Expr(Expr.Ident(bvar))
+    let block_body: List<SStmt> = [sstmt_dummy(init_stmt), sstmt_dummy(for_stmt), sstmt_dummy(yield_stmt)]
+    Expr.Block(block_body)
+}
+
+fn writer_for(ty: ValueType) -> string {
+    match ty {
+        .Int -> "write_int"
+        .Bool -> "write_bool"
+        .Str -> "write_string"
+        .Float -> "write_float"
+        .List(elem) -> list_writer_for(elem)
+        _ -> ""
+    }
+}
+
+fn reader_for(ty: ValueType) -> string {
+    match ty {
+        .Int -> "read_int"
+        .Bool -> "read_bool"
+        .Str -> "read_string"
+        .Float -> "read_float"
+        .List(elem) -> list_reader_for(elem)
+        _ -> ""
+    }
+}
+
+/// nce6.1.B + extensions: List<T> codec. Pairs with @std/process's
+/// per-element-type writers. List<NestedMarshalStruct> still
+/// pending — needs a generic write_struct_list / read_struct_list
+/// since @marshal can't synthesise generic methods on
+/// @std/process's types.
+fn list_writer_for(elem: ValueType) -> string {
+    match elem {
+        .Int -> "write_int_list"
+        .Bool -> "write_bool_list"
+        .Str -> "write_string_list"
+        .Float -> "write_float_list"
+        _ -> ""
+    }
+}
+
+fn list_reader_for(elem: ValueType) -> string {
+    match elem {
+        .Int -> "read_int_list"
+        .Bool -> "read_bool_list"
+        .Str -> "read_string_list"
+        .Float -> "read_float_list"
+        _ -> ""
+    }
+}
+
+// ── from_bytes synthesis ──
+
+/// Build `fn from_bytes(b: bytes) -> T { let r = bytes_reader(b); let (f1, r) = r.read_*(); … ; T { f1: f1, … } }`.
+/// Reuses the `r` binding across reads (Avra's let-rebinding
+/// shadows the outer `r`), keeping the body flat.
+fn build_from_bytes_fn(type_name: string, fields: List<FieldEntry>) -> Stmt {
+    // Param: b: bytes
+    let params: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Bytes }]
+    // Body stmts:
+    //   let r = bytes_reader(b)
+    //   let (f1, r) = r.read_*()  -- per field (skipped if no reader)
+    //   T { fields }
+    // Qualified bytes_reader call — same reasoning as build_chain.
+    // `mut r` because list-of-struct reads need to reassign the
+    // cursor across loop iterations, and primitive reads thread
+    // via explicit reassignment (avoids the let-shadow that
+    // would hide the mut from inner scopes).
+    let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
+        [sexpr_dummy(Expr.Ident("b"))])
+    let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
+    let reads_then_ctor = build_reads_and_ctor(type_name, fields)
+    mut body: List<SStmt> = [sstmt_dummy(init_let)]
+    mut bi = 0
+    while bi < reads_then_ctor.length {
+        body.push(reads_then_ctor[bi])
+        bi = bi + 1
+    }
+    // Top-level fn named `from_bytes_<T>` (no static-method syntax
+    // in Avra). nce6.1.E will route generic `isolated<T: Marshal>`
+    // through this naming convention.
+    let fn_name = "from_bytes_" + type_name
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function(fn_name, empty_tp, params,
+        vtype_struct(type_name, 0), body)
+}
+
+/// Builds the per-field read sequence followed by the final
+/// struct-literal constructor. Both parts are emitted as one
+/// List<SStmt> because the reader has to thread `r` through every
+/// step and produce the value at the end.
+fn build_reads_and_ctor(type_name: string, fields: List<FieldEntry>) -> List<SStmt> {
+    let reads = build_reads(fields)
+    let ctor = build_ctor(type_name, fields)
+    let tail: List<SStmt> = [sstmt_dummy(Stmt.Return(ctor))]
+    append_stmts(reads, tail)
+}
+
+fn build_reads(fields: List<FieldEntry>) -> List<SStmt> {
+    // Indexed walk produces the per-field read sequences and
+    // concatenates them into a single List<SStmt>. Each branch returns
+    // its own sub-list for the field — they're appended into
+    // `out` so source order is preserved.
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        let name = e.name
+        let ty = e.resolved
+        let empty: List<SStmt> = []
+        // Nested @marshal struct (nce6.1.C): emit three stmts.
+        //   let (__nested_<n>, __r_<n>) = r.read_bytes()
+        //   r = __r_<n>
+        //   let <n> = from_bytes_<InnerT>(__nested_<n>)
+        let per_field = match ty {
+            .Struct(inner_name, _, _) -> {
+                let stmts = read_then_reassign(name, "__nested_" + name, "read_bytes")
+                let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
+                    [sexpr_dummy(Expr.Ident("__nested_" + name))])
+                let bind_stmt = Stmt.Let(name, ValueType.Unknown, from_bytes_call)
+                let tail: List<SStmt> = [sstmt_dummy(bind_stmt)]
+                append_stmts(stmts, tail)
+            }
+            .List(elem) -> {
+                if elem is .Struct {
+                    list_of_struct_reads(name, elem)
+                } else {
+                    let reader = reader_for(ty)
+                    if reader == "" { empty } else { read_then_reassign(name, name, reader) }
+                }
+            }
+            _ -> {
+                let reader = reader_for(ty)
+                // Unsupported field type (reader == "") skips the
+                // read so the impl still compiles; round-trip is
+                // lossy until follow-up sub-tickets extend the table.
+                if reader == "" { empty } else { read_then_reassign(name, name, reader) }
+            }
+        }
+        out = append_stmts(out, per_field)
+        i = i + 1
+    }
+    out
+}
+
+/// Emit `let (<value_name>, __r_<n>) = r.<reader>(); r = __r_<n>`
+/// — extracts a value AND advances the cursor explicitly. The
+/// explicit reassignment lets list-of-struct loops + while-loops
+/// inside the same fn body share `mut r` without let-shadow
+/// hiding the mut.
+fn read_then_reassign(field_name: string, value_name: string, reader: string) -> List<SStmt> {
+    let r_next = "__r_" + field_name
+    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), [])
+    let destruct_names: List<ParamEntry> = [
+        ParamEntry { name: value_name, vtype: ValueType.Unknown },
+        ParamEntry { name: r_next, vtype: ValueType.Unknown },
+    ]
+    let destruct_stmt = Stmt.LetDestructure(destruct_names, read_call)
+    let reassign_stmt = Stmt.Expr(Expr.Assign("r", Expr.Ident(r_next)))
+    [sstmt_dummy(destruct_stmt), sstmt_dummy(reassign_stmt)]
+}
+
+/// Synthesise the read sequence for a `field: List<NestedStruct>`:
+///
+///     let (__count_<n>, r) = r.read_int()
+///     mut __acc_<n>: List<Inner> = []
+///     mut __i_<n> = 0
+///     while __i_<n> < __count_<n> {
+///         let (__raw_<n>, r2) = r.read_bytes()
+///         __acc_<n> = __acc_<n>.push(from_bytes_<Inner>(__raw_<n>))
+///         r = r2
+///         __i_<n> = __i_<n> + 1
+///     }
+///     let <n> = __acc_<n>
+///
+/// `<Inner>` is read off the .Struct(name, _) of the elem type.
+fn list_of_struct_reads(field_name: string, elem: ValueType) -> List<SStmt> {
+    let inner_name = match elem {
+        .Struct(n, _, _) -> n
+        _ -> ""
+    }
+    let cname = "__count_" + field_name
+    let aname = "__acc_" + field_name
+    let iname = "__i_" + field_name
+    let rname = "__r2_" + field_name
+    let rawname = "__raw_" + field_name
+
+    // Count read using explicit-reassign pattern — keeps `r`'s
+    // mut binding visible inside the while-loop below.
+    let count_stmts = read_then_reassign("listcount_" + field_name, cname, "read_int")
+
+    // mut __acc: List<Inner> = []
+    let acc_init = Expr.ListLit([])
+    let acc_stmt = Stmt.Mut(aname, ValueType.List(vtype_struct(inner_name, 0)), acc_init)
+
+    // mut __i = 0
+    let i_stmt = Stmt.Mut(iname, ValueType.Int, Expr.Number("0"))
+
+    // while __i < __count { ... }
+    let cond = Expr.Binary(Expr.Ident(iname), BinOp.Lt, Expr.Ident(cname))
+    // let (__raw, __r2) = r.read_bytes()
+    let raw_read = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), [])
+    let raw_names: List<ParamEntry> = [
+        ParamEntry { name: rawname, vtype: ValueType.Unknown },
+        ParamEntry { name: rname, vtype: ValueType.Unknown },
+    ]
+    let raw_stmt = Stmt.LetDestructure(raw_names, raw_read)
+    // __acc = __acc.push(from_bytes_<Inner>(__raw))
+    let from_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
+        [sexpr_dummy(Expr.Ident(rawname))])
+    let push_call = Expr.Call(Expr.FieldAccess(Expr.Ident(aname), "push"),
+        [sexpr_dummy(from_call)])
+    let acc_assign = Stmt.Expr(Expr.Assign(aname, push_call))
+    // r = __r2
+    let r_assign = Stmt.Expr(Expr.Assign("r", Expr.Ident(rname)))
+    // __i = __i + 1
+    let i_inc = Stmt.Expr(Expr.Assign(iname,
+        Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1"))))
+
+    let loop_body_stmts: List<SStmt> = [
+        sstmt_dummy(raw_stmt),
+        sstmt_dummy(acc_assign),
+        sstmt_dummy(r_assign),
+        sstmt_dummy(i_inc),
+    ]
+    let loop_body = Stmt.Block(loop_body_stmts)
+    let while_stmt = Stmt.While(cond, loop_body)
+
+    // let <field_name> = __acc
+    let bind_stmt = Stmt.Let(field_name, ValueType.Unknown, Expr.Ident(aname))
+
+    let trailer: List<SStmt> = [
+        sstmt_dummy(acc_stmt),
+        sstmt_dummy(i_stmt),
+        sstmt_dummy(while_stmt),
+        sstmt_dummy(bind_stmt),
+    ]
+    append_stmts(count_stmts, trailer)
+}
+
+/// Build the final `T { f1: f1, f2: f2, … }` constructor.
+fn build_ctor(type_name: string, fields: List<FieldEntry>) -> Expr {
+    Expr.StructLit(type_name, build_field_inits(fields))
+}
+
+fn build_field_inits(fields: List<FieldEntry>) -> List<FieldInit> {
+    // List<FieldInit>.push appends forward — walk source order.
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < fields.length {
+        let e = fields[i]
+        let name = e.name
+        let ty = e.resolved
+        // The field has a local binding by the same name iff
+        // build_reads emitted a read for it — true for any
+        // primitive with a reader, a nested Struct field
+        // (handled by from_bytes_<inner>), or a List<Struct>
+        // field (list_of_struct_reads emits `let <name> = __acc`).
+        let init_expr = if reader_for(ty) != "" || ty is .Struct || list_of_struct_elem(ty) {
+            Expr.Ident(name)
+        } else {
+            // Field type wasn't read; placeholder initializer
+            // keeps the struct-literal complete until follow-up
+            // sub-tickets land. Lossy round-trip for this field
+            // is documented at the field-type dispatch in
+            // chain_writes / build_reads.
+            default_for(ty)
+        }
+        out.push(FieldInit { name, value: sexpr_dummy(init_expr) })
+        i = i + 1
+    }
+    out
+}
+
+/// Return a zero-ish initializer expression matching `ty` so the
+/// synthesised struct literal type-checks for un-marshaled
+/// fields. List<T>/nested-struct fields produce `[]`-style
+/// placeholders; the lossy-round-trip note in build_field_inits
+/// applies.
+fn default_for(ty: ValueType) -> Expr {
+    if ty is .Int { return Expr.Number("0") }
+    if ty is .Bool { return Expr.Bool("false") }
+    if ty is .Str { return Expr.String("\"\"") }
+    if ty is .Float { return Expr.FloatLit("0.0") }
+    if ty is .List { return Expr.ListLit([]) }
+    // Fallback — `null` covers nullable / reference shapes; gets
+    // tightened as the codec table expands.
+    Expr.None
+}
+
+/// True when `ty` is `List<NestedMarshalStruct>` — i.e. a list
+/// whose element type is itself a struct. Used to gate the
+/// list-of-struct read/write block-synthesis paths.
+fn list_of_struct_elem(ty: ValueType) -> bool {
+    match ty {
+        .List(elem) -> elem is .Struct
+        _ -> false
+    }
+}
+
+fn append_stmts(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    mut i = 0
+    while i < a.length {
+        out.push(a[i])
+        i = i + 1
+    }
+    mut j = 0
+    while j < b.length {
+        out.push(b[j])
+        j = j + 1
+    }
+    out
+}
+
+// ── Enum support (nce6.1.D) ──
+
+/// Synthesise `impl T { fn to_bytes(self) -> bytes }` +
+/// `fn from_bytes_T(b: bytes) -> T` for an `@marshal enum T { ... }`.
+///
+/// Wire format: 8-byte tag (variant index) + concatenated payload
+/// fields (using the same per-type writers as struct fields). Tag
+/// ordering matches source order so adding a variant at the end
+/// stays backwards-compatible — inserting in the middle does not.
+fn derive_enum_stmts(type_name: string, variants: List<Variant>) -> List<SStmt> {
+    let to_bytes_fn = build_enum_to_bytes_fn(type_name, variants)
+    let methods: List<SStmt> = [sstmt_dummy(to_bytes_fn)]
+    // Cleanup #1: same `impl Marshal for T` form for enums.
+    let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
+    let from_bytes_fn = build_enum_from_bytes_fn(type_name, variants)
+    let empty_args: List<ValueType> = []
+    let isolated_fn = build_isolated_fn(type_name,
+        ValueType.Enum(type_name, empty_args, 0))
+    [sstmt_dummy(impl_stmt), sstmt_dummy(from_bytes_fn), sstmt_dummy(isolated_fn)]
+}
+
+fn build_enum_to_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
+    let arms = build_variant_arms(variants)
+    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(match_expr))]
+    let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
+}
+
+/// Per-variant match arms for to_bytes. Tag = source-order index;
+/// each arm builds a bytes_builder().write_int(tag).<payload>.finish()
+/// chain. Builds the cons-list back-to-front so source order is
+/// preserved when read head-first.
+fn build_variant_arms(variants: List<Variant>) -> List<MatchArm> {
+    // List<MatchArm>.push appends forward — walk source order, no
+    // reversal needed.
+    mut out: List<MatchArm> = []
+    for (i, v) in variants.enumerate() {
+        let bindings = field_list_to_param_list(v.fields)
+        let pattern = Pattern.Variant(v.name, bindings)
+        let chain = build_variant_write_chain(i, v.fields)
+        out.push(MatchArm { pattern, guard: null, body: sexpr_dummy(chain) })
+    }
+    out
+}
+
+fn field_list_to_param_list(fields: List<FieldEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    mut i = 0
+    while i < fields.length {
+        out.push(ParamEntry { name: fields[i].name, vtype: ValueType.Unknown })
+        i = i + 1
+    }
+    out
+}
+
+/// Build bytes_builder().write_int(<tag>).<payload-writes>.finish()
+/// for a single variant. Payload fields reference the
+/// match-arm-bound idents (no `self.` prefix — they're locals).
+fn build_variant_write_chain(tag: int, payload: List<FieldEntry>) -> Expr {
+    let tag_arg: List<SExpr> = [sexpr_dummy(Expr.Number(string(tag)))]
+    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
+    let with_tag = Expr.Call(Expr.FieldAccess(start, "write_int"), tag_arg)
+    // Variant payloads are match-arm bindings (local idents),
+    // hence from_self=false. Reuses the same codec table as
+    // struct fields via the shared chain_writes.
+    let with_payload = chain_writes(with_tag, payload, false)
+    Expr.Call(Expr.FieldAccess(with_payload, "finish"), [])
+}
+
+/// fn from_bytes_<T>(b: bytes) -> T {
+///   let r = bytes_reader(b)
+///   let (tag, r) = r.read_int()
+///   if tag == 0 { … return T.Variant0(…) }
+///   if tag == 1 { … return T.Variant1(…) }
+///   … last variant returned without an if-guard …
+/// }
+fn build_enum_from_bytes_fn(type_name: string, variants: List<Variant>) -> Stmt {
+    let params: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Bytes }]
+    let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
+        [sexpr_dummy(Expr.Ident("b"))])
+    let init_let = Stmt.Mut("r", ValueType.Unknown, init_call)
+    // Tag read uses the new explicit-reassign pattern so the
+    // mut r binding stays visible to the variant payload reads.
+    let tag_reads = read_then_reassign("tag", "tag", "read_int")
+    let dispatch = build_enum_dispatch(type_name, variants)
+    let init_part: List<SStmt> = [sstmt_dummy(init_let)]
+    let body = append_stmts(init_part, append_stmts(tag_reads, dispatch))
+    let fn_name = "from_bytes_" + type_name
+    let empty_tp: List<TypeParamEntry> = []
+    let empty_args: List<ValueType> = []
+    Stmt.Function(fn_name, empty_tp, params,
+        ValueType.Enum(type_name, empty_args, 0), body)
+}
+
+/// Cascade of `if tag == N { build variant }` stmts. The final
+/// variant returns unconditionally — the type-checker enforces
+/// total return coverage. Indexed walk over `variants`; builds the
+/// List<SStmt> in source order.
+fn build_enum_dispatch(type_name: string, variants: List<Variant>) -> List<SStmt> {
+    mut out: List<SStmt> = []
+    let n = variants.length
+    mut i = 0
+    while i < n {
+        let v = variants[i]
+        let read_payload_stmts = build_reads(v.fields)
+        let ctor = build_enum_ctor(type_name, v.name, v.fields)
+        let ret_stmt = Stmt.Return(ctor)
+        let ret_tail: List<SStmt> = [sstmt_dummy(ret_stmt)]
+        let block_body = append_stmts(read_payload_stmts, ret_tail)
+        let is_last = i == n - 1
+        let head_stmt: List<SStmt> = if is_last {
+            // Final variant: emit the read+return body unguarded —
+            // the cascade above narrowed everything but the last tag
+            // away. Splicing the body directly avoids an unreachable
+            // final `if`.
+            block_body
+        } else {
+            let tag_lit = Expr.Number(string(i))
+            let cmp = Expr.Binary(Expr.Ident("tag"), BinOp.Eq, tag_lit)
+            let then_block = Stmt.Block(block_body)
+            let if_stmt = Stmt.If(cmp, then_block, null)
+            [sstmt_dummy(if_stmt)]
+        }
+        out = append_stmts(out, head_stmt)
+        i = i + 1
+    }
+    out
+}
+
+// build_variant_reads was identical to build_reads — both read a
+// FieldList field-by-field, threading the `r` reader, recursing
+// into nested @marshal structs via from_bytes_<T>. Collapsed into
+// build_reads (struct & enum-variant payload share the same read
+// shape since match-arm bindings produce the same locals).
+
+fn build_enum_ctor(type_name: string, variant: string, payload: List<FieldEntry>) -> Expr {
+    Expr.EnumCtor(type_name, variant, field_list_to_arg_list(payload))
+}
+
+fn field_list_to_arg_list(payload: List<FieldEntry>) -> List<SExpr> {
+    mut out: List<SExpr> = []
+    mut i = 0
+    while i < payload.length {
+        out.push(sexpr_dummy(Expr.Ident(payload[i].name)))
+        i = i + 1
+    }
+    out
+}
+
+// ── isolated_<T>(body) synthesis (nce6.1.E) ──
+
+/// Synthesise:
+///   fn isolated_<T>(body: fn() -> T) -> Result<T, IsolatedError> {
+///       match isolated_bytes(() -> body().to_bytes()) {
+///           .Ok(b) -> Result.Ok(from_bytes_<T>(b))
+///           .Err(e) -> Result.Err(e)
+///       }
+///   }
+///
+/// Per-T pragmatic shortcut for what would be a generic
+/// `isolated<T: Marshal>(body)` if Avra had trait-bound generics
+/// today. Each @marshal-annotated type gets its own
+/// monomorphic `isolated_<T>` wrapper alongside to_bytes /
+/// from_bytes_<T>; the user-facing DX is identical to a generic
+/// trait-bound version.
+fn build_isolated_fn(type_name: string, ty: ValueType) -> Stmt {
+    // Param: body: fn() -> T
+    let no_params: List<ValueType> = []
+    let body_param_ty = ValueType.FnTyped(no_params, ty)
+    let params: List<ParamEntry> = [ParamEntry { name: "body", vtype: body_param_ty }]
+    // Result<T, IsolatedError> as the return type. Resolver
+    // upgrades the bare Enum form once IsolatedError is bound.
+    let isolated_empty_args: List<ValueType> = []
+    let isolated_err_ty = ValueType.Enum("IsolatedError", isolated_empty_args, 0)
+    mut result_type_args: List<ValueType> = []
+    result_type_args.push(ty)
+    result_type_args.push(isolated_err_ty)
+    let ret_ty = ValueType.Enum("Result", result_type_args, 0)
+    // Inner closure: () -> body().to_bytes()
+    let body_call = Expr.Call(Expr.Ident("body"), [])
+    let to_bytes_call = Expr.Call(Expr.FieldAccess(body_call, "to_bytes"), [])
+    let empty_lp: List<ParamEntry> = []
+    let inner_closure = Expr.Lambda(empty_lp, to_bytes_call)
+    // Subject: @std::process::isolated_bytes(closure). Qualified
+    // so consumers of @marshal don't need to `use isolated_bytes`
+    // — only types that actually fork pay the import cost (via
+    // their own use of `isolated_<T>` somewhere reachable).
+    let isolated_call = Expr.Call(Expr.QualifiedIdent("@std::process::isolated_bytes"),
+        [sexpr_dummy(inner_closure)])
+    // Ok arm: Result.Ok(from_bytes_<T>(b))
+    let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + type_name),
+        [sexpr_dummy(Expr.Ident("b"))])
+    let ok_body = Expr.EnumCtor("Result", "Ok",
+        [sexpr_dummy(from_bytes_call)])
+    let ok_bindings: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Unknown }]
+    let ok_pattern = Pattern.Variant("Ok", ok_bindings)
+    // Err arm: Result.Err(e) — pass-through
+    let err_body = Expr.EnumCtor("Result", "Err",
+        [sexpr_dummy(Expr.Ident("e"))])
+    let err_bindings: List<ParamEntry> = [ParamEntry { name: "e", vtype: ValueType.Unknown }]
+    let err_pattern = Pattern.Variant("Err", err_bindings)
+    mut arms: List<MatchArm> = []
+    arms.push(MatchArm { pattern: ok_pattern, guard: null, body: sexpr_dummy(ok_body) })
+    arms.push(MatchArm { pattern: err_pattern, guard: null, body: sexpr_dummy(err_body) })
+    let match_expr = Expr.MatchExpr(isolated_call, arms)
+    let body_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(match_expr))]
+    let fn_name = "isolated_" + type_name
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function(fn_name, empty_tp, params, ret_ty, body_stmts)
+}
+

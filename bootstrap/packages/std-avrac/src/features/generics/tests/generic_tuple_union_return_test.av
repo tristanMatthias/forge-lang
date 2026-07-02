@@ -1,0 +1,36 @@
+// A type-param buried inside a Tuple or Union *return* type must be
+// substituted from the call's inferred type arg, not leaked downstream.
+//
+// Exercises two typeck pieces in concert:
+//   - vtype_mentions_typeparam — reaches Tuple / Union members (via the
+//     derived ValueType.any) so the generic return is recognised as
+//     param-dependent and gets substituted at all;
+//   - tc_subst_vtype — recurses into Tuple / Union members (via the
+//     derived ValueType.map) so the substitution actually rewrites T.
+//
+// Before both reached those members, `fn f<T>(x: T) -> (T, int)` left the
+// return as `(T, int)`: `.0` stayed typed `T` (F1003 at use) or `T`
+// leaked into codegen (F9999 "undefined variable T").
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "generics: type-param inside a Tuple / Union return is substituted" {
+    then "(T, int) return — T resolves from the arg, for both string and int" {
+        let out = write_fixture_and_run("/tmp/avra_generic_tuple_return_fixture.av",
+            "fn pair<T>(x: T) -> (T, int) { (x, 0) }\n" +
+            "fn main() {\n" +
+            "    println(\"s=\" + pair(\"hi\").0)\n" +
+            "    println(\"i=\" + string(pair(41).0 + 1))\n" +
+            "}\n")
+        out.contains("s=hi") && out.contains("i=42")
+    }
+
+    then "T | int union return — T resolves from the arg" {
+        let out = write_fixture_and_run("/tmp/avra_generic_union_return_fixture.av",
+            "fn first_or<T>(x: T) -> T | int { x }\n" +
+            "fn main() {\n" +
+            "    match first_or(\"yo\") { string(s) -> println(\"u=\" + s), _ -> println(\"u=int\") }\n" +
+            "}\n")
+        out.contains("u=yo")
+    }
+}

@@ -28,11 +28,19 @@ impl<'ctx> Codegen<'ctx> {
                     let is_present = self.extract_tag_is_set(struct_val, "null_throw")?;
 
                     let function = self.current_function();
-                    let then_bb = self.context.append_basic_block(function, "null_throw_present");
-                    let else_bb = self.context.append_basic_block(function, "null_throw_panic");
-                    let merge_bb = self.context.append_basic_block(function, "null_throw_merge");
+                    let then_bb = self
+                        .context
+                        .append_basic_block(function, "null_throw_present");
+                    let else_bb = self
+                        .context
+                        .append_basic_block(function, "null_throw_panic");
+                    let merge_bb = self
+                        .context
+                        .append_basic_block(function, "null_throw_merge");
 
-                    self.builder.build_conditional_branch(is_present, then_bb, else_bb).unwrap();
+                    self.builder
+                        .build_conditional_branch(is_present, then_bb, else_bb)
+                        .unwrap();
 
                     // Present path: extract inner value
                     self.builder.position_at_end(then_bb);
@@ -49,24 +57,39 @@ impl<'ctx> Codegen<'ctx> {
                     // Null path: panic with error message
                     self.builder.position_at_end(else_bb);
                     let error_msg = self.extract_throw_error_name(&data.error);
-                    let msg_ptr = self.builder.build_global_string_ptr(&error_msg, "panic_msg").unwrap();
-                    let msg_len = self.context.i64_type().const_int(error_msg.len() as u64, false);
+                    let msg_ptr = self
+                        .builder
+                        .build_global_string_ptr(&error_msg, "panic_msg")
+                        .unwrap();
+                    let msg_len = self
+                        .context
+                        .i64_type()
+                        .const_int(error_msg.len() as u64, false);
 
                     let panic_fn = self.module.get_function("forge_panic").unwrap_or_else(|| {
                         let ptr_type = self.context.ptr_type(AddressSpace::default());
                         let i64t = self.context.i64_type();
-                        let ft = self.context.void_type().fn_type(
-                            &[ptr_type.into(), i64t.into()],
-                            false,
-                        );
+                        let ft = self
+                            .context
+                            .void_type()
+                            .fn_type(&[ptr_type.into(), i64t.into()], false);
                         self.module.add_function("forge_panic", ft, None)
                     });
-                    self.builder.build_call(panic_fn, &[msg_ptr.as_pointer_value().into(), msg_len.into()], "").unwrap();
+                    self.builder
+                        .build_call(
+                            panic_fn,
+                            &[msg_ptr.as_pointer_value().into(), msg_len.into()],
+                            "",
+                        )
+                        .unwrap();
                     self.builder.build_unreachable().unwrap();
 
                     // Merge (only reachable from present path)
                     self.builder.position_at_end(merge_bb);
-                    let phi = self.builder.build_phi(present_val.get_type(), "null_throw_result").unwrap();
+                    let phi = self
+                        .builder
+                        .build_phi(present_val.get_type(), "null_throw_result")
+                        .unwrap();
                     phi.add_incoming(&[(&present_val, then_end)]);
                     return Some(phi.as_basic_value());
                 }

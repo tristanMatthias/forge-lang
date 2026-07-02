@@ -1,0 +1,42 @@
+// kxpb: vtype_eq is strict for Unknown leaves. so07.7.3 phase-2
+// landed and removed the prior "Unknown is a wildcard inside any
+// container" leniency from vtype_assignable — the empty-literal
+// case now flows through T4's expected-threading (let / mut /
+// return position picks up the declared element type) instead of
+// the wildcard. The strict-eq tests stay; the wildcard tests
+// retired with the wildcard.
+
+use @std.avrac.core.{vtype_eq, vtype_assignable, ValueType}
+
+spec "kxpb: vtype_eq is strict for Unknown leaves" {
+    then "List<Unknown> != List<string> under strict eq" {
+        let src = ValueType.List(ValueType.Unknown)
+        let dst = ValueType.List(ValueType.Str)
+        !vtype_eq(src, dst)
+    }
+    then "Tuple<Unknown, int> != Tuple<string, int> under strict eq" {
+        let unk_int: List<ValueType> = [ValueType.Unknown, ValueType.Int]
+        let str_int: List<ValueType> = [ValueType.Str, ValueType.Int]
+        let src = ValueType.Tuple(unk_int)
+        let dst = ValueType.Tuple(str_int)
+        !vtype_eq(src, dst)
+    }
+    then "Closure<Unknown> != Closure<int> under strict eq" {
+        let src = ValueType.Closure(0, ValueType.Unknown)
+        let dst = ValueType.Closure(0, ValueType.Int)
+        !vtype_eq(src, dst)
+    }
+}
+
+spec "kxpb: vtype_assignable does NOT silently bridge concrete mismatch" {
+    then "List<int> NOT assignable to List<string>" {
+        let src = ValueType.List(ValueType.Int)
+        let dst = ValueType.List(ValueType.Str)
+        !vtype_assignable(src, dst)
+    }
+    then "Tuple<int, int> NOT assignable to Tuple<string, int>" {
+        let int_int: List<ValueType> = [ValueType.Int, ValueType.Int]
+        let str_int: List<ValueType> = [ValueType.Str, ValueType.Int]
+        !vtype_assignable(ValueType.Tuple(int_int), ValueType.Tuple(str_int))
+    }
+}

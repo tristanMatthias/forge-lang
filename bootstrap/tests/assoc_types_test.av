@@ -1,0 +1,36 @@
+trait AtContainer {
+    type Item
+    fn get(self, idx: int) -> Self.Item
+    fn size(self) -> int
+}
+
+type AtIntList = { data: List }
+
+impl AtContainer for AtIntList {
+    type Item = int
+    fn get(self, idx: int) -> int {
+        self.data.get(idx)
+    }
+    fn size(self) -> int {
+        self.data.length
+    }
+}
+
+fn at_sum_container(c: AtIntList) -> int {
+    mut total = 0
+    mut i = 0
+    while i < c.size() {
+        total = total + c.get(i)
+        i = i + 1
+    }
+    total
+}
+
+spec "assoc types" {
+    then "container sum is correct" {
+        at_sum_container(AtIntList { data: [1, 2, 3, 4, 5] }) == 15
+    }
+    then "container size is correct" {
+        AtIntList { data: [1, 2, 3, 4, 5] }.size() == 5
+    }
+}

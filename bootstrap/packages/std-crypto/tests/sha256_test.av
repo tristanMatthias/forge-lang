@@ -1,0 +1,64 @@
+// @std/crypto SHA-256 tests.
+//
+// Exercises:
+//   1. Known test vectors — empty string, "abc", and a longer input
+//      taken from FIPS 180-2 / RFC 6234.
+//   2. Determinism — same input twice yields the same digest.
+//   3. Sensitivity — a one-byte change perturbs every digest position.
+//   4. File hashing — a fixture on disk hashes to the expected value.
+//   5. Missing-file behaviour — falls back to the empty-input digest.
+
+use @std.crypto.{sha256_hex, sha256_file}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "sha256_hex: known vectors" {
+    then "empty string vector" {
+        // FIPS 180-2 Appendix B.1: SHA-256("") =
+        // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        sha256_hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+    then "abc vector" {
+        // FIPS 180-2 Appendix B.1: SHA-256("abc") =
+        // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+        sha256_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    }
+    then "112-byte vector (FIPS 180-2 B.2)" {
+        // SHA-256(56 bytes of 'a' + 'b' filler test vector). Drawn from
+        // RFC 6234 §8.5: SHA-256 of "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" is
+        // 248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1.
+        sha256_hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+            == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    }
+}
+
+spec "sha256_hex: deterministic and sensitive" {
+    then "same input twice produces the same digest" {
+        sha256_hex("the quick brown fox") == sha256_hex("the quick brown fox")
+    }
+    then "single-byte change perturbs the digest" {
+        sha256_hex("the quick brown fox") != sha256_hex("the quick brown fix")
+    }
+    then "digest is exactly 64 hex characters" {
+        sha256_hex("anything").length == 64
+    }
+}
+
+spec "sha256_file: hashes a file's contents on disk" {
+    then "fixture file matches sha256_hex of its contents" {
+        // Write a known body to a fixture file, hash it via both the
+        // string path and the file path, and check the digests agree.
+        // This proves sha256_file streams the same bytes sha256_hex
+        // sees in memory.
+        let body = "hello, fingerprint world\n"
+        avra_shell_exec("printf '%s' 'hello, fingerprint world\n' > /tmp/avra_sha256_fixture.txt")
+        let from_string = sha256_hex(body)
+        let from_disk = sha256_file("/tmp/avra_sha256_fixture.txt")
+        avra_shell_exec("rm -f /tmp/avra_sha256_fixture.txt")
+        from_string == from_disk
+    }
+    then "missing file returns the empty-input digest" {
+        sha256_file("/tmp/does-not-exist-avra-crypto-test-9999.bin")
+            == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+}

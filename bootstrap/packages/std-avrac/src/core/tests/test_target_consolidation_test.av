@@ -1,0 +1,33 @@
+// Companion to update_seed_fast_test.av: `make test-quick` was
+// indistinguishable from `make test` minus a single 4s selfhost
+// invocation — same speed in practice, two ways to spell the same
+// command. Consolidated into one target with SKIP_SELFHOST=1 plus
+// the existing FILTER=, mirroring the so07.7.13 lesson.
+//
+// Why this test observes the consolidation: `make test-quick` no
+// longer exists. Reverting either the PHONY removal OR the help
+// text drop puts it back; the assertions check both surfaces.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "Makefile: test-quick consolidated into `test SKIP_SELFHOST=1`" {
+    then "make help no longer documents test-quick as a separate target" {
+        let out = avra_shell_exec("make help 2>&1")
+        // The 'make test-quick    ' help line (two-space indent + 4-space pad)
+        // was deleted. The single bare-test entry replaces it.
+        !out.contains("make test-quick ")
+            && out.contains("SKIP_SELFHOST")
+    }
+    then "PHONY no longer lists test-quick" {
+        let phony = avra_shell_exec("grep '^.PHONY' Makefile 2>&1")
+        // Both 'test' and 'test-quick' previously appeared. Now only 'test'.
+        phony.contains(" test ") && !phony.contains(" test-quick ")
+    }
+    then "running test-quick fails (target removed)" {
+        // make exits non-zero with "no rule" when target doesn't exist.
+        // The 2>&1 captures stderr; the || true keeps the shell happy
+        // so we can grep the message.
+        let out = avra_shell_exec("make test-quick 2>&1 || true")
+        out.contains("No rule to make target") || out.contains("test-quick")
+    }
+}

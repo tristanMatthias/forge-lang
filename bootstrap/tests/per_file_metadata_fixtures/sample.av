@@ -1,0 +1,99 @@
+// Fixture: validates extract_per_file_metadata (g2eo, level-1).
+// Builds a two-mod package, runs the resolver, then asserts:
+//   - The whole-package metadata sees decls from BOTH files
+//   - Per-file slice for top.av sees ONLY top.av's decl
+//   - Per-file slice for foo.av sees ONLY foo.av's decl
+//
+// Cross-file leakage in either direction is the bug this guards.
+// Tracking ticket: forge-crafting-intepreters-g2eo.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_bytes_make(n: int) -> bytes
+
+use @std.avrac.parse.{parse_program_source_at}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname}
+use @std.avrac.build.{extract_unit_metadata, extract_per_file_metadata}
+use @std.avrac.build.{UnitMetadata, FnDeclEntry, TypeDeclEntry}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn fn_count(xs: List<FnDeclEntry>) -> int { xs.length }
+
+fn type_count(xs: List<TypeDeclEntry>) -> int { xs.length }
+
+fn fns_contains(xs: List<FnDeclEntry>, name: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let e: FnDeclEntry = xs[i]
+        if e.name.length >= name.length {
+            let tail = e.name.substring(e.name.length - name.length, e.name.length)
+            if tail == name { return true }
+        }
+        i = i + 1
+    }
+    false
+}
+
+fn types_contains(xs: List<TypeDeclEntry>, name: string) -> bool {
+    mut i = 0
+    while i < xs.length {
+        let e: TypeDeclEntry = xs[i]
+        if e.name.length >= name.length {
+            let tail = e.name.substring(e.name.length - name.length, e.name.length)
+            if tail == name { return true }
+        }
+        i = i + 1
+    }
+    false
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_g2eo_perfile"
+    avra_shell_exec("rm -rf ${root}")
+    avra_shell_exec("mkdir -p ${root}")
+
+    // top.av declares `fn entry`, foo.av declares `type Foo`.
+    avra_shell_exec("printf 'mod foo\\nfn entry() -> int { 0 }\\n' > ${root}/top.av")
+    avra_shell_exec("printf 'export type Foo = { value: int }\\nfn foo_helper() -> int { 1 }\\n' > ${root}/foo.av")
+
+    let top_path = "${root}/top.av"
+    let foo_path = "${root}/foo.av"
+    let parsed = parse_program_source_at(avra_selfhost_read_file(top_path), top_path)
+    if parsed.had_error || parsed.stmts == null {
+        probe("parse_succeeded", false)
+        return 1
+    }
+    probe("parse_succeeded", true)
+
+    let entry_dir = modules_dirname(top_path)
+    let empty: List<string> = []
+    let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, empty)
+    probe("resolver_succeeded", !mod_resolved.had_error)
+
+    let fp = avra_bytes_make(32)
+
+    // Whole-package metadata: should see entry, foo_helper, and Foo.
+    let whole = extract_unit_metadata("test_unit", fp, mod_resolved.stmts)
+    probe("whole_has_entry_fn", fns_contains(whole.fns, "entry"))
+    probe("whole_has_foo_helper_fn", fns_contains(whole.fns, "foo_helper"))
+    probe("whole_has_foo_type", types_contains(whole.types, "Foo"))
+
+    // Per-file slice for top.av: only `entry` fn, no Foo type.
+    let top_slice = extract_per_file_metadata("test_unit", top_path, fp, mod_resolved.stmts)
+    probe("top_slice_has_entry", fns_contains(top_slice.fns, "entry"))
+    probe("top_slice_no_foo_helper", !fns_contains(top_slice.fns, "foo_helper"))
+    probe("top_slice_no_foo_type", !types_contains(top_slice.types, "Foo"))
+
+    // Per-file slice for foo.av: only foo_helper + Foo type.
+    let foo_slice = extract_per_file_metadata("test_unit", foo_path, fp, mod_resolved.stmts)
+    probe("foo_slice_has_foo_helper", fns_contains(foo_slice.fns, "foo_helper"))
+    probe("foo_slice_has_foo_type", types_contains(foo_slice.types, "Foo"))
+    probe("foo_slice_no_entry", !fns_contains(foo_slice.fns, "entry"))
+
+    0
+}

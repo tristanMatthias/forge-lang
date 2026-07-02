@@ -1,0 +1,16 @@
+fn sop_esc(t: string) -> string {
+    mut o = ""
+    mut i = 0
+    while i < t.length {
+        let ch = t[i]
+        o = o + ch
+        i = i + 1
+    }
+    o
+}
+
+spec "string ops" {
+    then "escape identity" {
+        sop_esc("hello") == "hello"
+    }
+}

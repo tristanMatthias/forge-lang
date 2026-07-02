@@ -1,0 +1,23 @@
+type HnfiStudent = { name: string, scores: List }
+
+fn hnfi_run() -> string {
+    avra_test_capture_start()
+    let students = [
+        HnfiStudent { name: "Alice", scores: [90, 85, 92] },
+        HnfiStudent { name: "Bob", scores: [78, 88, 95] },
+    ]
+    for s in students {
+        mut sum = 0
+        for score in s.scores {
+            sum = sum + score
+        }
+        println(`${s.name}: avg ${string(sum / 3)}`)
+    }
+    avra_test_capture_stop()
+}
+
+spec "hunt nested for in" {
+    then "full output" {
+        hnfi_run() == "Alice: avg 89\nBob: avg 87"
+    }
+}

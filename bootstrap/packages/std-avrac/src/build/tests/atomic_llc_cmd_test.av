@@ -1,0 +1,105 @@
+// rrio: the per-module library-archive build (cli/main.av) reuses each unit's
+// `<sl>.o` across runs by an mtime-freshness check — so a killed/OOM'd llc that
+// left a TRUNCATED `.o` with a fresh mtime would be re-linked (and archived by
+// `ar`) as if complete, surfacing as "undefined symbol" errors far from the
+// interrupted build. atomic_obj_llc_cmd is the single command builder that path
+// uses: llc → per-pid temp → rename, so the final `.o` is only ever a complete
+// object (or the old one / nothing), never a partial. The CLI orchestration
+// isn't unit-testable, so we pin the command builder's contract here — both
+// structurally (it never writes llc output straight to the final) and
+// end-to-end against a real llc.
+
+use @std.avrac.build.{atomic_obj_llc_cmd, atomic_cp_cmd, llvm_prefix_dir}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_file_exists, avra_file_size, avra_getpid}
+
+fn workdir(slug: string) -> string {
+    let d = "/tmp/avra_rrio_llc_${slug}"
+    let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
+    d
+}
+
+fn llc_bin() -> string { "${llvm_prefix_dir()}/bin/llc" }
+
+spec "rrio: atomic_obj_llc_cmd never targets the final object directly" {
+    then "llc writes a .tmp.<pid> sibling; success renames, failure cleans up" {
+        let cmd = atomic_obj_llc_cmd("/x/llc", "-O0", "/w/u.ll", "/w/u.o", "/w/u.log", 4242)
+        // The core guarantee, structurally: llc's -o points at the temp, the
+        // final object is only reached via `mv`, and a failure removes the temp.
+        // The negative `-o '/w/u.o'` clause is what a revert to the old inline
+        // command (which wrote straight to the final) would violate.
+        cmd.contains("-o '/w/u.o.tmp.4242'")
+            && cmd.contains("mv -f '/w/u.o.tmp.4242' '/w/u.o'")
+            && cmd.contains("rm -f '/w/u.o.tmp.4242'")
+            && !cmd.contains("-o '/w/u.o'")
+    }
+}
+
+spec "rrio: atomic_obj_llc_cmd materialises a valid module to the final object" {
+    then "a valid .ll yields rc 0, a non-empty .o, and no leftover temp" {
+        let d = workdir("ok")
+        let ll = "${d}/u.ll"
+        let o = "${d}/u.o"
+        let _ = avra_selfhost_write_file(ll, "define i32 @rrio_probe() {\nentry:\n  ret i32 0\n}\n")
+        let pid = avra_getpid()
+        let rc = avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O0", ll, o, "${d}/u.log", pid))
+        rc == 0 && avra_file_size(o) > 0 && avra_selfhost_file_exists("${o}.tmp.${string(pid)}") == 0
+    }
+}
+
+spec "rrio: a failed llc leaves NO final object and no leftover temp" {
+    then "garbage .ll yields non-zero rc, no `.o`, and the temp is cleaned" {
+        let d = workdir("fail")
+        let ll = "${d}/u.ll"
+        let o = "${d}/u.o"
+        let _ = avra_selfhost_write_file(ll, "this is not valid llvm ir\n")
+        let pid = avra_getpid()
+        let rc = avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O0", ll, o, "${d}/u.log", pid))
+        rc != 0 && avra_selfhost_file_exists(o) == 0 && avra_selfhost_file_exists("${o}.tmp.${string(pid)}") == 0
+    }
+}
+
+spec "rrio: a failed re-llc does not clobber a previous complete object" {
+    then "an old complete `.o` survives intact when a re-llc fails" {
+        // The atomic contract's payoff: because llc writes to the temp and the
+        // final is reached only via a successful `mv`, a failed compile can
+        // never truncate the previous good object — so the mtime-freshness
+        // reuse reuses a COMPLETE object, not a partial one.
+        let d = workdir("preserve")
+        let ll = "${d}/u.ll"
+        let o = "${d}/u.o"
+        let _ = avra_selfhost_write_file(o, "OLD-COMPLETE-OBJECT")  // stand-in prior object
+        let _ = avra_selfhost_write_file(ll, "garbage that llc rejects\n")
+        let pid = avra_getpid()
+        let _ = avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O0", ll, o, "${d}/u.log", pid))
+        avra_selfhost_file_exists(o) == 1 && avra_file_size(o) > 0
+    }
+}
+
+// atomic_cp_cmd copies BINARY artifacts (metadata.bin) into cache slots that a
+// later run trusts by existence (cache_has / cache_has_source_meta). A killed
+// `cp` must never leave a partial there — same bug class as the .o above, found
+// by the post-kaux/rrio sweep of direct-to-final materialisations.
+spec "atomic_cp_cmd never copies directly onto the destination" {
+    then "cp targets a .tmp.<pid> sibling; success renames, failure cleans up" {
+        let cmd = atomic_cp_cmd("/w/src.bin", "/w/dst.bin", 77)
+        // The revert-discriminator: the old inline `cp src dst` wrote straight
+        // to the destination; here cp targets the temp and dst is reached only
+        // via `mv`.
+        cmd.contains("cp '/w/src.bin' '/w/dst.bin.tmp.77'")
+            && cmd.contains("mv -f '/w/dst.bin.tmp.77' '/w/dst.bin'")
+            && cmd.contains("rm -f '/w/dst.bin.tmp.77'")
+            && !cmd.contains("cp '/w/src.bin' '/w/dst.bin'")
+    }
+}
+
+spec "atomic_cp_cmd copies a real file onto the destination atomically" {
+    then "the destination receives the content and no temp is left behind" {
+        let d = workdir("cp_ok")
+        let src = "${d}/src.bin"
+        let dst = "${d}/dst.bin"
+        let _ = avra_selfhost_write_file(src, "PAYLOAD-BYTES\n")
+        let pid = avra_getpid()
+        let rc = avra_shell_exec_status(atomic_cp_cmd(src, dst, pid))
+        rc == 0 && avra_file_size(dst) > 0 && avra_selfhost_file_exists("${dst}.tmp.${string(pid)}") == 0
+    }
+}

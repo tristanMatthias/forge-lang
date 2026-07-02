@@ -26,7 +26,11 @@ impl BuildProfile {
     pub fn render_human(&self) -> String {
         let total = self.total();
         let total_ms = total.as_secs_f64() * 1000.0;
-        let max_ms = self.stages.iter().map(|(_, d)| d.as_secs_f64() * 1000.0).fold(0.0f64, f64::max);
+        let max_ms = self
+            .stages
+            .iter()
+            .map(|(_, d)| d.as_secs_f64() * 1000.0)
+            .fold(0.0f64, f64::max);
 
         let mut out = String::new();
         out.push_str("\n  Build Profile\n");
@@ -34,10 +38,21 @@ impl BuildProfile {
 
         for (name, dur) in &self.stages {
             let ms = dur.as_secs_f64() * 1000.0;
-            let pct = if total_ms > 0.0 { ms / total_ms * 100.0 } else { 0.0 };
-            let bar_width = if max_ms > 0.0 { (ms / max_ms * 20.0) as usize } else { 0 };
+            let pct = if total_ms > 0.0 {
+                ms / total_ms * 100.0
+            } else {
+                0.0
+            };
+            let bar_width = if max_ms > 0.0 {
+                (ms / max_ms * 20.0) as usize
+            } else {
+                0
+            };
             let bar: String = "█".repeat(bar_width);
-            out.push_str(&format!("  {:<12} {:>7.1}ms {:>5.1}%  {}\n", name, ms, pct, bar));
+            out.push_str(&format!(
+                "  {:<12} {:>7.1}ms {:>5.1}%  {}\n",
+                name, ms, pct, bar
+            ));
         }
 
         out.push_str(&format!("  ─────────────────────────────────────\n"));
@@ -52,9 +67,17 @@ impl BuildProfile {
 
     pub fn render_json(&self) -> String {
         let total = self.total();
-        let stages_json: Vec<String> = self.stages.iter().map(|(name, dur)| {
-            format!("    {{ \"name\": \"{}\", \"duration_ms\": {:.3} }}", name, dur.as_secs_f64() * 1000.0)
-        }).collect();
+        let stages_json: Vec<String> = self
+            .stages
+            .iter()
+            .map(|(name, dur)| {
+                format!(
+                    "    {{ \"name\": \"{}\", \"duration_ms\": {:.3} }}",
+                    name,
+                    dur.as_secs_f64() * 1000.0
+                )
+            })
+            .collect();
 
         format!(
             "{{\n  \"stages\": [\n{}\n  ],\n  \"total_ms\": {:.3},\n  \"fn_count\": {},\n  \"binary_size\": {}\n}}",

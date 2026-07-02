@@ -1,0 +1,51 @@
+// Test: errdefer — error-only cleanup with LIFO interleaving.
+// errdefer fires on `Result` error propagation (the `?`-split makes `?`
+// Result-only), so this exercises `?` on a `Result<string, string>`.
+
+fn ed_maybe_null(name: string) -> Result<string, string> {
+    if name == "bad" { return .Err("bad") }
+    .Ok(name)
+}
+
+fn ed_test_success() -> Result<string, string> {
+    defer { println("A") }
+    errdefer { println("B") }
+    defer { println("C") }
+    let x = ed_maybe_null("good")?
+    .Ok(x)
+}
+
+fn ed_test_error() -> Result<string, string> {
+    defer { println("A") }
+    errdefer { println("B") }
+    defer { println("C") }
+    let x = ed_maybe_null("bad")?
+    .Ok(x)
+}
+
+fn ed_run_success() -> string {
+    avra_test_capture_start()
+    match ed_test_success() {
+        .Ok(r1) -> println(r1)
+        .Err(_) -> {}
+    }
+    avra_test_capture_stop()
+}
+
+fn ed_run_error() -> string {
+    avra_test_capture_start()
+    match ed_test_error() {
+        .Ok(_) -> {}
+        .Err(_) -> println("null")
+    }
+    avra_test_capture_stop()
+}
+
+spec "errdefer" {
+    then "success skips errdefer" {
+        ed_run_success() == "C\nA\ngood"
+    }
+    then "error runs errdefer in LIFO order" {
+        ed_run_error() == "C\nB\nA\nnull"
+    }
+}

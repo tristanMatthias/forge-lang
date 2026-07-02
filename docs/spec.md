@@ -1,4 +1,4 @@
-# The Forge Language Specification
+# The Avra Language Specification
 
 **Version:** 0.2.0-draft
 **Status:** Design Specification
@@ -40,11 +40,11 @@
 
 ## 1. Overview
 
-Forge is a compiled, statically-typed programming language designed for building agent-oriented services, APIs, and tools. It prioritizes developer ergonomics, vibe-coding with LLM assistance, and the ability to orchestrate complex systems with minimal boilerplate.
+Avra is a compiled, statically-typed programming language designed for building agent-oriented services, APIs, and tools. It prioritizes developer ergonomics, vibe-coding with LLM assistance, and the ability to orchestrate complex systems with minimal boilerplate.
 
-Forge compiles to native code via LLVM, producing single binaries with no runtime dependency. It is designed to be the orchestration surface for modern software — providing high-level primitives for common infrastructure (HTTP servers, queues, databases, WebSockets) while allowing breakout into Rust, Go, C, or other languages for performance-critical components.
+Avra compiles to native code via LLVM, producing single binaries with no runtime dependency. It is designed to be the orchestration surface for modern software — providing high-level primitives for common infrastructure (HTTP servers, queues, databases, WebSockets) while allowing breakout into Rust, Go, C, or other languages for performance-critical components.
 
-### What Forge Is
+### What Avra Is
 
 - An orchestration language with first-class infrastructure primitives
 - A compiled language producing single static binaries via LLVM
@@ -52,7 +52,7 @@ Forge compiles to native code via LLVM, producing single binaries with no runtim
 - An agent-friendly language with machine-readable errors and context-loadable specs
 - A polyglot host that can embed components written in other languages
 
-### What Forge Is Not
+### What Avra Is Not
 
 - A systems programming language (use Rust/C for that, and bridge it in)
 - A replacement for general-purpose languages (it's the glue between them)
@@ -61,7 +61,7 @@ Forge compiles to native code via LLVM, producing single binaries with no runtim
 
 ### Hello World
 
-```forge
+```avra
 use @std.http.{server, route}
 
 server :8080 {
@@ -72,14 +72,14 @@ server :8080 {
 Compile and run:
 
 ```bash
-forge build
+avra build
 ./build/my-service
 # => Server started on :8080
 ```
 
 ### Motivating Example
 
-```forge
+```avra
 use @std.http.{server, route, mount}
 use @std.queue.{queue, worker, enqueue}
 use @std.cron.schedule
@@ -187,7 +187,7 @@ This single file defines data models, business logic, an AI agent, background wo
 
 ### 2.1 Convention Over Configuration (With Escape Hatches)
 
-Forge provides sensible defaults for everything. Defining a model automatically persists it. Defining a service automatically generates CRUD. But every default is overridable.
+Avra provides sensible defaults for everything. Defining a model automatically persists it. Defining a service automatically generates CRUD. But every default is overridable.
 
 ### 2.2 Describe What, Not How
 
@@ -199,7 +199,7 @@ New capabilities are added through the package system rather than baked into the
 
 ### 2.4 Single Binary, No Runtime
 
-Forge compiles to a self-contained native binary via LLVM. No JVM, no interpreter, no container required. This enables edge deployment, embedding, and simple operations.
+Avra compiles to a self-contained native binary via LLVM. No JVM, no interpreter, no container required. This enables edge deployment, embedding, and simple operations.
 
 ### 2.5 Agent-First Ergonomics
 
@@ -207,7 +207,7 @@ Error messages are machine-parseable. The language spec fits in an LLM context w
 
 ### 2.6 Polyglot By Design
 
-Forge doesn't replace Rust, Go, or Python. It orchestrates components that may be written in those languages, linked via a typed foreign function interface.
+Avra doesn't replace Rust, Go, or Python. It orchestrates components that may be written in those languages, linked via a typed foreign function interface.
 
 ---
 
@@ -243,7 +243,7 @@ macro     where
 
 Variables are **immutable by default**. Use `mut` for mutable bindings and `const` for compile-time constants.
 
-```forge
+```avra
 let name = "alice"              // immutable, type inferred as string
 name = "bob"                    // ERROR: cannot reassign immutable binding
 
@@ -260,7 +260,7 @@ Immutable-by-default makes concurrent code safer (immutable data can be shared f
 
 ### 3.3 Basic Types
 
-```forge
+```avra
 // Primitives
 int                         // 64-bit signed integer
 float                       // 64-bit floating point
@@ -280,7 +280,7 @@ never                       // function never returns (panics, infinite loop)
 
 ### 3.4 Composite Types
 
-```forge
+```avra
 // Arrays
 let names: List<string> = ["alice", "bob", "charlie"]
 let matrix: List<List<int>> = [[1, 2], [3, 4]]
@@ -300,7 +300,7 @@ let tags: Set<string> = #{"urgent", "bug", "frontend"}
 
 Double quotes for strings. Backticks for template literals with **compile-time type checking**. No single-quote strings.
 
-```forge
+```avra
 let name = "alice"
 let greeting = `hello ${name}`
 let multiline = `
@@ -333,7 +333,7 @@ name.replace_all("a", "A") // "Alice" (only one 'a' here but replaces all)
 
 ### 3.6 Functions
 
-```forge
+```avra
 // Basic function
 fn greet(name: string) -> string {
   `hello ${name}`           // last expression is return value
@@ -378,7 +378,7 @@ scores.reduce(0, (sum, n) -> sum + n)
 
 ### 3.7 Control Flow
 
-```forge
+```avra
 // If/else (expression — returns a value, no ternary needed)
 let status = if score > 0.9 { "excellent" } else { "good" }
 
@@ -469,7 +469,7 @@ let prod_config = dev_config with {
 
 Ranges use Kotlin-style readable syntax with Rust-style lazy evaluation. Ranges are iterators — they don't allocate a collection upfront.
 
-```forge
+```avra
 0..10                  // exclusive: 0,1,2,...,9 (lazy iterator)
 0..=10                 // inclusive: 0,1,2,...,10
 10.down_to(0)          // reverse: 10,9,8,...,0
@@ -490,7 +490,7 @@ for i in 0..users.length {
 
 ### 3.9 Enums
 
-```forge
+```avra
 // Simple enum
 enum Color { red, green, blue }
 
@@ -518,7 +518,7 @@ match s {
 
 TypeScript-style destructuring for all composite types:
 
-```forge
+```avra
 // Object/struct destructuring
 let { name, age, role } = user
 let { name, age: years } = user              // rename
@@ -546,7 +546,7 @@ for { title, status } in tasks {
 
 ### 3.11 Comments
 
-```forge
+```avra
 // Single line comment
 
 /*
@@ -563,11 +563,11 @@ fn important_function() { }
 
 ## 4. Type System
 
-Forge uses a structural type system inspired by TypeScript. Types are checked by shape, not by name.
+Avra uses a structural type system inspired by TypeScript. Types are checked by shape, not by name.
 
 ### 4.1 Structural Typing
 
-```forge
+```avra
 type HasName = { name: string }
 type HasEmail = { email: string }
 
@@ -583,7 +583,7 @@ greet({ name: "anon" })  // anonymous struct — OK
 
 ### 4.2 Type Aliases and Intersections
 
-```forge
+```avra
 type Identifiable = { id: uuid }
 type Timestamped = { created: timestamp, updated: timestamp }
 type BaseModel = Identifiable & Timestamped
@@ -595,7 +595,7 @@ type ApiResponse = SuccessResponse | ErrorResponse
 
 ### 4.3 Generics
 
-```forge
+```avra
 fn first<T>(list: List<T>) -> T? {
   if list.length > 0 { list[0] } else { null }
 }
@@ -619,7 +619,7 @@ fn soft_delete<T: { deleted_at: timestamp? }>(record: T) {
 
 Null safety is enforced by the type system. A type is non-nullable by default. Append `?` to make it nullable.
 
-```forge
+```avra
 let name: string = "alice"     // cannot be null
 let nickname: string? = null   // explicitly nullable
 
@@ -644,9 +644,9 @@ let city = user?.address?.city ?? "unknown"
 
 ### 4.5 Type Inference
 
-Forge infers types locally within function bodies. Function signatures require explicit type annotations for parameters and return types.
+Avra infers types locally within function bodies. Function signatures require explicit type annotations for parameters and return types.
 
-```forge
+```avra
 // Inferred
 let x = 42                     // int
 let names = ["a", "b"]         // List<string>
@@ -664,7 +664,7 @@ users.filter((u) -> u.active)      // u inferred from List<User>
 
 ### 4.6 Literal Types
 
-```forge
+```avra
 type Direction = "north" | "south" | "east" | "west"
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
 type DiceRoll = 1 | 2 | 3 | 4 | 5 | 6
@@ -672,7 +672,7 @@ type DiceRoll = 1 | 2 | 3 | 4 | 5 | 6
 
 ### 4.7 Type Assertions and Casting
 
-```forge
+```avra
 let value: json = get_dynamic_data()
 
 // Safe cast (returns nullable)
@@ -692,11 +692,11 @@ if value is string {
 
 ## 5. Traits and Interfaces
 
-Forge uses a hybrid type contract system: **structural types** for data shape requirements (TypeScript-style, from Section 4) and **traits** for behavior contracts (Rust-style). They coexist and serve different purposes.
+Avra uses a hybrid type contract system: **structural types** for data shape requirements (TypeScript-style, from Section 4) and **traits** for behavior contracts (Rust-style). They coexist and serve different purposes.
 
 ### 5.1 Trait Declaration
 
-```forge
+```avra
 trait Serializable {
   fn to_json(self) -> json
   fn from_json(data: json) -> Result<Self, Error>
@@ -715,7 +715,7 @@ trait Drawable {
 
 ### 5.2 Implementing Traits
 
-```forge
+```avra
 impl Drawable for Circle {
   fn draw(self) { println(`circle r=${self.radius}`) }
   fn area(self) -> float { 3.14159 * self.radius * self.radius }
@@ -725,7 +725,7 @@ impl Drawable for Circle {
 
 ### 5.3 Trait Bounds on Generics
 
-```forge
+```avra
 fn draw_all<T: Drawable>(items: List<T>) {
   for item in items { item.draw() }
 }
@@ -741,14 +741,14 @@ fn process<T: Serializable & Drawable>(item: T) {
 ### 5.4 When to Use Structural Types vs Traits
 
 Use **structural types** for simple data shape requirements:
-```forge
+```avra
 type HasName = { name: string }
 fn greet(thing: HasName) -> string { `hello ${thing.name}` }
 // Works with anything that has a name field — no declaration needed
 ```
 
 Use **traits** for behavior contracts with methods and defaults:
-```forge
+```avra
 trait Cacheable {
   fn cache_key(self) -> string
   fn ttl(self) -> duration { 5m }    // default TTL
@@ -775,7 +775,7 @@ Standard traits are auto-derived for simple types. Models auto-derive `Display`,
 
 Known operators can be overloaded by implementing the corresponding trait:
 
-```forge
+```avra
 trait Add<Rhs = Self> {
   type Output
   fn add(self, rhs: Rhs) -> Self.Output
@@ -801,7 +801,7 @@ Models are provided by `@std/model` and define both the shape of data and its pe
 
 ### 6.1 Model Declaration
 
-```forge
+```avra
 use @std.model.{model, service}
 
 model User {
@@ -832,7 +832,7 @@ model User {
 
 ### 5.3 Relations
 
-```forge
+```avra
 model User {
   id: uuid @primary
   name: string
@@ -856,7 +856,7 @@ model Tag {
 
 Every model automatically gets the following operations (via auto-generated service):
 
-```forge
+```avra
 // These exist implicitly for every model
 User.create({ name: "alice", email: "alice@example.com" })
 User.get(id)                    // -> User?
@@ -872,11 +872,11 @@ User.exists(id)                 // -> bool
 
 ### 5.5 Persistence Configuration
 
-```forge
-// In forge.toml — project-level config
+```avra
+// In avra.toml — project-level config
 [database]
 default = "sqlite"              // "sqlite", "postgres", "mysql"
-path = "./data/forge.db"        // SQLite path
+path = "./data/avra.db"        // SQLite path
 
 // Or per-model override via annotation
 @persist(postgres("postgresql://localhost/mydb"))
@@ -897,23 +897,23 @@ model TemporaryResult {
 
 ### 5.6 Migrations
 
-Forge auto-generates migrations by comparing model definitions against the current database schema.
+Avra auto-generates migrations by comparing model definitions against the current database schema.
 
 ```bash
 # Generate migration from model changes
-forge migrate create
+avra migrate create
 
 # Preview SQL that will run
-forge migrate preview
+avra migrate preview
 
 # Apply pending migrations
-forge migrate run
+avra migrate run
 
 # Rollback last migration
-forge migrate rollback
+avra migrate rollback
 
 # Migration status
-forge migrate status
+avra migrate status
 ```
 
 Migration files are stored in `./migrations/` as timestamped SQL files that can be reviewed and edited before applying.
@@ -933,7 +933,7 @@ Services define business logic around models. They wrap auto-generated CRUD with
 
 ### 6.1 Service Declaration
 
-```forge
+```avra
 service TaskService for Task {
   // Lifecycle hooks
   before create(task) {
@@ -997,7 +997,7 @@ service TaskService for Task {
 
 Services can emit and listen to events:
 
-```forge
+```avra
 // Emitting (in a service method)
 emit task_created(task)
 
@@ -1024,29 +1024,29 @@ Events are local by default (in-process pub/sub). Packages can extend events to 
 
 ## 7. Package System
 
-The package system is Forge's core extensibility mechanism. Packages are compiler plugins that register new keywords, syntax blocks, and compile-time transformations. They are backed by native implementations in any language.
+The package system is Avra's core extensibility mechanism. Packages are compiler plugins that register new keywords, syntax blocks, and compile-time transformations. They are backed by native implementations in any language.
 
 ### 7.1 Concept
 
-The core Forge language is intentionally minimal (~20 keywords). All infrastructure primitives — servers, queues, WebSockets, AI agents — are added by packages. This means:
+The core Avra language is intentionally minimal (~20 keywords). All infrastructure primitives — servers, queues, WebSockets, AI agents — are added by packages. This means:
 
 - `server` is not a keyword until you import `@std/http`
 - `queue` is not a keyword until you import `@std/queue`
 - `agent` is not a keyword until you import `@std/ai`
 
-Packages are declared in `forge.toml` and imported in source files.
+Packages are declared in `avra.toml` and imported in source files.
 
 ### 7.2 Using Packages
 
-```forge
-// forge.toml
+```avra
+// avra.toml
 [packages]
 "@std/http" = "0.1.0"
 "@std/queue" = "0.1.0"
 "@community/graphql" = "0.3.2"
 ```
 
-```forge
+```avra
 // In source files
 use @std.http.{server, route, middleware}
 use @std.queue.{queue, worker}
@@ -1087,7 +1087,7 @@ hyper = "1.0"
 tokio = { version = "1", features = ["full"] }
 
 [interface]
-types = "types.forge"     # type definitions file
+types = "types.avra"     # type definitions file
 schema = "package.wit"   # interface definition
 ```
 
@@ -1113,9 +1113,9 @@ keyword middleware:
 
 ```rust
 // src/lib.rs for @std/http package
-use forge_package_sdk::prelude::*;
+use avra_package_sdk::prelude::*;
 
-#[forge_keyword("server")]
+#[avra_keyword("server")]
 pub struct ServerBlock {
     pub name: Option<String>,
     pub port: u16,
@@ -1124,18 +1124,18 @@ pub struct ServerBlock {
     pub mounts: Vec<Mount>,
 }
 
-#[forge_compile]
+#[avra_compile]
 impl ServerBlock {
     /// Transforms the server block into native function calls.
-    /// Called at compile time by the Forge compiler.
+    /// Called at compile time by the Avra compiler.
     fn lower(&self, ctx: &mut CompileContext) -> Result<NativeIR> {
         // Generate LLVM IR that calls into the native http library
-        let server_init = ctx.call_native("forge_http_server_create", &[
+        let server_init = ctx.call_native("avra_http_server_create", &[
             ctx.const_u16(self.port),
         ]);
 
         for route in &self.routes {
-            ctx.call_native("forge_http_add_route", &[
+            ctx.call_native("avra_http_add_route", &[
                 server_init,
                 ctx.const_str(&route.method),
                 ctx.const_str(&route.path),
@@ -1144,28 +1144,28 @@ impl ServerBlock {
         }
 
         for mount in &self.mounts {
-            ctx.call_native("forge_http_mount_service", &[
+            ctx.call_native("avra_http_mount_service", &[
                 server_init,
                 ctx.const_str(&mount.path),
                 ctx.service_ref(&mount.service),
             ]);
         }
 
-        ctx.call_native("forge_http_server_start", &[server_init]);
+        ctx.call_native("avra_http_server_start", &[server_init]);
         Ok(server_init)
     }
 }
 
 /// The native C ABI functions that the compiled binary links against.
 #[no_mangle]
-pub extern "C" fn forge_http_server_create(port: u16) -> *mut Server {
+pub extern "C" fn avra_http_server_create(port: u16) -> *mut Server {
     // Actual hyper/tokio server creation
     let server = Server::new(port);
     Box::into_raw(Box::new(server))
 }
 
 #[no_mangle]
-pub extern "C" fn forge_http_server_start(server: *mut Server) {
+pub extern "C" fn avra_http_server_start(server: *mut Server) {
     let server = unsafe { &*server };
     server.start_blocking();
 }
@@ -1215,7 +1215,7 @@ uses = ["models", "events"]  # Can read models and emit events
 If two packages both claim `tcp:port` in the same project, the compiler emits an error:
 
 ```
-ERROR[E0201]: resource conflict at forge.toml
+ERROR[E0201]: resource conflict at avra.toml
 
   Packages @std/http and @community/grpc both claim resource "tcp:port".
 
@@ -1229,7 +1229,7 @@ ERROR[E0201]: resource conflict at forge.toml
 Packages conform to interfaces, allowing implementation swaps:
 
 ```toml
-# forge.toml — use a different HTTP engine
+# avra.toml — use a different HTTP engine
 [packages]
 "@std/http" = { version = "0.1.0", impl = "@community/http-bun" }
 ```
@@ -1240,13 +1240,13 @@ The syntax in your source code stays identical. Only the compiled native code ch
 
 ## 8. Standard Packages
 
-These packages ship with Forge and are maintained as part of the core distribution.
+These packages ship with Avra and are maintained as part of the core distribution.
 
 ### 8.1 @std/http — HTTP Server
 
 **Keywords:** `server`, `route`, `middleware`, `mount`, `redirect`
 
-```forge
+```avra
 use @std.http.{server, route, middleware, mount}
 
 server :8080 {
@@ -1278,7 +1278,7 @@ server :8080 {
 
 Provides the persistence layer for models, raw SQL blocks, and migration tooling.
 
-```forge
+```avra
 use @std.sql
 
 // Raw SQL with compile-time validation against models
@@ -1306,7 +1306,7 @@ fn find_by_role(role: string) -> List<User> {
 
 **Keywords:** `queue`, `worker`, `enqueue`, `consume`
 
-```forge
+```avra
 use @std.queue.{queue, worker, enqueue}
 
 queue email_queue {
@@ -1347,7 +1347,7 @@ enqueue email_queue {
 
 **Keywords:** `ws`, `broadcast`, `subscribe`
 
-```forge
+```avra
 use @std.ws.{ws, broadcast}
 
 server :8080 {
@@ -1383,7 +1383,7 @@ on task_created(task) {
 
 **Keywords:** `schedule`
 
-```forge
+```avra
 use @std.cron.schedule
 
 schedule every 5m {
@@ -1406,7 +1406,7 @@ schedule cron "0 */2 * * *" {   // every 2 hours
 
 **Keywords:** `agent`, `tool`, `prompt`
 
-```forge
+```avra
 use @std.ai.{agent, tool, prompt}
 
 agent my_agent {
@@ -1444,7 +1444,7 @@ agent my_agent {
 
 **Keywords:** (none — provides the `log` global)
 
-```forge
+```avra
 use @std.log
 
 log.info("server started", { port: 8080 })
@@ -1463,7 +1463,7 @@ See [Section 17: Testing](#17-testing) for full details.
 
 **Keywords:** (none — provides the `env` global and config loading)
 
-```forge
+```avra
 use @std.env.{env, config}
 
 // Environment variables with typed defaults
@@ -1480,13 +1480,13 @@ let db_host = cfg.get("database.host", "localhost")
 
 ## 10. Concurrency and Parallelism
 
-Forge distinguishes between **concurrency** (many tasks sharing threads, for I/O) and **parallelism** (tasks on separate OS threads, for CPU). The language manages both automatically, with opt-in control when needed.
+Avra distinguishes between **concurrency** (many tasks sharing threads, for I/O) and **parallelism** (tasks on separate OS threads, for CPU). The language manages both automatically, with opt-in control when needed.
 
 ### 10.1 Implicit Async
 
 All I/O operations are non-blocking under the hood. The developer writes code that looks synchronous:
 
-```forge
+```avra
 // These are concurrent (I/O) — many tasks, few OS threads
 let user = UserService.get(id)             // DB query, non-blocking
 let weather = fetch_weather("SF")          // HTTP call, non-blocking
@@ -1497,7 +1497,7 @@ let result = process(data)                 // CPU work, runs on thread pool
 
 When you want to run things concurrently and wait for all results:
 
-```forge
+```avra
 // Parallel execution — true OS threads
 let (users, tasks, metrics) = parallel {
   UserService.list()
@@ -1520,7 +1520,7 @@ let (users, tasks) = parallel timeout 5s {
 
 `spawn` creates a concurrent lightweight task (scheduled on the thread pool). `spawn cpu` creates a parallel task on a dedicated OS thread for CPU-intensive work:
 
-```forge
+```avra
 // Concurrent — lightweight, good for I/O
 spawn {
   let data = fetch_external_api()
@@ -1538,7 +1538,7 @@ spawn cpu {
 
 For explicit message passing between concurrent/parallel tasks:
 
-```forge
+```avra
 let ch = channel<Task>(buffer: 10)
 
 // Producer
@@ -1559,7 +1559,7 @@ for task in ch.receive() {
 
 `Stream<T>` is a lazy, pull-based sequence — use for data pipelines, pagination, and backpressure-aware processing:
 
-```forge
+```avra
 // Stream from a database query (fetches in batches)
 let active_tasks: Stream<Task> = TaskService.stream(status: .active)
 
@@ -1578,7 +1578,7 @@ let st = my_channel.to_stream()     // pull channel items as stream
 
 For waiting on multiple channels:
 
-```forge
+```avra
 select {
   msg from data_channel -> process(msg)
   err from error_channel -> handle_error(err)
@@ -1601,13 +1601,13 @@ This is a compiled-in scheduler, not a separate runtime — it's statically link
 
 ## 11. Error Handling
 
-Forge provides three complementary error mechanisms: `?` for propagation, `catch` for inline handling, and `errdefer`/`defer` for cleanup.
+Avra provides three complementary error mechanisms: `?` for propagation, `catch` for inline handling, and `errdefer`/`defer` for cleanup.
 
 ### 11.1 Result Type
 
-Forge uses a `Result<T, E>` type for recoverable errors:
+Avra uses a `Result<T, E>` type for recoverable errors:
 
-```forge
+```avra
 fn parse_config(path: string) -> Result<Config, ConfigError> {
   let content = read_file(path)?                    // propagate with ?
   let parsed = json.parse(content)?
@@ -1617,9 +1617,9 @@ fn parse_config(path: string) -> Result<Config, ConfigError> {
 
 ### 11.2 The `?` Operator
 
-The `?` operator unwraps `Ok` values or returns `Err` early. It's Forge's primary error propagation mechanism — one character instead of boilerplate:
+The `?` operator unwraps `Ok` values or returns `Err` early. It's Avra's primary error propagation mechanism — one character instead of boilerplate:
 
-```forge
+```avra
 fn load_user_tasks(id: uuid) -> Result<List<Task>, Error> {
   let user = UserService.get(id)?          // returns Err if fails
   let tasks = TaskService.list(owner: user)?
@@ -1633,7 +1633,7 @@ The `?` operator works on `Result<T, E>` types and performs automatic error conv
 
 `catch` handles errors inline — use it when you want to handle the error locally rather than propagate it:
 
-```forge
+```avra
 // Catch and provide default
 let config = parse_config("./config.toml") catch {
   Config.default()
@@ -1653,9 +1653,9 @@ let user = UserService.get(id) catch {
 
 ### 11.4 Defer and Errdefer
 
-`defer` runs cleanup when the current scope exits (always). `errdefer` runs cleanup **only on error paths** — Zig's most innovative feature, adopted for Forge:
+`defer` runs cleanup when the current scope exits (always). `errdefer` runs cleanup **only on error paths** — Zig's most innovative feature, adopted for Avra:
 
-```forge
+```avra
 fn process_upload(file: File) -> Result<Document, Error> {
   let conn = db.connect()
   defer conn.close()              // ALWAYS runs when scope exits
@@ -1677,7 +1677,7 @@ The `Drop` trait (Section 5.5) provides type-level cleanup for resources like co
 
 For retry-with-fallback logic (common in agent workflows):
 
-```forge
+```avra
 let result = attempt {
   call_primary_api(data)
 } retry 3 times with exponential_backoff {
@@ -1693,7 +1693,7 @@ let result = attempt {
 
 For unrecoverable errors and invariant checking:
 
-```forge
+```avra
 fn divide(a: float, b: float) -> float {
   if b == 0.0 { panic("division by zero") }
   a / b
@@ -1712,7 +1712,7 @@ All compiler errors follow a consistent format with error codes, source location
 **Human-readable format (default):**
 
 ```
-ERROR[E0012]: type mismatch at src/main.fg:23:14
+ERROR[E0012]: type mismatch at src/main.av:23:14
 
   22 |  let user = UserService.get(id)
   23 |  let name: int = user.name
@@ -1723,10 +1723,10 @@ ERROR[E0012]: type mismatch at src/main.fg:23:14
   Help: user.name is a string. Did you mean:
     let name: string = user.name
 
-  Docs: https://forgelang.dev/errors/E0012
+  Docs: https://avralang.dev/errors/E0012
 ```
 
-**Machine-parseable format (`forge build --error-format=json`):**
+**Machine-parseable format (`avra build --error-format=json`):**
 
 ```json
 {
@@ -1734,7 +1734,7 @@ ERROR[E0012]: type mismatch at src/main.fg:23:14
     "code": "E0012",
     "severity": "error",
     "message": "type mismatch",
-    "file": "src/main.fg",
+    "file": "src/main.av",
     "line": 23,
     "col": 14,
     "span": { "start": 456, "end": 465 },
@@ -1752,7 +1752,7 @@ ERROR[E0012]: type mismatch at src/main.fg:23:14
         "confidence": 0.95
       }
     ],
-    "docs_url": "https://forgelang.dev/errors/E0012",
+    "docs_url": "https://avralang.dev/errors/E0012",
     "related": []
   }]
 }
@@ -1767,10 +1767,10 @@ Every error includes:
 
 ### 10.7 Package Error Boundaries
 
-Errors from package native code are caught at the FFI boundary and converted to Forge's error type:
+Errors from package native code are caught at the FFI boundary and converted to Avra's error type:
 
 ```
-ERROR at src/main.fg:14:16
+ERROR at src/main.av:14:16
 Package @std/queue encountered an internal error
 
   14 |  enqueue(payment_queue, order)
@@ -1786,7 +1786,7 @@ Package @std/queue encountered an internal error
     queue.go:142  processMessage()
     queue.go:89   Enqueue()
     [FFI boundary]
-    src/main.fg:14  main()
+    src/main.av:14  main()
 ```
 
 The FFI boundary catches:
@@ -1801,28 +1801,28 @@ A package crash never takes down the host process. It always surfaces as a catch
 
 ## 11. Module System
 
-Forge uses a file-based module system with dot-separated paths and compiler auto-discovery. No string paths. No index files.
+Avra uses a file-based module system with dot-separated paths and compiler auto-discovery. No string paths. No index files.
 
 ### 11.1 File = Module
 
-Each `.fg` file is a module. Directories are namespaces. The compiler auto-discovers exported items by scanning files.
+Each `.av` file is a module. Directories are namespaces. The compiler auto-discovers exported items by scanning files.
 
 ```
 src/
-  main.fg              // entry point
+  main.av              // entry point
   tasks/
-    task.fg            // namespace: tasks, exports Task model etc.
-    task_test.fg       // tests for task.fg
+    task.av            // namespace: tasks, exports Task model etc.
+    task_test.av       // tests for task.av
   users/
-    user.fg            // namespace: users
-    user_test.fg
+    user.av            // namespace: users
+    user_test.av
   utils/
-    helpers.fg         // namespace: utils
+    helpers.av         // namespace: utils
 ```
 
 ### 11.2 Imports
 
-```forge
+```avra
 // Import specific items from your project (dots, not strings)
 use tasks.Task
 use tasks.{Task, TaskService}
@@ -1841,16 +1841,16 @@ use @std.model                               // all exports from @std/model
 use @community.graphql
 
 // The compiler resolves names to files automatically
-// If User is exported in users/user.fg, `use users.User` finds it
-// No index.fg files needed
+// If User is exported in users/user.av, `use users.User` finds it
+// No index.av files needed
 ```
 
 ### 11.3 Exports
 
 All top-level declarations are private by default. Use `export` to make them available:
 
-```forge
-// users/user.fg
+```avra
+// users/user.av
 
 export model User {
   id: uuid @primary
@@ -1871,11 +1871,11 @@ fn normalize_name(name: string) -> string {
 
 ## 12. Embedded Sublanguages
 
-Forge supports embedding other language syntaxes within blocks. The outer parser handles brace-matching; the package parses the inner content.
+Avra supports embedding other language syntaxes within blocks. The outer parser handles brace-matching; the package parses the inner content.
 
 ### 12.1 SQL Blocks
 
-```forge
+```avra
 use @std.sql
 
 let results = sql {
@@ -1899,7 +1899,7 @@ SQL blocks are compile-time validated:
 
 ### 12.2 Regex Blocks
 
-```forge
+```avra
 use @std.regex
 
 let email_pattern = regex { [A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z]{2,} }
@@ -1909,7 +1909,7 @@ let matches = email_pattern.find_all(text)
 
 ### 12.3 Shell Blocks
 
-```forge
+```avra
 use @std.shell
 
 let output = sh { ls -la /tmp }
@@ -1918,7 +1918,7 @@ let git_hash = sh { git rev-parse HEAD }.trim()
 
 ### 12.4 How Embedded Blocks Work
 
-The Forge parser treats embedded blocks generically:
+The Avra parser treats embedded blocks generically:
 
 1. Parser sees `<keyword> { ... }` where `<keyword>` is registered by a package as an embedded block
 2. Parser does brace-matching to find the block boundaries
@@ -1926,17 +1926,17 @@ The Forge parser treats embedded blocks generically:
 4. Package parses, validates, and returns typed AST nodes
 5. Compiler lowers package AST nodes to LLVM IR
 
-This means new embedded syntaxes can be added by community packages without modifying the Forge parser.
+This means new embedded syntaxes can be added by community packages without modifying the Avra parser.
 
 ---
 
 ## 13. External Language Bridge
 
-Forge can link components written in other languages into the same binary. This is the mechanism that allows "write it in Rust, use it from Forge."
+Avra can link components written in other languages into the same binary. This is the mechanism that allows "write it in Rust, use it from Avra."
 
 ### 13.1 Extern Declarations
 
-```forge
+```avra
 // Declare a component implemented in another language
 extern component fraud_detector {
   source: "rust://components/fraud"
@@ -1950,7 +1950,7 @@ extern component fraud_detector {
   fn train(data: List<Transaction>) -> TrainingResult
 }
 
-// Use it like any Forge code
+// Use it like any Avra code
 let result = fraud_detector.evaluate(tx)
 if result.block {
   reject(tx, result.flags)
@@ -1961,14 +1961,14 @@ if result.block {
 
 For compiled languages (Rust, Go, C, C++, Zig):
 
-1. Forge toolchain invokes the foreign compiler to produce a static library with C ABI
-2. Forge generates FFI bindings matching the declared interface
+1. Avra toolchain invokes the foreign compiler to produce a static library with C ABI
+2. Avra generates FFI bindings matching the declared interface
 3. Types are marshaled across the boundary using a shared binary format
 4. The foreign library is statically linked into the final binary
 
 For interpreted languages (Python, JavaScript):
 
-1. Forge embeds a minimal interpreter runtime (libpython, QuickJS)
+1. Avra embeds a minimal interpreter runtime (libpython, QuickJS)
 2. Foreign code runs in the embedded interpreter
 3. Communication uses optimized shared-memory IPC
 4. The interpreter runtime is statically linked into the final binary
@@ -1977,18 +1977,18 @@ For interpreted languages (Python, JavaScript):
 
 Types crossing the FFI boundary are automatically serialized/deserialized:
 
-| Forge Type | C ABI Representation |
+| Avra Type | C ABI Representation |
 |---|---|
 | `int` | `int64_t` |
 | `float` | `double` |
 | `bool` | `uint8_t` (0 or 1) |
-| `string` | `forge_string_t` (ptr + len) |
-| `List<T>` | `forge_list_t` (ptr + len + element_size) |
-| `Map<K, V>` | `forge_map_t` (serialized) |
-| `struct/model` | `forge_struct_t` (field-by-field marshaling) |
-| `T?` (nullable) | `forge_optional_t` (tag + value) |
+| `string` | `avra_string_t` (ptr + len) |
+| `List<T>` | `avra_list_t` (ptr + len + element_size) |
+| `Map<K, V>` | `avra_map_t` (serialized) |
+| `struct/model` | `avra_struct_t` (field-by-field marshaling) |
+| `T?` (nullable) | `avra_optional_t` (tag + value) |
 
-The Forge compiler generates marshaling code at compile time based on the `extern` declarations, so there's no runtime reflection cost.
+The Avra compiler generates marshaling code at compile time based on the `extern` declarations, so there's no runtime reflection cost.
 
 ### 13.4 Go-Specific Notes
 
@@ -2006,7 +2006,7 @@ mode = "c-shared"
 cgo_enabled = true
 ```
 
-The Go runtime (goroutine scheduler, GC) runs within the shared library. Forge's concurrency scheduler and Go's goroutine scheduler coexist but operate independently. This works because they communicate only through C ABI function calls at the boundary.
+The Go runtime (goroutine scheduler, GC) runs within the shared library. Avra's concurrency scheduler and Go's goroutine scheduler coexist but operate independently. This works because they communicate only through C ABI function calls at the boundary.
 
 ### 13.5 Python-Specific Notes
 
@@ -2032,38 +2032,38 @@ Python components have higher latency than compiled components due to the interp
 ### 14.1 CLI Overview
 
 ```bash
-forge new <name>              # Create new project
-forge build                   # Build release binary (LLVM optimized)
-forge build --dev             # Build dev binary (faster compile, debug info)
-forge dev                     # Run in dev mode with hot reload
-forge run                     # Build and run
-forge test                    # Run tests
-forge repl                    # Interactive REPL
+avra new <name>              # Create new project
+avra build                   # Build release binary (LLVM optimized)
+avra build --dev             # Build dev binary (faster compile, debug info)
+avra dev                     # Run in dev mode with hot reload
+avra run                     # Build and run
+avra test                    # Run tests
+avra repl                    # Interactive REPL
 
-forge add <package>          # Add a package
-forge remove <package>       # Remove a package
-forge packages list          # List installed packages
-forge packages search <q>    # Search package registry
+avra add <package>          # Add a package
+avra remove <package>       # Remove a package
+avra packages list          # List installed packages
+avra packages search <q>    # Search package registry
 
-forge migrate create          # Generate migration from model changes
-forge migrate run             # Apply pending migrations
-forge migrate rollback        # Rollback last migration
-forge migrate preview         # Preview SQL
+avra migrate create          # Generate migration from model changes
+avra migrate run             # Apply pending migrations
+avra migrate rollback        # Rollback last migration
+avra migrate preview         # Preview SQL
 
-forge context                 # Output LLM-friendly project context
-forge context --packages     # Include all package specs
-forge context --compact       # Minimal context for small windows
+avra context                 # Output LLM-friendly project context
+avra context --packages     # Include all package specs
+avra context --compact       # Minimal context for small windows
 
-forge fmt                     # Format source code
-forge lint                    # Run linter
-forge doc                     # Generate documentation
-forge doc serve               # Serve docs locally
+avra fmt                     # Format source code
+avra lint                    # Run linter
+avra doc                     # Generate documentation
+avra doc serve               # Serve docs locally
 ```
 
 ### 14.2 Compiler Architecture
 
 ```
-Source (.fg files)
+Source (.av files)
        │
        ▼
 ┌─────────────┐
@@ -2115,27 +2115,27 @@ The compiler is written in Rust and uses the LLVM C API (via the `inkwell` or `l
 
 | Mode | Command | LLVM Opt | Compile Speed | Binary Size | Debug Info |
 |---|---|---|---|---|---|
-| Dev | `forge build --dev` | O0 | Fast | Large | Yes |
-| Release | `forge build` | O2 | Slow | Small | No |
-| Size | `forge build --size` | Os | Slow | Smallest | No |
-| Debug | `forge build --debug` | O0 | Fast | Large | Full DWARF |
+| Dev | `avra build --dev` | O0 | Fast | Large | Yes |
+| Release | `avra build` | O2 | Slow | Small | No |
+| Size | `avra build --size` | Os | Slow | Smallest | No |
+| Debug | `avra build --debug` | O0 | Fast | Large | Full DWARF |
 
 ### 14.4 Hot Reload (Dev Mode)
 
-`forge dev` watches source files and recompiles changed modules as shared libraries, then hot-swaps them in the running process. This gives sub-second reload times for most changes without restarting servers or losing state.
+`avra dev` watches source files and recompiles changed modules as shared libraries, then hot-swaps them in the running process. This gives sub-second reload times for most changes without restarting servers or losing state.
 
 Limitations:
 - Model schema changes require a full restart (migration needed)
 - Adding/removing packages requires a full restart
-- Changes to `main.fg` entry point require a full restart
+- Changes to `main.av` entry point require a full restart
 
 ### 14.5 REPL
 
-`forge repl` provides an interactive environment backed by JIT compilation via LLVM's ORC JIT:
+`avra repl` provides an interactive environment backed by JIT compilation via LLVM's ORC JIT:
 
 ```
-$ forge repl
-Forge 0.1.0 REPL (type :help for commands)
+$ avra repl
+Avra 0.1.0 REPL (type :help for commands)
 
 > let x = 42
 x: int = 42
@@ -2166,7 +2166,7 @@ REPL commands start with `:` to distinguish from language expressions.
 
 ### 14.6 LSP Server
 
-Forge ships with a Language Server Protocol implementation for editor support:
+Avra ships with a Language Server Protocol implementation for editor support:
 
 - **Completions:** keyword, type, field, package keyword completions
 - **Diagnostics:** real-time error reporting as you type
@@ -2175,25 +2175,25 @@ Forge ships with a Language Server Protocol implementation for editor support:
 - **Rename:** safe rename across modules
 - **Format:** integrated formatter
 
-The LSP server is distributed as part of the `forge` binary (`forge lsp`).
+The LSP server is distributed as part of the `avra` binary (`avra lsp`).
 
 ---
 
 ## 15. LLM and Agent Ergonomics
 
-Forge is designed to be written by both humans and AI agents. This section describes the specific design choices that support LLM-assisted development.
+Avra is designed to be written by both humans and AI agents. This section describes the specific design choices that support LLM-assisted development.
 
 ### 15.1 Context Loading
 
-The `forge context` command outputs a complete, structured description of the current project that can be loaded into an LLM's context window:
+The `avra context` command outputs a complete, structured description of the current project that can be loaded into an LLM's context window:
 
 ```bash
 # Full project context (spec + packages + models + types)
-forge context
+avra context
 
 # Output:
 # ============================
-# FORGE PROJECT CONTEXT
+# AVRA PROJECT CONTEXT
 # Project: my-service
 # ============================
 #
@@ -2215,25 +2215,25 @@ forge context
 # service TaskService for Task { assign, complete, overdue }
 #
 # PROJECT STRUCTURE:
-# src/main.fg, src/models/user.fg, src/models/task.fg, ...
+# src/main.av, src/models/user.av, src/models/task.av, ...
 ```
 
 Options:
 
 ```bash
-forge context --compact       # Minimal context (~3k tokens)
-forge context --full          # Everything including package internals (~15k tokens)
-forge context --packages     # Just package specs
-forge context --models        # Just model definitions
-forge context --format=json   # Machine-parseable output
+avra context --compact       # Minimal context (~3k tokens)
+avra context --full          # Everything including package internals (~15k tokens)
+avra context --packages     # Just package specs
+avra context --models        # Just model definitions
+avra context --format=json   # Machine-parseable output
 ```
 
 ### 15.2 MCP Server
 
-Forge can run as an MCP (Model Context Protocol) server, allowing AI agents to query project information dynamically:
+Avra can run as an MCP (Model Context Protocol) server, allowing AI agents to query project information dynamically:
 
 ```bash
-forge mcp serve
+avra mcp serve
 ```
 
 This exposes tools for:
@@ -2263,7 +2263,7 @@ Every compiler error includes machine-actionable fix suggestions:
     },
     {
       "message": "add @std/ws package for streaming",
-      "action": "forge add @std/ws",
+      "action": "avra add @std/ws",
       "confidence": 0.45
     }
   ]
@@ -2271,7 +2271,7 @@ Every compiler error includes machine-actionable fix suggestions:
 ```
 
 An LLM agent can:
-1. Run `forge build --error-format=json`
+1. Run `avra build --error-format=json`
 2. Parse errors
 3. Apply the highest-confidence suggestion
 4. Rebuild and verify
@@ -2284,14 +2284,14 @@ This is intentional — every language design decision was evaluated for how con
 
 ### 15.5 Naming Conventions
 
-Forge enforces consistent naming to reduce ambiguity for LLM code generation:
+Avra enforces consistent naming to reduce ambiguity for LLM code generation:
 
 - **Models:** PascalCase (`User`, `TaskAssignment`)
 - **Functions:** snake_case (`process_order`, `send_email`)
 - **Variables:** snake_case (`user_count`, `active_tasks`)
 - **Constants:** UPPER_SNAKE_CASE (`MAX_RETRIES`, `DEFAULT_PORT`)
 - **Packages:** kebab-case namespaced (`@std/http`, `@community/graphql`)
-- **Files:** snake_case (`task_service.fg`, `user_model.fg`)
+- **Files:** snake_case (`task_service.av`, `user_model.av`)
 - **Enums:** snake_case values (`.pending`, `.in_progress`, `.done`)
 
 The formatter enforces these conventions automatically.
@@ -2300,7 +2300,7 @@ The formatter enforces these conventions automatically.
 
 ## 16. Memory Management
 
-Forge uses automatic memory management that is invisible to the programmer. The strategy combines reference counting with arena allocation, all decided at compile time.
+Avra uses automatic memory management that is invisible to the programmer. The strategy combines reference counting with arena allocation, all decided at compile time.
 
 ### 16.1 Core Strategy
 
@@ -2318,7 +2318,7 @@ Forge uses automatic memory management that is invisible to the programmer. The 
 
 The programmer never writes memory management code:
 
-```forge
+```avra
 fn process_request(req: Request) -> Response {
   // All objects here are arena-allocated (compiler detects request scope)
   let user = UserService.get(req.user_id)
@@ -2333,14 +2333,14 @@ fn process_request(req: Request) -> Response {
 
 ### 16.3 Package Authors
 
-Package authors writing native Rust/Go/C code manage their own internal memory. However, any object that crosses the FFI boundary into Forge is automatically reference-counted. The Package SDK handles this:
+Package authors writing native Rust/Go/C code manage their own internal memory. However, any object that crosses the FFI boundary into Avra is automatically reference-counted. The Package SDK handles this:
 
 ```rust
 // Package SDK automatically wraps returned values
-#[forge_export]
-fn create_server(port: u16) -> ForgeHandle<Server> {
-    // ForgeHandle adds reference counting at the boundary
-    ForgeHandle::new(Server::new(port))
+#[avra_export]
+fn create_server(port: u16) -> AvraHandle<Server> {
+    // AvraHandle adds reference counting at the boundary
+    AvraHandle::new(Server::new(port))
 }
 ```
 
@@ -2350,22 +2350,22 @@ fn create_server(port: u16) -> ForgeHandle<Server> {
 
 ### 17.1 Test Files
 
-Tests live in separate files with a `_test.fg` suffix:
+Tests live in separate files with a `_test.av` suffix:
 
 ```
 src/
   models/
-    user.fg
-    user_test.fg         // tests for user.fg
+    user.av
+    user_test.av         // tests for user.av
   services/
-    task_service.fg
-    task_service_test.fg // tests for task_service.fg
+    task_service.av
+    task_service_test.av // tests for task_service.av
 ```
 
 ### 17.2 Writing Tests
 
-```forge
-// task_service_test.fg
+```avra
+// task_service_test.av
 use @std.test.{describe, test, expect, before_each, mock}
 use tasks.TaskService
 use users.User
@@ -2425,7 +2425,7 @@ describe "TaskService" {
 
 ### 17.3 Mocking
 
-```forge
+```avra
 test "sends notification on task creation" {
   let sent_emails = mock(send_email)
 
@@ -2439,17 +2439,17 @@ test "sends notification on task creation" {
 ### 17.4 Running Tests
 
 ```bash
-forge test                    # Run all tests
-forge test src/tasks/         # Run tests in directory
-forge test --filter "overdue" # Run tests matching pattern
-forge test --watch            # Re-run on file changes
-forge test --coverage         # Generate coverage report
-forge test --json             # Machine-readable output
+avra test                    # Run all tests
+avra test src/tasks/         # Run tests in directory
+avra test --filter "overdue" # Run tests matching pattern
+avra test --watch            # Re-run on file changes
+avra test --coverage         # Generate coverage report
+avra test --json             # Machine-readable output
 ```
 
 ### 17.5 Benchmarking
 
-```forge
+```avra
 use @std.test.{bench}
 
 bench "task creation" {
@@ -2463,9 +2463,9 @@ bench "bulk query" (iterations: 1000) {
 ```
 
 ```bash
-forge bench                     # run all benchmarks
-forge bench --compare HEAD~1    # compare against previous commit
-forge bench --output json       # machine-readable results
+avra bench                     # run all benchmarks
+avra bench --compare HEAD~1    # compare against previous commit
+avra bench --output json       # machine-readable results
 ```
 
 Output includes iterations, mean time, standard deviation, and p50/p95/p99 latencies.
@@ -2480,20 +2480,20 @@ Projects are organized by feature/domain, not by layer. Each directory represent
 
 ```
 my-project/
-├── forge.toml               # Project configuration
+├── avra.toml               # Project configuration
 ├── src/
-│   ├── main.fg              # Entry point
+│   ├── main.av              # Entry point
 │   ├── tasks/
-│   │   ├── task.fg          # Task model, service, helpers
-│   │   └── task_test.fg     # Tests for tasks
+│   │   ├── task.av          # Task model, service, helpers
+│   │   └── task_test.av     # Tests for tasks
 │   ├── users/
-│   │   ├── user.fg          # User model, service, helpers
-│   │   └── user_test.fg     # Tests for users
+│   │   ├── user.av          # User model, service, helpers
+│   │   └── user_test.av     # Tests for users
 │   ├── notifications/
-│   │   ├── notification.fg
-│   │   └── notification_test.fg
+│   │   ├── notification.av
+│   │   └── notification_test.av
 │   └── utils/
-│       └── helpers.fg
+│       └── helpers.av
 ├── migrations/
 │   ├── 20260310_create_users.sql
 │   └── 20260310_create_tasks.sql
@@ -2508,14 +2508,14 @@ my-project/
     └── my-project-windows.exe
 ```
 
-### 19.2 forge.toml
+### 19.2 avra.toml
 
 ```toml
 [project]
 name = "my-project"
 version = "0.1.0"
 description = "A task management API"
-entry = "src/main.fg"
+entry = "src/main.av"
 
 [database]
 default = "sqlite"
@@ -2562,9 +2562,9 @@ triple = "wasm32-wasi"
 max_binary_size = "10MB"
 
 # Build commands:
-# forge build                    → builds for current platform
-# forge build --target linux     → specific target
-# forge build --all              → all declared targets
+# avra build                    → builds for current platform
+# avra build --target linux     → specific target
+# avra build --all              → all declared targets
 
 [dev]
 hot_reload = true
@@ -2587,11 +2587,11 @@ exporter = "stdout"                # default: log to stdout
 
 ## 19. Standard Library
 
-Beyond packages, Forge has a small standard library of functions and types always available without imports.
+Beyond packages, Avra has a small standard library of functions and types always available without imports.
 
 ### 19.1 Built-in Functions
 
-```forge
+```avra
 // Output
 print(value)                  // Print to stdout
 println(value)                // Print with newline
@@ -2628,7 +2628,7 @@ panic(message)                // Unconditional panic
 
 ### 19.2 Duration Literals
 
-```forge
+```avra
 let timeout = 30s             // 30 seconds
 let interval = 5m             // 5 minutes
 let ttl = 24h                 // 24 hours
@@ -2642,7 +2642,7 @@ let double = timeout * 2      // 60 seconds
 
 ### 19.3 String Methods
 
-```forge
+```avra
 // All string methods are non-mutating (return new string)
 s.length                      // Character count
 s.upper()                     // Uppercase
@@ -2668,7 +2668,7 @@ s.repeat(n)                   // Repeat n times
 
 ### 19.4 List Methods
 
-```forge
+```avra
 list.length                   // Size
 list.push(item)               // Add to end (mutates)
 list.pop()                    // Remove from end (mutates) -> T?
@@ -2699,7 +2699,7 @@ list.chunks(size)             // -> List<List<T>>
 
 ### 19.5 Map Methods
 
-```forge
+```avra
 map.length                    // Number of entries
 map.get(key)                  // -> V?
 map.set(key, value)           // Set entry (mutates)
@@ -2758,11 +2758,11 @@ map.merge(other)              // Merge maps -> Map<K, V>
 
 ## 21. Deployment
 
-Deployment is a first-class concept in Forge via the `@std/deploy` package. No Dockerfiles, no YAML, no separate IaC tools.
+Deployment is a first-class concept in Avra via the `@std/deploy` package. No Dockerfiles, no YAML, no separate IaC tools.
 
 ### 21.1 Deployment Configuration
 
-```forge
+```avra
 use @std.deploy.{deploy, target, health}
 
 deploy my_service {
@@ -2800,18 +2800,18 @@ deploy my_service {
 ### 21.2 CLI Commands
 
 ```bash
-forge deploy staging            # deploy to staging
-forge deploy production         # deploy to production
-forge deploy status             # check deployment status
-forge deploy rollback           # rollback last deployment
-forge deploy logs               # stream logs
+avra deploy staging            # deploy to staging
+avra deploy production         # deploy to production
+avra deploy status             # check deployment status
+avra deploy rollback           # rollback last deployment
+avra deploy logs               # stream logs
 ```
 
 The toolchain generates Dockerfiles, Kubernetes manifests, or platform-specific configs automatically. Deployment targets are packages — `@community/deploy-fly`, `@community/deploy-aws`, `@community/deploy-vercel` — so the community can add platforms.
 
 ### 21.3 Secrets Management
 
-```forge
+```avra
 use @std.secrets.{secret, vault}
 
 let api_key = secret("API_KEY")                    // from environment
@@ -2830,7 +2830,7 @@ let db_password = vault("production/db-password") {
 
 CLI tools are first-class via `@std/cli`. Argument parsing, help text, shell completions — all auto-generated.
 
-```forge
+```avra
 use @std.cli.{command, arg, flag}
 
 command app "my-tool" version "1.0.0" {
@@ -2872,11 +2872,11 @@ command app "my-tool" version "1.0.0" {
 
 Observability is first-class via `@std/observe`. Auto-instruments every function call, HTTP request, database query, and queue operation with zero code changes.
 
-```forge
+```avra
 use @std.observe
 
 // That's it. Everything is now traced.
-// Configure export in forge.toml:
+// Configure export in avra.toml:
 // [observe]
 // exporter = "otlp"
 // endpoint = "http://localhost:4317"
@@ -2884,7 +2884,7 @@ use @std.observe
 
 Manual spans for custom instrumentation:
 
-```forge
+```avra
 use @std.observe.{span, metric}
 
 fn process_order(order: Order) -> Result<Receipt, Error> {
@@ -2897,30 +2897,30 @@ fn process_order(order: Order) -> Result<Receipt, Error> {
 }
 ```
 
-Built-in dashboards available via `forge observe serve` for local development.
+Built-in dashboards available via `avra observe serve` for local development.
 
 ---
 
 ## 24. Mobile Support
 
-Forge targets mobile platforms as a long-term vision. LLVM's ARM backend makes this architecturally feasible.
+Avra targets mobile platforms as a long-term vision. LLVM's ARM backend makes this architecturally feasible.
 
 ### 24.1 Phase 1: Business Logic Library
 
-Forge compiles to a native library (`.so`/`.dylib`/`.framework`) that native UI code calls:
+Avra compiles to a native library (`.so`/`.dylib`/`.framework`) that native UI code calls:
 
 ```bash
-forge build --target aarch64-apple-ios        # iOS
-forge build --target aarch64-linux-android    # Android
+avra build --target aarch64-apple-ios        # iOS
+avra build --target aarch64-linux-android    # Android
 ```
 
-Write business logic, networking, and data layer in Forge. Write UI in Swift/Kotlin. This is the same approach used by Rust, Go, and Kotlin Multiplatform on mobile today.
+Write business logic, networking, and data layer in Avra. Write UI in Swift/Kotlin. This is the same approach used by Rust, Go, and Kotlin Multiplatform on mobile today.
 
 ### 24.2 Phase 2: UI Package (Future Vision)
 
 A `@std/ui` package that compiles to native controls on each platform:
 
-```forge
+```avra
 use @std.ui.{app, view, text, button, list, state}
 
 app TasksApp {
@@ -2948,7 +2948,7 @@ This would compile to SwiftUI on iOS and Jetpack Compose on Android. This is a p
 
 ### Phase 1: Core Language (Months 1-6)
 
-**Goal:** Compile basic Forge programs to native binaries via LLVM.
+**Goal:** Compile basic Avra programs to native binaries via LLVM.
 
 Deliverables:
 - Lexer and parser for core keywords
@@ -2956,8 +2956,8 @@ Deliverables:
 - LLVM IR code generation via `inkwell` crate
 - Reference counting insertion pass
 - Basic standard library (print, string ops, collections)
-- `forge build` and `forge run` commands
-- `forge.toml` project configuration
+- `avra build` and `avra run` commands
+- `avra.toml` project configuration
 
 **Milestone:** `Hello World` compiles and runs as a native binary.
 
@@ -2987,14 +2987,14 @@ Deliverables:
 - Package fault boundaries (FFI error catching)
 - `@std/http` package (server, route, middleware, mount)
 - `@std/queue` package (queue, worker, enqueue)
-- `forge add`, `forge remove`, `forge packages` commands
+- `avra add`, `avra remove`, `avra packages` commands
 - Package registry (package hosting)
 
 **Milestone:** Full motivating example (Section 1) compiles and runs.
 
 ### Phase 4: External Language Bridge (Months 10-14)
 
-**Goal:** Components written in Go/Rust/Python can be linked into Forge binaries.
+**Goal:** Components written in Go/Rust/Python can be linked into Avra binaries.
 
 Deliverables:
 - `extern component` declaration syntax
@@ -3002,26 +3002,26 @@ Deliverables:
 - Type marshaling across language boundaries
 - Go c-shared compilation integration
 - Python embedding via libpython
-- Component build orchestration in `forge build`
+- Component build orchestration in `avra build`
 
-**Milestone:** A Forge service calls a Go component and a Python component in the same binary.
+**Milestone:** A Avra service calls a Go component and a Python component in the same binary.
 
 ### Phase 5: Developer Experience (Months 12-16)
 
-**Goal:** Forge is pleasant to use for daily development.
+**Goal:** Avra is pleasant to use for daily development.
 
 Deliverables:
 - LSP server (completions, diagnostics, hover, go-to-def)
 - REPL with LLVM ORC JIT
 - Hot reload in dev mode
-- `forge fmt` (formatter)
-- `forge lint` (linter)
-- `forge context` (LLM context export)
-- `forge mcp serve` (MCP server)
+- `avra fmt` (formatter)
+- `avra lint` (linter)
+- `avra context` (LLM context export)
+- `avra mcp serve` (MCP server)
 - Testing framework (`@std/test`)
 - Documentation generator
 
-**Milestone:** A developer (or LLM agent) can write, test, and iterate on a Forge service with full tooling support.
+**Milestone:** A developer (or LLM agent) can write, test, and iterate on a Avra service with full tooling support.
 
 ### Phase 6: Ecosystem (Months 14-18+)
 
@@ -3058,7 +3058,7 @@ The following design areas need further exploration and prototyping. Many questi
 
 ### 26.1 Compile-Time Computation
 
-Should Forge support Zig-style `comptime` for compile-time evaluation? This would enable type-level programming, compile-time code generation, and const generics. Deferred to post-v1.0 but the type system and trait system are designed to not preclude it.
+Should Avra support Zig-style `comptime` for compile-time evaluation? This would enable type-level programming, compile-time code generation, and const generics. Deferred to post-v1.0 but the type system and trait system are designed to not preclude it.
 
 ### 26.2 Versioning and Compatibility
 
@@ -3066,7 +3066,7 @@ How do model schema changes interact with running services? The migration system
 
 ### 26.3 Effect System
 
-Should Forge track side effects in the type system? An effect system could distinguish pure functions from those that do I/O, mutate state, or panic. This improves testability and reasoning but adds complexity. Deferred to post-v1.0.
+Should Avra track side effects in the type system? An effect system could distinguish pure functions from those that do I/O, mutate state, or panic. This improves testability and reasoning but adds complexity. Deferred to post-v1.0.
 
 ### 26.4 Mobile UI Package Design
 
@@ -3172,7 +3172,7 @@ Each error code has a permanent, stable meaning. Error codes are never reused or
 
 ## Appendix C: Comparison with Existing Languages
 
-| Feature | Forge | Go | Rust | TypeScript | Elixir |
+| Feature | Avra | Go | Rust | TypeScript | Elixir |
 |---|---|---|---|---|---|
 | Compilation | Native (LLVM) | Native | Native (LLVM) | JIT (V8) | Bytecode (BEAM) |
 | Type system | Structural | Structural | Nominal | Structural | Dynamic |
@@ -3192,13 +3192,13 @@ Each error code has a permanent, stable meaning. Error codes are never reused or
 - **Package:** A compiler plugin that registers keywords, syntax, and native implementations. The primary extensibility mechanism.
 - **Model:** A data type declaration that auto-persists to a database.
 - **Service:** Business logic layer around a model with lifecycle hooks and custom methods.
-- **Extern Component:** A module implemented in another language (Rust, Go, Python) and linked into the Forge binary.
+- **Extern Component:** A module implemented in another language (Rust, Go, Python) and linked into the Avra binary.
 - **Embedded Block:** A syntax block (like `sql { ... }`) whose contents are parsed by a package, not the core parser.
 - **Arena:** A memory allocation region where all objects are freed at once when the scope exits.
-- **MIR:** Mid-level Intermediate Representation — Forge's internal representation after type checking but before LLVM IR generation.
+- **MIR:** Mid-level Intermediate Representation — Avra's internal representation after type checking but before LLVM IR generation.
 - **Package SDK:** The library/framework used by package authors to build new packages.
-- **Forge Context:** The LLM-loadable description of a project generated by `forge context`.
+- **Avra Context:** The LLM-loadable description of a project generated by `avra context`.
 
 ---
 
-*End of Forge Language Specification v0.1.0-draft*
+*End of Avra Language Specification v0.1.0-draft*

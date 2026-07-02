@@ -1,0 +1,41 @@
+// Typed table literals (forge-crafting-intepreters-c080).
+//
+// A `table { ... }` desugars to a `List<RowStruct>` of struct rows.
+// The row type comes from an explicit `table<Row>` ascription or is
+// inferred from the binding's declared type. Fields are statically
+// typed and accessible — no opaque map lookups.
+
+type TlUser = { name: string, age: int }
+
+// Explicit row type.
+fn tl_explicit() -> List<TlUser> {
+    table<TlUser> {
+        name      | age
+        "alice"   | 30
+        "bob"     | 25
+        "charlie" | 35
+    }
+}
+
+// Row type inferred from the let annotation.
+fn tl_inferred() -> int {
+    let users: List<TlUser> = table {
+        name      | age
+        "alice"   | 30
+        "bob"     | 25
+    }
+    users[1].age
+}
+
+spec "table literal" {
+    then "explicit table<Row> produces typed rows" {
+        let users = tl_explicit()
+        users.length == 3 && users[0].name == "alice" && users[2].age == 35
+    }
+    then "fields are statically typed and ordered" {
+        tl_explicit()[1].name == "bob" && tl_explicit()[1].age == 25
+    }
+    then "row type inferred from let annotation" {
+        tl_inferred() == 25
+    }
+}

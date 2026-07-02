@@ -1,0 +1,34 @@
+// WHY: type checking for let/mut/const bindings and tuple destructuring.
+
+use core.{Expr, ParamEntry, ValueType, vtype_tuple_at}
+use typeck.{TC, tc_bind}
+
+/// Bind a tuple-destructure's names into the type-check env,
+/// pulling each element type from `tuple_ty` via `vtype_tuple_at`.
+export fn bind_destructure(tc: TC, names: List<ParamEntry>, tuple_ty: ValueType) -> TC {
+    mut cur = tc
+    for (i, name) in names.enumerate() {
+        let elem_ty = vtype_tuple_at(tuple_ty, i)
+        cur = tc_bind(cur, name.name, elem_ty)
+    }
+    cur
+}
+
+/// Compile-time-constant predicate used by `const x = ...`
+/// validation. Returns true for literals, idents (resolver
+/// has already verified the binding is itself a const), and
+/// trees built from those operands.
+export fn is_const_expr(expr: Expr) -> bool {
+    match expr {
+        .Number(_) -> true
+        .FloatLit(_) -> true
+        .String(_) -> true
+        .Bool(_) -> true
+        .None -> true
+        .Unary(_, inner) -> is_const_expr(inner)
+        .Binary(left, _, right) -> is_const_expr(left) && is_const_expr(right)
+        .Grouping(inner) -> is_const_expr(inner)
+        .Ident(_) -> true  // could be another const — resolver ensures it's defined
+        _ -> false
+    }
+}

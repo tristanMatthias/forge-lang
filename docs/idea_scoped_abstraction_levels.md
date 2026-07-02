@@ -1,6 +1,6 @@
-# Forge — Scoped Abstraction Levels
+# Avra — Scoped Abstraction Levels
 
-**A Proposal for the Future of Forge**
+**A Proposal for the Future of Avra**
 
 *One language. Every level of the stack. No compromises.*
 
@@ -16,7 +16,7 @@ But that world is ending.
 
 In the AI-engineered future, the entity writing code doesn't have a specialization. An AI can think about HTTP routing and register manipulation in the same thought. It doesn't find memory management "hard" or garbage collection "easy" — those are just different strategies for different contexts. The bottleneck is no longer human cognitive specialization. The bottleneck is *language boundaries* — the friction of crossing from one language to another, one toolchain to another, one mental model to another.
 
-Forge is already designed as an orchestration language. It already compiles to native code via LLVM. It already has a component/package system that lets domain-specific syntax feel native. The question is: what if we removed the ceiling?
+Avra is already designed as an orchestration language. It already compiles to native code via LLVM. It already has a component/package system that lets domain-specific syntax feel native. The question is: what if we removed the ceiling?
 
 ---
 
@@ -24,11 +24,11 @@ Forge is already designed as an orchestration language. It already compiles to n
 
 **Abstraction level is a property of scope, not a property of language.**
 
-Forge introduces *scoped abstraction levels* — regions within your code where the compiler's strategies change. The syntax stays the same. The type system stays the same. The error system stays the same. But what the compiler *does* with your code — how it manages memory, what operations are available, what guarantees it provides — shifts based on the level you're operating at.
+Avra introduces *scoped abstraction levels* — regions within your code where the compiler's strategies change. The syntax stays the same. The type system stays the same. The error system stays the same. But what the compiler *does* with your code — how it manages memory, what operations are available, what guarantees it provides — shifts based on the level you're operating at.
 
 This is not "unsafe blocks." It's not a mode switch. It's a *spectrum* of capabilities that you can fluidly move through within a single file, a single function, a single expression. Each level adds capabilities (lower-level operations) and responsibilities (things you must manage), while the compiler verifies every boundary.
 
-```forge
+```avra
 // Application level — the default. Automatic memory, full ergonomics.
 server :8080 {
   POST /analyze -> (req) {
@@ -63,11 +63,11 @@ server :8080 {
 
 ## The Levels
 
-Forge defines four abstraction levels. Each level is a strict superset of the one below in terms of what you must manage, and a strict superset of the one above in terms of what operations are available.
+Avra defines four abstraction levels. Each level is a strict superset of the one below in terms of what you must manage, and a strict superset of the one above in terms of what operations are available.
 
 ### Level 0: Application (default)
 
-The level most Forge code lives at. Automatic memory management — reference counting with arena allocation and targeted cycle detection, all decided at compile time. No GC. No pauses. Deterministic deallocation. This is what Forge is today.
+The level most Avra code lives at. Automatic memory management — reference counting with arena allocation and targeted cycle detection, all decided at compile time. No GC. No pauses. Deterministic deallocation. This is what Avra is today.
 
 **You get:** Automatic memory management, auto-serialization, packages (`model`, `server`, `queue`), type inference, pattern matching, channels, spawn, the full standard library.
 
@@ -75,7 +75,7 @@ The level most Forge code lives at. Automatic memory management — reference co
 
 **Compiled as:** Reference-counted values with compiler-inserted retain/release. Arena allocation for request-scoped patterns (the compiler detects "handle-and-respond" patterns and bulk-frees on scope exit). Targeted cycle detection only on types that could form cycles (bidirectional model relations, etc.) — a lightweight mark-and-sweep that runs only when a refcount doesn't reach zero as expected.
 
-```forge
+```avra
 // Application level — the vast majority of code
 server :8080 {
   GET /users -> {
@@ -96,7 +96,7 @@ For code that needs explicit control over allocation strategy, zero reference-co
 
 **Compiled as:** Ownership-tracked values with compiler-inserted drops. No reference counting overhead. No cycle detection. Allocation points are explicit.
 
-```forge
+```avra
 systems {
   let buf = Buffer<u8>.alloc(4096)        // heap allocation — you own it
   let header = buf.slice(0, 12)           // borrow — checked at compile time
@@ -118,7 +118,7 @@ For code that needs raw pointer arithmetic, SIMD intrinsics, inline assembly, ma
 
 **Compiled as:** Direct LLVM IR with no inserted runtime calls. What you write is what you get.
 
-```forge
+```avra
 bare {
   let ptr = mem.alloc<u8>(1024)
   let aligned = mem.align_up(ptr, 16)
@@ -147,7 +147,7 @@ For code that directly addresses hardware: memory-mapped registers, DMA buffers,
 
 **Compiled as:** Direct machine code for the target architecture. No operating system assumptions. Suitable for bare-metal deployment.
 
-```forge
+```avra
 hardware {
   // Register map — compiler validates addresses against target chip
   let gpio = register_map(0x3F200000) {
@@ -177,7 +177,7 @@ The real engineering challenge isn't the individual levels — it's the *transit
 
 Crossing from application to systems requires that all values passed in are either copyable or explicitly moved. Reference-counted values can't cross directly into systems scope because there's no retain/release machinery there — the overhead model is different.
 
-```forge
+```avra
 let users = User.list()    // application: reference-counted list
 
 systems {
@@ -192,7 +192,7 @@ systems {
 
 For simple types (numbers, strings, small structs), the compiler handles this automatically — they're stack-copyable and don't involve reference counting. The boundary cost is zero for these.
 
-```forge
+```avra
 let width = 1920    // int — no RC involvement
 let height = 1080
 
@@ -212,7 +212,7 @@ let result = systems {
 
 Crossing from systems to bare drops lifetime tracking. The compiler trusts you inside `bare`. But it still verifies the boundary: anything returned from `bare` to `systems` must be a type that the systems level can track.
 
-```forge
+```avra
 systems {
   let result = bare {
     let ptr = mem.alloc<u8>(256)
@@ -233,7 +233,7 @@ Crossing from bare to hardware is mostly about adding hardware-specific intrinsi
 
 You can skip levels. Application code can drop directly into `bare` or `hardware`. The compiler applies all intermediate boundary checks:
 
-```forge
+```avra
 // Application → Hardware (skipping systems and bare)
 server :8080 {
   GET /led/:state -> (req) {
@@ -255,11 +255,11 @@ This is a web server that directly controls a GPIO pin. The compiler validates t
 
 ## Packages Across Levels
 
-Forge's component/package system works at every level. A package can expose an application-level interface while implementing in a lower level internally. Users of the package never see the lower level — they interact with a clean, high-level API.
+Avra's component/package system works at every level. A package can expose an application-level interface while implementing in a lower level internally. Users of the package never see the lower level — they interact with a clean, high-level API.
 
 ### Package with Mixed Levels
 
-```forge
+```avra
 // @hw/gpio package — application-level interface, hardware-level guts
 component gpio_controller(target: ChipTarget) {
 
@@ -296,7 +296,7 @@ component gpio_controller(target: ChipTarget) {
 
 User code:
 
-```forge
+```avra
 use @hw.gpio
 
 let led = gpio.output(pin: 17)    // application level, clean API
@@ -307,11 +307,11 @@ led.low()
 
 ### Domain Packages for Different Industries
 
-The level system makes Forge viable as the orchestration surface for domains that were previously inaccessible to high-level languages:
+The level system makes Avra viable as the orchestration surface for domains that were previously inaccessible to high-level languages:
 
 **Robotics:**
 
-```forge
+```avra
 use @hw.robot
 use @std.http
 
@@ -369,11 +369,11 @@ server :8080 {
 }
 ```
 
-One file. Web server, real-time motor control, SIMD-accelerated sensor fusion, hardware I/O. All Forge. All type-checked. All with structured errors.
+One file. Web server, real-time motor control, SIMD-accelerated sensor fusion, hardware I/O. All Avra. All type-checked. All with structured errors.
 
 **PCB Design and Simulation:**
 
-```forge
+```avra
 use @hw.eda
 use @hw.spice
 
@@ -442,7 +442,7 @@ sim transient_response {
 
 **Audio/DSP:**
 
-```forge
+```avra
 use @std.http
 use @hw.audio
 
@@ -490,7 +490,7 @@ server :8080 {
 
 **Machine Learning Inference:**
 
-```forge
+```avra
 use @std.http
 use @ml.model
 
@@ -562,7 +562,7 @@ Source → [Parser] → AST with level annotations on each scope
 
 A function's level is part of its type signature. If a function contains a `systems` block, its *interface* is still application-level. But if a function is *declared* at systems level, it can only be called from systems level or lower.
 
-```forge
+```avra
 // This function is application-level (the default)
 // It uses systems internally, but callers don't know or care
 fn process_image(image: Image) -> Image {
@@ -619,9 +619,9 @@ Each boundary transition has a defined set of rules the compiler enforces:
 
 ## The Self-Hosting Connection
 
-This proposal connects directly to the vision of Forge describing itself in its own language. Each abstraction level could eventually be defined *as a Forge component*:
+This proposal connects directly to the vision of Avra describing itself in its own language. Each abstraction level could eventually be defined *as a Avra component*:
 
-```forge
+```avra
 // The application level is a component that provides RC semantics
 component level_application {
   on alloc(type: Type, size: int) -> *void {
@@ -664,13 +664,13 @@ component level_systems {
 }
 ```
 
-The levels are just components with different memory strategies. The compiler is just a pipeline that consults these components when lowering code. As Forge self-hosts, even the memory management strategies become Forge code.
+The levels are just components with different memory strategies. The compiler is just a pipeline that consults these components when lowering code. As Avra self-hosts, even the memory management strategies become Avra code.
 
 ---
 
 ## Error Diagnostics Across Levels
 
-Forge's structured error system works at every level. The diagnostic quality doesn't degrade when you drop into systems or bare code. If anything, the errors get *more* helpful because the compiler understands what you're trying to do.
+Avra's structured error system works at every level. The diagnostic quality doesn't degrade when you drop into systems or bare code. If anything, the errors get *more* helpful because the compiler understands what you're trying to do.
 
 ### Lifetime Error (Systems)
 
@@ -727,7 +727,7 @@ Forge's structured error system works at every level. The diagnostic quality doe
   │  │         GPIOB: 0x40020400
   │  │         GPIOC: 0x40020800
   │  │
-  │  ├── note: target set in forge.toml:
+  │  ├── note: target set in avra.toml:
   │  │    [hardware]
   │  │    target = "stm32f401"
   ╰──
@@ -759,7 +759,7 @@ Forge's structured error system works at every level. The diagnostic quality doe
 
 ## Target Hardware Descriptions
 
-For hardware-level code, Forge needs to know what hardware it's targeting. This is configured in `forge.toml` and optionally augmented with hardware description files:
+For hardware-level code, Avra needs to know what hardware it's targeting. This is configured in `avra.toml` and optionally augmented with hardware description files:
 
 ```toml
 [hardware]
@@ -771,13 +771,13 @@ ram = "264KB"
 # Custom peripherals not in the standard chip description
 [hardware.peripherals.custom_adc]
 base = 0x40054000
-registers = "hw/custom_adc.fgr"  # Forge register description file
+registers = "hw/custom_adc.avr"  # Avra register description file
 ```
 
-Hardware description in Forge syntax:
+Hardware description in Avra syntax:
 
-```forge
-// hw/rp2040_gpio.fgr — register description file
+```avra
+// hw/rp2040_gpio.avr — register description file
 register_bank gpio @base(0x40014000) {
   GPIO0_STATUS: u32 @offset(0x000) {
     IRQTOPROC:   bit(26)     @readonly
@@ -810,7 +810,7 @@ This register description is compiled into the type system. `gpio.GPIO0_CTRL.FUN
 
 Systems-level and below code can declare real-time constraints that the compiler verifies:
 
-```forge
+```avra
 systems {
   // Declare a hard real-time loop — compiler verifies no RC overhead,
   // no unbounded allocation, no blocking I/O inside
@@ -880,7 +880,7 @@ For bare-metal targets, the application level is unavailable (no OS, no arena al
 
 This system is designed for a future where AI writes most code. Here's why scoped levels are better than separate languages for AI-driven development:
 
-**Single context window.** An AI working on a Forge project can see the web server, the real-time control loop, and the hardware register manipulation in one file. No context switching between "the Python orchestration code" and "the C firmware code." The AI maintains full understanding of the system at all times.
+**Single context window.** An AI working on a Avra project can see the web server, the real-time control loop, and the hardware register manipulation in one file. No context switching between "the Python orchestration code" and "the C firmware code." The AI maintains full understanding of the system at all times.
 
 **Fluid level transitions.** An AI doesn't find it cognitively expensive to switch between "application mode" and "systems mode." It can write twelve lines of bare-level SIMD code, close the block, and continue writing application-level route handlers. No project switching, no FFI boilerplate, no build system changes.
 
@@ -894,15 +894,15 @@ This system is designed for a future where AI writes most code. Here's why scope
 
 ## Implementation Phases
 
-This vision doesn't need to ship all at once. It maps naturally to Forge's existing phase roadmap:
+This vision doesn't need to ship all at once. It maps naturally to Avra's existing phase roadmap:
 
 ### Phase 1: Current (Application Level Only)
 
-Forge as it exists today. RC-managed, package-based, application-level orchestration. No level system. The existing `@std/http`, `@std/model`, etc. packages work at application level.
+Avra as it exists today. RC-managed, package-based, application-level orchestration. No level system. The existing `@std/http`, `@std/model`, etc. packages work at application level.
 
 ### Phase 2: Systems Level
 
-Add the `systems` block with ownership-based memory management. This is the first real level. It doesn't require hardware support or SIMD intrinsics — it's about giving Forge code a way to opt into deterministic resource management.
+Add the `systems` block with ownership-based memory management. This is the first real level. It doesn't require hardware support or SIMD intrinsics — it's about giving Avra code a way to opt into deterministic resource management.
 
 Key deliverables:
 - `systems { }` scope with ownership/borrow checking
@@ -930,7 +930,7 @@ Add the `hardware` block for bare-metal and embedded targets. This requires hard
 Key deliverables:
 - `hardware { }` scope with volatile semantics
 - Register map declarations and bit field access
-- Hardware description files (`.fgr`)
+- Hardware description files (`.avr`)
 - Cross-compilation for ARM Cortex-M, RISC-V, etc.
 - Interrupt handler registration
 - `rt_loop` with real-time verification
@@ -957,7 +957,7 @@ With all four levels available, build out domain-specific package ecosystems:
 
 **3. Async across levels.** Application level has `spawn` and channels for concurrency. Systems level needs a different concurrency model (no heap allocation for task queues). How do async patterns compose across levels?
 
-**4. FFI and the level system.** When Forge calls a C function via FFI, what level is it? Probably `bare`, since C doesn't have lifetime tracking. But should the FFI bridge let you annotate C functions with level information?
+**4. FFI and the level system.** When Avra calls a C function via FFI, what level is it? Probably `bare`, since C doesn't have lifetime tracking. But should the FFI bridge let you annotate C functions with level information?
 
 **5. Testing across levels.** The `@std/test` component works at application level. How do you write tests for systems-level or bare-level code? Do tests run at a higher level than the code they test (so they can use RC and arenas for test infrastructure)?
 
@@ -975,48 +975,48 @@ This idea doesn't come from nowhere. Several languages and systems have explored
 
 ### Rust: `unsafe` blocks
 
-The closest existing analog. Rust lets you drop into `unsafe` for raw pointer manipulation, FFI, and operations the borrow checker can't verify. The key differences from Forge's proposal:
+The closest existing analog. Rust lets you drop into `unsafe` for raw pointer manipulation, FFI, and operations the borrow checker can't verify. The key differences from Avra's proposal:
 
-- Rust's `unsafe` is binary — safe or unsafe. Forge proposes a spectrum (app → systems → bare → hardware).
-- Rust's `unsafe` doesn't change the memory model — you're still in ownership-land, just with the guardrails removed. Forge's levels actually change the compiler's strategy (RC → ownership → manual → hardware).
-- Rust's `unsafe` is viral in reputation — a crate that uses `unsafe` internally is viewed with suspicion even if its public API is safe. Forge's levels are implementation details that don't leak through interfaces.
-- Rust doesn't have an "easier than ownership" mode. You're always in the ownership model. Forge's application level is genuinely simpler — no lifetimes, no borrowing, just write code.
+- Rust's `unsafe` is binary — safe or unsafe. Avra proposes a spectrum (app → systems → bare → hardware).
+- Rust's `unsafe` doesn't change the memory model — you're still in ownership-land, just with the guardrails removed. Avra's levels actually change the compiler's strategy (RC → ownership → manual → hardware).
+- Rust's `unsafe` is viral in reputation — a crate that uses `unsafe` internally is viewed with suspicion even if its public API is safe. Avra's levels are implementation details that don't leak through interfaces.
+- Rust doesn't have an "easier than ownership" mode. You're always in the ownership model. Avra's application level is genuinely simpler — no lifetimes, no borrowing, just write code.
 
 ### Zig: `comptime` and explicit allocators
 
 Zig lets you choose your allocator explicitly and provides `comptime` for compile-time evaluation. Relevant parallels:
 
-- Zig's explicit allocators are philosophically similar to Forge's level system — different memory strategies for different contexts. But in Zig, you pass allocators as function parameters everywhere. In Forge, the strategy is a property of the scope.
-- Zig's `comptime` proves that compile-time evaluation can eliminate entire categories of runtime overhead. Forge could leverage similar ideas at the systems and bare levels.
+- Zig's explicit allocators are philosophically similar to Avra's level system — different memory strategies for different contexts. But in Zig, you pass allocators as function parameters everywhere. In Avra, the strategy is a property of the scope.
+- Zig's `comptime` proves that compile-time evaluation can eliminate entire categories of runtime overhead. Avra could leverage similar ideas at the systems and bare levels.
 
 ### Terra: Staged compilation
 
 Terra (built on top of Lua) lets you write high-level Lua code that generates low-level Terra code at compile time. The "two-language" approach within one system:
 
 - Terra proves that mixing abstraction levels in one file is viable and useful.
-- But Terra is literally two languages (Lua + Terra) sharing a runtime. Forge proposes one language with scoped strategies. The syntax, type system, and error system don't change between levels.
+- But Terra is literally two languages (Lua + Terra) sharing a runtime. Avra proposes one language with scoped strategies. The syntax, type system, and error system don't change between levels.
 
 ### Nim: Multiple backends and `emit` pragmas
 
 Nim compiles to C, C++, or JavaScript and provides `emit` pragmas for inserting backend-specific code. It also has manual memory management options alongside its GC:
 
-- Nim's `{.emit: "...".}` pragma is conceptually similar to Forge's `bare` block — drop into a lower level for specific operations.
-- But Nim's emit is string-based backend insertion, not a type-checked scope. You lose all compiler guarantees. Forge's levels remain fully type-checked.
+- Nim's `{.emit: "...".}` pragma is conceptually similar to Avra's `bare` block — drop into a lower level for specific operations.
+- But Nim's emit is string-based backend insertion, not a type-checked scope. You lose all compiler guarantees. Avra's levels remain fully type-checked.
 
 ### Racket: `#lang` and language-oriented programming
 
 Racket lets you define entirely new languages that compose in the same project via `#lang`. Each module can be a different language:
 
 - This proves that multi-paradigm composition within one ecosystem is both possible and beloved by its users.
-- But Racket's languages are module-level. You can't switch languages mid-function. Forge's levels are expression-level — you can drop into `bare` for three lines and come back.
-- Racket is dynamically typed. Forge's levels work within a single static type system with verified boundaries.
+- But Racket's languages are module-level. You can't switch languages mid-function. Avra's levels are expression-level — you can drop into `bare` for three lines and come back.
+- Racket is dynamically typed. Avra's levels work within a single static type system with verified boundaries.
 
 ### C#: `unsafe` context and `Span<T>`
 
 C# has `unsafe` blocks for pointer manipulation and `Span<T>` / `Memory<T>` for stack-based, allocation-free work within an otherwise GC'd language:
 
-- `Span<T>` is essentially a "systems-level view" into GC-managed memory — similar in spirit to what Forge's systems level provides.
-- C#'s `unsafe` is closer to Forge's `bare` — raw pointers, manual everything.
+- `Span<T>` is essentially a "systems-level view" into GC-managed memory — similar in spirit to what Avra's systems level provides.
+- C#'s `unsafe` is closer to Avra's `bare` — raw pointers, manual everything.
 - But C# can't go further. No hardware level, no register maps, no bare-metal deployment. And the GC is always there, even in `unsafe` code — you're just working around it, not opting out.
 
 ### Ada/SPARK: Mixed criticality and verification levels
@@ -1025,14 +1025,14 @@ Ada has different pragma profiles (`Ravenscar`, `Jorvik`) that restrict the lang
 
 - This is the closest conceptual precedent for "the same language with different capability sets per context."
 - But Ada's profiles are module-level or project-level, not block-level. You can't mix a Ravenscar task with unconstrained Ada in the same function.
-- Ada's restrictions *remove* capabilities. Forge's levels *add* capabilities as you go lower. The direction is inverted.
+- Ada's restrictions *remove* capabilities. Avra's levels *add* capabilities as you go lower. The direction is inverted.
 
 ### D: `@safe`, `@trusted`, `@system`
 
 D has function-level annotations that control what operations are allowed:
 
 - `@safe` functions can't use raw pointers. `@system` functions can. `@trusted` is the boundary — a `@safe` interface with `@system` guts.
-- This is very close to Forge's package pattern where the public API is application-level and the internals use a lower level.
+- This is very close to Avra's package pattern where the public API is application-level and the internals use a lower level.
 - But D's annotations are per-function, not per-block. And D doesn't change memory strategy — it's always GC'd (or manually managed if you opt out project-wide).
 
 ### Summary: What's genuinely new
@@ -1073,7 +1073,7 @@ Let's be honest about the attack surface. Here's what the Hacker News thread wil
 - Provide `borrow` semantics at boundaries where possible — instead of always copying, let systems-level code borrow an application-level value with a compile-time guarantee that the borrow doesn't outlive the scope. This is the `Span<T>` insight from C#.
 - Profile and publish the actual cost of boundary crossings. Don't handwave.
 
-```forge
+```avra
 let users = User.list()    // application: RC-managed list
 
 systems {
@@ -1091,9 +1091,9 @@ systems {
 
 **The honest answer:** The systems level *is* similar to Rust's safe code (ownership/borrowing), and bare *is* similar to `unsafe`. But the key differences are:
 
-1. Forge's application level is *easier* than Rust's safe mode. No lifetimes, no borrow checker. RC + arenas. This is the whole point — Rust forces you into the ownership model for *everything*, including code that doesn't need it.
-2. The hardware level has no Rust equivalent. Rust can do embedded, but you're still in the ownership model with `unsafe` escape hatches. Forge's hardware level is purpose-built for register maps, volatile access, and compile-time hardware validation.
-3. Forge's levels are scoped and composable within a function. Rust's `unsafe` is a blunt instrument by comparison.
+1. Avra's application level is *easier* than Rust's safe mode. No lifetimes, no borrow checker. RC + arenas. This is the whole point — Rust forces you into the ownership model for *everything*, including code that doesn't need it.
+2. The hardware level has no Rust equivalent. Rust can do embedded, but you're still in the ownership model with `unsafe` escape hatches. Avra's hardware level is purpose-built for register maps, volatile access, and compile-time hardware validation.
+3. Avra's levels are scoped and composable within a function. Rust's `unsafe` is a blunt instrument by comparison.
 
 **What we should do:** Don't position this as "better than Rust." Position it as "Rust-level performance available when you need it, without Rust-level ceremony when you don't." The application level is the differentiator, not the systems level.
 
@@ -1105,9 +1105,9 @@ systems {
 
 **What we should do:**
 
-- Build the hardware level as an FFI *consumer* first, not a replacement. Import SVD files as Forge register maps. Bridge to existing RTOS primitives. Interop with existing C HALs (Hardware Abstraction Layers). Don't ask people to rewrite — let them wrap.
+- Build the hardware level as an FFI *consumer* first, not a replacement. Import SVD files as Avra register maps. Bridge to existing RTOS primitives. Interop with existing C HALs (Hardware Abstraction Layers). Don't ask people to rewrite — let them wrap.
 - Target the *new* embedded audience — AI agents building hardware integrations, hobbyists who know web development but want to program a robot, teams building IoT devices who currently suffer through the Python-to-C handoff. These people don't have decades of C tooling loyalty.
-- The compiler can generate C-compatible headers from hardware-level Forge code, so existing toolchains can call into Forge. Meet people where they are.
+- The compiler can generate C-compatible headers from hardware-level Avra code, so existing toolchains can call into Avra. Meet people where they are.
 
 ### "Four levels is too many. People won't know when to use which."
 
@@ -1135,7 +1135,7 @@ systems {
 - Incremental compilation: only re-analyze scopes that changed.
 - Level-local analysis: ownership checking inside a `systems` block doesn't need to look outside the block. This is *more* constrained than Rust's whole-function analysis.
 - Fast-path for application-only code: if a file has no level transitions, skip the level analysis entirely. Most files will be application-only.
-- Profile the compiler itself. Set compile-time budgets. "Forge must compile 50,000 LOC/second for application-level code, 10,000 LOC/second for mixed-level code."
+- Profile the compiler itself. Set compile-time budgets. "Avra must compile 50,000 LOC/second for application-level code, 10,000 LOC/second for mixed-level code."
 
 ### "You'll fragment the ecosystem. Libraries written at systems level can't be used from application level."
 
@@ -1157,8 +1157,8 @@ systems {
 
 **What we should do:**
 
-- Ensure that level blocks are visually obvious. You can read a Forge file top-to-bottom and know exactly where the level transitions happen.
-- The default (application level) requires no annotation. You only need to think about levels when you explicitly opt in. A Forge file with no `systems`, `bare`, or `hardware` blocks reads exactly like Forge does today.
+- Ensure that level blocks are visually obvious. You can read a Avra file top-to-bottom and know exactly where the level transitions happen.
+- The default (application level) requires no annotation. You only need to think about levels when you explicitly opt in. A Avra file with no `systems`, `bare`, or `hardware` blocks reads exactly like Avra does today.
 - Documentation should be level-aware. API docs should say "this function operates at application level" or "this function contains a systems-level inner loop." Humans need this context for code review.
 
 ### "You're building a language for a world that doesn't exist yet."
@@ -1168,7 +1168,7 @@ systems {
 **The honest answer:** Partly right. AI is not ready to autonomously write correct bare-metal firmware today. But:
 
 1. The level system is independently useful without AI. A human writing `systems { }` to opt into ownership semantics for a hot loop is a better experience than rewriting that loop in Rust and FFI-bridging it.
-2. Languages take years to build. By the time Forge's hardware level ships, AI will be significantly more capable. Designing for the future is the right bet.
+2. Languages take years to build. By the time Avra's hardware level ships, AI will be significantly more capable. Designing for the future is the right bet.
 3. Even today, AI is very good at writing application-level code and reasonably good at systems-level code with clear constraints. The scoped nature of levels makes the problem tractable — the AI only needs to get ownership right for 20 lines inside a `systems` block, not for an entire codebase.
 
 **What we should do:** Ship the levels that are useful *now* (application + systems), design the levels that will be useful *soon* (bare + hardware), and be honest about the timeline. Don't claim the hardware level is production-ready before it is.
@@ -1183,9 +1183,9 @@ Beyond what critics will say, here are genuine unsolved problems in this proposa
 
 If `string`, `List`, `Map` need to work at every level, you need multiple implementations of each data structure — one RC-managed, one ownership-tracked, one manual. Or you need a single implementation that's polymorphic over memory strategy. The former is a maintenance nightmare. The latter is a research problem.
 
-The best existing approach is Zig's explicit allocator pattern — data structures are parameterized by their allocation strategy. Forge could do something similar at the type level:
+The best existing approach is Zig's explicit allocator pattern — data structures are parameterized by their allocation strategy. Avra could do something similar at the type level:
 
-```forge
+```avra
 // One List implementation, parameterized by level
 // The compiler monomorphizes per-level
 let app_list: List<int> = [1, 2, 3]                    // RC-managed
@@ -1212,11 +1212,11 @@ Options:
 
 ### Incremental Adoption in Existing Projects
 
-How does a team adopt levels incrementally? If they have a large application-level Forge codebase, can they add a `systems` block to one function without reorganizing anything? (Probably yes, but the tooling needs to support this — the build system, the test runner, the linter all need to be level-aware.)
+How does a team adopt levels incrementally? If they have a large application-level Avra codebase, can they add a `systems` block to one function without reorganizing anything? (Probably yes, but the tooling needs to support this — the build system, the test runner, the linter all need to be level-aware.)
 
 ### Cross-Level Closures
 
-```forge
+```avra
 let callback = (x: int) -> x * 2    // application-level closure
 
 systems {
@@ -1235,7 +1235,7 @@ Ultimately, every feature must pass the test: does the benefit justify the compl
 
 - **Systems level:** Almost certainly worth it. "Drop into ownership semantics for a hot loop without rewriting in Rust" is a clear, common, high-value use case.
 - **Bare level:** Probably worth it for the SIMD/performance niche. Most users won't touch it, but the ones who need it *really* need it.
-- **Hardware level:** Highest risk, highest reward. If it works, Forge becomes viable for embedded — a massive market expansion. If it doesn't, it's a lot of compiler work for a niche audience. The FFI-first approach (bridge to existing C HALs) is the safe bet.
+- **Hardware level:** Highest risk, highest reward. If it works, Avra becomes viable for embedded — a massive market expansion. If it doesn't, it's a lot of compiler work for a niche audience. The FFI-first approach (bridge to existing C HALs) is the safe bet.
 
 ---
 
@@ -1243,6 +1243,6 @@ Ultimately, every feature must pass the test: does the benefit justify the compl
 
 The division between "application languages" and "systems languages" is an accident of history, not a law of physics. It exists because human brains specialize. AI doesn't.
 
-Forge's scoped abstraction levels let you write a web server that controls a robot arm that processes sensor data with SIMD-accelerated algorithms that talk to hardware registers — all in one file, one type system, one error system, one compiler, one deployment. The right level of abstraction for each piece of code, with the compiler verifying every boundary.
+Avra's scoped abstraction levels let you write a web server that controls a robot arm that processes sensor data with SIMD-accelerated algorithms that talk to hardware registers — all in one file, one type system, one error system, one compiler, one deployment. The right level of abstraction for each piece of code, with the compiler verifying every boundary.
 
-The sky is the limit. The compiler is the safety net. Forge on.
+The sky is the limit. The compiler is the safety net. Avra on.

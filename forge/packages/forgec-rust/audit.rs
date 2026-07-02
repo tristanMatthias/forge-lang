@@ -14,7 +14,7 @@ pub struct AuditReport {
 pub struct Vulnerability {
     pub package: String,
     pub version: String,
-    pub severity: String,  // "critical", "high", "medium", "low"
+    pub severity: String, // "critical", "high", "medium", "low"
     pub description: String,
     pub advisory_url: Option<String>,
 }
@@ -40,7 +40,9 @@ pub fn audit_project(project_dir: &Path) -> Result<AuditReport, String> {
 
     // Check if lockfile exists
     if !lockfile_path.exists() {
-        return Err("no forge.lock found — run `forge build` first to generate a lockfile".to_string());
+        return Err(
+            "no forge.lock found — run `forge build` first to generate a lockfile".to_string(),
+        );
     }
 
     let lock_content = std::fs::read_to_string(&lockfile_path)
@@ -60,10 +62,7 @@ pub fn audit_project(project_dir: &Path) -> Result<AuditReport, String> {
 }
 
 /// Verify lockfile hashes against the transparency log
-pub fn verify_against_log(
-    project_dir: &Path,
-    _registry_url: &str,
-) -> Result<AuditReport, String> {
+pub fn verify_against_log(project_dir: &Path, _registry_url: &str) -> Result<AuditReport, String> {
     let mut report = audit_project(project_dir)?;
 
     // TODO: When registry is available, fetch log and cross-check
@@ -91,16 +90,27 @@ pub fn format_report(report: &AuditReport) -> String {
 
     out.push_str(&format!("audited {} packages\n\n", report.packages_checked));
 
-    if report.vulnerabilities.is_empty() && report.hash_mismatches.is_empty() && report.capability_issues.is_empty() {
+    if report.vulnerabilities.is_empty()
+        && report.hash_mismatches.is_empty()
+        && report.capability_issues.is_empty()
+    {
         out.push_str("  \x1b[32m\u{2713}\x1b[0m no known vulnerabilities found\n");
         out.push_str("  \x1b[32m\u{2713}\x1b[0m all content hashes verified\n");
         out.push_str("  \x1b[32m\u{2713}\x1b[0m no capability issues\n");
     } else {
         // Vulnerabilities
         if !report.vulnerabilities.is_empty() {
-            out.push_str(&format!("  \x1b[31m\u{2717}\x1b[0m {} vulnerabilities found:\n\n", report.vulnerabilities.len()));
+            out.push_str(&format!(
+                "  \x1b[31m\u{2717}\x1b[0m {} vulnerabilities found:\n\n",
+                report.vulnerabilities.len()
+            ));
             for vuln in &report.vulnerabilities {
-                out.push_str(&format!("    \x1b[31m{}\x1b[0m {} v{}\n", vuln.severity.to_uppercase(), vuln.package, vuln.version));
+                out.push_str(&format!(
+                    "    \x1b[31m{}\x1b[0m {} v{}\n",
+                    vuln.severity.to_uppercase(),
+                    vuln.package,
+                    vuln.version
+                ));
                 out.push_str(&format!("      {}\n", vuln.description));
                 if let Some(url) = &vuln.advisory_url {
                     out.push_str(&format!("      see: {}\n", url));
@@ -111,7 +121,10 @@ pub fn format_report(report: &AuditReport) -> String {
 
         // Hash mismatches
         if !report.hash_mismatches.is_empty() {
-            out.push_str(&format!("  \x1b[31m\u{2717}\x1b[0m {} content hash mismatches:\n\n", report.hash_mismatches.len()));
+            out.push_str(&format!(
+                "  \x1b[31m\u{2717}\x1b[0m {} content hash mismatches:\n\n",
+                report.hash_mismatches.len()
+            ));
             for mismatch in &report.hash_mismatches {
                 out.push_str(&format!("    {} v{}\n", mismatch.package, mismatch.version));
                 out.push_str(&format!("      expected: {}\n", mismatch.expected));
@@ -121,9 +134,15 @@ pub fn format_report(report: &AuditReport) -> String {
 
         // Capability issues
         if !report.capability_issues.is_empty() {
-            out.push_str(&format!("  \x1b[33m!\x1b[0m {} capability issues:\n\n", report.capability_issues.len()));
+            out.push_str(&format!(
+                "  \x1b[33m!\x1b[0m {} capability issues:\n\n",
+                report.capability_issues.len()
+            ));
             for issue in &report.capability_issues {
-                out.push_str(&format!("    {} v{}: {}\n", issue.package, issue.version, issue.issue));
+                out.push_str(&format!(
+                    "    {} v{}: {}\n",
+                    issue.package, issue.version, issue.issue
+                ));
             }
         }
     }
@@ -136,11 +155,7 @@ pub fn format_report(report: &AuditReport) -> String {
 }
 
 /// Allow a specific capability for a package (writes to forge.toml)
-pub fn allow_capability(
-    project_dir: &Path,
-    package: &str,
-    capability: &str,
-) -> Result<(), String> {
+pub fn allow_capability(project_dir: &Path, package: &str, capability: &str) -> Result<(), String> {
     let toml_path = project_dir.join("forge.toml");
     let mut content = std::fs::read_to_string(&toml_path)
         .map_err(|e| format!("cannot read forge.toml: {}", e))?;
@@ -153,7 +168,7 @@ pub fn allow_capability(
     // Add the approval
     let approval = format!("{}.{} = true\n", package, capability);
     if content.contains(&approval) {
-        return Ok(());  // Already approved
+        return Ok(()); // Already approved
     }
 
     // Insert after [capabilities.approved]
@@ -162,8 +177,7 @@ pub fn allow_capability(
         &format!("[capabilities.approved]\n{}", approval),
     );
 
-    std::fs::write(&toml_path, &content)
-        .map_err(|e| format!("cannot write forge.toml: {}", e))?;
+    std::fs::write(&toml_path, &content).map_err(|e| format!("cannot write forge.toml: {}", e))?;
 
     Ok(())
 }

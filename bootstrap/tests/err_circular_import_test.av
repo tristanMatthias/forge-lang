@@ -1,0 +1,8 @@
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "err circular import" {
+    then "F3103 reported when modules import each other" {
+        let out = avra_shell_exec("./build/bs2 compile tests/err_circular_import/main.av 2>&1 || true")
+        out.contains("F3103")
+    }
+}

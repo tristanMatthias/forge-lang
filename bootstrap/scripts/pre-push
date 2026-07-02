@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Bootstrap pre-push hook — the bootstrap-window gate.
+#
+# Runs `diagnose.sh --check-bootstrap-window` when any outgoing commit
+# touches bootstrap/. The check enforces the seed-train rule (feature
+# branches never cycle the seed) and rebuilds the branch's compiler
+# source from the integration branch's pristine seed (cached — a green
+# verify is remembered until the integration seed or compiler sources
+# change). See CLAUDE.md "Bootstrap window & seed train".
+#
+# Install: ln -sf ../../bootstrap/scripts/pre-push .git/hooks/pre-push
+#          (or `make install-hooks` from bootstrap/). On checkouts with
+#          core.hooksPath=.beads/hooks, .beads/hooks/pre-push chains here.
+# Skip once: AVRA_SKIP_WINDOW_CHECK=1 git push   (or git push --no-verify)
+#            — use sparingly; an unmergeable seed state lands exactly this way.
+
+set -euo pipefail
+
+REPO_DIR=$(git rev-parse --show-toplevel)
+cd "$REPO_DIR"
+
+# The window gate and the diff-test are independently skippable
+# (AVRA_SKIP_WINDOW_CHECK / AVRA_SKIP_DIFFTEST); `git push --no-verify`
+# skips the hook entirely. Note the skip here but do NOT exit — that would
+# silently disable the diff-test too.
+if [ "${AVRA_SKIP_WINDOW_CHECK:-0}" = "1" ]; then
+  echo "[pre-push] AVRA_SKIP_WINDOW_CHECK=1 — bootstrap-window gate skipped"
+fi
+
+# stdin: one "<local-ref> <local-sha> <remote-ref> <remote-sha>" line
+# per ref being pushed. Decide whether anything outgoing could affect
+# the window: bootstrap/ plus the root ignore/attribute files that
+# shape what git (and therefore the gate) sees. Pushes elsewhere in
+# the repo stay instant. A brand-new remote branch always checks —
+# a green verify is cached, so the common case costs well under a
+# second.
+ZERO=0000000000000000000000000000000000000000
+need_check=0
+# Separately track whether the COMPILER SOURCES changed (packages /
+# runtime.c / llvm_wrapper.c). Only those can alter emitted IR, so the
+# HRN differential test runs only then — a docs/scripts/tests push skips
+# it. Tests are corpus *inputs*, fed identically to both compilers, so a
+# test edit cannot itself cause a divergence.
+need_difftest=0
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue   # ref deletion — nothing outgoing
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New remote branch: no tip to diff against. Run the cheap (cached)
+    # window gate; leave the heavier diff-test to CI on the PR and to the
+    # next push (which has a remote tip to diff). Avoids building two
+    # compilers for a brand-new branch that may not touch compiler source.
+    need_check=1
+    continue
+  fi
+  # The pathspec is a deliberate SUPERSET of diagnose.sh's
+  # WINDOW_SRC_PATHS: over-triggering costs a cached sub-second verify,
+  # under-triggering would skip the gate. -n 1 avoids the head pipe (and
+  # its legitimate-SIGPIPE rc) so a real git failure can fail the push
+  # loudly instead of reading as "nothing touched". This rev-list only
+  # decides whether to RUN the window check, which is itself skipped when
+  # AVRA_SKIP_WINDOW_CHECK=1 — so skip the computation too, lest a skipped
+  # push fail on the range (e.g. synthetic refs exercised by the hook spec).
+  if [ "${AVRA_SKIP_WINDOW_CHECK:-0}" != "1" ]; then
+    if ! touched=$(git rev-list -n 1 "$remote_sha..$local_sha" \
+        -- bootstrap/ .gitignore .gitattributes 2>&1); then
+      echo >&2 "[pre-push] git rev-list failed for $remote_sha..$local_sha:"
+      echo >&2 "$touched"
+      exit 1
+    fi
+    [ -n "$touched" ] && need_check=1
+  fi
+  if [ -n "$(git rev-list -n 1 "$remote_sha..$local_sha" \
+      -- bootstrap/packages bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null)" ]; then
+    need_difftest=1
+  fi
+done
+
+if [ "$need_check" -eq 1 ] && [ "${AVRA_SKIP_WINDOW_CHECK:-0}" != "1" ]; then
+  echo "[pre-push] outgoing commits touch bootstrap/ — verifying the bootstrap window"
+  bash bootstrap/scripts/diagnose.sh --check-bootstrap-window
+fi
+
+# HRN differential test: byte-identical-IR check against the integration
+# oracle when compiler sources changed. Selfhost + the (now tiny) curated
+# corpus compile concurrently, so this is cheap on top of the builds. CI
+# re-runs it on the PR (.github/workflows/diff-test.yml). Skip with
+# AVRA_SKIP_DIFFTEST=1 git push.
+if [ "$need_difftest" -eq 1 ] && [ "${AVRA_SKIP_DIFFTEST:-0}" != "1" ]; then
+  echo "[pre-push] compiler sources changed — differential test (selfhost + corpus IR)"
+  bash bootstrap/scripts/diagnose.sh --diff-test
+fi

@@ -43,7 +43,6 @@ pub struct PackageInfo {
     pub component_metas: Vec<ComponentMeta>,
 
     // --- v2 manifest fields (all optional for backward compatibility) ---
-
     /// Short description of the package
     pub description: Option<String>,
     /// License identifier (e.g., "MIT", "Apache-2.0")
@@ -165,7 +164,8 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
             .iter()
             .map(|(name, kw)| {
                 // Find syntax patterns from corresponding template
-                let syntax_patterns: Vec<crate::parser::SyntaxPatternDef> = extern_fns.2
+                let syntax_patterns: Vec<crate::parser::SyntaxPatternDef> = extern_fns
+                    .2
                     .iter()
                     .filter(|t| t.component_name == *name)
                     .flat_map(|t| t.syntax_fns.iter())
@@ -175,7 +175,8 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
                     })
                     .collect();
                 // Find annotation declarations from corresponding template
-                let annotation_decls: Vec<crate::parser::AnnotationDeclMeta> = extern_fns.2
+                let annotation_decls: Vec<crate::parser::AnnotationDeclMeta> = extern_fns
+                    .2
                     .iter()
                     .filter(|t| t.component_name == *name)
                     .flat_map(|t| t.annotation_decls.iter())
@@ -185,7 +186,8 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
                     })
                     .collect();
                 // Find default config key from corresponding template
-                let default_config_key = extern_fns.2
+                let default_config_key = extern_fns
+                    .2
                     .iter()
                     .filter(|t| t.component_name == *name)
                     .flat_map(|t| t.config_schema.iter())
@@ -431,12 +433,16 @@ pub fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> 
 
 /// Parse a package.fg file and extract ExternFn statements, exported FnDecls, and ComponentTemplateDefs.
 /// Returns an error if the package.fg has syntax errors — never silently ignores them.
-fn parse_package_fg(source: &str) -> Result<(Vec<Statement>, Vec<Statement>, Vec<ComponentTemplateDef>), String> {
+fn parse_package_fg(
+    source: &str,
+) -> Result<(Vec<Statement>, Vec<Statement>, Vec<ComponentTemplateDef>), String> {
     let mut lexer = Lexer::new(source);
     let tokens = lexer.tokenize();
 
     // Check for lexer errors — never silently ignore syntax problems in package.fg
-    let lex_errors: Vec<_> = lexer.diagnostics().iter()
+    let lex_errors: Vec<_> = lexer
+        .diagnostics()
+        .iter()
         .filter(|d| d.severity == Severity::Error)
         .collect();
     if !lex_errors.is_empty() {
@@ -448,7 +454,9 @@ fn parse_package_fg(source: &str) -> Result<(Vec<Statement>, Vec<Statement>, Vec
     let program = parser.parse_program();
 
     // Check for parser errors — never silently ignore parse problems in package.fg
-    let parse_errors: Vec<_> = parser.diagnostics().iter()
+    let parse_errors: Vec<_> = parser
+        .diagnostics()
+        .iter()
         .filter(|d| d.severity == Severity::Error)
         .collect();
     if !parse_errors.is_empty() {

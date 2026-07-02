@@ -1,0 +1,182 @@
+// WHY: forge-crafting-intepreters-enwi — a generic enum's constructor dropped the
+// type-args inferred from its payload, so the result type stayed `Wrap<?>` and the
+// let/return/arg layout-conflict checks (which need the concrete args) could never
+// fire. A `Box<int>` payload bound where `Box<string>` is declared escaped as a
+// wild store — including through the built-in `Result`/`Option` ctors, which are
+// instances of the same gap.
+//
+// Fix: tc_infer_enum_ctor_type_args infers the enum's
+// type-args from the ctor payload (Wrap.W(Box{val:9}) => Wrap<int>), wired into
+// both the explicit `Type.Variant` path (check_expr) and the subjectless
+// `.Variant` path (check_expr_expected, where the enum name comes from the
+// annotation). The existing layout gate then catches the mismatch. Inference runs
+// through the shared tc_unify (which peels Struct/Enum args — g97x), so emitted
+// IR is unchanged; this only adds rejections for invalid programs.
+//
+// Driven through `bs2 check`: enwi is a TYPECK gate, so a check is enough.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Type-check the source; emit a success sentinel ONLY on a clean check, so a
+// valid program is distinguishable from one that merely produced no F1000.
+fn enwi_out(source: string) -> string {
+    let path = "/tmp/avra_enwi_gate.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "enwi: a user generic enum ctor infers its payload type-arg (explicit form)" {
+    then "Wrap.W(Box<int>) into Wrap<string> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: Box<T>) }
+fn main() {
+    let w: Wrap<string> = Wrap.W(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+    then "subjectless .W(Box<int>) into Wrap<string> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: Box<T>) }
+fn main() {
+    let w: Wrap<string> = .W(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "enwi: a deep container payload (List<Box<T>>) infers and conflicts" {
+    // Pins the shared-unifier recursion through List<…> (g97x): before the arm
+    // landed, a Struct nested inside a container left T unbound, so this escaped.
+    then "Wrap.W([Box<int>]) into Wrap<string> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: List<Box<T>>) }
+fn main() {
+    let w: Wrap<string> = Wrap.W([Box { val: 9 }])
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+    then "the matching List<Box<string>> payload checks clean" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: List<Box<T>>) }
+fn main() {
+    let w: Wrap<string> = Wrap.W([Box { val: \"hi\" }])
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "enwi: a naked payload type-param infers and conflicts" {
+    then "Holder.H(9) into Holder<string> is F1000" {
+        let out = enwi_out("enum Holder<T> { H(v: T) }
+fn main() {
+    let h: Holder<string> = Holder.H(9)
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "enwi: the second type-param of a multi-param enum is inferred too" {
+    then "Pair.P(Box<int>, Box<int>) into Pair<int, string> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Pair<A, B> { P(a: Box<A>, b: Box<B>) }
+fn main() {
+    let p: Pair<int, string> = Pair.P(Box { val: 1 }, Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "enwi: the built-in Result/Option ctors infer their payload too" {
+    then "subjectless .Ok(Box<int>) into Result<Box<string>, int> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+fn main() {
+    let r: Result<Box<string>, int> = .Ok(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+    then "subjectless .Some(Box<int>) into Option<Box<string>> is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+fn main() {
+    let o: Option<Box<string>> = .Some(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "enwi: a .Some into a `T?` optional checks its payload against the inner" {
+    then "subjectless .Some(Box<int>) into Box<string>? is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+fn main() {
+    let o: Box<string>? = .Some(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "enwi: the inference covers the return position, not just let-bindings" {
+    then "returning Wrap.W(Box<int>) where Wrap<string> is declared is F1000" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: Box<T>) }
+fn make() -> Wrap<string> { return Wrap.W(Box { val: 9 }) }
+fn main() {
+    let w = make()
+    println(\"x\")
+}")
+        out.contains("F1000")
+    }
+}
+
+spec "enwi: matching generic enum ctors still type-check (no false positives)" {
+    then "Wrap<int> = .W(Box<int>) checks clean" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: Box<T>) }
+fn main() {
+    let w: Wrap<int> = .W(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "Wrap<string> = Wrap.W(Box<string>) checks clean" {
+        let out = enwi_out("type Box<T> = { val: T }
+enum Wrap<T> { W(v: Box<T>) }
+fn main() {
+    let w: Wrap<string> = Wrap.W(Box { val: \"ok\" })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "Result<Box<int>, int> = .Ok(Box<int>) checks clean" {
+        let out = enwi_out("type Box<T> = { val: T }
+fn main() {
+    let r: Result<Box<int>, int> = .Ok(Box { val: 9 })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "Holder<int> = Holder.H(9) checks clean" {
+        let out = enwi_out("enum Holder<T> { H(v: T) }
+fn main() {
+    let h: Holder<int> = Holder.H(9)
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+    then "Box<string>? = .Some(Box<string>) checks clean" {
+        let out = enwi_out("type Box<T> = { val: T }
+fn main() {
+    let o: Box<string>? = .Some(Box { val: \"ok\" })
+    println(\"x\")
+}")
+        out.contains("__AVRA_CHECK_OK__")
+    }
+}

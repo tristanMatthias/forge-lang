@@ -1,0 +1,90 @@
+trait DdcAnimal {
+    fn speak(self) -> string
+    fn legs(self) -> int
+}
+
+type DdcDog = { name: string, breed: string }
+type DdcCat = { name: string, indoor: bool }
+type DdcSpider = { species: string }
+
+impl DdcAnimal for DdcDog {
+    fn speak(self) -> string { "woof from " + self.name }
+    fn legs(self) -> int { 4 }
+}
+
+impl DdcAnimal for DdcCat {
+    fn speak(self) -> string { "meow from " + self.name }
+    fn legs(self) -> int { 4 }
+}
+
+impl DdcAnimal for DdcSpider {
+    fn speak(self) -> string { "..." }
+    fn legs(self) -> int { 8 }
+}
+
+fn ddc_describe_animal(a: DdcAnimal) -> string {
+    a.speak() + " (" + string(a.legs()) + " legs)"
+}
+
+fn ddc_total_legs(a: DdcAnimal, b: DdcAnimal) -> int {
+    a.legs() + b.legs()
+}
+
+fn ddc_which_sound(a: DdcAnimal, loud: bool) -> string {
+    if loud {
+        a.speak() + "!!!"
+    } else {
+        a.speak()
+    }
+}
+
+fn ddc_animal_template(a: DdcAnimal) -> string {
+    `${a.speak()} has ${string(a.legs())} legs`
+}
+
+fn ddc_classify_legs(a: DdcAnimal) -> string {
+    let n = a.legs()
+    if n <= 4 { "normal" } else { "many" }
+}
+
+fn ddc_run() -> string {
+    avra_test_capture_start()
+    let d: DdcAnimal = DdcDog { name: "Rex", breed: "Lab" }
+    let c: DdcAnimal = DdcCat { name: "Whiskers", indoor: true }
+    let s: DdcAnimal = DdcSpider { species: "tarantula" }
+    println(d.speak())
+    println(c.speak())
+    println(s.speak())
+    println(string(d.legs()))
+    println(string(s.legs()))
+    println(ddc_describe_animal(d))
+    println(ddc_describe_animal(c))
+    println(ddc_describe_animal(s))
+    println(string(ddc_total_legs(d, s)))
+    println(ddc_which_sound(d, true))
+    println(ddc_which_sound(c, false))
+    println(ddc_animal_template(d))
+    println(ddc_animal_template(s))
+    println(ddc_classify_legs(d))
+    println(ddc_classify_legs(s))
+    avra_test_capture_stop()
+}
+
+spec "dyn dispatch combo" {
+    then "basic speak" {
+        let d: DdcAnimal = DdcDog { name: "Rex", breed: "Lab" }
+        d.speak() == "woof from Rex"
+    }
+    then "describe animal" {
+        let d: DdcAnimal = DdcDog { name: "Rex", breed: "Lab" }
+        ddc_describe_animal(d) == "woof from Rex (4 legs)"
+    }
+    then "total legs" {
+        let d: DdcAnimal = DdcDog { name: "Rex", breed: "Lab" }
+        let s: DdcAnimal = DdcSpider { species: "tarantula" }
+        ddc_total_legs(d, s) == 12
+    }
+    then "full output" {
+        ddc_run() == "woof from Rex\nmeow from Whiskers\n...\n4\n8\nwoof from Rex (4 legs)\nmeow from Whiskers (4 legs)\n... (8 legs)\n12\nwoof from Rex!!!\nmeow from Whiskers\nwoof from Rex has 4 legs\n... has 8 legs\nnormal\nmany"
+    }
+}

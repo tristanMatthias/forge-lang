@@ -25,7 +25,7 @@ manage threads, locks, or condition variables directly.",
     category: "Concurrency",
 }
 
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
 pub mod types;

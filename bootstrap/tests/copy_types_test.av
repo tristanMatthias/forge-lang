@@ -1,0 +1,36 @@
+type CtPoint = { x: int, y: int }
+type CtColor = { r: int, g: int, b: int }
+type CtNamed = { name: string, val: int }
+type CtConfig = { port: int }
+
+fn ct_make_config() -> CtConfig {
+    CtConfig { port: 8080 }
+}
+
+spec "copy types" {
+    then "basic copy struct" {
+        let p = CtPoint { x: 42, y: 99 }
+        p.x == 42 and p.y == 99
+    }
+    then "copy struct via with" {
+        let p = CtPoint { x: 42, y: 99 }
+        let p2 = p with { x: 200, y: 300 }
+        p2.x == 200 and p2.y == 300
+    }
+    then "copy struct in loop" {
+        mut total = 0
+        for i in 0..10 {
+            let c = CtColor { r: i, g: i * 2, b: i * 3 }
+            total = total + c.r + c.g + c.b
+        }
+        total == 270
+    }
+    then "non-copy struct" {
+        let n = CtNamed { name: "hello", val: 42 }
+        n.name == "hello"
+    }
+    then "copy struct returned from function" {
+        let cfg = ct_make_config()
+        cfg.port == 8080
+    }
+}

@@ -1,4 +1,5 @@
 // ─── Enums Feature ─────────────────────────────
+use core.kind_ids.{KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_RBRACE, KID_COMMA, KID_COLON, KID_ARROW, KID_DOT, KID_EQ, KID_NEWLINE, KID_IDENT, KID_FN, KID_MUT}
 // Handles: enum declarations and enum variant construction.
 // Tagged union representation: { tag: i8, payload: [fields] }
 
@@ -9,7 +10,8 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr}
 use parser.expressions.{register_enum_variant}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ENUM_TYPE_CSV, register_enum_variant_fields}
+use codegen.{Codegen, register_enum_variant_fields, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset, CG_B, CG_I8, CG_I64, match_enum_tag}
+use @std.llvm
 use features.while_loops.PARSE_END_POS
 
 // ─── Side Tables ────────────────────────────────
@@ -61,7 +63,7 @@ fn get_enum_construct(id: int) -> EnumConstructData? {
 // Registers variant tags for use by match expressions.
 
 export fn parse_enum_decl(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'enum'
+    let start = p.advance_span() // consume 'enum'
 
     let name = p.expect_ident()
     if name == "" {
@@ -69,12 +71,12 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         return null
     }
 
-    if p.expect(TokenKind.LBrace) == null { return null }
+    if p.expect_id(KID_LBRACE) == null { return null }
     p.skip_newlines()
 
     mut tag = 0
     mut max_slots = 0
-    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+    while p.peek_kind_id() != KID_RBRACE && !p.is_at_end() {
         p.skip_newlines()
         let variant_name = p.expect_ident()
         if variant_name == "" { break }
@@ -85,16 +87,16 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         // Parse optional fields, track types, and count slots
         mut variant_slots = 0
         mut field_types_str = ""
-        if p.check(TokenKind.LParen) {
+        if p.peek_kind_id() == KID_LPAREN {
             p.advance()
-            while !p.check(TokenKind.RParen) && !p.is_at_end() {
+            while p.peek_kind_id() != KID_RPAREN && !p.is_at_end() {
                 p.expect_ident()
                 mut field_slots = 1  // default: 1 slot (int, bool, ptr, etc.)
                 mut field_code = "i"
-                if p.check(TokenKind.Colon) {
+                if p.peek_kind_id() == KID_COLON {
                     p.advance()
                     // Check the type name BEFORE parse_type_expr consumes it
-                    let type_text = p.peek().text
+                    let type_text = p.peek_text()
                     // string and List<T> are 2 i64 slots ({ptr, i64})
                     if type_text == "string" {
                         field_slots = 2
@@ -109,26 +111,13 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
                         field_slots = 4
                         field_code = "4"
                     }
-                    // Large enum/struct types: boxed as pointer
-                    if type_text == "Expr" {
-                        field_slots = 1
-                        field_code = "p"
-                    }
-                    if type_text == "Statement" {
-                        field_slots = 1
-                        field_code = "p"
-                    }
-                    if type_text == "Block" {
-                        field_slots = 1
-                        field_code = "p"
-                    }
                     p.parse_type_expr()
                 }
                 variant_slots = variant_slots + field_slots
                 field_types_str = field_types_str + field_code
-                if p.check(TokenKind.Comma) { p.advance() }
+                if p.peek_kind_id() == KID_COMMA { p.advance() }
             }
-            p.expect(TokenKind.RParen)
+            p.expect_id(KID_RPAREN)
         }
         if variant_slots > max_slots { max_slots = variant_slots }
         // Register per-variant field type info
@@ -138,15 +127,15 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
         tag = tag + 1
         p.skip_newlines()
-        if p.check(TokenKind.Comma) { p.advance() }
+        if p.peek_kind_id() == KID_COMMA { p.advance() }
         p.skip_newlines()
     }
 
-    p.expect(TokenKind.RBrace)
+    p.expect_id(KID_RBRACE)
 
-    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
+    forge_enum_type_register(name, max_slots)
     // Enum declarations register tags + max field count.
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("enums", "enum_decl", id, start)
 }
@@ -164,15 +153,15 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
 
     // Optional fields: Variant(field1: Type, field2: Type)
     mut fields: List<EnumVariantField> = []
-    if p.check(.LParen) {
+    if p.peek_kind_id() == KID_LPAREN {
         p.advance()
         mut field_idx = 0
-        while !p.check(.RParen) && !p.is_at_end() {
+        while p.peek_kind_id() != KID_RPAREN && !p.is_at_end() {
             p.skip_newlines()
             let field_name_or_type = p.expect_ident()
             if field_name_or_type == null { break }
 
-            if p.check(.Colon) {
+            if p.peek_kind_id() == KID_COLON {
                 p.advance()
                 let type_ann = p.parse_type_expr()
                 mut ann = TypeExpr.Named("unknown", start)
@@ -189,7 +178,7 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
 
             field_idx = field_idx + 1
             p.skip_newlines()
-            if p.check(.Comma) { p.advance() }
+            if p.peek_kind_id() == KID_COMMA { p.advance() }
         }
         if p.expect(.RParen) == null { return null }
     }
@@ -239,6 +228,84 @@ fn top_level_enum(tc: TypeChecker, node: NodeRef) {
 fn emit_enum_decl(cg: Codegen, node: NodeRef) {
     // Enum declarations don't emit code directly — they define types
     // that are used by variant constructors and match expressions.
+}
+
+// Emit an enum variant constructor expression, e.g. `Pattern.EnumVariant(name,
+// fields, span)`. Builds the tagged-union value:
+//   { i8 tag, i64 slot0, i64 slot1, ... }
+// in an alloca, sets the tag byte to the variant index, packs each argument
+// into the appropriate i64 slot(s), then loads and returns the struct value.
+//
+// This MUST exist for any function that returns an enum variant — without it,
+// `dispatch_emit_expr` falls through and the constructor evaluates to null.
+export fn emit_enum_construct(cg: Codegen, node: NodeRef) -> ptr {
+    let d = get_enum_construct(node.node_id)
+    if d == null { return null }
+    let data = d!
+
+    let enum_ty = cg_get_enum_ty_for(data.enum_name)
+    if enum_ty == null { return null }
+
+    // Allocate the enum struct, zero-initialize it.
+    let alloca = llvm.build_alloca(CG_B, enum_ty, "enum_tmp")
+    llvm.build_store(CG_B, llvm.const_null(enum_ty), alloca)
+
+    // Set the tag byte (field 0) to the variant index.
+    let qname = data.enum_name + "." + data.variant_name
+    mut tag = match_enum_tag(qname)
+    if tag < 0 { tag = match_enum_tag(data.variant_name) }
+    if tag < 0 { tag = 0 }
+    let tag_ptr = llvm.build_struct_gep2(CG_B, enum_ty, alloca, 0, "tag_ptr")
+    llvm.build_store(CG_B, llvm.const_int(CG_I8, tag, 0), tag_ptr)
+
+    // Pack arguments into i64 payload slots. The slot layout is computed
+    // by cg_enum_field_slot_offset based on each field's type code:
+    //   i = int   (1 slot)
+    //   s = string (2 slots: ptr, len)
+    //   l = list   (2 slots: ptr, len)
+    //   4 = Span   (4 slots: start, end, line, col)
+    //   p = boxed  (1 slot, holds inttoptr handle)
+    let field_types = cg_enum_variant_field_types(data.enum_name, data.variant_name)
+    mut field_idx = 0
+    let _args = data.args
+    for arg in _args {
+        let v = cg.emit_expr(arg)
+        let slot_off = cg_enum_field_slot_offset(field_types, field_idx)
+        let slot = 1 + slot_off
+        mut fcode = "i"
+        if field_idx < field_types.length { fcode = field_types[field_idx] }
+
+        if fcode == "s" || fcode == "l" {
+            // ForgeString / List<T> — both {ptr, i64}.
+            // Extract field 0 (data ptr) and field 1 (length), store each into
+            // its own i64 slot via ptrtoint for the pointer half.
+            let f0 = llvm.build_extract_value(CG_B, v, 0, "f0")
+            let f1 = llvm.build_extract_value(CG_B, v, 1, "f1")
+            let f0_i64 = llvm.build_ptrtoint(CG_B, f0, CG_I64, "f0i")
+            let s0_ptr = llvm.build_struct_gep2(CG_B, enum_ty, alloca, slot, "s0")
+            llvm.build_store(CG_B, f0_i64, s0_ptr)
+            let s1_ptr = llvm.build_struct_gep2(CG_B, enum_ty, alloca, slot + 1, "s1")
+            llvm.build_store(CG_B, f1, s1_ptr)
+        } else if fcode == "4" {
+            // Span = {i64, i64, i64, i64} — extract each field into its slot.
+            mut sf = 0
+            while sf < 4 {
+                let sv = llvm.build_extract_value(CG_B, v, sf, "sv")
+                let sp_ptr = llvm.build_struct_gep2(CG_B, enum_ty, alloca, slot + sf, "sp")
+                llvm.build_store(CG_B, sv, sp_ptr)
+                sf = sf + 1
+            }
+        } else {
+            // Single i64 slot — int, bool, or boxed handle.
+            let s_ptr = llvm.build_struct_gep2(CG_B, enum_ty, alloca, slot, "sl")
+            llvm.build_store(CG_B, v, s_ptr)
+        }
+
+        field_idx = field_idx + 1
+    }
+
+    // Load and return the constructed enum value.
+    llvm.build_load(CG_B, enum_ty, alloca, "enum_val")
 }
 
 // ─── Registration ───────────────────────────────

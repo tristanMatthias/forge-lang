@@ -1,0 +1,136 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 5 test 14.
+// `ctx_unwrap_path_to` returns a field-access chain from a
+// ResolvedType to a value of the target type. BFS over the field
+// graph, depth-capped at 8 to terminate on recursive types.
+//
+// The macro looks up Wrap and DoubleWrap, then walks each to "int"
+// via ctx_unwrap_path_to. The chains it gets back are joined into
+// a string and printed at runtime — the assertions pin the exact
+// per-type chains.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
+    then "Wrap → [node]; DoubleWrap → [value, node]" {
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
+            "\n" +
+            "type Wrap = { node: int }\n" +
+            "type DoubleWrap = { value: Wrap }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let t_wrap = ctx_lookup_type(ctx, \"Wrap\")\n" +
+            "    let t_double = ctx_lookup_type(ctx, \"DoubleWrap\")\n" +
+            "    mut p1: List<string> = []\n" +
+            "    if t_wrap != null { p1 = ctx_unwrap_path_to(ctx, t_wrap!, \"int\") }\n" +
+            "    mut p2: List<string> = []\n" +
+            "    if t_double != null { p2 = ctx_unwrap_path_to(ctx, t_double!, \"int\") }\n" +
+            "    mut s1 = \"\"\n" +
+            "    mut i1 = 0\n" +
+            "    while i1 < p1.length {\n" +
+            "        if i1 > 0 { s1 = s1 + \".\" }\n" +
+            "        s1 = s1 + p1[i1]\n" +
+            "        i1 = i1 + 1\n" +
+            "    }\n" +
+            "    mut s2 = \"\"\n" +
+            "    mut i2 = 0\n" +
+            "    while i2 < p2.length {\n" +
+            "        if i2 > 0 { s2 = s2 + \".\" }\n" +
+            "        s2 = s2 + p2[i2]\n" +
+            "        i2 = i2 + 1\n" +
+            "    }\n" +
+            "    let msg = \"wrap=[\" + s1 + \"]; double=[\" + s2 + \"]\"\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("wrap=[node]") && out.contains("double=[value.node]")
+    }
+}
+
+spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
+    then "Rec { self_ref: Rec, payload: int } → [payload] without infinite loop" {
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
+            "\n" +
+            "type Rec = { self_ref: Rec, payload: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let t = ctx_lookup_type(ctx, \"Rec\")\n" +
+            "    mut p: List<string> = []\n" +
+            "    if t != null { p = ctx_unwrap_path_to(ctx, t!, \"int\") }\n" +
+            "    mut s = \"\"\n" +
+            "    mut i = 0\n" +
+            "    while i < p.length {\n" +
+            "        if i > 0 { s = s + \".\" }\n" +
+            "        s = s + p[i]\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "    let msg = \"rec=[\" + s + \"]\"\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("rec=[payload]")
+    }
+}
+
+// Doc line 530: `ctx_unwrap_path_to(string, "int")` (expects `[]`),
+// `ctx_unwrap_path_to(int, "int")` (expects `[]`). The first is a
+// primitive that doesn't contain the target; the second is the
+// target itself (no walk needed). Both return [] — they exercise
+// the early-out path in unwrap_path_bfs.
+//
+// We construct ResolvedType values by hand here because
+// ctx_lookup_type("string") / ("int") returns null (primitives
+// aren't tracked in the resolver-data layer as TypeDecls). The
+// hand-built type values are kind="primitive" with the canonical
+// name set, which is enough for unwrap_path_bfs to short-circuit.
+spec "ResolverCtx: ctx_unwrap_path_to on primitives returns []" {
+    then "string→int and int→int both return an empty path" {
+        let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
+            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy, TypeKind}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedType, ResolvedField, ResolvedVariant, ctx_unwrap_path_to}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let empty_f: List<ResolvedField> = []\n" +
+            "    let empty_v: List<ResolvedVariant> = []\n" +
+            "    let t_string = ResolvedType {\n" +
+            "        canonical_name: \"string\",\n" +
+            "        kind: TypeKind.StructKind,\n" +
+            "        fields: empty_f,\n" +
+            "        variants: empty_v,\n" +
+            "    }\n" +
+            "    let t_int = ResolvedType {\n" +
+            "        canonical_name: \"int\",\n" +
+            "        kind: TypeKind.StructKind,\n" +
+            "        fields: empty_f,\n" +
+            "        variants: empty_v,\n" +
+            "    }\n" +
+            "    let p_string = ctx_unwrap_path_to(ctx, t_string, \"int\")\n" +
+            "    let p_int = ctx_unwrap_path_to(ctx, t_int, \"int\")\n" +
+            "    let msg = \"string_len=\" + string(p_string.length) + \"; int_len=\" + string(p_int.length)\n" +
+            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("string_len=0") && out.contains("int_len=0")
+    }
+}

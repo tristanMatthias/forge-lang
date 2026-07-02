@@ -1,0 +1,45 @@
+spec "float lit example" {
+    then "float literal" {
+        let x = 3.14
+        x == 3.14
+    }
+    then "string-to-float conversion" {
+        float("9.81") == 9.81
+    }
+    then "int-to-float conversion" {
+        float(100) == 100.0
+    }
+    then "float addition" {
+        3.0 + 2.0 == 5.0
+    }
+    then "float multiplication" {
+        3.0 * 2.0 == 6.0
+    }
+    then "float division" {
+        10.0 / 4.0 == 2.5
+    }
+    then "float subtraction" {
+        10.0 - 3.5 == 6.5
+    }
+    then "float negation" {
+        0.0 - 1.5 == 0.0 - 1.5
+    }
+    then "float greater-than" {
+        3.14 > 2.0
+    }
+    then "float less-than" {
+        1.0 < 2.0
+    }
+    then "float equality" {
+        3.0 == 3.0
+    }
+    then "float pattern match selects pi" {
+        let v = 3.14
+        let label = match v {
+            1.0 -> "one"
+            3.14 -> "pi"
+            _ -> "other"
+        }
+        label == "pi"
+    }
+}

@@ -1,0 +1,44 @@
+; ModuleID = 'forgec_output  declared  fnsoutput.ll  emit done'
+source_filename = "forgec_output  declared  fnsoutput.ll  emit done"
+
+%ForgeString = type { ptr, i64 }
+
+declare void @forge_println_string()
+
+declare %ForgeString @forge_int_to_stringforge_string_new()
+
+declare %ForgeString @forge_string_new()
+
+declare %ForgeString @forge_string_concat()
+
+declare %ForgeString @forge_string_char_at()
+
+declare i64 @forge_string_lengthforge_string_eq()
+
+declare i8 @forge_string_eq()
+
+declare i64 @forge_string_compare()
+
+declare %ForgeString @forge_string_substring()
+
+declare i64 @forge_string_index_offorge_c_index_offorge_allocforge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setforge_set_args()
+
+declare i64 @forge_c_index_offorge_allocforge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setforge_set_args()
+
+declare ptr @forge_allocforge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setforge_set_args()
+
+declare void @forge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setforge_set_args()
+
+declare ptr @forge_map_newforge_map_hasforge_map_getforge_map_setforge_set_args()
+
+declare i8 @forge_map_hasforge_map_getforge_map_setforge_set_args()
+
+declare i64 @forge_map_getforge_map_setforge_set_args()
+
+declare void @forge_map_setforge_set_args()
+
+declare void @forge_set_args()
+
+declare void @forge_selfhost_process_exit()
+
+declare void @forge_eprintln_stringmainenicthelmgivme()

@@ -1,0 +1,119 @@
+// nce6.1.D: @marshal on enum decls. Wire format: 8-byte tag
+// (source-order variant index) + per-variant payload writes.
+// from_bytes_<T> cascades through `if tag == N` and returns the
+// matching variant constructed from the read payload.
+
+use @std.process.{bytes_builder, bytes_reader}
+
+@marshal
+enum MStatus {
+    Active,
+    Pending(count: int),
+    Failed(reason: string, code: int),
+}
+
+@marshal
+enum MShape {
+    Empty,
+    Point(x: int, y: int),
+    Labeled(name: string),
+}
+
+fn describe(s: MStatus) -> string {
+    match s {
+        .Active -> "A"
+        .Pending(c) -> "P" + string(c)
+        .Failed(r, c) -> "F:" + r + ":" + string(c)
+    }
+}
+
+fn describe_shape(s: MShape) -> string {
+    match s {
+        .Empty -> "E"
+        .Point(x, y) -> "P:" + string(x) + "," + string(y)
+        .Labeled(n) -> "L:" + n
+    }
+}
+
+spec "@marshal: enum round-trip (nce6.1.D)" {
+    then "payload-less variant survives" {
+        let s2 = from_bytes_MStatus(MStatus.Active.to_bytes())
+        describe(s2) == "A"
+    }
+    then "single-int-payload variant survives" {
+        let s2 = from_bytes_MStatus(MStatus.Pending(42).to_bytes())
+        describe(s2) == "P42"
+    }
+    then "two-field payload variant survives" {
+        let s2 = from_bytes_MStatus(MStatus.Failed("disk", 7).to_bytes())
+        describe(s2) == "F:disk:7"
+    }
+    then "all variants round-trip in same program run" {
+        let a = describe(from_bytes_MStatus(MStatus.Active.to_bytes()))
+        let p = describe(from_bytes_MStatus(MStatus.Pending(99).to_bytes()))
+        let f = describe(from_bytes_MStatus(MStatus.Failed("net", 0 - 1).to_bytes()))
+        a == "A" && p == "P99" && f == "F:net:-1"
+    }
+    then "different enum types don't cross-contaminate tag space" {
+        let s2 = from_bytes_MShape(MShape.Empty.to_bytes())
+        let p2 = from_bytes_MShape(MShape.Point(3, 4).to_bytes())
+        let l2 = from_bytes_MShape(MShape.Labeled("hi").to_bytes())
+        describe_shape(s2) == "E" && describe_shape(p2) == "P:3,4" && describe_shape(l2) == "L:hi"
+    }
+    then "negative-int payload survives" {
+        let s2 = from_bytes_MStatus(MStatus.Pending(0 - 50).to_bytes())
+        describe(s2) == "P-50"
+    }
+    then "empty-string payload survives" {
+        let s2 = from_bytes_MStatus(MStatus.Failed("", 0).to_bytes())
+        describe(s2) == "F::0"
+    }
+}
+
+@marshal
+type MCoord = { x: int, y: int }
+
+@marshal
+enum MFigure {
+    Empty,
+    Dot(p: MCoord),
+    Segment(a: MCoord, b: MCoord),
+    Path(points: List<MCoord>),
+}
+
+fn shape_summary(f: MFigure) -> string {
+    match f {
+        .Empty -> "empty"
+        .Dot(p) -> "dot:" + string(p.x) + "," + string(p.y)
+        .Segment(a, b) -> "seg:(" + string(a.x) + "," + string(a.y) + ")-(" + string(b.x) + "," + string(b.y) + ")"
+        .Path(pts) -> "path:" + string(pts.length)
+    }
+}
+
+spec "@marshal: enum with nested-struct + list-of-struct payloads" {
+    then "variant with single nested-struct payload" {
+        let f = MFigure.Dot(MCoord { x: 5, y: 7 })
+        shape_summary(from_bytes_MFigure(f.to_bytes())) == "dot:5,7"
+    }
+    then "variant with two nested-struct payloads" {
+        let f = MFigure.Segment(MCoord { x: 1, y: 2 }, MCoord { x: 3, y: 4 })
+        shape_summary(from_bytes_MFigure(f.to_bytes())) == "seg:(1,2)-(3,4)"
+    }
+    then "variant with List<NestedStruct> payload" {
+        let pts = table<MCoord> {
+            x  | y
+            0  | 0
+            10 | 10
+            20 | 20
+        }
+        let f = MFigure.Path(pts)
+        let f2 = from_bytes_MFigure(f.to_bytes())
+        match f2 {
+            .Path(pts2) -> pts2.length == 3 && pts2[0].x == 0 && pts2[2].y == 20
+            _ -> false
+        }
+    }
+    then "payload-less variant still works alongside complex ones" {
+        shape_summary(from_bytes_MFigure(MFigure.Empty.to_bytes())) == "empty"
+    }
+}

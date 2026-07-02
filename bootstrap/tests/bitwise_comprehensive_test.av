@@ -1,0 +1,68 @@
+spec "bitwise comprehensive" {
+    then "AND operations" {
+        (0xFF & 0x0F) == 15
+    }
+    then "AND with zero" {
+        (0 & 0xFF) == 0
+    }
+    then "AND same value" {
+        (0xFF & 0xFF) == 255
+    }
+    then "OR operations" {
+        (0xF0 | 0x0F) == 255
+    }
+    then "OR both zero" {
+        (0 | 0) == 0
+    }
+    then "OR different bits" {
+        (0x80 | 0x01) == 129
+    }
+    then "XOR same is zero" {
+        (0xFF ^ 0xFF) == 0
+    }
+    then "XOR with zero" {
+        (0xFF ^ 0x00) == 255
+    }
+    then "XOR complementary" {
+        (0xAA ^ 0x55) == 255
+    }
+    then "left shift by 0" {
+        (1 << 0) == 1
+    }
+    then "left shift by 8" {
+        (1 << 8) == 256
+    }
+    then "left shift by 16" {
+        (1 << 16) == 65536
+    }
+    then "right shift" {
+        (1024 >> 2) == 256
+    }
+    then "right shift 255" {
+        (255 >> 4) == 15
+    }
+    then "NOT zero masked" {
+        (~0 & 0xFF) == 255
+    }
+    then "NOT 0xFF masked" {
+        (~0xFF & 0xFF) == 0
+    }
+    then "modulo 10 % 3" {
+        (10 % 3) == 1
+    }
+    then "modulo 7 % 7" {
+        (7 % 7) == 0
+    }
+    then "modulo 100 % 17" {
+        (100 % 17) == 15
+    }
+    then "precedence AND tighter than OR" {
+        (0xF0 | 0x0F & 0x03) == 243
+    }
+    then "shift plus arithmetic" {
+        ((1 << 4) + 3) == 19
+    }
+    then "AND times two" {
+        ((0xFF & 0x0F) * 2) == 30
+    }
+}

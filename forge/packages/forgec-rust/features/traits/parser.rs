@@ -152,7 +152,16 @@ impl Parser {
             } else if self.check(&TokenKind::Fn) {
                 let method = self.parse_fn_decl(false)?;
                 // Inject implicit `self` as first param if not already present
-                let method = if let Statement::FnDecl { name, type_params, params, return_type, body, exported, span } = method {
+                let method = if let Statement::FnDecl {
+                    name,
+                    type_params,
+                    params,
+                    return_type,
+                    body,
+                    exported,
+                    span,
+                } = method
+                {
                     let has_self = params.iter().any(|p| p.name == "self");
                     let params = if has_self {
                         params
@@ -167,7 +176,15 @@ impl Parser {
                         new_params.extend(params);
                         new_params
                     };
-                    Statement::FnDecl { name, type_params, params, return_type, body, exported, span }
+                    Statement::FnDecl {
+                        name,
+                        type_params,
+                        params,
+                        return_type,
+                        body,
+                        exported,
+                        span,
+                    }
                 } else {
                     method
                 };

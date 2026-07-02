@@ -1,0 +1,21 @@
+enum ImplColor {
+    Red
+    Green
+    Blue
+}
+
+impl ImplColor {
+    fn name(self) -> string {
+        match self {
+            .Red -> "red"
+            .Green -> "green"
+            .Blue -> "blue"
+        }
+    }
+}
+
+spec "enum impl" {
+    then "red name" { ImplColor.Red.name() == "red" }
+    then "green name" { ImplColor.Green.name() == "green" }
+    then "blue name" { ImplColor.Blue.name() == "blue" }
+}

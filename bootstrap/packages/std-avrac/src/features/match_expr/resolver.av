@@ -1,0 +1,66 @@
+// WHY: resolves names in match arms — binds pattern variables into scope.
+
+use core.{Pattern, MatchArm, WhenArm}
+use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params, declare_name, define_name}
+
+/// Resolve every arm of a `match` expression. For each arm:
+/// open a fresh scope, declare the pattern's captured names,
+/// resolve the optional guard, then resolve the arm body —
+/// finally pop the scope. Stops on first resolver error.
+export fn resolve_match_arms(r: Resolver, arms: List<MatchArm>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < arms.length {
+        if res.had_error { return res }
+        let arm = arms[i]
+        let entered = enter_resolve_scope(res)
+        let with_bindings = declare_pattern_bindings(entered, arm.pattern)
+        let after_guard = if arm.guard != null { resolve_expr(with_bindings, arm.guard!.node) } else { with_bindings }
+        let after_body = resolve_expr(after_guard, arm.body.node)
+        res = exit_resolve_scope(after_body)
+        i = i + 1
+    }
+    res
+}
+
+/// Walk a pattern declaring every captured name in the
+/// resolver. Variant patterns descend into payload bindings;
+/// `is`-patterns (TypePattern) declare the single binding;
+/// literals and wildcards bind nothing.
+fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
+    match pattern {
+        .Wildcard -> r
+        .Variant(_, bindings) -> declare_params(r, bindings)
+        .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
+        .TypePattern(_, binding) -> define_name(declare_name(r, binding), binding)
+        _ -> r  // Literal patterns don't bind variables
+    }
+}
+
+/// Walk a `List<Pattern>` declaring captures from every sub-pattern.
+fn declare_pattern_list(r: Resolver, pats: List<Pattern>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < pats.length {
+        acc = declare_pattern_bindings(acc, pats[i])
+        i = i + 1
+    }
+    acc
+}
+
+/// Resolve every arm of a `when` (subjectless `match`)
+/// expression. No pattern bindings — each arm has just an
+/// optional condition + body, both resolved in the outer
+/// scope.
+export fn resolve_when_arms(r: Resolver, arms: List<WhenArm>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < arms.length {
+        if res.had_error { return res }
+        let arm = arms[i]
+        let after_cond = if arm.cond == null { res } else { resolve_expr(res, arm.cond!.node) }
+        res = resolve_expr(after_cond, arm.body.node)
+        i = i + 1
+    }
+    res
+}

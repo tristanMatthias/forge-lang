@@ -1,0 +1,7 @@
+fn zero_main() -> int { return 0 }
+
+spec "zero" {
+    then "return 0 from a function" {
+        zero_main() == 0
+    }
+}

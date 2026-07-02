@@ -1,0 +1,57 @@
+// Fixture: validates @std/avrac builds cleanly as a separately-
+// cached unit. This is the bootstrap-CLI consumption case for 2f54
+// — proves the multi-mod use-anchor wiring (resolve_module_stmt's
+// pre-populated body branch + qualify_uses_recursively at the
+// --module_path wrap) handles the bootstrap's own source.
+//
+// Tracking ticket: forge-crafting-intepreters-2f54.
+
+use @std.avrac.features.modules.{package_meta_path_for}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    // @@fixture-stateful@@ — fxfz: this fixture builds @std/avrac into the
+    // SHARED packages/std-avrac tree and probes its meta.bin / avrac.av.ll
+    // artifacts — build state outside the fixture-stdout cache key.
+    // fixture_is_stateful reads this directive from the source, making any
+    // `: FAIL` capture non-publishable so a capture taken against a corrupt/
+    // half-published shared cache re-probes next run instead of freezing.
+    // (Token: FIXTURE_STATEFUL_MARKER in @std.avrac.)
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+    let std_avrac = "${pwd}/packages/std-avrac"
+
+    // 0qmm: stop wiping. The content-addressed grgg cache + the
+    // cache-hit metadata-restore in main.av's build path mean the
+    // probes below (avrac_meta_bin_present etc.) work whether the
+    // build ran from-scratch or from-cache. On warm runs the wipe
+    // forced ~12s of unnecessary recompilation.
+
+    let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata")
+    probe("std_avrac_build_rc_zero", rc == 0)
+
+    probe("avrac_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(std_avrac)) != 0)
+    probe("avrac_ll_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.ll") != 0)
+
+    // Symbols are qualified with @std::avrac::, which the object-file
+    // mangler escapes (`@`->$40, `:`->$3A) to `$40std$3A$3Aavrac$3A$3A…`.
+    // Grep for one canonical fn that exists in @std/avrac/codegen.
+    let qualified_grep = avra_shell_exec("grep -c '@\"$40std$3A$3Aavrac$3A$3Acodegen' ${std_avrac}/src/avrac.av.ll").trim()
+    probe("symbols_qualified_under_at_std_avrac", int(qualified_grep) > 100)
+
+    // Unqualified `codegen::` (mangled `codegen$3A$3A`) should NOT appear at
+    // the start of any define line (that would mean the wrap missed those fns).
+    let unq = avra_shell_exec("grep -c '^define [a-z0-9]* @\"codegen$3A$3A' ${std_avrac}/src/avrac.av.ll").trim()
+    probe("no_unqualified_codegen_fns", int(unq) == 0)
+
+    0
+}

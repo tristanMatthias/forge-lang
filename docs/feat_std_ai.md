@@ -6,7 +6,7 @@ Provider-agnostic AI integration. Works with Anthropic, OpenAI, local models, Op
 
 ## The Simple Case
 
-```forge
+```avra
 use @std.ai
 
 let response = ai.ask("What is the capital of France?") {
@@ -22,7 +22,7 @@ One function call. No setup. The package is configured globally or inline.
 
 ## Provider Configuration
 
-```forge
+```avra
 use @std.ai
 
 // Global default
@@ -58,9 +58,9 @@ ai.configure {
 
 ## Streaming into Channels
 
-This is the Forge-native way. Responses are channels.
+This is the Avra-native way. Responses are channels.
 
-```forge
+```avra
 let stream = ai.stream("Write a poem about channels") {
   model "claude-sonnet"
 }
@@ -82,7 +82,7 @@ println(full)
 
 `ai.stream()` returns a `channel<string>`. Everything you can do with channels works — filter, map, batch, pipe, select.
 
-```forge
+```avra
 // Stream to a file
 let output = fs.create("response.md")
 ai.stream("Write documentation for this API", context: api_spec)
@@ -97,9 +97,9 @@ ai.stream("Help the user", context: conversation)
 
 ## Structured Outputs
 
-Forge types ARE the schema. No JSON Schema, no Pydantic. Your types go in, typed data comes out.
+Avra types ARE the schema. No JSON Schema, no Pydantic. Your types go in, typed data comes out.
 
-```forge
+```avra
 type WeatherReport = {
   city: string,
   temperature: float,
@@ -117,7 +117,7 @@ println(`${weather.city}: ${weather.temperature}°C, ${weather.conditions}`)
 
 With enums:
 
-```forge
+```avra
 enum Sentiment { positive, negative, neutral }
 
 type Analysis = {
@@ -137,7 +137,7 @@ if result.sentiment is .positive && result.confidence > 0.9 {
 
 Structured streaming — fields arrive as they're generated:
 
-```forge
+```avra
 type Story = {
   title: string,
   chapters: List<{heading: string, content: string}>,
@@ -165,7 +165,7 @@ for partial in stream {
 
 The big one. An `agent` is a component with tools, a system prompt, memory, and a conversation loop.
 
-```forge
+```avra
 use @std.ai
 use @std.fs
 use @std.process
@@ -176,7 +176,7 @@ agent coder {
   max_tokens 4096
 
   system_prompt {
-    You are a Forge developer. Write clean, idiomatic Forge code.
+    You are a Avra developer. Write clean, idiomatic Avra code.
     Always write tests first. Use components, pipes, and channels.
   }
 
@@ -206,13 +206,13 @@ agent coder {
 
 Using the agent:
 
-```forge
+```avra
 // Single question
-let answer = coder.ask("How do I read a file in Forge?")?
+let answer = coder.ask("How do I read a file in Avra?")?
 println(answer)
 
 // With tool use — the agent decides when to use tools
-let answer = coder.ask("Read main.fg and add error handling")?
+let answer = coder.ask("Read main.av and add error handling")?
 // Agent calls read_file, modifies code, calls write_file
 
 // Streaming
@@ -238,14 +238,14 @@ println(`Score: ${review.score}/100`)
 
 Agents maintain history within a conversation scope:
 
-```forge
+```avra
 let chat = coder.conversation()
 
 chat.say("What files are in src/?")?
 // Agent uses list_dir tool, responds with file list
 
-chat.say("Read the main.fg file")?
-// Agent knows context — uses read_file("src/main.fg")
+chat.say("Read the main.av file")?
+// Agent knows context — uses read_file("src/main.av")
 
 chat.say("Add error handling to the main function")?
 // Agent remembers the file content, modifies it
@@ -265,9 +265,9 @@ branch.say("Actually, use a different approach")?
 
 ## Tool Definitions with Types
 
-Tools are type-checked. The compiler generates the JSON schema from Forge types automatically.
+Tools are type-checked. The compiler generates the JSON schema from Avra types automatically.
 
-```forge
+```avra
 agent support {
   model "claude-sonnet"
 
@@ -288,7 +288,7 @@ agent support {
     Tickets.create(data)
   }
 
-  // Tools can use other Forge features
+  // Tools can use other Avra features
   tool search_docs(query: string) -> List<{title: string, snippet: string}> {
     "Search the documentation"
     let results = fs.glob("docs/**/*.md")?
@@ -309,7 +309,7 @@ agent support {
 
 Use different models for different tasks:
 
-```forge
+```avra
 // Fast model for classification, smart model for generation
 let category = ai.ask<Category>("Classify this email: ${email}") {
   model "claude-haiku"    // fast and cheap
@@ -336,7 +336,7 @@ agent router {
 
 Agents can talk to each other through channels:
 
-```forge
+```avra
 let tasks = channel<string>(10)
 let results = channel<CodeReview>(10)
 
@@ -376,7 +376,7 @@ for task in tasks {
 
 Hook into every AI call for logging, caching, rate limiting:
 
-```forge
+```avra
 ai.configure {
   provider "anthropic"
   api_key env("ANTHROPIC_API_KEY")
@@ -410,7 +410,7 @@ ai.configure {
 
 ## Image and Multimodal
 
-```forge
+```avra
 // Send an image
 let description = ai.ask("Describe this image") {
   model "claude-sonnet"
@@ -445,7 +445,7 @@ let receipt = ai.ask<Receipt>("Extract the receipt data") {
 
 Everything together:
 
-```forge
+```avra
 use @std.ai
 use @std.fs
 use @std.process
@@ -458,12 +458,12 @@ ai.configure {
   api_key env("ANTHROPIC_API_KEY")
 }
 
-agent forge_builder {
+agent avra_builder {
   model "claude-sonnet"
   temperature 0.0
 
   system_prompt {
-    You are a Forge developer. You build applications from specs.
+    You are a Avra developer. You build applications from specs.
 
     Workflow:
     1. Read the spec
@@ -473,8 +473,8 @@ agent forge_builder {
     5. Build and test
     6. Fix errors until green
 
-    Use forge features to understand what's available.
-    Write idiomatic Forge — components, pipes, channels, tables.
+    Use avra features to understand what's available.
+    Write idiomatic Avra — components, pipes, channels, tables.
   }
 
   tool read(path: string) -> string {
@@ -489,25 +489,25 @@ agent forge_builder {
   }
 
   tool build(path: string) -> string {
-    "Compile a Forge file and return errors"
-    let r = $"forge build ${path} --error-format=json"
+    "Compile a Avra file and return errors"
+    let r = $"avra build ${path} --error-format=json"
     if r.code == 0 { "success" } else { r.stderr }
   }
 
   tool test(path: string) -> string {
     "Run tests and return results"
-    let r = $"forge test ${path} --error-format=json"
+    let r = $"avra test ${path} --error-format=json"
     if r.code == 0 { "all tests pass" } else { r.stdout + r.stderr }
   }
 
   tool explain(code: string) -> string {
-    "Explain a Forge error code"
-    $"forge explain ${code}"
+    "Explain a Avra error code"
+    $"avra explain ${code}"
   }
 
   tool features() -> string {
-    "List available Forge features"
-    $"forge features"
+    "List available Avra features"
+    $"avra features"
   }
 }
 
@@ -532,7 +532,7 @@ server :8080 {
 specs.each(job -> {
   let s = term.spinner(`Building: ${job.spec.truncate(40)}...`)
 
-  let chat = forge_builder.conversation()
+  let chat = avra_builder.conversation()
 
   // TDD loop
   chat.say(`
@@ -544,7 +544,7 @@ specs.each(job -> {
 
   s.done(term.green("✓") + ` ${job.id} complete`)
 
-  let files = fs.glob("**/*.fg")?.map(string(it))
+  let files = fs.glob("**/*.av")?.map(string(it))
   results <- { id: job.id, status: "complete", files: files }
 })
 ```
@@ -561,7 +561,7 @@ version = "0.1.0"
 description = "Provider-agnostic AI: chat, streaming, tools, structured output, agents"
 
 [native]
-library = "forge_ai"
+library = "avra_ai"
 
 [components.agent]
 kind = "block"
@@ -571,7 +571,7 @@ body = "mixed"
 
 ## What the Native Library Handles
 
-The native Rust library (`forge_ai`) is an HTTP client that speaks multiple provider protocols:
+The native Rust library (`avra_ai`) is an HTTP client that speaks multiple provider protocols:
 
 - Anthropic Messages API (streaming, tools, structured outputs)
 - OpenAI Chat Completions / Responses API (streaming, function calling, structured outputs)
@@ -579,6 +579,6 @@ The native Rust library (`forge_ai`) is an HTTP client that speaks multiple prov
 - OpenRouter (proxied access to any model)
 - Any OpenAI-compatible API (vLLM, Together, Groq, etc)
 
-The native lib handles: HTTP requests, SSE streaming, JSON schema generation from Forge types, tool call marshaling, conversation history management, retry/rate limiting, caching.
+The native lib handles: HTTP requests, SSE streaming, JSON schema generation from Avra types, tool call marshaling, conversation history management, retry/rate limiting, caching.
 
-The Forge-side (`package.fg`) handles: the `agent` component definition, tool registration, channel integration, structured output typing, middleware hooks.
+The Avra-side (`package.av`) handles: the `agent` component definition, tool registration, channel integration, structured output typing, middleware hooks.

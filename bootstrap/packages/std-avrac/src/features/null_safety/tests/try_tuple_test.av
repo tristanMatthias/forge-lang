@@ -1,0 +1,31 @@
+// `?`-split: none-guard + force-unwrap feeding a tuple destructure (the
+// post-`?`-split idiom; `?` is Result-only now).
+
+fn nstt_find(name: string) -> string? {
+    if name == "alice" { return "Alice Smith" }
+    none
+}
+
+fn nstt_greet_pair(a: string, b: string) -> int? {
+    let name_a_o = nstt_find(a)
+    if name_a_o == none { return none }
+    let name_b_o = nstt_find(b)
+    if name_b_o == none { return none }
+    let (pa, pb) = (name_a_o!, name_b_o!)
+    println(pa)
+    println(pb)
+    1
+}
+
+spec "try tuple" {
+    then "both found prints names" {
+        avra_test_capture_start()
+        let r = nstt_greet_pair("alice", "alice")
+        let out = avra_test_capture_stop()
+        r ?? 0 == 1
+    }
+    then "second missing returns none" {
+        let r2 = nstt_greet_pair("alice", "bob")
+        r2 ?? -1 == -1
+    }
+}

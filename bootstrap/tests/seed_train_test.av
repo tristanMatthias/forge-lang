@@ -1,0 +1,98 @@
+// WHY: specs for two seed-train invariants.
+//
+// (1) Canonical identity — update-seed stamps provenance comments
+// (commit, timestamp) into the pinned artifact, so byte-comparison
+// would call every train run "diverged" and republish identical
+// compilers forever. The canonical sha strips comment lines (bs2's
+// emitter never writes any), making provenance-only differences
+// invisible and real IR changes loud.
+//
+// (2) Self-containment — a published seed MUST define every Avra-
+// package symbol it uses: a fresh clone bootstraps it via seed.ll ->
+// llc + cc -> seed binary with NO other objects, so an extern `declare`
+// of a mangled package symbol (`$40` prefix, e.g. `$40std$3A$3A...`) is
+// an unresolvable reference that bricks the pin. This is exactly the
+// 2026-06-13 first-train failure: a metadata fast-path build leaked
+// extern @std decls into the candidate, the publish-verify link refused
+// it, and the train must now regenerate a self-contained IR before it
+// can pin. C externs (unmangled, e.g. @avra_alloc) are legitimate and
+// must NOT trip it.
+//
+// These live together (not in a separate file) because adding a new
+// test FILE reshuffles the parallel runner's batch packing, which can
+// flip the deliberate-SIGABRT crash-containment test elsewhere in the
+// suite — a known runner fragility unrelated to this change.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn canon(path: string) -> string {
+    avra_shell_exec("bash scripts/diagnose.sh --seed-canonical-sha ${path}").trim()
+}
+
+fn sc(ll: string) -> string {
+    avra_shell_exec("bash scripts/diagnose.sh --seed-self-contained ${ll} >/dev/null 2>&1; echo rc=$?")
+}
+
+spec "seed train: canonical seed identity" {
+    given "two seeds with identical IR but different provenance headers" {
+        then "they compare equal — the train has nothing to publish" {
+            let dir = "build/cache/_seed_train_canon"
+            avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+            avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @f() {\\n}\\n' > ${dir}/a.ll")
+            avra_shell_exec("printf '; built from commit bbb at t2\\n; source hash: zzz\\ndefine i64 @f() {\\n}\\n' > ${dir}/b.ll")
+            canon("${dir}/a.ll") == canon("${dir}/b.ll")
+        }
+        then "a real IR difference still compares different — the train advances" {
+            // Hermetic: write both operands in this block rather than
+            // leaning on a.ll from the previous `then` (isolation/order
+            // could change and silently break the comparison).
+            let dir = "build/cache/_seed_train_canon"
+            avra_shell_exec("rm -rf ${dir} && mkdir -p ${dir}")
+            avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @f() {\\n}\\n' > ${dir}/a.ll")
+            avra_shell_exec("printf '; built from commit aaa at t1\\ndefine i64 @g() {\\n}\\n' > ${dir}/c.ll")
+            canon("${dir}/a.ll") != canon("${dir}/c.ll")
+        }
+    }
+}
+
+spec "seed_is_self_contained: a pin must define every package symbol it uses" {
+    given "an IR that DEFINES its package symbols (no externs)" {
+        then "it is self-contained — rc=0" {
+            let base = "build/cache/_seed_self_contained"
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            avra_shell_exec("printf 'define i64 @\"$40std$3A$3Afoo\"() {\\nret i64 0\\n}\\n' > ${base}/ok.ll")
+            sc("${base}/ok.ll").contains("rc=0")
+        }
+    }
+    given "an IR that DECLARES an extern @std symbol (the fast-path leak)" {
+        then "it is rejected — rc=1, the exact class the train must never pin" {
+            let base = "build/cache/_seed_self_contained"
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            avra_shell_exec("printf 'declare i64 @\"$40std$3A$3Abar\"()\\ndefine i64 @main() {\\nret i64 0\\n}\\n' > ${base}/bad.ll")
+            sc("${base}/bad.ll").contains("rc=1")
+        }
+    }
+    given "an IR that DECLARES an extern NON-std package symbol" {
+        then "it is rejected too — the guard tracks any package, not just @std" {
+            let base = "build/cache/_seed_self_contained"
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            avra_shell_exec("printf 'declare i64 @\"$40mypkg$3A$3Aq\"()\\ndefine i64 @main() {\\nret i64 0\\n}\\n' > ${base}/pkg.ll")
+            sc("${base}/pkg.ll").contains("rc=1")
+        }
+    }
+    given "an IR whose only externs are unmangled C symbols" {
+        then "it stays self-contained — C externs must not false-positive" {
+            let base = "build/cache/_seed_self_contained"
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            avra_shell_exec("printf 'declare ptr @avra_alloc(i64)\\ndefine i64 @main() {\\nret i64 0\\n}\\n' > ${base}/c_extern.ll")
+            sc("${base}/c_extern.ll").contains("rc=0")
+        }
+    }
+    given "a missing IR path" {
+        then "an unreadable file is the inspection-error class — rc=2, not a misclassified rc=0/rc=1" {
+            let base = "build/cache/_seed_self_contained"
+            avra_shell_exec("rm -rf ${base} && mkdir -p ${base}")
+            sc("${base}/does_not_exist.ll").contains("rc=2")
+        }
+    }
+}

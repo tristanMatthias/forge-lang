@@ -1,0 +1,46 @@
+// WHY: regression — a TYPE-ANNOTATED generic enum constructor placed directly
+// in a spec/then (or given/then) block must compile and run, not SIGSEGV.
+//
+// This was a latent crash in the generic-enum ctor mono/codegen path, reachable
+// only once the typeck annotate pass descended into spec/given bodies: an
+// earlier attempt to add that descent was reverted precisely because it tripped
+// this crash (`bs2 check` passed; the program died downstream in mono/codegen).
+// The under-applied-generic gate (F1004) + the annotate-descent fix removed both
+// halves — the bare-generic first-match that caused the wrong-layout crash, and
+// the missing annotation that left the construction's type unstamped.
+//
+// These `then` blocks RUN the constructed values, so a regression fails at
+// compile time (crash / mono failure) or at runtime (wrong value), never
+// silently. Covers int + string payloads and given nesting, all in spec-block
+// context. (A multi-param enum whose annotation supplies a payload-absent type
+// param is a *separate* inference limitation, tracked elsewhere — not this
+// crash, and deliberately not exercised here.)
+
+enum CrashOpt<T> {
+    None,
+    Some(value: T),
+}
+
+spec "a type-annotated generic enum ctor compiles + runs inside a spec/then" {
+    then "int payload, annotated, directly under spec" {
+        let o: CrashOpt<int> = CrashOpt.Some(42)
+        match o { .None -> false  .Some(v) -> v == 42 }
+    }
+    then "string (pointer) payload, annotated, directly under spec" {
+        let o: CrashOpt<string> = CrashOpt.Some("hi")
+        match o { .None -> false  .Some(v) -> v == "hi" }
+    }
+    then "the None arm of an annotated generic enum also round-trips" {
+        let o: CrashOpt<int> = CrashOpt.None
+        match o { .None -> true  .Some(v) -> false }
+    }
+}
+
+spec "the annotated generic enum ctor also works nested under a given" {
+    given "a then nested one level deeper" {
+        then "annotated generic enum ctor under given/then" {
+            let o: CrashOpt<int> = CrashOpt.Some(7)
+            match o { .None -> false  .Some(v) -> v == 7 }
+        }
+    }
+}

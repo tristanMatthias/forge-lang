@@ -9,7 +9,11 @@ use super::types::ForData;
 impl TypeChecker {
     /// Type-check a for loop via the Feature dispatch system.
     pub(crate) fn check_for_feature(&mut self, fe: &FeatureStmt) {
-        feature_stmt!(self, fe, ForData, |data| self.check_for(&data.pattern, &data.iterable, &data.body));
+        feature_stmt!(self, fe, ForData, |data| self.check_for(
+            &data.pattern,
+            &data.iterable,
+            &data.body
+        ));
     }
 
     pub(crate) fn check_for(&mut self, pattern: &Pattern, iterable: &Expr, body: &Block) {

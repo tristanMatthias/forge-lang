@@ -1,0 +1,47 @@
+extern fn avra_json_stringify_int(value: int) -> string
+extern fn avra_json_stringify_string(s: string) -> string
+extern fn avra_json_stringify_bool(value: bool) -> string
+extern fn avra_json_get_int(json: string, key: string) -> int
+extern fn avra_json_get_string(json: string, key: string) -> string
+extern fn avra_json_get_bool(json: string, key: string) -> bool
+
+fn sj_obj() -> string { "{\"x\": 100, \"y\": -5, \"name\": \"test\", \"ok\": false}" }
+
+spec "std json" {
+    then "stringify zero" {
+        avra_json_stringify_int(0) == "0"
+    }
+    then "stringify negative int" {
+        avra_json_stringify_int(0 - 42) == "-42"
+    }
+    then "stringify empty string" {
+        avra_json_stringify_string("") == "\"\""
+    }
+    then "stringify string with spaces" {
+        avra_json_stringify_string("with spaces") == "\"with spaces\""
+    }
+    then "stringify bool true" {
+        avra_json_stringify_bool(true) == "true"
+    }
+    then "stringify bool false" {
+        avra_json_stringify_bool(false) == "false"
+    }
+    then "parse positive int" {
+        avra_json_get_int(sj_obj(), "x") == 100
+    }
+    then "parse negative int" {
+        avra_json_get_int(sj_obj(), "y") == 0 - 5
+    }
+    then "parse string" {
+        avra_json_get_string(sj_obj(), "name") == "test"
+    }
+    then "parse bool false" {
+        avra_json_get_bool(sj_obj(), "ok") == false
+    }
+    then "stringify newline escape" {
+        avra_json_stringify_string("line\none") == "\"line\\none\""
+    }
+    then "stringify tab escape" {
+        avra_json_stringify_string("tab\there") == "\"tab\\there\""
+    }
+}

@@ -1,0 +1,448 @@
+// Sized integer types — u8/u16/u32/u64 and i8/i16/i32 — covered
+// end-to-end. Phase A added the ValueType variants; Phase B routes
+// `ctx.type_for` through narrow LLVM widths so allocas, loads,
+// stores, and arithmetic operate at the declared width and wrap
+// correctly on overflow.
+//
+// Tracking ticket: forge-crafting-intepreters-k5al under language
+// epic forge-crafting-intepreters-ayq3.
+
+spec "sized ints: declarable as let-binding types" {
+    then "u8 binding" {
+        let x: u8 = 250
+        x == 250
+    }
+    then "u16 binding" {
+        let x: u16 = 65535
+        x == 65535
+    }
+    then "u32 binding" {
+        let x: u32 = 4000000000
+        x == 4000000000
+    }
+    then "u64 binding" {
+        let x: u64 = 1234567890
+        x == 1234567890
+    }
+    then "i8 binding" {
+        let x: i8 = 0 - 100
+        x == 0 - 100
+    }
+    then "i16 binding" {
+        let x: i16 = 30000
+        x == 30000
+    }
+    then "i32 binding" {
+        let x: i32 = 2147483647
+        x == 2147483647
+    }
+}
+
+spec "sized ints: arithmetic at native width" {
+    then "u8 wraps at 256: 200+100 = 44" {
+        let a: u8 = 200
+        let b: u8 = 100
+        let c: u8 = a + b
+        c == 44
+    }
+    then "u16 wraps at 65536: 65000+1000 = 464" {
+        let a: u16 = 65000
+        let b: u16 = 1000
+        let c: u16 = a + b
+        c == 464
+    }
+    then "u32 wraps at 2^32: 4e9 + 1e9 = 705032704" {
+        let a: u32 = 4000000000
+        let b: u32 = 1000000000
+        let c: u32 = a + b
+        c == 705032704
+    }
+    then "u32 add without wrap" {
+        let a: u32 = 100
+        let b: u32 = 200
+        let c: u32 = a + b
+        c == 300
+    }
+}
+
+spec "sized ints: usable as fn parameter and return types" {
+    then "fn taking u32 returns the same value" {
+        let result: u32 = id_u32(42)
+        result == 42
+    }
+    then "fn taking u8 returns the same value (255 fits)" {
+        let result: u8 = id_u8(255)
+        result == 255
+    }
+    then "fn returning u8 + arithmetic wraps correctly" {
+        let a: u8 = id_u8(100)
+        let b: u8 = id_u8(200)
+        let c: u8 = a + b      // 300 mod 256 = 44
+        c == 44
+    }
+}
+
+spec "sized ints: subtraction wraps unsigned" {
+    then "u8: 0 - 1 wraps to 255" {
+        let a: u8 = 0
+        let b: u8 = 1
+        let c: u8 = a - b
+        c == 255
+    }
+    then "u16: 0 - 1 wraps to 65535" {
+        let a: u16 = 0
+        let b: u16 = 1
+        let c: u16 = a - b
+        c == 65535
+    }
+    then "u8: 5 - 200 wraps to 61 (5 - 200 + 256)" {
+        let a: u8 = 5
+        let b: u8 = 200
+        let c: u8 = a - b
+        c == 61
+    }
+}
+
+spec "sized ints: multiplication wraps at native width" {
+    then "u8: 16 * 16 = 0 (256 mod 256)" {
+        let a: u8 = 16
+        let b: u8 = 16
+        let c: u8 = a * b
+        c == 0
+    }
+    then "u8: 17 * 16 = 16 (272 mod 256)" {
+        let a: u8 = 17
+        let b: u8 = 16
+        let c: u8 = a * b
+        c == 16
+    }
+    then "u16: 256 * 256 = 0 (65536 mod 65536)" {
+        let a: u16 = 256
+        let b: u16 = 256
+        let c: u16 = a * b
+        c == 0
+    }
+    then "u32: 65536 * 65536 = 0 (2^32 mod 2^32)" {
+        let a: u32 = 65536
+        let b: u32 = 65536
+        let c: u32 = a * b
+        c == 0
+    }
+}
+
+spec "sized ints: signed wraps at native width" {
+    then "i8: 127 + 1 wraps to -128" {
+        let a: i8 = 127
+        let b: i8 = 1
+        let c: i8 = a + b
+        c == 0 - 128
+    }
+    then "i16: 32767 + 1 wraps to -32768" {
+        let a: i16 = 32767
+        let b: i16 = 1
+        let c: i16 = a + b
+        c == 0 - 32768
+    }
+    then "i32: 2147483647 + 1 wraps to -2147483648" {
+        let a: i32 = 2147483647
+        let b: i32 = 1
+        let c: i32 = a + b
+        c == 0 - 2147483648
+    }
+}
+
+spec "sized ints: comparison operators work at native width" {
+    then "u8 less-than" {
+        let a: u8 = 5
+        let b: u8 = 10
+        a < b
+    }
+    then "u16 equality" {
+        let a: u16 = 1024
+        let b: u16 = 1024
+        a == b
+    }
+    then "i8 negative less-than positive" {
+        let a: i8 = 0 - 50
+        let b: i8 = 10
+        a < b
+    }
+    // forge-crafting-intepreters-kxvn regression: prior to the fix,
+    // u8 comparison used signed ICmp, so 127 < 255 read as 127 < -1
+    // and returned false. Now uses ULT and the full sorted sequence
+    // 0 < 127 < 255 holds as expected.
+    then "u8 sorted-comparison sequence (0 < 127 < 255)" {
+        let a: u8 = 0
+        let b: u8 = 127
+        let c: u8 = 255
+        a < b && b < c
+    }
+    then "u16 sorted-comparison crossing the signed boundary" {
+        let a: u16 = 0
+        let b: u16 = 32767
+        let c: u16 = 65535
+        a < b && b < c
+    }
+    then "u32 sorted-comparison crossing the signed boundary" {
+        let a: u32 = 0
+        let b: u32 = 2147483647
+        let c: u32 = 4000000000
+        a < b && b < c
+    }
+    then "u8 not greater than: 5 > 200 is false (signed bug would say true)" {
+        let a: u8 = 5
+        let b: u8 = 200
+        !(a > b)
+    }
+    then "u8 less-than-or-equal at the high boundary" {
+        let a: u8 = 254
+        let b: u8 = 255
+        a <= b
+    }
+}
+
+spec "sized ints: division uses unsigned semantics for unsigned types" {
+    // Companion to forge-crafting-intepreters-kxvn. Pre-fix, SDiv on
+    // u8 250 / 4 read 250 as -6, returned -2 = 254 in u8 instead of 62.
+    then "u8: 200 / 4 = 50 (signed bug would yield 242)" {
+        let a: u8 = 200
+        let b: u8 = 4
+        let c: u8 = a / b
+        c == 50
+    }
+    then "u8: 250 / 5 = 50" {
+        let a: u8 = 250
+        let b: u8 = 5
+        let c: u8 = a / b
+        c == 50
+    }
+    then "u16: 50000 / 250 = 200" {
+        let a: u16 = 50000
+        let b: u16 = 250
+        let c: u16 = a / b
+        c == 200
+    }
+    then "u32: 4 billion / 2 = 2 billion" {
+        let a: u32 = 4000000000
+        let b: u32 = 2
+        let c: u32 = a / b
+        c == 2000000000
+    }
+    then "u8: 200 % 7 = 4 (signed bug would yield -2 = 254)" {
+        let a: u8 = 200
+        let b: u8 = 7
+        let c: u8 = a % b
+        c == 4
+    }
+}
+
+spec "sized ints: signed division still works for i8/i16/i32" {
+    then "i8: -10 / 3 = -3 (signed truncation toward zero)" {
+        let a: i8 = 0 - 10
+        let b: i8 = 3
+        let c: i8 = a / b
+        c == 0 - 3
+    }
+    then "i16: -100 / 5 = -20" {
+        let a: i16 = 0 - 100
+        let b: i16 = 5
+        let c: i16 = a / b
+        c == 0 - 20
+    }
+}
+
+spec "sized ints: shift left at native width" {
+    // forge-crafting-intepreters-1pte5 (the shift-bug ticket): pre-fix,
+    // `let c:u8 = a << 4` failed at LLVM-verifier with mismatched
+    // operand widths (`shl i8 %a, i64 4`). Shift codegen now casts
+    // rhs to lhs's narrow width.
+    then "u8: 1 << 4 = 16" {
+        let a: u8 = 1
+        let c: u8 = a << 4
+        c == 16
+    }
+    then "u8: 1 << 7 = 128 (high bit set)" {
+        let a: u8 = 1
+        let c: u8 = a << 7
+        c == 128
+    }
+    // Note: shifting by >= bitwidth is LLVM UB, so we don't test
+    // `1 << 8` here. Spec axis 6 should formalise the behaviour
+    // (wrap to zero vs trap) before we add a regression for it.
+    then "u16: 1 << 15 = 32768" {
+        let a: u16 = 1
+        let c: u16 = a << 15
+        c == 32768
+    }
+    then "u32: 1 << 31 = 2147483648" {
+        let a: u32 = 1
+        let c: u32 = a << 31
+        c == 2147483648
+    }
+}
+
+spec "sized ints: shift right uses unsigned for unsigned types" {
+    // u8 arithmetic shift would sign-extend the high bit:
+    //   200 >> 1 with ASHR reads as -56 >> 1 = -28 = 228
+    // Logical shift gives the right answer (100).
+    then "u8: 200 >> 1 = 100 (signed bug would yield 228)" {
+        let a: u8 = 200
+        let c: u8 = a >> 1
+        c == 100
+    }
+    then "u8: 255 >> 4 = 15 (signed bug would yield 255)" {
+        let a: u8 = 255
+        let c: u8 = a >> 4
+        c == 15
+    }
+    then "u16: 50000 >> 1 = 25000" {
+        let a: u16 = 50000
+        let c: u16 = a >> 1
+        c == 25000
+    }
+    then "u32: 4 billion >> 16 = 61035 (4e9 / 65536)" {
+        let a: u32 = 4000000000
+        let c: u32 = a >> 16
+        c == 61035
+    }
+}
+
+spec "sized ints: signed shift right keeps sign-extension" {
+    then "i8: -8 >> 1 = -4 (arithmetic, sign-fill)" {
+        let a: i8 = 0 - 8
+        let c: i8 = a >> 1
+        c == 0 - 4
+    }
+    then "i16: -100 >> 2 = -25" {
+        let a: i16 = 0 - 100
+        let c: i16 = a >> 2
+        c == 0 - 25
+    }
+}
+
+spec "sized ints: int() conversion zero-extends unsigned, sign-extends signed" {
+    // Pre-fix, int(u8) fell through to avra_parse_int and treated
+    // the narrow value as a string pointer → segfault. Now uses ZExt
+    // for unsigned variants and SExt for signed.
+    then "int(u8) zero-extends across the signed boundary" {
+        let a: u8 = 200
+        int(a) == 200
+    }
+    then "int(u16) preserves full unsigned range" {
+        let a: u16 = 65000
+        int(a) == 65000
+    }
+    then "int(u32) preserves the high-bit value" {
+        let a: u32 = 4000000000
+        int(a) == 4000000000
+    }
+    then "int(i8) sign-extends negative" {
+        let a: i8 = 0 - 50
+        int(a) == 0 - 50
+    }
+    then "int(i16) sign-extends negative across boundary" {
+        let a: i16 = 0 - 32000
+        int(a) == 0 - 32000
+    }
+    then "int(i32) sign-extends large negative" {
+        let a: i32 = 0 - 2000000000
+        int(a) == 0 - 2000000000
+    }
+}
+
+spec "sized ints: string() conversion uses correct sign" {
+    // Pre-fix, string(i8 -50) printed "206" because the narrow value
+    // got auto-zero-extended to i64 before the variadic snprintf
+    // call. Now codegen emits explicit ZExt for unsigned and SExt
+    // for signed before the call.
+    then "string(u8 200) == \"200\"" {
+        let a: u8 = 200
+        string(a) == "200"
+    }
+    then "string(u16 65000) == \"65000\"" {
+        let a: u16 = 65000
+        string(a) == "65000"
+    }
+    then "string(u32 4000000000) == \"4000000000\"" {
+        let a: u32 = 4000000000
+        string(a) == "4000000000"
+    }
+    then "string(i8 -50) == \"-50\" (signed bug would say \"206\")" {
+        let a: i8 = 0 - 50
+        string(a) == "-50"
+    }
+    then "string(i16 -32000) == \"-32000\"" {
+        let a: i16 = 0 - 32000
+        string(a) == "-32000"
+    }
+    then "string(i32 -2000000000) == \"-2000000000\"" {
+        let a: i32 = 0 - 2000000000
+        string(a) == "-2000000000"
+    }
+}
+
+spec "sized ints: mixed-width binary ops normalise to the narrow type" {
+    // Pre-fix, `let a:u8=200; a + 50` emitted `add i8 %a, i64 50` and
+    // LLVM's verifier rejected the width mismatch. The same applied
+    // to comparisons (icmp i8, i64) and bitwise ops. The codegen now
+    // truncates the i64 literal to lhs's narrow width before the op.
+    then "u8 + literal: 200 + 50 = 250 (no overflow)" {
+        let a: u8 = 200
+        let b: u8 = a + 50
+        b == 250
+    }
+    then "u8 + literal wraps: 200 + 100 = 44" {
+        let a: u8 = 200
+        let b: u8 = a + 100
+        b == 44
+    }
+    then "u8 > literal works on the high half: 200 > 127" {
+        let a: u8 = 200
+        a > 127
+    }
+    then "u8 == literal: 255 == 255" {
+        let a: u8 = 255
+        a == 255
+    }
+    then "u8 bitwise & literal: 0xCE & 0x0F = 0x0E" {
+        let a: u8 = 206
+        let b: u8 = a & 15
+        b == 14
+    }
+    then "u8 bitwise | literal: 0x80 | 0x0F = 0x8F" {
+        let a: u8 = 128
+        let b: u8 = a | 15
+        b == 143
+    }
+    then "i16 - literal: 100 - 200 = -100" {
+        let a: i16 = 100
+        let b: i16 = a - 200
+        b == 0 - 100
+    }
+    then "u32 + literal at the high end: 4_000_000_000 + 1 = 4_000_000_001" {
+        let a: u32 = 4000000000
+        let b: u32 = a + 1
+        b == 4000000001
+    }
+}
+
+spec "sized ints: roundtrip through fn calls preserves wrapped value" {
+    then "id_u8(300 % 256) == 44" {
+        // 300 doesn't fit in u8 — let-binding would error.
+        // Use arithmetic to land at a wrapped value first.
+        let a: u8 = 200
+        let b: u8 = 100
+        let c: u8 = a + b   // 44
+        let r: u8 = id_u8(c)
+        r == 44
+    }
+    then "id_i16(0 - 32768) preserves sign" {
+        let a: i16 = 0 - 32768
+        let r: i16 = id_i16(a)
+        r == 0 - 32768
+    }
+}
+
+fn id_u32(x: u32) -> u32 { x }
+fn id_u8(x: u8) -> u8 { x }
+fn id_i16(x: i16) -> i16 { x }

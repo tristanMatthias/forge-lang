@@ -9,7 +9,6 @@ mod if_else
 mod printing
 mod primitive_types
 mod enums
-mod pattern_matching
 mod structs
 mod impl_methods
 mod while_loops
@@ -25,6 +24,7 @@ mod traits
 mod generics
 mod pipe_operator
 mod modules
+mod is_keyword
 // mod error_propagation  // has parse errors with Ok_/Err_ tokens
 
 use core.ast.NodeRef
@@ -32,8 +32,8 @@ use core.types.Type
 use codegen.Codegen
 use checker.TypeChecker
 use variables.{parse_let, parse_mut, parse_const, check_var, emit_var, top_level_var}
-use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn, declare_all_functions, emit_fn_body, store_fn_for_codegen}
-use enums.{parse_enum, check_enum, emit_enum_decl, top_level_enum}
+use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn, emit_fn_body, store_fn_for_codegen}
+use enums.{parse_enum, check_enum, emit_enum_decl, emit_enum_construct, top_level_enum}
 use structs.{parse_type_decl, check_type_decl, check_struct_lit, emit_type_decl, emit_struct_lit, top_level_type}
 use traits.{parse_trait, check_trait, top_level_trait}
 use impl_methods.{parse_impl, check_impl, emit_impl, top_level_impl}
@@ -41,12 +41,14 @@ use modules.{parse_use, check_use, top_level_use}
 use while_loops.{parse_while, check_while, emit_while}
 use for_loops.{parse_for, check_for, emit_for}
 use if_else.{check_if_expr, emit_if_expr}
-use pattern_matching.{check_match, emit_match}
+// pattern_matching: matches now use core AST (Expr.MatchExpr / Statement.Match)
+// directly via Codegen.emit_match_arms — feature dispatch not used.
 use collections.{check_collection, emit_collection}
 use ranges.{check_range, emit_range}
 use string_templates.{check_template, emit_template}
 use closures.{check_closure, emit_closure}
 use null_safety.{check_null_safety, emit_null_safety}
+// is_keyword: handled inline via Expr.IsCheck in codegen/mod.fg
 // use error_propagation.{check_error_prop, emit_error_prop}  // not exported yet
 
 export fn init_features() {
@@ -72,13 +74,14 @@ export fn dispatch_emit_stmt(cg: Codegen, node: NodeRef) {
 export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
     let fid = node.feature
     if fid == "if_else" { return emit_if_expr(cg, node) }
-    else if fid == "pattern_matching" { return emit_match(cg, node) }
+    // pattern_matching feature: handled directly via Expr.MatchExpr in codegen
     else if fid == "collections" { return emit_collection(cg, node) }
     else if fid == "ranges" { return emit_range(cg, node) }
     else if fid == "string_templates" { return emit_template(cg, node) }
     else if fid == "closures" { return emit_closure(cg, node) }
     else if fid == "null_safety" { return emit_null_safety(cg, node) }
     else if fid == "structs" { return emit_struct_lit(cg, node) }
+    else if fid == "enums" { return emit_enum_construct(cg, node) }
     else {
         eprintln("[dispatch_emit_expr] unknown feature: ${fid}")
     }

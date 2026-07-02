@@ -1,0 +1,21 @@
+// WHY: feature registration for `quote { body }` (and the kind-annotated
+// forms `quote stmt`, `quote stmts`, `quote type`, `quote decl`).
+//
+// Phase 3 (vez6.3) of Components V2. Captures the AST of `body` as a
+// runtime Expr value via a lowering pass that turns Expr.Quote into
+// AST-construction calls. Splicing (`~name`) lands in Phase 4.
+//
+// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surface
+// flat at `features.quote_expr.{...}`.
+
+use core.{feature_new, Feature, Expr}
+
+/// Register the `quote { body }` expression feature. The feature is
+/// minimal at this stage — parser only. Resolver / typeck / codegen
+/// hooks land alongside the lowering pass that replaces Expr.Quote
+/// nodes with concrete AST-construction expressions.
+export fn quote_expr_feature() -> Feature {
+    feature_new("quote") with {
+        expr_tag: Expr.Quote("expr", Expr.None),
+    }
+}

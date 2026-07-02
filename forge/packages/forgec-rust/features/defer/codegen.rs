@@ -11,7 +11,9 @@ impl<'ctx> Codegen<'ctx> {
     /// compiled in reverse order before function returns (both explicit `return`
     /// statements and implicit returns at the end of `compile_fn`).
     pub(crate) fn compile_defer_feature(&mut self, fe: &FeatureStmt) {
-        feature_stmt!(self, fe, DeferData, |data| self.deferred_stmts.push(data.body.clone()));
+        feature_stmt!(self, fe, DeferData, |data| self
+            .deferred_stmts
+            .push(data.body.clone()));
     }
 
     /// Execute all deferred statements in reverse order.

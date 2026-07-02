@@ -1,0 +1,560 @@
+// AST → SymList indexer.
+//
+// Walks a parsed List<SStmt>, reads /// → @doc annotations, renders the
+// declaration shape into a string-typed SymKind, and produces std-lsp
+// Sym records ready for the SymbolGraph.
+//
+// This is the AST-based replacement for the line-based regex extractor
+// in src/docs/mod.av — every detail (parameter types, generics, field
+// types, exported-ness, span) is read from the parser's output rather
+// than re-parsed from source text.
+//
+// The indexer is compiler-internal because it consumes Stmt/List<SStmt>
+// from src/core/ast.av. It produces std-lsp's portable Sym shape, so
+// downstream consumers (docs CLI, LSP server) only need @std.lsp's
+// types — they never import compiler internals.
+
+use core.{avra_selfhost_read_file, avra_shell_exec}
+use core.{Stmt, SStmt,
+              Expr, SExpr,
+              ParamEntry, FieldEntry,
+              Variant, ValueType, TypeParamEntry, render_type_param_list,
+              vtype_display, vtype_render_full,
+              find_annotation, doc_string_for, stmt_unwrap}
+use parse.{parse_program_source}
+use pathutil.{relativise}
+use @std.lsp.{LspPos, LspSpan, Sym, SymKind,
+              SymbolGraph, CallEdge,
+              CacheState, CacheFileEntry,
+              calls_new, calls_add,
+              graph_new, graph_extend,
+              lsp_pos, lsp_span, sym_new,
+              lsp_serve,
+              cache_empty, cache_is_fresh, cache_evict_file,
+              cache_add_file, cache_load, cache_save,
+              sym_list_concat}
+
+// ── Public API ──────────────────────────────────────────────────────
+
+/// Walk `stmts`, returning every documentable declaration as a Sym
+/// in source order. `file` is the relative path used to populate
+/// Sym.file; the caller is responsible for normalising it (e.g.
+/// project-relative).
+///
+/// Module nesting is preserved by qualifying every nested decl with
+/// the module's name as a `module::name` prefix. So
+/// `mod core { fn foo() }` produces `name="foo", qualified="core::foo"`.
+export fn extract_from_ast(stmts: List<SStmt>, file: string) -> List<Sym> {
+    extract_inner(stmts, file, "")
+}
+
+/// Same as `extract_from_ast` but seeds the qualified-name prefix
+/// from the file's relative path. `core/ast.av` → "core::ast", so
+/// a fn inside that file ends up qualified as `core::ast::foo`.
+/// `core/mod.av` → "core" (the `mod` filename collapses). Used by
+/// `avra docs` so cross-file hierarchical addressing works.
+export fn extract_from_ast_at(stmts: List<SStmt>, file: string) -> List<Sym> {
+    extract_inner(stmts, file, file_to_module_prefix(file))
+}
+
+/// Like `extract_calls_from_ast` but seeds the caller's
+/// qualified-name prefix from the file path, mirroring
+/// `extract_from_ast_at`.
+export fn extract_calls_from_ast_at(stmts: List<SStmt>, file: string) -> List<CallEdge> {
+    extract_calls_inner(stmts, file, file_to_module_prefix(file), calls_new())
+}
+
+/// Map a file path to its qualified-name prefix:
+/// `"core/ast.av" → "core::ast"`, `"core/mod.av" → "core"`,
+/// `"main.av" → ""` (root-level files don't get a prefix).
+fn file_to_module_prefix(file: string) -> string {
+    if !file.contains("/") { return "" }
+    let last_slash = last_index_of_slash(file)
+    let basename = file.substring(last_slash + 1, file.length)
+    let dir = file.substring(0, last_slash)
+    let stem = if basename == "mod.av" {
+        ""
+    } else if basename.ends_with(".av") {
+        basename.substring(0, basename.length - 3)
+    } else {
+        basename
+    }
+    let dir_qual = path_to_qualifier(dir)
+    if stem == "" { dir_qual }
+    else if dir_qual == "" { stem }
+    else { "${dir_qual}::${stem}" }
+}
+
+/// Right-to-left search for `/` in `s`. Returns -1 when none.
+fn last_index_of_slash(s: string) -> int {
+    mut i = s.length - 1
+    while i >= 0 {
+        if s.substring(i, i + 1) == "/" { return i }
+        i = i - 1
+    }
+    -1
+}
+
+/// Convert a `/`-separated directory path into a `::`-separated
+/// qualifier. Skips empty segments and `.` (current-dir).
+fn path_to_qualifier(dir: string) -> string {
+    mut out = ""
+    for seg in dir.split("/") {
+        if seg == "" || seg == "." { continue }
+        out = if out == "" { seg } else { "${out}::${seg}" }
+    }
+    out
+}
+
+/// Walk `stmts` collecting CallEdge records for every
+/// `Expr.Call(Ident, _)` site found inside a function body.
+/// Captures the most common "X calls Y" relationship; deeper
+/// coverage (calls inside match arms, closures, lambdas) is
+/// layered on as needed.
+export fn extract_calls_from_ast(stmts: List<SStmt>, file: string) -> List<CallEdge> {
+    extract_calls_inner(stmts, file, "", calls_new())
+}
+
+/// Recursive worker for `extract_calls_from_ast` and
+/// `extract_calls_from_ast_at`. Threads the qualified-name prefix
+/// through nested modules and impls; descends into function bodies
+/// via `walk_body_for_calls`.
+fn extract_calls_inner(stmts: List<SStmt>, file: string, qual_prefix: string, acc: List<CallEdge>) -> List<CallEdge> {
+    mut cur_acc = acc
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        let inner = stmt_unwrap(ss.node)
+        cur_acc = match inner {
+            .Function(name, _, _, _, body) -> {
+                let qual = qualify(qual_prefix, name)
+                walk_body_for_calls(body, file, qual, cur_acc)
+            }
+            .Module(name, body) -> {
+                let nested_qual = qualify(qual_prefix, name)
+                extract_calls_inner(body, file, nested_qual, cur_acc)
+            }
+            .Impl(_, methods) -> extract_calls_inner(methods, file, qual_prefix, cur_acc)
+            _ -> cur_acc
+        }
+        i = i + 1
+    }
+    cur_acc
+}
+
+/// One level deep into a function body — capture direct
+/// `Expr.Call` sites whose callee is a bare identifier. Deeper
+/// expression structure (lambdas, match arms) is reached through
+/// `scan_expr_for_calls`.
+fn walk_body_for_calls(stmts: List<SStmt>, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
+    mut cur_acc = acc
+    mut i = 0
+    while i < stmts.length {
+        cur_acc = scan_stmt_for_calls(stmts[i], file, caller, cur_acc)
+        i = i + 1
+    }
+    cur_acc
+}
+
+/// Per-statement call scanner. Recurses into expression payloads
+/// for `let`/`mut`/`const`/`if`/`while`/`return`/`expr`; treats
+/// other statements as opaque.
+fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
+    let inner = stmt_unwrap(ss.node)
+    let scan_e = (e: Expr) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+    match inner {
+        .Expr(e) -> scan_e(e)
+        .Return(e) -> scan_e(e)
+        .Let(_, _, e) -> scan_e(e)
+        .Mut(_, _, e) -> scan_e(e)
+        .Const(_, _, e) -> scan_e(e)
+        .Block(body) -> walk_body_for_calls(body, file, caller, acc)
+        .If(cond, then_branch, _) -> {
+            let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
+            scan_stmt_for_calls(SStmt { node: then_branch, line: ss.line, col: ss.col }, file, caller, a1)
+        }
+        .While(cond, body) -> {
+            let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
+            scan_stmt_for_calls(SStmt { node: body, line: ss.line, col: ss.col }, file, caller, a1)
+        }
+        _ -> acc
+    }
+}
+
+/// Per-expression call scanner. Records a CallEdge when the
+/// callee is a bare `Ident` and recurses into args + nested
+/// binary/logical/grouping operands. Other expression shapes are
+/// not traversed (would over-report on closure bodies and lambdas).
+fn scan_expr_for_calls(e: Expr, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
+    match e {
+        .Call(callee, args) -> {
+            let with_callee = match callee {
+                .Ident(name) -> calls_add(acc, CallEdge { caller, callee: name, file, line, col })
+                _ -> acc
+            }
+            scan_expr_list(args, file, caller, line, col, with_callee)
+        }
+        .Binary(left, _, right) -> {
+            let a1 = scan_expr_for_calls(left, file, caller, line, col, acc)
+            scan_expr_for_calls(right, file, caller, line, col, a1)
+        }
+        .Logical(left, _, right) -> {
+            let a1 = scan_expr_for_calls(left, file, caller, line, col, acc)
+            scan_expr_for_calls(right, file, caller, line, col, a1)
+        }
+        .Grouping(inner) -> scan_expr_for_calls(inner, file, caller, line, col, acc)
+        _ -> acc
+    }
+}
+
+/// Map `scan_expr_for_calls` over a `List<SExpr>` — used to walk
+/// argument lists when the call site itself is recorded.
+fn scan_expr_list(es: List<SExpr>, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
+    mut cur_acc = acc
+    mut i = 0
+    while i < es.length {
+        cur_acc = scan_expr_for_calls(es[i].node, file, caller, line, col, cur_acc)
+        i = i + 1
+    }
+    cur_acc
+}
+
+// ── Internals ───────────────────────────────────────────────────────
+
+/// Recursive worker for `extract_from_ast`. `qual_prefix`
+/// accumulates the module path: "" at the top level, "core" inside
+/// `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
+/// Iterative append over the built-in `List<Sym>`.
+fn extract_inner(stmts: List<SStmt>, file: string, qual_prefix: string) -> List<Sym> {
+    mut acc: List<Sym> = []
+    mut i = 0
+    while i < stmts.length {
+        acc = process_stmt(stmts[i], file, qual_prefix, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Convert a single statement into a Sym (or several, when the
+/// stmt is a Module containing nested decls). Pulls `///` doc text
+/// via `doc_string_for` and the export flag via the AST's
+/// annotation list. Statements that don't produce a doc symbol
+/// (Expr, Return, …) pass through with `acc` unchanged.
+fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: List<Sym>) -> List<Sym> {
+    let outer = ss.node
+    let inner = stmt_unwrap(outer)
+    let doc = doc_string_for(outer)
+    let exported = has_export_annotation(outer)
+    let sp = lsp_span(lsp_pos(ss.line, ss.col), lsp_pos(ss.line, ss.col))
+
+    match inner {
+        .Function(name, tp, params, ret, _) -> {
+            let sig = render_fn_signature(name, tp, params, ret)
+            let ret_str = vtype_display(ret)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Fn(sig, ret_str), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .TypeDecl(name, tp, fields) -> {
+            let rendered = render_type_decl_with_fields(name, tp, fields)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .NewtypeDecl(name, inner_vt) -> {
+            let rendered = "type ${name} = ${vtype_render_full(inner_vt)}"
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .UnionAliasDecl(name, ty_vt) -> {
+            let rendered = "type ${name} = ${vtype_render_full(ty_vt)}"
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type(rendered), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .ShapeDecl(name, _) -> {
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Type("shape ${name}"), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .EnumDecl(name, _, variants) -> {
+            let csv = render_variant_csv(variants)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Enum(csv), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .TraitDecl(name, _) -> {
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Trait("trait ${name}"), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .Impl(type_name, _) -> {
+            // type_name is "Trait:Type" or "Type"; both rendered as a
+            // single Impl entry. The trait/type split lives in std-lsp
+            // SymKind.Impl(trait, type) but we encode unparsed text
+            // here and let the renderer split if needed.
+            let colon = type_name.index_of(":")
+            let pair = if colon >= 0 {
+                let t = type_name.substring(0, colon)
+                let on = type_name.substring(colon + 1, type_name.length)
+                SymKind.Impl(t, on)
+            } else {
+                SymKind.Impl("", type_name)
+            }
+            let qual = qualify(qual_prefix, type_name)
+            let display = if colon >= 0 { type_name.substring(0, colon) } else { type_name }
+            let sym = sym_new(display, qual, pair, doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .Const(name, vt, _) -> {
+            let ty_str = vtype_display(vt)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Const(ty_str), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .Mut(name, vt, _) -> {
+            let ty_str = vtype_display(vt)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Mut(ty_str), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .Let(name, vt, _) -> {
+            let ty_str = vtype_display(vt)
+            let qual = qualify(qual_prefix, name)
+            let sym = sym_new(name, qual, SymKind.Let(ty_str), doc, file, sp, exported, "")
+            mut out = acc
+            out.push(sym)
+            out
+        }
+        .Module(name, body) -> {
+            let qual = qualify(qual_prefix, name)
+            let module_sym = sym_new(name, qual, SymKind.Module, doc, file, sp, exported, "")
+            // Recurse into the module body so nested decls land in the
+            // graph with the correct qualified prefix.
+            let inner_syms = extract_inner(body, file, qual)
+            // Append the module symbol first, then its contents — keeps
+            // module-then-children ordering for downstream renderers.
+            mut out = acc
+            out.push(module_sym)
+            sym_list_concat(out, inner_syms)
+        }
+        _ -> acc
+    }
+}
+
+// ── Annotation helpers ──────────────────────────────────────────────
+
+/// True when `s` carries an `@export` annotation. Used to populate
+/// `Sym.exported` so the doc renderer can dim non-exported items.
+fn has_export_annotation(s: Stmt) -> bool {
+    find_annotation(s, "export") != null
+}
+
+// ── Signature rendering ─────────────────────────────────────────────
+
+/// Render a fn declaration as a single-line signature string used
+/// by the docs renderer header. Handles type params, fully typed
+/// params, and the `-> Ret` clause (suppressed when ret is void).
+fn render_fn_signature(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret: ValueType) -> string {
+    let tp_str = render_type_param_list(tp)
+    let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+    let params_str = render_params_typed(params)
+    let ret_str = vtype_display(ret)
+    let ret_part = if ret_str == "" || ret_str == "void" { "" } else { " -> ${ret_str}" }
+    "fn ${name}${tp_part}(${params_str})${ret_part}"
+}
+
+/// Render a `type Foo<T, U>` header without a body. Used as the
+/// prefix when `render_type_decl_with_fields` adds the body, and
+/// as the standalone header for shape decls.
+fn render_type_decl(name: string, tp: List<TypeParamEntry>) -> string {
+    let tp_str = render_type_param_list(tp)
+    let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+    "type ${name}${tp_part}"
+}
+
+/// Render a type declaration with its field list inline, e.g.
+/// `type Point = { x: int, y: int }`. Used by the indexer so
+/// `docs --gen` can recover field names without re-parsing the
+/// source.
+fn render_type_decl_with_fields(name: string, tp: List<TypeParamEntry>, fields: List<FieldEntry>) -> string {
+    let header = render_type_decl(name, tp)
+    let body = render_field_decls(fields)
+    if body == "" { return header }
+    "${header} = { ${body} }"
+}
+
+/// Render `name: ty, name: ty` for a field list. Used by
+/// `render_type_decl_with_fields`. Single-pass joiner — the prior
+/// head/tail split (`render_field_decls` + `render_field_decls_tail`)
+/// collapses into one loop with an `i == 0` guard.
+fn render_field_decls(fields: List<FieldEntry>) -> string {
+    mut out = ""
+    for (i, e) in fields.enumerate() {
+        if i == 0 {
+            out = "${e.name}: ${vtype_display(e.resolved)}"
+        } else {
+            out = "${out}, ${e.name}: ${vtype_display(e.resolved)}"
+        }
+    }
+    out
+}
+
+/// Render the head element of a comma-separated `name: ty` param
+/// list. Suppresses `: ty` when the type is unknown / blank so
+/// untyped lambdas still render cleanly.
+fn render_params_typed(params: List<ParamEntry>) -> string {
+    mut out = ""
+    for (i, p) in params.enumerate() {
+        if i > 0 { out = out + ", " }
+        let head_ty = vtype_display(p.vtype)
+        out = out + (if head_ty == "" || head_ty == "<unknown>" { p.name } else { "${p.name}: ${head_ty}" })
+    }
+    out
+}
+
+/// Render an enum's variant list as a comma-separated string of
+/// variant names. Used as the `SymKind.Enum` payload so the docs
+/// renderer can show variant lists without re-walking the AST.
+fn render_variant_csv(vs: List<Variant>) -> string {
+    mut out = ""
+    for (i, v) in vs.enumerate() {
+        if i == 0 { out = v.name } else { out = "${out}, ${v.name}" }
+    }
+    out
+}
+
+// ── List helpers ────────────────────────────────────────────────────
+
+/// Concatenate `prefix::name` with a single `::` separator. When
+/// `prefix` is empty, returns `name` verbatim — used everywhere
+/// the indexer builds qualified symbol paths.
+fn qualify(prefix: string, name: string) -> string {
+    if prefix == "" { name } else { "${prefix}::${name}" }
+}
+
+// ── LSP server entry point ─────────────────────────────────────────
+//
+// Indexes every .av in `project_dir` then enters @std/lsp's stdio
+// JSON-RPC loop. Lives here because the bootstrap module resolver
+// currently dedupes a second @std.lsp import — we centralize the
+// import in this module so the whole compiler reaches std-lsp via
+// indexer.
+
+/// Entry point for the `bs2 lsp` subcommand. Walks every .av file in
+/// `project_dir`, builds a SymbolGraph + CallList, then enters
+/// `lsp_serve` to handle JSON-RPC requests over stdio. Blocks until
+/// the editor closes its end.
+///
+/// V1 serves a static graph — there's no reindex-on-edit yet (waits
+/// for a watch loop in std-lsp).
+export fn run_lsp_server(project_dir: string) {
+    let cmd = "find ${project_dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
+    let files_text = avra_shell_exec(cmd)
+
+    mut g = graph_new()
+    mut calls = calls_new()
+    for path in files_text.split("\n") {
+        if path == "" { continue }
+        let content = avra_selfhost_read_file(path)
+        if content == "" { continue }
+        let parsed = parse_program_source(content)
+        if parsed.had_error || parsed.stmts == null { continue }
+        let rel = relativise(path, project_dir)
+        let file_syms = extract_from_ast(parsed.stmts!, rel)
+        let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
+        g = graph_extend(g, file_syms)
+        for e in file_calls { calls.push(e) }
+    }
+
+    lsp_serve(g, calls)
+}
+
+// ── Doc cache ───────────────────────────────────────────────────────
+//
+// Persist the project's SymList between `avra docs` invocations so
+// repeated runs don't re-walk + re-parse every file. Cache lives at
+// target/lsp/cache.tsv (TSV format from @std/lsp.cache_encode);
+// freshness is mtime-based, so editing one file only re-extracts
+// that one file.
+//
+// Compiler version is stamped into the cache header. A version bump
+// invalidates the whole cache via cache_decode's header check.
+
+/// Read a file's mtime as a Unix epoch second. Stamped into the
+/// cache so freshness checks can compare on-disk vs. cached mtime.
+extern fn avra_file_mtime(path: string) -> int
+
+/// `target/lsp` directory under the project root — where the doc
+/// cache files live. Created on demand by `extract_project_syms_cached`.
+fn cache_dir_path(project_dir: string) -> string {
+    "${project_dir}/target/lsp"
+}
+
+/// Full path to `cache.tsv` inside the cache directory.
+fn cache_file_path(project_dir: string) -> string {
+    "${cache_dir_path(project_dir)}/cache.tsv"
+}
+
+/// Compiler version stamped into the cache header. Bumping this
+/// invalidates every cached entry on the next read — the cache
+/// decoder rejects mismatching headers as stale.
+fn cache_version() -> string {
+    "0.1.0"
+}
+
+/// Cached version of `extract_from_ast_at` for the whole project.
+/// Reads `target/lsp/cache.tsv` (when not `force_rebuild`), walks
+/// every `.av` file, and only re-parses + re-extracts files whose
+/// mtime is newer than the cached stamp. Persists the updated
+/// state back to disk on exit (failure is non-fatal).
+export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) -> List<Sym> {
+    let cache_path = cache_file_path(project_dir)
+    let initial = if force_rebuild { cache_empty() } else { cache_load(cache_path) }
+    let cmd = "find ${project_dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' -not -path '*/target/*' 2>/dev/null | sort"
+    let files_text = avra_shell_exec(cmd)
+    if files_text == "" { return [] }
+
+    mut state = initial
+    for path in files_text.split("\n") {
+        if path == "" { continue }
+        let rel = relativise(path, project_dir)
+        if cache_is_fresh(state, rel) { continue }
+        // Stale or new: evict any prior contribution and re-extract.
+        state = cache_evict_file(state, rel)
+        let content = avra_selfhost_read_file(path)
+        if content == "" { continue }
+        let parsed = parse_program_source(content)
+        if parsed.had_error || parsed.stmts == null { continue }
+        let file_syms = extract_from_ast_at(parsed.stmts!, rel)
+        let mtime = avra_file_mtime(path)
+        state = cache_add_file(state, rel, mtime, file_syms)
+    }
+
+    // Persist; failure is non-fatal (next run will re-extract).
+    avra_shell_exec("mkdir -p ${cache_dir_path(project_dir)}")
+    cache_save(state, cache_path, cache_version())
+
+    state.syms
+}

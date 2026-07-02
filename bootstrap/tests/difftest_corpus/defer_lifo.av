@@ -1,0 +1,14 @@
+// WHY: diff-test corpus — exercises defer LIFO ordering across normal and
+// early-return exit paths.
+fn work(x: int) -> string {
+    defer println("third (first deferred)")
+    defer println("second")
+    defer println("first (last deferred)")
+    if x > 0 { return "positive" }
+    "non-positive"
+}
+
+fn main() {
+    println(work(5))
+    println(work(-1))
+}

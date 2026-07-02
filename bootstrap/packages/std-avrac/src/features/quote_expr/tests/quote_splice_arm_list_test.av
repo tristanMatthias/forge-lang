@@ -1,0 +1,40 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 2 probe 2.
+// Splice a `List<MatchArm>` into a `match { ... }` body via `~arms`
+// in match-arm position. Tests the parser sentinel + lowerer's
+// `list_concat`-based segmentation.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "quote: ~arms splices a List<MatchArm> into match-arm position" {
+    then "spliced arms fire at runtime" {
+        let out = write_fixture_and_run("/tmp/avra_quote_splice_arm_list_test.av", 
+            "use @std.avrac.core.{Stmt, SStmt, MatchArm}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_arms() -> List<MatchArm> {\n" +
+            "    let a1 = quote arm { 1 -> 100 }\n" +
+            "    let a2 = quote arm { 2 -> 200 }\n" +
+            "    [a1, a2]\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_main() -> List<SStmt> {\n" +
+            "    let arms = make_arms()\n" +
+            "    quote stmts {\n" +
+            "        let v = 2\n" +
+            "        let r = match v {\n" +
+            "            ~arms\n" +
+            "            _ -> 0\n" +
+            "        }\n" +
+            "        println(string(r))\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_main)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("200")
+    }
+}

@@ -1,0 +1,99 @@
+// "Did you mean?" suggestions for undefined variables, fields, and
+// other resolver/typeck diagnostics.
+//
+// Algorithm mirrors @std/lsp's composed scorer in
+// packages/std-lsp/src/lsp.av — keep the two in sync. Eventual
+// deduplication is tracked in epic forge-crafting-intepreters-rnb9.2:
+// once avrac can `use @std.lsp.{did_you_mean}` (currently blocked on
+// the bootstrap import path requiring a seed cycle for any new
+// avrac-side @std import), this file becomes a one-line re-export.
+//
+// Scoring tiers (highest first):
+//   1000  exact         800  case-insensitive exact
+//    600  prefix         400  subsequence ("iu" matches "init_user")
+//    300  substring      200  Levenshtein ≤ 2
+//      0  no match
+//
+// Threshold for surfacing a suggestion: 200 (silence beats a
+// misleading suggestion).
+
+use core.{avra_selfhost_levenshtein}
+
+/// Edit distance between two strings, computed by the C runtime.
+/// Used as the last-resort tier in `suggest_score` (≤ 2 edits scores
+/// 200; everything beyond doesn't suggest at all).
+export fn levenshtein(a: string, b: string) -> int {
+    avra_selfhost_levenshtein(a, b, a.length, b.length)
+}
+
+/// Score a single `(query, candidate)` pair with the same composed
+/// scorer as `@std/lsp`. Pure: same inputs always produce the same
+/// int. Scoring tiers (highest first): 1000 exact, 800 case-
+/// insensitive, 600 prefix (penalised by length-diff), 400
+/// subsequence, 300 substring, 200 Levenshtein ≤ 2, 0 otherwise.
+fn suggest_score(query: string, candidate: string) -> int {
+    if query == candidate {
+        return 1000
+    }
+    let ql = query.to_lower()
+    let cl = candidate.to_lower()
+    if ql == cl {
+        return 800
+    }
+    if cl.starts_with(ql) {
+        let len_diff = candidate.length - query.length
+        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
+        return 600 - pen
+    }
+    if suggest_is_subsequence(ql, cl) {
+        let pen = candidate.length - query.length
+        return 400 - if pen > 0 { pen } else { 0 - pen }
+    }
+    if cl.contains(ql) {
+        let pos_pen = cl.index_of(ql)
+        return 300 - pos_pen
+    }
+    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
+    if dist <= 2 {
+        return 200 - dist * 50
+    }
+    0
+}
+
+/// True when every character of `needle` appears in order somewhere
+/// in `haystack` (e.g. "iu" is a subsequence of "init_user"). The
+/// classic abbreviation-match heuristic.
+fn suggest_is_subsequence(needle: string, haystack: string) -> bool {
+    if needle.length == 0 { return true }
+    mut ni = 0
+    mut hi = 0
+    while hi < haystack.length {
+        if needle.substring(ni, ni + 1) == haystack.substring(hi, hi + 1) {
+            ni = ni + 1
+            if ni == needle.length {
+                return true
+            }
+        }
+        hi = hi + 1
+    }
+    false
+}
+
+/// Find the closest match to `name` among `candidates`, or `""` if
+/// nothing scores above the suggestion threshold (199 — silence
+/// beats a misleading "did you mean?").
+export fn suggest_similar_from_list(name: string, candidates: List<string>) -> string {
+    mut best = ""
+    mut best_score = 199
+    mut i = 0
+    while i < candidates.length {
+        let candidate = candidates[i]
+        let s = suggest_score(name, candidate)
+        if s > best_score {
+            best = candidate
+            best_score = s
+        }
+        i = i + 1
+    }
+    best
+}

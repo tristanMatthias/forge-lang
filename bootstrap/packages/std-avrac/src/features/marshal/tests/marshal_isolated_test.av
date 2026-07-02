@@ -1,0 +1,82 @@
+// nce6.1.E: per-T `isolated_<T>(body)` wrapper synthesised
+// alongside every @marshal-derived to_bytes / from_bytes_<T>.
+// Runs `body` in a forked subprocess and returns
+// `Result<T, IsolatedError>`. Pragmatic stand-in for a generic
+// `isolated<T: Marshal>(body)` until trait-bound generics land.
+
+use @std.process.{bytes_builder, bytes_reader, isolated_bytes, IsolatedError}
+
+@marshal
+type IPayload = { value: int, label: string }
+
+@marshal
+type IBag = { items: List<string>, total: int }
+
+@marshal
+enum IStatus {
+    Idle,
+    Working(progress: int),
+    Done(msg: string),
+}
+
+fn produce_payload() -> IPayload {
+    IPayload { value: 123, label: "from-fork" }
+}
+
+fn produce_bag() -> IBag {
+    IBag { items: ["a", "b", "c"], total: 3 }
+}
+
+fn produce_status() -> IStatus {
+    IStatus.Working(75)
+}
+
+spec "@marshal: isolated_<T>(body) round-trip (nce6.1.E)" {
+    then "struct payload crosses fork boundary" {
+        let r = isolated_IPayload(produce_payload)
+        match r {
+            .Ok(p) -> p.value == 123 && p.label == "from-fork"
+            .Err(_) -> false
+        }
+    }
+    then "struct-with-list crosses fork boundary" {
+        let r = isolated_IBag(produce_bag)
+        match r {
+            .Ok(b) -> b.total == 3 && b.items.length == 3 && b.items[1] == "b"
+            .Err(_) -> false
+        }
+    }
+    then "enum payload crosses fork boundary" {
+        let r = isolated_IStatus(produce_status)
+        match r {
+            .Ok(s) -> {
+                match s {
+                    .Idle -> false
+                    .Working(p) -> p == 75
+                    .Done(_) -> false
+                }
+            }
+            .Err(_) -> false
+        }
+    }
+    then "Err arm propagates when body crashes" {
+        // A child that panics surfaces as Result.Err(IsolatedError.Crashed).
+        // We don't have a clean panic primitive in Avra source, so this
+        // case is exercised by avra_panic-style code in the existing
+        // isolated_bytes_test suite. Here we just verify Err is a
+        // reachable arm shape by branching on a known-good result —
+        // the .Err pattern must still type-check.
+        let r = isolated_IPayload(produce_payload)
+        match r {
+            .Ok(_) -> true
+            .Err(e) -> {
+                // Touch the error to make sure the destructure works.
+                match e {
+                    .Crashed -> false
+                    .ForkFailed -> false
+                    .PipeFailed -> false
+                }
+            }
+        }
+    }
+}

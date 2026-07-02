@@ -1,0 +1,597 @@
+// WHY: L0 tracer bullet for bd ps3t.1.1 (epic ps3t — "AST as the single
+// source of truth"). THROWAWAY scaffolding. Its only job is to prove the
+// L1→L6 architecture composes end-to-end AND that the perf story holds,
+// BEFORE we farm out the layer epics. It is NOT wired into the real
+// compiler pipeline; it is a scratch program run with `bs2 run`.
+//
+// The slice compiles ONE tiny construct — an integer arithmetic expression
+// like `1 + 2 * 3 - 4` — straight through every layer of the proposed
+// architecture:
+//
+//   Layer 1  data-oriented PER-TYPE ARENA (structure-of-arrays columns
+//            indexed by a typed ExprId) + a byte-offset SPAN side-table.
+//   Layer 3  content fingerprints (hash-consing / content-addressing
+//            preview) used as memo + cache keys.
+//   Layer 4  a tiny grammar-DSL-style recursive-descent parser, one
+//            function per grammar production, tracking byte offsets.
+//   Layer 6  a minimal red-green (Salsa-style) memo store for ONE query
+//            (`type_of node N`) with revision tracking + early cutoff,
+//            and a codegen cache keyed by a body fingerprint.
+//
+// It then runs four scenarios — cold build, a NO-OP edit, a real value
+// edit, and a differential oracle — asserting (via instrumentation
+// counters) that the query and codegen are genuinely REUSED on the no-op
+// edit, correctly INVALIDATED on the value edit, and that the incrementally
+// maintained results EQUAL a from-scratch rebuild (spine doc §10.B: "the
+// engine's correctness oracle"). Finally it records a perf baseline.
+//
+// Grammar (precedence climbing):
+//   expr   := term (('+' | '-') term)*
+//   term   := factor ('*' factor)*
+//   factor := INT
+//
+// Type tags: 0 = Int, 1 = TypeError.  Op codes: 0 = '+', 1 = '-', 2 = '*'.
+// Node kinds: 0 = IntLit, 1 = Binary.
+
+extern fn avra_uptime_ms() -> int
+extern fn avra_bytes_from_string(s: string) -> bytes
+extern fn avra_bytes_byte(b: bytes, idx: int) -> int
+extern fn avra_bytes_length(b: bytes) -> int
+extern fn avra_process_exit(code: int)
+
+// ── pure hash helpers (Layer 3: content fingerprints) ──────────────────
+// djb2-style mixing. i64 multiply wraps on overflow — fine for a hash;
+// determinism (not cryptographic strength) is all the tracer needs.
+
+fn mix(h: int, x: int) -> int { h * 33 + x }
+fn mix2(a: int, b: int) -> int { mix(mix(5381, a), b) }
+
+fn opcode_str(op: int) -> string {
+    if op == 0 { return "add" }
+    if op == 1 { return "sub" }
+    "mul"
+}
+
+// ── Layer 1: data-oriented per-type arena ──────────────────────────────
+// Structure-of-arrays: every column is a List indexed by ExprId (= the row
+// index returned at alloc time). `span_lo`/`span_hi` are the byte-offset
+// SPAN side-table — spans live beside the node data, keyed by the same id,
+// rather than being smeared onto a wrapper struct (the SExpr/SStmt drift
+// this epic exists to kill).
+type ExprArena = {
+    kind:    List<int>   // 0 = IntLit, 1 = Binary
+    ival:    List<int>   // IntLit: literal value (else -1)
+    lhs:     List<int>   // Binary: left ExprId    (else -1)
+    rhs:     List<int>   // Binary: right ExprId   (else -1)
+    op:      List<int>   // Binary: op code        (else -1)
+    span_lo: List<int>   // span side-table: start byte offset (inclusive)
+    span_hi: List<int>   // span side-table: end byte offset   (exclusive)
+}
+
+impl ExprArena {
+    fn count(self) -> int { self.kind.length }
+
+    fn alloc_int(self, v: int, lo: int, hi: int) -> int {
+        let id = self.kind.length
+        self.kind.push(0)
+        self.ival.push(v)
+        self.lhs.push(-1)
+        self.rhs.push(-1)
+        self.op.push(-1)
+        self.span_lo.push(lo)
+        self.span_hi.push(hi)
+        id
+    }
+
+    fn alloc_bin(self, op: int, l: int, r: int, lo: int, hi: int) -> int {
+        let id = self.kind.length
+        self.kind.push(1)
+        self.ival.push(-1)
+        self.lhs.push(l)
+        self.rhs.push(r)
+        self.op.push(op)
+        self.span_lo.push(lo)
+        self.span_hi.push(hi)
+        id
+    }
+
+    // LOCAL content fingerprint: identity of THIS node only. For a Binary
+    // node it hashes the op and the child IDS (structural position), NOT
+    // the child values — so editing a leaf does not perturb its parents'
+    // local fingerprints. This is what the red-green INPUT layer keys on.
+    fn local_fp(self, id: int) -> int {
+        if self.kind[id] == 0 { return mix2(101, self.ival[id]) }
+        mut h = 211
+        h = mix(h, self.op[id])
+        h = mix(h, self.lhs[id])
+        h = mix(h, self.rhs[id])
+        h
+    }
+
+    // STRUCTURAL (Merkle) fingerprint: hashes the whole subtree. Changing
+    // any leaf changes every ancestor's structural fp. This is the "body
+    // fingerprint" the codegen cache is keyed on.
+    fn struct_fp(self, id: int) -> int {
+        if self.kind[id] == 0 { return mix2(101, self.ival[id]) }
+        mut h = 211
+        h = mix(h, self.op[id])
+        h = mix(h, self.struct_fp(self.lhs[id]))
+        h = mix(h, self.struct_fp(self.rhs[id]))
+        h
+    }
+
+    // Reference evaluator — folds the expression to its integer value so
+    // the tracer can assert codegen would be CORRECT.
+    fn eval(self, id: int) -> int {
+        if self.kind[id] == 0 { return self.ival[id] }
+        let l = self.eval(self.lhs[id])
+        let r = self.eval(self.rhs[id])
+        let op = self.op[id]
+        if op == 0 { return l + r }
+        if op == 1 { return l - r }
+        l * r
+    }
+
+    // Emit a real, valid LLVM function for the expression — recursively,
+    // with SSA temporaries. Demonstrates the codegen SHAPE; the cache
+    // wraps THIS.
+    fn emit_fn(self, root: int) -> string {
+        let e = Emit { tmp: 0, buf: "" }
+        let op = e.node(self, root)
+        "define i64 @expr() {\nentry:\n" + e.buf + "  ret i64 " + op + "\n}\n"
+    }
+}
+
+// SSA emit context (mutated by-pointer across the recursion).
+type Emit = { tmp: int, buf: string }
+
+impl Emit {
+    // Returns the LLVM operand for node `id` (a bare literal or a %tN
+    // register) and appends any instructions it needs to `buf`.
+    fn node(self, a: ExprArena, id: int) -> string {
+        if a.kind[id] == 0 { return string(a.ival[id]) }
+        let lo = self.node(a, a.lhs[id])
+        let ro = self.node(a, a.rhs[id])
+        let reg = "%t" + string(self.tmp)
+        self.tmp = self.tmp + 1
+        self.buf = self.buf + "  " + reg + " = " + opcode_str(a.op[id]) + " i64 " + lo + ", " + ro + "\n"
+        reg
+    }
+}
+
+// ── Layer 4: grammar-DSL-style recursive-descent parser ────────────────
+// One method per grammar production. Tracks the byte offset (`pos`) so it
+// can hand the arena true byte-offset spans.
+type Parser = { src: bytes, n: int, pos: int, ok: bool }
+
+impl Parser {
+    fn cur(self) -> int {
+        if self.pos < self.n { return avra_bytes_byte(self.src, self.pos) }
+        -1
+    }
+
+    fn skip_ws(self) {
+        mut go = true
+        while go {
+            if self.pos < self.n and self.cur() == 32 { self.pos = self.pos + 1 } else { go = false }
+        }
+    }
+
+    // factor := INT
+    fn parse_factor(self, a: ExprArena) -> int {
+        self.skip_ws()
+        let lo = self.pos
+        mut v = 0
+        mut go = true
+        while go {
+            let c = self.cur()
+            if c >= 48 and c <= 57 {
+                v = v * 10 + (c - 48)
+                self.pos = self.pos + 1
+            } else { go = false }
+        }
+        // A factor must be at least one digit — reject "x" / "1 +" / EOF
+        // rather than silently fabricating IntLit(0).
+        if self.pos == lo { self.ok = false }
+        a.alloc_int(v, lo, self.pos)
+    }
+
+    // term := factor ('*' factor)*
+    fn parse_term(self, a: ExprArena) -> int {
+        mut left = self.parse_factor(a)
+        mut go = true
+        while go {
+            self.skip_ws()
+            if self.cur() == 42 {
+                self.pos = self.pos + 1
+                let lo = a.span_lo[left]
+                let right = self.parse_factor(a)
+                left = a.alloc_bin(2, left, right, lo, a.span_hi[right])
+            } else { go = false }
+        }
+        left
+    }
+
+    // expr := term (('+' | '-') term)*
+    fn parse_expr(self, a: ExprArena) -> int {
+        mut left = self.parse_term(a)
+        mut go = true
+        while go {
+            self.skip_ws()
+            let c = self.cur()
+            if c == 43 or c == 45 {
+                let op = if c == 43 { 0 } else { 1 }
+                self.pos = self.pos + 1
+                let lo = a.span_lo[left]
+                let right = self.parse_term(a)
+                left = a.alloc_bin(op, left, right, lo, a.span_hi[right])
+            } else { go = false }
+        }
+        left
+    }
+}
+
+type ParseOut = { arena: ExprArena, root: int, ok: bool }
+
+fn new_arena() -> ExprArena {
+    ExprArena { kind: [], ival: [], lhs: [], rhs: [], op: [], span_lo: [], span_hi: [] }
+}
+
+fn parse_program(source: string) -> ParseOut {
+    let b = avra_bytes_from_string(source)
+    mut p = Parser { src: b, n: avra_bytes_length(b), pos: 0, ok: true }
+    let a = new_arena()
+    let root = p.parse_expr(a)
+    // The whole input must be consumed — reject trailing garbage ("1 2").
+    p.skip_ws()
+    if p.pos != p.n { p.ok = false }
+    ParseOut { arena: a, root: root, ok: p.ok }
+}
+
+// ── Layer 6: red-green incremental DB ──────────────────────────────────
+// A minimal Salsa-style engine. The INPUT layer stores a per-node local
+// fingerprint with the revision it last changed. The DERIVED query
+// `type_of` memoizes (value, verified_at, changed_at) per ExprId and uses
+// EARLY CUTOFF: on re-run it only recomputes a node when something it read
+// (its input cell, or a child query whose VALUE changed) has a changed_at
+// later than when this node was last verified. The codegen cache is keyed
+// by the structural body fingerprint.
+//
+// Instrumentation counters are the proof of reuse: they count how often
+// the query / codegen bodies ACTUALLY ran.
+type Db = {
+    revision:      int
+    // input layer (per ExprId)
+    in_fp:         List<int>
+    in_changed_at: List<int>
+    // type_of memo (per ExprId)
+    t_has:         List<int>
+    t_val:         List<int>
+    t_verified:    List<int>
+    t_changed:     List<int>
+    // codegen cache (parallel lists: fingerprint -> IR text)
+    cg_keys:       List<int>
+    cg_vals:       List<string>
+    // instrumentation
+    n_type_exec:   int   // times the type_of body actually ran
+    n_cg_exec:     int   // times the codegen body actually ran
+    n_cg_hit:      int
+    n_cg_miss:     int
+}
+
+fn new_db() -> Db {
+    Db {
+        revision: 0,
+        in_fp: [], in_changed_at: [],
+        t_has: [], t_val: [], t_verified: [], t_changed: [],
+        cg_keys: [], cg_vals: [],
+        n_type_exec: 0, n_cg_exec: 0, n_cg_hit: 0, n_cg_miss: 0
+    }
+}
+
+impl Db {
+    fn ensure_memo(self, n: int) {
+        mut go = true
+        while go {
+            if self.t_has.length < n {
+                self.t_has.push(0)
+                self.t_val.push(-1)
+                self.t_verified.push(0)
+                self.t_changed.push(0)
+            } else { go = false }
+        }
+    }
+
+    // INPUT-layer early cutoff: re-setting an input to its existing value
+    // does NOT bump changed_at. A no-op edit therefore bumps nothing.
+    fn set_input(self, id: int, fp: int) {
+        if id < self.in_fp.length {
+            if self.in_fp[id] != fp {
+                self.in_fp.set(id, fp)
+                self.in_changed_at.set(id, self.revision)
+            }
+        } else {
+            self.in_fp.push(fp)
+            self.in_changed_at.push(self.revision)
+        }
+    }
+
+    fn ingest(self, a: ExprArena) {
+        mut i = 0
+        let n = a.count()
+        while i < n {
+            self.set_input(i, a.local_fp(i))
+            i = i + 1
+        }
+    }
+
+    // The query body. Counted every time it actually runs.
+    fn compute_type(self, a: ExprArena, id: int) -> int {
+        self.n_type_exec = self.n_type_exec + 1
+        if a.kind[id] == 0 { return 0 }            // Int
+        let lt = self.type_of(a, a.lhs[id])
+        let rt = self.type_of(a, a.rhs[id])
+        if lt == rt { return lt }
+        1                                          // TypeError
+    }
+
+    fn type_of(self, a: ExprArena, id: int) -> int {
+        // cold: never computed
+        if self.t_has[id] == 0 {
+            let v = self.compute_type(a, id)
+            self.t_has.set(id, 1)
+            self.t_val.set(id, v)
+            self.t_verified.set(id, self.revision)
+            self.t_changed.set(id, self.revision)
+            return v
+        }
+        // already verified at the current revision
+        if self.t_verified[id] == self.revision { return self.t_val[id] }
+
+        // validate against everything this query read
+        mut stale = false
+        if self.in_changed_at[id] > self.t_verified[id] { stale = true }
+        if a.kind[id] == 1 {
+            let l = a.lhs[id]
+            let r = a.rhs[id]
+            let lv = self.type_of(a, l)   // refresh children first
+            let rv = self.type_of(a, r)
+            if self.t_changed[l] > self.t_verified[id] { stale = true }
+            if self.t_changed[r] > self.t_verified[id] { stale = true }
+        }
+
+        if stale == false {
+            // EARLY CUTOFF — nothing changed; just re-stamp verified.
+            self.t_verified.set(id, self.revision)
+            return self.t_val[id]
+        }
+
+        // recompute; VALUE-based early cutoff feeds downstream nodes.
+        let nv = self.compute_type(a, id)
+        if nv != self.t_val[id] {
+            self.t_val.set(id, nv)
+            self.t_changed.set(id, self.revision)
+        }
+        self.t_verified.set(id, self.revision)
+        nv
+    }
+
+    fn cg_lookup(self, fp: int) -> int {
+        mut i = 0
+        while i < self.cg_keys.length {
+            if self.cg_keys[i] == fp { return i }
+            i = i + 1
+        }
+        -1
+    }
+
+    fn codegen(self, a: ExprArena, root: int) -> string {
+        let fp = a.struct_fp(root)
+        let idx = self.cg_lookup(fp)
+        if idx >= 0 {
+            self.n_cg_hit = self.n_cg_hit + 1
+            return self.cg_vals[idx]
+        }
+        self.n_cg_miss = self.n_cg_miss + 1
+        self.n_cg_exec = self.n_cg_exec + 1
+        let ir = a.emit_fn(root)
+        self.cg_keys.push(fp)
+        self.cg_vals.push(ir)
+        ir
+    }
+}
+
+// Drive a whole edit-revision through the persistent DB.
+fn rebuild(db: Db, a: ExprArena, root: int) {
+    db.ensure_memo(a.count())
+    db.ingest(a)
+    let _t = db.type_of(a, root)
+    let _ir = db.codegen(a, root)
+}
+
+// ── assertions ─────────────────────────────────────────────────────────
+
+fn check(label: string, ok: bool) -> int {
+    if ok {
+        println("  PASS  " + label)
+        return 0
+    }
+    println("  FAIL  " + label)
+    1
+}
+
+fn ns_per(ms: int, iters: int) -> int {
+    (ms * 1000000) / iters
+}
+
+fn main() {
+    println("=== ps3t.1.1 — L0 tracer bullet ===")
+    println("")
+
+    let source = "1 + 2 * 3 - 4"   // = 1 + (2*3) - 4 = 3
+    let expected = 3
+
+    // ── parse + arena dump (Layer 1 + Layer 4) ─────────────────────────
+    let pr = parse_program(source)
+    let a = pr.arena
+    let root = pr.root
+    let nodes = a.count()
+    println("source: \"" + source + "\"")
+    println("arena: " + string(nodes) + " nodes, root=ExprId(" + string(root) + ")")
+    mut i = 0
+    while i < nodes {
+        let span = "[" + string(a.span_lo[i]) + "," + string(a.span_hi[i]) + ")"
+        if a.kind[i] == 0 {
+            println("  ExprId(" + string(i) + ") IntLit " + string(a.ival[i]) + " span" + span)
+        } else {
+            println("  ExprId(" + string(i) + ") Binary '" + opcode_str(a.op[i]) + "' lhs=" + string(a.lhs[i]) + " rhs=" + string(a.rhs[i]) + " span" + span)
+        }
+        i = i + 1
+    }
+    println("")
+
+    mut fails = 0
+
+    // ── scenario 1: cold build (one persistent DB) ─────────────────────
+    mut db = new_db()
+    db.revision = 1
+    rebuild(db, a, root)
+    let val = a.eval(root)
+    let ir = db.codegen(a, root)   // already cached by rebuild -> a hit
+    println("[cold build @rev1]")
+    println("  type_of(root) = " + string(db.t_val[root]) + " (0=Int)")
+    println("  eval(root)    = " + string(val))
+    println("  type_exec=" + string(db.n_type_exec) + " cg_miss=" + string(db.n_cg_miss) + " cg_hit=" + string(db.n_cg_hit))
+    println("  emitted LLVM:")
+    println(ir)
+    fails = fails + check("cold: query ran once per node", db.n_type_exec == nodes)
+    fails = fails + check("cold: codegen emitted once", db.n_cg_miss == 1)
+    fails = fails + check("cold: root types as Int", db.t_val[root] == 0)
+    fails = fails + check("cold: eval is correct (=3)", val == expected)
+    println("")
+
+    let type_exec_after_cold = db.n_type_exec
+    let cg_exec_after_cold = db.n_cg_exec
+
+    // ── scenario 2: NO-OP edit — re-parse identical source ──────────────
+    let pr2 = parse_program(source)
+    db.revision = 2
+    rebuild(db, pr2.arena, pr2.root)
+    println("[no-op edit @rev2]")
+    println("  type_exec=" + string(db.n_type_exec) + " cg_miss=" + string(db.n_cg_miss) + " cg_hit=" + string(db.n_cg_hit))
+    fails = fails + check("no-op: query body NOT re-run (early cutoff)", db.n_type_exec == type_exec_after_cold)
+    fails = fails + check("no-op: codegen NOT re-run (cache hit)", db.n_cg_exec == cg_exec_after_cold)
+    fails = fails + check("no-op: codegen served from cache", db.n_cg_hit >= 1)
+    println("")
+
+    // ── scenario 3: REAL value edit — change a literal (3 -> 5) ─────────
+    let source2 = "1 + 2 * 5 - 4"   // = 1 + (2*5) - 4 = 7
+    let pr3 = parse_program(source2)
+    db.revision = 3
+    rebuild(db, pr3.arena, pr3.root)
+    let val3 = pr3.arena.eval(pr3.root)
+    println("[value edit @rev3]  source: \"" + source2 + "\"")
+    println("  type_exec=" + string(db.n_type_exec) + " cg_miss=" + string(db.n_cg_miss) + " cg_hit=" + string(db.n_cg_hit))
+    println("  eval(root) = " + string(val3))
+    // exactly one leaf's input changed; its type is still Int (value
+    // unchanged) so ancestors' type queries early-cut-off => +1 exec only.
+    fails = fails + check("edit: exactly one query re-run (leaf)", db.n_type_exec == type_exec_after_cold + 1)
+    fails = fails + check("edit: codegen re-emitted (cache invalidated)", db.n_cg_exec == cg_exec_after_cold + 1)
+    fails = fails + check("edit: eval is correct (=7)", val3 == 7)
+    println("")
+
+    // ── scenario 4: differential oracle (spine doc §10.B) ──────────────
+    // "incremental result MUST equal from-scratch result" — the query
+    // engine's correctness oracle. The incremental DB has been carried
+    // across three revisions; a fresh DB recomputes everything cold. For
+    // the SAME (edited) program the type_of result AND the emitted IR must
+    // be identical, or the incremental machinery is lying.
+    let inc_type = db.t_val[pr3.root]
+    let inc_ir = db.codegen(pr3.arena, pr3.root)   // served from the incremental cache
+    mut fresh = new_db()
+    fresh.revision = 1
+    rebuild(fresh, pr3.arena, pr3.root)
+    let fresh_type = fresh.t_val[pr3.root]
+    let fresh_ir = fresh.codegen(pr3.arena, pr3.root)
+    println("[differential oracle @rev3]  incremental vs from-scratch")
+    fails = fails + check("oracle: incremental type == from-scratch type", inc_type == fresh_type)
+    fails = fails + check("oracle: incremental IR == from-scratch IR", inc_ir == fresh_ir)
+    println("")
+
+    // ── scenario 5: input validation (CodeRabbit review, PR #525) ──────
+    // A factor requires >=1 digit and the whole input must be consumed, so
+    // malformed input is rejected (ok == false) instead of silently
+    // fabricating IntLit(0) or ignoring trailing garbage. (This is basic
+    // hard-rejection, NOT the error-TOLERANT partial-tree recovery that
+    // remains an L1/L4 requirement — see the write-up.)
+    println("[input validation]")
+    fails = fails + check("valid input parses ok", parse_program(source).ok)
+    fails = fails + check("missing operand (\"1 +\") rejected", parse_program("1 +").ok == false)
+    fails = fails + check("trailing garbage (\"1 2\") rejected", parse_program("1 2").ok == false)
+    println("")
+
+    // ── perf baseline ──────────────────────────────────────────────────
+    println("[perf baseline]  (avg over many iterations; CLOCK_MONOTONIC ms)")
+    let iters = 60000
+
+    // parse
+    let p0 = avra_uptime_ms()
+    mut k = 0
+    while k < iters {
+        let _ = parse_program(source)
+        k = k + 1
+    }
+    let p1 = avra_uptime_ms()
+
+    // typeck cold (fresh DB + ingest + type_of each iter)
+    let c0 = avra_uptime_ms()
+    k = 0
+    while k < iters {
+        mut d = new_db()
+        d.revision = 1
+        d.ensure_memo(a.count())
+        d.ingest(a)
+        let _ = d.type_of(a, root)
+        k = k + 1
+    }
+    let c1 = avra_uptime_ms()
+
+    // codegen cold (fresh cache each iter -> always emits)
+    let g0 = avra_uptime_ms()
+    k = 0
+    while k < iters {
+        let d = new_db()
+        let _ = d.codegen(a, root)
+        k = k + 1
+    }
+    let g1 = avra_uptime_ms()
+
+    // incremental rerun (warm DB; query + codegen reused)
+    mut warm = new_db()
+    warm.revision = 1
+    rebuild(warm, a, root)
+    let r0 = avra_uptime_ms()
+    k = 0
+    while k < iters {
+        warm.revision = warm.revision + 1
+        warm.ingest(a)
+        let _ = warm.type_of(a, root)
+        let _ = warm.codegen(a, root)
+        k = k + 1
+    }
+    let r1 = avra_uptime_ms()
+
+    println("  parse           : " + string(p1 - p0) + " ms total  ~" + string(ns_per(p1 - p0, iters)) + " ns/iter")
+    println("  typeck (cold)   : " + string(c1 - c0) + " ms total  ~" + string(ns_per(c1 - c0, iters)) + " ns/iter")
+    println("  codegen (cold)  : " + string(g1 - g0) + " ms total  ~" + string(ns_per(g1 - g0, iters)) + " ns/iter")
+    println("  incr. rerun     : " + string(r1 - r0) + " ms total  ~" + string(ns_per(r1 - r0, iters)) + " ns/iter")
+    println("  (incremental reuses both the query result and the cached codegen)")
+    println("")
+
+    if fails == 0 {
+        println("RESULT: GO — all checks passed; layers compose end-to-end.")
+    } else {
+        println("RESULT: NO-GO — " + string(fails) + " check(s) failed.")
+        avra_process_exit(1)
+    }
+}

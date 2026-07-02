@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::package::PackageCapabilities;
 use crate::errors::CompileError;
+use crate::package::PackageCapabilities;
+use std::collections::HashMap;
 
 /// Mapping from package namespace.name to which capabilities they require.
 /// Any package not listed here is assumed to require no capabilities.
@@ -46,7 +46,8 @@ pub fn check_capabilities(
     for used in used_packages {
         if let Some(caps) = grants.get(used.as_str()) {
             for cap in caps {
-                required.entry(cap)
+                required
+                    .entry(cap)
                     .or_insert_with(|| format!("imports @{}", used));
             }
         }
@@ -54,7 +55,8 @@ pub fn check_capabilities(
 
     // Native code requires the `native` capability
     if has_native_code {
-        required.entry("native")
+        required
+            .entry("native")
             .or_insert_with(|| "ships native code".to_string());
     }
 
@@ -94,20 +96,34 @@ pub fn check_capabilities(
 ///   +-- http-client v1.0.0
 ///       capabilities: [network, native]
 /// ```
-pub fn capability_tree(
-    packages: &[(String, PackageCapabilities)],
-) -> String {
+pub fn capability_tree(packages: &[(String, PackageCapabilities)]) -> String {
     let mut out = String::new();
     for (i, (name, caps)) in packages.iter().enumerate() {
         let cap_list = caps_to_list(caps);
         let is_last = i == packages.len() - 1;
-        let prefix = if i == 0 { "" } else if is_last { "  +-- " } else { "  +-- " };
+        let prefix = if i == 0 {
+            ""
+        } else if is_last {
+            "  +-- "
+        } else {
+            "  +-- "
+        };
         out.push_str(&format!("{}{}\n", prefix, name));
-        let indent = if i == 0 { "  " } else if is_last { "      " } else { "  |   " };
+        let indent = if i == 0 {
+            "  "
+        } else if is_last {
+            "      "
+        } else {
+            "  |   "
+        };
         if cap_list.is_empty() {
             out.push_str(&format!("{}capabilities: [none]\n", indent));
         } else {
-            out.push_str(&format!("{}capabilities: [{}]\n", indent, cap_list.join(", ")));
+            out.push_str(&format!(
+                "{}capabilities: [{}]\n",
+                indent,
+                cap_list.join(", ")
+            ));
         }
     }
     out
@@ -136,7 +152,8 @@ pub fn check_escalation(
     }
 
     // Check if new capabilities were added (not just removed)
-    let new_additions: Vec<String> = new_list.iter()
+    let new_additions: Vec<String> = new_list
+        .iter()
         .filter(|c| !old_list.contains(c))
         .cloned()
         .collect();
@@ -183,11 +200,21 @@ pub fn check_escalation(
 /// Convert PackageCapabilities to a sorted list of capability names.
 fn caps_to_list(caps: &PackageCapabilities) -> Vec<String> {
     let mut list = Vec::new();
-    if caps.compile_time_codegen { list.push("compile_time_codegen".to_string()); }
-    if caps.ffi { list.push("ffi".to_string()); }
-    if caps.filesystem { list.push("filesystem".to_string()); }
-    if caps.native { list.push("native".to_string()); }
-    if caps.network { list.push("network".to_string()); }
+    if caps.compile_time_codegen {
+        list.push("compile_time_codegen".to_string());
+    }
+    if caps.ffi {
+        list.push("ffi".to_string());
+    }
+    if caps.filesystem {
+        list.push("filesystem".to_string());
+    }
+    if caps.native {
+        list.push("native".to_string());
+    }
+    if caps.network {
+        list.push("network".to_string());
+    }
     list
 }
 
@@ -235,7 +262,10 @@ mod tests {
 
     #[test]
     fn test_network_declared() {
-        let caps = PackageCapabilities { network: true, ..Default::default() };
+        let caps = PackageCapabilities {
+            network: true,
+            ..Default::default()
+        };
         let used = vec!["std.http".to_string()];
         let result = check_capabilities("my-pkg", &caps, &used, false);
         assert!(result.is_ok());
@@ -270,7 +300,10 @@ mod tests {
     #[test]
     fn test_escalation_patch() {
         let old = PackageCapabilities::default();
-        let new = PackageCapabilities { network: true, ..Default::default() };
+        let new = PackageCapabilities {
+            network: true,
+            ..Default::default()
+        };
         let result = check_escalation("pkg", &old, &new, "1.0.0", "1.0.1");
         assert!(result.is_some());
     }
@@ -278,7 +311,10 @@ mod tests {
     #[test]
     fn test_escalation_minor_allowed() {
         let old = PackageCapabilities::default();
-        let new = PackageCapabilities { network: true, ..Default::default() };
+        let new = PackageCapabilities {
+            network: true,
+            ..Default::default()
+        };
         let result = check_escalation("pkg", &old, &new, "1.0.0", "1.1.0");
         assert!(result.is_none());
     }
@@ -286,14 +322,21 @@ mod tests {
     #[test]
     fn test_escalation_major_allowed() {
         let old = PackageCapabilities::default();
-        let new = PackageCapabilities { network: true, filesystem: true, ..Default::default() };
+        let new = PackageCapabilities {
+            network: true,
+            filesystem: true,
+            ..Default::default()
+        };
         let result = check_escalation("pkg", &old, &new, "1.0.0", "2.0.0");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_no_escalation_same_caps() {
-        let caps = PackageCapabilities { network: true, ..Default::default() };
+        let caps = PackageCapabilities {
+            network: true,
+            ..Default::default()
+        };
         let result = check_escalation("pkg", &caps, &caps, "1.0.0", "1.0.1");
         assert!(result.is_none());
     }
@@ -301,8 +344,22 @@ mod tests {
     #[test]
     fn test_capability_tree() {
         let packages = vec![
-            ("graphql v3.1.0".to_string(), PackageCapabilities { network: true, native: true, ..Default::default() }),
-            ("http-client v1.0.0".to_string(), PackageCapabilities { network: true, native: true, ..Default::default() }),
+            (
+                "graphql v3.1.0".to_string(),
+                PackageCapabilities {
+                    network: true,
+                    native: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "http-client v1.0.0".to_string(),
+                PackageCapabilities {
+                    network: true,
+                    native: true,
+                    ..Default::default()
+                },
+            ),
         ];
         let tree = capability_tree(&packages);
         assert!(tree.contains("graphql v3.1.0"));

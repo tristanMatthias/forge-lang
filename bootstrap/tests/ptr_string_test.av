@@ -1,0 +1,39 @@
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+extern fn avra_ptr_store_byte(p: ptr, offset: int, val: int)
+extern fn avra_string_from_ptr(p: ptr, len: int) -> string
+
+spec "ptr string" {
+    then "build string from raw bytes via store_byte" {
+        let buf: ptr = malloc(16)
+        avra_ptr_store_byte(buf, 0, 72)
+        avra_ptr_store_byte(buf, 1, 101)
+        avra_ptr_store_byte(buf, 2, 108)
+        avra_ptr_store_byte(buf, 3, 108)
+        avra_ptr_store_byte(buf, 4, 111)
+        let s = avra_string_from_ptr(buf, 5)
+        free(buf)
+        s == "Hello"
+    }
+    then "string length matches" {
+        let buf: ptr = malloc(16)
+        avra_ptr_store_byte(buf, 0, 72)
+        avra_ptr_store_byte(buf, 1, 101)
+        avra_ptr_store_byte(buf, 2, 108)
+        avra_ptr_store_byte(buf, 3, 108)
+        avra_ptr_store_byte(buf, 4, 111)
+        let s = avra_string_from_ptr(buf, 5)
+        free(buf)
+        s.length == 5
+    }
+    then "string-to-ptr cast: read byte 0" {
+        let msg = "World"
+        let p: ptr = msg
+        p[0] == 87
+    }
+    then "string-to-ptr cast: read byte 4" {
+        let msg = "World"
+        let p: ptr = msg
+        p[4] == 100
+    }
+}

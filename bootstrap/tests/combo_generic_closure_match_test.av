@@ -1,0 +1,50 @@
+// Combo: generic list methods + closure + Result + match
+
+enum CgcmResult { CgcmOk(value: string), CgcmErr(error: string) }
+
+fn cgcm_try_parse(s: string) -> CgcmResult {
+    if s == "bad" { return CgcmResult.CgcmErr("parse failed") }
+    CgcmResult.CgcmOk("length: " + string(s.length))
+}
+
+fn cgcm_process(input: string) -> CgcmResult {
+    let r = cgcm_try_parse(input)
+    match r {
+        .CgcmOk(v) -> CgcmResult.CgcmOk(v)
+        .CgcmErr(e) -> CgcmResult.CgcmErr(e)
+    }
+}
+
+fn cgcm_describe(r: CgcmResult) -> string {
+    match r {
+        .CgcmOk(v) -> v
+        .CgcmErr(e) -> "error: " + e
+    }
+}
+
+spec "combo generic closure match" {
+    then "map doubles list" {
+        let nums = [1, 2, 3]
+        let doubled = nums.map((x) -> x * 2)
+        doubled.get(0) == 2
+    }
+    then "map doubles second" {
+        let nums2 = [1, 2, 3]
+        let doubled2 = nums2.map((x) -> x * 2)
+        doubled2.get(1) == 4
+    }
+    then "result error propagation" {
+        cgcm_describe(cgcm_process("bad")) == "error: parse failed"
+    }
+    then "filter evens" {
+        let evens = [1, 2, 3, 4, 5].filter((x) -> x % 2 == 0)
+        evens.get(0) == 2
+    }
+    then "chained map filter reduce" {
+        let result = [1, 2, 3, 4, 5]
+            .map((x) -> x * 2)
+            .filter((x) -> x > 4)
+            .reduce(0, (acc, x) -> acc + x)
+        result == 24
+    }
+}

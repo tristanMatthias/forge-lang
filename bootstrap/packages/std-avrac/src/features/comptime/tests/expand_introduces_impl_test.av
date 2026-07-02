@@ -1,0 +1,33 @@
+// docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test.
+// Verifies a @expand macro can introduce an impl block whose
+// methods are callable from main. Complements the fn/type/enum
+// introduction tests with the fourth decl-shape.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "qa6i: @expand macro can introduce an impl block callable from main" {
+    then "macro-emitted greet() on MyType returns 'hi' at runtime" {
+        let out = write_fixture_and_run("/tmp/avra_expand_introduces_impl_test.av", 
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "type MyType = { x: int }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_impl() -> Stmt {\n" +
+            "    quote stmt {\n" +
+            "        impl MyType {\n" +
+            "            fn greet(self) -> string { \"hi\" }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_impl)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let m = MyType { x: 1 }\n" +
+            "    println(m.greet())\n" +
+            "}\n")
+        out.contains("hi")
+    }
+}

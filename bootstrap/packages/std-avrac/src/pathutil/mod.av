@@ -1,0 +1,96 @@
+// Filesystem path manipulation helpers used by docs / indexer /
+// lsp_server / test runner. Centralised so each consumer doesn't
+// hand-roll its own copy of "strip dir prefix" or "drop the .av
+// extension".
+
+/// Trim `dir` from the front of `path`, returning a project-relative
+/// string. If `path` doesn't start with `dir`, return it unchanged.
+/// A leading "/" after stripping is also dropped, so
+/// `relativise("/proj/src/a.av", "/proj")` → "src/a.av".
+export fn relativise(path: string, dir: string) -> string {
+    if !path.starts_with(dir) { return path }
+    let after = path.substring(dir.length, path.length)
+    if after.starts_with("/") { after.substring(1, after.length) } else { after }
+}
+
+/// Strip every leading directory and a trailing `.av` extension.
+/// `basename_no_ext("src/parse/lexer.av")` → "lexer".
+export fn basename_no_ext(path: string) -> string {
+    mut last_slash = 0
+    mut si = 0
+    for ch in path {
+        if ch == "/" { last_slash = si + 1 }
+        si = si + 1
+    }
+    let basename = path.substring(last_slash, path.length)
+    if basename.ends_with(".av") {
+        basename.substring(0, basename.length - 3)
+    } else {
+        basename
+    }
+}
+
+// ── Qualified-path helpers ──────────────────────────────────────────
+//
+// Operate on Avra module paths separated by `::` (e.g.
+// `core::ast::Expr`). Mirror @std/lsp.qualified_* — function imports
+// from @std.lsp into compiler-internal modules hit the resolver
+// dedupe bug, so consumers in compiler-internal land use these
+// instead.
+
+/// Index of the last `::` separator in `q`, or -1 if absent.
+export fn qualified_last_separator(q: string) -> int {
+    mut i = q.length - 2
+    while i >= 0 {
+        if q.substring(i, i + 2) == "::" {
+            return i
+        }
+        i = i - 1
+    }
+    -1
+}
+
+/// Return the leaf segment — everything after the final `::`.
+/// `qualified_leaf("core::ast::Expr")` → "Expr".
+export fn qualified_leaf(q: string) -> string {
+    let last = qualified_last_separator(q)
+    if last < 0 { return q }
+    q.substring(last + 2, q.length)
+}
+
+/// Number of `::` separators in `q`. Top-level paths return 0.
+export fn count_path_seps(q: string) -> int {
+    mut depth = 0
+    mut i = 0
+    while i + 1 < q.length {
+        if q.substring(i, i + 2) == "::" {
+            depth = depth + 1
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    depth
+}
+
+/// Render a qualified path as breadcrumbs separated by ▸ — used by
+/// `avra docs <name>` detail views.
+/// `qualified_breadcrumbs("core::ast::Expr")` → "core ▸ ast ▸ Expr".
+export fn qualified_breadcrumbs(q: string) -> string {
+    if q == "" { return "" }
+    mut acc = ""
+    mut start = 0
+    mut i = 0
+    while i + 1 < q.length {
+        if q.substring(i, i + 2) == "::" {
+            let seg = q.substring(start, i)
+            acc = if acc == "" { seg } else { "${acc} ▸ ${seg}" }
+            start = i + 2
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    let last = q.substring(start, q.length)
+    if acc == "" { last } else { "${acc} ▸ ${last}" }
+}

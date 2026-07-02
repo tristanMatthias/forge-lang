@@ -1,0 +1,45 @@
+// Regression test for the codegen bug where `if cond { return X }`
+// in expression position (e.g. as a match-arm value) emitted invalid
+// LLVM IR — two terminators in one basic block. The store_br_if_open
+// helper guards against post-terminator instructions; this test
+// ensures the fix stays in place.
+
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+fn name_of(c: Color) -> string {
+    match c {
+        // if-expr-as-match-arm-value, with `return` inside the then-branch.
+        // Pre-fix this triggered: 'instruction expected to be numbered %4 or
+        // greater' from llc, OR 'unknown field X' from the seed compiler
+        // resolver getting confused by the malformed IR.
+        .Red -> if true { return "red" }
+        .Green -> if true { return "green" }
+        .Blue -> if true { return "blue" }
+    }
+}
+
+fn first_named(c: Color) -> string {
+    // Same shape but the if-expr's then-branch has a non-trivial cond,
+    // and the implicit else falls through. Exercises both "early return"
+    // and "fall through to next match arm" paths.
+    match c {
+        .Red   -> if c is .Red { return "red-fast" }
+        _      -> "other"
+    }
+}
+
+spec "if-expr with return in match arm: regression for codegen bug" {
+    then "Red maps to 'red'" { name_of(Color.Red) == "red" }
+    then "Green maps to 'green'" { name_of(Color.Green) == "green" }
+    then "Blue maps to 'blue'" { name_of(Color.Blue) == "blue" }
+    then "first_named takes the early-return path on Red" {
+        first_named(Color.Red) == "red-fast"
+    }
+    then "first_named falls through on non-Red" {
+        first_named(Color.Green) == "other"
+    }
+}

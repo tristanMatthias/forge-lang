@@ -1,0 +1,54 @@
+// WHY: @std/crypto — cryptographic primitives.
+//
+// v1.0 surface: SHA-256 over strings and over file contents. The
+// implementation calls into runtime.c (`avra_sha256_hex` /
+// `avra_sha256_file`) because Avra today lacks the language features
+// crypto code needs to be readable in-language: u32 arithmetic with
+// wrapping semantics, sized unsigned integer types, and direct byte
+// access on strings. When those land, this file becomes the place
+// where those features get exercised — the implementation moves to
+// pure Avra and the externs disappear without callers noticing.
+//
+// Used by @std/avrac's build system (fingerprint computation) and by
+// any downstream consumer that needs deterministic content hashing.
+
+// Pure-Avra SHA-256 lives in the sibling sha256_pure.av — under
+// dir-as-module (g2eo.1) it auto-loads as part of the package body
+// and its export `sha256_hex_pure` surfaces flat at `@std.crypto.{...}`.
+// Default behaviour stays C-backed for the hot fingerprint path; the
+// pure variant is exposed for validation and so consumers can opt
+// into a no-FFI implementation.
+
+// ── runtime hooks ──
+// avra_sha256_hex / avra_sha256_file remain the default fast path
+// (used by the build-system fingerprint cache). They will be
+// retired in favour of sha256_hex_pure once benchmarks confirm the
+// pure path is fast enough for thousands-of-files-per-build use.
+extern fn avra_sha256_hex(input: string) -> string
+extern fn avra_sha256_file(path: string) -> string
+
+/// SHA-256 of an input string, interpreted as raw bytes.
+/// Returns the lowercase 64-character hexadecimal digest.
+///
+/// Determinism: the same input always produces the same output. This
+/// is the property the build-system fingerprint relies on.
+///
+/// @param input  bytes to hash (UTF-8 strings are hashed as their
+///               UTF-8 byte representation)
+/// @returns      a 64-char lowercase hex string
+export fn sha256_hex(input: string) -> string {
+    avra_sha256_hex(input)
+}
+
+/// SHA-256 of a file's contents on disk. Streams the file rather
+/// than loading it whole — safe for large inputs.
+///
+/// Returns the digest of the empty input when the file is missing
+/// or unreadable. Callers that need a present/absent distinction
+/// should check the file separately.
+///
+/// @param path   filesystem path
+/// @returns      a 64-char lowercase hex string
+export fn sha256_file(path: string) -> string {
+    avra_sha256_file(path)
+}

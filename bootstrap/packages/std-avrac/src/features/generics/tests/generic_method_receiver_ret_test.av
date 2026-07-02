@@ -1,0 +1,120 @@
+// WHY: regression spec for the receiver-bound generic-method RETURN type
+// substitution in typeck (check_method_call). A method that returns a BARE impl
+// type param — `Box<V> { fn get(self) -> V }` — must have `V` resolved from the
+// RECEIVER's concrete type-args when called: `b.get()` on a `Box<int>` is `int`.
+//
+// Before the fix, the return type was substituted only from the call's ARGS
+// (y9y4.16), never from the receiver, so `get` (whose `V` appears nowhere in its
+// args) came back as the unsubstituted `V`. Any call whose result flowed into a
+// type-checked position then mis-typed:
+//   fn f(b: Box<int>) -> int { b.get() }   // F1000: body produces `V`
+// even though it's a valid program. The fix fills receiver-bound params (the
+// same `tc_recv_type_bindings` the param-layout gate already uses, rs0b) into
+// the return type AFTER the arg substitution — fill-only, so an arg-bound param
+// is never overridden. A let/`==` context masked it (expected-type inference
+// filled `V`), which is why it surfaced only from a return position.
+//
+// Receivers exercised: a plain param, a `let`, and — the case the L1 side-tables
+// need (ps3t.3.6) — a generic-struct value reached through a struct FIELD.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+type Box<V> = { v: V }
+impl Box<V> {
+    fn get(self) -> V { self.v }
+}
+
+// Two type params, return each — proves the receiver binding is positional, not
+// "first param wins".
+type Pair<A, B> = { fst: A, snd: B }
+impl Pair<A, B> {
+    fn left(self) -> A { self.fst }
+    fn right(self) -> B { self.snd }
+}
+
+// The field-receiver shape: a non-generic struct holding a concrete generic
+// instance, whose method returns the bound param into a checked return position.
+type Holder = { b: Box<int> }
+impl Holder {
+    fn read(self) -> int { self.b.get() }
+}
+
+// param receiver, result in a return position (the original F1000 repro).
+fn from_param(b: Box<int>) -> int { b.get() }
+
+spec "generic method returning a bare type param resolves it from the receiver" {
+    then "param receiver: from_param(Box<int>) returns int" {
+        from_param(Box { v: 7 }) == 7
+    }
+    then "let receiver: b.get() flows into an int return" {
+        get_via_let() == 9
+    }
+    then "field receiver: Holder.read() over a Box<int> field returns int" {
+        let h = Holder { b: Box { v: 42 } }
+        h.read() == 42
+    }
+    then "string receiver instantiation is distinct (Box<string>)" {
+        from_param_str(Box { v: "hi" }) == "hi"
+    }
+}
+
+// Receiver is let-bound INSIDE the function so `b.get()` is evaluated from a
+// let binding at the return site (not a parameter — that's `from_param`'s path).
+fn get_via_let() -> int {
+    let b: Box<int> = Box { v: 9 }
+    b.get()
+}
+fn from_param_str(b: Box<string>) -> string { b.get() }
+
+spec "two-param receiver substitution is positional" {
+    then "Pair<int,string>.left() is int, .right() is string" {
+        let p: Pair<int, string> = Pair { fst: 3, snd: "x" }
+        pair_left(p) == 3 && pair_right(p) == "x"
+    }
+}
+
+fn pair_left(p: Pair<int, string>) -> int { p.left() }
+fn pair_right(p: Pair<int, string>) -> string { p.right() }
+
+// The receiver substitution recurses structurally into the return type: a
+// method returning `List<V>` on a `Bag<int>` must resolve to `List<int>`, so the
+// elements iterate as `int`. (tc_subst_vtype maps into container children.)
+type Bag<V> = { items: List<V> }
+impl Bag<V> {
+    fn all(self) -> List<V> { self.items }
+}
+
+spec "receiver substitution recurses into a container return type" {
+    then "Bag<int>.all() iterates as List<int>" {
+        let b: Bag<int> = Bag { items: [10, 20, 30] }
+        bag_sum(b) == 60
+    }
+}
+
+fn bag_sum(b: Bag<int>) -> int {
+    mut s = 0
+    for x in b.all() {
+        s = s + x
+    }
+    s
+}
+
+// Over-accept guard: the fix RESOLVES the receiver's param into the return type,
+// it does not blindly accept. A method whose resolved return (int, from
+// Box<int>.get) contradicts the declared return (string) must still be rejected.
+fn overaccept_output() -> string {
+    let fixture = "build/_gmr_overaccept.av"
+    let src = "type Box<V> = { v: V }\n" +
+        "impl Box<V> { fn get(self) -> V { self.v } }\n" +
+        "fn f(b: Box<int>) -> string { b.get() }\n" +
+        "fn main() { let _ = f(Box { v: 1 }) }\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "receiver substitution does not over-accept a wrong declared return" {
+    then "Box<int>.get() into a `-> string` body is still F1000 (produces int)" {
+        let out = overaccept_output()
+        out.contains("F1000") && out.contains("produces `int`")
+    }
+}

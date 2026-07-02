@@ -1,0 +1,8 @@
+use @std.cli.{cli_new}
+
+spec "pkg import" {
+    then "@std.cli package import provides cli_new" {
+        let c = cli_new("app", "desc", "1.0")
+        c.name == "app"
+    }
+}

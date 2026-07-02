@@ -24,7 +24,14 @@ export fn decompose_template(raw: string, span: Span) -> Expr {
             }
             dp = dp + 1
         }
-        let found = dp < len - 1 && raw[dp] == DOLLAR && raw[dp + 1] == LBRACE
+        mut found = false
+        if dp < len - 1 {
+            if raw[dp] == DOLLAR {
+                if raw[dp + 1] == LBRACE {
+                    found = true
+                }
+            }
+        }
         if found {
             if dp > pos {
                 let lit = Expr.StringLit(raw.substring(pos, dp), span)

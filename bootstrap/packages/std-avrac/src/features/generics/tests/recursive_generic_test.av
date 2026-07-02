@@ -1,0 +1,25 @@
+// Recursive generic enums are exercised by the bootstrap compiler's
+// own AST nodes (DeferStack, LoopStack, and similar cons-cell scope
+// stacks). This test verifies the runtime behavior of a list-like
+// recursive ADT via a non-generic concrete instance;
+// `recursive_generic_module_test.av` covers the Module-wrapped
+// generic form (forge-crafting-intepreters-uqay).
+
+enum RgIntList {
+    End,
+    Node(value: int, next: RgIntList),
+}
+
+fn rg_sum(list: RgIntList) -> int {
+    match list {
+        .End -> 0
+        .Node(v, next) -> v + rg_sum(next)
+    }
+}
+
+spec "recursive generic" {
+    then "linked list of ints sums correctly" {
+        let list = RgIntList.Node(1, RgIntList.Node(2, RgIntList.Node(3, RgIntList.End)))
+        rg_sum(list) == 6
+    }
+}

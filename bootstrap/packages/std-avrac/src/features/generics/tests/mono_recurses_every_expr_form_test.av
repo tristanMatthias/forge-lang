@@ -1,0 +1,92 @@
+// Companion to mono_inside_with_expr_test.av (yf2s). Same root cause:
+// collect_inst_expr (and its sibling walkers rewrite_expr +
+// substitute_expr) had arms for some Expr variants that silently
+// dropped sub-expressions. Generic calls hidden inside those forms
+// never registered an instantiation, so mono never spec'd them, and
+// codegen crashed with `undefined function`.
+//
+// The forms that were broken:
+//   .Slice(obj, start, end)     — three dropped
+//   .TupleIndex(obj, _)         — obj dropped
+//   .IsCheck(subj, _)           — subj dropped
+//   .InCheck(needle, items)     — both dropped
+//   .OptionalChain(obj, _)      — obj dropped
+//   .Spawn(body)                — body dropped
+//   .Isolated(body)             — body dropped
+//   .Quote(_, body)             — body dropped
+//   .Splice(target)             — target dropped
+//   .When(arms)                 — all arms dropped
+//
+// This test exercises one generic call inside each fixed form. If any
+// regresses, compile fails with `undefined function gen_call`.
+
+fn gen_call<T>(x: T) -> T { x }
+
+// .Slice — `xs[start..end]` with gen_call inside
+fn mr_slice(xs: List<int>) -> List<int> {
+    xs[gen_call(0)..gen_call(xs.length)]
+}
+
+// .TupleIndex — `gen_call(t).0`
+fn mr_tuple_index(t: (int, int)) -> int {
+    gen_call(t).0
+}
+
+// .IsCheck — `gen_call(v) is .Variant`
+enum MrVar { A, B(n: int) }
+fn mr_is_check(v: MrVar) -> bool {
+    gen_call(v) is .A
+}
+
+// .InCheck — generic call as needle AND as list element
+fn mr_in_check(n: int) -> bool {
+    gen_call(n) in [gen_call(1), gen_call(2)]
+}
+
+// .OptionalChain — `gen_call(o)?.field`
+type MrOpt = { v: int }
+fn mr_optional_chain(o: MrOpt?) -> int? {
+    gen_call(o)?.v
+}
+
+// .Spawn — `spawn { gen_call(...) }`
+fn mr_spawn() -> int {
+    let t = spawn {
+        gen_call(7)
+    }
+    t.await
+}
+
+// .When — generic call in BOTH condition and body
+fn mr_when(n: int) -> int {
+    when {
+        gen_call(n) > 0 -> gen_call(n)
+        else -> gen_call(0 - n)
+    }
+}
+
+spec "mono walks every expression form that holds sub-expressions" {
+    given "generic call buried in each Expr variant" {
+        then "Slice indices threaded through" {
+            mr_slice([10, 20, 30]).length == 3
+        }
+        then "TupleIndex.0 lifts the right element" {
+            mr_tuple_index((11, 22)) == 11
+        }
+        then "IsCheck recognises the variant" {
+            mr_is_check(MrVar.A) && !mr_is_check(MrVar.B(0))
+        }
+        then "InCheck membership holds" {
+            mr_in_check(1) && !mr_in_check(99)
+        }
+        then "OptionalChain unwraps through null" {
+            mr_optional_chain(MrOpt { v: 42 }) == 42 && mr_optional_chain(null) == null
+        }
+        then "Spawn body returns through await" {
+            mr_spawn() == 7
+        }
+        then "When picks the matching arm" {
+            mr_when(5) == 5 && mr_when(0 - 3) == 3
+        }
+    }
+}

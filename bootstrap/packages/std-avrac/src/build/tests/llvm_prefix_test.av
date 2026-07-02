@@ -1,0 +1,28 @@
+// WHY: regression spec for the shared LLVM toolchain-root probe
+// (llvm_prefix_dir). Before it existed, every Avra-side link/llc
+// site fell back to the macOS Homebrew path when LLVM_PREFIX wasn't
+// exported — on a fresh Linux machine `bs2 test` then failed every
+// shard link with `unable to find library -lLLVM`. The probe must
+// return a real toolchain root on any machine the suite runs on,
+// env var or not.
+
+use @std.avrac.build.{llvm_prefix_dir}
+
+extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+
+spec "llvm_prefix_dir resolves a usable toolchain root" {
+    then "the resolved prefix is non-empty" {
+        llvm_prefix_dir() != ""
+    }
+    then "the resolved prefix contains bin/llc" {
+        avra_selfhost_file_exists("${llvm_prefix_dir()}/bin/llc") == 1
+    }
+    then "an exported LLVM_PREFIX is honoured verbatim" {
+        // When the env var is set the probe must not second-guess it;
+        // when unset, this degenerates to the probe-found prefix and
+        // holds trivially.
+        let env = avra_process_env_get("LLVM_PREFIX")
+        env == "" || llvm_prefix_dir() == env
+    }
+}

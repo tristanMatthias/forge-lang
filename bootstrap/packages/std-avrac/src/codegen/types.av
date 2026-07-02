@@ -1,0 +1,1618 @@
+// WHY: shared codegen types and pure leaf helpers that any feature
+// codegen file may depend on. Living here breaks what would
+// otherwise be a circular import: codegen.av ↔ features/<X>/codegen.av.
+//
+// Both sides depend one-way on this module, forming a clean DAG.
+//
+// AGENT:
+//   read this file when:    looking for the EmitResult / StmtResult
+//                           shape, the Cg helper API, or shared
+//                           ValueType conventions
+//   do NOT read this file when:   the issue is feature-specific emit
+//                                 logic (features/<X>/codegen.av)
+//                                 or the dispatchers (codegen.av)
+
+use core.{Expr, SExpr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe, vtype_struct_name}
+
+// LLVMTypeKind values from llvm-c/Core.h (LLVM 20). Only the kinds the
+// value-dispatch helpers test; keep in sync with the pinned LLVM major.
+const LLVM_TYPEKIND_DOUBLE: int = 3
+const LLVM_TYPEKIND_INTEGER: int = 8
+const LLVM_TYPEKIND_POINTER: int = 12
+use core.{Registry}
+use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
+use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
+use features.error_propagation.{Result}
+use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
+use core.{avra_tag_as_result}
+use list_ops.{list_any}
+
+// ── Codegen context ──
+//
+// The Codegen struct carries everything an emit function needs to
+// reach the LLVM C API: the context, module, builder, and the
+// function whose body the builder is currently positioned in.
+
+/// The codegen context — carries everything an emit function needs
+/// to reach the LLVM C API plus every type / scope registry built
+/// up during compilation. Threaded through every emit call.
+///
+/// @field lc / module / builder — LLVM C API handles.
+/// @field current_fn / current_fn_name — the fn the builder is
+///        currently positioned inside; needed by `bb` /
+///        `append_basic_block`.
+/// @field i64_type / i1_type / ptr_type / double_type — cached
+///        primitive LLVM types.
+/// @field structs / enums / fn_rets / fn_params / top_level_vars —
+///        type and binding registries built by the declaration pass.
+/// @field loops — `break` / `continue` target stack.
+/// @field defers / rc_cleanup / rc_releasable — RC + defer state.
+/// @field features — feature dispatch registry.
+/// @field trait_decls / newtypes / union_aliases — extra type tables.
+/// @field copy_types — set of types that satisfy Copy (no RC needed).
+/// @field debug_null_checks — emit avra_null_arg traps when true.
+/// @field coverage / source_file / source_line — LLVM source-based
+///        coverage instrumentation state.
+/// @field arena_ptr — per-scope arena handle when active (spec 9.6).
+/// @field copy_alloc_target — stack alloca to write into instead of
+///        heap-allocating (spec 9.12).
+/// @field task_group — structured-concurrency task handle stack
+///        (spec 18.7).
+/// @field bag — codegen-emitted warnings (spec Axis 20).
+/// @field type_reg — central TypeRegistry (O(1) id lookups).
+export type Ctx = {
+    lc: ptr,
+    module: ptr,
+    builder: ptr,
+    // The function whose body the builder is currently positioned in.
+    // append_basic_block needs this; codegen for `if`/`while` and
+    // function bodies all use it.
+    current_fn: ptr,
+    current_fn_name: string,
+    i64_type: ptr,
+    i1_type: ptr,
+    ptr_type: ptr,
+    double_type: ptr,
+    // Sized integer LLVM types (forge-crafting-intepreters-k5al
+    // Phase B). Cached on Ctx so codegen sites can look them up
+    // without re-creating per call. Phase A mapped every sized
+    // ValueType to i64; Phase B switches each width to its native
+    // LLVM primitive via llvm_type_for_full.
+    i8_type: ptr,
+    i16_type: ptr,
+    i32_type: ptr,
+    // Type registries — built once by the declaration passes and
+    // then threaded through every emit function via the Codegen
+    // struct. No mutable globals needed.
+    structs: StructReg,
+    enums: EnumReg,
+    fn_rets: FnRetTypes,
+    fn_params: List<FnParamMeta>,
+    top_level_vars: List<TopLevelVarMeta>,
+    loops: List<LoopStackFrame>,
+    defers: List<DeferEntry>,
+    rc_cleanup: List<RcCleanupEntry>,
+    rc_releasable: List<string>,
+    features: Registry,
+    trait_decls: TraitDeclReg,
+    newtypes: CgNewtypeReg,
+    union_aliases: CgUnionAliasReg,
+    copy_types: List<string>,
+    debug_null_checks: int,
+    // LLVM source-based coverage (--coverage flag). When true, codegen
+    // emits llvm.instrprof.increment calls at each coverage region.
+    // Zero overhead when false — no instrumentation in IR.
+    coverage: bool,
+    source_file: string,
+    source_line: int,
+    // Per-scope arena (spec Axis 9.6). When non-null, this is an LLVM
+    // value holding a runtime arena pointer. Allocations that are known
+    // to be non-escaping will use avra_arena_alloc instead of avra_rc_alloc.
+    arena_ptr: ptr,
+    // Copy-type stack allocation target (spec 9.12). When non-null, this
+    // is a stack alloca that emit_struct_lit should write into instead of
+    // heap-allocating. Set by emit_var_decl for Copy-type releasable locals.
+    copy_alloc_target: ptr,
+    // Structured concurrency task group (spec Axis 18.7). When non-null,
+    // spawn expressions add their handles here, and scope exit awaits all.
+    task_group: ptr,
+    // Diagnostic bag for codegen warnings (spec Axis 20).
+    // Enables codegen to emit warnings through the diagnostic system
+    // instead of raw eprintln calls.
+    bag: DiagnosticBag,
+    // Central type registry — TypeId-based lookups (O(1) intmap).
+    // Will replace the string-keyed linked-list registries above.
+    type_reg: TypeRegistry,
+    // P2 of library-mode (see docs/2026_05_11_LIBRARY_MODE_DESIGN.md).
+    // When non-empty, this string is the qualified prefix that
+    // identifies "this package" (e.g. "@std::cli"). Codegen skips
+    // body emission for any function whose qualified name does NOT
+    // start with `${lib_pkg_root}::` (treating it as imported from
+    // another package — linker resolves the call against the
+    // producer's pre-built .o). Unqualified names (no `::`) are
+    // synthesized wrappers (main, __init_<mod>, __avra_lib_top_level)
+    // and are always emitted regardless.
+    //
+    // Empty string ("") means whole-program mode: emit every body.
+    // That's today's default behaviour; library mode opt-in via
+    // --lib-pkg-root=<qualifier>.
+    lib_pkg_root: string,
+    // The same ownership as a parsed set: AVRA_LIB_PKG_ROOT is
+    // colon-separated (mirrors AVRA_LIB_OBJS) because a BATCHED test
+    // shard owns several test modules at once — a fn belongs to the
+    // unit when ANY root prefixes it. Empty list = whole-program.
+    lib_pkg_roots: List<string>,
+}
+
+/// Bundle of every type-resolution registry. Passed as a single
+/// parameter instead of four loose ones; makes it easy to add a
+/// new type kind without rippling through every call site.
+export type TypeRegs = {
+    structs: StructReg,
+    enums: EnumReg,
+    newtypes: CgNewtypeReg,
+    union_aliases: CgUnionAliasReg,
+}
+
+/// One newtype in CgNewtypeReg's `ord` list.
+export type CgNewtypeMeta = { name: string, inner_vt: ValueType }
+
+/// Newtype registry — name → inner ValueType. Hashmap-backed for
+/// O(1) lookup, same pattern as the other codegen registries.
+export type CgNewtypeReg = {
+    ord: List<CgNewtypeMeta>,
+    idx: ptr,
+}
+
+export fn cg_newtype_reg_new() -> CgNewtypeReg {
+    CgNewtypeReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn cg_newtype_reg_register(reg: CgNewtypeReg, name: string, inner_vt: ValueType) -> CgNewtypeReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(CgNewtypeMeta { name, inner_vt })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    CgNewtypeReg { ord, idx: reg.idx }
+}
+
+/// Look up a newtype's inner type. Returns Unknown when not found.
+export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType {
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].inner_vt
+}
+
+/// One union-alias entry in CgUnionAliasReg's `ord` list.
+export type CgUnionAliasMeta = { name: string, type_vt: ValueType }
+
+/// Union-alias registry — name → expanded Union ValueType. Hashmap-
+/// backed for O(1) lookup.
+export type CgUnionAliasReg = {
+    ord: List<CgUnionAliasMeta>,
+    idx: ptr,
+}
+
+export fn cg_union_alias_reg_new() -> CgUnionAliasReg {
+    CgUnionAliasReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn cg_union_alias_reg_register(reg: CgUnionAliasReg, name: string, type_vt: ValueType) -> CgUnionAliasReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(CgUnionAliasMeta { name, type_vt })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    CgUnionAliasReg { ord, idx: reg.idx }
+}
+
+/// Look up a union alias's expanded type. Unknown when absent.
+fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType {
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].type_vt
+}
+
+/// Index into a fn's parameter ValueType list. Returns Unknown
+/// out-of-range — call sites lookup via `fn_param_lookup` first then
+/// index this for per-arg coercion.
+export fn param_type_vt_at(list: List<ValueType>, idx: int) -> ValueType {
+    if idx < 0 || idx >= list.length { return ValueType.Unknown }
+    list[idx]
+}
+
+/// One method on a trait — name + declared return type. Built by
+/// `collect_trait_decls`; consulted by codegen to wire up vtables
+/// and resolve `dyn Trait` method calls.
+export type TraitMethodMeta = { name: string, ret_vt: ValueType }
+
+/// One trait decl entry in TraitDeclReg's `ord` list.
+export type TraitDeclMeta = { trait_name: string, methods: List<TraitMethodMeta> }
+
+/// Trait declaration registry — maps trait name → its
+/// `List<TraitMethodMeta>`. Carried through `Ctx.trait_decls` and consulted
+/// by codegen to resolve method calls on `dyn Trait` and `impl Trait`
+/// receivers. Hashmap-backed for O(1) lookup.
+export type TraitDeclReg = {
+    ord: List<TraitDeclMeta>,
+    idx: ptr,
+}
+
+export fn trait_decl_reg_new() -> TraitDeclReg {
+    TraitDeclReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn trait_decl_reg_register(reg: TraitDeclReg, trait_name: string, methods: List<TraitMethodMeta>) -> TraitDeclReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(TraitDeclMeta { trait_name, methods })
+    avra_map_set_cstr(reg.idx, trait_name, new_idx)
+    TraitDeclReg { ord, idx: reg.idx }
+}
+
+/// Look up a trait by name, returning its method list. Empty when
+/// the trait is not registered.
+export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> List<TraitMethodMeta> {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<TraitMethodMeta> = []
+        return empty
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].methods
+}
+
+/// True when `name` is a registered trait. Cheaper than
+/// `trait_decl_lookup` when only existence matters (e.g. resolving
+/// whether a type annotation refers to a trait or a struct).
+export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
+    avra_map_has_cstr(reg.idx, name) != 0
+}
+
+/// A typed null `ptr` constant. Used in struct-literal fields where
+/// the field is `ptr` but the AST builder needs a value before LLVM
+/// codegen runs.
+export fn null_ptr_val() -> ptr {
+    let n: ptr = null
+    n
+}
+
+// ── Result helpers ──
+
+// ── Emit types ──
+//
+// Expression emitters return Result<EmitValue, string>.
+// Statement emitters return Result<List<VarBinding>, string>.
+// Use ? to propagate errors: `let r = ctx.emit(env, expr)?`
+
+/// Result of every expression emit. Pairs the LLVM SSA value with
+/// its Avra ValueType so downstream consumers know how to cast,
+/// release, or branch on it. Every emit must produce a typed value.
+///
+/// @field value — the LLVM `ptr` SSA reference.
+/// @field ty — the Avra ValueType of `value`.
+export type EmitValue = { value: ptr, ty: ValueType }
+
+/// Extract the LLVM SSA value from an EmitValue.
+export fn emit_value_ptr(v: EmitValue) -> ptr {
+    v.value
+}
+
+/// Extract the Avra ValueType from an EmitValue.
+export fn emit_value_ty(v: EmitValue) -> ValueType {
+    v.ty
+}
+
+
+/// Wrap a successfully emitted LLVM value into a typed `Result.Ok`.
+/// Every emitted value MUST carry an explicit ValueType — this is
+/// the only sanctioned constructor for that invariant.
+export fn ok_emit(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
+
+    let r = Result.Ok(EmitValue { value, ty })
+    avra_tag_as_result(r)
+    r
+}
+/// Wrap a codegen failure into `Result.Err` with a `codegen error:`
+/// prefix so callers can pattern-match on the layer that produced
+/// the diagnostic. If `message` already starts with the prefix
+/// (propagated error from a nested emit call), pass it through
+/// instead of double-wrapping — yields one clean prefix instead of
+/// `codegen error: codegen error: ...`.
+export fn err_emit(message: string) -> Result<EmitValue, string> {
+
+    let wrapped = if message.length >= 15 && message.substring(0, 15) == "codegen error: " {
+        message
+    } else {
+        "codegen error: ${message}"
+    }
+    let r = Result.Err(wrapped)
+    avra_tag_as_result(r)
+    r
+}
+
+/// Wrap a successful statement result (an updated List<VarBinding>) into
+/// `Result.Ok`. The statement-level mirror of `ok_emit`.
+export fn ok_stmt(env: List<VarBinding>) -> Result<List<VarBinding>, string> {
+
+    let r = Result.Ok(env)
+    avra_tag_as_result(r)
+    r
+}
+/// Wrap a statement-level codegen error. No `codegen error:` prefix
+/// here — statement errors are surfaced verbatim because callers
+/// embed them directly into diagnostics.
+export fn err_stmt(message: string) -> Result<List<VarBinding>, string> {
+
+    let r = Result.Err(message)
+    avra_tag_as_result(r)
+    r
+}
+
+/// `0xDEADBEEF` as a signed i64. Sentinel head value placed in
+/// closure arrays so the runtime can distinguish closures (array of
+/// `[MARKER, fn_ptr, captures...]`) from raw function pointers.
+fn closure_marker() -> int { -559038737 }
+
+// ── Pure leaf helpers ──
+//
+// These are the small string and list utilities that everything
+// uses but nothing depends on (no global state, no other helpers
+// from codegen.av). They live here because moving them up out of
+// codegen.av unblocks feature-codegen extraction without dragging
+// the registry state along with them.
+
+/// Get the resolved ValueType of the Nth field (0-indexed). Returns
+/// `Unknown` when `idx` is out of range — callers must be prepared
+/// for that.
+export fn field_resolved_at(fields: List<FieldEntry>, idx: int) -> ValueType {
+    if idx < 0 || idx >= fields.length { return ValueType.Unknown }
+    fields[idx].resolved
+}
+
+// ── Type registries ──
+//
+// Linked-list registries for struct and enum declarations. Built
+// once by the declaration passes in compile_program, then carried
+// through every emit function inside the Codegen struct. No
+// mutable globals — the registries are pure data threaded through
+// function parameters.
+
+
+/// One fn's return-type entry in FnRetTypes' `ord` list.
+export type FnRetMeta = { name: string, ret_ty: ValueType }
+
+/// Function return-type registry — `name → ValueType`. Built once
+/// during the declaration pass; consulted everywhere a call site
+/// needs the typed result of `fn_name(...)`. Hashmap-backed for O(1)
+/// lookup, same pattern as the typeck registries (FnTypeReg, etc.).
+export type FnRetTypes = {
+    ord: List<FnRetMeta>,
+    idx: ptr,
+}
+
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+export fn fn_ret_types_new() -> FnRetTypes {
+    FnRetTypes { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn fn_ret_types_register(reg: FnRetTypes, name: string, ret_ty: ValueType) -> FnRetTypes {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(FnRetMeta { name, ret_ty })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    FnRetTypes { ord, idx: reg.idx }
+}
+
+/// One fn's parameter-type entry: declared name + the per-position
+/// `List<ValueType>` (index N = Nth declared parameter). The full
+/// registry is `List<FnParamMeta>` carried through `Ctx.fn_params`.
+export type FnParamMeta = { name: string, params: List<ValueType> }
+
+/// Look up the parameter type list for a function. Empty list when
+/// unknown — callers fall back to i64 coercion in that case.
+export fn fn_param_lookup(reg: List<FnParamMeta>, name: string) -> List<ValueType> {
+    for e in reg {
+        if e.name == name { return e.params }
+    }
+    []
+}
+
+/// One top-level binding (`export let` / `export mut`): name +
+/// its LLVM global + its ValueType. Looked up by `emit_name_lookup`
+/// when a name resolves outside any local scope. The full registry
+/// is `List<TopLevelVarMeta>` carried through `Ctx.top_level_vars`.
+export type TopLevelVarMeta = { name: string, llvm_global: ptr, ty: ValueType }
+
+/// Loop control-flow stack — one frame per enclosing `while` / `for`.
+/// `break` jumps to `exit_bb`, `continue` jumps to `cond_bb`. Backed
+/// by `List<LoopStackFrame>`; the innermost loop is the LAST element
+/// (LIFO via append-and-walk-backwards).
+export type LoopStackFrame = { cond_bb: ptr, exit_bb: ptr }
+
+/// LIFO stack of deferred actions running at scope exit. Three
+/// kinds interleave in a single list so they observe the same
+/// declaration order:
+///   - `Frame`     → `defer` body (always runs)
+///   - `ErrFrame`  → `errdefer` body (only on error return)
+///   - `Release`   → RC drop pushed by the binder (spec 9.4)
+export enum DeferEntry {
+    Frame(body: SExpr)
+    ErrFrame(body: SExpr)
+    Release(name: string, alloca: ptr, ty: ValueType)
+}
+
+/// RC cleanup stack — tracks RC-managed locals for release at scope
+/// exit. The cleanup emitter walks the list in LIFO order, calling
+/// `avra_rc_release` on every live entry that escape analysis didn't
+/// already drain.
+export type RcCleanupEntry = { name: string, alloca: ptr, ty: ValueType }
+
+/// Set of variable names that are safe to release at scope exit.
+/// Backed by `List<string>` — order is irrelevant, only membership
+/// matters. `Ctx.rc_releasable` carries the per-fn set; escape
+/// analysis (codegen/escape.av) builds it and codegen consults it
+/// via `releasable_has`.
+
+/// Set of type names that are Copy (all-primitive fields, no heap
+/// references). Built once by `analyze_copy_types` and threaded
+/// through `Ctx` so emit code can decide whether to RC-track a value.
+/// Order-irrelevant; queried for membership only.
+
+/// Membership test for the Copy-types set.
+export fn copy_set_has(set: List<string>, name: string) -> bool {
+    list_any(set, (n: string) -> n == name)
+}
+
+/// Decide whether `vt` is a Copy type — i.e. cheap to duplicate and
+/// free of heap ownership. Primitives (Int, Float, Bool, Void) are
+/// always Copy; named types (Struct/Enum) are Copy only if they
+/// appear in `copies`; Newtype unwraps to its inner; everything else
+/// (Str, List, Map, Ptr, Fn, Closure, Trait, Tuple, Union, …) is
+/// non-Copy.
+export fn vtype_is_copy(vt: ValueType, copies: List<string>) -> bool {
+    match vt {
+        .Int -> true
+        .U8 -> true
+        .U16 -> true
+        .U32 -> true
+        .U64 -> true
+        .I8 -> true
+        .I16 -> true
+        .I32 -> true
+        .Float -> true
+        .Bool -> true
+        .Void -> true
+        .Struct(name, _, _) -> copy_set_has(copies, name)
+        .Enum(name, _, _) -> copy_set_has(copies, name)
+        .Newtype(_, inner, _) -> vtype_is_copy(inner, copies)
+        _ -> false
+    }
+}
+
+/// Membership test for the releasable set.
+export fn releasable_has(set: List<string>, name: string) -> bool {
+    list_any(set, (n: string) -> n == name)
+}
+
+/// One struct decl entry in StructReg's `ord` list. `external` is
+/// set when the type comes from an `@external_unit` Module — its
+/// `__release_TypeName` body lives in the producer's `.o` and we
+/// must emit only the declaration here, not a duplicate body
+/// (g2eo Phase A: per-module compile filter).
+export type StructRegMeta = { name: string, fields: List<FieldEntry>, external: bool }
+
+/// Registry of declared struct types — `name → List<FieldEntry>`.
+/// Built by the declaration pass; carried as `Ctx.structs`. Hashmap-
+/// backed for O(1) lookup, same pattern as FnRetTypes / typeck registries.
+export type StructReg = {
+    ord: List<StructRegMeta>,
+    idx: ptr,
+}
+
+export fn struct_reg_new() -> StructReg {
+    StructReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn struct_reg_register(reg: StructReg, name: string, fields: List<FieldEntry>) -> StructReg {
+    struct_reg_register_full(reg, name, fields, false)
+}
+
+/// Variant of `struct_reg_register` that records whether the struct
+/// originates from an `@external_unit` module. Used by per-module
+/// compile (g2eo Phase A) to skip emitting `__release_TypeName`
+/// bodies for types defined elsewhere.
+export fn struct_reg_register_full(reg: StructReg, name: string, fields: List<FieldEntry>, external: bool) -> StructReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(StructRegMeta { name, fields, external })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    StructReg { ord, idx: reg.idx }
+}
+
+/// Result of a struct registry lookup. `found` is 1 when present.
+export type StructLookup = {
+    found: int,
+    fields: List<FieldEntry>,
+}
+
+/// Look up a struct by name. Always returns a StructLookup — callers
+/// inspect `.found` to distinguish hit from miss.
+export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<FieldEntry> = []
+        return StructLookup { found: false, fields: empty }
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    StructLookup { found: true, fields: reg.ord[i].fields }
+}
+
+/// One enum decl entry in EnumReg's `ord` list. `external` mirrors
+/// `StructRegMeta.external` — set when the enum belongs to an
+/// `@external_unit` module so per-module compile skips emitting its
+/// `__release_EnumName` body (g2eo Phase A).
+export type EnumRegMeta = { name: string, variants: List<Variant>, external: bool }
+
+/// Registry of declared enum types — `name → List<Variant>`. Hashmap-
+/// backed for O(1) lookup, same pattern as StructReg.
+export type EnumReg = {
+    ord: List<EnumRegMeta>,
+    idx: ptr,
+}
+
+export fn enum_reg_new() -> EnumReg {
+    EnumReg { ord: [], idx: avra_map_new_cstr() }
+}
+
+export fn enum_reg_register(reg: EnumReg, name: string, variants: List<Variant>) -> EnumReg {
+    enum_reg_register_full(reg, name, variants, false)
+}
+
+/// Variant of `enum_reg_register` that records whether the enum
+/// originates from an `@external_unit` module — see
+/// `struct_reg_register_full`.
+export fn enum_reg_register_full(reg: EnumReg, name: string, variants: List<Variant>, external: bool) -> EnumReg {
+    mut ord = reg.ord
+    let new_idx = ord.length
+    ord.push(EnumRegMeta { name, variants, external })
+    avra_map_set_cstr(reg.idx, name, new_idx)
+    EnumReg { ord, idx: reg.idx }
+}
+
+/// Result of an enum registry lookup. `found` is 1 when present.
+export type EnumLookup = {
+    found: int,
+    variants: List<Variant>,
+}
+
+/// Look up an enum by name. Always returns an EnumLookup — callers
+/// inspect `.found` to distinguish hit from miss.
+export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
+    if avra_map_has_cstr(reg.idx, name) == 0 {
+        let empty: List<Variant> = []
+        return EnumLookup { found: false, variants: empty }
+    }
+    let i = avra_map_get_cstr(reg.idx, name)
+    EnumLookup { found: true, variants: reg.ord[i].variants }
+}
+
+/// Find the enum type name that contains a given variant. Used to
+/// disambiguate the leading-dot shorthand `.Variant` — codegen needs
+/// the enum's name to build the right constructor. Iterates `ord`
+/// in REVERSE so most-recently-declared enums win, preserving the
+/// LIFO semantics of the prior cons-list (forge-crafting-intepreters-q3gp).
+export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
+    mut i = reg.ord.length - 1
+    while i >= 0 {
+        let m = reg.ord[i]
+        if variant_lookup(m.variants, variant).found { return m.name }
+        i = i - 1
+    }
+    ""
+}
+
+/// Find an enum by variant name AND field count — prevents ambiguity
+/// when multiple enums declare the same variant name but with
+/// different field counts. Returns `""` when no match. Reverse-
+/// iteration mirrors `enum_reg_find_by_variant`.
+export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: int) -> string {
+    mut i = reg.ord.length - 1
+    while i >= 0 {
+        let m = reg.ord[i]
+        let v = variant_lookup(m.variants, variant)
+        if v.found && v.fields.length == arity { return m.name }
+        i = i - 1
+    }
+    ""
+}
+
+/// Look up a function's return ValueType. Returns `.Unknown` when
+/// the function isn't registered (callers fall back to i64).
+export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
+    if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].ret_ty
+}
+
+/// Result of a top-level-var lookup.
+///
+/// @field found — 1 when the global was registered, 0 otherwise.
+/// @field llvm_global — the LLVM global value (null on miss).
+/// @field ty — the global's ValueType (Unknown on miss).
+export type TopLevelLookup = {
+    found: int,
+    llvm_global: ptr,
+    ty: ValueType,
+}
+
+/// Look up an exported top-level binding. Always returns a
+/// TopLevelLookup — callers inspect `.found` to distinguish hit
+/// from miss.
+export fn toplevel_lookup(reg: List<TopLevelVarMeta>, name: string) -> TopLevelLookup {
+    for e in reg {
+        if e.name == name {
+            return TopLevelLookup { found: true, llvm_global: e.llvm_global, ty: e.ty }
+        }
+    }
+    let n: ptr = null
+    TopLevelLookup { found: false, llvm_global: n, ty: .Unknown }
+}
+
+/// The top of the LoopStack, surfaced as a flat record so emit_break
+/// / emit_continue don't have to pattern-match the stack again.
+///
+/// @field found — 1 when at least one loop frame is active.
+/// @field cond_bb — block to branch to for `continue`.
+/// @field exit_bb — block to branch to for `break`.
+export type LoopFrame = {
+    found: int,
+    cond_bb: ptr,
+    exit_bb: ptr,
+}
+
+/// Peek at the innermost loop frame. `found = 0` means the stack is
+/// empty (i.e. `break` / `continue` was used outside any loop).
+/// Innermost is the LAST element since `with_loops` appends.
+export fn loops_top(stack: List<LoopStackFrame>) -> LoopFrame {
+    if stack.length == 0 {
+        let n: ptr = null
+        return LoopFrame { found: false, cond_bb: n, exit_bb: n }
+    }
+    let top = stack[stack.length - 1]
+    LoopFrame { found: true, cond_bb: top.cond_bb, exit_bb: top.exit_bb }
+}
+
+// ── LLVM type mapping ──
+//
+// Avra's ValueType to the correct LLVM type.
+//
+// Int → i64, Bool → i1, Float → double, Void → i64
+// Str, Ptr, Struct, Enum, List, Map, Fn, Closure, Trait, Union, Tuple → ptr
+// Newtype → recurse on inner type
+
+/// Canonical Avra ValueType → LLVM type mapping. The single source
+/// of truth used everywhere a value is allocated, loaded, stored or
+/// cast. Keeping this as a free function (not a method) lets pure
+/// helpers reach it without a Ctx.
+///
+/// Mapping: `Int → i64`, `Bool → i1`, `Float → double`,
+/// `Void / Unknown / Task → i64`, all other reference types → `ptr`,
+/// `Newtype` recurses into its inner type.
+///
+/// Sized integer variants (U8/U16/U32/U64/I8/I16/I32) map to i64
+/// here when the caller only has the four base type pointers
+/// (i64/i1/double/ptr). Callers with access to narrow types should
+/// use `llvm_type_for_full_sized` (this fn's superset) or
+/// `Ctx.llvm_type_for(vt)`. The declare-functions pass in
+/// codegen/setup.av MUST use the narrow path so fn declarations
+/// match the alloca-side widths produced by ctx.type_for.
+export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
+    match vt {
+        .Int -> i64t
+        .U8 -> i64t
+        .U16 -> i64t
+        .U32 -> i64t
+        .U64 -> i64t
+        .I8 -> i64t
+        .I16 -> i64t
+        .I32 -> i64t
+        .Bool -> i1t
+        .Float -> dt
+        .Str -> pt
+        .Bytes -> pt
+        .Ptr -> pt
+        .Struct(_, _, _) -> pt
+        .Enum(_, _, _) -> pt
+        .List(_) -> pt
+        .Map(_, _) -> pt
+        .Fn(_) -> pt
+        .FnTyped(_, _) -> pt
+        .Closure(_, _) -> pt
+        .Trait(_, _) -> pt
+        .Union(_) -> pt
+        .Newtype(_, inner, _) -> llvm_type_for_full(i64t, i1t, dt, pt, inner)
+        .Tuple(_) -> pt
+        .NarrowedEnum(_, _, _) -> pt
+        .Void -> i64t
+        .Unknown -> i64t
+        .Task(_) -> i64t
+        // Channel handle: opaque runtime ptr (AvraChannel*).
+        .Channel(_) -> pt
+        // Optional (T?): always a pointer. Pointer-backed inner is the
+        // null-pointer niche (the inner pointer IS the optional, none = null);
+        // value-backed inner (int?/bool?/float?) is boxed (Some = heap box,
+        // none = null). Both lower to `ptr`. See features/null_safety/
+        // optional_repr.av for the build/read primitives.
+        .Optional(_) -> pt
+    }
+}
+
+/// Narrow-aware variant: takes i8/i16/i32 type pointers in addition
+/// to the four base widths. Sized integer ValueTypes resolve to
+/// their native LLVM widths (e.g. u32 → i32) so fn declarations and
+/// alloca sites agree. Callers without narrow type pointers use
+/// `llvm_type_for_full` (which falls back to i64 for sized ints);
+/// the declare-functions pass and other places that emit fn-type
+/// signatures should always use this variant — Ctx.type_for already
+/// does for runtime-side lookups.
+export fn llvm_type_for_full_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType) -> ptr {
+    match vt {
+        .U8 -> i8t
+        .I8 -> i8t
+        .U16 -> i16t
+        .I16 -> i16t
+        .U32 -> i32t
+        .I32 -> i32t
+        .U64 -> i64t
+        .Newtype(_, inner, _) -> llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, inner)
+        _ -> llvm_type_for_full(i64t, i1t, dt, pt, vt)
+    }
+}
+
+/// True when `vt` lowers to an LLVM pointer (i.e. needs ptr alloca,
+/// rc tracking, null checks). False for primitives that map to
+/// integer / float types.
+export fn vtype_is_ptr_type(vt: ValueType) -> bool {
+    match vt {
+        .Int -> false
+        .Bool -> false
+        .Float -> false
+        .Void -> false
+        .Unknown -> false
+        _ -> true
+    }
+}
+
+// ── Ctx builder DSL ──
+// Three levels: raw LLVM wrappers, common patterns, semantic operations.
+// All codegen code should use these instead of raw avra_llvm_* calls.
+
+impl Ctx {
+    // ── Level 0: lift free functions to methods ──
+
+    fn bb(self, name: string) -> ptr { avra_llvm_append_basic_block(self.lc, self.current_fn, name) }
+    fn bb_in(self, fn_val: ptr, name: string) -> ptr { avra_llvm_append_basic_block(self.lc, fn_val, name) }
+    fn i64(self, value: int) -> ptr { avra_llvm_const_int(self.i64_type, value, 0) }
+    fn i8(self, value: int) -> ptr { avra_llvm_const_int(avra_llvm_int8_type(self.lc), value, 0) }
+    fn get_fn(self, name: string) -> ptr { avra_llvm_get_named_function(self.module, name) }
+    fn rc_alloc(self, size: ptr) -> ptr { self.call("avra_rc_alloc", [size]) }
+    // Arena-aware allocation: if an arena scope is active, bump-allocate
+    // within the arena (no RC header, O(1) free at scope exit). Otherwise
+    // falls back to avra_rc_alloc. Used for non-escaping allocations
+    // detected by escape analysis (spec Axis 9.6).
+    fn arena_alloc(self, size: ptr) -> ptr {
+        if self.arena_ptr != null {
+            self.call("avra_arena_alloc", [self.arena_ptr, size])
+        } else {
+            self.call("avra_rc_alloc", [size])
+        }
+    }
+    fn rc_retain(self, val: ptr) -> ptr { self.call("avra_rc_retain", [val]) }
+    fn rc_release(self, val: ptr) -> ptr { self.call("avra_rc_release", [val]) }
+
+    // ── Diagnostics ──
+    fn warn(self, code: DiagCode, message: string) {
+        self.bag = bag_report(self.bag, diag_warning(code, message, span_new(0, 0, self.source_line, 0)))
+    }
+
+    // ── Value / type array management ──
+    // These wrap the raw C array API so feature code never touches it.
+    fn value_array(self, count: int) -> ptr { avra_llvm_value_array_new(count) }
+    fn value_array_set(self, arr: ptr, idx: int, val: ptr) { avra_llvm_value_array_set(arr, idx, val) }
+    fn value_array_free(self, arr: ptr) { avra_llvm_value_array_free(arr) }
+    fn type_array(self, count: int) -> ptr { avra_llvm_type_array_new(count) }
+    fn type_array_set(self, arr: ptr, idx: int, ty: ptr) { avra_llvm_type_array_set(arr, idx, ty) }
+    fn type_array_free(self, arr: ptr) { avra_llvm_type_array_free(arr) }
+
+    // Create a type array pre-filled with i64 types (the common case for lambdas/closures).
+    fn i64_type_array(self, count: int) -> ptr {
+        let arr = avra_llvm_type_array_new(count)
+        self.fill_i64_types(arr, 0, count)
+        arr
+    }
+
+    fn fill_i64_types(self, arr: ptr, idx: int, count: int) {
+        if idx >= count { return }
+        avra_llvm_type_array_set(arr, idx, self.i64_type)
+        self.fill_i64_types(arr, idx + 1, count)
+    }
+
+    // Build a type array matching a closure call's value array:
+    // declared args take their emitted value's actual LLVM type
+    // (avra_llvm_typeof), captures are always i64. Used by
+    // emit_closure_call so the call-site fn_type matches the
+    // typed-declared-params + i64-captures layout that
+    // fill_typed_lambda_params imposes on the lambda's actual
+    // signature. Without this match, LLVM's verifier flags every
+    // closure invocation as a parameter-type mismatch
+    // (forge-crafting-intepreters-og68).
+    fn value_array_param_types(self, val_arr: ptr, declared_count: int, capture_count: int) -> ptr {
+        let total = declared_count + capture_count
+        let arr = avra_llvm_type_array_new(total)
+        self.fill_value_array_param_types(arr, val_arr, 0, declared_count, total)
+        arr
+    }
+
+    fn fill_value_array_param_types(self, arr: ptr, val_arr: ptr, idx: int, declared_count: int, total: int) {
+        if idx >= total { return }
+        let llvm_ty = if idx < declared_count {
+            let v = avra_llvm_value_array_get(val_arr, idx)
+            avra_llvm_typeof(v)
+        } else {
+            self.i64_type
+        }
+        avra_llvm_type_array_set(arr, idx, llvm_ty)
+        self.fill_value_array_param_types(arr, val_arr, idx + 1, declared_count, total)
+    }
+
+    // Fill type array from a `List<ValueType>` for declared params,
+    // then i64 for captures. Walks the list by index; the offset is
+    // `idx` so each call uses `idx`-aligned positions when called as
+    // the initial entrypoint with `idx == 0`.
+    fn fill_typed_lambda_params(self, arr: ptr, types: List<ValueType>, idx: int, total: int) {
+        mut i = idx
+        while i < total {
+            let llvm_ty = if i < types.length {
+                llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, types[i])
+            } else {
+                self.i64_type
+            }
+            avra_llvm_type_array_set(arr, i, llvm_ty)
+            i = i + 1
+        }
+    }
+
+    // ── Sized-integer LLVM type dispatch ──
+    //
+    // Returns the LLVM type for a sized-integer ValueType using the
+    // narrow types cached on Ctx. For every other ValueType, falls
+    // back to the standard llvm_type_for_full mapping. Codegen sites
+    // that want true narrow lowering (struct field layouts, fn
+    // signatures, alloca widths) should call this method instead of
+    // llvm_type_for_full directly. Phase B rollout
+    // (forge-crafting-intepreters-k5al) is incremental — each site
+    // moves to this dispatch as its arithmetic / cast logic is
+    // proven against the new types.
+    fn llvm_type_for(self, vt: ValueType) -> ptr {
+        match vt {
+            .U8 -> self.i8_type
+            .I8 -> self.i8_type
+            .U16 -> self.i16_type
+            .I16 -> self.i16_type
+            .U32 -> self.i32_type
+            .I32 -> self.i32_type
+            .U64 -> self.i64_type
+            _ -> llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt)
+        }
+    }
+
+    // ── Function creation ──
+    fn fn_type(self, ret: ptr, params: ptr, count: int) -> ptr { avra_llvm_function_type(ret, params, count, 0) }
+    fn add_function(self, name: string, ty: ptr) -> ptr { avra_llvm_add_function(self.module, name, ty) }
+    fn get_param(self, fn_val: ptr, idx: int) -> ptr { avra_llvm_get_param(fn_val, idx) }
+    fn verify_fn(self, fn_val: ptr) { avra_llvm_verify_function(fn_val) }
+
+    // Query: is this LLVM value a pointer type?
+    fn is_ptr_value(self, val: ptr) -> bool { avra_llvm_is_ptr_value(val) != 0 }
+
+    // Build a direct call with an explicit function type (for indirect calls
+    // where the callee is a raw pointer, not a named function).
+    fn build_call(self, fn_ty: ptr, callee: ptr, args: ptr, count: int, name: string) -> ptr {
+        avra_llvm_build_call(self.builder, fn_ty, callee, args, count, name)
+    }
+
+    // ── Type-aware operations ──
+    // These use avra_llvm_cast_to_type which handles ALL type
+    // combinations: ptr↔i64, i1↔i64, double↔i64, etc.
+    // No-op when value already has the target type.
+
+    fn to_ptr(self, val: ptr, name: string) -> ptr { avra_llvm_cast_to_type(self.builder, val, self.ptr_type) }
+    fn to_i64(self, val: ptr, name: string) -> ptr { avra_llvm_cast_to_type(self.builder, val, self.i64_type) }
+    fn to_f64(self, val: ptr, name: string) -> ptr { avra_llvm_cast_to_type(self.builder, val, self.double_type) }
+
+    // Cast value to match a ValueType's LLVM representation.
+    fn cast_to(self, val: ptr, vt: ValueType) -> ptr { avra_llvm_cast_to_type(self.builder, val, self.type_for(vt)) }
+
+    // Value conversions (semantic, not bit-reinterpretation):
+    fn sitofp(self, val: ptr, name: string) -> ptr { avra_llvm_build_si_to_fp(self.builder, val, self.double_type, name) }
+    fn fptosi(self, val: ptr, name: string) -> ptr { avra_llvm_build_fp_to_si(self.builder, val, self.i64_type, name) }
+
+    // Map a ValueType to its LLVM type. Routes through llvm_type_for
+    // so sized-integer variants pick up their narrow LLVM widths
+    // (Phase B of forge-crafting-intepreters-k5al). Falls back to
+    // llvm_type_for_full for everything else.
+    fn type_for(self, vt: ValueType) -> ptr {
+        self.llvm_type_for(vt)
+    }
+
+    // Typed alloca/load: use the correct LLVM type for a ValueType.
+    fn alloca_typed(self, vt: ValueType, name: string) -> ptr { avra_llvm_build_alloca(self.builder, self.type_for(vt), name) }
+    fn load_typed(self, vt: ValueType, src: ptr, name: string) -> ptr { avra_llvm_build_load(self.builder, self.type_for(vt), src, name) }
+
+    // Zero/null value for a given type.
+    fn zero_for(self, vt: ValueType) -> ptr {
+        avra_llvm_const_null(self.type_for(vt))
+    }
+
+    // Return from the current function, casting val to match the declared return type.
+    fn ret(self, val: ptr, ret_ty: ValueType) { avra_llvm_build_ret(self.builder, self.cast_to(val, ret_ty)) }
+    fn ret_void(self, ret_ty: ValueType) { avra_llvm_build_ret(self.builder, self.zero_for(ret_ty)) }
+
+    // Call any C function by name with a list of args.
+    // Automatically coerces arguments to match the declared parameter types.
+    fn call(self, name: string, args: [ptr]) -> ptr {
+        let fn_val = avra_llvm_get_named_function(self.module, name)
+        let ft = avra_llvm_fn_type_of(fn_val)
+        let count = args.length
+        let arr = avra_llvm_value_array_new(count)
+        for i in 0..count {
+            avra_llvm_value_array_set(arr, i, args[i])
+        }
+        let result = avra_llvm_build_call_coerce(self.builder, ft, fn_val, arr, count, "")
+        avra_llvm_value_array_free(arr)
+        result
+    }
+
+    // Call a function value (not by name — for local fn variables).
+    fn call_fn(self, fn_val: ptr, args: [ptr]) -> ptr {
+        let ft = avra_llvm_fn_type_of(fn_val)
+        let count = args.length
+        let arr = avra_llvm_value_array_new(count)
+        for i in 0..count {
+            avra_llvm_value_array_set(arr, i, args[i])
+        }
+        let result = avra_llvm_build_call_coerce(self.builder, ft, fn_val, arr, count, "")
+        avra_llvm_value_array_free(arr)
+        result
+    }
+
+    // Same but with a named result.
+    fn call_fn_named(self, fn_val: ptr, args: [ptr], name: string) -> ptr {
+        let ft = avra_llvm_fn_type_of(fn_val)
+        let count = args.length
+        let arr = avra_llvm_value_array_new(count)
+        for i in 0..count {
+            avra_llvm_value_array_set(arr, i, args[i])
+        }
+        let result = avra_llvm_build_call_coerce(self.builder, ft, fn_val, arr, count, name)
+        avra_llvm_value_array_free(arr)
+        result
+    }
+
+    // Call a function value with a pre-built value array.
+    // Used for dynamic dispatch (method calls, closures) where args
+    // are built incrementally via avra_llvm_value_array_set.
+    fn call_raw(self, fn_val: ptr, arg_arr: ptr, arg_count: int) -> ptr {
+        let ft = avra_llvm_fn_type_of(fn_val)
+        avra_llvm_build_call_coerce(self.builder, ft, fn_val, arg_arr, arg_count, "")
+    }
+
+    // Emit a null-deref trap (branchless — C function checks internally).
+    fn null_check(self, val: ptr, field_name: string, type_name: string) {
+        let val_i64 = self.to_i64(val, "nc_val")
+        let is_null_i1 = self.icmp(32, val_i64, avra_llvm_const_int(self.i64_type, 0, 0), "null_chk")
+        let is_null = self.zext(is_null_i1, self.i64_type, "null_ext")
+        self.call("avra_null_deref_trap", [
+            self.global_str(field_name, "fld_name"), self.i64(field_name.length),
+            self.global_str(type_name, "sty_name"), self.i64(type_name.length),
+            is_null,
+            self.global_str(self.source_file, "src_file"), self.i64(self.source_file.length),
+            self.i64(self.source_line)
+        ])
+    }
+
+    // ── Level 1: raw LLVM (eliminate ctx.builder repetition) ──
+
+    fn position(self, bb: ptr) { avra_llvm_position_at_end(self.builder, bb) }
+    // Type-safe store: always casts the value to match the destination's
+    // allocated type. For allocas, reads the type from LLVM. For GEP
+    // destinations (struct fields), the alloca type check falls back to
+    // a raw store — use store_field for struct fields instead.
+    fn store(self, val: ptr, dest: ptr) { avra_llvm_build_store_cast(self.builder, val, dest) }
+
+    // Store into a struct field GEP with explicit type casting.
+    // This is the ONLY safe way to store into struct fields — the
+    // destination type can't be inferred from opaque pointers.
+    fn store_field(self, val: ptr, gep: ptr, field_ty: ValueType) {
+        avra_llvm_build_store(self.builder, self.cast_to(val, field_ty), gep)
+    }
+    // ── Memory ──
+    fn load(self, ty: ptr, src: ptr, name: string) -> ptr { avra_llvm_build_load(self.builder, ty, src, name) }
+    fn load_i64(self, src: ptr, name: string) -> ptr { avra_llvm_build_load(self.builder, self.i64_type, src, name) }
+    fn load_i8(self, src: ptr, name: string) -> ptr { avra_llvm_build_load(self.builder, avra_llvm_int8_type(self.lc), src, name) }
+    fn alloca(self, ty: ptr, name: string) -> ptr { avra_llvm_build_alloca(self.builder, ty, name) }
+    fn alloca_i64(self, name: string) -> ptr { avra_llvm_build_alloca(self.builder, self.i64_type, name) }
+    fn gep(self, ty: ptr, base: ptr, idx: int, name: string) -> ptr { avra_llvm_build_struct_gep2(self.builder, ty, base, idx, name) }
+    fn global_str(self, text: string, name: string) -> ptr { avra_llvm_build_global_string_ptr(self.builder, text, name) }
+
+    // ── Control flow ──
+    fn br(self, bb: ptr) { avra_llvm_build_br(self.builder, bb) }
+    fn cond_br(self, cond: ptr, then_bb: ptr, else_bb: ptr) { avra_llvm_build_cond_br(self.builder, cond, then_bb, else_bb) }
+    fn build_ret(self, val: ptr) { avra_llvm_build_ret(self.builder, val) }
+    fn unreachable(self) { avra_llvm_build_unreachable(self.builder) }
+    fn has_terminator(self) -> bool { avra_llvm_block_has_terminator(self.builder) != 0 }
+    fn current_bb(self) -> ptr { avra_llvm_get_insert_block(self.builder) }
+
+    // ── Integer arithmetic ──
+    fn add(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_add(self.builder, a, b, name) }
+    fn sub(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_sub(self.builder, a, b, name) }
+    fn mul(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_mul(self.builder, a, b, name) }
+    fn sdiv(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_sdiv(self.builder, a, b, name) }
+    fn srem(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_srem(self.builder, a, b, name) }
+    fn udiv(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_udiv(self.builder, a, b, name) }
+    fn urem(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_urem(self.builder, a, b, name) }
+    fn bit_and(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_and(self.builder, a, b, name) }
+    fn bit_or(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_or(self.builder, a, b, name) }
+    fn bit_xor(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_xor(self.builder, a, b, name) }
+    fn shl(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_shl(self.builder, a, b, name) }
+    fn shr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_ashr(self.builder, a, b, name) }
+    fn lshr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_lshr(self.builder, a, b, name) }
+    fn ashr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_ashr(self.builder, a, b, name) }
+    fn bit_not(self, val: ptr, name: string) -> ptr { avra_llvm_build_not(self.builder, val, name) }
+
+    // ── Comparisons ──
+    fn icmp(self, pred: int, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, pred, a, b, name) }
+    fn fcmp(self, pred: int, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_fcmp(self.builder, pred, a, b, name) }
+    fn zext(self, val: ptr, ty: ptr, name: string) -> ptr { avra_llvm_build_zext(self.builder, val, ty, name) }
+    fn sext(self, val: ptr, ty: ptr, name: string) -> ptr { avra_llvm_build_sext(self.builder, val, ty, name) }
+
+    // ── Float arithmetic ──
+    fn fadd(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_fadd(self.builder, a, b, name) }
+    fn fsub(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_fsub(self.builder, a, b, name) }
+    fn fmul(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_fmul(self.builder, a, b, name) }
+    fn fdiv(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_fdiv(self.builder, a, b, name) }
+    fn frem(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_frem(self.builder, a, b, name) }
+    fn fneg(self, val: ptr, name: string) -> ptr { avra_llvm_build_fneg(self.builder, val, name) }
+
+    // ── PHI nodes ──
+    fn phi_i1(self, name: string) -> ptr { avra_llvm_build_phi(self.builder, self.i1_type, name) }
+    fn phi_for(self, ty: ValueType, name: string) -> ptr { avra_llvm_build_phi(self.builder, self.type_for(ty), name) }
+    fn add_incoming(self, phi: ptr, val: ptr, bb: ptr) { avra_llvm_add_incoming(phi, val, bb) }
+
+    // ── Constants ──
+    fn const_i1(self, val: int) -> ptr { avra_llvm_const_int(self.i1_type, val, 0) }
+
+    // ── Lookups ──
+    fn get_type(self, name: string) -> ptr {
+        let t = avra_llvm_get_type_by_name(self.lc, name)
+        if t != null { return t }
+        // Fallback: resolve via TypeRegistry
+        let tid = type_registry_id_for(self.type_reg, name)
+        let canonical = type_registry_name_for(self.type_reg, tid)
+        if canonical != "" {
+            let t2 = avra_llvm_get_type_by_name(self.lc, canonical)
+            if t2 != null { return t2 }
+        }
+        null
+    }
+    fn int_to_ptr(self, val: ptr, name: string) -> ptr { avra_llvm_build_int_to_ptr(self.builder, val, self.ptr_type, name) }
+    fn ptr_to_int(self, val: ptr, name: string) -> ptr { avra_llvm_build_ptr_to_int(self.builder, val, self.i64_type, name) }
+
+    // ── Pointer arithmetic ──
+    // ptr_add: base_ptr + byte_offset → ptr. The workhorse of tuple/payload access.
+    fn ptr_add(self, base: ptr, offset: ptr, name: string) -> ptr {
+        let base_int = avra_llvm_build_ptr_to_int(self.builder, base, self.i64_type, "${name}_base")
+        let addr = avra_llvm_build_add(self.builder, base_int, offset, "${name}_addr")
+        avra_llvm_build_int_to_ptr(self.builder, addr, self.ptr_type, name)
+    }
+
+    // Load an i64 at base + idx*8 (tuple/payload element access).
+    fn load_slot(self, base: ptr, idx: int, name: string) -> ptr {
+        let slot = self.ptr_add(base, self.i64(idx * 8), "${name}_slot")
+        avra_llvm_build_load(self.builder, self.i64_type, slot, name)
+    }
+
+    // Load with type at base + idx*8 (typed payload field access).
+    fn load_slot_typed(self, base: ptr, idx: int, ty: ValueType, name: string) -> ptr {
+        let slot = self.ptr_add(base, self.i64(idx * 8), "${name}_slot")
+        avra_llvm_build_load(self.builder, self.type_for(ty), slot, name)
+    }
+
+    // Store value at base + idx*8 with explicit type (tuple/payload field store).
+    fn store_slot(self, base: ptr, idx: int, val: ptr, field_ty: ValueType) {
+        let slot = self.ptr_add(base, self.i64(idx * 8), "slot")
+        avra_llvm_build_store(self.builder, self.cast_to(val, field_ty), slot)
+    }
+
+    // ── Variable binding ──
+    // Allocate, store, and extend the environment in one call.
+    // The most common 3-line pattern in codegen: alloca + store + env_extend.
+    fn bind(self, env: List<VarBinding>, name: string, value: ptr, ty: ValueType) -> List<VarBinding> {
+        let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
+        avra_llvm_build_store_cast(self.builder, value, alloca)
+        if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
+            // Scope-exit cleanup loads this slot unconditionally; the slot
+            // is guaranteed null until first bound because every ptr-typed
+            // alloca is zero-initialized at creation (avra_llvm_build_alloca,
+            // zm77) — otherwise cleanup would release stack garbage.
+            self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
+            // Push Release onto defers for LIFO interleaving with defer/errdefer
+            self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))
+        }
+        env_extend(env, name, alloca, ty)
+    }
+
+    // Copy-type stack binding (spec 9.12): bind a local whose struct
+    // data is already on the stack (written directly by emit_struct_lit
+    // via copy_alloc_target). No RC cleanup needed — stack memory is
+    // freed when the function returns.
+    fn bind_copy_stack(self, env: List<VarBinding>, name: string, stack_ptr: ptr, ty: ValueType, struct_name: string) -> List<VarBinding> {
+        // Store the stack pointer as the local's value
+        let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
+        avra_llvm_build_store_cast(self.builder, stack_ptr, alloca)
+        // No RC cleanup — stack memory doesn't need freeing
+        env_extend(env, name, alloca, ty)
+    }
+
+    // ── Module lifecycle ──
+    fn verify_module(self) { avra_llvm_verify_module_print(self.module) }
+    fn write_ir(self, path: string) -> int { avra_llvm_print_module_to_file(self.module, path) }
+    fn dispose(self) {
+        avra_llvm_dispose_builder(self.builder)
+        avra_llvm_module_dispose(self.module)
+        avra_llvm_context_dispose(self.lc)
+    }
+
+    // ── Level 2: common patterns (2-3 lines → 1) ──
+
+    // Named comparison predicates (i1 results — for branch conditions)
+    fn eq(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 32, a, b, name) }
+    fn ne(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 33, a, b, name) }
+    fn slt(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 40, a, b, name) }
+
+    // Is this value truthy (non-zero / non-null)? Handles all value types:
+    // ptr → null check, i64 → zero check, i1 → use directly, double → fcmp ne 0.0
+    fn truthy(self, val: ptr, name: string) -> ptr {
+        let kind = avra_llvm_type_kind(avra_llvm_typeof(val))
+        // Note: this previously tested 14 (Metadata) for pointers, so a bare
+        // pointer-typed condition fell into the integer branch and emitted a
+        // malformed `icmp ne ptr, i64 0` that llc rejects — latent until
+        // optionals made `if opt` reachable.
+        if kind == LLVM_TYPEKIND_POINTER { return avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_null(self.ptr_type), name) }
+        if kind == LLVM_TYPEKIND_DOUBLE { return avra_llvm_build_fcmp(self.builder, 6, val, avra_llvm_const_null(self.double_type), name) }
+        if kind == LLVM_TYPEKIND_INTEGER && avra_llvm_int_type_width(avra_llvm_typeof(val)) == 1 { return val }
+        avra_llvm_build_icmp(self.builder, 33, val, avra_llvm_const_int(avra_llvm_typeof(val), 0, 0), name)
+    }
+
+    // Branch on truthiness: create then/else BBs, position at then, return else_bb.
+    // The universal "if" primitive — replaces 5 lines everywhere.
+    fn if_true(self, val: ptr, prefix: string) -> ptr {
+        let cond = self.truthy(val, "${prefix}_cond")
+        let then_bb = avra_llvm_append_basic_block(self.lc, self.current_fn, "${prefix}_then")
+        let else_bb = avra_llvm_append_basic_block(self.lc, self.current_fn, "${prefix}_else")
+        avra_llvm_build_cond_br(self.builder, cond, then_bb, else_bb)
+        avra_llvm_position_at_end(self.builder, then_bb)
+        else_bb
+    }
+
+    // Compare + zext to i64 in one call (for value use, not branching).
+    // Casts b to match a's type before comparing.
+    fn icmp_eq(self, a: ptr, b: ptr, name: string) -> ptr {
+        let b2 = avra_llvm_cast_to_type(self.builder, b, avra_llvm_typeof(a))
+        let cmp = avra_llvm_build_icmp(self.builder, 32, a, b2, name)
+        avra_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext")
+    }
+
+    fn icmp_ne(self, a: ptr, b: ptr, name: string) -> ptr {
+        let b2 = avra_llvm_cast_to_type(self.builder, b, avra_llvm_typeof(a))
+        let cmp = avra_llvm_build_icmp(self.builder, 33, a, b2, name)
+        avra_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext")
+    }
+
+    // Branch to bb only if current block has no terminator
+    fn br_if_open(self, bb: ptr) {
+        if avra_llvm_block_has_terminator(self.builder) == 0 {
+            avra_llvm_build_br(self.builder, bb)
+        }
+    }
+
+    // Store a value and branch — the most common expr-result pattern.
+    // Casts ptr values to i64 for i64 result slots.
+    fn store_br_if_open(self, val: ptr, slot: ptr, bb: ptr) {
+        if avra_llvm_block_has_terminator(self.builder) == 0 {
+            let store_val = self.to_i64(val, "slot_val")
+            avra_llvm_build_store(self.builder, store_val, slot)
+            avra_llvm_build_br(self.builder, bb)
+        }
+    }
+
+    // Create a string constant — returns ptr directly (no i64 cast).
+    fn string_val(self, text: string) -> ptr {
+        avra_llvm_build_global_string_ptr(self.builder, text, ".str")
+    }
+
+    // ── Level 3: semantic operations (4-6 lines → 1) ──
+
+    // Load the tag (i64 hash) from an enum value
+    fn enum_tag(self, val: ptr, type_name: string) -> ptr {
+        let obj = self.to_ptr(val, "tag_obj")
+        let st_ty = self.get_type(type_name)
+        let tag_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, 0, "tag_ptr")
+        avra_llvm_build_load(self.builder, self.i64_type, tag_gep, "tag")
+    }
+
+    // Load the payload pointer from an enum value
+    fn enum_payload(self, val: ptr, type_name: string) -> ptr {
+        let obj = self.to_ptr(val, "pay_obj")
+        let st_ty = self.get_type(type_name)
+        let pay_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, 1, "pay_ptr")
+        avra_llvm_build_load(self.builder, self.ptr_type, pay_gep, "payload")
+    }
+
+    // Load a struct field by index
+    fn field(self, val: ptr, type_name: string, idx: int, name: string) -> ptr {
+        let obj = self.to_ptr(val, "fld_obj")
+        let st_ty = self.get_type(type_name)
+        let fld_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
+        avra_llvm_build_load(self.builder, self.i64_type, fld_gep, name)
+    }
+
+    // Load a typed struct field by index — returns value with correct LLVM type.
+    fn field_typed(self, val: ptr, type_name: string, idx: int, ty: ValueType, name: string) -> ptr {
+        let obj = self.to_ptr(val, "fld_obj")
+        let st_ty = self.get_type(type_name)
+        let fld_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
+        avra_llvm_build_load(self.builder, self.type_for(ty), fld_gep, name)
+    }
+
+    // Store into a struct field by index with type-safe casting.
+    fn set_field(self, obj: ptr, type_name: string, idx: int, val: ptr, field_ty: ValueType) {
+        let st_ty = self.get_type(type_name)
+        let fld_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "fld_ptr")
+        avra_llvm_build_store(self.builder, self.cast_to(val, field_ty), fld_gep)
+    }
+
+    // Emit match-unreachable trap + unreachable instruction.
+    // Called at the end of exhaustive match arms.
+    fn match_trap(self, tag_val: ptr) {
+        if self.has_terminator() { return }
+        self.call("avra_match_unreachable", [
+            self.global_str(self.current_fn_name, ".match_fn"), tag_val,
+            self.global_str(self.source_file, "mu_file"), self.i64(self.source_line)
+        ])
+        self.unreachable()
+    }
+
+    // ── Array helpers ──
+    // Wrap the most common avra_array_* patterns for lists.
+    fn array_new(self) -> ptr { self.call("avra_array_new", []) }
+    fn array_push(self, arr: ptr, val: ptr) { self.call("avra_array_push", [arr, val]) }
+    fn array_get(self, arr: ptr, idx: ptr) -> ptr { self.call("avra_array_get", [arr, idx]) }
+    fn array_len(self, arr: ptr) -> ptr { self.call("avra_array_len", [arr]) }
+
+    // ── Type resolution ──
+
+    // Resolve all type annotations in a List<ParamEntry> from strings to ValueType.
+    fn resolve_params(self, params: List<ParamEntry>) -> List<ParamEntry> {
+        mut out: List<ParamEntry> = []
+        mut i = 0
+        while i < params.length {
+            let p = params[i]
+            out.push(ParamEntry { name: p.name, vtype: self.resolve_codegen_vtype(p.vtype) })
+            i = i + 1
+        }
+        out
+    }
+
+    fn resolve_fields(self, fields: List<FieldEntry>) -> List<FieldEntry> {
+        mut out: List<FieldEntry> = []
+        mut i = 0
+        while i < fields.length {
+            let e = fields[i]
+            out.push(FieldEntry { name: e.name, resolved: self.resolve_codegen_vtype(e.resolved) })
+            i = i + 1
+        }
+        out
+    }
+
+    // Upgrade a parser-resolved ValueType using codegen registries.
+    // Uses canonical names from registries to ensure downstream lookups match.
+    fn resolve_codegen_vtype(self, vt: ValueType) -> ValueType {
+        match vt {
+            .Struct(name, args, _) -> {
+                // Resolve via TypeRegistry first for canonical name
+                let tid = type_registry_id_for(self.type_reg, name)
+                let cn = type_registry_name_for(self.type_reg, tid)
+                let rn = if cn != "" { cn } else { name }
+                let rid = if tid > 0 { tid } else { 0 }
+                // Check registries with resolved name
+                let e = enum_reg_lookup(self.enums, rn)
+                if e.found {
+                    let empty_args: List<ValueType> = []
+                    return ValueType.Enum(rn, empty_args, rid)
+                }
+                let s = struct_reg_lookup(self.structs, rn)
+                if s.found { return ValueType.Struct(rn, self.resolve_codegen_vtype_list(args), rid) }
+                if trait_decl_has(self.trait_decls, rn) { return ValueType.Trait(rn, rid) }
+                let nt_vt = cg_newtype_vtype_lookup(self.newtypes, rn)
+                if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(rn, self.resolve_codegen_vtype(nt_vt), rid) }
+                let ua_vt = cg_union_alias_vtype_lookup(self.union_aliases, rn)
+                if !vtype_is_unknown(ua_vt) { return self.resolve_codegen_vtype(ua_vt) }
+                vt
+            }
+            .Enum(name, args, _) -> {
+                // Mirror the Struct arm: canonicalize the name via the
+                // TypeRegistry (mono's string roundtrips produce BARE
+                // names; the registries index module-qualified ones)
+                // and correct the KIND — a bare name parsed as Enum may
+                // denote a struct, since the string form carries no
+                // struct/enum distinction.
+                let tid = type_registry_id_for(self.type_reg, name)
+                let cn = type_registry_name_for(self.type_reg, tid)
+                let rn = if cn != "" { cn } else { name }
+                let rid = if tid > 0 { tid } else { 0 }
+                // A generic struct annotation (`Box<string>`) lowers to Enum
+                // at parse time and monomorphizes to a bare-named struct
+                // (`Box__string`); reclassify to Struct whenever the (resolved)
+                // name is a registered struct — regardless of carried args —
+                // so field access sees a Struct, not an Enum.
+                let s = struct_reg_lookup(self.structs, rn)
+                if s.found { return ValueType.Struct(rn, self.resolve_codegen_vtype_list(args), rid) }
+                ValueType.Enum(rn, self.resolve_codegen_vtype_list(args), rid)
+            }
+            .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
+            // Resolve the inner of a `T?` too — otherwise a local `let c: Color? = …`
+            // keeps an unresolved `.Struct("Color")` inner (the parser can't tell
+            // enum from struct), and unwrapping it (`c!` / `if let`) yields a value
+            // the enum `match` can't dispatch (F9999). Mirrors List/Union/FnTyped.
+            .Optional(inner) -> ValueType.Optional(self.resolve_codegen_vtype(inner))
+            .Channel(elem) -> ValueType.Channel(self.resolve_codegen_vtype(elem))
+            .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
+            .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))
+            _ -> vt
+        }
+    }
+
+    fn resolve_codegen_vtype_list(self, types: List<ValueType>) -> List<ValueType> {
+        mut out: List<ValueType> = []
+        mut i = 0
+        while i < types.length {
+            out.push(self.resolve_codegen_vtype(types[i]))
+            i = i + 1
+        }
+        out
+    }
+
+    fn resolve_field_type(self, fields: List<FieldEntry>, name: string) -> ValueType {
+        let vt = field_vtype_of(fields, name)
+        self.resolve_codegen_vtype(vt)
+    }
+
+    /// Struct name of a value's type, reclassifying first when needed. A value
+    /// typed by a return / `let` / param annotation carries an Enum-FORM mangled
+    /// generic name (`Box__int`) that may actually name a registered struct (the
+    /// parser / mangle round-trip can't tell struct from enum). `vtype_struct_name`
+    /// alone returns "" for that Enum shape; this falls back to the codegen type
+    /// resolver, which corrects the kind by registry lookup. Returns "" for a
+    /// genuine non-struct (a real enum, a scalar), so field access/assign still
+    /// reject those. Both the field-read and field-write paths share this.
+    fn resolved_struct_name(self, ty: ValueType) -> string {
+        let direct = vtype_struct_name(ty)
+        if direct != "" { return direct }
+        vtype_struct_name(self.resolve_codegen_vtype(ty))
+    }
+
+    // ── Registry lookups ──
+
+    // Look up the return type of a named function.
+    fn fn_ret(self, name: string) -> ValueType { fn_ret_lookup(self.fn_rets, name) }
+
+    // Return type of the current function being emitted.
+    fn current_fn_ret(self) -> ValueType { fn_ret_lookup(self.fn_rets, self.current_fn_name) }
+
+    // ── Context builders ──
+
+    fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
+        let empty: List<string> = []
+        let empty_defers: List<DeferEntry> = []
+        let empty_rc: List<RcCleanupEntry> = []
+        self with { current_fn: fn_val, current_fn_name: fn_name, defers: empty_defers, rc_cleanup: empty_rc, rc_releasable: empty, task_group: null }
+    }
+
+    fn with_loops(self, loops: List<LoopStackFrame>) -> Ctx {
+        self with { loops }
+    }
+
+    // ── Comparison → Bool helpers ──
+    // icmp/fcmp + zext to i64 + wrap in ok_emit(.Bool) — the
+    // universal pattern for comparison operators returning Bool.
+
+    fn icmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> Result<EmitValue, string> {
+        let cmp = avra_llvm_build_icmp(self.builder, pred, a, b, name)
+        ok_emit(avra_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
+    }
+
+    fn fcmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> Result<EmitValue, string> {
+        let cmp = avra_llvm_build_fcmp(self.builder, pred, a, b, name)
+        ok_emit(avra_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
+    }
+
+    // ── Traps ──
+
+    fn div_zero_trap(self, rhs: ptr) {
+        self.call("avra_div_by_zero_trap", [
+            self.icmp_eq(rhs, self.i64(0), "dz_chk"),
+            self.global_str(self.source_file, "dz_file"),
+            self.i64(self.source_file.length), self.i64(self.source_line)
+        ])
+    }
+
+    // ── Registry lookups ──
+
+    fn lookup_struct(self, name: string) -> StructLookup { struct_reg_lookup(self.structs, name) }
+    fn lookup_enum(self, name: string) -> EnumLookup { enum_reg_lookup(self.enums, name) }
+    fn lookup_toplevel(self, name: string) -> TopLevelLookup { toplevel_lookup(self.top_level_vars, name) }
+
+    // Resolve the Ok variant's payload type for Result enums.
+    fn resolve_ok_type(self, enum_name: string) -> ValueType {
+        let lookup = self.lookup_enum(enum_name)
+        if !lookup.found { return ValueType.Unknown }
+        let ok = variant_lookup(lookup.variants, "Ok")
+        if !ok.found { return ValueType.Unknown }
+        field_resolved_at(ok.fields, 0)
+    }
+
+    /// Type-args-aware variant of resolve_ok_type. Used at codegen
+    /// sites where the caller has the full `ValueType.Enum(name,
+    /// type_args, _)` — preferred when type_args is populated
+    /// because the registry's generic payload type still references
+    /// the type parameter (`T`) before monomorphization substitution,
+    /// while type_args carries the concrete substitution.
+    /// nce6.3.
+    fn resolve_ok_type_with(self, enum_name: string, type_args: List<ValueType>) -> ValueType {
+        if type_args.length >= 1 {
+            let arg = type_args[0]
+            if !(arg is .Unknown) { return arg }
+        }
+        self.resolve_ok_type(enum_name)
+    }
+
+    // Resolve the Err variant's payload type for Result enums.
+    fn resolve_err_type(self, enum_name: string) -> ValueType {
+        let lookup = self.lookup_enum(enum_name)
+        if !lookup.found { return ValueType.Unknown }
+        let ev = variant_lookup(lookup.variants, "Err")
+        if !ev.found { return ValueType.Unknown }
+        field_resolved_at(ev.fields, 0)
+    }
+
+    /// Type-args-aware variant — same shape as resolve_ok_type_with
+    /// but pulls the 2nd type arg (Err type) instead. nce6.3.
+    fn resolve_err_type_with(self, enum_name: string, type_args: List<ValueType>) -> ValueType {
+        if type_args.length >= 2 {
+            let arg = type_args[1]
+            if !(arg is .Unknown) { return arg }
+        }
+        self.resolve_err_type(enum_name)
+    }
+    fn lookup_fn_params(self, name: string) -> List<ValueType> { fn_param_lookup(self.fn_params, name) }
+
+    // ── Closure support ──
+
+    // Build a closure array: [TAG, fn_ptr, captures...]
+    fn closure_array(self, fn_ptr: ptr) -> ptr {
+        let arr = self.array_new()
+        self.array_push(arr, self.i64(closure_marker()))
+        self.array_push(arr, fn_ptr)
+        arr
+    }
+
+    // ── Context builders (continued) ──
+
+    fn with_top_level(self, top_level_vars: List<TopLevelVarMeta>) -> Ctx {
+        self with { top_level_vars }
+    }
+
+    fn with_defers(self, defers: List<DeferEntry>) -> Ctx {
+        self with { defers }
+    }
+
+    // Emit a coverage counter hit. No-op when coverage is disabled.
+    fn cov_hit(self, counter_idx: int) {
+        if self.coverage {
+            avra_coverage_emit_hit(self.builder, self.module, self.current_fn_name, 0, 0, counter_idx)
+        }
+    }
+
+    // Allocate a coverage counter and emit a hit. Returns the counter ID.
+    fn cov_line(self) -> int {
+        if !self.coverage { return -1 }
+        let id = avra_covmap_alloc("line", self.current_fn_name, self.source_line, 0, 0)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    fn cov_fn_entry(self) -> int {
+        if !self.coverage { return -1 }
+        avra_covmap_reset_fn()
+        let id = avra_covmap_alloc("fn_entry", self.current_fn_name, self.source_line, 0, 0)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    fn cov_branch_then(self, branch_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = avra_covmap_alloc("branch_then", self.current_fn_name, self.source_line, 0, branch_id)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    fn cov_branch_else(self, branch_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = avra_covmap_alloc("branch_else", self.current_fn_name, self.source_line, 0, branch_id)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    fn cov_match_arm(self, arm_idx: int) -> int {
+        if !self.coverage { return -1 }
+        let id = avra_covmap_alloc("match_arm", self.current_fn_name, self.source_line, 0, arm_idx)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    // MC/DC condition coverage: track each sub-condition's true/false outcome.
+    // decision_id groups conditions within a compound logical expression.
+    fn cov_condition_true(self, decision_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = avra_covmap_alloc("condition_true", self.current_fn_name, self.source_line, 0, decision_id)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    fn cov_condition_false(self, decision_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = avra_covmap_alloc("condition_false", self.current_fn_name, self.source_line, 0, decision_id)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    // Finalize coverage for current function: patch all instrprof.increment
+    // calls to use the actual counter count instead of placeholder 0.
+    fn cov_finalize_fn(self) {
+        if !self.coverage { return }
+        let count = avra_covmap_counter_count()
+        if count > 0 {
+            avra_coverage_finalize_fn(self.current_fn, count)
+        }
+    }
+}
+/// Carrier for a statement emit's threaded state. Instead of mutating
+/// `Ctx` in place (which would require globals — see CLAUDE.md rule
+/// 17), every stmt emitter returns the new ctx + env explicitly.
+///
+/// @field ctx — the updated codegen context (defers, rc state, …).
+/// @field env — the updated variable environment.
+export type StmtResult = { ctx: Ctx, env: List<VarBinding> }
+
+/// Carrier for a block-as-expression emit. Same threaded state as
+/// StmtResult plus the block's terminal value and its ValueType, so
+/// callers can use the block as the RHS of an expression.
+///
+/// @field value — the block's terminal SSA value.
+/// @field ty — the block's terminal ValueType.
+/// @field ctx — the updated codegen context.
+/// @field env — the updated variable environment.
+export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding> }

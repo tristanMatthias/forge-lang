@@ -1,0 +1,10 @@
+spec "tuples example" {
+    then "two-tuple field access via .0/.1" {
+        let pair = (10, 20)
+        pair.0 + pair.1 == 30
+    }
+    then "destructure three-tuple" {
+        let (x, y, z) = (1, 2, 3)
+        x + y + z == 6
+    }
+}

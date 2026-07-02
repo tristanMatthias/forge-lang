@@ -1,0 +1,789 @@
+// WHY: emits function bodies and binds parameters into the body scope.
+// Also emits null-argument checks when debug_null_checks is enabled on Ctx.
+
+use core.{Expr, SExpr, Stmt, ParamEntry, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_render_full, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown, vtype_is_unsigned_int, vtype_is_signed_narrow_int, avra_llvm_set_linkonce_odr}
+use codegen.{cg_newtype_vtype_lookup}
+use core.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
+use codegen.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
+use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
+use features.defer_stmt.{emit_defers, emit_defers_on_error}
+use core.{avra_variant_hash}
+use features.union_type.{emit_union_wrap, needs_union_wrap}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, emit_optional_is_none}
+use core.{vtype_strip_optional, vtype_is_optional}
+use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
+use codegen.{emit_rc_cleanup}
+
+extern fn avra_ice_push_fn(name: string)
+extern fn avra_ice_pop_fn()
+use codegen.{analyze_releasable}
+use features.spawn_expr.{stmts_has_spawn}
+
+/// Walk `stmts` emitting the body of every `fn` declaration —
+/// recursively descends into impls, modules, and nested decls.
+/// Pass 2 of compilation: signatures are already declared by
+/// `declare_functions` in `setup.av`.
+///
+/// P2 of library-mode: when `ctx.lib_pkg_root` is non-empty (the
+/// compile is targeting one package's library), skip body emission
+/// for functions whose qualified name belongs to ANOTHER package.
+/// The LLVM declaration from `declare_functions` stays as a
+/// declare-only; the linker resolves the call against the producer's
+/// pre-built .o. See `fn_belongs_to_lib_pkg` for the ownership rule.
+export fn emit_function_bodies(ctx: Ctx, stmts: List<SStmt>) -> Result<List<VarBinding>, string> {
+    let empty_e: List<VarBinding> = []
+    mut i = 0
+    while i < stmts.length {
+        let ss = stmts[i]
+        // Skip body emission for fns marked `@external_unit` —
+        // their compiled code lives in another unit's .o that the
+        // linker resolves at final link time.
+        let is_external = find_annotation(ss.node, "external_unit") != null
+        // Mono-produced specializations get `linkonce_odr` linkage: every
+        // consuming .o that monomorphizes the same `list_filter<T>` emits
+        // a copy, and only `linkonce_odr` lets the linker dedup them
+        // instead of erroring on duplicate symbols.
+        let is_mono_spec = find_annotation(ss.node, "mono_spec") != null
+        let inner = match stmt_unwrap(ss.node) {
+            .Function(name, _, params, _, body) -> {
+                avra_ice_push_fn(name)
+                let r = if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
+                    ok_stmt(empty_e)
+                } else {
+                    let res = emit_function_body(ctx, name, params, body)
+                    if is_mono_spec {
+                        let fn_val = ctx.get_fn(name)
+                        if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
+                    }
+                    res
+                }
+                avra_ice_pop_fn()
+                r
+            }
+            .Impl(_, methods) -> emit_function_bodies(ctx, methods)
+            .Module(_, body) -> {
+                if is_external {
+                    ok_stmt(empty_e)
+                } else {
+                    emit_function_bodies(ctx, body)
+                }
+            }
+            _ -> ok_stmt(empty_e)
+        }
+        inner?
+        i = i + 1
+    }
+    ok_stmt(empty_e)
+}
+
+/// P2 library-mode ownership check.
+///
+/// Returns true when `fn_name` should have its body emitted in THIS
+/// compile (i.e. it belongs to the package we're building a library
+/// for) — OR when we're in whole-program mode (lib_pkg_root empty).
+///
+/// Ownership rule:
+///   * Whole-program mode (lib_pkg_root == ""): every fn belongs.
+///     Today's behaviour; emit every body.
+///   * Library mode (roots set, e.g. "@std::cli" — colon-separated
+///     for batched test shards owning several modules): a fn belongs
+///     iff its qualified name starts with `${root}::` for ANY root,
+///     OR has no `::` at all. Unqualified names are synthesized
+///     wrappers (main, __init_<mod>, __avra_lib_top_level) that
+///     always live in this unit.
+fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
+    if ctx.lib_pkg_roots.length == 0 { return true }
+    if fn_name.index_of("::") < 0 { return true }
+    for root in ctx.lib_pkg_roots {
+        if fn_name.starts_with("${root}::") { return true }
+    }
+    false
+}
+
+/// Emit a single function body: position the builder at the
+/// entry block, bind every parameter into the env, run escape
+/// analysis to seed the releasable set, optionally allocate a
+/// task group when the body uses `spawn`, then walk the body.
+/// Adds an implicit return at the end when the last statement
+/// didn't terminate.
+export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, body: List<SStmt>) -> Result<List<VarBinding>, string> {
+    let fn_val = ctx.get_fn(name)
+    if fn_val == null {
+        return err_stmt("codegen error: function `${name}` was not declared in pass 1")
+    }
+    let entry = ctx.bb_in(fn_val, "entry")
+    ctx.position(entry)
+
+    mut body_cg = ctx.with_fn(fn_val, name)
+    body_cg.cov_fn_entry()
+    body_cg.rc_releasable = analyze_releasable(body)
+
+    // Structured concurrency (spec Axis 18.7): if the function body
+    // contains spawn expressions, create a task group so all spawned
+    // tasks are automatically awaited when the scope exits.
+    if stmts_has_spawn(body) {
+        body_cg.task_group = body_cg.call("avra_task_group_new", [])
+    }
+
+    let resolved_params = body_cg.resolve_params(params)
+    let empty_env: List<VarBinding> = []
+    let env = bind_params_inline(body_cg, fn_val, resolved_params, 0, empty_env)
+
+    // Emit null checks for all ptr/struct/enum parameters when debug mode is on.
+    if body_cg.debug_null_checks {
+        emit_null_checks(body_cg, name, params, env)
+    }
+
+    // Use the function's return type for the default block value.
+    let ret_ty = body_cg.fn_ret(name)
+    let br = emit_block_loop_ctx(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
+    if !ctx.has_terminator() {
+        // Structured concurrency: await all spawned tasks before cleanup.
+        if body_cg.task_group != null {
+            br.ctx.call("avra_task_group_await_all", [body_cg.task_group])
+        }
+        // Unified cleanup: defers + RC release in LIFO declaration order.
+        // For functions returning Result, check the tag at runtime to decide
+        // whether to run errdefer (Err path) or regular defer (Ok path).
+        let ret_enum = vtype_enum_name(ret_ty)
+        if is_result_shaped_enum(br.ctx.type_reg, ret_enum) {
+            let ret_ptr = br.ctx.to_ptr(br.value, "ret_enum_ptr")
+            let ret_st = br.ctx.get_type(ret_enum)
+            let tag_gep = br.ctx.gep(ret_st, ret_ptr, 0, "ret_tag_ptr")
+            let tag_val = br.ctx.load_i64(tag_gep, "ret_tag")
+            let err_tag = br.ctx.i64(avra_variant_hash("Err"))
+            let is_err = br.ctx.eq(tag_val, err_tag, "is_err_ret")
+            let err_bb = br.ctx.bb("errdefer_path")
+            let ok_bb = br.ctx.bb("defer_path")
+            let merge_bb = br.ctx.bb("defer_done")
+            br.ctx.cond_br(is_err, err_bb, ok_bb)
+            br.ctx.position(err_bb)
+            emit_defers_on_error(br.ctx, br.env)
+            br.ctx.br(merge_bb)
+            br.ctx.position(ok_bb)
+            emit_defers(br.ctx, br.env)
+            br.ctx.br(merge_bb)
+            br.ctx.position(merge_bb)
+        } else {
+            emit_defers(br.ctx, br.env)
+        }
+        // Optional box/unbox of the implicit (fall-off-end) return value.
+        // Guarded so the common path emits no extra call; plain-ptr primitives
+        // avoid constructing an EmitValue in this hot path.
+        mut ret_val = br.value
+        mut ret_vty = br.ty
+        if needs_optional_box(br.ty, ret_ty) {
+            ret_val = emit_optional_some(body_cg, vtype_strip_optional(ret_ty), br.value)
+            ret_vty = ret_ty
+        } else if needs_optional_unbox(br.ty, ret_ty) {
+            ret_vty = vtype_strip_optional(br.ty)
+            ret_val = emit_optional_unwrap(body_cg, ret_vty, br.value)
+        }
+        // Union wrapping: if function returns a union, wrap the implicit return value
+        if needs_union_wrap(ret_vty, ret_ty) {
+            let wrapped = emit_union_wrap(body_cg, ret_val, ret_vty, ret_ty)?
+            ctx.ret(wrapped.value, ret_ty)
+        } else {
+            // Trait boxing: if function returns a trait, box the concrete value
+            let trait_ret = vtype_trait_name(ret_ty)
+            let concrete_ret = resolve_concrete_type_name(ret_vty)
+            if trait_ret != "" && concrete_ret != "" && !trait_decl_has(br.ctx.trait_decls, concrete_ret) {
+                let boxed = box_for_trait(br.ctx, ret_val, trait_ret, concrete_ret)
+                ctx.ret(boxed, ret_ty)
+            } else {
+                ctx.ret(ret_val, ret_ty)
+            }
+        }
+    }
+    body_cg.cov_finalize_fn()
+    ctx.verify_fn(fn_val)
+    let e: List<VarBinding> = []
+    ok_stmt(e)
+}
+
+/// Walk the `List<ParamEntry>` copying each LLVM parameter into
+/// a stack alloca and extending the environment so the body sees
+/// the param by name. Each binding is typed with the resolved
+/// param's ValueType.
+fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: List<ParamEntry>, idx: int, env: List<VarBinding>) -> List<VarBinding> {
+    mut cur_env = env
+    for (i, p) in params.enumerate() {
+        let arg = ctx.get_param(fn_val, idx + i)
+        cur_env = ctx.bind(cur_env, p.name, arg, p.vtype)
+    }
+    cur_env
+}
+
+// ── Debug null checks ──
+//
+// When --debug-null is active, emit an icmp eq i64 %val, 0 check for
+// every parameter whose declared type is ptr, a struct, or an enum.
+// If null, call avra_null_arg_trap with the function name and
+// parameter name, then emit unreachable. This catches null propagation
+// at the source function instead of crashing 8000 calls later.
+
+/// True when a parameter type is non-nullable and benefits
+/// from a null-check trap when `--debug-null` is on.
+/// Primitives, voids, and explicit nullables (`T?`) skip — the
+/// rest get instrumentation.
+fn should_null_check_vt(vt: ValueType) -> bool {
+    match vt {
+        .Str -> true
+        .Ptr -> true
+        .Struct(_, _, _) -> true
+        .Enum(_, _, _) -> true
+        .List(_) -> true
+        .Map(_, _) -> true
+        .Trait(_, _) -> true
+        .Union(_) -> true
+        .Newtype(_, inner, _) -> should_null_check_vt(inner)
+        .Tuple(_) -> true
+        .NarrowedEnum(_, _, _) -> true
+        _ -> false
+    }
+}
+
+/// Emit per-parameter null-check traps when
+/// `ctx.debug_null_checks` is on. Walks the `List<ParamEntry>` calling
+/// `emit_one_null_check` for each non-nullable param.
+fn emit_null_checks(ctx: Ctx, fn_name: string, params: List<ParamEntry>, env: List<VarBinding>) {
+    mut i = 0
+    while i < params.length {
+        let p = params[i]
+        if should_null_check_vt(p.vtype) {
+            emit_one_null_check(ctx, fn_name, p.name, env)
+        }
+        i = i + 1
+    }
+}
+
+/// Emit a single `avra_null_arg_check` call comparing the
+/// loaded param value against null. The runtime trap surfaces
+/// F5005 with the function name + parameter name on failure.
+fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: List<VarBinding>) {
+    let lookup = env_lookup(env, param_name)
+    if !lookup.found { return }
+
+    // Load the parameter value (stored as i64 in the alloca).
+    let val = ctx.load_i64(lookup.alloca, "${param_name}_val")
+    let zero = ctx.i64(0)
+    // icmp eq i64 %val, 0 → i1
+    let is_null_i1 = ctx.eq(val, zero, "${param_name}_null")
+    // zext i1 to i64 for the C function
+    let is_null = ctx.zext(is_null_i1, ctx.i64_type, "${param_name}_nz")
+
+    ctx.call("avra_null_arg_check", [
+        ctx.global_str(fn_name, "dbg_fn"), ctx.i64(fn_name.length),
+        ctx.global_str(param_name, "dbg_param"), ctx.i64(param_name.length),
+        is_null
+    ])
+}
+
+// ── Call dispatch (moved from codegen/mod.av) ──
+
+use codegen.{emit_concat, emit_substring, emit_str_replace}
+use codegen.{emit_println, emit_eprintln}
+use features.list_lit.{emit_list_method_call}
+use features.channels.{emit_channel_method_call}
+use features.map_lit.{emit_map_method_call}
+use features.trait_decl.{emit_trait_dispatch}
+use codegen.{emit_block_loop, emit_block_loop_ctx}
+use codegen.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, strip_quotes}
+
+/// Codegen entry for `f(args)`. Dispatches on the callee shape
+/// — bare ident → named-call; field access → method call;
+/// generic call → monomorphized name; closure value → indirect.
+/// Built-in helpers (panic, string conversions, etc.) are
+/// short-circuited here too.
+export fn emit_call(ctx: Ctx, env: List<VarBinding>, callee: Expr, args: List<SExpr>) -> Result<EmitValue, string> {
+    match callee {
+        .Ident(name) -> emit_call_named(ctx, env, name, args)
+        .QualifiedIdent(path) -> emit_call_named(ctx, env, path, args)
+        .FieldAccess(obj, method) -> emit_method_call(ctx, env, obj, method, args)
+        _ -> {
+            // Expression callee: evaluate it and call indirectly.
+            // All callable values are closure arrays, so route through
+            // the closure call path which unpacks [TAG, fn_ptr, caps...].
+            let callee_r = ctx.emit(env, callee)?
+            let ret_ty = vtype_fn_ret(callee_r.ty)
+            if vtype_is_closure(callee_r.ty) {
+                let num_caps = vtype_closure_captures(callee_r.ty)
+                if num_caps >= 0 {
+                    return emit_closure_call_typed(ctx, env, callee_r.value, args, num_caps, ret_ty)
+                }
+            }
+            // For values with Fn/FnTyped type (e.g. from intmap_get),
+            // the runtime value is still a closure array — route
+            // through indirect call which handles both representations.
+            emit_indirect_call_typed(ctx, env, callee_r.value, args, ret_ty)
+        }
+    }
+}
+
+/// Dispatch a method call on a string receiver. Maps method
+/// names to the matching `avra_str_*` runtime call; methods
+/// with codegen-side implementations (concat, substring, replace,
+/// equality) route to their dedicated emitters.
+fn emit_string_method(ctx: Ctx, env: List<VarBinding>, str_val: ptr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    match method {
+        "length" -> {
+            let str_ptr = ctx.to_ptr(str_val, "len_arg")
+            ok_emit(ctx.call("strlen", [str_ptr]), .Int)
+        }
+        "substring" -> emit_substring(ctx, env, str_val, args)
+        "contains" or "starts_with" or "ends_with" or "index_of" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            let arg_ptr = ctx.to_ptr(arg_r.value, "str_arg")
+            ok_emit(ctx.call("avra_str_${method}", [str_ptr, arg_ptr]), .Int)
+        }
+        "replace" -> emit_str_replace(ctx, env, str_val, args)
+        "trim" -> ok_emit(ctx.call("avra_str_trim", [ctx.to_ptr(str_val, "str_self")]), .Str)
+        "to_upper" or "upper" -> ok_emit(ctx.call("avra_str_to_upper", [ctx.to_ptr(str_val, "str_self")]), .Str)
+        "to_lower" or "lower" -> ok_emit(ctx.call("avra_str_to_lower", [ctx.to_ptr(str_val, "str_self")]), .Str)
+        "split" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            let sep_ptr = ctx.to_ptr(arg_r.value, "sep_arg")
+            ok_emit(ctx.call("avra_str_split", [str_ptr, sep_ptr]), .List(.Str))
+        }
+        "char_code" -> {
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            let byte_val = ctx.load_i8(str_ptr, "char_byte")
+            ok_emit(ctx.zext(byte_val, ctx.i64_type, "char_code"), .Int)
+        }
+        // string.byte(i) — return the i-th UTF-8 byte as an int 0..255.
+        // NOT the i-th codepoint; this is the byte-level accessor that
+        // crypto code, binary protocol decoders, and any byte-shaped
+        // parser needs. char_code() above is the zero-arg variant that
+        // peeks byte 0 (kept for backward compat with existing
+        // lexer/parser usage). Both go through the same avra_str_char_code
+        // runtime hook.
+        "byte" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            ok_emit(ctx.call("avra_str_char_code", [str_ptr, arg_r.value]), .Int)
+        }
+        "repeat" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            ok_emit(ctx.call("avra_str_repeat", [ctx.to_ptr(str_val, "str_self"), arg_r.value]), .Str)
+        }
+        "reverse" -> ok_emit(ctx.call("avra_str_reverse", [ctx.to_ptr(str_val, "str_self")]), .Str)
+        _ -> err_emit("string method `${method}` not implemented")
+    }
+}
+
+/// Dispatch a method call on a bytes receiver. Mirrors emit_string_method
+/// but routes to the avra_bytes_* runtime helpers and types the result
+/// as ValueType.Bytes / .Int / .Str as appropriate.
+fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    match method {
+        "length" -> {
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            ok_emit(ctx.call("avra_bytes_length", [bp]), .Int)
+        }
+        "byte" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            ok_emit(ctx.call("avra_bytes_byte", [bp, arg_r.value]), .Int)
+        }
+        "concat" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            let other = ctx.to_ptr(arg_r.value, "bytes_arg")
+            ok_emit(ctx.call("avra_bytes_concat", [bp, other]), .Bytes)
+        }
+        "slice" -> {
+            // slice(start, end) — emit each arg, then forward both
+            // i64 indices to the runtime helper.
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            if args.length < 2 {
+                return err_emit("bytes.slice expects 2 args, got ${string(args.length)}")
+            }
+            let s_r = ctx.emit(env, args[0].node)?
+            let e_r = ctx.emit(env, args[1].node)?
+            ok_emit(ctx.call("avra_bytes_slice", [bp, s_r.value, e_r.value]), .Bytes)
+        }
+        "to_string" -> {
+            let bp = ctx.to_ptr(bytes_val, "bytes_self")
+            ok_emit(ctx.call("avra_string_from_bytes", [bp]), .Str)
+        }
+        _ -> err_emit("bytes method `${method}` not implemented")
+    }
+}
+
+/// Codegen entry for `obj.method(args)`. Type-aware dispatch:
+/// strings → `emit_string_method`, bytes → `emit_bytes_method`,
+/// lists → `emit_list_method_call`, maps → `emit_map_method_call`,
+/// traits → trait-vtable dispatch, structs/enums → mangled
+/// inherent-method call. Falls back to plain by-name call for
+/// unknown receivers.
+export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    let r = ctx.emit_member(env, obj)?
+    emit_method_on_value(ctx, env, r, method, args)
+}
+
+/// Dispatch a method call on an ALREADY-EMITTED receiver `r`. Split out of
+/// emit_method_call so the optional method chain (`obj?.m(args)`) can call
+/// the method on the UNWRAPPED receiver through the same dispatch (str/bytes/
+/// list/map/Task/trait/newtype/struct/enum), instead of a `?.`-specific path.
+export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    if vtype_is_str(r.ty) {
+        return emit_string_method(ctx, env, r.value, method, args)
+    }
+    if vtype_is_bytes(r.ty) {
+        return emit_bytes_method(ctx, env, r.value, method, args)
+    }
+    // List methods — dispatched to features/list_lit/codegen.av
+    if vtype_is_list(r.ty) {
+        return emit_list_method_call(ctx, env, r.value, r.ty, method, args)
+    }
+    // Map methods — dispatched to features/map_lit/codegen.av
+    if vtype_is_map(r.ty) {
+        let map_ptr = ctx.to_ptr(r.value, "map_ptr")
+        return emit_map_method_call(ctx, env, map_ptr, method, args)
+    }
+    // Channel methods — dispatched to features/channels/codegen.av
+    match r.ty {
+        .Channel(elem) -> {
+            return emit_channel_method_call(ctx, env, ctx.to_ptr(r.value, "chan_ptr"), elem, method, args)
+        }
+        _ -> {}
+    }
+    // Task methods: .cancel()
+    match r.ty {
+        .Task(_) -> {
+            if method == "cancel" {
+                return ok_emit(ctx.call("avra_task_cancel", [r.value]), .Void)
+            }
+            return err_emit("Task has no method `${method}` (available: .await, .cancel())")
+        }
+        _ -> {}
+    }
+    // Trait dispatch
+    let tn = vtype_trait_name(r.ty)
+    if tn != "" {
+        return emit_trait_dispatch(ctx, env, r.value, tn, method, args)
+    }
+    // Newtype .raw() → zero-cost access to inner value
+    if vtype_is_newtype(r.ty) {
+        if method == "raw" {
+            return ok_emit(r.value, vtype_newtype_inner(r.ty))
+        }
+        // Forward other methods to the inner type's methods
+        let nt_name = vtype_newtype_name(r.ty)
+        return err_emit("newtype `${nt_name}` has no method `${method}` (use .raw() to access the inner value)")
+    }
+    // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
+    let type_name = vtype_struct_name(r.ty)
+    let enum_name = vtype_enum_name(r.ty)
+    let owner = if type_name != "" {
+        type_name
+    } else {
+        enum_name
+    }
+    if owner == "" {
+        return err_emit("method call on non-struct/enum value (ty=${vtype_render_full(r.ty)})")
+    }
+    let mangled = method_mangled_name(owner, method)
+    mut fn_val = ctx.get_fn(mangled)
+    // Fallback: resolve via TypeRegistry using TypeId
+    if fn_val == null {
+        let tid = match r.ty { .Struct(_, _, id) -> id, .Enum(_, _, id) -> id, _ -> 0 }
+        let canonical = type_registry_name_for(ctx.type_reg, tid)
+        if canonical != "" {
+            fn_val = ctx.get_fn(method_mangled_name(canonical, method))
+        }
+    }
+    if fn_val == null {
+        // Not a method — check if it's a struct field with fn type.
+        // e.g. handler.action(25) where action: fn(int) -> int
+        if type_name != "" {
+            let s_lookup = ctx.lookup_struct(type_name)
+            if s_lookup.found {
+                let field_ty = ctx.resolve_field_type(s_lookup.fields, method)
+                if vtype_is_fn(field_ty) {
+                    // Load the field value (fn pointer) and call indirectly
+                    let st_ty = ctx.get_type(type_name)
+                    let obj_ptr = ctx.to_ptr(r.value, "fn_field_obj")
+                    let gep = ctx.gep(st_ty, obj_ptr, field_index_of(s_lookup.fields, method), "fn_field_ptr")
+                    let fn_i64 = ctx.load_i64(gep, "fn_field_val")
+                    return emit_indirect_call_value(ctx, env, fn_i64, args)
+                }
+            }
+        }
+        return err_emit("undefined method `${owner}.${method}`")
+    }
+    ctx.null_check(r.value, method, owner)
+
+    // Build arg array with self prepended.
+    let extra_count = args.length
+    let arg_count = extra_count + 1
+    let arg_arr = ctx.value_array(arg_count)
+    ctx.value_array_set(arg_arr, 0, r.value)
+    match fill_arg_array(ctx, env, arg_arr, args, 1) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.value_array_free(arg_arr)
+            return err_emit(e)
+        }
+    }
+    let result = ctx.call_raw(fn_val, arg_arr, arg_count)
+    ctx.value_array_free(arg_arr)
+    let ret_ty = ctx.fn_ret(mangled)
+    ok_emit(result, ret_ty)
+}
+
+/// Emit the first argument from a `List<SExpr>`. Errors when the
+/// list is empty so callers can surface a clean "expected N
+/// arguments, got 0" diagnostic.
+export fn emit_first_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("expected argument") }
+    ctx.emit(env, args[0].node)
+}
+
+/// Codegen for a direct call to a named function. Resolves the
+/// LLVM fn by `name`, builds the arg array with `fill_arg_array_
+/// boxing` (so concrete args get wrapped for trait/union params),
+/// and calls via `ctx.call`. Result type comes from the function's
+/// declared return type.
+/// Codegen for the `expr!` force-unwrap builtin (`__avra_force_unwrap`).
+/// Yields the present inner value of an optional: for value-inner (tagged)
+/// optionals this UNBOXES the heap box; for pointer-inner (niche) optionals
+/// `emit_optional_unwrap` is identity (the value already IS the inner
+/// pointer). The result type is the non-optional inner. Caller is asserting
+/// non-`none` (strict non-null gating / flow-narrowing will enforce this statically).
+fn emit_force_unwrap(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    let r = emit_single_arg(ctx, env, args)?
+    if vtype_is_optional(r.ty) {
+        let inner = vtype_strip_optional(r.ty)
+        return ok_emit(emit_optional_unwrap(ctx, inner, r.value), inner)
+    }
+    // Non-optional operand: `!` is a no-op non-null assertion.
+    ok_emit(r.value, r.ty)
+}
+
+export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    // Built-in functions — dispatched by name.
+    match name {
+        "println"            -> return emit_println(ctx, env, args)
+        "eprintln"           -> return emit_eprintln(ctx, env, args)
+        "string"             -> return emit_int_to_string(ctx, env, args)
+        "avra_format_float" -> return emit_format_float(ctx, env, args)
+        "avra_format_int"   -> return emit_format_int(ctx, env, args)
+        "int"                -> return emit_string_to_int(ctx, env, args)
+        "float"              -> return emit_string_to_float(ctx, env, args)
+        "panic"              -> return emit_panic(ctx, env, args)
+        "__avra_force_unwrap" -> return emit_force_unwrap(ctx, env, args)
+        _ -> {}
+    }
+    // Newtype construction: UserId(value) → zero-cost, just retype the value
+    if !vtype_is_unknown(cg_newtype_vtype_lookup(ctx.newtypes, name)) {
+        return emit_newtype_ctor(ctx, env, name, args)
+    }
+    let fn_val = ctx.get_fn(name)
+    if fn_val == null {
+        // Not a named function — might be a lambda stored in a variable.
+        let local = env_lookup(env, name)
+        if local.found && vtype_is_fn(local.ty) {
+            return emit_indirect_call(ctx, env, local.alloca, name, args)
+        }
+        let g = ctx.lookup_toplevel(name)
+        if g.found && vtype_is_fn(g.ty) {
+            return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args, g.ty)
+        }
+        return err_emit("undefined function `${name}`")
+    }
+
+    let arg_count = args.length
+    let arg_arr = ctx.value_array(arg_count)
+    let ptypes = ctx.lookup_fn_params(name)
+    match fill_arg_array_boxing(ctx, env, arg_arr, args, ptypes, 0) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.value_array_free(arg_arr)
+            return err_emit(e)
+        }
+    }
+    let result = ctx.call_raw(fn_val, arg_arr, arg_count)
+    ctx.value_array_free(arg_arr)
+    let ret_ty = ctx.fn_ret(name)
+    ok_emit(result, ret_ty)
+}
+
+/// Codegen for the built-in `string(value)` conversion.
+/// Supports int (snprintf into a 32-byte buffer), float
+/// (`avra_float_to_string`), bool (literal "true"/"false"),
+/// and pre-stringified strings (passthrough).
+export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("string() expects 1 arg") }
+    let r = ctx.emit(env, args[0].node)?
+    let display_dispatch = emit_display_dispatch(ctx, r)
+    if display_dispatch != null { return ok_emit(display_dispatch!, .Str) }
+    let sname = vtype_struct_name(r.ty)
+    let ename = vtype_enum_name(r.ty)
+    if sname != "" {
+        return err_emit("type `${sname}` cannot be converted to string — define `fn display(self) -> string` on `${sname}` (see Display dispatch)")
+    }
+    if ename != "" {
+        return err_emit("enum `${ename}` cannot be converted to string — define `fn display(self) -> string` on `${ename}` (see Display dispatch)")
+    }
+    if vtype_is_newtype(r.ty) {
+        let inner = vtype_newtype_inner(r.ty)
+        return emit_value_to_string(ctx, r.value, inner)
+    }
+    if r.ty is .Union {
+        return err_emit("cannot convert union type to string directly — use `match` to extract the value first")
+    }
+    emit_value_to_string(ctx, r.value, r.ty)
+}
+
+/// THE value-level string converter — the single dispatch shared by the
+/// public `string()` emitter, the newtype path, and the optional present
+/// branch: str passthrough, bool words, float / sized-int / int formatting.
+/// A `T?` routes through `emit_optional_to_string` (mutually recursive), so
+/// nested optionals like `int??` display correctly at every depth.
+fn emit_value_to_string(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitValue, string> {
+    if vtype_is_optional(ty) {
+        return emit_optional_to_string(ctx, EmitValue { value: val, ty: ty })
+    }
+    if vtype_is_str(ty) { return ok_emit(val, .Str) }
+    if vtype_eq(ty, .Bool) {
+        return ok_emit(ctx.call("avra_bool_to_string", [val]), .Str)
+    }
+    mut v = val
+    if vtype_is_unsigned_int(ty) { v = ctx.zext(val, ctx.i64_type, "u2i") }
+    if vtype_is_signed_narrow_int(ty) { v = ctx.sext(val, ctx.i64_type, "i2i") }
+    emit_int_to_string_inner(ctx, v, ty)
+}
+
+/// Display for a `T?` value: branch at runtime — `none` → the literal
+/// "none"; present → unwrap and convert the inner (str passthrough, bool
+/// words, float / int formatting). A struct/enum inner without a string
+/// form is rejected at compile time with the same remedy as the
+/// non-optional path, BEFORE any blocks are opened.
+fn emit_optional_to_string(ctx: Ctx, r: EmitValue) -> Result<EmitValue, string> {
+    let inner = vtype_strip_optional(r.ty)
+    let bad_owner = if vtype_struct_name(inner) != "" { vtype_struct_name(inner) } else { vtype_enum_name(inner) }
+    if bad_owner != "" {
+        return err_emit("type `${bad_owner}?` cannot be converted to string — unwrap it and define `fn display(self) -> string` on `${bad_owner}`")
+    }
+    let slot = ctx.alloca_i64("opt2s_slot")
+    let merge_bb = ctx.bb("opt2s_end")
+    let none_bb = ctx.bb("opt2s_none")
+    let present_bb = ctx.bb("opt2s_present")
+    ctx.cond_br(emit_optional_is_none(ctx, r.value), none_bb, present_bb)
+    ctx.position(none_bb)
+    ctx.store_br_if_open(ctx.to_i64(ctx.global_str("none", ".opt2s_none"), "opt2s_n"), slot, merge_bb)
+    ctx.position(present_bb)
+    let inner_val = emit_optional_unwrap(ctx, inner, r.value)
+    let conv = emit_value_to_string(ctx, inner_val, inner)?
+    ctx.store_br_if_open(ctx.to_i64(conv.value, "opt2s_p"), slot, merge_bb)
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(slot, "opt2s_val"), .Str)
+}
+
+/// Duck-typed Display dispatch: if `r.ty` is a user-defined Struct
+/// / Enum / Newtype with a `display(self) -> string` method, emit
+/// the method call and return the resulting SSA value. Otherwise
+/// returns null so the caller falls through to its default
+/// conversion path (snprintf for ints, etc.).
+///
+/// Looks up via the method-mangle table (`<Type>__display`) — no
+/// formal `Display` trait required, just a method by convention.
+/// Go's `Stringer` pattern but with compile-time dispatch.
+fn emit_display_dispatch(ctx: Ctx, r: EmitValue) -> ptr? {
+    let type_name = vtype_struct_name(r.ty)
+    let enum_name = vtype_enum_name(r.ty)
+    let owner = if type_name != "" { type_name } else { enum_name }
+    if owner == "" { return null }
+    let mangled = method_mangled_name(owner, "display")
+    let fn_val = ctx.get_fn(mangled)
+    if fn_val == null { return null }
+    // Build a 1-arg array containing self, call through the method.
+    let arr = ctx.value_array(1)
+    ctx.value_array_set(arr, 0, r.value)
+    let result = ctx.call_raw(fn_val, arr, 1)
+    ctx.value_array_free(arr)
+    result
+}
+
+/// Inner converter for `string(value)` — shared by the public
+/// emitter and by template/format paths that already have the
+/// SSA value + type and don't want to re-emit the argument.
+fn emit_int_to_string_inner(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitValue, string> {
+    if vtype_eq(ty, .Float) {
+        let str_ptr = ctx.call("avra_float_to_string", [val])
+        return ok_emit(str_ptr, .Str)
+    }
+    let buf = ctx.rc_alloc(ctx.i64(32))
+    let fmt = ctx.global_str("%lld", ".i2s_fmt")
+    ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
+    ok_emit(buf, .Str)
+}
+
+// avra_format_float(float_val, spec_str) → str
+/// Codegen for `format_float(value, fmt)` — calls
+/// `avra_format_float` with the user-supplied printf-style format.
+fn emit_format_float(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length < 2 { return err_emit("avra_format_float() expects 2 args") }
+    let val_r = ctx.emit(env, args[0].node)?
+    let spec_r = ctx.emit(env, args[1].node)?
+    let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
+    let result = ctx.call("avra_format_float", [val_r.value, spec_ptr])
+    ok_emit(result, .Str)
+}
+
+// avra_format_int(int_val, spec_str) → str
+fn emit_format_int(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length < 2 { return err_emit("avra_format_int() expects 2 args") }
+    let val_r = ctx.emit(env, args[0].node)?
+    let spec_r = ctx.emit(env, args[1].node)?
+    let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
+    let result = ctx.call("avra_format_int", [val_r.value, spec_ptr])
+    ok_emit(result, .Str)
+}
+
+export fn emit_string_to_int(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("int() expects 1 arg") }
+    let r = ctx.emit(env, args[0].node)?
+    if vtype_eq(r.ty, .Float) { return ok_emit(ctx.fptosi(r.value, "f2i"), .Int) }
+    if vtype_eq(r.ty, .Int) || vtype_eq(r.ty, .Bool) { return ok_emit(r.value, .Int) }
+    if vtype_is_unsigned_int(r.ty) {
+        return ok_emit(ctx.zext(r.value, ctx.i64_type, "u2i"), .Int)
+    }
+    if vtype_is_signed_narrow_int(r.ty) {
+        return ok_emit(ctx.sext(r.value, ctx.i64_type, "i2i"), .Int)
+    }
+    let str_ptr = ctx.to_ptr(r.value, "parseInt_arg")
+    ok_emit(ctx.call("avra_parse_int", [str_ptr]), .Int)
+}
+
+export fn emit_string_to_float(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("float() expects 1 arg") }
+    let r = ctx.emit(env, args[0].node)?
+    if vtype_eq(r.ty, .Float) { return ok_emit(r.value, .Float) }
+    if vtype_is_str(r.ty) {
+        let str_ptr = ctx.to_ptr(r.value, "f_parse_arg")
+        let bits = ctx.call("avra_float_parse", [str_ptr])
+        return ok_emit(ctx.cast_to(bits, .Float), .Float)
+    }
+    ok_emit(ctx.cast_to(ctx.sitofp(r.value, "i2f"), .Float), .Float)
+}
+
+export fn emit_panic(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("panic() expects 1 argument") }
+    let r = ctx.emit(env, args[0].node)?
+    let prefix = ctx.global_str("panic: ", ".panic_prefix")
+    let msg = emit_concat(ctx, prefix, r.value)?
+    ctx.call("avra_eprintln", [ctx.to_ptr(msg.value, "panic_msg")])
+    ctx.call("exit", [ctx.i64(1)])
+    ok_emit(ctx.i64(0), .Int)
+}
+
+fn emit_newtype_ctor(ctx: Ctx, env: List<VarBinding>, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
+    if args.length == 0 { return err_emit("${name}() expects 1 argument") }
+    let r = ctx.emit(env, args[0].node)?
+    let inner_ty = ctx.resolve_codegen_vtype(cg_newtype_vtype_lookup(ctx.newtypes, name))
+    ok_emit(r.value, .Newtype(name, inner_ty, type_registry_id_for(ctx.type_reg, name)))
+}

@@ -1,0 +1,109 @@
+// vez6.4szi — in-process stdout capture primitive.
+// Replaces the avra_shell_exec("./build/bs2 ...") fixture pattern
+// that costs ~50ms-1s per call. Capture is a function call.
+
+extern fn avra_capture_stdout(closure: fn() -> void) -> string
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "vez6.4szi: avra_capture_stdout basics" {
+    then "captures a single println" {
+        let out = avra_capture_stdout(() -> println("hello"))
+        out.contains("hello")
+    }
+    then "captures multiple lines in order" {
+        let out = avra_capture_stdout(() -> {
+            println("first")
+            println("second")
+            println("third")
+        })
+        out.contains("first") && out.contains("second") && out.contains("third")
+    }
+    then "captures interpolated values" {
+        let n = 42
+        let out = avra_capture_stdout(() -> println("answer: ${n}"))
+        out.contains("answer: 42")
+    }
+    then "empty closure produces empty string" {
+        let out = avra_capture_stdout(() -> {})
+        out == ""
+    }
+    then "stdout outside the closure is NOT captured" {
+        // Sanity: stdout still works normally before/after the capture
+        let out = avra_capture_stdout(() -> println("inside"))
+        out.contains("inside") && !out.contains("BEFORE") && !out.contains("AFTER")
+    }
+    then "nested capture: inner closure's output goes to inner buffer" {
+        let outer = avra_capture_stdout(() -> {
+            println("outer-pre")
+            let inner = avra_capture_stdout(() -> println("inner"))
+            println("inner-was: ${inner}")
+            println("outer-post")
+        })
+        // Inner output should NOT leak into outer; outer should see
+        // its own prints + the inner-was line.
+        outer.contains("outer-pre")
+            && outer.contains("outer-post")
+            && outer.contains("inner")  // via the inner-was render
+            && !outer.contains("\ninner\n")  // inner shouldn't appear as its own line
+    }
+}
+
+// vez6.4szi.3 — red-team / edge-case pass.
+//
+// The capture primitive serves bs2's spec-test fixture replacement
+// (~169 shell-outs saved), so behaviour at the boundaries is worth
+// pinning down: subprocess stdout inheritance is documented behaviour
+// (the child sees the redirected FD via fork's FD inheritance, so its
+// output joins the captured buffer — not the user's terminal), and
+// large-payload writes must not corrupt the read-back.
+spec "vez6.4szi.3: avra_capture_stdout red-team" {
+    then "shell_exec subprocesses don't leak into the captured buffer (popen isolates child stdout)" {
+        // The ticket asked: when the closure spawns a subprocess that
+        // writes to stdout, does the child's stdout still hit the real
+        // terminal? With `avra_shell_exec` (popen-based) the answer is
+        // neither — the child's stdout is collected by popen's own
+        // pipe and returned to the caller as a string, so the child's
+        // bytes never touch our redirected STDOUT_FILENO. The captured
+        // buffer therefore contains only what the closure itself
+        // prints with the returned string in hand.
+        let out = avra_capture_stdout(() -> {
+            let result = avra_shell_exec("printf 'from-subprocess'")
+            println("got: ${result}")
+        })
+        // Two contracts in one assertion: (1) the closure CAN read
+        // subprocess output (result is "from-subprocess"); (2) the
+        // child's raw bytes don't end up doubled in the buffer (no
+        // leading "from-subprocess" before the "got: " prefix).
+        out.contains("got: from-subprocess") && !out.starts_with("from-subprocess")
+    }
+    then "large payload (>64KB — past pipe-buffer threshold) round-trips cleanly" {
+        // The runtime uses tmpfile (not pipe) precisely to avoid the
+        // 64KB buffer-fill deadlock — verify the threshold by writing
+        // ~80KB. 4-char header + 1024×80 padding = ~82KB. Pre-tmpfile
+        // implementations deadlocked here when the closure tried to
+        // write past the pipe's buffer with no reader draining it.
+        let pad = "x".repeat(80)
+        let out = avra_capture_stdout(() -> {
+            println("HEAD")
+            mut i = 0
+            while i < 1024 {
+                println(pad)
+                i = i + 1
+            }
+            println("TAIL")
+        })
+        // Both endpoints must survive the round-trip — a deadlock
+        // would have left the closure blocked and `out` empty/partial.
+        out.contains("HEAD") && out.contains("TAIL") && out.length > 80000
+    }
+    then "captured string survives mutation of the source" {
+        // The runtime mallocs+strcpy's the read-back buffer, so the
+        // returned string owns its bytes. A later capture call mustn't
+        // disturb a previously captured value. Pre-fix: returning a
+        // pointer into a reused static buffer would clobber `first`
+        // on the second call.
+        let first = avra_capture_stdout(() -> println("alpha"))
+        let second = avra_capture_stdout(() -> println("beta"))
+        first.contains("alpha") && second.contains("beta") && !first.contains("beta")
+    }
+}

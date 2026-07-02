@@ -1,0 +1,72 @@
+// WHY: value arithmetic (`+ - * / %`, bitwise, shifts) on an optional is a
+// compile error (F1205). A `none` has no value to compute with, so silently
+// computing corrupts — both-optional arithmetic operated on BOX POINTERS
+// (`Some(3) + Some(5)` crashed / `float?` produced garbage) and a none side
+// trapped at runtime. Sibling of the F1204 ordering reject; equality and `??`
+// stay permissive because they ARE defined on optionals.
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+spec "arithmetic on an optional is rejected (F1205)" {
+    then "`a + b` on two int? operands is F1205" {
+        let f = "/tmp/avra_arith_pair.av"
+        write_fixture(f,
+            "fn g(a: int?, b: int?) -> int { a + b }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1205")
+    }
+    then "`a + 5` on an optional vs a bare literal is F1205 (was: works until none)" {
+        let f = "/tmp/avra_arith_lit.av"
+        write_fixture(f,
+            "fn g(a: int?) -> int { a + 5 }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1205")
+    }
+    then "`*`, `/`, `%` and a float? are covered too" {
+        let f = "/tmp/avra_arith_more.av"
+        write_fixture(f,
+            "fn a(x: int?, y: int?) -> int { x * y }\n" +
+            "fn b(x: int?, y: int?) -> int { x / y }\n" +
+            "fn c(x: int?, y: int?) -> int { x % y }\n" +
+            "fn d(x: float?, y: float?) -> float { x + y }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1205")
+    }
+    then "bitwise and shift on an optional are covered" {
+        let f = "/tmp/avra_arith_bits.av"
+        write_fixture(f,
+            "fn a(x: int?) -> int { x & 1 }\n" +
+            "fn b(x: int?) -> int { x << 2 }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1205")
+    }
+    then "the remedy compiles: unwrap, then compute" {
+        let f = "/tmp/avra_arith_ok.av"
+        write_fixture(f,
+            "fn g(a: int?, b: int?) -> int { a! + b! }\n" +
+            "fn h(a: int?) -> int { (a ?? 0) + 5 }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1205")
+    }
+    then "arithmetic on NON-optionals is unaffected" {
+        let f = "/tmp/avra_arith_plain.av"
+        write_fixture(f,
+            "fn g(a: int, b: int) -> int { a + b * 2 }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1205")
+    }
+    then "and the present-bind body computes fine (v is non-optional inner)" {
+        let f = "/tmp/avra_arith_iflet.av"
+        write_fixture(f,
+            "fn g(a: int?) -> int { if let v = a { v + 5 } else { 0 } }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1205")
+    }
+}

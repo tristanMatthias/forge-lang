@@ -1,0 +1,45 @@
+spec "edge empty" {
+    then "empty list length" {
+        let empty_list = []
+        empty_list.length == 0
+    }
+    then "empty map length" {
+        let empty_map = {}
+        empty_map.length == 0
+    }
+    then "empty string length" {
+        "".length == 0
+    }
+    then "filter empty list" {
+        let filtered = [].filter((x) -> x > 0)
+        filtered.length == 0
+    }
+    then "map empty list" {
+        let mapped = [].map((x) -> x * 2)
+        mapped.length == 0
+    }
+    then "reduce empty list" {
+        let reduced = [].reduce(99, (a, b) -> a + b)
+        reduced == 99
+    }
+    then "slice empty list" {
+        let sliced = [][0..0]
+        sliced.length == 0
+    }
+    then "empty string contains empty" {
+        "".contains("") == true
+    }
+    then "empty string starts_with empty" {
+        "".starts_with("") == true
+    }
+    then "empty string index_of empty" {
+        "".index_of("") == 0
+    }
+    then "replace on empty string" {
+        "".replace("x", "y") == ""
+    }
+    then "split empty string" {
+        let split_empty = "".split(",")
+        split_empty.length == 0
+    }
+}

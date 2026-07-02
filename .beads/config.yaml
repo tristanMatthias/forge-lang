@@ -6,7 +6,9 @@
 # Issue prefix for this repository (used by bd init)
 # If not set, bd init will auto-detect from directory name
 # Example: issue-prefix: "myproject" creates issues like "myproject-1", "myproject-2", etc.
-# issue-prefix: ""
+# Pinned explicitly so `bd init --from-jsonl` in a fresh checkout reproduces the
+# existing IDs — the directory name ("forge-lang") would auto-detect wrong.
+issue-prefix: "forge-crafting-intepreters"
 
 # Use no-db mode: JSONL-only, no Dolt database
 # When true, bd will use .beads/issues.jsonl as the source of truth
@@ -52,3 +54,10 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+
+# Dolt remote sync is intentionally DISABLED — this project syncs issues
+# through the git-tracked .beads/issues.jsonl, not Dolt remotes. With no
+# active sync.remote, bd never clones from or pushes to the network: it
+# builds a local Dolt store from issues.jsonl (`bd init --from-jsonl`) and
+# operates entirely offline. (scripts/bootstrap.sh strips the sync.remote
+# that `bd init` re-derives from the git origin, keeping bd offline.)

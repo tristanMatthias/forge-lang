@@ -1,6 +1,6 @@
-pub mod parser;
-pub mod codegen;
 pub mod checker;
+pub mod codegen;
+pub mod parser;
 pub mod types;
 
 crate::forge_feature! {

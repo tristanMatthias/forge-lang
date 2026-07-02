@@ -1,0 +1,43 @@
+// End-to-end deps-sidecar tests.
+//
+// Validates that AVRA_DEPS_OUT receives the list of producer source
+// paths the resolver substituted via metadata.bin. This is the
+// linker-side plumbing: a downstream linker reads the sidecar and
+// adds each `.o` to its argv. Without it, the consumer's binary
+// would have unresolved-symbol errors at link time.
+//
+// Memoised at the shell level so each `then` doesn't re-run the
+// fixture. Tracking ticket: forge-crafting-intepreters-2f54.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn deps_run_fixture() -> string {
+    cached_fixture_run("tests/deps_sidecar_fixtures/sample.av")
+}
+
+spec "deps sidecar: AVRA_DEPS_OUT receives substituted producer paths" {
+    then "both producer compiles succeed" {
+        deps_run_fixture().contains("PROBE producers_emit_rc_zero: ok")
+    }
+    then "consumer compile under AVRA_USE_METADATA=1 succeeds" {
+        deps_run_fixture().contains("PROBE consumer_meta_compile_rc_zero: ok")
+    }
+    then "deps file lists the alpha producer's .o" {
+        deps_run_fixture().contains("PROBE deps_lists_alpha_o: ok")
+    }
+    then "deps file lists the beta producer's .o" {
+        deps_run_fixture().contains("PROBE deps_lists_beta_o: ok")
+    }
+    then "compiling without AVRA_USE_METADATA succeeds" {
+        deps_run_fixture().contains("PROBE env_off_compile_rc_zero: ok")
+    }
+    then "no deps file is written when fast-path is off" {
+        deps_run_fixture().contains("PROBE env_off_no_deps_file: ok")
+    }
+    then "first run produces exactly one line per substituted producer" {
+        deps_run_fixture().contains("PROBE first_run_two_lines: ok")
+    }
+    then "second run appends — dedup is the build driver's job" {
+        deps_run_fixture().contains("PROBE second_run_appends_to_four: ok")
+    }
+}

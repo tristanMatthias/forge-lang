@@ -24,14 +24,20 @@ impl Parser {
 
         let operation = match &self.peek()?.kind {
             TokenKind::Ident(n) => n.clone(),
-            _ => { self.error("expected operation name"); return None; }
+            _ => {
+                self.error("expected operation name");
+                return None;
+            }
         };
         self.advance();
 
         self.expect(&TokenKind::LParen)?;
         let param = match &self.peek()?.kind {
             TokenKind::Ident(n) => n.clone(),
-            _ => { self.error("expected parameter name"); String::new() }
+            _ => {
+                self.error("expected parameter name");
+                String::new()
+            }
         };
         self.advance();
         self.expect(&TokenKind::RParen)?;

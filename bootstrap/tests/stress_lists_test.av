@@ -1,0 +1,97 @@
+// Stress: large list, chained operations, nested, slicing
+
+fn stl_build_big() -> int {
+    mut big: List<int> = []
+    for i in 0..100 {
+        big.push(i)
+    }
+    big.length
+}
+
+fn stl_big_first() -> int {
+    mut big: List<int> = []
+    for i in 0..100 {
+        big.push(i)
+    }
+    big[0]
+}
+
+fn stl_big_last() -> int {
+    mut big: List<int> = []
+    for i in 0..100 {
+        big.push(i)
+    }
+    big[99]
+}
+
+fn stl_flatten_matrix() -> int {
+    let matrix1 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    mut flat1: List<int> = []
+    for row in matrix1 {
+        for val in row {
+            flat1.push(val)
+        }
+    }
+    flat1.length
+}
+
+fn stl_flatten_mid_val() -> int {
+    let matrix2 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    mut flat2: List<int> = []
+    for row in matrix2 {
+        for val in row {
+            flat2.push(val)
+        }
+    }
+    flat2[4]
+}
+
+spec "stress lists" {
+    then "big list length" {
+        stl_build_big() == 100
+    }
+    then "big list first" {
+        stl_big_first() == 0
+    }
+    then "big list last" {
+        stl_big_last() == 99
+    }
+    then "chained map filter reduce" {
+        let result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            .map((x) -> x * x)
+            .filter((x) -> x > 20)
+            .reduce(0, (acc, x) -> acc + x)
+        result == 355
+    }
+    then "nested list flatten" {
+        stl_flatten_matrix() == 9
+    }
+    then "nested list middle value" {
+        stl_flatten_mid_val() == 5
+    }
+    then "slice of slice" {
+        let nums = [10, 20, 30, 40, 50, 60, 70]
+        let mid = nums[2..5]
+        let inner = mid[1..2]
+        inner[0] == 40
+    }
+    then "empty list length" {
+        let empty1 = []
+        empty1.length == 0
+    }
+    then "empty map length" {
+        let empty2 = []
+        let mapped_empty = empty2.map((x) -> x * 2)
+        mapped_empty.length == 0
+    }
+    then "empty filter length" {
+        let empty3 = []
+        let filtered_empty = empty3.filter((x) -> x > 0)
+        filtered_empty.length == 0
+    }
+    then "empty reduce default" {
+        let empty4 = []
+        let reduced_empty = empty4.reduce(42, (acc, x) -> acc + x)
+        reduced_empty == 42
+    }
+}

@@ -1,0 +1,72 @@
+// Test: structs with fn pointer fields as a registry pattern.
+
+type FrTransform = {
+    name: string,
+    apply: fn(int) -> int,
+}
+
+fn fr_double(n: int) -> int { n * 2 }
+fn fr_triple(n: int) -> int { n * 3 }
+fn fr_negate(n: int) -> int { 0 - n }
+fn fr_square(n: int) -> int { n * n }
+
+enum FrTransformList {
+    End
+    Node(t: FrTransform, next: FrTransformList)
+}
+
+fn fr_run_all_capture(transforms: FrTransformList, input: int) {
+    match transforms {
+        .End -> {}
+        .Node(t, rest) -> {
+            println(t.name + "(" + string(input) + ") = " + string(t.apply(input)))
+            fr_run_all_capture(rest, input)
+        }
+    }
+}
+
+fn fr_find_and_run(transforms: FrTransformList, name: string, input: int) -> int {
+    match transforms {
+        .End -> 0
+        .Node(t, rest) -> {
+            if t.name == name {
+                return t.apply(input)
+            }
+            fr_find_and_run(rest, name, input)
+        }
+    }
+}
+
+fn fr_build_registry() -> FrTransformList {
+    FrTransformList.Node(
+        FrTransform { name: "double", apply: fr_double },
+        FrTransformList.Node(
+            FrTransform { name: "triple", apply: fr_triple },
+            FrTransformList.Node(
+                FrTransform { name: "negate", apply: fr_negate },
+                FrTransformList.Node(
+                    FrTransform { name: "square", apply: fr_square },
+                    FrTransformList.End
+                )
+            )
+        )
+    )
+}
+
+fn fr_run_all_output() -> string {
+    avra_test_capture_start()
+    fr_run_all_capture(fr_build_registry(), 5)
+    avra_test_capture_stop()
+}
+
+spec "feature registry" {
+    then "run all transforms on 5" {
+        fr_run_all_output() == "double(5) = 10\ntriple(5) = 15\nnegate(5) = -5\nsquare(5) = 25"
+    }
+    then "find and run square of 7" {
+        fr_find_and_run(fr_build_registry(), "square", 7) == 49
+    }
+    then "find and run negate of 3" {
+        fr_find_and_run(fr_build_registry(), "negate", 3) == -3
+    }
+}

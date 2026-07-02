@@ -1,0 +1,42 @@
+// WHY: feature registration for `spawn { body }` expression.
+// Per spec Axis 18: green-thread task spawning.
+//
+// dir-as-module (g2eo.1): codegen.av + parser.av auto-load as siblings,
+// surface flat at `features.spawn_expr.{...}`.
+use core.{feature_new, Feature}
+use resolve.{resolve_expr}
+use typeck.{check_expr, tc_er}
+
+/// Register the `spawn { body }` expression feature. Returns an
+/// integer task handle that callers can pass to `await`.
+/// Spec Axis 18 (concurrency).
+export fn spawn_expr_feature() -> Feature {
+    feature_new("spawn") with {
+        expr_tag: Expr.Spawn(Expr.None),
+        emit_expr: spawn_emit_expr,
+        resolve_expr: spawn_resolve,
+        check_expr: spawn_check,
+    }
+}
+
+/// Resolver hook for `Spawn`. The body resolves in the enclosing
+/// scope so captured names work as expected.
+fn spawn_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Spawn(body) -> resolve_expr(r, body)
+        _ -> r
+    }
+}
+
+/// Type-check hook for `Spawn`. Walks the body for its errors
+/// then declares the result Int — the task handle.
+fn spawn_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Spawn(body) -> {
+            let b = check_expr(tc, body)
+            // spawn returns an int handle (task handle)
+            tc_er(b.tc, .Int)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}

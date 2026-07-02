@@ -1,0 +1,2 @@
+// dir-as-module (g2eo.1): no `mod` decls — sibling .av files
+// (codegen.av) auto-load and surface flat at `features.union_type.{...}`.
