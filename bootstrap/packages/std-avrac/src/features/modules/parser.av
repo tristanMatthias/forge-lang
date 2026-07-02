@@ -9,16 +9,16 @@ impl Parser {
     // Parse `mod name` — produces an unresolved Stmt.Module with an
     // empty body. The module resolution pass fills in the body by
     // reading the file from disk. The parser stays pure — no I/O.
-    fn parse_module_declaration(self) -> Result<Stmt, string> {
+    fn parse_module_declaration(self) -> Result<StmtId, string> {
         self.advance()  // consume `mod`
         let name = self.consume_identifier("expected module name after `mod`")?
         let empty_body: List<SStmt> = []
-        .Ok(Stmt.Module(name, empty_body))
+        .Ok(self.glue_ingest_stmt(Stmt.Module(name, empty_body)))
     }
 
     // Parse `use path.{name1, name2, ...}` — an import declaration.
     // Supports package imports: `use @std.cli.{name1, name2}`
-    fn parse_use_declaration(self) -> Result<Stmt, string> {
+    fn parse_use_declaration(self) -> Result<StmtId, string> {
         self.advance()  // consume `use`
         mut path = ""
         if self.check(Tk.At) {
@@ -46,7 +46,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` in use declaration") {
             return .Err("parse error")
         }
-        .Ok(Stmt.Use(path, names))
+        .Ok(self.glue_ingest_stmt(Stmt.Use(path, names)))
     }
 
     // Parse comma-separated identifier list inside `use path.{...}`.

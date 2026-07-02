@@ -1,26 +1,27 @@
 // WHY: parses `while cond { body }`.
 
-use core.{Stmt}
+use core.{Stmt, NodeRef, byte_span_none}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
 
 impl Parser {
-    fn parse_while_statement(self) -> Result<Stmt, string> {
+    fn parse_while_statement(self) -> Result<StmtId, string> {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let condition_opt = self.parse_expression_boxed()
+        let condition_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        let condition = condition_opt?
+        let cond_id = condition_opt?
 
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after while condition")
             return .Err("parse error")
         }
 
-        let body = self.parse_statement()?
+        let body_id = self.parse_statement()?
 
-        .Ok(Stmt.While(condition, body))
+        let node = Stmt.While(self.expr_of(cond_id), self.stmt_of(body_id))
+        .Ok(self.alloc_stmt(node, byte_span_none(), [NodeRef.ExprRef(cond_id), NodeRef.StmtRef(body_id)]))
     }
 }

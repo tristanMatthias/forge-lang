@@ -51,8 +51,8 @@ export type Feature = {
     stmt_tag: Stmt?,
     decl_keyword: string,
     stmt_keyword: string,
-    parse_decl: fn(Parser) -> Result<Stmt, string>,
-    parse_stmt: fn(Parser) -> Result<Stmt, string>,
+    parse_decl: fn(Parser) -> Result<StmtId, string>,
+    parse_stmt: fn(Parser) -> Result<StmtId, string>,
     emit_expr: int,
     emit_stmt: int,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
@@ -94,7 +94,7 @@ fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 }
 /// Parser no-op — returns null so the parser falls back to the
 /// in-tree dispatch when no feature claims this keyword.
-fn noop_parse(p: Parser) -> Result<Stmt, string> { .Err("no parser registered") }
+fn noop_parse(p: Parser) -> Result<StmtId, string> { .Err("no parser registered") }
 
 /// Construct a Feature with no-op handlers. Each feature module
 /// builds on this with `with`-updates to register its own callbacks.
@@ -273,7 +273,7 @@ export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
 /// this, `name instance { ... }` at statement level is parsed as a
 /// ComponentBlock — the component declaration's name acts as a
 /// pseudo-keyword in the stmt parser.
-export fn register_component_name(reg: Registry, name: string, handler: fn(Parser) -> Result<Stmt, string>) {
+export fn register_component_name(reg: Registry, name: string, handler: fn(Parser) -> Result<StmtId, string>) {
     avra_map_set_cstr(reg.stmt_parsers, name, handler)
 }
 

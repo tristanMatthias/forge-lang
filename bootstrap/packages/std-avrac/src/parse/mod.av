@@ -15,7 +15,7 @@ use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, Logic
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
-use core.{NodeRef, NodeEdges, ExprId, PatId, ByteSpan, byte_span_none}
+use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span_none, expr_ref_id}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -40,6 +40,11 @@ export type ProgramParseResult = {
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
+    // The parser's NATIVE arena (B1): every parsed node has a row; on a
+    // clean parse the top-level statements are recorded as `roots` with
+    // canonical-identical conservative spans + provenance. Dark — callers
+    // still consume `stmts`; probes and (eventually) the flip read this.
+    store: NodeStore,
 }
 
 /// One parse of a paren/bracket-bounded argument list, surfaced both ways:
@@ -50,6 +55,20 @@ export type ProgramParseResult = {
 export type ArgListIds = {
     wrapped: List<SExpr>,
     ids: List<ExprId>,
+}
+
+/// Running state of the template-desugar fold — the boxed concatenation
+/// built so far and the arena row backing it (`have` distinguishes the
+/// empty fold from a real first segment).
+type TemplateFold = { have: bool, result: Expr, result_id: ExprId }
+
+/// One parse of a statement list, surfaced both ways: `wrapped` is the boxed
+/// spanned view (`sstmt_at` at the same positions as always) for embedding in
+/// a parent's payload; `ids` are the arena rows backing each statement, in
+/// the same order, for the parent's edge list (or the store's roots).
+export type StmtListIds = {
+    wrapped: List<SStmt>,
+    ids: List<StmtId>,
 }
 
 /// Saved parser state used by speculative parses (e.g. generic call
@@ -345,14 +364,14 @@ fn template_split_format(s: string) -> FormatSplit {
 }
 
 /// Parse a sub-expression from a string. Used by template
-/// desugaring — creates its own parser instance so the parent's
-/// state isn't disturbed by the inner walk.
-fn parse_template_expr(source: string) -> Result<Expr, string> {
+/// desugaring — a fresh parser instance so the parent's lexer state isn't
+/// disturbed, but SHARING the outer parser's store: rows the sub-parse
+/// allocates live in the outer arena, so the desugared template re-parents
+/// them by id — no re-ingest at the template boundary.
+fn parse_template_expr(source: string, store: NodeStore) -> Result<ExprId, string> {
     mut p = parser_new(source)
-    // The sub-parser's store is discarded with it: the boxed result
-    // re-enters the PARENT's store via the template glue bridge
-    // (a later commit threads sub-parser stores through).
-    p.parse_expression_boxed()
+    p.store = store
+    p.parse_expression()
 }
 
 /// B1 probe: parse `source` as a single expression through the id-returning
@@ -528,13 +547,14 @@ impl Parser {
     }
 
     fn parse_file_program(self) -> ProgramParseResult {
-        let stmts = match self.parse_statement_list(false) {
+        let parsed = match self.parse_statement_list_ids(false) {
             .Ok(s) -> s
             .Err(_) -> return ProgramParseResult {
                 stmts: null,
                 had_error: self.had_error,
                 error_message: self.error_message,
                 bag: self.bag,
+                store: self.store,
             }
         }
 
@@ -545,22 +565,38 @@ impl Parser {
                 had_error: true,
                 error_message: self.error_message,
                 bag: self.bag,
+                store: self.store,
             }
         }
 
+        // Record the top-level rows as the native store's roots — same
+        // conservative spans + provenance as the canonical ingest, via the
+        // shared helper. This is what makes `program_from_store(store)`
+        // constructible from the PARSER's own arena.
+        self.store.record_roots(parsed.wrapped, parsed.ids, self.source.length)
+
         ProgramParseResult {
-            stmts,
+            stmts: parsed.wrapped,
             had_error: self.had_error,
             error_message: self.error_message,
             bag: self.bag,
+            store: self.store,
         }
     }
 
+    /// Boxed-only view of a statement list, for callers that don't record
+    /// edges yet.
     fn parse_statement_list(self, stop_at_right_brace: int) -> Result<List<SStmt>, string> {
+        let parsed = self.parse_statement_list_ids(stop_at_right_brace)?
+        .Ok(parsed.wrapped)
+    }
+
+    fn parse_statement_list_ids(self, stop_at_right_brace: int) -> Result<StmtListIds, string> {
         mut out: List<SStmt> = []
+        mut ids: List<StmtId> = []
         while true {
-            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(out) }
-            if self.check(Tk.Eof) { return .Ok(out) }
+            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(StmtListIds { wrapped: out, ids: ids }) }
+            if self.check(Tk.Eof) { return .Ok(StmtListIds { wrapped: out, ids: ids }) }
             if !stop_at_right_brace && self.check(Tk.RightBrace) {
                 self.report(DiagCode.MismatchedBrace, "unexpected `}`")
                 self.advance()
@@ -568,19 +604,20 @@ impl Parser {
             }
             let stmt_line = self.current_line
             let stmt_col = self.current_column
-            let stmt = match self.parse_declaration() {
+            let sid = match self.parse_declaration() {
                 .Ok(s) -> s
                 .Err(_) -> {
                     self.synchronize()
                     continue
                 }
             }
-            out.push(sstmt_at(stmt, stmt_line, stmt_col, self.file))
+            out.push(sstmt_at(self.stmt_of(sid), stmt_line, stmt_col, self.file))
+            ids.push(sid)
         }
-        .Ok(out)
+        .Ok(StmtListIds { wrapped: out, ids: ids })
     }
 
-    fn parse_declaration(self) -> Result<Stmt, string> {
+    fn parse_declaration(self) -> Result<StmtId, string> {
         // Reserved future keywords produce an error immediately.
         if self.check(Tk.KwReserved) {
             self.reject_reserved_keyword("yet")
@@ -598,10 +635,11 @@ impl Parser {
             }
             let inner_l = self.current_line
             let inner_c = self.current_column
-            let inner = self.parse_declaration()?
+            let inner_id = self.parse_declaration()?
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
-            return .Ok(Stmt.Annotated(doc_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
+            let node = Stmt.Annotated(doc_annots, sstmt_at(self.stmt_of(inner_id), inner_l, inner_c, self.file))
+            return .Ok(self.alloc_stmt_stmt1(node, inner_id))
         }
         if self.check(Tk.ModDocComment) {
             mut doc_text = self.current_lexeme
@@ -613,7 +651,9 @@ impl Parser {
             // Module docs don't wrap a declaration — store as a NoOp with annotation
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let mdoc_annots: List<Annotation> = [Annotation { name: "module_doc", args: doc_arg }]
-            return .Ok(Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file)))
+            let noop_id = self.alloc_stmt_leaf(Stmt.NoOp)
+            let node = Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file))
+            return .Ok(self.alloc_stmt_stmt1(node, noop_id))
         }
 
         // Annotations: `@name` or `@name(args)` before a declaration.
@@ -621,8 +661,9 @@ impl Parser {
             let annotations = self.parse_annotations()
             let inner_l = self.current_line
             let inner_c = self.current_column
-            let inner = self.parse_declaration()?
-            return .Ok(Stmt.Annotated(annotations, sstmt_at(inner, inner_l, inner_c, self.file)))
+            let inner_id = self.parse_declaration()?
+            let node = Stmt.Annotated(annotations, sstmt_at(self.stmt_of(inner_id), inner_l, inner_c, self.file))
+            return .Ok(self.alloc_stmt_stmt1(node, inner_id))
         }
 
         // `export` wraps the inner declaration in an @export annotation
@@ -637,17 +678,18 @@ impl Parser {
                 self.set_error("expected declaration after `export`")
                 return .Err("expected declaration after `export`")
             }
-            let handler: fn(Parser) -> Result<Stmt, string> = export_handler_raw!
-            let inner_res: Result<Stmt, string> = handler(self)
-            let inner = inner_res?
+            let handler: fn(Parser) -> Result<StmtId, string> = export_handler_raw!
+            let inner_res: Result<StmtId, string> = handler(self)
+            let inner_id = inner_res?
             let empty_args: List<SExpr> = []
             let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
-            return .Ok(Stmt.Annotated(exp_annots, sstmt_at(inner, inner_l, inner_c, self.file)))
+            let node = Stmt.Annotated(exp_annots, sstmt_at(self.stmt_of(inner_id), inner_l, inner_c, self.file))
+            return .Ok(self.alloc_stmt_stmt1(node, inner_id))
         }
 
         let decl_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
         if decl_raw != null {
-            let handler: fn(Parser) -> Result<Stmt, string> = decl_raw!
+            let handler: fn(Parser) -> Result<StmtId, string> = decl_raw!
             return handler(self)
         }
 
@@ -658,7 +700,7 @@ impl Parser {
         if self.check(Tk.Identifier) && self.peek_after_ident_is_ident_not_keyword() {
             let comp_raw = lookup_stmt_parser(self.features, self.current_lexeme)
             if comp_raw != null {
-                let handler: fn(Parser) -> Result<Stmt, string> = comp_raw!
+                let handler: fn(Parser) -> Result<StmtId, string> = comp_raw!
                 return handler(self)
             }
         }
@@ -794,7 +836,7 @@ impl Parser {
     // Feature-specific parsers live in features/*/parser.av.
     // They extend Parser via `impl Parser { ... }` blocks.
 
-    fn parse_statement(self) -> Result<Stmt, string> {
+    fn parse_statement(self) -> Result<StmtId, string> {
         // qsqm: a bare map literal at statement position — a function's
         // implicit-return `{"k": v}` — must not be swallowed as a block.
         // is_stmt_map_literal fires only on a string-keyed `{ "str": ... }`; a
@@ -804,31 +846,31 @@ impl Parser {
         // (parse_expression → parse_map_literal).
         if self.check(Tk.LeftBrace) && !self.is_stmt_map_literal() {
             self.advance()
-            let body = self.parse_statement_list(true)?
+            let body = self.parse_statement_list_ids(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after block") {
                 return .Err("parse error")
             }
-            return .Ok(Stmt.Block(body))
+            return .Ok(self.alloc_stmt(Stmt.Block(body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
         }
 
         if self.check(Tk.KwBreak) {
             self.advance()
-            return .Ok(Stmt.Break)
+            return .Ok(self.alloc_stmt_leaf(Stmt.Break))
         }
 
         if self.check(Tk.KwContinue) {
             self.advance()
-            return .Ok(Stmt.Continue)
+            return .Ok(self.alloc_stmt_leaf(Stmt.Continue))
         }
 
         let stmt_raw = lookup_stmt_parser(self.features, tk_keyword_str(self.current_kind))
         if stmt_raw != null {
-            let handler: fn(Parser) -> Result<Stmt, string> = stmt_raw!
+            let handler: fn(Parser) -> Result<StmtId, string> = stmt_raw!
             return handler(self)
         }
 
-        let expr = self.parse_expression_boxed()?
-        .Ok(Stmt.Expr(expr))
+        let eid = self.parse_expression()?
+        .Ok(self.alloc_stmt_expr1(Stmt.Expr(self.expr_of(eid)), eid))
     }
 
     /// B1: the expression chain flows typed ids end-to-end; the parsed
@@ -1297,13 +1339,11 @@ impl Parser {
                 if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return .Err("parse error") }
                 let saved_dot = self.allow_dot_postfix
                 self.allow_dot_postfix = true
-                let body_stmts = self.parse_statement_list(true)?
+                let body_stmts = self.parse_statement_list_ids(true)?
                 self.allow_dot_postfix = saved_dot
                 if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
-                // Handler is a stmt-bearing Block — statements are still boxed
-                // producers, so the handler subtree enters via the glue bridge.
-                let handler = Expr.Block(body_stmts)
-                let handler_id = self.glue_ingest_expr(handler)
+                let handler = Expr.Block(body_stmts.wrapped)
+                let handler_id = self.alloc_expr(handler, byte_span_none(), self.edges_of_stmt_ids(body_stmts.ids))
                 result = Expr.Catch(result, binding, handler, catch_line, catch_col)
                 rid = self.alloc2(result, rid, handler_id)
                 continue
@@ -1522,8 +1562,7 @@ impl Parser {
         if self.check(Tk.Template) {
             let raw = self.current_lexeme
             self.advance()
-            let desugared = self.desugar_template(raw)?
-            return .Ok(self.glue_ingest_expr(desugared))
+            return self.desugar_template(raw)
         }
 
         if self.current_kind in [Tk.KwTrue, Tk.KwFalse] {
@@ -1585,10 +1624,10 @@ impl Parser {
             if self.check(Tk.Template) {
                 let raw = self.current_lexeme
                 self.advance()
-                let template_expr = self.desugar_template(raw)?
+                let template_id = self.desugar_template(raw)?
+                let template_expr = self.expr_of(template_id)
                 let args: List<SExpr> = [sexpr_at(template_expr, self.current_line, self.current_column, self.file)]
                 let tag_callee = self.alloc_leaf(Expr.Ident(name))
-                let template_id = self.glue_ingest_expr(template_expr)
                 return .Ok(self.alloc2(Expr.Call(Expr.Ident(name), args), tag_callee, template_id))
             }
             return .Ok(self.alloc_leaf(Expr.Ident(name)))
@@ -1703,8 +1742,7 @@ impl Parser {
         }
 
         if self.check(Tk.KwSpawn) {
-            let sp = self.parse_spawn_expression()?
-            return .Ok(self.glue_ingest_expr(sp))
+            return self.parse_spawn_expression()
         }
 
         if self.check(Tk.KwChannel) {
@@ -1713,8 +1751,7 @@ impl Parser {
         }
 
         if self.check(Tk.KwIsolated) {
-            let iso = self.parse_isolated_expression()?
-            return .Ok(self.glue_ingest_expr(iso))
+            return self.parse_isolated_expression()
         }
 
         if self.check(Tk.KwWhen) {
@@ -1734,8 +1771,7 @@ impl Parser {
                 let m = self.parse_map_literal()?
                 return .Ok(self.glue_ingest_expr(m))
             }
-            let blk = self.parse_block_expression()?
-            return .Ok(self.glue_ingest_expr(blk))
+            return self.parse_block_expression()
         }
 
         if self.current_lexeme == ";" {
@@ -1750,8 +1786,8 @@ impl Parser {
     // The content between `${` and `}` is parsed as a full expression
     // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
     // `${string(x)}` all work.
-    fn desugar_template(self, raw: string) -> Result<Expr, string> {
-        mut result: Expr? = null
+    fn desugar_template(self, raw: string) -> Result<ExprId, string> {
+        mut acc = TemplateFold { have: false, result: Expr.None, result_id: ExprId(0) }
         mut i = 0
         let len = raw.length
         mut text_start = 0
@@ -1759,13 +1795,8 @@ impl Parser {
             if i + 1 < len && raw[i] == "$" && raw[i + 1] == "{" {
                 // Flush text segment before the interpolation.
                 if i > text_start {
-                    let seg = "\"${raw.substring(text_start, i)}\""
-                    let str_expr = Expr.String(seg)
-                    if result == null {
-                        result = str_expr
-                    } else {
-                        result = Expr.Binary(result!, BinOp.Add, str_expr)
-                    }
+                    let str_expr = Expr.String("\"${raw.substring(text_start, i)}\"")
+                    acc = self.template_fold(acc, str_expr, self.alloc_leaf(str_expr))
                 }
                 // Find matching `}` (no nesting — braces inside
                 // template expressions are not supported).
@@ -1794,9 +1825,11 @@ impl Parser {
                 let fmt_split = template_split_format(sub_source)
                 let expr_part = fmt_split.expr
                 let fmt_spec = fmt_split.fmt
-                mut parsed = Expr.Ident(expr_part)
-                if !template_is_simple_ident(expr_part) {
-                    parsed = match parse_template_expr(expr_part) {
+                mut parsed_id = ExprId(0)
+                if template_is_simple_ident(expr_part) {
+                    parsed_id = self.alloc_leaf(Expr.Ident(expr_part))
+                } else {
+                    parsed_id = match parse_template_expr(expr_part, self.store) {
                         .Ok(sr) -> sr
                         .Err(_) -> {
                             self.set_error("invalid expression in template: ${expr_part}")
@@ -1804,33 +1837,33 @@ impl Parser {
                         }
                     }
                 }
+                let parsed = self.expr_of(parsed_id)
                 // If format spec exists, use avra_format_float/int; otherwise string().
-                let str_call = if fmt_spec.length > 0 {
+                mut str_call = Expr.None
+                mut call_id = ExprId(0)
+                if fmt_spec.length > 0 {
                     // Determine if float or int format.
                     // Float: ends with f/e/E/g/G, or starts with . (precision without type letter).
                     let last_ch = fmt_spec[fmt_spec.length - 1]
                     let first_ch = fmt_spec[0]
                     let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
+                    let fmt_fn = if is_float_fmt { "avra_format_float" } else { "avra_format_int" }
+                    let spec_lit = Expr.String("\"${fmt_spec}\"")
                     let fmt_args: List<SExpr> = [
                         sexpr_dummy(parsed),
-                        sexpr_dummy(Expr.String("\"${fmt_spec}\""))
+                        sexpr_dummy(spec_lit)
                     ]
-                    if is_float_fmt {
-                        // Float format: avra_format_float(expr, spec)
-                        Expr.Call(Expr.Ident("avra_format_float"), fmt_args)
-                    } else {
-                        // Int format: avra_format_int(expr, spec)
-                        Expr.Call(Expr.Ident("avra_format_int"), fmt_args)
-                    }
+                    let callee_id = self.alloc_leaf(Expr.Ident(fmt_fn))
+                    let spec_id = self.alloc_leaf(spec_lit)
+                    str_call = Expr.Call(Expr.Ident(fmt_fn), fmt_args)
+                    call_id = self.alloc3(str_call, callee_id, parsed_id, spec_id)
                 } else {
                     let str_args: List<SExpr> = [sexpr_dummy(parsed)]
-                    Expr.Call(Expr.Ident("string"), str_args)
+                    let callee_id = self.alloc_leaf(Expr.Ident("string"))
+                    str_call = Expr.Call(Expr.Ident("string"), str_args)
+                    call_id = self.alloc2(str_call, callee_id, parsed_id)
                 }
-                if result == null {
-                    result = str_call
-                } else {
-                    result = Expr.Binary(result!, BinOp.Add, str_call)
-                }
+                acc = self.template_fold(acc, str_call, call_id)
                 i = j + 1
                 text_start = i
             } else {
@@ -1839,18 +1872,25 @@ impl Parser {
         }
         // Flush trailing text after last interpolation.
         if text_start < len {
-            let seg = "\"${raw.substring(text_start, len)}\""
-            let str_expr = Expr.String(seg)
-            if result == null {
-                result = str_expr
-            } else {
-                result = Expr.Binary(result!, BinOp.Add, str_expr)
-            }
+            let str_expr = Expr.String("\"${raw.substring(text_start, len)}\"")
+            acc = self.template_fold(acc, str_expr, self.alloc_leaf(str_expr))
         }
-        if result == null {
-            result = Expr.String("\"\"")
+        if !acc.have {
+            return .Ok(self.alloc_leaf(Expr.String("\"\"")))
         }
-        .Ok(result)
+        .Ok(acc.result_id)
+    }
+
+    /// Append one segment to the running template concatenation: the first
+    /// segment starts the fold; every later one chains `prev + seg`
+    /// left-associatively (the shape the boxed desugar always produced),
+    /// allocating the Binary row over the two segment rows.
+    fn template_fold(self, acc: TemplateFold, node: Expr, id: ExprId) -> TemplateFold {
+        if !acc.have {
+            return TemplateFold { have: true, result: node, result_id: id }
+        }
+        let combined = Expr.Binary(acc.result, BinOp.Add, node)
+        TemplateFold { have: true, result: combined, result_id: self.alloc2(combined, acc.result_id, id) }
     }
 
     fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
@@ -1875,20 +1915,20 @@ impl Parser {
         .Ok(ArgListIds { wrapped: out, ids: ids })
     }
 
-    fn parse_block_expression(self) -> Result<Expr, string> {
+    fn parse_block_expression(self) -> Result<ExprId, string> {
         self.advance()
         // A block expression's body is parsed as a regular statement
         // list. Re-enable `.field` postfix consumption inside —
         // we're back in normal expression-statement context.
         let saved_dot = self.allow_dot_postfix
         self.allow_dot_postfix = true
-        let body = self.parse_statement_list(true)
+        let body = self.parse_statement_list_ids(true)
         self.allow_dot_postfix = saved_dot
         let body_val = body?
         if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
             return .Err("parse error")
         }
-        .Ok(Expr.Block(body_val))
+        .Ok(self.alloc_expr(Expr.Block(body_val.wrapped), byte_span_none(), self.edges_of_stmt_ids(body_val.ids)))
     }
 
     fn check(self, kind: Tk) -> bool {
@@ -2306,7 +2346,7 @@ impl Parser {
             self.quote_depth = self.quote_depth - 1
             return .Ok(Expr.Quote(kind, body))
         }
-        let body = self.parse_block_expression()?
+        let body = self.expr_of(self.parse_block_expression()?)
         self.quote_depth = self.quote_depth - 1
         .Ok(Expr.Quote(kind, body))
     }
@@ -2421,6 +2461,12 @@ impl Parser {
         self.store.ingest_pat(node, byte_span_none())
     }
 
+    /// Bridge a BOXED type subtree (type expressions are still boxed
+    /// producers) into the store, returning its root id.
+    fn glue_ingest_type(self, node: ValueType) -> TypeId {
+        self.store.ingest_type(node, byte_span_none())
+    }
+
     /// Boxed readback of an allocated expr — an O(1) row read. The chain uses
     /// it to embed already-allocated children into a parent's boxed payload.
     fn expr_of(self, id: ExprId) -> Expr {
@@ -2429,16 +2475,9 @@ impl Parser {
 
     /// The i-th recorded edge of `id`, unwrapped as an expr child. Used when
     /// a rebuild discards a shell node (assignment retarget, pipe desugar)
-    /// and re-parents the shell's children by id — no re-walk. The unwrap is
-    /// inlined rather than delegated to `core.expr_ref_id` because the
-    /// pinned seed's typechecker mis-gates free fns that return a newtype
-    /// (fixed in typeck this generation; collapse to `expr_ref_id` once the
-    /// seed train advances past it).
+    /// and re-parents the shell's children by id — no re-walk.
     fn expr_child(self, id: ExprId, i: int) -> ExprId {
-        match self.store.exprs.children_of(id)[i] {
-            .ExprRef(cid) -> cid
-            _ -> panic("expr_child: edge is not an ExprRef")
-        }
+        expr_ref_id(self.store.exprs.children_of(id)[i])
     }
 
     /// Alloc an expr LEAF (no node children) — the arena's one-push path.
@@ -2482,6 +2521,50 @@ impl Parser {
     fn glue_field_init_refs(self, inits: List<FieldInit>) -> List<NodeRef> {
         mut refs: List<NodeRef> = []
         for init in inits { refs.push(NodeRef.ExprRef(self.glue_ingest_expr(init.value.node))) }
+        refs
+    }
+
+    // ── B1 stmt-side allocation ──
+    // The statement mirror of the expr helpers above: converted stmt
+    // productions push their node into `self.store` and return its typed id;
+    // productions still returning boxed `Stmt` bridge via `glue_ingest_stmt`
+    // at their own boundary.
+
+    /// Allocate a parser-built `Stmt` with its children's edge refs.
+    fn alloc_stmt(self, node: Stmt, sp: ByteSpan, edges: List<NodeRef>) -> StmtId {
+        self.store.stmts.add(node, NodeEdges { refs: edges }, sp)
+    }
+
+    /// Bridge a BOXED stmt subtree from an unconverted producer into the
+    /// store, returning its root id (see `glue_ingest_expr`).
+    fn glue_ingest_stmt(self, node: Stmt) -> StmtId {
+        self.store.ingest_stmt(node, byte_span_none())
+    }
+
+    /// Boxed readback of an allocated stmt — an O(1) row read.
+    fn stmt_of(self, id: StmtId) -> Stmt {
+        self.store.stmts.get(id)
+    }
+
+    /// Alloc a stmt LEAF (no node children) — the arena's one-push path.
+    fn alloc_stmt_leaf(self, node: Stmt) -> StmtId {
+        self.store.stmts.add_leaf(node)
+    }
+
+    /// Alloc a stmt with ONE expr child (field order).
+    fn alloc_stmt_expr1(self, node: Stmt, a: ExprId) -> StmtId {
+        self.alloc_stmt(node, byte_span_none(), [NodeRef.ExprRef(a)])
+    }
+
+    /// Alloc a stmt with ONE stmt child (field order).
+    fn alloc_stmt_stmt1(self, node: Stmt, a: StmtId) -> StmtId {
+        self.alloc_stmt(node, byte_span_none(), [NodeRef.StmtRef(a)])
+    }
+
+    /// Edge refs for a stmt-id list (block bodies, decl bodies).
+    fn edges_of_stmt_ids(self, ids: List<StmtId>) -> List<NodeRef> {
+        mut refs: List<NodeRef> = []
+        for id in ids { refs.push(NodeRef.StmtRef(id)) }
         refs
     }
 

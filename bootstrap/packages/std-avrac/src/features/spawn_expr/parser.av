@@ -2,17 +2,17 @@
 // Per spec Axis 18: spawn creates a green-thread task.
 
 use parse.{Parser}
-use core.{Expr, Tk}
+use core.{Expr, Tk, ExprId}
 
 impl Parser {
-    fn parse_spawn_expression(self) -> Result<Expr, string> {
+    fn parse_spawn_expression(self) -> Result<ExprId, string> {
         self.advance()  // consume `spawn`
         if !self.check(Tk.LeftBrace) {
             self.consume(Tk.LeftBrace, "expected `{` after spawn")
             return .Err("parse error")
         }
         // parse_block_expression consumes { stmts }
-        let body = self.parse_block_expression()?
-        .Ok(Expr.Spawn(body))
+        let body_id = self.parse_block_expression()?
+        .Ok(self.alloc1(Expr.Spawn(self.expr_of(body_id)), body_id))
     }
 }

@@ -6,7 +6,7 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_type_declaration(self) -> Result<Stmt, string> {
+    fn parse_type_declaration(self) -> Result<StmtId, string> {
         self.advance()
         // Inside `quote { ... }`, accept `~ident` in the name slot.
         // consume_name_or_splice preserves the leading `~` sentinel so the
@@ -29,7 +29,7 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after fields") {
                 return .Err("parse error")
             }
-            return .Ok(Stmt.TypeDecl(name, tp, fields))
+            return .Ok(self.glue_ingest_stmt(Stmt.TypeDecl(name, tp, fields)))
         }
         // Non-brace RHS: type expressions, type operators, or aliases
         // Handles: type X = int | string, type X = Base without { f }, type X = OtherType
@@ -39,7 +39,7 @@ impl Parser {
             // Match on the TypeExpr structure, not string content
             match type_expr {
                 .Union(_, _) -> {
-                    return .Ok(Stmt.UnionAliasDecl(name, type_expr_to_vtype(type_expr)))
+                    return .Ok(self.glue_ingest_stmt(Stmt.UnionAliasDecl(name, type_expr_to_vtype(type_expr))))
                 }
                 _ -> {}
             }
@@ -65,19 +65,19 @@ impl Parser {
                         derived.push(op_fields[k])
                         k = k + 1
                     }
-                    return .Ok(Stmt.TypeDecl(name, tp, derived))
+                    return .Ok(self.glue_ingest_stmt(Stmt.TypeDecl(name, tp, derived)))
                 }
             }
             // Newtype wrapper: type UserId = string — nominal distinction
-            return .Ok(Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr)))
+            return .Ok(self.glue_ingest_stmt(Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr))))
         }
         let empty: List<FieldEntry> = []
-        .Ok(Stmt.TypeDecl(name, tp, empty))
+        .Ok(self.glue_ingest_stmt(Stmt.TypeDecl(name, tp, empty)))
     }
 
     // shape Name = { field: Type, ... }
     // Structural type — all fields public, width subtyping (spec Axis 3.1-3.7).
-    fn parse_shape_declaration(self) -> Result<Stmt, string> {
+    fn parse_shape_declaration(self) -> Result<StmtId, string> {
         self.advance()
         let name = self.consume_identifier("expected shape name")?
         if !self.consume(Tk.Equal, "expected `=` after shape name") {
@@ -90,7 +90,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after shape fields") {
             return .Err("parse error")
         }
-        .Ok(Stmt.ShapeDecl(name, fields))
+        .Ok(self.glue_ingest_stmt(Stmt.ShapeDecl(name, fields)))
     }
 
     // Parse a list of identifiers separated by commas: {a, b, c}.
