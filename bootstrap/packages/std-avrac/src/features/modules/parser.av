@@ -13,7 +13,7 @@ impl Parser {
         self.advance()  // consume `mod`
         let name = self.consume_identifier("expected module name after `mod`")?
         let empty_body: List<SStmt> = []
-        .Ok(self.glue_ingest_stmt(Stmt.Module(name, empty_body)))
+        .Ok(self.alloc_stmt_leaf(Stmt.Module(name, empty_body)))
     }
 
     // Parse `use path.{name1, name2, ...}` — an import declaration.
@@ -46,7 +46,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` in use declaration") {
             return .Err("parse error")
         }
-        .Ok(self.glue_ingest_stmt(Stmt.Use(path, names)))
+        .Ok(self.alloc_stmt_leaf(Stmt.Use(path, names)))
     }
 
     // Parse comma-separated identifier list inside `use path.{...}`.

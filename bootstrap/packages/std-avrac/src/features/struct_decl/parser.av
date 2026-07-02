@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.{Stmt, Expr, FieldEntry, FieldInit, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype}
+use core.{Stmt, Expr, FieldEntry, FieldInit, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype, NodeRef, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 
@@ -29,7 +29,8 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after fields") {
                 return .Err("parse error")
             }
-            return .Ok(self.glue_ingest_stmt(Stmt.TypeDecl(name, tp, fields)))
+            // Walker-opaque (FieldEntry isn't a registered container) — leaf.
+            return .Ok(self.alloc_stmt_leaf(Stmt.TypeDecl(name, tp, fields)))
         }
         // Non-brace RHS: type expressions, type operators, or aliases
         // Handles: type X = int | string, type X = Base without { f }, type X = OtherType
@@ -39,7 +40,10 @@ impl Parser {
             // Match on the TypeExpr structure, not string content
             match type_expr {
                 .Union(_, _) -> {
-                    return .Ok(self.glue_ingest_stmt(Stmt.UnionAliasDecl(name, type_expr_to_vtype(type_expr))))
+                    // Walker order: the bare aliased-type field is the only
+                    // child (a TypeRef).
+                    let union_vt = type_expr_to_vtype(type_expr)
+                    return .Ok(self.alloc_stmt(Stmt.UnionAliasDecl(name, union_vt), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(union_vt))]))
                 }
                 _ -> {}
             }
@@ -65,14 +69,17 @@ impl Parser {
                         derived.push(op_fields[k])
                         k = k + 1
                     }
-                    return .Ok(self.glue_ingest_stmt(Stmt.TypeDecl(name, tp, derived)))
+                    return .Ok(self.alloc_stmt_leaf(Stmt.TypeDecl(name, tp, derived)))
                 }
             }
-            // Newtype wrapper: type UserId = string — nominal distinction
-            return .Ok(self.glue_ingest_stmt(Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr))))
+            // Newtype wrapper: type UserId = string — nominal distinction.
+            // Walker order: the bare wrapped-type field is the only child (a
+            // TypeRef).
+            let inner_vt = type_expr_to_vtype(type_expr)
+            return .Ok(self.alloc_stmt(Stmt.NewtypeDecl(name, inner_vt), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(inner_vt))]))
         }
         let empty: List<FieldEntry> = []
-        .Ok(self.glue_ingest_stmt(Stmt.TypeDecl(name, tp, empty)))
+        .Ok(self.alloc_stmt_leaf(Stmt.TypeDecl(name, tp, empty)))
     }
 
     // shape Name = { field: Type, ... }
@@ -90,7 +97,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after shape fields") {
             return .Err("parse error")
         }
-        .Ok(self.glue_ingest_stmt(Stmt.ShapeDecl(name, fields)))
+        .Ok(self.alloc_stmt_leaf(Stmt.ShapeDecl(name, fields)))
     }
 
     // Parse a list of identifiers separated by commas: {a, b, c}.

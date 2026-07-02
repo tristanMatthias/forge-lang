@@ -1,10 +1,20 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.{Stmt, ParamEntry, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, SExpr, Annotation, sexpr_dummy}
+use core.{Stmt, ParamEntry, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name, Expr, SExpr, Annotation, sexpr_dummy, NodeRef, StmtId, byte_span_none}
 use parse.{Parser}
 use core.{method_mangled_name}
 use core.{Tk}
+
+/// One parse of an impl body, surfaced both ways: `wrapped` is the boxed
+/// spanned view (sstmt-wrapped exactly as the boxed chain always did) for
+/// embedding in the Impl payload; `ids` are the arena rows backing each
+/// element, in the same order, for the Impl node's edge list (mirrors
+/// parse's StmtListIds).
+type MethodsParsed = {
+    wrapped: List<SStmt>,
+    ids: List<StmtId>,
+}
 
 impl Parser {
     fn parse_impl_declaration(self) -> Result<StmtId, string> {
@@ -44,11 +54,13 @@ impl Parser {
         } else {
             target_name
         }
-        .Ok(self.glue_ingest_stmt(Stmt.Impl(impl_name, methods)))
+        // Walker order: one StmtRef per method-list element, in source order.
+        .Ok(self.alloc_stmt(Stmt.Impl(impl_name, methods.wrapped), byte_span_none(), self.edges_of_stmt_ids(methods.ids)))
     }
 
-    fn parse_impl_methods(self, type_name: string) -> Result<List<SStmt>, string> {
+    fn parse_impl_methods(self, type_name: string) -> Result<MethodsParsed, string> {
         mut out: List<SStmt> = []
+        mut ids: List<StmtId> = []
         mut pending_doc: string = ""
         mut has_pending_doc = false
         while !self.check(Tk.RightBrace) {
@@ -79,6 +91,8 @@ impl Parser {
                     let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
                     Stmt.Annotated(doc_annots, sstmt(raw, line, col))
                 } else { raw }
+                // Assoc-type elements stay boxed producers — bridge whole.
+                ids.push(self.glue_ingest_stmt(wrapped))
                 out.push(sstmt(wrapped, line, col))
                 has_pending_doc = false
                 pending_doc = ""
@@ -88,13 +102,21 @@ impl Parser {
                 self.set_error("expected `fn` or `type` inside impl block")
                 return .Err("parse error")
             }
-            let method = self.parse_method_declaration(type_name)?
+            let method_id = self.parse_method_declaration(type_name)?
+            let method = self.stmt_of(method_id)
+            // A doc-wrapped method mirrors the top-level converted pattern:
+            // `Annotated` records exactly ONE StmtRef child (the inner decl),
+            // so the natively-allocated method row stays attached.
+            mut elem_id = method_id
             let wrapped = if has_pending_doc {
                 let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${pending_doc}\""))]
                 let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
-                Stmt.Annotated(doc_annots, sstmt(method, self.current_line, self.current_column))
+                let annotated = Stmt.Annotated(doc_annots, sstmt(method, self.current_line, self.current_column))
+                elem_id = self.alloc_stmt_stmt1(annotated, method_id)
+                annotated
             } else { method }
             out.push(sstmt(wrapped, self.current_line, self.current_column))
+            ids.push(elem_id)
             has_pending_doc = false
             pending_doc = ""
         }
@@ -102,10 +124,10 @@ impl Parser {
             self.set_error("doc comment must precede a method or associated type")
             return .Err("parse error")
         }
-        .Ok(out)
+        .Ok(MethodsParsed { wrapped: out, ids: ids })
     }
 
-    fn parse_method_declaration(self, type_name: string) -> Result<Stmt, string> {
+    fn parse_method_declaration(self, type_name: string) -> Result<StmtId, string> {
         self.advance()
         let name = self.consume_identifier("expected method name")?
         if !self.consume(Tk.LeftParen, "expected `(` after method name") {
@@ -127,13 +149,18 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after method parameters") {
             return .Err("parse error")
         }
-        let body = self.parse_statement_list(true)?
+        let body = self.parse_statement_list_ids(true)?
         if !self.consume(Tk.RightBrace, "expected `}` after method body") {
             return .Err("parse error")
         }
         let mangled = method_mangled_name(type_name, name)
         let empty_tp: List<TypeParamEntry> = []
-        .Ok(Stmt.Function(mangled, empty_tp, params, ret_vtype, body))
+        // Walker order: the bare return-type field contributes a TypeRef,
+        // then one StmtRef per body statement (the parse_function_declaration
+        // shape).
+        mut edges: List<NodeRef> = [NodeRef.TypeRef(self.glue_ingest_type(ret_vtype))]
+        for sid in body.ids { edges.push(NodeRef.StmtRef(sid)) }
+        .Ok(self.alloc_stmt(Stmt.Function(mangled, empty_tp, params, ret_vtype, body.wrapped), byte_span_none(), edges))
     }
 
     fn parse_method_param_list(self, type_name: string) -> Result<List<ParamEntry>, string> {

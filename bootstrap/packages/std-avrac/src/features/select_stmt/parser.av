@@ -14,7 +14,11 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close select") {
             return .Err("parse error")
         }
-        .Ok(self.glue_ingest_stmt(Stmt.Select(arms)))
+        // `Select` is walker-opaque (SelectArm isn't a registered container
+        // struct), so the canonical ingest records NO children — the native
+        // alloc mirrors that as a leaf; the arms' natively-parsed rows
+        // orphan until SelectArm registers with the walker.
+        .Ok(self.alloc_stmt_leaf(Stmt.Select(arms)))
     }
 
     fn parse_select_arm_list(self) -> List<SelectArm> {

@@ -15,7 +15,7 @@ impl Parser {
         let is_mut = self.check(Tk.KwMut)
         if is_mut { self.advance() }
         if self.check(Tk.LeftParen) {
-            return .Ok(self.glue_ingest_stmt(self.parse_let_destructure()?))
+            return self.parse_let_destructure()
         }
         let name = self.consume_identifier("expected variable name")?
         mut ty_vt = ValueType.Unknown
@@ -110,12 +110,13 @@ impl Parser {
         .Ok(self.alloc_binding_stmt(Stmt.Const(name, ty_vt, self.expr_of(init_id)), ty_vt, init_id))
     }
 
-    fn parse_let_destructure(self) -> Result<Stmt, string> {
+    fn parse_let_destructure(self) -> Result<StmtId, string> {
         self.advance()
         let names = self.parse_destructure_names()?
         if !self.consume(Tk.RightParen, "expected `)` after destructure names") { return .Err("parse error") }
         if !self.consume(Tk.Equal, "expected `=` after destructure pattern") { return .Err("parse error") }
-        let initializer = self.parse_expression_boxed()?
-        .Ok(Stmt.LetDestructure(names, initializer))
+        let init_id = self.parse_expression()?
+        // Walker order: the initializer is the only child (an ExprRef).
+        .Ok(self.alloc_stmt_expr1(Stmt.LetDestructure(names, self.expr_of(init_id)), init_id))
     }
 }

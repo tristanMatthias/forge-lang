@@ -1,7 +1,7 @@
 // WHY: parses `parallel { body }` blocks.
 
 use parse.{Parser}
-use core.{Stmt}
+use core.{Stmt, byte_span_none}
 use core.{Tk}
 
 impl Parser {
@@ -10,10 +10,11 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after parallel") {
             return .Err("parse error")
         }
-        let body = self.parse_statement_list(true)?
+        let body = self.parse_statement_list_ids(true)?
         if !self.consume(Tk.RightBrace, "expected `}` to close parallel block") {
             return .Err("parse error")
         }
-        .Ok(self.glue_ingest_stmt(Stmt.Parallel(body)))
+        // Walker order: one StmtRef per body statement.
+        .Ok(self.alloc_stmt(Stmt.Parallel(body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
     }
 }

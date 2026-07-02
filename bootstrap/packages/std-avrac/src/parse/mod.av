@@ -1746,8 +1746,7 @@ impl Parser {
         }
 
         if self.check(Tk.KwChannel) {
-            let ch = self.parse_channel_expression()?
-            return .Ok(self.glue_ingest_expr(ch))
+            return self.parse_channel_expression()
         }
 
         if self.check(Tk.KwIsolated) {
@@ -1768,8 +1767,7 @@ impl Parser {
             // Disambiguate from block: if first token after { is a string,
             // and the token after that is a colon, it's a map.
             if self.is_map_literal() {
-                let m = self.parse_map_literal()?
-                return .Ok(self.glue_ingest_expr(m))
+                return self.parse_map_literal()
             }
             return self.parse_block_expression()
         }
