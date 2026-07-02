@@ -5,14 +5,14 @@ use parse.{Parser}
 use core.{Tk}
 
 impl Parser {
-    fn parse_return_statement(self) -> Result<Stmt, string> {
+    fn parse_return_statement(self) -> Result<StmtId, string> {
         self.advance()
 
         if self.current_kind in [Tk.RightBrace, Tk.Eof] {
-            return .Ok(Stmt.ReturnEmpty)
+            return .Ok(self.glue_ingest_stmt(Stmt.ReturnEmpty))
         }
 
         let value = self.parse_expression_boxed()?
-        .Ok(Stmt.Return(value))
+        .Ok(self.glue_ingest_stmt(Stmt.Return(value)))
     }
 }

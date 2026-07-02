@@ -31,7 +31,7 @@ fn merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: st
 }
 
 impl Parser {
-    fn parse_function_declaration(self) -> Result<Stmt, string> {
+    fn parse_function_declaration(self) -> Result<StmtId, string> {
         self.advance()
         let name = self.consume_identifier("expected function name")?
         // Optional generic parameters: fn name<T, U>(...)
@@ -73,7 +73,7 @@ impl Parser {
             return .Err("parse error")
         }
 
-        .Ok(Stmt.Function(name, tp, params, ret_vtype, body))
+        .Ok(self.glue_ingest_stmt(Stmt.Function(name, tp, params, ret_vtype, body)))
     }
 
     fn parse_param_list(self) -> Result<List<ParamEntry>, string> {

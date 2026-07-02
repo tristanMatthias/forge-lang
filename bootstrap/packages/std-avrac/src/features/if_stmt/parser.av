@@ -20,10 +20,10 @@ type IfLetHeader = { tmp: string, binding: string, subject: Expr }
 
 impl Parser {
 
-    fn parse_if_statement(self) -> Result<Stmt, string> {
+    fn parse_if_statement(self) -> Result<StmtId, string> {
         self.advance()
         // Bind-fresh `if let v = x { … }`: `let` right after `if`.
-        if self.check(Tk.KwLet) { return self.parse_if_let_statement() }
+        if self.check(Tk.KwLet) { return .Ok(self.glue_ingest_stmt(self.parse_if_let_statement()?)) }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let condition_opt = self.parse_expression_boxed()
@@ -35,15 +35,15 @@ impl Parser {
             return .Err("parse error")
         }
 
-        let then_branch = self.parse_statement()?
+        let then_branch = self.stmt_of(self.parse_statement()?)
 
         if self.check(Tk.KwElse) {
             self.advance()
-            let else_branch = self.parse_statement()?
-            return .Ok(Stmt.If(condition, then_branch, else_branch))
+            let else_branch = self.stmt_of(self.parse_statement()?)
+            return .Ok(self.glue_ingest_stmt(Stmt.If(condition, then_branch, else_branch)))
         }
 
-        .Ok(Stmt.If(condition, then_branch, none))
+        .Ok(self.glue_ingest_stmt(Stmt.If(condition, then_branch, none)))
     }
 
     // `if let v = x { THEN } else { ELSE }` desugars to
@@ -72,11 +72,11 @@ impl Parser {
 
     fn parse_if_let_statement(self) -> Result<Stmt, string> {
         let h = self.parse_if_let_header()?
-        let then_branch = self.parse_statement()?
+        let then_branch = self.stmt_of(self.parse_statement()?)
         mut else_branch: Stmt? = none
         if self.check(Tk.KwElse) {
             self.advance()
-            else_branch = self.parse_statement()?
+            else_branch = self.stmt_of(self.parse_statement()?)
         }
         let bind_stmt = self.iflet_bind_stmt(h.tmp, h.binding)
         // Prepend the unwrap-bind to the then-block.

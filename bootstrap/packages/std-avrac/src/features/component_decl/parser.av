@@ -16,7 +16,7 @@ impl Parser {
     // Keyword-free instantiation: `comp_name inst_name { ... }`
     // Only called when the NEXT token after the component name is an identifier
     // (the instance name). If next is `{`, `(`, `=`, etc., we don't match.
-    fn parse_component_block_bare(self) -> Result<Stmt, string> {
+    fn parse_component_block_bare(self) -> Result<StmtId, string> {
         let name = self.consume_identifier("expected component name")?
         // Require instance name (identifier) — this prevents false positives
         // like `command {` inside match expressions.
@@ -30,11 +30,11 @@ impl Parser {
         let config = self.parse_comp_config_pairs()?
         let body = self.parse_comp_block_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
-        .Ok(Stmt.ComponentBlock(name, instance, config, body))
+        .Ok(self.glue_ingest_stmt(Stmt.ComponentBlock(name, instance, config, body)))
     }
 
     // `component name { ... }` — always a definition (no parens)
-    fn parse_component_decl(self) -> Result<Stmt, string> {
+    fn parse_component_decl(self) -> Result<StmtId, string> {
         self.advance()  // consume `component`
         let name = self.consume_identifier("expected component name")?
 
@@ -50,7 +50,7 @@ impl Parser {
 
         // Definition: `component name {` ...
         if self.check(Tk.LeftBrace) {
-            return self.parse_component_def(name, implements)
+            return .Ok(self.glue_ingest_stmt(self.parse_component_def(name, implements)?))
         }
 
         // Legacy: `component name(params) {` — still supported for backward compat
@@ -69,7 +69,7 @@ impl Parser {
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return .Err("parse error") }
             register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-            return .Ok(Stmt.ComponentDef(name, params, config, [], implements, body))
+            return .Ok(self.glue_ingest_stmt(Stmt.ComponentDef(name, params, config, [], implements, body)))
         }
 
         // Legacy: `component comp instance {` — block with keyword prefix.
@@ -93,7 +93,7 @@ impl Parser {
             let config = self.parse_comp_config_pairs()?
             let body = self.parse_comp_block_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
-            return .Ok(Stmt.ComponentBlock(name, instance, config, body))
+            return .Ok(self.glue_ingest_stmt(Stmt.ComponentBlock(name, instance, config, body)))
         }
 
         self.set_error("expected `{` after component name")
@@ -281,7 +281,7 @@ impl Parser {
             }
 
             // Regular statement (fn declarations, etc.)
-            let stmt = self.parse_declaration()?
+            let stmt = self.stmt_of(self.parse_declaration()?)
             out.push(sstmt(stmt, line, col))
         }
         .Ok(out)
@@ -467,7 +467,7 @@ impl Parser {
 
             // `component ...` keyword for nested blocks
             if self.check(Tk.KwComponent) {
-                let stmt = self.parse_component_decl()?
+                let stmt = self.stmt_of(self.parse_component_decl()?)
                 out.push(sstmt(stmt, line, col))
                 continue
             }
@@ -499,7 +499,7 @@ impl Parser {
             }
 
             // fn declarations and other statements
-            let stmt = self.parse_declaration()?
+            let stmt = self.stmt_of(self.parse_declaration()?)
             out.push(sstmt(stmt, line, col))
         }
         .Ok(out)

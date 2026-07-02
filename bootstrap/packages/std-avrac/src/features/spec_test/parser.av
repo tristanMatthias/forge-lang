@@ -6,7 +6,7 @@
 use core.{sstmt, sstmt_at}
 use core.{Tk}
 impl Parser {
-    fn parse_spec_block(self) -> Result<Stmt, string> {
+    fn parse_spec_block(self) -> Result<StmtId, string> {
         self.advance()  // consume `spec`
         if !self.check(Tk.String) {
             return .Err("parse error")
@@ -20,7 +20,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close spec block") {
             return .Err("parse error")
         }
-        .Ok(Stmt.SpecBlock(name, body))
+        .Ok(self.glue_ingest_stmt(Stmt.SpecBlock(name, body)))
     }
 
     fn parse_spec_body(self) -> List<SStmt> {
@@ -28,7 +28,7 @@ impl Parser {
         while !(self.current_kind in [Tk.RightBrace, Tk.Eof]) {
             let line = self.current_line
             let col = self.current_column
-            mut stmt_res: Result<Stmt, string> = .Err("")
+            mut stmt_res: Result<StmtId, string> = .Err("")
             if self.check(Tk.KwGiven) {
                 stmt_res = self.parse_given_block()
             } else if self.check(Tk.KwThen) {
@@ -37,7 +37,7 @@ impl Parser {
                 stmt_res = self.parse_declaration()
             }
             let stmt = match stmt_res {
-                .Ok(s) -> s
+                .Ok(s) -> self.stmt_of(s)
                 .Err(_) -> return out
             }
             out.push(sstmt_at(stmt, line, col, self.file))
@@ -45,7 +45,7 @@ impl Parser {
         out
     }
 
-    fn parse_given_block(self) -> Result<Stmt, string> {
+    fn parse_given_block(self) -> Result<StmtId, string> {
         self.advance()  // consume `given`
         if !self.check(Tk.String) {
             return .Err("parse error")
@@ -59,10 +59,10 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close given block") {
             return .Err("parse error")
         }
-        .Ok(Stmt.GivenBlock(name, body))
+        .Ok(self.glue_ingest_stmt(Stmt.GivenBlock(name, body)))
     }
 
-    fn parse_then_block(self) -> Result<Stmt, string> {
+    fn parse_then_block(self) -> Result<StmtId, string> {
         self.advance()  // consume `then`
         if !self.check(Tk.String) {
             return .Err("parse error")
@@ -77,6 +77,6 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close then block") {
             return .Err("parse error")
         }
-        .Ok(Stmt.ThenBlock(name, Expr.Block(body)))
+        .Ok(self.glue_ingest_stmt(Stmt.ThenBlock(name, Expr.Block(body))))
     }
 }

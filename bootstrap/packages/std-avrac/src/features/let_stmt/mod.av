@@ -50,17 +50,17 @@ export fn mut_keyword_feature() -> Feature {
 
 /// Parser dispatch hook for the `let` keyword. Forwards to the
 /// recursive-descent parser's let-statement entry.
-fn kw_parse_let(p: Parser) -> Result<Stmt, string> {
+fn kw_parse_let(p: Parser) -> Result<StmtId, string> {
     p.parse_let_statement()
 }
 
 /// Parser dispatch hook for the `const` keyword.
-fn kw_parse_const(p: Parser) -> Result<Stmt, string> {
+fn kw_parse_const(p: Parser) -> Result<StmtId, string> {
     p.parse_const_statement()
 }
 
 /// Parser dispatch hook for the `mut` keyword.
-fn kw_parse_mut(p: Parser) -> Result<Stmt, string> {
+fn kw_parse_mut(p: Parser) -> Result<StmtId, string> {
     p.parse_mut_statement()
 }
 

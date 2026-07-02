@@ -10,12 +10,12 @@ use core.{Tk}
 use diagnostics.{DiagCode}
 
 impl Parser {
-    fn parse_let_statement(self) -> Result<Stmt, string> {
+    fn parse_let_statement(self) -> Result<StmtId, string> {
         self.advance()
         let is_mut = self.check(Tk.KwMut)
         if is_mut { self.advance() }
         if self.check(Tk.LeftParen) {
-            return self.parse_let_destructure()
+            return .Ok(self.glue_ingest_stmt(self.parse_let_destructure()?))
         }
         let name = self.consume_identifier("expected variable name")?
         mut ty_vt = ValueType.Unknown
@@ -28,9 +28,9 @@ impl Parser {
         let initializer = self.parse_expression_boxed()?
         // Guard form: `let v = x else { … }` (also `let mut v = x else { … }`).
         if self.check(Tk.KwElse) {
-            return self.build_let_else(name, ty_vt, initializer, is_mut)
+            return .Ok(self.glue_ingest_stmt(self.build_let_else(name, ty_vt, initializer, is_mut)?))
         }
-        if is_mut { .Ok(Stmt.Mut(name, ty_vt, initializer)) } else { .Ok(Stmt.Let(name, ty_vt, initializer)) }
+        if is_mut { .Ok(self.glue_ingest_stmt(Stmt.Mut(name, ty_vt, initializer))) } else { .Ok(self.glue_ingest_stmt(Stmt.Let(name, ty_vt, initializer))) }
     }
 
     // `let v = x else { ELSE }` desugars to a block-expression initializer:
@@ -43,7 +43,7 @@ impl Parser {
     // way, since nothing can invalidate the already-unwrapped value.
     fn build_let_else(self, name: string, ty_vt: ValueType, subject: Expr, is_mut: bool) -> Result<Stmt, string> {
         self.advance()
-        let else_stmt = self.parse_statement()?
+        let else_stmt = self.stmt_of(self.parse_statement()?)
         let else_body = match else_stmt {
             .Block(b) -> b
             _ -> {
@@ -69,7 +69,7 @@ impl Parser {
         if is_mut { .Ok(Stmt.Mut(name, ty_vt, init)) } else { .Ok(Stmt.Let(name, ty_vt, init)) }
     }
 
-    fn parse_mut_statement(self) -> Result<Stmt, string> {
+    fn parse_mut_statement(self) -> Result<StmtId, string> {
         self.advance()
         let name = self.consume_identifier("expected variable name")?
         mut ty_vt = ValueType.Unknown
@@ -82,12 +82,12 @@ impl Parser {
         let initializer = self.parse_expression_boxed()?
         // `mut v = x else { … }` — bind-fresh guard binding a reassignable `v`.
         if self.check(Tk.KwElse) {
-            return self.build_let_else(name, ty_vt, initializer, true)
+            return .Ok(self.glue_ingest_stmt(self.build_let_else(name, ty_vt, initializer, true)?))
         }
-        .Ok(Stmt.Mut(name, ty_vt, initializer))
+        .Ok(self.glue_ingest_stmt(Stmt.Mut(name, ty_vt, initializer)))
     }
 
-    fn parse_const_statement(self) -> Result<Stmt, string> {
+    fn parse_const_statement(self) -> Result<StmtId, string> {
         self.advance()
         let name = self.consume_identifier("expected constant name")?
         mut ty_vt = ValueType.Unknown
@@ -98,7 +98,7 @@ impl Parser {
         }
         if !self.consume(Tk.Equal, "expected `=` after constant name") { return .Err("parse error") }
         let initializer = self.parse_expression_boxed()?
-        .Ok(Stmt.Const(name, ty_vt, initializer))
+        .Ok(self.glue_ingest_stmt(Stmt.Const(name, ty_vt, initializer)))
     }
 
     fn parse_let_destructure(self) -> Result<Stmt, string> {

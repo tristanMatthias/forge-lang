@@ -7,7 +7,7 @@ use core.{method_mangled_name}
 use core.{Tk}
 
 impl Parser {
-    fn parse_impl_declaration(self) -> Result<Stmt, string> {
+    fn parse_impl_declaration(self) -> Result<StmtId, string> {
         self.advance()
         // Optional generic parameters on impl: `impl<T> ...`
         if self.check(Tk.Less) {
@@ -44,7 +44,7 @@ impl Parser {
         } else {
             target_name
         }
-        .Ok(Stmt.Impl(impl_name, methods))
+        .Ok(self.glue_ingest_stmt(Stmt.Impl(impl_name, methods)))
     }
 
     fn parse_impl_methods(self, type_name: string) -> Result<List<SStmt>, string> {

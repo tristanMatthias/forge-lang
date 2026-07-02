@@ -5,7 +5,7 @@ use core.{Stmt}
 use core.{Tk}
 
 impl Parser {
-    fn parse_parallel_statement(self) -> Result<Stmt, string> {
+    fn parse_parallel_statement(self) -> Result<StmtId, string> {
         self.advance()  // consume `parallel`
         if !self.consume(Tk.LeftBrace, "expected `{` after parallel") {
             return .Err("parse error")
@@ -14,6 +14,6 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close parallel block") {
             return .Err("parse error")
         }
-        .Ok(Stmt.Parallel(body))
+        .Ok(self.glue_ingest_stmt(Stmt.Parallel(body)))
     }
 }

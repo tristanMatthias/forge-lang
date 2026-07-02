@@ -16,12 +16,12 @@ use core.{Tk}
 extern fn avra_gensym() -> int
 
 impl Parser {
-    fn parse_for_statement(self) -> Result<Stmt, string> {
+    fn parse_for_statement(self) -> Result<StmtId, string> {
         self.advance()
 
         // Tuple-destructure binding: `for (a, b) in coll { body }`.
         if self.check(Tk.LeftParen) {
-            return self.parse_for_destructure()
+            return .Ok(self.glue_ingest_stmt(self.parse_for_destructure()?))
         }
 
         let name = self.consume_identifier("expected variable name after `for`")?
@@ -49,8 +49,8 @@ impl Parser {
                 self.report(DiagCode.ExpectedBlock, "expected `{` after for range")
                 return .Err("parse error")
             }
-            let body = self.parse_statement()?
-            return .Ok(Stmt.For(name, expr, end, body))
+            let body = self.stmt_of(self.parse_statement()?)
+            return .Ok(self.glue_ingest_stmt(Stmt.For(name, expr, end, body)))
         }
 
         // Collection form: `for x in list { body }`
@@ -58,8 +58,8 @@ impl Parser {
             self.report(DiagCode.ExpectedBlock, "expected `{` or `..` after for expression")
             return .Err("parse error")
         }
-        let body = self.parse_statement()?
-        .Ok(Stmt.ForIn(name, expr, body))
+        let body = self.stmt_of(self.parse_statement()?)
+        .Ok(self.glue_ingest_stmt(Stmt.ForIn(name, expr, body)))
     }
 
     /// Parse `for (a, b, …) in collection { body }`. The opening `(`
@@ -100,7 +100,7 @@ impl Parser {
             self.report(DiagCode.ExpectedBlock, "expected `{` after for-in expression")
             return .Err("parse error")
         }
-        let body = self.parse_statement()?
+        let body = self.stmt_of(self.parse_statement()?)
 
         let tmp = "__forpair_${gid}"
         let unpack = Stmt.LetDestructure(names, Expr.Ident(tmp))
