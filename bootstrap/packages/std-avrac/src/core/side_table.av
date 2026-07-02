@@ -94,6 +94,15 @@ impl DenseTable<Id, V> {
     /// The number of addressable slots (the high-water id + 1), NOT the number
     /// of distinct facts written — a dense table doesn't track that.
     fn count(self) -> int { self.vals.length }
+    /// Drop every slot at index >= n — the rollback primitive for speculative
+    /// arena allocation: a backtracked parse truncates each arena's parallel
+    /// columns (nodes + edges + spans) together to the saved length.
+    /// O(slots dropped); a no-op when already at or below `n`.
+    fn truncate_to(self, n: int) {
+        while self.vals.length > n {
+            let _ = self.vals.pop()
+        }
+    }
 }
 
 /// Construct an empty dense table whose unwritten slots read back as `fill`.

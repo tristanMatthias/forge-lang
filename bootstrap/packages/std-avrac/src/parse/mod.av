@@ -14,6 +14,7 @@
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, expr_force_unwrap, expr_ne_none}
+use core.{NodeStore, StoreMark, new_node_store, build_line_index}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -64,6 +65,11 @@ export type ParserState = {
     allow_it_sugar: int,
     quote_depth: int,
     bag: DiagnosticBag,
+    // The store half of the snapshot (B1): arena row counts at save time. A
+    // backtrack truncates the arenas to these marks so an abandoned
+    // speculative parse leaves no rows (a quote allocated inside a backtracked
+    // arg list must not trip the flat presence scan).
+    store_mark: StoreMark,
 }
 
 /// Mutable parser state. Tracks lexer position, the currently-staged
@@ -139,6 +145,13 @@ export type Parser = {
     mut gensym_seq: int,
     mut bag: DiagnosticBag,
     features: Registry,
+    // The L1 arena the parser allocates into as it parses (B1, dark-launched:
+    // ingest_program stays the canonical producer until the flip). Productions
+    // converted to native alloc push their node here and return its typed id;
+    // unconverted callers read the boxed node back via `store.<arena>.get(id)`.
+    // Built per entry parser from this parser's source (template `${...}`
+    // sub-parsers will share the outer store — Stage C).
+    store: NodeStore,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -433,6 +446,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         gensym_seq: 0,
         bag: bag_new(),
         features: build_registry(),
+        store: new_node_store(build_line_index(source)),
     }
     parser.advance_token()
     parser
@@ -2287,6 +2301,7 @@ impl Parser {
             cell_mode: self.cell_mode, allow_it_sugar: self.allow_it_sugar,
             quote_depth: self.quote_depth,
             bag: self.bag,
+            store_mark: self.store.mark(),
         }
     }
 
@@ -2309,6 +2324,7 @@ impl Parser {
         self.allow_it_sugar = state.allow_it_sugar
         self.quote_depth = state.quote_depth
         self.bag = state.bag
+        self.store.truncate_to_mark(state.store_mark)
     }
 
     // Skip a balanced `< ... >` bracket group, handling nesting.

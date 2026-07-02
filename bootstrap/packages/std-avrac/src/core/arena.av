@@ -217,6 +217,14 @@ impl ExprArena {
     fn children_of(self, id: ExprId) -> List<NodeRef> { self.edges.get(id).refs }
     /// The node's byte-offset span (§14.2) — a side-table lookup.
     fn span_of(self, id: ExprId) -> ByteSpan { self.spans.get(id) }
+    /// Roll back to `n` rows — nodes and their parallel id-keyed columns
+    /// (edges, spans) truncate together so the arena stays consistent. The
+    /// speculative-parse rollback primitive (B1): O(rows dropped).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
     fn count(self) -> int { self.nodes.length }
 }
 
@@ -245,6 +253,12 @@ impl StmtArena {
     fn children_of(self, id: StmtId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: StmtId) -> ByteSpan { self.spans.get(id) }
     fn count(self) -> int { self.nodes.length }
+    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
 }
 
 /// Construct an empty `StmtArena` (see `new_expr_arena`).
@@ -270,6 +284,12 @@ impl PatArena {
     fn children_of(self, id: PatId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: PatId) -> ByteSpan { self.spans.get(id) }
     fn count(self) -> int { self.nodes.length }
+    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
 }
 
 /// Construct an empty `PatArena` (see `new_expr_arena`).
@@ -297,6 +317,12 @@ impl TypeArena {
     fn children_of(self, id: TypeId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: TypeId) -> ByteSpan { self.spans.get(id) }
     fn count(self) -> int { self.nodes.length }
+    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn truncate_to(self, n: int) {
+        while self.nodes.length > n { self.nodes.pop() }
+        self.edges.truncate_to(n)
+        self.spans.truncate_to(n)
+    }
 }
 
 /// Construct an empty `TypeArena` (see `new_expr_arena`).
@@ -311,6 +337,11 @@ export fn new_type_arena() -> TypeArena {
 /// node's (line, col) can be recomputed on demand from its span (§14.2) —
 /// the only place line/col is derived once the pass migration lands. Built
 /// by `ingest_program`.
+/// The four arenas' row counts at a moment in time — a speculative-parse
+/// snapshot handle (B1). Taken with `NodeStore.mark()`, rolled back with
+/// `NodeStore.truncate_to_mark()`.
+export type StoreMark = { exprs: int, stmts: int, pats: int, types: int }
+
 export type NodeStore = {
     exprs: ExprArena,
     stmts: StmtArena,
@@ -421,6 +452,25 @@ impl NodeStore {
     /// Recompute a type node's (line, col) from its recorded span.
     fn type_linecol(self, id: TypeId) -> LineCol {
         self.linecol_of_span(self.types.span_of(id))
+    }
+    /// Snapshot the four arenas' row counts — the store half of a speculative-
+    /// parse snapshot (B1). Pair with `truncate_to_mark` on backtrack so an
+    /// abandoned parse leaves no rows.
+    fn mark(self) -> StoreMark {
+        StoreMark {
+            exprs: self.exprs.count(),
+            stmts: self.stmts.count(),
+            pats: self.pats.count(),
+            types: self.types.count(),
+        }
+    }
+    /// Roll all four arenas back to `m` — each arena truncates its nodes and
+    /// parallel id-keyed columns together. O(rows allocated since the mark).
+    fn truncate_to_mark(self, m: StoreMark) {
+        self.exprs.truncate_to(m.exprs)
+        self.stmts.truncate_to(m.stmts)
+        self.pats.truncate_to(m.pats)
+        self.types.truncate_to(m.types)
     }
 
     // ── reconstruct: rebuild the boxed tree from arena EDGES (B1) ──
