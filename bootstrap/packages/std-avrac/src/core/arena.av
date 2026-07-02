@@ -219,9 +219,8 @@ export fn store_type_subtree_faithful(store: NodeStore, id: TypeId) -> bool {
 
 fn store_children_faithful(store: NodeStore, kids: List<SpannedChild>, refs: List<NodeRef>) -> bool {
     if kids.length != refs.length { return false }
-    mut i = 0
-    while i < kids.length {
-        let ok = match kids[i].node {
+    for (i, kid) in kids.enumerate() {
+        let ok = match kid.node {
             .AnyExpr(e) -> match refs[i] {
                 .ExprRef(cid) -> render_expr(store.exprs.get(cid)) == render_expr(e) && store_expr_subtree_faithful(store, cid)
                 _ -> false
@@ -240,7 +239,6 @@ fn store_children_faithful(store: NodeStore, kids: List<SpannedChild>, refs: Lis
             }
         }
         if !ok { return false }
-        i = i + 1
     }
     true
 }

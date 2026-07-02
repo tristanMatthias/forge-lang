@@ -895,24 +895,20 @@ impl Parser {
                     let callee_id = self.expr_child(rhs, 0)
                     if pipe_args_has_placeholder(args) {
                         mut edges: List<NodeRef> = [NodeRef.ExprRef(callee_id)]
-                        mut i = 0
-                        while i < args.length {
-                            let is_placeholder = match args[i].node {
+                        for (i, a) in args.enumerate() {
+                            let is_placeholder = match a.node {
                                 .Ident(n) -> n == "_"
                                 _ -> false
                             }
                             if is_placeholder { edges.push(NodeRef.ExprRef(eid)) } else { edges.push(rhs_kids[i + 1]) }
-                            i = i + 1
                         }
                         self.alloc_expr(Expr.Call(callee, pipe_replace_placeholder(args, se)), byte_span_none(), edges)
                     } else {
                         mut prepended: List<SExpr> = [se]
                         mut edges: List<NodeRef> = [NodeRef.ExprRef(callee_id), NodeRef.ExprRef(eid)]
-                        mut i = 0
-                        while i < args.length {
-                            prepended.push(args[i])
+                        for (i, a) in args.enumerate() {
+                            prepended.push(a)
                             edges.push(rhs_kids[i + 1])
-                            i = i + 1
                         }
                         self.alloc_expr(Expr.Call(callee, prepended), byte_span_none(), edges)
                     }
@@ -1024,11 +1020,7 @@ impl Parser {
                 if !self.check(Tk.RightBracket) {
                     let parsed = self.parse_arg_list_ids()?
                     items = parsed.wrapped
-                    mut ii = 0
-                    while ii < parsed.ids.length {
-                        item_ids.push(NodeRef.ExprRef(parsed.ids[ii]))
-                        ii = ii + 1
-                    }
+                    for id in parsed.ids { item_ids.push(NodeRef.ExprRef(id)) }
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
                     return .Err("parse error")
@@ -1208,12 +1200,7 @@ impl Parser {
                 return .Err("parse error")
             }
             mut edges: List<NodeRef> = [NodeRef.ExprRef(eid)]
-            let value_refs = self.glue_field_init_refs(overrides)
-            mut vi = 0
-            while vi < value_refs.length {
-                edges.push(value_refs[vi])
-                vi = vi + 1
-            }
+            for vr in self.glue_field_init_refs(overrides) { edges.push(vr) }
             eid = self.alloc_expr(Expr.With(self.expr_of(eid), overrides), byte_span_none(), edges)
         }
         .Ok(eid)
@@ -1654,22 +1641,16 @@ impl Parser {
                 if self.check(Tk.Arrow) {
                     self.advance()
                     mut combined: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
-                    mut ri = 0
-                    while ri < rest.wrapped.length {
-                        combined.push(rest.wrapped[ri])
-                        ri = ri + 1
-                    }
+                    for w in rest.wrapped { combined.push(w) }
                     let params = exprs_to_params(combined)
                     let body = self.parse_lambda_body()?
                     return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
                 }
                 mut tuple_elems: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
                 mut tuple_ids: List<ExprId> = [expr]
-                mut tj = 0
-                while tj < rest.wrapped.length {
-                    tuple_elems.push(rest.wrapped[tj])
+                for (tj, w) in rest.wrapped.enumerate() {
+                    tuple_elems.push(w)
                     tuple_ids.push(rest.ids[tj])
-                    tj = tj + 1
                 }
                 return .Ok(self.alloc_expr(Expr.Tuple(tuple_elems), byte_span_none(), self.edges_of_ids(tuple_ids)))
             }
@@ -2483,11 +2464,7 @@ impl Parser {
     /// Edge refs for a plain id list (arg-only nodes like EnumCtor).
     fn edges_of_ids(self, ids: List<ExprId>) -> List<NodeRef> {
         mut refs: List<NodeRef> = []
-        mut i = 0
-        while i < ids.length {
-            refs.push(NodeRef.ExprRef(ids[i]))
-            i = i + 1
-        }
+        for id in ids { refs.push(NodeRef.ExprRef(id)) }
         refs
     }
 
@@ -2495,11 +2472,7 @@ impl Parser {
     /// Call-shaped nodes (Call, OptionalMethodCall, GenericCall).
     fn edges_subject_args(self, subject: ExprId, arg_ids: List<ExprId>) -> List<NodeRef> {
         mut refs: List<NodeRef> = [NodeRef.ExprRef(subject)]
-        mut i = 0
-        while i < arg_ids.length {
-            refs.push(NodeRef.ExprRef(arg_ids[i]))
-            i = i + 1
-        }
+        for id in arg_ids { refs.push(NodeRef.ExprRef(id)) }
         refs
     }
 
@@ -2508,11 +2481,7 @@ impl Parser {
     /// parse_field_init_list flows ids.
     fn glue_field_init_refs(self, inits: List<FieldInit>) -> List<NodeRef> {
         mut refs: List<NodeRef> = []
-        mut i = 0
-        while i < inits.length {
-            refs.push(NodeRef.ExprRef(self.glue_ingest_expr(inits[i].value.node)))
-            i = i + 1
-        }
+        for init in inits { refs.push(NodeRef.ExprRef(self.glue_ingest_expr(init.value.node))) }
         refs
     }
 
