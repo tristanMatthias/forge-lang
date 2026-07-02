@@ -119,6 +119,6 @@ impl Parser {
         let wrapped: List<SStmt> = [sstmt(unpack, tline, tcol), sstmt(body, tline, tcol)]
         let block_id = self.alloc_stmt(Stmt.Block(wrapped), byte_span_none(), [NodeRef.StmtRef(unpack_id), NodeRef.StmtRef(body_id)])
         // Walker order: the collection ExprRef, then the body stmt.
-        .Ok(self.alloc_stmt(Stmt.ForIn(tmp, coll, Stmt.Block(wrapped)), byte_span_none(), [NodeRef.ExprRef(coll_id), NodeRef.StmtRef(block_id)]))
+        .Ok(self.alloc_stmt(Stmt.ForIn(tmp, coll, self.stmt_of(block_id)), byte_span_none(), [NodeRef.ExprRef(coll_id), NodeRef.StmtRef(block_id)]))
     }
 }

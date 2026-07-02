@@ -182,19 +182,14 @@ impl Parser {
     // then a fresh callee leaf, edges [callee, subject] — Call walker order)
     // under a Let row ([TypeRef, ExprRef] — binding walker order).
     fn iflet_bind_row(self, tmp: string, binding: string) -> StmtId {
-        let subject_id = self.alloc_leaf(Expr.Ident(tmp))
-        let callee_id = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
         let unwrap = expr_force_unwrap(Expr.Ident(tmp))
-        let unwrap_id = self.alloc2(unwrap, callee_id, subject_id)
+        let unwrap_id = self.alloc_force_unwrap_row(tmp)
         self.alloc_binding_stmt(Stmt.Let(binding, ValueType.Unknown, unwrap), ValueType.Unknown, unwrap_id)
     }
 
-    // Row twin of the `__tmp != none` condition: two leaves under a Binary
-    // row (edges [left, right]).
+    // Row twin of the `__tmp != none` condition.
     fn iflet_cond_row(self, tmp: string) -> ExprId {
-        let left_id = self.alloc_leaf(Expr.Ident(tmp))
-        let right_id = self.alloc_leaf(Expr.None)
-        self.alloc2(expr_ne_none(Expr.Ident(tmp)), left_id, right_id)
+        self.alloc_none_check_row(tmp, expr_ne_none(Expr.Ident(tmp)))
     }
 
     // Prepend the unwrap-bind to a then-block's statement list.

@@ -250,7 +250,7 @@ impl Parser {
                 let empty_p: List<ParamEntry> = []
                 let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body.wrapped)
                 out.push(sstmt(stmt, line, col))
-                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(body.ids)))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Void, body.ids)))
                 continue
             }
 
@@ -269,7 +269,7 @@ impl Parser {
                 let empty_ids: List<StmtId> = []
                 let stmt = Stmt.Function("__event_${ev_name}", empty_tp, ev_params, ValueType.Void, empty_body)
                 out.push(sstmt(stmt, line, col))
-                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(empty_ids)))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Void, empty_ids)))
                 continue
             }
 
@@ -306,8 +306,8 @@ impl Parser {
     /// Edge refs of a synthesized component `fn` row — walker order: the
     /// bare return-type field's TypeRef (always `Void` here), then one
     /// StmtRef per body statement (params are walker-opaque).
-    fn fn_edges(self, body_ids: List<StmtId>) -> List<NodeRef> {
-        mut edges: List<NodeRef> = [NodeRef.TypeRef(self.glue_ingest_type(ValueType.Void))]
+    fn fn_edges(self, ret_vtype: ValueType, body_ids: List<StmtId>) -> List<NodeRef> {
+        mut edges: List<NodeRef> = [NodeRef.TypeRef(self.glue_ingest_type(ret_vtype))]
         for sid in body_ids { edges.push(NodeRef.StmtRef(sid)) }
         edges
     }
@@ -488,7 +488,7 @@ impl Parser {
                 let empty_tp: List<TypeParamEntry> = []
                 let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body.wrapped)
                 out.push(sstmt(stmt, line, col))
-                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(body.ids)))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Void, body.ids)))
                 continue
             }
 

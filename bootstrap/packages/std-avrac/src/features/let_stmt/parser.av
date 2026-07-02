@@ -75,15 +75,9 @@ impl Parser {
         }
         let tmp = self.fresh("letelse")
         let unwrap = expr_force_unwrap(Expr.Ident(tmp))
-        // Unwrap-call rows: subject leaf, fresh callee leaf, then the call
-        // (edges [callee, subject] — Call walker order).
-        let unwrap_subject_id = self.alloc_leaf(Expr.Ident(tmp))
-        let unwrap_callee_id = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
-        let unwrap_id = self.alloc2(unwrap, unwrap_callee_id, unwrap_subject_id)
+        let unwrap_id = self.alloc_force_unwrap_row(tmp)
         let cond = expr_eq_none(Expr.Ident(tmp))
-        let cond_left_id = self.alloc_leaf(Expr.Ident(tmp))
-        let cond_right_id = self.alloc_leaf(Expr.None)
-        let cond_id = self.alloc2(cond, cond_left_id, cond_right_id)
+        let cond_id = self.alloc_none_check_row(tmp, cond)
         let else_block = Expr.Block(else_body)
         let else_block_id = self.alloc_expr(else_block, byte_span_none(), else_edges)
         let guard = Expr.IfExpr(cond, else_block, unwrap)

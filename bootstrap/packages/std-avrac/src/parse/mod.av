@@ -2503,6 +2503,25 @@ impl Parser {
         self.store.pats.add_leaf(node)
     }
 
+    /// Row twin of `expr_force_unwrap(Ident(name))`: subject leaf + fresh
+    /// callee leaf under a Call row, edges [callee, subject] — the ONE place
+    /// this ordering convention lives (the if-let and let-else desugars both
+    /// mint it).
+    fn alloc_force_unwrap_row(self, name: string) -> ExprId {
+        let subject_id = self.alloc_leaf(Expr.Ident(name))
+        let callee_id = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+        self.alloc2(expr_force_unwrap(Expr.Ident(name)), callee_id, subject_id)
+    }
+
+    /// Row twin of an `<ident> == none` / `!= none` test: two leaves under
+    /// the Binary row, edges [left, right]. `cmp` is the boxed comparison
+    /// the caller built (expr_eq_none / expr_ne_none).
+    fn alloc_none_check_row(self, name: string, cmp: Expr) -> ExprId {
+        let left_id = self.alloc_leaf(Expr.Ident(name))
+        let right_id = self.alloc_leaf(Expr.None)
+        self.alloc2(cmp, left_id, right_id)
+    }
+
     /// Boxed readback of an allocated expr — an O(1) row read. The chain uses
     /// it to embed already-allocated children into a parent's boxed payload.
     fn expr_of(self, id: ExprId) -> Expr {
