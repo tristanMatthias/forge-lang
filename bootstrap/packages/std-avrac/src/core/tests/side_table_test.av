@@ -35,8 +35,8 @@
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 
-// 3 top-level fns -> 6 stmt nodes once bodies are flattened recursively
-// (3 fn decls + 3 body stmts). Under the CROSS-TYPE ingest (A1) a node's
+// 3 top-level fns -> 6 stmt rows (3 fn decls + 3 body stmts): nested
+// statements get their own rows. Under the CROSS-TYPE edge model (A1) a node's
 // children span all four kinds, so a fn decl (ret-type + body children) AND a
 // value-returning body stmt (its expr child) are both non-leaf — only a
 // CHILDLESS stmt is a leaf. `fn c() { return }`'s bare `return` (ReturnEmpty,

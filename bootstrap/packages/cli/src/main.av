@@ -76,7 +76,7 @@ use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, ingest_program, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{NodeStore, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -229,24 +229,19 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
         fail(parsed.error_message)
     }
     let stmts = parsed.stmts!
-    // L1 (ps3t.3.7): the arena is the CANONICAL producer for every full compile
-    // through this entry (run / check / cache-miss compile / the interpreter).
-    // The parser builds the boxed tree, `ingest_program` flattens it into the
-    // per-type arena (typed-id edges + byte-offset span side-tables + provenance),
-    // and the program is served back FROM the arena via `program_from_store`
-    // (stored roots, with line/col recomputed from the span side-table on demand
-    // and `from_macro` restored from provenance). This puts the arena on the
-    // critical path — load-bearing and continuously validated — the prerequisite
-    // for migrating consumers to read ids. Byte-identical to the direct parse
-    // output (diff-test is the oracle): passes are unchanged. `program_from_store`
-    // (not the edge-rebuilt `reconstruct_program`) is used here because it keeps
-    // each NESTED wrapper's `from_macro`, which the edge round-trip flattens.
-    //
-    // COST: one extra ingest pass per full compile (~5% measured) with no consumer
-    // payoff yet — the staged price §14.6 accepts; it disappears once consumers
-    // read ids and the boxed tree is deleted. NOT on the incremental `build`
-    // fast-path (that parses via its own unit-cache entry — a later target).
-    let store = ingest_program(stmts, source)
+    // B1: the parser IS the arena producer. Every production allocated its row
+    // (typed-id edges in walker order + byte-offset span side-tables + provenance)
+    // during the parse itself, and the top-level rows were recorded as roots —
+    // there is no separate ingest walk. The program is served FROM that store via
+    // `program_from_store` (stored roots, line/col recomputed from the span
+    // side-table on demand, `from_macro` restored from provenance), byte-identical
+    // to the direct parse output (diff-test is the oracle): passes are unchanged.
+    // `program_from_store` (not the edge-rebuilt `reconstruct_program`) is used
+    // here because it keeps each NESTED wrapper's `from_macro`, which the edge
+    // round-trip flattens. Serve-path equivalence with the retired ingest walk is
+    // pinned by the parity battery (parse/tests/b1_native_stmt_test.av), which
+    // keeps `ingest_program` alive as its test oracle.
+    let store = parsed.store
     let file = if stmts.length > 0 { stmts[0].file } else { "" }
     // AVRA_L1_INGEST surfaces the arena diagnostics + the EDGE round-trip fidelity
     // probe (`reconstruct_program` ≅ parse output via render-equality). Debug-only
@@ -267,11 +262,11 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
 }
 
 /// What `parse_or_fail` hands back: the boxed program (served from the arena)
-/// plus the parse-time `NodeStore` itself, so early passes can read the arena
+/// plus the parser's own `NodeStore`, so early passes can read the arena
 /// instead of re-walking the boxed tree (first consumer: the quote presence
-/// scan). The store was ingested from exactly these `stmts` — a caller that
-/// merges in statements parsed elsewhere (sibling-file loading) must not scan
-/// the store as if it covered the merged program.
+/// scan). The store was built during the parse of exactly these `stmts` — a
+/// caller that merges in statements parsed elsewhere (sibling-file loading)
+/// must not scan the store as if it covered the merged program.
 type ParsedProgram = { stmts: List<SStmt>, store: NodeStore }
 
 /// Same shape as parse_or_fail but for the expression parser.

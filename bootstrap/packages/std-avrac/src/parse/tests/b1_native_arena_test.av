@@ -1,12 +1,11 @@
 // WHY: B1 — the parser's expression chain allocates arena rows natively
-// (typed ids end-to-end) while production still serves the boxed tree.
-// These specs run the migration oracle over real parses: for every parsed
-// expression, the ROOT ROW's recorded edges must mirror the derive-walker's
-// view of its boxed payload — same arity, same kinds, same nodes — all the
-// way down the subtree (`store_expr_subtree_faithful`). That equivalence is
-// exactly what the eventual flip (serving from the parser's store instead
-// of re-ingesting) relies on, so a regression here is a flip-blocker even
-// though nothing in production reads the native store yet.
+// (typed ids end-to-end). These specs run the faithfulness oracle over real
+// parses: for every parsed expression, the ROOT ROW's recorded edges must
+// mirror the derive-walker's view of its boxed payload — same arity, same
+// kinds, same nodes — all the way down the subtree
+// (`store_expr_subtree_faithful`). Since the flip, `parse_or_fail` serves
+// every compiled program from this store, so a regression here is a defect
+// on the live compile path, not a probe failure.
 
 use @std.avrac.parse.{parse_expression_native_probe}
 use @std.avrac.core.{store_expr_subtree_faithful, render_expr}

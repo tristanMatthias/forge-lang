@@ -1,17 +1,15 @@
-// WHY: ps3t.3.7 increment (ii) — the FIRST real consumers of the L1 arena.
-// With AVRA_L1_INGEST=1, parse_or_fail returns the program reconstructed FROM
-// the arena (program_from_store) instead of the direct parse output, so every
-// command routing through parse_or_fail reads the arena round-trip: `check`
-// (resolve + typeck), `run` (interpreter), and a cache-miss `compile` (codegen).
-// These end-to-end specs prove that round-trip is behaviour-identical to the
-// normal path on real programs — a valid program still type-checks (`ok`), an
-// invalid one still reports the SAME F-code, and a compiled program still runs
-// to the SAME output — with the [l1-ingest] probe in each captured output
-// confirming the flag-on path actually ran (so an assertion can't silently pass
-// on the flag-off path). (The `build` fast-path parses via its own unit-cache
-// entry, not parse_or_fail, so it is a separate, later migration target.)
-// Default builds keep the flag off, so this exercises a path the byte-identical
-// diff-test gate cannot reach.
+// WHY: end-to-end proof that the arena serve path drives the REAL passes.
+// parse_or_fail serves every program from the parser's native NodeStore
+// (program_from_store — since the B1 flip there is no other producer), so
+// every command routing through it reads the arena: `check` (resolve +
+// typeck), `run` (interpreter), and a cache-miss `compile` (codegen). These
+// specs prove that serve is behaviour-identical on real programs — a valid
+// program type-checks (`ok`), an invalid one reports the SAME F-code, and a
+// compiled program runs to the SAME output — with the [l1-ingest] probe
+// (AVRA_L1_INGEST=1, diagnostics-only) in each captured output confirming
+// the arena-serving binary produced the result being asserted. (The `build`
+// fast-path parses via its own unit-cache entry, not parse_or_fail, so it is
+// a separate, later migration target.)
 
 use @std.avrac.test_runner.{write_fixture}
 use @std.avrac.core.{avra_shell_exec}
