@@ -81,6 +81,9 @@ use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 
 /// A typed reference to a node in one of the four arenas — the cross-type edge
 /// payload. Opaque handle: compare / look up, never inspect the inner int.
+/// Ids are 1-BASED: raw 0 is the reserved null niche, so a nullable id field
+/// (`ExprId?`) can never confuse a real row with absence — the F1a dual-field
+/// bug class (nullable wrapping treats raw 0 as null) is unrepresentable.
 export enum NodeRef {
     ExprRef(id: ExprId),
     StmtRef(id: StmtId),
@@ -253,7 +256,7 @@ impl ExprArena {
     /// `edges` lives on `NodeStore.ingest_expr` — a lone arena can't place a
     /// node's cross-type children.
     fn add(self, node: Expr, edges: NodeEdges, sp: ByteSpan) -> ExprId {
-        let id = ExprId(self.nodes.length)
+        let id = ExprId(self.nodes.length + 1)
         self.nodes.push(node)
         // Empty edges / the sentinel span ARE the DenseTable `fill`, so an
         // unwritten slot reads back identically — skip those writes and a
@@ -266,11 +269,11 @@ impl ExprArena {
     /// of the caller-side edge/span allocations `add` requires. The hot path
     /// for literal/ident rows — the majority of expr nodes.
     fn add_leaf(self, node: Expr) -> ExprId {
-        let id = ExprId(self.nodes.length)
+        let id = ExprId(self.nodes.length + 1)
         self.nodes.push(node)
         id
     }
-    fn get(self, id: ExprId) -> Expr { self.nodes[id.raw()] }
+    fn get(self, id: ExprId) -> Expr { self.nodes[id.raw() - 1] }
     /// Navigate by id, not by pointer — the L1 access discipline. Cross-type:
     /// a child `NodeRef` may point into any of the four arenas.
     fn children_of(self, id: ExprId) -> List<NodeRef> { self.edges.get(id).refs }
@@ -281,8 +284,10 @@ impl ExprArena {
     /// speculative-parse rollback primitive (B1): O(rows dropped).
     fn truncate_to(self, n: int) {
         while self.nodes.length > n { self.nodes.pop() }
-        self.edges.truncate_to(n)
-        self.spans.truncate_to(n)
+        // Ids are 1-based (0 = the null niche), so a table's highest live
+        // slot for n rows is raw index n — keep n + 1 slots.
+        self.edges.truncate_to(n + 1)
+        self.spans.truncate_to(n + 1)
     }
     fn count(self) -> int { self.nodes.length }
 }
@@ -302,7 +307,7 @@ export type StmtArena = { nodes: List<Stmt>, edges: DenseTable<StmtId, NodeEdges
 impl StmtArena {
     /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
     fn add(self, node: Stmt, edges: NodeEdges, sp: ByteSpan) -> StmtId {
-        let id = StmtId(self.nodes.length)
+        let id = StmtId(self.nodes.length + 1)
         self.nodes.push(node)
         // Fill-valued edges/spans skip the write (see ExprArena.add).
         if edges.refs.length > 0 { self.edges.set(id, edges) }
@@ -311,19 +316,21 @@ impl StmtArena {
     }
     /// Append a LEAF row (no children, no source span) — see ExprArena.add_leaf.
     fn add_leaf(self, node: Stmt) -> StmtId {
-        let id = StmtId(self.nodes.length)
+        let id = StmtId(self.nodes.length + 1)
         self.nodes.push(node)
         id
     }
-    fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw()] }
+    fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw() - 1] }
     fn children_of(self, id: StmtId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: StmtId) -> ByteSpan { self.spans.get(id) }
     fn count(self) -> int { self.nodes.length }
     /// Roll back to `n` rows (see ExprArena.truncate_to).
     fn truncate_to(self, n: int) {
         while self.nodes.length > n { self.nodes.pop() }
-        self.edges.truncate_to(n)
-        self.spans.truncate_to(n)
+        // Ids are 1-based (0 = the null niche), so a table's highest live
+        // slot for n rows is raw index n — keep n + 1 slots.
+        self.edges.truncate_to(n + 1)
+        self.spans.truncate_to(n + 1)
     }
 }
 
@@ -340,7 +347,7 @@ export type PatArena = { nodes: List<Pattern>, edges: DenseTable<PatId, NodeEdge
 impl PatArena {
     /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
     fn add(self, node: Pattern, edges: NodeEdges, sp: ByteSpan) -> PatId {
-        let id = PatId(self.nodes.length)
+        let id = PatId(self.nodes.length + 1)
         self.nodes.push(node)
         // Fill-valued edges/spans skip the write (see ExprArena.add).
         if edges.refs.length > 0 { self.edges.set(id, edges) }
@@ -349,19 +356,21 @@ impl PatArena {
     }
     /// Append a LEAF row (no children, no source span) — see ExprArena.add_leaf.
     fn add_leaf(self, node: Pattern) -> PatId {
-        let id = PatId(self.nodes.length)
+        let id = PatId(self.nodes.length + 1)
         self.nodes.push(node)
         id
     }
-    fn get(self, id: PatId) -> Pattern { self.nodes[id.raw()] }
+    fn get(self, id: PatId) -> Pattern { self.nodes[id.raw() - 1] }
     fn children_of(self, id: PatId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: PatId) -> ByteSpan { self.spans.get(id) }
     fn count(self) -> int { self.nodes.length }
     /// Roll back to `n` rows (see ExprArena.truncate_to).
     fn truncate_to(self, n: int) {
         while self.nodes.length > n { self.nodes.pop() }
-        self.edges.truncate_to(n)
-        self.spans.truncate_to(n)
+        // Ids are 1-based (0 = the null niche), so a table's highest live
+        // slot for n rows is raw index n — keep n + 1 slots.
+        self.edges.truncate_to(n + 1)
+        self.spans.truncate_to(n + 1)
     }
 }
 
@@ -380,22 +389,24 @@ export type TypeArena = { nodes: List<ValueType>, edges: DenseTable<TypeId, Node
 impl TypeArena {
     /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
     fn add(self, node: ValueType, edges: NodeEdges, sp: ByteSpan) -> TypeId {
-        let id = TypeId(self.nodes.length)
+        let id = TypeId(self.nodes.length + 1)
         self.nodes.push(node)
         // Fill-valued edges/spans skip the write (see ExprArena.add).
         if edges.refs.length > 0 { self.edges.set(id, edges) }
         if !byte_span_is_none(sp) { self.spans.set(id, sp) }
         id
     }
-    fn get(self, id: TypeId) -> ValueType { self.nodes[id.raw()] }
+    fn get(self, id: TypeId) -> ValueType { self.nodes[id.raw() - 1] }
     fn children_of(self, id: TypeId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: TypeId) -> ByteSpan { self.spans.get(id) }
     fn count(self) -> int { self.nodes.length }
     /// Roll back to `n` rows (see ExprArena.truncate_to).
     fn truncate_to(self, n: int) {
         while self.nodes.length > n { self.nodes.pop() }
-        self.edges.truncate_to(n)
-        self.spans.truncate_to(n)
+        // Ids are 1-based (0 = the null niche), so a table's highest live
+        // slot for n rows is raw index n — keep n + 1 slots.
+        self.edges.truncate_to(n + 1)
+        self.spans.truncate_to(n + 1)
     }
 }
 

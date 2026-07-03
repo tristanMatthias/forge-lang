@@ -88,7 +88,7 @@ impl Parser {
                 let raw = Stmt.AssocType(name, ty_vt)
                 let wrapped = if has_pending_doc {
                     let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${pending_doc}\""))]
-                    let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
+                    let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg, arg_ids: [self.alloc_leaf(Expr.String("\"${pending_doc}\""))] }]
                     Stmt.Annotated(doc_annots, sstmt(raw, line, col))
                 } else { raw }
                 // Assoc-type elements stay boxed producers — bridge whole.
@@ -110,7 +110,7 @@ impl Parser {
             mut elem_id = method_id
             let wrapped = if has_pending_doc {
                 let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${pending_doc}\""))]
-                let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg }]
+                let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg, arg_ids: [self.alloc_leaf(Expr.String("\"${pending_doc}\""))] }]
                 let annotated = Stmt.Annotated(doc_annots, sstmt(method, self.current_line, self.current_column))
                 elem_id = self.alloc_stmt_stmt1(annotated, method_id)
                 annotated

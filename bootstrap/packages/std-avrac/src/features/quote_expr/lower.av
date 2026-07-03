@@ -58,9 +58,9 @@ export fn lower_quotes_via_store(stmts: List<SStmt>, store: NodeStore) -> List<S
 /// True iff any `Expr.Quote` row exists in the store's expr arena. The
 /// data-oriented form of the presence scan: O(#exprs) over a dense array.
 fn store_has_quote(store: NodeStore) -> bool {
-    mut i = 0
+    mut i = 1
     let n = store.exprs.count()
-    while i < n {
+    while i <= n {
         if store.exprs.get(ExprId(i)) is .Quote { return true }
         i = i + 1
     }

@@ -249,7 +249,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
         if store.stmts.count() > 0 {
-            let last = StmtId(store.stmts.count() - 1)
+            let last = StmtId(store.stmts.count())
             let sp = store.stmts.span_of(last)
             let lc = store.stmt_linecol(last)
             println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")

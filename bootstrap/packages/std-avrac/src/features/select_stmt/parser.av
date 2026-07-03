@@ -32,10 +32,11 @@ impl Parser {
             if !self.check(Tk.LeftArrow) { return out }
             self.advance()  // consume <-
             // Parse channel expression
-            let chan = match self.parse_expression_boxed() {
+            let chan_id = match self.parse_expression() {
                 .Ok(c) -> c
                 .Err(_) -> return out
             }
+            let chan = self.expr_of(chan_id)
             // Expect `->`
             if !self.consume(Tk.Arrow, "expected `->` after channel in select arm") {
                 return out
@@ -44,14 +45,15 @@ impl Parser {
             if !self.consume(Tk.LeftBrace, "expected `{` for select arm body") {
                 return out
             }
-            let body = match self.parse_statement_list(true) {
+            let body_parsed = match self.parse_statement_list_ids(true) {
                 .Ok(b) -> b
                 .Err(_) -> return out
             }
+            let body = body_parsed.wrapped
             if !self.consume(Tk.RightBrace, "expected `}` to close select arm") {
                 return out
             }
-            out.push(SelectArm { binding, chan: chan, body: body })
+            out.push(SelectArm { binding, chan: chan, body: body, chan_id, body_ids: body_parsed.ids })
         }
         out
     }

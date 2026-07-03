@@ -169,7 +169,7 @@ export fn l1_sidetable_summary(store: NodeStore) -> string {
     let mut nonleaf: SparseTable<StmtId, int> = new_sparse_table()
     let n = store.stmts.count()
     for i in 0..n {
-        let id = StmtId(i)
+        let id = StmtId(i + 1)
         let kids = store.stmts.children_of(id).length
         child_counts.set(id, kids)
         if kids > 0 {
