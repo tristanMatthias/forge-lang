@@ -1,13 +1,13 @@
 // WHY: B1 — the statement chain allocates arena rows natively and the
 // parser records its top-level statements as store ROOTS (with the same
-// conservative spans the canonical ingest derives, via one shared helper).
-// That makes the SERVE-PATH oracle constructible for the first time: for a
-// parsed program, `program_from_store` over the PARSER's native store must
-// be indistinguishable from `program_from_store` over the canonical
-// `ingest_program` store — same renders, same (line, col), same provenance,
-// same root spans. This equivalence is exactly what the eventual flip
-// (serving from the parser store and deleting the canonical re-ingest)
-// relies on. The per-subtree faithfulness oracle from the expression stage
+// conservative spans the walker ingest derives, via one shared helper).
+// This battery IS the SERVE-PATH parity oracle, and since the flip it is
+// what keeps the live path honest: `parse_or_fail` serves every compiled
+// program from the PARSER's native store, and these specs assert that store
+// is indistinguishable from a walker-derived `ingest_program` store — same
+// renders, same (line, col), same provenance, same root spans.
+// `ingest_program` survives off the compile path precisely to be this
+// oracle. The per-subtree faithfulness oracle from the expression stage
 // extends to statement roots here.
 
 use @std.avrac.parse.{parse_program_source}

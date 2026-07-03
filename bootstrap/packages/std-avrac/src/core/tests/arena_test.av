@@ -1,17 +1,17 @@
-// WHY: integration spec for the L1 arena (ps3t.3.2 + ingest shim ps3t.3.7 /
-// spine §14.1, §14.6). The arena store is WIRED into parse_or_fail behind
-// AVRA_L1_INGEST: enabling it recursively flattens the parsed statement
-// pointer-tree into a StmtArena (every nested statement gets a typed id).
-// We test the real wired path end-to-end (shelling out to bs2, the
-// established pattern for compiler-behaviour specs) rather than a
-// cross-package unit re-link. Flag-off is a no-op, so the diff-test stays
+// WHY: integration spec for the L1 arena (ps3t.3.2 / spine §14.1, §14.6).
+// The parser builds the NodeStore natively as it parses (B1) and
+// parse_or_fail serves the program from it; AVRA_L1_INGEST=1 surfaces that
+// store's diagnostics (row counts, root spans, reconstruct fidelity). We
+// test the real wired path end-to-end (shelling out to bs2, the established
+// pattern for compiler-behaviour specs) rather than a cross-package unit
+// re-link. Flag-off changes only the output, so the diff-test stays
 // byte-identical.
 //
-// Two acceptance facets are covered: (1) the recursive id-based ingest
-// produces MORE nodes than top-level statements (proving nested stmts are
-// flattened into the arena, not just the top level); (2) the typed ids are
-// nominally distinct — passing a StmtId where an ExprId is wanted is an
-// F1000 type error ("type system rejects wrong-arena id use").
+// Two acceptance facets are covered: (1) the store holds MORE nodes than
+// top-level statements (proving nested stmts get their own arena rows, not
+// just the top level); (2) the typed ids are nominally distinct — passing a
+// StmtId where an ExprId is wanted is an F1000 type error ("type system
+// rejects wrong-arena id use").
 
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 use @std.avrac.core.{new_node_store, build_line_index, NodeRef, ExprId, PatId, Expr, Pattern, ValueType, BinOp}
@@ -34,8 +34,8 @@ fn edge_tags(refs: List<NodeRef>) -> string {
 }
 
 fn l1_ingest_output() -> string {
-    // 3 top-level fns, each with a one-statement body -> 6 stmt nodes once
-    // bodies are flattened recursively (3 fn decls + 3 body stmts).
+    // 3 top-level fns, each with a one-statement body -> 6 stmt rows (3 fn
+    // decls + 3 body stmts): nested statements get their own rows.
     let fixture = "build/_l1_arena_fixture.av"
     let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() -> int { 3 }\n")
     avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
@@ -56,13 +56,14 @@ fn l1_mixup_output() -> string {
 }
 
 spec "L1 arena ingest (wired)" {
-    then "parse_or_fail recursively flattens stmts into a StmtArena" {
+    then "parse_or_fail's store carries a row for every stmt, nested included" {
         l1_ingest_output().contains("[l1-ingest] NodeStore: 6 stmt nodes")
     }
     // The last top-level statement (`fn c`, the third line of the fixture)
     // gets a REAL byte-offset span, and its (line, col) is recomputed
     // on demand from that span as line 3 col 1 — never read off the node.
-    // (Ingest is post-order, so the last appended node is a top-level root.)
+    // (Children alloc before their parent, so the last appended row is a
+    // top-level root.)
     then "the last stmt carries a real byte-offset span; line/col recomputed from it" {
         let out = l1_ingest_output()
         out.contains("[l1-ingest] last stmt span [40,") && out.contains("line 3 col 1")
@@ -72,6 +73,17 @@ spec "L1 arena ingest (wired)" {
     // render-equality vs the parse output is the structural oracle).
     then "reconstruct_program rebuilds the real parsed program faithfully from edges" {
         l1_ingest_output().contains("[l1-reconstruct] faithful=y")
+    }
+    // Flip discriminator: the served store is the PARSER's own — orphan rows
+    // included — not a walker re-ingest of the final boxed tree. A let-else
+    // desugar leaves one orphaned intermediate row, so the parser's store
+    // holds 7 stmt rows where a re-ingest would hold 6. If this reads 6,
+    // parse_or_fail has stopped serving the parser's native store.
+    then "parse_or_fail serves the parser's native store, orphans included" {
+        let fixture = "build/_l1_arena_native_fixture.av"
+        let _ = avra_selfhost_write_file(fixture, "fn f(o: int?) -> int {\n    let v = o else { return 0 }\n    v\n}\n")
+        let out = avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
+        out.contains("[l1-ingest] NodeStore: 7 stmt nodes")
     }
 }
 

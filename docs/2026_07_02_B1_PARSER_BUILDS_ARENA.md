@@ -69,6 +69,10 @@ Mechanics:
    orphan count = parser rows minus ingest rows), turning Decision 4 from an
    argument into a measurement: a runaway rebuild or a truncation bug shows up
    as an orphan-rate spike at the stage gate, not as a mystery later.
+   *(As shipped: the parity oracle went straight in as the spec battery —
+   `b1_native_stmt_test` serve-parity + root-span + faithfulness specs over
+   every converted form — rather than a separate env-gated probe, so it runs
+   on every suite pass instead of on demand.)*
 2. **Flip + delete.** When parity holds across the suite + selfhost,
    `parse_or_fail` serves from the parser store and the `ingest_program` call
    is deleted. The quote-scan (`y5um.5`) and resolver-roots (`y5um.1`)
@@ -132,6 +136,16 @@ masking loop):
    the glue re-ingests eliminated, the native store build is now cheaper
    than what it replaced.
 5. **Stage E — flip + delete ingest** (+ retire the parity probe to a spec).
+   **DONE** — `parse_or_fail` serves every compiled program from the parser's
+   native store (`parsed.store`); the canonical `ingest_program` call is
+   deleted from the compile path. `ingest_program` itself survives OFF the
+   path as the parity battery's test oracle (`b1_native_stmt_test` — the
+   probe retired to a spec), and the `AVRA_L1_INGEST` diagnostics now report
+   the parser's store (all probe outputs — row counts, root spans,
+   reconstruct fidelity, side-table summary — byte-identical to the ingest
+   era, so the probe specs pass unchanged). Diff-test byte-identical
+   (616,055-line selfhost IR + corpus 14/14). Measured **−1.6% vs oracle**
+   (interleaved ×4): the dark-launch double-allocation reclaimed.
 
 Each stage is one PR on the standing process (prepare-pr ×3, CodeRabbit, merge
 on green). Stages A–D ship dark (parser store built but unused): temporary

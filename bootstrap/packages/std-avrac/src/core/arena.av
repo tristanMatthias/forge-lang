@@ -644,24 +644,28 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
     }
 }
 
-/// Compat shim (ingest direction, ps3t.3.7): flatten a parsed statement list
-/// into the store, recursively and CROSS-TYPE (A1) — every descendant node, of
-/// ANY kind, gets an id in its owning arena (a stmt's expr/type/pattern
-/// children among them), and each node's edges record those children as typed
-/// `NodeRef`s. So after ingest the four arenas together hold the whole
-/// WALKER-REACHABLE tree by id, not just the top-level statements. (Reachable =
-/// what `all_children_spanned()` traverses: the four AST enum kinds and their
+/// Walker-driven ingest: flatten a parsed statement list into a fresh store,
+/// recursively and CROSS-TYPE (A1) — every descendant node, of ANY kind, gets
+/// an id in its owning arena (a stmt's expr/type/pattern children among them),
+/// and each node's edges record those children as typed `NodeRef`s. So after
+/// ingest the four arenas together hold the whole WALKER-REACHABLE tree by id,
+/// not just the top-level statements. (Reachable = what
+/// `all_children_spanned()` traverses: the four AST enum kinds and their
 /// SExpr/SStmt wrappers. Nodes embedded in plain STRUCTS — match arms, struct-
-/// lit fields, params — are not yet ingested, because the derive walker stops at
-/// non-node-kind fields, same as `children()`; they arrive when the parser
-/// assigns ids directly, the B/id-children step.) The first reachable consumer
-/// of the store is the gated AVRA_L1_INGEST probe in parse_or_fail (main.av);
-/// later increments migrate passes to read from it instead of the SStmt
-/// pointer-tree. `source` builds the LineIndex and lifts each top-level
-/// statement's preserved (line, col) into a REAL byte-offset span (§14.2);
-/// WRAPPED nested nodes get real (zero-width) spans too, lifted from their
-/// SExpr/SStmt wrapper by `child_span` (A2). Only truly-bare children stay
-/// byte_span_none() until the parser builds the arena directly.
+/// lit fields, params — are not descended into, because the derive walker
+/// stops at non-node-kind fields, same as `children()`; their ids arrive with
+/// the B-final container work.)
+///
+/// SINCE THE B1 FLIP this is no longer on the compile path — the parser
+/// builds the canonical store natively during the parse (`Parser.store`) and
+/// `parse_or_fail` serves from it. `ingest_program` remains as the TEST
+/// ORACLE: the serve-path parity battery (parse/tests/b1_native_stmt_test.av
+/// and siblings) asserts the parser's native store serves programs
+/// indistinguishable from this walker-derived one, which is what keeps the
+/// native edge recording honest. `source` builds the LineIndex and lifts each
+/// top-level statement's preserved (line, col) into a REAL byte-offset span
+/// (§14.2); WRAPPED nested nodes get real (zero-width) spans too, lifted from
+/// their SExpr/SStmt wrapper by `child_span` (A2).
 /// Conservative top-level extent for root `k` of `stmts`: from the stmt's own
 /// (line, col) offset up to the next SOURCE-BEARING stmt's start (else
 /// `source_len`), skipping synthesised neighbours (line < 1) so they never
@@ -733,15 +737,15 @@ fn roots_to_sstmts(store: NodeStore, file: string, node_of: fn(StmtId) -> Stmt) 
     out
 }
 
-/// Compat shim (reverse direction): rebuild the top-level statement list from the
-/// arena — the inverse of `ingest_program`, so a pass migrated to read from the
-/// store can still hand the un-migrated passes an `SStmt` tree. Each root is its
+/// THE serve path: rebuild the top-level statement list from the arena — since
+/// the B1 flip, `parse_or_fail` hands every compiled program to the un-migrated
+/// passes through this fn, over the parser's native store. Each root is its
 /// stored boxed node, re-wrapped with (line, col) recomputed from the span
 /// side-table (§14.2) and `from_macro` restored from the provenance side-table
 /// (§14.3). Faithful for node structure + line/col + provenance at this migration
 /// phase (nodes still retain their boxed children, which carry their own
-/// positions); `file` is threaded in (the arena is single-source) so this stays
-/// behind `AVRA_L1_INGEST` until per-node file lands for multi-file units.
+/// positions); `file` is threaded in by the caller because per-node file has not
+/// landed for multi-file units (the arena is single-source).
 export fn program_from_store(store: NodeStore, file: string) -> List<SStmt> {
     roots_to_sstmts(store, file, (id: StmtId) -> store.stmts.get(id))
 }

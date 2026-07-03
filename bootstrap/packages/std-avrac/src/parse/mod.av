@@ -42,8 +42,9 @@ export type ProgramParseResult = {
     bag: DiagnosticBag,
     // The parser's NATIVE arena (B1): every parsed node has a row; on a
     // clean parse the top-level statements are recorded as `roots` with
-    // canonical-identical conservative spans + provenance. Dark — callers
-    // still consume `stmts`; probes and (eventually) the flip read this.
+    // conservative spans + provenance. This is the store `parse_or_fail`
+    // serves the program from (`program_from_store`) — the canonical
+    // producer on the compile path.
     store: NodeStore,
 }
 
@@ -184,12 +185,13 @@ export type Parser = {
     mut gensym_seq: int,
     mut bag: DiagnosticBag,
     features: Registry,
-    // The L1 arena the parser allocates into as it parses (B1, dark-launched:
-    // ingest_program stays the canonical producer until the flip). Productions
-    // converted to native alloc push their node here and return its typed id;
-    // unconverted callers read the boxed node back via `store.<arena>.get(id)`.
-    // Built per entry parser from this parser's source (template `${...}`
-    // sub-parsers will share the outer store once they thread it through).
+    // The L1 arena the parser allocates into as it parses (B1). This IS the
+    // canonical store: every production pushes its node here and returns its
+    // typed id, and `parse_or_fail` (main.av) serves the program from it —
+    // there is no separate ingest walk. Parents read a child's boxed node
+    // back via `store.<arena>.get(id)` to embed in their own payload. Built
+    // per entry parser from this parser's source; template `${...}`
+    // sub-parsers share the outer store.
     store: NodeStore,
 }
 
@@ -386,8 +388,8 @@ fn parse_template_expr(source: string, store: NodeStore) -> Result<ExprId, strin
 /// B1 probe: parse `source` as a single expression through the id-returning
 /// chain and surface the parser's NATIVE store + root id, so spec tests can
 /// run the faithfulness oracle (`store_expr_subtree_faithful`) over real
-/// parses. Probe surface only — production callers keep the boxed results
-/// until the flip serves from this store.
+/// parses. Probe surface only — the compile path enters through
+/// `parse_program_source`, whose store `parse_or_fail` serves directly.
 export type NativeParseProbe = { root: ExprId, store: NodeStore, had_error: int }
 
 /// See `NativeParseProbe`. On a parse error `root` is a dummy id — check
@@ -2453,31 +2455,33 @@ impl Parser {
         .Ok(out)
     }
 
-    // ── B1: native arena allocation (dark-launched) ──
+    // ── B1: native arena allocation ──
     //
-    // Converted productions push the node they just built into `self.store`
-    // and return its typed id; `edges` are the already-allocated children's
-    // refs in walker (field) order. Children arriving BOXED from a
-    // not-yet-converted producer are bridged via `self.glue_ingest_expr` —
-    // the whole boxed subtree enters the store walker-faithfully in one call
-    // (the ingest-the-gap glue; each bridge disappears when its producer
-    // converts). Nothing reads this store yet: ingest_program remains the
-    // canonical producer until the flip serves this store directly.
+    // Productions push the node they just built into `self.store` and return
+    // its typed id; `edges` are the already-allocated children's refs in
+    // walker (field) order. This store is the CANONICAL producer:
+    // `parse_or_fail` (main.av) serves the compiled program from it. The
+    // glue_ingest_* helpers below bridge the few still-boxed producers into
+    // the store walker-faithfully: type expressions (`glue_ingest_type` — the
+    // one remaining boxed producer, everywhere a TypeRef edge is recorded)
+    // and three rare-path element sites (match-table synthesized arm bodies,
+    // trait/impl signature elements).
 
     /// Allocate a parser-built `Expr` with its children's edge refs.
     fn alloc_expr(self, node: Expr, sp: ByteSpan, edges: List<NodeRef>) -> ExprId {
         self.store.exprs.add(node, NodeEdges { refs: edges }, sp)
     }
 
-    /// Bridge a BOXED expr subtree from an unconverted producer into the
-    /// store, returning its root id. Walker-driven, so the subtree's edges
-    /// and nested wrapper spans match what the canonical ingest records.
+    /// Bridge a BOXED expr subtree from a still-boxed element producer into
+    /// the store, returning its root id. Walker-driven, so the subtree's
+    /// edges match what a native alloc records (used by the match-table
+    /// synthesized arm-body site).
     fn glue_ingest_expr(self, node: Expr) -> ExprId {
         self.store.ingest_expr(node, byte_span_none())
     }
 
-    /// Bridge a BOXED pattern subtree (patterns are still boxed producers —
-    /// they convert to ids later) into the store, returning its root id.
+    /// Bridge a BOXED pattern subtree into the store, returning its root id
+    /// (used by the match-table synthesized arm-pattern site).
     fn glue_ingest_pat(self, node: Pattern) -> PatId {
         self.store.ingest_pat(node, byte_span_none())
     }
@@ -2572,18 +2576,17 @@ impl Parser {
 
 
     // ── B1 stmt-side allocation ──
-    // The statement mirror of the expr helpers above: converted stmt
-    // productions push their node into `self.store` and return its typed id;
-    // productions still returning boxed `Stmt` bridge via `glue_ingest_stmt`
-    // at their own boundary.
+    // The statement mirror of the expr helpers above: stmt productions push
+    // their node into `self.store` and return its typed id.
 
     /// Allocate a parser-built `Stmt` with its children's edge refs.
     fn alloc_stmt(self, node: Stmt, sp: ByteSpan, edges: List<NodeRef>) -> StmtId {
         self.store.stmts.add(node, NodeEdges { refs: edges }, sp)
     }
 
-    /// Bridge a BOXED stmt subtree from an unconverted producer into the
-    /// store, returning its root id (see `glue_ingest_expr`).
+    /// Bridge a BOXED stmt subtree from a still-boxed element producer into
+    /// the store, returning its root id (see `glue_ingest_expr`; used by the
+    /// trait/impl signature-element sites).
     fn glue_ingest_stmt(self, node: Stmt) -> StmtId {
         self.store.ingest_stmt(node, byte_span_none())
     }
