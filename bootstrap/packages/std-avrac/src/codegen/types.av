@@ -1136,6 +1136,23 @@ impl Ctx {
         avra_llvm_build_store(self.builder, self.cast_to(val, field_ty), slot)
     }
 
+    // ── RC-cleanup registration (the SOLE chokepoint) ──
+    // The one and only place an RcCleanupEntry and its matching
+    // DeferEntry.Release are constructed. Both are born here, together, so
+    // the cleanup list and the defer stack (LIFO-interleaved with
+    // defer/errdefer) can never drift apart. No other site may construct
+    // RcCleanupEntry or DeferEntry.Release — rcsf.1 encapsulation invariant,
+    // enforced by tests/rc_cleanup_chokepoint_test.av.
+    //
+    // Safety (the slot reads null until first stored, so scope-exit cleanup
+    // never releases stack garbage) is guaranteed UPSTREAM: every ptr-typed
+    // alloca is zero-initialized at creation by avra_llvm_build_alloca (zm77).
+    // This chokepoint is therefore about encapsulation, not the safety store.
+    fn register_rc_cleanup(self, name: string, alloca: ptr, ty: ValueType) {
+        self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
+        self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))
+    }
+
     // ── Variable binding ──
     // Allocate, store, and extend the environment in one call.
     // The most common 3-line pattern in codegen: alloca + store + env_extend.
@@ -1143,13 +1160,7 @@ impl Ctx {
         let alloca = avra_llvm_build_alloca(self.builder, self.type_for(ty), name)
         avra_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
-            // Scope-exit cleanup loads this slot unconditionally; the slot
-            // is guaranteed null until first bound because every ptr-typed
-            // alloca is zero-initialized at creation (avra_llvm_build_alloca,
-            // zm77) — otherwise cleanup would release stack garbage.
-            self.rc_cleanup = self.rc_cleanup.push(RcCleanupEntry { name, alloca, ty })
-            // Push Release onto defers for LIFO interleaving with defer/errdefer
-            self.defers = self.defers.push(DeferEntry.Release(name, alloca, ty))
+            self.register_rc_cleanup(name, alloca, ty)
         }
         env_extend(env, name, alloca, ty)
     }

@@ -1,0 +1,54 @@
+// rcsf.1: encapsulation invariant — RC-managed scope-exit cleanup is
+// registered at exactly ONE chokepoint, `Ctx.register_rc_cleanup`
+// (codegen/types.av). Both the RcCleanupEntry (cleanup list) and its matching
+// DeferEntry.Release (defer stack) are born there, together, so no future
+// emitter can push a half-registered cleanup slot — the shape that let zm77
+// exist (a cleanup entry whose alloca was never definitely initialized).
+//
+// Safety itself (the slot reads null until first stored) is guaranteed
+// UPSTREAM by the universal ptr-alloca zero-init in avra_llvm_build_alloca
+// (zm77). This test guards the ENCAPSULATION: it greps the compiler source
+// and asserts construction happens nowhere else.
+//
+// The greps are spacing-tolerant regexes (`Entry *\{`, `Release *\(`), not
+// fixed strings, so a stray site formatted `RcCleanupEntry{` / `Release (` (no
+// space) can't slip past the count.
+//
+// RcCleanupEntry is a STRUCT — no leading-dot shorthand exists for struct
+// construction, so `RcCleanupEntry *\{` matches every possible construction.
+//
+// DeferEntry.Release is an ENUM variant, and Avra allows leading-dot
+// construction (`.Release(...)`) in expression position, not just the
+// qualified `DeferEntry.Release(...)`. So the Release check matches ANY
+// `.Release(` — qualified or shorthand — and subtracts match-arm CONSUMERS,
+// which are the `.Release(...) ->` form (identified by the `->`). A future
+// second constructor in EITHER form is therefore caught; only a real match
+// arm is excluded. (CodeRabbit #605 flagged the qualified-only gap.)
+//
+// grep runs from the bootstrap dir (test CWD) and excludes test files so this
+// test's own pattern strings don't self-match.
+//
+// @@fixture-stateful@@  greps the live compiler source tree.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "rcsf.1: RC cleanup has a single registration chokepoint" {
+    given "the compiler source (excluding test files)" {
+        then "RcCleanupEntry is constructed at exactly one site" {
+            let n = avra_shell_exec("grep -rE 'RcCleanupEntry *\\{' packages/std-avrac/src --include=*.av | grep -v '/tests/' | wc -l").trim()
+            n == "1"
+        }
+        then "the sole RcCleanupEntry site is in codegen/types.av" {
+            let site = avra_shell_exec("grep -rlE 'RcCleanupEntry *\\{' packages/std-avrac/src --include=*.av | grep -v '/tests/'").trim()
+            site.contains("codegen/types.av")
+        }
+        then "a Release entry is constructed at exactly one site (qualified or leading-dot)" {
+            let n = avra_shell_exec("grep -rnE '\\.Release *\\(' packages/std-avrac/src --include=*.av | grep -v '/tests/' | grep -v -e '->' | wc -l").trim()
+            n == "1"
+        }
+        then "the sole Release construction site is in codegen/types.av" {
+            let site = avra_shell_exec("grep -rnE '\\.Release *\\(' packages/std-avrac/src --include=*.av | grep -v '/tests/' | grep -v -e '->'").trim()
+            site.contains("codegen/types.av")
+        }
+    }
+}
