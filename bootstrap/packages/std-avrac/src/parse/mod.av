@@ -1520,8 +1520,8 @@ impl Parser {
         .Ok(rid)
     }
 
-    /// Boxed-only view of an arg list, for callers that don't record edges
-    /// (annotation args, feature parsers not yet flowing ids).
+    /// Boxed-only view of an arg list, for feature parsers not yet
+    /// flowing ids (annotation args now flow ids via parse_arg_list_ids).
     fn parse_arg_list(self) -> Result<List<SExpr>, string> {
         let parsed = self.parse_arg_list_ids()?
         .Ok(parsed.wrapped)

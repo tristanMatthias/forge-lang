@@ -114,6 +114,14 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
 - **F1a (y5um.8.2)** — flip localized containers: `CompConfig`, `SelectArm`,
   `WhenArm`, `Annotation` → id fields; consumers read via store; parsers record
   real container children (retires their walker-opaque status).
+  **DONE** — nullable duals live on all four containers; the parser populates
+  every parse-path dual (parity battery `f1a_container_duals_test`,
+  mutation-verified). Two foundational fixes landed with it: arena ids are
+  1-BASED (raw 0 = the null niche — the id-0/null conflation class is
+  unrepresentable) and the id newtypes hoisted to core/ids.av. Diff-test
+  byte-identical; full suite + fixed point green. Transform-rebuilt
+  containers carry null duals until their pass migrates (the F1005 train
+  makes those nulls explicit).
 - **F1b (y5um.8.3)** — flip `FieldInit.value` → `ExprId`.
 - **F1c (y5um.8.4)** — flip `MatchArm` → `{pattern: PatId, guard: ExprId?, body: ExprId}`.
 - **F1d (y5um.8.5)** — flip `ParamEntry.vtype` → `TypeId` (the wide sweep:
