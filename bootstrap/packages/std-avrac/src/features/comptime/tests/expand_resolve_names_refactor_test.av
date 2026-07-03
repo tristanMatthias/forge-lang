@@ -7,6 +7,7 @@
 // see different AST shapes than plain compilation.
 
 use @std.avrac.core.{Stmt, SStmt, ParamEntry, TypeParamEntry, FieldEntry, ValueType, Expr, sstmt_dummy, sexpr_dummy, render_stmt}
+use @std.avrac.core.{new_node_store, build_line_index}
 use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses}
 
 fn build_program() -> List<SStmt> {
@@ -34,7 +35,7 @@ spec "qa6i: resolve_names == resolve_names_pre_expand + manual halves" {
         let program_a = build_program()
         let program_b = build_program()
         let monolithic = resolve_names(program_a)
-        let pre = resolve_names_pre_expand(program_b)
+        let pre = resolve_names_pre_expand(program_b, new_node_store(build_line_index("")))
         // Re-run rewrite_uses with the pre-expand state — this is
         // the same composition the pipeline-fix uses post-expand.
         let rewritten = rewrite_uses(pre.stmts, pre.state)

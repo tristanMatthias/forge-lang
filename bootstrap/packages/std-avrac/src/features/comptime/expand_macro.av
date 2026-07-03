@@ -42,6 +42,7 @@
 // block as the Stmt arg.
 
 use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
+use core.{NodeStore}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
@@ -979,8 +980,8 @@ fn build_resolver_ctx(handle: int) -> Value {
 /// against post-resolve stmts gives the eval the right AST in one
 /// shot; collecting against raw stmts would force a second walk to
 /// re-rewrite the plan's stmts.
-export fn resolve_and_expand_program(stmts: List<SStmt>) -> NameResolveResult {
-    let pre = resolve_names_pre_expand(stmts)
+export fn resolve_and_expand_program(stmts: List<SStmt>, store: NodeStore) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts, store)
     if pre.had_error == 1 {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }

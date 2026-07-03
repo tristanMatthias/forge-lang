@@ -20,6 +20,7 @@
 // impl would.
 
 use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct}
+use core.{NodeStore}
 
 // ── Public entry ──
 
@@ -30,7 +31,7 @@ use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr_dummy, FieldEntry, FieldI
 /// Fast-path: when no `@marshal` annotation is present, returns
 /// the input unchanged (matches the expand_macros zero-cost
 /// pattern).
-export fn derive_marshal(stmts: List<SStmt>) -> List<SStmt> {
+export fn derive_marshal(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     if !any_marshal_annotation(stmts) { return stmts }
     walk(stmts)
 }

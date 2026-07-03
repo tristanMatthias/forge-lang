@@ -2,6 +2,7 @@
 // evaluator lives in features/eval/mod.av.
 
 use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
+use core.{NodeStore}
 use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
@@ -326,7 +327,7 @@ export fn execute_program_source(source: string) -> EvalResult {
             error_message: parsed.error_message,
         }
     }
-    execute_program_stmts(parsed.stmts!)
+    execute_program_stmts(parsed.stmts!, parsed.store)
 }
 
 /// Same as `execute_program_source` but takes pre-parsed
@@ -334,7 +335,7 @@ export fn execute_program_source(source: string) -> EvalResult {
 /// upstream (cmd_run via parse_or_fail) avoid a second parse
 /// and still surface F-coded parse errors through the unified
 /// rendering pipeline.
-export fn execute_program_stmts(stmts: List<SStmt>) -> EvalResult {
+export fn execute_program_stmts(stmts: List<SStmt>, store: NodeStore) -> EvalResult {
     finish_result(execute_stmt_list(runtime_new(), stmts))
 }
 

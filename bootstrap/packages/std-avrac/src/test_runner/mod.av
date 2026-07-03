@@ -25,7 +25,8 @@ use features.modules.{
     resolve_module_files, modules_dirname, find_packages_dir,
     dedup_modules,
 }
-use parse.{parse_program_source_at}
+use parse.{parse_program_source_at, parse_program_source_shared}
+use core.{NodeStore}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
 use build.{llvm_prefix_dir}
@@ -293,15 +294,15 @@ type AssembledFile = {
 /// sibling `use` imports. Cost: @std/* packages re-parsed per file;
 /// `dedup_modules` collapses the duplicate package wrappers by name
 /// at the program-root level.
-fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
+fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFile, string> {
     let content = avra_selfhost_read_file(path)
-    let parsed = parse_program_source_at(content, path)
+    let parsed = parse_program_source_shared(content, path, store)
     if parsed.had_error || parsed.stmts == null {
         if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
         return Result.Err("error parsing ${path}")
     }
     let empty_loaded: List<string> = []
-    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded, parsed.store)
+    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded, store)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
@@ -321,25 +322,25 @@ fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
 /// a (broken) test program; the missing reporter fns surface as
 /// "undefined name" diagnostics in the codegen pass, which is the
 /// signal we want when something is wrong with the install.
-fn load_reporter_stmts(project_dir: string) -> List<SStmt> {
-    load_support_stmts(test_reporter_path(project_dir))
+fn load_reporter_stmts(project_dir: string, store: NodeStore) -> List<SStmt> {
+    load_support_stmts(test_reporter_path(project_dir), store)
 }
 
 /// The in-process parallel runner, inlined right after the
 /// reporter so the synthesized main's `run_test_suite` resolves.
-fn load_runner_stmts(project_dir: string) -> List<SStmt> {
-    load_support_stmts(test_runner_path(project_dir))
+fn load_runner_stmts(project_dir: string, store: NodeStore) -> List<SStmt> {
+    load_support_stmts(test_runner_path(project_dir), store)
 }
 
 /// Load + parse one inlined support file (reporter, runner). An
 /// empty list on missing/parse-failure keeps the caller producing a
 /// (broken) program whose missing names surface as resolve
 /// diagnostics — the right signal for a damaged install.
-fn load_support_stmts(path: string) -> List<SStmt> {
+fn load_support_stmts(path: string, store: NodeStore) -> List<SStmt> {
     let empty: List<SStmt> = []
     if avra_selfhost_file_exists(path) == 0 { return empty }
     let rsrc = avra_selfhost_read_file(path)
-    let rparsed = parse_program_source_at(rsrc, path)
+    let rparsed = parse_program_source_shared(rsrc, path, store)
     if rparsed.had_error || rparsed.stmts == null { return empty }
     rparsed.stmts!
 }
@@ -395,7 +396,7 @@ fn unit_init_externs(mod_names: List<string>) -> List<RuntimeExtern> {
 /// Returned program layout (top-to-bottom): runtime externs,
 /// reporter fns, deduped @std/* packages, per-file test modules,
 /// synthesised `fn main`.
-export fn assemble_test_program(test_paths: List<string>, project_dir: string) -> Result<List<SStmt>, string> {
+export fn assemble_test_program(test_paths: List<string>, project_dir: string, store: NodeStore) -> Result<List<SStmt>, string> {
     if test_paths.length == 0 { return Result.Err("no spec test files found") }
 
     // hkms.1.1 perf pass: iterate test_paths in REVERSE and push so
@@ -414,7 +415,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
     mut mod_names: List<string> = []
     mut i = test_paths.length - 1
     while i >= 0 {
-        let a = assemble_one_test_file(test_paths[i])?
+        let a = assemble_one_test_file(test_paths[i], store)?
         for p in a.packages { packages.push(p) }
         // Every test module is deferred — codegen synthesizes
         // __init_<mod> without the top-level auto-call; the runner
@@ -426,8 +427,8 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string) -
         i = i - 1
     }
 
-    let body = list_concat(load_reporter_stmts(project_dir),
-               list_concat(load_runner_stmts(project_dir),
+    let body = list_concat(load_reporter_stmts(project_dir, store),
+               list_concat(load_runner_stmts(project_dir, store),
                list_concat(dedup_modules(packages), modules)))
     let with_unit_externs = prepend_externs(prepend_test_externs(body), unit_init_externs(mod_names))
     let program = list_concat([synth_test_main(mod_names)], with_unit_externs)

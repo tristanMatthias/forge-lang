@@ -48,6 +48,7 @@
 //                                  type checking
 
 use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
+use core.{NodeStore}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
@@ -984,7 +985,7 @@ export type PreExpandResolve = {
 /// scope-validation runs over the call sites that reference it.
 /// Splitting the two halves lets `cli/main.av` interleave
 /// `expand_macros` between them.
-export fn resolve_names_pre_expand(stmts: List<SStmt>) -> PreExpandResolve {
+export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreExpandResolve {
     let state = register_decls(stmts)
     let rewritten = rewrite_uses(stmts, state)
     let has_errors = bag_has_errors(state.bag)
@@ -1028,8 +1029,8 @@ export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState)
 /// imports. Composed from `resolve_names_pre_expand` and
 /// `validate_scopes_after_expand`; pipelines that interleave
 /// `expand_macros` call the halves directly.
-export fn resolve_names(stmts: List<SStmt>) -> NameResolveResult {
-    let pre = resolve_names_pre_expand(stmts)
+export fn resolve_names(stmts: List<SStmt>, store: NodeStore) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(stmts, store)
     validate_scopes_after_expand(pre.stmts, pre.state)
 }
 
