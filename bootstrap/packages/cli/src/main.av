@@ -106,7 +106,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.features.comptime.{run_comptime, resolve_and_expand_program}
-use @std.avrac.features.quote_expr.{lower_quotes, lower_quotes_via_store}
+use @std.avrac.features.quote_expr.{lower_quotes_via_store}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
 use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
@@ -3830,7 +3830,7 @@ fn main() {
             let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(check_path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             // Inject intrinsics AFTER module resolution so stdlib's
             // Result is visible to program_declares_enum — avoids
@@ -3862,9 +3862,10 @@ fn main() {
             // Parse and check the file, then apply high-confidence fixes.
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
             let ctx = render_ctx(false, source, path)
-            let parsed_stmts = parse_or_fail(source, ctx).stmts
+            let parsed_prog = parse_or_fail(source, ctx)
+            let parsed_stmts = parsed_prog.stmts
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             let named = resolve_names(mod_resolved.stmts)
             render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
@@ -3895,7 +3896,7 @@ fn main() {
             let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, ctx)
@@ -3914,7 +3915,7 @@ fn main() {
             let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
             let expanded = expand_components_or_fail(with_intrinsics, ctx)
@@ -4108,7 +4109,7 @@ fn main() {
             let parent_dir = modules_dirname(cpath_dir_stripped)
             let is_package_src = avra_selfhost_file_exists("${parent_dir}avra.toml") != 0
             let body_with_siblings = if is_package_src {
-                let dir_load = resolve_dir_module_body(cpath_dir, [cpath])
+                let dir_load = resolve_dir_module_body(cpath_dir, [cpath], parsed_prog.store)
                 if dir_load.had_error {
                     parsed_stmts
                 } else {
@@ -4127,23 +4128,20 @@ fn main() {
         // bodies are captured as string-typed AST literals (not seen by
         // resolve as undefined references).
         //
-        // The arena presence scan is valid only when `pre_desugar_stmts` IS the
-        // parse output the store was ingested from. With --module_path the body
-        // may have absorbed sibling files parsed elsewhere (not in the store),
-        // so that path keeps the boxed scan — a store scan there would miss
-        // quotes in siblings.
-        let post_quote_stmts = if module_path == "" {
-            lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
-        } else {
-            lower_quotes(pre_desugar_stmts)
-        }
+        // The arena presence scan covers the whole merged body: sibling
+        // files absorbed under --module_path are parsed via
+        // `parse_program_source_shared` into THIS entry's store (the
+        // single-store invariant), so the flat store scan sees their
+        // quotes too — the boxed fallback the pre-F0 pipeline needed
+        // here is gone.
+        let post_quote_stmts = lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
         let desugared = desugar_program(post_quote_stmts)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
         let entry_dir = modules_dirname(cpath)
-        let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+        let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
         let t_resolve_mods = avra_uptime_ms()
         fail_on_module_resolve_error(mod_resolved, ctx)
         if stop_after_matches(stop_after, "resolve") { return }

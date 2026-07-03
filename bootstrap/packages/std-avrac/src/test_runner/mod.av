@@ -301,7 +301,7 @@ fn assemble_one_test_file(path: string) -> Result<AssembledFile, string> {
         return Result.Err("error parsing ${path}")
     }
     let empty_loaded: List<string> = []
-    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded)
+    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded, parsed.store)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
