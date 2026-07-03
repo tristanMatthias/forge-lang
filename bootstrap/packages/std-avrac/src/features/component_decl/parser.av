@@ -7,8 +7,8 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, SExpr, sexpr_dummy, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
-use parse.{Parser}
+use core.{Stmt, Expr, SExpr, sexpr_dummy, SStmt, sstmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, StmtId, ExprId, byte_span_none}
+use parse.{Parser, StmtListIds}
 use core.{Tk}
 use core.{register_component_name}
 
@@ -30,7 +30,9 @@ impl Parser {
         let config = self.parse_comp_config_pairs()?
         let body = self.parse_comp_block_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
-        .Ok(self.glue_ingest_stmt(Stmt.ComponentBlock(name, instance, config, body)))
+        // Walker order: one StmtRef per body stmt (config pairs are
+        // walker-opaque — CompConfigPair is unregistered, no edges).
+        .Ok(self.alloc_stmt(Stmt.ComponentBlock(name, instance, config, body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
     }
 
     // `component name { ... }` — always a definition (no parens)
@@ -50,7 +52,7 @@ impl Parser {
 
         // Definition: `component name {` ...
         if self.check(Tk.LeftBrace) {
-            return .Ok(self.glue_ingest_stmt(self.parse_component_def(name, implements)?))
+            return self.parse_component_def(name, implements)
         }
 
         // Legacy: `component name(params) {` — still supported for backward compat
@@ -69,7 +71,9 @@ impl Parser {
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return .Err("parse error") }
             register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
-            return .Ok(self.glue_ingest_stmt(Stmt.ComponentDef(name, params, config, [], implements, body)))
+            // Walker order: one StmtRef per body stmt (params/config are
+            // walker-opaque — unregistered structs, no edges).
+            return .Ok(self.alloc_stmt(Stmt.ComponentDef(name, params, config, [], implements, body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
         }
 
         // Legacy: `component comp instance {` — block with keyword prefix.
@@ -93,7 +97,7 @@ impl Parser {
             let config = self.parse_comp_config_pairs()?
             let body = self.parse_comp_block_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
-            return .Ok(self.glue_ingest_stmt(Stmt.ComponentBlock(name, instance, config, body)))
+            return .Ok(self.alloc_stmt(Stmt.ComponentBlock(name, instance, config, body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
         }
 
         self.set_error("expected `{` after component name")
@@ -126,7 +130,7 @@ impl Parser {
 
     // ── Component Definition ──
 
-    fn parse_component_def(self, name: string, implements: List<string>) -> Result<Stmt, string> {
+    fn parse_component_def(self, name: string, implements: List<string>) -> Result<StmtId, string> {
         // `component name {` — no parens, self.name is implicit.
         // `implements` was consumed by the caller (parse_component_decl)
         // so by the time we land here the next token is the opening `{`.
@@ -169,7 +173,9 @@ impl Parser {
         // Register this component name for keyword-free instantiation
         register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
         let empty_p: List<ParamEntry> = []
-        .Ok(Stmt.ComponentDef(name, empty_p, config, children, implements, body))
+        // Walker order: one StmtRef per body stmt (config/children are
+        // walker-opaque — unregistered structs, no edges).
+        .Ok(self.alloc_stmt(Stmt.ComponentDef(name, empty_p, config, children, implements, body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
     }
 
     // ── Children Schema (definition) — vez6.7 ──
@@ -226,8 +232,9 @@ impl Parser {
 
     // ── Definition Body ──
 
-    fn parse_comp_def_body(self) -> Result<List<SStmt>, string> {
+    fn parse_comp_def_body(self) -> Result<StmtListIds, string> {
         mut out: List<SStmt> = []
+        mut ids: List<StmtId> = []
         while !self.check(Tk.RightBrace) {
             let line = self.current_line
             let col = self.current_column
@@ -237,12 +244,13 @@ impl Parser {
                 self.advance()
                 let event_name = self.consume_identifier("expected event name after `on`")?
                 if !self.consume(Tk.LeftBrace, "expected `{` after event name") { return .Err("parse error") }
-                let body = self.parse_statement_list(true)?
+                let body = self.parse_statement_list_ids(true)?
                 if !self.consume(Tk.RightBrace, "expected `}` after event body") { return .Err("parse error") }
                 let empty_tp: List<TypeParamEntry> = []
                 let empty_p: List<ParamEntry> = []
-                let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body)
+                let stmt = Stmt.Function("__on_${event_name}", empty_tp, empty_p, ValueType.Void, body.wrapped)
                 out.push(sstmt(stmt, line, col))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Void, body.ids)))
                 continue
             }
 
@@ -258,8 +266,10 @@ impl Parser {
                 } else { [] }
                 let empty_tp: List<TypeParamEntry> = []
                 let empty_body: List<SStmt> = []
+                let empty_ids: List<StmtId> = []
                 let stmt = Stmt.Function("__event_${ev_name}", empty_tp, ev_params, ValueType.Void, empty_body)
                 out.push(sstmt(stmt, line, col))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Void, empty_ids)))
                 continue
             }
 
@@ -270,21 +280,36 @@ impl Parser {
                 if !self.consume(Tk.Colon, "expected `:` after field name") { return .Err("parse error") }
                 let te = self.parse_type_expr("expected field type")?
                 let vt = type_expr_to_vtype(te)
-                let init = if self.check(Tk.Equal) {
+                mut init = Expr.None
+                mut init_id = ExprId(0)
+                if self.check(Tk.Equal) {
                     self.advance()
-                    let v = self.parse_expression_boxed()?
-                    v
-                } else { Expr.None }
+                    init_id = self.parse_expression()?
+                    init = self.expr_of(init_id)
+                } else {
+                    init_id = self.alloc_leaf(Expr.None)
+                }
                 let stmt = Stmt.Let(field_name, vt, init)
                 out.push(sstmt(stmt, line, col))
+                ids.push(self.alloc_binding_stmt(stmt, vt, init_id))
                 continue
             }
 
             // Regular statement (fn declarations, etc.)
-            let stmt = self.stmt_of(self.parse_declaration()?)
-            out.push(sstmt(stmt, line, col))
+            let sid = self.parse_declaration()?
+            out.push(sstmt(self.stmt_of(sid), line, col))
+            ids.push(sid)
         }
-        .Ok(out)
+        .Ok(StmtListIds { wrapped: out, ids: ids })
+    }
+
+    /// Edge refs of a synthesized component `fn` row — walker order: the
+    /// bare return-type field's TypeRef (always `Void` here), then one
+    /// StmtRef per body statement (params are walker-opaque).
+    fn fn_edges(self, ret_vtype: ValueType, body_ids: List<StmtId>) -> List<NodeRef> {
+        mut edges: List<NodeRef> = [NodeRef.TypeRef(self.glue_ingest_type(ret_vtype))]
+        for sid in body_ids { edges.push(NodeRef.StmtRef(sid)) }
+        edges
     }
 
     // ── Component Block Body ──
@@ -440,8 +465,9 @@ impl Parser {
     }
 
     // Parse block body: nested blocks + on handlers + fn decls + statements
-    fn parse_comp_block_body(self) -> Result<List<SStmt>, string> {
+    fn parse_comp_block_body(self) -> Result<StmtListIds, string> {
         mut out: List<SStmt> = []
+        mut ids: List<StmtId> = []
         while !self.check(Tk.RightBrace) {
             let line = self.current_line
             let col = self.current_column
@@ -457,18 +483,20 @@ impl Parser {
                     p
                 } else { [] }
                 if !self.consume(Tk.LeftBrace, "expected `{` after event handler") { return .Err("parse error") }
-                let body = self.parse_statement_list(true)?
+                let body = self.parse_statement_list_ids(true)?
                 if !self.consume(Tk.RightBrace, "expected `}` after event body") { return .Err("parse error") }
                 let empty_tp: List<TypeParamEntry> = []
-                let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body)
+                let stmt = Stmt.Function("__on_${event_name}", empty_tp, ev_params, ValueType.Void, body.wrapped)
                 out.push(sstmt(stmt, line, col))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Void, body.ids)))
                 continue
             }
 
             // `component ...` keyword for nested blocks
             if self.check(Tk.KwComponent) {
-                let stmt = self.stmt_of(self.parse_component_decl()?)
-                out.push(sstmt(stmt, line, col))
+                let sid = self.parse_component_decl()?
+                out.push(sstmt(self.stmt_of(sid), line, col))
+                ids.push(sid)
                 continue
             }
 
@@ -481,8 +509,9 @@ impl Parser {
                 let nested_config = self.parse_comp_config_pairs()?
                 let nested_body = self.parse_comp_block_body()?
                 if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
-                let stmt = Stmt.ComponentBlock(comp_name, inst_name, nested_config, nested_body)
+                let stmt = Stmt.ComponentBlock(comp_name, inst_name, nested_config, nested_body.wrapped)
                 out.push(sstmt(stmt, line, col))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.edges_of_stmt_ids(nested_body.ids)))
                 continue
             }
 
@@ -493,15 +522,17 @@ impl Parser {
                 let nested_config = self.parse_comp_config_pairs()?
                 let nested_body = self.parse_comp_block_body()?
                 if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
-                let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body)
+                let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body.wrapped)
                 out.push(sstmt(stmt, line, col))
+                ids.push(self.alloc_stmt(stmt, byte_span_none(), self.edges_of_stmt_ids(nested_body.ids)))
                 continue
             }
 
             // fn declarations and other statements
-            let stmt = self.stmt_of(self.parse_declaration()?)
-            out.push(sstmt(stmt, line, col))
+            let sid = self.parse_declaration()?
+            out.push(sstmt(self.stmt_of(sid), line, col))
+            ids.push(sid)
         }
-        .Ok(out)
+        .Ok(StmtListIds { wrapped: out, ids: ids })
     }
 }

@@ -3,10 +3,10 @@
 // semantics — absent = unbounded, 0 = rendezvous, N > 0 = bounded.
 
 use parse.{Parser}
-use core.{Expr, Tk, type_expr_to_vtype}
+use core.{Expr, Tk, type_expr_to_vtype, NodeRef, byte_span_none}
 
 impl Parser {
-    fn parse_channel_expression(self) -> Result<Expr, string> {
+    fn parse_channel_expression(self) -> Result<ExprId, string> {
         self.advance()  // consume `channel`
         if !self.consume(Tk.Less, "expected `<` after `channel` — write `channel<T>()` or `channel<T>(cap)`") {
             return .Err("parse error")
@@ -21,12 +21,15 @@ impl Parser {
         }
         if self.check(Tk.RightParen) {
             self.advance()
-            return .Ok(Expr.ChannelNew(elem, null))
+            // Walker order: the bare element-type field contributes a
+            // TypeRef; an absent capacity contributes nothing.
+            return .Ok(self.alloc_expr(Expr.ChannelNew(elem, null), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(elem))]))
         }
-        let cap = self.parse_expression_boxed()?
+        let cap_id = self.parse_expression()?
         if !self.consume(Tk.RightParen, "expected `)` after channel capacity") {
             return .Err("parse error")
         }
-        .Ok(Expr.ChannelNew(elem, cap))
+        // Walker order: the element type's TypeRef, then the capacity ExprRef.
+        .Ok(self.alloc_expr(Expr.ChannelNew(elem, self.expr_of(cap_id)), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(elem)), NodeRef.ExprRef(cap_id)]))
     }
 }

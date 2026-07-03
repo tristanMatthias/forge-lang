@@ -5,7 +5,7 @@
 // with `let (a, b) = <tmp>` — reusing the existing ForIn + LetDestructure
 // machinery rather than introducing a parallel AST node.
 
-use core.{Stmt, Expr, SStmt, sstmt}
+use core.{Stmt, Expr, SStmt, sstmt, NodeRef, byte_span_none}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
@@ -21,7 +21,7 @@ impl Parser {
 
         // Tuple-destructure binding: `for (a, b) in coll { body }`.
         if self.check(Tk.LeftParen) {
-            return .Ok(self.glue_ingest_stmt(self.parse_for_destructure()?))
+            return self.parse_for_destructure()
         }
 
         let name = self.consume_identifier("expected variable name after `for`")?
@@ -32,25 +32,28 @@ impl Parser {
 
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let expr_opt = self.parse_expression_boxed()
+        let expr_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        let expr = expr_opt?
+        let expr_id = expr_opt?
+        let expr = self.expr_of(expr_id)
 
         // Range form: `for x in start..end { body }`
         if self.check(Tk.DotDot) {
             self.advance()
             let saved2 = self.allow_struct_lit
             self.allow_struct_lit = false
-            let end_opt = self.parse_expression_boxed()
+            let end_opt = self.parse_expression()
             self.allow_struct_lit = saved2
-            let end = end_opt?
+            let end_id = end_opt?
+            let end = self.expr_of(end_id)
 
             if !self.check(Tk.LeftBrace) {
                 self.report(DiagCode.ExpectedBlock, "expected `{` after for range")
                 return .Err("parse error")
             }
-            let body = self.stmt_of(self.parse_statement()?)
-            return .Ok(self.glue_ingest_stmt(Stmt.For(name, expr, end, body)))
+            let body_id = self.parse_statement()?
+            // Walker order: start, end (ExprRefs), then the body stmt.
+            return .Ok(self.alloc_stmt(Stmt.For(name, expr, end, self.stmt_of(body_id)), byte_span_none(), [NodeRef.ExprRef(expr_id), NodeRef.ExprRef(end_id), NodeRef.StmtRef(body_id)]))
         }
 
         // Collection form: `for x in list { body }`
@@ -58,8 +61,9 @@ impl Parser {
             self.report(DiagCode.ExpectedBlock, "expected `{` or `..` after for expression")
             return .Err("parse error")
         }
-        let body = self.stmt_of(self.parse_statement()?)
-        .Ok(self.glue_ingest_stmt(Stmt.ForIn(name, expr, body)))
+        let body_id = self.parse_statement()?
+        // Walker order: the collection ExprRef, then the body stmt.
+        .Ok(self.alloc_stmt(Stmt.ForIn(name, expr, self.stmt_of(body_id)), byte_span_none(), [NodeRef.ExprRef(expr_id), NodeRef.StmtRef(body_id)]))
     }
 
     /// Parse `for (a, b, …) in collection { body }`. The opening `(`
@@ -80,7 +84,7 @@ impl Parser {
     /// This reuses the for-in iterator codegen and the tuple
     /// destructuring path verbatim — no new AST node, codegen, or
     /// type-check rule is required.
-    fn parse_for_destructure(self) -> Result<Stmt, string> {
+    fn parse_for_destructure(self) -> Result<StmtId, string> {
         let tline = self.current_line
         let tcol = self.current_column
         let gid = avra_gensym()
@@ -92,19 +96,29 @@ impl Parser {
 
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let expr_opt = self.parse_expression_boxed()
+        let expr_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        let coll = expr_opt?
+        let coll_id = expr_opt?
+        let coll = self.expr_of(coll_id)
 
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after for-in expression")
             return .Err("parse error")
         }
-        let body = self.stmt_of(self.parse_statement()?)
+        let body_id = self.parse_statement()?
+        let body = self.stmt_of(body_id)
 
         let tmp = "__forpair_${gid}"
         let unpack = Stmt.LetDestructure(names, Expr.Ident(tmp))
+        // Synthetic rows: the unpack's initializer leaf, the unpack row
+        // ([ExprRef initializer] — LetDestructure walker order), then the
+        // two-element Block (the parsed body nests whole as one element,
+        // exactly as the boxed desugar wraps it — no splice).
+        let tmp_ident_id = self.alloc_leaf(Expr.Ident(tmp))
+        let unpack_id = self.alloc_stmt_expr1(unpack, tmp_ident_id)
         let wrapped: List<SStmt> = [sstmt(unpack, tline, tcol), sstmt(body, tline, tcol)]
-        .Ok(Stmt.ForIn(tmp, coll, Stmt.Block(wrapped)))
+        let block_id = self.alloc_stmt(Stmt.Block(wrapped), byte_span_none(), [NodeRef.StmtRef(unpack_id), NodeRef.StmtRef(body_id)])
+        // Walker order: the collection ExprRef, then the body stmt.
+        .Ok(self.alloc_stmt(Stmt.ForIn(tmp, coll, self.stmt_of(block_id)), byte_span_none(), [NodeRef.ExprRef(coll_id), NodeRef.StmtRef(block_id)]))
     }
 }

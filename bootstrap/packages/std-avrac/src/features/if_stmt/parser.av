@@ -5,7 +5,7 @@
 // binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
 // no codegen.
 
-use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, expr_ne_none, NodeRef, byte_span_none}
+use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use list_ops.{list_concat}
 use parse.{Parser}
 use diagnostics.{DiagCode}
@@ -15,16 +15,15 @@ use core.{Tk}
 // The shared `if let <binding> = <subject>` prefix, in both positions:
 // mint the once-evaluated temp, consume the binding and `=`, parse the
 // subject with struct-literals disabled, and require the `{` that starts
-// the then-block.
-type IfLetHeader = { tmp: string, binding: string, subject: Expr }
+// the then-block. `subject_id` is the arena row backing `subject`.
+type IfLetHeader = { tmp: string, binding: string, subject: Expr, subject_id: ExprId }
 
 impl Parser {
 
     fn parse_if_statement(self) -> Result<StmtId, string> {
         self.advance()
         // Bind-fresh `if let v = x { … }`: `let` right after `if`.
-        // The desugared block is a boxed producer — glue at its boundary.
-        if self.check(Tk.KwLet) { return .Ok(self.glue_ingest_stmt(self.parse_if_let_statement()?)) }
+        if self.check(Tk.KwLet) { return self.parse_if_let_statement() }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let condition_opt = self.parse_expression()
@@ -63,37 +62,57 @@ impl Parser {
         if !self.consume(Tk.Equal, "expected `=` after the `if let` binding") { return .Err("parse error") }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let subject_opt = self.parse_expression_boxed()
+        let subject_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        let subject = subject_opt?
+        let subject_id = subject_opt?
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after the `if let` binding")
             return .Err("parse error")
         }
-        .Ok(IfLetHeader { tmp: tmp, binding: binding, subject: subject })
+        .Ok(IfLetHeader { tmp: tmp, binding: binding, subject: self.expr_of(subject_id), subject_id: subject_id })
     }
 
-    fn parse_if_let_statement(self) -> Result<Stmt, string> {
+    fn parse_if_let_statement(self) -> Result<StmtId, string> {
         let h = self.parse_if_let_header()?
-        let then_branch = self.stmt_of(self.parse_statement()?)
+        let then_id = self.parse_statement()?
+        let then_branch = self.stmt_of(then_id)
         mut else_branch: Stmt? = none
+        mut has_else = false
+        mut else_id = StmtId(0)
         if self.check(Tk.KwElse) {
             self.advance()
-            else_branch = self.stmt_of(self.parse_statement()?)
+            else_id = self.parse_statement()?
+            else_branch = self.stmt_of(else_id)
+            has_else = true
         }
         let bind_stmt = self.iflet_bind_stmt(h.tmp, h.binding)
-        // Prepend the unwrap-bind to the then-block.
+        let bind_id = self.iflet_bind_row(h.tmp, h.binding)
+        // Prepend the unwrap-bind to the then-block. The new Block row's
+        // edges lead with the bind row; a parsed then-Block's recorded
+        // children are reused verbatim (never re-walked).
+        mut then_edges: List<NodeRef> = [NodeRef.StmtRef(bind_id)]
         let new_then = match then_branch {
-            .Block(body) -> Stmt.Block(self.iflet_prepend(bind_stmt, body))
+            .Block(body) -> {
+                for r in self.store.stmts.children_of(then_id) { then_edges.push(r) }
+                Stmt.Block(self.iflet_prepend(bind_stmt, body))
+            }
             _ -> {
+                then_edges.push(NodeRef.StmtRef(then_id))
                 let one: List<SStmt> = [bind_stmt, sstmt_dummy(then_branch)]
                 Stmt.Block(one)
             }
         }
+        let new_then_id = self.alloc_stmt(new_then, byte_span_none(), then_edges)
         let cond = expr_ne_none(Expr.Ident(h.tmp))
+        let cond_id = self.iflet_cond_row(h.tmp)
         let inner_if = Stmt.If(cond, new_then, else_branch)
-        let outer: List<SStmt> = [sstmt_dummy(Stmt.Let(h.tmp, ValueType.Unknown, h.subject)), sstmt_dummy(inner_if)]
-        .Ok(Stmt.Block(outer))
+        mut if_edges: List<NodeRef> = [NodeRef.ExprRef(cond_id), NodeRef.StmtRef(new_then_id)]
+        if has_else { if_edges.push(NodeRef.StmtRef(else_id)) }
+        let inner_if_id = self.alloc_stmt(inner_if, byte_span_none(), if_edges)
+        let outer_let = Stmt.Let(h.tmp, ValueType.Unknown, h.subject)
+        let outer_let_id = self.alloc_binding_stmt(outer_let, ValueType.Unknown, h.subject_id)
+        let outer: List<SStmt> = [sstmt_dummy(outer_let), sstmt_dummy(inner_if)]
+        .Ok(self.alloc_stmt(Stmt.Block(outer), byte_span_none(), [NodeRef.StmtRef(outer_let_id), NodeRef.StmtRef(inner_if_id)]))
     }
 
     // Expression-position `if let v = x { THEN } else { ELSE }`. Same
@@ -101,34 +120,55 @@ impl Parser {
     // EXPRESSION whose value is the inner `if`-expression:
     //   { let __t = x;  if __t != none { let v = __t!;  THEN } else { ELSE } }
     // `if` already consumed by `parse_if_expression`; `let` is current.
-    fn parse_if_let_expression(self) -> Result<Expr, string> {
+    fn parse_if_let_expression(self) -> Result<ExprId, string> {
         let h = self.parse_if_let_header()?
-        let then_expr = self.expr_of(self.parse_block_expression()?)
+        let then_id = self.parse_block_expression()?
+        let then_expr = self.expr_of(then_id)
         // Else mirrors `parse_if_expression`: block / `else if` / bare expr;
-        // a missing else yields the same `0` default a plain if-expr uses.
+        // a missing else yields the same `0` default a plain if-expr uses
+        // (a real child row, exactly as the canonical ingest records it).
         mut else_expr = Expr.Number("0")
+        mut else_id = ExprId(0)
+        mut has_else = false
         if self.check(Tk.KwElse) {
             self.advance()
             if self.check(Tk.KwIf) {
-                else_expr = self.expr_of(self.parse_if_expression()?)
+                else_id = self.parse_if_expression()?
             } else if self.check(Tk.LeftBrace) {
-                else_expr = self.expr_of(self.parse_block_expression()?)
+                else_id = self.parse_block_expression()?
             } else {
-                else_expr = self.parse_expression_boxed()?
+                else_id = self.parse_expression()?
             }
+            else_expr = self.expr_of(else_id)
+            has_else = true
         }
+        if !has_else { else_id = self.alloc_leaf(Expr.Number("0")) }
         let bind_stmt = self.iflet_bind_stmt(h.tmp, h.binding)
+        let bind_id = self.iflet_bind_row(h.tmp, h.binding)
+        // Prepend the unwrap-bind to the then-block (see the statement form:
+        // a parsed then-Block's recorded children are reused verbatim).
+        mut then_edges: List<NodeRef> = [NodeRef.StmtRef(bind_id)]
         let new_then = match then_expr {
-            .Block(body) -> Expr.Block(self.iflet_prepend(bind_stmt, body))
+            .Block(body) -> {
+                for r in self.store.exprs.children_of(then_id) { then_edges.push(r) }
+                Expr.Block(self.iflet_prepend(bind_stmt, body))
+            }
             _ -> {
+                then_edges.push(NodeRef.StmtRef(self.alloc_stmt_expr1(Stmt.Expr(then_expr), then_id)))
                 let one: List<SStmt> = [bind_stmt, sstmt_dummy(Stmt.Expr(then_expr))]
                 Expr.Block(one)
             }
         }
+        let new_then_id = self.alloc_expr(new_then, byte_span_none(), then_edges)
         let cond = expr_ne_none(Expr.Ident(h.tmp))
+        let cond_id = self.iflet_cond_row(h.tmp)
         let inner_if = Expr.IfExpr(cond, new_then, else_expr)
-        let outer: List<SStmt> = [sstmt_dummy(Stmt.Let(h.tmp, ValueType.Unknown, h.subject)), sstmt_dummy(Stmt.Expr(inner_if))]
-        .Ok(Expr.Block(outer))
+        let inner_if_id = self.alloc3(inner_if, cond_id, new_then_id, else_id)
+        let outer_let = Stmt.Let(h.tmp, ValueType.Unknown, h.subject)
+        let outer_let_id = self.alloc_binding_stmt(outer_let, ValueType.Unknown, h.subject_id)
+        let inner_if_stmt_id = self.alloc_stmt_expr1(Stmt.Expr(inner_if), inner_if_id)
+        let outer: List<SStmt> = [sstmt_dummy(outer_let), sstmt_dummy(Stmt.Expr(inner_if))]
+        .Ok(self.alloc_expr(Expr.Block(outer), byte_span_none(), [NodeRef.StmtRef(outer_let_id), NodeRef.StmtRef(inner_if_stmt_id)]))
     }
 
     // The `let <binding> = __tmp!` statement shared by both if-let desugars:
@@ -136,6 +176,20 @@ impl Parser {
     fn iflet_bind_stmt(self, tmp: string, binding: string) -> SStmt {
         let unwrap = expr_force_unwrap(Expr.Ident(tmp))
         sstmt_dummy(Stmt.Let(binding, ValueType.Unknown, unwrap))
+    }
+
+    // Row twin of `iflet_bind_stmt`: the unwrap-call subtree (subject leaf,
+    // then a fresh callee leaf, edges [callee, subject] — Call walker order)
+    // under a Let row ([TypeRef, ExprRef] — binding walker order).
+    fn iflet_bind_row(self, tmp: string, binding: string) -> StmtId {
+        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
+        let unwrap_id = self.alloc_force_unwrap_row(tmp)
+        self.alloc_binding_stmt(Stmt.Let(binding, ValueType.Unknown, unwrap), ValueType.Unknown, unwrap_id)
+    }
+
+    // Row twin of the `__tmp != none` condition.
+    fn iflet_cond_row(self, tmp: string) -> ExprId {
+        self.alloc_none_check_row(tmp, expr_ne_none(Expr.Ident(tmp)))
     }
 
     // Prepend the unwrap-bind to a then-block's statement list.
@@ -147,10 +201,8 @@ impl Parser {
     fn parse_if_expression(self) -> Result<ExprId, string> {
         self.advance()
         // Bind-fresh `if let v = x { … } else { … }` in expression position.
-        // The desugared block carries statements — glue bridge at its boundary.
         if self.check(Tk.KwLet) {
-            let iflet = self.parse_if_let_expression()?
-            return .Ok(self.glue_ingest_expr(iflet))
+            return self.parse_if_let_expression()
         }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false

@@ -1,8 +1,8 @@
 // WHY: parses map literal expressions `{ "key": value, ... }`.
 // is_map_literal does lookahead to disambiguate map literals from blocks.
 
-use core.{Expr, SExpr, sexpr}
-use parse.{Parser}
+use core.{Expr, SExpr, sexpr, ExprId, byte_span_none}
+use parse.{Parser, ArgListIds}
 use core.{Tk}
 
 impl Parser {
@@ -70,32 +70,37 @@ impl Parser {
         self.check(Tk.String) || self.check(Tk.Template)
     }
 
-    fn parse_map_literal(self) -> Result<Expr, string> {
+    fn parse_map_literal(self) -> Result<ExprId, string> {
         self.advance()  // consume {
         if self.check(Tk.RightBrace) {
             self.advance()
             let empty: List<SExpr> = []
-            return .Ok(Expr.MapLit(empty))
+            return .Ok(self.alloc_leaf(Expr.MapLit(empty)))
         }
         let entries = self.parse_map_entries()?
         if !self.consume(Tk.RightBrace, "expected `}` after map") {
             return .Err("parse error")
         }
-        .Ok(Expr.MapLit(entries))
+        // Walker order: one ExprRef per element of the FLAT entry list
+        // (key, val, key, val, …), in list order.
+        .Ok(self.alloc_expr(Expr.MapLit(entries.wrapped), byte_span_none(), self.edges_of_ids(entries.ids)))
     }
 
     // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
-    fn parse_map_entries(self) -> Result<List<SExpr>, string> {
+    fn parse_map_entries(self) -> Result<ArgListIds, string> {
         mut out: List<SExpr> = []
+        mut ids: List<ExprId> = []
         mut keep_going = true
         while keep_going {
-            let key = self.parse_expression_boxed()?
+            let key_id = self.parse_expression()?
             if !self.consume(Tk.Colon, "expected `:` after map key") {
                 return .Err("parse error")
             }
-            let value = self.parse_expression_boxed()?
-            out.push(sexpr(key, self.current_line, self.current_column))
-            out.push(sexpr(value, self.current_line, self.current_column))
+            let value_id = self.parse_expression()?
+            out.push(sexpr(self.expr_of(key_id), self.current_line, self.current_column))
+            out.push(sexpr(self.expr_of(value_id), self.current_line, self.current_column))
+            ids.push(key_id)
+            ids.push(value_id)
             if self.check(Tk.Comma) {
                 self.advance()
                 if self.check(Tk.RightBrace) { keep_going = false }
@@ -103,6 +108,6 @@ impl Parser {
                 keep_going = false
             }
         }
-        .Ok(out)
+        .Ok(ArgListIds { wrapped: out, ids: ids })
     }
 }

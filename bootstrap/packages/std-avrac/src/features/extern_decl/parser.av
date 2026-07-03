@@ -1,6 +1,6 @@
 // WHY: parses `extern fn name(params) -> Type` declarations.
 
-use core.{Stmt, ValueType, type_expr_to_vtype}
+use core.{Stmt, ValueType, type_expr_to_vtype, NodeRef, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 
@@ -24,6 +24,8 @@ impl Parser {
             let te = self.parse_type_expr("expected return type after `->`")?
             ret_vt = type_expr_to_vtype(te)
         }
-        .Ok(self.glue_ingest_stmt(Stmt.ExternFn(name, params, ret_vt)))
+        // Walker order: the bare return-type field is the only child (a
+        // TypeRef) — params carry no node children.
+        .Ok(self.alloc_stmt(Stmt.ExternFn(name, params, ret_vt), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(ret_vt))]))
     }
 }

@@ -4,7 +4,7 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmts_diverges, expr_force_unwrap, expr_eq_none, NodeRef, ExprId, byte_span_none}
+use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmts_diverges, expr_force_unwrap, expr_eq_none, FORCE_UNWRAP_FN, NodeRef, ExprId, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 use diagnostics.{DiagCode}
@@ -15,7 +15,7 @@ impl Parser {
         let is_mut = self.check(Tk.KwMut)
         if is_mut { self.advance() }
         if self.check(Tk.LeftParen) {
-            return .Ok(self.glue_ingest_stmt(self.parse_let_destructure()?))
+            return self.parse_let_destructure()
         }
         let name = self.consume_identifier("expected variable name")?
         mut ty_vt = ValueType.Unknown
@@ -28,9 +28,8 @@ impl Parser {
         let init_id = self.parse_expression()?
         let initializer = self.expr_of(init_id)
         // Guard form: `let v = x else { … }` (also `let mut v = x else { … }`).
-        // The desugared block is a boxed producer — glue at its boundary.
         if self.check(Tk.KwElse) {
-            return .Ok(self.glue_ingest_stmt(self.build_let_else(name, ty_vt, initializer, is_mut)?))
+            return self.build_let_else(name, ty_vt, initializer, init_id, is_mut)
         }
         if is_mut { .Ok(self.alloc_binding_stmt(Stmt.Mut(name, ty_vt, initializer), ty_vt, init_id)) } else { .Ok(self.alloc_binding_stmt(Stmt.Let(name, ty_vt, initializer), ty_vt, init_id)) }
     }
@@ -49,12 +48,21 @@ impl Parser {
     // `is_mut` selects the outer binding (`let mut v = x else` / `mut v = x
     // else` bind a reassignable `v`) — the fresh binding stays sound either
     // way, since nothing can invalidate the already-unwrapped value.
-    fn build_let_else(self, name: string, ty_vt: ValueType, subject: Expr, is_mut: bool) -> Result<Stmt, string> {
+    fn build_let_else(self, name: string, ty_vt: ValueType, subject: Expr, subject_id: ExprId, is_mut: bool) -> Result<StmtId, string> {
         self.advance()
-        let else_stmt = self.stmt_of(self.parse_statement()?)
+        let else_id = self.parse_statement()?
+        let else_stmt = self.stmt_of(else_id)
+        // The else-arm Expr.Block's edges: a parsed else-Block's recorded
+        // children are reused verbatim (never re-walked); any other stmt
+        // shape wraps as the block's single child.
+        mut else_edges: List<NodeRef> = []
         let else_body = match else_stmt {
-            .Block(b) -> b
+            .Block(b) -> {
+                for r in self.store.stmts.children_of(else_id) { else_edges.push(r) }
+                b
+            }
             _ -> {
+                else_edges.push(NodeRef.StmtRef(else_id))
                 let one: List<SStmt> = [sstmt_dummy(else_stmt)]
                 one
             }
@@ -67,14 +75,23 @@ impl Parser {
         }
         let tmp = self.fresh("letelse")
         let unwrap = expr_force_unwrap(Expr.Ident(tmp))
+        let unwrap_id = self.alloc_force_unwrap_row(tmp)
         let cond = expr_eq_none(Expr.Ident(tmp))
-        let guard = Expr.IfExpr(cond, Expr.Block(else_body), unwrap)
+        let cond_id = self.alloc_none_check_row(tmp, cond)
+        let else_block = Expr.Block(else_body)
+        let else_block_id = self.alloc_expr(else_block, byte_span_none(), else_edges)
+        let guard = Expr.IfExpr(cond, else_block, unwrap)
+        let guard_id = self.alloc3(guard, cond_id, else_block_id, unwrap_id)
+        let tmp_let = Stmt.Let(tmp, ValueType.Unknown, subject)
+        let tmp_let_id = self.alloc_binding_stmt(tmp_let, ValueType.Unknown, subject_id)
+        let guard_stmt_id = self.alloc_stmt_expr1(Stmt.Expr(guard), guard_id)
         let block_body: List<SStmt> = [
-            sstmt_dummy(Stmt.Let(tmp, ValueType.Unknown, subject)),
+            sstmt_dummy(tmp_let),
             sstmt_dummy(Stmt.Expr(guard)),
         ]
         let init = Expr.Block(block_body)
-        if is_mut { .Ok(Stmt.Mut(name, ty_vt, init)) } else { .Ok(Stmt.Let(name, ty_vt, init)) }
+        let init_id = self.alloc_expr(init, byte_span_none(), [NodeRef.StmtRef(tmp_let_id), NodeRef.StmtRef(guard_stmt_id)])
+        if is_mut { .Ok(self.alloc_binding_stmt(Stmt.Mut(name, ty_vt, init), ty_vt, init_id)) } else { .Ok(self.alloc_binding_stmt(Stmt.Let(name, ty_vt, init), ty_vt, init_id)) }
     }
 
     fn parse_mut_statement(self) -> Result<StmtId, string> {
@@ -91,7 +108,7 @@ impl Parser {
         let initializer = self.expr_of(init_id)
         // `mut v = x else { … }` — bind-fresh guard binding a reassignable `v`.
         if self.check(Tk.KwElse) {
-            return .Ok(self.glue_ingest_stmt(self.build_let_else(name, ty_vt, initializer, true)?))
+            return self.build_let_else(name, ty_vt, initializer, init_id, true)
         }
         .Ok(self.alloc_binding_stmt(Stmt.Mut(name, ty_vt, initializer), ty_vt, init_id))
     }
@@ -110,12 +127,13 @@ impl Parser {
         .Ok(self.alloc_binding_stmt(Stmt.Const(name, ty_vt, self.expr_of(init_id)), ty_vt, init_id))
     }
 
-    fn parse_let_destructure(self) -> Result<Stmt, string> {
+    fn parse_let_destructure(self) -> Result<StmtId, string> {
         self.advance()
         let names = self.parse_destructure_names()?
         if !self.consume(Tk.RightParen, "expected `)` after destructure names") { return .Err("parse error") }
         if !self.consume(Tk.Equal, "expected `=` after destructure pattern") { return .Err("parse error") }
-        let initializer = self.parse_expression_boxed()?
-        .Ok(Stmt.LetDestructure(names, initializer))
+        let init_id = self.parse_expression()?
+        // Walker order: the initializer is the only child (an ExprRef).
+        .Ok(self.alloc_stmt_expr1(Stmt.LetDestructure(names, self.expr_of(init_id)), init_id))
     }
 }

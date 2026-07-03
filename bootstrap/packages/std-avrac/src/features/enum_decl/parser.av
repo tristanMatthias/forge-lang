@@ -22,7 +22,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after variants") {
             return .Err("parse error")
         }
-        .Ok(self.glue_ingest_stmt(Stmt.EnumDecl(name, tp, variants)))
+        .Ok(self.alloc_stmt_leaf(Stmt.EnumDecl(name, tp, variants)))
     }
 
     fn parse_variant_list(self) -> Result<List<Variant>, string> {
