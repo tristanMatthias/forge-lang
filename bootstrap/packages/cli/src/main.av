@@ -74,9 +74,9 @@ use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
-use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
+use @std.avrac.parse.{parse_expression_source, parse_program_source}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -106,7 +106,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.features.comptime.{run_comptime, resolve_and_expand_program}
-use @std.avrac.features.quote_expr.{lower_quotes, lower_quotes_via_store}
+use @std.avrac.features.quote_expr.{lower_quotes_via_store}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
 use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
@@ -306,8 +306,8 @@ fn stop_after_matches(stop_after: string, stage: string) -> bool {
 /// Returns the post-expand stmt list on success; fails the process
 /// (after rendering F4100 diagnostics) when the validator found
 /// schema mismatches.
-fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext) -> List<SStmt> {
-    let comp = expand_components(stmts)
+fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: NodeStore) -> List<SStmt> {
+    let comp = expand_components(stmts, store)
     if bag_has_errors(comp.bag) {
         render_bag_ctx(ctx, comp.bag)
         fail("component validation failed")
@@ -322,9 +322,9 @@ fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext) -> List<SSt
 /// repeated immediately after `expand_components_or_fail`.
 /// Returns the NameResolveResult so the caller can continue
 /// with run_comptime → typecheck.
-fn marshal_and_resolve_or_fail(stmts: List<SStmt>, ctx: RenderContext) -> NameResolveResult {
-    let with_marshal = derive_marshal(stmts)
-    let named = resolve_and_expand_program(with_marshal)
+fn marshal_and_resolve_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
+    let with_marshal = derive_marshal(stmts, store)
+    let named = resolve_and_expand_program(with_marshal, store)
     render_bag_if_nonempty(ctx, named.bag)
     if named.had_error { fail(named.error_message) }
     named
@@ -2589,7 +2589,10 @@ fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestAr
 // per-file shards pass a per-test slug (basename without extension).
 fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: TestArgs, shard_id: string) -> Result<string, string> {
     let project_dir = inputs.project_root
-    let program = match assemble_test_program(test_paths, project_dir) {
+    // B-final F0: one bundle-wide store — every per-file parse, module
+    // load, and support-file parse in this unit allocates into it.
+    let bundle_store = new_node_store(build_line_index(""))
+    let program = match assemble_test_program(test_paths, project_dir, bundle_store) {
         .Ok(p) -> p
         .Err(e) -> { return Result.Err(e) }
     }
@@ -2610,6 +2613,7 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
         // before fanning out shard commands so each shard's link step
         // resolves the mangled call sites AVRA_USE_METADATA exposed.
         extra_objs: parse_lib_objs_env(),
+        store: bundle_store,
     }
     build_binary(target)
 }
@@ -3828,18 +3832,18 @@ fn main() {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
             let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-            let desugared = desugar_program(post_quote)
+            let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(check_path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             // Inject intrinsics AFTER module resolution so stdlib's
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
-            let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components_or_fail(with_intrinsics, ctx)
-            let named = marshal_and_resolve_or_fail(expanded, ctx)
-            let post_comptime = run_comptime(named.stmts)
-            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
+            let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
+            let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
             return
@@ -3849,8 +3853,9 @@ fn main() {
             // context, just like every other bs2 subcommand. Without it,
             // a parse error in cmd_run would print only a bare one-line
             // message ("parse error at L:C: …") with no diagnostic frame.
-            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path)).stmts
-            let result = execute_program_stmts(parsed_stmts)
+            let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
+            let parsed_stmts = parsed_prog.stmts
+            let result = execute_program_stmts(parsed_stmts, parsed_prog.store)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }
@@ -3862,11 +3867,12 @@ fn main() {
             // Parse and check the file, then apply high-confidence fixes.
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
             let ctx = render_ctx(false, source, path)
-            let parsed_stmts = parse_or_fail(source, ctx).stmts
+            let parsed_prog = parse_or_fail(source, ctx)
+            let parsed_stmts = parsed_prog.stmts
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let named = resolve_names(mod_resolved.stmts)
+            let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
             render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
             println("no auto-fixes available")
             return
@@ -3893,14 +3899,14 @@ fn main() {
             let parsed_prog = parse_or_fail(source, ctx)
             let parsed_stmts = parsed_prog.stmts
             let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-            let desugared = desugar_program(post_quote)
+            let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components_or_fail(with_intrinsics, ctx)
-            let named = marshal_and_resolve_or_fail(expanded, ctx)
-            let post_comptime = run_comptime(named.stmts)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
+            let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
+            let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
             println(fmt_stmt_list(post_comptime, 0))
             return
         }
@@ -3912,20 +3918,20 @@ fn main() {
             let parsed_prog = parse_or_fail(source, ctx)
             let parsed_stmts = parsed_prog.stmts
             let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-            let desugared = desugar_program(post_quote)
+            let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
-            let expanded = expand_components_or_fail(with_intrinsics, ctx)
-            let named = marshal_and_resolve_or_fail(expanded, ctx)
-            let post_comptime = run_comptime(named.stmts)
-            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
+            let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
+            let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
-            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
             render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
             let output = "${path}.ll"
-            match compile_program(mono.stmts, output, false, false, path, named.type_reg, false) {
+            match compile_program(mono.stmts, output, false, false, path, named.type_reg, false, parsed_prog.store) {
                 .Ok(_) -> {}
                 .Err(e) -> { fail_with_codegen_ice(e, ctx) }
             }
@@ -4108,7 +4114,7 @@ fn main() {
             let parent_dir = modules_dirname(cpath_dir_stripped)
             let is_package_src = avra_selfhost_file_exists("${parent_dir}avra.toml") != 0
             let body_with_siblings = if is_package_src {
-                let dir_load = resolve_dir_module_body(cpath_dir, [cpath])
+                let dir_load = resolve_dir_module_body(cpath_dir, [cpath], parsed_prog.store)
                 if dir_load.had_error {
                     parsed_stmts
                 } else {
@@ -4127,23 +4133,20 @@ fn main() {
         // bodies are captured as string-typed AST literals (not seen by
         // resolve as undefined references).
         //
-        // The arena presence scan is valid only when `pre_desugar_stmts` IS the
-        // parse output the store was ingested from. With --module_path the body
-        // may have absorbed sibling files parsed elsewhere (not in the store),
-        // so that path keeps the boxed scan — a store scan there would miss
-        // quotes in siblings.
-        let post_quote_stmts = if module_path == "" {
-            lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
-        } else {
-            lower_quotes(pre_desugar_stmts)
-        }
+        // The arena presence scan covers the whole merged body: sibling
+        // files absorbed under --module_path are parsed via
+        // `parse_program_source_shared` into THIS entry's store (the
+        // single-store invariant), so the flat store scan sees their
+        // quotes too — the boxed fallback the pre-F0 pipeline needed
+        // here is gone.
+        let post_quote_stmts = lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
-        let desugared = desugar_program(post_quote_stmts)
+        let desugared = desugar_program(post_quote_stmts, parsed_prog.store)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
         let entry_dir = modules_dirname(cpath)
-        let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list())
+        let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
         let t_resolve_mods = avra_uptime_ms()
         fail_on_module_resolve_error(mod_resolved, ctx)
         if stop_after_matches(stop_after, "resolve") { return }
@@ -4151,7 +4154,7 @@ fn main() {
         // program_declares_enum scan sees stdlib's Result (now inline)
         // and skips synthesizing a duplicate. Cleanup of the earlier
         // dkfa `is_intrinsic_name` hack.
-        let with_intrinsics = inject_intrinsics(mod_resolved.stmts)
+        let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
         // g2eo Phase A: per-module compile filter. Marks every Module
         // wrapper outside `target_module` as @external_unit so codegen
         // emits forward-refs, not bodies. Runs after resolve so the
@@ -4163,23 +4166,23 @@ fn main() {
         }
         // Component expansion: runs AFTER module resolution so component
         // definitions in any module are visible to the expander.
-        let expanded = expand_components_or_fail(post_filter_stmts, ctx)
+        let expanded = expand_components_or_fail(post_filter_stmts, ctx, parsed_prog.store)
         let t_expand = avra_uptime_ms()
-        let named = marshal_and_resolve_or_fail(expanded, ctx)
+        let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
         let t_names = avra_uptime_ms()
         if stop_after_matches(stop_after, "names") { return }
         // Comptime fold: replace `@comptime` calls with their literal results.
         // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
-        let post_comptime = run_comptime(named.stmts)
+        let post_comptime = run_comptime(named.stmts, parsed_prog.store)
         // Type check — gates compilation on errors
-        let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins)
+        let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
         let t_typeck = avra_uptime_ms()
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return }
         // Monomorphize: replace generic declarations with concrete specializations.
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
-        let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+        let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
         let t_mono = avra_uptime_ms()
         render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
         let output = if output_override != "" { output_override } else { "${cpath}.ll" }
@@ -4245,7 +4248,7 @@ fn main() {
             }
         }
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
-        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode) {
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode, parsed_prog.store) {
             .Ok(_) -> {}
             .Err(e) -> { fail_with_codegen_ice(e, ctx) }
         }

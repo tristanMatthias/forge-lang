@@ -193,6 +193,12 @@ export type Parser = {
     // per entry parser from this parser's source; template `${...}`
     // sub-parsers share the outer store.
     store: NodeStore,
+    // 1 for an ENTRY parse (parse_file_program records the top-level rows
+    // as store roots); 0 for a pipeline sub-parse sharing the entry store
+    // (module files, package entries, siblings — their statements merge
+    // into the entry tree as children, never as program roots). Set at
+    // construction, never mutated mid-parse (not backtrack-relevant).
+    mut records_roots: int,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -215,6 +221,22 @@ export fn parse_program_source(source: string) -> ProgramParseResult {
 /// cite the originating *_test.av rather than a `<test>` placeholder.
 export fn parse_program_source_at(source: string, file: string) -> ProgramParseResult {
     mut parser = parser_new_with_file(source, file)
+    parser.parse_file_program()
+}
+
+/// Sub-parse entry for pipeline-MERGED files (module files, package
+/// entries, sibling files, test-runner imports): parses `source`
+/// allocating into the ENTRY parser's `store` — the single-store
+/// invariant, so every node the pipeline later walks has a row in the
+/// one program store (the template-sub-parser precedent, generalized).
+/// Does NOT record roots: the parsed statements become children of the
+/// entry program's tree. Positions ride the boxed wrappers (each SStmt
+/// carries `file`); sub-parse rows carry byte_span_none() until
+/// per-node file/span lands (B-final F4).
+export fn parse_program_source_shared(source: string, file: string, store: NodeStore) -> ProgramParseResult {
+    mut parser = parser_new_with_file(source, file)
+    parser.store = store
+    parser.records_roots = 0
     parser.parse_file_program()
 }
 
@@ -508,6 +530,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         bag: bag_new(),
         features: build_registry(),
         store: new_node_store(build_line_index(source)),
+        records_roots: 1,
     }
     parser.advance_token()
     parser
@@ -580,11 +603,15 @@ impl Parser {
             }
         }
 
-        // Record the top-level rows as the native store's roots — same
-        // conservative spans + provenance as the canonical ingest, via the
-        // shared helper. This is what makes `program_from_store(store)`
-        // constructible from the PARSER's own arena.
-        self.store.record_roots(parsed.wrapped, parsed.ids, self.source.length)
+        // Record the top-level rows as the native store's roots (entry
+        // parses only — a shared-store sub-parse's statements merge into the
+        // entry tree as children, never as program roots). Same conservative
+        // spans + provenance as the walker-ingest oracle, via the shared
+        // helper. This is what makes `program_from_store(store)` serve the
+        // program from the PARSER's own arena.
+        if self.records_roots != 0 {
+            self.store.record_roots(parsed.wrapped, parsed.ids, self.source.length)
+        }
 
         ProgramParseResult {
             stmts: parsed.wrapped,
@@ -2469,7 +2496,7 @@ impl Parser {
 
     /// Allocate a parser-built `Expr` with its children's edge refs.
     fn alloc_expr(self, node: Expr, sp: ByteSpan, edges: List<NodeRef>) -> ExprId {
-        self.store.exprs.add(node, NodeEdges { refs: edges }, sp)
+        self.store.add_expr(node, sp, edges)
     }
 
     /// Bridge a BOXED expr subtree from a still-boxed element producer into
@@ -2581,7 +2608,7 @@ impl Parser {
 
     /// Allocate a parser-built `Stmt` with its children's edge refs.
     fn alloc_stmt(self, node: Stmt, sp: ByteSpan, edges: List<NodeRef>) -> StmtId {
-        self.store.stmts.add(node, NodeEdges { refs: edges }, sp)
+        self.store.add_stmt(node, sp, edges)
     }
 
     /// Bridge a BOXED stmt subtree from a still-boxed element producer into

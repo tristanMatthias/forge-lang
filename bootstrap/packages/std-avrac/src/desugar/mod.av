@@ -8,6 +8,7 @@
 // See features/component_decl/expand.av.
 
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
+use core.{NodeStore}
 use list_ops.{list_map, list_concat}
 
 // ListComp is no longer desugared at the AST level. The AST-rewrite
@@ -30,7 +31,7 @@ use list_ops.{list_map, list_concat}
 /// duplicate. Each caller does:
 ///   parse → lower_quotes → desugar_program → resolve_module_files
 ///                                          → inject_intrinsics → ...
-export fn desugar_program(stmts: List<SStmt>) -> List<SStmt> {
+export fn desugar_program(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     // Collect top-level / module fn signatures up front so call-argument
     // table inference (`f(table { ... })`) can pin the row type from the
     // matching parameter's declared `List<Row>` type. Param vtypes are
@@ -146,7 +147,7 @@ fn stamp_call_arg_tables(callee: Expr, args: List<SExpr>, sigs: List<FnSig>) -> 
 /// see it. Putting the synthesized decl at the global scope also
 /// fixes ticket xks4 (resolver mis-qualification of `Result` inside
 /// trait impls).
-export fn inject_intrinsics(stmts: List<SStmt>) -> List<SStmt> {
+export fn inject_intrinsics(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     mut out = stmts
     // Inject each intrinsic enum the program doesn't already declare.
     // Guarded independently so a program that declares one (e.g. the

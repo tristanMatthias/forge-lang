@@ -442,6 +442,34 @@ export type NodeStore = {
 }
 
 impl NodeStore {
+    /// Transform-alloc: append an `Expr` row with its children's edge refs in
+    /// walker order. The store-level core that the parser's `alloc_*` family
+    /// delegates to and that tree-synthesizing transforms (desugar, mono,
+    /// comptime, derive) allocate through once their outputs carry ids — one
+    /// allocation chokepoint, no per-pass duplicates.
+    fn add_expr(self, node: Expr, sp: ByteSpan, edges: List<NodeRef>) -> ExprId {
+        self.exprs.add(node, NodeEdges { refs: edges }, sp)
+    }
+    /// Transform-alloc: append an `Expr` LEAF row (no node children).
+    fn add_expr_leaf(self, node: Expr) -> ExprId {
+        self.exprs.add_leaf(node)
+    }
+    /// Transform-alloc: append a `Stmt` row with its children's edge refs.
+    fn add_stmt(self, node: Stmt, sp: ByteSpan, edges: List<NodeRef>) -> StmtId {
+        self.stmts.add(node, NodeEdges { refs: edges }, sp)
+    }
+    /// Transform-alloc: append a `Stmt` LEAF row (no node children).
+    fn add_stmt_leaf(self, node: Stmt) -> StmtId {
+        self.stmts.add_leaf(node)
+    }
+    /// Transform-alloc: append a `Pattern` row with its children's edge refs.
+    fn add_pat(self, node: Pattern, sp: ByteSpan, edges: List<NodeRef>) -> PatId {
+        self.pats.add(node, NodeEdges { refs: edges }, sp)
+    }
+    /// Transform-alloc: append a `Pattern` LEAF row (no node children).
+    fn add_pat_leaf(self, node: Pattern) -> PatId {
+        self.pats.add_leaf(node)
+    }
     /// Ingest one boxed child into the arena that owns its kind, returning the
     /// cross-type `NodeRef`. The dispatch that fuses the four arenas into one
     /// tree (an `Expr`'s `Stmt`/`Pattern`/`ValueType` children land in their

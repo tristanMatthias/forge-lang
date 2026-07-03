@@ -4,6 +4,7 @@
 // generic declarations — codegen sees only concrete code.
 
 use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{NodeStore}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, qualified_mangle_base, method_mangled_name, method_from_mangled}
@@ -2722,7 +2723,7 @@ fn compute_ambig_short_names(regs: GenRegs) -> List<string> {
 /// rewrites every reference to use the mangled names. Iterates
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
-export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>) -> MonoResult {
+export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>, store: NodeStore) -> MonoResult {
     let regs0 = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [], impls: [], ambig: [] })
     if !has_generics(regs0) { return MonoResult { stmts, bag: bag_new() } }
     // Resolve the short-name collisions ONCE up front so every pass mangles

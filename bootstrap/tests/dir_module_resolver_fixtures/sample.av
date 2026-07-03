@@ -9,6 +9,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 
 use @std.avrac.features.modules.{resolve_dir_module_body}
+use @std.avrac.core.{new_node_store, build_line_index}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
@@ -35,7 +36,7 @@ fn main() -> int {
     // A _test.av sibling — must be filtered out of the loaded body.
     avra_shell_exec("printf 'export fn helper() -> int { 99 }\\n' > " + root + "/zzz_test.av")
 
-    let result = resolve_dir_module_body(root, empty_loaded())
+    let result = resolve_dir_module_body(root, empty_loaded(), new_node_store(build_line_index("")))
 
     // Probe 1 — load is errorless.
     probe("no_error", !result.had_error)
@@ -47,12 +48,12 @@ fn main() -> int {
     probe("body_non_empty", result.stmts.length > 0)
 
     // Probe 4 — re-running with an already-loaded set short-circuits.
-    let result2 = resolve_dir_module_body(root, result.loaded)
+    let result2 = resolve_dir_module_body(root, result.loaded, new_node_store(build_line_index("")))
     probe("rerun_empty_stmts", result2.stmts.length == 0)
     probe("rerun_loaded_unchanged", result2.loaded.length == result.loaded.length)
 
     // Probe 5 — pointing at a non-existent dir returns errorless empty.
-    let result3 = resolve_dir_module_body("/tmp/avra_dirmod_resolver_does_not_exist_xx", empty_loaded())
+    let result3 = resolve_dir_module_body("/tmp/avra_dirmod_resolver_does_not_exist_xx", empty_loaded(), new_node_store(build_line_index("")))
     probe("missing_dir_no_error", !result3.had_error)
     probe("missing_dir_empty_stmts", result3.stmts.length == 0)
     probe("missing_dir_zero_loaded", result3.loaded.length == 0)

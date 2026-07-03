@@ -1,0 +1,59 @@
+// WHY: the single-store invariant (B-final F0). The compile pipeline MERGES
+// trees parsed from other files (module files, package entries, sibling
+// files) into the entry program. Those sub-parses run through
+// `parse_program_source_shared`, allocating into the ENTRY parser's
+// NodeStore — so any flat store scan (the quote presence scan is the live
+// consumer) covers the whole merged program, and (from the container/variant
+// flips onward) every merged node has the arena row its id-typed parents
+// will reference. These specs pin the invariant directly: loading a
+// directory of sibling files GROWS the entry store and surfaces sibling
+// quote rows in it, and the sub-parse records NO roots (merged statements
+// are children of the entry tree, never program roots).
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, Expr, ExprId}
+use @std.avrac.features.modules.{resolve_dir_module_body}
+
+/// True iff any Expr.Quote row exists in the store — mirrors the presence
+/// scan `lower_quotes_via_store` runs on the live path.
+fn store_carries_quote(r_exprs_count: int, exprs_get: fn(int) -> Expr) -> bool {
+    mut i = 0
+    while i < r_exprs_count {
+        if exprs_get(i) is .Quote { return true }
+        i = i + 1
+    }
+    false
+}
+
+spec "F0 single-store invariant: sibling sub-parses share the entry store" {
+    given "a sibling directory whose file contains a quote" {
+        then "loading it grows the entry store and its quote row is visible" {
+            let dir = "build/_f0_shared_dir"
+            let _ = avra_shell_exec("mkdir -p ${dir}")
+            let _ = avra_selfhost_write_file("${dir}/sib.av",
+                "fn make() -> int {\n    let e = quote { 1 + 2 }\n    0\n}\n")
+            let r = parse_program_source("let entry_only = 1\n")
+            if r.had_error != 0 { return false }
+            let before = r.store.exprs.count()
+            let loaded: List<string> = []
+            let dir_load = resolve_dir_module_body(dir, loaded, r.store)
+            if dir_load.had_error { return false }
+            let grew = r.store.exprs.count() > before
+            let quote_visible = store_carries_quote(r.store.exprs.count(), (i: int) -> r.store.exprs.get(ExprId(i)))
+            grew && quote_visible
+        }
+        then "the sub-parse records no roots into the shared store" {
+            let dir = "build/_f0_shared_roots"
+            let _ = avra_shell_exec("mkdir -p ${dir}")
+            let _ = avra_selfhost_write_file("${dir}/sib.av",
+                "fn side() -> int { 41 }\nfn other() -> int { 42 }\n")
+            let r = parse_program_source("let entry_only = 1\n")
+            if r.had_error != 0 { return false }
+            let roots_before = r.store.roots.length
+            let loaded: List<string> = []
+            let dir_load = resolve_dir_module_body(dir, loaded, r.store)
+            if dir_load.had_error { return false }
+            r.store.roots.length == roots_before
+        }
+    }
+}

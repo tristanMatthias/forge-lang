@@ -4,6 +4,7 @@
 // compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{NodeStore}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
@@ -1132,7 +1133,7 @@ export type TypeCheckResult = {
 /// passes: pre-pass `collect_decls` registers types/fns; main
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
-export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TypeCheckResult {
+export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TypeCheckResult {
     avra_ice_phase("typeck")
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the

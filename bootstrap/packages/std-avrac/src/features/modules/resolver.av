@@ -3,8 +3,8 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.{Stmt, SStmt, sstmt, sstmt_at, sstmt_dummy, Annotation, SExpr}
-use parse.{parse_program_source, parse_program_source_at}
+use core.{Stmt, SStmt, sstmt, sstmt_at, sstmt_dummy, Annotation, SExpr, NodeStore}
+use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, synthesize_unit_body, stamp_stub_spans}
 use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
@@ -391,9 +391,9 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
-export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<string>) -> ModListResult {
+export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
     let empty_stack: List<string> = []
-    let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack)
+    let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
     let split = hoist_package_modules(inner.stmts)
     // Dedup hoisted package wrappers by qualified name. Without this,
@@ -438,14 +438,14 @@ export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<str
 /// field returns whatever was assembled so far (so partial output
 /// is still introspectable in tools), and `had_error` flips to
 /// true with a diagnostic.
-export fn resolve_dir_module_body(dir: string, loaded: List<string>) -> ModListResult {
+export fn resolve_dir_module_body(dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
     let files = list_avra_module_files(dir)
     mut acc: List<SStmt> = []
     mut acc_loaded = loaded
     for path in files {
         if loaded_has(acc_loaded, path) { continue }
         let source = avra_selfhost_read_file(path)
-        let parsed = parse_program_source_at(source, path)
+        let parsed = parse_program_source_shared(source, path, store)
         if parsed.had_error || parsed.stmts == null {
             return ModListResult {
                 stmts: acc,
@@ -804,7 +804,7 @@ fn anchor_use_path(up: string, pkg_qual: string) -> string {
 /// statement, resolving `Module` and `Use` stubs in place;
 /// non-import statements pass through unchanged. Threads the
 /// LoadedPaths set + ImportStack through every recursive call.
-fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
+fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>, store: NodeStore) -> ModListResult {
     mut out: List<SStmt> = []
     mut cur_loaded = loaded
     for (i, ss) in stmts.enumerate() {
@@ -827,7 +827,7 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
                 next.push(stmts[k])
                 k = k + 1
             }
-            let pkg_res = resolve_package_use_and_continue(ss, next, dir, cur_loaded, stack)
+            let pkg_res = resolve_package_use_and_continue(ss, next, dir, cur_loaded, stack, store)
             if pkg_res.had_error { return pkg_res }
             // Merge already-accumulated out with pkg_res.stmts (which
             // already includes the package wrapper + the resolved rest).
@@ -849,7 +849,7 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
                 error_message: "",
             }
         }
-        let head = resolve_module_stmt(ss.node, dir, cur_loaded, stack)
+        let head = resolve_module_stmt(ss.node, dir, cur_loaded, stack, store)
         if head.had_error {
             let empty: List<SStmt> = []
             return ModListResult { stmts: empty, loaded: head.loaded, had_error: true, error_message: head.error_message }
@@ -876,7 +876,7 @@ export fn extract_use_path(stmt: Stmt) -> string {
 /// `Module("@scope") { Module(name) { ... } }` so the resolver
 /// sees the package's symbols at their qualified path. Continue
 /// resolution on the rest of the input list.
-fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>) -> ModListResult {
+fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>, store: NodeStore) -> ModListResult {
     let use_path = extract_use_path(ss.node)
     let pkg_mod = package_module_name(use_path)
     let packages_dir = find_packages_dir(dir)
@@ -891,7 +891,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     }
     if loaded_has(loaded, pkg_file) {
         // Already loaded — just pass through the use statement
-        let rest = resolve_module_files_inner(next, dir, loaded, stack)
+        let rest = resolve_module_files_inner(next, dir, loaded, stack, store)
         if rest.had_error { return rest }
         mut combined: List<SStmt> = [ss]
         mut bi = 0
@@ -940,7 +940,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
         // _at keeps SStmt.file pointed at the package's entry-point
         // path so cross-package diagnostics + per-file metadata
         // discovery (g2eo) attribute decls correctly.
-        let parsed = parse_program_source_at(pkg_source, pkg_file)
+        let parsed = parse_program_source_shared(pkg_source, pkg_file, store)
         if parsed.had_error || parsed.stmts == null {
             let empty: List<SStmt> = []
             return ModListResult { stmts: empty, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
@@ -957,7 +957,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // present → keep legacy nested behaviour).
     let pkg_decls_present = stmts_have_mod_decl(pkg_stmts)
     let pkg_dir_load = if !take_meta_fast_path && !pkg_decls_present {
-        resolve_dir_module_body(pkg_dir, new_loaded)
+        resolve_dir_module_body(pkg_dir, new_loaded, store)
     } else {
         let empty: List<SStmt> = []
         ModListResult { stmts: empty, loaded: new_loaded, had_error: false, error_message: "" }
@@ -975,7 +975,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     let empty_subdir: List<SStmt> = []
     let pkg_subdir_decls = if take_meta_fast_path { empty_subdir } else { synthesize_subdir_module_decls_filtered(pkg_dir, pkg_stmts) }
     let pkg_combined_stmts = list_concat(list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
-    let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack)
+    let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack, store)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
     let without_at = pkg_mod.substring(1, pkg_mod.length)
@@ -996,7 +996,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     let outer_body: List<SStmt> = [sstmt_at(inner_mod, ss.line, ss.col, ss.file)]
     let outer_mod = Stmt.Module("@${scope_name}", outer_body)
     // Continue processing rest of the statement list
-    let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack)
+    let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack, store)
     if rest.had_error { return rest }
     // Emit: [module_decl, use_stmt, ...rest]
     mut emitted: List<SStmt> = [sstmt_at(outer_mod, ss.line, ss.col, ss.file), ss]
@@ -1018,7 +1018,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
 /// nested modules, and return a populated `Stmt.Module(name, body)`.
 /// Detects circular imports via `stack` and returns F3103 in that
 /// case. `Annotated` wrappers around the module decl pass through.
-fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: List<string>) -> ModStmtResult {
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: List<string>, store: NodeStore) -> ModStmtResult {
     match stmt {
         // Pre-populated Module wrapper: cli's --module_path produces
         // `Stmt.Module(name, body)` with body already filled in.
@@ -1060,7 +1060,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             } else {
                 body
             }
-            let resolved = resolve_module_files_inner(combined, dir, loaded, stack)
+            let resolved = resolve_module_files_inner(combined, dir, loaded, stack, store)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
@@ -1082,12 +1082,12 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             // decls for subdirectories that don't have their own
             // mod.av.
             if mod_path == "" && avra_is_dir(dir_only) != 0 {
-                let dir_load = resolve_dir_module_body(dir_only, loaded)
+                let dir_load = resolve_dir_module_body(dir_only, loaded, store)
                 if dir_load.had_error {
                     return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
                 }
                 let new_stack = list_push_copy(stack, dir_only)
-                let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack)
+                let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack, store)
                 if resolved.had_error {
                     return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
                 }
@@ -1139,7 +1139,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 // with file="" — diagnostics lose their origin and
                 // the per-file source-discovery path (g2eo) can't
                 // attribute decls to the file they came from.
-                let parsed = parse_program_source_at(mod_source, mod_path)
+                let parsed = parse_program_source_shared(mod_source, mod_path, store)
                 if parsed.had_error || parsed.stmts == null {
                     return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `${name}`: ${parsed.error_message}" }
                 }
@@ -1174,7 +1174,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             let is_subdir_form = mod_path == dir_mod
             let mod_decls_present = stmts_have_mod_decl(mod_stmts)
             let dir_load = if dir_mode && is_subdir_form && !take_meta && !mod_decls_present {
-                resolve_dir_module_body(mod_dir, new_loaded)
+                resolve_dir_module_body(mod_dir, new_loaded, store)
             } else {
                 let empty: List<SStmt> = []
                 ModListResult { stmts: empty, loaded: new_loaded, had_error: false, error_message: "" }
@@ -1184,7 +1184,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             }
             let combined_stmts = list_concat(mod_stmts, dir_load.stmts)
             let post_dir_loaded = dir_load.loaded
-            let resolved = resolve_module_files_inner(combined_stmts, mod_dir, post_dir_loaded, new_stack)
+            let resolved = resolve_module_files_inner(combined_stmts, mod_dir, post_dir_loaded, new_stack, store)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
@@ -1203,7 +1203,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             ModStmtResult { stmt: final_stmt, loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Annotated(annotations, inner) -> {
-            let r = resolve_module_stmt(inner.node, dir, loaded, stack)?
+            let r = resolve_module_stmt(inner.node, dir, loaded, stack, store)?
             ModStmtResult { stmt: Stmt.Annotated(annotations, inner with { node: r.stmt }), loaded: r.loaded, had_error: false, error_message: "" }
         }
         _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }

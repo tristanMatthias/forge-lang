@@ -19,6 +19,7 @@
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
 use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation}
+use core.{NodeStore}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 use parse.{parse_body_source}
@@ -43,7 +44,7 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 ///
 /// Fast path: when the program has no @comptime fns we short-circuit
 /// without walking the AST at all.
-export fn run_comptime(stmts: List<SStmt>) -> List<SStmt> {
+export fn run_comptime(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     let reg = collect_comptime_fns(stmts)
     if reg.fns.length == 0 { return stmts }
     rewrite_program(stmts, reg)

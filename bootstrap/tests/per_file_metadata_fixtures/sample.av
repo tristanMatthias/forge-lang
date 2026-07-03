@@ -72,7 +72,7 @@ fn main() -> int {
 
     let entry_dir = modules_dirname(top_path)
     let empty: List<string> = []
-    let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, empty)
+    let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, empty, parsed.store)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let fp = avra_bytes_make(32)

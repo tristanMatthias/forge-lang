@@ -85,6 +85,14 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
 
 - **F0 (y5um.8.1)** — thread `NodeStore` through all passes; add the shared
   transform-alloc helpers to core/arena.av. Zero behavior change.
+  **DONE** — the single-store invariant is live (module/package/sibling and
+  test-runner sub-parses allocate into the entry or bundle store via
+  `parse_program_source_shared`; the boxed quote-scan fallback under
+  `--module_path` is deleted); all twelve pass entries + the or-fail
+  wrappers carry the store; the test-bundle path threads one bundle-wide
+  `CompileTarget.store`. Diff-test byte-identical; suite 3699/3699 + fixed
+  point; the invariant is spec-pinned (`shared_store_test`,
+  mutation-verified).
 - **F1a (y5um.8.2)** — flip localized containers: `CompConfig`, `SelectArm`,
   `WhenArm`, `Annotation` → id fields; consumers read via store; parsers record
   real container children (retires their walker-opaque status).

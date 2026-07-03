@@ -76,7 +76,7 @@ fn main() -> int {
         return 1
     }
     let empty: List<string> = []
-    let mod_resolved = resolve_module_files(resolved_top.stmts!, entry_dir, empty)
+    let mod_resolved = resolve_module_files(resolved_top.stmts!, entry_dir, empty, resolved_top.store)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let files = collect_source_files(mod_resolved.stmts)
