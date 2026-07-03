@@ -205,6 +205,12 @@ export enum DiagCode {
     /// type (`GenOpt<int>`) or make the function generic over the
     /// missing parameter (`fn f<T>(x: GenOpt<T>)`).
     UnderAppliedGeneric
+    /// F1005 — a struct literal that omits declared fields. Every
+    /// field must be initialized explicitly: omitted fields do NOT
+    /// default — before this gate they silently zero-filled, the
+    /// null-where-object-expected class. Construct from an existing
+    /// value with `with` to change only some fields.
+    MissingFields
     /// F1043 — method call on a receiver whose type has no such
     /// method. The message lists the receiver's available methods.
     UnknownMethod
@@ -401,6 +407,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
         .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
         .UnderAppliedGeneric -> ErrorDef { code: "F1004", help: "apply the type's arguments (`Foo<int>`), or make the function generic over the missing parameter (`fn f<T>(x: Foo<T>)`)" }
+        .MissingFields       -> ErrorDef { code: "F1005", help: "initialize every declared field in the struct literal — to derive from an existing value changing only some fields, use `base with { field: value }`" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }

@@ -89,7 +89,33 @@ export fn check_struct_lit_fields(tc: TC, receiver_ty: ValueType, name: string, 
         }
         i = i + 1
     }
+    // The reverse direction (F1005): every DECLARED field must be
+    // initialized. Omitted fields do not default — pre-gate they silently
+    // zero-filled (`p.z` read null), the null-where-object-expected class.
+    if fields.length > 0 {
+        mut missing = ""
+        mut j = 0
+        while j < fields.length {
+            if !field_init_named(inits, fields[j].name) {
+                missing = if missing == "" { fields[j].name } else { "${missing}, ${fields[j].name}" }
+            }
+            j = j + 1
+        }
+        if missing != "" {
+            acc = tc_report(acc, DiagCode.MissingFields, "struct literal for `${name}` is missing field(s): ${missing}")
+        }
+    }
     acc
+}
+
+/// True iff `inits` carries an initializer for field `fname`.
+fn field_init_named(inits: List<FieldInit>, fname: string) -> bool {
+    mut i = 0
+    while i < inits.length {
+        if inits[i].name == fname { return true }
+        i = i + 1
+    }
+    false
 }
 
 /// Validate ONE field's value against its declared type: a string↔non-string
