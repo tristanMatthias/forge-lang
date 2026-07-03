@@ -45,6 +45,16 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    codegen, eval, build metadata) gains the `NodeStore`. No behavior change —
    byte-identical trivially. This is the single enabling move: container and
    variant flips only need local edits afterwards.
+   **F0 also establishes the single-store invariant**: the compile pipeline
+   MERGES trees parsed by other parsers (module-file resolution, sibling-file
+   loading, test-runner reparse) — today those sub-parses build their own
+   stores, which is why `lower_quotes_via_store` keeps a boxed fallback for
+   `--module_path`. F0 threads the ENTRY store into every sub-parse (exactly
+   as B1's template sub-parsers already share the outer store, Decision 3),
+   so one store covers the whole merged program. Corollary: the boxed
+   quote-scan fallback dissolves; a store scan is valid unconditionally.
+   Arena ids are per-store indices, so store MERGING (id rebasing) is
+   rejected — sharing one store from the start is the only sound shape.
 2. **Transforms become allocators via the parser's own helpers.** When a flipped
    field forces a synthesis site (desugar/mono/quote/comptime/walker/marshal) to
    produce an id, it allocates through shared `core/arena.av` alloc helpers (the
