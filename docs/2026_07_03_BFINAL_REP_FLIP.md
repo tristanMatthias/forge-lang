@@ -64,6 +64,16 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    exercised on small blast radii, and each container flip retires a
    walker-opaque edge-model debt from B1. Order: CompConfig+SelectArm+WhenArm+
    Annotation → FieldInit → MatchArm → ParamEntry.
+   **F1 ships DUAL fields (the B1 `wrapped`+`ids` pattern), not a hard flip:**
+   a hard field-type change would force store-threading through every
+   store-less consumer at once — `render_*`, the derive-generated walkers,
+   eval — exactly the big-bang the staging exists to avoid. Instead each F1
+   stage ADDS the id field(s) beside the boxed ones; parsers populate them
+   natively (ids are already in hand); a parity spec pins id ⇔ boxed
+   agreement via `store.get`; consumers stay on the boxed halves (dark,
+   byte-identical trivially) and migrate read-by-read afterwards. The boxed
+   halves die at F4 with the wrappers — the duals are staging scaffolding
+   with a scheduled demolition, not a second source of truth left standing.
 4. **Variant payloads flip by kind, smallest first: Pattern → Stmt → Expr.**
    Pattern is the pilot (~33 constructor sites). Within one kind, all
    construct/match sites flip together — the type checker enumerates the
