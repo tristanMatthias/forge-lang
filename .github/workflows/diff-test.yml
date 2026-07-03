@@ -69,4 +69,16 @@ jobs:
           # Indirection keeps the ref out of shell parsing — branch names
           # are validated by GitHub, but pass data as data.
           BASE_REF: ${{ github.base_ref }}
-        run: bash bootstrap/scripts/diagnose.sh --diff-test --base "origin/${BASE_REF}" --new HEAD
+          # An `intended-ir-change` label switches the oracle from
+          # byte-identity to run-equivalence: IR may diverge, but every
+          # corpus artifact must RUN identically (and the suite must be
+          # green — the rc-strict job). The documented landing path for
+          # intentional codegen changes.
+          RUN_EQUIV: ${{ contains(github.event.pull_request.labels.*.name, 'intended-ir-change') && '1' || '0' }}
+        run: |
+          extra=""
+          if [ "$RUN_EQUIV" = "1" ]; then
+            extra="--run-equiv"
+            echo "intended-ir-change label present — running the run-equivalence oracle"
+          fi
+          bash bootstrap/scripts/diagnose.sh --diff-test --base "origin/${BASE_REF}" --new HEAD $extra

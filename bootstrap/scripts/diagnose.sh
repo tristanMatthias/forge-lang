@@ -251,7 +251,7 @@ DIFF & ANALYSIS
   --diff-fn <file.av> <fn>
                        Same as --diff but only shows the body of one
                        function.
-  --diff-test [--base <ref>] [--new <ref>] [--new-prebuilt]
+  --diff-test [--base <ref>] [--new <ref>] [--new-prebuilt] [--run-equiv]
                        Differential test (HRN): build the
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
@@ -2888,18 +2888,41 @@ dt_corpus_task() {
   fi
 }
 
+# Run-equivalence check for one corpus divergence (--run-equiv): link BOTH
+# already-emitted artifacts and execute them; equivalent means byte-identical
+# stdout AND equal exit codes. The weaker oracle for INTENDED IR changes —
+# behavior, not bytes. Bounded by a timeout so a wedged artifact fails loudly.
+dt_run_equiv_check() {
+  local cwd="$1" name="$2"
+  [ -f "$cwd/old.ll" ] && [ -f "$cwd/new.ll" ] || return 1
+  ensure_runtime; ensure_llvm_wrapper
+  link_ll "$cwd/old.ll" "$cwd/old.bin" "$cwd/link.old.log" || { err "run-equiv: OLD artifact of '$name' failed to link"; return 1; }
+  link_ll "$cwd/new.ll" "$cwd/new.bin" "$cwd/link.new.log" || { err "run-equiv: NEW artifact of '$name' failed to link"; return 1; }
+  local rc_old=0 rc_new=0
+  timeout 30 "$cwd/old.bin" >"$cwd/run.old.out" 2>&1 || rc_old=$?
+  timeout 30 "$cwd/new.bin" >"$cwd/run.new.out" 2>&1 || rc_new=$?
+  if [ "$rc_old" = "$rc_new" ] && diff -q "$cwd/run.old.out" "$cwd/run.new.out" >/dev/null 2>&1; then
+    log "diff-test: '$name' IR diverged but RUNS identically (exit $rc_old) — intended-change equivalence holds"
+    return 0
+  fi
+  err "run-equiv: '$name' RUNS DIFFERENTLY (exit $rc_old vs $rc_new) — outputs: $cwd/run.old.out vs $cwd/run.new.out"
+  diff -u "$cwd/run.old.out" "$cwd/run.new.out" | head -40 >&2
+  return 1
+}
+
 # Entry point for `--diff-test` (see the section banner above). Builds the
 # OLD/oracle and NEW/candidate compilers, then asserts byte-identical IR
 # over the selfhost source + corpus; prints a readable diff and returns
 # non-zero on any divergence.
 mode_diff_test() {
-  local base="" new="HEAD" prebuilt=0
+  local base="" new="HEAD" prebuilt=0 run_equiv=0 intended=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --base) base="${2:?--base needs a ref}"; shift 2 ;;
       --new)  new="${2:?--new needs a ref}";  shift 2 ;;
       --new-prebuilt) prebuilt=1; shift ;;
-      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref> / --new-prebuilt)" ;;
+      --run-equiv) run_equiv=1; shift ;;
+      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref> / --new-prebuilt / --run-equiv)" ;;
     esac
   done
   [ -n "$base" ] || base="${AVRA_DIFFTEST_BASE:-$(window_resolve_integration_ref)}"
@@ -2962,6 +2985,13 @@ mode_diff_test() {
     fails=$((fails+1))
   elif diff -q "$wd/self.old.ll" "$wd/self.new.ll" >/dev/null 2>&1; then
     ok "diff-test: selfhost IR byte-identical ($(wc -l <"$wd/self.old.ll" | tr -d ' ') lines)"
+  elif [ "$run_equiv" = "1" ]; then
+    # Intended-IR-change mode: the selfhost artifacts are COMPILERS, whose
+    # run-equivalence is exactly what the corpus phase below measures (each
+    # corpus program is compiled by both and must RUN identically) plus the
+    # full suite under NEW (CI's rc-strict job). Record, don't fail.
+    intended=$((intended+1))
+    warn "diff-test: selfhost IR diverged — INTENDED (run-equiv mode); corpus run-equivalence + the suite are the oracle"
   else
     err "diff-test: SELFHOST IR DIVERGED — the compiler compiles itself differently"
     err "  full IR: $wd/self.old.ll  vs  $wd/self.new.ll"
@@ -3004,8 +3034,14 @@ mode_diff_test() {
       newfail) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name")
                [ -z "$first_div_cwd" ] && first_div_cwd="$cwd"
                err "diff-test: NEW failed to compile '$name' that OLD compiled — regression" ;;
-      diverge) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name")
-               [ -z "$first_div_cwd" ] && first_div_cwd="$cwd" ;;
+      diverge)
+        checked=$((checked+1))
+        if [ "$run_equiv" = "1" ] && dt_run_equiv_check "$cwd" "$name"; then
+          intended=$((intended+1)); rm -rf "$cwd"
+        else
+          fails=$((fails+1)); divergent+=("$name")
+          [ -z "$first_div_cwd" ] && first_div_cwd="$cwd"
+        fi ;;
       *)       fails=$((fails+1))
                err "diff-test: corpus task for '$name' produced no verdict (harness bug)" ;;
     esac
@@ -3030,12 +3066,24 @@ mode_diff_test() {
   fi
 
   log "diff-test: compared $checked input(s), skipped $skipped (not standalone-compilable)"
+  if [ "$run_equiv" = "1" ] && [ "$skipped" -gt 0 ]; then
+    err "diff-test: run-equiv mode forbids corpus skips — the run oracle is weaker than byte-identity, so coverage must be total"
+    fails=$((fails+1))
+  fi
   if [ "$fails" -eq 0 ]; then
-    ok "DIFF-TEST PASS — OLD ($base) and NEW ($new_label) emit byte-identical IR"
+    if [ "$run_equiv" = "1" ] && [ "$intended" -gt 0 ]; then
+      ok "DIFF-TEST RUN-EQUIV PASS — IR diverged at $intended site(s) (intended) but every corpus artifact RUNS identically; the suite (CI rc-strict) completes the oracle"
+    else
+      ok "DIFF-TEST PASS — OLD ($base) and NEW ($new_label) emit byte-identical IR"
+    fi
     return 0
   fi
   err "DIFF-TEST FAIL — $fails divergence(s); the change is NOT behaviour-preserving"
-  err "(if the IR change is intentional, confirm run-results match and update the oracle)"
+  if [ "$run_equiv" = "1" ]; then
+    err "(run-equiv mode: a corpus artifact RUNS differently — the IR change is not behavior-preserving)"
+  else
+    err "(if the IR change is intentional, confirm run-results match and label the PR intended-ir-change to run the run-equivalence oracle)"
+  fi
   return 1
 }
 
