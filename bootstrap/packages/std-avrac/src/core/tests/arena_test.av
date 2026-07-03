@@ -137,9 +137,10 @@ spec "ingest_program records real statement spans" {
     then "consecutive statements get adjacent byte-offset spans + correct line/col" {
         let stmts = [sstmt_at(Stmt.NoOp, 1, 1, ""), sstmt_at(Stmt.NoOp, 2, 1, "")]
         let store = ingest_program(stmts, "x\ny\n")
-        let s0 = store.stmts.span_of(StmtId(0))
-        let s1 = store.stmts.span_of(StmtId(1))
-        let lc1 = store.stmt_linecol(StmtId(1))
+        // Ids are 1-based (raw 0 is the null niche).
+        let s0 = store.stmts.span_of(StmtId(1))
+        let s1 = store.stmts.span_of(StmtId(2))
+        let lc1 = store.stmt_linecol(StmtId(2))
         store.stmts.count() == 2 && s0.lo == 0 && s0.hi == 2 && s1.lo == 2 && s1.hi == 4 && lc1.line == 2 && lc1.col == 1
     }
 }
@@ -303,8 +304,8 @@ spec "ingest_program: a synthesised statement has no source position" {
     then "a line-0 statement gets span_none and (0,0) line/col" {
         let stmts = [sstmt_at(Stmt.NoOp, 0, 0, "")]
         let store = ingest_program(stmts, "")
-        let lc = store.stmt_linecol(StmtId(0))
-        byte_span_is_none(store.stmts.span_of(StmtId(0))) && lc.line == 0 && lc.col == 0
+        let lc = store.stmt_linecol(StmtId(1))
+        byte_span_is_none(store.stmts.span_of(StmtId(1))) && lc.line == 0 && lc.col == 0
     }
 }
 
@@ -316,7 +317,7 @@ spec "ingest_program: hi skips synthesised statements to the next real one" {
     then "an interspersed synthesised statement does not stretch the span to EOF" {
         let stmts = [sstmt_at(Stmt.NoOp, 1, 1, ""), sstmt_at(Stmt.NoOp, 0, 0, ""), sstmt_at(Stmt.NoOp, 3, 1, "")]
         let store = ingest_program(stmts, "a\nb\nc\n")
-        let s0 = store.stmts.span_of(StmtId(0))
+        let s0 = store.stmts.span_of(StmtId(1))
         s0.lo == 0 && s0.hi == 4
     }
 }

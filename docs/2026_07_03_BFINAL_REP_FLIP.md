@@ -44,7 +44,7 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    signature (desugar, component expand, marshal derive, hygiene, mono, typeck,
    codegen, eval, build metadata) gains the `NodeStore`. No behavior change —
    byte-identical trivially. This is the single enabling move: container and
-   variant flips only need local edits afterwards.
+   variant flips only need local edits afterward.
    **F0 also establishes the single-store invariant**: the compile pipeline
    MERGES trees parsed by other parsers (module-file resolution, sibling-file
    loading, test-runner reparse) — today those sub-parses build their own
@@ -64,6 +64,24 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    exercised on small blast radii, and each container flip retires a
    walker-opaque edge-model debt from B1. Order: CompConfig+SelectArm+WhenArm+
    Annotation → FieldInit → MatchArm → ParamEntry.
+   **F1 ships DUAL fields (the B1 `wrapped`+`ids` pattern), not a hard flip:**
+   a hard field-type change would force store-threading through every
+   store-less consumer at once — `render_*`, the derive-generated walkers,
+   eval — exactly the big-bang the staging exists to avoid. Instead each F1
+   stage ADDS the id field(s) beside the boxed ones; parsers populate them
+   natively (ids are already in hand); a parity spec pins id ⇔ boxed
+   agreement via `store.get`; consumers stay on the boxed halves (dark,
+   byte-identical trivially) and migrate read-by-read afterward. The boxed
+   halves die at F4 with the wrappers — the duals are staging scaffolding
+   with a scheduled demolition, not a second source of truth left standing.
+   **Dual id fields are NULLABLE**: null = "no arena row yet" — a transform
+   rebuilt the container and its pass hasn't migrated to allocating; readers
+   fall back to the boxed half. The parser always populates real ids.
+   (Discovered en route: struct literals with missing fields silently
+   zero-fill — spec violation, filed + gate implemented as F1005 on
+   claude/typeck-missing-fields; its cleanup train runs beside the F stages
+   and, once enforced, makes every transform site declare its nulls
+   explicitly.)
 4. **Variant payloads flip by kind, smallest first: Pattern → Stmt → Expr.**
    Pattern is the pilot (~33 constructor sites). Within one kind, all
    construct/match sites flip together — the type checker enumerates the
@@ -96,6 +114,14 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
 - **F1a (y5um.8.2)** — flip localized containers: `CompConfig`, `SelectArm`,
   `WhenArm`, `Annotation` → id fields; consumers read via store; parsers record
   real container children (retires their walker-opaque status).
+  **DONE** — nullable duals live on all four containers; the parser populates
+  every parse-path dual (parity battery `f1a_container_duals_test`,
+  mutation-verified). Two foundational fixes landed with it: arena ids are
+  1-BASED (raw 0 = the null niche — the id-0/null conflation class is
+  unrepresentable) and the id newtypes hoisted to core/ids.av. Diff-test
+  byte-identical; full suite + fixed point green. Transform-rebuilt
+  containers carry null duals until their pass migrates (the F1005 train
+  makes those nulls explicit).
 - **F1b (y5um.8.3)** — flip `FieldInit.value` → `ExprId`.
 - **F1c (y5um.8.4)** — flip `MatchArm` → `{pattern: PatId, guard: ExprId?, body: ExprId}`.
 - **F1d (y5um.8.5)** — flip `ParamEntry.vtype` → `TypeId` (the wide sweep:

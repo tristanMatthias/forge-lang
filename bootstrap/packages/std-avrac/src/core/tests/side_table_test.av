@@ -51,8 +51,10 @@ fn l1_sidetable_output() -> string {
 }
 
 spec "L1 side-tables record derived facts over the arena's ids (wired)" {
-    then "a dense child-count table has one slot per ingested statement" {
-        l1_sidetable_output().contains("[l1-sidetable] dense=6")
+    then "a dense child-count table holds the 6 stmt slots plus the niche pad" {
+        // Ids are 1-based (raw 0 = the null niche), so an id-keyed dense
+        // table's backing vec carries a pad slot at index 0: 6 stmts -> 7.
+        l1_sidetable_output().contains("[l1-sidetable] dense=7")
     }
     then "a sparse non-leaf table stores only the 5 non-leaf statements" {
         l1_sidetable_output().contains("nonleaf=5")

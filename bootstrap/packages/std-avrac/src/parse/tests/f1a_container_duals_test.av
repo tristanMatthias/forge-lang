@@ -1,0 +1,165 @@
+// WHY: B-final F1a — the four walker-opaque containers (WhenArm, SelectArm,
+// Annotation, CompConfig) carry DUAL id fields beside their boxed children
+// (nullable: null = "no arena row yet", the transform-rebuilt state). On the
+// PARSE path the ids must always be present and must denote the same node
+// the boxed half carries — that agreement is what lets consumers migrate
+// from the boxed halves to store reads one at a time without drift. These
+// specs pin it: for each container parsed from source, the dual id is
+// non-null and `store.get(id)` renders identically to the boxed child.
+
+use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
+use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, stmt_unwrap, NodeStore, ExprId}
+
+/// Dig the first statement of the first fn's body out of a served program.
+fn first_body_stmt(stmts: List<SStmt>) -> Stmt {
+    match stmt_unwrap(stmts[0].node) {
+        .Function(_, _, _, _, body) -> stmt_unwrap(body[0].node)
+        _ -> Stmt.NoOp
+    }
+}
+
+/// Each then body lives in a helper fn: a bare `return` inside a then-block
+/// returns out of the synthesized unit fn and silently drops registrations
+/// (filed bug) — helpers own the early returns.
+fn when_bodies_mirror() -> bool {
+    let probe = parse_expression_native_probe("when { a > 1 -> f(a)  _ -> g() }")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .When(arms) -> {
+            if arms.length != 2 { return false }
+            for arm in arms {
+                if arm.body_id == none { return false }
+                if render_expr(probe.store.exprs.get(arm.body_id!)) != render_expr(arm.body.node) { return false }
+            }
+            true
+        }
+        _ -> false
+    }
+}
+
+fn when_conds_mirror() -> bool {
+    let probe = parse_expression_native_probe("when { a > 1 -> f(a)  _ -> g() }")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .When(arms) -> {
+            if arms[0].cond_id == none { return false }
+            if arms[0].cond == none { return false }
+            if render_expr(probe.store.exprs.get(arms[0].cond_id!)) != render_expr(arms[0].cond!.node) { return false }
+            arms[1].cond_id == none && arms[1].cond == none
+        }
+        _ -> false
+    }
+}
+
+fn select_arm_mirrors() -> bool {
+    let src = "fn f(c: Channel<int>) -> int {\n    select {\n        v <- c -> {\n            handle(v)\n            log(v)\n        }\n    }\n    0\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match first_body_stmt(r.stmts!) {
+        .Select(arms) -> {
+            if arms.length != 1 { return false }
+            let arm = arms[0]
+            if arm.chan_id == none { return false }
+            if render_expr(r.store.exprs.get(arm.chan_id!)) != render_expr(arm.chan) { return false }
+            if arm.body_ids == none { return false }
+            let ids = arm.body_ids!
+            if ids.length != arm.body.length { return false }
+            for (i, id) in ids.enumerate() {
+                if render_stmt(r.store.stmts.get(id)) != render_stmt(arm.body[i].node) { return false }
+            }
+            true
+        }
+        _ -> false
+    }
+}
+
+fn annotation_args_mirror() -> bool {
+    let src = "@limit(3 + 4, name)\nfn f() -> int { 1 }\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match r.stmts![0].node {
+        .Annotated(annots, _) -> {
+            if annots.length != 1 { return false }
+            let a = annots[0]
+            if a.arg_ids == none { return false }
+            let ids = a.arg_ids!
+            if ids.length != a.args.length || ids.length != 2 { return false }
+            for (i, id) in ids.enumerate() {
+                if render_expr(r.store.exprs.get(id)) != render_expr(a.args[i].node) { return false }
+            }
+            true
+        }
+        _ -> false
+    }
+}
+
+fn doc_annotation_mirrors() -> bool {
+    let src = "/// adds one\nfn inc(x: int) -> int { x + 1 }\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match r.stmts![0].node {
+        .Annotated(annots, _) -> {
+            let a = annots[0]
+            if a.arg_ids == none { return false }
+            a.arg_ids!.length == 1
+                && render_expr(r.store.exprs.get(a.arg_ids![0])) == render_expr(a.args[0].node)
+        }
+        _ -> false
+    }
+}
+
+fn comp_config_mirrors() -> bool {
+    let src = "component counter {\n    config {\n        start: int = 5\n        label: string\n    }\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match stmt_unwrap(r.stmts![0].node) {
+        .ComponentDef(_, _, config, _, _, _) -> {
+            if config.length != 2 { return false }
+            let with_default = config[0]
+            let plain = config[1]
+            if with_default.ty_id == none || plain.ty_id == none { return false }
+            if with_default.default_id == none || with_default.default_val == none { return false }
+            if render_expr(r.store.exprs.get(with_default.default_id!)) != render_expr(with_default.default_val!) { return false }
+            plain.default_id == none && plain.default_val == none
+        }
+        _ -> false
+    }
+}
+
+spec "F1a duals: when arms carry cond/body rows that mirror the boxed halves" {
+    given "a when expression parsed through the native probe" {
+        then "every arm's body_id is present and renders identically" {
+            when_bodies_mirror()
+        }
+        then "a conditioned arm carries cond_id; the wildcard arm carries none" {
+            when_conds_mirror()
+        }
+    }
+}
+
+spec "F1a duals: select arms carry chan/body rows that mirror the boxed halves" {
+    given "a select statement inside a fn body" {
+        then "chan_id and per-element body_ids are present and agree" {
+            select_arm_mirrors()
+        }
+    }
+}
+
+spec "F1a duals: annotation args carry one row per arg, in order" {
+    given "an annotated declaration with expression args" {
+        then "arg_ids agree element-wise with the boxed args" {
+            annotation_args_mirror()
+        }
+        then "a doc comment's synthesized annotation carries its string row" {
+            doc_annotation_mirrors()
+        }
+    }
+}
+
+spec "F1a duals: component config rows carry type + default ids" {
+    given "a component with a defaulted and an undefaulted config key" {
+        then "ty_id is always present; default_id mirrors default_val presence" {
+            comp_config_mirrors()
+        }
+    }
+}

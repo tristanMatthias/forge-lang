@@ -212,10 +212,12 @@ impl Parser {
             if !self.consume(Tk.Colon, "expected `:` after config key") { return .Err("parse error") }
             let te = self.parse_type_expr("expected config type")?
             let vt = type_expr_to_vtype(te)
+            mut default_id: ExprId? = none
             let default_val = if self.check(Tk.Equal) {
                 self.advance()
-                let dv = self.parse_expression_boxed()?
-                dv
+                let dv_id = self.parse_expression()?
+                default_id = dv_id
+                self.expr_of(dv_id)
             } else {
                 null
             }
@@ -225,7 +227,7 @@ impl Parser {
                 if self.check(Tk.Identifier) { self.advance() }
             }
             if self.check(Tk.Comma) { self.advance() }
-            out.push(CompConfig { key, ty_vt: vt, default_val })
+            out.push(CompConfig { key, ty_vt: vt, default_val, ty_id: self.glue_ingest_type(vt), default_id })
         }
         .Ok(out)
     }

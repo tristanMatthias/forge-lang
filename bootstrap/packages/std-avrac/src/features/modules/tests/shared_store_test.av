@@ -17,8 +17,8 @@ use @std.avrac.features.modules.{resolve_dir_module_body}
 /// True iff any Expr.Quote row exists in the store — mirrors the presence
 /// scan `lower_quotes_via_store` runs on the live path.
 fn store_carries_quote(r_exprs_count: int, exprs_get: fn(int) -> Expr) -> bool {
-    mut i = 0
-    while i < r_exprs_count {
+    mut i = 1
+    while i <= r_exprs_count {
         if exprs_get(i) is .Quote { return true }
         i = i + 1
     }
