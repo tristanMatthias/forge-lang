@@ -1,0 +1,21 @@
+// WHY: the four typed node-id newtypes, hoisted out of arena.av so BOTH
+// halves of the node model can name them: arena.av (the id-keyed stores)
+// and ast.av (container structs and, as the B-final flip proceeds,
+// variant payloads carry id fields). ids.av imports nothing, so ast.av
+// gaining `use core.{ExprId, ...}` introduces no core-file cycle — the
+// same reason AnyNode lives in ast.av rather than arena.av.
+//
+// Typed ids are OPAQUE HANDLES (compare / look up, never inspect):
+// typeck keeps them nominally distinct — passing a StmtId where an
+// ExprId is wanted is a type error (arena_test.av) — and each side-table
+// is keyed by its own id kind. Construct `StmtId(i)`, peel with `.raw()`
+// inside the node-model modules only.
+
+/// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
+export type ExprId = int
+/// Index into the Stmt arena.
+export type StmtId = int
+/// Index into the Pattern arena.
+export type PatId = int
+/// Index into the ValueType arena.
+export type TypeId = int

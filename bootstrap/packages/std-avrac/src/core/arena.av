@@ -56,18 +56,13 @@
 // side-table value type).
 
 use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild, strip_spans, SStmt, sstmt_at}
+use core.{ExprId, StmtId, PatId, TypeId}
 use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 
-/// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
-export type ExprId = int
-/// Index into the Stmt arena.
-export type StmtId = int
-/// Index into the Pattern arena.
-export type PatId = int
-/// Index into the ValueType arena.
-export type TypeId = int
+// The four typed id newtypes (ExprId/StmtId/PatId/TypeId) live in
+// core/ids.av so ast.av can carry id fields without a core-file cycle.
 
 // A node's child edges are the cross-type `NodeEdges` (defined below, next to
 // `NodeRef`) — one heterogeneous, order-preserving list, the single edge

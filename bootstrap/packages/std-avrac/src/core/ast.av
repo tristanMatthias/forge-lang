@@ -2,6 +2,7 @@
 // Stmt, Pattern, and their recursive list types. Pure data only;
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
+use core.{ExprId, StmtId, PatId, TypeId}
 use list_ops.{list_map, list_any}
 use features.walker.{derive_walker}
 
@@ -2321,14 +2322,29 @@ export enum Stmt {
 ///
 /// `List<WhenArm>` replaces the retired `enum WhenArmList`. Used as
 /// `arms: List<WhenArm>` on Expr.When.
-export type WhenArm = { cond: SExpr?, body: SExpr }
+export type WhenArm = {
+    cond: SExpr?,
+    body: SExpr,
+    // B-final F1a dual fields: the arena rows backing cond/body (parser-
+    // populated; transforms allocate rebuilt children). The boxed halves
+    // above die at F4.
+    cond_id: ExprId?,
+    body_id: ExprId,
+}
 
 /// Select arm: one branch `binding <- channel -> body` of a
 /// `select { ... }` block.
 ///
 /// `List<SelectArm>` replaces the retired `enum SelectArmList`.
 /// Used as `arms: List<SelectArm>` on Stmt.Select.
-export type SelectArm = { binding: string, chan: Expr, body: List<SStmt> }
+export type SelectArm = {
+    binding: string,
+    chan: Expr,
+    body: List<SStmt>,
+    // B-final F1a dual fields (see WhenArm).
+    chan_id: ExprId,
+    body_ids: List<StmtId>,
+}
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
 /// Args are stored as `List<SExpr>` for generality so any annotation
@@ -2338,7 +2354,12 @@ export type SelectArm = { binding: string, chan: Expr, body: List<SStmt> }
 /// Used as `annotations: List<Annotation>` on Stmt.Annotated and
 /// threaded through the resolver, type checker, macro expander,
 /// metadata extractor and formatter.
-export type Annotation = { name: string, args: List<SExpr> }
+export type Annotation = {
+    name: string,
+    args: List<SExpr>,
+    // B-final F1a dual field (see WhenArm): one row per arg, in order.
+    arg_ids: List<ExprId>,
+}
 
 /// Component config schema entry: one `key: ty = default` row declared
 /// by a ComponentDef. Call sites are type-checked against the schema.
@@ -2346,7 +2367,14 @@ export type Annotation = { name: string, args: List<SExpr> }
 /// `List<CompConfig>` replaces the retired `enum CompConfigList`. Used
 /// as `config: List<CompConfig>` on Stmt.ComponentDef and threaded
 /// through component expansion / lookup helpers.
-export type CompConfig = { key: string, ty_vt: ValueType, default_val: Expr? }
+export type CompConfig = {
+    key: string,
+    ty_vt: ValueType,
+    default_val: Expr?,
+    // B-final F1a dual fields (see WhenArm).
+    ty_id: TypeId,
+    default_id: ExprId?,
+}
 
 /// Component config pair: one `key: value` supplied at a
 /// ComponentBlock call site to override the schema's default.
