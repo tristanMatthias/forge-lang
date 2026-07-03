@@ -418,8 +418,9 @@ impl Parser {
             if !self.consume(Tk.Arrow, "expected `->` in match arm") { return .Err("parse error") }
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = false
-            let body_id = self.parse_expression()?
+            let body_res = self.parse_expression()
             self.allow_dot_postfix = saved
+            let body_id = body_res?
             if self.check(Tk.Comma) { self.advance() }
             out.push(WhenArm { cond, body: sexpr(self.expr_of(body_id), self.current_line, self.current_column), cond_id, body_id })
         }

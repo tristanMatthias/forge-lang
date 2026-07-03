@@ -44,7 +44,7 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    signature (desugar, component expand, marshal derive, hygiene, mono, typeck,
    codegen, eval, build metadata) gains the `NodeStore`. No behavior change —
    byte-identical trivially. This is the single enabling move: container and
-   variant flips only need local edits afterwards.
+   variant flips only need local edits afterward.
    **F0 also establishes the single-store invariant**: the compile pipeline
    MERGES trees parsed by other parsers (module-file resolution, sibling-file
    loading, test-runner reparse) — today those sub-parses build their own
@@ -71,7 +71,7 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    stage ADDS the id field(s) beside the boxed ones; parsers populate them
    natively (ids are already in hand); a parity spec pins id ⇔ boxed
    agreement via `store.get`; consumers stay on the boxed halves (dark,
-   byte-identical trivially) and migrate read-by-read afterwards. The boxed
+   byte-identical trivially) and migrate read-by-read afterward. The boxed
    halves die at F4 with the wrappers — the duals are staging scaffolding
    with a scheduled demolition, not a second source of truth left standing.
    **Dual id fields are NULLABLE**: null = "no arena row yet" — a transform

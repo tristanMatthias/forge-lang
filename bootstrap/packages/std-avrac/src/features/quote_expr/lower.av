@@ -709,13 +709,17 @@ fn list_concat_call(left: Expr, right: Expr) -> Expr {
 }
 
 /// Build an Expr that, when evaluated, produces a single
-/// `Annotation { name, args }` value. Step 4 — needed so a macro's
-/// quote-emitted `@expand(...)` annotation roundtrips through the
-/// expand pass's fixpoint loop and the inner @expand re-fires.
+/// `Annotation { name, args, arg_ids }` value. Step 4 — needed so a
+/// macro's quote-emitted `@expand(...)` annotation roundtrips through
+/// the expand pass's fixpoint loop and the inner @expand re-fires.
+/// `arg_ids` is explicitly null: a quote-rebuilt annotation has no
+/// arena rows until its consumer's pass migrates (the F1a dual-field
+/// convention).
 fn construct_annotation(a: Annotation) -> Expr {
-    struct_lit_2("@std::avrac::core::Annotation",
+    struct_lit_3("@std::avrac::core::Annotation",
         "name", string_lit_expr(a.name),
-        "args", construct_expr_list(a.args))
+        "args", construct_expr_list(a.args),
+        "arg_ids", Expr.None)
 }
 
 /// Build an Expr producing a `List<Annotation>` AST value at
