@@ -2325,11 +2325,12 @@ export enum Stmt {
 export type WhenArm = {
     cond: SExpr?,
     body: SExpr,
-    // B-final F1a dual fields: the arena rows backing cond/body (parser-
-    // populated; transforms allocate rebuilt children). The boxed halves
-    // above die at F4.
+    // B-final F1a dual fields — NULLABLE: null means "no arena row yet"
+    // (a transform rebuilt this container and its pass hasn't migrated to
+    // allocating; readers fall back to the boxed half). The parser always
+    // populates real ids. The boxed halves die at F4.
     cond_id: ExprId?,
-    body_id: ExprId,
+    body_id: ExprId?,
 }
 
 /// Select arm: one branch `binding <- channel -> body` of a
@@ -2341,9 +2342,9 @@ export type SelectArm = {
     binding: string,
     chan: Expr,
     body: List<SStmt>,
-    // B-final F1a dual fields (see WhenArm).
-    chan_id: ExprId,
-    body_ids: List<StmtId>,
+    // B-final F1a dual fields (see WhenArm — NULLABLE, null = no row yet).
+    chan_id: ExprId?,
+    body_ids: List<StmtId>?,
 }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
@@ -2357,8 +2358,9 @@ export type SelectArm = {
 export type Annotation = {
     name: string,
     args: List<SExpr>,
-    // B-final F1a dual field (see WhenArm): one row per arg, in order.
-    arg_ids: List<ExprId>,
+    // B-final F1a dual field (see WhenArm — NULLABLE, null = no rows yet):
+    // one row per arg, in order.
+    arg_ids: List<ExprId>?,
 }
 
 /// Component config schema entry: one `key: ty = default` row declared
@@ -2371,8 +2373,8 @@ export type CompConfig = {
     key: string,
     ty_vt: ValueType,
     default_val: Expr?,
-    // B-final F1a dual fields (see WhenArm).
-    ty_id: TypeId,
+    // B-final F1a dual fields (see WhenArm — NULLABLE, null = no row yet).
+    ty_id: TypeId?,
     default_id: ExprId?,
 }
 

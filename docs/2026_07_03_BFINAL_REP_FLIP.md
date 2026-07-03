@@ -74,6 +74,14 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
    byte-identical trivially) and migrate read-by-read afterwards. The boxed
    halves die at F4 with the wrappers — the duals are staging scaffolding
    with a scheduled demolition, not a second source of truth left standing.
+   **Dual id fields are NULLABLE**: null = "no arena row yet" — a transform
+   rebuilt the container and its pass hasn't migrated to allocating; readers
+   fall back to the boxed half. The parser always populates real ids.
+   (Discovered en route: struct literals with missing fields silently
+   zero-fill — spec violation, filed + gate implemented as F1005 on
+   claude/typeck-missing-fields; its cleanup train runs beside the F stages
+   and, once enforced, makes every transform site declare its nulls
+   explicitly.)
 4. **Variant payloads flip by kind, smallest first: Pattern → Stmt → Expr.**
    Pattern is the pilot (~33 constructor sites). Within one kind, all
    construct/match sites flip together — the type checker enumerates the
