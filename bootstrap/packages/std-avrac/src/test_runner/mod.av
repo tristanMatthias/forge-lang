@@ -25,7 +25,7 @@ use features.modules.{
     resolve_module_files, modules_dirname, find_packages_dir,
     dedup_modules,
 }
-use parse.{parse_program_source_at, parse_program_source_shared}
+use parse.{parse_program_source_shared}
 use core.{NodeStore}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}

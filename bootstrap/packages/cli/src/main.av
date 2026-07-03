@@ -74,7 +74,7 @@ use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
-use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
+use @std.avrac.parse.{parse_expression_source, parse_program_source}
 use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
