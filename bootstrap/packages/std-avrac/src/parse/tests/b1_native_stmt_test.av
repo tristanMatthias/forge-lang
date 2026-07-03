@@ -16,7 +16,7 @@ use @std.avrac.core.{ingest_program, program_from_store, render_stmt_list, store
 /// Serve-path equivalence: parser-store serve == canonical-ingest serve.
 fn serve_parity(source: string) -> bool {
     let r = parse_program_source(source)
-    if r.had_error != 0 { return false }
+    if r.had_error != 0 || r.stmts == null { return false }
     let native = program_from_store(r.store, "probe.av")
     let canonical = program_from_store(ingest_program(r.stmts!, source), "probe.av")
     if native.length != canonical.length { return false }
@@ -45,7 +45,7 @@ fn roots_faithful(source: string) -> bool {
 /// `conservative_root_span`, so this pins the wiring, not just the math).
 fn root_spans_match(source: string) -> bool {
     let r = parse_program_source(source)
-    if r.had_error != 0 { return false }
+    if r.had_error != 0 || r.stmts == null { return false }
     let canonical = ingest_program(r.stmts!, source)
     if r.store.roots.length != canonical.roots.length { return false }
     for (i, id) in r.store.roots.enumerate() {

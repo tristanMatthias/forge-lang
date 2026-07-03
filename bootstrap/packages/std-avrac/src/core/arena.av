@@ -415,7 +415,8 @@ export fn new_type_arena() -> TypeArena {
 /// replacement for the boxed pointer-tree, plus the file's `LineIndex` so a
 /// node's (line, col) can be recomputed on demand from its span (§14.2) —
 /// the only place line/col is derived once the pass migration lands. Built
-/// by `ingest_program`.
+/// natively by the parser during the parse (the canonical producer); the
+/// walker-driven `ingest_program` builds one only as the parity-test oracle.
 /// The four arenas' row counts at a moment in time — a speculative-parse
 /// snapshot handle (B1). Taken with `NodeStore.mark()`, rolled back with
 /// `NodeStore.truncate_to_mark()`.
@@ -500,9 +501,9 @@ impl NodeStore {
     }
     /// Record the parser's already-allocated top-level statements as this
     /// store's roots: stamp each root row with the same conservative span
-    /// the canonical ingest derives (`conservative_root_span` — one shared
-    /// implementation, so both producers are byte-identical) and mirror
-    /// macro provenance. `stmts[k]` is the spanned wrapper of the row
+    /// the walker-ingest test oracle derives (`conservative_root_span` — one
+    /// shared implementation, so both producers are byte-identical) and
+    /// mirror macro provenance. `stmts[k]` is the spanned wrapper of the row
     /// `ids[k]`; both lists come from one `parse_statement_list_ids` pass.
     fn record_roots(self, stmts: List<SStmt>, ids: List<StmtId>, source_len: int) {
         for (k, s) in stmts.enumerate() {
@@ -672,8 +673,9 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
 /// stretch a span to EOF. A synthesised root itself (line < 1, e.g. injected
 /// intrinsics) gets the sentinel — never a fabricated offset. The precise
 /// end-of-statement byte arrives with per-production offset tracking; until
-/// then BOTH root-span producers (the canonical ingest and the parser's
-/// native recording) call this one helper so their spans are byte-identical.
+/// then BOTH root-span producers (the parser's native recording and the
+/// walker-ingest test oracle) call this one helper so their spans are
+/// byte-identical.
 export fn conservative_root_span(lines: LineIndex, stmts: List<SStmt>, k: int, source_len: int) -> ByteSpan {
     let s = stmts[k]
     if s.line < 1 { return byte_span_none() }

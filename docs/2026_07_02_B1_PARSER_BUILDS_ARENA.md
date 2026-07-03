@@ -141,9 +141,12 @@ masking loop):
    deleted from the compile path. `ingest_program` itself survives OFF the
    path as the parity battery's test oracle (`b1_native_stmt_test` — the
    probe retired to a spec), and the `AVRA_L1_INGEST` diagnostics now report
-   the parser's store (all probe outputs — row counts, root spans,
-   reconstruct fidelity, side-table summary — byte-identical to the ingest
-   era, so the probe specs pass unchanged). Diff-test byte-identical
+   the parser's store. On the pre-existing probe fixtures every output (row
+   counts, root spans, reconstruct fidelity, side-table summary) is unchanged
+   — those specs pass as-is — while a new mutation-verified discriminator
+   spec pins where the native store intentionally differs (orphan rows: a
+   let-else fixture reads 7 stmt rows natively vs 6 re-ingested, proving the
+   serve path is the parser's store). Diff-test byte-identical
    (616,055-line selfhost IR + corpus 14/14). Measured **−1.6% vs oracle**
    (interleaved ×4): the dark-launch double-allocation reclaimed.
 
