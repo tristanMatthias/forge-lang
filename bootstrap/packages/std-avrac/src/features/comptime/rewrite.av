@@ -130,7 +130,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .Grouping(inner) -> .Grouping(rewrite_expr_id(inner, reg))
         .Assign(name, val) -> .Assign(name, rewrite_expr_id(val, reg))
         .Index(obj, idx) -> .Index(rewrite_expr(obj, reg), rewrite_expr(idx, reg))
-        .FieldAccess(obj, field) -> .FieldAccess(rewrite_expr(obj, reg), field)
+        .FieldAccess(obj, field) -> .FieldAccess(rewrite_expr_id(obj, reg), field)
         .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr_id(obj, reg), field, rewrite_expr_id(val, reg))
         .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, rewrite_expr_list(args, reg))
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(c, reg), rewrite_expr(t, reg), rewrite_expr(e, reg))

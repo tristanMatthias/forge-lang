@@ -1534,7 +1534,7 @@ impl Parser {
                     result = Expr.EnumCtor(type_name, field, parsed.wrapped)
                     rid = self.alloc_expr(result, byte_span_none(), self.edges_of_ids(parsed.ids))
                 } else {
-                    result = Expr.FieldAccess(result, field)
+                    result = Expr.FieldAccess(rid, field)
                     rid = self.alloc1(result, rid)
                 }
             }

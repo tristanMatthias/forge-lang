@@ -454,7 +454,7 @@ fn arm_body(bindings: List<Binding>, parent_name: string) -> Expr {
 @comptime
 fn direct_child_expr(b: Binding) -> Expr {
     if b.kind is .WrapperOfSelf {
-        return Expr.FieldAccess(Expr.Ident(b.binding_name), "node")
+        return Expr.FieldAccess(synth_expr_id(Expr.Ident(b.binding_name)), "node")
     }
     Expr.Ident(b.binding_name)
 }
@@ -757,7 +757,7 @@ fn cross_concat(acc: Expr, item: Expr) -> Expr {
 @comptime
 fn box_single(b: CrossBinding) -> Expr {
     let inner = if b.kind is .WrapperOfSelf {
-        Expr.FieldAccess(Expr.Ident(b.binding_name), "node")
+        Expr.FieldAccess(synth_expr_id(Expr.Ident(b.binding_name)), "node")
     } else {
         Expr.Ident(b.binding_name)
     }
@@ -1193,9 +1193,9 @@ fn build_visit_fn(enum_name: string) -> Stmt {
 
     // for c in self.children() { c.visit(f) }
     let no_call_args: List<SExpr> = []
-    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let children_call = Expr.Call(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "children"), no_call_args)
     let visit_args: List<SExpr> = [sexpr_dummy(Expr.Ident("f"))]
-    let visit_call = Stmt.Expr(synth_expr_id(Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "visit"), visit_args)))
+    let visit_call = Stmt.Expr(synth_expr_id(Expr.Call(Expr.FieldAccess(synth_expr_id(Expr.Ident("c")), "visit"), visit_args)))
     let for_body_stmts: List<SStmt> = [sstmt_dummy(visit_call)]
     let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
     let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
@@ -1236,9 +1236,9 @@ fn build_any_fn(enum_name: string) -> Stmt {
 
     // for c in self.children() { if c.any(pred) { return true } }
     let no_call_args: List<SExpr> = []
-    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let children_call = Expr.Call(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "children"), no_call_args)
     let any_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
-    let c_any_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "any"), any_args)
+    let c_any_call = Expr.Call(Expr.FieldAccess(synth_expr_id(Expr.Ident("c")), "any"), any_args)
     let inner_return_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Bool("true"))))]
     let inner_return_block = Stmt.Block(synth_stmt_ids(inner_return_stmts))
     let if_c_any = Stmt.If(synth_expr_id(c_any_call), synth_stmt_id(inner_return_block), null)
@@ -1297,9 +1297,9 @@ fn build_find_fn(enum_name: string) -> Stmt {
     //     if r != null { return r }
     // }
     let no_call_args: List<SExpr> = []
-    let children_call = Expr.Call(Expr.FieldAccess(Expr.Ident("self"), "children"), no_call_args)
+    let children_call = Expr.Call(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "children"), no_call_args)
     let find_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
-    let c_find_call = Expr.Call(Expr.FieldAccess(Expr.Ident("c"), "find"), find_args)
+    let c_find_call = Expr.Call(Expr.FieldAccess(synth_expr_id(Expr.Ident("c")), "find"), find_args)
     let let_r = Stmt.Let("r", self_ty, synth_expr_id(c_find_call))
     let r_not_null = Expr.Binary(Expr.Ident("r"), BinOp.Ne, Expr.None)
     let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Ident("r"))))]

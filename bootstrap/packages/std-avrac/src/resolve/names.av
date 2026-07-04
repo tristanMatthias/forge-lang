@@ -1499,14 +1499,15 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
             // Qualify uppercase Ident in FieldAccess (enum constructors: ValueType.Unknown)
-            let rewritten_obj = match obj {
+            let obj_node = ctx.nodes.exprs.get(obj)
+            let rewritten_obj = match obj_node {
                 .Ident(name) if name.length > 0 && name[0] in "A".."Z" -> {
                     let resolved = resolve_type_in_ctx(ctx, name)
-                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, obj) }
+                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, obj_node) }
                 }
-                _ -> rewrite_expr(ctx, obj)
+                _ -> rewrite_expr(ctx, obj_node)
             }
-            Expr.FieldAccess(rewritten_obj, field)
+            Expr.FieldAccess(ctx.nodes.reexpr(rewritten_obj, obj), field)
         }
         .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr_id(ctx, obj), field, rewrite_expr_id(ctx, val))
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(ctx, c), rewrite_expr(ctx, t), rewrite_expr(ctx, e))
@@ -1808,7 +1809,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .Assign(_, val) -> collect_used_paths_expr(store, store.exprs.get(val), acc)
         .Index(obj, idx) -> collect_used_paths_expr(store, idx, collect_used_paths_expr(store, obj, acc))
         .Block(body) -> collect_used_paths_stmts(store, body, acc)
-        .FieldAccess(obj, _) -> collect_used_paths_expr(store, obj, acc)
+        .FieldAccess(obj, _) -> collect_used_paths_expr(store, store.exprs.get(obj), acc)
         .FieldAssign(obj, _, val) -> collect_used_paths_expr(store, store.exprs.get(val), collect_used_paths_expr(store, store.exprs.get(obj), acc))
         .IfExpr(c, t, e) -> collect_used_paths_expr(store, e, collect_used_paths_expr(store, t, collect_used_paths_expr(store, c, acc)))
         .NullCoalesce(l, r) -> collect_used_paths_expr(store, r, collect_used_paths_expr(store, l, acc))

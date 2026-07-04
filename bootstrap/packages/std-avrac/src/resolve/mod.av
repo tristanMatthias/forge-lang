@@ -428,10 +428,10 @@ export fn declare_params(r: Resolver, params: List<ParamEntry>) -> Resolver {
 /// Walk a `FieldAccess` chain back to the root identifier name —
 /// used by `check_immutable_root` to find the underlying binding
 /// when the user writes `obj.field.subfield = value`.
-fn fa_root(expr: Expr) -> string {
+fn fa_root(store: NodeStore, expr: Expr) -> string {
     match expr {
         .Ident(nm) -> nm
-        .FieldAccess(inner, _) -> fa_root(inner)
+        .FieldAccess(inner, _) -> fa_root(store, store.exprs.get(inner))
         _ -> ""
     }
 }
@@ -440,7 +440,7 @@ fn fa_root(expr: Expr) -> string {
 /// Returns a Resolver-with-error when the root is `let`-bound;
 /// returns null otherwise so the caller continues unchanged.
 fn check_immutable_root(r: Resolver, obj: Expr, operation: string) -> Resolver? {
-    let root = fa_root(obj)
+    let root = fa_root(r.nodes, obj)
     if root.length > 0 && root != "self" {
         let lu = lookup_name(r.scopes, root)
         if lu.found && !lu.mutable {
@@ -524,7 +524,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             match callee {
                 .FieldAccess(obj, method) -> {
                     if is_mutating_method(method) {
-                        let err = check_immutable_root(after_args, obj, "cannot call mutating method `${method}`")
+                        let err = check_immutable_root(after_args, after_args.nodes.exprs.get(obj), "cannot call mutating method `${method}`")
                         if err != null { return err! }
                     }
                 }

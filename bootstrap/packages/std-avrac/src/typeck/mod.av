@@ -1533,14 +1533,14 @@ fn lint_expr_is_zero(e: Expr) -> bool {
 
 /// If `cond` is `i < <coll>.length`, return the collection's name;
 /// otherwise "". Conservative — only the canonical index-loop guard.
-fn lint_index_guard_coll(cond: Expr) -> string {
+fn lint_index_guard_coll(store: NodeStore, cond: Expr) -> string {
     match cond {
         .Binary(left, op, right) -> match op {
             .Lt -> match left {
                 .Ident(ln) -> if ln != "i" { "" } else {
                     match right {
                         .FieldAccess(obj, field) -> if field != "length" { "" } else {
-                            match obj { .Ident(n) -> n, _ -> "" }
+                            match store.exprs.get(obj) { .Ident(n) -> n, _ -> "" }
                         }
                         _ -> ""
                     }
@@ -1624,7 +1624,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
-        .FieldAccess(obj, _) -> lint_scan_expr(store, obj, coll)
+        .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
         .Block(body) -> lint_scan_sstmts(store, body, coll)
         .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
@@ -1747,7 +1747,7 @@ fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
                     if name == "i" && lint_expr_is_zero(tc.nodes.exprs.get(init)) {
                         match stmts[k + 1].node {
                             .While(cond, body) -> {
-                                let coll = lint_index_guard_coll(tc.nodes.exprs.get(cond))
+                                let coll = lint_index_guard_coll(tc.nodes, tc.nodes.exprs.get(cond))
                                 if coll != "" && vtype_is_list(type_lookup(cur.types, coll)) {
                                     let sig = lint_scan_stmt(tc.nodes, tc.nodes.stmts.get(body), coll)
                                     let step = lint_step_count(tc.nodes, tc.nodes.stmts.get(body))
@@ -2683,7 +2683,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         // the codegen F9999 backstop instead of the typeck-side
         // F1003 (shortcut #4 — Display strictness).
         .FieldAccess(obj, _) -> {
-            match obj {
+            match tc.nodes.exprs.get(obj) {
                 .Ident(type_name) if enum_type_has(tc.enums, type_name) -> {
                     let empty_args: List<ValueType> = []
                     return tc_er(tc, ValueType.Enum(type_name, empty_args, 0))
@@ -3715,7 +3715,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
             }
             tc_er(checked, .Unknown)
         }
-        .FieldAccess(obj, method) -> check_method_call(tc, obj, method, args)
+        .FieldAccess(obj, method) -> check_method_call(tc, tc.nodes.exprs.get(obj), method, args)
         _ -> {
             // Expression callee (e.g. compose(f,g)(x))
             let c = check_expr(tc, callee)
@@ -3956,7 +3956,7 @@ fn infer_arg_for_display(tc: TC, expr: Expr) -> ValueType {
         // payload-less ctor — recover the enum type so
         // display_check_arg can fire F1003. Doesn't disturb the
         // parser; safer than changing the AST shape globally.
-        .FieldAccess(obj, _) -> match obj {
+        .FieldAccess(obj, _) -> match tc.nodes.exprs.get(obj) {
             .Ident(type_name) -> if enum_type_has(tc.enums, type_name) {
                 let empty_args: List<ValueType> = []
                 ValueType.Enum(type_name, empty_args, 0)
@@ -4193,7 +4193,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
         .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
-        .FieldAccess(obj, f) -> .FieldAccess(annotate_expr(tc, obj), f)
+        .FieldAccess(obj, f) -> .FieldAccess(annotate_expr_id(tc, obj), f)
         .Assign(name, val) -> .Assign(name, annotate_expr_id(tc, val))
         .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr_id(tc, obj), f, annotate_expr_id(tc, val))
         .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
@@ -4244,7 +4244,7 @@ fn annotate_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr {
 fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
     match callee {
         .FieldAccess(obj, method) -> {
-            let o = check_expr(tc, obj)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let type_name = match o.ty {
                 .Struct(n, _, _) -> n
                 .Enum(n, _, _) -> n
@@ -4351,7 +4351,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // type comes from the struct registry. Falls back to
         // check_expr only when the base is a more complex expression
         // (chained field accesses, calls returning structs, etc.).
-        .FieldAccess(base, fname) -> match base {
+        .FieldAccess(base, fname) -> match tc.nodes.exprs.get(base) {
             .Ident(obj_name) -> {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let sname = vtype_struct_name(base_ty)

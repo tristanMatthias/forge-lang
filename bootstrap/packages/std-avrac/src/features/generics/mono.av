@@ -1383,7 +1383,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
             try_add_enum_inst(tn, variant, args, regs, collect_inst_exprs(args, regs, st))
         .StructLit(name, inits) ->
             try_add_struct_inst(name, inits, regs, collect_inst_field_inits(inits, regs, st))
-        .FieldAccess(obj, variant_name) -> match obj {
+        .FieldAccess(obj, variant_name) -> match regs.store.exprs.get(obj) {
             // Bare variant access (e.g. Option.None) — no args to infer from.
             // Valid only if another ctor site already provided type args via merging.
             // We don't error here — finalize_insts will catch missing instantiations.
@@ -1394,7 +1394,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                     let empty_ta: List<TypeArg> = []
                     st with { insts: merge_partial(ename, empty_ta, st.insts) }
                 } else {
-                    collect_inst_expr(obj, regs, st)
+                    collect_inst_expr(regs.store.exprs.get(obj), regs, st)
                 }
             }
             // Module-qualified bare variant access (resolver
@@ -1404,10 +1404,10 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                     let empty_ta: List<TypeArg> = []
                     st with { insts: merge_partial(ename, empty_ta, st.insts) }
                 } else {
-                    collect_inst_expr(obj, regs, st)
+                    collect_inst_expr(regs.store.exprs.get(obj), regs, st)
                 }
             }
-            _ -> collect_inst_expr(obj, regs, st)
+            _ -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         }
         .Binary(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
         .Logical(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
@@ -1690,7 +1690,7 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
         .IfExpr(c, t, e) -> .IfExpr(rename_self_calls_expr(store, c, orig_name, mangled), rename_self_calls_expr(store, t, orig_name, mangled), rename_self_calls_expr(store, e, orig_name, mangled))
         .MatchExpr(subj, arms) -> .MatchExpr(rename_self_calls_expr(store, subj, orig_name, mangled), rename_self_calls_arms(store, arms, orig_name, mangled))
         .Index(obj, idx) -> .Index(rename_self_calls_expr(store, obj, orig_name, mangled), rename_self_calls_expr(store, idx, orig_name, mangled))
-        .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr(store, obj, orig_name, mangled), f)
+        .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr_id(store, obj, orig_name, mangled), f)
         .Assign(n, val) -> .Assign(n, rename_self_calls_expr_id(store, val, orig_name, mangled))
         .FieldAssign(obj, f, val) -> .FieldAssign(rename_self_calls_expr_id(store, obj, orig_name, mangled), f, rename_self_calls_expr_id(store, val, orig_name, mangled))
         .ListLit(elems) -> .ListLit(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
@@ -1967,7 +1967,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .IfExpr(c, t, e) -> .IfExpr(substitute_expr(store, c, ta), substitute_expr(store, t, ta), substitute_expr(store, e, ta))
         .MatchExpr(subj, arms) -> .MatchExpr(substitute_expr(store, subj, ta), substitute_match_arms(store, arms, ta))
         .Index(obj, idx) -> .Index(substitute_expr(store, obj, ta), substitute_expr(store, idx, ta))
-        .FieldAccess(obj, f) -> .FieldAccess(substitute_expr(store, obj, ta), f)
+        .FieldAccess(obj, f) -> .FieldAccess(substitute_expr_id(store, obj, ta), f)
         .Assign(name, val) -> .Assign(name, substitute_expr_id(store, val, ta))
         .FieldAssign(obj, f, val) -> .FieldAssign(substitute_expr_id(store, obj, ta), f, substitute_expr_id(store, val, ta))
         .ListLit(elems) -> .ListLit(substitute_expr_list(store, elems, ta))
@@ -2575,24 +2575,24 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         }
         .EnumCtor(tn, variant, args) -> rewrite_enum_ctor(tn, variant, args, regs, insts)
         .StructLit(name, inits) -> rewrite_struct_lit(name, inits, regs, insts)
-        .FieldAccess(obj, f) -> match obj {
+        .FieldAccess(obj, f) -> match regs.store.exprs.get(obj) {
             .Ident(ename) -> {
                 if generic_enum_lookup(regs.enums, ename) != null {
-                    Expr.FieldAccess(.Ident(inst_mangled(insts, ename)), f)
+                    Expr.FieldAccess(regs.store.reexpr(Expr.Ident(inst_mangled(insts, ename)), obj), f)
                 } else {
-                    Expr.FieldAccess(rewrite_expr(obj, regs, insts), f)
+                    Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
                 }
             }
             // Module-qualified enum reference (resolver rewrote
             // `RgmList` → `mod::RgmList`). Same mangling logic.
             .QualifiedIdent(ename) -> {
                 if generic_enum_lookup(regs.enums, ename) != null {
-                    Expr.FieldAccess(.QualifiedIdent(inst_mangled(insts, ename)), f)
+                    Expr.FieldAccess(regs.store.reexpr(Expr.QualifiedIdent(inst_mangled(insts, ename)), obj), f)
                 } else {
-                    Expr.FieldAccess(rewrite_expr(obj, regs, insts), f)
+                    Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
                 }
             }
-            _ -> Expr.FieldAccess(rewrite_expr(obj, regs, insts), f)
+            _ -> Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
         }
         .Binary(l, op, r) -> .Binary(rewrite_expr(l, regs, insts), op, rewrite_expr(r, regs, insts))
         .Logical(l, op, r) -> .Logical(rewrite_expr(l, regs, insts), op, rewrite_expr(r, regs, insts))

@@ -23,7 +23,7 @@ export fn struct_lit_feature() -> Feature {
 /// upper-case ident — that case skips name resolution.
 export fn field_access_feature() -> Feature {
     feature_new("field_access") with {
-        expr_tag: Expr.FieldAccess(Expr.None, ""),
+        expr_tag: Expr.FieldAccess(ExprId(0), ""),
         emit_expr: field_access_emit_expr,
         resolve_expr: field_access_resolve_expr,
         check_expr: field_access_check_expr,
@@ -119,7 +119,7 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Codegen hook for `FieldAccess`. Forwards to `emit_field_access`.
 fn field_access_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field)
+        .FieldAccess(obj, field) -> emit_field_access(ctx, env, ctx.nodes.exprs.get(obj), field)
         _ -> err_emit("expected FieldAccess")
     }
 }
@@ -131,14 +131,14 @@ fn field_access_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result
 fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .FieldAccess(obj, _) -> {
-            match obj {
+            match r.nodes.exprs.get(obj) {
                 .Ident(name) -> {
                     if starts_with_upper(name) {
                         return r
                     }
-                    resolve_expr(r, obj)
+                    resolve_expr(r, r.nodes.exprs.get(obj))
                 }
-                _ -> resolve_expr(r, obj)
+                _ -> resolve_expr(r, r.nodes.exprs.get(obj))
             }
         }
         _ -> r
@@ -150,7 +150,7 @@ fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// shorthand.
 fn field_access_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
+        .FieldAccess(obj, field) -> check_field_access(tc, tc.nodes.exprs.get(obj), field)
         _ -> tc_er(tc, .Unknown)
     }
 }

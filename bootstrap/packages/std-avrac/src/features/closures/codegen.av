@@ -211,7 +211,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .EnumCtor(_, _, args) -> find_captures_list(store, args, params, env, captures)
         .StructLit(_, inits) -> find_captures_field_inits(store, inits, params, env, captures)
-        .FieldAccess(obj, _) -> find_captures(store, obj, params, env, captures)
+        .FieldAccess(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .FieldAssign(obj, _, val) -> {
             find_captures(store, store.exprs.get(obj), params, env, captures)
             find_captures(store, store.exprs.get(val), params, env, captures)
@@ -462,7 +462,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .Grouping(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Call(callee, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
         .GenericCall(callee, _, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
-        .FieldAccess(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
+        .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
         .Index(obj, idx) -> has_float_ident(obj, ctx, env, captures, params) || has_float_ident(idx, ctx, env, captures, params)
         .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
         .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)

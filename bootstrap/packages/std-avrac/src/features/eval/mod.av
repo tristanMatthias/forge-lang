@@ -969,7 +969,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             // `r!.canonical_name` parses as FieldAccess(r, "canonical_name");
             // the parser's force-unwrap (`!`) is a no-op so this arm
             // handles both nullable-unwrap and direct-struct cases.
-            let obj_result = eval_expr(runtime, obj)
+            let obj_result = eval_expr(runtime, runtime.nodes.exprs.get(obj))
             if obj_result.had_error { return obj_result }
             let v = obj_result.value
             if v.kind == "list" && field == "length" {
@@ -1125,13 +1125,13 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     // the `mut arms = []; arms.push(...)` pattern macros rely on.
     match callee {
         .FieldAccess(obj, method) -> {
-            let probe = eval_expr(runtime, obj)
+            let probe = eval_expr(runtime, runtime.nodes.exprs.get(obj))
             if !probe.had_error && probe.value.kind == "list" {
                 let lm = eval_list_method(probe.runtime, probe.value, method, args)
                 if lm != null {
                     let lm_val = lm!
                     if lm_val.had_error { return lm_val }
-                    match obj {
+                    match runtime.nodes.exprs.get(obj) {
                         .Ident(name) -> {
                             let assigned = assign_binding(lm_val.runtime.bindings, name, lm_val.value)
                             if assigned.found {
@@ -2357,7 +2357,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "FieldAccess" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(store, head)?
+            let obj = value_to_expr_id(store, head)?
             let field_v: Value = p[1]
             .Ok(Expr.FieldAccess(obj, field_v.text))
         }

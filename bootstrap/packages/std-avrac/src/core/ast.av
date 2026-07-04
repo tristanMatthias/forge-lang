@@ -2196,7 +2196,7 @@ export enum Expr {
     /// Struct literal: `Foo { x: 1, y: 2 }`.
     StructLit(name: string, inits: List<FieldInit>)
     /// Field access: `obj.field`.
-    FieldAccess(obj: Expr, field: string)
+    FieldAccess(obj: ExprId, field: string)
     /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
     EnumCtor(type_name: string, variant: string, args: List<SExpr>)
     /// Index access: `list[i]` / `map["key"]`.
@@ -2787,7 +2787,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
         .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"
-        .FieldAccess(obj, field) -> "(field ${render_expr(store, obj)} ${field})"
+        .FieldAccess(obj, field) -> "(field ${render_expr(store, store.exprs.get(obj))} ${field})"
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(store, args)})"
         .Index(obj, idx) -> "(index ${render_expr(store, obj)} ${render_expr(store, idx)})"
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
