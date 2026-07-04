@@ -7,7 +7,7 @@
 // flat at `resolve.{...}`.
 
 use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
-use core.{NodeStore, ingest_roots_spanless}
+use core.{NodeStore, StmtId, ingest_roots_spanless}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
 
@@ -131,25 +131,33 @@ fn collect_function_names(r: Resolver, stmts: List<SStmt>) -> Resolver {
     mut res = r
     mut i = 0
     while i < stmts.length {
-        res = match stmt_unwrap(stmts[i].node) {
-            .Function(name, _, _, _, _) -> declare_function(res, name)
-            .ExternFn(name, _, _) -> declare_function(res, name)
-            .Impl(_, methods) -> collect_method_names(res, methods)
-            .Module(_, body) -> collect_function_names(res, body)
-            _ -> res
-        }
+        res = collect_function_names_stmt(res, stmt_unwrap(r.nodes, stmts[i].node))
         i = i + 1
     }
     res
 }
 
+fn collect_function_names_stmt(r: Resolver, s: Stmt) -> Resolver {
+    match s {
+        .Function(name, _, _, _, _) -> declare_function(r, name)
+        .ExternFn(name, _, _) -> declare_function(r, name)
+        .Impl(_, methods) -> collect_method_names(r, methods)
+        .Module(_, body) -> {
+            mut res = r
+            for id in body { res = collect_function_names_stmt(res, stmt_unwrap(r.nodes, r.nodes.stmts.get(id))) }
+            res
+        }
+        _ -> r
+    }
+}
+
 /// Helper for `collect_function_names` — register every method
 /// inside an impl block.
-fn collect_method_names(r: Resolver, methods: List<SStmt>) -> Resolver {
+fn collect_method_names(r: Resolver, methods: List<StmtId>) -> Resolver {
     mut res = r
     mut i = 0
     while i < methods.length {
-        res = match stmt_unwrap(methods[i].node) {
+        res = match stmt_unwrap(r.nodes, r.nodes.stmts.get(methods[i])) {
             .Function(name, _, _, _, _) -> declare_function(res, name)
             _ -> res
         }
@@ -357,13 +365,13 @@ export fn resolve_stmt_list(r: Resolver, stmts: List<SStmt>) -> Resolver {
 /// (`let`/`mut`/`const`/`Function`) declare names in scope.
 export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
-        .Let(name, _, init) -> resolve_binding(r, name, init, false)
-        .Mut(name, _, init) -> resolve_binding(r, name, init, true)
-        .Const(name, _, init) -> resolve_binding(r, name, init, false)
-        .Expr(expr) -> resolve_expr(r, expr)
+        .Let(name, _, init) -> resolve_binding(r, name, r.nodes.exprs.get(init), false)
+        .Mut(name, _, init) -> resolve_binding(r, name, r.nodes.exprs.get(init), true)
+        .Const(name, _, init) -> resolve_binding(r, name, r.nodes.exprs.get(init), false)
+        .Expr(expr) -> resolve_expr(r, r.nodes.exprs.get(expr))
         .Block(body) -> {
             let entered = enter_resolve_scope(r)
-            let after = resolve_stmt_list(entered, body)
+            let after = resolve_stmt_ids(entered, body)
             exit_resolve_scope(after)
         }
         .Function(name, tp, params, _, body) -> {
@@ -371,15 +379,15 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let entered = enter_resolve_scope(with_fn)
             let with_tp = define_type_params(entered, tp)
             let with_params = declare_params(with_tp, params)
-            let after_body = resolve_stmt_list(with_params, body)
+            let after_body = resolve_stmt_ids(with_params, body)
             exit_resolve_scope(after_body)
         }
-        .Return(value) -> resolve_expr(r, value)
+        .Return(value) -> resolve_expr(r, r.nodes.exprs.get(value))
         .ReturnEmpty or .NoOp or .Break or .Continue -> r
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) or .AssocType(_, _) -> r
-        .Impl(_, methods) -> resolve_stmt_list(r, methods)
+        .Impl(_, methods) -> resolve_stmt_ids(r, methods)
         .ExternFn(name, _, _) -> declare_function(r, name)
-        .Annotated(_, inner) -> resolve_stmt(r, inner.node)
+        .Annotated(_, inner) -> resolve_stmt(r, r.nodes.stmts.get(inner))
         _ -> {
             let tag = avra_stmt_tag(stmt)
             let result = dispatch_stmt_resolve(r.features, tag, r, stmt)
@@ -387,6 +395,20 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             r
         }
     }
+}
+
+/// Row-list twin of `resolve_stmt_list` for flipped bodies: positions
+/// come from the store's position column.
+export fn resolve_stmt_ids(r: Resolver, ids: List<StmtId>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < ids.length {
+        let id = ids[i]
+        let pos = r.nodes.stmt_pos(id)
+        res = resolve_stmt(res with { source_line: pos.line, source_col: pos.col, source_file: pos.file }, r.nodes.stmts.get(id))
+        i = i + 1
+    }
+    res
 }
 
 /// Same as `define_param_names` but iterative — used in performance-

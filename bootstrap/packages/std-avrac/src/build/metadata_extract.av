@@ -5,7 +5,7 @@
 //
 // Tracked under forge-crafting-intepreters-iinq.
 
-use core.{NodeStore, 
+use core.{NodeStore, StmtId,
     Stmt, SStmt, sstmt_at, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
@@ -17,7 +17,7 @@ use build.metadata.{
     sym_id_for, unit_metadata_new,
 }
 use parse.{parse_int_literal}
-use fmt.{fmt_stmt_list}
+use fmt.{fmt_stmt_ids}
 use list_ops.{list_any}
 
 // Internal accumulator — each walk step folds into this and returns
@@ -55,7 +55,7 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: Li
     // double-prefixing qns (e.g. `@std::avrac::@std::avrac::core::X`).
     // Otherwise walk all stmts with current_module=unit_name so bare
     // decls still get qualified against the unit they belong to.
-    let inner = unwrap_outer_unit_module(stmts, unit_name)
+    let inner = unwrap_outer_unit_module(store, stmts, unit_name)
     let acc = walk_stmts(empty_acc(store), inner, unit_name, false, false)
     // Lists already in source order — push appends. The cons-list
     // version had to reverse here because cons-prepend put the
@@ -92,7 +92,7 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: Li
 /// qns whether they load the package's whole-unit metadata or the
 /// per-file slice.
 export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: List<SStmt>, store: NodeStore) -> UnitMetadata {
-    let inner = unwrap_outer_unit_module(stmts, unit_name)
+    let inner = unwrap_outer_unit_module(store, stmts, unit_name)
     let acc = walk_stmts_for_file(empty_acc(store), inner, unit_name, false, false, target_file)
     UnitMetadata {
         unit_name: unit_name,
@@ -126,7 +126,7 @@ fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported
         // lived; the body's own SStmts carry foo.av's path.
         .Module(name, body) -> {
             let sub_path = qualify(current_module, name)
-            walk_stmts_for_file(acc, body, sub_path, false, false, target_file)
+            walk_stmts_for_file(acc, acc.nodes.sstmts_of(body), sub_path, false, false, target_file)
         }
         // Annotated transparently delegates. The Annotated SStmt's
         // file matches the inner stmt's file (parser stamps both),
@@ -136,7 +136,7 @@ fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported
         .Annotated(annots, inner) -> {
             let is_export = exported || annotation_has_export(annots)
             let is_comp = is_comptime || annotation_has(annots, "comptime")
-            let inner_ss = inner
+            let inner_ss = acc.nodes.sstmt_of(inner)
             walk_ss_for_file(acc, inner_ss, current_module, is_export, is_comp, target_file)
         }
         // Leaf decl: gate on file match.
@@ -155,21 +155,21 @@ fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported
 // the resolver prepended for `use @pkg` paths. When no such wrap
 // exists the source is treated as a flat unit, returning `stmts`
 // unchanged so the legacy single-file path still works.
-fn unwrap_outer_unit_module(stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
+fn unwrap_outer_unit_module(store: NodeStore, stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
     if unit_name == "" { return stmts }
-    let body = find_unit_module_body(stmts, unit_name)
+    let body = find_unit_module_body(store, stmts, unit_name)
     if body.length == 0 { return stmts }
     body
 }
 
-fn find_unit_module_body(stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
+fn find_unit_module_body(store: NodeStore, stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let inner = stmt_unwrap(ss.node)
+        let inner = stmt_unwrap(store, ss.node)
         match inner {
             .Module(name, body) -> {
-                if name == unit_name { return body }
+                if name == unit_name { return store.sstmts_of(body) }
             }
             _ -> {}
         }
@@ -226,19 +226,16 @@ fn push_inherent_impl(acc: ExtractAcc, e: InherentImplEntry) -> ExtractAcc {
 /// signature (name + params + ret_vt). The body's Function names are
 /// mangled (`Type__method`); strip the mangling so the synthesizer's
 /// `${qualified_type}__${m.name}` step doesn't double-mangle.
-fn extract_inherent_methods(stmts: List<SStmt>) -> List<MetaTraitMethod> {
+fn extract_inherent_methods(store: NodeStore, methods: List<StmtId>) -> List<MetaTraitMethod> {
     mut out: List<MetaTraitMethod> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        match stmt_unwrap(ss.node) {
+    for id in methods {
+        match stmt_unwrap(store, store.stmts.get(id)) {
             .Function(mangled, _, params, ret_vt, _) -> {
                 let m_name = strip_mangle(mangled)
                 out.push(MetaTraitMethod { name: m_name, params: params, ret: ret_vt })
             }
             _ -> {}
         }
-        i = i + 1
     }
     out
 }
@@ -290,11 +287,11 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             // .Function arm so the FnDeclEntry gets flagged and the
             // body ships via GenericBodyEntry.
             let is_comp = is_comptime || annotation_has(annots, "comptime")
-            walk_stmt(acc, inner.node, current_module, is_export, is_comp)
+            walk_stmt(acc, acc.nodes.stmts.get(inner), current_module, is_export, is_comp)
         }
         .Module(name, body) -> {
             let sub_path = qualify(current_module, name)
-            walk_stmts(acc, body, sub_path, false, false)
+            walk_stmts(acc, acc.nodes.sstmts_of(body), sub_path, false, false)
         }
         .TypeDecl(name, type_params, fields) -> {
             let qn = qualify(current_module, name)
@@ -376,7 +373,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 fields: [],
                 variants: [],
                 inner_vt: ValueType.Unknown,
-                methods: extract_trait_methods(methods),
+                methods: extract_trait_methods(acc.nodes, methods),
             }
             push_type(acc, entry)
         }
@@ -412,7 +409,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             if ships_generic || is_comptime {
                 let body_entry = GenericBodyEntry {
                     qualified_name: qn,
-                    source: fmt_stmt_list(acc.nodes, body, 0),
+                    source: fmt_stmt_ids(acc.nodes, body, 0),
                     // Walker doesn't carry the enclosing SStmt's file
                     // path; the per-fn span work is P4 follow-up. The
                     // consumer falls back to "metadata" for the
@@ -448,7 +445,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
         }
         .Const(name, ty_vt, init) -> {
             let qn = qualify(current_module, name)
-            let parts = extract_const_value(init)
+            let parts = extract_const_value(acc.nodes.exprs.get(init))
             let entry = ConstDeclEntry {
                 sym_id: sym_id_for(qn),
                 name: qn,
@@ -470,7 +467,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                     trait_name: trait_qn,
                     type_sym_id: sym_id_for(type_qn),
                     type_name: type_qn,
-                    methods: extract_impl_methods(methods, type_qn),
+                    methods: extract_impl_methods(acc.nodes, methods, type_qn),
                 }
                 push_impl(acc, entry)
             } else {
@@ -481,7 +478,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 let entry = InherentImplEntry {
                     type_sym_id: sym_id_for(type_qn),
                     type_name: type_qn,
-                    methods: extract_inherent_methods(methods),
+                    methods: extract_inherent_methods(acc.nodes, methods),
                 }
                 push_inherent_impl(acc, entry)
             }
@@ -528,12 +525,10 @@ fn find_single_colon_after_qualification(s: string) -> int {
     0 - 1
 }
 
-fn extract_trait_methods(stmts: List<SStmt>) -> List<MetaTraitMethod> {
+fn extract_trait_methods(store: NodeStore, methods: List<StmtId>) -> List<MetaTraitMethod> {
     mut out: List<MetaTraitMethod> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let inner = stmt_unwrap(ss.node)
+    for id in methods {
+        let inner = stmt_unwrap(store, store.stmts.get(id))
         match inner {
             .Function(name, _, params, ret_vt, _) -> {
                 out.push(MetaTraitMethod { name, params, ret: ret_vt })
@@ -543,17 +538,14 @@ fn extract_trait_methods(stmts: List<SStmt>) -> List<MetaTraitMethod> {
             }
             _ -> {}
         }
-        i = i + 1
     }
     out
 }
 
-fn extract_impl_methods(stmts: List<SStmt>, type_qn: string) -> List<ImplMethodRef> {
+fn extract_impl_methods(store: NodeStore, methods: List<StmtId>, type_qn: string) -> List<ImplMethodRef> {
     mut out: List<ImplMethodRef> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let inner = stmt_unwrap(ss.node)
+    for id in methods {
+        let inner = stmt_unwrap(store, store.stmts.get(id))
         match inner {
             // Impl-method names parse to mangled "Type__method"
             // form via features::impl_decl::parser. The
@@ -566,7 +558,6 @@ fn extract_impl_methods(stmts: List<SStmt>, type_qn: string) -> List<ImplMethodR
             }
             _ -> {}
         }
-        i = i + 1
     }
     out
 }
@@ -641,12 +632,12 @@ fn strip_quotes(quoted: string) -> string {
 //
 // Used today only by tests; the build driver picks it up under g2eo.
 
-export fn collect_source_files(stmts: List<SStmt>) -> List<string> {
+export fn collect_source_files(store: NodeStore, stmts: List<SStmt>) -> List<string> {
     mut acc: List<string> = []
-    walk_files(stmts, acc)
+    walk_files(store, stmts, acc)
 }
 
-fn walk_files(stmts: List<SStmt>, acc: List<string>) -> List<string> {
+fn walk_files(store: NodeStore, stmts: List<SStmt>, acc: List<string>) -> List<string> {
     mut local = acc
     mut i = 0
     while i < stmts.length {
@@ -654,7 +645,7 @@ fn walk_files(stmts: List<SStmt>, acc: List<string>) -> List<string> {
         if ss.file != "" && !files_contain(local, ss.file) {
             local.push(ss.file)
         }
-        local = walk_files_in_stmt(ss.node, local)
+        local = walk_files_in_stmt(store, ss.node, local)
         i = i + 1
     }
     local
@@ -668,10 +659,10 @@ fn walk_files(stmts: List<SStmt>, acc: List<string>) -> List<string> {
 // redundant and slow. The trade-off: declarations are what the
 // metadata extractor cares about, so Module + Annotated cover the
 // public-surface walk.
-fn walk_files_in_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
+fn walk_files_in_stmt(store: NodeStore, stmt: Stmt, acc: List<string>) -> List<string> {
     match stmt {
-        .Module(_, body) -> walk_files(body, acc)
-        .Annotated(_, inner) -> walk_files_in_stmt(inner.node, acc)
+        .Module(_, body) -> walk_files(store, store.sstmts_of(body), acc)
+        .Annotated(_, inner) -> walk_files_in_stmt(store, store.stmts.get(inner), acc)
         _ -> acc
     }
 }

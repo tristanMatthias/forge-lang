@@ -1,6 +1,6 @@
 // WHY: parses `while cond { body }`.
 
-use core.{Stmt, NodeRef, byte_span_none}
+use core.{Stmt}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
@@ -21,7 +21,6 @@ impl Parser {
 
         let body_id = self.parse_statement()?
 
-        let node = Stmt.While(self.expr_of(cond_id), self.stmt_of(body_id))
-        .Ok(self.alloc_stmt(node, byte_span_none(), [NodeRef.ExprRef(cond_id), NodeRef.StmtRef(body_id)]))
+        .Ok(self.alloc_stmt_leaf(Stmt.While(cond_id, body_id)))
     }
 }

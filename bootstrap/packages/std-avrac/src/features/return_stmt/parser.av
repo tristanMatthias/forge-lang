@@ -13,6 +13,6 @@ impl Parser {
         }
 
         let value_id = self.parse_expression()?
-        .Ok(self.alloc_stmt_expr1(Stmt.Return(self.expr_of(value_id)), value_id))
+        .Ok(self.alloc_stmt_leaf(Stmt.Return(value_id)))
     }
 }

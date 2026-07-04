@@ -8,7 +8,7 @@
 // WrapperListOfSelf, OptionalDirectSelf, bare ListOfSelf, and all-scalar. (The
 // per-child SPANS the same walker carries are covered in arena_test.av.)
 
-use @std.avrac.core.{PatId, NodeStore, new_node_store, build_line_index, Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry, TypeParamEntry}
+use @std.avrac.core.{PatId, StmtId, NodeStore, new_node_store, build_line_index, Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry, TypeParamEntry}
 use @std.avrac.core.{stmt_child_tags, expr_child_tags, pat_child_tags, type_child_tags}
 use @std.avrac.core.{wc_roundtrip_expr, wc_roundtrip_stmt, wc_roundtrip_pat, wc_roundtrip_type}
 use @std.avrac.core.{AnyNode, SpannedChild, spanned_child, respan_sexpr_opt, respan_sstmt_opt, render_expr, render_stmt, render_pattern}
@@ -21,10 +21,12 @@ fn ts() -> NodeStore {
 
 
 spec "derive all_children_spanned: cross-type children, in order" {
-    then "Stmt.Let -> ValueType child then Expr child (T then E)" {
+    then "Stmt.Let -> ValueType child only (the initializer id is a scalar, F3a)" {
         // children() (same-type Stmt) is empty; all_children_spanned adds the
-        // cross-type ty_vt (ValueType) and initializer (Expr). name is scalar.
-        stmt_child_tags(Stmt.Let("x", ValueType.Int, Expr.Number("1"))) == "TE"
+        // cross-type ty_vt (ValueType). The initializer is an ExprId arena row
+        // — the id payload IS the child mechanism, so the walker skips it.
+        let ws = ts()
+        stmt_child_tags(Stmt.Let("x", ValueType.Int, ws.exprs.add_leaf(Expr.Number("1")))) == "T"
     }
     then "Expr.Binary -> both operand Exprs (op scalar skipped)" {
         expr_child_tags(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2"))) == "EE"
@@ -42,13 +44,20 @@ spec "derive all_children_spanned: cross-type children, in order" {
 // each kind is asserted on a real node — not just the DirectSelf/WrapperList
 // cases above.
 spec "derive all_children_spanned: optional and bare-list field kinds" {
-    then "Stmt.If with an else -> cond/then/else (OptionalDirectSelf present, ESS)" {
-        // else_branch is Stmt? — a present value boxes as one trailing child.
-        stmt_child_tags(Stmt.If(Expr.Number("1"), Stmt.Break, Stmt.Continue)) == "ESS"
+    then "Stmt.If with an else -> no walker children (all payloads are ids, F3a)" {
+        // cond / then / else are ExprId / StmtId / StmtId? rows — every one a
+        // scalar to the walker, whether the optional is present or not.
+        let ws = ts()
+        let cond = ws.exprs.add_leaf(Expr.Number("1"))
+        let t = ws.stmts.add_leaf(Stmt.Break)
+        let e = ws.stmts.add_leaf(Stmt.Continue)
+        stmt_child_tags(Stmt.If(cond, t, e)) == ""
     }
-    then "Stmt.If without an else -> just cond/then (OptionalDirectSelf absent, ES)" {
-        // null else contributes zero children (self_opt_to_list yields []).
-        stmt_child_tags(Stmt.If(Expr.Number("1"), Stmt.Break, null)) == "ES"
+    then "Stmt.If without an else -> still no walker children (absent optional id)" {
+        let ws = ts()
+        let cond = ws.exprs.add_leaf(Expr.Number("1"))
+        let t = ws.stmts.add_leaf(Stmt.Break)
+        stmt_child_tags(Stmt.If(cond, t, null)) == ""
     }
     then "Pattern.NestedVariant -> id payload is walker-opaque (F2, no children)" {
         // Post-F2 the sub-list is List<PatId> — scalars to the walker; the
@@ -76,8 +85,9 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
     then "bare single children + scalar (Expr.Binary: two operands, op passes through)" {
         wc_roundtrip_expr(ts(), Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2")))
     }
-    then "cross-type bare singles (Stmt.Let: ValueType then Expr)" {
-        wc_roundtrip_stmt(ts(), Stmt.Let("x", ValueType.Int, Expr.Number("1")))
+    then "cross-type bare single + id payload (Stmt.Let: ValueType walked, ExprId verbatim)" {
+        let ws = ts()
+        wc_roundtrip_stmt(ws, Stmt.Let("x", ValueType.Int, ws.exprs.add_leaf(Expr.Number("1"))))
     }
     then "wrapper-list child (Expr.Block: List<SStmt> rebuilt with recovered spans)" {
         let body: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
@@ -87,9 +97,10 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
         let args: List<SExpr> = [sexpr(Expr.Number("1"), 1, 3), sexpr(Expr.Ident("x"), 1, 6)]
         wc_roundtrip_expr(ts(), Expr.Call(Expr.Ident("f"), args))
     }
-    then "wrapper-single child (Stmt.Annotated.inner: one SStmt)" {
+    then "id-payload single (Stmt.Annotated.inner: one StmtId, F3a)" {
+        let ws = ts()
         let no_ann: List<Annotation> = []
-        wc_roundtrip_stmt(ts(), Stmt.Annotated(no_ann, sstmt(Stmt.Break, 3, 1)))
+        wc_roundtrip_stmt(ws, Stmt.Annotated(no_ann, ws.stmts.add_leaf(Stmt.Break)))
     }
     then "id-payload child (Pattern.NestedVariant: List<PatId>, F2 flip)" {
         // Post-F2 the sub-list is ids — a SCALAR to the walker, so the case
@@ -103,17 +114,20 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
     then "literal-pattern leaf (Pattern.LitInt: all-scalar, render distinguishes)" {
         wc_roundtrip_pat(ts(), Pattern.LitInt(42))
     }
-    then "wrapper-list body on a block-stmt variant (Stmt.Parallel: List<SStmt>)" {
-        // Stmt.Parallel's body is a walked List<SStmt> that render now descends
-        // into (was elided as `...`), so a mis-rebuilt body diverges.
-        let pbody: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
-        wc_roundtrip_stmt(ts(), Stmt.Parallel(pbody))
+    then "id-list body on a block-stmt variant (Stmt.Parallel: List<StmtId>, F3a)" {
+        // The body rides as ids — scalars to the walker — and render descends
+        // through the store, so a dropped or reordered id diverges.
+        let ws = ts()
+        let pbody: List<StmtId> = [ws.stmts.add_leaf(Stmt.Break), ws.stmts.add_leaf(Stmt.Continue)]
+        wc_roundtrip_stmt(ws, Stmt.Parallel(pbody))
     }
-    then "optional child present (Stmt.If with else)" {
-        wc_roundtrip_stmt(ts(), Stmt.If(Expr.Number("1"), Stmt.Break, Stmt.Continue))
+    then "optional id present (Stmt.If with else)" {
+        let ws = ts()
+        wc_roundtrip_stmt(ws, Stmt.If(ws.exprs.add_leaf(Expr.Number("1")), ws.stmts.add_leaf(Stmt.Break), ws.stmts.add_leaf(Stmt.Continue)))
     }
-    then "optional child absent (Stmt.If, null else — the run is empty)" {
-        wc_roundtrip_stmt(ts(), Stmt.If(Expr.Number("1"), Stmt.Break, null))
+    then "optional id absent (Stmt.If, null else)" {
+        let ws = ts()
+        wc_roundtrip_stmt(ws, Stmt.If(ws.exprs.add_leaf(Expr.Number("1")), ws.stmts.add_leaf(Stmt.Break), null))
     }
     then "node-LIST before node-SINGLE (ValueType.FnTyped: params run, then ret)" {
         // The A1 ordering-bug shape: with_children must take params=kids[0..n-1]
@@ -122,8 +136,10 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
         wc_roundtrip_type(ValueType.FnTyped(params, ValueType.Bool))
     }
     then "nested (Block holds an Expr-stmt holding a Binary) round-trips at depth" {
-        let inner: List<SStmt> = [sstmt(Stmt.Expr(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2"))), 1, 1)]
-        wc_roundtrip_expr(ts(), Expr.Block(inner))
+        let ws = ts()
+        let bin = ws.exprs.add_leaf(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2")))
+        let inner: List<SStmt> = [sstmt(Stmt.Expr(bin), 1, 1)]
+        wc_roundtrip_expr(ws, Expr.Block(inner))
     }
 }
 
@@ -179,32 +195,40 @@ spec "render_pattern: literal + nested arms render distinctly" {
 // renderer; assert two distinct element types diverge (and Unknown stays readable).
 spec "render_stmt: binding/fn type annotations render faithfully (round-trip oracle non-vacuity)" {
     then "Let element type is faithful (List<int> != List<string>; was both 'List')" {
+        let ws = ts()
         let no_el: List<SExpr> = []
-        let a = render_stmt(ts(), Stmt.Let("x", ValueType.List(ValueType.Int), Expr.ListLit(no_el)))
-        let b = render_stmt(ts(), Stmt.Let("x", ValueType.List(ValueType.Str), Expr.ListLit(no_el)))
+        let init = ws.exprs.add_leaf(Expr.ListLit(no_el))
+        let a = render_stmt(ws, Stmt.Let("x", ValueType.List(ValueType.Int), init))
+        let b = render_stmt(ws, Stmt.Let("x", ValueType.List(ValueType.Str), init))
         a != b && a.contains("List<int>")
     }
     then "Function return type is faithful (List<int> not collapsed to 'List')" {
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
-        let no_body: List<SStmt> = []
+        let no_body: List<StmtId> = []
         render_stmt(ts(), Stmt.Function("f", no_tp, no_pp, ValueType.List(ValueType.Int), no_body)).contains("List<int>")
     }
     then "unresolved binding type still renders the <unknown> marker" {
-        render_stmt(ts(), Stmt.Let("x", ValueType.Unknown, Expr.Number("1"))).contains("<unknown>")
+        let ws = ts()
+        render_stmt(ws, Stmt.Let("x", ValueType.Unknown, ws.exprs.add_leaf(Expr.Number("1")))).contains("<unknown>")
     }
     then "Fn return type is faithful (Fn<int> != Fn<string>; vtype_render_full collapses both to 'fn')" {
-        let a = render_stmt(ts(), Stmt.Let("f", ValueType.Fn(ValueType.Int), Expr.Number("0")))
-        let b = render_stmt(ts(), Stmt.Let("f", ValueType.Fn(ValueType.Str), Expr.Number("0")))
+        let ws = ts()
+        let init = ws.exprs.add_leaf(Expr.Number("0"))
+        let a = render_stmt(ws, Stmt.Let("f", ValueType.Fn(ValueType.Int), init))
+        let b = render_stmt(ws, Stmt.Let("f", ValueType.Fn(ValueType.Str), init))
         a != b
     }
     then "Tuple element types are faithful (compound element not collapsed to 'List')" {
+        let ws = ts()
         let elems: List<ValueType> = [ValueType.List(ValueType.Int), ValueType.Str]
-        render_stmt(ts(), Stmt.Let("t", ValueType.Tuple(elems), Expr.Number("0"))).contains("List<int>")
+        render_stmt(ws, Stmt.Let("t", ValueType.Tuple(elems), ws.exprs.add_leaf(Expr.Number("0")))).contains("List<int>")
     }
     then "NESTED type child is faithful (List<Fn<int>> != List<Fn<string>>; the case a naive fix misses)" {
-        let a = render_stmt(ts(), Stmt.Let("x", ValueType.List(ValueType.Fn(ValueType.Int)), Expr.Number("0")))
-        let b = render_stmt(ts(), Stmt.Let("x", ValueType.List(ValueType.Fn(ValueType.Str)), Expr.Number("0")))
+        let ws = ts()
+        let init = ws.exprs.add_leaf(Expr.Number("0"))
+        let a = render_stmt(ws, Stmt.Let("x", ValueType.List(ValueType.Fn(ValueType.Int)), init))
+        let b = render_stmt(ws, Stmt.Let("x", ValueType.List(ValueType.Fn(ValueType.Str)), init))
         a != b
     }
 }

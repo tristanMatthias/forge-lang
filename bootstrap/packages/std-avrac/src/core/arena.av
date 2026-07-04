@@ -58,7 +58,7 @@
 use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild, strip_spans, SStmt, sstmt_at}
 use core.{ExprId, StmtId, PatId, TypeId}
 use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
-use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index}
+use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index, SrcPos, src_pos_none}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 
 // The four typed id newtypes (ExprId/StmtId/PatId/TypeId) live in
@@ -302,8 +302,12 @@ export fn new_expr_arena() -> ExprArena {
 }
 
 /// Append-only arena of `Stmt` nodes, addressed by `StmtId`. `edges`/`spans`
-/// are dense, id-keyed side-tables (see ExprArena).
-export type StmtArena = { nodes: List<Stmt>, edges: DenseTable<StmtId, NodeEdges>, spans: DenseTable<StmtId, ByteSpan> }
+/// are dense, id-keyed side-tables (see ExprArena). `pos` is the F3a
+/// position column: the (line, col, file) the pre-flip `SStmt` wrapper
+/// carried for this row, needed because one store hosts sub-parses of
+/// SEVERAL files (F0) so a byte span alone can't attribute a row to its
+/// file. Dense so speculative-parse rollback truncates it with the rows.
+export type StmtArena = { nodes: List<Stmt>, edges: DenseTable<StmtId, NodeEdges>, spans: DenseTable<StmtId, ByteSpan>, pos: DenseTable<StmtId, SrcPos> }
 impl StmtArena {
     /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
     fn add(self, node: Stmt, edges: NodeEdges, sp: ByteSpan) -> StmtId {
@@ -323,6 +327,13 @@ impl StmtArena {
     fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw() - 1] }
     fn children_of(self, id: StmtId) -> List<NodeRef> { self.edges.get(id).refs }
     fn span_of(self, id: StmtId) -> ByteSpan { self.spans.get(id) }
+    /// Stamp the row's (line, col, file) — the producer-side write the
+    /// parser makes at every point it used to build a positioned wrapper.
+    fn record_pos(self, id: StmtId, p: SrcPos) {
+        if p.line > 0 { self.pos.set(id, p) }
+    }
+    /// The row's stamped position, or the synthesised sentinel.
+    fn pos_of(self, id: StmtId) -> SrcPos { self.pos.get(id) }
     fn count(self) -> int { self.nodes.length }
     /// Roll back to `n` rows (see ExprArena.truncate_to).
     fn truncate_to(self, n: int) {
@@ -331,6 +342,7 @@ impl StmtArena {
         // slot for n rows is raw index n — keep n + 1 slots.
         self.edges.truncate_to(n + 1)
         self.spans.truncate_to(n + 1)
+        self.pos.truncate_to(n + 1)
     }
 }
 
@@ -338,7 +350,8 @@ impl StmtArena {
 export fn new_stmt_arena() -> StmtArena {
     let edges: DenseTable<StmtId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
     let spans: DenseTable<StmtId, ByteSpan> = new_dense_table(byte_span_none())
-    StmtArena { nodes: [], edges: edges, spans: spans }
+    let pos: DenseTable<StmtId, SrcPos> = new_dense_table(src_pos_none())
+    StmtArena { nodes: [], edges: edges, spans: spans, pos: pos }
 }
 
 /// Append-only arena of `Pattern` nodes, addressed by `PatId`. `edges`/`spans`
@@ -568,6 +581,61 @@ impl NodeStore {
     /// Recompute a statement node's (line, col) from its recorded span.
     fn stmt_linecol(self, id: StmtId) -> LineCol {
         self.linecol_of_span(self.stmts.span_of(id))
+    }
+    /// A statement row's source position with file attribution (F3a): the
+    /// stamped `pos` column when the producer recorded one, else the span
+    /// side-table (entry-file rows), else the synthesised sentinel.
+    fn stmt_pos(self, id: StmtId) -> SrcPos {
+        let p = self.stmts.pos_of(id)
+        if p.line > 0 { return p }
+        let lc = self.stmt_linecol(id)
+        SrcPos { line: lc.line, col: lc.col, file: "" }
+    }
+    /// Rebuild the positioned `SStmt` view of a row — the boxed-wrapper
+    /// bridge for consumers whose downstream APIs still take `SStmt`
+    /// (the wrappers die at F4). Position from `stmt_pos`, provenance
+    /// from the store's side-table.
+    fn sstmt_of(self, id: StmtId) -> SStmt {
+        let p = self.stmt_pos(id)
+        SStmt { node: self.stmts.get(id), line: p.line, col: p.col, file: p.file, from_macro: self.provenance.has(id) }
+    }
+    /// The inverse of `sstmts_of`: allocate a row per positioned wrapper
+    /// (node + position column + provenance) and return the ids — the
+    /// write half of the F3a boundary bridge, for passes that assemble
+    /// a flipped `List<StmtId>` body from wrapped statements (the module
+    /// resolver stitching parsed files into `Stmt.Module` bodies).
+    fn rows_of(self, stmts: List<SStmt>) -> List<StmtId> {
+        mut out: List<StmtId> = []
+        for ss in stmts {
+            let id = self.stmts.add_leaf(ss.node)
+            self.stmts.record_pos(id, SrcPos { line: ss.line, col: ss.col, file: ss.file })
+            if ss.from_macro { self.provenance.set(id, true) }
+            out.push(id)
+        }
+        out
+    }
+    /// Allocate a REWRITTEN statement row, inheriting the source row's
+    /// span, position, and provenance — the transform-pass allocator
+    /// (F3a): a pass that rebuilds a child allocates the new node here
+    /// so diagnostics keep pointing at the original source.
+    fn restmt(self, node: Stmt, from: StmtId) -> StmtId {
+        let id = self.stmts.add(node, NodeEdges { refs: [] }, self.stmts.span_of(from))
+        self.stmts.record_pos(id, self.stmts.pos_of(from))
+        if self.provenance.has(from) { self.provenance.set(id, true) }
+        id
+    }
+    /// The expr twin of `restmt`: a rewritten expression row inheriting
+    /// the source row's span.
+    fn reexpr(self, node: Expr, from: ExprId) -> ExprId {
+        self.exprs.add(node, NodeEdges { refs: [] }, self.exprs.span_of(from))
+    }
+    /// The positioned `SStmt` views of a flipped `List<StmtId>` body — the
+    /// list twin of `sstmt_of`, for consumers handing a whole body to an
+    /// un-migrated `List<SStmt>` API.
+    fn sstmts_of(self, ids: List<StmtId>) -> List<SStmt> {
+        mut out: List<SStmt> = []
+        for id in ids { out.push(self.sstmt_of(id)) }
+        out
     }
     /// Recompute an expression node's (line, col) from its recorded span.
     fn expr_linecol(self, id: ExprId) -> LineCol {

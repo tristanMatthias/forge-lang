@@ -41,10 +41,13 @@ export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -
 /// caller's `last_val` / `last_ty`.
 export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmt {
-        .Expr(e) -> ctx.emit(env, e)
-        .Block(body) -> emit_block_expr(ctx, env, body)
-        .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
-        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
+        .Expr(e) -> ctx.emit(env, ctx.nodes.exprs.get(e))
+        .Block(body) -> emit_block_expr(ctx, env, ctx.nodes.sstmts_of(body))
+        .Match(subject, arms) -> emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)
+        .If(condition, then_branch, else_branch) -> {
+            let else_s: Stmt? = if else_branch != null { ctx.nodes.stmts.get(else_branch!) } else { null }
+            emit_stmt_if_as_value(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)
+        }
         _ -> {
             let sr = emit_stmt(ctx, env, stmt)?
             ok_emit(last_val, last_ty)
@@ -59,19 +62,20 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val:
     ctx.cov_line()
     match stmt {
         .Expr(e) -> {
-            let r = ctx.emit(env, e)?
+            let r = ctx.emit(env, ctx.nodes.exprs.get(e))?
             ok_br(r.value, r.ty, ctx, env)
         }
         .Block(body) -> {
-            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Unknown)?
+            let r = emit_block_loop_ctx(ctx, env, ctx.nodes.sstmts_of(body), ctx.i64(0), .Unknown)?
             ok_br(r.value, r.ty, r.ctx, r.env)
         }
         .Match(subject, arms) -> {
-            let r = emit_match_expr(ctx, env, subject, arms)?
+            let r = emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)?
             ok_br(r.value, r.ty, ctx, env)
         }
         .If(condition, then_branch, else_branch) -> {
-            let r = emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)?
+            let else_s: Stmt? = if else_branch != null { ctx.nodes.stmts.get(else_branch!) } else { null }
+            let r = emit_stmt_if_as_value(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)?
             ok_br(r.value, r.ty, ctx, env)
         }
         _ -> {

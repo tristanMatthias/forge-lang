@@ -18,8 +18,8 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation}
-use core.{NodeStore}
+use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
+use core.{NodeStore, StmtId}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program}
 use parse.{parse_body_source}
@@ -92,7 +92,7 @@ export type CompTimeFn = {
     name: string,
     params: List<ParamEntry>,
     ret_ty: ValueType,
-    body: List<SStmt>,
+    body: List<StmtId>,
 }
 
 /// Registry of every `@comptime` fn discovered in the program,
@@ -120,7 +120,7 @@ export type CompTimeRegistry = {
 /// Recurses into Module bodies so package-internal comptime fns are
 /// found. Pure: doesn't mutate the AST.
 export fn collect_comptime_fns(stmts: List<SStmt>, store: NodeStore) -> CompTimeRegistry {
-    let fns = gather_fns(stmts, [])
+    let fns = gather_fns(store, stmts, [])
     prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
 }
 
@@ -128,18 +128,30 @@ export fn collect_comptime_fns(stmts: List<SStmt>, store: NodeStore) -> CompTime
 /// running accumulator. Recurses into Module bodies. Threading the
 /// accumulator through the recursion avoids the per-Module list-copy
 /// that an outer-merge approach would do.
-fn gather_fns(stmts: List<SStmt>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
+fn gather_fns(store: NodeStore, stmts: List<SStmt>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
     mut fns = acc
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let entry = comptime_fn_from_stmt(ss.node)
-        if entry != null { fns.push(entry!) }
-        match ss.node {
-            .Module(_, body) -> { fns = gather_fns(body, fns) }
-            _ -> {}
-        }
+        fns = gather_from_stmt(store, ss.node, fns)
         i = i + 1
+    }
+    fns
+}
+
+/// Per-statement half of `gather_fns`: register the stmt if it's an
+/// @comptime fn, then recurse into a Module body's rows.
+fn gather_from_stmt(store: NodeStore, stmt: Stmt, acc: List<CompTimeFn>) -> List<CompTimeFn> {
+    mut fns = acc
+    let entry = comptime_fn_from_stmt(store, stmt)
+    if entry != null { fns.push(entry!) }
+    // Unwrap Annotated wrappers before the Module match so `@x module { … }`
+    // still recurses into its body to find nested @comptime fns.
+    match stmt_unwrap(store, stmt) {
+        .Module(_, body) -> {
+            for id in body { fns = gather_from_stmt(store, store.stmts.get(id), fns) }
+        }
+        _ -> {}
     }
     fns
 }
@@ -147,13 +159,13 @@ fn gather_fns(stmts: List<SStmt>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
 /// If `stmt` is an `@comptime`-annotated fn, return a CompTimeFn
 /// describing it. Returns null otherwise. Peels through arbitrary
 /// nesting of `Annotated` wrappers (`@doc @export @comptime fn` etc).
-fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
+fn comptime_fn_from_stmt(store: NodeStore, stmt: Stmt) -> CompTimeFn? {
     match stmt {
         .Annotated(annots, inner) -> {
             if annotation_present(annots, "comptime") {
-                fn_payload(inner.node)
+                fn_payload(store, store.stmts.get(inner))
             } else {
-                comptime_fn_from_stmt(inner.node)
+                comptime_fn_from_stmt(store, store.stmts.get(inner))
             }
         }
         _ -> null
@@ -162,9 +174,9 @@ fn comptime_fn_from_stmt(stmt: Stmt) -> CompTimeFn? {
 
 /// Recursively peel further annotation layers and extract the
 /// Function payload. Returns null if the underlying decl isn't a fn.
-fn fn_payload(stmt: Stmt) -> CompTimeFn? {
+fn fn_payload(store: NodeStore, stmt: Stmt) -> CompTimeFn? {
     match stmt {
-        .Annotated(_, inner) -> fn_payload(inner.node)
+        .Annotated(_, inner) -> fn_payload(store, store.stmts.get(inner))
         .Function(name, _, params, ret_ty, body) -> CompTimeFn { name, params, ret_ty, body }
         _ -> null
     }

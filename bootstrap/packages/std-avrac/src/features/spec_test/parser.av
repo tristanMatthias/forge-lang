@@ -3,7 +3,7 @@
 
 // Imports resolved by bootstrap's module-qualified name resolution.
 
-use core.{sstmt, sstmt_at, byte_span_none}
+use core.{sstmt, sstmt_at, byte_span_none, SrcPos}
 use core.{Tk}
 use parse.{StmtListIds}
 impl Parser {
@@ -21,8 +21,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close spec block") {
             return .Err("parse error")
         }
-        // Walker order: one StmtRef per body statement.
-        .Ok(self.alloc_stmt(Stmt.SpecBlock(name, body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
+        .Ok(self.alloc_stmt_leaf(Stmt.SpecBlock(name, body.ids)))
     }
 
     fn parse_spec_body(self) -> StmtListIds {
@@ -43,6 +42,7 @@ impl Parser {
                 .Ok(s) -> s
                 .Err(_) -> return StmtListIds { wrapped: out, ids: ids }
             }
+            self.store.stmts.record_pos(sid, SrcPos { line: line, col: col, file: self.file })
             out.push(sstmt_at(self.stmt_of(sid), line, col, self.file))
             ids.push(sid)
         }
@@ -63,8 +63,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close given block") {
             return .Err("parse error")
         }
-        // Walker order: one StmtRef per body statement.
-        .Ok(self.alloc_stmt(Stmt.GivenBlock(name, body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
+        .Ok(self.alloc_stmt_leaf(Stmt.GivenBlock(name, body.ids)))
     }
 
     fn parse_then_block(self) -> Result<StmtId, string> {
@@ -82,11 +81,11 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close then block") {
             return .Err("parse error")
         }
-        // Walker order: the cond expr is the ThenBlock's only child; the
-        // Block cond itself records one StmtRef per body statement (the
-        // parse_block_expression shape).
+        // The Block cond records one StmtRef per body statement (the
+        // parse_block_expression shape); the ThenBlock row itself is a
+        // leaf — the cond is its id payload.
         let cond = Expr.Block(body.wrapped)
         let cond_id = self.alloc_expr(cond, byte_span_none(), self.edges_of_stmt_ids(body.ids))
-        .Ok(self.alloc_stmt_expr1(Stmt.ThenBlock(name, cond), cond_id))
+        .Ok(self.alloc_stmt_leaf(Stmt.ThenBlock(name, cond_id)))
     }
 }

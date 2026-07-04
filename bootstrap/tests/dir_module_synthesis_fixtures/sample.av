@@ -12,7 +12,7 @@ use @std.avrac.features.modules.{
     synthesize_subdir_module_decls,
     synthesize_subdir_module_decls_filtered,
 }
-use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}
+use @std.avrac.core.{Stmt, SStmt, StmtId, NodeStore, new_node_store, build_line_index, sstmt_dummy}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
@@ -43,6 +43,9 @@ fn count_stmts(stmts: List<SStmt>) -> int {
 }
 
 fn main() -> int {
+    // B-final: synthesized Module bodies are List<StmtId> rows, so the
+    // synthesizer allocates them into this store.
+    let store = new_node_store(build_line_index(""))
     let root = "/tmp/avra_dirmod_synth_fixture"
     avra_shell_exec("rm -rf " + root)
     avra_shell_exec("mkdir -p " + root + "/sub_a")
@@ -57,20 +60,20 @@ fn main() -> int {
     avra_shell_exec("touch " + root + "/sub_c/z.av")
 
     // ── unfiltered ─────────────────────────────────────────────
-    let all = synthesize_subdir_module_decls(root)
+    let all = synthesize_subdir_module_decls(store, root)
     probe("unfiltered_count_3", count_stmts(all) == 3)
     let names_all = module_names(all)
     probe("unfiltered_has_sub_a", names_all.contains("sub_a"))
     probe("unfiltered_has_sub_b", names_all.contains("sub_b"))
     probe("unfiltered_has_sub_c", names_all.contains("sub_c"))
 
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
 
     // ── filtered: one subdir already declared ──────────────────
     let existing_one: List<SStmt> = [
         sstmt_dummy(Stmt.Module("sub_a", empty_body)),
     ]
-    let some = synthesize_subdir_module_decls_filtered(root, existing_one)
+    let some = synthesize_subdir_module_decls_filtered(store, root, existing_one)
     probe("filtered_one_count_2", count_stmts(some) == 2)
     let names_some = module_names(some)
     probe("filtered_one_skip_sub_a", !names_some.contains("sub_a"))
@@ -83,12 +86,12 @@ fn main() -> int {
         sstmt_dummy(Stmt.Module("sub_b", empty_body)),
         sstmt_dummy(Stmt.Module("sub_c", empty_body)),
     ]
-    let filtered_all = synthesize_subdir_module_decls_filtered(root, existing_all)
+    let filtered_all = synthesize_subdir_module_decls_filtered(store, root, existing_all)
     probe("filtered_all_count_0", count_stmts(filtered_all) == 0)
 
     // ── filtered: missing-dir is empty ─────────────────────────
     let empty_existing: List<SStmt> = []
-    let nodir = synthesize_subdir_module_decls_filtered("/tmp/avra_dirmod_synth_does_not_exist_xx", empty_existing)
+    let nodir = synthesize_subdir_module_decls_filtered(store, "/tmp/avra_dirmod_synth_does_not_exist_xx", empty_existing)
     probe("missing_dir_count_0", count_stmts(nodir) == 0)
 
     avra_shell_exec("rm -rf " + root)

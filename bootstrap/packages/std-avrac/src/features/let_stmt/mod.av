@@ -13,7 +13,7 @@ use typeck.{check_expr}
 /// Wires up resolver, typeck, codegen, and eval hooks.
 export fn let_destructure_feature() -> Feature {
     feature_new("let_destructure") with {
-        stmt_tag: Stmt.LetDestructure([], Expr.None),
+        stmt_tag: Stmt.LetDestructure([], ExprId(0)),
         emit_stmt: let_destructure_emit_stmt,
         resolve_stmt: let_destructure_resolve_stmt,
         check_stmt: let_destructure_check_stmt,
@@ -70,7 +70,7 @@ fn kw_parse_mut(p: Parser) -> Result<StmtId, string> {
 fn let_destructure_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .LetDestructure(names, initializer) -> {
-            let after_init = resolve_expr(r, initializer)
+            let after_init = resolve_expr(r, r.nodes.exprs.get(initializer))
             define_param_names(after_init, names)
         }
         _ -> r
@@ -83,7 +83,7 @@ fn let_destructure_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .LetDestructure(names, init) -> {
-            let r = check_expr(tc, init)
+            let r = check_expr(tc, tc.nodes.exprs.get(init))
             bind_destructure(r.tc, names, r.ty)
         }
         _ -> tc
@@ -99,7 +99,7 @@ fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
 fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .LetDestructure(names, initializer) -> {
-            let init = eval_expr(rt, initializer)
+            let init = eval_expr(rt, rt.nodes.exprs.get(initializer))
             if init.had_error { return init }
             if init.value.kind != "list" {
                 return error_result(init.runtime, "cannot destructure non-tuple value (kind=${init.value.kind})")
@@ -122,7 +122,7 @@ fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 fn let_destructure_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .LetDestructure(names, initializer) -> {
-            let new_env = emit_let_destructure(ctx, env, names, initializer)?
+            let new_env = emit_let_destructure(ctx, env, names, ctx.nodes.exprs.get(initializer))?
             ok_sr(ctx, new_env)
         }
         _ -> err_sr("expected LetDestructure")

@@ -14,7 +14,7 @@ export fn spec_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<
         // file/line come from `ctx` (set per-stmt by the codegen
         // walkers); the reporter uses them to record failure
         // locations for the summary block.
-        .ThenBlock(name, cond) -> emit_then_block(ctx, env, name, cond, ctx.source_file, ctx.source_line)
+        .ThenBlock(name, cond) -> emit_then_block(ctx, env, name, ctx.nodes.exprs.get(cond), ctx.source_file, ctx.source_line)
         _ -> err_sr("spec_emit_stmt: unexpected statement")
     }
 }
@@ -28,7 +28,7 @@ export fn spec_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<
 /// Body-local `let` bindings DO NOT escape to sibling spec blocks
 /// — each spec is independent, so we return the original `env`
 /// after discarding the body's accumulated List<VarBinding>.
-fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<SStmt>) -> Result<StmtResult, string> {
+fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<StmtId>) -> Result<StmtResult, string> {
     ctx.call("test_render_spec_start", [ctx.global_str(name, "spec_str")])
     let _ = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, env)
@@ -38,7 +38,7 @@ fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<SSt
 /// the body. Threads the env so `let` bindings flow into later
 /// `then` arms within the same given (the canonical use case:
 /// `given "..." { let x = ...; then "..." { x == 1 } }`).
-fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<SStmt>) -> Result<StmtResult, string> {
+fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<StmtId>) -> Result<StmtResult, string> {
     ctx.call("test_render_given_start", [ctx.global_str(name, "spec_str")])
     let new_env = emit_spec_stmts(ctx, env, body)?
     ok_sr(ctx, new_env)
@@ -73,13 +73,14 @@ fn emit_then_block(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr, fi
 /// arm — the outer codegen walker only updates ctx at top-level
 /// stmt boundaries, but `then` arms are nested inside `spec` /
 /// `given` bodies and need their own per-stmt update.
-fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<List<VarBinding>, string> {
+fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, body: List<StmtId>) -> Result<List<VarBinding>, string> {
     mut cur_env = env
     mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let line_ctx = ctx with { source_line: ss.line, source_file: ss.file }
-        cur_env = emit_spec_single(line_ctx, cur_env, ss.node)?
+    while i < body.length {
+        let id = body[i]
+        let pos = ctx.nodes.stmt_pos(id)
+        let line_ctx = ctx with { source_line: pos.line, source_file: pos.file }
+        cur_env = emit_spec_single(line_ctx, cur_env, ctx.nodes.stmts.get(id))?
         i = i + 1
     }
     ok_stmt(cur_env)

@@ -3,13 +3,13 @@
 // ComponentDef AST so later passes (typeck, expand) can consume it.
 
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.core.{Stmt, SStmt, stmt_unwrap}
+use @std.avrac.core.{Stmt, SStmt, NodeStore, stmt_unwrap}
 
 fn first_component_implements(source: string) -> List<string> {
     let r = parse_program_source(source)
     if r.had_error == 1 { return [] }
     if r.stmts == null { return [] }
-    implements_of_first_component(r.stmts!)
+    implements_of_first_component(r.store, r.stmts!)
 }
 
 /// Returns the parse-error flag — used by red-team tests that
@@ -24,16 +24,16 @@ fn parse_has_error(source: string) -> bool {
 /// implements list into a list of (component_name, impl_count)
 /// pairs. Used by tests that file multiple component defs in
 /// one source to confirm each gets its own implements list.
-fn all_component_impl_counts(stmts: List<SStmt>) -> List<int> {
+fn all_component_impl_counts(store: NodeStore, stmts: List<SStmt>) -> List<int> {
     mut out: List<int> = []
-    walk_impl_counts(stmts, out)
+    walk_impl_counts(store, stmts, out)
 }
 
-fn walk_impl_counts(stmts: List<SStmt>, acc_in: List<int>) -> List<int> {
+fn walk_impl_counts(store: NodeStore, stmts: List<SStmt>, acc_in: List<int>) -> List<int> {
     mut acc = acc_in
     mut i = 0
     while i < stmts.length {
-        let inner = stmt_unwrap(stmts[i].node)
+        let inner = stmt_unwrap(store, stmts[i].node)
         match inner {
             .ComponentDef(_, _, _, _, impls, _) -> acc.push(impl_count(impls))
             _ -> {}
@@ -43,10 +43,10 @@ fn walk_impl_counts(stmts: List<SStmt>, acc_in: List<int>) -> List<int> {
     acc
 }
 
-fn implements_of_first_component(stmts: List<SStmt>) -> List<string> {
+fn implements_of_first_component(store: NodeStore, stmts: List<SStmt>) -> List<string> {
     mut i = 0
     while i < stmts.length {
-        let inner = stmt_unwrap(stmts[i].node)
+        let inner = stmt_unwrap(store, stmts[i].node)
         match inner {
             .ComponentDef(_, _, _, _, impls, _) -> return impls
             _ -> {}
@@ -214,7 +214,7 @@ component B implements Y, Z {
         if r.had_error == 1 { false }
         else if r.stmts == null { false }
         else {
-            let counts = all_component_impl_counts(r.stmts!)
+            let counts = all_component_impl_counts(r.store, r.stmts!)
             counts.length == 2 && counts[0] == 1 && counts[1] == 2
         }
     }
@@ -226,7 +226,7 @@ fn trail() -> int { return 1 }")
         if r.had_error == 1 { false }
         else if r.stmts == null { false }
         else {
-            let counts = all_component_impl_counts(r.stmts!)
+            let counts = all_component_impl_counts(r.store, r.stmts!)
             counts.length == 1 && counts[0] == 1
         }
     }
@@ -295,7 +295,7 @@ spec "vez6.8.3: stress — many components with implements clauses" {
         if r.had_error == 1 { false }
         else if r.stmts == null { false }
         else {
-            let counts = all_component_impl_counts(r.stmts!)
+            let counts = all_component_impl_counts(r.store, r.stmts!)
             counts.length == 100 && counts[0] == 1 && counts[99] == 1
         }
     }

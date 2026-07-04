@@ -55,13 +55,14 @@ spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the nat
         // shape AND the inner Expr.Number's text survived the round
         // trip. If Phase A's stmt_payload slot were a copy-by-tag-
         // only sham, the inner Expr.Number's text field would clear.
-        let inner = Expr.Number("42")
+        let ws = ts()
+        let inner = ws.exprs.add_leaf(Expr.Number("42"))
         let v: Value = value_for_stmt(Stmt.Return(inner))
-        let unwrapped = value_to_stmt(ts(), v)
+        let unwrapped = value_to_stmt(ws, v)
         v.kind == "stmt"
             && match unwrapped {
                 .Ok(s) -> match s {
-                    .Return(e) -> match e {
+                    .Return(e) -> match ws.exprs.get(e) {
                         .Number(n) -> n == "42"
                         _ -> false
                     }

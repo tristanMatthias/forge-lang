@@ -6,12 +6,12 @@
 // at `features.modules.{...}`.
 use features.eval.{ok_result, value_null}
 use core.{feature_new, Feature}
-use resolve.{resolve_stmt_list}
+use resolve.{resolve_stmt_ids}
 
 /// Resolver hook for `mod`. Recursively resolves the body — name
 /// resolution within the module is local to its scope.
 fn mod_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r }
+    match stmt { .Module(_, body) -> resolve_stmt_ids(r, body), _ -> r }
 }
 
 /// Tree-walk evaluator hook for `mod`. The evaluator doesn't yet
@@ -37,7 +37,7 @@ fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// resolver, and eval hooks. Codegen is provided implicitly by
 /// the codegen pipeline emitting `__init_<name>()` per module.
 export fn mod_feature() -> Feature {
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     feature_new("mod") with {
         stmt_tag: Stmt.Module("", empty_body),
         decl_keyword: "kw_mod",

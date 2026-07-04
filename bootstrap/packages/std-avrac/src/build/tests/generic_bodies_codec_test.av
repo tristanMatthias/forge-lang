@@ -183,31 +183,31 @@ spec "P4 extractor: generic_bodies population" {
 // re-parsed body (instead of the empty-body extern-wrapped stub the
 // pre-P5 path used for every fn).
 use @std.avrac.build.{synthesize_unit_body}
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, SStmt, Stmt, stmt_unwrap}
+use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, SStmt, Stmt, stmt_unwrap}
 
 /// Walk a (possibly Module-wrapped) List<SStmt> and find the first
 /// `Function(name)` node, returning its body. Returns an empty list
 /// on miss. Recurses into Module bodies because the synthesizer wraps
 /// decls under their qualified-name path (e.g. unit_name → @std::test).
-fn first_fn_body(stmts: List<SStmt>, name: string) -> List<SStmt> {
+fn first_fn_body(store: NodeStore, stmts: List<SStmt>, name: string) -> List<StmtId> {
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        match stmt_unwrap(ss.node) {
+        match stmt_unwrap(store, ss.node) {
             .Function(n, _, _, _, body) if n == name -> return body
             .Module(_, body) -> {
-                let found = first_fn_body(body, name)
+                let found = first_fn_body(store, store.sstmts_of(body), name)
                 if found.length > 0 { return found }
             }
             _ -> {}
         }
         i = i + 1
     }
-    let empty: List<SStmt> = []
+    let empty: List<StmtId> = []
     empty
 }
 
-fn body_stmt_count(b: List<SStmt>) -> int {
+fn body_stmt_count(b: List<StmtId>) -> int {
     b.length
 }
 
@@ -220,16 +220,18 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
         let parsed = parse_program_source(
             "export fn id<T>(x: T) -> T {\n    return x\n}")
         let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
-        let synth = synthesize_unit_body(m, ts())
-        let body = first_fn_body(synth, "id")
+        let ws = ts()
+        let synth = synthesize_unit_body(m, ws)
+        let body = first_fn_body(ws, synth, "id")
         body_stmt_count(body) >= 1
     }
     then "non-generic exported fn still gets empty body + @external_unit" {
         let parsed = parse_program_source(
             "export fn plain(x: int) -> int {\n    return x + 1\n}")
         let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
-        let synth = synthesize_unit_body(m, ts())
-        let body = first_fn_body(synth, "plain")
+        let ws = ts()
+        let synth = synthesize_unit_body(m, ws)
+        let body = first_fn_body(ws, synth, "plain")
         // Body stays empty for non-generic — linker resolves the
         // call at link time against the producer's .o.
         body_stmt_count(body) == 0
@@ -303,13 +305,14 @@ spec "bd8n: inherent impl metadata round-trip" {
         let parsed = parse_program_source(
             "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
         let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
-        let synth = synthesize_unit_body(m, ts())
+        let ws = ts()
+        let synth = synthesize_unit_body(m, ws)
         // The synthesizer wraps the impl block under the type's
         // relative-to-unit path; a top-level walk should find an
         // `impl Foo` (which renders as Function `Foo__id` inside).
         // Approximate the assertion by looking for the mangled fn
         // declaration body via the same first_fn_body helper.
-        let body = first_fn_body(synth, "Foo__id")
+        let body = first_fn_body(ws, synth, "Foo__id")
         // Body stays empty because @external_unit-wrapped — the
         // producer's .o supplies the implementation at link time.
         // Presence (any node we can locate) is the win.

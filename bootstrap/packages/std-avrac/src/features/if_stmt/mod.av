@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
-use core.{ValueType, vtype_display, vtype_eq, vtype_is_unknown}
+use core.{Stmt, ValueType, vtype_display, vtype_eq, vtype_is_unknown}
 use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
@@ -16,7 +16,7 @@ use typeck.{check_expr, check_stmt, tc_er, tc_report, narrow_guard_of, tc_narrow
 export fn if_stmt_feature() -> Feature {
     feature_new("if") with {
         expr_tag: Expr.IfExpr(Expr.None, Expr.None, Expr.None),
-        stmt_tag: Stmt.If(Expr.None, Stmt.NoOp, null),
+        stmt_tag: Stmt.If(ExprId(0), StmtId(0), null),
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
         resolve_stmt: if_resolve_stmt,
@@ -77,7 +77,10 @@ fn if_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue
 /// which emits both branches into named basic blocks.
 fn if_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
-        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
+        .If(condition, then_branch, else_branch) -> {
+            let else_s: Stmt? = if else_branch != null { ctx.nodes.stmts.get(else_branch!) } else { null }
+            emit_if(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)
+        }
         _ -> err_sr("expected If")
     }
 }
@@ -87,10 +90,10 @@ fn if_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResul
 fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .If(condition, then_branch, else_branch) -> {
-            let after_cond = resolve_expr(r, condition)
-            let after_then = resolve_stmt(after_cond, then_branch)
+            let after_cond = resolve_expr(r, r.nodes.exprs.get(condition))
+            let after_then = resolve_stmt(after_cond, r.nodes.stmts.get(then_branch))
             if else_branch != null {
-                return resolve_stmt(after_then, else_branch!)
+                return resolve_stmt(after_then, r.nodes.stmts.get(else_branch!))
             }
             after_then
         }
@@ -111,7 +114,10 @@ fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 /// type-merging is needed.)
 fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .If(cond, then_branch, else_branch) -> {
+        .If(cond_id, then_id, else_id) -> {
+            let cond = tc.nodes.exprs.get(cond_id)
+            let then_branch = tc.nodes.stmts.get(then_id)
+            let else_branch: Stmt? = if else_id != null { tc.nodes.stmts.get(else_id!) } else { null }
             let c = check_expr(tc, cond)
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
@@ -193,15 +199,15 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
 fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .If(condition, then_branch, else_branch) -> {
-            let cond_result = eval_expr(rt, condition)
+            let cond_result = eval_expr(rt, rt.nodes.exprs.get(condition))
             if step_had_error(cond_result) {
                 return cond_result
             }
             if is_truthy(step_value(cond_result)) {
-                return execute_stmt(step_runtime(cond_result), then_branch)
+                return execute_stmt(step_runtime(cond_result), rt.nodes.stmts.get(then_branch))
             }
             if else_branch != null {
-                return execute_stmt(step_runtime(cond_result), else_branch!)
+                return execute_stmt(step_runtime(cond_result), rt.nodes.stmts.get(else_branch!))
             }
             ok_result(step_runtime(cond_result), value_null())
         }

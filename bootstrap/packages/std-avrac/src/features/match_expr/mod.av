@@ -18,7 +18,7 @@ export fn match_feature() -> Feature {
     let empty_arms: List<MatchArm> = []
     feature_new("match") with {
         expr_tag: Expr.MatchExpr(Expr.None, empty_arms),
-        stmt_tag: Stmt.Match(Expr.None, empty_arms),
+        stmt_tag: Stmt.Match(ExprId(0), empty_arms),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
         resolve_stmt: match_resolve_stmt,
@@ -51,7 +51,7 @@ export fn when_feature() -> Feature {
 fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .Match(subject, arms) -> {
-            let after_subject = resolve_expr(r, subject)
+            let after_subject = resolve_expr(r, r.nodes.exprs.get(subject))
             resolve_match_arms(after_subject, arms)
         }
         _ -> r
@@ -77,7 +77,7 @@ fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Match(subject, arms) -> {
-            let subject_result = eval_expr(rt, subject)
+            let subject_result = eval_expr(rt, rt.nodes.exprs.get(subject))
             if step_had_error(subject_result) { return subject_result }
             eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
         }
@@ -178,7 +178,7 @@ fn finalize_arm_result(body_result: StepResult) -> StepResult {
 /// `is_return` and propagate up.
 fn eval_match_body(rt: Runtime, body: SExpr) -> StepResult {
     match body.node {
-        .Block(stmts) -> execute_stmt(rt, Stmt.Block(stmts))
+        .Block(stmts) -> execute_stmt(rt, Stmt.Block(rt.nodes.rows_of(stmts)))
         _ -> eval_expr(rt, body.node)
     }
 }
@@ -334,7 +334,7 @@ fn match_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitVa
 /// Codegen hook for `Match`. Forwards to `emit_match`.
 fn match_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
-        .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
+        .Match(subject, arms) -> emit_match(ctx, env, ctx.nodes.exprs.get(subject), arms)
         _ -> err_sr("expected Match")
     }
 }
@@ -352,7 +352,7 @@ fn when_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitVal
 fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Match(subject, arms) -> {
-            let s = check_expr(tc, subject)
+            let s = check_expr(tc, tc.nodes.exprs.get(subject))
             let checked = tc_check_exhaustive(s.tc, s.ty, arms)
             check_match_arms(checked, s.ty, arms)
         }

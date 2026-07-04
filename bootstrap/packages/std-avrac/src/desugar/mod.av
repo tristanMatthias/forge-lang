@@ -8,7 +8,7 @@
 // See features/component_decl/expand.av.
 
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
-use core.{NodeStore}
+use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map, list_concat}
 
 // ListComp is no longer desugared at the AST level. The AST-rewrite
@@ -22,7 +22,9 @@ use list_ops.{list_map, list_concat}
 
 /// Top-level desugar entry. Walks the statement list rewriting
 /// expression-level sugar (`assert`, `dbg`, `todo`, `unreachable`,
-/// `min`, `max`, list comprehensions). Idempotent.
+/// `min`, `max`, list comprehensions). Idempotent. Rewritten children
+/// allocate fresh rows via the store's transform allocators
+/// (`restmt`/`reexpr`), inheriting the source rows' positions.
 ///
 /// **Intrinsic injection moved out of this entry point** — call
 /// `inject_intrinsics` AFTER `resolve_module_files` so the
@@ -37,8 +39,8 @@ export fn desugar_program(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     // matching parameter's declared `List<Row>` type. Param vtypes are
     // already populated by the parser (type_expr_to_vtype), so this works
     // pre-resolve. (c080 fn-arg inference.)
-    let sigs = collect_fn_sigs(stmts)
-    desugar_stmt_list(stmts, sigs)
+    let sigs = collect_fn_sigs(store, stmts)
+    desugar_stmt_list(store, stmts, sigs)
 }
 
 /// A function's name paired with its declared parameter types. Used only
@@ -49,44 +51,34 @@ type FnSig = { name: string, params: List<ValueType> }
 /// level, inside modules, inside impls, and under annotations. Methods
 /// are keyed by their bare name; a same-named free fn would shadow, but
 /// table args to methods are rare and fall back to the explicit form.
-fn collect_fn_sigs(stmts: List<SStmt>) -> List<FnSig> {
+fn collect_fn_sigs(store: NodeStore, stmts: List<SStmt>) -> List<FnSig> {
     mut out: List<FnSig> = []
     mut i = 0
     while i < stmts.length {
-        out = collect_fn_sigs_stmt(stmts[i].node, out)
+        out = collect_fn_sigs_stmt(store, stmts[i].node, out)
         i = i + 1
     }
     out
 }
 
-fn collect_fn_sigs_stmt(stmt: Stmt, acc: List<FnSig>) -> List<FnSig> {
+fn collect_fn_sigs_stmt(store: NodeStore, stmt: Stmt, acc: List<FnSig>) -> List<FnSig> {
     match stmt {
         .Function(name, _, params, _, _) -> {
             mut a = acc
             a.push(FnSig { name: name, params: list_map(params, (p: ParamEntry) -> p.vtype) })
             a
         }
-        .Annotated(_, inner) -> collect_fn_sigs_stmt(inner.node, acc)
-        .Module(_, body) -> {
-            mut a = acc
-            mut i = 0
-            while i < body.length {
-                a = collect_fn_sigs_stmt(body[i].node, a)
-                i = i + 1
-            }
-            a
-        }
-        .Impl(_, methods) -> {
-            mut a = acc
-            mut i = 0
-            while i < methods.length {
-                a = collect_fn_sigs_stmt(methods[i].node, a)
-                i = i + 1
-            }
-            a
-        }
+        .Annotated(_, inner) -> collect_fn_sigs_stmt(store, store.stmts.get(inner), acc)
+        .Module(_, body) -> collect_fn_sigs_stmt_ids(store, body, acc)
+        .Impl(_, methods) -> collect_fn_sigs_stmt_ids(store, methods, acc)
         _ -> acc
     }
+}
+
+fn collect_fn_sigs_stmt_ids(store: NodeStore, ids: List<StmtId>, acc: List<FnSig>) -> List<FnSig> {
+    mut a = acc
+    for id in ids { a = collect_fn_sigs_stmt(store, store.stmts.get(id), a) }
+    a
 }
 
 /// Find a function's parameter types by name, or null when unknown.
@@ -102,7 +94,7 @@ fn sig_lookup(sigs: List<FnSig>, name: string) -> List<ValueType>? {
 /// Stamp anonymous table-row literals passed directly as call arguments
 /// using the callee's declared `List<Row>` parameter types. Non-table
 /// args and unknown callees pass through unchanged.
-fn stamp_call_arg_tables(callee: Expr, args: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
+fn stamp_call_arg_tables(store: NodeStore, callee: Expr, args: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
     let name = match callee { .Ident(n) -> n, .QualifiedIdent(n) -> n, _ -> "" }
     if name == "" { return args }
     let params = sig_lookup(sigs, name)
@@ -114,7 +106,7 @@ fn stamp_call_arg_tables(callee: Expr, args: List<SExpr>, sigs: List<FnSig>) -> 
         if i < ps.length {
             let sname = vtype_struct_name(vtype_list_elem(ps[i]))
             if sname != "" {
-                out.push(sexpr(stamp_table_rows(args[i].node, sname), args[i].line, args[i].col))
+                out.push(sexpr(stamp_table_rows(store, args[i].node, sname), args[i].line, args[i].col))
             } else {
                 out.push(args[i])
             }
@@ -153,10 +145,10 @@ export fn inject_intrinsics(stmts: List<SStmt>, store: NodeStore) -> List<SStmt>
     // Guarded independently so a program that declares one (e.g. the
     // self-hosting compiler declares Result in error_propagation) still
     // receives the other.
-    if !program_declares_enum(out, "Option") {
+    if !program_declares_enum(store, out, "Option") {
         out = list_concat([sstmt_dummy(synthesize_option_enum())], out)
     }
-    if !program_declares_enum(out, "Result") {
+    if !program_declares_enum(store, out, "Result") {
         out = list_concat([sstmt_dummy(synthesize_result_enum())], out)
     }
     out
@@ -202,19 +194,26 @@ fn synthesize_option_enum() -> Stmt {
 /// True when a top-level `EnumDecl` named `target` exists in the
 /// program (or any nested Module). Used to skip Result injection
 /// when the user has already declared it.
-fn program_declares_enum(stmts: List<SStmt>, target: string) -> bool {
+fn program_declares_enum(store: NodeStore, stmts: List<SStmt>, target: string) -> bool {
     mut i = 0
     while i < stmts.length {
-        match stmt_unwrap(stmts[i].node) {
-            .EnumDecl(name, _, _) if name == target -> return true
-            .Module(_, body) -> {
-                if program_declares_enum(body, target) { return true }
-            }
-            _ -> {}
-        }
+        if stmt_declares_enum(store, stmt_unwrap(store, stmts[i].node), target) { return true }
         i = i + 1
     }
     false
+}
+
+fn stmt_declares_enum(store: NodeStore, s: Stmt, target: string) -> bool {
+    match s {
+        .EnumDecl(name, _, _) -> name == target
+        .Module(_, body) -> {
+            for id in body {
+                if stmt_declares_enum(store, stmt_unwrap(store, store.stmts.get(id)), target) { return true }
+            }
+            false
+        }
+        _ -> false
+    }
 }
 
 // ── Statement desugaring ──
@@ -222,49 +221,64 @@ fn program_declares_enum(stmts: List<SStmt>, target: string) -> bool {
 /// Map `desugar_stmt` over every element of a `List<SStmt>`, preserving
 /// span info on each rewritten node. `sigs` threads fn signatures for
 /// call-argument table inference.
-fn desugar_stmt_list(stmts: List<SStmt>, sigs: List<FnSig>) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt_at(desugar_stmt(ss.node, sigs), ss.line, ss.col, ss.file))
+fn desugar_stmt_list(store: NodeStore, stmts: List<SStmt>, sigs: List<FnSig>) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> sstmt_at(desugar_stmt(store, ss.node, sigs), ss.line, ss.col, ss.file))
+}
+
+/// Desugar a flipped `List<StmtId>` body: each rewritten child is a
+/// fresh row inheriting the original's position (`restmt`).
+fn desugar_stmt_ids(store: NodeStore, ids: List<StmtId>, sigs: List<FnSig>) -> List<StmtId> {
+    list_map(ids, (id: StmtId) -> desugar_stmt_id(store, id, sigs))
+}
+
+fn desugar_stmt_id(store: NodeStore, id: StmtId, sigs: List<FnSig>) -> StmtId {
+    store.restmt(desugar_stmt(store, store.stmts.get(id), sigs), id)
+}
+
+/// Desugar an expression row: resolve, rewrite, re-allocate.
+fn desugar_expr_id(store: NodeStore, id: ExprId, sigs: List<FnSig>) -> ExprId {
+    store.reexpr(desugar_expr(store, store.exprs.get(id), sigs), id)
 }
 
 /// Desugar a single statement. For control-flow / declaration
 /// statements we recurse into their expression and body fields;
 /// statements with no rewritable payload pass through unchanged.
-fn desugar_stmt(stmt: Stmt, sigs: List<FnSig>) -> Stmt {
+fn desugar_stmt(store: NodeStore, stmt: Stmt, sigs: List<FnSig>) -> Stmt {
     match stmt {
-        .Expr(e) -> .Expr(desugar_expr(e, sigs))
+        .Expr(e) -> .Expr(desugar_expr_id(store, e, sigs))
         // Typed table-literal inference (forge-crafting-intepreters-c080):
         // a `table { ... }` whose row type is omitted parses to a ListLit
         // of anonymous StructLit("") rows. When the binding carries a
         // `List<Row>` annotation, stamp `Row` onto each row so the rest of
         // the pipeline sees an ordinary `List<Row>`. `table<Row> { ... }`
         // already names its rows and is left untouched.
-        .Let(name, vt, init) -> .Let(name, vt, lower_table_rows(desugar_expr(init, sigs), vt))
-        .Mut(name, vt, init) -> .Mut(name, vt, lower_table_rows(desugar_expr(init, sigs), vt))
-        .Const(name, vt, init) -> .Const(name, vt, lower_table_rows(desugar_expr(init, sigs), vt))
-        .Return(e) -> .Return(desugar_expr(e, sigs))
-        .Block(body) -> .Block(desugar_stmt_list(body, sigs))
+        .Let(name, vt, init) -> .Let(name, vt, store.reexpr(lower_table_rows(store, desugar_expr(store, store.exprs.get(init), sigs), vt), init))
+        .Mut(name, vt, init) -> .Mut(name, vt, store.reexpr(lower_table_rows(store, desugar_expr(store, store.exprs.get(init), sigs), vt), init))
+        .Const(name, vt, init) -> .Const(name, vt, store.reexpr(lower_table_rows(store, desugar_expr(store, store.exprs.get(init), sigs), vt), init))
+        .Return(e) -> .Return(desugar_expr_id(store, e, sigs))
+        .Block(body) -> .Block(desugar_stmt_ids(store, body, sigs))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(desugar_expr(cond, sigs), desugar_stmt(then_b, sigs), desugar_stmt(else_b!, sigs))
+                .If(desugar_expr_id(store, cond, sigs), desugar_stmt_id(store, then_b, sigs), desugar_stmt_id(store, else_b!, sigs))
             } else {
-                .If(desugar_expr(cond, sigs), desugar_stmt(then_b, sigs), null)
+                .If(desugar_expr_id(store, cond, sigs), desugar_stmt_id(store, then_b, sigs), null)
             }
         }
-        .While(cond, body) -> .While(desugar_expr(cond, sigs), desugar_stmt(body, sigs))
-        .For(v, start, end, body) -> .For(v, desugar_expr(start, sigs), desugar_expr(end, sigs), desugar_stmt(body, sigs))
-        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll, sigs), desugar_stmt(body, sigs))
-        .Match(subj, arms) -> .Match(desugar_expr(subj, sigs), desugar_match_arms(arms, sigs))
+        .While(cond, body) -> .While(desugar_expr_id(store, cond, sigs), desugar_stmt_id(store, body, sigs))
+        .For(v, start, end, body) -> .For(v, desugar_expr_id(store, start, sigs), desugar_expr_id(store, end, sigs), desugar_stmt_id(store, body, sigs))
+        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr_id(store, coll, sigs), desugar_stmt_id(store, body, sigs))
+        .Match(subj, arms) -> .Match(desugar_expr_id(store, subj, sigs), desugar_match_arms(store, arms, sigs))
         // Function bodies: after desugaring, stamp the return type onto
         // any context-free `table { ... }` in return / tail position so a
         // `fn f() -> List<Row> { table { ... } }` infers `Row` per c080.
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_fn_returns(desugar_stmt_list(body, sigs), rvt))
-        .Defer(body) -> .Defer(desugar_expr(body, sigs))
-        .Errdefer(body) -> .Errdefer(desugar_expr(body, sigs))
-        .Module(name, body) -> .Module(name, desugar_stmt_list(body, sigs))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: desugar_stmt(inner.node, sigs) })
-        .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body, sigs))
-        .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_list(body, sigs))
-        .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr(cond, sigs))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_fn_returns(store, desugar_stmt_ids(store, body, sigs), rvt))
+        .Defer(body) -> .Defer(desugar_expr_id(store, body, sigs))
+        .Errdefer(body) -> .Errdefer(desugar_expr_id(store, body, sigs))
+        .Module(name, body) -> .Module(name, desugar_stmt_ids(store, body, sigs))
+        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt_id(store, inner, sigs))
+        .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_ids(store, body, sigs))
+        .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_ids(store, body, sigs))
+        .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr_id(store, cond, sigs))
         _ -> stmt
     }
 }
@@ -284,20 +298,20 @@ fn desugar_stmt(stmt: Stmt, sigs: List<FnSig>) -> Stmt {
 /// every anonymous table row in `expr`. Recurses into block / if / match /
 /// when tail positions so a table inside a tail branch still resolves.
 /// Non-table expressions and non-`List<Struct>` expectations pass through.
-fn lower_table_rows(expr: Expr, expected: ValueType) -> Expr {
+fn lower_table_rows(store: NodeStore, expr: Expr, expected: ValueType) -> Expr {
     let sname = vtype_struct_name(vtype_list_elem(expected))
     if sname == "" { return expr }
-    stamp_table_rows(expr, sname)
+    stamp_table_rows(store, expr, sname)
 }
 
 /// Recursively stamp `sname` onto anonymous table rows in value position.
-fn stamp_table_rows(expr: Expr, sname: string) -> Expr {
+fn stamp_table_rows(store: NodeStore, expr: Expr, sname: string) -> Expr {
     match expr {
         .ListLit(rows) -> .ListLit(stamp_table_row_list(rows, sname))
-        .Block(body) -> .Block(stamp_block_tail(body, sname))
-        .IfExpr(c, t, e) -> .IfExpr(c, stamp_table_rows(t, sname), stamp_table_rows(e, sname))
-        .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(arms, sname))
-        .When(arms) -> .When(stamp_table_when_arms(arms, sname))
+        .Block(body) -> .Block(stamp_block_tail(store, body, sname))
+        .IfExpr(c, t, e) -> .IfExpr(c, stamp_table_rows(store, t, sname), stamp_table_rows(store, e, sname))
+        .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(store, arms, sname))
+        .When(arms) -> .When(stamp_table_when_arms(store, arms, sname))
         _ -> expr
     }
 }
@@ -318,7 +332,7 @@ fn stamp_table_row(row: Expr, sname: string) -> Expr {
 }
 
 /// Stamp the tail (last) statement of a block when it is an expression.
-fn stamp_block_tail(body: List<SStmt>, sname: string) -> List<SStmt> {
+fn stamp_block_tail(store: NodeStore, body: List<SStmt>, sname: string) -> List<SStmt> {
     let n = body.length
     if n == 0 { return body }
     mut out: List<SStmt> = []
@@ -327,7 +341,7 @@ fn stamp_block_tail(body: List<SStmt>, sname: string) -> List<SStmt> {
         let ss = body[i]
         if i == n - 1 {
             match ss.node {
-                .Expr(e) -> out.push(sstmt_at(Stmt.Expr(stamp_table_rows(e, sname)), ss.line, ss.col, ss.file))
+                .Expr(e) -> out.push(sstmt_at(Stmt.Expr(store.reexpr(stamp_table_rows(store, store.exprs.get(e), sname), e)), ss.line, ss.col, ss.file))
                 _ -> out.push(ss)
             }
         } else {
@@ -339,41 +353,41 @@ fn stamp_block_tail(body: List<SStmt>, sname: string) -> List<SStmt> {
 }
 
 /// Stamp each match-arm body (arms are in tail position when the match is).
-fn stamp_table_match_arms(arms: List<MatchArm>, sname: string) -> List<MatchArm> {
+fn stamp_table_match_arms(store: NodeStore, arms: List<MatchArm>, sname: string) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> MatchArm {
         pattern: arm.pattern,
         guard: arm.guard,
-        body: sexpr(stamp_table_rows(arm.body.node, sname), arm.body.line, arm.body.col),
+        body: sexpr(stamp_table_rows(store, arm.body.node, sname), arm.body.line, arm.body.col),
     })
 }
 
 /// Stamp each `when`-arm body.
-fn stamp_table_when_arms(arms: List<WhenArm>, sname: string) -> List<WhenArm> {
+fn stamp_table_when_arms(store: NodeStore, arms: List<WhenArm>, sname: string) -> List<WhenArm> {
     list_map(arms, (arm: WhenArm) -> WhenArm {
         cond: arm.cond,
-        body: sexpr(stamp_table_rows(arm.body.node, sname), arm.body.line, arm.body.col),
+        body: sexpr(stamp_table_rows(store, arm.body.node, sname), arm.body.line, arm.body.col),
     })
 }
 
 /// Walk a function body stamping the return type onto tables in `return`
 /// statements (at any depth reachable through block / if) and in the
 /// body's tail expression.
-fn lower_fn_returns(stmts: List<SStmt>, rvt: ValueType) -> List<SStmt> {
+fn lower_fn_returns(store: NodeStore, body: List<StmtId>, rvt: ValueType) -> List<StmtId> {
     let sname = vtype_struct_name(vtype_list_elem(rvt))
-    if sname == "" { return stmts }
-    lower_return_stmts(stmts, sname)
+    if sname == "" { return body }
+    lower_return_stmt_ids(store, body, sname)
 }
 
-/// Apply return/tail stamping to a statement list; only the final
-/// statement is treated as a tail (implicit-return) position.
-fn lower_return_stmts(stmts: List<SStmt>, sname: string) -> List<SStmt> {
-    let n = stmts.length
-    mut out: List<SStmt> = []
+/// Apply return/tail stamping to a body's rows; only the final row is a
+/// tail (implicit-return) position. Rewritten rows re-allocate.
+fn lower_return_stmt_ids(store: NodeStore, ids: List<StmtId>, sname: string) -> List<StmtId> {
+    let n = ids.length
+    mut out: List<StmtId> = []
     mut i = 0
     while i < n {
-        let ss = stmts[i]
+        let id = ids[i]
         let is_tail = i == n - 1
-        out.push(sstmt_at(lower_return_stmt(ss.node, sname, is_tail), ss.line, ss.col, ss.file))
+        out.push(store.restmt(lower_return_stmt(store, store.stmts.get(id), sname, is_tail), id))
         i = i + 1
     }
     out
@@ -382,20 +396,20 @@ fn lower_return_stmts(stmts: List<SStmt>, sname: string) -> List<SStmt> {
 /// Stamp tables in `return e` (always) and in a tail expression / tail
 /// match (only when `is_tail`). Recurses through block and if so a
 /// `return table { ... }` nested in those positions still resolves.
-fn lower_return_stmt(stmt: Stmt, sname: string, is_tail: bool) -> Stmt {
+fn lower_return_stmt(store: NodeStore, stmt: Stmt, sname: string, is_tail: bool) -> Stmt {
     match stmt {
-        .Return(e) -> Stmt.Return(stamp_table_rows(e, sname))
-        .Expr(e) -> if is_tail { Stmt.Expr(stamp_table_rows(e, sname)) } else { stmt }
-        .Block(body) -> Stmt.Block(lower_return_stmts(body, sname))
+        .Return(e) -> Stmt.Return(store.reexpr(stamp_table_rows(store, store.exprs.get(e), sname), e))
+        .Expr(e) -> if is_tail { Stmt.Expr(store.reexpr(stamp_table_rows(store, store.exprs.get(e), sname), e)) } else { stmt }
+        .Block(body) -> Stmt.Block(lower_return_stmt_ids(store, body, sname))
         .If(cond, then_b, else_b) -> {
-            let nt = lower_return_stmt(then_b, sname, is_tail)
+            let nt = store.restmt(lower_return_stmt(store, store.stmts.get(then_b), sname, is_tail), then_b)
             if else_b != null {
-                Stmt.If(cond, nt, lower_return_stmt(else_b!, sname, is_tail))
+                Stmt.If(cond, nt, store.restmt(lower_return_stmt(store, store.stmts.get(else_b!), sname, is_tail), else_b!))
             } else {
                 Stmt.If(cond, nt, null)
             }
         }
-        .Match(subj, arms) -> if is_tail { Stmt.Match(subj, stamp_table_match_arms(arms, sname)) } else { stmt }
+        .Match(subj, arms) -> if is_tail { Stmt.Match(subj, stamp_table_match_arms(store, arms, sname)) } else { stmt }
         _ -> stmt
     }
 }
@@ -406,17 +420,17 @@ fn lower_return_stmt(stmt: Stmt, sname: string, is_tail: bool) -> Stmt {
 /// node (`rewrite_expr`), then recurse into all sub-expressions
 /// (`walk_expr`). Local-then-recurse ordering means rewritten output
 /// gets desugared again — `assert(dbg(x))` works.
-fn desugar_expr(expr: Expr, sigs: List<FnSig>) -> Expr {
-    let rewritten = rewrite_expr(expr)
-    walk_expr(rewritten, sigs)
+fn desugar_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
+    let rewritten = rewrite_expr(store, expr)
+    walk_expr(store, rewritten, sigs)
 }
 
 /// Local rewrites that fire for one node only. Currently dispatches
 /// to `rewrite_call` for sugar built-ins (assert, dbg, …). Other
 /// expressions pass through to `walk_expr` for structural recursion.
-fn rewrite_expr(expr: Expr) -> Expr {
+fn rewrite_expr(store: NodeStore, expr: Expr) -> Expr {
     match expr {
-        .Call(callee, args) -> rewrite_call(expr, callee, args)
+        .Call(callee, args) -> rewrite_call(store, expr, callee, args)
         _ -> expr
     }
 }
@@ -424,15 +438,15 @@ fn rewrite_expr(expr: Expr) -> Expr {
 /// Dispatch a call expression to the right `desugar_*` rewriter
 /// when its callee is a known sugar builtin. Plain calls pass
 /// through unchanged so user-defined `assert`/`dbg` shadowing works.
-fn rewrite_call(original: Expr, callee: Expr, args: List<SExpr>) -> Expr {
+fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr>) -> Expr {
     let name = match callee { .Ident(n) -> n, _ -> "" }
     match name {
         "assert" -> desugar_assert(args)
-        "dbg" -> desugar_dbg(args)
+        "dbg" -> desugar_dbg(store, args)
         "todo" -> desugar_todo(args)
         "unreachable" -> desugar_unreachable(args)
-        "min" -> desugar_min_max(args, true)
-        "max" -> desugar_min_max(args, false)
+        "min" -> desugar_min_max(store, args, true)
+        "max" -> desugar_min_max(store, args, false)
         _ -> original
     }
 }
@@ -459,7 +473,8 @@ fn desugar_assert(args: List<SExpr>) -> Expr {
 /// Rewrite `dbg(expr)` into `{ let __dbg = expr;
 /// println("[dbg] " + string(__dbg)); __dbg }`. Side-effect-once on
 /// `expr`, returns the value so `dbg` can be chained mid-pipeline.
-fn desugar_dbg(args: List<SExpr>) -> Expr {
+/// The synthesized statements' payload rows are fresh leaves.
+fn desugar_dbg(store: NodeStore, args: List<SExpr>) -> Expr {
     if args.length == 0 {
         let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"dbg: no argument\""))]
         return Expr.Call(Expr.Ident("panic"), panic_args)
@@ -473,9 +488,9 @@ fn desugar_dbg(args: List<SExpr>) -> Expr {
     )
     let println_args: List<SExpr> = [sexpr_dummy(print_arg)]
     let body: List<SStmt> = [
-        sstmt(Stmt.Let("__dbg", ValueType.Unknown, val), 0, 0),
-        sstmt(Stmt.Expr(Expr.Call(Expr.Ident("println"), println_args)), 0, 0),
-        sstmt(Stmt.Expr(Expr.Ident("__dbg")), 0, 0),
+        sstmt(Stmt.Let("__dbg", ValueType.Unknown, store.exprs.add_leaf(val)), 0, 0),
+        sstmt(Stmt.Expr(store.exprs.add_leaf(Expr.Call(Expr.Ident("println"), println_args))), 0, 0),
+        sstmt(Stmt.Expr(store.exprs.add_leaf(Expr.Ident("__dbg"))), 0, 0),
     ]
     Expr.Block(body)
 }
@@ -509,7 +524,7 @@ fn desugar_unreachable(args: List<SExpr>) -> Expr {
 /// evaluates each operand once, then picks the appropriate side via
 /// `IfExpr`. `is_min` chooses the comparison op (`<` for min, `>`
 /// for max). Wrong arity panics.
-fn desugar_min_max(args: List<SExpr>, is_min: int) -> Expr {
+fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
     if args.length < 2 {
         let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"min/max requires 2 arguments\""))]
         return Expr.Call(Expr.Ident("panic"), panic_args)
@@ -517,14 +532,15 @@ fn desugar_min_max(args: List<SExpr>, is_min: int) -> Expr {
     let a_se = args[0]
     let b_se = args[1]
     let op = if is_min { BinOp.Lt } else { BinOp.Gt }
+    let pick = Expr.IfExpr(
+        Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
+        Expr.Ident("__a"),
+        Expr.Ident("__b")
+    )
     let body: List<SStmt> = [
-        sstmt(Stmt.Let("__a", ValueType.Unknown, a_se.node), 0, 0),
-        sstmt(Stmt.Let("__b", ValueType.Unknown, b_se.node), 0, 0),
-        sstmt(Stmt.Expr(Expr.IfExpr(
-            Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
-            Expr.Ident("__a"),
-            Expr.Ident("__b")
-        )), 0, 0),
+        sstmt(Stmt.Let("__a", ValueType.Unknown, store.exprs.add_leaf(a_se.node)), 0, 0),
+        sstmt(Stmt.Let("__b", ValueType.Unknown, store.exprs.add_leaf(b_se.node)), 0, 0),
+        sstmt(Stmt.Expr(store.exprs.add_leaf(pick)), 0, 0),
     ]
     Expr.Block(body)
 }
@@ -535,98 +551,98 @@ fn desugar_min_max(args: List<SExpr>, is_min: int) -> Expr {
 /// of `expr`, applying `desugar_expr` (which itself runs
 /// `rewrite_expr` followed by `walk_expr`). Leaf expressions
 /// without sub-nodes pass through unchanged.
-fn walk_expr(expr: Expr, sigs: List<FnSig>) -> Expr {
+fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
-        .Binary(l, op, r) -> .Binary(desugar_expr(l, sigs), op, desugar_expr(r, sigs))
-        .Unary(op, r) -> .Unary(op, desugar_expr(r, sigs))
-        .Logical(l, op, r) -> .Logical(desugar_expr(l, sigs), op, desugar_expr(r, sigs))
+        .Binary(l, op, r) -> .Binary(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
+        .Unary(op, r) -> .Unary(op, desugar_expr(store, r, sigs))
+        .Logical(l, op, r) -> .Logical(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
         // Call args: desugar each arg, then pin any anonymous table row
         // to the callee's declared `List<Row>` parameter type (c080).
-        .Call(callee, args) -> .Call(desugar_expr(callee, sigs), stamp_call_arg_tables(callee, desugar_expr_list(args, sigs), sigs))
-        .Grouping(inner) -> .Grouping(desugar_expr(inner, sigs))
-        .Assign(name, val) -> .Assign(name, desugar_expr(val, sigs))
-        .Index(obj, idx) -> .Index(desugar_expr(obj, sigs), desugar_expr(idx, sigs))
-        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(obj, sigs), field)
-        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(obj, sigs), field, desugar_expr(val, sigs))
-        .IfExpr(c, t, e) -> .IfExpr(desugar_expr(c, sigs), desugar_expr(t, sigs), desugar_expr(e, sigs))
-        .Block(body) -> .Block(desugar_stmt_list(body, sigs))
-        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(l, sigs), desugar_expr(r, sigs))
-        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(obj, sigs), field)
-        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(obj, sigs), method, desugar_expr_list(args, sigs))
-        .Try(inner) -> .Try(desugar_expr(inner, sigs))
-        .Tuple(elems) -> .Tuple(desugar_expr_list(elems, sigs))
-        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(obj, sigs), idx)
-        .ListLit(elems) -> .ListLit(desugar_expr_list(elems, sigs))
-        .MapLit(entries) -> .MapLit(desugar_expr_list(entries, sigs))
-        .Slice(obj, s, e) -> .Slice(desugar_expr(obj, sigs), desugar_expr(s, sigs), desugar_expr(e, sigs))
-        .With(obj, overrides) -> .With(desugar_expr(obj, sigs), desugar_field_inits(overrides, sigs))
-        .Lambda(params, body) -> .Lambda(params, desugar_expr(body, sigs))
-        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(subj, sigs), desugar_match_arms(arms, sigs))
-        .When(arms) -> .When(desugar_when_arms(arms, sigs))
-        .InCheck(needle, items) -> .InCheck(desugar_expr(needle, sigs), desugar_expr_list(items, sigs))
-        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(subj, sigs), variant)
+        .Call(callee, args) -> .Call(desugar_expr(store, callee, sigs), stamp_call_arg_tables(store, callee, desugar_expr_list(store, args, sigs), sigs))
+        .Grouping(inner) -> .Grouping(desugar_expr(store, inner, sigs))
+        .Assign(name, val) -> .Assign(name, desugar_expr(store, val, sigs))
+        .Index(obj, idx) -> .Index(desugar_expr(store, obj, sigs), desugar_expr(store, idx, sigs))
+        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(store, obj, sigs), field)
+        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(store, obj, sigs), field, desugar_expr(store, val, sigs))
+        .IfExpr(c, t, e) -> .IfExpr(desugar_expr(store, c, sigs), desugar_expr(store, t, sigs), desugar_expr(store, e, sigs))
+        .Block(body) -> .Block(desugar_stmt_list(store, body, sigs))
+        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(store, l, sigs), desugar_expr(store, r, sigs))
+        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(store, obj, sigs), field)
+        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(store, obj, sigs), method, desugar_expr_list(store, args, sigs))
+        .Try(inner) -> .Try(desugar_expr(store, inner, sigs))
+        .Tuple(elems) -> .Tuple(desugar_expr_list(store, elems, sigs))
+        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(store, obj, sigs), idx)
+        .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
+        .MapLit(entries) -> .MapLit(desugar_expr_list(store, entries, sigs))
+        .Slice(obj, s, e) -> .Slice(desugar_expr(store, obj, sigs), desugar_expr(store, s, sigs), desugar_expr(store, e, sigs))
+        .With(obj, overrides) -> .With(desugar_expr(store, obj, sigs), desugar_field_inits(store, overrides, sigs))
+        .Lambda(params, body) -> .Lambda(params, desugar_expr(store, body, sigs))
+        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))
+        .When(arms) -> .When(desugar_when_arms(store, arms, sigs))
+        .InCheck(needle, items) -> .InCheck(desugar_expr(store, needle, sigs), desugar_expr_list(store, items, sigs))
+        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(store, subj, sigs), variant)
         .ListComp(body, var, coll, filter) -> {
             // Recurse into body / coll / filter so sugar inside the
             // comprehension (assert, dbg, min, max, …) still gets
             // desugared. Without this, `[assert(x > 0) for x in xs]`
             // would leave the assert call intact.
-            let new_filter = if filter != null { desugar_expr(filter!, sigs) } else { null }
-            .ListComp(desugar_expr(body, sigs), var, desugar_expr(coll, sigs), new_filter)
+            let new_filter = if filter != null { desugar_expr(store, filter!, sigs) } else { null }
+            .ListComp(desugar_expr(store, body, sigs), var, desugar_expr(store, coll, sigs), new_filter)
         }
         // Forms that hold sub-expressions and were silently dropped
         // by the old `_ -> expr` fallthrough. Same root cause as the
         // mono + escape + closure walker bugs: sugar inside any of
         // these stayed as raw calls (e.g. `Foo { x: assert(p) }` left
         // `assert` as an unresolved fn name).
-        .StructLit(name, inits) -> .StructLit(name, desugar_field_inits(inits, sigs))
-        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(args, sigs))
-        .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(callee, sigs), type_args, desugar_expr_list(args, sigs))
-        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(inner, sigs), binding, desugar_expr(body, sigs), l, c)
-        .Spawn(body) -> .Spawn(desugar_expr(body, sigs))
-        .Isolated(body) -> .Isolated(desugar_expr(body, sigs))
-        .Quote(kind, body) -> .Quote(kind, desugar_expr(body, sigs))
-        .Splice(target) -> .Splice(desugar_expr(target, sigs))
+        .StructLit(name, inits) -> .StructLit(name, desugar_field_inits(store, inits, sigs))
+        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(store, args, sigs))
+        .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(store, callee, sigs), type_args, desugar_expr_list(store, args, sigs))
+        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(store, inner, sigs), binding, desugar_expr(store, body, sigs), l, c)
+        .Spawn(body) -> .Spawn(desugar_expr(store, body, sigs))
+        .Isolated(body) -> .Isolated(desugar_expr(store, body, sigs))
+        .Quote(kind, body) -> .Quote(kind, desugar_expr(store, body, sigs))
+        .Splice(target) -> .Splice(desugar_expr(store, target, sigs))
         _ -> expr
     }
 }
 
 /// Map `desugar_expr` over every element of a `List<SExpr>`,
 /// preserving span info on each rewritten node.
-fn desugar_expr_list(list: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(desugar_expr(se.node, sigs), se.line, se.col))
+fn desugar_expr_list(store: NodeStore, list: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
+    list_map(list, (se: SExpr) -> sexpr(desugar_expr(store, se.node, sigs), se.line, se.col))
 }
 
 /// Walk a `List<MatchArm>` desugaring each arm's guard (when
 /// present) and body. Patterns are not desugared — they're already
 /// in canonical form.
-fn desugar_match_arms(arms: List<MatchArm>, sigs: List<FnSig>) -> List<MatchArm> {
+fn desugar_match_arms(store: NodeStore, arms: List<MatchArm>, sigs: List<FnSig>) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> {
         let new_guard = if arm.guard != null {
-            sexpr(desugar_expr(arm.guard!.node, sigs), arm.guard!.line, arm.guard!.col)
+            sexpr(desugar_expr(store, arm.guard!.node, sigs), arm.guard!.line, arm.guard!.col)
         } else { null }
         MatchArm {
             pattern: arm.pattern,
             guard: new_guard,
-            body: sexpr(desugar_expr(arm.body.node, sigs), arm.body.line, arm.body.col),
+            body: sexpr(desugar_expr(store, arm.body.node, sigs), arm.body.line, arm.body.col),
         }
     })
 }
 
 /// Walk a `when` arm list desugaring each arm's condition and body.
 /// `when` arms have an optional condition (the `else` arm is null).
-fn desugar_when_arms(arms: List<WhenArm>, sigs: List<FnSig>) -> List<WhenArm> {
+fn desugar_when_arms(store: NodeStore, arms: List<WhenArm>, sigs: List<FnSig>) -> List<WhenArm> {
     list_map(arms, (arm: WhenArm) -> WhenArm {
-        cond: if arm.cond != null { sexpr(desugar_expr(arm.cond!.node, sigs), arm.cond!.line, arm.cond!.col) } else { null },
-        body: sexpr(desugar_expr(arm.body.node, sigs), arm.body.line, arm.body.col),
+        cond: if arm.cond != null { sexpr(desugar_expr(store, arm.cond!.node, sigs), arm.cond!.line, arm.cond!.col) } else { null },
+        body: sexpr(desugar_expr(store, arm.body.node, sigs), arm.body.line, arm.body.col),
     })
 }
 
 /// Walk a `List<FieldInit>` (used by struct literals and `with`
 /// exprs) desugaring each value while keeping field name + span
 /// intact.
-fn desugar_field_inits(inits: List<FieldInit>, sigs: List<FnSig>) -> List<FieldInit> {
+fn desugar_field_inits(store: NodeStore, inits: List<FieldInit>, sigs: List<FnSig>) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(desugar_expr(init.value.node, sigs), init.value.line, init.value.col),
+        value: sexpr(desugar_expr(store, init.value.node, sigs), init.value.line, init.value.col),
     })
 }

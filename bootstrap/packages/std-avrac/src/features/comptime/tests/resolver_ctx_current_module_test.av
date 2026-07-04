@@ -13,6 +13,7 @@ spec "ResolverCtx: ctx_current_module returns the @expand site's module" {
     then "top-level @expand reports empty string" {
         let out = write_fixture_and_run("/tmp/avra_resolver_ctx_current_module_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_current_module}\n" +
             "\n" +
             "@comptime\n" +
@@ -20,7 +21,7 @@ spec "ResolverCtx: ctx_current_module returns the @expand site's module" {
             "    let m = ctx_current_module(ctx)\n" +
             "    let msg = \"module=[\" + m + \"]\"\n" +
             "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +

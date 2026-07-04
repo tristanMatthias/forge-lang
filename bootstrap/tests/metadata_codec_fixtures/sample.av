@@ -23,7 +23,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.core.{
     NodeStore, new_node_store, build_line_index,
-    Stmt, SStmt, Expr, SExpr, TypeParamEntry,
+    Stmt, SStmt, StmtId, Expr, SExpr, TypeParamEntry,
     ValueType, FieldEntry, Variant, ParamEntry,
     Annotation, vtype_eq, vtype_struct, sstmt_dummy, stmt_unwrap, find_annotation,
 }
@@ -707,7 +707,10 @@ fn main() -> int {
 
     // AST → UnitMetadata extractor: hand-build a small StmtList that
     // covers each handled stmt kind, run extract_unit_metadata, and
-    // verify the produced lists match.
+    // verify the produced lists match. B-final: Stmt payloads carry
+    // arena ids, so the fn's flipped `body` (List<StmtId>) and the
+    // Annotated `inner` (StmtId) live in a store that extraction reads.
+    let ext_store = new_node_store(build_line_index(""))
     let ext_fp = avra_bytes_make(32)
 
     // type Pt = { x: int }
@@ -722,16 +725,18 @@ fn main() -> int {
         ParamEntry { name: "b", vtype: ValueType.Int },
     ]
     let empty_tp_add: List<TypeParamEntry> = []
-    let empty_body_fn: List<SStmt> = []
+    let empty_body_fn: List<StmtId> = []
     let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, empty_body_fn)
+    let s_fn_inner_id = ext_store.rows_of([sstmt_dummy(s_fn_inner)])[0]
     let exp_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
-    let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, sstmt_dummy(s_fn_inner)))
+    let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner_id))
 
-    // const VERSION: string = "1.0"
-    let s_const = sstmt_dummy(Stmt.Const("VERSION", ValueType.Str, Expr.String("\"1.0\"")))
+    // const VERSION: string = "1.0" — the initializer is an ExprId row,
+    // so allocate the literal into the store and reference it by id.
+    let s_const = sstmt_dummy(Stmt.Const("VERSION", ValueType.Str, ext_store.add_expr_leaf(Expr.String("\"1.0\""))))
 
     // const N: int = 42
-    let s_const_int = sstmt_dummy(Stmt.Const("N", ValueType.Int, Expr.Number("42")))
+    let s_const_int = sstmt_dummy(Stmt.Const("N", ValueType.Int, ext_store.add_expr_leaf(Expr.Number("42"))))
 
     // extern fn host_now() -> int
     let extern_params: List<ParamEntry> = []
@@ -739,7 +744,7 @@ fn main() -> int {
 
     let ext_stmts: List<SStmt> = [s_type, s_fn, s_const, s_const_int, s_extern]
 
-    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts, new_node_store(build_line_index("")))
+    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts, ext_store)
     let ex_types: List<TypeDeclEntry> = extracted.types
     let ex_fns: List<FnDeclEntry> = extracted.fns
     let ex_consts: List<ConstDeclEntry> = extracted.consts
@@ -877,25 +882,28 @@ fn main() -> int {
     // synth back to a StmtList. The body should be a Module wrapper
     // around the original public-surface items, qualified the same
     // way they came in.
+    let synth_store = new_node_store(build_line_index(""))
     mut synth_fields: List<FieldEntry> = []
     synth_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let greet_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
     let empty_tp_synth: List<TypeParamEntry> = []
-    let empty_greet_body: List<SStmt> = []
+    let empty_greet_body: List<StmtId> = []
+    let greet_fn = Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body)
+    let greet_fn_id = synth_store.rows_of([sstmt_dummy(greet_fn)])[0]
     let synth_stmts: List<SStmt> = [
         sstmt_dummy(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
-        sstmt_dummy(Stmt.Annotated(
-            greet_annots,
-            sstmt_dummy(Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body)),
-        )),
-        sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),
+        sstmt_dummy(Stmt.Annotated(greet_annots, greet_fn_id)),
+        sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, synth_store.add_expr_leaf(Expr.String("\"42\"")))),
     ]
 
-    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, new_node_store(build_line_index("")))
-    let synth_back = synthesize_unit_stmts(synth_meta, new_node_store(build_line_index("")))
+    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, synth_store)
+    // synthesize_unit_stmts allocates its output rows into this store, so
+    // read the synthesized Module/fn/const back through it.
+    let synth_out_store = new_node_store(build_line_index(""))
+    let synth_back = synthesize_unit_stmts(synth_meta, synth_out_store)
 
     // The top of synth_back should be Stmt.Module("@synth", body).
-    let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_back[0].node) } else { Stmt.NoOp }
+    let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_out_store, synth_back[0].node) } else { Stmt.NoOp }
     probe("synth_top_is_module",
         match synth_top {
             .Module(name, _) -> name == "@synth"
@@ -905,14 +913,14 @@ fn main() -> int {
     // The body inside the Module should contain a TypeDecl for
     // `Cell` (local name, not `@synth::Cell` — qualification happens
     // when the consumer's resolver re-walks the Module).
-    let empty_body_stmts: List<SStmt> = []
+    let empty_body_ids: List<StmtId> = []
     let synth_body = match synth_top {
         .Module(_, body) -> body
-        _ -> empty_body_stmts
+        _ -> empty_body_ids
     }
     probe("synth_body_first_is_typedecl",
         if synth_body.length > 0 {
-            match stmt_unwrap(synth_body[0].node) {
+            match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[0])) {
                 .TypeDecl(name, _, _) -> name == "Cell"
                 _ -> false
             }
@@ -922,9 +930,9 @@ fn main() -> int {
     // and the local name `greet`.
     probe("synth_body_second_is_exported_fn",
         if synth_body.length > 1 {
-            // synth_body[1].node here is Annotated(@export, Annotated(@external_unit, Function)).
+            // synth_body[1] resolves to Annotated(@export, Annotated(@external_unit, Function)).
             // stmt_unwrap walks every Annotated layer down to the bare Function.
-            match stmt_unwrap(synth_body[1].node) {
+            match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[1])) {
                 .Function(name, _, _, _, _) -> name == "greet"
                 _ -> false
             }
@@ -936,13 +944,13 @@ fn main() -> int {
     // Annotated layer.
     probe("synth_body_second_has_external_unit",
         if synth_body.length > 1 {
-            find_annotation(synth_body[1].node, "external_unit") != null
+            find_annotation(synth_out_store, synth_out_store.stmts.get(synth_body[1]), "external_unit") != null
         } else { false })
 
     // The const should round-trip with the literal preserved.
     probe("synth_body_third_is_const",
         if synth_body.length > 2 {
-            match stmt_unwrap(synth_body[2].node) {
+            match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[2])) {
                 .Const(name, _, _) -> name == "BUILD"
                 _ -> false
             }

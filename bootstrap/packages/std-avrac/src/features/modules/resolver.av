@@ -395,7 +395,7 @@ export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<str
     let empty_stack: List<string> = []
     let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
-    let split = hoist_package_modules(inner.stmts)
+    let split = hoist_package_modules(store, inner.stmts)
     // Dedup hoisted package wrappers by qualified name. Without this,
     // a program that imports two sibling sub-packages of the same
     // scope (e.g. cli/main imports @std.json directly while @std.avrac
@@ -404,7 +404,7 @@ export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<str
     // scopes, which causes F1000 type-identity collisions and duplicate
     // function definitions at codegen. Tracking ticket
     // forge-crafting-intepreters-dnq4.
-    let deduped = dedup_modules(split.packages)
+    let deduped = dedup_modules(store, split.packages)
     ModListResult {
         stmts: list_concat(deduped, split.body),
         loaded: inner.loaded,
@@ -457,7 +457,7 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>, store: Node
         acc_loaded = list_push_copy(acc_loaded, path)
         acc = list_concat(acc, parsed.stmts!)
     }
-    acc = list_concat(acc, synthesize_subdir_module_decls(dir))
+    acc = list_concat(acc, synthesize_subdir_module_decls(store, dir))
     ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
 }
 
@@ -468,15 +468,15 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>, store: Node
 /// already declared in `existing` — produces NO duplicates with
 /// explicit `mod foo` decls, so dedup_modules doesn't have to merge
 /// (avoids a dedup-idempotency bug in the program-outer pass).
-export fn synthesize_subdir_module_decls_filtered(dir: string, existing: List<SStmt>) -> List<SStmt> {
+export fn synthesize_subdir_module_decls_filtered(store: NodeStore, dir: string, existing: List<SStmt>) -> List<SStmt> {
     let subdirs = list_avra_module_subdirs(dir)
     mut acc: List<SStmt> = []
     mut j = 0
     while j < subdirs.length {
         let sd = subdirs[j]
         let name = path_basename(sd)
-        if name != "" && !stmts_have_module_named(existing, name) {
-            let empty_body: List<SStmt> = []
+        if name != "" && !stmts_have_module_named(store, existing, name) {
+            let empty_body: List<StmtId> = []
             acc.push(sstmt_dummy(Stmt.Module(name, empty_body)))
         }
         j = j + 1
@@ -488,18 +488,18 @@ export fn synthesize_subdir_module_decls_filtered(dir: string, existing: List<SS
 /// resolve_dir_module_body's call site, where the body has no existing
 /// Module decls to filter against (the file just got parsed and
 /// concatenated).
-export fn synthesize_subdir_module_decls(dir: string) -> List<SStmt> {
+export fn synthesize_subdir_module_decls(store: NodeStore, dir: string) -> List<SStmt> {
     let empty: List<SStmt> = []
-    synthesize_subdir_module_decls_filtered(dir, empty)
+    synthesize_subdir_module_decls_filtered(store, dir, empty)
 }
 
 // True iff `stmts` contains a top-level `Module(name, _)` matching
 // `target_name`. Used by synthesize_subdir_module_decls_filtered to
 // avoid producing duplicates with explicit decls.
-fn stmts_have_module_named(stmts: List<SStmt>, target_name: string) -> bool {
+fn stmts_have_module_named(store: NodeStore, stmts: List<SStmt>, target_name: string) -> bool {
     list_any(stmts, (ss: SStmt) -> match ss.node {
         .Module(name, _) -> name == target_name
-        .Annotated(_, inner) -> match inner.node {
+        .Annotated(_, inner) -> match store.stmts.get(inner) {
             .Module(name, _) -> name == target_name
             _ -> false
         }
@@ -532,10 +532,10 @@ fn path_basename(p: string) -> string {
 // explicitly: mixing the two would either duplicate decls or hide
 // children behind a now-empty Module wrapper. Annotated wrappers
 // pass through.
-fn stmts_have_mod_decl(stmts: List<SStmt>) -> bool {
+fn stmts_have_mod_decl(store: NodeStore, stmts: List<SStmt>) -> bool {
     list_any(stmts, (ss: SStmt) -> match ss.node {
         .Module(_, body) -> body.length == 0
-        .Annotated(_, inner) -> match inner.node {
+        .Annotated(_, inner) -> match store.stmts.get(inner) {
             .Module(_, body) -> body.length == 0
             _ -> false
         }
@@ -557,8 +557,8 @@ fn stmts_have_mod_decl(stmts: List<SStmt>) -> bool {
 /// pass through in place.
 ///
 /// Tracking ticket: forge-crafting-intepreters-dnq4.
-export fn dedup_modules(stmts: List<SStmt>) -> List<SStmt> {
-    flatten_groups(group_by_module_name(stmts))
+export fn dedup_modules(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
+    flatten_groups(store, group_by_module_name(store, stmts))
 }
 
 /// One slot in the dedup intermediate. `Group(name, body, line, col)`
@@ -584,11 +584,11 @@ enum ModGroupItem {
 /// the inner group-name scan, which is O(unique-modules-seen) per
 /// step — fine because dedup runs on the small program-root list,
 /// not on bodies.
-fn group_by_module_name(stmts: List<SStmt>) -> List<ModGroupItem> {
+fn group_by_module_name(store: NodeStore, stmts: List<SStmt>) -> List<ModGroupItem> {
     mut acc: List<ModGroupItem> = []
     for ss in stmts {
         match ss.node {
-            .Module(name, body) -> mod_group_merge(acc, name, body, ss.line, ss.col)
+            .Module(name, body) -> mod_group_merge(acc, name, store.sstmts_of(body), ss.line, ss.col)
             _ -> acc.push(ModGroupItem.Pass(ss))
         }
     }
@@ -625,7 +625,7 @@ fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<SStmt>, lin
 /// bodies leaves duplicate stmts with identical (file, line, col)
 /// tuples — span-equality means they're literally the same source
 /// position, so dropping the duplicate is safe.
-fn flatten_groups(items: List<ModGroupItem>) -> List<SStmt> {
+fn flatten_groups(store: NodeStore, items: List<ModGroupItem>) -> List<SStmt> {
     mut acc: List<SStmt> = []
     mut i = 0
     while i < items.length {
@@ -635,7 +635,7 @@ fn flatten_groups(items: List<ModGroupItem>) -> List<SStmt> {
                 // source file owns them — so file="" is correct
                 // here. Body stmts retain their own SStmt.file from
                 // the original parse.
-                let merged = sstmt(Stmt.Module(name, dedup_modules(dedup_by_span(body))), line, col)
+                let merged = sstmt(Stmt.Module(name, store.rows_of(dedup_modules(store, dedup_by_span(body)))), line, col)
                 acc.push(merged)
             }
             .Pass(ss) -> acc.push(ss)
@@ -692,23 +692,23 @@ export type HoistSplit = {
 /// Recurses into both `@`-prefixed and regular Module bodies so a
 /// sub-package wrapper that landed inside another package (e.g.
 /// `@std.lsp` inside `@std.avrac.indexer`) also reaches the root.
-export fn hoist_package_modules(stmts: List<SStmt>) -> HoistSplit {
+export fn hoist_package_modules(store: NodeStore, stmts: List<SStmt>) -> HoistSplit {
     mut packages: List<SStmt> = []
     mut body: List<SStmt> = []
     for ss in stmts {
         match ss.node {
             .Module(name, mbody) if name.length > 0 && name[0] == "@" -> {
-                let inner = hoist_package_modules(mbody)
-                let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
+                let inner = hoist_package_modules(store, store.sstmts_of(mbody))
+                let cleaned = sstmt_at(Stmt.Module(name, store.rows_of(inner.body)), ss.line, ss.col, ss.file)
                 for p in inner.packages { packages.push(p) }
                 packages.push(cleaned)
             }
             .Module(name, mbody) -> {
-                let inner = hoist_package_modules(mbody)
+                let inner = hoist_package_modules(store, store.sstmts_of(mbody))
                 if has_no_packages(inner) {
                     body.push(ss)
                 } else {
-                    let cleaned = sstmt_at(Stmt.Module(name, inner.body), ss.line, ss.col, ss.file)
+                    let cleaned = sstmt_at(Stmt.Module(name, store.rows_of(inner.body)), ss.line, ss.col, ss.file)
                     for p in inner.packages { packages.push(p) }
                     body.push(cleaned)
                 }
@@ -767,8 +767,8 @@ export fn package_module_name(path: string) -> string {
 /// anchor explicitly. The recursion goes into every Module body so
 /// sub-files (e.g. `features/match_expr/typeck.av`) get anchored
 /// just like the package's top-level body does.
-fn qualify_uses_recursively(stmts: List<SStmt>, pkg_qual: string) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> qualify_use_in_stmt(ss, pkg_qual))
+fn qualify_uses_recursively(store: NodeStore, stmts: List<SStmt>, pkg_qual: string) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> qualify_use_in_stmt(store, ss, pkg_qual))
 }
 
 /// Per-statement worker: rewrite `Use` (handling Annotated wrappers)
@@ -776,15 +776,15 @@ fn qualify_uses_recursively(stmts: List<SStmt>, pkg_qual: string) -> List<SStmt>
 /// Annotated wrappers transparently delegate to the inner stmt's
 /// rewrite, then re-attach the annotation — `Use` and `Module`
 /// arms don't need to know about Annotated.
-fn qualify_use_in_stmt(ss: SStmt, pkg_qual: string) -> SStmt {
-    sstmt_at(qualify_inner_stmt(ss.node, pkg_qual), ss.line, ss.col, ss.file)
+fn qualify_use_in_stmt(store: NodeStore, ss: SStmt, pkg_qual: string) -> SStmt {
+    sstmt_at(qualify_inner_stmt(store, ss.node, pkg_qual), ss.line, ss.col, ss.file)
 }
 
-fn qualify_inner_stmt(stmt: Stmt, pkg_qual: string) -> Stmt {
+fn qualify_inner_stmt(store: NodeStore, stmt: Stmt, pkg_qual: string) -> Stmt {
     match stmt {
         .Use(up, names) -> Stmt.Use(anchor_use_path(up, pkg_qual), names)
-        .Module(name, body) -> Stmt.Module(name, qualify_uses_recursively(body, pkg_qual))
-        .Annotated(annots, inner) -> Stmt.Annotated(annots, inner with { node: qualify_inner_stmt(inner.node, pkg_qual) })
+        .Module(name, body) -> Stmt.Module(name, store.rows_of(qualify_uses_recursively(store, store.sstmts_of(body), pkg_qual)))
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, store.restmt(qualify_inner_stmt(store, store.stmts.get(inner), pkg_qual), inner))
         _ -> stmt
     }
 }
@@ -812,7 +812,7 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
         // Unwrap Annotated wrappers (e.g., doc comments) to find Use statements
         let is_pkg = match ss.node {
             .Use(up, _) -> is_package_use(up)
-            .Annotated(_, inner) -> match inner.node {
+            .Annotated(_, inner) -> match store.stmts.get(inner) {
                 .Use(up, _) -> is_package_use(up)
                 _ -> false
             }
@@ -863,10 +863,10 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
 /// Pull the use-path string out of a `Use` statement, peeling
 /// any `Annotated` wrappers (doc comments, attributes) along the
 /// way. Returns `""` when `stmt` isn't a Use.
-export fn extract_use_path(stmt: Stmt) -> string {
+export fn extract_use_path(store: NodeStore, stmt: Stmt) -> string {
     match stmt {
         .Use(up, _) -> up
-        .Annotated(_, inner) -> extract_use_path(inner.node)
+        .Annotated(_, inner) -> extract_use_path(store, store.stmts.get(inner))
         _ -> ""
     }
 }
@@ -877,7 +877,7 @@ export fn extract_use_path(stmt: Stmt) -> string {
 /// sees the package's symbols at their qualified path. Continue
 /// resolution on the rest of the input list.
 fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, loaded: List<string>, stack: List<string>, store: NodeStore) -> ModListResult {
-    let use_path = extract_use_path(ss.node)
+    let use_path = extract_use_path(store, ss.node)
     let pkg_mod = package_module_name(use_path)
     let packages_dir = find_packages_dir(dir)
     if packages_dir == "" {
@@ -934,7 +934,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     let pkg_stmts = if take_meta_fast_path {
         record_meta_dep(pkg_file)
         let m = metadata_read(meta_path)
-        stamp_stub_spans(synthesize_unit_body(m, store), meta_path)
+        stamp_stub_spans(store, synthesize_unit_body(m, store), meta_path)
     } else {
         let pkg_source = avra_selfhost_read_file(pkg_file)
         // _at keeps SStmt.file pointed at the package's entry-point
@@ -955,7 +955,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // — the package's surface = entry exports + every sibling's
     // exports, flat. Same gate the per-mod path uses (modules_decl
     // present → keep legacy nested behaviour).
-    let pkg_decls_present = stmts_have_mod_decl(pkg_stmts)
+    let pkg_decls_present = stmts_have_mod_decl(store, pkg_stmts)
     let pkg_dir_load = if !take_meta_fast_path && !pkg_decls_present {
         resolve_dir_module_body(pkg_dir, new_loaded, store)
     } else {
@@ -973,7 +973,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // fast-path because the metadata stubs already enumerate every
     // submodule that contributed to the cached unit.
     let empty_subdir: List<SStmt> = []
-    let pkg_subdir_decls = if take_meta_fast_path { empty_subdir } else { synthesize_subdir_module_decls_filtered(pkg_dir, pkg_stmts) }
+    let pkg_subdir_decls = if take_meta_fast_path { empty_subdir } else { synthesize_subdir_module_decls_filtered(store, pkg_dir, pkg_stmts) }
     let pkg_combined_stmts = list_concat(list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
     let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack, store)
     if resolved.had_error { return resolved }
@@ -991,10 +991,10 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // entirely, this upfront pass can be removed in favour of the
     // graph's lazy resolution.
     let pkg_qual = "@${scope_name}.${pkg_name}"
-    let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual)
-    let inner_mod = Stmt.Module(pkg_name, qualified_body)
+    let qualified_body = qualify_uses_recursively(store, resolved.stmts, pkg_qual)
+    let inner_mod = Stmt.Module(pkg_name, store.rows_of(qualified_body))
     let outer_body: List<SStmt> = [sstmt_at(inner_mod, ss.line, ss.col, ss.file)]
-    let outer_mod = Stmt.Module("@${scope_name}", outer_body)
+    let outer_mod = Stmt.Module("@${scope_name}", store.rows_of(outer_body))
     // Continue processing rest of the statement list
     let rest = resolve_module_files_inner(next, dir, resolved.loaded, stack, store)
     if rest.had_error { return rest }
@@ -1055,18 +1055,19 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
         // The package's content comes entirely from auto-discovered
         // subdirs in `dir`.
         .Module(name, body) if (name.length > 0 && name[0] == "@") || !body.length == 0 -> {
+            let wrapped_body = store.sstmts_of(body)
             let combined = if name.length > 0 && name[0] == "@" {
-                list_concat(body, synthesize_subdir_module_decls_filtered(dir, body))
+                list_concat(wrapped_body, synthesize_subdir_module_decls_filtered(store, dir, wrapped_body))
             } else {
-                body
+                wrapped_body
             }
             let resolved = resolve_module_files_inner(combined, dir, loaded, stack, store)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
             let pkg_qual_dot = name.replace("::", ".")
-            let qualified_body = qualify_uses_recursively(resolved.stmts, pkg_qual_dot)
-            ModStmtResult { stmt: Stmt.Module(name, qualified_body), loaded: resolved.loaded, had_error: false, error_message: "" }
+            let qualified_body = qualify_uses_recursively(store, resolved.stmts, pkg_qual_dot)
+            ModStmtResult { stmt: Stmt.Module(name, store.rows_of(qualified_body)), loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Module(name, _) -> {
             let sibling = "${dir}${name}.av"
@@ -1091,7 +1092,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 if resolved.had_error {
                     return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
                 }
-                return ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+                return ModStmtResult { stmt: Stmt.Module(name, store.rows_of(resolved.stmts)), loaded: resolved.loaded, had_error: false, error_message: "" }
             }
             if mod_path == "" {
                 return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
@@ -1103,7 +1104,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 return ModStmtResult { stmt, loaded, had_error: true, error_message: "[F3103] circular import detected: ${cycle}" }
             }
             if loaded_has(loaded, mod_path) {
-                let empty: List<SStmt> = []
+                let empty: List<StmtId> = []
                 return ModStmtResult { stmt: Stmt.Module(name, empty), loaded, had_error: false, error_message: "" }
             }
             let new_loaded = list_push_copy(loaded, mod_path)
@@ -1131,7 +1132,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             let mod_stmts = if take_meta {
                 record_meta_dep(mod_path)
                 let m = metadata_read(meta_path)
-                stamp_stub_spans(synthesize_unit_body(m, store), meta_path)
+                stamp_stub_spans(store, synthesize_unit_body(m, store), meta_path)
             } else {
                 let mod_source = avra_selfhost_read_file(mod_path)
                 // Use _at so every parsed stmt carries `mod_path` in
@@ -1172,7 +1173,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             // would produce extra decls the metadata doesn't have.
             let dir_mode = avra_process_env_get("AVRA_DIR_MODULE") != "0"
             let is_subdir_form = mod_path == dir_mod
-            let mod_decls_present = stmts_have_mod_decl(mod_stmts)
+            let mod_decls_present = stmts_have_mod_decl(store, mod_stmts)
             let dir_load = if dir_mode && is_subdir_form && !take_meta && !mod_decls_present {
                 resolve_dir_module_body(mod_dir, new_loaded, store)
             } else {
@@ -1192,19 +1193,19 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             // came from metadata, so codegen knows to declare-only
             // (no __init_<name> body, no per-fn body — those live in
             // the producer's compiled .o which the linker resolves).
-            let module_stmt = Stmt.Module(name, resolved.stmts)
+            let module_stmt = Stmt.Module(name, store.rows_of(resolved.stmts))
             let final_stmt = if take_meta {
                 let ext_args: List<SExpr> = []
                 let ext_annots: List<Annotation> = [Annotation { name: "external_unit", args: ext_args }]
-                Stmt.Annotated(ext_annots, sstmt_dummy(module_stmt))
+                Stmt.Annotated(ext_annots, store.stmts.add_leaf(module_stmt))
             } else {
                 module_stmt
             }
             ModStmtResult { stmt: final_stmt, loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Annotated(annotations, inner) -> {
-            let r = resolve_module_stmt(inner.node, dir, loaded, stack, store)?
-            ModStmtResult { stmt: Stmt.Annotated(annotations, inner with { node: r.stmt }), loaded: r.loaded, had_error: false, error_message: "" }
+            let r = resolve_module_stmt(store.stmts.get(inner), dir, loaded, stack, store)?
+            ModStmtResult { stmt: Stmt.Annotated(annotations, store.restmt(r.stmt, inner)), loaded: r.loaded, had_error: false, error_message: "" }
         }
         _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
     }

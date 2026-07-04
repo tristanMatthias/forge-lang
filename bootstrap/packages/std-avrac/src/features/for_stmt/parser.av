@@ -5,7 +5,7 @@
 // with `let (a, b) = <tmp>` — reusing the existing ForIn + LetDestructure
 // machinery rather than introducing a parallel AST node.
 
-use core.{Stmt, Expr, SStmt, sstmt, NodeRef, byte_span_none}
+use core.{Stmt, Expr, StmtId, SrcPos}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
@@ -35,7 +35,6 @@ impl Parser {
         let expr_opt = self.parse_expression()
         self.allow_struct_lit = saved
         let expr_id = expr_opt?
-        let expr = self.expr_of(expr_id)
 
         // Range form: `for x in start..end { body }`
         if self.check(Tk.DotDot) {
@@ -45,15 +44,13 @@ impl Parser {
             let end_opt = self.parse_expression()
             self.allow_struct_lit = saved2
             let end_id = end_opt?
-            let end = self.expr_of(end_id)
 
             if !self.check(Tk.LeftBrace) {
                 self.report(DiagCode.ExpectedBlock, "expected `{` after for range")
                 return .Err("parse error")
             }
             let body_id = self.parse_statement()?
-            // Walker order: start, end (ExprRefs), then the body stmt.
-            return .Ok(self.alloc_stmt(Stmt.For(name, expr, end, self.stmt_of(body_id)), byte_span_none(), [NodeRef.ExprRef(expr_id), NodeRef.ExprRef(end_id), NodeRef.StmtRef(body_id)]))
+            return .Ok(self.alloc_stmt_leaf(Stmt.For(name, expr_id, end_id, body_id)))
         }
 
         // Collection form: `for x in list { body }`
@@ -62,8 +59,7 @@ impl Parser {
             return .Err("parse error")
         }
         let body_id = self.parse_statement()?
-        // Walker order: the collection ExprRef, then the body stmt.
-        .Ok(self.alloc_stmt(Stmt.ForIn(name, expr, self.stmt_of(body_id)), byte_span_none(), [NodeRef.ExprRef(expr_id), NodeRef.StmtRef(body_id)]))
+        .Ok(self.alloc_stmt_leaf(Stmt.ForIn(name, expr_id, body_id)))
     }
 
     /// Parse `for (a, b, …) in collection { body }`. The opening `(`
@@ -99,26 +95,22 @@ impl Parser {
         let expr_opt = self.parse_expression()
         self.allow_struct_lit = saved
         let coll_id = expr_opt?
-        let coll = self.expr_of(coll_id)
 
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after for-in expression")
             return .Err("parse error")
         }
         let body_id = self.parse_statement()?
-        let body = self.stmt_of(body_id)
 
         let tmp = "__forpair_${gid}"
-        let unpack = Stmt.LetDestructure(names, Expr.Ident(tmp))
-        // Synthetic rows: the unpack's initializer leaf, the unpack row
-        // ([ExprRef initializer] — LetDestructure walker order), then the
-        // two-element Block (the parsed body nests whole as one element,
-        // exactly as the boxed desugar wraps it — no splice).
+        // Synthetic rows: the unpack's initializer leaf, the unpack row,
+        // then the two-element Block (the parsed body nests whole as one
+        // element, exactly as the boxed desugar wrapped it — no splice).
         let tmp_ident_id = self.alloc_leaf(Expr.Ident(tmp))
-        let unpack_id = self.alloc_stmt_expr1(unpack, tmp_ident_id)
-        let wrapped: List<SStmt> = [sstmt(unpack, tline, tcol), sstmt(body, tline, tcol)]
-        let block_id = self.alloc_stmt(Stmt.Block(wrapped), byte_span_none(), [NodeRef.StmtRef(unpack_id), NodeRef.StmtRef(body_id)])
-        // Walker order: the collection ExprRef, then the body stmt.
-        .Ok(self.alloc_stmt(Stmt.ForIn(tmp, coll, self.stmt_of(block_id)), byte_span_none(), [NodeRef.ExprRef(coll_id), NodeRef.StmtRef(block_id)]))
+        let unpack_id = self.alloc_stmt_leaf(Stmt.LetDestructure(names, tmp_ident_id))
+        self.store.stmts.record_pos(unpack_id, SrcPos { line: tline, col: tcol, file: self.file })
+        let block_body: List<StmtId> = [unpack_id, body_id]
+        let block_id = self.alloc_stmt_leaf(Stmt.Block(block_body))
+        .Ok(self.alloc_stmt_leaf(Stmt.ForIn(tmp, coll_id, block_id)))
     }
 }

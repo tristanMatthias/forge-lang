@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, SExpr, SStmt, stmt_unwrap}
+use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, SExpr, SStmt, StmtId, NodeStore, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 use list_ops.{list_push_copy}
 
@@ -41,17 +41,17 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(body: List<SStmt>) -> List<string> {
+export fn analyze_releasable(store: NodeStore, body: List<SStmt>) -> List<string> {
     let empty: List<string> = []
-    single_pass_escape(body, empty)
+    single_pass_escape(store, body, empty)
 }
 
 /// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
 /// blocks have no bindings to release; otherwise descend into the
 /// inner List<SStmt>.
-export fn analyze_releasable_expr(body: Expr) -> List<string> {
+export fn analyze_releasable_expr(store: NodeStore, body: Expr) -> List<string> {
     match body {
-        .Block(stmts) -> analyze_releasable(stmts)
+        .Block(stmts) -> analyze_releasable(store, stmts)
         _ -> {
             let empty: List<string> = []
             empty
@@ -61,60 +61,67 @@ export fn analyze_releasable_expr(body: Expr) -> List<string> {
 
 /// Single-pass escape analysis worker. Walks `stmts` left-to-right,
 /// folding `single_pass_stmt` over the running List<string>.
-fn single_pass_escape(stmts: List<SStmt>, set: List<string>) -> List<string> {
+fn single_pass_escape(store: NodeStore, stmts: List<SStmt>, set: List<string>) -> List<string> {
     mut cur = set
     mut i = 0
     while i < stmts.length {
-        cur = single_pass_stmt(stmts[i].node, cur)
+        cur = single_pass_stmt(store, stmts[i].node, cur)
         i = i + 1
     }
+    cur
+}
+
+/// Row-list twin for flipped bodies.
+fn single_pass_escape_ids(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
+    mut cur = set
+    for id in ids { cur = single_pass_stmt(store, store.stmts.get(id), cur) }
     cur
 }
 
 /// Process a `let`/`mut`/`const` binding: add the name when its
 /// initializer is allocating, then sweep the initializer for any
 /// uses of names already in the set (which would mark them escaped).
-fn analyze_binding(name: string, init: Expr, set: List<string>) -> List<string> {
+fn analyze_binding(store: NodeStore, name: string, init: Expr, set: List<string>) -> List<string> {
     let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-    remove_escaped_expr(init, s1)
+    remove_escaped_expr(store, init, s1)
 }
 
 /// Per-statement worker. Bindings call `analyze_binding`; control-
 /// flow statements recurse into their bodies; everything else is
 /// only checked for escaping uses inside its expressions. Decl-only
 /// statements (TypeDecl, TraitDecl, …) are pass-through.
-fn single_pass_stmt(stmt: Stmt, set: List<string>) -> List<string> {
-    let inner = stmt_unwrap(stmt)
+fn single_pass_stmt(store: NodeStore, stmt: Stmt, set: List<string>) -> List<string> {
+    let inner = stmt_unwrap(store, stmt)
     match inner {
-        .Let(name, _, init) -> analyze_binding(name, init, set)
-        .Mut(name, _, init) -> analyze_binding(name, init, set)
-        .Const(name, _, init) -> analyze_binding(name, init, set)
+        .Let(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set)
+        .Mut(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set)
+        .Const(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set)
         // Recurse into blocks
-        .Block(body) -> single_pass_escape(body, set)
+        .Block(body) -> single_pass_escape_ids(store, body, set)
         .If(cond, then_b, else_b) -> {
-            let s1 = remove_escaped_expr(cond, set)
-            let s2 = single_pass_stmt(then_b, s1)
-            if else_b != null { single_pass_stmt(else_b!, s2) } else { s2 }
+            let s1 = remove_escaped_expr(store, store.exprs.get(cond), set)
+            let s2 = single_pass_stmt(store, store.stmts.get(then_b), s1)
+            if else_b != null { single_pass_stmt(store, store.stmts.get(else_b!), s2) } else { s2 }
         }
         // Everything else: just check for escapes (same as remove_escaped_stmt)
-        .Return(expr) -> remove_escaped_expr(expr, set)
-        .Expr(expr) -> remove_escaped_expr(expr, set)
-        .While(cond, body) -> single_pass_stmt(body, remove_escaped_expr(cond, set))
+        .Return(expr) -> remove_escaped_expr(store, store.exprs.get(expr), set)
+        .Expr(expr) -> remove_escaped_expr(store, store.exprs.get(expr), set)
+        .While(cond, body) -> single_pass_stmt(store, store.stmts.get(body), remove_escaped_expr(store, store.exprs.get(cond), set))
         .For(_, start, end, body) -> {
-            let s1 = remove_escaped_expr(start, set)
-            let s2 = remove_escaped_expr(end, s1)
-            single_pass_stmt(body, s2)
+            let s1 = remove_escaped_expr(store, store.exprs.get(start), set)
+            let s2 = remove_escaped_expr(store, store.exprs.get(end), s1)
+            single_pass_stmt(store, store.stmts.get(body), s2)
         }
-        .ForIn(_, coll, body) -> single_pass_stmt(body, remove_escaped_expr(coll, set))
+        .ForIn(_, coll, body) -> single_pass_stmt(store, store.stmts.get(body), remove_escaped_expr(store, store.exprs.get(coll), set))
         // Same bug as the MatchExpr arm in remove_escaped_expr: walk
         // the arm guards + bodies so an h returned from a match arm
         // body gets removed from rc_releasable (otherwise scope-exit
         // releases h before the caller of the fn sees the value).
-        .Match(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
-        .Defer(body) -> remove_escaped_expr(body, set)
-        .Errdefer(body) -> remove_escaped_expr(body, set)
-        .Annotated(_, inner) -> single_pass_stmt(inner.node, set)
-        .LetDestructure(_, init) -> remove_escaped_expr(init, set)
+        .Match(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, store.exprs.get(subj), set))
+        .Defer(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
+        .Errdefer(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
+        .Annotated(_, inner_id) -> single_pass_stmt(store, store.stmts.get(inner_id), set)
+        .LetDestructure(_, init) -> remove_escaped_expr(store, store.exprs.get(init), set)
         .Function(_, _, _, _, _) -> set
         .ReturnEmpty -> set
         .TypeDecl(_, _, _) -> set
@@ -159,33 +166,33 @@ fn is_allocating_expr(expr: Expr) -> bool {
 /// they're used in a way that escapes the local. The only safe
 /// pattern is `.FieldAccess(Ident(name), _)` (reading a field). Any
 /// other use of `Ident(name)` removes it.
-fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
+fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
         .FieldAccess(obj, _) -> match obj {
             .Ident(_) -> set  // p.x is safe — don't remove p
-            _ -> remove_escaped_expr(obj, set)  // nested: (expr).field
+            _ -> remove_escaped_expr(store, obj, set)  // nested: (expr).field
         }
         // These are escaping uses:
         .Ident(name) -> releasable_remove(set, name)
         // Recurse into sub-expressions
         .Call(callee, args) -> {
-            let s1 = remove_escaped_expr(callee, set)
-            remove_escaped_args(args, s1)
+            let s1 = remove_escaped_expr(store, callee, set)
+            remove_escaped_args(store, args, s1)
         }
         .GenericCall(callee, _, args) -> {
-            let s1 = remove_escaped_expr(callee, set)
-            remove_escaped_args(args, s1)
+            let s1 = remove_escaped_expr(store, callee, set)
+            remove_escaped_args(store, args, s1)
         }
-        .Binary(left, _, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
-        .Unary(_, inner) -> remove_escaped_expr(inner, set)
-        .Logical(left, _, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
-        .Grouping(inner) -> remove_escaped_expr(inner, set)
-        .Index(obj, idx) -> remove_escaped_expr(idx, remove_escaped_expr(obj, set))
-        .Assign(_, val) -> remove_escaped_expr(val, set)
-        .FieldAssign(obj, _, val) -> remove_escaped_expr(val, remove_escaped_expr(obj, set))
-        .StructLit(_, inits) -> remove_escaped_field_inits(inits, set)
-        .ListLit(elems) -> remove_escaped_args(elems, set)
+        .Binary(left, _, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .Unary(_, inner) -> remove_escaped_expr(store, inner, set)
+        .Logical(left, _, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .Grouping(inner) -> remove_escaped_expr(store, inner, set)
+        .Index(obj, idx) -> remove_escaped_expr(store, idx, remove_escaped_expr(store, obj, set))
+        .Assign(_, val) -> remove_escaped_expr(store, val, set)
+        .FieldAssign(obj, _, val) -> remove_escaped_expr(store, val, remove_escaped_expr(store, obj, set))
+        .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set)
+        .ListLit(elems) -> remove_escaped_args(store, elems, set)
         // `with` reads obj field-by-field and emits rc_retain on ptr
         // fields the new struct keeps (see with_expr/codegen.av).
         // So `let u = h with { ... }` is a READ of `h` — the new
@@ -194,45 +201,45 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
         // like FieldAccess does, so the source stays releasable and
         // its own __release_<Struct> fires at scope exit.
         .With(obj, inits) -> {
-            let s1 = match obj { .Ident(_) -> set, _ -> remove_escaped_expr(obj, set) }
-            remove_escaped_field_inits(inits, s1)
+            let s1 = match obj { .Ident(_) -> set, _ -> remove_escaped_expr(store, obj, set) }
+            remove_escaped_field_inits(store, inits, s1)
         }
-        .Lambda(_, body) -> remove_escaped_expr(body, set)
-        .Block(body) -> single_pass_escape(body, set)
-        .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))
+        .Lambda(_, body) -> remove_escaped_expr(store, body, set)
+        .Block(body) -> single_pass_escape(store, body, set)
+        .IfExpr(cond, t, e) -> remove_escaped_expr(store, e, remove_escaped_expr(store, t, remove_escaped_expr(store, cond, set)))
         // Match arms must be walked: a variable used in an arm body
         // (especially as the arm's return value, which escapes) needs
         // to be removed from the releasable set. Without this the
         // scope-exit release path frees a struct the match expression
         // returned — UAF on the returned value.
-        .MatchExpr(subj, arms) -> remove_escaped_match_arms(arms, remove_escaped_expr(subj, set))
-        .Tuple(elems) -> remove_escaped_args(elems, set)
-        .TupleIndex(obj, _) -> remove_escaped_expr(obj, set)
-        .MapLit(entries) -> remove_escaped_args(entries, set)
-        .Slice(obj, start, end) -> remove_escaped_expr(end, remove_escaped_expr(start, remove_escaped_expr(obj, set)))
-        .Try(inner) -> remove_escaped_expr(inner, set)
-        .Catch(inner, _, body, _, _) -> remove_escaped_expr(body, remove_escaped_expr(inner, set))
-        .NullCoalesce(left, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
-        .OptionalChain(obj, _) -> remove_escaped_expr(obj, set)
-        .OptionalMethodCall(obj, _, args) -> remove_escaped_args(args, remove_escaped_expr(obj, set))
-        .IsCheck(subj, _) -> remove_escaped_expr(subj, set)
-        .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
-        .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
-        .Spawn(body) -> remove_escaped_expr(body, set)
+        .MatchExpr(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, subj, set))
+        .Tuple(elems) -> remove_escaped_args(store, elems, set)
+        .TupleIndex(obj, _) -> remove_escaped_expr(store, obj, set)
+        .MapLit(entries) -> remove_escaped_args(store, entries, set)
+        .Slice(obj, start, end) -> remove_escaped_expr(store, end, remove_escaped_expr(store, start, remove_escaped_expr(store, obj, set)))
+        .Try(inner) -> remove_escaped_expr(store, inner, set)
+        .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, body, remove_escaped_expr(store, inner, set))
+        .NullCoalesce(left, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .OptionalChain(obj, _) -> remove_escaped_expr(store, obj, set)
+        .OptionalMethodCall(obj, _, args) -> remove_escaped_args(store, args, remove_escaped_expr(store, obj, set))
+        .IsCheck(subj, _) -> remove_escaped_expr(store, subj, set)
+        .InCheck(needle, items) -> remove_escaped_args(store, items, remove_escaped_expr(store, needle, set))
+        .EnumCtor(_, _, args) -> remove_escaped_args(store, args, set)
+        .Spawn(body) -> remove_escaped_expr(store, body, set)
         .ChannelNew(_, capacity) -> {
-            if capacity == null { set } else { remove_escaped_expr(capacity!, set) }
+            if capacity == null { set } else { remove_escaped_expr(store, capacity!, set) }
         }
-        .Isolated(body) -> remove_escaped_expr(body, set)
-        .Quote(_, body) -> remove_escaped_expr(body, set)
-        .Splice(target) -> remove_escaped_expr(target, set)
+        .Isolated(body) -> remove_escaped_expr(store, body, set)
+        .Quote(_, body) -> remove_escaped_expr(store, body, set)
+        .Splice(target) -> remove_escaped_expr(store, target, set)
         // Same as MatchExpr: when arms' bodies/conditions can escape
         // variables (return value of the arm, or pass to a fn). The
         // old "no escapes at this level" comment was wrong.
-        .When(arms) -> remove_escaped_when_arms(arms, set)
+        .When(arms) -> remove_escaped_when_arms(store, arms, set)
         .ListComp(body, _, coll, filter) -> {
-            let s1 = remove_escaped_expr(body, set)
-            let s2 = remove_escaped_expr(coll, s1)
-            if filter != null { remove_escaped_expr(filter!, s2) } else { s2 }
+            let s1 = remove_escaped_expr(store, body, set)
+            let s2 = remove_escaped_expr(store, coll, s1)
+            if filter != null { remove_escaped_expr(store, filter!, s2) } else { s2 }
         }
         // Leaf expressions — no idents to escape
         .Number(_) -> set
@@ -245,41 +252,41 @@ fn remove_escaped_expr(expr: Expr, set: List<string>) -> List<string> {
 }
 
 /// Walk each match arm's guard + body checking for escapes.
-fn remove_escaped_match_arms(arms: List<MatchArm>, set: List<string>) -> List<string> {
+fn remove_escaped_match_arms(store: NodeStore, arms: List<MatchArm>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         if arm.guard != null {
-            acc = remove_escaped_expr(arm.guard!.node, acc)
+            acc = remove_escaped_expr(store, arm.guard!.node, acc)
         }
-        acc = remove_escaped_expr(arm.body.node, acc)
+        acc = remove_escaped_expr(store, arm.body.node, acc)
         i = i + 1
     }
     acc
 }
 
 /// Walk each when-arm's cond + body checking for escapes.
-fn remove_escaped_when_arms(arms: List<WhenArm>, set: List<string>) -> List<string> {
+fn remove_escaped_when_arms(store: NodeStore, arms: List<WhenArm>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         if arm.cond != null {
-            acc = remove_escaped_expr(arm.cond!.node, acc)
+            acc = remove_escaped_expr(store, arm.cond!.node, acc)
         }
-        acc = remove_escaped_expr(arm.body.node, acc)
+        acc = remove_escaped_expr(store, arm.body.node, acc)
         i = i + 1
     }
     acc
 }
 
 /// Apply `remove_escaped_expr` to every element of a `List<SExpr>`.
-fn remove_escaped_args(args: List<SExpr>, set: List<string>) -> List<string> {
+fn remove_escaped_args(store: NodeStore, args: List<SExpr>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0
     while i < args.length {
-        acc = remove_escaped_expr(args[i].node, acc)
+        acc = remove_escaped_expr(store, args[i].node, acc)
         i = i + 1
     }
     acc
@@ -287,11 +294,11 @@ fn remove_escaped_args(args: List<SExpr>, set: List<string>) -> List<string> {
 
 /// Apply `remove_escaped_expr` to every value in a struct-literal
 /// `List<FieldInit>`. Used on `Foo { x: a, y: b }` and `with` exprs.
-fn remove_escaped_field_inits(inits: List<FieldInit>, set: List<string>) -> List<string> {
+fn remove_escaped_field_inits(store: NodeStore, inits: List<FieldInit>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0
     while i < inits.length {
-        acc = remove_escaped_expr(inits[i].value.node, acc)
+        acc = remove_escaped_expr(store, inits[i].value.node, acc)
         i = i + 1
     }
     acc
@@ -306,29 +313,25 @@ fn remove_escaped_field_inits(inits: List<FieldInit>, set: List<string>) -> List
 // freed in bulk at scope exit.
 
 /// Sum the count of allocating expressions across a statement list.
-fn count_allocating_in_stmts(stmts: List<SStmt>) -> int {
+fn count_allocating_in_stmt_ids(store: NodeStore, ids: List<StmtId>) -> int {
     mut total = 0
-    mut i = 0
-    while i < stmts.length {
-        total = total + count_allocating_in_stmt_single(stmts[i].node)
-        i = i + 1
-    }
+    for id in ids { total = total + count_allocating_in_stmt_single(store, store.stmts.get(id)) }
     total
 }
 
 /// How many allocating expressions one statement contributes — 1 for
 /// an allocating binding, recursive for control-flow statements,
 /// 0 otherwise.
-fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
-    match stmt_unwrap(stmt) {
-        .Block(inner) -> count_allocating_in_stmts(inner)
-        .Let(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-        .Mut(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-        .Const(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-        .If(_, then_b, _) -> count_allocating_in_stmt_single(then_b)
-        .While(_, wb) -> count_allocating_in_stmt_single(wb)
-        .For(_, _, _, fb) -> count_allocating_in_stmt_single(fb)
-        .ForIn(_, _, fib) -> count_allocating_in_stmt_single(fib)
+fn count_allocating_in_stmt_single(store: NodeStore, stmt: Stmt) -> int {
+    match stmt_unwrap(store, stmt) {
+        .Block(inner) -> count_allocating_in_stmt_ids(store, inner)
+        .Let(_, _, init) -> if is_allocating_expr(store.exprs.get(init)) { 1 } else { 0 }
+        .Mut(_, _, init) -> if is_allocating_expr(store.exprs.get(init)) { 1 } else { 0 }
+        .Const(_, _, init) -> if is_allocating_expr(store.exprs.get(init)) { 1 } else { 0 }
+        .If(_, then_b, _) -> count_allocating_in_stmt_single(store, store.stmts.get(then_b))
+        .While(_, wb) -> count_allocating_in_stmt_single(store, store.stmts.get(wb))
+        .For(_, _, _, fb) -> count_allocating_in_stmt_single(store, store.stmts.get(fb))
+        .ForIn(_, _, fib) -> count_allocating_in_stmt_single(store, store.stmts.get(fib))
         .Expr(_) -> 0
         .Return(_) -> 0
         .ReturnEmpty -> 0
@@ -367,20 +370,20 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
 /// one allocating binding AND every allocating binding is
 /// non-escaping. Bulk freeing the arena at scope exit then replaces
 /// per-allocation RC drops.
-export fn is_arena_eligible(body: Stmt) -> bool {
-    let inner = stmt_unwrap(body)
+export fn is_arena_eligible(store: NodeStore, body: Stmt) -> bool {
+    let inner = stmt_unwrap(store, body)
     match inner {
         .Block(stmts) -> {
             // Must have at least one allocation
-            let owned_count = count_allocating_in_stmts(stmts)
+            let owned_count = count_allocating_in_stmt_ids(store, stmts)
             if owned_count == 0 { return false }
             // All allocations must be releasable (non-escaping)
             let empty: List<string> = []
-            single_pass_escape(stmts, empty).length > 0
+            single_pass_escape_ids(store, stmts, empty).length > 0
         }
-        .Let(_, _, init) -> is_allocating_expr(init)
-        .Mut(_, _, init) -> is_allocating_expr(init)
-        .Const(_, _, init) -> is_allocating_expr(init)
+        .Let(_, _, init) -> is_allocating_expr(store.exprs.get(init))
+        .Mut(_, _, init) -> is_allocating_expr(store.exprs.get(init))
+        .Const(_, _, init) -> is_allocating_expr(store.exprs.get(init))
         .Expr(_) -> false
         .Return(_) -> false
         .ReturnEmpty -> false

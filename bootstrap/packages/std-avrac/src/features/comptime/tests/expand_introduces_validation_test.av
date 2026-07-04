@@ -35,6 +35,7 @@ spec "@expand: introduces-vs-decls divergence emits a warning" {
     then "phantom name in introduces surfaces a stderr warning, real decl still works" {
         let out = run_capture(
             "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
             "\n" +
@@ -42,8 +43,8 @@ spec "@expand: introduces-vs-decls divergence emits a warning" {
             "fn introducer(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
             "    let empty_params: List<ParamEntry> = []\n" +
             "    let empty_tp: List<TypeParamEntry> = []\n" +
-            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(Expr.Number(\"7\")))]\n" +
-            "    let real_fn = Stmt.Function(\"_real_emitted\", empty_tp, empty_params, ValueType.Int, body)\n" +
+            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Number(\"7\"))))]\n" +
+            "    let real_fn = Stmt.Function(\"_real_emitted\", empty_tp, empty_params, ValueType.Int, synth_stmt_ids(body))\n" +
             "    let decls: List<SStmt> = [sstmt_dummy(real_fn)]\n" +
             "    // introduces lists BOTH the real decl AND a phantom name.\n" +
             "    let introduces: List<DeclSymbol> = [\n" +

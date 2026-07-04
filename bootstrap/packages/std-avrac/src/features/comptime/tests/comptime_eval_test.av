@@ -3,7 +3,7 @@
 // with literal args, and asserts that `try_fold_call` produces the
 // expected literal Expr.
 
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, BinOp, render_expr}
+use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, BinOp, render_expr}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
 
 /// Fresh empty store for inline-AST probes — F2 renderers resolve
@@ -14,9 +14,9 @@ fn ts() -> NodeStore {
 
 
 // `fn add(x: int, y: int) -> int { return x + y }`
-fn mk_add_fn() -> CompTimeFn {
-    let body: List<SStmt> = [
-        sstmt_dummy(Stmt.Return(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y")))),
+fn mk_add_fn(ws: NodeStore) -> CompTimeFn {
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y"))))),
     ]
     CompTimeFn {
         name: "add",
@@ -33,8 +33,9 @@ fn add_registry() -> CompTimeRegistry {
     // Reuse comptime_registry_new for the default-field values so this
     // doesn't need to know the registry's internal field set. Override
     // `fns`, then re-prepare to seed the runtime + name index.
-    let empty = comptime_registry_new(ts())
-    let staged = empty with { fns: [mk_add_fn()] }
+    let ws = ts()
+    let empty = comptime_registry_new(ws)
+    let staged = empty with { fns: [mk_add_fn(ws)] }
     prepare_runtime(staged)
 }
 
@@ -90,10 +91,10 @@ spec "comptime.try_fold_call: non-literal args refuse to fold" {
 
 // `fn make_ident() -> Expr { return Expr.Ident("x") }` — captured as
 // the EnumCtor shape that lower_quotes would have produced.
-fn mk_make_ident_fn() -> CompTimeFn {
+fn mk_make_ident_fn(ws: NodeStore) -> CompTimeFn {
     let arg: List<SExpr> = [sexpr_dummy(Expr.String("\"x\""))]
-    let body: List<SStmt> = [
-        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Ident", arg))),
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Ident", arg)))),
     ]
     CompTimeFn {
         name: "make_ident",
@@ -104,7 +105,8 @@ fn mk_make_ident_fn() -> CompTimeFn {
 }
 
 fn make_ident_registry() -> CompTimeRegistry {
-    let staged = comptime_registry_new(ts()) with { fns: [mk_make_ident_fn()] }
+    let ws = ts()
+    let staged = comptime_registry_new(ws) with { fns: [mk_make_ident_fn(ws)] }
     prepare_runtime(staged)
 }
 
@@ -124,7 +126,7 @@ spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4 / vez6.6.5)" {
 // — captured as the EnumCtor shape lower_quotes produces for
 // `quote { 1 + 2 }`. Exercises the structural-variant decoder added
 // to enum_value_to_expr.
-fn mk_make_sum_fn() -> CompTimeFn {
+fn mk_make_sum_fn(ws: NodeStore) -> CompTimeFn {
     let one_arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"1\""))]
     let two_arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"2\""))]
     let one_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_str)
@@ -132,8 +134,8 @@ fn mk_make_sum_fn() -> CompTimeFn {
     let empty_args: List<SExpr> = []
     let add_op = Expr.EnumCtor("@std::avrac::core::BinOp", "Add", empty_args)
     let bin_args: List<SExpr> = [sexpr_dummy(one_expr), sexpr_dummy(add_op), sexpr_dummy(two_expr)]
-    let body: List<SStmt> = [
-        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Binary", bin_args))),
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Binary", bin_args)))),
     ]
     CompTimeFn {
         name: "make_sum",
@@ -144,7 +146,8 @@ fn mk_make_sum_fn() -> CompTimeFn {
 }
 
 fn make_sum_registry() -> CompTimeRegistry {
-    let staged = comptime_registry_new(ts()) with { fns: [mk_make_sum_fn()] }
+    let ws = ts()
+    let staged = comptime_registry_new(ws) with { fns: [mk_make_sum_fn(ws)] }
     prepare_runtime(staged)
 }
 
@@ -168,7 +171,7 @@ spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4 / vez6.6.5)
 // — exercises the Call + list-arg decoders. The arg list construct
 // in lower.av builds an Expr.ListLit whose runtime eval produces a
 // kind="list" Value; the decoder reads it back via list_value_to_expr_list.
-fn mk_make_call_fn() -> CompTimeFn {
+fn mk_make_call_fn(ws: NodeStore) -> CompTimeFn {
     let arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"7\""))]
     let inner_num = Expr.EnumCtor("@std::avrac::core::Expr", "Number", arg_str)
     // Build the arg-list as an Expr.ListLit whose single element is a
@@ -183,8 +186,8 @@ fn mk_make_call_fn() -> CompTimeFn {
     let f_ident_str: List<SExpr> = [sexpr_dummy(Expr.String("\"f\""))]
     let callee_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Ident", f_ident_str)
     let call_payload: List<SExpr> = [sexpr_dummy(callee_expr), sexpr_dummy(args_list)]
-    let body: List<SStmt> = [
-        sstmt_dummy(Stmt.Return(Expr.EnumCtor("@std::avrac::core::Expr", "Call", call_payload))),
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Call", call_payload)))),
     ]
     CompTimeFn {
         name: "make_call",
@@ -195,7 +198,8 @@ fn mk_make_call_fn() -> CompTimeFn {
 }
 
 fn make_call_registry() -> CompTimeRegistry {
-    let staged = comptime_registry_new(ts()) with { fns: [mk_make_call_fn()] }
+    let ws = ts()
+    let staged = comptime_registry_new(ws) with { fns: [mk_make_call_fn(ws)] }
     prepare_runtime(staged)
 }
 

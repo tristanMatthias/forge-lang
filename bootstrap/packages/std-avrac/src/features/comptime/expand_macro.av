@@ -42,7 +42,7 @@
 // block as the Stmt arg.
 
 use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
-use core.{NodeStore}
+use core.{NodeStore, StmtId}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
@@ -107,10 +107,10 @@ fn populate_resolver_data_into(state: ResolverState, stmts: List<SStmt>) {
     for g in state.graph.all_items {
         avra_rd_add_global(g.short_name, g.canonical)
     }
-    populate_type_fields(stmts, "")
+    populate_type_fields(state.nodes, stmts, "")
 }
 
-fn populate_type_fields(stmts: List<SStmt>, mod_path: string) {
+fn populate_type_fields(store: NodeStore, stmts: List<SStmt>, mod_path: string) {
     for ss in stmts {
         // stmt_unwrap strips every Annotated layer. Most type decls
         // in std-avrac are `@export type Foo = {...}` so without the
@@ -118,15 +118,15 @@ fn populate_type_fields(stmts: List<SStmt>, mod_path: string) {
         // root cause: SStmt / SExpr were silently absent from the
         // resolver-data registry, so ctx_lookup_type from @comptime
         // macros (derive_walker's wrapper-list discovery) saw null.
-        register_type_decl(stmt_unwrap(ss.node), mod_path)
+        register_type_decl(store, stmt_unwrap(store, ss.node), mod_path)
     }
 }
 
-fn register_type_decl(stmt: Stmt, mod_path: string) {
+fn register_type_decl(store: NodeStore, stmt: Stmt, mod_path: string) {
     match stmt {
         .Module(name, body) -> {
             let child_path = qualify_or_keep(mod_path, name)
-            populate_type_fields(body, child_path)
+            for id in body { register_type_decl(store, stmt_unwrap(store, store.stmts.get(id)), child_path) }
         }
         .TypeDecl(name, _, fields) -> {
             let canonical = qualify_or_keep(mod_path, name)
@@ -198,9 +198,9 @@ export type ExpandPlan = {
 /// Returns the plan unmodified — no macro is invoked here. Lets
 /// `resolve_names` run between collect and eval so that the macro
 /// bodies (which themselves call helper fns) see resolved names.
-export fn expand_macros_collect(stmts: List<SStmt>) -> ExpandPlan {
-    let comp_macros = collect_component_macros(stmts)
-    let targets = collect_expand_targets(stmts)
+export fn expand_macros_collect(store: NodeStore, stmts: List<SStmt>) -> ExpandPlan {
+    let comp_macros = collect_component_macros(store, stmts)
+    let targets = collect_expand_targets(store, stmts)
     ExpandPlan { stmts, targets, comp_macros }
 }
 
@@ -210,15 +210,15 @@ export fn plan_has_work(plan: ExpandPlan) -> bool {
     plan.targets.length > 0 || plan.comp_macros.length > 0
 }
 
-fn collect_expand_targets(stmts: List<SStmt>) -> List<ExpandTarget> {
+fn collect_expand_targets(store: NodeStore, stmts: List<SStmt>) -> List<ExpandTarget> {
     mut acc: List<ExpandTarget> = []
     for ss in stmts {
-        let inner = stmt_unwrap(ss.node)
+        let inner = stmt_unwrap(store, ss.node)
         match inner {
-            .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(body))
+            .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(store, store.sstmts_of(body)))
             _ -> {
-                if has_expand_annotation(ss.node) {
-                    let name = expand_target_name(ss.node)
+                if has_expand_annotation(store, ss.node) {
+                    let name = expand_target_name(store, ss.node)
                     if name != "" {
                         acc = acc.push(ExpandTarget {
                             source_file: ss.file,
@@ -275,8 +275,8 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
     mut origins: List<MacroFnOrigin> = []
     mut iters = 0
     while iters < 16 {
-        let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(current) }
-        if !any_expand_annotation(current) && comp_macros.length == 0 {
+        let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
+        if !any_expand_annotation(state.nodes, current) && comp_macros.length == 0 {
             return ExpandResult { stmts: current, bag, origins }
         }
         if iters > 0 {
@@ -316,10 +316,10 @@ fn comp_macro_lookup(m: List<CompMacroEntry>, comp_name: string) -> string {
 
 /// Walk the AST, finding every `@expand(macro) component name { ... }`
 /// declaration and recording its (name → macro_fn) pair.
-fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
+fn collect_component_macros(store: NodeStore, stmts: List<SStmt>) -> List<CompMacroEntry> {
     mut acc: List<CompMacroEntry> = []
     for ss in stmts {
-        let inner = stmt_unwrap(ss.node)
+        let inner = stmt_unwrap(store, ss.node)
         // ComponentDefs can live inside Module wrappers (e.g.
         // `component command implements Runnable {}` declared
         // in @std/cli's cli.av lands wrapped under
@@ -328,10 +328,10 @@ fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
         // is empty for any def behind a module boundary, so
         // instance dispatch silently skips them.
         match inner {
-            .Module(_, body) -> acc = list_concat(acc, collect_component_macros(body))
+            .Module(_, body) -> acc = list_concat(acc, collect_component_macros(store, store.sstmts_of(body)))
             _ -> {
-                let macro_name = comp_macro_for(ss.node)
-                let comp_name = component_def_name(ss.node)
+                let macro_name = comp_macro_for(store, ss.node)
+                let comp_name = component_def_name(store, ss.node)
                 if macro_name != "" && comp_name != "" {
                     acc = acc.push(CompMacroEntry { comp_name, macro_name })
                 }
@@ -344,16 +344,16 @@ fn collect_component_macros(stmts: List<SStmt>) -> List<CompMacroEntry> {
 /// If `stmt` is a ComponentDef wrapped in @expand(M), return M's
 /// name. Returns "" otherwise. Handles arbitrarily-nested
 /// Annotated wrappers (e.g. `///` doc + `@expand`).
-fn comp_macro_for(stmt: Stmt) -> string {
-    let inner = stmt_unwrap(stmt)
+fn comp_macro_for(store: NodeStore, stmt: Stmt) -> string {
+    let inner = stmt_unwrap(store, stmt)
     match inner {
-        .ComponentDef(_, _, _, _, _, _) -> expand_target_name(stmt)
+        .ComponentDef(_, _, _, _, _, _) -> expand_target_name(store, stmt)
         _ -> ""
     }
 }
 
-fn component_def_name(stmt: Stmt) -> string {
-    let inner = stmt_unwrap(stmt)
+fn component_def_name(store: NodeStore, stmt: Stmt) -> string {
+    let inner = stmt_unwrap(store, stmt)
     match inner {
         .ComponentDef(name, _, _, _, _, _) -> name
         _ -> ""
@@ -375,12 +375,12 @@ fn component_def_name(stmt: Stmt) -> string {
 /// agree, otherwise the walker is never invoked and a present @expand
 /// silently slips past, leading to F9999 'undefined method T.children'
 /// downstream when callers try to use the would-be-derived method.
-export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
+export fn any_expand_annotation(store: NodeStore, stmts: List<SStmt>) -> bool {
     for ss in stmts {
-        if has_expand_annotation(ss.node) { return true }
-        match stmt_unwrap(ss.node) {
+        if has_expand_annotation(store, ss.node) { return true }
+        match stmt_unwrap(store, ss.node) {
             .Module(_, body) -> {
-                if any_expand_annotation(body) { return true }
+                if any_expand_annotation(store, store.sstmts_of(body)) { return true }
             }
             _ -> {}
         }
@@ -388,27 +388,28 @@ export fn any_expand_annotation(stmts: List<SStmt>) -> bool {
     false
 }
 
-fn has_expand_annotation(stmt: Stmt) -> bool {
-    let found = find_annotation(stmt, "expand")
+fn has_expand_annotation(store: NodeStore, stmt: Stmt) -> bool {
+    let found = find_annotation(store, stmt, "expand")
     found != null
 }
 
 // ── Walker ──
 
 fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
+    let store = in_state.nodes
     mut out: List<SStmt> = []
     mut current_state = in_state
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
     for ss in stmts {
-        let inner = stmt_unwrap(ss.node)
+        let inner = stmt_unwrap(store, ss.node)
         // vez6.8.5: a ComponentDef with @expand only REGISTERS
         // the macro for its instances. The def itself drops
         // out of the output — there's no template-style expansion
         // for the def, only per-instance dispatch.
         match inner {
             .ComponentDef(_, _, _, _, _, _) -> {
-                if !has_expand_annotation(ss.node) {
+                if !has_expand_annotation(store, ss.node) {
                     out.push(ss)
                 }
             }
@@ -445,7 +446,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             // intact for downstream resolve/typeck.
             .Module(mod_name, body) -> {
                 let child_module = type_qualified_name(current_module, mod_name)
-                let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
+                let sub = expand_stmt_list(store.sstmts_of(body), reg, comp_macros, current_state, child_module)
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
                 origins = list_concat(origins, sub.origins)
@@ -454,13 +455,13 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                 // layers, or a wrapped module (e.g. the test
                 // assembler's @deferred_init) silently loses its
                 // annotations here and codegen auto-runs its init.
-                let new_stmt = rewrap_annotations(ss.node, Stmt.Module(mod_name, sub.out))
+                let new_stmt = rewrap_annotations(store, ss.node, Stmt.Module(mod_name, store.rows_of(sub.out)))
                 out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
             }
             _ -> {
-                if has_expand_annotation(ss.node) {
+                if has_expand_annotation(store, ss.node) {
                     avra_rd_set_current_module(current_module)
-                    let attempt = try_expand_one(ss.node, reg, ss.line, ss.col, ss.file, current_module)
+                    let attempt = try_expand_one(store, ss.node, reg, ss.line, ss.col, ss.file, current_module)
                     bag = bag_merge(bag, attempt.bag)
                     origins = list_concat(origins, attempt.origins)
                     splice_expansion(out, ss, attempt.replacement)
@@ -561,8 +562,8 @@ fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
 /// zero-arg), and decode the result. Returns null `replacement` plus
 /// a bag entry whenever any step fails — the caller treats null as
 /// "leave this stmt alone" and renders the bag for the user.
-fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
-    let macro_name = expand_target_name(stmt)
+fn try_expand_one(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
+    let macro_name = expand_target_name(store, stmt)
     if macro_name == "" {
         return expand_fail(
             DiagCode.ExpandMissingMacroIdent,
@@ -570,7 +571,7 @@ fn try_expand_one(stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: 
             span_at(0, 0, line, col, file)
         )
     }
-    invoke_macro(stmt_unwrap(stmt), macro_name, reg, line, col, file, current_module, stmt)
+    invoke_macro(stmt_unwrap(store, stmt), macro_name, reg, line, col, file, current_module, stmt)
 }
 
 /// Shared driver: locate `macro_name` in the comptime registry,
@@ -644,7 +645,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         }
         // `original_stmt` carries the @expand annotation; `stmt` is
         // already-unwrapped for the boxed payload.
-        let annotated = build_annotated_decl(boxed!, decl_name_of(stmt), current_module, original_stmt, reg.runtime)
+        let annotated = build_annotated_decl(boxed!, decl_name_of(reg.runtime.nodes, stmt), current_module, original_stmt, reg.runtime)
         let handle = avra_resolver_ctx_top()
         let ctx = build_resolver_ctx(handle)
         [annotated, ctx]
@@ -682,7 +683,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         // codegen would then fail at the call site. Surface this as
         // a warning so macro authors notice the mismatch.
         mut bag = bag_new()
-        let decl_names = collect_decl_names(rd.decls)
+        let decl_names = collect_decl_names(reg.runtime.nodes, rd.decls)
         for promised in rd.introduces {
             if !list_contains_str(decl_names, promised) {
                 bag = bag_report(bag, diag_warning(
@@ -692,7 +693,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
                 ))
             }
         }
-        return expand_ok(out, bag, macro_name, line, col, file)
+        return expand_ok(reg.runtime.nodes, out, bag, macro_name, line, col, file)
     }
     // Try List<SStmt> — what `quote stmts { ... }` produces.
     // value_to_stmt_list returns Err when v isn't a list, so this is
@@ -703,7 +704,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
             for ss in as_list {
                 out.push(sstmt_at(ss.node, line, col, file))
             }
-            return expand_ok(out, bag_new(), macro_name, line, col, file)
+            return expand_ok(reg.runtime.nodes, out, bag_new(), macro_name, line, col, file)
         }
         .Err(_) -> {}
     }
@@ -718,7 +719,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     }
     mut single: List<SStmt> = []
     single.push(sstmt_at(decoded, line, col, file))
-    expand_ok(single, bag_new(), macro_name, line, col, file)
+    expand_ok(reg.runtime.nodes, single, bag_new(), macro_name, line, col, file)
 }
 
 /// Successful ExpandAttempt constructor. Builds the macro-origin
@@ -726,8 +727,8 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
 /// can blame the macro on errors against the synthesised fns) and
 /// wraps the canonical ExpandAttempt shape so the 3 decode arms in
 /// `invoke_macro` collapse to a single line.
-fn expand_ok(replacement: List<SStmt>, bag: DiagnosticBag, macro_name: string, line: int, col: int, file: string) -> ExpandAttempt {
-    let origins = build_origins(replacement, macro_name, line, col, file)
+fn expand_ok(store: NodeStore, replacement: List<SStmt>, bag: DiagnosticBag, macro_name: string, line: int, col: int, file: string) -> ExpandAttempt {
+    let origins = build_origins(store, replacement, macro_name, line, col, file)
     ExpandAttempt { replacement, bag, origins }
 }
 
@@ -736,11 +737,11 @@ fn expand_ok(replacement: List<SStmt>, bag: DiagnosticBag, macro_name: string, l
 /// site in the user's source; typeck's `tc_report_at` uses both the
 /// macro name and span to retag diagnostics emitted against the
 /// synthesised fns. so07.3 (T3 Phase 1).
-fn build_origins(spliced: List<SStmt>, macro_name: string, line: int, col: int, file: string) -> List<MacroFnOrigin> {
+fn build_origins(store: NodeStore, spliced: List<SStmt>, macro_name: string, line: int, col: int, file: string) -> List<MacroFnOrigin> {
     mut out: List<MacroFnOrigin> = []
     let site = span_at(0, 0, line, col, file)
     for ss in spliced {
-        let name = decl_name_of(ss.node)
+        let name = decl_name_of(store, ss.node)
         if name != "" {
             out.push(MacroFnOrigin { fn_name: name, macro_name, expand_site: site })
         }
@@ -804,10 +805,10 @@ fn decl_symbol_names(v: Value) -> List<string> {
 
 /// Collect the short_name from every decl in a List<SStmt>. Used to
 /// validate ResolvedDecls.introduces against ResolvedDecls.decls.
-fn collect_decl_names(decls: List<SStmt>) -> List<string> {
+fn collect_decl_names(store: NodeStore, decls: List<SStmt>) -> List<string> {
     mut out: List<string> = []
     for ss in decls {
-        let name = decl_name_of(ss.node)
+        let name = decl_name_of(store, ss.node)
         if name != "" { out.push(name) }
     }
     out
@@ -816,8 +817,8 @@ fn collect_decl_names(decls: List<SStmt>) -> List<string> {
 /// Pull the macro-fn identifier out of the `@expand(NAME)` annotation
 /// args. Returns "" when the annotation isn't present, has no args,
 /// or the first arg isn't a bare Ident / QualifiedIdent.
-fn expand_target_name(stmt: Stmt) -> string {
-    let found = find_annotation(stmt, "expand")
+fn expand_target_name(store: NodeStore, stmt: Stmt) -> string {
+    let found = find_annotation(store, stmt, "expand")
     if found == null { return "" }
     first_arg_ident(found!.args)
 }
@@ -870,7 +871,7 @@ fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string
 /// defensive guard for the ComponentBlock arm where the walker
 /// passes the stmt itself for both args.
 fn build_annotation_value(stmt: Stmt, runtime: Runtime) -> Value {
-    let found = find_annotation(stmt, "expand")
+    let found = find_annotation(runtime.nodes, stmt, "expand")
     mut args_values: List<Value> = []
     if found != null {
         for arg in found!.args {
@@ -924,7 +925,7 @@ fn build_value_type_unknown() -> Value {
 /// slot of Function / TypeDecl / EnumDecl / etc. Used to compute
 /// AnnotatedDecl.canonical_path. Returns "" when the Stmt isn't a
 /// declaration with a name.
-fn decl_name_of(stmt: Stmt) -> string {
+fn decl_name_of(store: NodeStore, stmt: Stmt) -> string {
     match stmt {
         .Function(name, _, _, _, _) -> name
         .ExternFn(name, _, _) -> name
@@ -936,7 +937,7 @@ fn decl_name_of(stmt: Stmt) -> string {
         .TraitDecl(name, _) -> name
         .Impl(target, _) -> target
         .ComponentDef(name, _, _, _, _, _) -> name
-        .Annotated(_, inner) -> decl_name_of(inner.node)
+        .Annotated(_, inner) -> decl_name_of(store, store.stmts.get(inner))
         _ -> ""
     }
 }
@@ -985,7 +986,7 @@ export fn resolve_and_expand_program(stmts: List<SStmt>, store: NodeStore) -> Na
     if pre.had_error == 1 {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    let plan = expand_macros_collect(pre.stmts)
+    let plan = expand_macros_collect(store, pre.stmts)
     if !plan_has_work(plan) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }

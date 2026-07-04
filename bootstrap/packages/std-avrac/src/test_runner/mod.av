@@ -26,7 +26,7 @@ use features.modules.{
     dedup_modules,
 }
 use parse.{parse_program_source_shared}
-use core.{NodeStore}
+use core.{NodeStore, StmtId}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
 use build.{llvm_prefix_dir}
@@ -202,11 +202,11 @@ export fn prepend_test_externs(stmts: List<SStmt>) -> List<SStmt> {
 /// nested inside fn bodies (no realistic use today, but cheap to keep
 /// untouched) compile as before, since their crash would already be
 /// scoped to the enclosing fn call.
-export fn wrap_specs_with_guard(stmts: List<SStmt>) -> List<SStmt> {
+export fn wrap_specs_with_guard(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
     mut out: List<SStmt> = []
     for ss in stmts {
         let rewritten = match ss.node {
-            .SpecBlock(name, _) -> build_guarded_spec_call(ss, name)
+            .SpecBlock(name, _) -> build_guarded_spec_call(store, ss, name)
             _ -> ss
         }
         out.push(rewritten)
@@ -223,10 +223,10 @@ export fn wrap_specs_with_guard(stmts: List<SStmt>) -> List<SStmt> {
 /// clean name. File path is freshly wrapped in quotes for the same
 /// round-trip. The body Lambda returns int (per the extern's
 /// `body: fn() -> int` signature) via the trailing `0`.
-fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
+fn build_guarded_spec_call(store: NodeStore, orig: SStmt, spec_name_lex: string) -> SStmt {
     let body_stmts: List<SStmt> = [
         sstmt_dummy(orig.node),
-        sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
+        sstmt_dummy(Stmt.Expr(store.exprs.add_leaf(Expr.Number("0")))),
     ]
     let empty_p: List<ParamEntry> = []
     let body_lambda = Expr.Lambda(empty_p, Expr.Block(body_stmts))
@@ -237,7 +237,7 @@ fn build_guarded_spec_call(orig: SStmt, spec_name_lex: string) -> SStmt {
         body_lambda,
     ])
     let call = Expr.Call(Expr.Ident("avra_test_run_spec_guarded"), args)
-    sstmt_at(Stmt.Expr(call), orig.line, orig.col, orig.file)
+    sstmt_at(Stmt.Expr(store.exprs.add_leaf(call)), orig.line, orig.col, orig.file)
 }
 
 /// Outcome of splitting a stmt list into hoistable package modules
@@ -254,8 +254,8 @@ export type PackageSplit = {
 /// need to import `features.modules.resolver` directly. Both
 /// implementations agreed on the recursive walk — sharing the
 /// canonical one removes a second copy that would have drifted.
-export fn split_package_modules(stmts: List<SStmt>) -> PackageSplit {
-    let h = hoist_package_modules(stmts)
+export fn split_package_modules(store: NodeStore, stmts: List<SStmt>) -> PackageSplit {
+    let h = hoist_package_modules(store, stmts)
     PackageSplit { packages: h.packages, body: h.body }
 }
 
@@ -306,14 +306,14 @@ fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFil
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
-    let split = split_package_modules(mod_resolved.stmts)
+    let split = split_package_modules(store, mod_resolved.stmts)
     Result.Ok(AssembledFile {
         mod_name: basename_no_ext(path),
         packages: split.packages,
         // hkms.3: rewrite each top-level `spec` block into a guarded
         // `avra_test_run_spec_guarded(...)` call so a SIGSEGV / abort
         // in one spec doesn't take down the bundle.
-        wrapped_body: wrap_specs_with_guard(split.body),
+        wrapped_body: wrap_specs_with_guard(store, split.body),
     })
 }
 
@@ -356,7 +356,7 @@ fn load_support_stmts(path: string, store: NodeStore) -> List<SStmt> {
 /// is not auto-called); the runner dispatches the units across
 /// worker threads. Cons-prepended onto the rest of the assembled
 /// program so the declaration lands first in the rendered AST.
-fn synth_test_main(mod_names: List<string>) -> SStmt {
+fn synth_test_main(store: NodeStore, mod_names: List<string>) -> SStmt {
     let empty_args: List<SExpr> = []
     mut unit_lits: List<SExpr> = []
     for mod_name in mod_names {
@@ -366,10 +366,10 @@ fn synth_test_main(mod_names: List<string>) -> SStmt {
         ]
         unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
     }
-    let body: List<SStmt> = [
-        sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("run_test_suite"),
-            [sexpr_dummy(Expr.ListLit(unit_lits))]))),
-        sstmt_dummy(Stmt.Return(Expr.Call(Expr.Ident("test_render_summary"), empty_args))),
+    let body: List<StmtId> = [
+        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Call(Expr.Ident("run_test_suite"),
+            [sexpr_dummy(Expr.ListLit(unit_lits))])))),
+        store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(Expr.Call(Expr.Ident("test_render_summary"), empty_args)))),
     ]
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
@@ -422,16 +422,16 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
         // invokes the units across worker threads.
         let deferred: List<Annotation> = [Annotation { name: "deferred_init", args: [] }]
         modules.push(sstmt_dummy(Stmt.Annotated(deferred,
-            sstmt_dummy(Stmt.Module(a.mod_name, a.wrapped_body)))))
+            store.stmts.add_leaf(Stmt.Module(a.mod_name, store.rows_of(a.wrapped_body))))))
         mod_names.push(a.mod_name)
         i = i - 1
     }
 
     let body = list_concat(load_reporter_stmts(project_dir, store),
                list_concat(load_runner_stmts(project_dir, store),
-               list_concat(dedup_modules(packages), modules)))
+               list_concat(dedup_modules(store, packages), modules)))
     let with_unit_externs = prepend_externs(prepend_test_externs(body), unit_init_externs(mod_names))
-    let program = list_concat([synth_test_main(mod_names)], with_unit_externs)
+    let program = list_concat([synth_test_main(store, mod_names)], with_unit_externs)
     Result.Ok(program)
 }
 

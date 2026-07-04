@@ -10,7 +10,7 @@ use list_ops.{list_push_copy}
 /// `While` AST node and forwards to `emit_while_inner`.
 export fn emit_while(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
-        .While(condition, body) -> emit_while_inner(ctx, env, condition, body)
+        .While(condition, body) -> emit_while_inner(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(body))
         _ -> err_sr("expected While")
     }
 }

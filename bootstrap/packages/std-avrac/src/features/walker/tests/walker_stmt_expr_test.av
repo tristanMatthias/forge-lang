@@ -19,25 +19,27 @@ spec "derive_walker: Stmt enum carries .children()" {
             "}\n")
         out.contains("empty=true")
     }
-    then "direct-Self field (Stmt.While body) — exactly the body" {
+    then "id-payload fields (Stmt.While cond + body) — scalars to the walker (F3a)" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
-            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.core.{Stmt, Expr, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
-            "    let w = Stmt.While(Expr.Bool(\"true\"), Stmt.Break)\n" +
+            "    let ws = new_node_store(build_line_index(\"\"))\n" +
+            "    let w = Stmt.While(ws.exprs.add_leaf(Expr.Bool(\"true\")), ws.stmts.add_leaf(Stmt.Break))\n" +
             "    let kids = w.children()\n" +
-            "    println(\"matches_one=\" + string(kids.length == 1))\n" +
+            "    println(\"leaf_view=\" + string(kids.length == 0))\n" +
             "}\n")
-        out.contains("matches_one=true")
+        out.contains("leaf_view=true")
     }
-    then "wrapper-list field (Stmt.Block body) — count matches input.length" {
+    then "id-list field (Stmt.Block body: List<StmtId>) — no walker children (F3a)" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
+            "use @std.avrac.core.{Stmt, StmtId, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
-            "    let inner: List<SStmt> = [sstmt_dummy(Stmt.NoOp), sstmt_dummy(Stmt.Break), sstmt_dummy(Stmt.Continue)]\n" +
+            "    let ws = new_node_store(build_line_index(\"\"))\n" +
+            "    let inner: List<StmtId> = [ws.stmts.add_leaf(Stmt.NoOp), ws.stmts.add_leaf(Stmt.Break), ws.stmts.add_leaf(Stmt.Continue)]\n" +
             "    let block = Stmt.Block(inner)\n" +
-            "    println(\"matches_input=\" + string(block.children().length == inner.length))\n" +
+            "    println(\"leaf_view=\" + string(block.children().length == 0 && inner.length == 3))\n" +
             "}\n")
-        out.contains("matches_input=true")
+        out.contains("leaf_view=true")
     }
 }
 

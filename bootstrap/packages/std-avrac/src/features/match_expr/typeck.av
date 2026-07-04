@@ -17,8 +17,8 @@ use core.{vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, p
 /// True when an arm should be skipped in type unification.
 /// Drops divergent / Void / Unknown / unresolved-named arms so
 /// the result type comes from the actually-producing arms.
-fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
-    if expr_diverges(body) { return true }
+fn arm_type_skip(tc: TC, body: Expr, ty: ValueType) -> bool {
+    if expr_diverges(tc.nodes, body) { return true }
     if vtype_eq(ty, .Void) { return true }
     if vtype_is_unknown(ty) { return true }
     match ty {
@@ -567,8 +567,8 @@ export fn tc_check_match_tail_conflict(tc: TC, fn_name: string, subject: Expr, a
 /// pass either the post-exit `after` (match expressions) or the raw
 /// `b.tc` (when expressions, no pattern scope to exit).
 fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueType) -> TC {
-    if arm_type_skip(arm_body, arm_ty) { return host_tc }
-    if arm_type_skip(arm_body, seed) { return host_tc }
+    if arm_type_skip(host_tc, arm_body, arm_ty) { return host_tc }
+    if arm_type_skip(host_tc, arm_body, seed) { return host_tc }
     if vtype_assignable(arm_ty, seed) || vtype_assignable(seed, arm_ty) { return host_tc }
     let msg = "match expression arms have different types: `${vtype_render_full(seed)}` vs `${vtype_render_full(arm_ty)}`"
     tc_report(host_tc, DiagCode.TypeMismatch, msg)
@@ -611,7 +611,7 @@ export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<Match
         if !found_seed {
             // First arm whose body actually produces a usable type
             // seeds the unification target for the remaining arms.
-            if !arm_type_skip(arm.body.node, b.ty) {
+            if !arm_type_skip(acc, arm.body.node, b.ty) {
                 seed = b.ty
                 found_seed = true
                 acc = after
@@ -640,7 +640,7 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
     while i < arms.length {
         let arm = arms[i]
         match arm.body.node {
-            .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, stmts)
+            .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, acc.nodes.rows_of(stmts))
             // A non-block arm body's generic-arg conflict against the return type
             // is handled by `tc_check_match_tail_conflict` (called from
             // tc_check_implicit_return) — it binds the arm pattern correctly and
