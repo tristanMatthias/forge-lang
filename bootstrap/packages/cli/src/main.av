@@ -255,7 +255,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
             println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")
         }
         println(l1_sidetable_summary(store))
-        let recon_faithful = render_stmt_list(reconstruct_program(store, file)) == render_stmt_list(stmts)
+        let recon_faithful = render_stmt_list(store, reconstruct_program(store, file)) == render_stmt_list(store, stmts)
         println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
     }
     ParsedProgram { stmts: program_from_store(store, file), store }
@@ -273,7 +273,7 @@ type ParsedProgram = { stmts: List<SStmt>, store: NodeStore }
 /// Used by cmd_expr / cmd_eval — both want F-code rendering on a
 /// parse failure followed by a hard fail. Returns the parsed Expr
 /// on success.
-fn parse_expr_or_fail(source: string, ctx: RenderContext) -> Expr {
+fn parse_expr_or_fail(source: string, ctx: RenderContext) -> ParseResult {
     let parsed = parse_expression_source(source)
     if parsed.had_error || parsed.expr == null {
         if bag_has_errors(parsed.bag) {
@@ -281,7 +281,7 @@ fn parse_expr_or_fail(source: string, ctx: RenderContext) -> Expr {
         }
         fail(parsed.error_message)
     }
-    parsed.expr!
+    parsed
 }
 
 /// `--stop-after=<stage>` is run_build_command's debugging knob —
@@ -763,7 +763,7 @@ fn render_unit_chain(units: List<Unit>) -> string {
 // contents), extracts a per-file UnitMetadata slice, and writes it to
 // `<file>.meta.bin`. Entry-point file is skipped — its sidecar is
 // the whole-unit slice consumers expect, written upstream.
-fn emit_per_file_metas(files: List<string>, stmts: List<SStmt>, unit_name: string, entry_path: string) {
+fn emit_per_file_metas(files: List<string>, stmts: List<SStmt>, unit_name: string, entry_path: string, store: NodeStore) {
     mut i = 0
     while i < files.length {
         let file_path = files[i]
@@ -774,7 +774,7 @@ fn emit_per_file_metas(files: List<string>, stmts: List<SStmt>, unit_name: strin
         if file_path != entry_path && file_path != "" {
             let src = avra_selfhost_read_file(file_path)
             let fp = bytes_from_hex(sha256_hex(src))
-            let m = extract_per_file_metadata(unit_name, file_path, fp, stmts)
+            let m = extract_per_file_metadata(unit_name, file_path, fp, stmts, store)
             // 0qmm: write ONLY to the content-addressed cache slot.
             // No fixed-path sidecar — the cache is the single source
             // of truth. package_root_for_file handles both /src/
@@ -3783,13 +3783,13 @@ fn main() {
     let source = if is_flag { "" } else { read_file(path) }
     match command {
         "expr" -> {
-            let expr = parse_expr_or_fail(source, render_ctx(false, source, path))
-            println(render_expr(expr))
+            let parsed_e = parse_expr_or_fail(source, render_ctx(false, source, path))
+            println(render_expr(parsed_e.store, parsed_e.expr!))
             return
         }
         "program" -> {
-            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path)).stmts
-            println(render_stmt_list(parsed_stmts))
+            let parsed_p = parse_or_fail(source, render_ctx(false, source, path))
+            println(render_stmt_list(parsed_p.store, parsed_p.stmts))
             return
         }
         "metadata_show" -> {
@@ -3803,12 +3803,15 @@ fn main() {
             }
             println("// metadata for unit `${m.unit_name}`")
             println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
-            println(render_stmt_list(synthesize_unit_stmts(m)))
+            // Metadata-synthesized decls carry no pattern ids — an empty
+            // store satisfies the renderer without ever being read.
+            let show_store = new_node_store(build_line_index(""))
+            println(render_stmt_list(show_store, synthesize_unit_stmts(m, show_store)))
             return
         }
         "eval" -> {
-            let expr = parse_expr_or_fail(source, render_ctx(false, source, path))
-            let result = eval_parsed_expression(expr)
+            let parsed = parse_expr_or_fail(source, render_ctx(false, source, path))
+            let result = eval_parsed_expression(parsed.expr!, parsed.store)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }
@@ -3880,8 +3883,8 @@ fn main() {
         "fmt" -> {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
-            let parsed_stmts = parse_or_fail(source, render_ctx(false, source, path)).stmts
-            println(fmt_stmt_list(parsed_stmts, 0))
+            let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
+            println(fmt_stmt_list(parsed_fmt.store, parsed_fmt.stmts, 0))
             return
         }
         "expand" -> {
@@ -3907,7 +3910,7 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store)
-            println(fmt_stmt_list(post_comptime, 0))
+            println(fmt_stmt_list(parsed_prog.store, post_comptime, 0))
             return
         }
         "test" -> {
@@ -4216,7 +4219,7 @@ fn main() {
                 basename_no_ext(cpath)
             }
             let fp = bytes_from_hex(sha256_hex(csource))
-            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts)
+            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             // 2wfp: when compiling a real package (avra.toml present),
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
@@ -4244,7 +4247,7 @@ fn main() {
             // whole-unit slice consumers expect).
             if per_file_metadata {
                 let files = collect_source_files(named.stmts)
-                emit_per_file_metas(files, named.stmts, unit_name, cpath)
+                emit_per_file_metas(files, named.stmts, unit_name, cpath, parsed_prog.store)
             }
         }
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.

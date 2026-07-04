@@ -19,7 +19,7 @@ fn faithful(source: string) -> bool {
 fn root_render(source: string) -> string {
     let probe = parse_expression_native_probe(source)
     if probe.had_error != 0 { return "<parse error>" }
-    render_expr(probe.store.exprs.get(probe.root))
+    render_expr(probe.store, probe.store.exprs.get(probe.root))
 }
 
 spec "B1 native chain: leaves and operator spine are walker-faithful" {

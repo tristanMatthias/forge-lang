@@ -29,7 +29,7 @@ fn when_bodies_mirror() -> bool {
             if arms.length != 2 { return false }
             for arm in arms {
                 if arm.body_id == none { return false }
-                if render_expr(probe.store.exprs.get(arm.body_id!)) != render_expr(arm.body.node) { return false }
+                if render_expr(probe.store, probe.store.exprs.get(arm.body_id!)) != render_expr(probe.store, arm.body.node) { return false }
             }
             true
         }
@@ -44,7 +44,7 @@ fn when_conds_mirror() -> bool {
         .When(arms) -> {
             if arms[0].cond_id == none { return false }
             if arms[0].cond == none { return false }
-            if render_expr(probe.store.exprs.get(arms[0].cond_id!)) != render_expr(arms[0].cond!.node) { return false }
+            if render_expr(probe.store, probe.store.exprs.get(arms[0].cond_id!)) != render_expr(probe.store, arms[0].cond!.node) { return false }
             arms[1].cond_id == none && arms[1].cond == none
         }
         _ -> false
@@ -60,12 +60,12 @@ fn select_arm_mirrors() -> bool {
             if arms.length != 1 { return false }
             let arm = arms[0]
             if arm.chan_id == none { return false }
-            if render_expr(r.store.exprs.get(arm.chan_id!)) != render_expr(arm.chan) { return false }
+            if render_expr(r.store, r.store.exprs.get(arm.chan_id!)) != render_expr(r.store, arm.chan) { return false }
             if arm.body_ids == none { return false }
             let ids = arm.body_ids!
             if ids.length != arm.body.length { return false }
             for (i, id) in ids.enumerate() {
-                if render_stmt(r.store.stmts.get(id)) != render_stmt(arm.body[i].node) { return false }
+                if render_stmt(r.store, r.store.stmts.get(id)) != render_stmt(r.store, arm.body[i].node) { return false }
             }
             true
         }
@@ -85,7 +85,7 @@ fn annotation_args_mirror() -> bool {
             let ids = a.arg_ids!
             if ids.length != a.args.length || ids.length != 2 { return false }
             for (i, id) in ids.enumerate() {
-                if render_expr(r.store.exprs.get(id)) != render_expr(a.args[i].node) { return false }
+                if render_expr(r.store, r.store.exprs.get(id)) != render_expr(r.store, a.args[i].node) { return false }
             }
             true
         }
@@ -102,7 +102,7 @@ fn doc_annotation_mirrors() -> bool {
             let a = annots[0]
             if a.arg_ids == none { return false }
             a.arg_ids!.length == 1
-                && render_expr(r.store.exprs.get(a.arg_ids![0])) == render_expr(a.args[0].node)
+                && render_expr(r.store, r.store.exprs.get(a.arg_ids![0])) == render_expr(r.store, a.args[0].node)
         }
         _ -> false
     }
@@ -119,7 +119,7 @@ fn comp_config_mirrors() -> bool {
             let plain = config[1]
             if with_default.ty_id == none || plain.ty_id == none { return false }
             if with_default.default_id == none || with_default.default_val == none { return false }
-            if render_expr(r.store.exprs.get(with_default.default_id!)) != render_expr(with_default.default_val!) { return false }
+            if render_expr(r.store, r.store.exprs.get(with_default.default_id!)) != render_expr(r.store, with_default.default_val!) { return false }
             plain.default_id == none && plain.default_val == none
         }
         _ -> false
@@ -176,7 +176,7 @@ fn field_init_duals_mirror() -> bool {
                 if inits.length != 2 { return false }
                 for fi in inits {
                     if fi.value_id == none { return false }
-                    if render_expr(r.store.exprs.get(fi.value_id!)) != render_expr(fi.value.node) { return false }
+                    if render_expr(r.store, r.store.exprs.get(fi.value_id!)) != render_expr(r.store, fi.value.node) { return false }
                 }
                 true
             }
@@ -197,7 +197,7 @@ fn table_row_field_duals_mirror() -> bool {
                     if inits.length != 2 { return false }
                     for fi in inits {
                         if fi.value_id == none { return false }
-                        if render_expr(r.store.exprs.get(fi.value_id!)) != render_expr(fi.value.node) { return false }
+                        if render_expr(r.store, r.store.exprs.get(fi.value_id!)) != render_expr(r.store, fi.value.node) { return false }
                     }
                     true
                 }
@@ -232,13 +232,13 @@ fn match_arm_duals_mirror() -> bool {
             if arms.length != 2 { return false }
             for arm in arms {
                 if arm.pattern_id == none { return false }
-                if render_pattern(probe.store.pats.get(arm.pattern_id!)) != render_pattern(arm.pattern) { return false }
+                if render_pattern(probe.store, probe.store.pats.get(arm.pattern_id!)) != render_pattern(probe.store, arm.pattern) { return false }
                 if arm.body_id == none { return false }
-                if render_expr(probe.store.exprs.get(arm.body_id!)) != render_expr(arm.body.node) { return false }
+                if render_expr(probe.store, probe.store.exprs.get(arm.body_id!)) != render_expr(probe.store, arm.body.node) { return false }
             }
             let guarded = arms[0]
             if guarded.guard_id == none || guarded.guard == none { return false }
-            if render_expr(probe.store.exprs.get(guarded.guard_id!)) != render_expr(guarded.guard!.node) { return false }
+            if render_expr(probe.store, probe.store.exprs.get(guarded.guard_id!)) != render_expr(probe.store, guarded.guard!.node) { return false }
             arms[1].guard_id == none && arms[1].guard == none
         }
         _ -> false
@@ -255,9 +255,9 @@ fn quote_arm_duals_mirror() -> bool {
                 let arm = arms[0]
                 if arm.pattern_id == none || arm.guard_id == none || arm.body_id == none { return false }
                 if arm.guard == none { return false }
-                if render_pattern(probe.store.pats.get(arm.pattern_id!)) != render_pattern(arm.pattern) { return false }
-                if render_expr(probe.store.exprs.get(arm.guard_id!)) != render_expr(arm.guard!.node) { return false }
-                render_expr(probe.store.exprs.get(arm.body_id!)) == render_expr(arm.body.node)
+                if render_pattern(probe.store, probe.store.pats.get(arm.pattern_id!)) != render_pattern(probe.store, arm.pattern) { return false }
+                if render_expr(probe.store, probe.store.exprs.get(arm.guard_id!)) != render_expr(probe.store, arm.guard!.node) { return false }
+                render_expr(probe.store, probe.store.exprs.get(arm.body_id!)) == render_expr(probe.store, arm.body.node)
             }
             _ -> false
         }
@@ -292,7 +292,7 @@ fn table_arm_pattern_dual_mirrors() -> bool {
                 if arms.length != 1 { return false }
                 let arm = arms[0]
                 if arm.pattern_id == none { return false }
-                if render_pattern(r.store.pats.get(arm.pattern_id!)) != render_pattern(arm.pattern) { return false }
+                if render_pattern(r.store, r.store.pats.get(arm.pattern_id!)) != render_pattern(r.store, arm.pattern) { return false }
                 // The MapLit body is synthesized table glue — no native row
                 // until that producer converts; the guard slot doesn't exist.
                 arm.body_id == none && arm.guard_id == none

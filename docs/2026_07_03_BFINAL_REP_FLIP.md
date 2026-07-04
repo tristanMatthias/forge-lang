@@ -143,6 +143,20 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
   after any existing local — module-private fns leak cross-module and locals
   fail to shadow them (zo1a; cost this stage a debugging session).
 - **F2 (y5um.8.6)** — `Pattern` variant payloads → `PatId` (pilot kind).
+  **DONE** — `NestedVariant.sub_patterns: List<PatId>`, `Or: (PatId, PatId)`;
+  parser sites simplified (ids were in hand; redundant PatRef edges dropped —
+  the payload IS the child mechanism, so native alloc mirrors the ingest's
+  leaf view). Store carriers landed on every consumer pass: codegen
+  `Ctx.nodes`, eval `Runtime.nodes` (+ the 16-fn decode family, which now
+  ALLOCATES), the comptime registry chain, `ResolverState`/`NameCtx`, the
+  scope `Resolver` (takes the PARSE store), typeck `TC.nodes`, the render +
+  fmt + lowering families, metadata extract, `ParseResult.store`. PILOT
+  FINDINGS for F3a/F3b: (1) typeck F1000s enumerate CONSTRUCT sites only —
+  read sites pass the generic-arg leniency and corrupt at runtime; grep is
+  the read-site worklist. (2) Store carriers now exist everywhere, so F3
+  inherits the threading. (3) Test fixtures under `bootstrap/tests/*_fixtures/`
+  and embedded fixture-source strings need their own sweep — the shard
+  compile surfaces them one suite run late.
 - **F3a (y5um.8.7)** — `Stmt` variant payloads → ids.
 - **F3b (y5um.8.8)** — `Expr` variant payloads → ids (largest; may split by
   variant family if a single PR gets unwieldy — precedent: B1 Stage D tiers).

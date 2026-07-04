@@ -53,7 +53,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// pass — extern decls, structs, enums, globals, functions, release
 /// fns — and finally emits user function bodies and top-level
 /// statements.
-fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool) -> Result<Ctx, string> {
+fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
@@ -411,6 +411,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
         task_group: null,
         bag: bag_new(),
         type_reg,
+        nodes: store,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
         lib_pkg_roots: parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT")),
     }
@@ -505,7 +506,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
 /// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
 /// you don't want a file on disk.
 export fn compile_program(stmts: List<SStmt>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
-    match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg, library) {
+    match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg, library, store) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
             ctx.dispose()
@@ -521,8 +522,8 @@ export fn compile_program(stmts: List<SStmt>, output_path: string, debug_null_ch
 /// Compile and JIT-execute a program in-process. The JIT engine
 /// takes ownership of the LLVM module, so we deliberately don't
 /// dispose `ctx`. Returns the program's exit code.
-export fn compile_and_jit(stmts: List<SStmt>, type_reg: TypeRegistry) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false) {
+export fn compile_and_jit(stmts: List<SStmt>, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    match codegen_program(stmts, false, false, "", type_reg, false, store) {
         .Ok(ctx) -> {
             // JIT engine takes ownership of the module — don't dispose ctx
             let exit_code = avra_llvm_jit_run(ctx.module)
@@ -536,7 +537,7 @@ export fn compile_and_jit(stmts: List<SStmt>, type_reg: TypeRegistry) -> Result<
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.
 export fn codegen_and_emit_object(stmts: List<SStmt>, output_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store) {
         .Ok(ctx) -> {
             let result = avra_llvm_emit_object(ctx.module, output_path)
             ctx.dispose()
@@ -557,7 +558,7 @@ export fn codegen_and_emit_object(stmts: List<SStmt>, output_path: string, type_
 /// `source_file` is recorded in the `.covmap.tsv` that the codegen
 /// pass writes alongside the IR.
 export fn codegen_and_emit_ir_cov(stmts: List<SStmt>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore) -> Result<int, string> {
-    match codegen_program(stmts, false, true, source_file, type_reg, false) {
+    match codegen_program(stmts, false, true, source_file, type_reg, false, store) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(ir_path)
             ctx.dispose()

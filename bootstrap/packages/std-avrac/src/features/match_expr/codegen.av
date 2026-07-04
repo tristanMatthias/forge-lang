@@ -142,7 +142,7 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
                     ctx.br(body_bb)
                     is_catch_all = true
                 }
-            } else if is_literal_pattern(p) {
+            } else if is_literal_pattern(ctx, p) {
                 let cmp = emit_literal_cmp(ctx, subj, p)
                 if arm.guard != null {
                     let lit_bb = ctx.bb("optm_lit")
@@ -539,11 +539,11 @@ fn pattern_variant_name(pattern: Pattern) -> string {
 fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: List<Variant>, arm_bb: ptr, next_bb: ptr) -> ptr {
     match pattern {
         .Or(left, right) -> {
-            // Try left alternative; if it fails, try right.
+            // Try left alternative; if it fails, try right (F2: branches by id).
             let mid_bb = ctx.bb("or_mid")
-            emit_pattern_tag_branch(ctx, left, tag_val, variants, arm_bb, mid_bb)
+            emit_pattern_tag_branch(ctx, ctx.nodes.pats.get(left), tag_val, variants, arm_bb, mid_bb)
             ctx.position(mid_bb)
-            emit_pattern_tag_branch(ctx, right, tag_val, variants, arm_bb, next_bb)
+            emit_pattern_tag_branch(ctx, ctx.nodes.pats.get(right), tag_val, variants, arm_bb, next_bb)
         }
         _ -> {
             let vname = pattern_variant_name(pattern)
@@ -581,8 +581,9 @@ fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr,
 /// Recursive worker for `emit_nested_tag_checks` — walks the
 /// pattern list pairwise with the variant's field list, emitting
 /// tag-compare branches for each constructor sub-pattern.
-fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int, next_bb: ptr) {
-    for (i, pat) in pats.enumerate() {
+fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: List<PatId>, fields: List<FieldEntry>, idx: int, next_bb: ptr) {
+    for (i, pid) in pats.enumerate() {
+        let pat = ctx.nodes.pats.get(pid)
         // Per-iteration field cursor (was a `mut current_fields`
         // threaded through `advance_field_list(...)`). With
         // `List<FieldEntry>` indexed access, the i-th field is just
@@ -701,9 +702,10 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_p
 /// sub-pattern, loads the matching field slot and either binds
 /// it directly (single-name capture) or recurses into deeper
 /// constructor patterns.
-fn bind_nested_patterns(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, pats: List<Pattern>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
+fn bind_nested_patterns(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: ptr, pats: List<PatId>, fields: List<FieldEntry>, idx: int) -> List<VarBinding> {
     mut acc = env
-    for (i, pat) in pats.enumerate() {
+    for (i, pid) in pats.enumerate() {
+        let pat = ctx.nodes.pats.get(pid)
         // The i-th sub-pattern matches the i-th payload field; with
         // indexed fields, the prior `mut current_fields = ...;
         // advance_field_list(...)` pattern collapses to direct
@@ -819,8 +821,8 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
         }
         .Or(left, right) -> {
             // OR two i1 comparison results — both sub-patterns are literals
-            let l = emit_literal_cmp(ctx, subj, left)
-            let r = emit_literal_cmp(ctx, subj, right)
+            let l = emit_literal_cmp(ctx, subj, ctx.nodes.pats.get(left))
+            let r = emit_literal_cmp(ctx, subj, ctx.nodes.pats.get(right))
             ctx.bit_or(l, r, "or_cmp")
         }
         _ -> {
@@ -833,13 +835,13 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
 /// True when a pattern is a primitive literal (Int / Bool /
 /// String). Drives the literal-vs-variant dispatch in
 /// `emit_primitive_arms_expr`.
-fn is_literal_pattern(pattern: Pattern) -> bool {
+fn is_literal_pattern(ctx: Ctx, pattern: Pattern) -> bool {
     match pattern {
         .LitString(_) -> true
         .LitInt(_) -> true
         .LitBool(_) -> true
         .LitFloat(_) -> true
-        .Or(left, _) -> is_literal_pattern(left)
+        .Or(left, _) -> is_literal_pattern(ctx, ctx.nodes.pats.get(left))
         _ -> false
     }
 }
@@ -863,7 +865,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
         let body_bb = ctx.bb("parm_body")
         let next_bb = ctx.bb("parm_next")
 
-        if is_literal_pattern(arm.pattern) {
+        if is_literal_pattern(ctx, arm.pattern) {
             let cmp = emit_literal_cmp(ctx, subj, arm.pattern)
             if arm.guard != null {
                 // Literal + guard: both must hold.

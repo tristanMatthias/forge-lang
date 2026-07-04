@@ -6,9 +6,16 @@
 // the two paths apart and macros that use the pipeline-fix would
 // see different AST shapes than plain compilation.
 
-use @std.avrac.core.{Stmt, SStmt, ParamEntry, TypeParamEntry, FieldEntry, ValueType, Expr, sstmt_dummy, sexpr_dummy, render_stmt}
+use @std.avrac.core.{NodeStore, Stmt, SStmt, ParamEntry, TypeParamEntry, FieldEntry, ValueType, Expr, sstmt_dummy, sexpr_dummy, render_stmt}
 use @std.avrac.core.{new_node_store, build_line_index}
 use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses}
+
+/// Fresh empty store for inline-AST probes — F2 renderers resolve
+/// flipped pattern ids through it (never read for id-free nodes).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
 
 fn build_program() -> List<SStmt> {
     let empty_p: List<ParamEntry> = []
@@ -26,7 +33,7 @@ fn build_program() -> List<SStmt> {
 
 fn render_all(stmts: List<SStmt>) -> string {
     mut out = ""
-    for ss in stmts { out = out + render_stmt(ss.node) + "\n" }
+    for ss in stmts { out = out + render_stmt(ts(), ss.node) + "\n" }
     out
 }
 

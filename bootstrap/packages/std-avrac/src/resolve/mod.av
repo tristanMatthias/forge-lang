@@ -57,6 +57,10 @@ type Resolver = {
     source_line: int,
     source_col: int,
     source_file: string,
+    // The PARSE store (B-final F2+): pattern children are ids into it.
+    // Distinct from the shallow roots-only store the top-level walk
+    // builds — ids in node payloads always index the parse store.
+    nodes: NodeStore,
 }
 
 /// Top-level entry: resolve every name reference in `stmts`. Pre-
@@ -64,9 +68,9 @@ type Resolver = {
 /// declarations.
 extern fn avra_ice_phase(phase: string)
 
-export fn resolve_program(stmts: List<SStmt>) -> ResolveResult {
+export fn resolve_program(stmts: List<SStmt>, parse_store: NodeStore) -> ResolveResult {
     avra_ice_phase("resolve")
-    mut r = resolver_new()
+    mut r = resolver_new(parse_store)
     // Pre-declare builtins so they resolve like any other function
     r = declare_function(r, "println")
     r = declare_function(r, "eprintln")
@@ -156,7 +160,7 @@ fn collect_method_names(r: Resolver, methods: List<SStmt>) -> Resolver {
 
 /// Empty Resolver at depth 0 with a freshly built feature registry
 /// and an empty diagnostic bag.
-fn resolver_new() -> Resolver {
+fn resolver_new(parse_store: NodeStore) -> Resolver {
     Resolver {
         scopes: [],
         functions: [],
@@ -168,6 +172,7 @@ fn resolver_new() -> Resolver {
         source_line: 0,
         source_col: 0,
         source_file: "",
+        nodes: parse_store,
     }
 }
 

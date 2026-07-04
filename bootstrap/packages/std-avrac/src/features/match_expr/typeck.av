@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
+use core.{PatId, Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
@@ -64,7 +64,7 @@ fn arms_has_wildcard(arms: List<MatchArm>) -> bool {
 /// Build a comma-separated list of variant names covered by
 /// the arms' patterns. Used by `find_missing_variants` to
 /// compute the difference against the enum's full set.
-fn arms_matched_variants(arms: List<MatchArm>) -> string {
+fn arms_matched_variants(store: NodeStore, arms: List<MatchArm>) -> string {
     // Walk back-to-front: the old cons recursion built `rest` first
     // (tail variants), then suffixed the head with `${rest}|${vnames}`,
     // so tail variants appeared before head ones. Reverse iteration
@@ -72,7 +72,7 @@ fn arms_matched_variants(arms: List<MatchArm>) -> string {
     mut out = ""
     mut i = arms.length - 1
     while i >= 0 {
-        let vnames = pattern_variant_names(arms[i].pattern)
+        let vnames = pattern_variant_names(store, arms[i].pattern)
         if vnames != "" {
             if out == "" { out = vnames } else { out = "${out}|${vnames}" }
         }
@@ -85,14 +85,14 @@ fn arms_matched_variants(arms: List<MatchArm>) -> string {
 /// Extract the variant name(s) from a pattern as a CSV.
 /// Or-patterns expand to multiple names; struct/literal/
 /// wildcard patterns return "".
-fn pattern_variant_names(pattern: Pattern) -> string {
+fn pattern_variant_names(store: NodeStore, pattern: Pattern) -> string {
     match pattern {
         .Variant(name, _) -> name
         .NestedVariant(name, _) -> name
         .TypePattern(type_name, _) -> type_name
         .Or(left, right) -> {
-            let l = pattern_variant_names(left)
-            let r = pattern_variant_names(right)
+            let l = pattern_variant_names(store, store.pats.get(left))
+            let r = pattern_variant_names(store, store.pats.get(right))
             if l == "" { r } else if r == "" { l } else { "${l}|${r}" }
         }
         _ -> ""
@@ -156,7 +156,7 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm
     if enum_name == "" { return tc }
     let variants = enum_type_variants(tc.enums, enum_name)
     if variants.length == 0 { return tc }
-    let matched = arms_matched_variants(arms)
+    let matched = arms_matched_variants(tc.nodes, arms)
     let missing = find_missing_variants(variants, matched)
     if missing == "" { return tc }
     if tc.current_line == 0 { return tc }
@@ -223,7 +223,7 @@ fn count_missing(variants: List<Variant>, matched: string) -> int {
 /// wildcard). Reports F9001 with the missing types listed.
 fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
     let types = vtype_union_types(subject_ty)
-    let matched = arms_matched_variants(arms)
+    let matched = arms_matched_variants(tc.nodes, arms)
     let missing = find_missing_union_members(types, matched)
     if missing == "" { return tc }
     if tc.current_line == 0 { return tc }
@@ -318,12 +318,13 @@ export fn tc_enter_pattern_scope(tc: TC, pattern: Pattern, subject_ty: ValueType
     tc_bind_pattern(tc_enter(tc), pattern, subject_ty)
 }
 
-/// Walk a `List<Pattern>` binding captures from every sub-pattern.
-fn tc_bind_pattern_list(tc: TC, pats: List<Pattern>, subject_ty: ValueType) -> TC {
+/// Walk a nested pattern's id list (F2) binding captures from every
+/// store-resolved sub-pattern.
+fn tc_bind_pattern_list(tc: TC, pats: List<PatId>, subject_ty: ValueType) -> TC {
     mut acc = tc
     mut i = 0
     while i < pats.length {
-        acc = tc_bind_pattern(acc, pats[i], subject_ty)
+        acc = tc_bind_pattern(acc, tc.nodes.pats.get(pats[i]), subject_ty)
         i = i + 1
     }
     acc
@@ -492,7 +493,7 @@ fn tc_reject_variant_on_scalar(tc: TC, subject_ty: ValueType, arms: List<MatchAr
     mut acc = tc
     mut i = 0
     while i < arms.length {
-        let vn = pattern_variant_names(arms[i].pattern)
+        let vn = pattern_variant_names(tc.nodes, arms[i].pattern)
         if vn != "" {
             let msg = "a variant pattern `.${vn}` needs an enum or optional subject, not `${vtype_display(subject_ty)}` — present-bind (`let x ->` / `none ->`) requires the subject to be an optional `T?`"
             acc = tc_report(acc, DiagCode.TypeMismatch, msg)

@@ -13,19 +13,20 @@
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 spec "derive_walker: applied to core/ast.av's Pattern enum" {
-    then "Pattern.children() — structural counts (so07.7.14)" {
+    then "Pattern.children() — id payloads are walker-scalars (F2)" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_pattern_test.av", 
-            "use @std.avrac.core.{Pattern, ParamEntry}\n" +
+            "use @std.avrac.core.{Pattern, ParamEntry, PatId, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
             "    let wild_ok = Pattern.Wildcard.children().length == 0\n" +
             "    let lit_ok  = Pattern.LitInt(42).children().length == 0\n" +
-            "    // Or holds two direct Patterns — both contribute as children.\n" +
-            "    let or_pat = Pattern.Or(Pattern.LitInt(1), Pattern.LitInt(2))\n" +
-            "    let or_ok = or_pat.children().length == 2\n" +
-            "    // NestedVariant carries List<Pattern>; children = input.length.\n" +
-            "    let inner: List<Pattern> = [Pattern.Wildcard, Pattern.LitInt(1)]\n" +
+            "    // F2: Or/NestedVariant carry arena ids — scalars to the derive\n" +
+            "    // walker, so children() sees none; the store resolves them.\n" +
+            "    let ws = new_node_store(build_line_index(\"\"))\n" +
+            "    let or_pat = Pattern.Or(ws.pats.add_leaf(Pattern.LitInt(1)), ws.pats.add_leaf(Pattern.LitInt(2)))\n" +
+            "    let or_ok = or_pat.children().length == 0\n" +
+            "    let inner: List<PatId> = [ws.pats.add_leaf(Pattern.Wildcard), ws.pats.add_leaf(Pattern.LitInt(1))]\n" +
             "    let nested = Pattern.NestedVariant(\"Some\", inner)\n" +
-            "    let nested_ok = nested.children().length == inner.length\n" +
+            "    let nested_ok = nested.children().length == 0\n" +
             "    println(\"all=\" + string(wild_ok && lit_ok && or_ok && nested_ok))\n" +
             "}\n")
         out.contains("all=true")

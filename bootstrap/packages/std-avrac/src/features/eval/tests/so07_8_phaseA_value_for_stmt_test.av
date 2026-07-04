@@ -20,13 +20,18 @@
 //     field is purely additive and existing constructors zero-
 //     initialise it.
 
-use @std.avrac.core.{Stmt, Expr, ValueType}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Stmt, Expr, ValueType}
 use @std.avrac.features.eval.{Value, value_for_stmt, value_for_expr, value_for_value_type, value_null, value_number, value_string, value_bool, value_enum, value_to_stmt}
+
+/// Fresh store for decode probes (F2: decoders allocate pattern rows).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
 
 spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the native Stmt" {
     then "Stmt.NoOp round-trip: value_for_stmt → value_to_stmt unwraps the same variant" {
         let v: Value = value_for_stmt(Stmt.NoOp)
-        let unwrapped = value_to_stmt(v)
+        let unwrapped = value_to_stmt(ts(), v)
         // Two assertions:
         //   1. The Value carries kind="stmt" (Phase A's new tag)
         //   2. value_to_stmt's short-circuit hit — returned non-null
@@ -52,7 +57,7 @@ spec "so07.8 Phase A: value_for_stmt produces a kind=stmt Value carrying the nat
         // only sham, the inner Expr.Number's text field would clear.
         let inner = Expr.Number("42")
         let v: Value = value_for_stmt(Stmt.Return(inner))
-        let unwrapped = value_to_stmt(v)
+        let unwrapped = value_to_stmt(ts(), v)
         v.kind == "stmt"
             && match unwrapped {
                 .Ok(s) -> match s {
@@ -129,7 +134,7 @@ spec "so07.8 Phase A: value_to_stmt back-compat path still decodes kind=enum Val
     then "kind=enum NoOp Value still decodes through the legacy path" {
         let empty: List<Value> = []
         let v: Value = value_enum("@std::avrac::core::Stmt", "NoOp", empty)
-        let unwrapped = value_to_stmt(v)
+        let unwrapped = value_to_stmt(ts(), v)
         match unwrapped {
             .Ok(s) -> match s {
                 .NoOp -> true

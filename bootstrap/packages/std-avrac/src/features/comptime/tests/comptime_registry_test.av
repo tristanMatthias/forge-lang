@@ -1,8 +1,12 @@
 // Phase 2 of Components V2 (vez6.2): exercise the @comptime fn
 // registry — discovery, lookup, recursion into Module bodies.
 
-use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, ValueType, TypeParamEntry, Annotation, SExpr}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Stmt, SStmt, sstmt_dummy, ParamEntry, ValueType, TypeParamEntry, Annotation, SExpr}
 use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime_fns, comptime_lookup, comptime_has}
+
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
 
 fn mk_empty_params() -> List<ParamEntry> {
     let out: List<ParamEntry> = []
@@ -42,7 +46,7 @@ spec "comptime.collect_comptime_fns" {
     }
     then "empty program yields empty registry" {
         let empty: List<SStmt> = []
-        collect_comptime_fns(empty).fns.length == 0
+        collect_comptime_fns(empty, ts()).fns.length == 0
     }
     then "non-annotated fns ignored" {
         let empty_tp: List<TypeParamEntry> = []
@@ -50,7 +54,7 @@ spec "comptime.collect_comptime_fns" {
         let plain: List<SStmt> = [
             sstmt_dummy(Stmt.Function("plain", empty_tp, mk_empty_params(), ValueType.Int, empty_body)),
         ]
-        collect_comptime_fns(plain).fns.length == 0
+        collect_comptime_fns(plain, ts()).fns.length == 0
     }
 }
 
@@ -73,7 +77,7 @@ spec "comptime registry recurses into Module bodies" {
     then "finds @comptime fns inside a Module wrapper" {
         let inner: List<SStmt> = [sstmt_dummy(mk_annotated_fn("comptime", "nested"))]
         let prog: List<SStmt> = [sstmt_dummy(Stmt.Module("foo", inner))]
-        let reg = collect_comptime_fns(prog)
+        let reg = collect_comptime_fns(prog, ts())
         reg.fns.length == 1 && reg.fns[0].name == "nested"
     }
 }

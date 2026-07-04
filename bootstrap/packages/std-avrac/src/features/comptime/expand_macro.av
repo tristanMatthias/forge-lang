@@ -283,7 +283,7 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
             current_state = register_macro_decls(current_state, current)
             populate_resolver_data(current_state, current)
         }
-        let reg = collect_comptime_fns(current)
+        let reg = collect_comptime_fns(current, state.nodes)
         let walked = expand_stmt_list(current, reg, comp_macros, current_state, "")
         current = walked.out
         current_state = walked.state
@@ -668,7 +668,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     // step 4.4. value_to_resolved_decls returns null when v isn't a
     // `{decls, introduces, provenance}` struct, so non-ResolvedDecls
     // returns fall through to the existing decoders.
-    let as_rd = value_to_resolved_decls(v)
+    let as_rd = value_to_resolved_decls(reg.runtime.nodes, v)
     if as_rd != null {
         let rd = as_rd!
         mut out: List<SStmt> = []
@@ -697,7 +697,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     // Try List<SStmt> — what `quote stmts { ... }` produces.
     // value_to_stmt_list returns Err when v isn't a list, so this is
     // the cheap dispatch.
-    match value_to_stmt_list(v) {
+    match value_to_stmt_list(reg.runtime.nodes, v) {
         .Ok(as_list) -> {
             mut out: List<SStmt> = []
             for ss in as_list {
@@ -708,7 +708,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         .Err(_) -> {}
     }
     // Fall back to single Stmt — `quote stmt { ... }` macros.
-    let decoded = match value_to_stmt(v) {
+    let decoded = match value_to_stmt(reg.runtime.nodes, v) {
         .Ok(s) -> s
         .Err(_) -> return expand_fail(
             DiagCode.ExpandUndecodableReturn,
@@ -762,7 +762,7 @@ type ResolvedDeclsPayload = {
 /// Decode a `ResolvedDecls` struct Value. Returns null when the
 /// Value doesn't match the expected shape so the caller can fall
 /// through to other decoders.
-fn value_to_resolved_decls(v: Value) -> ResolvedDeclsPayload? {
+fn value_to_resolved_decls(store: NodeStore, v: Value) -> ResolvedDeclsPayload? {
     if v.kind != "struct" { return null }
     // Match by suffix — the qualified form depends on how rewrite_uses
     // canonicalised the StructLit's type name (may be bare, may include
@@ -776,7 +776,7 @@ fn value_to_resolved_decls(v: Value) -> ResolvedDeclsPayload? {
         if f.name == "introduces" { introduces_v = f.value }
     }
     if decls_v == null { return null }
-    let decls = match value_to_stmt_list(decls_v!) {
+    let decls = match value_to_stmt_list(store, decls_v!) {
         .Ok(d) -> d
         .Err(_) -> return null
     }
@@ -906,7 +906,7 @@ fn build_arg_sexpr_value(e: Expr, runtime: Runtime) -> Value {
 /// covers; falls back to Expr.None on eval failure so the macro at
 /// least sees a well-typed marker.
 fn build_expr_value(e: Expr, runtime: Runtime) -> Value {
-    let constructor = construct_expr(e)
+    let constructor = construct_expr(runtime.nodes, e)
     let result = eval_expr(runtime, constructor)
     if step_had_error(result) {
         let empty: List<Value> = []

@@ -141,8 +141,10 @@ impl Parser {
         if !self.check(Tk.KwOr) { return .Ok(left) }
         self.advance()
         let right = self.parse_pattern_or()?
-        let node = Pattern.Or(self.pat_of(left), self.pat_of(right))
-        .Ok(self.alloc_pat(node, [NodeRef.PatRef(left), NodeRef.PatRef(right)]))
+        // F2: the branches ARE ids — the payload is the child mechanism now,
+        // so no PatRef edges (the walker sees ids as scalars; the native alloc
+        // mirrors the ingest's leaf view, the F1a when-arm rule).
+        .Ok(self.alloc_pat_leaf(Pattern.Or(left, right)))
     }
 
     fn parse_match_arm_list(self) -> Result<MatchArmsParsed, string> {
@@ -323,13 +325,9 @@ impl Parser {
             if !self.consume(Tk.RightParen, "expected `)` after nested patterns") {
                 return .Err("parse error")
             }
-            mut boxed: List<Pattern> = []
-            mut edges: List<NodeRef> = []
-            for pid in sub {
-                boxed.push(self.pat_of(pid))
-                edges.push(NodeRef.PatRef(pid))
-            }
-            return .Ok(self.alloc_pat(Pattern.NestedVariant(name, boxed), edges))
+            // F2: the sub-pattern ids ARE the payload — the child mechanism
+            // itself, so no PatRef edges (leaf view mirrors the ingest).
+            return .Ok(self.alloc_pat_leaf(Pattern.NestedVariant(name, sub)))
         }
         let bindings = self.parse_param_list()?
         if !self.consume(Tk.RightParen, "expected `)` after binding list") {
