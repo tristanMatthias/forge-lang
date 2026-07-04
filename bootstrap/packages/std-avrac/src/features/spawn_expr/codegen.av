@@ -11,7 +11,7 @@ use features.closures.{emit_lambda}
 /// `Spawn` AST node and forwards to `emit_spawn`.
 export fn spawn_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Spawn(body) -> emit_spawn(ctx, env, body)
+        .Spawn(body) -> emit_spawn(ctx, env, ctx.nodes.exprs.get(body))
         _ -> err_emit("spawn_emit_expr: expected Spawn")
     }
 }

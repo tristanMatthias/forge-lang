@@ -53,7 +53,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .NullCoalesce(left, right) -> "${fmt_expr(store, left)} ?? ${fmt_expr(store, right)}"
         .OptionalChain(obj, field) -> "${fmt_expr(store, obj)}?.${field}"
         .OptionalMethodCall(obj, method, args) -> "${fmt_expr(store, obj)}?.${method}(${fmt_expr_list_comma(store, args)})"
-        .Try(inner) -> "${fmt_expr(store, inner)}?"
+        .Try(inner) -> "${fmt_expr(store, store.exprs.get(inner))}?"
         .Tuple(elements) -> "(${fmt_expr_list_comma(store, elements)})"
         .TupleIndex(obj, idx) -> "${fmt_expr(store, obj)}.${string(idx)}"
         .With(obj, overrides) -> "${fmt_expr(store, obj)} with { ${fmt_field_init_list(store, overrides)} }"
@@ -70,7 +70,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         }
         .When(arms) -> "when {\n${fmt_when_arms(store, arms, 1)}\n}"
         .Catch(inner, binding, body, _, _) -> "${fmt_expr(store, inner)} catch ${binding} { ${fmt_expr(store, body)} }"
-        .Spawn(body) -> "spawn ${fmt_expr(store, body)}"
+        .Spawn(body) -> "spawn ${fmt_expr(store, store.exprs.get(body))}"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
                 "channel<${vtype_render_full(elem)}>()"
@@ -78,9 +78,9 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
                 "channel<${vtype_render_full(elem)}>(${fmt_expr(store, capacity!)})"
             }
         }
-        .Isolated(body) -> "isolated ${fmt_expr(store, body)}"
+        .Isolated(body) -> "isolated ${fmt_expr(store, store.exprs.get(body))}"
         .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(store, body)}" } else { "quote ${kind} ${fmt_expr(store, body)}" }
-        .Splice(target) -> "~${fmt_expr(store, target)}"
+        .Splice(target) -> "~${fmt_expr(store, store.exprs.get(target))}"
     }
 }
 

@@ -2347,12 +2347,12 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         "NullCoalesce" -> two_expr_decode(store, p, "NullCoalesce")
         "Try" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(store, head)?
+            let inner = value_to_expr_id(store, head)?
             .Ok(Expr.Try(inner))
         }
         "Spawn" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(store, head)?
+            let inner = value_to_expr_id(store, head)?
             .Ok(Expr.Spawn(inner))
         }
         "FieldAccess" -> {

@@ -127,7 +127,7 @@ fn any_quote_in_stmt(store: NodeStore, stmt: Stmt) -> bool {
 fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Quote(_, _) -> true
-        .Splice(target) -> any_quote_in_expr(store, target)
+        .Splice(target) -> any_quote_in_expr(store, store.exprs.get(target))
         .Binary(l, _, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
         .Unary(_, r) -> any_quote_in_expr(store, store.exprs.get(r))
         .Logical(l, _, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
@@ -145,7 +145,7 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .NullCoalesce(l, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
         .OptionalChain(obj, _) -> any_quote_in_expr(store, obj)
         .OptionalMethodCall(obj, _, args) -> any_quote_in_expr(store, obj) || any_quote_in_expr_list(store, args)
-        .Try(inner) -> any_quote_in_expr(store, inner)
+        .Try(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
         .Tuple(elems) -> any_quote_in_expr_list(store, elems)
         .TupleIndex(obj, _) -> any_quote_in_expr(store, obj)
         .With(obj, overrides) -> any_quote_in_expr(store, obj) || any_quote_in_field_inits(store, overrides)
@@ -155,8 +155,8 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .Slice(obj, s, e) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, s) || any_quote_in_expr(store, e)
         .IsCheck(subj, _) -> any_quote_in_expr(store, subj)
         .InCheck(needle, items) -> any_quote_in_expr(store, needle) || any_quote_in_expr_list(store, items)
-        .Spawn(body) -> any_quote_in_expr(store, body)
-        .Isolated(body) -> any_quote_in_expr(store, body)
+        .Spawn(body) -> any_quote_in_expr(store, store.exprs.get(body))
+        .Isolated(body) -> any_quote_in_expr(store, store.exprs.get(body))
         .MatchExpr(subj, arms) -> any_quote_in_expr(store, subj) || any_quote_in_match_arms(store, arms)
         _ -> false
     }
@@ -282,7 +282,7 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .NullCoalesce(l, r) -> .NullCoalesce(lower_expr(store, l), lower_expr(store, r))
         .OptionalChain(obj, field) -> .OptionalChain(lower_expr(store, obj), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(lower_expr(store, obj), method, lower_expr_list(store, args))
-        .Try(inner) -> .Try(lower_expr(store, inner))
+        .Try(inner) -> .Try(lower_expr_id(store, inner))
         .Tuple(elems) -> .Tuple(lower_expr_list(store, elems))
         .TupleIndex(obj, idx) -> .TupleIndex(lower_expr(store, obj), idx)
         .With(obj, overrides) -> .With(lower_expr(store, obj), lower_field_inits(store, overrides))
@@ -292,10 +292,10 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .Slice(obj, s, e) -> .Slice(lower_expr(store, obj), lower_expr(store, s), lower_expr(store, e))
         .IsCheck(subj, vname) -> .IsCheck(lower_expr(store, subj), vname)
         .InCheck(needle, items) -> .InCheck(lower_expr(store, needle), lower_expr_list(store, items))
-        .Spawn(body) -> .Spawn(lower_expr(store, body))
-        .Isolated(body) -> .Isolated(lower_expr(store, body))
+        .Spawn(body) -> .Spawn(lower_expr_id(store, body))
+        .Isolated(body) -> .Isolated(lower_expr_id(store, body))
         .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(store, subj), lower_match_arms(store, arms))
-        .Splice(target) -> .Splice(lower_expr(store, target))
+        .Splice(target) -> .Splice(lower_expr_id(store, target))
         _ -> expr
     }
 }
@@ -513,7 +513,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr(store, l), construct_expr(store, r)))
         .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(store, obj), string_lit_expr(field)))
         .OptionalMethodCall(obj, method, args) -> expr_ctor("OptionalMethodCall", three_args(construct_expr(store, obj), string_lit_expr(method), construct_expr_list(store, args)))
-        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(store, inner)))
+        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr_id(store, inner)))
         .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
         .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(name), construct_field_init_list(store, inits)))
         .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(store, args)))
@@ -525,8 +525,8 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(store, obj), construct_field_init_list(store, overrides)))
         .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(store, obj), string_lit_expr(field), construct_expr(store, value)))
         .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(store, params), construct_expr(store, body)))
-        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(store, body)))
-        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr(store, body)))
+        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr_id(store, body)))
+        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr_id(store, body)))
         .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(store, body)))
         // MatchExpr inside a quote — subject + arms become a runtime
         // `Expr.MatchExpr` value. The arm list goes through
@@ -538,7 +538,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         // to a runtime AST value of the right shape, so we emit it
         // straight through without a construct_expr wrap. That's the
         // whole point of splice: skip construction, paste the value.
-        .Splice(target) -> target
+        .Splice(target) -> store.exprs.get(target)
         // Nested Quote: `quote { ... quote { x } ... }` collapses one
         // level — the inner quote's BODY is what gets constructed, as
         // if the user had written `quote { ... x ... }` directly. This
@@ -718,7 +718,7 @@ fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
             let seg_lit = Expr.ListLit(current_seg)
             result_opt = if result_opt == null { seg_lit } else { list_concat_call(result_opt!, seg_lit) }
             let splice_body = arm.body
-            let splice_target = extract_splice_target(splice_body.node)
+            let splice_target = extract_splice_target(store, splice_body.node)
             result_opt = list_concat_call(result_opt!, splice_target)
             current_seg = []
         } else {
@@ -744,9 +744,9 @@ fn is_arm_splice_sentinel(arm: MatchArm) -> bool {
 /// The parser stores it as `Expr.Splice(target)`; we want just the
 /// target so its runtime value (a `List<MatchArm>`) flows into
 /// `list_concat` directly.
-fn extract_splice_target(body: Expr) -> Expr {
+fn extract_splice_target(store: NodeStore, body: Expr) -> Expr {
     match body {
-        .Splice(t) -> t
+        .Splice(t) -> store.exprs.get(t)
         _ -> body
     }
 }

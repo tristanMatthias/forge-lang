@@ -37,7 +37,7 @@ export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
 export fn check_try(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Try(inner) -> {
-            let r = check_expr(tc, inner)
+            let r = check_expr(tc, tc.nodes.exprs.get(inner))
             // `?`-split (spec Axis 10 §1.3): `?` is Result-only. Applying it to
             // an optional `T?` is F1202 — absence is handled with `??`, `?.`,
             // force-unwrap `!`, or `match`, never `?`. The recursive-descent

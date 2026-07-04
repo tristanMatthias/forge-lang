@@ -1347,7 +1347,7 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
             }
         }
         .Grouping(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, st)
-        .Try(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
+        .Try(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, st)
         // A struct literal in expected-type position (let/return annotation):
         // thread the annotation in so a phantom or empty-collection-only param
         // binds from it. Recurse into the field inits first (matching the
@@ -1438,13 +1438,13 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
         .OptionalChain(obj, _) -> collect_inst_expr(obj, regs, st)
         .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(args, regs, collect_inst_expr(obj, regs, st))
-        .Spawn(body) -> collect_inst_expr(body, regs, st)
+        .Spawn(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .ChannelNew(_, capacity) -> {
             if capacity == null { st } else { collect_inst_expr(capacity!, regs, st) }
         }
-        .Isolated(body) -> collect_inst_expr(body, regs, st)
+        .Isolated(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .Quote(_, body) -> collect_inst_expr(body, regs, st)
-        .Splice(target) -> collect_inst_expr(target, regs, st)
+        .Splice(target) -> collect_inst_expr(regs.store.exprs.get(target), regs, st)
         .When(arms) -> collect_inst_when_arms(arms, regs, st)
         _ -> st
     }
@@ -1697,7 +1697,7 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
         .Tuple(elems) -> .Tuple(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
         .Lambda(params, body) -> .Lambda(params, rename_self_calls_expr(store, body, orig_name, mangled))
         .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr(store, l, orig_name, mangled), rename_self_calls_expr(store, r, orig_name, mangled))
-        .Try(e) -> .Try(rename_self_calls_expr(store, e, orig_name, mangled))
+        .Try(e) -> .Try(rename_self_calls_expr_id(store, e, orig_name, mangled))
         _ -> expr
     }
 }
@@ -1975,7 +1975,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .MapLit(entries) -> .MapLit(substitute_expr_list(store, entries, ta))
         .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr(store, body, ta))
         .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr(store, l, ta), substitute_expr(store, r, ta))
-        .Try(e) -> .Try(substitute_expr(store, e, ta))
+        .Try(e) -> .Try(substitute_expr_id(store, e, ta))
         .With(obj, inits) -> .With(substitute_expr(store, obj, ta), inits)
         .ListComp(body, v, coll, filter) -> {
             if filter != null {
@@ -1993,14 +1993,14 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .InCheck(needle, items) -> .InCheck(substitute_expr(store, needle, ta), substitute_expr_list(store, items, ta))
         .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(store, obj, ta), f)
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(store, obj, ta), m, substitute_expr_list(store, a, ta))
-        .Spawn(body) -> .Spawn(substitute_expr(store, body, ta))
+        .Spawn(body) -> .Spawn(substitute_expr_id(store, body, ta))
         .ChannelNew(elem, capacity) -> {
             let new_elem = substitute_vtype(elem, ta)
             if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr(store, capacity!, ta)) }
         }
-        .Isolated(body) -> .Isolated(substitute_expr(store, body, ta))
+        .Isolated(body) -> .Isolated(substitute_expr_id(store, body, ta))
         .Quote(k, body) -> .Quote(k, substitute_expr(store, body, ta))
-        .Splice(target) -> .Splice(substitute_expr(store, target, ta))
+        .Splice(target) -> .Splice(substitute_expr_id(store, target, ta))
         .When(arms) -> .When(substitute_when_arms(store, arms, ta))
         _ -> expr
     }
@@ -2397,7 +2397,7 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
             }
         }
         .Grouping(e) -> Expr.Grouping(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
-        .Try(e) -> Expr.Try(rewrite_expr_with_expected(e, expected, regs, insts))
+        .Try(e) -> Expr.Try(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
         .StructLit(name, inits) -> rewrite_struct_lit_with_expected(name, inits, expected, regs, insts)
         _ -> rewrite_expr(expr, regs, insts)
     }
@@ -2613,7 +2613,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         // bare `Box`. Mirrors how fn params are rewritten.
         .Lambda(params, body) -> .Lambda(rewrite_param_types(params, regs, insts), rewrite_expr(body, regs, insts))
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, regs, insts), rewrite_expr(r, regs, insts))
-        .Try(e) -> .Try(rewrite_expr(e, regs, insts))
+        .Try(e) -> .Try(rewrite_expr_id(e, regs, insts))
         .With(obj, overrides) -> .With(rewrite_expr(obj, regs, insts), rewrite_field_inits(overrides, regs, insts))
         .ListComp(body, v, coll, filter) -> {
             if filter != null {
@@ -2631,13 +2631,13 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))
         .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr(obj, regs, insts), f)
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr(obj, regs, insts), m, rewrite_expr_list(a, regs, insts))
-        .Spawn(body) -> .Spawn(rewrite_expr(body, regs, insts))
+        .Spawn(body) -> .Spawn(rewrite_expr_id(body, regs, insts))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, regs, insts)) }
         }
-        .Isolated(body) -> .Isolated(rewrite_expr(body, regs, insts))
+        .Isolated(body) -> .Isolated(rewrite_expr_id(body, regs, insts))
         .Quote(k, body) -> .Quote(k, rewrite_expr(body, regs, insts))
-        .Splice(target) -> .Splice(rewrite_expr(target, regs, insts))
+        .Splice(target) -> .Splice(rewrite_expr_id(target, regs, insts))
         .When(arms) -> .When(rewrite_when_arms(arms, regs, insts))
         _ -> expr
     }

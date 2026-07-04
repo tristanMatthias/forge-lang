@@ -1291,7 +1291,7 @@ impl Parser {
                 return .Ok(self.alloc_expr(Expr.StructLit("~" + var_name, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids)))
             }
             let target = self.parse_unary()?
-            return .Ok(self.alloc1(Expr.Splice(self.expr_of(target)), target))
+            return .Ok(self.alloc1(Expr.Splice(target), target))
         }
         if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
             let op = match {
@@ -1393,7 +1393,7 @@ impl Parser {
             // from the enclosing function.
             if self.check(Tk.Question) {
                 self.advance()
-                result = Expr.Try(result)
+                result = Expr.Try(rid)
                 rid = self.alloc1(result, rid)
                 continue
             }

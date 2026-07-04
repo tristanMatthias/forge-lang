@@ -217,7 +217,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .TupleIndex(obj, _) -> remove_escaped_expr(store, obj, set)
         .MapLit(entries) -> remove_escaped_args(store, entries, set)
         .Slice(obj, start, end) -> remove_escaped_expr(store, end, remove_escaped_expr(store, start, remove_escaped_expr(store, obj, set)))
-        .Try(inner) -> remove_escaped_expr(store, inner, set)
+        .Try(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
         .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, body, remove_escaped_expr(store, inner, set))
         .NullCoalesce(left, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
         .OptionalChain(obj, _) -> remove_escaped_expr(store, obj, set)
@@ -225,13 +225,13 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .IsCheck(subj, _) -> remove_escaped_expr(store, subj, set)
         .InCheck(needle, items) -> remove_escaped_args(store, items, remove_escaped_expr(store, needle, set))
         .EnumCtor(_, _, args) -> remove_escaped_args(store, args, set)
-        .Spawn(body) -> remove_escaped_expr(store, body, set)
+        .Spawn(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
         .ChannelNew(_, capacity) -> {
             if capacity == null { set } else { remove_escaped_expr(store, capacity!, set) }
         }
-        .Isolated(body) -> remove_escaped_expr(store, body, set)
+        .Isolated(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
         .Quote(_, body) -> remove_escaped_expr(store, body, set)
-        .Splice(target) -> remove_escaped_expr(store, target, set)
+        .Splice(target) -> remove_escaped_expr(store, store.exprs.get(target), set)
         // Same as MatchExpr: when arms' bodies/conditions can escape
         // variables (return value of the arm, or pass to a fn). The
         // old "no escapes at this level" comment was wrong.

@@ -2222,7 +2222,7 @@ export enum Expr {
     OptionalMethodCall(obj: Expr, method: string, args: List<SExpr>)
     /// Error / null propagate: `expr?` — bails the enclosing fn early
     /// if `expr` is Err / null.
-    Try(expr: Expr)
+    Try(expr: ExprId)
     /// Tuple literal: `(a, b, c)`.
     Tuple(elements: List<SExpr>)
     /// Tuple index: `t.0`, `t.1`.
@@ -2255,7 +2255,7 @@ export enum Expr {
     /// erroring `expr` by binding the error to `e`.
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
     /// `spawn body` — start a green-thread Task running `body`.
-    Spawn(body: Expr)
+    Spawn(body: ExprId)
     /// `channel<T>()` / `channel<T>(cap)` — construct a typed channel
     /// (spec Axis 18). `capacity` is null for the unbounded form;
     /// `channel<T>(0)` is a rendezvous channel (send blocks until a
@@ -2265,7 +2265,7 @@ export enum Expr {
     /// child's bytes return value travels back through a pipe. Crash-
     /// safe sibling of `spawn { }`. Lowers to `avra_isolated_run` at
     /// codegen with body wrapped in a zero-arg closure.
-    Isolated(body: Expr)
+    Isolated(body: ExprId)
     /// `quote { body }` — captures the AST of `body` as a value.
     /// Lowering pass turns this into AST-construction calls so
     /// evaluating the result rebuilds the original AST node.
@@ -2277,7 +2277,7 @@ export enum Expr {
     /// Outside a quote body the parser produces Expr.Unary(BitNot, ...)
     /// instead, so the same `~` token is overloaded by context.
     /// Phase 4 (vez6.4) of Components V2.
-    Splice(target: Expr)
+    Splice(target: ExprId)
 }
 
 /// Avra statement AST. Anything that doesn't produce a value lowers
@@ -2797,7 +2797,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, left)} ${render_expr(store, right)})"
         .OptionalChain(obj, field) -> "(?. ${render_expr(store, obj)} ${field})"
         .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"
-        .Try(inner) -> "(? ${render_expr(store, inner)})"
+        .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
         .Tuple(elements) -> "(tuple ${render_expr_list(store, elements)})"
         .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, obj)} ${string(idx)})"
         .With(obj, overrides) -> "(with ${render_expr(store, obj)} ${render_field_init_list(store, overrides)})"
@@ -2815,7 +2815,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
             if filter != null { "${head} if ${render_expr(store, filter!)})" } else { "${head})" }
         }
         .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(store, inner)} (${binding}) ${render_expr(store, body)})"
-        .Spawn(body) -> "(spawn ${render_expr(store, body)})"
+        .Spawn(body) -> "(spawn ${render_expr(store, store.exprs.get(body))})"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
                 "(channel<${vtype_render_full(elem)}>)"
@@ -2823,9 +2823,9 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
                 "(channel<${vtype_render_full(elem)}> ${render_expr(store, capacity!)})"
             }
         }
-        .Isolated(body) -> "(isolated ${render_expr(store, body)})"
+        .Isolated(body) -> "(isolated ${render_expr(store, store.exprs.get(body))})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr(store, body)})"
-        .Splice(target) -> "(splice ${render_expr(store, target)})"
+        .Splice(target) -> "(splice ${render_expr(store, store.exprs.get(target))})"
     }
 }
 

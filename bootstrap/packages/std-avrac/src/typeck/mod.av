@@ -1633,7 +1633,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .OptionalChain(obj, _) -> lint_scan_expr(store, obj, coll)
         .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_sexprs(store, args, coll))
-        .Try(inner) -> lint_scan_expr(store, inner, coll)
+        .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Tuple(els) -> lint_scan_sexprs(store, els, coll)
         .TupleIndex(obj, _) -> lint_scan_expr(store, obj, coll)
         .With(obj, _) -> lint_scan_expr(store, obj, coll)
@@ -4198,7 +4198,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr(tc, obj), f, annotate_expr(tc, val))
         .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
-        .Try(e) -> .Try(annotate_expr(tc, e))
+        .Try(e) -> .Try(annotate_expr_id(tc, e))
         .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
         .IsCheck(subj, vname) -> .IsCheck(annotate_expr(tc, subj), vname)
         .InCheck(needle, items) -> .InCheck(annotate_expr(tc, needle), annotate_expr_list(tc, items))
@@ -4214,8 +4214,8 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr(tc, obj), m, annotate_expr_list(tc, args))
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
-        .Spawn(body) -> .Spawn(annotate_expr(tc, body))
-        .Isolated(body) -> .Isolated(annotate_expr(tc, body))
+        .Spawn(body) -> .Spawn(annotate_expr_id(tc, body))
+        .Isolated(body) -> .Isolated(annotate_expr_id(tc, body))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { expr } else { .ChannelNew(elem, annotate_expr(tc, capacity!)) }
         }

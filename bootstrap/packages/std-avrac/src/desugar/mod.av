@@ -569,7 +569,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(store, l, sigs), desugar_expr(store, r, sigs))
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(store, obj, sigs), method, desugar_expr_list(store, args, sigs))
-        .Try(inner) -> .Try(desugar_expr(store, inner, sigs))
+        .Try(inner) -> .Try(desugar_expr_id(store, inner, sigs))
         .Tuple(elems) -> .Tuple(desugar_expr_list(store, elems, sigs))
         .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(store, obj, sigs), idx)
         .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
@@ -598,10 +598,10 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(store, args, sigs))
         .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(store, callee, sigs), type_args, desugar_expr_list(store, args, sigs))
         .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(store, inner, sigs), binding, desugar_expr(store, body, sigs), l, c)
-        .Spawn(body) -> .Spawn(desugar_expr(store, body, sigs))
-        .Isolated(body) -> .Isolated(desugar_expr(store, body, sigs))
+        .Spawn(body) -> .Spawn(desugar_expr_id(store, body, sigs))
+        .Isolated(body) -> .Isolated(desugar_expr_id(store, body, sigs))
         .Quote(kind, body) -> .Quote(kind, desugar_expr(store, body, sigs))
-        .Splice(target) -> .Splice(desugar_expr(store, target, sigs))
+        .Splice(target) -> .Splice(desugar_expr_id(store, target, sigs))
         _ -> expr
     }
 }

@@ -28,7 +28,7 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .NullCoalesce(l, r) -> expr_contains_it(store, l) || expr_contains_it(store, r)
         .OptionalChain(obj, _) -> expr_contains_it(store, obj)
         .OptionalMethodCall(obj, _, args) -> expr_contains_it(store, obj) || expr_list_contains_it(store, args)
-        .Try(inner) -> expr_contains_it(store, inner)
+        .Try(inner) -> expr_contains_it(store, store.exprs.get(inner))
         .Tuple(elems) -> expr_list_contains_it(store, elems)
         .TupleIndex(obj, _) -> expr_contains_it(store, obj)
         .With(obj, _) -> expr_contains_it(store, obj)

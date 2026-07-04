@@ -220,7 +220,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, l, params, env, captures)
             find_captures(store, r, params, env, captures)
         }
-        .Try(inner) -> find_captures(store, inner, params, env, captures)
+        .Try(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
         .ListLit(elems) -> find_captures_list(store, elems, params, env, captures)
         .Tuple(elems) -> find_captures_list(store, elems, params, env, captures)
         .MapLit(entries) -> find_captures_list(store, entries, params, env, captures)
@@ -267,10 +267,10 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         // Spawn/Isolated/Quote/Splice/Lambda were missing — closure
         // bodies that wrap their work in any of these would silently
         // skip captures for vars referenced inside.
-        .Spawn(body) -> find_captures(store, body, params, env, captures)
-        .Isolated(body) -> find_captures(store, body, params, env, captures)
+        .Spawn(body) -> find_captures(store, store.exprs.get(body), params, env, captures)
+        .Isolated(body) -> find_captures(store, store.exprs.get(body), params, env, captures)
         .Quote(_, body) -> find_captures(store, body, params, env, captures)
-        .Splice(target) -> find_captures(store, target, params, env, captures)
+        .Splice(target) -> find_captures(store, store.exprs.get(target), params, env, captures)
         .Lambda(inner_params, inner_body) -> {
             // Inner lambda's body — its OWN params shadow the outer's
             // for capture detection, but captures inside it that come
@@ -466,7 +466,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .Index(obj, idx) -> has_float_ident(obj, ctx, env, captures, params) || has_float_ident(idx, ctx, env, captures, params)
         .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
         .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
-        .Try(inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
         .TupleIndex(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
         _ -> false

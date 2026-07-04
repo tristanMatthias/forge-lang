@@ -1485,7 +1485,7 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
         .Grouping(inner) -> .Grouping(rewrite_expr_id(ctx, inner))
         .Assign(name, val) -> .Assign(name, rewrite_expr(ctx, val))
         .Index(obj, idx) -> .Index(rewrite_expr(ctx, obj), rewrite_expr(ctx, idx))
-        .Try(inner) -> .Try(rewrite_expr(ctx, inner))
+        .Try(inner) -> .Try(rewrite_expr_id(ctx, inner))
         .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
         _ -> rewrite_expr_compound(ctx, expr)
     }
@@ -1546,7 +1546,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             let new_filter = if filter != null { rewrite_expr(inner, filter!) } else { null }
             Expr.ListComp(rewrite_expr(inner, body), var, rewrite_expr(ctx, coll), new_filter)
         }
-        .Spawn(body) -> .Spawn(rewrite_expr(ctx, body))
+        .Spawn(body) -> .Spawn(rewrite_expr_id(ctx, body))
         .ChannelNew(elem, capacity) -> {
             // The element type is embedded in the expression — qualify
             // nominal names exactly like Let/Mut annotations do, so
@@ -1555,7 +1555,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             let qelem = rewrite_vtype(ctx, elem)
             if capacity == null { Expr.ChannelNew(qelem, null) } else { .ChannelNew(qelem, rewrite_expr(ctx, capacity!)) }
         }
-        .Isolated(body) -> .Isolated(rewrite_expr(ctx, body))
+        .Isolated(body) -> .Isolated(rewrite_expr_id(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
         .When(arms) -> .When(rewrite_when_arms(ctx, arms))
@@ -1572,7 +1572,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             Expr.Catch(rewrite_expr(ctx, inner), binding, rewrite_expr(body_ctx, body), line, col)
         }
         .Quote(kind, body) -> Expr.Quote(kind, rewrite_expr(ctx, body))
-        .Splice(target) -> Expr.Splice(rewrite_expr(ctx, target))
+        .Splice(target) -> Expr.Splice(rewrite_expr_id(ctx, target))
         _ -> expr
     }
 }
@@ -1814,7 +1814,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .NullCoalesce(l, r) -> collect_used_paths_expr(store, r, collect_used_paths_expr(store, l, acc))
         .OptionalChain(obj, _) -> collect_used_paths_expr(store, obj, acc)
         .OptionalMethodCall(obj, _, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, obj, acc))
-        .Try(inner) -> collect_used_paths_expr(store, inner, acc)
+        .Try(inner) -> collect_used_paths_expr(store, store.exprs.get(inner), acc)
         .Tuple(elems) -> collect_used_paths_expr_list(store, elems, acc)
         .ListLit(elems) -> collect_used_paths_expr_list(store, elems, acc)
         .MapLit(entries) -> collect_used_paths_expr_list(store, entries, acc)
@@ -1833,11 +1833,11 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .IsCheck(subj, _) -> collect_used_paths_expr(store, subj, acc)
         .InCheck(needle, items) -> collect_used_paths_expr_list(store, items, collect_used_paths_expr(store, needle, acc))
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, body, collect_used_paths_expr(store, inner, acc))
-        .Spawn(body) -> collect_used_paths_expr(store, body, acc)
+        .Spawn(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
         .ChannelNew(_, capacity) -> {
             if capacity == null { acc } else { collect_used_paths_expr(store, capacity!, acc) }
         }
-        .Isolated(body) -> collect_used_paths_expr(store, body, acc)
+        .Isolated(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
         .Ident(name) -> {
             // PascalCase identifiers may be imported type/enum names.
             // Track them as used paths by looking up their alias.

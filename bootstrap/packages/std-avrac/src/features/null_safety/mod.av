@@ -3,7 +3,7 @@
 // Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
 // without explicit self-imports.
 use codegen.{err_emit}
-use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown}
+use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
@@ -47,7 +47,7 @@ export fn optional_method_call_feature() -> Feature {
 
 export fn try_feature() -> Feature {
     feature_new("try") with {
-        expr_tag: Expr.Try(Expr.None),
+        expr_tag: Expr.Try(ExprId(0)),
         emit_expr: try_emit_expr,
         resolve_expr: try_resolve_expr,
         check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
@@ -107,7 +107,7 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Resolver hook for `Try`. Walks the inner expression.
 fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .Try(inner) -> resolve_expr(r, inner)
+        .Try(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
         _ -> r
     }
 }
@@ -196,7 +196,7 @@ fn optional_method_call_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Codegen hook for `Try`. Forwards to `emit_try`.
 fn try_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Try(inner) -> emit_try(ctx, env, inner)
+        .Try(inner) -> emit_try(ctx, env, ctx.nodes.exprs.get(inner))
         _ -> err_emit("expected Try")
     }
 }
