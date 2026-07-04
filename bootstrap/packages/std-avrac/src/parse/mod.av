@@ -865,7 +865,7 @@ impl Parser {
             mut inits: List<FieldInit> = []
             mut ci = 0
             while ci < header_count {
-                inits.push(FieldInit { name: col_names[ci], value: cells[ci] })
+                inits.push(FieldInit { name: col_names[ci], value: cells[ci], value_id: cell_ids[ci] })
                 ci = ci + 1
             }
             // Row StructLit: one ExprRef per FieldInit value, in column order.

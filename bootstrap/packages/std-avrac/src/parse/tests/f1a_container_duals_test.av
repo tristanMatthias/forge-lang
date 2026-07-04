@@ -163,3 +163,61 @@ spec "F1a duals: component config rows carry type + default ids" {
         }
     }
 }
+
+// ── F1b: FieldInit.value_id ──
+
+fn field_init_duals_mirror() -> bool {
+    let src = "fn f() -> int {\n    let p = P { x: 1 + 2, y }\n    0\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match first_body_stmt(r.stmts!) {
+        .Let(_, _, init) -> match init {
+            .StructLit(_, inits) -> {
+                if inits.length != 2 { return false }
+                for fi in inits {
+                    if fi.value_id == none { return false }
+                    if render_expr(r.store.exprs.get(fi.value_id!)) != render_expr(fi.value.node) { return false }
+                }
+                true
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+fn table_row_field_duals_mirror() -> bool {
+    let src = "fn f() -> int {\n    let rows = table {\n        a | b\n        1 | 2\n    }\n    0\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match first_body_stmt(r.stmts!) {
+        .Let(_, _, init) -> match init {
+            .ListLit(rows) -> match rows[0].node {
+                .StructLit(_, inits) -> {
+                    if inits.length != 2 { return false }
+                    for fi in inits {
+                        if fi.value_id == none { return false }
+                        if render_expr(r.store.exprs.get(fi.value_id!)) != render_expr(fi.value.node) { return false }
+                    }
+                    true
+                }
+                _ -> false
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+spec "F1b duals: struct-literal field inits carry value rows" {
+    given "explicit and shorthand field inits" {
+        then "every value_id is present and renders identically to the boxed value" {
+            field_init_duals_mirror()
+        }
+    }
+    given "table-literal rows" {
+        then "each cell's FieldInit carries its cell row" {
+            table_row_field_duals_mirror()
+        }
+    }
+}
