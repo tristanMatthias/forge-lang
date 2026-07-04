@@ -2363,7 +2363,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "OptionalChain" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(store, head)?
+            let obj = value_to_expr_id(store, head)?
             let field_v: Value = p[1]
             .Ok(Expr.OptionalChain(obj, field_v.text))
         }
@@ -2377,7 +2377,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "IsCheck" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let subj = value_to_expr_node(store, head)?
+            let subj = value_to_expr_id(store, head)?
             let vname_v: Value = p[1]
             .Ok(Expr.IsCheck(subj, vname_v.text))
         }

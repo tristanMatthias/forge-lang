@@ -235,17 +235,17 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, s, params, env, captures)
             find_captures(store, e, params, env, captures)
         }
-        .IsCheck(subj, _) -> find_captures(store, subj, params, env, captures)
+        .IsCheck(subj, _) -> find_captures(store, store.exprs.get(subj), params, env, captures)
         .InCheck(needle, items) -> {
             find_captures(store, needle, params, env, captures)
             find_captures_list(store, items, params, env, captures)
         }
-        .OptionalChain(obj, _) -> find_captures(store, obj, params, env, captures)
+        .OptionalChain(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .OptionalMethodCall(obj, _, args) -> {
             find_captures(store, obj, params, env, captures)
             find_captures_list(store, args, params, env, captures)
         }
-        .TupleIndex(obj, _) -> find_captures(store, obj, params, env, captures)
+        .TupleIndex(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .ListComp(body, var, coll, filter) -> {
             // Collection is evaluated in the outer scope.
             find_captures(store, coll, params, env, captures)
@@ -468,7 +468,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
         .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
-        .TupleIndex(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
+        .TupleIndex(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
         _ -> false
     }
 }

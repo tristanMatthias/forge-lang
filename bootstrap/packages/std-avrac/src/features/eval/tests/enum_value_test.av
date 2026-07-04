@@ -238,13 +238,15 @@ spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
 // reads the variant off a boxed value via value_is_enumish.
 spec "is-check matches a boxed AST value by variant (value_is_enumish path)" {
     then "Expr.Number(\"1\") is .Number -> true" {
-        let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
-        let r: StepResult = eval_expr(runtime_new(ts()), Expr.IsCheck(subj, "Number"))
+        let store = ts()
+        let subj = store.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\""))))
+        let r: StepResult = eval_expr(runtime_new(store), Expr.IsCheck(subj, "Number"))
         r.value.kind == "bool" && r.value.bool_value == 1
     }
     then "Expr.Number(\"1\") is .Bool -> false (variant mismatch, still enumish)" {
-        let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
-        let r: StepResult = eval_expr(runtime_new(ts()), Expr.IsCheck(subj, "Bool"))
+        let store = ts()
+        let subj = store.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\""))))
+        let r: StepResult = eval_expr(runtime_new(store), Expr.IsCheck(subj, "Bool"))
         r.value.kind == "bool" && r.value.bool_value == 0
     }
 }

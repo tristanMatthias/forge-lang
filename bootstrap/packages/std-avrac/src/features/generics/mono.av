@@ -1433,10 +1433,10 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         // Forms that hold sub-expressions: every walker must recurse
         // or generic calls inside silently slip past mono.
         .Slice(obj, start, end) -> collect_inst_expr(end, regs, collect_inst_expr(start, regs, collect_inst_expr(obj, regs, st)))
-        .TupleIndex(obj, _) -> collect_inst_expr(obj, regs, st)
-        .IsCheck(subj, _) -> collect_inst_expr(subj, regs, st)
+        .TupleIndex(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
+        .IsCheck(subj, _) -> collect_inst_expr(regs.store.exprs.get(subj), regs, st)
         .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
-        .OptionalChain(obj, _) -> collect_inst_expr(obj, regs, st)
+        .OptionalChain(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(args, regs, collect_inst_expr(obj, regs, st))
         .Spawn(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .ChannelNew(_, capacity) -> {
@@ -1988,10 +1988,10 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         // Mirror collect_inst_expr — every sub-expression in a generic
         // body must get its T-references substituted.
         .Slice(obj, start, end) -> .Slice(substitute_expr(store, obj, ta), substitute_expr(store, start, ta), substitute_expr(store, end, ta))
-        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr(store, obj, ta), idx)
-        .IsCheck(subj, v) -> .IsCheck(substitute_expr(store, subj, ta), v)
+        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr_id(store, obj, ta), idx)
+        .IsCheck(subj, v) -> .IsCheck(substitute_expr_id(store, subj, ta), v)
         .InCheck(needle, items) -> .InCheck(substitute_expr(store, needle, ta), substitute_expr_list(store, items, ta))
-        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(store, obj, ta), f)
+        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr_id(store, obj, ta), f)
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(store, obj, ta), m, substitute_expr_list(store, a, ta))
         .Spawn(body) -> .Spawn(substitute_expr_id(store, body, ta))
         .ChannelNew(elem, capacity) -> {
@@ -2626,10 +2626,10 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         // Mirror collect_inst_expr — must rewrite every sub-expression
         // so mangled-name substitution reaches them too.
         .Slice(obj, start, end) -> .Slice(rewrite_expr(obj, regs, insts), rewrite_expr(start, regs, insts), rewrite_expr(end, regs, insts))
-        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr(obj, regs, insts), idx)
-        .IsCheck(subj, v) -> .IsCheck(rewrite_expr(subj, regs, insts), v)
+        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr_id(obj, regs, insts), idx)
+        .IsCheck(subj, v) -> .IsCheck(rewrite_expr_id(subj, regs, insts), v)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))
-        .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr(obj, regs, insts), f)
+        .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr_id(obj, regs, insts), f)
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr(obj, regs, insts), m, rewrite_expr_list(a, regs, insts))
         .Spawn(body) -> .Spawn(rewrite_expr_id(body, regs, insts))
         .ChannelNew(elem, capacity) -> {

@@ -2213,7 +2213,7 @@ export enum Expr {
     NullCoalesce(left: Expr, right: Expr)
     /// Optional chain: `obj?.field` — null obj passes through, no
     /// deref on null.
-    OptionalChain(obj: Expr, field: string)
+    OptionalChain(obj: ExprId, field: string)
     /// Optional method call: `obj?.method(args)` — null obj short-circuits
     /// to none, otherwise calls the method on the present receiver and wraps
     /// the result. Sibling of OptionalChain for the call form (which needs to
@@ -2226,7 +2226,7 @@ export enum Expr {
     /// Tuple literal: `(a, b, c)`.
     Tuple(elements: List<SExpr>)
     /// Tuple index: `t.0`, `t.1`.
-    TupleIndex(obj: Expr, index: int)
+    TupleIndex(obj: ExprId, index: int)
     /// Functional struct update: `obj with { field: new_value }`.
     With(obj: Expr, overrides: List<FieldInit>)
     /// List literal: `[1, 2, 3]`.
@@ -2241,7 +2241,7 @@ export enum Expr {
     /// Float literal (text form, like Number).
     FloatLit(value: string)
     /// Type-narrowing test: `subject is .Variant`.
-    IsCheck(subject: Expr, variant_name: string)
+    IsCheck(subject: ExprId, variant_name: string)
     /// Membership test: `needle in [a, b, c]`.
     InCheck(needle: Expr, items: List<SExpr>)
     /// List comprehension: `[body for variable in collection if filter]`.
@@ -2795,18 +2795,18 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, obj)} ${field} ${render_expr(store, value)})"
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, c)} ${render_expr(store, t)} ${render_expr(store, e)})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, left)} ${render_expr(store, right)})"
-        .OptionalChain(obj, field) -> "(?. ${render_expr(store, obj)} ${field})"
+        .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"
         .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"
         .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
         .Tuple(elements) -> "(tuple ${render_expr_list(store, elements)})"
-        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, obj)} ${string(idx)})"
+        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, store.exprs.get(obj))} ${string(idx)})"
         .With(obj, overrides) -> "(with ${render_expr(store, obj)} ${render_field_init_list(store, overrides)})"
         .ListLit(elements) -> "(list ${render_expr_list(store, elements)})"
         .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
         .MapLit(entries) -> "(map ${render_expr_list(store, entries)})"
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice ${render_expr(store, obj)} ${render_expr(store, start)}..${render_expr(store, end)})"
-        .IsCheck(subject, vname) -> "(is ${render_expr(store, subject)} .${vname})"
+        .IsCheck(subject, vname) -> "(is ${render_expr(store, store.exprs.get(subject))} .${vname})"
         .InCheck(needle, items) -> "(in ${render_expr(store, needle)} [${render_expr_list(store, items)}])"
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(store, arms)})"

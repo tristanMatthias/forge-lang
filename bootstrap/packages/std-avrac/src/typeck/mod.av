@@ -1631,17 +1631,17 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_expr(store, value, coll))
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, c, coll), lint_sig_or(lint_scan_expr(store, t, coll), lint_scan_expr(store, el, coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
-        .OptionalChain(obj, _) -> lint_scan_expr(store, obj, coll)
+        .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_sexprs(store, args, coll))
         .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Tuple(els) -> lint_scan_sexprs(store, els, coll)
-        .TupleIndex(obj, _) -> lint_scan_expr(store, obj, coll)
+        .TupleIndex(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .With(obj, _) -> lint_scan_expr(store, obj, coll)
         .ListLit(els) -> lint_scan_sexprs(store, els, coll)
         .Lambda(_, body) -> lint_scan_expr(store, body, coll)
         .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
         .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_sig_or(lint_scan_expr(store, start, coll), lint_scan_expr(store, end, coll)))
-        .IsCheck(subject, _) -> lint_scan_expr(store, subject, coll)
+        .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
         .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, needle, coll), lint_scan_sexprs(store, items, coll))
         _ -> lint_sig_none()
     }
@@ -4200,7 +4200,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
         .Try(e) -> .Try(annotate_expr_id(tc, e))
         .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
-        .IsCheck(subj, vname) -> .IsCheck(annotate_expr(tc, subj), vname)
+        .IsCheck(subj, vname) -> .IsCheck(annotate_expr_id(tc, subj), vname)
         .InCheck(needle, items) -> .InCheck(annotate_expr(tc, needle), annotate_expr_list(tc, items))
         .ListComp(body, var, coll, filter) -> {
             if filter != null {
@@ -4210,9 +4210,9 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
             }
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body), cl, cc)
-        .OptionalChain(obj, f) -> .OptionalChain(annotate_expr(tc, obj), f)
+        .OptionalChain(obj, f) -> .OptionalChain(annotate_expr_id(tc, obj), f)
         .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr(tc, obj), m, annotate_expr_list(tc, args))
-        .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
+        .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr_id(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
         .Spawn(body) -> .Spawn(annotate_expr_id(tc, body))
         .Isolated(body) -> .Isolated(annotate_expr_id(tc, body))

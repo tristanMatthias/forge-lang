@@ -1123,7 +1123,7 @@ impl Parser {
                 return .Err("parse error")
             }
             let vname = self.consume_identifier("expected variant name after `is .`")?
-            return .Ok(self.alloc1(Expr.IsCheck(self.expr_of(left), vname), left))
+            return .Ok(self.alloc1(Expr.IsCheck(left, vname), left))
         }
 
         if self.check(Tk.KwIn) {
@@ -1442,7 +1442,7 @@ impl Parser {
                     result = Expr.OptionalMethodCall(result, field, parsed.wrapped)
                     rid = self.alloc_expr(result, byte_span_none(), self.edges_subject_args(rid, parsed.ids))
                 } else {
-                    result = Expr.OptionalChain(result, field)
+                    result = Expr.OptionalChain(rid, field)
                     rid = self.alloc1(result, rid)
                 }
             } else if self.check(Tk.LeftBracket) {
@@ -1503,7 +1503,7 @@ impl Parser {
                 if self.check(Tk.Number) {
                     let idx_text = self.current_lexeme
                     self.advance()
-                    result = Expr.TupleIndex(result, int(idx_text))
+                    result = Expr.TupleIndex(rid, int(idx_text))
                     rid = self.alloc1(result, rid)
                     continue
                 }

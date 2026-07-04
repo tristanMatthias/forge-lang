@@ -24,7 +24,7 @@ export fn null_coalesce_feature() -> Feature {
 /// null.
 export fn optional_chain_feature() -> Feature {
     feature_new("optional_chain") with {
-        expr_tag: Expr.OptionalChain(Expr.None, ""),
+        expr_tag: Expr.OptionalChain(ExprId(0), ""),
         emit_expr: optional_chain_emit_expr,
         resolve_expr: optional_chain_resolve_expr,
         check_expr: optional_chain_check_expr,
@@ -81,7 +81,7 @@ fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// name resolution.
 fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .OptionalChain(obj, _) -> resolve_expr(r, obj)
+        .OptionalChain(obj, _) -> resolve_expr(r, r.nodes.exprs.get(obj))
         _ -> r
     }
 }
@@ -96,7 +96,7 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
             // `obj?.field` short-circuits to `none` when `obj` is null → `U?`.
             // Unknown/already-optional field types stay as-is (no double-wrap,
             // no `Optional(Unknown)` rendered as a bare `?`).
-            let r = check_field_access(tc, obj, field)
+            let r = check_field_access(tc, tc.nodes.exprs.get(obj), field)
             if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
             tc_er(r.tc, vtype_wrap_optional(r.ty))
         }
@@ -151,7 +151,7 @@ fn null_coalesce_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Resul
 /// `emit_optional_chain`.
 fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
+        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, ctx.nodes.exprs.get(obj), field)
         _ -> err_emit("expected OptionalChain")
     }
 }

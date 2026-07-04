@@ -567,11 +567,11 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .IfExpr(c, t, e) -> .IfExpr(desugar_expr(store, c, sigs), desugar_expr(store, t, sigs), desugar_expr(store, e, sigs))
         .Block(body) -> .Block(desugar_stmt_list(store, body, sigs))
         .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(store, l, sigs), desugar_expr(store, r, sigs))
-        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(store, obj, sigs), field)
+        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr_id(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(store, obj, sigs), method, desugar_expr_list(store, args, sigs))
         .Try(inner) -> .Try(desugar_expr_id(store, inner, sigs))
         .Tuple(elems) -> .Tuple(desugar_expr_list(store, elems, sigs))
-        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(store, obj, sigs), idx)
+        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr_id(store, obj, sigs), idx)
         .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
         .MapLit(entries) -> .MapLit(desugar_expr_list(store, entries, sigs))
         .Slice(obj, s, e) -> .Slice(desugar_expr(store, obj, sigs), desugar_expr(store, s, sigs), desugar_expr(store, e, sigs))
@@ -580,7 +580,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))
         .When(arms) -> .When(desugar_when_arms(store, arms, sigs))
         .InCheck(needle, items) -> .InCheck(desugar_expr(store, needle, sigs), desugar_expr_list(store, items, sigs))
-        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(store, subj, sigs), variant)
+        .IsCheck(subj, variant) -> .IsCheck(desugar_expr_id(store, subj, sigs), variant)
         .ListComp(body, var, coll, filter) -> {
             // Recurse into body / coll / filter so sugar inside the
             // comprehension (assert, dbg, min, max, …) still gets
