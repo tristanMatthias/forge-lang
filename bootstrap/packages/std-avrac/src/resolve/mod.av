@@ -508,7 +508,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             }
             after_value
         }
-        .Grouping(inner) -> resolve_expr(r, inner)
+        .Grouping(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
         .Unary(_, right) -> resolve_expr(r, right)
         .Binary(left, _, right) -> {
             let after_left = resolve_expr(r, left)

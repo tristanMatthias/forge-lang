@@ -1775,7 +1775,7 @@ impl Parser {
                 let body = self.parse_lambda_body()?
                 return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
             }
-            return .Ok(self.alloc1(Expr.Grouping(self.expr_of(expr)), expr))
+            return .Ok(self.alloc1(Expr.Grouping(expr), expr))
         }
 
         // List literal: [expr, expr, ...]

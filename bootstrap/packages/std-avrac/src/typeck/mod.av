@@ -1618,7 +1618,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
             }
         }
         .Assign(_, value) -> lint_scan_expr(store, value, coll)
-        .Grouping(inner) -> lint_scan_expr(store, inner, coll)
+        .Grouping(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Unary(_, right) -> lint_scan_expr(store, right, coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
@@ -2167,7 +2167,7 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
         let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
-    if is_const && !is_const_expr(init) {
+    if is_const && !is_const_expr(tc.nodes, init) {
         let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
@@ -2458,7 +2458,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // subjectless-enum gates, so a wild store hides behind one pair of parens
         // (`let x: int = (Box { val: 9 })`). Recurse on the inner with the SAME raw
         // `expected` so it re-strips the optional and lands in the right arm.
-        .Grouping(inner) -> check_expr_expected(tc, inner, expected)
+        .Grouping(inner) -> check_expr_expected(tc, tc.nodes.exprs.get(inner), expected)
         // A list/map literal (always a pointer) meeting a VALUE-SCALAR expected
         // type (int/float/bool/…) is the inverse of the ry1a scalar→ptr hole:
         // a pointer stored in a scalar slot. `let x: int = [1,2]` / `{"k":1}`
@@ -2610,7 +2610,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let r = check_expr(l.tc, right)
             tc_er(r.tc, .Bool)
         }
-        .Grouping(inner) -> check_expr(tc, inner)
+        .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
         .Call(callee, args) -> check_call(tc, callee, args)
         .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
         .Index(obj, idx) -> {
@@ -3449,13 +3449,13 @@ fn tc_arg_concrete_ty(tc: TC, arg: SExpr) -> ValueType {
     if !vtype_is_unknown(arg.ty) { return arg.ty }
     let r = check_expr(tc, arg.node)
     if !vtype_is_unknown(r.ty) { return r.ty }
-    tc_infer_lit_ty(arg.node)
+    tc_infer_lit_ty(tc.nodes, arg.node)
 }
 
 /// Lightweight literal-shape inference for arg types when typeck
 /// hasn't annotated. Mirrors mono's `infer_lit_ty` but uses
 /// typeck-local helpers (no cross-module import).
-fn tc_infer_lit_ty(e: Expr) -> ValueType {
+fn tc_infer_lit_ty(store: NodeStore, e: Expr) -> ValueType {
     match e {
         .Number(_) -> ValueType.Int
         .FloatLit(_) -> ValueType.Float
@@ -3466,8 +3466,8 @@ fn tc_infer_lit_ty(e: Expr) -> ValueType {
             let empty_args: List<ValueType> = []
             ValueType.Enum(tn, empty_args, 0)
         }
-        .Grouping(inner) -> tc_infer_lit_ty(inner)
-        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(elements))
+        .Grouping(inner) -> tc_infer_lit_ty(store, store.exprs.get(inner))
+        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(store, elements))
         .Lambda(params, _) -> ValueType.FnTyped(tc_param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
@@ -3493,7 +3493,7 @@ fn list_lit_optionalize(elements: List<SExpr>, base: ValueType) -> ValueType {
     if list_lit_has_none(elements) { ValueType.Optional(base) } else { base }
 }
 
-fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
+fn tc_infer_list_elem(store: NodeStore, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
     // Pin the inner type from the first present element (a leading `none`
     // carries no type), then re-wrap in `T?` when a `none` is present.
@@ -3501,7 +3501,7 @@ fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
     mut i = 0
     while i < elements.length {
         if !(elements[i].node is .None) {
-            base = tc_infer_lit_ty(elements[i].node)
+            base = tc_infer_lit_ty(store, elements[i].node)
             i = elements.length
         } else {
             i = i + 1
@@ -3538,7 +3538,7 @@ fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
 /// pins). Shared by the quick-type inference for list elements and map values.
 fn tc_expr_or_lit_ty(tc: TC, node: Expr) -> ValueType {
     let r = check_expr(tc, node)
-    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(node) } else { r.ty }
+    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(tc.nodes, node) } else { r.ty }
 }
 
 /// First map VALUE type for quick `MapLit` typing — the value analog of
@@ -4190,7 +4190,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Binary(l, op, r) -> .Binary(annotate_expr(tc, l), op, annotate_expr(tc, r))
         .Logical(l, op, r) -> .Logical(annotate_expr(tc, l), op, annotate_expr(tc, r))
         .Unary(op, e) -> .Unary(op, annotate_expr(tc, e))
-        .Grouping(e) -> .Grouping(annotate_expr(tc, e))
+        .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
         .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
         .FieldAccess(obj, f) -> .FieldAccess(annotate_expr(tc, obj), f)
@@ -4325,7 +4325,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // Grouping forwards its inner expression's type. Used heavily
         // by parser-emitted parenthesised forms; falling through to
         // check_expr was a needless re-walk.
-        .Grouping(inner) -> annotate_sexpr_ty(tc, inner)
+        .Grouping(inner) -> annotate_sexpr_ty(tc, tc.nodes.exprs.get(inner))
         // Range forms always produce an Int range (codegen doesn't
         // distinguish further). Avoids check_expr on every range-for.
         .Range(_, _) -> ValueType.Int

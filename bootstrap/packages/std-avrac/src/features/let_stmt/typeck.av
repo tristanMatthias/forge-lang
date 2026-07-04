@@ -1,6 +1,6 @@
 // WHY: type checking for let/mut/const bindings and tuple destructuring.
 
-use core.{Expr, ParamEntry, ValueType, vtype_tuple_at}
+use core.{Expr, NodeStore, ParamEntry, ValueType, vtype_tuple_at}
 use typeck.{TC, tc_bind}
 
 /// Bind a tuple-destructure's names into the type-check env,
@@ -18,16 +18,16 @@ export fn bind_destructure(tc: TC, names: List<ParamEntry>, tuple_ty: ValueType)
 /// validation. Returns true for literals, idents (resolver
 /// has already verified the binding is itself a const), and
 /// trees built from those operands.
-export fn is_const_expr(expr: Expr) -> bool {
+export fn is_const_expr(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Number(_) -> true
         .FloatLit(_) -> true
         .String(_) -> true
         .Bool(_) -> true
         .None -> true
-        .Unary(_, inner) -> is_const_expr(inner)
-        .Binary(left, _, right) -> is_const_expr(left) && is_const_expr(right)
-        .Grouping(inner) -> is_const_expr(inner)
+        .Unary(_, inner) -> is_const_expr(store, inner)
+        .Binary(left, _, right) -> is_const_expr(store, left) && is_const_expr(store, right)
+        .Grouping(inner) -> is_const_expr(store, store.exprs.get(inner))
         .Ident(_) -> true  // could be another const — resolver ensures it's defined
         _ -> false
     }

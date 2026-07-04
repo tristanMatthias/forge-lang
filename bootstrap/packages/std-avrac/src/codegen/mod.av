@@ -400,7 +400,7 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             let str_ptr = ctx.global_str(inner, ".str")
             ok_emit(str_ptr, .Str)
         }
-        .Grouping(inner) -> emit_expr(ctx, env, inner)
+        .Grouping(inner) -> emit_expr(ctx, env, ctx.nodes.exprs.get(inner))
         .Unary(op, right) -> emit_unary(ctx, env, op, right)
         .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
         .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)

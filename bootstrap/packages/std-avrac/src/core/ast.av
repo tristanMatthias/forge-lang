@@ -2182,7 +2182,7 @@ export enum Expr {
     /// `name = value` reassignment. Only valid for `mut` bindings.
     Assign(name: string, value: Expr)
     /// `(expr)` — preserves source parenthesisation for renderer.
-    Grouping(expr: Expr)
+    Grouping(expr: ExprId)
     /// Prefix unary: `!x`, `-x`, `~x`.
     Unary(op: UnOp, right: Expr)
     /// Binary infix: `a + b`, `x == y`, `a & b`.

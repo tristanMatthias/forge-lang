@@ -445,7 +445,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
         }
         .Const(name, ty_vt, init) -> {
             let qn = qualify(current_module, name)
-            let parts = extract_const_value(acc.nodes.exprs.get(init))
+            let parts = extract_const_value(acc.nodes, acc.nodes.exprs.get(init))
             let entry = ConstDeclEntry {
                 sym_id: sym_id_for(qn),
                 name: qn,
@@ -580,7 +580,7 @@ type ConstValueParts = {
     str_val: string,
 }
 
-fn extract_const_value(e: Expr) -> ConstValueParts {
+fn extract_const_value(store: NodeStore, e: Expr) -> ConstValueParts {
     match e {
         .Number(text) -> ConstValueParts {
             kind: ConstValueKind.IntValue,
@@ -597,8 +597,8 @@ fn extract_const_value(e: Expr) -> ConstValueParts {
             int_val: 0,
             str_val: strip_quotes(text),
         }
-        .Grouping(inner) -> extract_const_value(inner)
-        .Unary(_, inner) -> extract_const_value(inner)
+        .Grouping(inner) -> extract_const_value(store, store.exprs.get(inner))
+        .Unary(_, inner) -> extract_const_value(store, inner)
         _ -> ConstValueParts {
             kind: ConstValueKind.UnknownValue,
             int_val: 0,

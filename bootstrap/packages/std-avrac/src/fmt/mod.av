@@ -36,7 +36,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Ident(name) -> name
         .QualifiedIdent(path) -> path
         .Assign(name, value) -> "${name} = ${fmt_expr(store, value)}"
-        .Grouping(inner) -> "(${fmt_expr(store, inner)})"
+        .Grouping(inner) -> "(${fmt_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "${unop_str(op)}${fmt_expr(store, right)}"
         .Binary(left, op, right) -> "${fmt_expr(store, left)} ${binop_str(op)} ${fmt_expr(store, right)}"
         .Logical(left, op, right) -> "${fmt_expr(store, left)} ${logicop_str(op)} ${fmt_expr(store, right)}"
