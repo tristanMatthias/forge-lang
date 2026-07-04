@@ -265,6 +265,23 @@ fn quote_arm_duals_mirror() -> bool {
     }
 }
 
+fn unguarded_quote_arm_guard_dual_null() -> bool {
+    let probe = parse_expression_native_probe("quote arm { 1 -> 2 }")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .Quote(_, body) -> match body {
+            .MatchExpr(_, arms) -> {
+                if arms.length != 1 { return false }
+                let arm = arms[0]
+                arm.guard == none && arm.guard_id == none
+                    && arm.pattern_id != none && arm.body_id != none
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
 fn table_arm_pattern_dual_mirrors() -> bool {
     let src = "fn f(s: int) -> int {\n    let r = match s table {\n        pattern | label\n        1 | \"one\"\n    }\n    0\n}\n"
     let r = parse_program_source(src)
@@ -295,6 +312,11 @@ spec "F1c duals: match arms carry pattern/guard/body rows" {
     given "a quote arm with a guard" {
         then "the envelope's single arm carries all three rows" {
             quote_arm_duals_mirror()
+        }
+    }
+    given "a quote arm without a guard" {
+        then "guard_id stays null while pattern/body rows are present" {
+            unguarded_quote_arm_guard_dual_null()
         }
     }
     given "a match table row" {
@@ -380,6 +402,34 @@ fn name_list_param_duals_null() -> bool {
     }
 }
 
+fn use_name_list_duals_null() -> bool {
+    let src = "use @std.avrac.core.{Expr, Stmt}\nfn f() -> int { 0 }\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match stmt_unwrap(r.stmts![0].node) {
+        .Use(_, names) -> {
+            names.length == 2 && names[0].ty_id == none && names[1].ty_id == none
+        }
+        _ -> false
+    }
+}
+
+fn it_lambda_param_dual_null() -> bool {
+    // `it` in a method-call arg wraps the arg in a synthesized (it) -> lambda
+    // (method calls parse as Call(FieldAccess(recv, name), args)).
+    let probe = parse_expression_native_probe("xs.map(it + 1)")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .Call(_, args) -> match args[0].node {
+            .Lambda(params, _) -> {
+                params.length == 1 && params[0].name == "it" && params[0].ty_id == none
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
 spec "F1d duals: params carry their type row where a type position exists" {
     given "an annotated and an unannotated fn param" {
         then "both ty_ids are present and display identically to vtype" {
@@ -402,6 +452,12 @@ spec "F1d duals: params carry their type row where a type position exists" {
         }
         then "destructure binding entries stay null" {
             name_list_param_duals_null()
+        }
+        then "use-name list entries stay null" {
+            use_name_list_duals_null()
+        }
+        then "the synthesized it-lambda param stays null" {
+            it_lambda_param_dual_null()
         }
     }
 }
