@@ -176,7 +176,10 @@ impl Parser {
                 self.advance()
                 self.parse_type_expr("expected type after `:`")?
             }
-            out.push(ParamEntry { name: "self", vtype: vtype_from_name(type_name) })
+            // The receiver type is resolved from the impl header — a real
+            // type the parser has in hand, so it gets a real (orphan) row.
+            let self_vt = vtype_from_name(type_name)
+            out.push(ParamEntry { name: "self", vtype: self_vt, ty_id: self.glue_ingest_type(self_vt) })
             if self.check(Tk.Comma) {
                 self.advance()
                 let rest = self.parse_param_list()?

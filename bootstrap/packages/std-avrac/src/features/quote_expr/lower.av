@@ -291,7 +291,16 @@ fn lower_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
             let g = arm.guard!
             sexpr(lower_expr(g.node), g.line, g.col)
         }
-        MatchArm { pattern: arm.pattern, guard: lowered_guard, body: lowered_body }
+        // The lowered arm is a NEW tree with no arena rows (F1b dual
+        // convention) — the original ids would point at pre-lowering rows.
+        MatchArm {
+            pattern: arm.pattern,
+            guard: lowered_guard,
+            body: lowered_body,
+            pattern_id: none,
+            guard_id: none,
+            body_id: none,
+        }
     })
 }
 
@@ -358,12 +367,14 @@ fn extract_single_match_arm(body: Expr) -> MatchArm? {
 }
 
 fn construct_match_arm_null() -> Expr {
-    let no_guard = Expr.None
     let body_expr = Expr.None
     construct_match_arm(MatchArm {
         pattern: Pattern.Wildcard,
         guard: null,
         body: sexpr_dummy(body_expr),
+        pattern_id: none,
+        guard_id: none,
+        body_id: none,
     })
 }
 
@@ -525,21 +536,29 @@ fn expr_ctor(variant: string, args: List<SExpr>) -> Expr {
 }
 
 /// Build an Expr that, when evaluated, produces a `List<ParamEntry>`
-/// AST value. Each entry is a `ParamEntry { name, vtype }` struct
+/// AST value. Each entry is a `ParamEntry { name, vtype, ty_id }` struct
 /// literal. Quote captures pre-resolve, so vtype is always Unknown —
-/// the resolver fills it in when the lowered AST is re-resolved.
+/// the resolver fills it in when the lowered AST is re-resolved — and
+/// ty_id is an explicit null dual (a constructed entry has no arena row).
 fn construct_param_list(params: List<ParamEntry>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < params.length {
         let p = params[i]
-        let struct_lit = struct_lit_2("@std::avrac::core::ParamEntry",
-                                      "name", string_lit_expr(p.name),
-                                      "vtype", construct_param_vtype(p.vtype))
-        elems.push(sexpr_dummy(struct_lit))
+        let entry_lit = struct_lit_3("@std::avrac::core::ParamEntry",
+                                     "name", string_lit_expr(p.name),
+                                     "vtype", construct_param_vtype(p.vtype),
+                                     "ty_id", Expr.None)
+        elems.push(sexpr_dummy(entry_lit))
         i = i + 1
     }
     Expr.ListLit(elems)
+}
+
+/// Synthetic field-init for the struct-literal builders: dummy span and a
+/// null value row — a constructed literal is a NEW tree with no arena rows.
+fn synth_init(k: string, v: Expr) -> FieldInit {
+    FieldInit { name: k, value: sexpr_dummy(v), value_id: none }
 }
 
 /// Build a two-field struct-literal Expr `Type { k1: v1, k2: v2 }`.
@@ -548,19 +567,18 @@ fn construct_param_list(params: List<ParamEntry>) -> Expr {
 /// per-entry struct literal.
 fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -> Expr {
     mut inits: List<FieldInit> = []
-    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1), value_id: none })
-    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2), value_id: none })
+    inits.push(synth_init(k1, v1))
+    inits.push(synth_init(k2, v2))
     Expr.StructLit(type_name, inits)
 }
 
-/// Three-field sister to `struct_lit_2` — used by `MatchArm`
-/// (pattern, guard, body) construction. Keep the parallel shape so
-/// future N-field helpers slot in next to it.
+/// Three-field sister to `struct_lit_2`. Wider literals build their init
+/// list directly over `struct_lit` + `synth_init`.
 fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k3: string, v3: Expr) -> Expr {
     mut inits: List<FieldInit> = []
-    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1), value_id: none })
-    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2), value_id: none })
-    inits.push(FieldInit { name: k3, value: sexpr_dummy(v3), value_id: none })
+    inits.push(synth_init(k1, v1))
+    inits.push(synth_init(k2, v2))
+    inits.push(synth_init(k3, v3))
     Expr.StructLit(type_name, inits)
 }
 
@@ -636,15 +654,21 @@ fn construct_pattern_list(patterns: List<Pattern>) -> Expr {
 /// Build an Expr that, when evaluated, produces a `MatchArm` AST
 /// value. Emits `Expr.StructLit("MatchArm", { pattern, guard, body })`
 /// — guard is null when the source had no `if` guard, otherwise the
-/// constructed SExpr.
+/// constructed SExpr. The dual id fields are emitted as explicit nulls:
+/// the constructed arm is a NEW synthetic tree with no arena rows —
+/// re-ingest allocates them when the spliced AST re-enters a store.
 fn construct_match_arm(arm: MatchArm) -> Expr {
     let pattern_expr = construct_pattern(arm.pattern)
     let guard_expr = if arm.guard != null { construct_sexpr(arm.guard!) } else { Expr.None }
     let body_expr = construct_sexpr(arm.body)
-    struct_lit_3("@std::avrac::core::MatchArm",
-        "pattern", pattern_expr,
-        "guard", guard_expr,
-        "body", body_expr)
+    mut inits: List<FieldInit> = []
+    inits.push(synth_init("pattern", pattern_expr))
+    inits.push(synth_init("guard", guard_expr))
+    inits.push(synth_init("body", body_expr))
+    inits.push(synth_init("pattern_id", Expr.None))
+    inits.push(synth_init("guard_id", Expr.None))
+    inits.push(synth_init("body_id", Expr.None))
+    Expr.StructLit("@std::avrac::core::MatchArm", inits)
 }
 
 /// Build an Expr that, when evaluated, produces a `List<MatchArm>`

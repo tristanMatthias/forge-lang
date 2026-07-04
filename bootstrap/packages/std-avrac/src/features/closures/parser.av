@@ -70,7 +70,8 @@ fn stmt_contains_it(s: Stmt) -> bool {
 /// `(it) -> body` lambda. The parameter type is left as
 /// `Unknown` so the regular type-inference path picks it up.
 export fn wrap_in_it_lambda(expr: Expr) -> Expr {
-    let ps: List<ParamEntry> = [ParamEntry { name: "it", vtype: ValueType.Unknown }]
+    // The `it` param is synthesized (never written) — no row backs its type.
+    let ps: List<ParamEntry> = [ParamEntry { name: "it", vtype: ValueType.Unknown, ty_id: none }]
     Expr.Lambda(ps, expr)
 }
 

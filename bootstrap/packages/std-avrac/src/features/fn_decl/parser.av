@@ -94,7 +94,10 @@ impl Parser {
                 let te = self.parse_type_expr("expected parameter type after `:`")?
                 resolved = type_expr_to_vtype(te)
             }
-            out.push(ParamEntry { name: name, vtype: resolved })
+            // The dual mirrors `vtype` exactly — including the Int default for
+            // an unannotated param — so the F4 flip stays mechanical. The row
+            // orphans (params aren't walker edges) until ParamEntry registers.
+            out.push(ParamEntry { name: name, vtype: resolved, ty_id: self.glue_ingest_type(resolved) })
             if self.check(Tk.Comma) {
                 self.advance()
                 if self.check(Tk.RightParen) {

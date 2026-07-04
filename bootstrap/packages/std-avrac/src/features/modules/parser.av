@@ -54,7 +54,9 @@ impl Parser {
         mut out: List<ParamEntry> = []
         while !self.check(Tk.RightBrace) {
             let name = self.consume_identifier("expected import name")?
-            out.push(ParamEntry { name: name, vtype: ValueType.Unknown })
+            // ParamEntry here is reused as a bare NAME list (imports carry no
+            // type syntax) — nothing was written, so no row backs the slot.
+            out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
             if self.check(Tk.Comma) {
                 self.advance()
             }

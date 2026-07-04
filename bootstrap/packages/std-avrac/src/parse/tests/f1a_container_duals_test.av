@@ -8,7 +8,7 @@
 // non-null and `store.get(id)` renders identically to the boxed child.
 
 use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
-use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, stmt_unwrap, NodeStore, ExprId}
+use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
 
 /// Dig the first statement of the first fn's body out of a served program.
 fn first_body_stmt(stmts: List<SStmt>) -> Stmt {
@@ -218,6 +218,190 @@ spec "F1b duals: struct-literal field inits carry value rows" {
     given "table-literal rows" {
         then "each cell's FieldInit carries its cell row" {
             table_row_field_duals_mirror()
+        }
+    }
+}
+
+// ── F1c: MatchArm pattern/guard/body duals ──
+
+fn match_arm_duals_mirror() -> bool {
+    let probe = parse_expression_native_probe("match x { 1 if g -> a, _ -> b }")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .MatchExpr(_, arms) -> {
+            if arms.length != 2 { return false }
+            for arm in arms {
+                if arm.pattern_id == none { return false }
+                if render_pattern(probe.store.pats.get(arm.pattern_id!)) != render_pattern(arm.pattern) { return false }
+                if arm.body_id == none { return false }
+                if render_expr(probe.store.exprs.get(arm.body_id!)) != render_expr(arm.body.node) { return false }
+            }
+            let guarded = arms[0]
+            if guarded.guard_id == none || guarded.guard == none { return false }
+            if render_expr(probe.store.exprs.get(guarded.guard_id!)) != render_expr(guarded.guard!.node) { return false }
+            arms[1].guard_id == none && arms[1].guard == none
+        }
+        _ -> false
+    }
+}
+
+fn quote_arm_duals_mirror() -> bool {
+    let probe = parse_expression_native_probe("quote arm { 1 if g -> 2 }")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .Quote(_, body) -> match body {
+            .MatchExpr(_, arms) -> {
+                if arms.length != 1 { return false }
+                let arm = arms[0]
+                if arm.pattern_id == none || arm.guard_id == none || arm.body_id == none { return false }
+                if arm.guard == none { return false }
+                if render_pattern(probe.store.pats.get(arm.pattern_id!)) != render_pattern(arm.pattern) { return false }
+                if render_expr(probe.store.exprs.get(arm.guard_id!)) != render_expr(arm.guard!.node) { return false }
+                render_expr(probe.store.exprs.get(arm.body_id!)) == render_expr(arm.body.node)
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+fn table_arm_pattern_dual_mirrors() -> bool {
+    let src = "fn f(s: int) -> int {\n    let r = match s table {\n        pattern | label\n        1 | \"one\"\n    }\n    0\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match first_body_stmt(r.stmts!) {
+        .Let(_, _, init) -> match init {
+            .MatchExpr(_, arms) -> {
+                if arms.length != 1 { return false }
+                let arm = arms[0]
+                if arm.pattern_id == none { return false }
+                if render_pattern(r.store.pats.get(arm.pattern_id!)) != render_pattern(arm.pattern) { return false }
+                // The MapLit body is synthesized table glue — no native row
+                // until that producer converts; the guard slot doesn't exist.
+                arm.body_id == none && arm.guard_id == none
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+spec "F1c duals: match arms carry pattern/guard/body rows" {
+    given "a guarded and a wildcard arm parsed through the native probe" {
+        then "pattern_id and body_id are always present and render identically" {
+            match_arm_duals_mirror()
+        }
+    }
+    given "a quote arm with a guard" {
+        then "the envelope's single arm carries all three rows" {
+            quote_arm_duals_mirror()
+        }
+    }
+    given "a match table row" {
+        then "the pattern row is real; the synthesized MapLit body stays null" {
+            table_arm_pattern_dual_mirrors()
+        }
+    }
+}
+
+// ── F1d: ParamEntry.ty_id ──
+
+fn fn_param_duals_mirror() -> bool {
+    let src = "fn add(x: int, y) -> int { x }\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match stmt_unwrap(r.stmts![0].node) {
+        .Function(_, _, params, _, _) -> {
+            if params.length != 2 { return false }
+            // x carries the written annotation; y carries the Int default —
+            // the dual mirrors BOTH (it tracks vtype, not the surface text).
+            for p in params {
+                if p.ty_id == none { return false }
+                if vtype_display(r.store.types.get(p.ty_id!)) != vtype_display(p.vtype) { return false }
+            }
+            true
+        }
+        _ -> false
+    }
+}
+
+fn method_self_param_dual_mirrors() -> bool {
+    let src = "type P = { x: int }\nimpl P {\n    fn get(self) -> int { 1 }\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match stmt_unwrap(r.stmts![1].node) {
+        .Impl(_, methods) -> match stmt_unwrap(methods[0].node) {
+            .Function(_, _, params, _, _) -> {
+                if params.length != 1 { return false }
+                let self_p = params[0]
+                if self_p.ty_id == none { return false }
+                vtype_display(r.store.types.get(self_p.ty_id!)) == vtype_display(self_p.vtype)
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+fn typed_lambda_param_dual_mirrors() -> bool {
+    let probe = parse_expression_native_probe("(x: string) -> x")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .Lambda(params, _) -> {
+            if params.length != 1 { return false }
+            let p = params[0]
+            if p.ty_id == none { return false }
+            vtype_display(probe.store.types.get(p.ty_id!)) == vtype_display(p.vtype)
+        }
+        _ -> false
+    }
+}
+
+fn untyped_lambda_param_duals_null() -> bool {
+    let probe = parse_expression_native_probe("(x, y) -> x")
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .Lambda(params, _) -> {
+            params.length == 2 && params[0].ty_id == none && params[1].ty_id == none
+        }
+        _ -> false
+    }
+}
+
+fn name_list_param_duals_null() -> bool {
+    let src = "fn f() -> int {\n    let (a, b) = t\n    0\n}\n"
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.stmts == null { return false }
+    match first_body_stmt(r.stmts!) {
+        .LetDestructure(names, _) -> {
+            names.length == 2 && names[0].ty_id == none && names[1].ty_id == none
+        }
+        _ -> false
+    }
+}
+
+spec "F1d duals: params carry their type row where a type position exists" {
+    given "an annotated and an unannotated fn param" {
+        then "both ty_ids are present and display identically to vtype" {
+            fn_param_duals_mirror()
+        }
+    }
+    given "a method's self receiver" {
+        then "self's ty_id carries the impl header type" {
+            method_self_param_dual_mirrors()
+        }
+    }
+    given "a typed lambda param" {
+        then "ty_id mirrors the written annotation" {
+            typed_lambda_param_dual_mirrors()
+        }
+    }
+    given "positions that cannot carry a type" {
+        then "untyped lambda params stay null" {
+            untyped_lambda_param_duals_null()
+        }
+        then "destructure binding entries stay null" {
+            name_list_param_duals_null()
         }
     }
 }
