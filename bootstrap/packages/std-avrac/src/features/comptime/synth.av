@@ -1,0 +1,53 @@
+// WHY: typed id-shim constructors for @comptime macro source — the
+// eval-side mechanism for the B-final arena flip (Stmt payloads
+// become ExprId / StmtId / List<StmtId> arena ids).
+//
+// Macro bodies run in the tree-walk evaluator's Value space, where
+// every AST node is a boxed Value and arena ids don't exist — a macro
+// has no store handle to allocate rows into. Once the Stmt enum's
+// payloads are flipped to ids, a typed macro construct like
+// `Stmt.Expr(e)` stops type-checking: `e` is an `Expr` node where the
+// declaration demands an `ExprId` row.
+//
+// These shims close that gap. At the type level each converts a node
+// value to its id form, so a flipped construct reads
+// `Stmt.Expr(synth_expr_id(e))` and type-checks with no leniency. At
+// eval time each is an IDENTITY: features/eval/mod.av intercepts the
+// calls by name (`synth_shim_kind` — same last-segment matching as
+// the ctx_* fns in resolver_ctx.av) and returns the evaluated
+// argument Value unchanged, because Value space keeps the F2-boxed
+// convention — the boxed node IS the payload, and the Value→AST
+// decoder allocates real rows only when the macro's return value is
+// spliced.
+//
+// The compiled bodies below are unreachable by design: every call
+// site lives in @comptime macro code, which only the evaluator
+// executes. Reaching one compiled means a shim leaked into runtime
+// code — an internal invariant violation, reported and aborted with
+// the same exit(99) convention as avra_match_unreachable.
+
+use core.{ExprId, StmtId, Stmt, SStmt, Expr, exit}
+
+/// Compiled-path guard shared by every shim body.
+fn synth_shim_unreachable(name: string) {
+    eprintln("internal error: ${name} is comptime-only (eval-intercepted); it must not be reached in compiled code")
+    exit(99)
+}
+
+/// Id view of an expression node — comptime-only identity shim.
+export fn synth_expr_id(e: Expr) -> ExprId {
+    synth_shim_unreachable("synth_expr_id")
+    ExprId(0)
+}
+
+/// Id view of a statement node — comptime-only identity shim.
+export fn synth_stmt_id(s: Stmt) -> StmtId {
+    synth_shim_unreachable("synth_stmt_id")
+    StmtId(0)
+}
+
+/// Id view of a statement list — comptime-only identity shim.
+export fn synth_stmt_ids(body: List<SStmt>) -> List<StmtId> {
+    synth_shim_unreachable("synth_stmt_ids")
+    []
+}

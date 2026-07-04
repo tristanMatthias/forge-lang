@@ -1,0 +1,103 @@
+// synth_* id shims — the eval-side mechanism for the B-final arena
+// flip (features/comptime/synth.av).
+//
+// A @comptime macro building flipped Stmt variants writes
+// `Stmt.Expr(synth_expr_id(e))`: the shim satisfies the type checker
+// (node → id), while at eval time the call must be an IDENTITY — the
+// boxed node Value passes through unchanged, because Value space
+// keeps the boxed convention and the Value→AST decoder allocates the
+// real arena rows at splice time.
+//
+// What these specs assert (and what reverting the intercept flips):
+//   - a call to each shim evaluates to its first argument's Value,
+//     not to an error ("can only call functions") and not to the
+//     compiled stub body's sentinel.
+//   - both callee shapes the resolver can produce — bare Ident and
+//     QualifiedIdent — are intercepted (`synth_shim_kind` matches by
+//     last path segment, like the ctx_* fns).
+//   - non-shim names are NOT intercepted: an unknown fn still errors,
+//     proving the match is exact on the last segment.
+
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, SExpr, sexpr_dummy}
+use @std.avrac.features.eval.{Runtime, runtime_new, eval_expr, step_value, step_had_error}
+
+/// Fresh store + runtime per probe. (Named uniquely — `rt` is a live
+/// local in eval/mod.av, and top-level fns leak cross-module in a
+/// bundled shard.)
+fn fresh_probe_rt() -> Runtime {
+    runtime_new(new_node_store(build_line_index("")))
+}
+
+/// An argument expression that EVALUATES to a boxed Expr Value:
+/// the AST-construction form of `Expr.Number("42")`.
+fn boxed_expr_arg() -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Expr", "Number", [sexpr_dummy(Expr.String("\"42\""))])
+}
+
+/// An argument expression that EVALUATES to a boxed Stmt Value:
+/// the AST-construction form of `Stmt.ReturnEmpty`.
+fn boxed_stmt_arg() -> Expr {
+    let no_args: List<SExpr> = []
+    Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", no_args)
+}
+
+spec "synth_expr_id is an identity passthrough at eval" {
+    then "a bare-Ident call returns the boxed Expr Value unchanged" {
+        let call = Expr.Call(Expr.Ident("synth_expr_id"), [sexpr_dummy(boxed_expr_arg())])
+        let r = eval_expr(fresh_probe_rt(), call)
+        !step_had_error(r)
+            && step_value(r).kind == "expr"
+            && step_value(r).enum_variant == "Number"
+    }
+    then "a QualifiedIdent call (post-resolve form) is intercepted too" {
+        let call = Expr.Call(Expr.QualifiedIdent("@std::avrac::features::comptime::synth_expr_id"), [sexpr_dummy(boxed_expr_arg())])
+        let r = eval_expr(fresh_probe_rt(), call)
+        !step_had_error(r) && step_value(r).kind == "expr"
+    }
+}
+
+spec "synth_stmt_id is an identity passthrough at eval" {
+    then "the boxed Stmt Value passes through with its variant intact" {
+        let call = Expr.Call(Expr.Ident("synth_stmt_id"), [sexpr_dummy(boxed_stmt_arg())])
+        let r = eval_expr(fresh_probe_rt(), call)
+        !step_had_error(r)
+            && step_value(r).kind == "stmt"
+            && step_value(r).enum_variant == "ReturnEmpty"
+    }
+}
+
+spec "synth_stmt_ids is an identity passthrough at eval" {
+    then "a list of boxed Stmt Values passes through unchanged" {
+        let list_arg = Expr.ListLit([sexpr_dummy(boxed_stmt_arg())])
+        let call = Expr.Call(Expr.Ident("synth_stmt_ids"), [sexpr_dummy(list_arg)])
+        let r = eval_expr(fresh_probe_rt(), call)
+        !step_had_error(r)
+            && step_value(r).kind == "list"
+            && step_value(r).list_payload.length == 1
+            && step_value(r).list_payload[0].kind == "stmt"
+    }
+}
+
+spec "synth shim edge cases" {
+    then "an empty statement list passes through as an empty list Value" {
+        let no_elems: List<SExpr> = []
+        let call = Expr.Call(Expr.Ident("synth_stmt_ids"), [sexpr_dummy(Expr.ListLit(no_elems))])
+        let r = eval_expr(fresh_probe_rt(), call)
+        !step_had_error(r)
+            && step_value(r).kind == "list"
+            && step_value(r).list_payload.length == 0
+    }
+    then "a zero-arg shim call errors instead of fabricating a value" {
+        let no_args: List<SExpr> = []
+        let call = Expr.Call(Expr.Ident("synth_expr_id"), no_args)
+        step_had_error(eval_expr(fresh_probe_rt(), call))
+    }
+}
+
+spec "the shim intercept matches exactly, not by substring" {
+    then "an unknown fn whose name merely embeds a shim name still errors" {
+        let call = Expr.Call(Expr.Ident("my_synth_expr_id_helper"), [sexpr_dummy(boxed_expr_arg())])
+        let r = eval_expr(fresh_probe_rt(), call)
+        step_had_error(r)
+    }
+}
