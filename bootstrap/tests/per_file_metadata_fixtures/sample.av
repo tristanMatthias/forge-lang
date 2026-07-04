@@ -78,19 +78,19 @@ fn main() -> int {
     let fp = avra_bytes_make(32)
 
     // Whole-package metadata: should see entry, foo_helper, and Foo.
-    let whole = extract_unit_metadata("test_unit", fp, mod_resolved.stmts)
+    let whole = extract_unit_metadata("test_unit", fp, mod_resolved.stmts, parsed.store)
     probe("whole_has_entry_fn", fns_contains(whole.fns, "entry"))
     probe("whole_has_foo_helper_fn", fns_contains(whole.fns, "foo_helper"))
     probe("whole_has_foo_type", types_contains(whole.types, "Foo"))
 
     // Per-file slice for top.av: only `entry` fn, no Foo type.
-    let top_slice = extract_per_file_metadata("test_unit", top_path, fp, mod_resolved.stmts)
+    let top_slice = extract_per_file_metadata("test_unit", top_path, fp, mod_resolved.stmts, parsed.store)
     probe("top_slice_has_entry", fns_contains(top_slice.fns, "entry"))
     probe("top_slice_no_foo_helper", !fns_contains(top_slice.fns, "foo_helper"))
     probe("top_slice_no_foo_type", !types_contains(top_slice.types, "Foo"))
 
     // Per-file slice for foo.av: only foo_helper + Foo type.
-    let foo_slice = extract_per_file_metadata("test_unit", foo_path, fp, mod_resolved.stmts)
+    let foo_slice = extract_per_file_metadata("test_unit", foo_path, fp, mod_resolved.stmts, parsed.store)
     probe("foo_slice_has_foo_helper", fns_contains(foo_slice.fns, "foo_helper"))
     probe("foo_slice_has_foo_type", types_contains(foo_slice.types, "Foo"))
     probe("foo_slice_no_entry", !fns_contains(foo_slice.fns, "entry"))

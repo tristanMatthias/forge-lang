@@ -45,7 +45,7 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// Fast path: when the program has no @comptime fns we short-circuit
 /// without walking the AST at all.
 export fn run_comptime(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    let reg = collect_comptime_fns(stmts)
+    let reg = collect_comptime_fns(stmts, store)
     if reg.fns.length == 0 { return stmts }
     rewrite_program(stmts, reg)
 }
@@ -54,8 +54,8 @@ export fn run_comptime(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
 /// empty name index. Tests and external callers that build registries
 /// by hand should use this rather than the raw struct literal so
 /// internal fields can evolve without touching call sites.
-export fn comptime_registry_new() -> CompTimeRegistry {
-    CompTimeRegistry { fns: [], runtime: runtime_new(), name_index: avra_map_new_cstr() }
+export fn comptime_registry_new(store: NodeStore) -> CompTimeRegistry {
+    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr() }
 }
 
 /// Seed `reg.runtime` with every comptime fn AND build the name → index
@@ -64,7 +64,8 @@ export fn comptime_registry_new() -> CompTimeRegistry {
 /// Callers usually go through `collect_comptime_fns` which returns a
 /// fully-prepared registry.
 export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
-    mut rt = runtime_new()
+    // Reseed from the registry's own runtime — the store rides along.
+    mut rt = runtime_new(reg.runtime.nodes)
     let idx = avra_map_new_cstr()
     mut i = 0
     for f in reg.fns {
@@ -118,9 +119,9 @@ export type CompTimeRegistry = {
 ///
 /// Recurses into Module bodies so package-internal comptime fns are
 /// found. Pure: doesn't mutate the AST.
-export fn collect_comptime_fns(stmts: List<SStmt>) -> CompTimeRegistry {
+export fn collect_comptime_fns(stmts: List<SStmt>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns(stmts, [])
-    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(), name_index: avra_map_new_cstr() })
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
 }
 
 /// Internal: walk `stmts`, append matching @comptime fns to the

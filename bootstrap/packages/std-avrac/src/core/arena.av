@@ -183,9 +183,9 @@ export fn type_child_tags(t: ValueType) -> string { child_tags_of(t.all_children
 // Pattern (structure — spans are tested separately, A2); `vtype_eq_deep` for
 // ValueType (deep-compares FnTyped params+ret, so a mis-ordered/mis-partitioned
 // rebuild is caught). True ⇒ the inverse walker faithfully inverts the walker.
-export fn wc_roundtrip_expr(e: Expr) -> bool { render_expr(e.with_children(e.all_children_spanned())) == render_expr(e) }
-export fn wc_roundtrip_stmt(s: Stmt) -> bool { render_stmt(s.with_children(s.all_children_spanned())) == render_stmt(s) }
-export fn wc_roundtrip_pat(p: Pattern) -> bool { render_pattern(p.with_children(p.all_children_spanned())) == render_pattern(p) }
+export fn wc_roundtrip_expr(store: NodeStore, e: Expr) -> bool { render_expr(store, e.with_children(e.all_children_spanned())) == render_expr(store, e) }
+export fn wc_roundtrip_stmt(store: NodeStore, s: Stmt) -> bool { render_stmt(store, s.with_children(s.all_children_spanned())) == render_stmt(store, s) }
+export fn wc_roundtrip_pat(store: NodeStore, p: Pattern) -> bool { render_pattern(store, p.with_children(p.all_children_spanned())) == render_pattern(store, p) }
 export fn wc_roundtrip_type(t: ValueType) -> bool { vtype_eq_deep(t.with_children(t.all_children_spanned()), t) }
 
 // ── B1 faithfulness oracle ──
@@ -220,15 +220,15 @@ fn store_children_faithful(store: NodeStore, kids: List<SpannedChild>, refs: Lis
     for (i, kid) in kids.enumerate() {
         let ok = match kid.node {
             .AnyExpr(e) -> match refs[i] {
-                .ExprRef(cid) -> render_expr(store.exprs.get(cid)) == render_expr(e) && store_expr_subtree_faithful(store, cid)
+                .ExprRef(cid) -> render_expr(store, store.exprs.get(cid)) == render_expr(store, e) && store_expr_subtree_faithful(store, cid)
                 _ -> false
             }
             .AnyStmt(s) -> match refs[i] {
-                .StmtRef(cid) -> render_stmt(store.stmts.get(cid)) == render_stmt(s) && store_stmt_subtree_faithful(store, cid)
+                .StmtRef(cid) -> render_stmt(store, store.stmts.get(cid)) == render_stmt(store, s) && store_stmt_subtree_faithful(store, cid)
                 _ -> false
             }
             .AnyPat(p) -> match refs[i] {
-                .PatRef(cid) -> render_pattern(store.pats.get(cid)) == render_pattern(p) && store_pat_subtree_faithful(store, cid)
+                .PatRef(cid) -> render_pattern(store, store.pats.get(cid)) == render_pattern(store, p) && store_pat_subtree_faithful(store, cid)
                 _ -> false
             }
             .AnyType(t) -> match refs[i] {

@@ -164,7 +164,7 @@ export fn emit_field_on_value(ctx: Ctx, r: EmitValue, obj: Expr, field: string) 
 
     let struct_name = ctx.resolved_struct_name(r.ty)
     if struct_name == "" {
-        let obj_repr = render_expr(obj)
+        let obj_repr = render_expr(ctx.nodes, obj)
         return err_emit("field access on non-struct value (ty=${vtype_render_full(r.ty)}, field=${field}, obj=${obj_repr}, at=${ctx.source_file}:${string(ctx.source_line)})")
     }
     let lookup = ctx.lookup_struct(struct_name)

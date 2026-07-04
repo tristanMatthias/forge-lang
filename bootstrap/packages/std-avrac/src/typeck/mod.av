@@ -657,6 +657,9 @@ type TC = {
     // prefix and the span swaps to the @expand site so the caret
     // lands on the user's annotation, not the synthetic body.
     macro_origins: List<MacroFnOrigin>,
+    // The program's NodeStore (B-final F2+): flipped pattern payloads
+    // resolve through here (exhaustiveness, arm binding).
+    nodes: NodeStore,
 }
 
 /// One `impl Trait for Type` relationship. The full registry is
@@ -692,7 +695,7 @@ type ExprResult = {
 /// `type_reg` is the resolver's TypeId allocator threaded through
 /// from `typecheck_program`; an empty registry preserves the
 /// id=0 sentinel behaviour for any standalone use.
-fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TC {
+fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TC {
     let empty_shapes: List<string> = []
     let empty_assoc: List<AssocTypeEntry> = []
     let empty_impls: List<TraitImplEntry> = []
@@ -716,6 +719,7 @@ fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>) -> TC {
         features: build_registry(),
         type_reg,
         macro_origins,
+        nodes: store,
     }
 }
 
@@ -1142,7 +1146,7 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
 
-    let tc0_pre = tc_new(type_reg, macro_origins)
+    let tc0_pre = tc_new(type_reg, macro_origins, store)
     // Re-stamp registry ids on every nominal slot whose id=0.
     // Macro/comptime/monomorphizer-emitted AST nodes carry
     // parser-shape ValueTypes with id=0 even when the name IS

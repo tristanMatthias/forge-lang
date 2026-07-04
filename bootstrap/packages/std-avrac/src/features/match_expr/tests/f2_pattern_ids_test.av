@@ -1,0 +1,101 @@
+// WHY: B-final F2 — Pattern is the variant-flip pilot: `NestedVariant`
+// carries `List<PatId>` and `Or` carries two `PatId`s; children are arena
+// rows, not boxed nodes. These specs pin the flip's contract from both
+// sides: (1) the parse path allocates real rows whose store-resolved
+// renders reproduce the source shape, and (2) the compiled behavior of
+// nested/or matching is unchanged (dispatch, binding, guards).
+
+use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.core.{Expr, Pattern, render_pattern, NodeStore}
+
+/// Parse a match expression and render its first arm's pattern through
+/// the store — the flip means rendering MUST resolve ids to reproduce
+/// the nested source text.
+fn first_arm_pattern_render(source: string) -> string {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return "<parse error>" }
+    match probe.store.exprs.get(probe.root) {
+        .MatchExpr(_, arms) -> render_pattern(probe.store, arms[0].pattern)
+        _ -> "<not a match>"
+    }
+}
+
+spec "F2: nested-variant patterns carry id children that render faithfully" {
+    given "a two-level nested destructure" {
+        then "the store-resolved render reproduces the nested shape" {
+            first_arm_pattern_render("match v { .Some(.Ok(x)) -> 1, _ -> 2 }")
+                .contains(".Some(.Ok(x))")
+        }
+    }
+    given "a three-level nested destructure" {
+        then "deep ids resolve level by level" {
+            first_arm_pattern_render("match v { .A(.B(.C(x))) -> 1, _ -> 2 }")
+                .contains(".A(.B(.C(x)))")
+        }
+    }
+    given "an or-pattern chain" {
+        then "both branches resolve through their rows" {
+            let r = first_arm_pattern_render("match v { 1 or 2 or 3 -> 1, _ -> 2 }")
+            r.contains("1") && r.contains("2") && r.contains("3") && r.contains("or")
+        }
+    }
+    given "an or of nested variants" {
+        then "or branches that are themselves nested resolve recursively" {
+            first_arm_pattern_render("match v { .Some(.A(x)) or .Some(.B(y)) -> 1, _ -> 2 }")
+                .contains(".Some(.A(x)) or .Some(.B(y))")
+        }
+    }
+}
+
+// ── Compiled behavior: the flip must not change match semantics ──
+
+enum F2Inner { IA(x: int), IB }
+enum F2Outer { OSome(v: F2Inner), ONone }
+
+fn f2_classify(o: F2Outer) -> int {
+    match o {
+        .OSome(.IA(x)) -> x
+        .OSome(.IB) -> 200
+        .ONone -> 300
+    }
+}
+
+fn f2_or_dispatch(n: int) -> int {
+    match n {
+        1 or 2 or 3 -> 10
+        4 -> 40
+        _ -> 99
+    }
+}
+
+fn f2_or_strings(s: string) -> int {
+    match s {
+        "a" or "b" -> 1
+        _ -> 0
+    }
+}
+
+spec "F2: nested and or matching behave identically post-flip" {
+    given "a nested constructor subject" {
+        then "the inner payload binds through two levels" {
+            f2_classify(F2Outer.OSome(F2Inner.IA(7))) == 7
+        }
+        then "inner-variant dispatch distinguishes payload-less arms" {
+            f2_classify(F2Outer.OSome(F2Inner.IB)) == 200
+        }
+        then "the outer payload-less arm still matches" {
+            f2_classify(F2Outer.ONone) == 300
+        }
+    }
+    given "or-pattern chains over literals" {
+        then "every alternative of a 3-way or takes the arm" {
+            f2_or_dispatch(1) == 10 && f2_or_dispatch(2) == 10 && f2_or_dispatch(3) == 10
+        }
+        then "non-members fall through to later arms" {
+            f2_or_dispatch(4) == 40 && f2_or_dispatch(9) == 99
+        }
+        then "string literal ors compare by value" {
+            f2_or_strings("a") == 1 && f2_or_strings("b") == 1 && f2_or_strings("z") == 0
+        }
+    }
+}

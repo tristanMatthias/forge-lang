@@ -36,9 +36,9 @@ use list_ops.{list_map}
 /// storeless callers (in-process check, the incremental build path) and for
 /// trees merged from more than one parse (sibling-file loading) — its scan
 /// and the arena scan must stay presence-equivalent (spec-guarded).
-export fn lower_quotes(stmts: List<SStmt>) -> List<SStmt> {
+export fn lower_quotes(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     if !any_quote_in_stmt_list(stmts) { return stmts }
-    lower_stmt_list(stmts)
+    lower_stmt_list(store, stmts)
 }
 
 /// `lower_quotes` for a caller that already holds the parse-time `NodeStore`
@@ -52,7 +52,7 @@ export fn lower_quotes(stmts: List<SStmt>) -> List<SStmt> {
 /// merging) would scan the wrong program; such callers use `lower_quotes`.
 export fn lower_quotes_via_store(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
     if !store_has_quote(store) { return stmts }
-    lower_stmt_list(stmts)
+    lower_stmt_list(store, stmts)
 }
 
 /// True iff any `Expr.Quote` row exists in the store's expr arena. The
@@ -190,44 +190,44 @@ fn any_quote_in_match_arms(arms: List<MatchArm>) -> bool {
 
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──
 
-fn lower_stmt_list(stmts: List<SStmt>) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt_at(lower_stmt(ss.node), ss.line, ss.col, ss.file))
+fn lower_stmt_list(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> sstmt_at(lower_stmt(store, ss.node), ss.line, ss.col, ss.file))
 }
 
-fn lower_stmt(stmt: Stmt) -> Stmt {
+fn lower_stmt(store: NodeStore, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, vt, lower_expr(init))
-        .Mut(name, vt, init) -> .Mut(name, vt, lower_expr(init))
-        .Const(name, vt, init) -> .Const(name, vt, lower_expr(init))
-        .Expr(e) -> .Expr(lower_expr(e))
-        .Return(e) -> .Return(lower_expr(e))
-        .Block(body) -> .Block(lower_stmt_list(body))
+        .Let(name, vt, init) -> .Let(name, vt, lower_expr(store, init))
+        .Mut(name, vt, init) -> .Mut(name, vt, lower_expr(store, init))
+        .Const(name, vt, init) -> .Const(name, vt, lower_expr(store, init))
+        .Expr(e) -> .Expr(lower_expr(store, e))
+        .Return(e) -> .Return(lower_expr(store, e))
+        .Block(body) -> .Block(lower_stmt_list(store, body))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(lower_expr(cond), lower_stmt(then_b), lower_stmt(else_b!))
+                .If(lower_expr(store, cond), lower_stmt(store, then_b), lower_stmt(store, else_b!))
             } else {
-                .If(lower_expr(cond), lower_stmt(then_b), null)
+                .If(lower_expr(store, cond), lower_stmt(store, then_b), null)
             }
         }
-        .While(cond, body) -> .While(lower_expr(cond), lower_stmt(body))
-        .For(v, start, end, body) -> .For(v, lower_expr(start), lower_expr(end), lower_stmt(body))
-        .ForIn(v, coll, body) -> .ForIn(v, lower_expr(coll), lower_stmt(body))
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_stmt_list(body))
-        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(methods))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: lower_stmt(inner.node) })
-        .Module(name, body) -> .Module(name, lower_stmt_list(body))
-        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, lower_stmt_list(body))
-        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, lower_stmt_list(body))
-        .SpecBlock(name, body) -> .SpecBlock(name, lower_stmt_list(body))
-        .GivenBlock(name, body) -> .GivenBlock(name, lower_stmt_list(body))
-        .ThenBlock(name, cond) -> .ThenBlock(name, lower_expr(cond))
-        .Match(subj, arms) -> .Match(lower_expr(subj), lower_match_arms(arms))
-        .Defer(body) -> .Defer(lower_expr(body))
-        .Errdefer(body) -> .Errdefer(lower_expr(body))
-        .LetDestructure(names, init) -> .LetDestructure(names, lower_expr(init))
-        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(methods))
-        .TraitDecl(name, methods) -> .TraitDecl(name, lower_stmt_list(methods))
-        .Parallel(body) -> .Parallel(lower_stmt_list(body))
+        .While(cond, body) -> .While(lower_expr(store, cond), lower_stmt(store, body))
+        .For(v, start, end, body) -> .For(v, lower_expr(store, start), lower_expr(store, end), lower_stmt(store, body))
+        .ForIn(v, coll, body) -> .ForIn(v, lower_expr(store, coll), lower_stmt(store, body))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_stmt_list(store, body))
+        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(store, methods))
+        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: lower_stmt(store, inner.node) })
+        .Module(name, body) -> .Module(name, lower_stmt_list(store, body))
+        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, lower_stmt_list(store, body))
+        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, lower_stmt_list(store, body))
+        .SpecBlock(name, body) -> .SpecBlock(name, lower_stmt_list(store, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, lower_stmt_list(store, body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, lower_expr(store, cond))
+        .Match(subj, arms) -> .Match(lower_expr(store, subj), lower_match_arms(store, arms))
+        .Defer(body) -> .Defer(lower_expr(store, body))
+        .Errdefer(body) -> .Errdefer(lower_expr(store, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, lower_expr(store, init))
+        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(store, methods))
+        .TraitDecl(name, methods) -> .TraitDecl(name, lower_stmt_list(store, methods))
+        .Parallel(body) -> .Parallel(lower_stmt_list(store, body))
         _ -> stmt
     }
 }
@@ -237,46 +237,46 @@ fn lower_stmt(stmt: Stmt) -> Stmt {
 /// `quote { ... }` nested inside (e.g.) a struct-literal field or
 /// match-arm body is also lowered. Leaves (Number/String/Bool/Null/
 /// Ident/QualifiedIdent/FloatLit) hit the catch-all and pass through.
-fn lower_expr(expr: Expr) -> Expr {
+fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
     match expr {
-        .Quote(kind, body) -> dispatch_quote_kind(kind, body)
-        .Binary(l, op, r) -> .Binary(lower_expr(l), op, lower_expr(r))
-        .Unary(op, r) -> .Unary(op, lower_expr(r))
-        .Logical(l, op, r) -> .Logical(lower_expr(l), op, lower_expr(r))
-        .Call(callee, args) -> .Call(lower_expr(callee), lower_expr_list(args))
-        .GenericCall(callee, ta, args) -> .GenericCall(lower_expr(callee), ta, lower_expr_list(args))
-        .Grouping(inner) -> .Grouping(lower_expr(inner))
-        .Block(body) -> .Block(lower_stmt_list(body))
-        .IfExpr(c, t, e) -> .IfExpr(lower_expr(c), lower_expr(t), lower_expr(e))
-        .Assign(name, v) -> .Assign(name, lower_expr(v))
-        .StructLit(name, inits) -> .StructLit(name, lower_field_inits(inits))
-        .FieldAccess(obj, field) -> .FieldAccess(lower_expr(obj), field)
-        .FieldAssign(obj, field, v) -> .FieldAssign(lower_expr(obj), field, lower_expr(v))
-        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, lower_expr_list(args))
-        .Index(obj, idx) -> .Index(lower_expr(obj), lower_expr(idx))
-        .NullCoalesce(l, r) -> .NullCoalesce(lower_expr(l), lower_expr(r))
-        .OptionalChain(obj, field) -> .OptionalChain(lower_expr(obj), field)
-        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(lower_expr(obj), method, lower_expr_list(args))
-        .Try(inner) -> .Try(lower_expr(inner))
-        .Tuple(elems) -> .Tuple(lower_expr_list(elems))
-        .TupleIndex(obj, idx) -> .TupleIndex(lower_expr(obj), idx)
-        .With(obj, overrides) -> .With(lower_expr(obj), lower_field_inits(overrides))
-        .ListLit(elems) -> .ListLit(lower_expr_list(elems))
-        .Lambda(params, body) -> .Lambda(params, lower_expr(body))
-        .MapLit(entries) -> .MapLit(lower_expr_list(entries))
-        .Slice(obj, s, e) -> .Slice(lower_expr(obj), lower_expr(s), lower_expr(e))
-        .IsCheck(subj, vname) -> .IsCheck(lower_expr(subj), vname)
-        .InCheck(needle, items) -> .InCheck(lower_expr(needle), lower_expr_list(items))
-        .Spawn(body) -> .Spawn(lower_expr(body))
-        .Isolated(body) -> .Isolated(lower_expr(body))
-        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(subj), lower_match_arms(arms))
-        .Splice(target) -> .Splice(lower_expr(target))
+        .Quote(kind, body) -> dispatch_quote_kind(store, kind, body)
+        .Binary(l, op, r) -> .Binary(lower_expr(store, l), op, lower_expr(store, r))
+        .Unary(op, r) -> .Unary(op, lower_expr(store, r))
+        .Logical(l, op, r) -> .Logical(lower_expr(store, l), op, lower_expr(store, r))
+        .Call(callee, args) -> .Call(lower_expr(store, callee), lower_expr_list(store, args))
+        .GenericCall(callee, ta, args) -> .GenericCall(lower_expr(store, callee), ta, lower_expr_list(store, args))
+        .Grouping(inner) -> .Grouping(lower_expr(store, inner))
+        .Block(body) -> .Block(lower_stmt_list(store, body))
+        .IfExpr(c, t, e) -> .IfExpr(lower_expr(store, c), lower_expr(store, t), lower_expr(store, e))
+        .Assign(name, v) -> .Assign(name, lower_expr(store, v))
+        .StructLit(name, inits) -> .StructLit(name, lower_field_inits(store, inits))
+        .FieldAccess(obj, field) -> .FieldAccess(lower_expr(store, obj), field)
+        .FieldAssign(obj, field, v) -> .FieldAssign(lower_expr(store, obj), field, lower_expr(store, v))
+        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, lower_expr_list(store, args))
+        .Index(obj, idx) -> .Index(lower_expr(store, obj), lower_expr(store, idx))
+        .NullCoalesce(l, r) -> .NullCoalesce(lower_expr(store, l), lower_expr(store, r))
+        .OptionalChain(obj, field) -> .OptionalChain(lower_expr(store, obj), field)
+        .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(lower_expr(store, obj), method, lower_expr_list(store, args))
+        .Try(inner) -> .Try(lower_expr(store, inner))
+        .Tuple(elems) -> .Tuple(lower_expr_list(store, elems))
+        .TupleIndex(obj, idx) -> .TupleIndex(lower_expr(store, obj), idx)
+        .With(obj, overrides) -> .With(lower_expr(store, obj), lower_field_inits(store, overrides))
+        .ListLit(elems) -> .ListLit(lower_expr_list(store, elems))
+        .Lambda(params, body) -> .Lambda(params, lower_expr(store, body))
+        .MapLit(entries) -> .MapLit(lower_expr_list(store, entries))
+        .Slice(obj, s, e) -> .Slice(lower_expr(store, obj), lower_expr(store, s), lower_expr(store, e))
+        .IsCheck(subj, vname) -> .IsCheck(lower_expr(store, subj), vname)
+        .InCheck(needle, items) -> .InCheck(lower_expr(store, needle), lower_expr_list(store, items))
+        .Spawn(body) -> .Spawn(lower_expr(store, body))
+        .Isolated(body) -> .Isolated(lower_expr(store, body))
+        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(store, subj), lower_match_arms(store, arms))
+        .Splice(target) -> .Splice(lower_expr(store, target))
         _ -> expr
     }
 }
 
-fn lower_expr_list(list: List<SExpr>) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(lower_expr(se.node), se.line, se.col))
+fn lower_expr_list(store: NodeStore, list: List<SExpr>) -> List<SExpr> {
+    list_map(list, (se: SExpr) -> sexpr(lower_expr(store, se.node), se.line, se.col))
 }
 
 /// b85m: lower every Quote in match-arm guards + bodies. Without
@@ -284,12 +284,12 @@ fn lower_expr_list(list: List<SExpr>) -> List<SExpr> {
 /// arm body keeps its un-lowered Expr.Quote node, which the
 /// tree-walk evaluator can't handle — the macro expansion
 /// silently fails to fire.
-fn lower_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
+fn lower_match_arms(store: NodeStore, arms: List<MatchArm>) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> {
-        let lowered_body = sexpr(lower_expr(arm.body.node), arm.body.line, arm.body.col)
+        let lowered_body = sexpr(lower_expr(store, arm.body.node), arm.body.line, arm.body.col)
         let lowered_guard = if arm.guard == null { null } else {
             let g = arm.guard!
-            sexpr(lower_expr(g.node), g.line, g.col)
+            sexpr(lower_expr(store, g.node), g.line, g.col)
         }
         // The lowered arm is a NEW tree with no arena rows (F1b dual
         // convention) — the original ids would point at pre-lowering rows.
@@ -304,10 +304,10 @@ fn lower_match_arms(arms: List<MatchArm>) -> List<MatchArm> {
     })
 }
 
-fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
+fn lower_field_inits(store: NodeStore, inits: List<FieldInit>) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(lower_expr(init.value.node), init.value.line, init.value.col),
+        value: sexpr(lower_expr(store, init.value.node), init.value.line, init.value.col),
         // The lowered value is a NEW tree with no arena row (F1b dual
         // convention) — the original id would point at the pre-lowering row.
         value_id: none,
@@ -324,34 +324,34 @@ fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
 /// (int / bool / float / string / bytes / void) by Ident shape —
 /// generic types and structural type expressions need a parser path
 /// that invokes parse_type_expr inside the braces (vez6.3.13 follow-up).
-fn dispatch_quote_kind(kind: string, body: Expr) -> Expr {
+fn dispatch_quote_kind(store: NodeStore, kind: string, body: Expr) -> Expr {
     if kind == "stmt" || kind == "decl" {
         let single = extract_single_stmt(body)
-        if single != null { return construct_stmt(single!) }
+        if single != null { return construct_stmt(store, single!) }
         // Block has 0 or 2+ statements — fall back to constructing
         // the List<SStmt> as if `stmts` was used. The user gets a
         // list instead of a Stmt, which surfaces the mismatch.
-        return construct_stmt_list(extract_stmt_list(body))
+        return construct_stmt_list(store, extract_stmt_list(body))
     }
     if kind == "stmts" {
-        return construct_stmt_list(extract_stmt_list(body))
+        return construct_stmt_list(store, extract_stmt_list(body))
     }
     if kind == "type" {
-        return construct_value_type_from_body(body)
+        return construct_value_type_from_body(store, body)
     }
     if kind == "arm" {
         // The parser wrapped the arm in a single-armed MatchExpr so
         // the Quote(body) shape stays uniform. Unbox it here and
         // construct the MatchArm value programmatically.
         let arm = extract_single_match_arm(body)
-        if arm != null { return construct_match_arm(arm!) }
+        if arm != null { return construct_match_arm(store, arm!) }
         // Malformed `quote arm { ... }` (no arm parsed) — emit a null
         // pattern arm so codegen has something well-typed; the parser
         // already reported the syntax error.
-        return construct_match_arm_null()
+        return construct_match_arm_null(store, )
     }
     // Default: kind == "expr" or unrecognized.
-    construct_expr(unwrap_quote_body(body))
+    construct_expr(store, unwrap_quote_body(body))
 }
 
 /// Pull the single MatchArm out of the synthetic `MatchExpr(Null, [arm])`
@@ -366,9 +366,9 @@ fn extract_single_match_arm(body: Expr) -> MatchArm? {
     }
 }
 
-fn construct_match_arm_null() -> Expr {
+fn construct_match_arm_null(store: NodeStore, ) -> Expr {
     let body_expr = Expr.None
-    construct_match_arm(MatchArm {
+    construct_match_arm(store, MatchArm {
         pattern: Pattern.Wildcard,
         guard: null,
         body: sexpr_dummy(body_expr),
@@ -382,7 +382,7 @@ fn construct_match_arm_null() -> Expr {
 /// matching the body's Ident text against the primitive names.
 /// Anything else falls through to ValueType.Unknown — generic +
 /// structural type expressions are tracked under vez6.3.13.
-fn construct_value_type_from_body(body: Expr) -> Expr {
+fn construct_value_type_from_body(store: NodeStore, body: Expr) -> Expr {
     let inner = unwrap_quote_body(body)
     match inner {
         .Ident(name) -> primitive_value_type(name)
@@ -453,7 +453,7 @@ fn unwrap_quote_body(body: Expr) -> Expr {
 // ── AST construction ──
 
 /// Given an AST Expr `e`, produce another Expr that constructs `e` as
-/// a runtime value when evaluated. So `construct_expr(Number("5"))`
+/// a runtime value when evaluated. So `construct_expr(store, Number("5"))`
 /// returns the AST shape of `Expr.Number("5")` — i.e. an EnumCtor for
 /// the Expr.Number variant carrying a string-literal arg "5".
 ///
@@ -463,7 +463,7 @@ fn unwrap_quote_body(body: Expr) -> Expr {
 /// by tests that need them. Other variants pass through unchanged for
 /// now; downstream stages will see the raw AST and surface the missing
 /// case naturally.
-export fn construct_expr(e: Expr) -> Expr {
+export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
     match e {
         .Number(v) -> expr_ctor("Number", string_arg(v))
         .String(v) -> expr_ctor("String", string_arg(v))
@@ -474,41 +474,41 @@ export fn construct_expr(e: Expr) -> Expr {
         }
         .Ident(name) -> expr_ctor("Ident", string_arg(name))
         .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
-        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(value)))
-        .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr(l), construct_binop(op), construct_expr(r)))
-        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(op), construct_expr(r)))
-        .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr(l), construct_logicop(op), construct_expr(r)))
-        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr(inner)))
-        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr(callee), construct_expr_list(args)))
-        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr(obj), string_lit_expr(field)))
-        .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr(obj), construct_expr(idx)))
-        .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr(c), construct_expr(t), construct_expr(el)))
-        .Tuple(elements) -> expr_ctor("Tuple", one_arg(construct_expr_list(elements)))
-        .ListLit(elements) -> expr_ctor("ListLit", one_arg(construct_expr_list(elements)))
-        .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr(l), construct_expr(r)))
-        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(obj), string_lit_expr(field)))
-        .OptionalMethodCall(obj, method, args) -> expr_ctor("OptionalMethodCall", three_args(construct_expr(obj), string_lit_expr(method), construct_expr_list(args)))
-        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(inner)))
+        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(store, value)))
+        .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr(store, l), construct_binop(store, op), construct_expr(store, r)))
+        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(store, op), construct_expr(store, r)))
+        .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr(store, l), construct_logicop(store, op), construct_expr(store, r)))
+        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr(store, inner)))
+        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr(store, callee), construct_expr_list(store, args)))
+        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr(store, obj), string_lit_expr(field)))
+        .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr(store, obj), construct_expr(store, idx)))
+        .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr(store, c), construct_expr(store, t), construct_expr(store, el)))
+        .Tuple(elements) -> expr_ctor("Tuple", one_arg(construct_expr_list(store, elements)))
+        .ListLit(elements) -> expr_ctor("ListLit", one_arg(construct_expr_list(store, elements)))
+        .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr(store, l), construct_expr(store, r)))
+        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(store, obj), string_lit_expr(field)))
+        .OptionalMethodCall(obj, method, args) -> expr_ctor("OptionalMethodCall", three_args(construct_expr(store, obj), string_lit_expr(method), construct_expr_list(store, args)))
+        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(store, inner)))
         .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
-        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(name), construct_field_init_list(inits)))
-        .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(args)))
-        .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(entries)))
-        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr(subj), string_lit_expr(vname)))
-        .InCheck(needle, items) -> expr_ctor("InCheck", two_args(construct_expr(needle), construct_expr_list(items)))
-        .Slice(obj, start, end) -> expr_ctor("Slice", three_args(construct_expr(obj), construct_expr(start), construct_expr(end)))
-        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr(obj), Expr.Number(string(idx))))
-        .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(obj), construct_field_init_list(overrides)))
-        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(obj), string_lit_expr(field), construct_expr(value)))
-        .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(params), construct_expr(body)))
-        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(body)))
-        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr(body)))
-        .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(body)))
+        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(name), construct_field_init_list(store, inits)))
+        .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(store, args)))
+        .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(store, entries)))
+        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr(store, subj), string_lit_expr(vname)))
+        .InCheck(needle, items) -> expr_ctor("InCheck", two_args(construct_expr(store, needle), construct_expr_list(store, items)))
+        .Slice(obj, start, end) -> expr_ctor("Slice", three_args(construct_expr(store, obj), construct_expr(store, start), construct_expr(store, end)))
+        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr(store, obj), Expr.Number(string(idx))))
+        .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(store, obj), construct_field_init_list(store, overrides)))
+        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(store, obj), string_lit_expr(field), construct_expr(store, value)))
+        .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(store, params), construct_expr(store, body)))
+        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(store, body)))
+        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr(store, body)))
+        .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(store, body)))
         // MatchExpr inside a quote — subject + arms become a runtime
         // `Expr.MatchExpr` value. The arm list goes through
         // `construct_match_arm_list` which expands `~arms` sentinels
         // into `list_concat` calls.
         .MatchExpr(subject, arms) -> expr_ctor("MatchExpr",
-            two_args(construct_expr(subject), construct_match_arm_list(arms)))
+            two_args(construct_expr(store, subject), construct_match_arm_list(store, arms)))
         // Splice (~target) — the target evaluates at expansion time
         // to a runtime AST value of the right shape, so we emit it
         // straight through without a construct_expr wrap. That's the
@@ -521,7 +521,7 @@ export fn construct_expr(e: Expr) -> Expr {
         // already an AST-build expression) and avoids needing a meta-
         // quote machinery. Proper meta-quote (outer captures inner
         // Quote form verbatim) is a separate language design call.
-        .Quote(_, body) -> construct_expr(unwrap_quote_body(body))
+        .Quote(_, body) -> construct_expr(store, unwrap_quote_body(body))
         .When(_) -> e
         _ -> e
     }
@@ -540,7 +540,7 @@ fn expr_ctor(variant: string, args: List<SExpr>) -> Expr {
 /// literal. Quote captures pre-resolve, so vtype is always Unknown —
 /// the resolver fills it in when the lowered AST is re-resolved — and
 /// ty_id is an explicit null dual (a constructed entry has no arena row).
-fn construct_param_list(params: List<ParamEntry>) -> Expr {
+fn construct_param_list(store: NodeStore, params: List<ParamEntry>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < params.length {
@@ -587,13 +587,13 @@ fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k
 /// emits an `Expr.EnumCtor("Pattern", VariantName, [args])` for
 /// each case. Used by `construct_match_arm` and (in the future)
 /// by quote_expr's pattern-position splices.
-fn construct_pattern(p: Pattern) -> Expr {
+fn construct_pattern(store: NodeStore, p: Pattern) -> Expr {
     match p {
         .Wildcard -> pattern_ctor("Wildcard", [])
         .Variant(name, bindings) -> {
             let args: List<SExpr> = [
                 sexpr_dummy(string_lit_expr(name)),
-                sexpr_dummy(construct_param_list(bindings)),
+                sexpr_dummy(construct_param_list(store, bindings)),
             ]
             pattern_ctor("Variant", args)
         }
@@ -616,14 +616,14 @@ fn construct_pattern(p: Pattern) -> Expr {
         .NestedVariant(name, sub_patterns) -> {
             let args: List<SExpr> = [
                 sexpr_dummy(string_lit_expr(name)),
-                sexpr_dummy(construct_pattern_list(sub_patterns)),
+                sexpr_dummy(construct_pattern_list(store, sub_patterns)),
             ]
             pattern_ctor("NestedVariant", args)
         }
         .Or(left, right) -> {
             let args: List<SExpr> = [
-                sexpr_dummy(construct_pattern(left)),
-                sexpr_dummy(construct_pattern(right)),
+                sexpr_dummy(construct_pattern(store, store.pats.get(left))),
+                sexpr_dummy(construct_pattern(store, store.pats.get(right))),
             ]
             pattern_ctor("Or", args)
         }
@@ -641,11 +641,11 @@ fn pattern_ctor(variant: string, args: List<SExpr>) -> Expr {
     Expr.EnumCtor("@std::avrac::core::Pattern", variant, args)
 }
 
-fn construct_pattern_list(patterns: List<Pattern>) -> Expr {
+fn construct_pattern_list(store: NodeStore, patterns: List<PatId>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < patterns.length {
-        elems.push(sexpr_dummy(construct_pattern(patterns[i])))
+        elems.push(sexpr_dummy(construct_pattern(store, store.pats.get(patterns[i]))))
         i = i + 1
     }
     Expr.ListLit(elems)
@@ -657,10 +657,10 @@ fn construct_pattern_list(patterns: List<Pattern>) -> Expr {
 /// constructed SExpr. The dual id fields are emitted as explicit nulls:
 /// the constructed arm is a NEW synthetic tree with no arena rows —
 /// re-ingest allocates them when the spliced AST re-enters a store.
-fn construct_match_arm(arm: MatchArm) -> Expr {
-    let pattern_expr = construct_pattern(arm.pattern)
-    let guard_expr = if arm.guard != null { construct_sexpr(arm.guard!) } else { Expr.None }
-    let body_expr = construct_sexpr(arm.body)
+fn construct_match_arm(store: NodeStore, arm: MatchArm) -> Expr {
+    let pattern_expr = construct_pattern(store, arm.pattern)
+    let guard_expr = if arm.guard != null { construct_sexpr(store, arm.guard!) } else { Expr.None }
+    let body_expr = construct_sexpr(store, arm.body)
     mut inits: List<FieldInit> = []
     inits.push(synth_init("pattern", pattern_expr))
     inits.push(synth_init("guard", guard_expr))
@@ -682,7 +682,7 @@ fn construct_match_arm(arm: MatchArm) -> Expr {
 /// sentinel `MatchArm { pattern: TypePattern("__quote_splice_arms__", ""),
 /// body: Splice(target) }` produced by `parse_match_arm_list` when
 /// inside a quote.
-fn construct_match_arm_list(arms: List<MatchArm>) -> Expr {
+fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
     mut result_opt: Expr? = null
     mut current_seg: List<SExpr> = []
     mut i = 0
@@ -697,7 +697,7 @@ fn construct_match_arm_list(arms: List<MatchArm>) -> Expr {
             result_opt = list_concat_call(result_opt!, splice_target)
             current_seg = []
         } else {
-            let arm_lit = construct_match_arm(arm)
+            let arm_lit = construct_match_arm(store, arm)
             current_seg = current_seg.push(sexpr_dummy(arm_lit))
         }
         i = i + 1
@@ -742,20 +742,20 @@ fn list_concat_call(left: Expr, right: Expr) -> Expr {
 /// `arg_ids` is explicitly null: a quote-rebuilt annotation has no
 /// arena rows until its consumer's pass migrates (the F1a dual-field
 /// convention).
-fn construct_annotation(a: Annotation) -> Expr {
+fn construct_annotation(store: NodeStore, a: Annotation) -> Expr {
     struct_lit_3("@std::avrac::core::Annotation",
         "name", string_lit_expr(a.name),
-        "args", construct_expr_list(a.args),
+        "args", construct_expr_list(store, a.args),
         "arg_ids", Expr.None)
 }
 
 /// Build an Expr producing a `List<Annotation>` AST value at
 /// runtime. Each entry uses `construct_annotation`.
-fn construct_annotation_list(annots: List<Annotation>) -> Expr {
+fn construct_annotation_list(store: NodeStore, annots: List<Annotation>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < annots.length {
-        elems.push(sexpr_dummy(construct_annotation(annots[i])))
+        elems.push(sexpr_dummy(construct_annotation(store, annots[i])))
         i = i + 1
     }
     Expr.ListLit(elems)
@@ -829,14 +829,14 @@ fn construct_variant_list(variants: List<Variant>) -> Expr {
 /// `List<CompConfigPair>` AST value. Each entry is a struct
 /// literal `CompConfigPair { key, value }`; the result is an
 /// `Expr.ListLit` so codegen materializes a real list at runtime.
-fn construct_comp_config_pair_list(list: List<CompConfigPair>) -> Expr {
+fn construct_comp_config_pair_list(store: NodeStore, list: List<CompConfigPair>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < list.length {
         let pair = list[i]
         let struct_lit = struct_lit_2("@std::avrac::core::CompConfigPair",
             "key", string_lit_expr(pair.key),
-            "value", construct_expr(pair.value))
+            "value", construct_expr(store, pair.value))
         elems.push(sexpr_dummy(struct_lit))
         i = i + 1
     }
@@ -977,14 +977,14 @@ fn int_lit_expr(n: int) -> Expr {
 /// `Expr.ListLit` so codegen produces a real list at runtime.
 /// Mirrors `construct_type_param_list` shape — same pattern, same
 /// reverse-walk-to-preserve-source-order.
-fn construct_field_init_list(list: List<FieldInit>) -> Expr {
+fn construct_field_init_list(store: NodeStore, list: List<FieldInit>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < list.length {
         let init = list[i]
         let struct_lit = struct_lit_3("@std::avrac::core::FieldInit",
             "name", string_lit_expr(init.name),
-            "value", construct_sexpr(init.value),
+            "value", construct_sexpr(store, init.value),
             "value_id", Expr.None)
         elems.push(sexpr_dummy(struct_lit))
         i = i + 1
@@ -1091,16 +1091,16 @@ fn is_ident_char(c: string) -> bool {
 
 /// Build an Expr that, when evaluated, produces a `List<SExpr>` AST
 /// value matching `list`. Emits `Expr.ListLit([sexpr_call_0, ...])`
-/// — each element is a Call to `sexpr_dummy(construct_expr(item))`,
+/// — each element is a Call to `sexpr_dummy(construct_expr(store, item))`,
 /// so at runtime the ListLit eval produces a list of SExpr values
 /// shaped like the original `List<SExpr>`. Decoded by
 /// `list_value_to_expr_list` in comptime/eval.av.
-fn construct_expr_list(list: List<SExpr>) -> Expr {
+fn construct_expr_list(store: NodeStore, list: List<SExpr>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < list.length {
         let se = list[i]
-        elems.push(sexpr_dummy(construct_sexpr(se)))
+        elems.push(sexpr_dummy(construct_sexpr(store, se)))
         i = i + 1
     }
     Expr.ListLit(elems)
@@ -1109,8 +1109,8 @@ fn construct_expr_list(list: List<SExpr>) -> Expr {
 /// Build an Expr that, when evaluated, produces an SExpr wrapping the
 /// runtime value of the given Expr. Uses `sexpr_dummy(e)` rather than
 /// a struct literal to avoid having to track ValueType / file fields.
-fn construct_sexpr(se: SExpr) -> Expr {
-    sexpr_dummy_call(construct_expr(se.node))
+fn construct_sexpr(store: NodeStore, se: SExpr) -> Expr {
+    sexpr_dummy_call(construct_expr(store, se.node))
 }
 
 /// `sexpr_dummy(arg)` as a Call expression. Helper for constructing
@@ -1140,12 +1140,12 @@ fn sstmt_dummy_call(arg: Expr) -> Expr {
 
 /// Build an Expr that, when evaluated, produces a `List<SStmt>` AST value.
 /// Mirrors construct_expr_list / construct_field_init_list shape:
-/// emits `Expr.ListLit([construct_sstmt(s0), construct_sstmt(s1), ...])`.
-fn construct_stmt_list(list: List<SStmt>) -> Expr {
+/// emits `Expr.ListLit([construct_sstmt(store, s0), construct_sstmt(store, s1), ...])`.
+fn construct_stmt_list(store: NodeStore, list: List<SStmt>) -> Expr {
     mut elems: List<SExpr> = []
     mut i = 0
     while i < list.length {
-        elems.push(sexpr_dummy(construct_sstmt(list[i])))
+        elems.push(sexpr_dummy(construct_sstmt(store, list[i])))
         i = i + 1
     }
     Expr.ListLit(elems)
@@ -1153,8 +1153,8 @@ fn construct_stmt_list(list: List<SStmt>) -> Expr {
 
 /// Build an Expr that, when evaluated, produces an SStmt wrapping the
 /// runtime value of `ss.node`.
-fn construct_sstmt(ss: SStmt) -> Expr {
-    sstmt_dummy_call(construct_stmt(ss.node))
+fn construct_sstmt(store: NodeStore, ss: SStmt) -> Expr {
+    sstmt_dummy_call(construct_stmt(store, ss.node))
 }
 
 /// Build an Expr that, when evaluated, produces a Stmt AST value
@@ -1169,7 +1169,7 @@ fn construct_sstmt(ss: SStmt) -> Expr {
 /// (via construct_stmt + eval_expr) when invoking a 1-arg macro.
 /// Arity, encoding, and split between encoded vs. passthrough variants
 /// stay an internal detail — callers should treat this as opaque.
-export fn construct_stmt(stmt: Stmt) -> Expr {
+export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
     match stmt {
         // Preserve the declared/resolved type slot. Quote-emitted code
         // typically leaves it Unknown (resolver fills in), but macros
@@ -1180,12 +1180,12 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
         // types: List vs List". The encoder now handles ValueType
         // construction generically; non-typed quote callers pass
         // ValueType.Unknown which encodes as the same Unknown ctor.
-        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
-        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
-        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(init)))
-        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(e)))
-        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(body)))
-        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(e)))
+        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(store, init)))
+        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(store, init)))
+        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(store, init)))
+        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(store, e)))
+        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(store, body)))
+        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(store, e)))
         .ReturnEmpty -> {
             let empty: List<SExpr> = []
             stmt_ctor("ReturnEmpty", empty)
@@ -1202,30 +1202,30 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
             let empty: List<SExpr> = []
             stmt_ctor("Continue", empty)
         }
-        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr(body)))
-        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr(body)))
-        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(cond), construct_stmt(body)))
-        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr(start), construct_expr(end), construct_stmt(body)))
-        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr(coll), construct_stmt(body)))
+        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr(store, body)))
+        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr(store, body)))
+        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(store, cond), construct_stmt(store, body)))
+        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr(store, start), construct_expr(store, end), construct_stmt(store, body)))
+        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr(store, coll), construct_stmt(store, body)))
         // If has a nullable else_branch — encode null as Expr.None at
         // the AST level so the constructed runtime gets back the
         // null-discriminant.
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), construct_stmt(else_b!)))
+                stmt_ctor("If", three_args(construct_expr(store, cond), construct_stmt(store, then_b), construct_stmt(store, else_b!)))
             } else {
-                stmt_ctor("If", three_args(construct_expr(cond), construct_stmt(then_b), Expr.None))
+                stmt_ctor("If", three_args(construct_expr(store, cond), construct_stmt(store, then_b), Expr.None))
             }
         }
-        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_list(methods)))
-        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(methods)))
-        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(body)))
+        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_list(store, methods)))
+        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(store, methods)))
+        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(store, body)))
         .Function(name, tp, params, rvt, body) -> stmt_ctor("Function",
             five_args(name_or_splice(name),
                       construct_type_param_list(tp),
-                      construct_param_list(params),
+                      construct_param_list(store, params),
                       construct_value_type(rvt),
-                      construct_stmt_list(body)))
+                      construct_stmt_list(store, body)))
         .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
             three_args(name_or_splice(name),
                        construct_type_param_list(tp),
@@ -1237,14 +1237,14 @@ export fn construct_stmt(stmt: Stmt) -> Expr {
         .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor("ComponentBlock",
             four_args(string_lit_expr(comp_name),
                       string_lit_expr(instance),
-                      construct_comp_config_pair_list(config),
-                      construct_stmt_list(body)))
+                      construct_comp_config_pair_list(store, config),
+                      construct_stmt_list(store, body)))
         // Step 4 nested @expand: a macro returning code that itself
         // carries an @expand annotation needs the Annotated layer to
         // roundtrip through quote construction so the outer expand
         // pass sees the new @expand site on the next fixpoint iter.
         .Annotated(annots, inner) -> stmt_ctor("Annotated",
-            two_args(construct_annotation_list(annots), construct_stmt(inner.node)))
+            two_args(construct_annotation_list(store, annots), construct_stmt(store, inner.node)))
         _ -> stmt_passthrough(stmt)
     }
 }
@@ -1272,15 +1272,15 @@ fn five_args(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> List<SExpr> {
     [sexpr_dummy(a), sexpr_dummy(b), sexpr_dummy(c), sexpr_dummy(d), sexpr_dummy(e)]
 }
 
-fn construct_binop(op: BinOp) -> Expr {
+fn construct_binop(store: NodeStore, op: BinOp) -> Expr {
     let empty: List<SExpr> = []
     Expr.EnumCtor("@std::avrac::core::BinOp", op_variant_name_bin(op), empty)
 }
-fn construct_unop(op: UnOp) -> Expr {
+fn construct_unop(store: NodeStore, op: UnOp) -> Expr {
     let empty: List<SExpr> = []
     Expr.EnumCtor("@std::avrac::core::UnOp", op_variant_name_un(op), empty)
 }
-fn construct_logicop(op: LogicOp) -> Expr {
+fn construct_logicop(store: NodeStore, op: LogicOp) -> Expr {
     let empty: List<SExpr> = []
     Expr.EnumCtor("@std::avrac::core::LogicOp", op_variant_name_logic(op), empty)
 }

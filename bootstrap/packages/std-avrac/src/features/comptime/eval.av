@@ -172,7 +172,7 @@ fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
 /// Uses the runtime stored on the comptime registry — same one
 /// that try_fold_call seeds via prepare_runtime.
 export fn stmt_to_value(runtime: Runtime, s: Stmt) -> Value? {
-    let expr = construct_stmt(s)
+    let expr = construct_stmt(runtime.nodes, s)
     let result = eval_expr(runtime, expr)
     if step_had_error(result) != 0 { return null }
     step_value(result)

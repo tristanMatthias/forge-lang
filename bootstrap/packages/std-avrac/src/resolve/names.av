@@ -566,6 +566,9 @@ type NameCtx = {
     locals: List<LocalBinding>,
     global_index: GlobalItemReg,
     type_reg: TypeRegistry,
+    // The program's NodeStore (B-final F2+): pattern children are ids,
+    // resolved through here when binding/rewriting.
+    nodes: NodeStore,
     // cpvo: the enclosing generic fn's / type's type-params, in scope as a
     // LOCAL binding that shadows same-named types. A name is a type-param iff
     // it's here — replacing the brittle "single uppercase letter" heuristic
@@ -697,7 +700,7 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
     match pattern {
         .Wildcard -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
-        .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
+        .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)  // ids resolved in the list walker
         .TypePattern(_, binding) -> {
             // list_push_copy avoids mutating the parent ctx's
             // locals — same leak-prevention reasoning as
@@ -711,11 +714,11 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
 
 /// Apply `bind_pattern_ctx` over a list of patterns — used by
 /// nested-variant destructuring.
-fn bind_pattern_list(ctx: NameCtx, pats: List<Pattern>) -> NameCtx {
+fn bind_pattern_list(ctx: NameCtx, pats: List<PatId>) -> NameCtx {
     mut acc = ctx
     mut i = 0
     while i < pats.length {
-        acc = bind_pattern_ctx(acc, pats[i])
+        acc = bind_pattern_ctx(acc, ctx.nodes.pats.get(pats[i]))
         i = i + 1
     }
     acc
@@ -766,6 +769,10 @@ export type ResolverState = {
     global_index: GlobalItemReg,
     type_reg: TypeRegistry,
     bag: DiagnosticBag,
+    // The program's NodeStore (B-final F2+): expansion-time transforms
+    // allocate flipped id payloads through it (comptime runtimes seed
+    // their `nodes` from here).
+    nodes: NodeStore,
 }
 
 /// Decl-scan half of `resolve_names`: builds the module tree, graph,
@@ -777,7 +784,7 @@ export type ResolverState = {
 /// pipeline can rebuild the decl context after macro expansion
 /// without re-running the use-site rewrite over already-resolved
 /// originals.
-export fn register_decls(stmts: List<SStmt>) -> ResolverState {
+export fn register_decls(stmts: List<SStmt>, store: NodeStore) -> ResolverState {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let graph = build_graph_from_stmts(stmts)
     let use_result = resolve_use_aliases(stmts, tree, graph)
@@ -791,6 +798,7 @@ export fn register_decls(stmts: List<SStmt>) -> ResolverState {
         global_index,
         type_reg: reg,
         bag: use_result.bag,
+        nodes: store,
     }
 }
 
@@ -809,6 +817,7 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
         locals: [],
         global_index: state.global_index,
         type_reg: state.type_reg,
+        nodes: state.nodes,
         type_params: [],
         type_decl_tps: tps,
     }
@@ -835,6 +844,7 @@ export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> L
         locals: [],
         global_index: state.global_index,
         type_reg: state.type_reg,
+        nodes: state.nodes,
         type_params: [],
         type_decl_tps: tps,
     }
@@ -986,7 +996,7 @@ export type PreExpandResolve = {
 /// Splitting the two halves lets `cli/main.av` interleave
 /// `expand_macros` between them.
 export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreExpandResolve {
-    let state = register_decls(stmts)
+    let state = register_decls(stmts, store)
     let rewritten = rewrite_uses(stmts, state)
     let has_errors = bag_has_errors(state.bag)
     PreExpandResolve {
@@ -1005,7 +1015,7 @@ export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreE
 /// Returns a full `NameResolveResult` so call sites can keep their
 /// existing bag-handling path unchanged after the split.
 export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState) -> NameResolveResult {
-    let resolved = resolve_program(stmts)
+    let resolved = resolve_program(stmts, state.nodes)
     let used = collect_used_paths_stmts(stmts, [])
     let unused_bag = check_unused_imports(state.aliases, used)
     let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)

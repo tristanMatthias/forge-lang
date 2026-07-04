@@ -30,6 +30,9 @@ export type ParseResult = {
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
+    // The parse's NodeStore (B-final F2+): flipped payloads carry ids,
+    // so expression consumers (eval) resolve through the same store.
+    store: NodeStore,
 }
 
 /// Output of `parse_program_source`. Same shape as ParseResult but
@@ -560,6 +563,7 @@ impl Parser {
                     had_error: self.had_error,
                     error_message: self.error_message,
                     bag: self.bag,
+                    store: self.store,
                 }
             }
         }
@@ -571,6 +575,7 @@ impl Parser {
                 had_error: true,
                 error_message: self.error_message,
                 bag: self.bag,
+                store: self.store,
             }
         }
 
@@ -579,6 +584,7 @@ impl Parser {
             had_error: self.had_error,
             error_message: self.error_message,
             bag: self.bag,
+            store: self.store,
         }
     }
 

@@ -513,10 +513,12 @@ export enum Pattern {
     LitBool(value: int)
     /// Float literal pattern (stored as string to preserve precision).
     LitFloat(value: string)
-    /// Nested destructure: `.Some(.Ok(x))` — sub-patterns recurse.
-    NestedVariant(name: string, sub_patterns: List<Pattern>)
-    /// Or-pattern: `.Red | .Green | .Blue -> ...`.
-    Or(left: Pattern, right: Pattern)
+    /// Nested destructure: `.Some(.Ok(x))` — sub-patterns recurse BY ID
+    /// (B-final F2, the variant-flip pilot): children are arena rows,
+    /// resolved via `store.pats.get`.
+    NestedVariant(name: string, sub_patterns: List<PatId>)
+    /// Or-pattern: `.Red | .Green | .Blue -> ...` — branches by id (F2).
+    Or(left: PatId, right: PatId)
     /// Union-type pattern: `int(n)` matches the int branch of a
     /// union-typed subject and binds the unwrapped value to `binding`.
     TypePattern(type_name: string, binding: string)
@@ -2726,80 +2728,80 @@ export fn field_vtype_of(fields: List<FieldEntry>, name: string) -> ValueType {
 /// `bs2 program` for AST inspection and by spec test failure
 /// messages — not a source-form pretty-printer (see fmt_* in main.av
 /// for that).
-export fn render_expr(expr: Expr) -> string {
+export fn render_expr(store: NodeStore, expr: Expr) -> string {
     match expr {
         .Number(value) -> value
         .String(value) -> value
         .Bool(value) -> value
         .None -> "none"
         .Ident(name) -> name
-        .Assign(name, value) -> "(assign ${name} ${render_expr(value)})"
-        .Grouping(inner) -> "(group ${render_expr(inner)})"
-        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(right)})"
-        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(left)} ${render_expr(right)})"
-        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(left)} ${render_expr(right)})"
-        .Call(callee, args) -> "(call ${render_expr(callee)} ${render_expr_list(args)})"
-        .GenericCall(callee, type_args, args) -> "(call ${render_expr(callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(args)})"
-        .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(inits)})"
-        .FieldAccess(obj, field) -> "(field ${render_expr(obj)} ${field})"
-        .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(args)})"
-        .Index(obj, idx) -> "(index ${render_expr(obj)} ${render_expr(idx)})"
-        .Block(body) -> "(block-expr ${render_stmt_list(body)})"
-        .MatchExpr(subject, arms) -> "(match-expr ${render_expr(subject)} ${render_match_arm_list(arms)})"
-        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(obj)} ${field} ${render_expr(value)})"
-        .IfExpr(c, t, e) -> "(if-expr ${render_expr(c)} ${render_expr(t)} ${render_expr(e)})"
-        .NullCoalesce(left, right) -> "(?? ${render_expr(left)} ${render_expr(right)})"
-        .OptionalChain(obj, field) -> "(?. ${render_expr(obj)} ${field})"
-        .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(obj)} ${method} ${render_expr_list(args)})"
-        .Try(inner) -> "(? ${render_expr(inner)})"
-        .Tuple(elements) -> "(tuple ${render_expr_list(elements)})"
-        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(obj)} ${string(idx)})"
-        .With(obj, overrides) -> "(with ${render_expr(obj)} ${render_field_init_list(overrides)})"
-        .ListLit(elements) -> "(list ${render_expr_list(elements)})"
-        .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(body)})"
-        .MapLit(entries) -> "(map ${render_expr_list(entries)})"
+        .Assign(name, value) -> "(assign ${name} ${render_expr(store, value)})"
+        .Grouping(inner) -> "(group ${render_expr(store, inner)})"
+        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, right)})"
+        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
+        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
+        .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
+        .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"
+        .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"
+        .FieldAccess(obj, field) -> "(field ${render_expr(store, obj)} ${field})"
+        .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(store, args)})"
+        .Index(obj, idx) -> "(index ${render_expr(store, obj)} ${render_expr(store, idx)})"
+        .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
+        .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
+        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, obj)} ${field} ${render_expr(store, value)})"
+        .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, c)} ${render_expr(store, t)} ${render_expr(store, e)})"
+        .NullCoalesce(left, right) -> "(?? ${render_expr(store, left)} ${render_expr(store, right)})"
+        .OptionalChain(obj, field) -> "(?. ${render_expr(store, obj)} ${field})"
+        .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"
+        .Try(inner) -> "(? ${render_expr(store, inner)})"
+        .Tuple(elements) -> "(tuple ${render_expr_list(store, elements)})"
+        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, obj)} ${string(idx)})"
+        .With(obj, overrides) -> "(with ${render_expr(store, obj)} ${render_field_init_list(store, overrides)})"
+        .ListLit(elements) -> "(list ${render_expr_list(store, elements)})"
+        .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
+        .MapLit(entries) -> "(map ${render_expr_list(store, entries)})"
         .FloatLit(value) -> value
-        .Slice(obj, start, end) -> "(slice ${render_expr(obj)} ${render_expr(start)}..${render_expr(end)})"
-        .IsCheck(subject, vname) -> "(is ${render_expr(subject)} .${vname})"
-        .InCheck(needle, items) -> "(in ${render_expr(needle)} [${render_expr_list(items)}])"
+        .Slice(obj, start, end) -> "(slice ${render_expr(store, obj)} ${render_expr(store, start)}..${render_expr(store, end)})"
+        .IsCheck(subject, vname) -> "(is ${render_expr(store, subject)} .${vname})"
+        .InCheck(needle, items) -> "(in ${render_expr(store, needle)} [${render_expr_list(store, items)}])"
         .QualifiedIdent(path) -> path
-        .When(arms) -> "(when ${render_when_arm_list(arms)})"
+        .When(arms) -> "(when ${render_when_arm_list(store, arms)})"
         .ListComp(body, variable, collection, filter) -> {
-            let head = "(list-comp ${render_expr(body)} for ${variable} in ${render_expr(collection)}"
-            if filter != null { "${head} if ${render_expr(filter!)})" } else { "${head})" }
+            let head = "(list-comp ${render_expr(store, body)} for ${variable} in ${render_expr(store, collection)}"
+            if filter != null { "${head} if ${render_expr(store, filter!)})" } else { "${head})" }
         }
-        .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
-        .Spawn(body) -> "(spawn ${render_expr(body)})"
+        .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(store, inner)} (${binding}) ${render_expr(store, body)})"
+        .Spawn(body) -> "(spawn ${render_expr(store, body)})"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
                 "(channel<${vtype_render_full(elem)}>)"
             } else {
-                "(channel<${vtype_render_full(elem)}> ${render_expr(capacity!)})"
+                "(channel<${vtype_render_full(elem)}> ${render_expr(store, capacity!)})"
             }
         }
-        .Isolated(body) -> "(isolated ${render_expr(body)})"
-        .Quote(kind, body) -> "(quote ${kind} ${render_expr(body)})"
-        .Splice(target) -> "(splice ${render_expr(target)})"
+        .Isolated(body) -> "(isolated ${render_expr(store, body)})"
+        .Quote(kind, body) -> "(quote ${kind} ${render_expr(store, body)})"
+        .Splice(target) -> "(splice ${render_expr(store, target)})"
     }
 }
 
 /// Render the body of a `when` expression as `cond -> body, ...`.
-fn render_when_arm_list(arms: List<WhenArm>) -> string {
+fn render_when_arm_list(store: NodeStore, arms: List<WhenArm>) -> string {
     mut out = ""
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let cond_str = if arm.cond == null { "_" } else { render_expr(arm.cond!.node) }
-        out = out + "${cond_str} -> ${render_expr(arm.body.node)} "
+        let cond_str = if arm.cond == null { "_" } else { render_expr(store, arm.cond!.node) }
+        out = out + "${cond_str} -> ${render_expr(store, arm.body.node)} "
         i = i + 1
     }
     out
 }
 
 /// Render a `List<FieldInit>` as an S-expression: `(k=v, k2=v2)`.
-export fn render_field_init_list(inits: List<FieldInit>) -> string {
+export fn render_field_init_list(store: NodeStore, inits: List<FieldInit>) -> string {
     if inits.length == 0 { return "()" }
-    "(${list_map(inits, (e: FieldInit) -> "${e.name}=${render_expr(e.value.node)}").join(", ")})"
+    "(${list_map(inits, (e: FieldInit) -> "${e.name}=${render_expr(store, e.value.node)}").join(", ")})"
 }
 
 /// Render a `List<FieldEntry>` as an S-expression: `(name:Type, name2:Type)`.
@@ -2814,9 +2816,9 @@ export fn render_type_name_list(names: List<string>) -> string {
 }
 
 /// Render a `List<SExpr>` as an S-expression: `(e1, e2, e3)`.
-export fn render_expr_list(exprs: List<SExpr>) -> string {
+export fn render_expr_list(store: NodeStore, exprs: List<SExpr>) -> string {
     if exprs.length == 0 { return "()" }
-    "(${list_map(exprs, (se: SExpr) -> render_expr(se.node)).join(", ")})"
+    "(${list_map(exprs, (se: SExpr) -> render_expr(store, se.node)).join(", ")})"
 }
 
 /// Render a `List<ParamEntry>` as `(name, name2)`.
@@ -2827,30 +2829,30 @@ export fn render_param_list(params: List<ParamEntry>) -> string {
 
 /// Render a Stmt as an S-expression. Mirror to `render_expr` —
 /// inspection-only, not source round-trip.
-export fn render_stmt(stmt: Stmt) -> string {
+export fn render_stmt(store: NodeStore, stmt: Stmt) -> string {
     match stmt {
-        .Let(name, vt, initializer) -> "(let ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
-        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
-        .Const(name, vt, initializer) -> "(const ${name}:${vtype_render_decl(vt)} ${render_expr(initializer)})"
-        .Expr(expr) -> "(expr ${render_expr(expr)})"
-        .Block(body) -> "(block ${render_stmt_list(body)})"
+        .Let(name, vt, initializer) -> "(let ${name}:${vtype_render_decl(vt)} ${render_expr(store, initializer)})"
+        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_render_decl(vt)} ${render_expr(store, initializer)})"
+        .Const(name, vt, initializer) -> "(const ${name}:${vtype_render_decl(vt)} ${render_expr(store, initializer)})"
+        .Expr(expr) -> "(expr ${render_expr(store, expr)})"
+        .Block(body) -> "(block ${render_stmt_list(store, body)})"
         .If(condition, then_branch, else_branch) -> {
-            let base = "(if ${render_expr(condition)} ${render_stmt(then_branch)}"
+            let base = "(if ${render_expr(store, condition)} ${render_stmt(store, then_branch)}"
             if else_branch == null {
                 "${base})"
             } else {
-                "${base} ${render_stmt(else_branch!)})"
+                "${base} ${render_stmt(store, else_branch!)})"
             }
         }
-        .While(condition, body) -> "(while ${render_expr(condition)} ${render_stmt(body)})"
-        .For(variable, start, end, body) -> "(for ${variable} ${render_expr(start)}..${render_expr(end)} ${render_stmt(body)})"
-        .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(collection)} ${render_stmt(body)})"
+        .While(condition, body) -> "(while ${render_expr(store, condition)} ${render_stmt(store, body)})"
+        .For(variable, start, end, body) -> "(for ${variable} ${render_expr(store, start)}..${render_expr(store, end)} ${render_stmt(store, body)})"
+        .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(store, collection)} ${render_stmt(store, body)})"
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_render_decl(rvt)} ${render_stmt_list(body)})"
+            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_render_decl(rvt)} ${render_stmt_list(store, body)})"
         }
-        .Return(value) -> "(return ${render_expr(value)})"
+        .Return(value) -> "(return ${render_expr(store, value)})"
         .ReturnEmpty -> "(return)"
         .TypeDecl(name, tp, fields) -> {
             let tp_str = render_type_param_list(tp)
@@ -2865,32 +2867,32 @@ export fn render_stmt(stmt: Stmt) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(enum ${name}${tp_part} ${render_variant_list(variants)})"
         }
-        .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
-        .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
+        .Match(subject, arms) -> "(match ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
+        .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(store, methods)})"
         .NoOp -> "(noop)"
         .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_render_decl(rvt)})"
         .Break -> "(break)"
         .Continue -> "(continue)"
-        .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"
-        .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr(initializer)})"
-        .Defer(body) -> "(defer ${render_expr(body)})"
-        .Errdefer(body) -> "(errdefer ${render_expr(body)})"
-        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner.node)})"
-        .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_list(body)})"
-        .GivenBlock(name, body) -> "(given ${name} ${render_stmt_list(body)})"
-        .ThenBlock(name, cond) -> "(then ${name} ${render_expr(cond)})"
+        .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(store, methods)})"
+        .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr(store, initializer)})"
+        .Defer(body) -> "(defer ${render_expr(store, body)})"
+        .Errdefer(body) -> "(errdefer ${render_expr(store, body)})"
+        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(store, annotations)} ${render_stmt(store, inner.node)})"
+        .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_list(store, body)})"
+        .GivenBlock(name, body) -> "(given ${name} ${render_stmt_list(store, body)})"
+        .ThenBlock(name, cond) -> "(then ${name} ${render_expr(store, cond)})"
         .Select(_) -> "(select ...)"
-        .Parallel(body) -> "(parallel ${render_stmt_list(body)})"
-        .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
+        .Parallel(body) -> "(parallel ${render_stmt_list(store, body)})"
+        .Module(name, body) -> "(module ${name} ${render_stmt_list(store, body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
-        .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(body)})"
-        .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_list(body)})"
+        .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(store, body)})"
+        .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_list(store, body)})"
     }
 }
 
 /// Render a `List<Annotation>` in the source `@name @name2` form.
-export fn render_annotation_list(annots: List<Annotation>) -> string {
+export fn render_annotation_list(store: NodeStore, annots: List<Annotation>) -> string {
     mut out = ""
     mut i = 0
     while i < annots.length {
@@ -2907,7 +2909,7 @@ export fn render_variant_list(variants: List<Variant>) -> string {
 }
 
 /// Render a Pattern as an S-expression — used by render_match_arm.
-export fn render_pattern(p: Pattern) -> string {
+export fn render_pattern(store: NodeStore, p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
         .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
@@ -2915,8 +2917,8 @@ export fn render_pattern(p: Pattern) -> string {
         .LitInt(value) -> string(value)
         .LitBool(value) -> if value != 0 { "true" } else { "false" }
         .LitFloat(value) -> value
-        .NestedVariant(name, sub_patterns) -> ".${name}(${render_pattern_list(sub_patterns)})"
-        .Or(left, right) -> "${render_pattern(left)} or ${render_pattern(right)}"
+        .NestedVariant(name, sub_patterns) -> ".${name}(${render_pattern_list(store, sub_patterns)})"
+        .Or(left, right) -> "${render_pattern(store, store.pats.get(left))} or ${render_pattern(store, store.pats.get(right))}"
         .TypePattern(type_name, binding) -> "${type_name}(${binding})"
     }
 }
@@ -2924,23 +2926,23 @@ export fn render_pattern(p: Pattern) -> string {
 /// Render a `List<Pattern>` as a comma-separated S-expression list — used by
 /// `render_pattern` for `NestedVariant` sub-patterns (so nested destructures
 /// render distinctly instead of collapsing, which a round-trip oracle relies on).
-export fn render_pattern_list(pats: List<Pattern>) -> string {
-    list_map(pats, (p: Pattern) -> render_pattern(p)).join(", ")
+export fn render_pattern_list(store: NodeStore, pats: List<PatId>) -> string {
+    list_map(pats, (pid: PatId) -> render_pattern(store, store.pats.get(pid))).join(", ")
 }
 
 /// Render a `List<MatchArm>` as a comma-separated list of `pat -> body`.
-export fn render_match_arm_list(arms: List<MatchArm>) -> string {
+export fn render_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> string {
     if arms.length == 0 { return "()" }
     "(${list_map(arms, (arm: MatchArm) -> {
-        let guard_str = if arm.guard != null { " if ${render_expr(arm.guard!.node)}" } else { "" }
-        "${render_pattern(arm.pattern)}${guard_str} -> ${render_expr(arm.body.node)}"
+        let guard_str = if arm.guard != null { " if ${render_expr(store, arm.guard!.node)}" } else { "" }
+        "${render_pattern(store, arm.pattern)}${guard_str} -> ${render_expr(store, arm.body.node)}"
     }).join("; ")})"
 }
 
 /// Render a `List<SStmt>` as an S-expression sequence — convenient
 /// for `render_stmt` recursion on Block bodies.
-export fn render_stmt_list(stmts: List<SStmt>) -> string {
-    list_map(stmts, (ss: SStmt) -> render_stmt(ss.node)).join("\n")
+export fn render_stmt_list(store: NodeStore, stmts: List<SStmt>) -> string {
+    list_map(stmts, (ss: SStmt) -> render_stmt(store, ss.node)).join("\n")
 }
 
 // ── Token kinds ──

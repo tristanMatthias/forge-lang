@@ -24,6 +24,9 @@ use list_ops.{list_any}
 // the updated record. Lists grow via prepend so traversal stays
 // O(stmts); a final reverse pass restores source order.
 type ExtractAcc = {
+    // The parse store (B-final F2+): generic/@comptime bodies serialize
+    // via fmt, which resolves flipped pattern ids through it.
+    nodes: NodeStore,
     types: List<TypeDeclEntry>,
     fns: List<FnDeclEntry>,
     consts: List<ConstDeclEntry>,
@@ -38,22 +41,22 @@ type ExtractAcc = {
     inherent_impls: List<InherentImplEntry>,
 }
 
-fn empty_acc() -> ExtractAcc {
-    ExtractAcc { types: [], fns: [], consts: [], impls: [], generic_bodies: [], inherent_impls: [] }
+fn empty_acc(store: NodeStore) -> ExtractAcc {
+    ExtractAcc { nodes: store, types: [], fns: [], consts: [], impls: [], generic_bodies: [], inherent_impls: [] }
 }
 
 // Public entry. `unit_name` becomes the module prefix used to
 // qualify every symbol (so the same fn `add` in a different module
 // gets a distinct sym_id). `fingerprint` is the 32-byte sha256 of
 // the source set, computed by the build driver upstream.
-export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: List<SStmt>) -> UnitMetadata {
+export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: List<SStmt>, store: NodeStore) -> UnitMetadata {
     // When the source is already wrapped in `Module(unit_name, body)`
     // (the lib path with --module_path), descend into body to avoid
     // double-prefixing qns (e.g. `@std::avrac::@std::avrac::core::X`).
     // Otherwise walk all stmts with current_module=unit_name so bare
     // decls still get qualified against the unit they belong to.
     let inner = unwrap_outer_unit_module(stmts, unit_name)
-    let acc = walk_stmts(empty_acc(), inner, unit_name, false, false)
+    let acc = walk_stmts(empty_acc(store), inner, unit_name, false, false)
     // Lists already in source order — push appends. The cons-list
     // version had to reverse here because cons-prepend put the
     // last-seen decl at the head.
@@ -88,9 +91,9 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: Li
 /// stable across all per-file slices so consumers see byte-identical
 /// qns whether they load the package's whole-unit metadata or the
 /// per-file slice.
-export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: List<SStmt>) -> UnitMetadata {
+export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: List<SStmt>, store: NodeStore) -> UnitMetadata {
     let inner = unwrap_outer_unit_module(stmts, unit_name)
-    let acc = walk_stmts_for_file(empty_acc(), inner, unit_name, false, false, target_file)
+    let acc = walk_stmts_for_file(empty_acc(store), inner, unit_name, false, false, target_file)
     UnitMetadata {
         unit_name: unit_name,
         fingerprint: fingerprint,
@@ -409,7 +412,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
             if ships_generic || is_comptime {
                 let body_entry = GenericBodyEntry {
                     qualified_name: qn,
-                    source: fmt_stmt_list(body, 0),
+                    source: fmt_stmt_list(acc.nodes, body, 0),
                     // Walker doesn't carry the enclosing SStmt's file
                     // path; the per-fn span work is P4 follow-up. The
                     // consumer falls back to "metadata" for the

@@ -153,6 +153,9 @@ export type Runtime = {
     functions: List<FunctionDef>,
     depth: int,
     features: Registry,
+    // The program's NodeStore (B-final F2+): decode/boxing paths allocate
+    // and resolve flipped id payloads (Pattern children first) through it.
+    nodes: NodeStore,
 }
 
 /// Per-step output: updated runtime, computed value, and
@@ -301,15 +304,15 @@ export fn eval_expression_source(source: string) -> EvalResult {
             error_message: parsed.error_message,
         }
     }
-    eval_parsed_expression(parsed.expr!)
+    eval_parsed_expression(parsed.expr!, parsed.store)
 }
 
 /// Same as eval_expression_source but takes a pre-parsed Expr. Lets
 /// cmd_eval (which now parses through parse_expression_source first
 /// for proper F-code diagnostic rendering) avoid a redundant parse,
 /// matching the execute_program_stmts pattern.
-export fn eval_parsed_expression(expr: Expr) -> EvalResult {
-    finish_result(eval_expr(runtime_new(), expr))
+export fn eval_parsed_expression(expr: Expr, store: NodeStore) -> EvalResult {
+    finish_result(eval_expr(runtime_new(store), expr))
 }
 
 /// Public entry point for evaluating a full program. Parses
@@ -336,7 +339,7 @@ export fn execute_program_source(source: string) -> EvalResult {
 /// and still surface F-coded parse errors through the unified
 /// rendering pipeline.
 export fn execute_program_stmts(stmts: List<SStmt>, store: NodeStore) -> EvalResult {
-    finish_result(execute_stmt_list(runtime_new(), stmts))
+    finish_result(execute_stmt_list(runtime_new(store), stmts))
 }
 
 /// Render an integer as its canonical decimal text. Strips a
@@ -421,12 +424,13 @@ fn literal_expr_to_value(e: Expr) -> Value? {
 /// depth zero, full feature registry. Public so external callers
 /// (e.g. compile-time evaluator in features/comptime) can build a
 /// runtime to thread through `execute_stmt` / `eval_expr`.
-export fn runtime_new() -> Runtime {
+export fn runtime_new(store: NodeStore) -> Runtime {
     Runtime {
         bindings: [],
         functions: [],
         depth: 0,
         features: build_registry(),
+        nodes: store,
     }
 }
 
@@ -980,7 +984,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             let tag = avra_expr_tag(expr)
             let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
             if result != null { return result! }
-            error_result(runtime, "unsupported expression type in tree-walk evaluator (tag=${string(tag)} render=${render_expr(expr)})")
+            error_result(runtime, "unsupported expression type in tree-walk evaluator (tag=${string(tag)} render=${render_expr(runtime.nodes, expr)})")
         }
     }
 }
@@ -1144,7 +1148,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     }
 
     if callee_value.kind != "function" {
-        return error_result(args_result.runtime, "can only call functions (callee=${render_expr(callee)} kind=${callee_value.kind})")
+        return error_result(args_result.runtime, "can only call functions (callee=${render_expr(runtime.nodes, callee)} kind=${callee_value.kind})")
     }
 
     let fn_name = callee_value.text
@@ -1864,7 +1868,7 @@ fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: Li
     // re-running the decoder downstream. The enum_* representation is
     // kept intact so pattern-matching and the fold reconstructor still
     // see variant/payload.
-    let boxed = box_ast_value(value_enum(type_name, variant, evaluated.values))
+    let boxed = box_ast_value(runtime.nodes, value_enum(type_name, variant, evaluated.values))
     ok_result(evaluated.runtime, boxed)
 }
 
@@ -2153,16 +2157,16 @@ export fn value_is_enumish(v: Value) -> bool {
 /// stays intact (matching + fold still read the enum form). Returns the
 /// Value unchanged for non-AST enum types or when the decode fails, so
 /// the downstream value_to_* fall back to the decoder.
-fn box_ast_value(v: Value) -> Value {
+fn box_ast_value(store: NodeStore, v: Value) -> Value {
     match v.enum_type {
         "@std::avrac::core::Stmt" -> {
-            match enum_value_to_stmt(v) {
+            match enum_value_to_stmt(store, v) {
                 .Ok(s) -> v with { kind: "stmt", stmt_payload: s }
                 .Err(_) -> v
             }
         }
         "@std::avrac::core::Expr" -> {
-            match enum_value_to_expr(v) {
+            match enum_value_to_expr(store, v) {
                 .Ok(e) -> v with { kind: "expr", expr_payload: e }
                 .Err(_) -> v
             }
@@ -2192,15 +2196,15 @@ fn decode_or<T>(r: Result<T, string>, d: T) -> T {
 /// Stmt from a Value: unwrap the boxed native node, else decode the
 /// enum representation. The @expand splice path calls this on macro
 /// return Values.
-export fn value_to_stmt(v: Value) -> Result<Stmt, string> {
+export fn value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
     if v.kind == "stmt" { return .Ok(v.stmt_payload) }
-    enum_value_to_stmt(v)
+    enum_value_to_stmt(store, v)
 }
 
 /// Expr from a Value — unwrap-first, mirroring value_to_stmt.
-fn value_to_expr_node(v: Value) -> Result<Expr, string> {
+fn value_to_expr_node(store: NodeStore, v: Value) -> Result<Expr, string> {
     if v.kind == "expr" { return .Ok(v.expr_payload) }
-    enum_value_to_expr(v)
+    enum_value_to_expr(store, v)
 }
 
 /// ValueType from a Value — unwrap-first, mirroring value_to_stmt.
@@ -2211,13 +2215,13 @@ fn value_to_value_type_node(v: Value) -> Result<ValueType, string> {
 
 /// Decode a Value carrying a `List<SStmt>` back into a real
 /// `List<SStmt>` AST value.
-export fn value_to_stmt_list(v: Value) -> Result<List<SStmt>, string> {
-    list_value_to_stmt_list(v)
+export fn value_to_stmt_list(store: NodeStore, v: Value) -> Result<List<SStmt>, string> {
+    list_value_to_stmt_list(store, v)
 }
 
 // ── Expr decoder ──
 
-fn enum_value_to_expr(v: Value) -> Result<Expr, string> {
+fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
     if v.enum_type != "@std::avrac::core::Expr" { return .Err("decode: not an Expr") }
     if variant_is_optional_absent(v.enum_variant) { return .Ok(Expr.None) }
     let p = v.enum_payload
@@ -2231,152 +2235,152 @@ fn enum_value_to_expr(v: Value) -> Result<Expr, string> {
         "QualifiedIdent"  -> .Ok(Expr.QualifiedIdent(head.text))
         "FloatLit"        -> .Ok(Expr.FloatLit(head.text))
         "Grouping"        -> {
-            let inner = value_to_expr_node(head)?
+            let inner = value_to_expr_node(store, head)?
             .Ok(Expr.Grouping(inner))
         }
         "Unary" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let op = enum_value_to_unop(head)?
-            let right = value_to_expr_node(p[1])?
+            let right = value_to_expr_node(store, p[1])?
             .Ok(Expr.Unary(op, right))
         }
         "Binary" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let left = value_to_expr_node(head)?
+            let left = value_to_expr_node(store, head)?
             let op = enum_value_to_binop(p[1])?
-            let right = value_to_expr_node(p[2])?
+            let right = value_to_expr_node(store, p[2])?
             .Ok(Expr.Binary(left, op, right))
         }
         "Logical" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let left = value_to_expr_node(head)?
+            let left = value_to_expr_node(store, head)?
             let op = enum_value_to_logicop(p[1])?
-            let right = value_to_expr_node(p[2])?
+            let right = value_to_expr_node(store, p[2])?
             .Ok(Expr.Logical(left, op, right))
         }
         "Call" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let callee = value_to_expr_node(head)?
-            let args = list_value_to_expr_list(p[1])?
+            let callee = value_to_expr_node(store, head)?
+            let args = list_value_to_expr_list(store, p[1])?
             .Ok(Expr.Call(callee, args))
         }
         "GenericCall" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let callee = value_to_expr_node(head)?
+            let callee = value_to_expr_node(store, head)?
             let type_args = list_value_to_string_list(p[1])?
-            let args = list_value_to_expr_list(p[2])?
+            let args = list_value_to_expr_list(store, p[2])?
             .Ok(Expr.GenericCall(callee, type_args, args))
         }
         "EnumCtor" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
             let variant_v: Value = p[1]
             let args_v: Value = p[2]
-            let args = list_value_to_expr_list(args_v)?
+            let args = list_value_to_expr_list(store, args_v)?
             .Ok(Expr.EnumCtor(head.text, variant_v.text, args))
         }
-        "Index" -> two_expr_decode(p, "Index")
-        "NullCoalesce" -> two_expr_decode(p, "NullCoalesce")
+        "Index" -> two_expr_decode(store, p, "Index")
+        "NullCoalesce" -> two_expr_decode(store, p, "NullCoalesce")
         "Try" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(head)?
+            let inner = value_to_expr_node(store, head)?
             .Ok(Expr.Try(inner))
         }
         "Spawn" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(head)?
+            let inner = value_to_expr_node(store, head)?
             .Ok(Expr.Spawn(inner))
         }
         "FieldAccess" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(head)?
+            let obj = value_to_expr_node(store, head)?
             let field_v: Value = p[1]
             .Ok(Expr.FieldAccess(obj, field_v.text))
         }
         "OptionalChain" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(head)?
+            let obj = value_to_expr_node(store, head)?
             let field_v: Value = p[1]
             .Ok(Expr.OptionalChain(obj, field_v.text))
         }
         "OptionalMethodCall" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(head)?
+            let obj = value_to_expr_node(store, head)?
             let method_v: Value = p[1]
             let args_v: Value = p[2]
-            let args = list_value_to_expr_list(args_v)?
+            let args = list_value_to_expr_list(store, args_v)?
             .Ok(Expr.OptionalMethodCall(obj, method_v.text, args))
         }
         "IsCheck" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let subj = value_to_expr_node(head)?
+            let subj = value_to_expr_node(store, head)?
             let vname_v: Value = p[1]
             .Ok(Expr.IsCheck(subj, vname_v.text))
         }
         "Tuple" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let elems = list_value_to_expr_list(head)?
+            let elems = list_value_to_expr_list(store, head)?
             .Ok(Expr.Tuple(elems))
         }
         "ListLit" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let elems = list_value_to_expr_list(head)?
+            let elems = list_value_to_expr_list(store, head)?
             .Ok(Expr.ListLit(elems))
         }
         "MapLit" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let entries = list_value_to_expr_list(head)?
+            let entries = list_value_to_expr_list(store, head)?
             .Ok(Expr.MapLit(entries))
         }
         "StructLit" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let inits = list_value_to_field_init_list(p[1])?
+            let inits = list_value_to_field_init_list(store, p[1])?
             .Ok(Expr.StructLit(head.text, inits))
         }
         "InCheck" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let needle = value_to_expr_node(head)?
-            let items = list_value_to_expr_list(p[1])?
+            let needle = value_to_expr_node(store, head)?
+            let items = list_value_to_expr_list(store, p[1])?
             .Ok(Expr.InCheck(needle, items))
         }
         "IfExpr" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let c = value_to_expr_node(head)?
-            let t = value_to_expr_node(p[1])?
-            let e = value_to_expr_node(p[2])?
+            let c = value_to_expr_node(store, head)?
+            let t = value_to_expr_node(store, p[1])?
+            let e = value_to_expr_node(store, p[2])?
             .Ok(Expr.IfExpr(c, t, e))
         }
         "MatchExpr" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let subj = value_to_expr_node(head)?
-            let arms = list_value_to_match_arm_list(p[1])?
+            let subj = value_to_expr_node(store, head)?
+            let arms = list_value_to_match_arm_list(store, p[1])?
             .Ok(Expr.MatchExpr(subj, arms))
         }
         "Block" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = list_value_to_stmt_list(head)?
+            let body = list_value_to_stmt_list(store, head)?
             .Ok(Expr.Block(body))
         }
         "Assign" -> {
             if p.length != 2 { return .Err("decode: Assign arity") }
             let name_v: Value = p[0]
-            let value = value_to_expr_node(p[1])?
+            let value = value_to_expr_node(store, p[1])?
             .Ok(Expr.Assign(name_v.text, value))
         }
         _                 -> .Err("decode: unknown Expr variant `${v.enum_variant}`")
     }
 }
 
-fn list_value_to_match_arm_list(v: Value) -> Result<List<MatchArm>, string> {
+fn list_value_to_match_arm_list(store: NodeStore, v: Value) -> Result<List<MatchArm>, string> {
     if v.kind != "list" { return .Err("decode: match-arm list not a list") }
     mut out: List<MatchArm> = []
     for entry in v.list_payload {
-        let arm = value_to_match_arm(entry)?
+        let arm = value_to_match_arm(store, entry)?
         out.push(arm)
     }
     .Ok(out)
 }
 
-fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
+fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
     if v.kind != "struct" { return .Err("decode: match arm not a struct") }
     mut pat_opt: Pattern? = null
     mut guard_opt: SExpr? = null
@@ -2384,7 +2388,7 @@ fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
     for f in v.struct_payload {
         match f.name {
             "pattern" -> {
-                match value_to_pattern(f.value) {
+                match value_to_pattern(store, f.value) {
                     .Ok(pat) -> pat_opt = pat
                     .Err(_) -> {}
                 }
@@ -2398,14 +2402,14 @@ fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
                 if variant_is_optional_absent(g_val.enum_variant) {
                     guard_opt = null
                 } else {
-                    match value_to_expr_node(g_val) {
+                    match value_to_expr_node(store, g_val) {
                         .Ok(g_expr) -> guard_opt = sexpr_dummy(g_expr)
                         .Err(_) -> {}
                     }
                 }
             }
             "body" -> {
-                match value_to_expr_node(f.value) {
+                match value_to_expr_node(store, f.value) {
                     .Ok(b_expr) -> body_opt = sexpr_dummy(b_expr)
                     .Err(_) -> {}
                 }
@@ -2418,7 +2422,7 @@ fn value_to_match_arm(v: Value) -> Result<MatchArm, string> {
     .Ok(MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt! })
 }
 
-fn value_to_pattern(v: Value) -> Result<Pattern, string> {
+fn value_to_pattern(store: NodeStore, v: Value) -> Result<Pattern, string> {
     if v.enum_type != "@std::avrac::core::Pattern" { return .Err("decode: not a Pattern") }
     let p = v.enum_payload
     match v.enum_variant {
@@ -2452,14 +2456,15 @@ fn value_to_pattern(v: Value) -> Result<Pattern, string> {
         "NestedVariant" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let name_v: Value = p[0]
-            let subs = list_value_to_pattern_list(p[1])?
+            let subs = list_value_to_pattern_list(store, p[1])?
             .Ok(Pattern.NestedVariant(name_v.text, subs))
         }
         "Or" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let left = value_to_pattern(p[0])?
-            let right = value_to_pattern(p[1])?
-            .Ok(Pattern.Or(left, right))
+            // F2: decoded branches are NEW trees — allocate their rows.
+            let left = value_to_pattern(store, p[0])?
+            let right = value_to_pattern(store, p[1])?
+            .Ok(Pattern.Or(store.pats.add_leaf(left), store.pats.add_leaf(right)))
         }
         "TypePattern" -> {
             if p.length != 2 { return .Err("decode: TypePattern arity") }
@@ -2471,20 +2476,22 @@ fn value_to_pattern(v: Value) -> Result<Pattern, string> {
     }
 }
 
-fn list_value_to_pattern_list(v: Value) -> Result<List<Pattern>, string> {
+fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>, string> {
     if v.kind != "list" { return .Err("decode: pattern list not a list") }
-    mut out: List<Pattern> = []
+    // F2: decoded sub-patterns are NEW trees — each gets an arena row;
+    // the id list IS the NestedVariant payload.
+    mut out: List<PatId> = []
     for entry in v.list_payload {
-        let p = value_to_pattern(entry)?
-        out.push(p)
+        let p = value_to_pattern(store, entry)?
+        out.push(store.pats.add_leaf(p))
     }
     .Ok(out)
 }
 
-fn two_expr_decode(p: List<Value>, variant: string) -> Result<Expr, string> {
+fn two_expr_decode(store: NodeStore, p: List<Value>, variant: string) -> Result<Expr, string> {
     if p.length != 2 { return .Err("decode: two-expr arity") }
-    let l = value_to_expr_node(p[0])?
-    let r = value_to_expr_node(p[1])?
+    let l = value_to_expr_node(store, p[0])?
+    let r = value_to_expr_node(store, p[1])?
     match variant {
         "Index" -> .Ok(Expr.Index(l, r))
         "NullCoalesce" -> .Ok(Expr.NullCoalesce(l, r))
@@ -2492,9 +2499,9 @@ fn two_expr_decode(p: List<Value>, variant: string) -> Result<Expr, string> {
     }
 }
 
-fn list_value_to_expr_list(v: Value) -> Result<List<SExpr>, string> {
+fn list_value_to_expr_list(store: NodeStore, v: Value) -> Result<List<SExpr>, string> {
     if v.kind != "list" { return .Err("decode: expr list not a list") }
-    list_value_to_expr_list_at(v.list_payload, 0)
+    list_value_to_expr_list_at(store, v.list_payload, 0)
 }
 
 fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {
@@ -2507,11 +2514,11 @@ fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {
     .Ok(out)
 }
 
-fn list_value_to_expr_list_at(items: List<Value>, i: int) -> Result<List<SExpr>, string> {
+fn list_value_to_expr_list_at(store: NodeStore, items: List<Value>, i: int) -> Result<List<SExpr>, string> {
     mut out: List<SExpr> = []
     mut j = i
     while j < items.length {
-        let inner = value_to_expr_node(items[j])?
+        let inner = value_to_expr_node(store, items[j])?
         out.push(sexpr_dummy(inner))
         j = j + 1
     }
@@ -2556,7 +2563,7 @@ fn enum_value_to_logicop(v: Value) -> Result<LogicOp, string> {
 
 // ── Stmt decoder ──
 
-fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
+fn enum_value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
     if v.enum_type != "@std::avrac::core::Stmt" { return .Err("decode: not a Stmt") }
     let p = v.enum_payload
     match v.enum_variant {
@@ -2566,26 +2573,26 @@ fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
         "NoOp"        -> .Ok(Stmt.NoOp)
         "Expr" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(p[0])?
+            let inner = value_to_expr_node(store, p[0])?
             .Ok(Stmt.Expr(inner))
         }
         "Return" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(p[0])?
+            let inner = value_to_expr_node(store, p[0])?
             .Ok(Stmt.Return(inner))
         }
-        "Let" -> binding_decode(p, "Let")
-        "Mut" -> binding_decode(p, "Mut")
-        "Const" -> binding_decode(p, "Const")
+        "Let" -> binding_decode(store, p, "Let")
+        "Mut" -> binding_decode(store, p, "Mut")
+        "Const" -> binding_decode(store, p, "Const")
         "Block" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = list_value_to_stmt_list(p[0])?
+            let body = list_value_to_stmt_list(store, p[0])?
             .Ok(Stmt.Block(body))
         }
         "Impl" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let type_name_v: Value = p[0]
-            let methods = list_value_to_stmt_list(p[1])?
+            let methods = list_value_to_stmt_list(store, p[1])?
             .Ok(Stmt.Impl(type_name_v.text, methods))
         }
         "Function" -> {
@@ -2594,7 +2601,7 @@ fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
             let tp = list_value_to_type_param_list(p[1])?
             let params = list_value_to_param_list(p[2])?
             let resolved_rt = decode_or(value_to_value_type_node(p[3]), ValueType.Unknown)
-            let body = list_value_to_stmt_list(p[4])?
+            let body = list_value_to_stmt_list(store, p[4])?
             .Ok(Stmt.Function(name_v.text, tp, params, resolved_rt, body))
         }
         "TypeDecl" -> {
@@ -2615,90 +2622,90 @@ fn enum_value_to_stmt(v: Value) -> Result<Stmt, string> {
             if p.length != 4 { return .Err("decode: bad payload") }
             let comp_v: Value = p[0]
             let inst_v: Value = p[1]
-            let config = list_value_to_comp_config_pair_list(p[2])?
-            let body = list_value_to_stmt_list(p[3])?
+            let config = list_value_to_comp_config_pair_list(store, p[2])?
+            let body = list_value_to_stmt_list(store, p[3])?
             .Ok(Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body))
         }
         "Annotated" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let annots = list_value_to_annotation_list(p[0])?
-            let inner = value_to_stmt(p[1])?
+            let annots = list_value_to_annotation_list(store, p[0])?
+            let inner = value_to_stmt(store, p[1])?
             // Annotated.inner is SStmt — wrap the decoded Stmt in a dummy span
             // (the decoded AST has no source position of its own).
             .Ok(Stmt.Annotated(annots, sstmt_dummy(inner)))
         }
         "If" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let cond = value_to_expr_node(p[0])?
-            let then_b = value_to_stmt(p[1])?
+            let cond = value_to_expr_node(store, p[0])?
+            let then_b = value_to_stmt(store, p[1])?
             let else_v: Value = p[2]
             let else_b = if variant_is_optional_absent(else_v.enum_variant) { none } else {
-                match value_to_stmt(else_v) { .Ok(s) -> s, .Err(_) -> none }
+                match value_to_stmt(store, else_v) { .Ok(s) -> s, .Err(_) -> none }
             }
             .Ok(Stmt.If(cond, then_b, else_b))
         }
         "While" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let cond = value_to_expr_node(p[0])?
-            let body = value_to_stmt(p[1])?
+            let cond = value_to_expr_node(store, p[0])?
+            let body = value_to_stmt(store, p[1])?
             .Ok(Stmt.While(cond, body))
         }
         "For" -> {
             if p.length != 4 { return .Err("decode: bad payload") }
             let var_v: Value = p[0]
-            let start = value_to_expr_node(p[1])?
-            let end_e = value_to_expr_node(p[2])?
-            let body = value_to_stmt(p[3])?
+            let start = value_to_expr_node(store, p[1])?
+            let end_e = value_to_expr_node(store, p[2])?
+            let body = value_to_stmt(store, p[3])?
             .Ok(Stmt.For(var_v.text, start, end_e, body))
         }
         "ForIn" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
             let var_v: Value = p[0]
-            let coll = value_to_expr_node(p[1])?
-            let body = value_to_stmt(p[2])?
+            let coll = value_to_expr_node(store, p[1])?
+            let body = value_to_stmt(store, p[2])?
             .Ok(Stmt.ForIn(var_v.text, coll, body))
         }
         "Defer" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = value_to_expr_node(p[0])?
+            let body = value_to_expr_node(store, p[0])?
             .Ok(Stmt.Defer(body))
         }
         "Errdefer" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = value_to_expr_node(p[0])?
+            let body = value_to_expr_node(store, p[0])?
             .Ok(Stmt.Errdefer(body))
         }
         "Parallel" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = list_value_to_stmt_list(p[0])?
+            let body = list_value_to_stmt_list(store, p[0])?
             .Ok(Stmt.Parallel(body))
         }
         "TraitDecl" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let name_v: Value = p[0]
-            let methods = list_value_to_stmt_list(p[1])?
+            let methods = list_value_to_stmt_list(store, p[1])?
             .Ok(Stmt.TraitDecl(name_v.text, methods))
         }
         _ -> .Err("decode: unknown Stmt variant `${v.enum_variant}`")
     }
 }
 
-fn list_value_to_annotation_list(v: Value) -> Result<List<Annotation>, string> {
+fn list_value_to_annotation_list(store: NodeStore, v: Value) -> Result<List<Annotation>, string> {
     if v.kind != "list" { return .Ok([]) }
     mut out: List<Annotation> = []
     for entry in v.list_payload {
         if entry.kind != "struct" { return .Err("decode: annotation not a struct") }
         let name = struct_field_string(entry, "name")
-        let args = decode_or(struct_field_expr_list(entry, "args"), [])
+        let args = decode_or(struct_field_expr_list(store, entry, "args"), [])
         out.push(Annotation { name, args })
     }
     .Ok(out)
 }
 
-fn struct_field_expr_list(v: Value, name: string) -> Result<List<SExpr>, string> {
+fn struct_field_expr_list(store: NodeStore, v: Value, name: string) -> Result<List<SExpr>, string> {
     if v.kind != "struct" { return .Err("decode: not a struct") }
     for f in v.struct_payload {
-        if f.name == name { return list_value_to_expr_list(f.value) }
+        if f.name == name { return list_value_to_expr_list(store, f.value) }
     }
     .Err("decode: field `${name}` not found")
 }
@@ -2731,7 +2738,7 @@ fn list_value_to_variant_list(v: Value) -> Result<List<Variant>, string> {
     .Ok(out)
 }
 
-fn list_value_to_comp_config_pair_list(v: Value) -> Result<List<CompConfigPair>, string> {
+fn list_value_to_comp_config_pair_list(store: NodeStore, v: Value) -> Result<List<CompConfigPair>, string> {
     if v.kind != "list" { return .Ok([]) }
     mut out: List<CompConfigPair> = []
     for entry in v.list_payload {
@@ -2740,7 +2747,7 @@ fn list_value_to_comp_config_pair_list(v: Value) -> Result<List<CompConfigPair>,
         mut value_expr: Expr = Expr.None
         for f in entry.struct_payload {
             if f.name == "value" {
-                value_expr = value_to_expr_node(f.value)?
+                value_expr = value_to_expr_node(store, f.value)?
             }
         }
         out.push(CompConfigPair { key, value: value_expr })
@@ -2748,7 +2755,7 @@ fn list_value_to_comp_config_pair_list(v: Value) -> Result<List<CompConfigPair>,
     .Ok(out)
 }
 
-fn list_value_to_field_init_list(v: Value) -> Result<List<FieldInit>, string> {
+fn list_value_to_field_init_list(store: NodeStore, v: Value) -> Result<List<FieldInit>, string> {
     if v.kind != "list" { return .Ok([]) }
     mut out: List<FieldInit> = []
     for entry in v.list_payload {
@@ -2757,7 +2764,7 @@ fn list_value_to_field_init_list(v: Value) -> Result<List<FieldInit>, string> {
         mut value_expr: Expr = Expr.None
         for f in entry.struct_payload {
             if f.name == "value" {
-                value_expr = value_to_expr_node(f.value)?
+                value_expr = value_to_expr_node(store, f.value)?
             }
         }
         out.push(FieldInit { name, value: sexpr_dummy(value_expr) })
@@ -2803,10 +2810,10 @@ fn struct_field_value_type(v: Value, name: string) -> Result<ValueType, string> 
     .Err("decode: field `${name}` not found")
 }
 
-fn binding_decode(p: List<Value>, variant: string) -> Result<Stmt, string> {
+fn binding_decode(store: NodeStore, p: List<Value>, variant: string) -> Result<Stmt, string> {
     if p.length != 3 { return .Err("decode: binding arity") }
     let name_v: Value = p[0]
-    let init = value_to_expr_node(p[2])?
+    let init = value_to_expr_node(store, p[2])?
     let resolved_vt = decode_or(value_to_value_type_node(p[1]), ValueType.Unknown)
     match variant {
         "Let"   -> .Ok(Stmt.Let(name_v.text, resolved_vt, init))
@@ -2942,11 +2949,11 @@ fn number_value_to_int(v: Value) -> int {
     avra_selfhost_string_to_int(v.number_text)
 }
 
-fn list_value_to_stmt_list(v: Value) -> Result<List<SStmt>, string> {
+fn list_value_to_stmt_list(store: NodeStore, v: Value) -> Result<List<SStmt>, string> {
     if v.kind != "list" { return .Err("decode: stmt list not a list") }
     mut out: List<SStmt> = []
     for entry in v.list_payload {
-        let inner = value_to_stmt(entry)?
+        let inner = value_to_stmt(store, entry)?
         out.push(sstmt_dummy(inner))
     }
     .Ok(out)

@@ -21,6 +21,13 @@ use @std.avrac.core.{TypeParamEntry, ParamEntry, SExpr, sexpr_at, Annotation}
 use @std.avrac.core.{expr_ref_id, stmt_ref_id, pat_ref_id, type_ref_id, noderef_tag}
 use @std.avrac.core.{MatchArm, FieldInit, expr_child_tags, wc_roundtrip_expr, wc_roundtrip_stmt, render_expr}
 
+/// Fresh empty store for inline-AST probes — F2 renderers resolve
+/// flipped pattern ids through it (never read for id-free nodes).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
+
 // The `NodeRef` peel helpers (`expr_ref_id` / `stmt_ref_id` / `pat_ref_id` /
 // `type_ref_id`) and `noderef_tag` are now exported from core/arena.av; they are
 // imported above and exercised by the specs below (and the whole suite).
@@ -112,11 +119,16 @@ spec "L1 ExprArena ingests recursively" {
     }
 }
 
-spec "L1 PatArena ingests recursively" {
-    then "Or(Wildcard, Wildcard) flattens to 3 pattern nodes" {
+spec "L1 PatArena ingests id-payload patterns as leaves (F2)" {
+    then "Or holds two pre-allocated rows; the ingest adds only the Or itself" {
+        // Post-F2 the branches ARE ids — the payload is the child mechanism,
+        // so the walker sees scalars and the ingest records no edges. Three
+        // rows total: the two allocated branches plus the Or.
         let store = new_node_store(build_line_index(""))
-        let root = store.ingest_pat(Pattern.Or(Pattern.Wildcard, Pattern.Wildcard), byte_span_none())
-        store.pats.count() == 3 && store.pats.children_of(root).length == 2
+        let l = store.pats.add_leaf(Pattern.Wildcard)
+        let r = store.pats.add_leaf(Pattern.Wildcard)
+        let root = store.ingest_pat(Pattern.Or(l, r), byte_span_none())
+        store.pats.count() == 3 && store.pats.children_of(root).length == 0
     }
 }
 
@@ -195,7 +207,7 @@ spec "program_from_store round-trips the top-level statements" {
         let store = ingest_program(orig, "break\ncontinue\nx\n")
         let back = program_from_store(store, "t.av")
         back.length == 3
-            && render_stmt_list(back) == render_stmt_list(orig)
+            && render_stmt_list(store, back) == render_stmt_list(store, orig)
             && back[0].line == 1 && back[0].col == 1
             && back[1].line == 2 && back[1].col == 1
             && back[2].line == 3 && back[2].col == 1
@@ -399,17 +411,17 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let guarded = MatchArm { pattern: Pattern.LitInt(0), guard: sexpr_at(Expr.Ident("cond"), 2, 1, ""), body: sexpr_at(Expr.Number("10"), 2, 3, "") }
         let unguarded = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Ident("fb"), 3, 3, "") }
         let arms: List<MatchArm> = [guarded, unguarded]
-        wc_roundtrip_expr(Expr.MatchExpr(Expr.Ident("x"), arms))
+        wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), arms))
     }
     then "Stmt.Match reconstructs faithfully" {
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("7"), 1, 1, "") }
         let arms: List<MatchArm> = [arm]
-        wc_roundtrip_stmt(Stmt.Match(Expr.Ident("y"), arms))
+        wc_roundtrip_stmt(ts(), Stmt.Match(Expr.Ident("y"), arms))
     }
     then "an empty arm list round-trips (only the subject is a child)" {
         let none_arms: List<MatchArm> = []
         expr_child_tags(Expr.MatchExpr(Expr.Ident("x"), none_arms)) == "E"
-            && wc_roundtrip_expr(Expr.MatchExpr(Expr.Ident("x"), none_arms))
+            && wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), none_arms))
     }
     then "a match nested in a match-arm body round-trips (combinatorial)" {
         // A guarded outer arm whose body is another MatchExpr — the arm-child walk
@@ -419,7 +431,7 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let inner = Expr.MatchExpr(Expr.Ident("y"), inner_arms)
         let outer_arm = MatchArm { pattern: Pattern.Wildcard, guard: sexpr_at(Expr.Ident("g"), 1, 1, ""), body: sexpr_at(inner, 3, 3, "") }
         let outer_arms: List<MatchArm> = [outer_arm]
-        wc_roundtrip_expr(Expr.MatchExpr(Expr.Ident("x"), outer_arms))
+        wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), outer_arms))
     }
     then "ingest → program_from_store is faithful for a nested-match program" {
         let inner_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("11"), 2, 5, "") }
@@ -429,7 +441,7 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let outer_arms: List<MatchArm> = [outer_arm]
         let stmts: List<SStmt> = [sstmt_at(Stmt.Expr(Expr.MatchExpr(Expr.Ident("x"), outer_arms)), 1, 1, "")]
         let store = ingest_program(stmts, "")
-        render_stmt_list(program_from_store(store, "")) == render_stmt_list(stmts)
+        render_stmt_list(store, program_from_store(store, "")) == render_stmt_list(store, stmts)
     }
 }
 
@@ -459,9 +471,9 @@ spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
         ]
         let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 4, 1, "") }]
         let empty: List<FieldInit> = []
-        wc_roundtrip_expr(Expr.StructLit("Point", inits))
-            && wc_roundtrip_expr(Expr.With(Expr.Ident("o"), ovr))
-            && wc_roundtrip_expr(Expr.StructLit("E", empty))
+        wc_roundtrip_expr(ts(), Expr.StructLit("Point", inits))
+            && wc_roundtrip_expr(ts(), Expr.With(Expr.Ident("o"), ovr))
+            && wc_roundtrip_expr(ts(), Expr.StructLit("E", empty))
     }
     then "FieldInit crossed with other walked structs round-trips (combinatorial)" {
         // A struct-init value that is itself a walked struct — the arena walk must
@@ -470,8 +482,8 @@ spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
         let m_inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(Expr.MatchExpr(Expr.Ident("y"), [arm]), 3, 3, "") }]
         let inner: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 2, 2, "") }]
         let s_ovr: List<FieldInit> = [FieldInit { name: "b", value: sexpr_at(Expr.StructLit("Q", inner), 3, 3, "") }]
-        wc_roundtrip_expr(Expr.StructLit("P", m_inits))              // struct-init value is a match
-            && wc_roundtrip_expr(Expr.With(Expr.Ident("o"), s_ovr))  // with-override value is a struct
+        wc_roundtrip_expr(ts(), Expr.StructLit("P", m_inits))              // struct-init value is a match
+            && wc_roundtrip_expr(ts(), Expr.With(Expr.Ident("o"), s_ovr))  // with-override value is a struct
     }
 }
 
@@ -489,7 +501,7 @@ spec "B1: StoreMark truncation rolls back speculative allocation" {
         let _ = store.ingest_type(ValueType.Int, byte_span_none())
         store.truncate_to_mark(m)
         store.exprs.count() == 1 && store.pats.count() == 0 && store.types.count() == 0
-            && render_expr(store.exprs.get(keep)) == render_expr(Expr.Number("1"))
+            && render_expr(store, store.exprs.get(keep)) == render_expr(store, Expr.Number("1"))
     }
     then "a re-issued id after truncation gets fresh edges and span (no stale columns)" {
         let store = new_node_store(build_line_index(""))
@@ -617,7 +629,7 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
         let orig = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, ""),
                     sstmt_at(Stmt.Break, 2, 1, "")]
         let store = ingest_program(orig, "let x: int = 5\nbreak\n")
-        render_stmt_list(reconstruct_program(store, "")) == render_stmt_list(orig)
+        render_stmt_list(store, reconstruct_program(store, "")) == render_stmt_list(store, orig)
     }
     then "a deep cross-kind program (fn { if (1<2) { let xs: List<List<int>> = [] } }) rebuilds identically" {
         // Exercises edge reconstruction across every kind boundary: Function ->
@@ -632,13 +644,13 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
         let f = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
         let orig = [sstmt_at(f, 1, 1, "")]
         let store = ingest_program(orig, "fn f() {\n  if 1<2 { }\n}\n")
-        render_stmt_list(reconstruct_program(store, "")) == render_stmt_list(orig)
+        render_stmt_list(store, reconstruct_program(store, "")) == render_stmt_list(store, orig)
     }
     then "wrapper-list children (Call args) rebuild from edges identically" {
         let args: List<SExpr> = [sexpr_at(Expr.Number("1"), 1, 3, ""), sexpr_at(Expr.Ident("y"), 1, 6, "")]
         let orig = [sstmt_at(Stmt.Expr(Expr.Call(Expr.Ident("g"), args)), 1, 1, "")]
         let store = ingest_program(orig, "g(1, y)\n")
-        render_stmt_list(reconstruct_program(store, "")) == render_stmt_list(orig)
+        render_stmt_list(store, reconstruct_program(store, "")) == render_stmt_list(store, orig)
     }
     then "an empty program reconstructs to an empty list" {
         let empty: List<SStmt> = []

@@ -22,6 +22,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, metadata_file_exists,
 }
 use @std.avrac.core.{
+    NodeStore, new_node_store, build_line_index,
     Stmt, SStmt, Expr, SExpr, TypeParamEntry,
     ValueType, FieldEntry, Variant, ParamEntry,
     Annotation, vtype_eq, vtype_struct, sstmt_dummy, stmt_unwrap, find_annotation,
@@ -738,7 +739,7 @@ fn main() -> int {
 
     let ext_stmts: List<SStmt> = [s_type, s_fn, s_const, s_const_int, s_extern]
 
-    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts)
+    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts, new_node_store(build_line_index("")))
     let ex_types: List<TypeDeclEntry> = extracted.types
     let ex_fns: List<FnDeclEntry> = extracted.fns
     let ex_consts: List<ConstDeclEntry> = extracted.consts
@@ -890,7 +891,7 @@ fn main() -> int {
         sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, Expr.String("\"42\""))),
     ]
 
-    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts)
+    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, new_node_store(build_line_index("")))
     let synth_back = synthesize_unit_stmts(synth_meta)
 
     // The top of synth_back should be Stmt.Module("@synth", body).

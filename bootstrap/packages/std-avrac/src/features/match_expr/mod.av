@@ -239,9 +239,9 @@ fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttemp
             try_match_pattern_list(rt, sub_patterns, value.enum_payload, 0)
         }
         .Or(left, right) -> {
-            let left_attempt = try_match_pattern(rt, left, value)
+            let left_attempt = try_match_pattern(rt, rt.nodes.pats.get(left), value)
             if left_attempt.matched { return left_attempt }
-            try_match_pattern(rt, right, value)
+            try_match_pattern(rt, rt.nodes.pats.get(right), value)
         }
         .TypePattern(_type_name, binding) -> {
             // Eval values are dynamically typed — we don't reify
@@ -270,12 +270,14 @@ fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: Lis
     cur
 }
 
-/// Pairwise-match a `List<Pattern>` against a payload list. Used by
+/// Pairwise-match a nested pattern's id list (F2) against a payload list,
+/// resolving each row through the runtime's store. Used by
 /// nested constructor patterns. If any sub-pattern fails, the
 /// whole nested match fails.
-fn try_match_pattern_list(rt: Runtime, patterns: List<Pattern>, payload: List<Value>, idx: int) -> MatchAttempt {
+fn try_match_pattern_list(rt: Runtime, patterns: List<PatId>, payload: List<Value>, idx: int) -> MatchAttempt {
     mut current_rt = rt
-    for (i, pat) in patterns.enumerate() {
+    for (i, pid) in patterns.enumerate() {
+        let pat = rt.nodes.pats.get(pid)
         if idx + i >= payload.length {
             return MatchAttempt { matched: false, runtime: current_rt }
         }

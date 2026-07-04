@@ -4,7 +4,7 @@
 // (codemod previews, error reporting, doc-comment scaffolding).
 //
 // Pure: no argv, no I/O, no globals. Takes an AST node, returns a string.
-// Public entry point is `fmt_stmt_list(stmts, 0)`.
+// Public entry point is `fmt_stmt_list(store, stmts, 0)`.
 
 use core.{
     Expr, SExpr, Stmt, ParamEntry,
@@ -27,7 +27,7 @@ fn fmt_indent(depth: int) -> string {
 
 /// Render an expression node back to source. Recursive — composes with
 /// the helper renderers (lists, patterns, match arms) for nested forms.
-export fn fmt_expr(se: Expr) -> string {
+export fn fmt_expr(store: NodeStore, se: Expr) -> string {
     match se {
         .Number(v) -> v
         .String(v) -> v
@@ -35,57 +35,57 @@ export fn fmt_expr(se: Expr) -> string {
         .None -> "none"
         .Ident(name) -> name
         .QualifiedIdent(path) -> path
-        .Assign(name, value) -> "${name} = ${fmt_expr(value)}"
-        .Grouping(inner) -> "(${fmt_expr(inner)})"
-        .Unary(op, right) -> "${unop_str(op)}${fmt_expr(right)}"
-        .Binary(left, op, right) -> "${fmt_expr(left)} ${binop_str(op)} ${fmt_expr(right)}"
-        .Logical(left, op, right) -> "${fmt_expr(left)} ${logicop_str(op)} ${fmt_expr(right)}"
-        .Call(callee, args) -> "${fmt_expr(callee)}(${fmt_expr_list_comma(args)})"
-        .GenericCall(callee, ta, args) -> "${fmt_expr(callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(args)})"
-        .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(inits)} }"
-        .FieldAccess(obj, field) -> "${fmt_expr(obj)}.${field}"
-        .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_list_comma(args)})"
-        .Index(obj, idx) -> "${fmt_expr(obj)}[${fmt_expr(idx)}]"
-        .Block(body) -> "{\n${fmt_stmt_list(body, 1)}\n}"
-        .MatchExpr(subject, arms) -> "match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, 1)}\n}"
-        .FieldAssign(obj, field, value) -> "${fmt_expr(obj)}.${field} = ${fmt_expr(value)}"
-        .IfExpr(c, t, e) -> "if ${fmt_expr(c)} { ${fmt_expr(t)} } else { ${fmt_expr(e)} }"
-        .NullCoalesce(left, right) -> "${fmt_expr(left)} ?? ${fmt_expr(right)}"
-        .OptionalChain(obj, field) -> "${fmt_expr(obj)}?.${field}"
-        .OptionalMethodCall(obj, method, args) -> "${fmt_expr(obj)}?.${method}(${fmt_expr_list_comma(args)})"
-        .Try(inner) -> "${fmt_expr(inner)}?"
-        .Tuple(elements) -> "(${fmt_expr_list_comma(elements)})"
-        .TupleIndex(obj, idx) -> "${fmt_expr(obj)}.${string(idx)}"
-        .With(obj, overrides) -> "${fmt_expr(obj)} with { ${fmt_field_init_list(overrides)} }"
-        .ListLit(elements) -> "[${fmt_expr_list_comma(elements)}]"
-        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(body)}"
-        .MapLit(entries) -> "{ ${fmt_map_entries(entries)} }"
+        .Assign(name, value) -> "${name} = ${fmt_expr(store, value)}"
+        .Grouping(inner) -> "(${fmt_expr(store, inner)})"
+        .Unary(op, right) -> "${unop_str(op)}${fmt_expr(store, right)}"
+        .Binary(left, op, right) -> "${fmt_expr(store, left)} ${binop_str(op)} ${fmt_expr(store, right)}"
+        .Logical(left, op, right) -> "${fmt_expr(store, left)} ${logicop_str(op)} ${fmt_expr(store, right)}"
+        .Call(callee, args) -> "${fmt_expr(store, callee)}(${fmt_expr_list_comma(store, args)})"
+        .GenericCall(callee, ta, args) -> "${fmt_expr(store, callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(store, args)})"
+        .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(store, inits)} }"
+        .FieldAccess(obj, field) -> "${fmt_expr(store, obj)}.${field}"
+        .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_list_comma(store, args)})"
+        .Index(obj, idx) -> "${fmt_expr(store, obj)}[${fmt_expr(store, idx)}]"
+        .Block(body) -> "{\n${fmt_stmt_list(store, body, 1)}\n}"
+        .MatchExpr(subject, arms) -> "match ${fmt_expr(store, subject)} {\n${fmt_match_arms(store, arms, 1)}\n}"
+        .FieldAssign(obj, field, value) -> "${fmt_expr(store, obj)}.${field} = ${fmt_expr(store, value)}"
+        .IfExpr(c, t, e) -> "if ${fmt_expr(store, c)} { ${fmt_expr(store, t)} } else { ${fmt_expr(store, e)} }"
+        .NullCoalesce(left, right) -> "${fmt_expr(store, left)} ?? ${fmt_expr(store, right)}"
+        .OptionalChain(obj, field) -> "${fmt_expr(store, obj)}?.${field}"
+        .OptionalMethodCall(obj, method, args) -> "${fmt_expr(store, obj)}?.${method}(${fmt_expr_list_comma(store, args)})"
+        .Try(inner) -> "${fmt_expr(store, inner)}?"
+        .Tuple(elements) -> "(${fmt_expr_list_comma(store, elements)})"
+        .TupleIndex(obj, idx) -> "${fmt_expr(store, obj)}.${string(idx)}"
+        .With(obj, overrides) -> "${fmt_expr(store, obj)} with { ${fmt_field_init_list(store, overrides)} }"
+        .ListLit(elements) -> "[${fmt_expr_list_comma(store, elements)}]"
+        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(store, body)}"
+        .MapLit(entries) -> "{ ${fmt_map_entries(store, entries)} }"
         .FloatLit(v) -> v
-        .Slice(obj, start, end) -> "${fmt_expr(obj)}[${fmt_expr(start)}..${fmt_expr(end)}]"
-        .IsCheck(subject, vname) -> "${fmt_expr(subject)} is .${vname}"
-        .InCheck(needle, items) -> "${fmt_expr(needle)} in [${fmt_expr_list_comma(items)}]"
+        .Slice(obj, start, end) -> "${fmt_expr(store, obj)}[${fmt_expr(store, start)}..${fmt_expr(store, end)}]"
+        .IsCheck(subject, vname) -> "${fmt_expr(store, subject)} is .${vname}"
+        .InCheck(needle, items) -> "${fmt_expr(store, needle)} in [${fmt_expr_list_comma(store, items)}]"
         .ListComp(body, variable, collection, filter) -> {
-            let head = "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}"
-            if filter != null { "${head} if ${fmt_expr(filter!)}]" } else { "${head}]" }
+            let head = "[${fmt_expr(store, body)} for ${variable} in ${fmt_expr(store, collection)}"
+            if filter != null { "${head} if ${fmt_expr(store, filter!)}]" } else { "${head}]" }
         }
-        .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
-        .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
-        .Spawn(body) -> "spawn ${fmt_expr(body)}"
+        .When(arms) -> "when {\n${fmt_when_arms(store, arms, 1)}\n}"
+        .Catch(inner, binding, body, _, _) -> "${fmt_expr(store, inner)} catch ${binding} { ${fmt_expr(store, body)} }"
+        .Spawn(body) -> "spawn ${fmt_expr(store, body)}"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
                 "channel<${vtype_render_full(elem)}>()"
             } else {
-                "channel<${vtype_render_full(elem)}>(${fmt_expr(capacity!)})"
+                "channel<${vtype_render_full(elem)}>(${fmt_expr(store, capacity!)})"
             }
         }
-        .Isolated(body) -> "isolated ${fmt_expr(body)}"
-        .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(body)}" } else { "quote ${kind} ${fmt_expr(body)}" }
-        .Splice(target) -> "~${fmt_expr(target)}"
+        .Isolated(body) -> "isolated ${fmt_expr(store, body)}"
+        .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(store, body)}" } else { "quote ${kind} ${fmt_expr(store, body)}" }
+        .Splice(target) -> "~${fmt_expr(store, target)}"
     }
 }
 
 /// Render a single statement at the given indentation depth.
-export fn fmt_stmt(ss: Stmt, depth: int) -> string {
+export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
     let ind = fmt_indent(depth)
     match ss {
         .Let(name, vt, init) -> {
@@ -94,36 +94,36 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
             // through the metadata fast-path's body serializer. fmt_*
             // must produce parseable source, not pretty error messages.
             let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
-            "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
+            "${ind}let ${name}${ty_part} = ${fmt_expr(store, init)}"
         }
         .Mut(name, vt, init) -> {
             let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
-            "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
+            "${ind}mut ${name}${ty_part} = ${fmt_expr(store, init)}"
         }
         .Const(name, vt, init) -> {
             let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
-            "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
+            "${ind}const ${name}${ty_part} = ${fmt_expr(store, init)}"
         }
-        .Expr(se) -> "${ind}${fmt_expr(se)}"
-        .Block(body) -> "${ind}{\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .Expr(se) -> "${ind}${fmt_expr(store, se)}"
+        .Block(body) -> "${ind}{\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
         .If(condition, then_branch, else_branch) -> {
-            let base = "${ind}if ${fmt_expr(condition)} {\n${fmt_stmt(then_branch, depth + 1)}\n${ind}}"
+            let base = "${ind}if ${fmt_expr(store, condition)} {\n${fmt_stmt(store, then_branch, depth + 1)}\n${ind}}"
             if else_branch == null {
                 base
             } else {
-                "${base} else {\n${fmt_stmt(else_branch!, depth + 1)}\n${ind}}"
+                "${base} else {\n${fmt_stmt(store, else_branch!, depth + 1)}\n${ind}}"
             }
         }
-        .While(condition, body) -> "${ind}while ${fmt_expr(condition)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
-        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
-        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .While(condition, body) -> "${ind}while ${fmt_expr(store, condition)} {\n${fmt_stmt(store, body, depth + 1)}\n${ind}}"
+        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(store, start)}..${fmt_expr(store, end)} {\n${fmt_stmt(store, body, depth + 1)}\n${ind}}"
+        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(store, collection)} {\n${fmt_stmt(store, body, depth + 1)}\n${ind}}"
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_render_full(rvt)}" }
-            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
         }
-        .Return(value) -> "${ind}return ${fmt_expr(value)}"
+        .Return(value) -> "${ind}return ${fmt_expr(store, value)}"
         .ReturnEmpty -> "${ind}return"
         .TypeDecl(name, tp, fields) -> {
             let tp_str = render_type_param_list(tp)
@@ -138,7 +138,7 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
         }
-        .Match(subject, arms) -> "${ind}match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, depth + 1)}\n${ind}}"
+        .Match(subject, arms) -> "${ind}match ${fmt_expr(store, subject)} {\n${fmt_match_arms(store, arms, depth + 1)}\n${ind}}"
         .Impl(name, methods) -> {
             let colon = name.index_of(":")
             let impl_header = if colon >= 0 {
@@ -148,40 +148,40 @@ export fn fmt_stmt(ss: Stmt, depth: int) -> string {
             } else {
                 "impl ${name}"
             }
-            "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+            "${ind}${impl_header} {\n${fmt_stmt_list(store, methods, depth + 1)}\n${ind}}"
         }
         .NoOp -> ""
         .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_render_full(rvt)}"
         .Break -> "${ind}break"
         .Continue -> "${ind}continue"
-        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
-        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(init)}"
-        .Defer(body) -> "${ind}defer ${fmt_expr(body)}"
-        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(body)}"
-        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner.node, depth)}"
-        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(cond)} }"
+        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(store, methods, depth + 1)}\n${ind}}"
+        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(store, init)}"
+        .Defer(body) -> "${ind}defer ${fmt_expr(store, body)}"
+        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(store, body)}"
+        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(store, inner.node, depth)}"
+        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(store, cond)} }"
         .Select(_) -> "${ind}select { ... }"
-        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
+        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(store, body, depth)}"
         .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
-        .ComponentDef(name, params, _, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
-        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ComponentDef(name, params, _, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
     }
 }
 
 /// Public entry point — render a top-level statement list. Each
 /// statement gets one source line, joined with `\n`.
-export fn fmt_stmt_list(stmts: List<SStmt>, depth: int) -> string {
-    list_map(stmts, (ss: SStmt) -> fmt_stmt(ss.node, depth)).join("\n")
+export fn fmt_stmt_list(store: NodeStore, stmts: List<SStmt>, depth: int) -> string {
+    list_map(stmts, (ss: SStmt) -> fmt_stmt(store, ss.node, depth)).join("\n")
 }
 
 /// Render a `List<SExpr>` as comma-separated expressions — used
 /// inside call args, list literals, tuple elements, and generic call args.
-fn fmt_expr_list_comma(exprs: List<SExpr>) -> string {
-    list_map(exprs, (se: SExpr) -> fmt_expr(se.node)).join(", ")
+fn fmt_expr_list_comma(store: NodeStore, exprs: List<SExpr>) -> string {
+    list_map(exprs, (se: SExpr) -> fmt_expr(store, se.node)).join(", ")
 }
 
 /// Render `List<ParamEntry>` as comma-separated names (no types).
@@ -207,8 +207,8 @@ fn fmt_type_name_list(names: List<string>) -> string {
 }
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.
-fn fmt_field_init_list(inits: List<FieldInit>) -> string {
-    list_map(inits, (init: FieldInit) -> "${init.name}: ${fmt_expr(init.value.node)}").join(", ")
+fn fmt_field_init_list(store: NodeStore, inits: List<FieldInit>) -> string {
+    list_map(inits, (init: FieldInit) -> "${init.name}: ${fmt_expr(store, init.value.node)}").join(", ")
 }
 
 /// Render a struct-decl/shape field list — one `name: Type` per
@@ -236,35 +236,35 @@ fn fmt_variant_fields(fields: List<FieldEntry>) -> string {
 }
 
 /// Render a match-arm pattern.
-fn fmt_pattern(p: Pattern) -> string {
+fn fmt_pattern(store: NodeStore, p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
         .Variant(name, bindings) -> {
             let bindings_str = fmt_param_list_comma(bindings)
             if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }
         }
-        .Or(left, right) -> "${fmt_pattern(left)} | ${fmt_pattern(right)}"
+        .Or(left, right) -> "${fmt_pattern(store, store.pats.get(left))} | ${fmt_pattern(store, store.pats.get(right))}"
         .TypePattern(type_name, binding) -> "${type_name}(${binding})"
         _ -> "_"
     }
 }
 
 /// Render a match-arm list — one arm per indented line.
-fn fmt_match_arms(arms: List<MatchArm>, depth: int) -> string {
+fn fmt_match_arms(store: NodeStore, arms: List<MatchArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
     list_map(arms, (arm: MatchArm) -> {
-        let guard_str = if arm.guard != null { " if ${fmt_expr(arm.guard!.node)}" } else { "" }
-        "${ind}${fmt_pattern(arm.pattern)}${guard_str} -> ${fmt_expr(arm.body.node)}"
+        let guard_str = if arm.guard != null { " if ${fmt_expr(store, arm.guard!.node)}" } else { "" }
+        "${ind}${fmt_pattern(store, arm.pattern)}${guard_str} -> ${fmt_expr(store, arm.body.node)}"
     }).join("\n")
 }
 
 /// Render a `when` arm list — one arm per indented line. A null
 /// condition becomes `_` (the catch-all).
-fn fmt_when_arms(arms: List<WhenArm>, depth: int) -> string {
+fn fmt_when_arms(store: NodeStore, arms: List<WhenArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
     list_map(arms, (arm: WhenArm) -> {
-        let cond_str = if arm.cond == null { "_" } else { fmt_expr(arm.cond!.node) }
-        "${ind}${cond_str} -> ${fmt_expr(arm.body.node)}"
+        let cond_str = if arm.cond == null { "_" } else { fmt_expr(store, arm.cond!.node) }
+        "${ind}${cond_str} -> ${fmt_expr(store, arm.body.node)}"
     }).join("\n")
 }
 
@@ -279,19 +279,19 @@ fn fmt_annotation_list(annots: List<Annotation>, depth: int) -> string {
 /// Render map-literal entries — flat `key: val, key: val` form.
 /// Map AST stores keys and values as alternating elements; this
 /// walks them pairwise.
-fn fmt_map_entries(entries: List<SExpr>) -> string {
+fn fmt_map_entries(store: NodeStore, entries: List<SExpr>) -> string {
     mut out = ""
     mut i = 0
     while i < entries.length {
         let key_se = entries[i]
         if i + 1 >= entries.length {
             if out != "" { out = out + ", " }
-            out = out + fmt_expr(key_se.node)
+            out = out + fmt_expr(store, key_se.node)
             i = i + 1
         } else {
             let val_se = entries[i + 1]
             if out != "" { out = out + ", " }
-            out = out + "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
+            out = out + "${fmt_expr(store, key_se.node)}: ${fmt_expr(store, val_se.node)}"
             i = i + 2
         }
     }

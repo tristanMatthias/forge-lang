@@ -21,6 +21,7 @@ const LLVM_TYPEKIND_INTEGER: int = 8
 const LLVM_TYPEKIND_POINTER: int = 12
 use core.{Registry}
 use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
+use core.{NodeStore}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -123,6 +124,11 @@ export type Ctx = {
     // Central type registry — TypeId-based lookups (O(1) intmap).
     // Will replace the string-keyed linked-list registries above.
     type_reg: TypeRegistry,
+    // The program's NodeStore (B-final F2+): flipped variant payloads
+    // carry arena ids (Pattern children first), and codegen resolves
+    // them via `nodes.pats.get(id)`. Named `nodes` — NOT `store` —
+    // because `ctx.store(...)` is the LLVM store-instruction helper.
+    nodes: NodeStore,
     // P2 of library-mode (see docs/2026_05_11_LIBRARY_MODE_DESIGN.md).
     // When non-empty, this string is the qualified prefix that
     // identifies "this package" (e.g. "@std::cli"). Codegen skips

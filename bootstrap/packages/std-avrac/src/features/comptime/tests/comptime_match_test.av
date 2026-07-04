@@ -3,9 +3,16 @@
 // -> ... }` — without match-eval the comptime fold errors with
 // "match statements are not supported by the tree-walk evaluator".
 
-use @std.avrac.core.{Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, BinOp, Pattern, MatchArm, render_expr}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, BinOp, Pattern, MatchArm, render_expr}
 use @std.avrac.features.eval.{Value, value_enum, value_number, eval_fn_with_resolved_args, step_value, step_had_error, runtime_new}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
+
+/// Fresh empty store for inline-AST probes — F2 renderers resolve
+/// flipped pattern ids through it (never read for id-free nodes).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
 
 // `fn classify(x: int) -> int {
 //     match x {
@@ -30,7 +37,7 @@ fn mk_int_match_fn() -> CompTimeFn {
 }
 
 fn int_match_registry() -> CompTimeRegistry {
-    let staged = comptime_registry_new() with { fns: [mk_int_match_fn()] }
+    let staged = comptime_registry_new(ts()) with { fns: [mk_int_match_fn()] }
     prepare_runtime(staged)
 }
 
@@ -86,7 +93,7 @@ fn mk_string_match_fn() -> CompTimeFn {
 }
 
 fn string_match_registry() -> CompTimeRegistry {
-    let staged = comptime_registry_new() with { fns: [mk_string_match_fn()] }
+    let staged = comptime_registry_new(ts()) with { fns: [mk_string_match_fn()] }
     prepare_runtime(staged)
 }
 
@@ -140,13 +147,13 @@ spec "ty5v: enum-variant match with payload binding" {
         let fn_def = mk_unwrap_fn()
         let some_payload: List<Value> = [value_number("42")]
         let some_val = value_enum("Option", "Some", some_payload)
-        let result = eval_fn_with_resolved_args(runtime_new(), fn_def.params, fn_def.body, [some_val])
+        let result = eval_fn_with_resolved_args(runtime_new(ts()), fn_def.params, fn_def.body, [some_val])
         !step_had_error(result) && step_value(result).number_text == "42"
     }
     then ".None returns 0" {
         let fn_def = mk_unwrap_fn()
         let none_val = value_enum("Option", "None", [])
-        let result = eval_fn_with_resolved_args(runtime_new(), fn_def.params, fn_def.body, [none_val])
+        let result = eval_fn_with_resolved_args(runtime_new(ts()), fn_def.params, fn_def.body, [none_val])
         !step_had_error(result) && step_value(result).number_text == "0"
     }
 }
@@ -158,12 +165,14 @@ spec "ty5v: enum-variant match with payload binding" {
 //         .Blue -> 2
 //     }
 // }`
-fn mk_or_pattern_fn() -> CompTimeFn {
+fn mk_or_pattern_fn(ws: NodeStore) -> CompTimeFn {
+    // F2: Or branches are arena rows — allocated into the SAME store the
+    // eval runtime resolves through (ids are store-relative).
     let no_bindings: List<ParamEntry> = []
     let red_pat = Pattern.Variant("Red", no_bindings)
     let green_pat = Pattern.Variant("Green", no_bindings)
     let blue_pat = Pattern.Variant("Blue", no_bindings)
-    let or_pat = Pattern.Or(red_pat, green_pat)
+    let or_pat = Pattern.Or(ws.pats.add_leaf(red_pat), ws.pats.add_leaf(green_pat))
     mut arms: List<MatchArm> = []
     arms.push(MatchArm { pattern: or_pat, guard: null, body: sexpr_dummy(Expr.Number("1")) })
     arms.push(MatchArm { pattern: blue_pat, guard: null, body: sexpr_dummy(Expr.Number("2")) })
@@ -179,21 +188,24 @@ fn mk_or_pattern_fn() -> CompTimeFn {
 
 spec "ty5v: or-pattern matches either variant" {
     then ".Red hits the or-arm" {
-        let fn_def = mk_or_pattern_fn()
+        let ws = ts()
+        let fn_def = mk_or_pattern_fn(ws)
         let val = value_enum("Color", "Red", [])
-        let result = eval_fn_with_resolved_args(runtime_new(), fn_def.params, fn_def.body, [val])
+        let result = eval_fn_with_resolved_args(runtime_new(ws), fn_def.params, fn_def.body, [val])
         !step_had_error(result) && step_value(result).number_text == "1"
     }
     then ".Green hits the or-arm" {
-        let fn_def = mk_or_pattern_fn()
+        let ws = ts()
+        let fn_def = mk_or_pattern_fn(ws)
         let val = value_enum("Color", "Green", [])
-        let result = eval_fn_with_resolved_args(runtime_new(), fn_def.params, fn_def.body, [val])
+        let result = eval_fn_with_resolved_args(runtime_new(ws), fn_def.params, fn_def.body, [val])
         !step_had_error(result) && step_value(result).number_text == "1"
     }
     then ".Blue takes the second arm" {
-        let fn_def = mk_or_pattern_fn()
+        let ws = ts()
+        let fn_def = mk_or_pattern_fn(ws)
         let val = value_enum("Color", "Blue", [])
-        let result = eval_fn_with_resolved_args(runtime_new(), fn_def.params, fn_def.body, [val])
+        let result = eval_fn_with_resolved_args(runtime_new(ws), fn_def.params, fn_def.body, [val])
         !step_had_error(result) && step_value(result).number_text == "2"
     }
 }
@@ -227,7 +239,7 @@ fn mk_match_stmt_with_return_fn() -> CompTimeFn {
 }
 
 fn match_stmt_registry() -> CompTimeRegistry {
-    let staged = comptime_registry_new() with { fns: [mk_match_stmt_with_return_fn()] }
+    let staged = comptime_registry_new(ts()) with { fns: [mk_match_stmt_with_return_fn()] }
     prepare_runtime(staged)
 }
 

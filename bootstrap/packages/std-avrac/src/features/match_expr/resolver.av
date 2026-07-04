@@ -37,12 +37,13 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     }
 }
 
-/// Walk a `List<Pattern>` declaring captures from every sub-pattern.
-fn declare_pattern_list(r: Resolver, pats: List<Pattern>) -> Resolver {
+/// Walk a nested pattern's id list (F2) declaring captures from every
+/// store-resolved sub-pattern.
+fn declare_pattern_list(r: Resolver, pats: List<PatId>) -> Resolver {
     mut acc = r
     mut i = 0
     while i < pats.length {
-        acc = declare_pattern_bindings(acc, pats[i])
+        acc = declare_pattern_bindings(acc, r.nodes.pats.get(pats[i]))
         i = i + 1
     }
     acc

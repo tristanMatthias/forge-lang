@@ -303,8 +303,9 @@ fn is_single_child(k: FieldKind) -> bool {
 }
 
 /// True when `vt` is `List<X>` where `X` is the parent type. Covers the
-/// declared-list shapes like `Pattern.NestedVariant(_, sub_patterns:
-/// List<Pattern>)` and `ValueType.Tuple(elements: List<ValueType>)`.
+/// declared-list shapes like `ValueType.Tuple(elements: List<ValueType>)`.
+/// (Pattern's sub-lists flipped to `List<PatId>` in B-final F2 — id
+/// payloads are scalars here, exactly why flipped kinds go walker-opaque.)
 @comptime
 fn is_list_of_self(vt: ValueType, parent_name: string) -> bool {
     match vt {

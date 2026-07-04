@@ -3,8 +3,15 @@
 // returning `quote stmt { ... }` (which lowers to nested EnumCtors)
 // produces a runtime Stmt value the @expand pass can extract.
 
-use @std.avrac.core.{Expr, SExpr, sexpr_dummy, Stmt, SStmt, ValueType}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, SExpr, sexpr_dummy, Stmt, SStmt, ValueType}
 use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, value_to_stmt_list}
+
+/// Fresh empty store for inline-AST probes — F2 renderers resolve
+/// flipped pattern ids through it (never read for id-free nodes).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
 
 fn empty_args() -> List<SExpr> {
     let e: List<SExpr> = []
@@ -28,7 +35,7 @@ spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact
     // reconstructor keep working — these specs pin that contract.
     then "no-payload variant (Expr.None) boxes as kind=expr, enum_* intact" {
         let e = Expr.EnumCtor("@std::avrac::core::Expr", "None", empty_args())
-        let r: StepResult = eval_expr(runtime_new(), e)
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
         let v: Value = r.value
         v.kind == "expr"
             && v.enum_type == "@std::avrac::core::Expr"
@@ -41,7 +48,7 @@ spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact
             "@std::avrac::core::Expr",
             "Number",
             one_arg(Expr.String("\"42\"")))
-        let r: StepResult = eval_expr(runtime_new(), e)
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
         let v: Value = r.value
         let payload0: Value = v.enum_payload[0]
         v.kind == "expr"
@@ -63,7 +70,7 @@ spec "eval EnumCtor boxes AST nodes (kind=expr/stmt) while keeping enum_* intact
             "@std::avrac::core::Stmt",
             "Return",
             one_arg(inner))
-        let r: StepResult = eval_expr(runtime_new(), outer)
+        let r: StepResult = eval_expr(runtime_new(ts()), outer)
         let v: Value = r.value
         let p0: Value = v.enum_payload[0]
         let p0p0: Value = p0.enum_payload[0]
@@ -143,7 +150,7 @@ fn let_shape_text(s: Result<Stmt, string>) -> string {
 }
 
 fn is_stmt_list_end(v: Value) -> bool {
-    match value_to_stmt_list(v) {
+    match value_to_stmt_list(ts(), v) {
         .Ok(l) -> l.length == 0
         .Err(_) -> false
     }
@@ -152,35 +159,35 @@ fn is_stmt_list_end(v: Value) -> bool {
 spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
     then "ReturnEmpty (no payload)" {
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", empty_args())
-        let r: StepResult = eval_expr(runtime_new(), e)
-        is_return_empty_stmt(value_to_stmt(r.value))
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
+        is_return_empty_stmt(value_to_stmt(ts(), r.value))
     }
     then "Return(Number)" {
         let inner = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"42\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Return", one_arg_se(inner))
-        let r: StepResult = eval_expr(runtime_new(), e)
-        return_number_text(value_to_stmt(r.value)) == "42"
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
+        return_number_text(value_to_stmt(ts(), r.value)) == "42"
     }
     then "Let(name, _, init)" {
         let unknown_vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty_args())
         let init_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"7\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
             three_args_se(Expr.String("\"x\""), unknown_vt, init_expr))
-        let r: StepResult = eval_expr(runtime_new(), e)
-        let_shape_text(value_to_stmt(r.value)) == "x=7"
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
+        let_shape_text(value_to_stmt(ts(), r.value)) == "x=7"
     }
     then "value_to_stmt on a non-enum returns null" {
         // value_number is private; use the eval result of a Number
         // literal expression instead.
-        let r: StepResult = eval_expr(runtime_new(), Expr.Number("5"))
-        value_to_stmt(r.value) is .Err
+        let r: StepResult = eval_expr(runtime_new(ts()), Expr.Number("5"))
+        value_to_stmt(ts(), r.value) is .Err
     }
 }
 
 spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
     then "empty Expr.ListLit decodes to an empty List<SStmt>" {
         let e = Expr.ListLit(empty_args())
-        let r: StepResult = eval_expr(runtime_new(), e)
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
         is_stmt_list_end(r.value)
     }
 }
@@ -214,8 +221,8 @@ spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
         let init = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
             three_args_se(Expr.String("\"x\""), vt, init))
-        let r: StepResult = eval_expr(runtime_new(), e)
-        let_vtype_enum_id(value_to_stmt(r.value)) == 42
+        let r: StepResult = eval_expr(runtime_new(ts()), e)
+        let_vtype_enum_id(value_to_stmt(ts(), r.value)) == 42
     }
 }
 
@@ -227,12 +234,12 @@ spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
 spec "is-check matches a boxed AST value by variant (value_is_enumish path)" {
     then "Expr.Number(\"1\") is .Number -> true" {
         let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
-        let r: StepResult = eval_expr(runtime_new(), Expr.IsCheck(subj, "Number"))
+        let r: StepResult = eval_expr(runtime_new(ts()), Expr.IsCheck(subj, "Number"))
         r.value.kind == "bool" && r.value.bool_value == 1
     }
     then "Expr.Number(\"1\") is .Bool -> false (variant mismatch, still enumish)" {
         let subj = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
-        let r: StepResult = eval_expr(runtime_new(), Expr.IsCheck(subj, "Bool"))
+        let r: StepResult = eval_expr(runtime_new(ts()), Expr.IsCheck(subj, "Bool"))
         r.value.kind == "bool" && r.value.bool_value == 0
     }
 }

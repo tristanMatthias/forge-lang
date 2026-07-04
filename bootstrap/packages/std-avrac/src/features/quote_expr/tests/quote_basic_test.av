@@ -2,210 +2,217 @@
 // Captures small expressions as runtime AST values, verifies via the
 // render_expr S-expression serializer that the captured shape matches.
 
-use @std.avrac.core.{Expr, render_expr, Stmt, SStmt, render_stmt, render_stmt_list, ValueType, vtype_display}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, render_expr, Stmt, SStmt, render_stmt, render_stmt_list, ValueType, vtype_display}
+
+/// Fresh empty store for inline-AST probes — F2 renderers resolve
+/// flipped pattern ids through it (never read for id-free nodes).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
 
 spec "quote: literals" {
     then "number literal" {
         let e = quote { 42 }
-        render_expr(e) == "42"
+        render_expr(ts(), e) == "42"
     }
     then "string literal" {
         let e = quote { "hi" }
-        render_expr(e) == "\"hi\""
+        render_expr(ts(), e) == "\"hi\""
     }
     then "bool literal" {
         let e = quote { true }
-        render_expr(e) == "true"
+        render_expr(ts(), e) == "true"
     }
     then "null literal renders canonically as none" {
         let e = quote { null }
-        render_expr(e) == "none"
+        render_expr(ts(), e) == "none"
     }
     then "none literal" {
         let e = quote { none }
-        render_expr(e) == "none"
+        render_expr(ts(), e) == "none"
     }
 }
 
 spec "quote: identifier capture" {
     then "bare identifier" {
         let e = quote { my_var }
-        render_expr(e) == "my_var"
+        render_expr(ts(), e) == "my_var"
     }
     then "identifier in arithmetic" {
         let e = quote { x + y }
-        render_expr(e) == "(+ x y)"
+        render_expr(ts(), e) == "(+ x y)"
     }
 }
 
 spec "quote: arithmetic" {
     then "addition" {
         let e = quote { 5 + 7 }
-        render_expr(e) == "(+ 5 7)"
+        render_expr(ts(), e) == "(+ 5 7)"
     }
     then "nested arithmetic" {
         let e = quote { 1 + 2 * 3 }
-        render_expr(e) == "(+ 1 (* 2 3))"
+        render_expr(ts(), e) == "(+ 1 (* 2 3))"
     }
     then "subtraction" {
         let e = quote { 10 - 3 }
-        render_expr(e) == "(- 10 3)"
+        render_expr(ts(), e) == "(- 10 3)"
     }
     then "comparison" {
         let e = quote { 1 == 2 }
-        render_expr(e) == "(== 1 2)"
+        render_expr(ts(), e) == "(== 1 2)"
     }
 }
 
 spec "quote: unary" {
     then "negation" {
         let e = quote { -5 }
-        render_expr(e) == "(- 5)"
+        render_expr(ts(), e) == "(- 5)"
     }
     then "logical not" {
         let e = quote { !true }
-        render_expr(e) == "(! true)"
+        render_expr(ts(), e) == "(! true)"
     }
 }
 
 spec "quote: function calls" {
     then "no-arg call" {
         let e = quote { f() }
-        render_expr(e) == "(call f ())"
+        render_expr(ts(), e) == "(call f ())"
     }
     then "single arg" {
         let e = quote { g(7) }
-        render_expr(e) == "(call g (7))"
+        render_expr(ts(), e) == "(call g (7))"
     }
     then "multiple args" {
         let e = quote { add(1, 2) }
-        render_expr(e) == "(call add (1, 2))"
+        render_expr(ts(), e) == "(call add (1, 2))"
     }
     then "nested calls" {
         let e = quote { f(g(x)) }
-        render_expr(e) == "(call f ((call g (x))))"
+        render_expr(ts(), e) == "(call f ((call g (x))))"
     }
 }
 
 spec "quote: field + index access" {
     then "field access" {
         let e = quote { obj.field }
-        render_expr(e) == "(field obj field)"
+        render_expr(ts(), e) == "(field obj field)"
     }
     then "chained field" {
         let e = quote { a.b.c }
-        render_expr(e) == "(field (field a b) c)"
+        render_expr(ts(), e) == "(field (field a b) c)"
     }
     then "index access" {
         let e = quote { xs[0] }
-        render_expr(e) == "(index xs 0)"
+        render_expr(ts(), e) == "(index xs 0)"
     }
 }
 
 spec "quote: collections" {
     then "tuple two" {
         let e = quote { (a, b) }
-        render_expr(e) == "(tuple (a, b))"
+        render_expr(ts(), e) == "(tuple (a, b))"
     }
     then "tuple three" {
         let e = quote { (1, 2, 3) }
-        render_expr(e) == "(tuple (1, 2, 3))"
+        render_expr(ts(), e) == "(tuple (1, 2, 3))"
     }
     then "list literal" {
         let e = quote { [1, 2, 3] }
-        render_expr(e) == "(list (1, 2, 3))"
+        render_expr(ts(), e) == "(list (1, 2, 3))"
     }
     then "empty list" {
         let e = quote { [] }
-        render_expr(e) == "(list ())"
+        render_expr(ts(), e) == "(list ())"
     }
 }
 
 spec "quote: null safety" {
     then "null coalesce" {
         let e = quote { a ?? b }
-        render_expr(e) == "(?? a b)"
+        render_expr(ts(), e) == "(?? a b)"
     }
     then "optional chain" {
         let e = quote { obj?.field }
-        render_expr(e) == "(?. obj field)"
+        render_expr(ts(), e) == "(?. obj field)"
     }
     then "optional method call (first-class node)" {
         let e = quote { obj?.m(1) }
-        render_expr(e) == "(?.call obj m (1))"
+        render_expr(ts(), e) == "(?.call obj m (1))"
     }
     then "try propagation" {
         let e = quote { fallible? }
-        render_expr(e) == "(? fallible)"
+        render_expr(ts(), e) == "(? fallible)"
     }
 }
 
 spec "quote: float literal" {
     then "simple float" {
         let e = quote { 3.14 }
-        render_expr(e) == "3.14"
+        render_expr(ts(), e) == "3.14"
     }
 }
 
 spec "quote: struct literal" {
     then "single field" {
         let e = quote { Point { x: 1 } }
-        render_expr(e) == "(struct Point (x=1))"
+        render_expr(ts(), e) == "(struct Point (x=1))"
     }
     then "two fields" {
         let e = quote { Point { x: 1, y: 2 } }
-        render_expr(e) == "(struct Point (x=1, y=2))"
+        render_expr(ts(), e) == "(struct Point (x=1, y=2))"
     }
     then "three fields" {
         let e = quote { Point3 { x: 1, y: 2, z: 3 } }
-        render_expr(e) == "(struct Point3 (x=1, y=2, z=3))"
+        render_expr(ts(), e) == "(struct Point3 (x=1, y=2, z=3))"
     }
 }
 
 spec "quote: lambda" {
     then "no params" {
         let e = quote { () -> 42 }
-        render_expr(e) == "(lambda () 42)"
+        render_expr(ts(), e) == "(lambda () 42)"
     }
     then "one param" {
         let e = quote { (x) -> x + 1 }
-        render_expr(e) == "(lambda (x) (+ x 1))"
+        render_expr(ts(), e) == "(lambda (x) (+ x 1))"
     }
     then "two params" {
         let e = quote { (x, y) -> x + y }
-        render_expr(e) == "(lambda (x, y) (+ x y))"
+        render_expr(ts(), e) == "(lambda (x, y) (+ x y))"
     }
 }
 
 spec "quote: map literal" {
     then "single entry" {
         let e = quote { ({"a": 1}) }
-        render_expr(e) == "(group (map (\"a\", 1)))"
+        render_expr(ts(), e) == "(group (map (\"a\", 1)))"
     }
 }
 
 spec "quote: with-update" {
     then "single override" {
         let e = quote { obj with { x: 5 } }
-        render_expr(e) == "(with obj (x=5))"
+        render_expr(ts(), e) == "(with obj (x=5))"
     }
 }
 
 spec "quote: tuple index" {
     then "first index" {
         let e = quote { t.0 }
-        render_expr(e) == "(tuple-idx t 0)"
+        render_expr(ts(), e) == "(tuple-idx t 0)"
     }
     then "third index" {
         let e = quote { t.2 }
-        render_expr(e) == "(tuple-idx t 2)"
+        render_expr(ts(), e) == "(tuple-idx t 2)"
     }
 }
 
 spec "quote: is + in checks" {
     then "is-check" {
         let e = quote { x is .Some }
-        render_expr(e) == "(is x .Some)"
+        render_expr(ts(), e) == "(is x .Some)"
     }
 }
 
@@ -224,11 +231,11 @@ spec "quote: nested quote inside container is lowered" {
         // the LOWERED inner quote — which evaluates to Expr.Number("42").
         // We check by asserting outer's render contains the marker for
         // the lowered (constructed) form, not the unlowered Quote form.
-        !render_expr(outer).contains("quote ")
+        !render_expr(ts(), outer).contains("quote ")
     }
     then "inner quote inside struct field" {
         let outer = quote { Foo { x: quote { 7 } } }
-        !render_expr(outer).contains("quote ")
+        !render_expr(ts(), outer).contains("quote ")
     }
 }
 
@@ -238,19 +245,19 @@ spec "quote: nested quote inside container is lowered" {
 spec "quote: precedence preserved" {
     then "mul before add" {
         let e = quote { a + b * c }
-        render_expr(e) == "(+ a (* b c))"
+        render_expr(ts(), e) == "(+ a (* b c))"
     }
     then "and before or" {
         let e = quote { a || b && c }
-        render_expr(e) == "(|| a (&& b c))"
+        render_expr(ts(), e) == "(|| a (&& b c))"
     }
     then "explicit parens override precedence" {
         let e = quote { (a + b) * c }
-        render_expr(e) == "(* (group (+ a b)) c)"
+        render_expr(ts(), e) == "(* (group (+ a b)) c)"
     }
     then "comparison precedence" {
         let e = quote { a + b == c - d }
-        render_expr(e) == "(== (+ a b) (- c d))"
+        render_expr(ts(), e) == "(== (+ a b) (- c d))"
     }
 }
 
@@ -258,19 +265,19 @@ spec "quote: precedence preserved" {
 spec "quote: deep nesting" {
     then "8-level groupings" {
         let e = quote { ((((((((1)))))))) }
-        render_expr(e).contains("(group ")
+        render_expr(ts(), e).contains("(group ")
     }
     then "deeply chained binary" {
         let e = quote { 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 }
-        render_expr(e).contains("(+ ") && render_expr(e).contains("8")
+        render_expr(ts(), e).contains("(+ ") && render_expr(ts(), e).contains("8")
     }
     then "list-of-lists" {
         let e = quote { [[1, 2], [3, 4], [5, 6]] }
-        render_expr(e) == "(list ((list (1, 2)), (list (3, 4)), (list (5, 6))))"
+        render_expr(ts(), e) == "(list ((list (1, 2)), (list (3, 4)), (list (5, 6))))"
     }
     then "tuple-of-tuples" {
         let e = quote { ((1, 2), (3, 4)) }
-        render_expr(e) == "(tuple ((tuple (1, 2)), (tuple (3, 4))))"
+        render_expr(ts(), e) == "(tuple ((tuple (1, 2)), (tuple (3, 4))))"
     }
 }
 
@@ -278,15 +285,15 @@ spec "quote: deep nesting" {
 spec "quote: stacked unaries" {
     then "double negation" {
         let e = quote { --5 }
-        render_expr(e) == "(- (- 5))"
+        render_expr(ts(), e) == "(- (- 5))"
     }
     then "double not" {
         let e = quote { !!flag }
-        render_expr(e) == "(! (! flag))"
+        render_expr(ts(), e) == "(! (! flag))"
     }
     then "negated call" {
         let e = quote { -f(x) }
-        render_expr(e) == "(- (call f (x)))"
+        render_expr(ts(), e) == "(- (call f (x)))"
     }
 }
 
@@ -295,15 +302,15 @@ spec "quote: stacked unaries" {
 spec "quote: identifier shapes" {
     then "snake_case identifier" {
         let e = quote { user_id_value }
-        render_expr(e) == "user_id_value"
+        render_expr(ts(), e) == "user_id_value"
     }
     then "single-char identifier" {
         let e = quote { x }
-        render_expr(e) == "x"
+        render_expr(ts(), e) == "x"
     }
     then "trailing-digit identifier" {
         let e = quote { x1 }
-        render_expr(e) == "x1"
+        render_expr(ts(), e) == "x1"
     }
 }
 
@@ -312,15 +319,15 @@ spec "quote: identifier shapes" {
 spec "quote: string-literal shapes" {
     then "empty string" {
         let e = quote { "" }
-        render_expr(e) == "\"\""
+        render_expr(ts(), e) == "\"\""
     }
     then "single space" {
         let e = quote { " " }
-        render_expr(e) == "\" \""
+        render_expr(ts(), e) == "\" \""
     }
     then "longer ASCII" {
         let e = quote { "hello world" }
-        render_expr(e) == "\"hello world\""
+        render_expr(ts(), e) == "\"hello world\""
     }
 }
 
@@ -328,15 +335,15 @@ spec "quote: string-literal shapes" {
 spec "quote: number shapes" {
     then "zero" {
         let e = quote { 0 }
-        render_expr(e) == "0"
+        render_expr(ts(), e) == "0"
     }
     then "large number" {
         let e = quote { 1000000 }
-        render_expr(e) == "1000000"
+        render_expr(ts(), e) == "1000000"
     }
     then "negative literal via unary" {
         let e = quote { -1 }
-        render_expr(e) == "(- 1)"
+        render_expr(ts(), e) == "(- 1)"
     }
 }
 
@@ -344,36 +351,36 @@ spec "quote: number shapes" {
 spec "quote: kind dispatch" {
     then "quote stmt yields a Stmt value" {
         let s: Stmt = quote stmt { let x = 5 }
-        render_stmt(s) == "(let x:<unknown> 5)"
+        render_stmt(ts(), s) == "(let x:<unknown> 5)"
     }
     then "quote stmts yields a List<SStmt> value" {
         let sl: List<SStmt> = quote stmts {
             let a = 1
             let b = 2
         }
-        render_stmt_list(sl).contains("let a") && render_stmt_list(sl).contains("let b")
+        render_stmt_list(ts(), sl).contains("let a") && render_stmt_list(ts(), sl).contains("let b")
     }
     then "quote decl with let acts like stmt" {
         let s: Stmt = quote decl { let x = 5 }
-        render_stmt(s) == "(let x:<unknown> 5)"
+        render_stmt(ts(), s) == "(let x:<unknown> 5)"
     }
     then "quote stmt with return" {
         let s: Stmt = quote stmt { return 42 }
-        render_stmt(s) == "(return 42)"
+        render_stmt(ts(), s) == "(return 42)"
     }
     then "quote stmt with if" {
         let s: Stmt = quote stmt {
             if cond { a } else { b }
         }
-        render_stmt(s).contains("(if cond")
+        render_stmt(ts(), s).contains("(if cond")
     }
     then "quote stmts with single stmt" {
         let sl: List<SStmt> = quote stmts { let x = 1 }
-        render_stmt_list(sl).contains("let x")
+        render_stmt_list(ts(), sl).contains("let x")
     }
     then "quote default kind is expr" {
         let e: Expr = quote { 42 }
-        render_expr(e) == "42"
+        render_expr(ts(), e) == "42"
     }
 }
 
@@ -410,45 +417,45 @@ spec "quote: splice expressions" {
     then "splice ident-like value into binary expression" {
         let x: Expr = Expr.Ident("hello")
         let e = quote { ~x + 1 }
-        render_expr(e) == "(+ hello 1)"
+        render_expr(ts(), e) == "(+ hello 1)"
     }
     then "splice number" {
         let n: Expr = Expr.Number("42")
         let e = quote { ~n * 2 }
-        render_expr(e) == "(* 42 2)"
+        render_expr(ts(), e) == "(* 42 2)"
     }
     then "splice both operands" {
         let lhs: Expr = Expr.Ident("a")
         let rhs: Expr = Expr.Ident("b")
         let e = quote { ~lhs + ~rhs }
-        render_expr(e) == "(+ a b)"
+        render_expr(ts(), e) == "(+ a b)"
     }
     then "splice into call argument" {
         let arg: Expr = Expr.Ident("user_var")
         let e = quote { f(~arg) }
-        render_expr(e) == "(call f (user_var))"
+        render_expr(ts(), e) == "(call f (user_var))"
     }
     then "splice paren-wrapped expression" {
         let inner: Expr = Expr.Binary(Expr.Number("3"), .Mul, Expr.Number("4"))
         let e = quote { 1 + ~(inner) }
-        render_expr(e) == "(+ 1 (* 3 4))"
+        render_expr(ts(), e) == "(+ 1 (* 3 4))"
     }
     then "splice into nested call" {
         let v: Expr = Expr.Ident("z")
         let e = quote { f(g(~v)) }
-        render_expr(e) == "(call f ((call g (z))))"
+        render_expr(ts(), e) == "(call f ((call g (z))))"
     }
     then "splice into list element" {
         let v: Expr = Expr.Number("99")
         let e = quote { [1, ~v, 3] }
-        render_expr(e) == "(list (1, 99, 3))"
+        render_expr(ts(), e) == "(list (1, 99, 3))"
     }
     then "splice nested quote-built target" {
         // The splice target can be ANY expression that produces an
         // AST value at expansion time — not just a bare ident.
         let inner: Expr = Expr.Number("7")
         let e = quote { 5 + ~inner }
-        render_expr(e) == "(+ 5 7)"
+        render_expr(ts(), e) == "(+ 5 7)"
     }
 }
 
@@ -457,18 +464,18 @@ spec "quote: splice red-team" {
     then "splice into struct field" {
         let v: Expr = Expr.Number("99")
         let e = quote { Point { x: ~v, y: 0 } }
-        render_expr(e) == "(struct Point (x=99, y=0))"
+        render_expr(ts(), e) == "(struct Point (x=99, y=0))"
     }
     then "splice into tuple element" {
         let v: Expr = Expr.Ident("z")
         let e = quote { (1, ~v, 3) }
-        render_expr(e) == "(tuple (1, z, 3))"
+        render_expr(ts(), e) == "(tuple (1, z, 3))"
     }
     then "splice composes with itself" {
         let a: Expr = Expr.Ident("alpha")
         let b: Expr = Expr.Ident("beta")
         let e = quote { ~a * ~b + ~a }
-        render_expr(e) == "(+ (* alpha beta) alpha)"
+        render_expr(ts(), e) == "(+ (* alpha beta) alpha)"
     }
     then "tilde outside quote stays as BitNot" {
         // Outside any quote body, ~5 = -6 (bitwise NOT).
@@ -478,12 +485,12 @@ spec "quote: splice red-team" {
     then "splice in negation" {
         let v: Expr = Expr.Number("3")
         let e = quote { -~v }
-        render_expr(e) == "(- 3)"
+        render_expr(ts(), e) == "(- 3)"
     }
     then "splice in if condition" {
         let cond: Expr = Expr.Bool("true")
         let e = quote { if ~cond { 1 } else { 2 } }
-        render_expr(e).contains("(if true") && render_expr(e).contains("(expr 1)") && render_expr(e).contains("(expr 2)")
+        render_expr(ts(), e).contains("(if true") && render_expr(ts(), e).contains("(expr 1)") && render_expr(ts(), e).contains("(expr 2)")
     }
     then "splice as call callee — paren-grouped" {
         // Splice is greedy: `~f(x)` would splice the entire `f(x)`,
@@ -493,7 +500,7 @@ spec "quote: splice red-team" {
         // then the call adds postfix args inside the quote.
         let f: Expr = Expr.Ident("my_fn")
         let e = quote { (~f)(my_arg) }
-        render_expr(e).contains("my_fn") && render_expr(e).contains("my_arg")
+        render_expr(ts(), e).contains("my_fn") && render_expr(ts(), e).contains("my_arg")
     }
 }
 
@@ -504,14 +511,14 @@ spec "quote: multi-statement block bodies" {
             let x = 5
             x + 1
         }
-        render_expr(e).contains("block-expr") && render_expr(e).contains("let x") && render_expr(e).contains("(+ x 1)")
+        render_expr(ts(), e).contains("block-expr") && render_expr(ts(), e).contains("let x") && render_expr(ts(), e).contains("(+ x 1)")
     }
     then "two lets" {
         let e = quote {
             let a = 1
             let b = 2
         }
-        render_expr(e).contains("let a") && render_expr(e).contains("let b")
+        render_expr(ts(), e).contains("let a") && render_expr(ts(), e).contains("let b")
     }
     then "if statement inside block" {
         let e = quote {
@@ -521,7 +528,7 @@ spec "quote: multi-statement block bodies" {
                 b
             }
         }
-        render_expr(e).contains("(if cond")
+        render_expr(ts(), e).contains("(if cond")
     }
     then "while loop" {
         let e = quote {
@@ -529,7 +536,7 @@ spec "quote: multi-statement block bodies" {
                 x = x + 1
             }
         }
-        render_expr(e).contains("(while")
+        render_expr(ts(), e).contains("(while")
     }
     then "for-in loop" {
         let e = quote {
@@ -537,19 +544,19 @@ spec "quote: multi-statement block bodies" {
                 x
             }
         }
-        render_expr(e).contains("(for-in x")
+        render_expr(ts(), e).contains("(for-in x")
     }
     then "return statement" {
         let e = quote {
             return 42
         }
-        render_expr(e).contains("(return 42)")
+        render_expr(ts(), e).contains("(return 42)")
     }
     then "defer in block" {
         let e = quote {
             defer cleanup()
             do_work()
         }
-        render_expr(e).contains("(defer ")
+        render_expr(ts(), e).contains("(defer ")
     }
 }
