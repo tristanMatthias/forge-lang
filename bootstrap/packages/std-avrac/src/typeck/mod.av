@@ -1619,7 +1619,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         }
         .Assign(_, value) -> lint_scan_expr(store, value, coll)
         .Grouping(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
-        .Unary(_, right) -> lint_scan_expr(store, right, coll)
+        .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
@@ -2602,7 +2602,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             check_binary_type(tc4, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
-            let r = check_expr(tc, right)
+            let r = check_expr(tc, tc.nodes.exprs.get(right))
             tc_er(r.tc, r.ty)
         }
         .Logical(left, _, right) -> {
@@ -4189,7 +4189,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Block(body) -> .Block(annotate_stmts(tc, body))
         .Binary(l, op, r) -> .Binary(annotate_expr(tc, l), op, annotate_expr(tc, r))
         .Logical(l, op, r) -> .Logical(annotate_expr(tc, l), op, annotate_expr(tc, r))
-        .Unary(op, e) -> .Unary(op, annotate_expr(tc, e))
+        .Unary(op, e) -> .Unary(op, annotate_expr_id(tc, e))
         .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
         .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))

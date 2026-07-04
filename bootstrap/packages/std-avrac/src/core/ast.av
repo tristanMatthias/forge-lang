@@ -2184,7 +2184,7 @@ export enum Expr {
     /// `(expr)` — preserves source parenthesisation for renderer.
     Grouping(expr: ExprId)
     /// Prefix unary: `!x`, `-x`, `~x`.
-    Unary(op: UnOp, right: Expr)
+    Unary(op: UnOp, right: ExprId)
     /// Binary infix: `a + b`, `x == y`, `a & b`.
     Binary(left: Expr, op: BinOp, right: Expr)
     /// Short-circuit logical: `a && b`, `a || b`.
@@ -2781,7 +2781,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Ident(name) -> name
         .Assign(name, value) -> "(assign ${name} ${render_expr(store, value)})"
         .Grouping(inner) -> "(group ${render_expr(store, inner)})"
-        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, right)})"
+        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
         .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
         .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"

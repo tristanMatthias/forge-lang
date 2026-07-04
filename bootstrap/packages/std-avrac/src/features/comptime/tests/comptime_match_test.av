@@ -233,7 +233,7 @@ fn mk_match_stmt_with_return_fn(ws: NodeStore) -> CompTimeFn {
     let subj = ws.exprs.add_leaf(Expr.Ident("x"))
     let body: List<StmtId> = [
         ws.stmts.add_leaf(Stmt.Match(subj, arms)),
-        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.Unary(UnOp.Neg, Expr.Number("1"))))),
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.Unary(UnOp.Neg, ws.exprs.add_leaf(Expr.Number("1")))))),
     ]
     CompTimeFn {
         name: "pick",

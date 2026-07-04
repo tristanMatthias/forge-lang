@@ -1301,7 +1301,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_unary()?
-            return .Ok(self.alloc1(Expr.Unary(op, self.expr_of(right)), right))
+            return .Ok(self.alloc1(Expr.Unary(op, right), right))
         }
 
         mut eid = self.parse_call()?

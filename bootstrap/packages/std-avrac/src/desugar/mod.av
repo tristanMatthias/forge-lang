@@ -441,7 +441,7 @@ fn rewrite_expr(store: NodeStore, expr: Expr) -> Expr {
 fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr>) -> Expr {
     let name = match callee { .Ident(n) -> n, _ -> "" }
     match name {
-        "assert" -> desugar_assert(args)
+        "assert" -> desugar_assert(store, args)
         "dbg" -> desugar_dbg(store, args)
         "todo" -> desugar_todo(args)
         "unreachable" -> desugar_unreachable(args)
@@ -455,7 +455,7 @@ fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr
 /// `if !cond { panic(msg) } else null`. Default message is
 /// `"assertion failed"`. Calls without args become a panic so the
 /// failure surfaces immediately.
-fn desugar_assert(args: List<SExpr>) -> Expr {
+fn desugar_assert(store: NodeStore, args: List<SExpr>) -> Expr {
     if args.length == 0 {
         let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"assert: no condition\""))]
         return Expr.Call(Expr.Ident("panic"), panic_args)
@@ -464,7 +464,7 @@ fn desugar_assert(args: List<SExpr>) -> Expr {
     let msg = if args.length > 1 { args[1].node } else { Expr.String("\"assertion failed\"") }
     let panic_args: List<SExpr> = [sexpr_dummy(msg)]
     Expr.IfExpr(
-        Expr.Unary(UnOp.Not, cond),
+        Expr.Unary(UnOp.Not, store.exprs.add_leaf(cond)),
         Expr.Call(Expr.Ident("panic"), panic_args),
         Expr.None
     )
@@ -554,7 +554,7 @@ fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
 fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
         .Binary(l, op, r) -> .Binary(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
-        .Unary(op, r) -> .Unary(op, desugar_expr(store, r, sigs))
+        .Unary(op, r) -> .Unary(op, desugar_expr_id(store, r, sigs))
         .Logical(l, op, r) -> .Logical(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
         // Call args: desugar each arg, then pin any anonymous table row
         // to the callee's declared `List<Row>` parameter type (c080).

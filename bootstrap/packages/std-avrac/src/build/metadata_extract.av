@@ -598,7 +598,7 @@ fn extract_const_value(store: NodeStore, e: Expr) -> ConstValueParts {
             str_val: strip_quotes(text),
         }
         .Grouping(inner) -> extract_const_value(store, store.exprs.get(inner))
-        .Unary(_, inner) -> extract_const_value(store, inner)
+        .Unary(_, inner) -> extract_const_value(store, store.exprs.get(inner))
         _ -> ConstValueParts {
             kind: ConstValueKind.UnknownValue,
             int_val: 0,
