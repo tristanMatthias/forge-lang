@@ -48,7 +48,7 @@
 //                                  type checking
 
 use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
-use core.{NodeStore}
+use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
@@ -228,11 +228,11 @@ fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
 
 /// Root entry for module tree construction. Recurses on every
 /// `Stmt.Module`, building children + sibling links.
-fn build_module_tree(stmts: List<SStmt>, parent_path: string, tree: ModuleNode) -> ModuleNode {
+fn build_module_tree(store: NodeStore, stmts: List<SStmt>, parent_path: string, tree: ModuleNode) -> ModuleNode {
     mut cur = tree
     mut i = 0
     while i < stmts.length {
-        cur = build_tree_from_stmt(stmts[i].node, parent_path, cur)
+        cur = build_tree_from_stmt(store, stmts[i].node, parent_path, cur)
         i = i + 1
     }
     cur
@@ -241,18 +241,19 @@ fn build_module_tree(stmts: List<SStmt>, parent_path: string, tree: ModuleNode) 
 /// Per-stmt branch of `build_module_tree`. `Module` adds a node
 /// (and recurses for children); `Annotated` strips the wrapper;
 /// everything else passes through unchanged.
-fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> ModuleNode {
+fn build_tree_from_stmt(store: NodeStore, stmt: Stmt, parent_path: string, tree: ModuleNode) -> ModuleNode {
     match stmt {
         .Module(name, body) -> {
             let mod_path = type_qualified_name(parent_path, name)
+            let wrapped = store.sstmts_of(body)
             // Collect items in this module
-            let items = collect_module_items(body, mod_path)
+            let items = collect_module_items(store, wrapped, mod_path)
             // Recursively build tree for nested modules
-            let children = build_module_tree(body, mod_path, ModuleNode.End)
+            let children = build_module_tree(store, wrapped, mod_path, ModuleNode.End)
             // Add this module to the tree
             ModuleNode.Node(name, mod_path, items, children, tree)
         }
-        .Annotated(_, inner) -> build_tree_from_stmt(inner.node, parent_path, tree)
+        .Annotated(_, inner) -> build_tree_from_stmt(store, store.stmts.get(inner), parent_path, tree)
         _ -> tree
     }
 }
@@ -263,11 +264,11 @@ fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> Mo
 /// the resulting list preserves source order (matching the
 /// previous cons-list which was built head-first by walking the
 /// tail recursively).
-fn collect_module_items(stmts: List<SStmt>, mod_path: string) -> List<ModuleItemEntry> {
+fn collect_module_items(store: NodeStore, stmts: List<SStmt>, mod_path: string) -> List<ModuleItemEntry> {
     mut out: List<ModuleItemEntry> = []
     mut i = 0
     while i < stmts.length {
-        collect_item_from_stmt(stmts[i].node, mod_path, false, out)
+        collect_item_from_stmt(store, stmts[i].node, mod_path, false, out)
         i = i + 1
     }
     out
@@ -283,7 +284,7 @@ fn collect_module_items(stmts: List<SStmt>, mod_path: string) -> List<ModuleItem
 /// params are immutable, but the underlying heap AvraArray is
 /// shared so push mutations reach the caller (same convention as
 /// test_runner/discovery.av).
-fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref: List<ModuleItemEntry>) {
+fn collect_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, exported: bool, out_ref: List<ModuleItemEntry>) {
     mut out = out_ref
     match stmt {
         .Function(name, _, _, _, _) -> {
@@ -325,13 +326,13 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref:
             let canonical = type_qualified_name(mod_path, name)
             out.push(ModuleItemEntry { short_name: name, canonical, exported })
         }
-        .Impl(_, methods) -> collect_impl_items(methods, mod_path, out)
+        .Impl(_, methods) -> collect_impl_items(store, methods, mod_path, out)
         .Annotated(annotations, inner) -> {
             let is_export = annotation_has_export(annotations)
             // Re-exports: `export use path.{name1, name2}` makes imported
             // names visible as exports of the current module.
             if is_export {
-                match inner.node {
+                match store.stmts.get(inner) {
                     .Use(use_path, names) -> {
                         // The use path is relative to the current module, so
                         // prefix with the module path to get the canonical path.
@@ -343,7 +344,7 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, out_ref:
                     _ -> {}
                 }
             }
-            collect_item_from_stmt(inner.node, mod_path, is_export, out)
+            collect_item_from_stmt(store, store.stmts.get(inner), mod_path, is_export, out)
         }
         _ -> {}
     }
@@ -366,11 +367,11 @@ fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: 
 /// Collect the methods of an impl block. Methods are stored under
 /// their pre-mangled `Type__method` name so dispatch can grep the
 /// global index directly.
-fn collect_impl_items(stmts: List<SStmt>, mod_path: string, out_ref: List<ModuleItemEntry>) {
+fn collect_impl_items(store: NodeStore, methods: List<StmtId>, mod_path: string, out_ref: List<ModuleItemEntry>) {
     mut out = out_ref
     mut i = 0
-    while i < stmts.length {
-        match stmt_unwrap(stmts[i].node) {
+    while i < methods.length {
+        match stmt_unwrap(store, store.stmts.get(methods[i])) {
             .Function(name, _, _, _, _) -> {
                 // Impl methods are already mangled as Type__method.
                 // Keep bare name — method call codegen uses Type__method directly.
@@ -394,8 +395,8 @@ fn annotation_has_export(annotations: List<Annotation>) -> bool {
 
 /// Top-level entry for use-alias resolution: process every `use`
 /// statement, building an AliasEntry list keyed off short names.
-fn resolve_use_aliases(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
-    resolve_use_aliases_in(stmts, tree, graph, "")
+fn resolve_use_aliases(store: NodeStore, stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
+    resolve_use_aliases_in(store, stmts, tree, graph, "")
 }
 
 /// Resolve `use` statements relative to a current module path.
@@ -407,7 +408,7 @@ fn resolve_use_aliases(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph)
 /// say `use core.{...}` and have it resolve to the sibling
 /// `@std.avrac.core.runtime` rather than failing because no such
 /// module exists at the program root.
-fn resolve_use_aliases_in(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
+fn resolve_use_aliases_in(store: NodeStore, stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
     // Walk in reverse so accumulator semantics match the original
     // head-recursive cons-cell walk (which built the result on the
     // way back up the recursion).
@@ -416,7 +417,7 @@ fn resolve_use_aliases_in(stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGra
     while i >= 0 {
         let ss = stmts[i]
         let unwrapped = match ss.node {
-            .Annotated(_, inner) -> inner.node
+            .Annotated(_, inner) -> store.stmts.get(inner)
             _ -> ss.node
         }
         acc = match unwrapped {
@@ -620,22 +621,22 @@ fn concat_type_params(a: List<TypeParamEntry>, b: List<TypeParamEntry>) -> List<
 /// — declared_type_name qualifies them only DURING the rewrite — so the
 /// qualified key is computed here from the module path; an already-qualified
 /// name (re-resolve passes) is stored as-is with its short tail.
-fn collect_type_decl_tps(stmts: List<SStmt>, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+fn collect_type_decl_tps(store: NodeStore, stmts: List<SStmt>, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
     mut out = out_ref
     mut i = 0
     while i < stmts.length {
-        collect_type_decl_tp_stmt(stmts[i].node, mod_path, out)
+        collect_type_decl_tp_stmt(store, stmts[i].node, mod_path, out)
         i = i + 1
     }
 }
 
-fn collect_type_decl_tp_stmt(stmt: Stmt, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+fn collect_type_decl_tp_stmt(store: NodeStore, stmt: Stmt, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
     mut out = out_ref
     match stmt {
         .TypeDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
         .EnumDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
-        .Module(name, body) -> collect_type_decl_tps(body, type_qualified_name(mod_path, name), out)
-        .Annotated(_, inner) -> collect_type_decl_tp_stmt(inner.node, mod_path, out)
+        .Module(name, body) -> collect_type_decl_tps(store, store.sstmts_of(body), type_qualified_name(mod_path, name), out)
+        .Annotated(_, inner) -> collect_type_decl_tp_stmt(store, store.stmts.get(inner), mod_path, out)
         _ -> {}
     }
 }
@@ -785,9 +786,9 @@ export type ResolverState = {
 /// without re-running the use-site rewrite over already-resolved
 /// originals.
 export fn register_decls(stmts: List<SStmt>, store: NodeStore) -> ResolverState {
-    let tree = build_module_tree(stmts, "", ModuleNode.End)
-    let graph = build_graph_from_stmts(stmts)
-    let use_result = resolve_use_aliases(stmts, tree, graph)
+    let tree = build_module_tree(store, stmts, "", ModuleNode.End)
+    let graph = build_graph_from_stmts(store, stmts)
+    let use_result = resolve_use_aliases(store, stmts, tree, graph)
     let global_index_list = build_global_index_from_graph(graph.all_items)
     let global_index = global_item_reg_build(global_index_list)
     let reg = type_registry_new()
@@ -808,7 +809,7 @@ export fn register_decls(stmts: List<SStmt>, store: NodeStore) -> ResolverState 
 /// does not modify `stmts`.
 export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
     mut tps: List<TypeDeclTpEntry> = []
-    collect_type_decl_tps(stmts, "", tps)
+    collect_type_decl_tps(state.nodes, stmts, "", tps)
     let ctx = NameCtx {
         tree: state.tree,
         graph: state.graph,
@@ -835,7 +836,7 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
 /// spliced fn inside a user module still gets rewritten.
 export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
     mut tps: List<TypeDeclTpEntry> = []
-    collect_type_decl_tps(stmts, "", tps)
+    collect_type_decl_tps(state.nodes, stmts, "", tps)
     let ctx = NameCtx {
         tree: state.tree,
         graph: state.graph,
@@ -862,8 +863,8 @@ fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
             match ss.node {
                 .Module(name, body) -> {
                     let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name) }
-                    let new_body = rewrite_macro_stmts(mod_ctx, body)
-                    out.push(ss with { node: Stmt.Module(name, new_body) })
+                    let new_body = rewrite_macro_stmts(mod_ctx, ctx.nodes.sstmts_of(body))
+                    out.push(ss with { node: Stmt.Module(name, ctx.nodes.rows_of(new_body)) })
                 }
                 _ -> out.push(ss)
             }
@@ -886,7 +887,7 @@ fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
 /// import diagnostics and double-bag them).
 export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> ResolverState {
     mut new_items: List<GraphItem> = []
-    collect_macro_items(stmts, "", new_items)
+    collect_macro_items(state.nodes, stmts, "", new_items)
     if new_items.length == 0 { return state }
 
     // Augment graph.all_items by appending the new entries.
@@ -916,17 +917,17 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     }
 }
 
-fn collect_macro_items(stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
+fn collect_macro_items(store: NodeStore, stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
     mut out = acc
     for ss in stmts {
         match ss.node {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
-                collect_macro_items(body, inner_path, out)
+                collect_macro_items(store, store.sstmts_of(body), inner_path, out)
             }
             _ -> {
                 if ss.from_macro {
-                    collect_macro_item_from_stmt(ss.node, mod_path, out)
+                    collect_macro_item_from_stmt(store, ss.node, mod_path, out)
                 }
             }
         }
@@ -936,7 +937,7 @@ fn collect_macro_items(stmts: List<SStmt>, mod_path: string, acc: List<GraphItem
 /// Sister of `collect_item_from_stmt` but emits `GraphItem` directly
 /// — the additive register augments `graph.all_items` which is a
 /// `List<GraphItem>`, not the per-module `ModuleItemEntry` list.
-fn collect_macro_item_from_stmt(stmt: Stmt, mod_path: string, acc: List<GraphItem>) {
+fn collect_macro_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, acc: List<GraphItem>) {
     mut out = acc
     match stmt {
         .Function(name, _, _, _, _) -> {
@@ -970,7 +971,7 @@ fn collect_macro_item_from_stmt(stmt: Stmt, mod_path: string, acc: List<GraphIte
             let canonical = type_qualified_name(mod_path, name)
             out.push(GraphItem { short_name: name, canonical, exported: false })
         }
-        .Annotated(_, inner) -> collect_macro_item_from_stmt(inner.node, mod_path, out)
+        .Annotated(_, inner) -> collect_macro_item_from_stmt(store, store.stmts.get(inner), mod_path, out)
         _ -> {}
     }
 }
@@ -1016,7 +1017,7 @@ export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreE
 /// existing bag-handling path unchanged after the split.
 export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState) -> NameResolveResult {
     let resolved = resolve_program(stmts, state.nodes)
-    let used = collect_used_paths_stmts(stmts, [])
+    let used = collect_used_paths_stmts(state.nodes, stmts, [])
     let unused_bag = check_unused_imports(state.aliases, used)
     let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
@@ -1058,23 +1059,39 @@ fn rewrite_stmt_list(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
     out
 }
 
+/// Rewrite an expression row: resolve, qualify, re-allocate (fresh
+/// row inherits the original's span).
+fn rewrite_expr_id(ctx: NameCtx, id: ExprId) -> ExprId {
+    ctx.nodes.reexpr(rewrite_expr(ctx, ctx.nodes.exprs.get(id)), id)
+}
+
+/// Rewrite a statement row (see `rewrite_expr_id`).
+fn rewrite_stmt_id(ctx: NameCtx, id: StmtId) -> StmtId {
+    ctx.nodes.restmt(rewrite_stmt(ctx, ctx.nodes.stmts.get(id)), id)
+}
+
+/// Rewrite a flipped `List<StmtId>` body.
+fn rewrite_stmt_ids(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
+    list_map(ids, (id: StmtId) -> rewrite_stmt_id(ctx, id))
+}
+
 /// Rewrite a single statement: qualify type names in declarations,
 /// register types in the registry, recurse into nested bodies. Each
 /// variant gets its own arm.
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
-        .Mut(name, vt, init) -> .Mut(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
-        .Expr(e) -> .Expr(rewrite_expr(ctx, e))
-        .Return(e) -> .Return(rewrite_expr(ctx, e))
-        .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
+        .Let(name, vt, init) -> .Let(name, rewrite_vtype(ctx, vt), rewrite_expr_id(ctx, init))
+        .Mut(name, vt, init) -> .Mut(name, rewrite_vtype(ctx, vt), rewrite_expr_id(ctx, init))
+        .Expr(e) -> .Expr(rewrite_expr_id(ctx, e))
+        .Return(e) -> .Return(rewrite_expr_id(ctx, e))
+        .Block(body) -> .Block(rewrite_stmt_ids(ctx, body))
         .If(cond, then_b, else_b) -> {
-            let new_else = if else_b != null { rewrite_stmt(ctx, else_b!) } else { null }
-            Stmt.If(rewrite_expr(ctx, cond), rewrite_stmt(ctx, then_b), new_else)
+            let new_else = if else_b != null { rewrite_stmt_id(ctx, else_b!) } else { null }
+            Stmt.If(rewrite_expr_id(ctx, cond), rewrite_stmt_id(ctx, then_b), new_else)
         }
-        .While(cond, body) -> .While(rewrite_expr(ctx, cond), rewrite_stmt(ctx, body))
-        .For(var, start, end, body) -> .For(var, rewrite_expr(ctx, start), rewrite_expr(ctx, end), rewrite_stmt(ctx, body))
-        .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
+        .While(cond, body) -> .While(rewrite_expr_id(ctx, cond), rewrite_stmt_id(ctx, body))
+        .For(var, start, end, body) -> .For(var, rewrite_expr_id(ctx, start), rewrite_expr_id(ctx, end), rewrite_stmt_id(ctx, body))
+        .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr_id(ctx, coll), rewrite_stmt_id(ctx, body))
         .Function(name, tp, params, rvt, body) -> {
             let is_impl_method = is_mangled_method(name)
             // Idempotent qualification: skip if already qualified
@@ -1086,13 +1103,13 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
             let ctx_tp = ctx_with_type_params(ctx, tp)
             let rp = rewrite_param_types(ctx_tp, params)
-            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
+            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_ids(bind_params_ctx(ctx_tp, rp), body))
         }
-        .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
+        .Match(subject, arms) -> .Match(rewrite_expr_id(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
             let mod_path = type_qualified_name(ctx.current_module, name)
-            let mod_uses = resolve_use_aliases_in(body, ctx.tree, ctx.graph, mod_path)
-            Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
+            let mod_uses = resolve_use_aliases_in(ctx.nodes, ctx.nodes.sstmts_of(body), ctx.tree, ctx.graph, mod_path)
+            Stmt.Module(name, rewrite_stmt_ids(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
         .TypeDecl(name, tp, fields) -> {
             let qn = declared_type_name(ctx, name)
@@ -1121,7 +1138,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             // `c = e.cause()`) misses the qualified trait registration
             // and falls through to the type-name dispatch
             // (forge-crafting-intepreters-q3gp).
-            Stmt.TraitDecl(qn, rewrite_stmt_list(ctx, body))
+            Stmt.TraitDecl(qn, rewrite_stmt_ids(ctx, body))
         }
         .ShapeDecl(name, fields) -> {
             let qn = declared_type_name(ctx, name)
@@ -1145,17 +1162,17 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         // cross-module @comptime fns are unreachable from the
         // @expand pass (the registry keys them under the qualified
         // path; the lookup uses whatever's in the annotation arg).
-        .Annotated(annotations, inner) -> .Annotated(rewrite_annotations(ctx, annotations), inner with { node: rewrite_stmt(ctx, inner.node) })
-        .Defer(body) -> .Defer(rewrite_expr(ctx, body))
-        .Errdefer(body) -> .Errdefer(rewrite_expr(ctx, body))
-        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
+        .Annotated(annotations, inner) -> .Annotated(rewrite_annotations(ctx, annotations), rewrite_stmt_id(ctx, inner))
+        .Defer(body) -> .Defer(rewrite_expr_id(ctx, body))
+        .Errdefer(body) -> .Errdefer(rewrite_expr_id(ctx, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr_id(ctx, init))
         .ExternFn(name, params, rvt) -> .ExternFn(name, rewrite_param_types(ctx, params), rewrite_vtype(ctx, rvt))
-        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(ctx, body))
-        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(ctx, body))
-        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(ctx, cond))
-        .Parallel(body) -> .Parallel(rewrite_stmt_list(ctx, body))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_ids(ctx, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_ids(ctx, body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr_id(ctx, cond))
+        .Parallel(body) -> .Parallel(rewrite_stmt_ids(ctx, body))
         .Select(arms) -> .Select(rewrite_select_arms(ctx, arms))
-        .Const(name, vt, init) -> .Const(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
+        .Const(name, vt, init) -> .Const(name, rewrite_vtype(ctx, vt), rewrite_expr_id(ctx, init))
         .UnionAliasDecl(name, vt) -> {
             let qn = declared_type_name(ctx, name)
             let rvt = rewrite_vtype(ctx, vt)
@@ -1188,7 +1205,7 @@ fn rewrite_select_arms(ctx: NameCtx, arms: List<SelectArm>) -> List<SelectArm> {
 /// Rewrite an `Impl` statement — qualify the type name (and the
 /// trait name when this is `impl Trait for Type`), then walk every
 /// method to mangle its name into `Type__method` form.
-fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: List<SStmt>) -> Stmt {
+fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: List<StmtId>) -> Stmt {
     // Trait impl: "TraitName:TypeName" — qualify both parts separately
     let sep = find_single_colon(type_name)
     if sep >= 0 {
@@ -1413,13 +1430,13 @@ fn qualify_self_param(ctx: NameCtx, params: List<ParamEntry>, qualified_type: st
 /// methods kept the bare `Type__method` name and call sites looking
 /// up the prefixed `@module::Type__method` failed to dispatch
 /// (vez6.7.4).
-fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, methods: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let new_stmt = rewrite_impl_method_stmt(ctx, qualified_type, ss.node)
-        out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+    while i < methods.length {
+        let id = methods[i]
+        let new_stmt = rewrite_impl_method_stmt(ctx, qualified_type, ctx.nodes.stmts.get(id))
+        out.push(ctx.nodes.restmt(new_stmt, id))
         i = i + 1
     }
     out
@@ -1435,9 +1452,9 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
             let qualified_name = method_mangled_name(qualified_type, mn)
             let ctx_tp = ctx_with_type_params(ctx, tp)
             let rp = rewrite_param_types(ctx_tp, qualify_self_param(ctx_tp, params, qualified_type))
-            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_list(bind_params_ctx(ctx_tp, rp), body))
+            Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_ids(bind_params_ctx(ctx_tp, rp), body))
         }
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_impl_method_stmt(ctx, qualified_type, inner.node) })
+        .Annotated(annots, inner) -> .Annotated(annots, ctx.nodes.restmt(rewrite_impl_method_stmt(ctx, qualified_type, ctx.nodes.stmts.get(inner)), inner))
         _ -> rewrite_stmt(ctx, stmt)
     }
 }
@@ -1720,51 +1737,58 @@ fn used_has(set: List<string>, path: string) -> bool {
 // Collect all QualifiedIdent paths from the rewritten AST.
 /// Walk a List<SStmt>, accumulating every QualifiedIdent path the
 /// rewrite pass emitted.
-fn collect_used_paths_stmts(stmts: List<SStmt>, acc: List<string>) -> List<string> {
+fn collect_used_paths_stmts(store: NodeStore, stmts: List<SStmt>, acc: List<string>) -> List<string> {
     mut cur = acc
     mut i = 0
     while i < stmts.length {
-        cur = collect_used_paths_stmt(stmts[i].node, cur)
+        cur = collect_used_paths_stmt(store, stmts[i].node, cur)
         i = i + 1
     }
     cur
 }
 
 /// Per-stmt branch of `collect_used_paths_stmts`.
-fn collect_used_paths_stmt(stmt: Stmt, acc: List<string>) -> List<string> {
+fn collect_used_paths_stmt(store: NodeStore, stmt: Stmt, acc: List<string>) -> List<string> {
     match stmt {
-        .Expr(e) -> collect_used_paths_expr(e, acc)
-        .Let(_, _, init) -> collect_used_paths_expr(init, acc)
-        .Mut(_, _, init) -> collect_used_paths_expr(init, acc)
-        .Const(_, _, init) -> collect_used_paths_expr(init, acc)
-        .Return(e) -> collect_used_paths_expr(e, acc)
-        .Block(body) -> collect_used_paths_stmts(body, acc)
-        .Function(_, _, _, _, body) -> collect_used_paths_stmts(body, acc)
+        .Expr(e) -> collect_used_paths_expr(store, store.exprs.get(e), acc)
+        .Let(_, _, init) -> collect_used_paths_expr(store, store.exprs.get(init), acc)
+        .Mut(_, _, init) -> collect_used_paths_expr(store, store.exprs.get(init), acc)
+        .Const(_, _, init) -> collect_used_paths_expr(store, store.exprs.get(init), acc)
+        .Return(e) -> collect_used_paths_expr(store, store.exprs.get(e), acc)
+        .Block(body) -> collect_used_paths_stmt_ids(store, body, acc)
+        .Function(_, _, _, _, body) -> collect_used_paths_stmt_ids(store, body, acc)
         .If(cond, then_b, else_b) -> {
-            let a = collect_used_paths_expr(cond, acc)
-            let b = collect_used_paths_stmt(then_b, a)
-            if else_b != null { collect_used_paths_stmt(else_b!, b) } else { b }
+            let a = collect_used_paths_expr(store, store.exprs.get(cond), acc)
+            let b = collect_used_paths_stmt(store, store.stmts.get(then_b), a)
+            if else_b != null { collect_used_paths_stmt(store, store.stmts.get(else_b!), b) } else { b }
         }
-        .While(cond, body) -> collect_used_paths_stmt(body, collect_used_paths_expr(cond, acc))
+        .While(cond, body) -> collect_used_paths_stmt(store, store.stmts.get(body), collect_used_paths_expr(store, store.exprs.get(cond), acc))
         .For(_, start, end, body) -> {
-            let a = collect_used_paths_expr(start, acc)
-            let b = collect_used_paths_expr(end, a)
-            collect_used_paths_stmt(body, b)
+            let a = collect_used_paths_expr(store, store.exprs.get(start), acc)
+            let b = collect_used_paths_expr(store, store.exprs.get(end), a)
+            collect_used_paths_stmt(store, store.stmts.get(body), b)
         }
-        .ForIn(_, coll, body) -> collect_used_paths_stmt(body, collect_used_paths_expr(coll, acc))
-        .Match(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
-        .Module(_, body) -> collect_used_paths_stmts(body, acc)
-        .Impl(_, methods) -> collect_used_paths_stmts(methods, acc)
-        .Annotated(_, inner) -> collect_used_paths_stmt(inner.node, acc)
-        .Defer(body) -> collect_used_paths_expr(body, acc)
-        .LetDestructure(_, init) -> collect_used_paths_expr(init, acc)
+        .ForIn(_, coll, body) -> collect_used_paths_stmt(store, store.stmts.get(body), collect_used_paths_expr(store, store.exprs.get(coll), acc))
+        .Match(subj, arms) -> collect_used_paths_match_arms(store, arms, collect_used_paths_expr(store, store.exprs.get(subj), acc))
+        .Module(_, body) -> collect_used_paths_stmt_ids(store, body, acc)
+        .Impl(_, methods) -> collect_used_paths_stmt_ids(store, methods, acc)
+        .Annotated(_, inner) -> collect_used_paths_stmt(store, store.stmts.get(inner), acc)
+        .Defer(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
+        .LetDestructure(_, init) -> collect_used_paths_expr(store, store.exprs.get(init), acc)
         _ -> acc
     }
 }
 
+/// Row-list twin of `collect_used_paths_stmts` for flipped bodies.
+fn collect_used_paths_stmt_ids(store: NodeStore, ids: List<StmtId>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for id in ids { out = collect_used_paths_stmt(store, store.stmts.get(id), out) }
+    out
+}
+
 /// Per-expr branch of the unused-import sweep — recurses into
 /// every sub-expression to find QualifiedIdent references.
-fn collect_used_paths_expr(expr: Expr, acc_ref: List<string>) -> List<string> {
+fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) -> List<string> {
     if expr == null { return acc_ref }
     // Avra params are immutable. Rebind to a `mut` local — the
     // underlying heap AvraArray is shared, so push mutations reach
@@ -1775,45 +1799,45 @@ fn collect_used_paths_expr(expr: Expr, acc_ref: List<string>) -> List<string> {
             acc.push(path)
             acc
         }
-        .Call(callee, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
-        .GenericCall(callee, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
-        .Binary(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
-        .Unary(_, r) -> collect_used_paths_expr(r, acc)
-        .Logical(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
-        .Grouping(inner) -> collect_used_paths_expr(inner, acc)
-        .Assign(_, val) -> collect_used_paths_expr(val, acc)
-        .Index(obj, idx) -> collect_used_paths_expr(idx, collect_used_paths_expr(obj, acc))
-        .Block(body) -> collect_used_paths_stmts(body, acc)
-        .FieldAccess(obj, _) -> collect_used_paths_expr(obj, acc)
-        .FieldAssign(obj, _, val) -> collect_used_paths_expr(val, collect_used_paths_expr(obj, acc))
-        .IfExpr(c, t, e) -> collect_used_paths_expr(e, collect_used_paths_expr(t, collect_used_paths_expr(c, acc)))
-        .NullCoalesce(l, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
-        .OptionalChain(obj, _) -> collect_used_paths_expr(obj, acc)
-        .OptionalMethodCall(obj, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(obj, acc))
-        .Try(inner) -> collect_used_paths_expr(inner, acc)
-        .Tuple(elems) -> collect_used_paths_expr_list(elems, acc)
-        .ListLit(elems) -> collect_used_paths_expr_list(elems, acc)
-        .MapLit(entries) -> collect_used_paths_expr_list(entries, acc)
+        .Call(callee, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, callee, acc))
+        .GenericCall(callee, _, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, callee, acc))
+        .Binary(l, _, r) -> collect_used_paths_expr(store, r, collect_used_paths_expr(store, l, acc))
+        .Unary(_, r) -> collect_used_paths_expr(store, r, acc)
+        .Logical(l, _, r) -> collect_used_paths_expr(store, r, collect_used_paths_expr(store, l, acc))
+        .Grouping(inner) -> collect_used_paths_expr(store, inner, acc)
+        .Assign(_, val) -> collect_used_paths_expr(store, val, acc)
+        .Index(obj, idx) -> collect_used_paths_expr(store, idx, collect_used_paths_expr(store, obj, acc))
+        .Block(body) -> collect_used_paths_stmts(store, body, acc)
+        .FieldAccess(obj, _) -> collect_used_paths_expr(store, obj, acc)
+        .FieldAssign(obj, _, val) -> collect_used_paths_expr(store, val, collect_used_paths_expr(store, obj, acc))
+        .IfExpr(c, t, e) -> collect_used_paths_expr(store, e, collect_used_paths_expr(store, t, collect_used_paths_expr(store, c, acc)))
+        .NullCoalesce(l, r) -> collect_used_paths_expr(store, r, collect_used_paths_expr(store, l, acc))
+        .OptionalChain(obj, _) -> collect_used_paths_expr(store, obj, acc)
+        .OptionalMethodCall(obj, _, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, obj, acc))
+        .Try(inner) -> collect_used_paths_expr(store, inner, acc)
+        .Tuple(elems) -> collect_used_paths_expr_list(store, elems, acc)
+        .ListLit(elems) -> collect_used_paths_expr_list(store, elems, acc)
+        .MapLit(entries) -> collect_used_paths_expr_list(store, entries, acc)
         .StructLit(sn, inits) -> {
             acc.push(sn)
-            collect_used_paths_field_inits(inits, acc)
+            collect_used_paths_field_inits(store, inits, acc)
         }
         .EnumCtor(tn, _, args) -> {
             acc.push(tn)
-            collect_used_paths_expr_list(args, acc)
+            collect_used_paths_expr_list(store, args, acc)
         }
-        .MatchExpr(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
-        .Lambda(_, body) -> collect_used_paths_expr(body, acc)
-        .With(obj, overrides) -> collect_used_paths_field_inits(overrides, collect_used_paths_expr(obj, acc))
-        .Slice(obj, s, e) -> collect_used_paths_expr(e, collect_used_paths_expr(s, collect_used_paths_expr(obj, acc)))
-        .IsCheck(subj, _) -> collect_used_paths_expr(subj, acc)
-        .InCheck(needle, items) -> collect_used_paths_expr_list(items, collect_used_paths_expr(needle, acc))
-        .Catch(inner, _, body, _, _) -> collect_used_paths_expr(body, collect_used_paths_expr(inner, acc))
-        .Spawn(body) -> collect_used_paths_expr(body, acc)
+        .MatchExpr(subj, arms) -> collect_used_paths_match_arms(store, arms, collect_used_paths_expr(store, subj, acc))
+        .Lambda(_, body) -> collect_used_paths_expr(store, body, acc)
+        .With(obj, overrides) -> collect_used_paths_field_inits(store, overrides, collect_used_paths_expr(store, obj, acc))
+        .Slice(obj, s, e) -> collect_used_paths_expr(store, e, collect_used_paths_expr(store, s, collect_used_paths_expr(store, obj, acc)))
+        .IsCheck(subj, _) -> collect_used_paths_expr(store, subj, acc)
+        .InCheck(needle, items) -> collect_used_paths_expr_list(store, items, collect_used_paths_expr(store, needle, acc))
+        .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, body, collect_used_paths_expr(store, inner, acc))
+        .Spawn(body) -> collect_used_paths_expr(store, body, acc)
         .ChannelNew(_, capacity) -> {
-            if capacity == null { acc } else { collect_used_paths_expr(capacity!, acc) }
+            if capacity == null { acc } else { collect_used_paths_expr(store, capacity!, acc) }
         }
-        .Isolated(body) -> collect_used_paths_expr(body, acc)
+        .Isolated(body) -> collect_used_paths_expr(store, body, acc)
         .Ident(name) -> {
             // PascalCase identifiers may be imported type/enum names.
             // Track them as used paths by looking up their alias.
@@ -1828,22 +1852,22 @@ fn collect_used_paths_expr(expr: Expr, acc_ref: List<string>) -> List<string> {
 }
 
 /// Map `collect_used_paths_expr` over a `List<SExpr>`.
-fn collect_used_paths_expr_list(exprs: List<SExpr>, acc: List<string>) -> List<string> {
+fn collect_used_paths_expr_list(store: NodeStore, exprs: List<SExpr>, acc: List<string>) -> List<string> {
     mut out = acc
     mut i = 0
     while i < exprs.length {
-        out = collect_used_paths_expr(exprs[i].node, out)
+        out = collect_used_paths_expr(store, exprs[i].node, out)
         i = i + 1
     }
     out
 }
 
 /// Walk a `List<FieldInit>` for the unused-import sweep.
-fn collect_used_paths_field_inits(inits: List<FieldInit>, acc: List<string>) -> List<string> {
+fn collect_used_paths_field_inits(store: NodeStore, inits: List<FieldInit>, acc: List<string>) -> List<string> {
     mut out = acc
     mut i = 0
     while i < inits.length {
-        out = collect_used_paths_expr(inits[i].value.node, out)
+        out = collect_used_paths_expr(store, inits[i].value.node, out)
         i = i + 1
     }
     out
@@ -1851,15 +1875,15 @@ fn collect_used_paths_field_inits(inits: List<FieldInit>, acc: List<string>) -> 
 
 /// Walk a `List<MatchArm>` for the unused-import sweep — both
 /// guards and bodies contribute.
-fn collect_used_paths_match_arms(arms: List<MatchArm>, acc: List<string>) -> List<string> {
+fn collect_used_paths_match_arms(store: NodeStore, arms: List<MatchArm>, acc: List<string>) -> List<string> {
     mut out = acc
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         if arm.guard != null {
-            out = collect_used_paths_expr(arm.guard!.node, out)
+            out = collect_used_paths_expr(store, arm.guard!.node, out)
         }
-        out = collect_used_paths_expr(arm.body.node, out)
+        out = collect_used_paths_expr(store, arm.body.node, out)
         i = i + 1
     }
     out

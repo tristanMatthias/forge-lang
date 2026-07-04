@@ -6,7 +6,7 @@
 // the two paths apart and macros that use the pipeline-fix would
 // see different AST shapes than plain compilation.
 
-use @std.avrac.core.{NodeStore, Stmt, SStmt, ParamEntry, TypeParamEntry, FieldEntry, ValueType, Expr, sstmt_dummy, sexpr_dummy, render_stmt}
+use @std.avrac.core.{NodeStore, StmtId, Stmt, SStmt, ParamEntry, TypeParamEntry, FieldEntry, ValueType, Expr, sstmt_dummy, sexpr_dummy, render_stmt}
 use @std.avrac.core.{new_node_store, build_line_index}
 use @std.avrac.resolve.{resolve_names, resolve_names_pre_expand, register_decls, rewrite_uses}
 
@@ -17,7 +17,7 @@ fn ts() -> NodeStore {
 }
 
 
-fn build_program() -> List<SStmt> {
+fn build_program(ws: NodeStore) -> List<SStmt> {
     let empty_p: List<ParamEntry> = []
     let empty_tp: List<TypeParamEntry> = []
     let empty_fields: List<FieldEntry> = []
@@ -25,27 +25,29 @@ fn build_program() -> List<SStmt> {
     let foo_fields: List<FieldEntry> = [FieldEntry { name: "x", resolved: ValueType.Int }]
     let s_type = sstmt_dummy(Stmt.TypeDecl("Foo", empty_tp, foo_fields))
     // fn main() { let f = Foo { x: 1 } }
-    let init = Expr.StructLit("Foo", [])
-    let body: List<SStmt> = [sstmt_dummy(Stmt.Let("f", ValueType.Unknown, init))]
+    let init = ws.exprs.add_leaf(Expr.StructLit("Foo", []))
+    let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Let("f", ValueType.Unknown, init))]
     let s_main = sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Void, body))
     [s_type, s_main]
 }
 
-fn render_all(stmts: List<SStmt>) -> string {
+fn render_all(ws: NodeStore, stmts: List<SStmt>) -> string {
     mut out = ""
-    for ss in stmts { out = out + render_stmt(ts(), ss.node) + "\n" }
+    for ss in stmts { out = out + render_stmt(ws, ss.node) + "\n" }
     out
 }
 
 spec "qa6i: resolve_names == resolve_names_pre_expand + manual halves" {
     then "monolithic resolve_names matches register_decls + rewrite_uses composition" {
-        let program_a = build_program()
-        let program_b = build_program()
-        let monolithic = resolve_names(program_a)
-        let pre = resolve_names_pre_expand(program_b, new_node_store(build_line_index("")))
+        let ws_a = ts()
+        let ws_b = ts()
+        let program_a = build_program(ws_a)
+        let program_b = build_program(ws_b)
+        let monolithic = resolve_names(program_a, ws_a)
+        let pre = resolve_names_pre_expand(program_b, ws_b)
         // Re-run rewrite_uses with the pre-expand state — this is
         // the same composition the pipeline-fix uses post-expand.
         let rewritten = rewrite_uses(pre.stmts, pre.state)
-        render_all(monolithic.stmts) == render_all(rewritten)
+        render_all(ws_a, monolithic.stmts) == render_all(ws_b, rewritten)
     }
 }

@@ -1,0 +1,119 @@
+// F3a (B-final flip, Stmt payloads): the `Stmt` enum's Expr/Stmt
+// children travel as arena ids — `ExprId` / `StmtId` / `List<StmtId>`
+// — with source positions in the StmtArena's dense pos column instead
+// of per-element SStmt wrappers. These specs pin the flip's contract
+// surface, mirroring what f2_pattern_ids_test pinned for patterns:
+//
+//   1. the PARSER is a native producer: a parsed program's statement
+//      payloads are live rows in the parse store, resolvable by id;
+//   2. the pos column carries (line, col, file) for body elements —
+//      the wrapper's old job — including across the read/write
+//      bridges (`rows_of` stamps, `sstmt_of`/`sstmts_of` read back);
+//   3. transform allocators (`restmt`/`reexpr`) inherit the source
+//      row's span + position, so a rewritten child keeps pointing at
+//      the original source;
+//   4. provenance (`from_macro`) rides the bridges unchanged.
+
+use @std.avrac.core.{NodeStore, StmtId, ExprId, Stmt, SStmt, Expr, ValueType, SrcPos,
+                     new_node_store, build_line_index, sstmt_at, render_stmt, render_expr}
+use @std.avrac.parse.{parse_program_source}
+
+fn ws() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
+spec "F3a: the parser produces flipped payloads as live rows" {
+    then "a parsed `let` carries an ExprId that resolves to its initializer" {
+        let parsed = parse_program_source("let x = 41\n")
+        parsed.stmts != null && match parsed.stmts![0].node {
+            .Let(n, _, init) -> n == "x" && render_expr(parsed.store, parsed.store.exprs.get(init)) == "41"
+            _ -> false
+        }
+    }
+    then "a parsed fn body is a List<StmtId> whose rows resolve in the parse store" {
+        let parsed = parse_program_source("fn f() -> int {\n    let y = 1\n    y\n}\n")
+        parsed.stmts != null && match parsed.stmts![0].node {
+            .Function(_, _, _, _, body) ->
+                body.length == 2 && match parsed.store.stmts.get(body[0]) {
+                    .Let(n, _, _) -> n == "y"
+                    _ -> false
+                }
+            _ -> false
+        }
+    }
+    then "a parsed `if` resolves its cond and branch rows by id" {
+        let parsed = parse_program_source("fn g() {\n    if true {\n        return\n    }\n}\n")
+        parsed.stmts != null && match parsed.stmts![0].node {
+            .Function(_, _, _, _, body) -> match parsed.store.stmts.get(body[0]) {
+                .If(cond, then_b, else_b) ->
+                    render_expr(parsed.store, parsed.store.exprs.get(cond)) == "true"
+                        && else_b == null
+                        && match parsed.store.stmts.get(then_b) { .Block(_) -> true  _ -> false }
+                _ -> false
+            }
+            _ -> false
+        }
+    }
+}
+
+spec "F3a: the pos column carries body-element positions with file attribution" {
+    then "a parsed body element's stmt_pos reports its own line, not the fn's" {
+        let parsed = parse_program_source("fn f() {\n    let z = 9\n}\n")
+        parsed.stmts != null && match parsed.stmts![0].node {
+            .Function(_, _, _, _, body) -> parsed.store.stmt_pos(body[0]).line == 2
+            _ -> false
+        }
+    }
+    then "rows_of stamps (line, col, file); sstmt_of reads them back" {
+        let store = ws()
+        let ids = store.rows_of([sstmt_at(Stmt.Break, 7, 3, "probe.av")])
+        let back = store.sstmt_of(ids[0])
+        back.line == 7 && back.col == 3 && back.file == "probe.av"
+            && match back.node { .Break -> true  _ -> false }
+    }
+    then "sstmts_of rebuilds a whole body's positioned views in order" {
+        let store = ws()
+        let ids = store.rows_of([sstmt_at(Stmt.Break, 1, 1, "a.av"), sstmt_at(Stmt.Continue, 2, 5, "b.av")])
+        let views = store.sstmts_of(ids)
+        views.length == 2
+            && views[0].line == 1 && views[0].file == "a.av"
+            && views[1].col == 5 && views[1].file == "b.av"
+    }
+}
+
+spec "F3a: transform allocators inherit position and span from the source row" {
+    then "restmt keeps the original row's recorded position" {
+        let store = ws()
+        let orig = store.rows_of([sstmt_at(Stmt.Break, 4, 2, "t.av")])[0]
+        let rewritten = store.restmt(Stmt.Continue, orig)
+        let p = store.stmt_pos(rewritten)
+        p.line == 4 && p.col == 2 && p.file == "t.av"
+            && match store.stmts.get(rewritten) { .Continue -> true  _ -> false }
+    }
+    then "reexpr carries the rewrite; the original row is untouched" {
+        let store = ws()
+        let orig = store.exprs.add_leaf(Expr.Number("1"))
+        let rewritten = store.reexpr(Expr.Number("2"), orig)
+        render_expr(store, store.exprs.get(orig)) == "1"
+            && render_expr(store, store.exprs.get(rewritten)) == "2"
+    }
+}
+
+spec "F3a: provenance rides the read/write bridges" {
+    then "a from_macro wrapper round-trips through rows_of → sstmt_of" {
+        let store = ws()
+        let tagged = SStmt { node: Stmt.Break, line: 1, col: 1, file: "m.av", from_macro: true }
+        let plain = SStmt { node: Stmt.NoOp, line: 2, col: 1, file: "m.av", from_macro: false }
+        let ids = store.rows_of([tagged, plain])
+        store.sstmt_of(ids[0]).from_macro && !store.sstmt_of(ids[1]).from_macro
+    }
+}
+
+spec "F3a: render resolves flipped payloads through the store" {
+    then "render_stmt on a flipped Let descends into the initializer row" {
+        let store = ws()
+        let init = store.exprs.add_leaf(Expr.Number("5"))
+        let rendered = render_stmt(store, Stmt.Let("x", ValueType.Int, init))
+        rendered.contains("5") && rendered.contains("x")
+    }
+}

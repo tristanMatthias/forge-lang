@@ -31,7 +31,7 @@ spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
             "    println(string(use_box(b)))\n" +
             "    0\n" +
             "}\n")
-        unstamped_registered_nominals(r.stmts, r.type_reg).length == 0
+        unstamped_registered_nominals(r.store, r.stmts, r.type_reg).length == 0
     }
     then "enum-using fixture has no registered-name leaks" {
         let r = typecheck_source(
@@ -46,7 +46,7 @@ spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
             "    println(string(sum(Tree.Leaf(3))))\n" +
             "    0\n" +
             "}\n")
-        unstamped_registered_nominals(r.stmts, r.type_reg).length == 0
+        unstamped_registered_nominals(r.store, r.stmts, r.type_reg).length == 0
     }
     then "newtype-using fixture has no registered-name leaks" {
         let r = typecheck_source(
@@ -57,7 +57,7 @@ spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
             "    println(string(unwrap_id(id)))\n" +
             "    0\n" +
             "}\n")
-        unstamped_registered_nominals(r.stmts, r.type_reg).length == 0
+        unstamped_registered_nominals(r.store, r.stmts, r.type_reg).length == 0
     }
     then "fixture with no nominals at all has zero residual id=0 nominals" {
         // Sanity floor: a program that touches only primitives must
@@ -65,6 +65,6 @@ spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
         // counter accidentally fires on Int / Bool / Str (none of
         // which are nominals).
         let r = typecheck_source("fn main() -> int { 0 }\n")
-        count_id_zero_nominals_stmts(r.stmts) == 0
+        count_id_zero_nominals_stmts(r.store, r.stmts) == 0
     }
 }

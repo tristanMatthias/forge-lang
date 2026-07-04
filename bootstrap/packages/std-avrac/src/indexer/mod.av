@@ -15,7 +15,7 @@
 // types — they never import compiler internals.
 
 use core.{avra_selfhost_read_file, avra_shell_exec}
-use core.{Stmt, SStmt,
+use core.{Stmt, SStmt, NodeStore, StmtId, ExprId,
               Expr, SExpr,
               ParamEntry, FieldEntry,
               Variant, ValueType, TypeParamEntry, render_type_param_list,
@@ -44,8 +44,8 @@ use @std.lsp.{LspPos, LspSpan, Sym, SymKind,
 /// Module nesting is preserved by qualifying every nested decl with
 /// the module's name as a `module::name` prefix. So
 /// `mod core { fn foo() }` produces `name="foo", qualified="core::foo"`.
-export fn extract_from_ast(stmts: List<SStmt>, file: string) -> List<Sym> {
-    extract_inner(stmts, file, "")
+export fn extract_from_ast(store: NodeStore, stmts: List<SStmt>, file: string) -> List<Sym> {
+    extract_inner(store, stmts, file, "")
 }
 
 /// Same as `extract_from_ast` but seeds the qualified-name prefix
@@ -53,15 +53,15 @@ export fn extract_from_ast(stmts: List<SStmt>, file: string) -> List<Sym> {
 /// a fn inside that file ends up qualified as `core::ast::foo`.
 /// `core/mod.av` → "core" (the `mod` filename collapses). Used by
 /// `avra docs` so cross-file hierarchical addressing works.
-export fn extract_from_ast_at(stmts: List<SStmt>, file: string) -> List<Sym> {
-    extract_inner(stmts, file, file_to_module_prefix(file))
+export fn extract_from_ast_at(store: NodeStore, stmts: List<SStmt>, file: string) -> List<Sym> {
+    extract_inner(store, stmts, file, file_to_module_prefix(file))
 }
 
 /// Like `extract_calls_from_ast` but seeds the caller's
 /// qualified-name prefix from the file path, mirroring
 /// `extract_from_ast_at`.
-export fn extract_calls_from_ast_at(stmts: List<SStmt>, file: string) -> List<CallEdge> {
-    extract_calls_inner(stmts, file, file_to_module_prefix(file), calls_new())
+export fn extract_calls_from_ast_at(store: NodeStore, stmts: List<SStmt>, file: string) -> List<CallEdge> {
+    extract_calls_inner(store, stmts, file, file_to_module_prefix(file), calls_new())
 }
 
 /// Map a file path to its qualified-name prefix:
@@ -111,30 +111,30 @@ fn path_to_qualifier(dir: string) -> string {
 /// Captures the most common "X calls Y" relationship; deeper
 /// coverage (calls inside match arms, closures, lambdas) is
 /// layered on as needed.
-export fn extract_calls_from_ast(stmts: List<SStmt>, file: string) -> List<CallEdge> {
-    extract_calls_inner(stmts, file, "", calls_new())
+export fn extract_calls_from_ast(store: NodeStore, stmts: List<SStmt>, file: string) -> List<CallEdge> {
+    extract_calls_inner(store, stmts, file, "", calls_new())
 }
 
 /// Recursive worker for `extract_calls_from_ast` and
 /// `extract_calls_from_ast_at`. Threads the qualified-name prefix
 /// through nested modules and impls; descends into function bodies
 /// via `walk_body_for_calls`.
-fn extract_calls_inner(stmts: List<SStmt>, file: string, qual_prefix: string, acc: List<CallEdge>) -> List<CallEdge> {
+fn extract_calls_inner(store: NodeStore, stmts: List<SStmt>, file: string, qual_prefix: string, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let inner = stmt_unwrap(ss.node)
+        let inner = stmt_unwrap(store, ss.node)
         cur_acc = match inner {
             .Function(name, _, _, _, body) -> {
                 let qual = qualify(qual_prefix, name)
-                walk_body_for_calls(body, file, qual, cur_acc)
+                walk_body_for_calls(store, body, file, qual, cur_acc)
             }
             .Module(name, body) -> {
                 let nested_qual = qualify(qual_prefix, name)
-                extract_calls_inner(body, file, nested_qual, cur_acc)
+                extract_calls_inner(store, store.sstmts_of(body), file, nested_qual, cur_acc)
             }
-            .Impl(_, methods) -> extract_calls_inner(methods, file, qual_prefix, cur_acc)
+            .Impl(_, methods) -> extract_calls_inner(store, store.sstmts_of(methods), file, qual_prefix, cur_acc)
             _ -> cur_acc
         }
         i = i + 1
@@ -146,12 +146,10 @@ fn extract_calls_inner(stmts: List<SStmt>, file: string, qual_prefix: string, ac
 /// `Expr.Call` sites whose callee is a bare identifier. Deeper
 /// expression structure (lambdas, match arms) is reached through
 /// `scan_expr_for_calls`.
-fn walk_body_for_calls(stmts: List<SStmt>, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
+fn walk_body_for_calls(store: NodeStore, body: List<StmtId>, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
-    mut i = 0
-    while i < stmts.length {
-        cur_acc = scan_stmt_for_calls(stmts[i], file, caller, cur_acc)
-        i = i + 1
+    for id in body {
+        cur_acc = scan_stmt_for_calls(store, store.sstmt_of(id), file, caller, cur_acc)
     }
     cur_acc
 }
@@ -159,23 +157,23 @@ fn walk_body_for_calls(stmts: List<SStmt>, file: string, caller: string, acc: Li
 /// Per-statement call scanner. Recurses into expression payloads
 /// for `let`/`mut`/`const`/`if`/`while`/`return`/`expr`; treats
 /// other statements as opaque.
-fn scan_stmt_for_calls(ss: SStmt, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
-    let inner = stmt_unwrap(ss.node)
-    let scan_e = (e: Expr) -> scan_expr_for_calls(e, file, caller, ss.line, ss.col, acc)
+fn scan_stmt_for_calls(store: NodeStore, ss: SStmt, file: string, caller: string, acc: List<CallEdge>) -> List<CallEdge> {
+    let inner = stmt_unwrap(store, ss.node)
+    let scan_e = (e: ExprId) -> scan_expr_for_calls(store.exprs.get(e), file, caller, ss.line, ss.col, acc)
     match inner {
         .Expr(e) -> scan_e(e)
         .Return(e) -> scan_e(e)
         .Let(_, _, e) -> scan_e(e)
         .Mut(_, _, e) -> scan_e(e)
         .Const(_, _, e) -> scan_e(e)
-        .Block(body) -> walk_body_for_calls(body, file, caller, acc)
+        .Block(body) -> walk_body_for_calls(store, body, file, caller, acc)
         .If(cond, then_branch, _) -> {
-            let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
-            scan_stmt_for_calls(SStmt { node: then_branch, line: ss.line, col: ss.col }, file, caller, a1)
+            let a1 = scan_expr_for_calls(store.exprs.get(cond), file, caller, ss.line, ss.col, acc)
+            scan_stmt_for_calls(store, store.sstmt_of(then_branch), file, caller, a1)
         }
         .While(cond, body) -> {
-            let a1 = scan_expr_for_calls(cond, file, caller, ss.line, ss.col, acc)
-            scan_stmt_for_calls(SStmt { node: body, line: ss.line, col: ss.col }, file, caller, a1)
+            let a1 = scan_expr_for_calls(store.exprs.get(cond), file, caller, ss.line, ss.col, acc)
+            scan_stmt_for_calls(store, store.sstmt_of(body), file, caller, a1)
         }
         _ -> acc
     }
@@ -225,11 +223,11 @@ fn scan_expr_list(es: List<SExpr>, file: string, caller: string, line: int, col:
 /// accumulates the module path: "" at the top level, "core" inside
 /// `mod core`, "core::ast" inside `mod core { mod ast { ... } }`.
 /// Iterative append over the built-in `List<Sym>`.
-fn extract_inner(stmts: List<SStmt>, file: string, qual_prefix: string) -> List<Sym> {
+fn extract_inner(store: NodeStore, stmts: List<SStmt>, file: string, qual_prefix: string) -> List<Sym> {
     mut acc: List<Sym> = []
     mut i = 0
     while i < stmts.length {
-        acc = process_stmt(stmts[i], file, qual_prefix, acc)
+        acc = process_stmt(store, stmts[i], file, qual_prefix, acc)
         i = i + 1
     }
     acc
@@ -240,11 +238,11 @@ fn extract_inner(stmts: List<SStmt>, file: string, qual_prefix: string) -> List<
 /// via `doc_string_for` and the export flag via the AST's
 /// annotation list. Statements that don't produce a doc symbol
 /// (Expr, Return, …) pass through with `acc` unchanged.
-fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: List<Sym>) -> List<Sym> {
+fn process_stmt(store: NodeStore, ss: SStmt, file: string, qual_prefix: string, acc: List<Sym>) -> List<Sym> {
     let outer = ss.node
-    let inner = stmt_unwrap(outer)
-    let doc = doc_string_for(outer)
-    let exported = has_export_annotation(outer)
+    let inner = stmt_unwrap(store, outer)
+    let doc = doc_string_for(store, outer)
+    let exported = has_export_annotation(store, outer)
     let sp = lsp_span(lsp_pos(ss.line, ss.col), lsp_pos(ss.line, ss.col))
 
     match inner {
@@ -352,7 +350,7 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: List<Sym>) ->
             let module_sym = sym_new(name, qual, SymKind.Module, doc, file, sp, exported, "")
             // Recurse into the module body so nested decls land in the
             // graph with the correct qualified prefix.
-            let inner_syms = extract_inner(body, file, qual)
+            let inner_syms = extract_inner(store, store.sstmts_of(body), file, qual)
             // Append the module symbol first, then its contents — keeps
             // module-then-children ordering for downstream renderers.
             mut out = acc
@@ -367,8 +365,8 @@ fn process_stmt(ss: SStmt, file: string, qual_prefix: string, acc: List<Sym>) ->
 
 /// True when `s` carries an `@export` annotation. Used to populate
 /// `Sym.exported` so the doc renderer can dim non-exported items.
-fn has_export_annotation(s: Stmt) -> bool {
-    find_annotation(s, "export") != null
+fn has_export_annotation(store: NodeStore, s: Stmt) -> bool {
+    find_annotation(store, s, "export") != null
 }
 
 // ── Signature rendering ─────────────────────────────────────────────
@@ -482,8 +480,8 @@ export fn run_lsp_server(project_dir: string) {
         let parsed = parse_program_source(content)
         if parsed.had_error || parsed.stmts == null { continue }
         let rel = relativise(path, project_dir)
-        let file_syms = extract_from_ast(parsed.stmts!, rel)
-        let file_calls = extract_calls_from_ast(parsed.stmts!, rel)
+        let file_syms = extract_from_ast(parsed.store, parsed.stmts!, rel)
+        let file_calls = extract_calls_from_ast(parsed.store, parsed.stmts!, rel)
         g = graph_extend(g, file_syms)
         for e in file_calls { calls.push(e) }
     }
@@ -547,7 +545,7 @@ export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) 
         if content == "" { continue }
         let parsed = parse_program_source(content)
         if parsed.had_error || parsed.stmts == null { continue }
-        let file_syms = extract_from_ast_at(parsed.stmts!, rel)
+        let file_syms = extract_from_ast_at(parsed.store, parsed.stmts!, rel)
         let mtime = avra_file_mtime(path)
         state = cache_add_file(state, rel, mtime, file_syms)
     }

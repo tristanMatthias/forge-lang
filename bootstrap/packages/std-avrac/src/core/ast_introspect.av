@@ -11,7 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Stmt, Expr, CompConfigPair}
+use core.{Stmt, Expr, CompConfigPair, StmtId}
 
 /// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
 /// macro authors handle component-block introspection without deep
@@ -20,12 +20,12 @@ use core.{Stmt, Expr, CompConfigPair}
 /// @field comp_name — the registered component name (e.g. "flag")
 /// @field instance  — the user-supplied instance name (e.g. "verbose")
 /// @field config    — config pairs supplied at the call site
-/// @field body      — the block body's statement list
+/// @field body      — the block body's rows (arena ids, F3a)
 export type ComponentBlockView = {
     comp_name: string,
     instance: string,
     config: List<CompConfigPair>,
-    body: List<SStmt>,
+    body: List<StmtId>,
 }
 
 // ── Function lookup ──
@@ -34,10 +34,10 @@ export type ComponentBlockView = {
 /// "fn with empty body" without an additional walk.
 ///
 /// @field found — true when a fn with the requested name exists.
-/// @field body  — fn body (empty list on miss).
+/// @field body  — fn body rows (empty list on miss).
 export type DeclLookup = {
     found: bool,
-    body: List<SStmt>,
+    body: List<StmtId>,
 }
 
 /// Find a top-level fn declaration by name in `body`. Single walk
@@ -52,7 +52,7 @@ export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
             _ -> {}
         }
     }
-    let empty: List<SStmt> = []
+    let empty: List<StmtId> = []
     DeclLookup { found: false, body: empty }
 }
 
@@ -64,7 +64,7 @@ export fn has_fn(body: List<SStmt>, fn_name: string) -> bool {
 /// Body of the fn named `fn_name`, or `End` when missing. Pair with
 /// `has_fn` (or use `find_fn` directly) to distinguish "no fn" from
 /// "fn with empty body" without two walks.
-export fn find_fn_body(body: List<SStmt>, fn_name: string) -> List<SStmt> {
+export fn find_fn_body(body: List<SStmt>, fn_name: string) -> List<StmtId> {
     find_fn(body, fn_name).body
 }
 

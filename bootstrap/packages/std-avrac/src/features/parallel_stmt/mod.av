@@ -3,12 +3,12 @@
 // Sibling exports (parallel_emit_stmt, parse_parallel_statement) are in
 // scope here without an explicit self-import.
 use core.{feature_new, Feature}
-use resolve.{resolve_stmt_list}
+use resolve.{resolve_stmt_ids}
 
 /// Resolver hook for `parallel { ... }`. Walks the body's statement
 /// list so name resolution still happens inside the parallel block.
 fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r }
+    match stmt { .Parallel(body) -> resolve_stmt_ids(r, body), _ -> r }
 }
 
 
@@ -16,7 +16,7 @@ fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 /// statements as concurrent tasks; the wrapper waits for them to
 /// finish before continuing. Spec Axis 18.
 export fn parallel_feature() -> Feature {
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     feature_new("parallel") with {
         stmt_tag: Stmt.Parallel(empty_body),
         decl_keyword: "kw_parallel",

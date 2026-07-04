@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.{Stmt, SStmt, vtype_is_unknown, stmt_unwrap}
+use core.{Stmt, SStmt, NodeStore, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.{method_mangled_name}
@@ -98,11 +98,11 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
     while i < required.length {
         let m = required[i]
         let mangled = method_mangled_name(type_name, m.name)
-        if !impl_has_method(impl_methods, mangled) {
+        if !impl_has_method(tc.nodes, impl_methods, mangled) {
             current = tc_report(current, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${m.name}` but `${type_name}` does not implement it")
         } else {
             // Check parameter count matches (including self)
-            let actual_params = impl_method_param_count(impl_methods, mangled)
+            let actual_params = impl_method_param_count(tc.nodes, impl_methods, mangled)
             if actual_params >= 0 && actual_params != m.param_count {
                 current = tc_report(current, DiagCode.TypeMismatch, "method `${m.name}` in `impl ${trait_name} for ${type_name}` has ${string(actual_params)} parameters but trait requires ${string(m.param_count)}")
             }
@@ -114,10 +114,10 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
 
 /// Look up a method by mangled name and return its parameter
 /// count, or -1 when not found.
-fn impl_method_param_count(methods: List<SStmt>, name: string) -> int {
+fn impl_method_param_count(store: NodeStore, methods: List<SStmt>, name: string) -> int {
     mut i = 0
     while i < methods.length {
-        match stmt_unwrap(methods[i].node) {
+        match stmt_unwrap(store, methods[i].node) {
             .Function(fn_name, _, params, _, _) if fn_name == name -> return params.length
             _ -> {}
         }
@@ -130,10 +130,10 @@ fn impl_method_param_count(methods: List<SStmt>, name: string) -> int {
 /// (mangled) name. Walks `Annotated` wrappers transparently so
 /// methods carrying `@external_unit` (synthesised from metadata.bin
 /// for cross-unit impls — 9ixv) still register as present.
-fn impl_has_method(methods: List<SStmt>, name: string) -> bool {
+fn impl_has_method(store: NodeStore, methods: List<SStmt>, name: string) -> bool {
     mut i = 0
     while i < methods.length {
-        match stmt_unwrap(methods[i].node) {
+        match stmt_unwrap(store, methods[i].node) {
             .Function(fn_name, _, _, _, _) if fn_name == name -> return true
             _ -> {}
         }

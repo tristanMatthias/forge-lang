@@ -4,19 +4,19 @@
 // empty list otherwise.
 
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.core.{Stmt, SStmt, ChildrenSlot, stmt_unwrap}
+use @std.avrac.core.{Stmt, SStmt, NodeStore, ChildrenSlot, stmt_unwrap}
 
 fn first_component_children(source: string) -> List<ChildrenSlot> {
     let r = parse_program_source(source)
     if r.had_error == 1 { return [] }
     if r.stmts == null { return [] }
-    children_of_first_component(r.stmts!)
+    children_of_first_component(r.store, r.stmts!)
 }
 
-fn children_of_first_component(stmts: List<SStmt>) -> List<ChildrenSlot> {
+fn children_of_first_component(store: NodeStore, stmts: List<SStmt>) -> List<ChildrenSlot> {
     mut i = 0
     while i < stmts.length {
-        let inner = stmt_unwrap(stmts[i].node)
+        let inner = stmt_unwrap(store, stmts[i].node)
         match inner {
             .ComponentDef(_, _, _, ch, _, _) -> return ch
             _ -> {}

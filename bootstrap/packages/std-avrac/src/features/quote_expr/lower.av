@@ -15,7 +15,7 @@
 // visitor ticket lands (93k3) all three should share a single visitor.
 
 use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, sexpr_dummy, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
-use core.{NodeStore, ExprId}
+use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
 
 // ── Public entry ──
@@ -37,7 +37,7 @@ use list_ops.{list_map}
 /// trees merged from more than one parse (sibling-file loading) — its scan
 /// and the arena scan must stay presence-equivalent (spec-guarded).
 export fn lower_quotes(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    if !any_quote_in_stmt_list(stmts) { return stmts }
+    if !any_quote_in_stmt_list(store, stmts) { return stmts }
     lower_stmt_list(store, stmts)
 }
 
@@ -71,102 +71,110 @@ fn store_has_quote(store: NodeStore) -> bool {
 
 /// True iff any Expr.Quote node appears anywhere in `stmts`.
 /// Walks the same shape as lower_stmt_list but allocates nothing.
-fn any_quote_in_stmt_list(stmts: List<SStmt>) -> bool {
+fn any_quote_in_stmt_list(store: NodeStore, stmts: List<SStmt>) -> bool {
     mut i = 0
     while i < stmts.length {
-        if any_quote_in_stmt(stmts[i].node) { return true }
+        if any_quote_in_stmt(store, stmts[i].node) { return true }
         i = i + 1
     }
     false
 }
 
-fn any_quote_in_stmt(stmt: Stmt) -> bool {
+/// The flipped-body twin of `any_quote_in_stmt_list`.
+fn any_quote_in_stmt_ids(store: NodeStore, ids: List<StmtId>) -> bool {
+    for id in ids {
+        if any_quote_in_stmt(store, store.stmts.get(id)) { return true }
+    }
+    false
+}
+
+fn any_quote_in_stmt(store: NodeStore, stmt: Stmt) -> bool {
     match stmt {
-        .Let(_, _, init) -> any_quote_in_expr(init)
-        .Mut(_, _, init) -> any_quote_in_expr(init)
-        .Const(_, _, init) -> any_quote_in_expr(init)
-        .Expr(e) -> any_quote_in_expr(e)
-        .Return(e) -> any_quote_in_expr(e)
-        .Block(body) -> any_quote_in_stmt_list(body)
+        .Let(_, _, init) -> any_quote_in_expr(store, store.exprs.get(init))
+        .Mut(_, _, init) -> any_quote_in_expr(store, store.exprs.get(init))
+        .Const(_, _, init) -> any_quote_in_expr(store, store.exprs.get(init))
+        .Expr(e) -> any_quote_in_expr(store, store.exprs.get(e))
+        .Return(e) -> any_quote_in_expr(store, store.exprs.get(e))
+        .Block(body) -> any_quote_in_stmt_ids(store, body)
         .If(cond, then_b, else_b) -> {
-            if any_quote_in_expr(cond) { return true }
-            if any_quote_in_stmt(then_b) { return true }
-            if else_b != null { return any_quote_in_stmt(else_b!) }
+            if any_quote_in_expr(store, store.exprs.get(cond)) { return true }
+            if any_quote_in_stmt(store, store.stmts.get(then_b)) { return true }
+            if else_b != null { return any_quote_in_stmt(store, store.stmts.get(else_b!)) }
             false
         }
-        .While(cond, body) -> any_quote_in_expr(cond) || any_quote_in_stmt(body)
-        .For(_, start, end, body) -> any_quote_in_expr(start) || any_quote_in_expr(end) || any_quote_in_stmt(body)
-        .ForIn(_, coll, body) -> any_quote_in_expr(coll) || any_quote_in_stmt(body)
-        .Function(_, _, _, _, body) -> any_quote_in_stmt_list(body)
-        .Impl(_, methods) -> any_quote_in_stmt_list(methods)
-        .Annotated(_, inner) -> any_quote_in_stmt(inner.node)
-        .Module(_, body) -> any_quote_in_stmt_list(body)
-        .ComponentDef(_, _, _, _, _, body) -> any_quote_in_stmt_list(body)
-        .ComponentBlock(_, _, _, body) -> any_quote_in_stmt_list(body)
-        .SpecBlock(_, body) -> any_quote_in_stmt_list(body)
-        .GivenBlock(_, body) -> any_quote_in_stmt_list(body)
-        .ThenBlock(_, cond) -> any_quote_in_expr(cond)
-        .Match(subj, arms) -> any_quote_in_expr(subj) || any_quote_in_match_arms(arms)
-        .Defer(body) -> any_quote_in_expr(body)
-        .Errdefer(body) -> any_quote_in_expr(body)
-        .LetDestructure(_, init) -> any_quote_in_expr(init)
-        .TraitDecl(_, methods) -> any_quote_in_stmt_list(methods)
-        .Parallel(body) -> any_quote_in_stmt_list(body)
+        .While(cond, body) -> any_quote_in_expr(store, store.exprs.get(cond)) || any_quote_in_stmt(store, store.stmts.get(body))
+        .For(_, start, end, body) -> any_quote_in_expr(store, store.exprs.get(start)) || any_quote_in_expr(store, store.exprs.get(end)) || any_quote_in_stmt(store, store.stmts.get(body))
+        .ForIn(_, coll, body) -> any_quote_in_expr(store, store.exprs.get(coll)) || any_quote_in_stmt(store, store.stmts.get(body))
+        .Function(_, _, _, _, body) -> any_quote_in_stmt_ids(store, body)
+        .Impl(_, methods) -> any_quote_in_stmt_ids(store, methods)
+        .Annotated(_, inner) -> any_quote_in_stmt(store, store.stmts.get(inner))
+        .Module(_, body) -> any_quote_in_stmt_ids(store, body)
+        .ComponentDef(_, _, _, _, _, body) -> any_quote_in_stmt_ids(store, body)
+        .ComponentBlock(_, _, _, body) -> any_quote_in_stmt_ids(store, body)
+        .SpecBlock(_, body) -> any_quote_in_stmt_ids(store, body)
+        .GivenBlock(_, body) -> any_quote_in_stmt_ids(store, body)
+        .ThenBlock(_, cond) -> any_quote_in_expr(store, store.exprs.get(cond))
+        .Match(subj, arms) -> any_quote_in_expr(store, store.exprs.get(subj)) || any_quote_in_match_arms(store, arms)
+        .Defer(body) -> any_quote_in_expr(store, store.exprs.get(body))
+        .Errdefer(body) -> any_quote_in_expr(store, store.exprs.get(body))
+        .LetDestructure(_, init) -> any_quote_in_expr(store, store.exprs.get(init))
+        .TraitDecl(_, methods) -> any_quote_in_stmt_ids(store, methods)
+        .Parallel(body) -> any_quote_in_stmt_ids(store, body)
         _ -> false
     }
 }
 
-fn any_quote_in_expr(expr: Expr) -> bool {
+fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Quote(_, _) -> true
-        .Splice(target) -> any_quote_in_expr(target)
-        .Binary(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
-        .Unary(_, r) -> any_quote_in_expr(r)
-        .Logical(l, _, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
-        .Call(callee, args) -> any_quote_in_expr(callee) || any_quote_in_expr_list(args)
-        .GenericCall(callee, _, args) -> any_quote_in_expr(callee) || any_quote_in_expr_list(args)
-        .Grouping(inner) -> any_quote_in_expr(inner)
-        .Block(body) -> any_quote_in_stmt_list(body)
-        .IfExpr(c, t, e) -> any_quote_in_expr(c) || any_quote_in_expr(t) || any_quote_in_expr(e)
-        .Assign(_, v) -> any_quote_in_expr(v)
-        .StructLit(_, inits) -> any_quote_in_field_inits(inits)
-        .FieldAccess(obj, _) -> any_quote_in_expr(obj)
-        .FieldAssign(obj, _, v) -> any_quote_in_expr(obj) || any_quote_in_expr(v)
-        .EnumCtor(_, _, args) -> any_quote_in_expr_list(args)
-        .Index(obj, idx) -> any_quote_in_expr(obj) || any_quote_in_expr(idx)
-        .NullCoalesce(l, r) -> any_quote_in_expr(l) || any_quote_in_expr(r)
-        .OptionalChain(obj, _) -> any_quote_in_expr(obj)
-        .OptionalMethodCall(obj, _, args) -> any_quote_in_expr(obj) || any_quote_in_expr_list(args)
-        .Try(inner) -> any_quote_in_expr(inner)
-        .Tuple(elems) -> any_quote_in_expr_list(elems)
-        .TupleIndex(obj, _) -> any_quote_in_expr(obj)
-        .With(obj, overrides) -> any_quote_in_expr(obj) || any_quote_in_field_inits(overrides)
-        .ListLit(elems) -> any_quote_in_expr_list(elems)
-        .Lambda(_, body) -> any_quote_in_expr(body)
-        .MapLit(entries) -> any_quote_in_expr_list(entries)
-        .Slice(obj, s, e) -> any_quote_in_expr(obj) || any_quote_in_expr(s) || any_quote_in_expr(e)
-        .IsCheck(subj, _) -> any_quote_in_expr(subj)
-        .InCheck(needle, items) -> any_quote_in_expr(needle) || any_quote_in_expr_list(items)
-        .Spawn(body) -> any_quote_in_expr(body)
-        .Isolated(body) -> any_quote_in_expr(body)
-        .MatchExpr(subj, arms) -> any_quote_in_expr(subj) || any_quote_in_match_arms(arms)
+        .Splice(target) -> any_quote_in_expr(store, target)
+        .Binary(l, _, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
+        .Unary(_, r) -> any_quote_in_expr(store, r)
+        .Logical(l, _, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
+        .Call(callee, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
+        .GenericCall(callee, _, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
+        .Grouping(inner) -> any_quote_in_expr(store, inner)
+        .Block(body) -> any_quote_in_stmt_list(store, body)
+        .IfExpr(c, t, e) -> any_quote_in_expr(store, c) || any_quote_in_expr(store, t) || any_quote_in_expr(store, e)
+        .Assign(_, v) -> any_quote_in_expr(store, v)
+        .StructLit(_, inits) -> any_quote_in_field_inits(store, inits)
+        .FieldAccess(obj, _) -> any_quote_in_expr(store, obj)
+        .FieldAssign(obj, _, v) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, v)
+        .EnumCtor(_, _, args) -> any_quote_in_expr_list(store, args)
+        .Index(obj, idx) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, idx)
+        .NullCoalesce(l, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
+        .OptionalChain(obj, _) -> any_quote_in_expr(store, obj)
+        .OptionalMethodCall(obj, _, args) -> any_quote_in_expr(store, obj) || any_quote_in_expr_list(store, args)
+        .Try(inner) -> any_quote_in_expr(store, inner)
+        .Tuple(elems) -> any_quote_in_expr_list(store, elems)
+        .TupleIndex(obj, _) -> any_quote_in_expr(store, obj)
+        .With(obj, overrides) -> any_quote_in_expr(store, obj) || any_quote_in_field_inits(store, overrides)
+        .ListLit(elems) -> any_quote_in_expr_list(store, elems)
+        .Lambda(_, body) -> any_quote_in_expr(store, body)
+        .MapLit(entries) -> any_quote_in_expr_list(store, entries)
+        .Slice(obj, s, e) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, s) || any_quote_in_expr(store, e)
+        .IsCheck(subj, _) -> any_quote_in_expr(store, subj)
+        .InCheck(needle, items) -> any_quote_in_expr(store, needle) || any_quote_in_expr_list(store, items)
+        .Spawn(body) -> any_quote_in_expr(store, body)
+        .Isolated(body) -> any_quote_in_expr(store, body)
+        .MatchExpr(subj, arms) -> any_quote_in_expr(store, subj) || any_quote_in_match_arms(store, arms)
         _ -> false
     }
 }
 
-fn any_quote_in_expr_list(list: List<SExpr>) -> bool {
+fn any_quote_in_expr_list(store: NodeStore, list: List<SExpr>) -> bool {
     mut i = 0
     while i < list.length {
-        if any_quote_in_expr(list[i].node) { return true }
+        if any_quote_in_expr(store, list[i].node) { return true }
         i = i + 1
     }
     false
 }
 
-fn any_quote_in_field_inits(list: List<FieldInit>) -> bool {
+fn any_quote_in_field_inits(store: NodeStore, list: List<FieldInit>) -> bool {
     mut i = 0
     while i < list.length {
-        if any_quote_in_expr(list[i].value.node) { return true }
+        if any_quote_in_expr(store, list[i].value.node) { return true }
         i = i + 1
     }
     false
@@ -177,12 +185,12 @@ fn any_quote_in_field_inits(list: List<FieldInit>) -> bool {
 /// hits the fast-path early-return and skips lowering entirely —
 /// the un-lowered Quote nodes then survive into eval and trigger
 /// `no eval_expr handler`. Same shape as `lower_match_arms`.
-fn any_quote_in_match_arms(arms: List<MatchArm>) -> bool {
+fn any_quote_in_match_arms(store: NodeStore, arms: List<MatchArm>) -> bool {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.guard != null && any_quote_in_expr(arm.guard!.node) { return true }
-        if any_quote_in_expr(arm.body.node) { return true }
+        if arm.guard != null && any_quote_in_expr(store, arm.guard!.node) { return true }
+        if any_quote_in_expr(store, arm.body.node) { return true }
         i = i + 1
     }
     false
@@ -194,39 +202,57 @@ fn lower_stmt_list(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
     list_map(stmts, (ss: SStmt) -> sstmt_at(lower_stmt(store, ss.node), ss.line, ss.col, ss.file))
 }
 
+/// The flipped-body twin of `lower_stmt_list`: lowers each row and
+/// allocates the result against the original's span + position.
+fn lower_stmt_ids(store: NodeStore, ids: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids { out.push(lower_stmt_id(store, id)) }
+    out
+}
+
+/// Lower one statement row, allocating against the original.
+fn lower_stmt_id(store: NodeStore, id: StmtId) -> StmtId {
+    store.restmt(lower_stmt(store, store.stmts.get(id)), id)
+}
+
+/// Lower one expression row, allocating against the original.
+fn lower_expr_id(store: NodeStore, id: ExprId) -> ExprId {
+    store.reexpr(lower_expr(store, store.exprs.get(id)), id)
+}
+
 fn lower_stmt(store: NodeStore, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, vt, lower_expr(store, init))
-        .Mut(name, vt, init) -> .Mut(name, vt, lower_expr(store, init))
-        .Const(name, vt, init) -> .Const(name, vt, lower_expr(store, init))
-        .Expr(e) -> .Expr(lower_expr(store, e))
-        .Return(e) -> .Return(lower_expr(store, e))
-        .Block(body) -> .Block(lower_stmt_list(store, body))
+        .Let(name, vt, init) -> .Let(name, vt, lower_expr_id(store, init))
+        .Mut(name, vt, init) -> .Mut(name, vt, lower_expr_id(store, init))
+        .Const(name, vt, init) -> .Const(name, vt, lower_expr_id(store, init))
+        .Expr(e) -> .Expr(lower_expr_id(store, e))
+        .Return(e) -> .Return(lower_expr_id(store, e))
+        .Block(body) -> .Block(lower_stmt_ids(store, body))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(lower_expr(store, cond), lower_stmt(store, then_b), lower_stmt(store, else_b!))
+                .If(lower_expr_id(store, cond), lower_stmt_id(store, then_b), lower_stmt_id(store, else_b!))
             } else {
-                .If(lower_expr(store, cond), lower_stmt(store, then_b), null)
+                .If(lower_expr_id(store, cond), lower_stmt_id(store, then_b), null)
             }
         }
-        .While(cond, body) -> .While(lower_expr(store, cond), lower_stmt(store, body))
-        .For(v, start, end, body) -> .For(v, lower_expr(store, start), lower_expr(store, end), lower_stmt(store, body))
-        .ForIn(v, coll, body) -> .ForIn(v, lower_expr(store, coll), lower_stmt(store, body))
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_stmt_list(store, body))
-        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(store, methods))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: lower_stmt(store, inner.node) })
-        .Module(name, body) -> .Module(name, lower_stmt_list(store, body))
-        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, lower_stmt_list(store, body))
-        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, lower_stmt_list(store, body))
-        .SpecBlock(name, body) -> .SpecBlock(name, lower_stmt_list(store, body))
-        .GivenBlock(name, body) -> .GivenBlock(name, lower_stmt_list(store, body))
-        .ThenBlock(name, cond) -> .ThenBlock(name, lower_expr(store, cond))
-        .Match(subj, arms) -> .Match(lower_expr(store, subj), lower_match_arms(store, arms))
-        .Defer(body) -> .Defer(lower_expr(store, body))
-        .Errdefer(body) -> .Errdefer(lower_expr(store, body))
-        .LetDestructure(names, init) -> .LetDestructure(names, lower_expr(store, init))
-        .TraitDecl(name, methods) -> .TraitDecl(name, lower_stmt_list(store, methods))
-        .Parallel(body) -> .Parallel(lower_stmt_list(store, body))
+        .While(cond, body) -> .While(lower_expr_id(store, cond), lower_stmt_id(store, body))
+        .For(v, start, end, body) -> .For(v, lower_expr_id(store, start), lower_expr_id(store, end), lower_stmt_id(store, body))
+        .ForIn(v, coll, body) -> .ForIn(v, lower_expr_id(store, coll), lower_stmt_id(store, body))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, lower_stmt_ids(store, body))
+        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_ids(store, methods))
+        .Annotated(annots, inner) -> .Annotated(annots, lower_stmt_id(store, inner))
+        .Module(name, body) -> .Module(name, lower_stmt_ids(store, body))
+        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, lower_stmt_ids(store, body))
+        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, lower_stmt_ids(store, body))
+        .SpecBlock(name, body) -> .SpecBlock(name, lower_stmt_ids(store, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, lower_stmt_ids(store, body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, lower_expr_id(store, cond))
+        .Match(subj, arms) -> .Match(lower_expr_id(store, subj), lower_match_arms(store, arms))
+        .Defer(body) -> .Defer(lower_expr_id(store, body))
+        .Errdefer(body) -> .Errdefer(lower_expr_id(store, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, lower_expr_id(store, init))
+        .TraitDecl(name, methods) -> .TraitDecl(name, lower_stmt_ids(store, methods))
+        .Parallel(body) -> .Parallel(lower_stmt_ids(store, body))
         _ -> stmt
     }
 }
@@ -350,7 +376,7 @@ fn dispatch_quote_kind(store: NodeStore, kind: string, body: Expr) -> Expr {
         return construct_match_arm_null(store)
     }
     // Default: kind == "expr" or unrecognized.
-    construct_expr(store, unwrap_quote_body(body))
+    construct_expr(store, unwrap_quote_body(store, body))
 }
 
 /// Pull the single MatchArm out of the synthetic `MatchExpr(Null, [arm])`
@@ -382,7 +408,7 @@ fn construct_match_arm_null(store: NodeStore) -> Expr {
 /// Anything else falls through to ValueType.Unknown — generic +
 /// structural type expressions are tracked under vez6.3.13.
 fn construct_value_type_from_body(store: NodeStore, body: Expr) -> Expr {
-    let inner = unwrap_quote_body(body)
+    let inner = unwrap_quote_body(store, body)
     match inner {
         .Ident(name) -> primitive_value_type(name)
         _ -> construct_value_type_unknown()
@@ -433,12 +459,12 @@ fn extract_stmt_list(body: Expr) -> List<SStmt> {
 /// which wraps single expressions in a Block of one Stmt.Expr.
 /// For a single-expr body, peel that off so `quote { 5 }` lowers to the
 /// AST of the literal 5, not the AST of a one-stmt Block.
-fn unwrap_quote_body(body: Expr) -> Expr {
+fn unwrap_quote_body(store: NodeStore, body: Expr) -> Expr {
     match body {
         .Block(stmts) -> {
             if stmts.length == 1 {
                 match stmts[0].node {
-                    .Expr(inner) -> inner
+                    .Expr(inner) -> store.exprs.get(inner)
                     _ -> body
                 }
             } else {
@@ -520,7 +546,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         // already an AST-build expression) and avoids needing a meta-
         // quote machinery. Proper meta-quote (outer captures inner
         // Quote form verbatim) is a separate language design call.
-        .Quote(_, body) -> construct_expr(store, unwrap_quote_body(body))
+        .Quote(_, body) -> construct_expr(store, unwrap_quote_body(store, body))
         .When(_) -> e
         _ -> e
     }
@@ -1150,6 +1176,43 @@ fn construct_stmt_list(store: NodeStore, list: List<SStmt>) -> Expr {
     Expr.ListLit(elems)
 }
 
+/// The flipped-body twin of `construct_stmt_list`: resolves each row
+/// and emits the span-wrapped constructor list, wrapped in the
+/// `synth_stmt_ids` id shim so the generated `List<StmtId>` payload
+/// slot type-checks (see `construct_stmt_id`).
+fn construct_stmt_ids(store: NodeStore, ids: List<StmtId>) -> Expr {
+    mut elems: List<SExpr> = []
+    for id in ids {
+        elems.push(sexpr_dummy(sstmt_dummy_call(construct_stmt(store, store.stmts.get(id)))))
+    }
+    synth_shim_call("synth_stmt_ids", Expr.ListLit(elems))
+}
+
+/// Resolve one statement row and build its constructor expression,
+/// wrapped in the `synth_stmt_id` id shim so the generated construct
+/// code type-checks against the flipped `StmtId` payload slot. The
+/// shim is an identity at eval (features/eval intercepts it by name).
+fn construct_stmt_id(store: NodeStore, id: StmtId) -> Expr {
+    synth_shim_call("synth_stmt_id", construct_stmt(store, store.stmts.get(id)))
+}
+
+/// Resolve one expression row and build its constructor expression,
+/// wrapped in the `synth_expr_id` id shim (see `construct_stmt_id`).
+fn construct_expr_id(store: NodeStore, id: ExprId) -> Expr {
+    synth_shim_call("synth_expr_id", construct_expr(store, store.exprs.get(id)))
+}
+
+/// A call to a synth_* id shim around `arg` — the generated-code twin
+/// of `sstmt_dummy_call`, fully qualified so the eval intercept's
+/// last-segment match and the compiled resolver both find it.
+fn synth_shim_call(name: string, arg: Expr) -> Expr {
+    let args: List<SExpr> = [sexpr_dummy(arg)]
+    Expr.Call(
+        Expr.QualifiedIdent("@std::avrac::features::comptime::${name}"),
+        args
+    )
+}
+
 /// Build an Expr that, when evaluated, produces an SStmt wrapping the
 /// runtime value of `ss.node`.
 fn construct_sstmt(store: NodeStore, ss: SStmt) -> Expr {
@@ -1179,12 +1242,12 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
         // types: List vs List". The encoder now handles ValueType
         // construction generically; non-typed quote callers pass
         // ValueType.Unknown which encodes as the same Unknown ctor.
-        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(store, init)))
-        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(store, init)))
-        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr(store, init)))
-        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr(store, e)))
-        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_list(store, body)))
-        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr(store, e)))
+        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr_id(store, init)))
+        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr_id(store, init)))
+        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(vt), construct_expr_id(store, init)))
+        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr_id(store, e)))
+        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_ids(store, body)))
+        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr_id(store, e)))
         .ReturnEmpty -> {
             let empty: List<SExpr> = []
             stmt_ctor("ReturnEmpty", empty)
@@ -1201,30 +1264,30 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
             let empty: List<SExpr> = []
             stmt_ctor("Continue", empty)
         }
-        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr(store, body)))
-        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr(store, body)))
-        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr(store, cond), construct_stmt(store, body)))
-        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr(store, start), construct_expr(store, end), construct_stmt(store, body)))
-        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr(store, coll), construct_stmt(store, body)))
+        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr_id(store, body)))
+        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr_id(store, body)))
+        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr_id(store, cond), construct_stmt_id(store, body)))
+        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr_id(store, start), construct_expr_id(store, end), construct_stmt_id(store, body)))
+        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr_id(store, coll), construct_stmt_id(store, body)))
         // If has a nullable else_branch — encode null as Expr.None at
         // the AST level so the constructed runtime gets back the
         // null-discriminant.
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                stmt_ctor("If", three_args(construct_expr(store, cond), construct_stmt(store, then_b), construct_stmt(store, else_b!)))
+                stmt_ctor("If", three_args(construct_expr_id(store, cond), construct_stmt_id(store, then_b), construct_stmt_id(store, else_b!)))
             } else {
-                stmt_ctor("If", three_args(construct_expr(store, cond), construct_stmt(store, then_b), Expr.None))
+                stmt_ctor("If", three_args(construct_expr_id(store, cond), construct_stmt_id(store, then_b), Expr.None))
             }
         }
-        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_list(store, methods)))
-        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_list(store, methods)))
-        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_list(store, body)))
+        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(type_name), construct_stmt_ids(store, methods)))
+        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_ids(store, methods)))
+        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_ids(store, body)))
         .Function(name, tp, params, rvt, body) -> stmt_ctor("Function",
             five_args(name_or_splice(name),
                       construct_type_param_list(tp),
                       construct_param_list(store, params),
                       construct_value_type(rvt),
-                      construct_stmt_list(store, body)))
+                      construct_stmt_ids(store, body)))
         .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
             three_args(name_or_splice(name),
                        construct_type_param_list(tp),
@@ -1237,13 +1300,13 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
             four_args(string_lit_expr(comp_name),
                       string_lit_expr(instance),
                       construct_comp_config_pair_list(store, config),
-                      construct_stmt_list(store, body)))
+                      construct_stmt_ids(store, body)))
         // Step 4 nested @expand: a macro returning code that itself
         // carries an @expand annotation needs the Annotated layer to
         // roundtrip through quote construction so the outer expand
         // pass sees the new @expand site on the next fixpoint iter.
         .Annotated(annots, inner) -> stmt_ctor("Annotated",
-            two_args(construct_annotation_list(store, annots), construct_stmt(store, inner.node)))
+            two_args(construct_annotation_list(store, annots), construct_stmt_id(store, inner)))
         _ -> stmt_passthrough(stmt)
     }
 }

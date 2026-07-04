@@ -19,7 +19,7 @@ use typeck.{check_expr}
 fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
-            let updated = ctx with { defers: list_push_copy(ctx.defers, DeferEntry.Frame(sexpr_dummy(body))) }
+            let updated = ctx with { defers: list_push_copy(ctx.defers, DeferEntry.Frame(sexpr_dummy(ctx.nodes.exprs.get(body)))) }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Defer")
@@ -29,7 +29,7 @@ fn defer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult,
 /// Resolver hook for `defer`. Walks the body so any names it
 /// references resolve in the current scope.
 fn defer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r }
+    match stmt { .Defer(body) -> resolve_expr(r, r.nodes.exprs.get(body)), _ -> r }
 }
 
 /// Type-check hook for `defer`. Checks the body for errors but
@@ -38,7 +38,7 @@ fn defer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 fn defer_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Defer(body) -> {
-            let r = check_expr(tc, body)
+            let r = check_expr(tc, tc.nodes.exprs.get(body))
             r.tc
         }
         _ -> tc
@@ -61,7 +61,7 @@ fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
-            let updated = ctx with { defers: list_push_copy(ctx.defers, DeferEntry.ErrFrame(sexpr_dummy(body))) }
+            let updated = ctx with { defers: list_push_copy(ctx.defers, DeferEntry.ErrFrame(sexpr_dummy(ctx.nodes.exprs.get(body)))) }
             ok_sr(updated, env)
         }
         _ -> err_sr("expected Errdefer")
@@ -70,14 +70,14 @@ fn errdefer_emit(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResu
 
 /// Resolver hook for `errdefer`. Mirror of `defer_resolve`.
 fn errdefer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Errdefer(body) -> resolve_expr(r, body), _ -> r }
+    match stmt { .Errdefer(body) -> resolve_expr(r, r.nodes.exprs.get(body)), _ -> r }
 }
 
 /// Type-check hook for `errdefer`. Mirror of `defer_check`.
 fn errdefer_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Errdefer(body) -> {
-            let r = check_expr(tc, body)
+            let r = check_expr(tc, tc.nodes.exprs.get(body))
             r.tc
         }
         _ -> tc
@@ -100,7 +100,7 @@ fn errdefer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// error). Spec Axis 9.4.
 export fn defer_feature() -> Feature {
     feature_new("defer") with {
-        stmt_tag: Stmt.Defer(Expr.None),
+        stmt_tag: Stmt.Defer(ExprId(0)),
         stmt_keyword: "kw_defer",
         parse_stmt: (p: Parser) -> p.parse_defer_statement(),
         emit_stmt: defer_emit,
@@ -115,7 +115,7 @@ export fn defer_feature() -> Feature {
 /// returns (Err(...) / null nullable returns). Spec Axis 9.4.
 export fn errdefer_feature() -> Feature {
     feature_new("errdefer") with {
-        stmt_tag: Stmt.Errdefer(Expr.None),
+        stmt_tag: Stmt.Errdefer(ExprId(0)),
         stmt_keyword: "kw_errdefer",
         parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
         emit_stmt: errdefer_emit,

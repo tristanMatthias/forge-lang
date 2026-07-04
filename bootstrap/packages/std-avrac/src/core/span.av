@@ -39,6 +39,18 @@ export fn byte_span_is_none(s: ByteSpan) -> bool { s.lo < 0 }
 /// offset only at diagnostic-render time is the whole point of §14.2.
 export type LineCol = { line: int, col: int }
 
+/// A node's source position WITH file attribution — the arena-column
+/// successor of the `SStmt` wrapper's (line, col, file) triple (B-final
+/// F3a). Needed as long as one store hosts sub-parses of several files
+/// (F0): a bare ByteSpan can only resolve through the store's single
+/// entry-file LineIndex, so cross-file children carry their position
+/// here instead. `line 0` = synthesised (no source position), matching
+/// the `line < 1` convention on the wrappers.
+export type SrcPos = { line: int, col: int, file: string }
+
+/// The synthesised-node position (no source attribution).
+export fn src_pos_none() -> SrcPos { SrcPos { line: 0, col: 0, file: "" } }
+
 /// Per-file index of line-start byte offsets. `line_starts[i]` is the byte
 /// offset where line (i+1) begins; line 1 always starts at offset 0. Built
 /// once per file from the source text — the only thing needed to turn a

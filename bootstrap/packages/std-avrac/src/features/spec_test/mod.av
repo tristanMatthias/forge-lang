@@ -2,14 +2,14 @@
 // as siblings, surface flat at `features.spec_test.{...}`.
 use features.eval.{error_result, ok_result, value_null}
 use core.{feature_new, Feature}
-use resolve.{resolve_expr, resolve_stmt_list}
+use resolve.{resolve_expr, resolve_stmt_ids}
 use typeck.{check_expr, check_stmt}
 
 /// Register the `spec "name" { ... }` BDD-style test block
 /// feature. Spec blocks contain `given` / `then` arms; the
 /// codegen emits calls to the test runner around each.
 export fn spec_feature() -> Feature {
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     feature_new("spec") with {
         stmt_tag: Stmt.SpecBlock("", empty_body),
         emit_stmt: spec_emit_stmt,
@@ -23,7 +23,7 @@ export fn spec_feature() -> Feature {
 /// Register the `given "context" { ... }` test arm feature.
 /// Used inside `spec` blocks to group related `then` assertions.
 export fn given_feature() -> Feature {
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     feature_new("given") with {
         stmt_tag: Stmt.GivenBlock("", empty_body),
         emit_stmt: spec_emit_stmt,
@@ -37,20 +37,20 @@ export fn given_feature() -> Feature {
 /// reports PASS/FAIL per arm.
 export fn then_feature() -> Feature {
     feature_new("then") with {
-        stmt_tag: Stmt.ThenBlock("", Expr.None),
+        stmt_tag: Stmt.ThenBlock("", ExprId(0)),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: then_resolve_stmt,
         eval_stmt: then_eval_stmt,
     }
 }
 
-/// Fold `check_stmt` over a List<SStmt>. Used by spec/given check
+/// Fold `check_stmt` over a body's rows. Used by spec/given check
 /// hooks to drive type-checking through the test body.
-fn check_stmt_list(tc: TC, stmts: List<SStmt>) -> TC {
+fn check_stmt_list(tc: TC, body: List<StmtId>) -> TC {
     mut cur = tc
     mut i = 0
-    while i < stmts.length {
-        cur = check_stmt(cur, stmts[i].node)
+    while i < body.length {
+        cur = check_stmt(cur, tc.nodes.stmts.get(body[i]))
         i = i + 1
     }
     cur
@@ -80,7 +80,7 @@ fn given_check_stmt(tc: TC, stmt: Stmt) -> TC {
 /// runner converts whatever it returns to a boolean at runtime.
 fn then_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .ThenBlock(_, cond) -> check_expr(tc, cond).tc
+        .ThenBlock(_, cond) -> check_expr(tc, tc.nodes.exprs.get(cond)).tc
         _ -> tc
     }
 }
@@ -88,7 +88,7 @@ fn then_check_stmt(tc: TC, stmt: Stmt) -> TC {
 /// Resolver hook for `SpecBlock`. Walks the body's statements.
 fn spec_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
-        .SpecBlock(_, body) -> resolve_stmt_list(r, body)
+        .SpecBlock(_, body) -> resolve_stmt_ids(r, body)
         _ -> r
     }
 }
@@ -105,7 +105,7 @@ fn spec_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Resolver hook for `GivenBlock`. Walks the body's statements.
 fn given_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
-        .GivenBlock(_, body) -> resolve_stmt_list(r, body)
+        .GivenBlock(_, body) -> resolve_stmt_ids(r, body)
         _ -> r
     }
 }
@@ -123,7 +123,7 @@ fn given_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 /// only — there's no body, just an expression.
 fn then_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
-        .ThenBlock(_, cond) -> resolve_expr(r, cond)
+        .ThenBlock(_, cond) -> resolve_expr(r, r.nodes.exprs.get(cond))
         _ -> r
     }
 }

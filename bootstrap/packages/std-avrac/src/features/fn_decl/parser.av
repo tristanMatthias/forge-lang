@@ -81,11 +81,10 @@ impl Parser {
             return .Err("parse error")
         }
 
-        // Walker order: the bare return-type field contributes a TypeRef,
-        // then one StmtRef per body statement.
-        mut edges: List<NodeRef> = [NodeRef.TypeRef(self.glue_ingest_type(ret_vtype))]
-        for sid in body.ids { edges.push(NodeRef.StmtRef(sid)) }
-        .Ok(self.alloc_stmt(Stmt.Function(name, tp, params, ret_vtype, body.wrapped), byte_span_none(), edges))
+        // Walker order: the bare return-type field contributes a TypeRef
+        // (body rows are id payloads — no edges).
+        let edges: List<NodeRef> = [NodeRef.TypeRef(self.glue_ingest_type(ret_vtype))]
+        .Ok(self.alloc_stmt(Stmt.Function(name, tp, params, ret_vtype, body.ids), byte_span_none(), edges))
     }
 
     fn parse_param_list(self) -> Result<List<ParamEntry>, string> {

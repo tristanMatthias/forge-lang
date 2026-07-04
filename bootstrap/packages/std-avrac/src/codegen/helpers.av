@@ -1,6 +1,6 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, SExpr, VarBinding, ValueType, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, SExpr, VarBinding, ValueType, SStmt, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
@@ -130,17 +130,16 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
 /// pointers, not call `strcmp`).
 export fn is_null_literal(e: Expr) -> bool { e is .None }
 
-/// Walk to the last statement of a list and unwrap it as an Expr.
+/// Walk to the last row of a flipped body and unwrap it as an Expr.
 /// `.Expr(e)` and `.Return(e)` both surface their payload; anything
 /// else becomes `.None`. Used to extract the implicit return value
 /// of a function body during type-aware emit.
-export fn stmts_last_expr(stmts: List<SStmt>) -> Expr {
-    if stmts.length == 0 { return .None }
-    let ss = stmts[stmts.length - 1]
-    let inner = stmt_unwrap(ss.node)
+export fn stmts_last_expr(store: NodeStore, body: List<StmtId>) -> Expr {
+    if body.length == 0 { return .None }
+    let inner = stmt_unwrap(store, store.stmts.get(body[body.length - 1]))
     match inner {
-        .Expr(e) -> e
-        .Return(e) -> e
+        .Expr(e) -> store.exprs.get(e)
+        .Return(e) -> store.exprs.get(e)
         _ -> .None
     }
 }

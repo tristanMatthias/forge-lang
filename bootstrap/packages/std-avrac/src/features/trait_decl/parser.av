@@ -3,16 +3,13 @@
 // The trait declaration itself is a no-op at codegen — the methods
 // are implemented by `impl Trait for Type { ... }` blocks.
 
-use core.{Stmt, TypeParamEntry, SStmt, sstmt, ValueType, type_expr_to_vtype, StmtId, byte_span_none}
+use core.{Stmt, TypeParamEntry, ValueType, type_expr_to_vtype, StmtId, SrcPos}
 use parse.{Parser}
 use core.{Tk}
 
-/// One parse of a trait body, surfaced both ways: `wrapped` is the boxed
-/// spanned view for the TraitDecl payload; `ids` are the arena rows backing
-/// each element, in the same order, for the TraitDecl node's edge list
-/// (mirrors parse's StmtListIds).
+/// One parse of a trait body: the arena rows backing each element, in
+/// source order — the TraitDecl payload (F3a: element ids ARE the children).
 type TraitMethodsParsed = {
-    wrapped: List<SStmt>,
     ids: List<StmtId>,
 }
 
@@ -31,8 +28,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after trait body") {
             return .Err("parse error")
         }
-        // Walker order: one StmtRef per method-list element, in source order.
-        .Ok(self.alloc_stmt(Stmt.TraitDecl(name, methods.wrapped), byte_span_none(), self.edges_of_stmt_ids(methods.ids)))
+        .Ok(self.alloc_stmt_leaf(Stmt.TraitDecl(name, methods.ids)))
     }
 
     // Parse method signatures and associated type declarations inside a trait body.
@@ -41,7 +37,6 @@ impl Parser {
     // Every element is a boxed producer (signature stmts) — each is bridged
     // whole via glue_ingest_stmt; only the TraitDecl node itself is native.
     fn parse_trait_methods(self) -> Result<TraitMethodsParsed, string> {
-        mut out: List<SStmt> = []
         mut ids: List<StmtId> = []
         while !self.check(Tk.RightBrace) {
             // Associated type declaration: `type Name`
@@ -51,15 +46,17 @@ impl Parser {
                 self.advance()
                 let name = self.consume_identifier("expected associated type name")?
                 let assoc = Stmt.AssocType(name, ValueType.Unknown)
-                ids.push(self.glue_ingest_stmt(assoc))
-                out.push(sstmt(assoc, line, col))
+                let assoc_id = self.glue_ingest_stmt(assoc)
+                self.store.stmts.record_pos(assoc_id, SrcPos { line: line, col: col, file: self.file })
+                ids.push(assoc_id)
                 continue
             }
             let method = self.parse_trait_method_sig()?
-            ids.push(self.glue_ingest_stmt(method))
-            out.push(sstmt(method, self.current_line, self.current_column))
+            let method_id = self.glue_ingest_stmt(method)
+            self.store.stmts.record_pos(method_id, SrcPos { line: self.current_line, col: self.current_column, file: self.file })
+            ids.push(method_id)
         }
-        .Ok(TraitMethodsParsed { wrapped: out, ids: ids })
+        .Ok(TraitMethodsParsed { ids: ids })
     }
 
     fn parse_trait_method_sig(self) -> Result<Stmt, string> {
@@ -88,12 +85,12 @@ impl Parser {
         // Otherwise it's a signature only (ExternFn).
         if self.check(Tk.LeftBrace) {
             self.advance()
-            let body = self.parse_statement_list(true)?
+            let body = self.parse_statement_list_ids(true)?
             if !self.consume(Tk.RightBrace, "expected `}` after default method body") {
                 return .Err("parse error")
             }
             let empty_tp: List<TypeParamEntry> = []
-            return .Ok(Stmt.Function(name, empty_tp, params, ret_vtype, body))
+            return .Ok(Stmt.Function(name, empty_tp, params, ret_vtype, body.ids))
         }
         .Ok(Stmt.ExternFn(name, params, ret_vtype))
     }

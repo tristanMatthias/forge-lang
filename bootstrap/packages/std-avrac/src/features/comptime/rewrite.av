@@ -11,7 +11,7 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, SStmt, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm}
+use core.{Stmt, SStmt, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm, StmtId, ExprId}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
@@ -36,40 +36,60 @@ fn rewrite_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
     out
 }
 
+/// The flipped-body twin of `rewrite_stmt_list`: rewrites each row
+/// and allocates the result against the original's span + position.
+fn rewrite_stmt_ids(ids: List<StmtId>, reg: CompTimeRegistry) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids { out.push(rewrite_stmt_id(id, reg)) }
+    out
+}
+
+/// Rewrite one statement row, allocating against the original.
+fn rewrite_stmt_id(id: StmtId, reg: CompTimeRegistry) -> StmtId {
+    let store = reg.runtime.nodes
+    store.restmt(rewrite_stmt(store.stmts.get(id), reg), id)
+}
+
+/// Rewrite one expression row, allocating against the original.
+fn rewrite_expr_id(id: ExprId, reg: CompTimeRegistry) -> ExprId {
+    let store = reg.runtime.nodes
+    store.reexpr(rewrite_expr(store.exprs.get(id), reg), id)
+}
+
 fn rewrite_stmt(stmt: Stmt, reg: CompTimeRegistry) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, vt, rewrite_expr(init, reg))
-        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_expr(init, reg))
-        .Const(name, vt, init) -> .Const(name, vt, rewrite_expr(init, reg))
-        .Expr(e) -> .Expr(rewrite_expr(e, reg))
-        .Return(e) -> .Return(rewrite_expr(e, reg))
-        .Block(body) -> .Block(rewrite_stmt_list(body, reg))
+        .Let(name, vt, init) -> .Let(name, vt, rewrite_expr_id(init, reg))
+        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_expr_id(init, reg))
+        .Const(name, vt, init) -> .Const(name, vt, rewrite_expr_id(init, reg))
+        .Expr(e) -> .Expr(rewrite_expr_id(e, reg))
+        .Return(e) -> .Return(rewrite_expr_id(e, reg))
+        .Block(body) -> .Block(rewrite_stmt_ids(body, reg))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(rewrite_expr(cond, reg), rewrite_stmt(then_b, reg), rewrite_stmt(else_b!, reg))
+                .If(rewrite_expr_id(cond, reg), rewrite_stmt_id(then_b, reg), rewrite_stmt_id(else_b!, reg))
             } else {
-                .If(rewrite_expr(cond, reg), rewrite_stmt(then_b, reg), null)
+                .If(rewrite_expr_id(cond, reg), rewrite_stmt_id(then_b, reg), null)
             }
         }
-        .While(cond, body) -> .While(rewrite_expr(cond, reg), rewrite_stmt(body, reg))
-        .For(v, start, end, body) -> .For(v, rewrite_expr(start, reg), rewrite_expr(end, reg), rewrite_stmt(body, reg))
-        .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, reg), rewrite_stmt(body, reg))
-        .Match(subj, arms) -> .Match(rewrite_expr(subj, reg), rewrite_match_arms(arms, reg))
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, rewrite_stmt_list(body, reg))
-        .Impl(type_name, methods) -> .Impl(type_name, rewrite_stmt_list(methods, reg))
-        .TraitDecl(name, methods) -> .TraitDecl(name, rewrite_stmt_list(methods, reg))
-        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(init, reg))
-        .Defer(body) -> .Defer(rewrite_expr(body, reg))
-        .Errdefer(body) -> .Errdefer(rewrite_expr(body, reg))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_stmt(inner.node, reg) })
-        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(body, reg))
-        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(body, reg))
-        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(cond, reg))
+        .While(cond, body) -> .While(rewrite_expr_id(cond, reg), rewrite_stmt_id(body, reg))
+        .For(v, start, end, body) -> .For(v, rewrite_expr_id(start, reg), rewrite_expr_id(end, reg), rewrite_stmt_id(body, reg))
+        .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr_id(coll, reg), rewrite_stmt_id(body, reg))
+        .Match(subj, arms) -> .Match(rewrite_expr_id(subj, reg), rewrite_match_arms(arms, reg))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, rewrite_stmt_ids(body, reg))
+        .Impl(type_name, methods) -> .Impl(type_name, rewrite_stmt_ids(methods, reg))
+        .TraitDecl(name, methods) -> .TraitDecl(name, rewrite_stmt_ids(methods, reg))
+        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr_id(init, reg))
+        .Defer(body) -> .Defer(rewrite_expr_id(body, reg))
+        .Errdefer(body) -> .Errdefer(rewrite_expr_id(body, reg))
+        .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt_id(inner, reg))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_ids(body, reg))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_ids(body, reg))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr_id(cond, reg))
         .Select(arms) -> .Select(rewrite_select_arms(arms, reg))
-        .Parallel(body) -> .Parallel(rewrite_stmt_list(body, reg))
-        .Module(name, body) -> .Module(name, rewrite_stmt_list(body, reg))
-        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, rewrite_stmt_list(body, reg))
-        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, rewrite_stmt_list(body, reg))
+        .Parallel(body) -> .Parallel(rewrite_stmt_ids(body, reg))
+        .Module(name, body) -> .Module(name, rewrite_stmt_ids(body, reg))
+        .ComponentDef(name, params, config, children, implements, body) -> .ComponentDef(name, params, config, children, implements, rewrite_stmt_ids(body, reg))
+        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, rewrite_stmt_ids(body, reg))
         // Leaves and decl-only statements pass through untouched.
         _ -> stmt
     }

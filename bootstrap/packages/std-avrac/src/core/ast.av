@@ -312,8 +312,10 @@ export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
 /// `__wc_kind_mismatch` marker (each sibling uses the same marker in its own kind,
 /// so a violation renders/compares distinctly; the round-trip oracle flags it).
 export fn unspan_expr(sc: SpannedChild) -> Expr { match sc.node { .AnyExpr(e) -> e  _ -> Expr.Ident("__wc_kind_mismatch") } }
-/// Unbox a single bare `Stmt` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
-export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.Expr(Expr.Ident("__wc_kind_mismatch")) } }
+/// Unbox a single bare `Stmt` child (`_` ⇒ recognizable `__wc_kind_mismatch`
+/// marker — carried on the store-free Module name slot since F3a flipped
+/// Stmt.Expr's payload to an arena id).
+export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.Module("__wc_kind_mismatch", []) } }
 /// Unbox a single bare `Pattern` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
 export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -> p  _ -> Pattern.TypePattern("__wc_kind_mismatch", "") } }
 /// Unbox a single bare `ValueType` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
@@ -1299,17 +1301,23 @@ fn collect_id_zero_names_vtypes(ts: List<ValueType>, out: List<string>) -> List<
 /// nested module body. The post-resolve AST should land at ~0
 /// id-zero nominals once T6.B lands the resolver/typeck threading;
 /// anything > 0 surfaces a resolver gap for T6.C to assert against.
-export fn count_id_zero_nominals_stmts(stmts: List<SStmt>) -> int {
+export fn count_id_zero_nominals_stmts(store: NodeStore, stmts: List<SStmt>) -> int {
     mut total = 0
     mut i = 0
     while i < stmts.length {
-        total = total + count_id_zero_nominals_stmt(stmts[i].node)
+        total = total + count_id_zero_nominals_stmt(store, stmts[i].node)
         i = i + 1
     }
     total
 }
 
-fn count_id_zero_nominals_stmt(stmt: Stmt) -> int {
+fn count_id_zero_nominals_stmt_ids(store: NodeStore, ids: List<StmtId>) -> int {
+    mut total = 0
+    for id in ids { total = total + count_id_zero_nominals_stmt(store, store.stmts.get(id)) }
+    total
+}
+
+fn count_id_zero_nominals_stmt(store: NodeStore, stmt: Stmt) -> int {
     match stmt {
         .Let(_, vt, _) -> count_id_zero_in_vtype(vt)
         .Mut(_, vt, _) -> count_id_zero_in_vtype(vt)
@@ -1317,20 +1325,20 @@ fn count_id_zero_nominals_stmt(stmt: Stmt) -> int {
         .Function(_, _, params, ret_vt, body) ->
             count_id_zero_in_params(params)
                 + count_id_zero_in_vtype(ret_vt)
-                + count_id_zero_nominals_stmts(body)
+                + count_id_zero_nominals_stmt_ids(store, body)
         .ExternFn(_, params, ret_vt) ->
             count_id_zero_in_params(params) + count_id_zero_in_vtype(ret_vt)
         .If(_, then_b, else_b) -> {
-            let t_n = count_id_zero_nominals_stmt(then_b)
-            if else_b != null { t_n + count_id_zero_nominals_stmt(else_b!) } else { t_n }
+            let t_n = count_id_zero_nominals_stmt(store, store.stmts.get(then_b))
+            if else_b != null { t_n + count_id_zero_nominals_stmt(store, store.stmts.get(else_b!)) } else { t_n }
         }
-        .While(_, body) -> count_id_zero_nominals_stmt(body)
-        .For(_, _, _, body) -> count_id_zero_nominals_stmt(body)
-        .ForIn(_, _, body) -> count_id_zero_nominals_stmt(body)
-        .Block(body) -> count_id_zero_nominals_stmts(body)
-        .Module(_, body) -> count_id_zero_nominals_stmts(body)
-        .Impl(_, methods) -> count_id_zero_nominals_stmts(methods)
-        .Annotated(_, inner) -> count_id_zero_nominals_stmt(inner.node)
+        .While(_, body) -> count_id_zero_nominals_stmt(store, store.stmts.get(body))
+        .For(_, _, _, body) -> count_id_zero_nominals_stmt(store, store.stmts.get(body))
+        .ForIn(_, _, body) -> count_id_zero_nominals_stmt(store, store.stmts.get(body))
+        .Block(body) -> count_id_zero_nominals_stmt_ids(store, body)
+        .Module(_, body) -> count_id_zero_nominals_stmt_ids(store, body)
+        .Impl(_, methods) -> count_id_zero_nominals_stmt_ids(store, methods)
+        .Annotated(_, inner) -> count_id_zero_nominals_stmt(store, store.stmts.get(inner))
         _ -> 0
     }
 }
@@ -1348,17 +1356,23 @@ fn count_id_zero_in_params(params: List<ParamEntry>) -> int {
 /// Detail-mode walker: collect the first id=0 nominal names found
 /// across the AST so a probe consumer can rank which names dominate
 /// (type-param placeholders like `T` vs real resolver gaps).
-export fn collect_id_zero_names_stmts(stmts: List<SStmt>, out: List<string>) -> List<string> {
+export fn collect_id_zero_names_stmts(store: NodeStore, stmts: List<SStmt>, out: List<string>) -> List<string> {
     mut acc = out
     mut i = 0
     while i < stmts.length {
-        acc = collect_id_zero_names_stmt(stmts[i].node, acc)
+        acc = collect_id_zero_names_stmt(store, stmts[i].node, acc)
         i = i + 1
     }
     acc
 }
 
-fn collect_id_zero_names_stmt(stmt: Stmt, out: List<string>) -> List<string> {
+fn collect_id_zero_names_stmt_ids(store: NodeStore, ids: List<StmtId>, out: List<string>) -> List<string> {
+    mut acc = out
+    for id in ids { acc = collect_id_zero_names_stmt(store, store.stmts.get(id), acc) }
+    acc
+}
+
+fn collect_id_zero_names_stmt(store: NodeStore, stmt: Stmt, out: List<string>) -> List<string> {
     match stmt {
         .Let(_, vt, _) -> collect_id_zero_names_vtype(vt, out)
         .Mut(_, vt, _) -> collect_id_zero_names_vtype(vt, out)
@@ -1366,21 +1380,21 @@ fn collect_id_zero_names_stmt(stmt: Stmt, out: List<string>) -> List<string> {
         .Function(_, _, params, ret_vt, body) -> {
             let a1 = collect_id_zero_names_params(params, out)
             let a2 = collect_id_zero_names_vtype(ret_vt, a1)
-            collect_id_zero_names_stmts(body, a2)
+            collect_id_zero_names_stmt_ids(store, body, a2)
         }
         .ExternFn(_, params, ret_vt) ->
             collect_id_zero_names_vtype(ret_vt, collect_id_zero_names_params(params, out))
         .If(_, then_b, else_b) -> {
-            let a1 = collect_id_zero_names_stmt(then_b, out)
-            if else_b != null { collect_id_zero_names_stmt(else_b!, a1) } else { a1 }
+            let a1 = collect_id_zero_names_stmt(store, store.stmts.get(then_b), out)
+            if else_b != null { collect_id_zero_names_stmt(store, store.stmts.get(else_b!), a1) } else { a1 }
         }
-        .While(_, body) -> collect_id_zero_names_stmt(body, out)
-        .For(_, _, _, body) -> collect_id_zero_names_stmt(body, out)
-        .ForIn(_, _, body) -> collect_id_zero_names_stmt(body, out)
-        .Block(body) -> collect_id_zero_names_stmts(body, out)
-        .Module(_, body) -> collect_id_zero_names_stmts(body, out)
-        .Impl(_, methods) -> collect_id_zero_names_stmts(methods, out)
-        .Annotated(_, inner) -> collect_id_zero_names_stmt(inner.node, out)
+        .While(_, body) -> collect_id_zero_names_stmt(store, store.stmts.get(body), out)
+        .For(_, _, _, body) -> collect_id_zero_names_stmt(store, store.stmts.get(body), out)
+        .ForIn(_, _, body) -> collect_id_zero_names_stmt(store, store.stmts.get(body), out)
+        .Block(body) -> collect_id_zero_names_stmt_ids(store, body, out)
+        .Module(_, body) -> collect_id_zero_names_stmt_ids(store, body, out)
+        .Impl(_, methods) -> collect_id_zero_names_stmt_ids(store, methods, out)
+        .Annotated(_, inner) -> collect_id_zero_names_stmt(store, store.stmts.get(inner), out)
         _ -> out
     }
 }
@@ -1400,37 +1414,49 @@ fn collect_id_zero_names_params(params: List<ParamEntry>, out: List<string>) -> 
 /// nominal arms can drop the name-fallback because every name that's
 /// in the registry comes with the matching id. Slots whose name
 /// isn't registered (type-param placeholders, builtins) stay at 0.
-export fn stamp_ids_stmts(stmts: List<SStmt>, reg: TypeRegistry) -> List<SStmt> {
+export fn stamp_ids_stmts(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistry) -> List<SStmt> {
     mut out: List<SStmt> = []
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        out.push(sstmt_at(stamp_ids_stmt(ss.node, reg), ss.line, ss.col, ss.file))
+        out.push(sstmt_at(stamp_ids_stmt(store, ss.node, reg), ss.line, ss.col, ss.file))
         i = i + 1
     }
     out
 }
 
-fn stamp_ids_stmt(stmt: Stmt, reg: TypeRegistry) -> Stmt {
+/// Stamp a flipped `List<StmtId>` body: each rebuilt child is a NEW
+/// arena row (transforms allocate; rows are immutable).
+fn stamp_ids_stmt_ids(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids { out.push(store.stmts.add_leaf(stamp_ids_stmt(store, store.stmts.get(id), reg))) }
+    out
+}
+
+fn stamp_ids_stmt_id(store: NodeStore, id: StmtId, reg: TypeRegistry) -> StmtId {
+    store.stmts.add_leaf(stamp_ids_stmt(store, store.stmts.get(id), reg))
+}
+
+fn stamp_ids_stmt(store: NodeStore, stmt: Stmt, reg: TypeRegistry) -> Stmt {
     match stmt {
         .Let(n, vt, init) -> .Let(n, stamp_ids_vtype(vt, reg), init)
         .Mut(n, vt, init) -> .Mut(n, stamp_ids_vtype(vt, reg), init)
         .Const(n, vt, init) -> .Const(n, stamp_ids_vtype(vt, reg), init)
         .Function(name, tp, params, ret_vt, body) ->
-            .Function(name, tp, stamp_ids_params(params, reg), stamp_ids_vtype(ret_vt, reg), stamp_ids_stmts(body, reg))
+            .Function(name, tp, stamp_ids_params(params, reg), stamp_ids_vtype(ret_vt, reg), stamp_ids_stmt_ids(store, body, reg))
         .ExternFn(name, params, ret_vt) ->
             .ExternFn(name, stamp_ids_params(params, reg), stamp_ids_vtype(ret_vt, reg))
         .If(cond, then_b, else_b) -> {
-            let a = stamp_ids_stmt(then_b, reg)
-            if else_b != null { .If(cond, a, stamp_ids_stmt(else_b!, reg)) } else { .If(cond, a, null) }
+            let a = stamp_ids_stmt_id(store, then_b, reg)
+            if else_b != null { .If(cond, a, stamp_ids_stmt_id(store, else_b!, reg)) } else { .If(cond, a, null) }
         }
-        .While(cond, body) -> .While(cond, stamp_ids_stmt(body, reg))
-        .For(v, s, e, body) -> .For(v, s, e, stamp_ids_stmt(body, reg))
-        .ForIn(v, coll, body) -> .ForIn(v, coll, stamp_ids_stmt(body, reg))
-        .Block(body) -> .Block(stamp_ids_stmts(body, reg))
-        .Module(name, body) -> .Module(name, stamp_ids_stmts(body, reg))
-        .Impl(name, methods) -> .Impl(name, stamp_ids_stmts(methods, reg))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: stamp_ids_stmt(inner.node, reg) })
+        .While(cond, body) -> .While(cond, stamp_ids_stmt_id(store, body, reg))
+        .For(v, s, e, body) -> .For(v, s, e, stamp_ids_stmt_id(store, body, reg))
+        .ForIn(v, coll, body) -> .ForIn(v, coll, stamp_ids_stmt_id(store, body, reg))
+        .Block(body) -> .Block(stamp_ids_stmt_ids(store, body, reg))
+        .Module(name, body) -> .Module(name, stamp_ids_stmt_ids(store, body, reg))
+        .Impl(name, methods) -> .Impl(name, stamp_ids_stmt_ids(store, methods, reg))
+        .Annotated(annots, inner) -> .Annotated(annots, stamp_ids_stmt_id(store, inner, reg))
         _ -> stmt
     }
 }
@@ -2252,31 +2278,33 @@ export enum Expr {
 /// it can stand alone in a block without yielding.
 @expand(derive_walker)
 export enum Stmt {
-    /// Immutable binding: `let name: T = init`.
-    Let(name: string, ty_vt: ValueType, initializer: Expr)
+    /// Immutable binding: `let name: T = init`. Children BY ID
+    /// (B-final F3a): every Expr/Stmt payload on this enum is an
+    /// arena row, resolved via `store.exprs.get` / `store.stmts.get`.
+    Let(name: string, ty_vt: ValueType, initializer: ExprId)
     /// Mutable binding: `mut name: T = init`. Reassign with
     /// `Expr.Assign` later.
-    Mut(name: string, ty_vt: ValueType, initializer: Expr)
+    Mut(name: string, ty_vt: ValueType, initializer: ExprId)
     /// Compile-time constant: `const NAME: T = init`.
-    Const(name: string, ty_vt: ValueType, initializer: Expr)
+    Const(name: string, ty_vt: ValueType, initializer: ExprId)
     /// Expression as a statement — runs for side effects, value
     /// discarded except as the final expression of a block.
-    Expr(expr: Expr)
+    Expr(expr: ExprId)
     /// Brace block: `{ stmt1; stmt2; }`.
-    Block(body: List<SStmt>)
+    Block(body: List<StmtId>)
     /// `if cond { then } else { else_branch }` (else may be null).
-    If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
+    If(condition: ExprId, then_branch: StmtId, else_branch: StmtId?)
     /// `while cond { body }`.
-    While(condition: Expr, body: Stmt)
+    While(condition: ExprId, body: StmtId)
     /// `for variable in start..end { body }` — integer range loop.
-    For(variable: string, start: Expr, end: Expr, body: Stmt)
+    For(variable: string, start: ExprId, end: ExprId, body: StmtId)
     /// `for variable in collection { body }` — list / iterator loop.
-    ForIn(variable: string, collection: Expr, body: Stmt)
+    ForIn(variable: string, collection: ExprId, body: StmtId)
     /// Function declaration. `type_params` empty for non-generic
     /// fns; resolver fills `ret_vtype` from the source annotation.
-    Function(name: string, type_params: List<TypeParamEntry>, params: List<ParamEntry>, ret_vtype: ValueType, body: List<SStmt>)
+    Function(name: string, type_params: List<TypeParamEntry>, params: List<ParamEntry>, ret_vtype: ValueType, body: List<StmtId>)
     /// `return value` — early return with an expression.
-    Return(value: Expr)
+    Return(value: ExprId)
     /// Bare `return` — ends a void fn.
     ReturnEmpty
     /// Struct type declaration: `type Point = { x: int, y: int }`.
@@ -2291,10 +2319,10 @@ export enum Stmt {
     /// Enum declaration: `enum Color { Red, Green, Blue }`.
     EnumDecl(name: string, type_params: List<TypeParamEntry>, variants: List<Variant>)
     /// Match as a statement: `match v { ... }` with no result.
-    Match(subject: Expr, arms: List<MatchArm>)
+    Match(subject: ExprId, arms: List<MatchArm>)
     /// `impl Type { fns }` or `impl Trait for Type { fns }`. The
     /// `:` form encodes the trait+type pair as `"Trait:Type"`.
-    Impl(type_name: string, methods: List<SStmt>)
+    Impl(type_name: string, methods: List<StmtId>)
     /// Placeholder — used after rewriting passes that drop a stmt.
     NoOp
     /// FFI declaration: `extern fn name(...)`. No body; ABI matches C.
@@ -2304,39 +2332,41 @@ export enum Stmt {
     /// `continue` — skip to the next iteration of the enclosing loop.
     Continue
     /// `trait Name { fn ... }` — interface declaration.
-    TraitDecl(name: string, methods: List<SStmt>)
+    TraitDecl(name: string, methods: List<StmtId>)
     /// Destructuring let: `let (a, b) = pair` / `let {x, y} = struct`.
-    LetDestructure(names: List<ParamEntry>, initializer: Expr)
+    LetDestructure(names: List<ParamEntry>, initializer: ExprId)
     /// `defer expr` — runs `expr` at scope exit, LIFO order.
-    Defer(body: Expr)
+    Defer(body: ExprId)
     /// `errdefer expr` — runs `expr` only on Err / panic exit.
-    Errdefer(body: Expr)
+    Errdefer(body: ExprId)
     /// Annotation wrapper: `@annot stmt` — annotations live here so
     /// the inner stmt's match arms stay focused on the actual decl.
-    Annotated(annotations: List<Annotation>, inner: SStmt)
+    /// The wrapped decl is an arena row; its (line, col) comes from
+    /// the store's span side-table, not an SStmt wrapper.
+    Annotated(annotations: List<Annotation>, inner: StmtId)
     /// Test outer block: `spec "name" { ... }`.
-    SpecBlock(name: string, body: List<SStmt>)
+    SpecBlock(name: string, body: List<StmtId>)
     /// Test setup block: `given "name" { let setup = ...; then "..." }`.
-    GivenBlock(name: string, body: List<SStmt>)
+    GivenBlock(name: string, body: List<StmtId>)
     /// Test assertion block: `then "name" { boolean_condition }`.
-    ThenBlock(name: string, condition: Expr)
+    ThenBlock(name: string, condition: ExprId)
     /// `select { x <- ch1 -> body, ... }` — multi-channel wait.
     Select(arms: List<SelectArm>)
     /// `parallel { stmts }` — run statements concurrently as Tasks.
-    Parallel(body: List<SStmt>)
+    Parallel(body: List<StmtId>)
     /// `mod name { body }` — namespaced sub-module. Pre-resolution
     /// `mod name` (no body) shows up here with empty body and is
     /// filled in by the module resolver.
-    Module(name: string, body: List<SStmt>)
+    Module(name: string, body: List<StmtId>)
     /// `use module.path.{name1, name2}` — import declaration.
     Use(module_path: string, names: List<ParamEntry>)
     /// Trait associated type: `type Item = T` inside a trait body.
     AssocType(name: string, ty_vt: ValueType)
     /// Component declaration: `component Name(params) { body }` —
     /// reusable templated block of statements.
-    ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: List<SStmt>)
+    ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: List<StmtId>)
     /// Component instantiation: `component Foo as bar { config; body }`.
-    ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: List<SStmt>)
+    ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: List<StmtId>)
 }
 
 /// When arm: one branch `cond -> body` or `else -> body` (cond is
@@ -2426,9 +2456,9 @@ export type ChildrenSlot = { slot_name: string, child_ty: ValueType }
 /// that dispatch on the inner Stmt variant need to reach Function
 /// regardless of how many `///` / `@export` / `@inline` / etc.
 /// layers happen to wrap it.
-export fn stmt_unwrap(s: Stmt) -> Stmt {
+export fn stmt_unwrap(store: NodeStore, s: Stmt) -> Stmt {
     match s {
-        .Annotated(_, inner) -> stmt_unwrap(inner.node)
+        .Annotated(_, inner) -> stmt_unwrap(store, store.stmts.get(inner))
         _ -> s
     }
 }
@@ -2443,25 +2473,32 @@ export fn stmt_unwrap(s: Stmt) -> Stmt {
 // definition.
 
 /// True when a statement list ends in a divergent statement.
-export fn stmts_diverges(stmts: List<SStmt>) -> bool {
+export fn stmts_diverges(store: NodeStore, stmts: List<SStmt>) -> bool {
     if stmts.length == 0 { return false }
-    stmt_diverges(stmt_unwrap(stmts[stmts.length - 1].node))
+    stmt_diverges(store, stmt_unwrap(store, stmts[stmts.length - 1].node))
+}
+
+/// Id-list twin of `stmts_diverges` for flipped `List<StmtId>` bodies
+/// (Stmt.Block and friends resolve their rows here).
+export fn stmt_ids_diverge(store: NodeStore, ids: List<StmtId>) -> bool {
+    if ids.length == 0 { return false }
+    stmt_diverges(store, stmt_unwrap(store, store.stmts.get(ids[ids.length - 1])))
 }
 
 /// Per-statement divergence test. An open-ended `if` (no `else`)
 /// always falls through; an `if`/`else` diverges only when both
 /// branches do.
-export fn stmt_diverges(stmt: Stmt) -> bool {
+export fn stmt_diverges(store: NodeStore, stmt: Stmt) -> bool {
     match stmt {
         .Return(_) -> true
         .ReturnEmpty -> true
         .Break -> true
         .Continue -> true
-        .Block(body) -> stmts_diverges(body)
-        .Expr(e) -> expr_diverges(e)
+        .Block(body) -> stmt_ids_diverge(store, body)
+        .Expr(e) -> expr_diverges(store, store.exprs.get(e))
         .If(_, then_b, else_b) -> {
             if else_b == null { return false }
-            stmt_diverges(then_b) && stmt_diverges(else_b!)
+            stmt_diverges(store, store.stmts.get(then_b)) && stmt_diverges(store, store.stmts.get(else_b!))
         }
         _ -> false
     }
@@ -2471,9 +2508,9 @@ export fn stmt_diverges(stmt: Stmt) -> bool {
 /// ending in a divergent statement, or the never-returning `panic`
 /// builtin (the canonical divergent expression — the other divergence
 /// forms `return` / `break` / `continue` are statements).
-export fn expr_diverges(body: Expr) -> bool {
+export fn expr_diverges(store: NodeStore, body: Expr) -> bool {
     match body {
-        .Block(stmts) -> stmts_diverges(stmts)
+        .Block(stmts) -> stmts_diverges(store, stmts)
         .Call(callee, _) -> expr_is_panic_callee(callee)
         _ -> false
     }
@@ -2499,21 +2536,21 @@ fn expr_is_panic_callee(callee: Expr) -> bool {
 /// the stmt's annotations (the @deferred_init-eating bug class fixed
 /// — expand_stmt_list and derive_marshal both did this before
 /// this helper existed).
-export fn rewrap_annotations(orig: Stmt, new_inner: Stmt) -> Stmt {
+export fn rewrap_annotations(store: NodeStore, orig: Stmt, new_inner: Stmt) -> Stmt {
     match orig {
-        .Annotated(annots, inner) -> Stmt.Annotated(annots, inner with { node: rewrap_annotations(inner.node, new_inner) })
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, store.stmts.add_leaf(rewrap_annotations(store, store.stmts.get(inner), new_inner)))
         _ -> new_inner
     }
 }
 
-export fn find_annotation(s: Stmt, name: string) -> Annotation? {
+export fn find_annotation(store: NodeStore, s: Stmt, name: string) -> Annotation? {
     match s {
         .Annotated(annots, inner) -> {
             let here = annotation_list_find(annots, name)
             if here != null {
                 return here
             }
-            find_annotation(inner.node, name)
+            find_annotation(store, store.stmts.get(inner), name)
         }
         _ -> null
     }
@@ -2523,8 +2560,8 @@ export fn find_annotation(s: Stmt, name: string) -> Annotation? {
 /// `"..."` literal quotes stripped. Returns "" if the stmt has no
 /// @doc annotation. Tooling (std-lsp indexer, IDE hover, the docs
 /// CLI) should prefer this over reading the annotation list directly.
-export fn doc_string_for(s: Stmt) -> string {
-    let found = find_annotation(s, "doc")
+export fn doc_string_for(store: NodeStore, s: Stmt) -> string {
+    let found = find_annotation(store, s, "doc")
     if found == null { return "" }
     annotation_first_string(found!)
 }
@@ -2831,28 +2868,28 @@ export fn render_param_list(params: List<ParamEntry>) -> string {
 /// inspection-only, not source round-trip.
 export fn render_stmt(store: NodeStore, stmt: Stmt) -> string {
     match stmt {
-        .Let(name, vt, initializer) -> "(let ${name}:${vtype_render_decl(vt)} ${render_expr(store, initializer)})"
-        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_render_decl(vt)} ${render_expr(store, initializer)})"
-        .Const(name, vt, initializer) -> "(const ${name}:${vtype_render_decl(vt)} ${render_expr(store, initializer)})"
-        .Expr(expr) -> "(expr ${render_expr(store, expr)})"
-        .Block(body) -> "(block ${render_stmt_list(store, body)})"
+        .Let(name, vt, initializer) -> "(let ${name}:${vtype_render_decl(vt)} ${render_expr_id(store, initializer)})"
+        .Mut(name, vt, initializer) -> "(mut ${name}:${vtype_render_decl(vt)} ${render_expr_id(store, initializer)})"
+        .Const(name, vt, initializer) -> "(const ${name}:${vtype_render_decl(vt)} ${render_expr_id(store, initializer)})"
+        .Expr(expr) -> "(expr ${render_expr_id(store, expr)})"
+        .Block(body) -> "(block ${render_stmt_ids(store, body)})"
         .If(condition, then_branch, else_branch) -> {
-            let base = "(if ${render_expr(store, condition)} ${render_stmt(store, then_branch)}"
+            let base = "(if ${render_expr_id(store, condition)} ${render_stmt_id(store, then_branch)}"
             if else_branch == null {
                 "${base})"
             } else {
-                "${base} ${render_stmt(store, else_branch!)})"
+                "${base} ${render_stmt_id(store, else_branch!)})"
             }
         }
-        .While(condition, body) -> "(while ${render_expr(store, condition)} ${render_stmt(store, body)})"
-        .For(variable, start, end, body) -> "(for ${variable} ${render_expr(store, start)}..${render_expr(store, end)} ${render_stmt(store, body)})"
-        .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(store, collection)} ${render_stmt(store, body)})"
+        .While(condition, body) -> "(while ${render_expr_id(store, condition)} ${render_stmt_id(store, body)})"
+        .For(variable, start, end, body) -> "(for ${variable} ${render_expr_id(store, start)}..${render_expr_id(store, end)} ${render_stmt_id(store, body)})"
+        .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr_id(store, collection)} ${render_stmt_id(store, body)})"
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_render_decl(rvt)} ${render_stmt_list(store, body)})"
+            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_render_decl(rvt)} ${render_stmt_ids(store, body)})"
         }
-        .Return(value) -> "(return ${render_expr(store, value)})"
+        .Return(value) -> "(return ${render_expr_id(store, value)})"
         .ReturnEmpty -> "(return)"
         .TypeDecl(name, tp, fields) -> {
             let tp_str = render_type_param_list(tp)
@@ -2867,28 +2904,44 @@ export fn render_stmt(store: NodeStore, stmt: Stmt) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(enum ${name}${tp_part} ${render_variant_list(variants)})"
         }
-        .Match(subject, arms) -> "(match ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
-        .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(store, methods)})"
+        .Match(subject, arms) -> "(match ${render_expr_id(store, subject)} ${render_match_arm_list(store, arms)})"
+        .Impl(name, methods) -> "(impl ${name} ${render_stmt_ids(store, methods)})"
         .NoOp -> "(noop)"
         .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_render_decl(rvt)})"
         .Break -> "(break)"
         .Continue -> "(continue)"
-        .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(store, methods)})"
-        .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr(store, initializer)})"
-        .Defer(body) -> "(defer ${render_expr(store, body)})"
-        .Errdefer(body) -> "(errdefer ${render_expr(store, body)})"
-        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(store, annotations)} ${render_stmt(store, inner.node)})"
-        .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_list(store, body)})"
-        .GivenBlock(name, body) -> "(given ${name} ${render_stmt_list(store, body)})"
-        .ThenBlock(name, cond) -> "(then ${name} ${render_expr(store, cond)})"
+        .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_ids(store, methods)})"
+        .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr_id(store, initializer)})"
+        .Defer(body) -> "(defer ${render_expr_id(store, body)})"
+        .Errdefer(body) -> "(errdefer ${render_expr_id(store, body)})"
+        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(store, annotations)} ${render_stmt_id(store, inner)})"
+        .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_ids(store, body)})"
+        .GivenBlock(name, body) -> "(given ${name} ${render_stmt_ids(store, body)})"
+        .ThenBlock(name, cond) -> "(then ${name} ${render_expr_id(store, cond)})"
         .Select(_) -> "(select ...)"
-        .Parallel(body) -> "(parallel ${render_stmt_list(store, body)})"
-        .Module(name, body) -> "(module ${name} ${render_stmt_list(store, body)})"
+        .Parallel(body) -> "(parallel ${render_stmt_ids(store, body)})"
+        .Module(name, body) -> "(module ${name} ${render_stmt_ids(store, body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
-        .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(store, body)})"
-        .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_list(store, body)})"
+        .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_ids(store, body)})"
+        .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_ids(store, body)})"
     }
+}
+
+/// Render an expr arena row — the id-resolving shorthand `render_stmt`'s
+/// flipped payloads go through.
+export fn render_expr_id(store: NodeStore, id: ExprId) -> string {
+    render_expr(store, store.exprs.get(id))
+}
+
+/// Render a stmt arena row (see `render_expr_id`).
+export fn render_stmt_id(store: NodeStore, id: StmtId) -> string {
+    render_stmt(store, store.stmts.get(id))
+}
+
+/// Render a flipped `List<StmtId>` body — the id twin of `render_stmt_list`.
+export fn render_stmt_ids(store: NodeStore, ids: List<StmtId>) -> string {
+    list_map(ids, (id: StmtId) -> render_stmt(store, store.stmts.get(id))).join("\n")
 }
 
 /// Render a `List<Annotation>` in the source `@name @name2` form.

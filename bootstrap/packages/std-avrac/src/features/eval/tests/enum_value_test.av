@@ -123,10 +123,10 @@ fn is_return_empty_stmt(s: Result<Stmt, string>) -> bool {
     }
 }
 
-fn return_number_text(s: Result<Stmt, string>) -> string {
+fn return_number_text(ws: NodeStore, s: Result<Stmt, string>) -> string {
     match s {
         .Ok(stmt) -> match stmt {
-            .Return(e) -> match e {
+            .Return(e) -> match ws.exprs.get(e) {
                 .Number(n) -> n
                 _ -> ""
             }
@@ -136,10 +136,10 @@ fn return_number_text(s: Result<Stmt, string>) -> string {
     }
 }
 
-fn let_shape_text(s: Result<Stmt, string>) -> string {
+fn let_shape_text(ws: NodeStore, s: Result<Stmt, string>) -> string {
     match s {
         .Ok(stmt) -> match stmt {
-            .Let(name, _, init) -> match init {
+            .Let(name, _, init) -> match ws.exprs.get(init) {
                 .Number(n) -> "${name}=${n}"
                 _ -> ""
             }
@@ -163,18 +163,22 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
         is_return_empty_stmt(value_to_stmt(ts(), r.value))
     }
     then "Return(Number)" {
+        // ONE store end to end: the decode allocates the flipped
+        // payload row into it, and the shape helper resolves there.
+        let ws = ts()
         let inner = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"42\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Return", one_arg_se(inner))
-        let r: StepResult = eval_expr(runtime_new(ts()), e)
-        return_number_text(value_to_stmt(ts(), r.value)) == "42"
+        let r: StepResult = eval_expr(runtime_new(ws), e)
+        return_number_text(ws, value_to_stmt(ws, r.value)) == "42"
     }
     then "Let(name, _, init)" {
+        let ws = ts()
         let unknown_vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty_args())
         let init_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"7\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
             three_args_se(Expr.String("\"x\""), unknown_vt, init_expr))
-        let r: StepResult = eval_expr(runtime_new(ts()), e)
-        let_shape_text(value_to_stmt(ts(), r.value)) == "x=7"
+        let r: StepResult = eval_expr(runtime_new(ws), e)
+        let_shape_text(ws, value_to_stmt(ws, r.value)) == "x=7"
     }
     then "value_to_stmt on a non-enum returns null" {
         // value_number is private; use the eval result of a Number
@@ -221,8 +225,9 @@ spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
         let init = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_se(Expr.String("\"1\"")))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
             three_args_se(Expr.String("\"x\""), vt, init))
-        let r: StepResult = eval_expr(runtime_new(ts()), e)
-        let_vtype_enum_id(value_to_stmt(ts(), r.value)) == 42
+        let ws = ts()
+        let r: StepResult = eval_expr(runtime_new(ws), e)
+        let_vtype_enum_id(value_to_stmt(ws, r.value)) == 42
     }
 }
 

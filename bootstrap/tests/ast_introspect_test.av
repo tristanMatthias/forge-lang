@@ -3,21 +3,21 @@
 // AST by hand, then checks that the helpers find what's there and
 // don't find what's not.
 
-use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, Expr, CompConfigPair, ParamEntry, ValueType, TypeParamEntry}
+use @std.avrac.core.{Stmt, SStmt, StmtId, sstmt_dummy, Expr, CompConfigPair, ParamEntry, ValueType, TypeParamEntry}
 use @std.avrac.core.{has_fn, find_fn_body, children_of_type, all_children, config_lookup, config_has}
 
 // Build a fn-decl statement for testing.
 fn mk_fn(name: string) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     Stmt.Function(name, empty_tp, empty_p, ValueType.Void, empty_body)
 }
 
 // Build a ComponentBlock for testing.
 fn mk_block(comp: string, inst: string) -> Stmt {
     let empty: List<CompConfigPair> = []
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     Stmt.ComponentBlock(comp, inst, empty, empty_body)
 }
 

@@ -73,8 +73,8 @@ export fn extract_project_corpus(dir: string) -> DocsCorpus {
             continue
         }
         let rel = relativise(path, dir)
-        let file_syms = extract_from_ast_at(parsed.stmts!, rel)
-        let file_calls = extract_calls_from_ast_at(parsed.stmts!, rel)
+        let file_syms = extract_from_ast_at(parsed.store, parsed.stmts!, rel)
+        let file_calls = extract_calls_from_ast_at(parsed.store, parsed.stmts!, rel)
         for s in file_syms { syms.push(s) }
         for c in file_calls { calls.push(c) }
     }

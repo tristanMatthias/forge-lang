@@ -13,6 +13,7 @@ spec "AnnotatedDecl.annotation.args: round-trips Ident + String + Number" {
     then "macro reads three different Expr kinds back from the encoded args" {
         let out = write_fixture_and_run("/tmp/avra_annotation_args_roundtrip_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx}\n" +
             "\n" +
             "@comptime\n" +
@@ -32,7 +33,7 @@ spec "AnnotatedDecl.annotation.args: round-trips Ident + String + Number" {
             "        i = i + 1\n" +
             "    }\n" +
             "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + kinds + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +

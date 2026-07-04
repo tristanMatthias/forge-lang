@@ -13,8 +13,8 @@ use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_b
 fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .While(condition, body) -> {
-            let after_cond = resolve_expr(r, condition)
-            resolve_stmt(after_cond, body)
+            let after_cond = resolve_expr(r, r.nodes.exprs.get(condition))
+            resolve_stmt(after_cond, r.nodes.stmts.get(body))
         }
         _ -> r
     }
@@ -25,7 +25,9 @@ fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 /// `F1000 TypeMismatch`. The body is checked unconditionally.
 fn while_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .While(cond, body) -> {
+        .While(cond_id, body_id) -> {
+            let cond = tc.nodes.exprs.get(cond_id)
+            let body = tc.nodes.stmts.get(body_id)
             let c = check_expr(tc, cond)
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `${vtype_render_full(c.ty)}`")
@@ -53,7 +55,7 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
 /// repl-style tooling that doesn't go through codegen.
 fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
-        .While(condition, body) -> execute_while(rt, condition, body)
+        .While(condition, body) -> execute_while(rt, rt.nodes.exprs.get(condition), rt.nodes.stmts.get(body))
         _ -> error_result(rt, "expected While")
     }
 }
@@ -62,7 +64,7 @@ fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// type-checker, codegen, and eval hooks via the feature registry.
 export fn while_feature() -> Feature {
     feature_new("while") with {
-        stmt_tag: Stmt.While(Expr.None, Stmt.NoOp),
+        stmt_tag: Stmt.While(ExprId(0), StmtId(0)),
         stmt_keyword: "kw_while",
         parse_stmt: (p: Parser) -> p.parse_while_statement(),
         emit_stmt: emit_while,

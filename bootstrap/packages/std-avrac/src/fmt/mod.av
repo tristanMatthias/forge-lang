@@ -7,7 +7,7 @@
 // Public entry point is `fmt_stmt_list(store, stmts, 0)`.
 
 use core.{
-    Expr, SExpr, Stmt, ParamEntry,
+    Expr, SExpr, Stmt, StmtId, NodeStore, ParamEntry,
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
@@ -94,36 +94,36 @@ export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
             // through the metadata fast-path's body serializer. fmt_*
             // must produce parseable source, not pretty error messages.
             let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
-            "${ind}let ${name}${ty_part} = ${fmt_expr(store, init)}"
+            "${ind}let ${name}${ty_part} = ${fmt_expr(store, store.exprs.get(init))}"
         }
         .Mut(name, vt, init) -> {
             let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
-            "${ind}mut ${name}${ty_part} = ${fmt_expr(store, init)}"
+            "${ind}mut ${name}${ty_part} = ${fmt_expr(store, store.exprs.get(init))}"
         }
         .Const(name, vt, init) -> {
             let ty_part = if vtype_is_unknown(vt) { "" } else { ": ${vtype_render_full(vt)}" }
-            "${ind}const ${name}${ty_part} = ${fmt_expr(store, init)}"
+            "${ind}const ${name}${ty_part} = ${fmt_expr(store, store.exprs.get(init))}"
         }
-        .Expr(se) -> "${ind}${fmt_expr(store, se)}"
-        .Block(body) -> "${ind}{\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+        .Expr(se) -> "${ind}${fmt_expr(store, store.exprs.get(se))}"
+        .Block(body) -> "${ind}{\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
         .If(condition, then_branch, else_branch) -> {
-            let base = "${ind}if ${fmt_expr(store, condition)} {\n${fmt_stmt(store, then_branch, depth + 1)}\n${ind}}"
+            let base = "${ind}if ${fmt_expr(store, store.exprs.get(condition))} {\n${fmt_stmt(store, store.stmts.get(then_branch), depth + 1)}\n${ind}}"
             if else_branch == null {
                 base
             } else {
-                "${base} else {\n${fmt_stmt(store, else_branch!, depth + 1)}\n${ind}}"
+                "${base} else {\n${fmt_stmt(store, store.stmts.get(else_branch!), depth + 1)}\n${ind}}"
             }
         }
-        .While(condition, body) -> "${ind}while ${fmt_expr(store, condition)} {\n${fmt_stmt(store, body, depth + 1)}\n${ind}}"
-        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(store, start)}..${fmt_expr(store, end)} {\n${fmt_stmt(store, body, depth + 1)}\n${ind}}"
-        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(store, collection)} {\n${fmt_stmt(store, body, depth + 1)}\n${ind}}"
+        .While(condition, body) -> "${ind}while ${fmt_expr(store, store.exprs.get(condition))} {\n${fmt_stmt(store, store.stmts.get(body), depth + 1)}\n${ind}}"
+        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(store, store.exprs.get(start))}..${fmt_expr(store, store.exprs.get(end))} {\n${fmt_stmt(store, store.stmts.get(body), depth + 1)}\n${ind}}"
+        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(store, store.exprs.get(collection))} {\n${fmt_stmt(store, store.stmts.get(body), depth + 1)}\n${ind}}"
         .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_render_full(rvt)}" }
-            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
         }
-        .Return(value) -> "${ind}return ${fmt_expr(store, value)}"
+        .Return(value) -> "${ind}return ${fmt_expr(store, store.exprs.get(value))}"
         .ReturnEmpty -> "${ind}return"
         .TypeDecl(name, tp, fields) -> {
             let tp_str = render_type_param_list(tp)
@@ -138,7 +138,7 @@ export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
         }
-        .Match(subject, arms) -> "${ind}match ${fmt_expr(store, subject)} {\n${fmt_match_arms(store, arms, depth + 1)}\n${ind}}"
+        .Match(subject, arms) -> "${ind}match ${fmt_expr(store, store.exprs.get(subject))} {\n${fmt_match_arms(store, arms, depth + 1)}\n${ind}}"
         .Impl(name, methods) -> {
             let colon = name.index_of(":")
             let impl_header = if colon >= 0 {
@@ -148,27 +148,27 @@ export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
             } else {
                 "impl ${name}"
             }
-            "${ind}${impl_header} {\n${fmt_stmt_list(store, methods, depth + 1)}\n${ind}}"
+            "${ind}${impl_header} {\n${fmt_stmt_ids(store, methods, depth + 1)}\n${ind}}"
         }
         .NoOp -> ""
         .ExternFn(name, params, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_render_full(rvt)}"
         .Break -> "${ind}break"
         .Continue -> "${ind}continue"
-        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(store, methods, depth + 1)}\n${ind}}"
-        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(store, init)}"
-        .Defer(body) -> "${ind}defer ${fmt_expr(store, body)}"
-        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(store, body)}"
-        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(store, inner.node, depth)}"
-        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
-        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
-        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(store, cond)} }"
+        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_ids(store, methods, depth + 1)}\n${ind}}"
+        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(store, store.exprs.get(init))}"
+        .Defer(body) -> "${ind}defer ${fmt_expr(store, store.exprs.get(body))}"
+        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(store, store.exprs.get(body))}"
+        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(store, store.stmts.get(inner), depth)}"
+        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
+        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
+        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(store, store.exprs.get(cond))} }"
         .Select(_) -> "${ind}select { ... }"
-        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
-        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(store, body, depth)}"
+        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
+        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_ids(store, body, depth)}"
         .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
-        .ComponentDef(name, params, _, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
-        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_list(store, body, depth + 1)}\n${ind}}"
+        .ComponentDef(name, params, _, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
+        .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
     }
 }
 
@@ -176,6 +176,11 @@ export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
 /// statement gets one source line, joined with `\n`.
 export fn fmt_stmt_list(store: NodeStore, stmts: List<SStmt>, depth: int) -> string {
     list_map(stmts, (ss: SStmt) -> fmt_stmt(store, ss.node, depth)).join("\n")
+}
+
+/// Row-list twin of `fmt_stmt_list` for flipped `List<StmtId>` bodies.
+export fn fmt_stmt_ids(store: NodeStore, ids: List<StmtId>, depth: int) -> string {
+    list_map(ids, (id: StmtId) -> fmt_stmt(store, store.stmts.get(id), depth)).join("\n")
 }
 
 /// Render a `List<SExpr>` as comma-separated expressions — used

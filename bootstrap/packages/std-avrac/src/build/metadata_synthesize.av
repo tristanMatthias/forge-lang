@@ -34,6 +34,7 @@ use core.{
     Expr, SExpr,
     Annotation, ParamEntry, ValueType, FieldEntry, Variant, TypeParamEntry,
     sexpr_dummy,
+    NodeStore, StmtId,
 }
 use build.metadata.{
     UnitMetadata,
@@ -69,26 +70,26 @@ type StampOut = { out: List<SStmt>, next: int }
 /// stubs dedup naturally when a multi-file test batch pulls one
 /// package through several members' use-chains. Diagnostics also
 /// improve: a stub frame now cites the metadata slot instead of "".
-export fn stamp_stub_spans(stmts: List<SStmt>, meta_path: string) -> List<SStmt> {
-    stamp_list(stmts, meta_path, 1).out
+export fn stamp_stub_spans(store: NodeStore, stmts: List<SStmt>, meta_path: string) -> List<SStmt> {
+    stamp_list(store, stmts, meta_path, 1).out
 }
 
-fn stamp_list(stmts: List<SStmt>, file: string, start: int) -> StampOut {
+fn stamp_list(store: NodeStore, stmts: List<SStmt>, file: string, start: int) -> StampOut {
     mut out: List<SStmt> = []
     mut next = start
     for ss in stmts {
         let restamped_node = match ss.node {
             .Module(name, body) -> {
-                let sub = stamp_list(body, file, next + 1)
+                let sub = stamp_list(store, store.sstmts_of(body), file, next + 1)
                 next = sub.next - 1
-                Stmt.Module(name, sub.out)
+                Stmt.Module(name, store.rows_of(sub.out))
             }
             .Annotated(annots, inner) -> {
-                match inner.node {
+                match store.stmts.get(inner) {
                     .Module(name, body) -> {
-                        let sub = stamp_list(body, file, next + 1)
+                        let sub = stamp_list(store, store.sstmts_of(body), file, next + 1)
                         next = sub.next - 1
-                        Stmt.Annotated(annots, inner with { node: Stmt.Module(name, sub.out) })
+                        Stmt.Annotated(annots, store.restmt(Stmt.Module(name, store.rows_of(sub.out)), inner))
                     }
                     _ -> ss.node
                 }
@@ -104,21 +105,21 @@ fn stamp_list(stmts: List<SStmt>, file: string, start: int) -> StampOut {
 export fn synthesize_unit_body(m: UnitMetadata, store: NodeStore) -> List<SStmt> {
     let empty_d: List<SStmt> = []
     let empty = SubMod { name: "", direct: empty_d, children: [] }
-    let after_types = insert_types(empty, m.types, m.unit_name)
+    let after_types = insert_types(store, empty, m.types, m.unit_name)
     // P5 library-mode: thread generic_bodies through to insert_fns so
     // synth_fn_decl can re-parse the body source for exported generics
     // and emit a real Function (rather than the empty-body extern-
     // wrapped stub the non-generic path uses). Non-generic exports
     // still take the extern path; private fns never appear in xs.
     let after_fns = insert_fns(after_types, m.fns, m.unit_name, m.generic_bodies, store)
-    let after_consts = insert_consts(after_fns, m.consts, m.unit_name)
-    let after_impls = insert_impls(after_consts, m.impls, m.unit_name, m.types)
+    let after_consts = insert_consts(store, after_fns, m.consts, m.unit_name)
+    let after_impls = insert_impls(store, after_consts, m.impls, m.unit_name, m.types)
     // bd8n / P6 phase 2: inherent impls also surface as
     // `impl Type { ... }` blocks so consumer call sites
     // (`bytes_writer.unit(meta)`) can resolve to the producer's
     // mangled extern (`@std::avrac::build::BytesWriter__unit`).
-    let after_inherent = insert_inherent_impls(after_impls, m.inherent_impls, m.unit_name)
-    trie_to_stmtlist(after_inherent)
+    let after_inherent = insert_inherent_impls(store, after_impls, m.inherent_impls, m.unit_name)
+    trie_to_stmtlist(store, after_inherent)
 }
 
 // ── 9ixv: nested-module reconstruction trie ────────────────────────────
@@ -244,39 +245,39 @@ fn ensure_child(list: List<SubMod>, seg: string, path: List<string>, depth: int,
     local
 }
 
-fn trie_to_stmtlist(node: SubMod) -> List<SStmt> {
-    let kid_stmts = children_to_stmts(node.children)
+fn trie_to_stmtlist(store: NodeStore, node: SubMod) -> List<SStmt> {
+    let kid_stmts = children_to_stmts(store, node.children)
     append_stmts(node.direct, kid_stmts)
 }
 
 // Walk children in source order, emit a Module(name, body) wrap per
 // child. children_to_stmts_at threads `idx` so the recursion-free
 // shape preserves order without an extra reverse pass.
-fn children_to_stmts(list: List<SubMod>) -> List<SStmt> {
-    children_to_stmts_at(list, 0)
+fn children_to_stmts(store: NodeStore, list: List<SubMod>) -> List<SStmt> {
+    children_to_stmts_at(store, list, 0)
 }
 
-fn children_to_stmts_at(list: List<SubMod>, idx: int) -> List<SStmt> {
+fn children_to_stmts_at(store: NodeStore, list: List<SubMod>, idx: int) -> List<SStmt> {
     mut out: List<SStmt> = []
     mut i = idx
     while i < list.length {
         let item = list[i]
-        let inner = trie_to_stmtlist(item)
-        let mod_stmt = sstmt_dummy(Stmt.Module(item.name, inner))
+        let inner = trie_to_stmtlist(store, item)
+        let mod_stmt = sstmt_dummy(Stmt.Module(item.name, store.rows_of(inner)))
         out.push(mod_stmt)
         i = i + 1
     }
     out
 }
 
-fn insert_types(trie: SubMod, xs: List<TypeDeclEntry>, unit_name: string) -> SubMod {
+fn insert_types(store: NodeStore, trie: SubMod, xs: List<TypeDeclEntry>, unit_name: string) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
         let e = xs[i]
         let rp = relative_path(e.name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_type_decl(e)
+            let decl = synth_type_decl(store, e)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -316,14 +317,14 @@ fn lookup_generic_body(bodies: List<GenericBodyEntry>, qn: string) -> string {
 /// producer wrote it via `fmt_stmt_list(body, 0)`, which renders a
 /// brace-less list of statements. We wrap in a placeholder fn so
 /// the program parser has a complete top-level to chew on, then
-fn insert_consts(trie: SubMod, xs: List<ConstDeclEntry>, unit_name: string) -> SubMod {
+fn insert_consts(store: NodeStore, trie: SubMod, xs: List<ConstDeclEntry>, unit_name: string) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
         let e = xs[i]
         let rp = relative_path(e.name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_const_decl(e)
+            let decl = synth_const_decl(store, e)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -331,7 +332,7 @@ fn insert_consts(trie: SubMod, xs: List<ConstDeclEntry>, unit_name: string) -> S
     t
 }
 
-fn insert_impls(trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string, types: List<TypeDeclEntry>) -> SubMod {
+fn insert_impls(store: NodeStore, trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string, types: List<TypeDeclEntry>) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
@@ -340,7 +341,7 @@ fn insert_impls(trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string, types:
         // so use the type's qualified name to derive the path.
         let rp = relative_path(e.type_name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_impl_decl(e, types)
+            let decl = synth_impl_decl(store, e, types)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -358,8 +359,8 @@ export fn synthesize_unit_stmts(m: UnitMetadata, store: NodeStore) -> List<SStmt
     if m.unit_name == "" {
         body
     } else {
-        let module_node = Stmt.Module(m.unit_name, body)
-        let out: List<SStmt> = [sstmt_dummy(wrap_external_unit(module_node))]
+        let module_node = Stmt.Module(m.unit_name, store.rows_of(body))
+        let out: List<SStmt> = [sstmt_dummy(wrap_external_unit(store, module_node))]
         out
     }
 }
@@ -381,20 +382,20 @@ fn append_stmts(a: List<SStmt>, b: List<SStmt>) -> List<SStmt> {
 
 // ── TYPES ──
 
-fn synth_type_decl(e: TypeDeclEntry) -> SStmt {
-    let inner = type_decl_inner_stmt(e)
-    sstmt_dummy(wrap_export(inner, true))
+fn synth_type_decl(store: NodeStore, e: TypeDeclEntry) -> SStmt {
+    let inner = type_decl_inner_stmt(store, e)
+    sstmt_dummy(wrap_export(store, inner, true))
 }
 
 // Always export — types from another unit are public-surface-only;
 // non-exported types never make it into metadata.bin. This keeps
 // the synthesized Stmt round-trippable through the resolver's
 // `use foo::Bar` lookup, which gates on @export.
-fn wrap_export(s: Stmt, exported: bool) -> Stmt {
+fn wrap_export(store: NodeStore, s: Stmt, exported: bool) -> Stmt {
     if exported {
         let empty_args: List<SExpr> = []
         let annots: List<Annotation> = [Annotation { name: "export", args: empty_args }]
-        Stmt.Annotated(annots, sstmt_dummy(s))
+        Stmt.Annotated(annots, store.stmts.add_leaf(s))
     } else {
         s
     }
@@ -406,10 +407,10 @@ fn wrap_export(s: Stmt, exported: bool) -> Stmt {
 // step. Only applied to Function stmts; types / consts / impl-method
 // references don't need it (consts inline values; impl methods route
 // through the same Function gate).
-fn wrap_external_unit(s: Stmt) -> Stmt {
+fn wrap_external_unit(store: NodeStore, s: Stmt) -> Stmt {
     let empty_args: List<SExpr> = []
     let annots: List<Annotation> = [Annotation { name: "external_unit", args: empty_args }]
-    Stmt.Annotated(annots, sstmt_dummy(s))
+    Stmt.Annotated(annots, store.stmts.add_leaf(s))
 }
 
 // Recover the bare local name from a qualified name. The qualified
@@ -438,7 +439,7 @@ fn last_index_of_double_colon(s: string) -> int {
     last
 }
 
-fn type_decl_inner_stmt(e: TypeDeclEntry) -> Stmt {
+fn type_decl_inner_stmt(store: NodeStore, e: TypeDeclEntry) -> Stmt {
     let n = local_name(e.name)
     if e.kind is .StructDecl { return Stmt.TypeDecl(n, e.type_params, e.fields) }
     if e.kind is .ShapeDecl { return Stmt.ShapeDecl(n, e.fields) }
@@ -446,18 +447,18 @@ fn type_decl_inner_stmt(e: TypeDeclEntry) -> Stmt {
     if e.kind is .NewtypeDecl { return Stmt.NewtypeDecl(n, e.inner_vt) }
     if e.kind is .UnionAliasDecl { return Stmt.UnionAliasDecl(n, e.inner_vt) }
     if e.kind is .TraitDecl {
-        let methods = synth_trait_method_stmts(e.methods)
+        let methods = synth_trait_method_stmts(store, e.methods)
         return Stmt.TraitDecl(n, methods)
     }
     Stmt.NoOp
 }
 
-fn synth_trait_method_stmts(ms: List<MetaTraitMethod>) -> List<SStmt> {
-    mut acc: List<SStmt> = []
+fn synth_trait_method_stmts(store: NodeStore, ms: List<MetaTraitMethod>) -> List<StmtId> {
+    mut acc: List<StmtId> = []
     mut i = 0
     while i < ms.length {
         let m = ms[i]
-        acc.push(sstmt_dummy(Stmt.ExternFn(m.name, m.params, m.ret)))
+        acc.push(store.stmts.add_leaf(Stmt.ExternFn(m.name, m.params, m.ret)))
         i = i + 1
     }
     acc
@@ -470,7 +471,7 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>, store: NodeStor
     if e.is_extern {
         // ExternFn is C ABI; codegen treats it as a forward decl
         // already, so no extra @external_unit wrapping needed.
-        return sstmt_dummy(wrap_export(Stmt.ExternFn(n, e.params, e.ret), e.exported))
+        return sstmt_dummy(wrap_export(store, Stmt.ExternFn(n, e.params, e.ret), e.exported))
     }
     let body_source = lookup_generic_body(bodies, e.name)
     if e.is_comptime && body_source != "" {
@@ -485,9 +486,9 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>, store: NodeStor
         // consumer must not emit its own definition (duplicate
         // symbol at link time otherwise).
         avra_lazy_comptime_set(e.name, body_source)
-        let empty_body: List<SStmt> = []
+        let empty_body: List<StmtId> = []
         let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, empty_body)
-        return sstmt_dummy(wrap_export(wrap_comptime(wrap_external_unit(fn_decl)), e.exported))
+        return sstmt_dummy(wrap_export(store, wrap_comptime(store, wrap_external_unit(store, fn_decl)), e.exported))
     }
     // P5 library-mode: when this fn has a generic body in the
     // metadata, materialise it locally so the consumer's
@@ -499,33 +500,33 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>, store: NodeStor
     if body_source != "" {
         let parsed_body = parse_body_source(body_source, store)
         let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, parsed_body)
-        return sstmt_dummy(wrap_export(fn_decl, e.exported))
+        return sstmt_dummy(wrap_export(store, fn_decl, e.exported))
     }
     // Avra Function with @external_unit: declare-only at the
     // consumer; the producer's .o supplies the body at link time.
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, empty_body)
-    sstmt_dummy(wrap_export(wrap_external_unit(fn_decl), e.exported))
+    sstmt_dummy(wrap_export(store, wrap_external_unit(store, fn_decl), e.exported))
 }
 
 // 9p1d: re-attach `@comptime` so `collect_comptime_fns` picks the
 // synthesized fn up. Body is empty at synth; `invoke_macro` lazy-
 // rehydrates from `avra_lazy_comptime_get(qn)` on first lookup.
-fn wrap_comptime(s: Stmt) -> Stmt {
+fn wrap_comptime(store: NodeStore, s: Stmt) -> Stmt {
     let empty_args: List<SExpr> = []
     let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args }]
-    Stmt.Annotated(annots, sstmt_dummy(s))
+    Stmt.Annotated(annots, store.stmts.add_leaf(s))
 }
 
 extern fn avra_lazy_comptime_set(qn: string, source: string)
 
 // ── CONSTS ──
 
-fn synth_const_decl(e: ConstDeclEntry) -> SStmt {
+fn synth_const_decl(store: NodeStore, e: ConstDeclEntry) -> SStmt {
     let n = local_name(e.name)
-    let init = const_value_to_expr(e)
+    let init = store.exprs.add_leaf(const_value_to_expr(e))
     let inner = Stmt.Const(n, e.ty, init)
-    sstmt_dummy(wrap_export(inner, e.exported))
+    sstmt_dummy(wrap_export(store, inner, e.exported))
 }
 
 fn const_value_to_expr(e: ConstDeclEntry) -> Expr {
@@ -555,14 +556,14 @@ fn int_to_text(n: int) -> string {
 /// build the impl block directly from `e.methods`. Path is the
 /// type's relative-to-unit segments (same as trait impls), so a
 /// `use @pkg.sub.Type` resolves through the right mod chain.
-fn insert_inherent_impls(trie: SubMod, xs: List<InherentImplEntry>, unit_name: string) -> SubMod {
+fn insert_inherent_impls(store: NodeStore, trie: SubMod, xs: List<InherentImplEntry>, unit_name: string) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
         let e = xs[i]
         let rp = relative_path(e.type_name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_inherent_impl_decl(e)
+            let decl = synth_inherent_impl_decl(store, e)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -570,12 +571,12 @@ fn insert_inherent_impls(trie: SubMod, xs: List<InherentImplEntry>, unit_name: s
     t
 }
 
-fn synth_inherent_impl_decl(e: InherentImplEntry) -> SStmt {
+fn synth_inherent_impl_decl(store: NodeStore, e: InherentImplEntry) -> SStmt {
     let type_local = local_name(e.type_name)
     // synth_impl_method_stmts expects a `trait_methods` list for
     // sig lookup. For inherent impls we ARE the source of truth, so
     // pass `e.methods` directly as the lookup table.
-    let methods = synth_impl_method_stmts_from_sigs(e.methods, e.type_name)
+    let methods = synth_impl_method_stmts_from_sigs(store, e.methods, e.type_name)
     sstmt_dummy(Stmt.Impl(type_local, methods))
 }
 
@@ -584,22 +585,22 @@ fn synth_inherent_impl_decl(e: InherentImplEntry) -> SStmt {
 /// can emit the @external_unit Function stub directly without a
 /// trait lookup. Mirrors synth_impl_method_stmts's mangling +
 /// wrapping rules.
-fn synth_impl_method_stmts_from_sigs(ms: List<MetaTraitMethod>, qualified_type: string) -> List<SStmt> {
-    mut acc: List<SStmt> = []
+fn synth_impl_method_stmts_from_sigs(store: NodeStore, ms: List<MetaTraitMethod>, qualified_type: string) -> List<StmtId> {
+    mut acc: List<StmtId> = []
     mut i = 0
     while i < ms.length {
         let m = ms[i]
         let mangled = "${qualified_type}__${m.name}"
         let empty_tp: List<TypeParamEntry> = []
-        let empty_body: List<SStmt> = []
+        let empty_body: List<StmtId> = []
         let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, empty_body)
-        acc.push(sstmt_dummy(wrap_external_unit(fn_decl)))
+        acc.push(store.stmts.add_leaf(wrap_external_unit(store, fn_decl)))
         i = i + 1
     }
     acc
 }
 
-fn synth_impl_decl(e: ImplDeclEntry, types: List<TypeDeclEntry>) -> SStmt {
+fn synth_impl_decl(store: NodeStore, e: ImplDeclEntry, types: List<TypeDeclEntry>) -> SStmt {
     let trait_local = local_name(e.trait_name)
     let type_local = local_name(e.type_name)
     let impl_name = "${trait_local}:${type_local}"
@@ -611,7 +612,7 @@ fn synth_impl_decl(e: ImplDeclEntry, types: List<TypeDeclEntry>) -> SStmt {
     // when the trait isn't in this unit's metadata (cross-package
     // impls — those won't pass typeck anyway).
     let trait_methods = lookup_trait_methods(types, e.trait_name)
-    let methods = synth_impl_method_stmts(e.methods, trait_methods, e.type_name)
+    let methods = synth_impl_method_stmts(store, e.methods, trait_methods, e.type_name)
     sstmt_dummy(Stmt.Impl(impl_name, methods))
 }
 
@@ -626,17 +627,17 @@ fn synth_impl_decl(e: ImplDeclEntry, types: List<TypeDeclEntry>) -> SStmt {
 // into the `is_mangled_method` branch and skipping qualification —
 // the synth impl methods carry an `@external_unit` Annotated wrapper
 // which short-circuits rewrite_impl_methods's Function arm.
-fn synth_impl_method_stmts(ms: List<ImplMethodRef>, trait_methods: List<MetaTraitMethod>, qualified_type: string) -> List<SStmt> {
-    mut acc: List<SStmt> = []
+fn synth_impl_method_stmts(store: NodeStore, ms: List<ImplMethodRef>, trait_methods: List<MetaTraitMethod>, qualified_type: string) -> List<StmtId> {
+    mut acc: List<StmtId> = []
     mut i = 0
     while i < ms.length {
         let m = ms[i]
         let sig = lookup_trait_method_sig(trait_methods, m.method_name)
         let mangled = "${qualified_type}__${m.method_name}"
         let empty_tp: List<TypeParamEntry> = []
-        let empty_body: List<SStmt> = []
+        let empty_body: List<StmtId> = []
         let fn_decl = Stmt.Function(mangled, empty_tp, sig.params, sig.ret, empty_body)
-        acc.push(sstmt_dummy(wrap_external_unit(fn_decl)))
+        acc.push(store.stmts.add_leaf(wrap_external_unit(store, fn_decl)))
         i = i + 1
     }
     acc

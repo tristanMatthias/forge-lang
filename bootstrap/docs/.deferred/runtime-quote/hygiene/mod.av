@@ -34,6 +34,7 @@ use core.{
     ParamEntry, Pattern,
     BinOp, UnOp, LogicOp,
     ValueType,
+    NodeStore, ExprId, StmtId,
 }
 use list_ops.{list_push_copy}
 
@@ -50,13 +51,18 @@ type HygieneBinding = { orig: string, renamed: string }
 /// suffix is globally unique within the rewrite. `scope` is a
 /// snapshot — push on binding-intro by returning a fresh copy with
 /// the new binding appended, drop by returning the caller's ctx
-/// after the scope ends.
-type HygieneCtx = { scope: List<HygieneBinding>, counter: int }
+/// after the scope ends. `store` resolves and re-allocates the id
+/// payloads on flipped Stmt variants (F3a) — rewritten children get
+/// fresh rows inheriting the originals' positions.
+type HygieneCtx = { scope: List<HygieneBinding>, counter: int, store: NodeStore }
 
 // Result wrappers — Avra has no first-class tuples in fn returns,
 // so these structs carry the (rewritten-form, updated-ctx) pair.
 type RenameExprResult = { expr: Expr, ctx: HygieneCtx }
 type RenameStmtResult = { stmt: Stmt, ctx: HygieneCtx }
+type RenameExprIdResult = { id: ExprId, ctx: HygieneCtx }
+type RenameStmtIdResult = { id: StmtId, ctx: HygieneCtx }
+type RenameStmtIdsResult = { ids: List<StmtId>, ctx: HygieneCtx }
 type RenameStmtListResult = { list: List<SStmt>, ctx: HygieneCtx }
 type RenameExprListResult = { list: List<SExpr>, ctx: HygieneCtx }
 type RenameFieldInitsResult = { list: List<FieldInit>, ctx: HygieneCtx }
@@ -66,28 +72,29 @@ type FreshResult = { name: string, ctx: HygieneCtx }
 // ── Public entry points ──
 
 /// Rename every locally-introduced identifier inside `e` to a unique
-/// suffix; free identifiers pass through verbatim.
-export fn hygiene_rename_expr(e: Expr) -> Expr {
-    let r = rename_expr(empty_ctx(), e)
+/// suffix; free identifiers pass through verbatim. `store` is the
+/// arena the tree's id payloads resolve in.
+export fn hygiene_rename_expr(store: NodeStore, e: Expr) -> Expr {
+    let r = rename_expr(empty_ctx(store), e)
     r.expr
 }
 
 /// Like hygiene_rename_expr, for a Stmt.
-export fn hygiene_rename_stmt(s: Stmt) -> Stmt {
-    let r = rename_stmt(empty_ctx(), s)
+export fn hygiene_rename_stmt(store: NodeStore, s: Stmt) -> Stmt {
+    let r = rename_stmt(empty_ctx(store), s)
     r.stmt
 }
 
 /// Like hygiene_rename_expr, for a List<SStmt> — typical entry for
 /// macro-built blocks.
-export fn hygiene_rename_stmts(stmts: List<SStmt>) -> List<SStmt> {
-    let r = rename_stmt_list(empty_ctx(), stmts)
+export fn hygiene_rename_stmts(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
+    let r = rename_stmt_list(empty_ctx(store), stmts)
     r.list
 }
 
-fn empty_ctx() -> HygieneCtx {
+fn empty_ctx(store: NodeStore) -> HygieneCtx {
     let empty: List<HygieneBinding> = []
-    HygieneCtx { scope: empty, counter: 0 }
+    HygieneCtx { scope: empty, counter: 0, store }
 }
 
 // ── Fresh-name + scope helpers ──
@@ -102,7 +109,7 @@ fn fresh_name(ctx: HygieneCtx, orig: string) -> FreshResult {
     // used after this scope returns (sibling rewrites, restore_scope
     // unwind). In-place .push would corrupt that snapshot.
     let new_scope = list_push_copy(ctx.scope, HygieneBinding { orig, renamed })
-    FreshResult { name: renamed, ctx: HygieneCtx { scope: new_scope, counter: id + 1 } }
+    FreshResult { name: renamed, ctx: ctx with { scope: new_scope, counter: id + 1 } }
 }
 
 /// Look up `name` in the scope chain. Walks tail-to-head so the
@@ -126,7 +133,7 @@ fn lookup_scope(scope: List<HygieneBinding>, name: string) -> string? {
 /// reuse the same counter and produce identical suffixes for
 /// distinct bindings — defeating uniqueness.
 fn restore_scope(parent_scope: List<HygieneBinding>, child_ctx: HygieneCtx) -> HygieneCtx {
-    HygieneCtx { scope: parent_scope, counter: child_ctx.counter }
+    child_ctx with { scope: parent_scope }
 }
 
 // ── Statement walker ──
@@ -142,79 +149,105 @@ fn rename_stmt_list(ctx: HygieneCtx, list: List<SStmt>) -> RenameStmtListResult 
     RenameStmtListResult { list: out, ctx: cur }
 }
 
+/// Rename an expression row: resolve, rewrite, re-allocate (fresh row
+/// inherits the original's span).
+fn rename_expr_id(ctx: HygieneCtx, id: ExprId) -> RenameExprIdResult {
+    let r = rename_expr(ctx, ctx.store.exprs.get(id))
+    RenameExprIdResult { id: ctx.store.reexpr(r.expr, id), ctx: r.ctx }
+}
+
+/// Rename a statement row (see `rename_expr_id`).
+fn rename_stmt_id(ctx: HygieneCtx, id: StmtId) -> RenameStmtIdResult {
+    let r = rename_stmt(ctx, ctx.store.stmts.get(id))
+    RenameStmtIdResult { id: ctx.store.restmt(r.stmt, id), ctx: r.ctx }
+}
+
+/// Rename a flipped `List<StmtId>` body, threading the ctx across
+/// elements exactly as `rename_stmt_list` does for wrapped lists.
+fn rename_stmt_ids(ctx: HygieneCtx, ids: List<StmtId>) -> RenameStmtIdsResult {
+    mut out: List<StmtId> = []
+    mut cur = ctx
+    for id in ids {
+        let r = rename_stmt_id(cur, id)
+        out.push(r.id)
+        cur = r.ctx
+    }
+    RenameStmtIdsResult { ids: out, ctx: cur }
+}
+
 fn rename_stmt(ctx: HygieneCtx, s: Stmt) -> RenameStmtResult {
     match s {
         // Bindings: rewrite the init in the CURRENT ctx (init can't see
         // the new binding), then introduce the rename for subsequent
         // stmts in the same scope.
         .Let(name, vt, init) -> {
-            let ri = rename_expr(ctx, init)
+            let ri = rename_expr_id(ctx, init)
             let f = fresh_name(ri.ctx, name)
-            RenameStmtResult { stmt: Stmt.Let(f.name, vt, ri.expr), ctx: f.ctx }
+            RenameStmtResult { stmt: Stmt.Let(f.name, vt, ri.id), ctx: f.ctx }
         }
         .Mut(name, vt, init) -> {
-            let ri = rename_expr(ctx, init)
+            let ri = rename_expr_id(ctx, init)
             let f = fresh_name(ri.ctx, name)
-            RenameStmtResult { stmt: Stmt.Mut(f.name, vt, ri.expr), ctx: f.ctx }
+            RenameStmtResult { stmt: Stmt.Mut(f.name, vt, ri.id), ctx: f.ctx }
         }
         .Const(name, vt, init) -> {
-            let ri = rename_expr(ctx, init)
+            let ri = rename_expr_id(ctx, init)
             let f = fresh_name(ri.ctx, name)
-            RenameStmtResult { stmt: Stmt.Const(f.name, vt, ri.expr), ctx: f.ctx }
+            RenameStmtResult { stmt: Stmt.Const(f.name, vt, ri.id), ctx: f.ctx }
         }
         .Expr(e) -> {
-            let r = rename_expr(ctx, e)
-            RenameStmtResult { stmt: Stmt.Expr(r.expr), ctx: r.ctx }
+            let r = rename_expr_id(ctx, e)
+            RenameStmtResult { stmt: Stmt.Expr(r.id), ctx: r.ctx }
         }
         .Return(e) -> {
-            let r = rename_expr(ctx, e)
-            RenameStmtResult { stmt: Stmt.Return(r.expr), ctx: r.ctx }
+            let r = rename_expr_id(ctx, e)
+            RenameStmtResult { stmt: Stmt.Return(r.id), ctx: r.ctx }
         }
         // Block: nested scope. Bindings inside don't escape to caller,
         // but the counter must propagate so subsequent siblings see
         // unique IDs.
         .Block(body) -> {
-            let r = rename_stmt_list(ctx, body)
-            RenameStmtResult { stmt: Stmt.Block(r.list), ctx: restore_scope(ctx.scope, r.ctx) }
+            let r = rename_stmt_ids(ctx, body)
+            RenameStmtResult { stmt: Stmt.Block(r.ids), ctx: restore_scope(ctx.scope, r.ctx) }
         }
         .If(cond, then_b, else_b) -> {
-            let rc = rename_expr(ctx, cond)
-            let rt = rename_stmt(rc.ctx, then_b)
+            let rc = rename_expr_id(ctx, cond)
+            let rt = rename_stmt_id(rc.ctx, then_b)
             let after_then = restore_scope(rc.ctx.scope, rt.ctx)
             if else_b != null {
-                let re = rename_stmt(after_then, else_b!)
+                let re = rename_stmt_id(after_then, else_b!)
                 let after_else = restore_scope(rc.ctx.scope, re.ctx)
-                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, re.stmt), ctx: after_else }
+                RenameStmtResult { stmt: Stmt.If(rc.id, rt.id, re.id), ctx: after_else }
             } else {
-                RenameStmtResult { stmt: Stmt.If(rc.expr, rt.stmt, null), ctx: after_then }
+                RenameStmtResult { stmt: Stmt.If(rc.id, rt.id, null), ctx: after_then }
             }
         }
         .While(cond, body) -> {
-            let rc = rename_expr(ctx, cond)
-            let rb = rename_stmt(rc.ctx, body)
-            RenameStmtResult { stmt: Stmt.While(rc.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
+            let rc = rename_expr_id(ctx, cond)
+            let rb = rename_stmt_id(rc.ctx, body)
+            RenameStmtResult { stmt: Stmt.While(rc.id, rb.id), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         // For introduces the loop variable for the body only.
         .For(v, start, end, body) -> {
-            let rs = rename_expr(ctx, start)
-            let re = rename_expr(rs.ctx, end)
+            let rs = rename_expr_id(ctx, start)
+            let re = rename_expr_id(rs.ctx, end)
             let f = fresh_name(re.ctx, v)
-            let rb = rename_stmt(f.ctx, body)
-            RenameStmtResult { stmt: Stmt.For(f.name, rs.expr, re.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
+            let rb = rename_stmt_id(f.ctx, body)
+            RenameStmtResult { stmt: Stmt.For(f.name, rs.id, re.id, rb.id), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         .ForIn(v, coll, body) -> {
-            let rc = rename_expr(ctx, coll)
+            let rc = rename_expr_id(ctx, coll)
             let f = fresh_name(rc.ctx, v)
-            let rb = rename_stmt(f.ctx, body)
-            RenameStmtResult { stmt: Stmt.ForIn(f.name, rc.expr, rb.stmt), ctx: restore_scope(ctx.scope, rb.ctx) }
+            let rb = rename_stmt_id(f.ctx, body)
+            RenameStmtResult { stmt: Stmt.ForIn(f.name, rc.id, rb.id), ctx: restore_scope(ctx.scope, rb.ctx) }
         }
         .Defer(body) -> {
-            let r = rename_expr(ctx, body)
-            RenameStmtResult { stmt: Stmt.Defer(r.expr), ctx: r.ctx }
+            let r = rename_expr_id(ctx, body)
+            RenameStmtResult { stmt: Stmt.Defer(r.id), ctx: r.ctx }
         }
         .Errdefer(body) -> {
-            let r = rename_expr(ctx, body)
-            RenameStmtResult { stmt: Stmt.Errdefer(r.expr), ctx: r.ctx }
+            let r = rename_expr_id(ctx, body)
+            RenameStmtResult { stmt: Stmt.Errdefer(r.id), ctx: r.ctx }
         }
         // Decl-level + complex Stmts not handled in v1 — pass through.
         // Match arm pattern bindings would need a separate walker.

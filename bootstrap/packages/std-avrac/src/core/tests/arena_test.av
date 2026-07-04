@@ -164,33 +164,39 @@ spec "ingest_program handles an empty program" {
     }
 }
 
-// A1 headline: ingest_program fans a program's nodes out across ALL FOUR
-// arenas by kind, not just the StmtArena. `let x: int = 5` is one Stmt.Let
-// whose cross-type children are a ValueType (`int`) and an Expr (`5`) — both
-// childless leaves — so ingest must place ONE node in each of the stmt, type,
-// and expr arenas (the pattern arena stays empty: no pattern here). Under the
-// OLD same-type ingest the type and expr arenas would both be empty; this spec
-// is what proves the ingest is genuinely cross-type at the program entry point.
-spec "ingest_program populates all four arenas cross-type" {
-    then "let x: int = 5 fills the stmt, type, and expr arenas (pattern stays empty)" {
-        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, "")]
+// A1 headline, F3a form: `let x: int = 5` is one Stmt.Let whose ty_vt is a
+// boxed ValueType (a cross-type TypeRef edge) and whose initializer is an
+// ExprId — an already-allocated arena row the walker treats as a SCALAR
+// (the id payload IS the child mechanism), so the ingest records no expr
+// edge and allocates no expr row. One stmt row, one type row, nothing else.
+spec "ingest_program populates the stmt + type arenas; id payloads stay leaves" {
+    then "let x: int = 5 fills the stmt and type arenas (expr id is a leaf)" {
+        let donor = ts()
+        let init = donor.exprs.add_leaf(Expr.Number("5"))
+        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, init), 1, 1, "")]
         let store = ingest_program(stmts, "let x: int = 5\n")
         store.stmts.count() == 1
             && store.types.count() == 1
-            && store.exprs.count() == 1
+            && store.exprs.count() == 0
             && store.pats.count() == 0
     }
 }
 
 // Beyond "the arenas are populated": the stored EDGES must be faithful. The
-// root Let's children, read back BY ID from the edge side-table (not recomputed
-// via all_children_spanned), must be the ValueType then the Expr in field order — so an
-// ingest that dropped, reordered, or mis-kinded a cross-type edge is caught.
+// root Let's only remaining boxed child is its ValueType (the initializer is
+// an id payload — a scalar to the walker), so exactly one TypeRef edge is
+// recorded, and the flipped payload itself must survive the ingest verbatim.
 spec "ingest_program stores faithful cross-type edges (kind + order)" {
-    then "the Let root's stored edges read back as [type, expr] (TE)" {
-        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, "")]
+    then "the Let root's stored edges read back as [type] (T); the id payload survives" {
+        let donor = ts()
+        let init = donor.exprs.add_leaf(Expr.Number("5"))
+        let stmts = [sstmt_at(Stmt.Let("x", ValueType.Int, init), 1, 1, "")]
         let store = ingest_program(stmts, "let x: int = 5\n")
-        edge_tags(store.stmts.children_of(store.roots[0])) == "TE"
+        let kept = match store.stmts.get(store.roots[0]) {
+            .Let(_, _, got) -> got == init
+            _ -> false
+        }
+        edge_tags(store.stmts.children_of(store.roots[0])) == "T" && kept
     }
 }
 
@@ -235,36 +241,39 @@ spec "program_from_store round-trips the top-level statements" {
     }
 }
 
-// Combinatorial: a single program that nests the kinds THROUGH each other —
-// Stmt(fn) -> Stmt(if) -> { Expr(binary cond) -> Expr,Expr ; Stmt(let) ->
-// Type(List<List<int>>, 3 deep) + Expr(empty list) }. Proves the cross-type
-// recursion descends across every kind boundary AND back, and lands each node
-// in its own arena. (Counts hand-derived below; mutation-checked elsewhere.)
-spec "ingest_program: combinatorial cross-kind nesting populates all arenas" {
-    then "fn { if (1<2) { let xs: List<List<int>> = [] } } yields stmt=3 expr=4 type=4 pat=0" {
+// Combinatorial, F3a form: the fn/if/let nesting now travels BY ID — the
+// Function body, the If's cond/then, and the Let's initializer are all arena
+// rows allocated up front in the SAME store the assertions read back from.
+// ingest_stmt on the fn decl records only its one remaining boxed child (the
+// ret ValueType); every flipped payload survives verbatim as a scalar, and
+// resolving the ids step-by-step recovers the full nesting.
+spec "ingest: combinatorial cross-kind nesting travels by id" {
+    then "fn { if (1<2) { let xs: List<List<int>> = [] } } resolves level-by-level" {
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
         let no_el: List<SExpr> = []
-        let cond = Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2"))
-        let inner_let = Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), Expr.ListLit(no_el))
-        let body: List<SStmt> = [sstmt_at(Stmt.If(cond, inner_let, null), 0, 0, "")]
-        let f_decl = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
-        let store = ingest_program([sstmt_at(f_decl, 0, 0, "")], "")
-        // Edge fidelity at EVERY level (not just counts, not just the root):
-        //   Function -> [ret-type, body stmt]              = "TS"
-        //   If       -> [cond expr, then stmt] (no else)   = "ES"
-        //   Let      -> [ty_vt type, initializer expr]     = "TE"
-        // so a cross-kind ordering regression at any depth is caught.
-        let fn_kids = store.stmts.children_of(store.roots[0])
-        let if_kids = store.stmts.children_of(stmt_ref_id(fn_kids[1]))
-        let let_kids = store.stmts.children_of(stmt_ref_id(if_kids[1]))
-        store.stmts.count() == 3
-            && store.exprs.count() == 4
-            && store.types.count() == 4
-            && store.pats.count() == 0
-            && edge_tags(fn_kids) == "TS"
-            && edge_tags(if_kids) == "ES"
-            && edge_tags(let_kids) == "TE"
+        let store = ts()
+        let cond = store.exprs.add_leaf(Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2")))
+        let init = store.exprs.add_leaf(Expr.ListLit(no_el))
+        let inner_let = store.stmts.add_leaf(Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), init))
+        let if_id = store.stmts.add_leaf(Stmt.If(cond, inner_let, null))
+        let body: List<StmtId> = [if_id]
+        let root = store.ingest_stmt(Stmt.Function("f", no_tp, no_pp, ValueType.Void, body), byte_span_none())
+        // The fn decl's only boxed child is its ret type; the body rides as ids.
+        let fn_kids = store.stmts.children_of(root)
+        let if_ok = match store.stmts.get(if_id) {
+            .If(c, t, e) -> c == cond && t == inner_let && e == null
+            _ -> false
+        }
+        let let_ok = match store.stmts.get(inner_let) {
+            .Let(_, _, got) -> got == init
+            _ -> false
+        }
+        let body_ok = match store.stmts.get(root) {
+            .Function(_, _, _, _, got_body) -> got_body.length == 1 && got_body[0] == if_id
+            _ -> false
+        }
+        edge_tags(fn_kids) == "T" && if_ok && let_ok && body_ok
     }
 }
 
@@ -292,20 +301,23 @@ spec "ingest: FnTyped children keep field order (params before ret)" {
 // lets (the ingest_program loop + per-node fan-out); deep = a 300-level binary
 // chain (the ingest_expr recursion depth). Synthesised (line 0) so no span math.
 spec "ingest_program: stress — wide (1000) and deep (300)" {
-    then "1000 top-level `let`s ingest to 1000 stmts + 1000 exprs + 1000 types" {
+    then "1000 top-level `let`s ingest to 1000 stmts + 1000 types (init ids are leaves)" {
+        let donor = ts()
         mut stmts: List<SStmt> = []
         for i in 0..1000 {
-            stmts.push(sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("1")), 0, 0, ""))
+            let init = donor.exprs.add_leaf(Expr.Number("1"))
+            stmts.push(sstmt_at(Stmt.Let("x", ValueType.Int, init), 0, 0, ""))
         }
         let store = ingest_program(stmts, "")
-        store.stmts.count() == 1000 && store.exprs.count() == 1000 && store.types.count() == 1000
+        store.stmts.count() == 1000 && store.exprs.count() == 0 && store.types.count() == 1000
     }
     then "a 300-deep binary chain ingests fully (601 exprs) without stack overflow" {
         mut e: Expr = Expr.Number("0")
         for i in 0..300 { e = Expr.Binary(e, BinOp.Add, Expr.Number("1")) }
-        let store = ingest_program([sstmt_at(Stmt.Expr(e), 0, 0, "")], "")
-        // 300 Binary + 301 Number = 601 exprs; the one wrapping Stmt.Expr.
-        store.exprs.count() == 601 && store.stmts.count() == 1
+        let store = ts()
+        let _ = store.ingest_expr(e, byte_span_none())
+        // 300 Binary + 301 Number = 601 exprs.
+        store.exprs.count() == 601
     }
 }
 
@@ -416,7 +428,9 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
     then "Stmt.Match reconstructs faithfully" {
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("7"), 1, 1, "") }
         let arms: List<MatchArm> = [arm]
-        wc_roundtrip_stmt(ts(), Stmt.Match(Expr.Ident("y"), arms))
+        let store = ts()
+        let subj = store.exprs.add_leaf(Expr.Ident("y"))
+        wc_roundtrip_stmt(store, Stmt.Match(subj, arms))
     }
     then "an empty arm list round-trips (only the subject is a child)" {
         let none_arms: List<MatchArm> = []
@@ -433,15 +447,25 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let outer_arms: List<MatchArm> = [outer_arm]
         wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), outer_arms))
     }
-    then "ingest → program_from_store is faithful for a nested-match program" {
+    then "ingest → program_from_store preserves a nested-match id payload verbatim" {
+        // F3a: Stmt.Expr carries an ExprId — the nested match rides behind the
+        // id, so ingest treats it as a scalar and the reverse shim must hand
+        // back the SAME id (resolving it in the id's own store recovers the
+        // full nested match, which wc_roundtrip covers above).
+        let donor = ts()
         let inner_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("11"), 2, 5, "") }
         let inner_arms: List<MatchArm> = [inner_arm]
         let inner = Expr.MatchExpr(Expr.Ident("y"), inner_arms)
         let outer_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(inner, 3, 3, "") }
         let outer_arms: List<MatchArm> = [outer_arm]
-        let stmts: List<SStmt> = [sstmt_at(Stmt.Expr(Expr.MatchExpr(Expr.Ident("x"), outer_arms)), 1, 1, "")]
+        let subj = donor.exprs.add_leaf(Expr.MatchExpr(Expr.Ident("x"), outer_arms))
+        let stmts: List<SStmt> = [sstmt_at(Stmt.Expr(subj), 1, 1, "")]
         let store = ingest_program(stmts, "")
-        render_stmt_list(store, program_from_store(store, "")) == render_stmt_list(store, stmts)
+        let back = program_from_store(store, "")
+        back.length == 1 && match back[0].node {
+            .Expr(got) -> got == subj
+            _ -> false
+        }
     }
 }
 
@@ -525,29 +549,30 @@ spec "B1: StoreMark truncation rolls back speculative allocation" {
 // pin: a single-wrapper child, a wrapper-LIST child, the bare-vs-wrapped split
 // within one node, and the end-to-end path through `ingest_program`.
 
-spec "A2: a wrapped nested statement gets a real span (wrapper-list child)" {
-    then "a Block body stmt's span is lifted from its SStmt wrapper's (line, col)" {
-        // line_starts for "aaaa\nbbbb\ncccc\n" = [0, 5, 10]; offset_of(2,3) = 5+2 = 7.
+spec "F3a: a flipped Block body row carries its position column" {
+    then "rows_of records (line, col, file); stmt_pos reads it back; no child edge" {
+        // The SStmt wrapper died with the flip — a Block body element's
+        // position now lives in the StmtArena's dense pos column, stamped
+        // by the write bridge (rows_of) or the parser. The ingest treats
+        // the id payload as a scalar, so the Block records no stmt edge.
         let store = new_node_store(build_line_index("aaaa\nbbbb\ncccc\n"))
-        let body: List<SStmt> = [sstmt_at(Stmt.Break, 2, 3, "")]
+        let body = store.rows_of([sstmt_at(Stmt.Break, 2, 3, "f.av")])
         let root = store.ingest_stmt(Stmt.Block(body), byte_span(0, 4))
-        let child = stmt_ref_id(store.stmts.children_of(root)[0])
-        let cs = store.stmts.span_of(child)
-        let lc = store.stmt_linecol(child)
-        // Real START, zero-width extent (end byte deferred to B); line/col round-trips.
-        !byte_span_is_none(cs) && cs.lo == 7 && cs.hi == 7 && lc.line == 2 && lc.col == 3
+        let p = store.stmt_pos(body[0])
+        store.stmts.children_of(root).length == 0
+            && p.line == 2 && p.col == 3 && p.file == "f.av"
     }
 }
 
-spec "A2: a wrapped single-child statement gets a real span (Annotated.inner)" {
-    then "Annotated.inner (a single SStmt wrapper) carries its wrapper's span" {
-        // line_starts for "a\nb\nc\n" = [0, 2, 4]; offset_of(3,1) = 4+0 = 4.
+spec "F3a: Annotated.inner (a StmtId payload) keeps its recorded position" {
+    then "the inner row's pos column survives the wrapping ingest; no stmt edge" {
         let store = new_node_store(build_line_index("a\nb\nc\n"))
         let no_ann: List<Annotation> = []
-        let root = store.ingest_stmt(Stmt.Annotated(no_ann, sstmt_at(Stmt.Break, 3, 1, "")), byte_span(0, 1))
-        let child = stmt_ref_id(store.stmts.children_of(root)[0])
-        let cs = store.stmts.span_of(child)
-        !byte_span_is_none(cs) && cs.lo == 4 && store.stmt_linecol(child).line == 3
+        let inner = store.rows_of([sstmt_at(Stmt.Break, 3, 1, "")])
+        let root = store.ingest_stmt(Stmt.Annotated(no_ann, inner[0]), byte_span(0, 1))
+        store.stmts.children_of(root).length == 0
+            && store.stmt_pos(inner[0]).line == 3
+            && store.stmt_pos(inner[0]).col == 1
     }
 }
 
@@ -568,52 +593,48 @@ spec "A2: bare children stay span_none while wrapped siblings get real spans" {
     }
 }
 
-spec "A2: a wrapped child at byte 0 (line 1 col 1) is a REAL span, not the none sentinel" {
-    then "offset 0 stays distinguishable from span_none (the sentinel is negative, not 0,0)" {
-        // line_starts for "break\n" = [0]; offset_of(1,1) = 0. The span sentinel is
-        // negative precisely so a node that legitimately starts at byte 0 is not
-        // mistaken for "no position" — this pins that boundary for wrapped children.
+spec "F3a: a body row at line 1 col 1 is a REAL position, not the absent sentinel" {
+    then "(1,1) stays distinguishable from the no-position (0,0) sentinel" {
+        // stmt_pos treats line 0 as "no recorded position" (falls back to the
+        // span table) — this pins that a legitimate line-1-col-1 element is
+        // not mistaken for an unstamped row.
         let store = new_node_store(build_line_index("break\n"))
-        let body: List<SStmt> = [sstmt_at(Stmt.Break, 1, 1, "")]
-        let root = store.ingest_stmt(Stmt.Block(body), byte_span(0, 5))
-        let child = stmt_ref_id(store.stmts.children_of(root)[0])
-        let cs = store.stmts.span_of(child)
-        !byte_span_is_none(cs) && cs.lo == 0 && cs.hi == 0
+        let body = store.rows_of([sstmt_at(Stmt.Break, 1, 1, "")])
+        let p = store.stmt_pos(body[0])
+        p.line == 1 && p.col == 1
     }
 }
 
-spec "A2: spans thread through wrappers at every depth (recursion, not just level 1)" {
-    then "Block body stmt AND the Call arg two levels deeper each get their own span; the bare Call between them stays none" {
+spec "F3a: positions and spans compose across the id boundary" {
+    then "the body row keeps its pos; the Call arg behind the expr id keeps its wrapper span" {
         // line_starts for "aaaa\nbbbb\ncccc\n" = [0, 5, 10].
-        // depth 1: Block body stmt `g(x)` wraps at line 2 col 1 -> offset 5.
-        // depth 2: Stmt.Expr's `expr` is a BARE Expr (the Call) -> span_none.
-        // depth 3: the Call's arg `x` wraps at line 3 col 2 -> offset 11.
+        // Stmt side: the Block body element's (2,1) rides the pos column.
+        // Expr side: the Call subtree still travels boxed under its own
+        // ingest, so the WRAPPED arg `x` at (3,2) lifts to offset 11 while
+        // the bare callee stays span_none — the A2 rules, now reached
+        // through the id payload's own arena row.
         let store = new_node_store(build_line_index("aaaa\nbbbb\ncccc\n"))
         let arg: List<SExpr> = [sexpr_at(Expr.Ident("x"), 3, 2, "")]
-        let body: List<SStmt> = [sstmt_at(Stmt.Expr(Expr.Call(Expr.Ident("g"), arg)), 2, 1, "")]
+        let call_id = store.ingest_expr(Expr.Call(Expr.Ident("g"), arg), byte_span_none())
+        let body = store.rows_of([sstmt_at(Stmt.Expr(call_id), 2, 1, "")])
         let root = store.ingest_stmt(Stmt.Block(body), byte_span(0, 4))
-        let stmt_child = stmt_ref_id(store.stmts.children_of(root)[0])           // depth 1: Stmt.Expr
-        let call_id = expr_ref_id(store.stmts.children_of(stmt_child)[0])        // depth 2: Call (bare)
-        let arg_id = expr_ref_id(store.exprs.children_of(call_id)[1])            // depth 3: arg (wrapped)
-        store.stmts.span_of(stmt_child).lo == 5
-            && byte_span_is_none(store.exprs.span_of(call_id))
+        let arg_id = expr_ref_id(store.exprs.children_of(call_id)[1])
+        store.stmts.children_of(root).length == 0
+            && store.stmt_pos(body[0]).line == 2
             && store.exprs.span_of(arg_id).lo == 11
     }
 }
 
-spec "A2: ingest_program threads real spans to wrapped nested statements" {
-    then "a fn body statement's span is lifted from its own SStmt wrapper, not the fn's" {
-        // "fn f() {\n  break\n}\n": line_starts = [0, 9, 17]; offset_of(2,3) = 9+2 = 11.
-        let body: List<SStmt> = [sstmt_at(Stmt.Break, 2, 3, "")]
+spec "F3a: a fn body row's position is its own, distinct from the fn root's" {
+    then "the body break keeps (2,3) in the pos column; the fn's only edge is its ret type" {
+        let store = new_node_store(build_line_index("fn f() {\n  break\n}\n"))
+        let body = store.rows_of([sstmt_at(Stmt.Break, 2, 3, "")])
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
-        let fn_decl = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
-        let store = ingest_program([sstmt_at(fn_decl, 1, 1, "")], "fn f() {\n  break\n}\n")
-        // Function children are [ret-type, body stmt] (TS); the body break is the
-        // StmtRef. Its span is the wrapper's (2,3), distinct from the fn root's (1,1).
-        let break_id = stmt_ref_id(store.stmts.children_of(store.roots[0])[1])
-        let bs = store.stmts.span_of(break_id)
-        !byte_span_is_none(bs) && bs.lo == 11 && store.stmt_linecol(break_id).line == 2
+        let root = store.ingest_stmt(Stmt.Function("f", no_tp, no_pp, ValueType.Void, body), byte_span(0, 18))
+        edge_tags(store.stmts.children_of(root)) == "T"
+            && store.stmt_pos(body[0]).line == 2
+            && store.stmt_pos(body[0]).col == 3
     }
 }
 
@@ -625,50 +646,61 @@ spec "A2: ingest_program threads real spans to wrapped nested statements" {
 // boxed-view shim the id-children rep flip stands on. render-equality is the
 // structural oracle: any dropped / reordered / mis-kinded edge diverges.
 spec "B1: reconstruct_program round-trips a program from arena edges" {
-    then "a simple program rebuilds structurally identically" {
-        let orig = [sstmt_at(Stmt.Let("x", ValueType.Int, Expr.Number("5")), 1, 1, ""),
+    then "boxed children rebuild from edges; flipped payloads ride verbatim" {
+        // F3a: the Let's initializer is an ExprId — reconstruct must hand the
+        // SAME id back (it is a scalar to the inverse walker), while the boxed
+        // ty_vt still rebuilds from its TypeRef edge. Allocate the id in the
+        // same store the render resolves against so the oracle stays valid.
+        let donor = ts()
+        let init = donor.exprs.add_leaf(Expr.Number("5"))
+        let orig = [sstmt_at(Stmt.Let("x", ValueType.Int, init), 1, 1, ""),
                     sstmt_at(Stmt.Break, 2, 1, "")]
         let store = ingest_program(orig, "let x: int = 5\nbreak\n")
-        render_stmt_list(store, reconstruct_program(store, "")) == render_stmt_list(store, orig)
+        let back = reconstruct_program(store, "")
+        let let_ok = match back[0].node {
+            .Let(n, vt, got) -> n == "x" && got == init && match vt { .Int -> true  _ -> false }
+            _ -> false
+        }
+        let brk_ok = match back[1].node { .Break -> true  _ -> false }
+        back.length == 2 && let_ok && brk_ok
     }
-    then "a deep cross-kind program (fn { if (1<2) { let xs: List<List<int>> = [] } }) rebuilds identically" {
-        // Exercises edge reconstruction across every kind boundary: Function ->
-        // [ret-type, body], If -> [cond expr, then stmt], Let -> [type, init],
-        // Binary -> [left, right] — all rebuilt from edges, not stored children.
+    then "a deep cross-kind decl rebuilds: boxed ret type from edges, body ids verbatim" {
+        let donor = ts()
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
         let no_el: List<SExpr> = []
-        let cond = Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2"))
-        let inner_let = Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), Expr.ListLit(no_el))
-        let body: List<SStmt> = [sstmt_at(Stmt.If(cond, inner_let, null), 2, 3, "")]
+        let cond = donor.exprs.add_leaf(Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2")))
+        let init = donor.exprs.add_leaf(Expr.ListLit(no_el))
+        let inner_let = donor.stmts.add_leaf(Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), init))
+        let if_id = donor.stmts.add_leaf(Stmt.If(cond, inner_let, null))
+        let body: List<StmtId> = [if_id]
         let f = Stmt.Function("f", no_tp, no_pp, ValueType.Void, body)
         let orig = [sstmt_at(f, 1, 1, "")]
         let store = ingest_program(orig, "fn f() {\n  if 1<2 { }\n}\n")
-        render_stmt_list(store, reconstruct_program(store, "")) == render_stmt_list(store, orig)
+        let back = reconstruct_program(store, "")
+        back.length == 1 && match back[0].node {
+            .Function(n, _, _, ret, got_body) ->
+                n == "f"
+                    && got_body.length == 1 && got_body[0] == if_id
+                    && match ret { .Void -> true  _ -> false }
+            _ -> false
+        }
     }
-    then "wrapper-list children (Call args) rebuild from edges identically" {
+    then "an expr subtree behind a Stmt.Expr id is untouched by the round-trip" {
+        let donor = ts()
         let args: List<SExpr> = [sexpr_at(Expr.Number("1"), 1, 3, ""), sexpr_at(Expr.Ident("y"), 1, 6, "")]
-        let orig = [sstmt_at(Stmt.Expr(Expr.Call(Expr.Ident("g"), args)), 1, 1, "")]
+        let call = donor.exprs.add_leaf(Expr.Call(Expr.Ident("g"), args))
+        let orig = [sstmt_at(Stmt.Expr(call), 1, 1, "")]
         let store = ingest_program(orig, "g(1, y)\n")
-        render_stmt_list(store, reconstruct_program(store, "")) == render_stmt_list(store, orig)
+        let back = reconstruct_program(store, "")
+        let same_id = match back[0].node { .Expr(got) -> got == call  _ -> false }
+        // The id resolves in ITS OWN store to the untouched Call subtree.
+        back.length == 1 && same_id
+            && render_expr(donor, donor.exprs.get(call)) == render_expr(donor, Expr.Call(Expr.Ident("g"), args))
     }
     then "an empty program reconstructs to an empty list" {
         let empty: List<SStmt> = []
         reconstruct_program(ingest_program(empty, ""), "").length == 0
-    }
-    then "reconstruct recovers a NESTED child's (line, col) from the span side-table" {
-        // render-equality is span-BLIND, so the reconstruct path's per-child span
-        // recovery (reconstruct_ref → respan_sstmt) is otherwise unverified. Assert
-        // the position directly: a Block whose inner Break sits at (2,3) must
-        // reconstruct with that span, not (0,0). A1/A2 test the ingest side-table;
-        // this tests the rebuild stamps it back onto the nested wrapper.
-        let inner: List<SStmt> = [sstmt_at(Stmt.Break, 2, 3, "")]
-        let orig: List<SStmt> = [sstmt_at(Stmt.Block(inner), 1, 1, "")]
-        let store = ingest_program(orig, "x\n  break\n")
-        let back = reconstruct_program(store, "")
-        let nested_line = match back[0].node { .Block(b) -> b[0].line  _ -> 0 - 1 }
-        let nested_col = match back[0].node { .Block(b) -> b[0].col  _ -> 0 - 1 }
-        back.length == 1 && back[0].line == 1 && nested_line == 2 && nested_col == 3
     }
 }
 

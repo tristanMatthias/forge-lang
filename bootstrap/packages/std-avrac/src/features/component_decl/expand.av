@@ -11,7 +11,7 @@
 // self.__parent_name → parent instance name string
 
 use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation, vtype_struct}
-use core.{NodeStore}
+use core.{NodeStore, StmtId, ExprId}
 use core.{has_fn, find_fn_body}
 use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, bag_merge, diag_error, span_at}
 use list_ops.{list_concat, list_map}
@@ -43,12 +43,12 @@ export type ComponentExpandResult = {
 /// was nothing to expand (4szi.1 perf pass — every check_source /
 /// `bs2 check` call runs this).
 export fn expand_components(stmts: List<SStmt>, store: NodeStore) -> ComponentExpandResult {
-    let reg = collect_component_defs(stmts)
+    let reg = collect_component_defs(store, stmts)
     if reg.length == 0 { return ComponentExpandResult { stmts, bag: bag_new() } }
-    let bag = validate_component_tree(stmts, reg)
+    let bag = validate_component_tree(store, stmts, reg)
     let empty_slots: List<ChildrenSlot> = []
     let root = CompNestCtx { parent_var: "", parent_name: "", parent_children: empty_slots }
-    let spliced = expand_stmt_list(stmts, reg, root)
+    let spliced = expand_stmt_list(store, stmts, reg, root)
     ComponentExpandResult { stmts: spliced, bag }
 }
 
@@ -100,17 +100,17 @@ export fn comp_reg_lookup(reg: List<CompDefEntry>, name: string) -> CompDefLooku
 /// legacy template path. Skipping them at the registry level means
 /// expand_stmt_list's ComponentBlock arm won't find them, so the
 /// instance passes through unchanged for expand_macros to consume.
-export fn collect_component_defs(stmts: List<SStmt>) -> List<CompDefEntry> {
+export fn collect_component_defs(store: NodeStore, stmts: List<SStmt>) -> List<CompDefEntry> {
     mut acc: List<CompDefEntry> = []
     for ss in stmts {
-        let has_expand = find_annotation(ss.node, "expand") != null
-        let inner = stmt_unwrap_deep(ss.node)
+        let has_expand = find_annotation(store, ss.node, "expand") != null
+        let inner = stmt_unwrap_deep(store, ss.node)
         match inner {
             .ComponentDef(name, _, config, children, _, body) -> {
-                if !has_expand { acc = acc.push(CompDefEntry { name, config, children, body }) }
+                if !has_expand { acc = acc.push(CompDefEntry { name, config, children, body: store.sstmts_of(body) }) }
             }
-            .Module(_, mod_body) -> acc = list_concat(acc, collect_component_defs(mod_body))
-            .Function(_, _, _, _, fn_body) -> acc = list_concat(acc, collect_component_defs(fn_body))
+            .Module(_, mod_body) -> acc = list_concat(acc, collect_component_defs(store, store.sstmts_of(mod_body)))
+            .Function(_, _, _, _, fn_body) -> acc = list_concat(acc, collect_component_defs(store, store.sstmts_of(fn_body)))
             _ -> {}
         }
     }
@@ -138,9 +138,9 @@ export fn comp_name_has(list: List<string>, name: string) -> bool {
 /// Strip every layer of `Annotated` wrappers from a statement.
 /// Component scanning needs the raw statement so doc comments
 /// + `@export` etc. don't hide a `ComponentDef` from collection.
-fn stmt_unwrap_deep(s: Stmt) -> Stmt {
+fn stmt_unwrap_deep(store: NodeStore, s: Stmt) -> Stmt {
     match s {
-        .Annotated(_, inner) -> stmt_unwrap_deep(inner.node)
+        .Annotated(_, inner) -> stmt_unwrap_deep(store, store.stmts.get(inner))
         _ -> s
     }
 }
@@ -176,35 +176,48 @@ type RewriteCtx = {
 /// Walk a body rewriting every `@self` / `@parent` reference
 /// to the right per-instance variable. The entry point for
 /// per-instance expansion of a component body.
-fn rewrite_self(stmts: List<SStmt>, ctx: RewriteCtx) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt_at(rw_stmt(ss.node, ctx), ss.line, ss.col, ss.file))
+fn rewrite_self(store: NodeStore, stmts: List<SStmt>, ctx: RewriteCtx) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> sstmt_at(rw_stmt(store, ss.node, ctx), ss.line, ss.col, ss.file))
 }
 
 /// Per-statement self-rewrite. Recurses into expression
 /// payloads + nested bodies; preserves decl-only statements.
-fn rw_stmt(stmt: Stmt, ctx: RewriteCtx) -> Stmt {
+fn rw_stmt(store: NodeStore, stmt: Stmt, ctx: RewriteCtx) -> Stmt {
     match stmt {
-        .Expr(e) -> .Expr(rw_expr(e, ctx))
-        .Let(name, vt, init) -> .Let(name, vt, rw_expr(init, ctx))
-        .Mut(name, vt, init) -> .Mut(name, vt, rw_expr(init, ctx))
-        .Return(e) -> .Return(rw_expr(e, ctx))
+        .Expr(e) -> .Expr(rw_expr_id(store, e, ctx))
+        .Let(name, vt, init) -> .Let(name, vt, rw_expr_id(store, init, ctx))
+        .Mut(name, vt, init) -> .Mut(name, vt, rw_expr_id(store, init, ctx))
+        .Return(e) -> .Return(rw_expr_id(store, e, ctx))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(rw_expr(cond, ctx), rw_stmt(then_b, ctx), rw_stmt(else_b!, ctx))
+                .If(rw_expr_id(store, cond, ctx), rw_stmt_id(store, then_b, ctx), rw_stmt_id(store, else_b!, ctx))
             } else {
-                .If(rw_expr(cond, ctx), rw_stmt(then_b, ctx), null)
+                .If(rw_expr_id(store, cond, ctx), rw_stmt_id(store, then_b, ctx), null)
             }
         }
-        .Block(body) -> .Block(rewrite_self(body, ctx))
-        .While(cond, body) -> .While(rw_expr(cond, ctx), rw_stmt(body, ctx))
+        .Block(body) -> .Block(rw_stmt_ids(store, body, ctx))
+        .While(cond, body) -> .While(rw_expr_id(store, cond, ctx), rw_stmt_id(store, body, ctx))
         _ -> stmt
     }
+}
+
+/// Row helpers for the self-rewrite: resolve, rewrite, re-allocate.
+fn rw_expr_id(store: NodeStore, id: ExprId, ctx: RewriteCtx) -> ExprId {
+    store.reexpr(rw_expr(store, store.exprs.get(id), ctx), id)
+}
+
+fn rw_stmt_id(store: NodeStore, id: StmtId, ctx: RewriteCtx) -> StmtId {
+    store.restmt(rw_stmt(store, store.stmts.get(id), ctx), id)
+}
+
+fn rw_stmt_ids(store: NodeStore, ids: List<StmtId>, ctx: RewriteCtx) -> List<StmtId> {
+    list_map(ids, (id: StmtId) -> rw_stmt_id(store, id, ctx))
 }
 
 /// Per-expression self-rewrite. `@self` and `@parent` Ident
 /// references rewrite to the matching per-instance var; other
 /// shapes recurse into their payloads.
-fn rw_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
+fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
             match obj {
@@ -213,46 +226,46 @@ fn rw_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
                         if field == "__parent" { return Expr.Ident(ctx.parent_var) }
                         if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
                         Expr.FieldAccess(Expr.Ident(ctx.inst), field)
-                    } else { Expr.FieldAccess(rw_expr(obj, ctx), field) }
+                    } else { Expr.FieldAccess(rw_expr(store, obj, ctx), field) }
                 }
                 .FieldAccess(inner_obj, inner_field) -> {
                     match inner_obj {
                         .Ident(name) -> {
                             if name == "self" && inner_field == "config" {
                                 Expr.FieldAccess(Expr.Ident(ctx.inst), field)
-                            } else { Expr.FieldAccess(rw_expr(obj, ctx), field) }
+                            } else { Expr.FieldAccess(rw_expr(store, obj, ctx), field) }
                         }
-                        _ -> Expr.FieldAccess(rw_expr(obj, ctx), field)
+                        _ -> Expr.FieldAccess(rw_expr(store, obj, ctx), field)
                     }
                 }
-                _ -> Expr.FieldAccess(rw_expr(obj, ctx), field)
+                _ -> Expr.FieldAccess(rw_expr(store, obj, ctx), field)
             }
         }
-        .Assign(name, val) -> Expr.Assign(name, rw_expr(val, ctx))
+        .Assign(name, val) -> Expr.Assign(name, rw_expr(store, val, ctx))
         .FieldAssign(obj, field, val) -> {
             match obj {
                 .Ident(name) -> {
                     if name == "self" && field == "__parent" {
-                        Expr.Assign(ctx.parent_var, rw_expr(val, ctx))
-                    } else { Expr.FieldAssign(rw_expr(obj, ctx), field, rw_expr(val, ctx)) }
+                        Expr.Assign(ctx.parent_var, rw_expr(store, val, ctx))
+                    } else { Expr.FieldAssign(rw_expr(store, obj, ctx), field, rw_expr(store, val, ctx)) }
                 }
-                _ -> Expr.FieldAssign(rw_expr(obj, ctx), field, rw_expr(val, ctx))
+                _ -> Expr.FieldAssign(rw_expr(store, obj, ctx), field, rw_expr(store, val, ctx))
             }
         }
         .Ident(name) -> if name == "self" { Expr.Ident(ctx.inst) } else { expr }
-        .Call(callee, args) -> Expr.Call(rw_expr(callee, ctx), rw_expr_list(args, ctx))
-        .Binary(l, op, r) -> Expr.Binary(rw_expr(l, ctx), op, rw_expr(r, ctx))
-        .Unary(op, r) -> Expr.Unary(op, rw_expr(r, ctx))
-        .Logical(l, op, r) -> Expr.Logical(rw_expr(l, ctx), op, rw_expr(r, ctx))
-        .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr(c, ctx), rw_expr(t, ctx), rw_expr(e, ctx))
-        .Block(body) -> Expr.Block(rewrite_self(body, ctx))
+        .Call(callee, args) -> Expr.Call(rw_expr(store, callee, ctx), rw_expr_list(store, args, ctx))
+        .Binary(l, op, r) -> Expr.Binary(rw_expr(store, l, ctx), op, rw_expr(store, r, ctx))
+        .Unary(op, r) -> Expr.Unary(op, rw_expr(store, r, ctx))
+        .Logical(l, op, r) -> Expr.Logical(rw_expr(store, l, ctx), op, rw_expr(store, r, ctx))
+        .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr(store, c, ctx), rw_expr(store, t, ctx), rw_expr(store, e, ctx))
+        .Block(body) -> Expr.Block(rewrite_self(store, body, ctx))
         _ -> expr
     }
 }
 
 /// Map `rw_expr` over a `List<SExpr>`.
-fn rw_expr_list(list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(rw_expr(se.node, ctx), se.line, se.col))
+fn rw_expr_list(store: NodeStore, list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
+    list_map(list, (se: SExpr) -> sexpr(rw_expr(store, se.node, ctx), se.line, se.col))
 }
 
 // ── Template self-rewriting (inlines config values) ──
@@ -261,33 +274,41 @@ fn rw_expr_list(list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
 /// reference with the user-supplied config value (falling back
 /// to the schema default). Threads the rewrite ctx so nested
 /// `@self` references still resolve.
-fn rw_template(stmts: List<SStmt>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt(rw_tpl_stmt(ss.node, inst, uc, schema, ctx), ss.line, ss.col))
+fn rw_template(store: NodeStore, stmts: List<SStmt>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SStmt> {
+    list_map(stmts, (ss: SStmt) -> sstmt(rw_tpl_stmt(store, ss.node, inst, uc, schema, ctx), ss.line, ss.col))
 }
 
 /// Per-statement template rewrite — same shape as `rw_stmt`
 /// but with the config substitution active.
-fn rw_tpl_stmt(stmt: Stmt, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Stmt {
+fn rw_tpl_stmt(store: NodeStore, stmt: Stmt, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Stmt {
     match stmt {
-        .Expr(e) -> .Expr(rw_tpl_expr(e, inst, uc, schema, ctx))
-        .Let(name, vt, init) -> .Let(name, vt, rw_tpl_expr(init, inst, uc, schema, ctx))
-        .Mut(name, vt, init) -> .Mut(name, vt, rw_tpl_expr(init, inst, uc, schema, ctx))
-        .Return(e) -> .Return(rw_tpl_expr(e, inst, uc, schema, ctx))
-        .Block(body) -> .Block(rw_template(body, inst, uc, schema, ctx))
+        .Expr(e) -> .Expr(rw_tpl_expr_id(store, e, inst, uc, schema, ctx))
+        .Let(name, vt, init) -> .Let(name, vt, rw_tpl_expr_id(store, init, inst, uc, schema, ctx))
+        .Mut(name, vt, init) -> .Mut(name, vt, rw_tpl_expr_id(store, init, inst, uc, schema, ctx))
+        .Return(e) -> .Return(rw_tpl_expr_id(store, e, inst, uc, schema, ctx))
+        .Block(body) -> .Block(list_map(body, (id: StmtId) -> store.restmt(rw_tpl_stmt(store, store.stmts.get(id), inst, uc, schema, ctx), id)))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(rw_tpl_expr(cond, inst, uc, schema, ctx), rw_tpl_stmt(then_b, inst, uc, schema, ctx), rw_tpl_stmt(else_b!, inst, uc, schema, ctx))
+                .If(rw_tpl_expr_id(store, cond, inst, uc, schema, ctx), rw_tpl_stmt_id(store, then_b, inst, uc, schema, ctx), rw_tpl_stmt_id(store, else_b!, inst, uc, schema, ctx))
             } else {
-                .If(rw_tpl_expr(cond, inst, uc, schema, ctx), rw_tpl_stmt(then_b, inst, uc, schema, ctx), null)
+                .If(rw_tpl_expr_id(store, cond, inst, uc, schema, ctx), rw_tpl_stmt_id(store, then_b, inst, uc, schema, ctx), null)
             }
         }
         _ -> stmt
     }
 }
 
+fn rw_tpl_expr_id(store: NodeStore, id: ExprId, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> ExprId {
+    store.reexpr(rw_tpl_expr(store, store.exprs.get(id), inst, uc, schema, ctx), id)
+}
+
+fn rw_tpl_stmt_id(store: NodeStore, id: StmtId, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> StmtId {
+    store.restmt(rw_tpl_stmt(store, store.stmts.get(id), inst, uc, schema, ctx), id)
+}
+
 /// Per-expression template rewrite. `@cfg.field` references
 /// resolve via `resolve_config_value`; other shapes recurse.
-fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Expr {
+fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
             match obj {
@@ -298,7 +319,7 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<
                         if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
                         return resolve_config_value(field, uc, schema)
                     }
-                    Expr.FieldAccess(rw_tpl_expr(obj, inst, uc, schema, ctx), field)
+                    Expr.FieldAccess(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field)
                 }
                 .FieldAccess(inner_obj, inner_field) -> {
                     match inner_obj {
@@ -309,26 +330,26 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<
                         }
                         _ -> {}
                     }
-                    Expr.FieldAccess(rw_tpl_expr(obj, inst, uc, schema, ctx), field)
+                    Expr.FieldAccess(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field)
                 }
-                _ -> Expr.FieldAccess(rw_tpl_expr(obj, inst, uc, schema, ctx), field)
+                _ -> Expr.FieldAccess(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field)
             }
         }
         .FieldAssign(obj, field, val) -> {
             match obj {
                 .Ident(name) -> {
                     if name == "self" && field == "__parent" {
-                        return Expr.Assign(ctx.parent_var, rw_tpl_expr(val, inst, uc, schema, ctx))
+                        return Expr.Assign(ctx.parent_var, rw_tpl_expr(store, val, inst, uc, schema, ctx))
                     }
                 }
                 _ -> {}
             }
-            Expr.FieldAssign(rw_tpl_expr(obj, inst, uc, schema, ctx), field, rw_tpl_expr(val, inst, uc, schema, ctx))
+            Expr.FieldAssign(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr(store, val, inst, uc, schema, ctx))
         }
-        .Call(callee, args) -> Expr.Call(rw_tpl_expr(callee, inst, uc, schema, ctx), rw_tpl_expr_list(args, inst, uc, schema, ctx))
-        .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr(l, inst, uc, schema, ctx), op, rw_tpl_expr(r, inst, uc, schema, ctx))
-        .With(base, overrides) -> Expr.With(rw_tpl_expr(base, inst, uc, schema, ctx), rw_tpl_field_inits(overrides, inst, uc, schema, ctx))
-        .StructLit(name, inits) -> Expr.StructLit(name, rw_tpl_field_inits(inits, inst, uc, schema, ctx))
+        .Call(callee, args) -> Expr.Call(rw_tpl_expr(store, callee, inst, uc, schema, ctx), rw_tpl_expr_list(store, args, inst, uc, schema, ctx))
+        .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr(store, l, inst, uc, schema, ctx), op, rw_tpl_expr(store, r, inst, uc, schema, ctx))
+        .With(base, overrides) -> Expr.With(rw_tpl_expr(store, base, inst, uc, schema, ctx), rw_tpl_field_inits(store, overrides, inst, uc, schema, ctx))
+        .StructLit(name, inits) -> Expr.StructLit(name, rw_tpl_field_inits(store, inits, inst, uc, schema, ctx))
         .Ident(name) -> if name == "self" { Expr.String("\"${inst}\"") } else { expr }
         _ -> expr
     }
@@ -336,16 +357,16 @@ fn rw_tpl_expr(expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<
 
 /// Map `rw_tpl_expr` over every field initializer in a struct
 /// literal embedded in a template body.
-fn rw_tpl_field_inits(inits: List<FieldInit>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<FieldInit> {
+fn rw_tpl_field_inits(store: NodeStore, inits: List<FieldInit>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(rw_tpl_expr(init.value.node, inst, uc, schema, ctx), init.value.line, init.value.col),
+        value: sexpr(rw_tpl_expr(store, init.value.node, inst, uc, schema, ctx), init.value.line, init.value.col),
     })
 }
 
 /// Map `rw_tpl_expr` over a `List<SExpr>` in a template body.
-fn rw_tpl_expr_list(list: List<SExpr>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(rw_tpl_expr(se.node, inst, uc, schema, ctx), se.line, se.col))
+fn rw_tpl_expr_list(store: NodeStore, list: List<SExpr>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SExpr> {
+    list_map(list, (se: SExpr) -> sexpr(rw_tpl_expr(store, se.node, inst, uc, schema, ctx), se.line, se.col))
 }
 
 /// Resolve a `@cfg.field` reference: prefer the user's
@@ -473,7 +494,7 @@ fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> List<FieldInit> {
 /// triple `type Name`, `impl Name { … }`, and a factory
 /// `fn make_name(cfg) -> Name`. Spliced ahead of `rest` so the
 /// surrounding code sees the synthesized definitions.
-export fn splice_component_def(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>) -> List<SStmt> {
+export fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>) -> List<SStmt> {
     // Template components (with init hooks): no type/factory generation
     if has_fn(body, "init") {
         let methods = extract_methods(body, name)
@@ -514,7 +535,7 @@ export fn splice_component_def(name: string, params: List<ParamEntry>, config: L
         ni_i = ni_i + 1
     }
     let struct_lit = Expr.StructLit(type_name, name_init)
-    let factory_body: List<SStmt> = [sstmt(Stmt.Return(struct_lit), 0, 0)]
+    let factory_body: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(struct_lit)))]
     let factory = Stmt.Function("${name}_new", empty_tp, name_param, vtype_struct(type_name, 0), factory_body)
 
     let methods = extract_methods(body, name)
@@ -587,14 +608,14 @@ fn slot_name_for_child(schema: List<ChildrenSlot>, child_comp: string) -> string
 /// Build the auto-push statement: `parent_var.<slot>.push(child_inst)`.
 /// Emitted by splice_data_block when the parent's children schema
 /// matched the child's type.
-fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: int, col: int) -> SStmt {
+fn build_push_stmt(store: NodeStore, parent_var: string, slot: string, child_inst: string, line: int, col: int) -> SStmt {
     let push_target = Expr.FieldAccess(
         Expr.FieldAccess(Expr.Ident(parent_var), slot),
         "push"
     )
     let push_args: List<SExpr> = [sexpr(Expr.Ident(child_inst), line, col)]
     let push_call = Expr.Call(push_target, push_args)
-    sstmt(Stmt.Expr(push_call), line, col)
+    sstmt(Stmt.Expr(store.exprs.add_leaf(push_call)), line, col)
 }
 
 // ── ComponentBlock splice ──
@@ -603,7 +624,7 @@ fn build_push_stmt(parent_var: string, slot: string, child_inst: string, line: i
 /// component definition, then dispatches to either
 /// `splice_template_block` or `splice_data_block` based on the
 /// template-vs-data classification of the body.
-export fn splice_component_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
+export fn splice_component_block(store: NodeStore, comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
     let def = comp_reg_lookup(reg, comp)
     // vez6.7 child-type validation runs in `validate_component_tree`
     // (the pre-splice pass) so diagnostics land in the bag rather
@@ -611,9 +632,9 @@ export fn splice_component_block(comp: string, inst: string, config: List<CompCo
     let has_init = def.found && has_fn(def.body, "init")
 
     if has_init {
-        return splice_template_block(comp, inst, config, body, line, col, rest, reg, nest, def)
+        return splice_template_block(store, comp, inst, config, body, line, col, rest, reg, nest, def)
     }
-    splice_data_block(comp, inst, config, body, line, col, rest, reg, nest, def)
+    splice_data_block(store, comp, inst, config, body, line, col, rest, reg, nest, def)
 }
 
 // ── vez6.7: child-type validation ──
@@ -625,46 +646,46 @@ export fn splice_component_block(comp: string, inst: string, config: List<CompCo
 /// (no side effects); the splicer ignores validation and processes
 /// every ComponentBlock regardless — error rendering happens via
 /// the bag, not via eprintln-on-the-fly.
-fn validate_component_tree(stmts: List<SStmt>, reg: List<CompDefEntry>) -> DiagnosticBag {
+fn validate_component_tree(store: NodeStore, stmts: List<SStmt>, reg: List<CompDefEntry>) -> DiagnosticBag {
     mut bag = bag_new()
     for ss in stmts {
-        bag = validate_stmt(ss, reg, bag)
+        bag = validate_stmt(store, ss, reg, bag)
     }
     bag
 }
 
-fn validate_stmt(ss: SStmt, reg: List<CompDefEntry>, in_bag: DiagnosticBag) -> DiagnosticBag {
-    let inner = stmt_unwrap_deep(ss.node)
+fn validate_stmt(store: NodeStore, ss: SStmt, reg: List<CompDefEntry>, in_bag: DiagnosticBag) -> DiagnosticBag {
+    let inner = stmt_unwrap_deep(store, ss.node)
     let mut bag = in_bag
     match inner {
         .ComponentBlock(comp, _, _, body) -> {
             let def = comp_reg_lookup(reg, comp)
             if def.found && def.children.length > 0 {
-                bag = validate_children_bag(comp, def.children, body, ss.line, ss.col, ss.file, bag)
+                bag = validate_children_bag(store, comp, def.children, store.sstmts_of(body), ss.line, ss.col, ss.file, bag)
             }
             // Recurse into body to catch nested-of-nested mismatches.
-            for child in body {
-                bag = validate_stmt(child, reg, bag)
+            for child in store.sstmts_of(body) {
+                bag = validate_stmt(store, child, reg, bag)
             }
         }
         .ComponentDef(_, _, _, _, _, body) -> {
-            for child in body {
-                bag = validate_stmt(child, reg, bag)
+            for child in store.sstmts_of(body) {
+                bag = validate_stmt(store, child, reg, bag)
             }
         }
         .Module(_, body) -> {
-            for child in body {
-                bag = validate_stmt(child, reg, bag)
+            for child in store.sstmts_of(body) {
+                bag = validate_stmt(store, child, reg, bag)
             }
         }
         .Function(_, _, _, _, body) -> {
-            for child in body {
-                bag = validate_stmt(child, reg, bag)
+            for child in store.sstmts_of(body) {
+                bag = validate_stmt(store, child, reg, bag)
             }
         }
         .Block(body) -> {
-            for child in body {
-                bag = validate_stmt(child, reg, bag)
+            for child in store.sstmts_of(body) {
+                bag = validate_stmt(store, child, reg, bag)
             }
         }
         _ -> {}
@@ -672,12 +693,12 @@ fn validate_stmt(ss: SStmt, reg: List<CompDefEntry>, in_bag: DiagnosticBag) -> D
     bag
 }
 
-fn validate_children_bag(parent_comp: string, schema: List<ChildrenSlot>, body: List<SStmt>, line: int, col: int, file: string, in_bag: DiagnosticBag) -> DiagnosticBag {
+fn validate_children_bag(store: NodeStore, parent_comp: string, schema: List<ChildrenSlot>, body: List<SStmt>, line: int, col: int, file: string, in_bag: DiagnosticBag) -> DiagnosticBag {
     mut bag = in_bag
     mut i = 0
     while i < body.length {
         let ss = body[i]
-        let inner = stmt_unwrap_deep(ss.node)
+        let inner = stmt_unwrap_deep(store, ss.node)
         match inner {
             .ComponentBlock(child_comp, _, _, _) -> {
                 if slot_name_for_child(schema, child_comp) == "" {
@@ -738,7 +759,7 @@ fn join_slot_names(schema: List<ChildrenSlot>) -> string {
 /// The component's body is rewritten via `rw_template` (for
 /// `@cfg`) and `rewrite_self` (for `@self`), then the result
 /// inlines into the surrounding scope.
-fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
+fn splice_template_block(store: NodeStore, comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
     let is_root = nest.parent_var == ""
     let accum_var = if is_root { inst } else { nest.parent_var }
     let rw_ctx = RewriteCtx { inst, parent_var: accum_var, parent_name: nest.parent_name }
@@ -746,26 +767,26 @@ fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair
     mut stmts: List<SStmt> = []
 
     if has_fn(def.body, "drop") {
-        let rewritten = rw_template(find_fn_body(def.body, "drop"), inst, config, def.config, rw_ctx)
-        stmts = prepend_stmt(Stmt.Defer(Expr.Block(rewritten)), line, col, stmts)
+        let rewritten = rw_template(store, store.sstmts_of(find_fn_body(def.body, "drop")), inst, config, def.config, rw_ctx)
+        stmts = prepend_stmt(Stmt.Defer(store.exprs.add_leaf(Expr.Block(rewritten))), line, col, stmts)
     }
 
     if has_fn(def.body, "__on_after_children") {
-        let rewritten = rw_template(find_fn_body(def.body, "__on_after_children"), inst, config, def.config, rw_ctx)
+        let rewritten = rw_template(store, store.sstmts_of(find_fn_body(def.body, "__on_after_children")), inst, config, def.config, rw_ctx)
         stmts = list_concat(rewritten, stmts)
     }
 
     let child_nest = CompNestCtx { parent_var: accum_var, parent_name: inst, parent_children: def.children }
-    let expanded_body = expand_stmt_list(body, reg, child_nest)
+    let expanded_body = expand_stmt_list(store, body, reg, child_nest)
     stmts = list_concat(expanded_body, stmts)
 
     if has_fn(def.body, "init") {
-        let rewritten = rw_template(find_fn_body(def.body, "init"), inst, config, def.config, rw_ctx)
+        let rewritten = rw_template(store, store.sstmts_of(find_fn_body(def.body, "init")), inst, config, def.config, rw_ctx)
         stmts = list_concat(rewritten, stmts)
     }
 
     if is_root {
-        stmts = prepend_stmt(Stmt.Mut(inst, ValueType.Unknown, Expr.Number("0")), line, col, stmts)
+        stmts = prepend_stmt(Stmt.Mut(inst, ValueType.Unknown, store.exprs.add_leaf(Expr.Number("0"))), line, col, stmts)
     }
 
     list_concat(stmts, rest)
@@ -775,7 +796,7 @@ fn splice_template_block(comp: string, inst: string, config: List<CompConfigPair
 /// Emits a `let inst = <factory>(cfg)` binding plus any nested
 /// component blocks expanded recursively under the new
 /// nesting context.
-fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
+fn splice_data_block(store: NodeStore, comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
     let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
     let call_args: List<SExpr> = [sexpr(Expr.String("\"${inst}\""), 0, 0)]
@@ -788,12 +809,12 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
     mut stmts: List<SStmt> = []
 
     if def.found && has_fn(def.body, "drop") {
-        let rewritten = rewrite_self(find_fn_body(def.body, "drop"), rw_ctx)
-        stmts = prepend_stmt(Stmt.Defer(Expr.Block(rewritten)), line, col, stmts)
+        let rewritten = rewrite_self(store, store.sstmts_of(find_fn_body(def.body, "drop")), rw_ctx)
+        stmts = prepend_stmt(Stmt.Defer(store.exprs.add_leaf(Expr.Block(rewritten))), line, col, stmts)
     }
 
     if def.found && has_fn(def.body, "__on_after_children") {
-        let rewritten = rewrite_self(find_fn_body(def.body, "__on_after_children"), rw_ctx)
+        let rewritten = rewrite_self(store, store.sstmts_of(find_fn_body(def.body, "__on_after_children")), rw_ctx)
         stmts = list_concat(rewritten, stmts)
     }
 
@@ -801,11 +822,11 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
     // parent (so auto-push targets `inst.<slot>`), and inherit the
     // current component's children schema for slot resolution.
     let child_nest = CompNestCtx { parent_var: inst, parent_name: inst, parent_children: def.children }
-    let expanded_body = expand_stmt_list(body, reg, child_nest)
+    let expanded_body = expand_stmt_list(store, body, reg, child_nest)
     stmts = list_concat(expanded_body, stmts)
 
     if def.found && has_fn(def.body, "init") {
-        let rewritten = rewrite_self(find_fn_body(def.body, "init"), rw_ctx)
+        let rewritten = rewrite_self(store, store.sstmts_of(find_fn_body(def.body, "init")), rw_ctx)
         stmts = list_concat(rewritten, stmts)
     }
 
@@ -815,7 +836,7 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
     // accumulator picks it up.
     let push_slot = slot_name_for_child(nest.parent_children, comp)
     let with_push: List<SStmt> = if push_slot != "" && nest.parent_var != "" {
-        mut wp: List<SStmt> = [build_push_stmt(nest.parent_var, push_slot, inst, line, col)]
+        mut wp: List<SStmt> = [build_push_stmt(store, nest.parent_var, push_slot, inst, line, col)]
         let tail = list_concat(stmts, rest)
         mut wpi = 0
         while wpi < tail.length {
@@ -832,9 +853,9 @@ fn splice_data_block(comp: string, inst: string, config: List<CompConfigPair>, b
     // nested ComponentBlocks compiles — the resolver rejects mutating
     // methods on immutable bindings.
     let binding = if has_any_slot(def.children) {
-        Stmt.Mut(inst, ValueType.Unknown, init_expr)
+        Stmt.Mut(inst, ValueType.Unknown, store.exprs.add_leaf(init_expr))
     } else {
-        Stmt.Let(inst, ValueType.Unknown, init_expr)
+        Stmt.Let(inst, ValueType.Unknown, store.exprs.add_leaf(init_expr))
     }
     mut out: List<SStmt> = [sstmt(binding, line, col)]
     mut oi = 0
@@ -862,14 +883,14 @@ fn has_any_slot(schema: List<ChildrenSlot>) -> bool {
 /// passes through unchanged here; ComponentBlock instances of
 /// @expand'd defs likewise pass through because their parent
 /// def is absent from `reg` (collect_component_defs skipped it).
-export fn expand_stmt_list(stmts: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
+export fn expand_stmt_list(store: NodeStore, stmts: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx) -> List<SStmt> {
     // Walk backward so that splice_* helpers — which take the
     // already-expanded tail as their `rest` — see the right successor.
     mut tail: List<SStmt> = []
     mut i = stmts.length - 1
     while i >= 0 {
         let ss = stmts[i]
-        let has_expand = find_annotation(ss.node, "expand") != null
+        let has_expand = find_annotation(store, ss.node, "expand") != null
         if has_expand {
             mut new_tail: List<SStmt> = [ss]
             mut ti = 0
@@ -881,10 +902,10 @@ export fn expand_stmt_list(stmts: List<SStmt>, reg: List<CompDefEntry>, nest: Co
             i = i - 1
             continue
         }
-        let inner = stmt_unwrap_deep(ss.node)
+        let inner = stmt_unwrap_deep(store, ss.node)
         tail = match inner {
             .ComponentDef(name, params, config, children, _, body) -> {
-                splice_component_def(name, params, config, children, body, ss.line, ss.col, tail)
+                splice_component_def(store, name, params, config, children, store.sstmts_of(body), ss.line, ss.col, tail)
             }
             .ComponentBlock(comp, inst, config, body) -> {
                 let lookup = comp_reg_lookup(reg, comp)
@@ -900,14 +921,14 @@ export fn expand_stmt_list(stmts: List<SStmt>, reg: List<CompDefEntry>, nest: Co
                     }
                     nt
                 } else {
-                    splice_component_block(comp, inst, config, body, ss.line, ss.col, tail, reg, nest)
+                    splice_component_block(store, comp, inst, config, store.sstmts_of(body), ss.line, ss.col, tail, reg, nest)
                 }
             }
             _ -> {
                 // Recurse into nested statement lists. Preserve
                 // SStmt.file so g2eo's per-file metadata path can
                 // attribute decls to their origin file.
-                let expanded_stmt = expand_stmt(ss.node, reg, nest)
+                let expanded_stmt = expand_stmt(store, ss.node, reg, nest)
                 mut nt: List<SStmt> = [sstmt_at(expanded_stmt, ss.line, ss.col, ss.file)]
                 mut ti = 0
                 while ti < tail.length {
@@ -925,22 +946,27 @@ export fn expand_stmt_list(stmts: List<SStmt>, reg: List<CompDefEntry>, nest: Co
 /// Per-statement expansion. Recurses into module / fn / impl /
 /// block bodies so component blocks at any nesting depth are
 /// spliced in place.
-fn expand_stmt(stmt: Stmt, reg: List<CompDefEntry>, nest: CompNestCtx) -> Stmt {
+fn expand_stmt(store: NodeStore, stmt: Stmt, reg: List<CompDefEntry>, nest: CompNestCtx) -> Stmt {
     match stmt {
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, expand_stmt_list(body, reg, nest))
-        .Block(body) -> .Block(expand_stmt_list(body, reg, nest))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, store.rows_of(expand_stmt_list(store, store.sstmts_of(body), reg, nest)))
+        .Block(body) -> .Block(store.rows_of(expand_stmt_list(store, store.sstmts_of(body), reg, nest)))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(cond, expand_stmt(then_b, reg, nest), expand_stmt(else_b!, reg, nest))
+                .If(cond, expand_stmt_id(store, then_b, reg, nest), expand_stmt_id(store, else_b!, reg, nest))
             } else {
-                .If(cond, expand_stmt(then_b, reg, nest), null)
+                .If(cond, expand_stmt_id(store, then_b, reg, nest), null)
             }
         }
-        .While(cond, body) -> .While(cond, expand_stmt(body, reg, nest))
-        .For(v, start, end, body) -> .For(v, start, end, expand_stmt(body, reg, nest))
-        .ForIn(v, coll, body) -> .ForIn(v, coll, expand_stmt(body, reg, nest))
-        .Module(name, body) -> .Module(name, expand_stmt_list(body, reg, nest))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: expand_stmt(inner.node, reg, nest) })
+        .While(cond, body) -> .While(cond, expand_stmt_id(store, body, reg, nest))
+        .For(v, start, end, body) -> .For(v, start, end, expand_stmt_id(store, body, reg, nest))
+        .ForIn(v, coll, body) -> .ForIn(v, coll, expand_stmt_id(store, body, reg, nest))
+        .Module(name, body) -> .Module(name, store.rows_of(expand_stmt_list(store, store.sstmts_of(body), reg, nest)))
+        .Annotated(annots, inner) -> .Annotated(annots, expand_stmt_id(store, inner, reg, nest))
         _ -> stmt
     }
+}
+
+/// Row twin of `expand_stmt`: resolve, expand, re-allocate.
+fn expand_stmt_id(store: NodeStore, id: StmtId, reg: List<CompDefEntry>, nest: CompNestCtx) -> StmtId {
+    store.restmt(expand_stmt(store, store.stmts.get(id), reg, nest), id)
 }

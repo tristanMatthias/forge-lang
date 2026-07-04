@@ -76,6 +76,24 @@ export fn emit_stmt_list(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) ->
     ok_sr(cur_ctx, cur_env)
 }
 
+/// Row-list twin of `emit_stmt_list` for flipped bodies — per-stmt
+/// source position comes from the store's position column.
+export fn emit_stmt_ids(ctx: Ctx, env: List<VarBinding>, ids: List<StmtId>) -> Result<StmtResult, string> {
+    mut cur_ctx = ctx
+    mut cur_env = env
+    mut i = 0
+    while i < ids.length {
+        let id = ids[i]
+        let pos = ctx.nodes.stmt_pos(id)
+        let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
+        let sr = emit_stmt(line_ctx, cur_env, ctx.nodes.stmts.get(id))?
+        cur_ctx = sr.ctx
+        cur_env = sr.env
+        i = i + 1
+    }
+    ok_sr(cur_ctx, cur_env)
+}
+
 /// Release every RC-managed local that wasn't moved out of scope.
 /// Walks `ctx.rc_cleanup` (built up by `ctx.bind`) in LIFO order.
 /// Called from every scope-exit emitter (return, function end,
@@ -258,10 +276,11 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
     ctx.cov_line()
     match stmt {
         .Expr(expr) -> {
-            emit_expr(ctx, env, expr)?
+            emit_expr(ctx, env, ctx.nodes.exprs.get(expr))?
             ok_sr(ctx, env)
         }
-        .Return(value) -> {
+        .Return(value_id) -> {
+            let value = ctx.nodes.exprs.get(value_id)
             mut r = emit_expr(ctx, env, value)?
             // Structured concurrency: await all spawned tasks before returning.
             if ctx.task_group != null {
@@ -303,25 +322,28 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             ok_sr(ctx, env)
         }
         .Let(name, vt, initializer) -> {
-            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            let new_env = emit_var_decl(ctx, env, name, vt, ctx.nodes.exprs.get(initializer))?
             ok_sr(ctx, new_env)
         }
         .Mut(name, vt, initializer) -> {
-            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            let new_env = emit_var_decl(ctx, env, name, vt, ctx.nodes.exprs.get(initializer))?
             ok_sr(ctx, new_env)
         }
         .Const(name, vt, initializer) -> {
-            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
+            let new_env = emit_var_decl(ctx, env, name, vt, ctx.nodes.exprs.get(initializer))?
             ok_sr(ctx, new_env)
         }
-        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
+        .If(condition, then_branch, else_branch) -> {
+            let else_s: Stmt? = if else_branch != null { ctx.nodes.stmts.get(else_branch!) } else { null }
+            emit_if(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)
+        }
         .Block(body) -> {
-            let sr = emit_stmt_list(ctx, env, body)?
+            let sr = emit_stmt_ids(ctx, env, body)?
             ok_sr(sr.ctx, env)
         }
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
         or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
-        .Annotated(_, inner) -> emit_stmt(ctx, env, inner.node)
+        .Annotated(_, inner) -> emit_stmt(ctx, env, ctx.nodes.stmts.get(inner))
         .Break -> {
             let frame = loops_top(ctx.loops)
             if !frame.found {

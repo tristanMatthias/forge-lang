@@ -1,7 +1,7 @@
 // WHY: parses module declarations (`mod name`) and use imports
 // (`use path.{name1, name2}`). Part of the modules feature.
 
-use core.{Stmt, SStmt, ParamEntry, ValueType}
+use core.{Stmt, StmtId, ParamEntry, ValueType}
 use parse.{Parser}
 use core.{Tk}
 
@@ -12,7 +12,7 @@ impl Parser {
     fn parse_module_declaration(self) -> Result<StmtId, string> {
         self.advance()  // consume `mod`
         let name = self.consume_identifier("expected module name after `mod`")?
-        let empty_body: List<SStmt> = []
+        let empty_body: List<StmtId> = []
         .Ok(self.alloc_stmt_leaf(Stmt.Module(name, empty_body)))
     }
 

@@ -16,6 +16,7 @@ spec "ResolverCtx: ctx_lookup_type eagerly expands nested fields" {
     then "DoubleWrap.value.node reaches int two levels down without re-lookup" {
         let out = write_fixture_and_run("/tmp/avra_ctx_lookup_type_eager_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type}\n" +
             "\n" +
             "type Wrap = { node: int }\n" +
@@ -43,7 +44,7 @@ spec "ResolverCtx: ctx_lookup_type eagerly expands nested fields" {
             "    }\n" +
             "    let msg = \"deep=\" + deep\n" +
             "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +

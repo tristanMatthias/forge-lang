@@ -2,7 +2,7 @@
 // evaluator lives in features/eval/mod.av.
 
 use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
-use core.{NodeStore, PatId}
+use core.{NodeStore, PatId, StmtId, ExprId}
 use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
@@ -139,7 +139,7 @@ type Binding = {
 type FunctionDef = {
     name: string,
     params: List<ParamEntry>,
-    body: List<SStmt>,
+    body: List<StmtId>,
 }
 
 /// Tree-walk evaluator state. Threaded through every eval step.
@@ -374,10 +374,10 @@ fn finish_result(step: StepResult) -> EvalResult {
 /// Returns the StepResult of running `body` with `params` bound to
 /// `arg_values` in a fresh scope of `runtime`. Caller is responsible
 /// for arity (`arg_values.length` should match `params.length`).
-export fn eval_fn_with_resolved_args(runtime: Runtime, params: List<ParamEntry>, body: List<SStmt>, arg_values: List<Value>) -> StepResult {
+export fn eval_fn_with_resolved_args(runtime: Runtime, params: List<ParamEntry>, body: List<StmtId>, arg_values: List<Value>) -> StepResult {
     let call_env = enter_scope(runtime)
     let bound_env = bind_params(call_env, params, arg_values)
-    let body_result = execute_stmt_list(bound_env, body)
+    let body_result = execute_stmt_ids(bound_env, body)
     let restored = exit_scope(body_result.runtime)
     if body_result.had_error {
         return StepResult {
@@ -565,7 +565,7 @@ type LookupResult = {
 /// @field found  — 1 when the fn was registered.
 type FunctionLookupResult = {
     params: List<ParamEntry>,
-    body: List<SStmt>,
+    body: List<StmtId>,
     found: int,
 }
 
@@ -596,14 +596,14 @@ fn lookup_function(functions: List<FunctionDef>, name: string) -> FunctionLookup
         i = i - 1
     }
     let empty_p: List<ParamEntry> = []
-    let empty_body: List<SStmt> = []
+    let empty_body: List<StmtId> = []
     FunctionLookupResult { params: empty_p, body: empty_body, found: false }
 }
 
 /// Register a function declaration on the runtime. Functions
 /// don't track depth (they're effectively program-global from
 /// the evaluator's perspective).
-fn define_function(runtime: Runtime, name: string, params: List<ParamEntry>, body: List<SStmt>) -> Runtime {
+fn define_function(runtime: Runtime, name: string, params: List<ParamEntry>, body: List<StmtId>) -> Runtime {
     mut new_functions = runtime.functions
     new_functions.push(FunctionDef { name: name, params: params, body: body })
     runtime with { functions: new_functions }
@@ -661,6 +661,19 @@ fn execute_stmt_list(runtime: Runtime, stmts: List<SStmt>) -> StepResult {
     cur
 }
 
+/// The flipped-body twin of `execute_stmt_list`: walks a
+/// `List<StmtId>` body, resolving each row through the runtime's
+/// node store.
+export fn execute_stmt_ids(runtime: Runtime, ids: List<StmtId>) -> StepResult {
+    if ids.length == 0 { return ok_result(runtime, value_null()) }
+    mut cur = ok_result(runtime, value_null())
+    for id in ids {
+        cur = execute_stmt(cur.runtime, cur.runtime.nodes.stmts.get(id))
+        if cur.had_error || cur.is_return { return cur }
+    }
+    cur
+}
+
 /// Execute a single statement. Built-ins (let/mut/expr/block/
 /// fn-decl/return) are inlined here; declarative-only stmts
 /// (TypeDecl, ShapeDecl, …) are erased. Anything else dispatches
@@ -668,7 +681,7 @@ fn execute_stmt_list(runtime: Runtime, stmts: List<SStmt>) -> StepResult {
 export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Let(name, _, initializer) -> {
-            let init = eval_expr(runtime, initializer)
+            let init = eval_expr(runtime, runtime.nodes.exprs.get(initializer))
             if init.had_error {
                 return init
             }
@@ -677,7 +690,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             ok_result(next_runtime, value_null())
         }
         .Mut(name, _, initializer) -> {
-            let init = eval_expr(runtime, initializer)
+            let init = eval_expr(runtime, runtime.nodes.exprs.get(initializer))
             if init.had_error {
                 return init
             }
@@ -685,10 +698,10 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             let next_runtime = define_binding(init.runtime, name, true, init.value)
             ok_result(next_runtime, value_null())
         }
-        .Expr(expr) -> eval_expr(runtime, expr)
+        .Expr(expr) -> eval_expr(runtime, runtime.nodes.exprs.get(expr))
         .Block(body) -> {
             let entered = enter_scope(runtime)
-            let body_result = execute_stmt_list(entered, body)
+            let body_result = execute_stmt_ids(entered, body)
             let exited = exit_scope(body_result.runtime)
             if body_result.had_error {
                 return StepResult {
@@ -711,7 +724,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             ok_result(next_runtime, value_null())
         }
         .Return(value) -> {
-            let val_result = eval_expr(runtime, value)
+            let val_result = eval_expr(runtime, runtime.nodes.exprs.get(value))
             if val_result.had_error {
                 return val_result
             }
@@ -726,7 +739,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
-        .Annotated(_, inner) -> execute_stmt(runtime, inner.node)
+        .Annotated(_, inner) -> execute_stmt(runtime, runtime.nodes.stmts.get(inner))
         _ -> {
             let tag = avra_stmt_tag(stmt)
             let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)
@@ -1174,7 +1187,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
 
     let call_env = enter_scope(args_result.runtime)
     let bound_env = bind_params(call_env, fn_lookup.params, args_result.values)
-    let body_result = execute_stmt_list(bound_env, fn_lookup.body)
+    let body_result = execute_stmt_ids(bound_env, fn_lookup.body)
     let restored = exit_scope(body_result.runtime)
 
     if body_result.had_error {
@@ -2246,6 +2259,31 @@ export fn value_to_stmt_list(store: NodeStore, v: Value) -> Result<List<SStmt>, 
     list_value_to_stmt_list(store, v)
 }
 
+/// Decode a Value to a Stmt and allocate it as a store row — the
+/// flipped-payload decoder step (F3a; generalizes the F2 pattern
+/// rule "decode allocates boxed→ids").
+export fn value_to_stmt_id(store: NodeStore, v: Value) -> Result<StmtId, string> {
+    let s = value_to_stmt(store, v)?
+    .Ok(store.stmts.add_leaf(s))
+}
+
+/// Decode a Value to an Expr and allocate it as a store row.
+fn value_to_expr_id(store: NodeStore, v: Value) -> Result<ExprId, string> {
+    let e = value_to_expr_node(store, v)?
+    .Ok(store.exprs.add_leaf(e))
+}
+
+/// Decode a list Value into flipped `List<StmtId>` rows.
+export fn list_value_to_stmt_id_list(store: NodeStore, v: Value) -> Result<List<StmtId>, string> {
+    if v.kind != "list" { return .Err("decode: stmt list not a list") }
+    mut out: List<StmtId> = []
+    for entry in v.list_payload {
+        let id = value_to_stmt_id(store, entry)?
+        out.push(id)
+    }
+    .Ok(out)
+}
+
 // ── Expr decoder ──
 
 fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
@@ -2600,12 +2638,12 @@ fn enum_value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
         "NoOp"        -> .Ok(Stmt.NoOp)
         "Expr" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(store, p[0])?
+            let inner = value_to_expr_id(store, p[0])?
             .Ok(Stmt.Expr(inner))
         }
         "Return" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(store, p[0])?
+            let inner = value_to_expr_id(store, p[0])?
             .Ok(Stmt.Return(inner))
         }
         "Let" -> binding_decode(store, p, "Let")
@@ -2613,13 +2651,13 @@ fn enum_value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
         "Const" -> binding_decode(store, p, "Const")
         "Block" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = list_value_to_stmt_list(store, p[0])?
+            let body = list_value_to_stmt_id_list(store, p[0])?
             .Ok(Stmt.Block(body))
         }
         "Impl" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let type_name_v: Value = p[0]
-            let methods = list_value_to_stmt_list(store, p[1])?
+            let methods = list_value_to_stmt_id_list(store, p[1])?
             .Ok(Stmt.Impl(type_name_v.text, methods))
         }
         "Function" -> {
@@ -2628,7 +2666,7 @@ fn enum_value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
             let tp = list_value_to_type_param_list(p[1])?
             let params = list_value_to_param_list(p[2])?
             let resolved_rt = decode_or(value_to_value_type_node(p[3]), ValueType.Unknown)
-            let body = list_value_to_stmt_list(store, p[4])?
+            let body = list_value_to_stmt_id_list(store, p[4])?
             .Ok(Stmt.Function(name_v.text, tp, params, resolved_rt, body))
         }
         "TypeDecl" -> {
@@ -2650,67 +2688,65 @@ fn enum_value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
             let comp_v: Value = p[0]
             let inst_v: Value = p[1]
             let config = list_value_to_comp_config_pair_list(store, p[2])?
-            let body = list_value_to_stmt_list(store, p[3])?
+            let body = list_value_to_stmt_id_list(store, p[3])?
             .Ok(Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body))
         }
         "Annotated" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let annots = list_value_to_annotation_list(store, p[0])?
-            let inner = value_to_stmt(store, p[1])?
-            // Annotated.inner is SStmt — wrap the decoded Stmt in a dummy span
-            // (the decoded AST has no source position of its own).
-            .Ok(Stmt.Annotated(annots, sstmt_dummy(inner)))
+            let inner = value_to_stmt_id(store, p[1])?
+            .Ok(Stmt.Annotated(annots, inner))
         }
         "If" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let cond = value_to_expr_node(store, p[0])?
-            let then_b = value_to_stmt(store, p[1])?
+            let cond = value_to_expr_id(store, p[0])?
+            let then_b = value_to_stmt_id(store, p[1])?
             let else_v: Value = p[2]
             let else_b = if variant_is_optional_absent(else_v.enum_variant) { none } else {
-                match value_to_stmt(store, else_v) { .Ok(s) -> s, .Err(_) -> none }
+                match value_to_stmt_id(store, else_v) { .Ok(s) -> s, .Err(_) -> none }
             }
             .Ok(Stmt.If(cond, then_b, else_b))
         }
         "While" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let cond = value_to_expr_node(store, p[0])?
-            let body = value_to_stmt(store, p[1])?
+            let cond = value_to_expr_id(store, p[0])?
+            let body = value_to_stmt_id(store, p[1])?
             .Ok(Stmt.While(cond, body))
         }
         "For" -> {
             if p.length != 4 { return .Err("decode: bad payload") }
             let var_v: Value = p[0]
-            let start = value_to_expr_node(store, p[1])?
-            let end_e = value_to_expr_node(store, p[2])?
-            let body = value_to_stmt(store, p[3])?
+            let start = value_to_expr_id(store, p[1])?
+            let end_e = value_to_expr_id(store, p[2])?
+            let body = value_to_stmt_id(store, p[3])?
             .Ok(Stmt.For(var_v.text, start, end_e, body))
         }
         "ForIn" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
             let var_v: Value = p[0]
-            let coll = value_to_expr_node(store, p[1])?
-            let body = value_to_stmt(store, p[2])?
+            let coll = value_to_expr_id(store, p[1])?
+            let body = value_to_stmt_id(store, p[2])?
             .Ok(Stmt.ForIn(var_v.text, coll, body))
         }
         "Defer" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = value_to_expr_node(store, p[0])?
+            let body = value_to_expr_id(store, p[0])?
             .Ok(Stmt.Defer(body))
         }
         "Errdefer" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = value_to_expr_node(store, p[0])?
+            let body = value_to_expr_id(store, p[0])?
             .Ok(Stmt.Errdefer(body))
         }
         "Parallel" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = list_value_to_stmt_list(store, p[0])?
+            let body = list_value_to_stmt_id_list(store, p[0])?
             .Ok(Stmt.Parallel(body))
         }
         "TraitDecl" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let name_v: Value = p[0]
-            let methods = list_value_to_stmt_list(store, p[1])?
+            let methods = list_value_to_stmt_id_list(store, p[1])?
             .Ok(Stmt.TraitDecl(name_v.text, methods))
         }
         _ -> .Err("decode: unknown Stmt variant `${v.enum_variant}`")
@@ -2840,7 +2876,7 @@ fn struct_field_value_type(v: Value, name: string) -> Result<ValueType, string> 
 fn binding_decode(store: NodeStore, p: List<Value>, variant: string) -> Result<Stmt, string> {
     if p.length != 3 { return .Err("decode: binding arity") }
     let name_v: Value = p[0]
-    let init = value_to_expr_node(store, p[2])?
+    let init = value_to_expr_id(store, p[2])?
     let resolved_vt = decode_or(value_to_value_type_node(p[1]), ValueType.Unknown)
     match variant {
         "Let"   -> .Ok(Stmt.Let(name_v.text, resolved_vt, init))

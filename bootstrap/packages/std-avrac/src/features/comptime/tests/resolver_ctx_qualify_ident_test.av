@@ -14,6 +14,7 @@ spec "ResolverCtx: ctx_qualify_ident hits aliases" {
     then "imported name resolves to its qualified path" {
         let out = write_fixture_and_run("/tmp/avra_resolver_ctx_qualify_ident_test.av", 
             "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_qualify_ident}\n" +
             "\n" +
             "@comptime\n" +
@@ -26,7 +27,7 @@ spec "ResolverCtx: ctx_qualify_ident hits aliases" {
             "    if n != null { nstr = n! }\n" +
             "    let msg = \"Stmt=\" + qstr + \"; missing=\" + nstr\n" +
             "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(Expr.Call(Expr.Ident(\"println\"), args))\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +

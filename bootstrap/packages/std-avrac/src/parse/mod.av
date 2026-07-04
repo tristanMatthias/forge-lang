@@ -15,7 +15,7 @@ use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, Logic
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
-use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span_none, expr_ref_id}
+use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -40,6 +40,11 @@ export type ParseResult = {
 /// can render multi-error messages.
 export type ProgramParseResult = {
     stmts: List<SStmt>?,
+    // The arena rows backing `stmts`, in the same order (F3a): a shared-
+    // store sub-parse doesn't record roots, so consumers that embed the
+    // parsed statements as flipped children (the module resolver filling
+    // `Stmt.Module` bodies) take their ids from here.
+    ids: List<StmtId>?,
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
@@ -250,11 +255,12 @@ export fn parse_program_source_shared(source: string, file: string, store: NodeS
 /// for @comptime bodies — both flow through here). Returns `[]` on
 /// any parse failure so callers treat the fn as body-less and
 /// surface a clearer error downstream.
-export fn parse_body_source(source: string, store: NodeStore) -> List<SStmt> {
+export fn parse_body_source(source: string, store: NodeStore) -> List<StmtId> {
     // The caller's store, not a fresh one: the parsed body's id payloads
-    // (pattern children since F2) must resolve in the arena the consumer
-    // executes against — a throwaway store would leave wrong-arena ids.
-    let empty: List<SStmt> = []
+    // (pattern children since F2, statement children since F3a) must
+    // resolve in the arena the consumer executes against — a throwaway
+    // store would leave wrong-arena ids.
+    let empty: List<StmtId> = []
     if source == "" { return empty }
     let wrapped = "fn __avra_body_source_wrapper() {\n" + source + "\n}"
     let parsed = parse_program_source_shared(wrapped, "", store)
@@ -262,7 +268,7 @@ export fn parse_body_source(source: string, store: NodeStore) -> List<SStmt> {
     if parsed.stmts == null { return empty }
     let ss = parsed.stmts!
     if ss.length == 0 { return empty }
-    match stmt_unwrap(ss[0].node) {
+    match stmt_unwrap(store, ss[0].node) {
         .Function(_, _, _, _, body) -> body
         _ -> empty
     }
@@ -596,6 +602,7 @@ impl Parser {
             .Ok(s) -> s
             .Err(_) -> return ProgramParseResult {
                 stmts: null,
+                ids: null,
                 had_error: self.had_error,
                 error_message: self.error_message,
                 bag: self.bag,
@@ -607,6 +614,7 @@ impl Parser {
             self.set_error("expected end of input")
             return ProgramParseResult {
                 stmts: null,
+                ids: null,
                 had_error: true,
                 error_message: self.error_message,
                 bag: self.bag,
@@ -626,6 +634,7 @@ impl Parser {
 
         ProgramParseResult {
             stmts: parsed.wrapped,
+            ids: parsed.ids,
             had_error: self.had_error,
             error_message: self.error_message,
             bag: self.bag,
@@ -660,6 +669,10 @@ impl Parser {
                     continue
                 }
             }
+            // Stamp the row's position column (F3a): flipped `List<StmtId>`
+            // bodies have no wrapper to carry (line, col, file), so the
+            // store row is the position's home now.
+            self.store.stmts.record_pos(sid, SrcPos { line: stmt_line, col: stmt_col, file: self.file })
             out.push(sstmt_at(self.stmt_of(sid), stmt_line, stmt_col, self.file))
             ids.push(sid)
         }
@@ -688,8 +701,8 @@ impl Parser {
             let doc_arg: List<SExpr> = [sexpr_dummy(Expr.String("\"${doc_text}\""))]
             let doc_arg_id = self.alloc_leaf(Expr.String("\"${doc_text}\""))
             let doc_annots: List<Annotation> = [Annotation { name: "doc", args: doc_arg, arg_ids: [doc_arg_id] }]
-            let node = Stmt.Annotated(doc_annots, sstmt_at(self.stmt_of(inner_id), inner_l, inner_c, self.file))
-            return .Ok(self.alloc_stmt_stmt1(node, inner_id))
+            self.store.stmts.record_pos(inner_id, SrcPos { line: inner_l, col: inner_c, file: self.file })
+            return .Ok(self.alloc_stmt_leaf(Stmt.Annotated(doc_annots, inner_id)))
         }
         if self.check(Tk.ModDocComment) {
             mut doc_text = self.current_lexeme
@@ -703,8 +716,8 @@ impl Parser {
             let mdoc_arg_id = self.alloc_leaf(Expr.String("\"${doc_text}\""))
             let mdoc_annots: List<Annotation> = [Annotation { name: "module_doc", args: doc_arg, arg_ids: [mdoc_arg_id] }]
             let noop_id = self.alloc_stmt_leaf(Stmt.NoOp)
-            let node = Stmt.Annotated(mdoc_annots, sstmt_at(Stmt.NoOp, self.current_line, self.current_column, self.file))
-            return .Ok(self.alloc_stmt_stmt1(node, noop_id))
+            self.store.stmts.record_pos(noop_id, SrcPos { line: self.current_line, col: self.current_column, file: self.file })
+            return .Ok(self.alloc_stmt_leaf(Stmt.Annotated(mdoc_annots, noop_id)))
         }
 
         // Annotations: `@name` or `@name(args)` before a declaration.
@@ -713,8 +726,8 @@ impl Parser {
             let inner_l = self.current_line
             let inner_c = self.current_column
             let inner_id = self.parse_declaration()?
-            let node = Stmt.Annotated(annotations, sstmt_at(self.stmt_of(inner_id), inner_l, inner_c, self.file))
-            return .Ok(self.alloc_stmt_stmt1(node, inner_id))
+            self.store.stmts.record_pos(inner_id, SrcPos { line: inner_l, col: inner_c, file: self.file })
+            return .Ok(self.alloc_stmt_leaf(Stmt.Annotated(annotations, inner_id)))
         }
 
         // `export` wraps the inner declaration in an @export annotation
@@ -735,8 +748,8 @@ impl Parser {
             let empty_args: List<SExpr> = []
             let no_arg_ids: List<ExprId> = []
             let exp_annots: List<Annotation> = [Annotation { name: "export", args: empty_args, arg_ids: no_arg_ids }]
-            let node = Stmt.Annotated(exp_annots, sstmt_at(self.stmt_of(inner_id), inner_l, inner_c, self.file))
-            return .Ok(self.alloc_stmt_stmt1(node, inner_id))
+            self.store.stmts.record_pos(inner_id, SrcPos { line: inner_l, col: inner_c, file: self.file })
+            return .Ok(self.alloc_stmt_leaf(Stmt.Annotated(exp_annots, inner_id)))
         }
 
         let decl_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
@@ -911,7 +924,7 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after block") {
                 return .Err("parse error")
             }
-            return .Ok(self.alloc_stmt(Stmt.Block(body.wrapped), byte_span_none(), self.edges_of_stmt_ids(body.ids)))
+            return .Ok(self.alloc_stmt_leaf(Stmt.Block(body.ids)))
         }
 
         if self.check(Tk.KwBreak) {
@@ -931,7 +944,7 @@ impl Parser {
         }
 
         let eid = self.parse_expression()?
-        .Ok(self.alloc_stmt_expr1(Stmt.Expr(self.expr_of(eid)), eid))
+        .Ok(self.alloc_stmt_leaf(Stmt.Expr(eid)))
     }
 
     /// B1: the expression chain flows typed ids end-to-end; the parsed
@@ -1568,7 +1581,7 @@ impl Parser {
                 match raw_expr {
                     .Lambda(_, _) -> raw_expr
                     _ -> {
-                        if expr_contains_it(raw_expr) {
+                        if expr_contains_it(self.store, raw_expr) {
                             let wrapped = wrap_in_it_lambda(raw_expr)
                             eid = self.alloc1(wrapped, raw_id)
                             wrapped

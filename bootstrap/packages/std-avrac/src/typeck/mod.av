@@ -4,7 +4,7 @@
 // compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
-use core.{NodeStore}
+use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
@@ -839,10 +839,10 @@ export fn tc_narrow_after_if(tc: TC, guard: NarrowGuard, then_b: Stmt, else_b: S
     let none_side_diverges = if guard.present_when_true {
         // `x != none`: the none-side is the else-branch (a bare
         // fall-through never diverges).
-        else_b != null && stmt_diverges(else_b!)
+        else_b != null && stmt_diverges(tc.nodes, else_b!)
     } else {
         // `x == none`: the none-side is the then-branch.
-        stmt_diverges(then_b)
+        stmt_diverges(tc.nodes, then_b)
     }
     if none_side_diverges { tc_narrow_present(tc, guard.var) } else { tc }
 }
@@ -1112,7 +1112,7 @@ fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
         // A trait method with a body parses to `Function`; a body-less required
         // signature parses to `ExternFn` (see trait_decl/parser.av). Gate both,
         // with the method's own type params in scope.
-        cur = match stmt_unwrap(ss.node) {
+        cur = match stmt_unwrap(tc.nodes, ss.node) {
             .Function(_, mtp, params, ret_vt, _) -> tc_check_signature_arity(cur, params, ret_vt, mtp)
             .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(cur, params, ret_vt)
             _ -> cur
@@ -1155,7 +1155,7 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     // instead of the exact-name fallback. Residual id=0 nominals after
     // the stamp pass are type-param placeholders (T, U, S, …) —
     // legitimately id=0 because they aren't registered types.
-    let stamped_stmts = stamp_ids_stmts(stmts, type_reg)
+    let stamped_stmts = stamp_ids_stmts(store, stmts, type_reg)
     // Unconditional invariant assertion: any id=0 nominal whose name
     // IS in the registry is a stamp-pass leak — codegen would fall
     // back to slower name lookup AND id-based equality would
@@ -1199,14 +1199,7 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     // Stamping AFTER annotation keeps the typeck-internal registries
     // unchanged while still letting downstream stages see the
     // resolved ids.
-    // Hand mono + codegen the stamped form. Typeck itself ran
-    // on the parser-shape AST (changing inputs mid-pipeline broke
-    // shard linkage in earlier iterations — codegen looks up types
-    // by name and the rebuild was load-bearing somewhere subtle).
-    // Stamping AFTER annotation keeps the typeck-internal registries
-    // unchanged while still letting downstream stages see the
-    // resolved ids.
-    let stamped_final = stamp_ids_stmts(annotated, type_reg)
+    let stamped_final = stamp_ids_stmts(tc3.nodes, annotated, type_reg)
     TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
 
@@ -1224,9 +1217,9 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
 /// Type-param placeholders (T, U, S, …) are NOT registered, so they
 /// stay id=0 and don't appear here. This function exclusively
 /// surfaces registered-name leaks.
-export fn unstamped_registered_nominals(stmts: List<SStmt>, reg: TypeRegistry) -> List<string> {
+export fn unstamped_registered_nominals(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistry) -> List<string> {
     let empty: List<string> = []
-    let id_zero_names = collect_id_zero_names_stmts(stmts, empty)
+    let id_zero_names = collect_id_zero_names_stmts(store, stmts, empty)
     mut out: List<string> = []
     mut i = 0
     while i < id_zero_names.length {
@@ -1244,7 +1237,7 @@ export fn unstamped_registered_nominals(stmts: List<SStmt>, reg: TypeRegistry) -
 /// is silent codegen corruption (name-based fallback lookup) and
 /// id-based equality mis-comparison.
 fn report_stamp_leaks(tc: TC, stamped: List<SStmt>, reg: TypeRegistry) -> TC {
-    let leaks = unstamped_registered_nominals(stamped, reg)
+    let leaks = unstamped_registered_nominals(tc.nodes, stamped, reg)
     if leaks.length == 0 { return tc }
     mut cur = tc
     mut i = 0
@@ -1343,7 +1336,7 @@ fn is_duplicate_type_name(cur: TC, name: string) -> bool {
 fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
     mut cur = tc
     for ss in stmts {
-        cur = match stmt_unwrap(ss.node) {
+        cur = match stmt_unwrap(tc.nodes, ss.node) {
             .TypeDecl(name, tp, fields) -> {
                 if is_duplicate_type_name(cur, name) {
                     tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
@@ -1437,13 +1430,13 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
                     let with_trait = cur with { trait_impls: list_push_copy(cur.trait_impls, TraitImplEntry { trait_name, type_name }) }
                     // Collect associated type definitions: `type Item = ConcreteType`
-                    collect_impl_assoc_types(with_trait, type_name, methods)
+                    collect_impl_assoc_types(with_trait, type_name, tc.nodes.sstmts_of(methods))
                 } else { cur }
-                collect_decls(with_impl, methods)
+                collect_decls(with_impl, tc.nodes.sstmts_of(methods))
             }
-            .Module(_, body) -> collect_decls(cur, body)
+            .Module(_, body) -> collect_decls(cur, tc.nodes.sstmts_of(body))
             .TraitDecl(name, methods) -> cur with {
-                traits: trait_registry_register(cur.traits, name, collect_method_names_from_stmts(methods), collect_assoc_types_from_stmts(methods))
+                traits: trait_registry_register(cur.traits, name, collect_method_names_from_stmts(tc.nodes.sstmts_of(methods)), collect_assoc_types_from_stmts(tc.nodes.sstmts_of(methods)))
             }
             _ -> cur
         }
@@ -1520,6 +1513,19 @@ export fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
     cur
 }
 
+/// Row-list twin of `check_stmts` for flipped bodies — positions come
+/// from the store's position column.
+export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
+    mut cur = lint_index_loops(tc, tc.nodes.sstmts_of(ids))
+    for id in ids {
+        let pos = tc.nodes.stmt_pos(id)
+        avra_ice_at(pos.file, pos.line, pos.col)
+        let with_pos = cur with { current_line: pos.line, current_col: pos.col }
+        cur = check_stmt(with_pos, tc.nodes.stmts.get(id))
+    }
+    cur
+}
+
 /// True when `e` is the integer literal 0 (the `mut i = 0` seed).
 fn lint_expr_is_zero(e: Expr) -> bool {
     match e { .Number(v) -> v == "0", _ -> false }
@@ -1564,25 +1570,32 @@ fn lint_sig_or(a: LintSig, b: LintSig) -> LintSig {
 
 /// Fold the signals over a list of expressions (call args, tuple /
 /// list elements, …).
-fn lint_scan_sexprs(xs: List<SExpr>, coll: string) -> LintSig {
+fn lint_scan_sexprs(store: NodeStore, xs: List<SExpr>, coll: string) -> LintSig {
     mut acc = lint_sig_none()
-    for x in xs { acc = lint_sig_or(acc, lint_scan_expr(x.node, coll)) }
+    for x in xs { acc = lint_sig_or(acc, lint_scan_expr(store, x.node, coll)) }
     acc
 }
 
 /// Fold the signals over a statement list (block body).
-fn lint_scan_sstmts(xs: List<SStmt>, coll: string) -> LintSig {
+fn lint_scan_sstmts(store: NodeStore, xs: List<SStmt>, coll: string) -> LintSig {
     mut acc = lint_sig_none()
-    for x in xs { acc = lint_sig_or(acc, lint_scan_stmt(x.node, coll)) }
+    for x in xs { acc = lint_sig_or(acc, lint_scan_stmt(store, x.node, coll)) }
+    acc
+}
+
+/// Fold the signals over a flipped body's rows.
+fn lint_scan_stmt_ids(store: NodeStore, ids: List<StmtId>, coll: string) -> LintSig {
+    mut acc = lint_sig_none()
+    for id in ids { acc = lint_sig_or(acc, lint_scan_stmt(store, store.stmts.get(id), coll)) }
     acc
 }
 
 /// Fold the signals over match arms (guard + body, both SExpr).
-fn lint_scan_arms(arms: List<MatchArm>, coll: string) -> LintSig {
+fn lint_scan_arms(store: NodeStore, arms: List<MatchArm>, coll: string) -> LintSig {
     mut acc = lint_sig_none()
     for a in arms {
-        if a.guard != null { acc = lint_sig_or(acc, lint_scan_expr(a.guard!.node, coll)) }
-        acc = lint_sig_or(acc, lint_scan_expr(a.body.node, coll))
+        if a.guard != null { acc = lint_sig_or(acc, lint_scan_expr(store, a.guard!.node, coll)) }
+        acc = lint_sig_or(acc, lint_scan_expr(store, a.body.node, coll))
     }
     acc
 }
@@ -1591,45 +1604,45 @@ fn lint_scan_arms(arms: List<MatchArm>, coll: string) -> LintSig {
 /// Index node is special-cased: it sets `elem` but the `i` in the
 /// subscript does NOT count as a value-use (otherwise every element
 /// access would look like index+element).
-fn lint_scan_expr(e: Expr, coll: string) -> LintSig {
+fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
     match e {
         .Ident(n) -> LintSig { value_i: n == "i", elem: false }
         .Index(obj, idx) -> {
-            let o = lint_scan_expr(obj, coll)
+            let o = lint_scan_expr(store, obj, coll)
             let obj_is_coll = match obj { .Ident(c) -> c == coll, _ -> false }
             let idx_is_i = match idx { .Ident(x) -> x == "i", _ -> false }
             if obj_is_coll && idx_is_i {
                 LintSig { value_i: o.value_i, elem: true }
             } else {
-                lint_sig_or(o, lint_scan_expr(idx, coll))
+                lint_sig_or(o, lint_scan_expr(store, idx, coll))
             }
         }
-        .Assign(_, value) -> lint_scan_expr(value, coll)
-        .Grouping(inner) -> lint_scan_expr(inner, coll)
-        .Unary(_, right) -> lint_scan_expr(right, coll)
-        .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
-        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
-        .Call(callee, args) -> lint_sig_or(lint_scan_expr(callee, coll), lint_scan_sexprs(args, coll))
-        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(callee, coll), lint_scan_sexprs(args, coll))
-        .FieldAccess(obj, _) -> lint_scan_expr(obj, coll)
-        .EnumCtor(_, _, args) -> lint_scan_sexprs(args, coll)
-        .Block(body) -> lint_scan_sstmts(body, coll)
-        .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(subject, coll), lint_scan_arms(arms, coll))
-        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(obj, coll), lint_scan_expr(value, coll))
-        .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(c, coll), lint_sig_or(lint_scan_expr(t, coll), lint_scan_expr(el, coll)))
-        .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(left, coll), lint_scan_expr(right, coll))
-        .OptionalChain(obj, _) -> lint_scan_expr(obj, coll)
-        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(obj, coll), lint_scan_sexprs(args, coll))
-        .Try(inner) -> lint_scan_expr(inner, coll)
-        .Tuple(els) -> lint_scan_sexprs(els, coll)
-        .TupleIndex(obj, _) -> lint_scan_expr(obj, coll)
-        .With(obj, _) -> lint_scan_expr(obj, coll)
-        .ListLit(els) -> lint_scan_sexprs(els, coll)
-        .Lambda(_, body) -> lint_scan_expr(body, coll)
-        .MapLit(entries) -> lint_scan_sexprs(entries, coll)
-        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(obj, coll), lint_sig_or(lint_scan_expr(start, coll), lint_scan_expr(end, coll)))
-        .IsCheck(subject, _) -> lint_scan_expr(subject, coll)
-        .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(needle, coll), lint_scan_sexprs(items, coll))
+        .Assign(_, value) -> lint_scan_expr(store, value, coll)
+        .Grouping(inner) -> lint_scan_expr(store, inner, coll)
+        .Unary(_, right) -> lint_scan_expr(store, right, coll)
+        .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
+        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
+        .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
+        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
+        .FieldAccess(obj, _) -> lint_scan_expr(store, obj, coll)
+        .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
+        .Block(body) -> lint_scan_sstmts(store, body, coll)
+        .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
+        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_expr(store, value, coll))
+        .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, c, coll), lint_sig_or(lint_scan_expr(store, t, coll), lint_scan_expr(store, el, coll)))
+        .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
+        .OptionalChain(obj, _) -> lint_scan_expr(store, obj, coll)
+        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_sexprs(store, args, coll))
+        .Try(inner) -> lint_scan_expr(store, inner, coll)
+        .Tuple(els) -> lint_scan_sexprs(store, els, coll)
+        .TupleIndex(obj, _) -> lint_scan_expr(store, obj, coll)
+        .With(obj, _) -> lint_scan_expr(store, obj, coll)
+        .ListLit(els) -> lint_scan_sexprs(store, els, coll)
+        .Lambda(_, body) -> lint_scan_expr(store, body, coll)
+        .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
+        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_sig_or(lint_scan_expr(store, start, coll), lint_scan_expr(store, end, coll)))
+        .IsCheck(subject, _) -> lint_scan_expr(store, subject, coll)
+        .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, needle, coll), lint_scan_sexprs(store, items, coll))
         _ -> lint_sig_none()
     }
 }
@@ -1637,28 +1650,31 @@ fn lint_scan_expr(e: Expr, coll: string) -> LintSig {
 /// Walk a statement collecting the two F9005 signals. The `i = …`
 /// increment is skipped entirely — its RHS reads `i` but that is the
 /// loop's own bookkeeping, not a value-use of the index.
-fn lint_scan_stmt(s: Stmt, coll: string) -> LintSig {
+fn lint_scan_stmt(store: NodeStore, s: Stmt, coll: string) -> LintSig {
     match s {
-        .Expr(inner) -> match inner {
-            .Assign(n, _) -> if n == "i" { lint_sig_none() } else { lint_scan_expr(inner, coll) }
-            _ -> lint_scan_expr(inner, coll)
+        .Expr(inner_id) -> {
+            let inner = store.exprs.get(inner_id)
+            match inner {
+                .Assign(n, _) -> if n == "i" { lint_sig_none() } else { lint_scan_expr(store, inner, coll) }
+                _ -> lint_scan_expr(store, inner, coll)
+            }
         }
-        .Let(_, _, init) -> lint_scan_expr(init, coll)
-        .Mut(_, _, init) -> lint_scan_expr(init, coll)
-        .Const(_, _, init) -> lint_scan_expr(init, coll)
-        .LetDestructure(_, init) -> lint_scan_expr(init, coll)
-        .Return(value) -> lint_scan_expr(value, coll)
-        .Block(body) -> lint_scan_sstmts(body, coll)
+        .Let(_, _, init) -> lint_scan_expr(store, store.exprs.get(init), coll)
+        .Mut(_, _, init) -> lint_scan_expr(store, store.exprs.get(init), coll)
+        .Const(_, _, init) -> lint_scan_expr(store, store.exprs.get(init), coll)
+        .LetDestructure(_, init) -> lint_scan_expr(store, store.exprs.get(init), coll)
+        .Return(value) -> lint_scan_expr(store, store.exprs.get(value), coll)
+        .Block(body) -> lint_scan_stmt_ids(store, body, coll)
         .If(c, t, el) -> {
-            let base = lint_sig_or(lint_scan_expr(c, coll), lint_scan_stmt(t, coll))
-            if el != null { lint_sig_or(base, lint_scan_stmt(el!, coll)) } else { base }
+            let base = lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_scan_stmt(store, store.stmts.get(t), coll))
+            if el != null { lint_sig_or(base, lint_scan_stmt(store, store.stmts.get(el!), coll)) } else { base }
         }
-        .While(c, body) -> lint_sig_or(lint_scan_expr(c, coll), lint_scan_stmt(body, coll))
-        .For(_, start, end, body) -> lint_sig_or(lint_sig_or(lint_scan_expr(start, coll), lint_scan_expr(end, coll)), lint_scan_stmt(body, coll))
-        .ForIn(_, c, body) -> lint_sig_or(lint_scan_expr(c, coll), lint_scan_stmt(body, coll))
-        .Match(subject, arms) -> lint_sig_or(lint_scan_expr(subject, coll), lint_scan_arms(arms, coll))
-        .Defer(body) -> lint_scan_expr(body, coll)
-        .Errdefer(body) -> lint_scan_expr(body, coll)
+        .While(c, body) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_scan_stmt(store, store.stmts.get(body), coll))
+        .For(_, start, end, body) -> lint_sig_or(lint_sig_or(lint_scan_expr(store, store.exprs.get(start), coll), lint_scan_expr(store, store.exprs.get(end), coll)), lint_scan_stmt(store, store.stmts.get(body), coll))
+        .ForIn(_, c, body) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_scan_stmt(store, store.stmts.get(body), coll))
+        .Match(subject, arms) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(subject), coll), lint_scan_arms(store, arms, coll))
+        .Defer(body) -> lint_scan_expr(store, store.exprs.get(body), coll)
+        .Errdefer(body) -> lint_scan_expr(store, store.exprs.get(body), coll)
         _ -> lint_sig_none()
     }
 }
@@ -1692,9 +1708,9 @@ fn lint_is_unit_step(e: Expr) -> bool {
     }
 }
 
-fn lint_step_count(s: Stmt) -> LintStep {
+fn lint_step_count(store: NodeStore, s: Stmt) -> LintStep {
     match s {
-        .Expr(inner) -> match inner {
+        .Expr(inner_id) -> match store.exprs.get(inner_id) {
             .Assign(n, v) -> if n == "i" {
                 LintStep { total: 1, unit: if lint_is_unit_step(v) { 1 } else { 0 } }
             } else { lint_step_none() }
@@ -1702,13 +1718,13 @@ fn lint_step_count(s: Stmt) -> LintStep {
         }
         .Block(body) -> {
             mut c = lint_step_none()
-            for x in body { c = lint_step_add(c, lint_step_count(x.node)) }
+            for x in body { c = lint_step_add(c, lint_step_count(store, store.stmts.get(x))) }
             c
         }
-        .If(_, t, el) -> lint_step_add(lint_step_count(t), if el != null { lint_step_count(el!) } else { lint_step_none() })
-        .While(_, body) -> lint_step_count(body)
-        .For(_, _, _, body) -> lint_step_count(body)
-        .ForIn(_, _, body) -> lint_step_count(body)
+        .If(_, t, el) -> lint_step_add(lint_step_count(store, store.stmts.get(t)), if el != null { lint_step_count(store, store.stmts.get(el!)) } else { lint_step_none() })
+        .While(_, body) -> lint_step_count(store, store.stmts.get(body))
+        .For(_, _, _, body) -> lint_step_count(store, store.stmts.get(body))
+        .ForIn(_, _, body) -> lint_step_count(store, store.stmts.get(body))
         _ -> lint_step_none()
     }
 }
@@ -1728,13 +1744,13 @@ fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
         if k + 1 < stmts.length {
             match ss.node {
                 .Mut(name, _, init) -> {
-                    if name == "i" && lint_expr_is_zero(init) {
+                    if name == "i" && lint_expr_is_zero(tc.nodes.exprs.get(init)) {
                         match stmts[k + 1].node {
                             .While(cond, body) -> {
-                                let coll = lint_index_guard_coll(cond)
+                                let coll = lint_index_guard_coll(tc.nodes.exprs.get(cond))
                                 if coll != "" && vtype_is_list(type_lookup(cur.types, coll)) {
-                                    let sig = lint_scan_stmt(body, coll)
-                                    let step = lint_step_count(body)
+                                    let sig = lint_scan_stmt(tc.nodes, tc.nodes.stmts.get(body), coll)
+                                    let step = lint_step_count(tc.nodes, tc.nodes.stmts.get(body))
                                     if sig.value_i && sig.elem && step.total == 1 && step.unit == 1 {
                                         cur = tc_warn(cur, DiagCode.ManualIndexLoop,
                                             "manual index loop over `${coll}` — use `for (i, x) in ${coll}.enumerate()`")
@@ -2167,21 +2183,21 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
 /// recurse into their bodies and registries.
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false, false)
-        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false, true)
-        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, true, false)
+        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), false, false)
+        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), false, true)
+        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), true, false)
         .Expr(e) -> {
-            let r = check_expr(tc, e)
+            let r = check_expr(tc, tc.nodes.exprs.get(e))
             r.tc
         }
         .Return(value) -> {
-            let r = check_expr(tc, value)
+            let r = check_expr(tc, tc.nodes.exprs.get(value))
             r.tc
         }
         .ReturnEmpty -> tc
         .Block(body) -> {
             let inner = tc_enter(tc)
-            let checked = check_stmts(inner, body)
+            let checked = check_stmt_ids(inner, body)
             tc_exit(checked)
         }
         .Function(name, tp, params, ret_vt, body) -> {
@@ -2195,13 +2211,13 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             result
         }
         .Impl(impl_name, methods) -> {
-            let after = check_stmts(tc, methods)
+            let after = check_stmt_ids(tc, methods)
             // Check trait conformance if this is `impl Trait for Type`
             // impl_name is "Trait:Type" or just "Type"
-            check_trait_conformance(after, impl_name, methods)
+            check_trait_conformance(after, impl_name, tc.nodes.sstmts_of(methods))
         }
-        .Module(_, body) -> check_stmts(tc, body)
-        .Annotated(_, inner) -> check_stmt(tc, inner.node)
+        .Module(_, body) -> check_stmt_ids(tc, body)
+        .Annotated(_, inner) -> check_stmt(tc, tc.nodes.stmts.get(inner))
         // F1004: a stored field / variant payload / newtype inner is a
         // layout-determining position, so a bare generic there is the same
         // unguarded hole as a bare parameter. Gated here (not in collect_decls)
@@ -2216,7 +2232,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         // `declare` and coerces call args against — also a layout-determining
         // position, so a bare generic there is gated like any other.
         .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(tc, params, ret_vt)
-        .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, methods)
+        .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, tc.nodes.sstmts_of(methods))
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,
         // while_check, for_check, for_in_check, defer_check,
@@ -2239,8 +2255,8 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 /// Type-check a function body against its declared return type.
 /// Includes implicit-return checking (the body's tail expression
 /// must match `ret_vt`) and explicit-return path verification.
-fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<SStmt>) -> TC {
-    let checked = check_stmts(tc, body)
+fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<StmtId>) -> TC {
+    let checked = check_stmt_ids(tc, body)
     // Skip return type checking for functions without a declared return type.
     if vtype_eq(ret_vt, .Void) {
         return checked
@@ -2260,7 +2276,7 @@ fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<SStmt>) 
 // functions whose last statement isn't an expression.
 /// Verify that the body's tail expression matches the declared
 /// return type — Avra's implicit-return rule. Skipped for void.
-fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: List<SStmt>) -> TC {
+fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: List<StmtId>) -> TC {
     // Skip when the declared type is Unknown (fallback/unreliable).
     if vtype_is_unknown(declared) { return tc }
     // so07.7.15: check the body's tail against `declared` as the expected type —
@@ -2270,7 +2286,7 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     // tail expression kind (struct literal, list, call, ident, …), so a signature
     // lie like `-> List<Box<string>> { [Box { val: 9 }] }` is caught here. A
     // type-only query (the old tc_body_tail_type) silently dropped those.
-    let tail = tc_tail_expr(stmts)
+    let tail = tc_tail_expr(tc, stmts)
     let tr = if tail != null { check_expr_expected(tc, tail!, declared) } else { tc_er(tc, ValueType.Void) }
     mut after = tr.tc
     let body_ty = tr.ty
@@ -2279,8 +2295,8 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     // binds the arm patterns correctly and skips arm-unification — the
     // non-block-arm case the explicit-return pass leaves uncovered.
     if stmts.length > 0 {
-        match stmts[stmts.length - 1].node {
-            .Match(subject, arms) -> after = tc_check_match_tail_conflict(after, fn_name, subject, arms, declared)
+        match tc.nodes.stmts.get(stmts[stmts.length - 1]) {
+            .Match(subject, arms) -> after = tc_check_match_tail_conflict(after, fn_name, tc.nodes.exprs.get(subject), arms, declared)
             _ -> {}
         }
     }
@@ -2308,10 +2324,10 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
 /// The block's tail expression, if its last statement is an implicit-return
 /// `.Expr` (not a `return` / loop / decl). Lets a caller run a node-level check
 /// on the tail that `tc_body_tail_type` (which yields only a type) can't.
-fn tc_tail_expr(stmts: List<SStmt>) -> Expr? {
+fn tc_tail_expr(tc: TC, stmts: List<StmtId>) -> Expr? {
     if stmts.length == 0 { return null }
-    match stmts[stmts.length - 1].node {
-        .Expr(e) -> e
+    match tc.nodes.stmts.get(stmts[stmts.length - 1]) {
+        .Expr(e) -> tc.nodes.exprs.get(e)
         _ -> null
     }
 }
@@ -2323,10 +2339,10 @@ fn tc_tail_expr(stmts: List<SStmt>) -> Expr? {
 /// Walk every explicit `return value` in `stmts`, verifying
 /// `value`'s type matches `declared`. Recurses into nested blocks
 /// and conditionals.
-export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: List<SStmt>) -> TC {
+export fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: List<StmtId>) -> TC {
     mut cur = tc
-    for ss in stmts {
-        cur = tc_check_stmt_returns(cur, fn_name, declared, ss.node)
+    for id in stmts {
+        cur = tc_check_stmt_returns(cur, fn_name, declared, tc.nodes.stmts.get(id))
     }
     cur
 }
@@ -2340,7 +2356,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
             // for the returned expression. Empty `[]` literals + generic
             // calls in return position pick up the fn's declared return
             // type instead of decaying to List<Unknown> / unresolved T.
-            let r = check_expr_expected(tc, value, declared)
+            let r = check_expr_expected(tc, tc.nodes.exprs.get(value), declared)
             if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but return produces `${vtype_render_full(r.ty)}`"
                 let cause = "declared return type is `${vtype_render_full(declared)}`"
@@ -2350,17 +2366,17 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         }
         .Block(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
         .If(_, then_branch, else_branch) -> {
-            let after_then = tc_check_stmt_returns(tc, fn_name, declared, then_branch)
+            let after_then = tc_check_stmt_returns(tc, fn_name, declared, tc.nodes.stmts.get(then_branch))
             if else_branch != null {
-                return tc_check_stmt_returns(after_then, fn_name, declared, else_branch!)
+                return tc_check_stmt_returns(after_then, fn_name, declared, tc.nodes.stmts.get(else_branch!))
             }
             after_then
         }
-        .While(_, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
-        .For(_, _, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
-        .ForIn(_, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
+        .While(_, body) -> tc_check_stmt_returns(tc, fn_name, declared, tc.nodes.stmts.get(body))
+        .For(_, _, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, tc.nodes.stmts.get(body))
+        .ForIn(_, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, tc.nodes.stmts.get(body))
         .Match(_, arms) -> tc_check_match_arm_returns(tc, fn_name, declared, arms)
-        .Annotated(_, inner) -> tc_check_stmt_returns(tc, fn_name, declared, inner.node)
+        .Annotated(_, inner) -> tc_check_stmt_returns(tc, fn_name, declared, tc.nodes.stmts.get(inner))
         .Defer(_) -> tc  // defer bodies should not contain return
         .Errdefer(_) -> tc
         .Parallel(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
@@ -2371,9 +2387,9 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         // pass re-runs check_expr (it doesn't trust the annotate
         // pass's SExpr.ty) but reuses the input TC verbatim, so
         // locals declared mid-block fall out of scope.
-        .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-        .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-        .Const(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+        .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
+        .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
+        .Const(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
         _ -> tc
     }
 }
@@ -3885,7 +3901,7 @@ fn check_block_stmts(tc: TC, stmts: List<SStmt>) -> ExprResult {
     let ss = stmts[last]
     avra_ice_at(ss.file, ss.line, ss.col)
     match ss.node {
-        .Expr(e) -> check_expr(cur, e)
+        .Expr(e) -> check_expr(cur, tc.nodes.exprs.get(e))
         _ -> {
             let checked = check_stmt(cur, ss.node)
             tc_er(checked, .Void)
@@ -4034,17 +4050,36 @@ fn annotate_stmts(tc: TC, stmts: List<SStmt>) -> List<SStmt> {
     for ss in stmts {
         let new_stmt = annotate_stmt(cur, ss.node)
         out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
-        cur = match ss.node {
-            .Let(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, init)
-            .Mut(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, init)
-            .Const(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, init)
-            // Destructured names need to flow into the annotate
-            // scope too, otherwise later `.field` accesses on
-            // destructured tuple elements see Unknown and ICE
-            // at codegen.
-            .LetDestructure(names, init) -> bind_destructure(cur, names, check_expr(cur, init).ty)
-            _ -> cur
-        }
+        cur = annotate_scope_step(cur, ss.node)
+    }
+    out
+}
+
+/// Thread the annotate scope across one statement: bindings flow into
+/// their successors' lookups (shared by the wrapped and row walks).
+fn annotate_scope_step(cur: TC, node: Stmt) -> TC {
+    match node {
+        .Let(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, cur.nodes.exprs.get(init))
+        .Mut(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, cur.nodes.exprs.get(init))
+        .Const(name, ty_vt, init) -> annotate_bind(cur, name, ty_vt, cur.nodes.exprs.get(init))
+        // Destructured names need to flow into the annotate
+        // scope too, otherwise later `.field` accesses on
+        // destructured tuple elements see Unknown and ICE
+        // at codegen.
+        .LetDestructure(names, init) -> bind_destructure(cur, names, check_expr(cur, cur.nodes.exprs.get(init)).ty)
+        _ -> cur
+    }
+}
+
+/// Row-list twin of `annotate_stmts`: rewritten rows re-allocate,
+/// inheriting positions.
+fn annotate_stmt_ids(tc: TC, ids: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    mut cur = tc
+    for id in ids {
+        let node = tc.nodes.stmts.get(id)
+        out.push(tc.nodes.restmt(annotate_stmt(cur, node), id))
+        cur = annotate_scope_step(cur, node)
     }
     out
 }
@@ -4052,63 +4087,72 @@ fn annotate_stmts(tc: TC, stmts: List<SStmt>) -> List<SStmt> {
 /// Per-stmt branch of the annotation pass.
 fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, vt, annotate_expr(tc, init))
-        .Mut(name, vt, init) -> .Mut(name, vt, annotate_expr(tc, init))
-        .Const(name, vt, init) -> .Const(name, vt, annotate_expr(tc, init))
-        .Expr(e) -> .Expr(annotate_expr(tc, e))
-        .Return(val) -> .Return(annotate_expr(tc, val))
-        .Block(body) -> .Block(annotate_stmts(tc, body))
+        .Let(name, vt, init) -> .Let(name, vt, annotate_expr_id(tc, init))
+        .Mut(name, vt, init) -> .Mut(name, vt, annotate_expr_id(tc, init))
+        .Const(name, vt, init) -> .Const(name, vt, annotate_expr_id(tc, init))
+        .Expr(e) -> .Expr(annotate_expr_id(tc, e))
+        .Return(val) -> .Return(annotate_expr_id(tc, val))
+        .Block(body) -> .Block(annotate_stmt_ids(tc, body))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(annotate_expr(tc, cond), annotate_stmt(tc, then_b), annotate_stmt(tc, else_b!))
+                .If(annotate_expr_id(tc, cond), annotate_stmt_id(tc, then_b), annotate_stmt_id(tc, else_b!))
             } else {
-                .If(annotate_expr(tc, cond), annotate_stmt(tc, then_b), null)
+                .If(annotate_expr_id(tc, cond), annotate_stmt_id(tc, then_b), null)
             }
         }
-        .While(cond, body) -> .While(annotate_expr(tc, cond), annotate_stmt(tc, body))
+        .While(cond, body) -> .While(annotate_expr_id(tc, cond), annotate_stmt_id(tc, body))
         .For(v, start, end, body) -> {
             // For-loop binds the counter as Int — scope it for the
             // body so method-call rewrite (y9y4.16) sees the right
             // type when the body references v.method(...).
-            let new_start = annotate_expr(tc, start)
-            let new_end = annotate_expr(tc, end)
+            let new_start = annotate_expr_id(tc, start)
+            let new_end = annotate_expr_id(tc, end)
             let inner = tc_bind(tc, v, .Int)
-            .For(v, new_start, new_end, annotate_stmt(inner, body))
+            .For(v, new_start, new_end, annotate_stmt_id(inner, body))
         }
         .ForIn(v, coll, body) -> {
             // for-in over List<X> binds v as X. y9y4.16: needed so
             // `for c in t.children() { c.method(...) }` annotate
             // can resolve c's type and fire the method-call rewrite.
-            let new_coll = annotate_expr(tc, coll)
-            let coll_ty = check_expr(tc, coll).ty
+            let new_coll = annotate_expr_id(tc, coll)
+            let coll_ty = check_expr(tc, tc.nodes.exprs.get(coll)).ty
             let elem_ty = vtype_list_elem(coll_ty)
             let inner = tc_bind(tc, v, elem_ty)
-            .ForIn(v, new_coll, annotate_stmt(inner, body))
+            .ForIn(v, new_coll, annotate_stmt_id(inner, body))
         }
         .Function(name, tp, params, rvt, body) ->
-            .Function(name, tp, params, rvt, annotate_stmts(annotate_enter_fn(tc, params), body))
-        .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
-        .Module(name, body) -> .Module(name, annotate_stmts(tc, body))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: annotate_stmt(tc, inner.node) })
-        .Impl(name, methods) -> .Impl(name, annotate_stmts(tc, methods))
-        .Defer(body) -> .Defer(annotate_expr(tc, body))
-        .LetDestructure(names, init) -> .LetDestructure(names, annotate_expr(tc, init))
-        .ThenBlock(name, cond) -> .ThenBlock(name, annotate_expr(tc, cond))
+            .Function(name, tp, params, rvt, annotate_stmt_ids(annotate_enter_fn(tc, params), body))
+        .Match(subj, arms) -> .Match(annotate_expr_id(tc, subj), annotate_match_arms(tc, arms))
+        .Module(name, body) -> .Module(name, annotate_stmt_ids(tc, body))
+        .Annotated(annots, inner) -> .Annotated(annots, annotate_stmt_id(tc, inner))
+        .Impl(name, methods) -> .Impl(name, annotate_stmt_ids(tc, methods))
+        .Defer(body) -> .Defer(annotate_expr_id(tc, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, annotate_expr_id(tc, init))
+        .ThenBlock(name, cond) -> .ThenBlock(name, annotate_expr_id(tc, cond))
         // A spec/given body is a statement list like any other block; descend so
         // the `then` conditions (and any `let`s they reference) get their nested
         // SExprs stamped. Without this the annotate pass stopped at the spec
         // boundary, so a generic struct/enum constructed inside a `then` had no
         // field-value `.ty` for mono to infer a type param from — the same
         // construction in a top-level fn body (which IS annotated) worked.
-        .SpecBlock(name, body) -> .SpecBlock(name, annotate_stmts(tc, body))
-        .GivenBlock(name, body) -> .GivenBlock(name, annotate_stmts(tc, body))
-        .Parallel(body) -> .Parallel(annotate_stmts(tc, body))
+        .SpecBlock(name, body) -> .SpecBlock(name, annotate_stmt_ids(tc, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, annotate_stmt_ids(tc, body))
+        .Parallel(body) -> .Parallel(annotate_stmt_ids(tc, body))
         // A select arm is a block that binds the recv value, exactly like
         // for-in binds the loop var — descend so a generic construction in an
         // arm body gets its SExprs stamped (mirrors select_check's binding).
         .Select(arms) -> .Select(annotate_select_arms(tc, arms))
         _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use
     }
+}
+
+/// Row twins for the annotate pass: resolve, annotate, re-allocate.
+fn annotate_stmt_id(tc: TC, id: StmtId) -> StmtId {
+    tc.nodes.restmt(annotate_stmt(tc, tc.nodes.stmts.get(id)), id)
+}
+
+fn annotate_expr_id(tc: TC, id: ExprId) -> ExprId {
+    tc.nodes.reexpr(annotate_expr(tc, tc.nodes.exprs.get(id)), id)
 }
 
 /// Annotate each select arm: bind the recv value to the channel's element type
@@ -4489,9 +4533,15 @@ fn check_naming_conventions(tc: TC, stmts: List<SStmt>) -> TC {
 /// Per-stmt branch of `check_naming_conventions`. Each declaration
 /// kind has its own expected case (PascalCase for types/enums/
 /// traits, snake_case for fns/lets, SCREAMING_SNAKE for consts).
+fn check_naming_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
+    mut cur = tc
+    for id in ids { cur = check_naming_stmt(cur, tc.nodes.stmts.get(id)) }
+    cur
+}
+
 fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Annotated(_, inner) -> check_naming_stmt(tc, inner.node)
+        .Annotated(_, inner) -> check_naming_stmt(tc, tc.nodes.stmts.get(inner))
         .Function(name, _, _, _, body) -> {
             // Strip impl prefix (TypeName__method → check method part only)
             let check_name = if name.index_of("__") > 0 {
@@ -4502,7 +4552,7 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
             } else {
                 tc
             }
-            check_naming_conventions(tc2, body)
+            check_naming_stmt_ids(tc2, body)
         }
         .TypeDecl(name, _, _) -> {
             if !is_pascal_case(name) {
@@ -4539,16 +4589,16 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
                 tc
             }
         }
-        .Block(body) -> check_naming_conventions(tc, body)
+        .Block(body) -> check_naming_stmt_ids(tc, body)
         .If(_, then_br, else_br) -> {
-            let tc2 = check_naming_stmt(tc, then_br)
-            if else_br != null { check_naming_stmt(tc2, else_br!) } else { tc2 }
+            let tc2 = check_naming_stmt(tc, tc.nodes.stmts.get(then_br))
+            if else_br != null { check_naming_stmt(tc2, tc.nodes.stmts.get(else_br!)) } else { tc2 }
         }
-        .While(_, body) -> check_naming_stmt(tc, body)
-        .For(_, _, _, body) -> check_naming_stmt(tc, body)
-        .ForIn(_, _, body) -> check_naming_stmt(tc, body)
-        .Module(_, body) -> check_naming_conventions(tc, body)
-        .Impl(_, methods) -> check_naming_conventions(tc, methods)
+        .While(_, body) -> check_naming_stmt(tc, tc.nodes.stmts.get(body))
+        .For(_, _, _, body) -> check_naming_stmt(tc, tc.nodes.stmts.get(body))
+        .ForIn(_, _, body) -> check_naming_stmt(tc, tc.nodes.stmts.get(body))
+        .Module(_, body) -> check_naming_stmt_ids(tc, body)
+        .Impl(_, methods) -> check_naming_stmt_ids(tc, methods)
         _ -> tc
     }
 }

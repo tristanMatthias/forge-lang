@@ -13,7 +13,7 @@ use list_ops.{list_push_copy}
 /// matches the `For` AST node and forwards to `emit_for_inner`.
 export fn emit_for(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
-        .For(variable, start, end, body) -> emit_for_inner(ctx, env, variable, start, end, body)
+        .For(variable, start, end, body) -> emit_for_inner(ctx, env, variable, ctx.nodes.exprs.get(start), ctx.nodes.exprs.get(end), ctx.nodes.stmts.get(body))
         _ -> err_sr("expected For")
     }
 }
@@ -39,7 +39,7 @@ fn emit_for_inner(ctx: Ctx, env: List<VarBinding>, variable: string, start: Expr
 
     // Arena detection (spec Axis 9.6): if all allocations in the loop
     // body are non-escaping, wrap the loop in a per-scope arena.
-    let use_arena = is_arena_eligible(body)
+    let use_arena = is_arena_eligible(ctx.nodes, body)
     let arena_val = if use_arena {
         ctx.call("avra_arena_new", [])
     } else {
@@ -105,7 +105,7 @@ fn emit_for_inner(ctx: Ctx, env: List<VarBinding>, variable: string, start: Expr
 /// so character iteration produces fresh single-char strings.
 export fn emit_for_in(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
-        .ForIn(variable, collection, body) -> emit_for_in_inner(ctx, env, variable, collection, body)
+        .ForIn(variable, collection, body) -> emit_for_in_inner(ctx, env, variable, ctx.nodes.exprs.get(collection), ctx.nodes.stmts.get(body))
         _ -> err_sr("expected ForIn")
     }
 }
@@ -139,7 +139,7 @@ fn emit_for_in_inner(ctx: Ctx, env: List<VarBinding>, variable: string, collecti
     let body_env = env_extend(env, variable, elem_alloca, elem_ty)
 
     // Arena detection (spec Axis 9.6)
-    let use_arena = is_arena_eligible(body)
+    let use_arena = is_arena_eligible(ctx.nodes, body)
     let arena_val = if use_arena {
         ctx.call("avra_arena_new", [])
     } else {

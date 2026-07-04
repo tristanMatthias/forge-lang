@@ -4,7 +4,7 @@
 // generic declarations — codegen sees only concrete code.
 
 use core.{Expr, SExpr, sexpr, sexpr_at, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
-use core.{NodeStore}
+use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, qualified_mangle_base, method_mangled_name, method_from_mangled}
@@ -15,12 +15,15 @@ use list_ops.{list_contains_str}
 /// Bundle of registries built from a program's generic
 /// declarations. Threaded through every monomorphization pass.
 ///
+/// @field store   — the program's node arena; flipped `Stmt` payloads
+///                  resolve through it and rewritten rows allocate into it.
 /// @field fns     — generic-fn registry.
 /// @field enums   — generic-enum registry.
 /// @field structs — generic-struct registry.
 /// @field impls   — impl blocks, so a generic struct's methods can be
 ///                  specialised once per instantiation (mkwc).
 type GenRegs = {
+    store: NodeStore,
     fns: List<GenericFnEntry>,
     enums: List<GenericEnumEntry>,
     structs: List<GenericStructEntry>,
@@ -44,7 +47,7 @@ type GenericFnEntry = {
     tp: List<TypeParamEntry>,
     params: List<ParamEntry>,
     ret_vt: ValueType,
-    body: List<SStmt>,
+    body: List<StmtId>,
 }
 /// One entry in the generic-enum registry.
 type GenericEnumEntry = {
@@ -63,7 +66,7 @@ type GenericStructEntry = {
 /// onto the monomorphised struct (see `specialize_impl_methods`).
 type GenericImplEntry = {
     type_name: string,
-    methods: List<SStmt>,
+    methods: List<StmtId>,
 }
 
 /// Find a generic fn by name. Returns the matching entry, or
@@ -364,12 +367,12 @@ fn lookup_type_params(name: string, regs: GenRegs) -> List<TypeParamEntry> {
 /// True when a statement is a generic-yielding declaration
 /// (fn / type / enum with non-empty type params). Used by
 /// `monomorphize` to filter the AST before specialisation.
-fn is_generic_decl(stmt: Stmt) -> bool {
+fn is_generic_decl(store: NodeStore, stmt: Stmt) -> bool {
     match stmt {
         .Function(_, tp, _, _, _) if tp.length > 0 -> true
         .EnumDecl(_, tp, _) if tp.length > 0 -> true
         .TypeDecl(_, tp, _) if tp.length > 0 -> true
-        .Annotated(_, inner) -> is_generic_decl(inner.node)
+        .Annotated(_, inner) -> is_generic_decl(store, store.stmts.get(inner))
         _ -> false
     }
 }
@@ -386,7 +389,7 @@ fn is_generic_impl(stmt: Stmt, regs: GenRegs) -> bool {
         .Impl(type_name, _) ->
             generic_struct_lookup(regs.structs, type_name) != null
             || generic_enum_lookup(regs.enums, type_name) != null
-        .Annotated(_, inner) -> is_generic_impl(inner.node, regs)
+        .Annotated(_, inner) -> is_generic_impl(regs.store.stmts.get(inner), regs)
         _ -> false
     }
 }
@@ -1144,6 +1147,14 @@ fn collect_generics(stmts: List<SStmt>, regs: GenRegs) -> GenRegs {
     cur
 }
 
+/// Registry collector over a flipped `List<StmtId>` body (module
+/// bodies) — resolves each row and dispatches per-statement.
+fn collect_generics_ids(ids: List<StmtId>, regs: GenRegs) -> GenRegs {
+    mut cur = regs
+    for id in ids { cur = collect_generic_stmt(cur.store.stmts.get(id), cur) }
+    cur
+}
+
 /// Per-statement collector. `Function`/`EnumDecl`/`TypeDecl`
 /// with non-empty type params land in the matching registry;
 /// other stmts pass through.
@@ -1172,8 +1183,8 @@ fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
             impls.push(GenericImplEntry { type_name, methods })
             regs with { impls }
         }
-        .Module(_, body) -> collect_generics(body, regs)
-        .Annotated(_, inner) -> collect_generic_stmt(inner.node, regs)
+        .Module(_, body) -> collect_generics_ids(body, regs)
+        .Annotated(_, inner) -> collect_generic_stmt(regs.store.stmts.get(inner), regs)
         _ -> regs
     }
 }
@@ -1209,18 +1220,30 @@ fn collect_inst_stmts(stmts: List<SStmt>, regs: GenRegs, st: CollectState) -> Co
     cur
 }
 
+/// Instantiation collector over a flipped `List<StmtId>` body —
+/// resolves each row and threads its recorded position so
+/// diagnostics keep pointing at source.
+fn collect_inst_stmt_ids(ids: List<StmtId>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    for id in ids {
+        let p = regs.store.stmt_pos(id)
+        cur = collect_inst_stmt(regs.store.stmts.get(id), regs, cur with { line: p.line, col: p.col })
+    }
+    cur
+}
+
 /// Per-statement instantiation collector. Recurses into every
 /// expression payload + nested body. Function bodies use a
 /// fresh inst-list so per-fn merging behaves locally.
 fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectState {
     match stmt {
-        .Let(_, vt, init) -> collect_inst_expr_with_expected(init, vt, regs, st)
-        .Mut(_, vt, init) -> collect_inst_expr_with_expected(init, vt, regs, st)
-        .Expr(e) -> collect_inst_expr(e, regs, st)
-        .Return(val) -> collect_inst_expr(val, regs, st)
-        .Defer(body) -> collect_inst_expr(body, regs, st)
-        .Block(body) -> collect_inst_stmts(body, regs, st)
-        .Module(_, body) -> collect_inst_stmts(body, regs, st)
+        .Let(_, vt, init) -> collect_inst_expr_with_expected(regs.store.exprs.get(init), vt, regs, st)
+        .Mut(_, vt, init) -> collect_inst_expr_with_expected(regs.store.exprs.get(init), vt, regs, st)
+        .Expr(e) -> collect_inst_expr(regs.store.exprs.get(e), regs, st)
+        .Return(val) -> collect_inst_expr(regs.store.exprs.get(val), regs, st)
+        .Defer(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
+        .Block(body) -> collect_inst_stmt_ids(body, regs, st)
+        .Module(_, body) -> collect_inst_stmt_ids(body, regs, st)
         .Function(_, tp, _, ret_vt, body) -> {
             if tp.length > 0 { return st }
             // Scope merging to this function: collect body's instantiations
@@ -1236,22 +1259,22 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
             CollectState { insts: append_insts(with_ret, st.insts), bag: fn_state.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
         }
         .If(cond, then_b, else_b) -> {
-            let a = collect_inst_stmt(then_b, regs, collect_inst_expr(cond, regs, st))
-            if else_b != null { collect_inst_stmt(else_b!, regs, a) } else { a }
+            let a = collect_inst_stmt(regs.store.stmts.get(then_b), regs, collect_inst_expr(regs.store.exprs.get(cond), regs, st))
+            if else_b != null { collect_inst_stmt(regs.store.stmts.get(else_b!), regs, a) } else { a }
         }
-        .While(cond, body) -> collect_inst_stmt(body, regs, collect_inst_expr(cond, regs, st))
-        .For(_, start, end, body) -> collect_inst_stmt(body, regs, collect_inst_expr(end, regs, collect_inst_expr(start, regs, st)))
-        .ForIn(_, coll, body) -> collect_inst_stmt(body, regs, collect_inst_expr(coll, regs, st))
-        .Match(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(subj, regs, st))
-        .Annotated(_, inner) -> collect_inst_stmt(inner.node, regs, st)
-        .Impl(_, methods) -> collect_inst_stmts(methods, regs, st)
-        .SpecBlock(_, body) -> collect_inst_stmts(body, regs, st)
-        .GivenBlock(_, body) -> collect_inst_stmts(body, regs, st)
-        .ThenBlock(_, cond) -> collect_inst_expr(cond, regs, st)
-        .Parallel(body) -> collect_inst_stmts(body, regs, st)
+        .While(cond, body) -> collect_inst_stmt(regs.store.stmts.get(body), regs, collect_inst_expr(regs.store.exprs.get(cond), regs, st))
+        .For(_, start, end, body) -> collect_inst_stmt(regs.store.stmts.get(body), regs, collect_inst_expr(regs.store.exprs.get(end), regs, collect_inst_expr(regs.store.exprs.get(start), regs, st)))
+        .ForIn(_, coll, body) -> collect_inst_stmt(regs.store.stmts.get(body), regs, collect_inst_expr(regs.store.exprs.get(coll), regs, st))
+        .Match(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(regs.store.exprs.get(subj), regs, st))
+        .Annotated(_, inner) -> collect_inst_stmt(regs.store.stmts.get(inner), regs, st)
+        .Impl(_, methods) -> collect_inst_stmt_ids(methods, regs, st)
+        .SpecBlock(_, body) -> collect_inst_stmt_ids(body, regs, st)
+        .GivenBlock(_, body) -> collect_inst_stmt_ids(body, regs, st)
+        .ThenBlock(_, cond) -> collect_inst_expr(regs.store.exprs.get(cond), regs, st)
+        .Parallel(body) -> collect_inst_stmt_ids(body, regs, st)
         .Select(arms) -> collect_inst_select_arms(arms, regs, st)
-        .Const(_, _, init) -> collect_inst_expr(init, regs, st)
-        .Errdefer(body) -> collect_inst_expr(body, regs, st)
+        .Const(_, _, init) -> collect_inst_expr(regs.store.exprs.get(init), regs, st)
+        .Errdefer(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         _ -> st
     }
 }
@@ -1282,22 +1305,23 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
 /// `.Return` position receives `ret_vt` as the expected return
 /// type so generic-call inference can bind type params that
 /// appear only in the return position (so07.7.16).
-fn collect_inst_fn_body(body: List<SStmt>, ret_vt: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+fn collect_inst_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     if body.length == 0 { return st }
     mut cur = st
     let n = body.length
     mut i = 0
     while i < n - 1 {
-        let ss = body[i]
-        cur = collect_inst_stmt(ss.node, regs, cur with { line: ss.line, col: ss.col })
+        let p = regs.store.stmt_pos(body[i])
+        cur = collect_inst_stmt(regs.store.stmts.get(body[i]), regs, cur with { line: p.line, col: p.col })
         i = i + 1
     }
-    let tail = body[n - 1]
-    let tail_st = cur with { line: tail.line, col: tail.col }
-    match tail.node {
-        .Expr(e) -> collect_inst_expr_with_expected(e, ret_vt, regs, tail_st)
-        .Return(val) -> collect_inst_expr_with_expected(val, ret_vt, regs, tail_st)
-        _ -> collect_inst_stmt(tail.node, regs, tail_st)
+    let tail_pos = regs.store.stmt_pos(body[n - 1])
+    let tail_node = regs.store.stmts.get(body[n - 1])
+    let tail_st = cur with { line: tail_pos.line, col: tail_pos.col }
+    match tail_node {
+        .Expr(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), ret_vt, regs, tail_st)
+        .Return(val) -> collect_inst_expr_with_expected(regs.store.exprs.get(val), ret_vt, regs, tail_st)
+        _ -> collect_inst_stmt(tail_node, regs, tail_st)
     }
 }
 
@@ -1567,15 +1591,15 @@ fn try_add_struct_inst_with_expected(name: string, inits: List<FieldInit>, expec
 /// Specialise a generic fn for one `List<TypeArg>`. Returns a
 /// fresh `Function` AST node with the mangled name +
 /// substituted param/return types + substituted body.
-fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, body: List<SStmt>, ta: List<TypeArg>, orig_name: string) -> Stmt {
+fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, ret_vt: ValueType, body: List<StmtId>, ta: List<TypeArg>, orig_name: string) -> Stmt {
     let concrete_ret_vt = substitute_vtype(ret_vt, ta)
     let empty_tp: List<TypeParamEntry> = []
     // Substitute body, then rewrite self-recursive `orig_name(...)` calls
     // in the spec body to the mangled name. Without this the Pass-4
     // rewriter can't infer the type args (substitute_expr_list drops
     // SExpr.ty) and mangles them to "" → "Type__fn__" undefined.
-    let subst_body = substitute_stmts(body, ta)
-    let final_body = rename_self_calls_stmts(subst_body, orig_name, mangled)
+    let subst_body = substitute_stmt_ids(store, body, ta)
+    let final_body = rename_self_calls_stmt_ids(store, subst_body, orig_name, mangled)
     let fn_stmt = Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, final_body)
     // Wrap with @mono_spec so codegen knows to emit `linkonce_odr`
     // linkage. Each consuming .o that monomorphizes the same generic
@@ -1584,7 +1608,7 @@ fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, b
     let empty_args: List<SExpr> = []
     mut annots: List<Annotation> = []
     annots.push(Annotation { name: "mono_spec", args: empty_args })
-    Stmt.Annotated(annots, sstmt_dummy(fn_stmt))
+    Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
 }
 
 /// Walk a substituted spec body and rewrite every self-recursive
@@ -1594,86 +1618,107 @@ fn specialize_fn(mangled: string, params: List<ParamEntry>, ret_vt: ValueType, b
 /// call gets mangled to "Type__fn__" (empty slug) and codegen fails
 /// with `undefined function`. We know the spec's type args here, so
 /// the rewrite is unambiguous.
-fn rename_self_calls_stmts(stmts: List<SStmt>, orig_name: string, mangled: string) -> List<SStmt> {
+fn rename_self_calls_stmts(store: NodeStore, stmts: List<SStmt>, orig_name: string, mangled: string) -> List<SStmt> {
     mut out: List<SStmt> = []
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        out.push(sstmt_at(rename_self_calls_stmt(ss.node, orig_name, mangled), ss.line, ss.col, ss.file))
+        out.push(sstmt_at(rename_self_calls_stmt(store, ss.node, orig_name, mangled), ss.line, ss.col, ss.file))
         i = i + 1
     }
     out
 }
 
-fn rename_self_calls_stmt(stmt: Stmt, orig_name: string, mangled: string) -> Stmt {
+/// The flipped-body twin of `rename_self_calls_stmts`: rewrites each
+/// row and allocates the result as a fresh row inheriting the
+/// original's span + position.
+fn rename_self_calls_stmt_ids(store: NodeStore, ids: List<StmtId>, orig_name: string, mangled: string) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids { out.push(store.restmt(rename_self_calls_stmt(store, store.stmts.get(id), orig_name, mangled), id)) }
+    out
+}
+
+fn rename_self_calls_stmt(store: NodeStore, stmt: Stmt, orig_name: string, mangled: string) -> Stmt {
     match stmt {
-        .Let(n, vt, init) -> .Let(n, vt, rename_self_calls_expr(init, orig_name, mangled))
-        .Mut(n, vt, init) -> .Mut(n, vt, rename_self_calls_expr(init, orig_name, mangled))
-        .Const(n, vt, init) -> .Const(n, vt, rename_self_calls_expr(init, orig_name, mangled))
-        .Expr(e) -> .Expr(rename_self_calls_expr(e, orig_name, mangled))
-        .Return(v) -> .Return(rename_self_calls_expr(v, orig_name, mangled))
-        .Block(body) -> .Block(rename_self_calls_stmts(body, orig_name, mangled))
+        .Let(n, vt, init) -> .Let(n, vt, rename_self_calls_expr_id(store, init, orig_name, mangled))
+        .Mut(n, vt, init) -> .Mut(n, vt, rename_self_calls_expr_id(store, init, orig_name, mangled))
+        .Const(n, vt, init) -> .Const(n, vt, rename_self_calls_expr_id(store, init, orig_name, mangled))
+        .Expr(e) -> .Expr(rename_self_calls_expr_id(store, e, orig_name, mangled))
+        .Return(v) -> .Return(rename_self_calls_expr_id(store, v, orig_name, mangled))
+        .Block(body) -> .Block(rename_self_calls_stmt_ids(store, body, orig_name, mangled))
         .If(c, t, e) -> {
-            if e != null { .If(rename_self_calls_expr(c, orig_name, mangled), rename_self_calls_stmt(t, orig_name, mangled), rename_self_calls_stmt(e!, orig_name, mangled)) }
-            else { .If(rename_self_calls_expr(c, orig_name, mangled), rename_self_calls_stmt(t, orig_name, mangled), null) }
+            if e != null { .If(rename_self_calls_expr_id(store, c, orig_name, mangled), rename_self_calls_stmt_id(store, t, orig_name, mangled), rename_self_calls_stmt_id(store, e!, orig_name, mangled)) }
+            else { .If(rename_self_calls_expr_id(store, c, orig_name, mangled), rename_self_calls_stmt_id(store, t, orig_name, mangled), null) }
         }
-        .While(c, body) -> .While(rename_self_calls_expr(c, orig_name, mangled), rename_self_calls_stmt(body, orig_name, mangled))
-        .For(v, s, e, body) -> .For(v, rename_self_calls_expr(s, orig_name, mangled), rename_self_calls_expr(e, orig_name, mangled), rename_self_calls_stmt(body, orig_name, mangled))
-        .ForIn(v, coll, body) -> .ForIn(v, rename_self_calls_expr(coll, orig_name, mangled), rename_self_calls_stmt(body, orig_name, mangled))
-        .Match(subj, arms) -> .Match(rename_self_calls_expr(subj, orig_name, mangled), rename_self_calls_arms(arms, orig_name, mangled))
-        .Defer(body) -> .Defer(rename_self_calls_expr(body, orig_name, mangled))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rename_self_calls_stmt(inner.node, orig_name, mangled) })
+        .While(c, body) -> .While(rename_self_calls_expr_id(store, c, orig_name, mangled), rename_self_calls_stmt_id(store, body, orig_name, mangled))
+        .For(v, s, e, body) -> .For(v, rename_self_calls_expr_id(store, s, orig_name, mangled), rename_self_calls_expr_id(store, e, orig_name, mangled), rename_self_calls_stmt_id(store, body, orig_name, mangled))
+        .ForIn(v, coll, body) -> .ForIn(v, rename_self_calls_expr_id(store, coll, orig_name, mangled), rename_self_calls_stmt_id(store, body, orig_name, mangled))
+        .Match(subj, arms) -> .Match(rename_self_calls_expr_id(store, subj, orig_name, mangled), rename_self_calls_arms(store, arms, orig_name, mangled))
+        .Defer(body) -> .Defer(rename_self_calls_expr_id(store, body, orig_name, mangled))
+        .Annotated(annots, inner) -> .Annotated(annots, rename_self_calls_stmt_id(store, inner, orig_name, mangled))
         _ -> stmt
     }
 }
 
-fn rename_self_calls_expr(expr: Expr, orig_name: string, mangled: string) -> Expr {
+/// Rewrite one statement row, allocating the result against the
+/// original's span + position.
+fn rename_self_calls_stmt_id(store: NodeStore, id: StmtId, orig_name: string, mangled: string) -> StmtId {
+    store.restmt(rename_self_calls_stmt(store, store.stmts.get(id), orig_name, mangled), id)
+}
+
+/// Rewrite one expression row, allocating the result against the
+/// original's span.
+fn rename_self_calls_expr_id(store: NodeStore, id: ExprId, orig_name: string, mangled: string) -> ExprId {
+    store.reexpr(rename_self_calls_expr(store, store.exprs.get(id), orig_name, mangled), id)
+}
+
+fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangled: string) -> Expr {
     match expr {
         .Call(callee, args) -> {
-            let new_args = rename_self_calls_sexpr_list(args, orig_name, mangled)
+            let new_args = rename_self_calls_sexpr_list(store, args, orig_name, mangled)
             match callee {
                 .Ident(n) if n == orig_name -> Expr.Call(Expr.Ident(mangled), new_args)
-                _ -> Expr.Call(rename_self_calls_expr(callee, orig_name, mangled), new_args)
+                _ -> Expr.Call(rename_self_calls_expr(store, callee, orig_name, mangled), new_args)
             }
         }
-        .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr(callee, orig_name, mangled), ta, rename_self_calls_sexpr_list(args, orig_name, mangled))
-        .Binary(l, op, r) -> .Binary(rename_self_calls_expr(l, orig_name, mangled), op, rename_self_calls_expr(r, orig_name, mangled))
-        .Logical(l, op, r) -> .Logical(rename_self_calls_expr(l, orig_name, mangled), op, rename_self_calls_expr(r, orig_name, mangled))
-        .Unary(op, e) -> .Unary(op, rename_self_calls_expr(e, orig_name, mangled))
-        .Grouping(e) -> .Grouping(rename_self_calls_expr(e, orig_name, mangled))
-        .Block(body) -> .Block(rename_self_calls_stmts(body, orig_name, mangled))
-        .IfExpr(c, t, e) -> .IfExpr(rename_self_calls_expr(c, orig_name, mangled), rename_self_calls_expr(t, orig_name, mangled), rename_self_calls_expr(e, orig_name, mangled))
-        .MatchExpr(subj, arms) -> .MatchExpr(rename_self_calls_expr(subj, orig_name, mangled), rename_self_calls_arms(arms, orig_name, mangled))
-        .Index(obj, idx) -> .Index(rename_self_calls_expr(obj, orig_name, mangled), rename_self_calls_expr(idx, orig_name, mangled))
-        .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr(obj, orig_name, mangled), f)
-        .Assign(n, val) -> .Assign(n, rename_self_calls_expr(val, orig_name, mangled))
-        .FieldAssign(obj, f, val) -> .FieldAssign(rename_self_calls_expr(obj, orig_name, mangled), f, rename_self_calls_expr(val, orig_name, mangled))
-        .ListLit(elems) -> .ListLit(rename_self_calls_sexpr_list(elems, orig_name, mangled))
-        .Tuple(elems) -> .Tuple(rename_self_calls_sexpr_list(elems, orig_name, mangled))
-        .Lambda(params, body) -> .Lambda(params, rename_self_calls_expr(body, orig_name, mangled))
-        .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr(l, orig_name, mangled), rename_self_calls_expr(r, orig_name, mangled))
-        .Try(e) -> .Try(rename_self_calls_expr(e, orig_name, mangled))
+        .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr(store, callee, orig_name, mangled), ta, rename_self_calls_sexpr_list(store, args, orig_name, mangled))
+        .Binary(l, op, r) -> .Binary(rename_self_calls_expr(store, l, orig_name, mangled), op, rename_self_calls_expr(store, r, orig_name, mangled))
+        .Logical(l, op, r) -> .Logical(rename_self_calls_expr(store, l, orig_name, mangled), op, rename_self_calls_expr(store, r, orig_name, mangled))
+        .Unary(op, e) -> .Unary(op, rename_self_calls_expr(store, e, orig_name, mangled))
+        .Grouping(e) -> .Grouping(rename_self_calls_expr(store, e, orig_name, mangled))
+        .Block(body) -> .Block(rename_self_calls_stmts(store, body, orig_name, mangled))
+        .IfExpr(c, t, e) -> .IfExpr(rename_self_calls_expr(store, c, orig_name, mangled), rename_self_calls_expr(store, t, orig_name, mangled), rename_self_calls_expr(store, e, orig_name, mangled))
+        .MatchExpr(subj, arms) -> .MatchExpr(rename_self_calls_expr(store, subj, orig_name, mangled), rename_self_calls_arms(store, arms, orig_name, mangled))
+        .Index(obj, idx) -> .Index(rename_self_calls_expr(store, obj, orig_name, mangled), rename_self_calls_expr(store, idx, orig_name, mangled))
+        .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr(store, obj, orig_name, mangled), f)
+        .Assign(n, val) -> .Assign(n, rename_self_calls_expr(store, val, orig_name, mangled))
+        .FieldAssign(obj, f, val) -> .FieldAssign(rename_self_calls_expr(store, obj, orig_name, mangled), f, rename_self_calls_expr(store, val, orig_name, mangled))
+        .ListLit(elems) -> .ListLit(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
+        .Tuple(elems) -> .Tuple(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
+        .Lambda(params, body) -> .Lambda(params, rename_self_calls_expr(store, body, orig_name, mangled))
+        .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr(store, l, orig_name, mangled), rename_self_calls_expr(store, r, orig_name, mangled))
+        .Try(e) -> .Try(rename_self_calls_expr(store, e, orig_name, mangled))
         _ -> expr
     }
 }
 
-fn rename_self_calls_sexpr_list(exprs: List<SExpr>, orig_name: string, mangled: string) -> List<SExpr> {
+fn rename_self_calls_sexpr_list(store: NodeStore, exprs: List<SExpr>, orig_name: string, mangled: string) -> List<SExpr> {
     mut out: List<SExpr> = []
     mut i = 0
     while i < exprs.length {
         let se = exprs[i]
-        out.push(SExpr { node: rename_self_calls_expr(se.node, orig_name, mangled), line: se.line, col: se.col, ty: se.ty, file: se.file })
+        out.push(SExpr { node: rename_self_calls_expr(store, se.node, orig_name, mangled), line: se.line, col: se.col, ty: se.ty, file: se.file })
         i = i + 1
     }
     out
 }
 
-fn rename_self_calls_arms(arms: List<MatchArm>, orig_name: string, mangled: string) -> List<MatchArm> {
+fn rename_self_calls_arms(store: NodeStore, arms: List<MatchArm>, orig_name: string, mangled: string) -> List<MatchArm> {
     mut out: List<MatchArm> = []
     mut i = 0
     while i < arms.length {
         let a = arms[i]
-        let new_body_node = rename_self_calls_expr(a.body.node, orig_name, mangled)
+        let new_body_node = rename_self_calls_expr(store, a.body.node, orig_name, mangled)
         let new_body = SExpr { node: new_body_node, line: a.body.line, col: a.body.col, ty: a.body.ty, file: a.body.file }
         out.push(MatchArm { pattern: a.pattern, guard: a.guard, body: new_body })
         i = i + 1
@@ -1702,19 +1747,19 @@ fn specialize_struct(mangled: string, fields: List<FieldEntry>, ta: List<TypeArg
 /// bindings AND a synthetic `OrigType -> Struct(MangledType)` entry, so the
 /// ordinary substitution machinery rewrites `self` (and any body annotation
 /// naming the struct) in the same pass that turns `T` into its concrete type.
-fn specialize_method(mangled_type: string, method: Stmt, ta_ext: List<TypeArg>) -> Stmt {
+fn specialize_method(store: NodeStore, mangled_type: string, method: Stmt, ta_ext: List<TypeArg>) -> Stmt {
     match method {
         .Function(name, mtp, params, ret_vt, body) -> {
             let new_name = method_mangled_name(mangled_type, method_from_mangled(name))
-            let fn_stmt = Stmt.Function(new_name, mtp, substitute_params(params, ta_ext), substitute_vtype(ret_vt, ta_ext), substitute_stmts(body, ta_ext))
+            let fn_stmt = Stmt.Function(new_name, mtp, substitute_params(params, ta_ext), substitute_vtype(ret_vt, ta_ext), substitute_stmt_ids(store, body, ta_ext))
             // @mono_spec → linkonce_odr, exactly as specialize_fn: the same
             // method may be monomorphized in multiple consuming packages.
             let empty_args: List<SExpr> = []
             mut annots: List<Annotation> = []
             annots.push(Annotation { name: "mono_spec", args: empty_args })
-            Stmt.Annotated(annots, sstmt_dummy(fn_stmt))
+            Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
         }
-        .Annotated(_, inner) -> specialize_method(mangled_type, inner.node, ta_ext)
+        .Annotated(_, inner) -> specialize_method(store, mangled_type, store.stmts.get(inner), ta_ext)
         _ -> method
     }
 }
@@ -1723,7 +1768,7 @@ fn specialize_method(mangled_type: string, method: Stmt, ta_ext: List<TypeArg>) 
 /// instantiation, producing `MangledType__method` functions. Builds the
 /// extended type-args once: the struct's own bindings (`ta`) plus the
 /// synthetic struct-name binding that rewrites `self`/struct references.
-fn specialize_impl_methods(impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<SStmt> {
+fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<SStmt> {
     let entries = generic_impls_for(impls, orig_type)
     if entries.length == 0 { return [] }
     // Copy `ta` (don't mutate the shared inst bindings) and append the
@@ -1739,7 +1784,7 @@ fn specialize_impl_methods(impls: List<GenericImplEntry>, orig_type: string, man
         let methods = entries[i].methods
         mut m = 0
         while m < methods.length {
-            out.push(sstmt_dummy(specialize_method(mangled_type, methods[m].node, ta_ext)))
+            out.push(sstmt_dummy(specialize_method(store, mangled_type, store.stmts.get(methods[m]), ta_ext)))
             m = m + 1
         }
         i = i + 1
@@ -1762,7 +1807,7 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
         let fn_e = generic_fn_lookup(regs.fns, name)
         if fn_e != null {
             let fe = fn_e!
-            out.push(sstmt(specialize_fn(mangled, fe.params, fe.ret_vt, fe.body, ta, name), 0, 0))
+            out.push(sstmt(specialize_fn(regs.store, mangled, fe.params, fe.ret_vt, fe.body, ta, name), 0, 0))
         } else {
             // A generic TYPE — emit its specialised decl, then (shared below) its
             // impl methods. Enum and struct are mutually exclusive on a name.
@@ -1779,7 +1824,7 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
             // the enum side long lacked it, so any method on a generic-enum
             // instance failed codegen ("undefined method EBox__int.is_wrap").
             if enum_e != null || struct_e != null {
-                let methods = specialize_impl_methods(regs.impls, name, mangled, ta)
+                let methods = specialize_impl_methods(regs.store, regs.impls, name, mangled, ta)
                 mut mi = 0
                 while mi < methods.length { out.push(methods[mi])  mi = mi + 1 }
             }
@@ -1845,23 +1890,38 @@ fn substitute_variants(variants: List<Variant>, ta: List<TypeArg>) -> List<Varia
     out
 }
 /// Map `substitute_stmt` over a List<SStmt>.
-fn substitute_stmts(stmts: List<SStmt>, ta: List<TypeArg>) -> List<SStmt> {
+fn substitute_stmts(store: NodeStore, stmts: List<SStmt>, ta: List<TypeArg>) -> List<SStmt> {
     mut out: List<SStmt> = []
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        out.push(sstmt_at(substitute_stmt(ss.node, ta), ss.line, ss.col, ss.file))
+        out.push(sstmt_at(substitute_stmt(store, ss.node, ta), ss.line, ss.col, ss.file))
         i = i + 1
     }
     out
 }
+/// The flipped-body twin of `substitute_stmts`: substitutes each row
+/// and allocates the result against the original's span + position.
+fn substitute_stmt_ids(store: NodeStore, ids: List<StmtId>, ta: List<TypeArg>) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids { out.push(substitute_stmt_id(store, id, ta)) }
+    out
+}
+/// Substitute one statement row, allocating against the original.
+fn substitute_stmt_id(store: NodeStore, id: StmtId, ta: List<TypeArg>) -> StmtId {
+    store.restmt(substitute_stmt(store, store.stmts.get(id), ta), id)
+}
+/// Substitute one expression row, allocating against the original.
+fn substitute_expr_id(store: NodeStore, id: ExprId, ta: List<TypeArg>) -> ExprId {
+    store.reexpr(substitute_expr(store, store.exprs.get(id), ta), id)
+}
 /// Map `substitute_expr` over a `List<SExpr>`.
-fn substitute_expr_list(exprs: List<SExpr>, ta: List<TypeArg>) -> List<SExpr> {
+fn substitute_expr_list(store: NodeStore, exprs: List<SExpr>, ta: List<TypeArg>) -> List<SExpr> {
     mut out: List<SExpr> = []
     mut i = 0
     while i < exprs.length {
         let se = exprs[i]
-        out.push(sexpr_at(substitute_expr(se.node, ta), se.line, se.col, se.file))
+        out.push(sexpr_at(substitute_expr(store, se.node, ta), se.line, se.col, se.file))
         i = i + 1
     }
     out
@@ -1869,23 +1929,23 @@ fn substitute_expr_list(exprs: List<SExpr>, ta: List<TypeArg>) -> List<SExpr> {
 
 /// Substitute type-args into a single statement. Recurses into
 /// expression payloads + nested bodies.
-fn substitute_stmt(stmt: Stmt, ta: List<TypeArg>) -> Stmt {
+fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, substitute_vtype(vt, ta), substitute_expr(init, ta))
-        .Mut(name, vt, init) -> .Mut(name, substitute_vtype(vt, ta), substitute_expr(init, ta))
-        .Expr(e) -> .Expr(substitute_expr(e, ta))
-        .Return(val) -> .Return(substitute_expr(val, ta))
+        .Let(name, vt, init) -> .Let(name, substitute_vtype(vt, ta), substitute_expr_id(store, init, ta))
+        .Mut(name, vt, init) -> .Mut(name, substitute_vtype(vt, ta), substitute_expr_id(store, init, ta))
+        .Expr(e) -> .Expr(substitute_expr_id(store, e, ta))
+        .Return(val) -> .Return(substitute_expr_id(store, val, ta))
         .ReturnEmpty -> stmt
-        .Block(body) -> .Block(substitute_stmts(body, ta))
+        .Block(body) -> .Block(substitute_stmt_ids(store, body, ta))
         .If(cond, then_b, else_b) -> {
-            if else_b != null { .If(substitute_expr(cond, ta), substitute_stmt(then_b, ta), substitute_stmt(else_b!, ta)) }
-            else { .If(substitute_expr(cond, ta), substitute_stmt(then_b, ta), null) }
+            if else_b != null { .If(substitute_expr_id(store, cond, ta), substitute_stmt_id(store, then_b, ta), substitute_stmt_id(store, else_b!, ta)) }
+            else { .If(substitute_expr_id(store, cond, ta), substitute_stmt_id(store, then_b, ta), null) }
         }
-        .While(cond, body) -> .While(substitute_expr(cond, ta), substitute_stmt(body, ta))
-        .For(v, s, e, body) -> .For(v, substitute_expr(s, ta), substitute_expr(e, ta), substitute_stmt(body, ta))
-        .ForIn(v, coll, body) -> .ForIn(v, substitute_expr(coll, ta), substitute_stmt(body, ta))
-        .Match(subj, arms) -> .Match(substitute_expr(subj, ta), substitute_match_arms(arms, ta))
-        .Defer(body) -> .Defer(substitute_expr(body, ta))
+        .While(cond, body) -> .While(substitute_expr_id(store, cond, ta), substitute_stmt_id(store, body, ta))
+        .For(v, s, e, body) -> .For(v, substitute_expr_id(store, s, ta), substitute_expr_id(store, e, ta), substitute_stmt_id(store, body, ta))
+        .ForIn(v, coll, body) -> .ForIn(v, substitute_expr_id(store, coll, ta), substitute_stmt_id(store, body, ta))
+        .Match(subj, arms) -> .Match(substitute_expr_id(store, subj, ta), substitute_match_arms(store, arms, ta))
+        .Defer(body) -> .Defer(substitute_expr_id(store, body, ta))
         _ -> stmt
     }
 }
@@ -1893,67 +1953,67 @@ fn substitute_stmt(stmt: Stmt, ta: List<TypeArg>) -> Stmt {
 /// Substitute type-args into a single expression. Recurses
 /// into every compound shape; literals and idents are
 /// untouched.
-fn substitute_expr(expr: Expr, ta: List<TypeArg>) -> Expr {
+fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
     match expr {
-        .Call(callee, a) -> .Call(substitute_expr(callee, ta), substitute_expr_list(a, ta))
-        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr(callee, ta), tn, substitute_expr_list(a, ta))
-        .Binary(l, op, r) -> .Binary(substitute_expr(l, ta), op, substitute_expr(r, ta))
-        .Logical(l, op, r) -> .Logical(substitute_expr(l, ta), op, substitute_expr(r, ta))
-        .Unary(op, e) -> .Unary(op, substitute_expr(e, ta))
-        .Grouping(e) -> .Grouping(substitute_expr(e, ta))
-        .Block(body) -> .Block(substitute_stmts(body, ta))
-        .IfExpr(c, t, e) -> .IfExpr(substitute_expr(c, ta), substitute_expr(t, ta), substitute_expr(e, ta))
-        .MatchExpr(subj, arms) -> .MatchExpr(substitute_expr(subj, ta), substitute_match_arms(arms, ta))
-        .Index(obj, idx) -> .Index(substitute_expr(obj, ta), substitute_expr(idx, ta))
-        .FieldAccess(obj, f) -> .FieldAccess(substitute_expr(obj, ta), f)
-        .Assign(name, val) -> .Assign(name, substitute_expr(val, ta))
-        .FieldAssign(obj, f, val) -> .FieldAssign(substitute_expr(obj, ta), f, substitute_expr(val, ta))
-        .ListLit(elems) -> .ListLit(substitute_expr_list(elems, ta))
-        .Tuple(elems) -> .Tuple(substitute_expr_list(elems, ta))
-        .MapLit(entries) -> .MapLit(substitute_expr_list(entries, ta))
-        .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr(body, ta))
-        .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr(l, ta), substitute_expr(r, ta))
-        .Try(e) -> .Try(substitute_expr(e, ta))
-        .With(obj, inits) -> .With(substitute_expr(obj, ta), inits)
+        .Call(callee, a) -> .Call(substitute_expr(store, callee, ta), substitute_expr_list(store, a, ta))
+        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr(store, callee, ta), tn, substitute_expr_list(store, a, ta))
+        .Binary(l, op, r) -> .Binary(substitute_expr(store, l, ta), op, substitute_expr(store, r, ta))
+        .Logical(l, op, r) -> .Logical(substitute_expr(store, l, ta), op, substitute_expr(store, r, ta))
+        .Unary(op, e) -> .Unary(op, substitute_expr(store, e, ta))
+        .Grouping(e) -> .Grouping(substitute_expr(store, e, ta))
+        .Block(body) -> .Block(substitute_stmts(store, body, ta))
+        .IfExpr(c, t, e) -> .IfExpr(substitute_expr(store, c, ta), substitute_expr(store, t, ta), substitute_expr(store, e, ta))
+        .MatchExpr(subj, arms) -> .MatchExpr(substitute_expr(store, subj, ta), substitute_match_arms(store, arms, ta))
+        .Index(obj, idx) -> .Index(substitute_expr(store, obj, ta), substitute_expr(store, idx, ta))
+        .FieldAccess(obj, f) -> .FieldAccess(substitute_expr(store, obj, ta), f)
+        .Assign(name, val) -> .Assign(name, substitute_expr(store, val, ta))
+        .FieldAssign(obj, f, val) -> .FieldAssign(substitute_expr(store, obj, ta), f, substitute_expr(store, val, ta))
+        .ListLit(elems) -> .ListLit(substitute_expr_list(store, elems, ta))
+        .Tuple(elems) -> .Tuple(substitute_expr_list(store, elems, ta))
+        .MapLit(entries) -> .MapLit(substitute_expr_list(store, entries, ta))
+        .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr(store, body, ta))
+        .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr(store, l, ta), substitute_expr(store, r, ta))
+        .Try(e) -> .Try(substitute_expr(store, e, ta))
+        .With(obj, inits) -> .With(substitute_expr(store, obj, ta), inits)
         .ListComp(body, v, coll, filter) -> {
             if filter != null {
-                .ListComp(substitute_expr(body, ta), v, substitute_expr(coll, ta), substitute_expr(filter!, ta))
+                .ListComp(substitute_expr(store, body, ta), v, substitute_expr(store, coll, ta), substitute_expr(store, filter!, ta))
             } else {
-                .ListComp(substitute_expr(body, ta), v, substitute_expr(coll, ta), null)
+                .ListComp(substitute_expr(store, body, ta), v, substitute_expr(store, coll, ta), null)
             }
         }
-        .Catch(inner, b, body, cl, cc) -> .Catch(substitute_expr(inner, ta), b, substitute_expr(body, ta), cl, cc)
+        .Catch(inner, b, body, cl, cc) -> .Catch(substitute_expr(store, inner, ta), b, substitute_expr(store, body, ta), cl, cc)
         // Mirror collect_inst_expr — every sub-expression in a generic
         // body must get its T-references substituted.
-        .Slice(obj, start, end) -> .Slice(substitute_expr(obj, ta), substitute_expr(start, ta), substitute_expr(end, ta))
-        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr(obj, ta), idx)
-        .IsCheck(subj, v) -> .IsCheck(substitute_expr(subj, ta), v)
-        .InCheck(needle, items) -> .InCheck(substitute_expr(needle, ta), substitute_expr_list(items, ta))
-        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(obj, ta), f)
-        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(obj, ta), m, substitute_expr_list(a, ta))
-        .Spawn(body) -> .Spawn(substitute_expr(body, ta))
+        .Slice(obj, start, end) -> .Slice(substitute_expr(store, obj, ta), substitute_expr(store, start, ta), substitute_expr(store, end, ta))
+        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr(store, obj, ta), idx)
+        .IsCheck(subj, v) -> .IsCheck(substitute_expr(store, subj, ta), v)
+        .InCheck(needle, items) -> .InCheck(substitute_expr(store, needle, ta), substitute_expr_list(store, items, ta))
+        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(store, obj, ta), f)
+        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(store, obj, ta), m, substitute_expr_list(store, a, ta))
+        .Spawn(body) -> .Spawn(substitute_expr(store, body, ta))
         .ChannelNew(elem, capacity) -> {
             let new_elem = substitute_vtype(elem, ta)
-            if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr(capacity!, ta)) }
+            if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr(store, capacity!, ta)) }
         }
-        .Isolated(body) -> .Isolated(substitute_expr(body, ta))
-        .Quote(k, body) -> .Quote(k, substitute_expr(body, ta))
-        .Splice(target) -> .Splice(substitute_expr(target, ta))
-        .When(arms) -> .When(substitute_when_arms(arms, ta))
+        .Isolated(body) -> .Isolated(substitute_expr(store, body, ta))
+        .Quote(k, body) -> .Quote(k, substitute_expr(store, body, ta))
+        .Splice(target) -> .Splice(substitute_expr(store, target, ta))
+        .When(arms) -> .When(substitute_when_arms(store, arms, ta))
         _ -> expr
     }
 }
 
 /// Substitute T-references in each when-arm's condition + body.
-fn substitute_when_arms(arms: List<WhenArm>, ta: List<TypeArg>) -> List<WhenArm> {
+fn substitute_when_arms(store: NodeStore, arms: List<WhenArm>, ta: List<TypeArg>) -> List<WhenArm> {
     mut out: List<WhenArm> = []
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         let new_cond = if arm.cond != null {
-            sexpr(substitute_expr(arm.cond!.node, ta), arm.cond!.line, arm.cond!.col)
+            sexpr(substitute_expr(store, arm.cond!.node, ta), arm.cond!.line, arm.cond!.col)
         } else { null }
-        let new_body = sexpr(substitute_expr(arm.body.node, ta), arm.body.line, arm.body.col)
+        let new_body = sexpr(substitute_expr(store, arm.body.node, ta), arm.body.line, arm.body.col)
         out.push(WhenArm { cond: new_cond, body: new_body })
         i = i + 1
     }
@@ -1962,16 +2022,16 @@ fn substitute_when_arms(arms: List<WhenArm>, ta: List<TypeArg>) -> List<WhenArm>
 
 /// Map `substitute_expr` over each guard + body of a match
 /// arm list. Patterns themselves don't carry types.
-fn substitute_match_arms(arms: List<MatchArm>, ta: List<TypeArg>) -> List<MatchArm> {
+fn substitute_match_arms(store: NodeStore, arms: List<MatchArm>, ta: List<TypeArg>) -> List<MatchArm> {
     mut out: List<MatchArm> = []
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         let new_guard = if arm.guard != null {
             let g = arm.guard!
-            sexpr_at(substitute_expr(g.node, ta), g.line, g.col, g.file)
+            sexpr_at(substitute_expr(store, g.node, ta), g.line, g.col, g.file)
         } else { null }
-        let new_body = sexpr_at(substitute_expr(arm.body.node, ta), arm.body.line, arm.body.col, arm.body.file)
+        let new_body = sexpr_at(substitute_expr(store, arm.body.node, ta), arm.body.line, arm.body.col, arm.body.file)
         out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
         i = i + 1
     }
@@ -2268,7 +2328,7 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType
 /// type, body — all forwarded through `rewrite_*` helpers.
 /// Used by the per-fn pass to convert generic decls into
 /// non-generic ones referencing mangled specialisations.
-fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_vt: ValueType, body: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> Stmt {
+fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_vt: ValueType, body: List<StmtId>, regs: GenRegs, insts: List<Inst>) -> Stmt {
     let ret_ty = vtype_render_full(ret_vt)
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
     Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_fn_body(body, ret_vt, regs, scoped))
@@ -2279,26 +2339,27 @@ fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEn
 /// type so generic-fn calls whose T appears only in the return
 /// position get the correct mangled name (matches the inst
 /// registered by `collect_inst_fn_body`). so07.7.16.
-fn rewrite_fn_body(body: List<SStmt>, ret_vt: ValueType, regs: GenRegs, insts: List<Inst>) -> List<SStmt> {
+fn rewrite_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, insts: List<Inst>) -> List<StmtId> {
     if body.length == 0 { return body }
-    mut out: List<SStmt> = []
+    mut out: List<StmtId> = []
     let n = body.length
     mut i = 0
     while i < n - 1 {
-        let ss = body[i]
-        if !is_generic_decl(ss.node) {
-            out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
+        let node = regs.store.stmts.get(body[i])
+        if !is_generic_decl(regs.store, node) {
+            out.push(regs.store.restmt(rewrite_stmt(node, regs, insts), body[i]))
         }
         i = i + 1
     }
-    let tail = body[n - 1]
-    if !is_generic_decl(tail.node) {
-        let new_node = match tail.node {
-            .Expr(e) -> Stmt.Expr(rewrite_expr_with_expected(e, ret_vt, regs, insts))
-            .Return(val) -> Stmt.Return(rewrite_expr_with_expected(val, ret_vt, regs, insts))
-            _ -> rewrite_stmt(tail.node, regs, insts)
+    let tail_id = body[n - 1]
+    let tail_node = regs.store.stmts.get(tail_id)
+    if !is_generic_decl(regs.store, tail_node) {
+        let new_node = match tail_node {
+            .Expr(e) -> Stmt.Expr(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), ret_vt, regs, insts), e))
+            .Return(val) -> Stmt.Return(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(val), ret_vt, regs, insts), val))
+            _ -> rewrite_stmt(tail_node, regs, insts)
         }
-        out.push(sstmt_at(new_node, tail.line, tail.col, tail.file))
+        out.push(regs.store.restmt(new_node, tail_id))
     }
     out
 }
@@ -2348,12 +2409,36 @@ fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<S
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        if !is_generic_decl(ss.node) && !is_generic_impl(ss.node, regs) {
+        if !is_generic_decl(regs.store, ss.node) && !is_generic_impl(ss.node, regs) {
             out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
         }
         i = i + 1
     }
     out
+}
+
+/// The flipped-body twin of `rewrite_stmts`: drops generic decls /
+/// generic impls and re-allocates each rewritten row against the
+/// original's span + position.
+fn rewrite_stmt_ids(ids: List<StmtId>, regs: GenRegs, insts: List<Inst>) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids {
+        let node = regs.store.stmts.get(id)
+        if !is_generic_decl(regs.store, node) && !is_generic_impl(node, regs) {
+            out.push(regs.store.restmt(rewrite_stmt(node, regs, insts), id))
+        }
+    }
+    out
+}
+
+/// Rewrite one statement row, allocating against the original.
+fn rewrite_stmt_id(id: StmtId, regs: GenRegs, insts: List<Inst>) -> StmtId {
+    regs.store.restmt(rewrite_stmt(regs.store.stmts.get(id), regs, insts), id)
+}
+
+/// Rewrite one expression row, allocating against the original.
+fn rewrite_expr_id(id: ExprId, regs: GenRegs, insts: List<Inst>) -> ExprId {
+    regs.store.reexpr(rewrite_expr(regs.store.exprs.get(id), regs, insts), id)
 }
 
 /// Rewrite a `let`/`mut` binding's type annotation + init.
@@ -2362,7 +2447,7 @@ fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<S
 /// the declared `vt` as the init's expected type so generic-fn
 /// calls on the RHS mangle to the same specialisation that
 /// `collect_inst_stmt` registered (so07.7.16).
-fn rewrite_let_binding(name: string, vt: ValueType, init: Expr, regs: GenRegs, insts: List<Inst>, is_mut: bool) -> Stmt {
+fn rewrite_let_binding(name: string, vt: ValueType, init: ExprId, regs: GenRegs, insts: List<Inst>, is_mut: bool) -> Stmt {
     // Mangle the declared type through the SAME structural rewriter the param /
     // field paths use, so a generic instance — at any depth, including behind an
     // `Optional` wrapper — picks up its monomorphized name. The previous string-
@@ -2370,7 +2455,7 @@ fn rewrite_let_binding(name: string, vt: ValueType, init: Expr, regs: GenRegs, i
     // `<int>` but left the trailing `>`), so a later `b?.method()` dispatched to
     // an unresolvable owner.
     let new_vt = rewrite_instance_vtype(vt, regs, insts)
-    let new_init = rewrite_expr_with_expected(init, vt, regs, insts)
+    let new_init = regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(init), vt, regs, insts), init)
     if is_mut { Stmt.Mut(name, new_vt, new_init) } else { Stmt.Let(name, new_vt, new_init) }
 }
 
@@ -2381,35 +2466,35 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
     match stmt {
         .Let(name, vt, init) -> rewrite_let_binding(name, vt, init, regs, insts, false)
         .Mut(name, vt, init) -> rewrite_let_binding(name, vt, init, regs, insts, true)
-        .Expr(e) -> .Expr(rewrite_expr(e, regs, insts))
-        .Return(val) -> .Return(rewrite_expr(val, regs, insts))
-        .Block(body) -> .Block(rewrite_stmts(body, regs, insts))
+        .Expr(e) -> .Expr(rewrite_expr_id(e, regs, insts))
+        .Return(val) -> .Return(rewrite_expr_id(val, regs, insts))
+        .Block(body) -> .Block(rewrite_stmt_ids(body, regs, insts))
         .If(cond, then_b, else_b) -> {
-            if else_b != null { .If(rewrite_expr(cond, regs, insts), rewrite_stmt(then_b, regs, insts), rewrite_stmt(else_b!, regs, insts)) }
-            else { .If(rewrite_expr(cond, regs, insts), rewrite_stmt(then_b, regs, insts), null) }
+            if else_b != null { .If(rewrite_expr_id(cond, regs, insts), rewrite_stmt_id(then_b, regs, insts), rewrite_stmt_id(else_b!, regs, insts)) }
+            else { .If(rewrite_expr_id(cond, regs, insts), rewrite_stmt_id(then_b, regs, insts), null) }
         }
-        .While(cond, body) -> .While(rewrite_expr(cond, regs, insts), rewrite_stmt(body, regs, insts))
-        .For(v, s, e, body) -> .For(v, rewrite_expr(s, regs, insts), rewrite_expr(e, regs, insts), rewrite_stmt(body, regs, insts))
-        .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, regs, insts), rewrite_stmt(body, regs, insts))
+        .While(cond, body) -> .While(rewrite_expr_id(cond, regs, insts), rewrite_stmt_id(body, regs, insts))
+        .For(v, s, e, body) -> .For(v, rewrite_expr_id(s, regs, insts), rewrite_expr_id(e, regs, insts), rewrite_stmt_id(body, regs, insts))
+        .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr_id(coll, regs, insts), rewrite_stmt_id(body, regs, insts))
         .Function(name, tp, params, ret_vt, body) -> rewrite_function(name, tp, params, ret_vt, body, regs, insts)
         .ExternFn(name, params, ret_vt) ->
             .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(vtype_render_full(ret_vt), regs, insts))
-        .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
-        .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))
+        .Match(subj, arms) -> .Match(rewrite_expr_id(subj, regs, insts), rewrite_arms(arms, regs, insts))
+        .Module(name, body) -> .Module(name, rewrite_stmt_ids(body, regs, insts))
         // A specialised struct (tp already emptied) may carry generic-instance
         // field types (`val: Box<int>`) that still need their monomorphized
         // names; mangle them so codegen resolves a concrete struct.
         .TypeDecl(name, tp, fields) -> .TypeDecl(name, tp, rewrite_field_types(fields, regs, insts))
-        .Annotated(annots, inner) -> .Annotated(annots, inner with { node: rewrite_stmt(inner.node, regs, insts) })
-        .Impl(name, methods) -> .Impl(name, rewrite_stmts(methods, regs, insts))
-        .Defer(body) -> .Defer(rewrite_expr(body, regs, insts))
-        .Errdefer(body) -> .Errdefer(rewrite_expr(body, regs, insts))
-        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmts(body, regs, insts))
-        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmts(body, regs, insts))
-        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(cond, regs, insts))
-        .Parallel(body) -> .Parallel(rewrite_stmts(body, regs, insts))
+        .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt_id(inner, regs, insts))
+        .Impl(name, methods) -> .Impl(name, rewrite_stmt_ids(methods, regs, insts))
+        .Defer(body) -> .Defer(rewrite_expr_id(body, regs, insts))
+        .Errdefer(body) -> .Errdefer(rewrite_expr_id(body, regs, insts))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_ids(body, regs, insts))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_ids(body, regs, insts))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr_id(cond, regs, insts))
+        .Parallel(body) -> .Parallel(rewrite_stmt_ids(body, regs, insts))
         .Select(arms) -> .Select(rewrite_select_arms_mono(arms, regs, insts))
-        .Const(n, vt, init) -> .Const(n, vt, rewrite_expr_with_expected(init, vt, regs, insts))
+        .Const(n, vt, init) -> .Const(n, vt, regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(init), vt, regs, insts), init))
         _ -> stmt
     }
 }
@@ -2724,7 +2809,7 @@ fn compute_ambig_short_names(regs: GenRegs) -> List<string> {
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
 export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>, store: NodeStore) -> MonoResult {
-    let regs0 = collect_generics(stmts, GenRegs { fns: [], enums: [], structs: [], impls: [], ambig: [] })
+    let regs0 = collect_generics(stmts, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
     if !has_generics(regs0) { return MonoResult { stmts, bag: bag_new() } }
     // Resolve the short-name collisions ONCE up front so every pass mangles
     // colliding instances module-qualified and the rest by short name (see

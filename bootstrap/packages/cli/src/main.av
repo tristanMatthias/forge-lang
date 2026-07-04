@@ -4126,7 +4126,7 @@ fn main() {
             } else {
                 parsed_stmts
             }
-            let one: List<SStmt> = [sstmt_dummy(Stmt.Module(module_path, body_with_siblings))]
+            let one: List<SStmt> = [sstmt_dummy(Stmt.Module(module_path, parsed_prog.store.rows_of(body_with_siblings)))]
             one
         } else {
             parsed_stmts
@@ -4163,7 +4163,7 @@ fn main() {
         // emits forward-refs, not bodies. Runs after resolve so the
         // filter has the full module tree to inspect.
         let post_filter_stmts = if target_module != "" {
-            filter_to_target_unit(with_intrinsics, target_module)
+            filter_to_target_unit(parsed_prog.store, with_intrinsics, target_module)
         } else {
             with_intrinsics
         }
@@ -4246,7 +4246,7 @@ fn main() {
             // Entry-point file is skipped (its meta.bin is the
             // whole-unit slice consumers expect).
             if per_file_metadata {
-                let files = collect_source_files(named.stmts)
+                let files = collect_source_files(parsed_prog.store, named.stmts)
                 emit_per_file_metas(files, named.stmts, unit_name, cpath, parsed_prog.store)
             }
         }
@@ -4276,7 +4276,7 @@ fn main() {
         // import-graph reachability instead of filesystem find.
         // Decoupled from --emit_metadata so it's usable on its own.
         if list_files_path != "" {
-            let files = collect_source_files(named.stmts)
+            let files = collect_source_files(parsed_prog.store, named.stmts)
             mut buf = ""
             mut fi = 0
             while fi < files.length {

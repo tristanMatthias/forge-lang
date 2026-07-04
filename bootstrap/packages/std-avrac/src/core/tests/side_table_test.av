@@ -36,14 +36,20 @@
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
 
 // 3 top-level fns -> 6 stmt rows (3 fn decls + 3 body stmts): nested
-// statements get their own rows. Under the CROSS-TYPE edge model (A1) a node's
-// children span all four kinds, so a fn decl (ret-type + body children) AND a
-// value-returning body stmt (its expr child) are both non-leaf — only a
-// CHILDLESS stmt is a leaf. `fn c() { return }`'s bare `return` (ReturnEmpty,
-// no fields) is exactly that, so 5 of the 6 are non-leaf and the sparse table
-// genuinely holds a SUBSET (nonleaf 5 < dense 6) — the point of the sparse/dense
-// split. (Were every stmt non-leaf, nonleaf would equal dense and a "records
-// everything" bug would slip past this assertion.)
+// statements get their own rows. Under the B-final flip a Stmt's Expr/Stmt
+// children travel as INLINE arena ids in the payload, so they are NOT recorded
+// as cross-type edges (that is the whole point of the flip — the id IS the
+// child). A row's edges therefore mirror only its still-boxed children: for a
+// fn decl that is the return-type `ValueType` (a TypeRef edge; the ret type is
+// not flipped), which every fn — including `fn c()`'s implicit Void — carries.
+// So the 3 fn decls are non-leaf (one ret-type edge each) and the 3 body
+// statements (two expr-stmts whose Expr child is inline, plus `fn c`'s bare
+// `return`) are id-payload leaves. That makes 3 of the 6 non-leaf, and the
+// sparse table genuinely holds a strict SUBSET (nonleaf 3 < dense 6) — the
+// point of the sparse/dense split. (Were every stmt non-leaf, nonleaf would
+// equal dense and a "records everything" bug would slip past this assertion.)
+// The edge model itself is pinned by the B1 faithfulness oracle in
+// parse/tests/b1_native_stmt_test.av; this test asserts the derived count.
 fn l1_sidetable_output() -> string {
     let fixture = "build/_l1_sidetable_fixture.av"
     let _ = avra_selfhost_write_file(fixture, "fn a() -> int { 1 }\nfn b() -> int { 2 }\nfn c() { return }\n")
@@ -56,8 +62,8 @@ spec "L1 side-tables record derived facts over the arena's ids (wired)" {
         // table's backing vec carries a pad slot at index 0: 6 stmts -> 7.
         l1_sidetable_output().contains("[l1-sidetable] dense=7")
     }
-    then "a sparse non-leaf table stores only the 5 non-leaf statements" {
-        l1_sidetable_output().contains("nonleaf=5")
+    then "a sparse non-leaf table stores only the 3 non-leaf statements" {
+        l1_sidetable_output().contains("nonleaf=3")
     }
 }
 
