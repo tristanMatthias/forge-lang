@@ -2,7 +2,7 @@
 // evaluator lives in features/eval/mod.av.
 
 use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
-use core.{NodeStore}
+use core.{NodeStore, PatId}
 use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}

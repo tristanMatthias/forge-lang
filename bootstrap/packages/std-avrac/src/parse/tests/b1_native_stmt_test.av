@@ -20,7 +20,7 @@ fn serve_parity(source: string) -> bool {
     let native = program_from_store(r.store, "probe.av")
     let canonical = program_from_store(ingest_program(r.stmts!, source), "probe.av")
     if native.length != canonical.length { return false }
-    if render_stmt_list(native) != render_stmt_list(canonical) { return false }
+    if render_stmt_list(r.store, native) != render_stmt_list(r.store, canonical) { return false }
     for (i, n) in native.enumerate() {
         let c = canonical[i]
         if n.line != c.line { return false }

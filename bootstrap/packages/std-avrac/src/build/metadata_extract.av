@@ -5,7 +5,7 @@
 //
 // Tracked under forge-crafting-intepreters-iinq.
 
-use core.{
+use core.{NodeStore, 
     Stmt, SStmt, sstmt_at, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }

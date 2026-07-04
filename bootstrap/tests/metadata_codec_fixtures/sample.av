@@ -892,7 +892,7 @@ fn main() -> int {
     ]
 
     let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, new_node_store(build_line_index("")))
-    let synth_back = synthesize_unit_stmts(synth_meta)
+    let synth_back = synthesize_unit_stmts(synth_meta, new_node_store(build_line_index("")))
 
     // The top of synth_back should be Stmt.Module("@synth", body).
     let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_back[0].node) } else { Stmt.NoOp }

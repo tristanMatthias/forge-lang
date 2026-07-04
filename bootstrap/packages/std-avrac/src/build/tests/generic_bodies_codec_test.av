@@ -133,8 +133,19 @@ fn extract_from_source(unit: string, src: string) -> List<GenericBodyEntry> {
     let parsed = parse_program_source(src)
     if parsed.had_error == 1 { return [] }
     if parsed.stmts == null { return [] }
-    let m = extract_unit_metadata(unit, fp32(), parsed.stmts!)
+    let m = extract_unit_metadata(unit, fp32(), parsed.stmts!, parsed.store)
     m.generic_bodies
+}
+
+spec "generic body with or/nested patterns serializes faithfully (F2)" {
+    then "an or-pattern inside a generic body fmt-serializes as source, not wildcards" {
+        // The body is fmt-serialized into metadata; before fmt_pattern
+        // rendered literal/nested arms, an or-pattern serialized as
+        // `_ | _` — reconstructing WRONG code at every consumer.
+        let bodies = extract_from_source("@std::test",
+            "export fn pick<T>(n: int, a: T, b: T) -> T {\n    match n {\n        1 or 2 -> a\n        _ -> b\n    }\n}")
+        bodies.length == 1 && bodies[0].source.contains("1 or 2")
+    }
 }
 
 spec "P4 extractor: generic_bodies population" {
@@ -172,7 +183,7 @@ spec "P4 extractor: generic_bodies population" {
 // re-parsed body (instead of the empty-body extern-wrapped stub the
 // pre-P5 path used for every fn).
 use @std.avrac.build.{synthesize_unit_body}
-use @std.avrac.core.{SStmt, Stmt, stmt_unwrap}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, SStmt, Stmt, stmt_unwrap}
 
 /// Walk a (possibly Module-wrapped) List<SStmt> and find the first
 /// `Function(name)` node, returning its body. Returns an empty list
@@ -208,16 +219,16 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
         // through fmt → metadata → parse.
         let parsed = parse_program_source(
             "export fn id<T>(x: T) -> T {\n    return x\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
-        let synth = synthesize_unit_body(m)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
+        let synth = synthesize_unit_body(m, ts())
         let body = first_fn_body(synth, "id")
         body_stmt_count(body) >= 1
     }
     then "non-generic exported fn still gets empty body + @external_unit" {
         let parsed = parse_program_source(
             "export fn plain(x: int) -> int {\n    return x + 1\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
-        let synth = synthesize_unit_body(m)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
+        let synth = synthesize_unit_body(m, ts())
         let body = first_fn_body(synth, "plain")
         // Body stays empty for non-generic — linker resolves the
         // call at link time against the producer's .o.
@@ -234,11 +245,16 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
 
 use @std.avrac.build.{InherentImplEntry}
 
+/// Fresh store for synthesized-body probes (F2: bodies parse into it).
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
 fn extract_inherent_impl_count(src: string) -> int {
     let parsed = parse_program_source(src)
     if parsed.had_error == 1 { return -1 }
     if parsed.stmts == null { return -1 }
-    let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+    let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
     m.inherent_impls.length
 }
 
@@ -246,7 +262,7 @@ fn first_inherent_method_count(src: string) -> int {
     let parsed = parse_program_source(src)
     if parsed.had_error == 1 { return -1 }
     if parsed.stmts == null { return -1 }
-    let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+    let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
     if m.inherent_impls.length == 0 { return 0 }
     m.inherent_impls[0].methods.length
 }
@@ -268,13 +284,13 @@ spec "bd8n: inherent impl metadata round-trip" {
         // only the no-trait form lands in inherent_impls.
         let parsed = parse_program_source(
             "trait Counter { fn tick(self) -> int }\ntype Foo = { n: int }\nimpl Counter for Foo {\n    fn tick(self) -> int { return self.n }\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
         m.inherent_impls.length == 0 && m.impls.length == 1
     }
     then "codec round-trip preserves inherent impl bytes-identical" {
         let parsed = parse_program_source(
             "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
         let w = writer_new()
         w.unit(m)
         let r = reader_new(w.finish())
@@ -286,8 +302,8 @@ spec "bd8n: inherent impl metadata round-trip" {
     then "synthesized inherent impl appears in unit body" {
         let parsed = parse_program_source(
             "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!)
-        let synth = synthesize_unit_body(m)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.stmts!, parsed.store)
+        let synth = synthesize_unit_body(m, ts())
         // The synthesizer wraps the impl block under the type's
         // relative-to-unit path; a top-level walk should find an
         // `impl Foo` (which renders as Function `Foo__id` inside).

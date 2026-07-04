@@ -3805,7 +3805,8 @@ fn main() {
             println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
             // Metadata-synthesized decls carry no pattern ids — an empty
             // store satisfies the renderer without ever being read.
-            println(render_stmt_list(new_node_store(build_line_index("")), synthesize_unit_stmts(m)))
+            let show_store = new_node_store(build_line_index(""))
+            println(render_stmt_list(show_store, synthesize_unit_stmts(m, show_store)))
             return
         }
         "eval" -> {

@@ -250,11 +250,14 @@ export fn parse_program_source_shared(source: string, file: string, store: NodeS
 /// for @comptime bodies — both flow through here). Returns `[]` on
 /// any parse failure so callers treat the fn as body-less and
 /// surface a clearer error downstream.
-export fn parse_body_source(source: string) -> List<SStmt> {
+export fn parse_body_source(source: string, store: NodeStore) -> List<SStmt> {
+    // The caller's store, not a fresh one: the parsed body's id payloads
+    // (pattern children since F2) must resolve in the arena the consumer
+    // executes against — a throwaway store would leave wrong-arena ids.
     let empty: List<SStmt> = []
     if source == "" { return empty }
     let wrapped = "fn __avra_body_source_wrapper() {\n" + source + "\n}"
-    let parsed = parse_program_source(wrapped)
+    let parsed = parse_program_source_shared(wrapped, "", store)
     if parsed.had_error == 1 { return empty }
     if parsed.stmts == null { return empty }
     let ss = parsed.stmts!

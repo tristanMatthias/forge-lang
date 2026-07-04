@@ -77,7 +77,7 @@ fn program_with_call() -> List<SStmt> {
 spec "comptime.rewrite_program: folds top-level call" {
     then "let z = add(2, 3) becomes let z = 5 after rewrite" {
         let prog = program_with_call()
-        let reg = collect_comptime_fns(prog)
+        let reg = collect_comptime_fns(prog, ts())
         let rewritten = rewrite_program(prog, reg)
         // Position 1 is the let stmt (position 0 is the @comptime fn).
         let init = let_init_of(nth_stmt(rewritten, 1))
@@ -87,7 +87,7 @@ spec "comptime.rewrite_program: folds top-level call" {
         let prog: List<SStmt> = [
             sstmt_dummy(Stmt.Let("x", ValueType.Unknown, Expr.Number("42"))),
         ]
-        let reg = collect_comptime_fns(prog)
+        let reg = collect_comptime_fns(prog, ts())
         let rewritten = rewrite_program(prog, reg)
         let init = let_init_of(nth_stmt(rewritten, 0))
         init != null && number_text_of(init!) == "42"
@@ -117,7 +117,7 @@ spec "comptime.rewrite_program: bottom-up folds nested calls" {
             sstmt_dummy(mk_add_decl()),
             sstmt_dummy(let_stmt),
         ]
-        let reg = collect_comptime_fns(prog)
+        let reg = collect_comptime_fns(prog, ts())
         let rewritten = rewrite_program(prog, reg)
         let init = let_init_of(nth_stmt(rewritten, 1))
         init != null && number_text_of(init!) == "6"
@@ -137,7 +137,7 @@ spec "comptime.rewrite_program: descends into fn bodies" {
             sstmt_dummy(mk_add_decl()),
             sstmt_dummy(outer_fn),
         ]
-        let reg = collect_comptime_fns(prog)
+        let reg = collect_comptime_fns(prog, ts())
         let rewritten = rewrite_program(prog, reg)
         // After rewrite: outer's body should be `return 5`.
         let outer_after = nth_stmt(rewritten, 1)

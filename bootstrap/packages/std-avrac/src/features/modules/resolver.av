@@ -934,7 +934,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     let pkg_stmts = if take_meta_fast_path {
         record_meta_dep(pkg_file)
         let m = metadata_read(meta_path)
-        stamp_stub_spans(synthesize_unit_body(m), meta_path)
+        stamp_stub_spans(synthesize_unit_body(m, store), meta_path)
     } else {
         let pkg_source = avra_selfhost_read_file(pkg_file)
         // _at keeps SStmt.file pointed at the package's entry-point
@@ -1131,7 +1131,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             let mod_stmts = if take_meta {
                 record_meta_dep(mod_path)
                 let m = metadata_read(meta_path)
-                stamp_stub_spans(synthesize_unit_body(m), meta_path)
+                stamp_stub_spans(synthesize_unit_body(m, store), meta_path)
             } else {
                 let mod_source = avra_selfhost_read_file(mod_path)
                 // Use _at so every parsed stmt carries `mod_path` in

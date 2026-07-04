@@ -241,7 +241,7 @@ export fn comptime_lookup_lazy(reg: CompTimeRegistry, name: string) -> CompTimeF
     if avra_lazy_comptime_has(name) == 0 { return direct }
     let source = avra_lazy_comptime_get(name)
     if source == "" { return direct }
-    let body = parse_body_source(source)
+    let body = parse_body_source(source, reg.runtime.nodes)
     if body.length == 0 { return direct }
     if avra_map_has_cstr(reg.name_index, name) == 0 { return direct }
     let idx = avra_map_get_cstr(reg.name_index, name)

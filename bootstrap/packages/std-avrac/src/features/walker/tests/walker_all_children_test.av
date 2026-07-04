@@ -8,7 +8,7 @@
 // WrapperListOfSelf, OptionalDirectSelf, bare ListOfSelf, and all-scalar. (The
 // per-child SPANS the same walker carries are covered in arena_test.av.)
 
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry, TypeParamEntry}
+use @std.avrac.core.{PatId, NodeStore, new_node_store, build_line_index, Stmt, Expr, Pattern, ValueType, BinOp, SStmt, SExpr, sstmt, sexpr, Annotation, ParamEntry, TypeParamEntry}
 use @std.avrac.core.{stmt_child_tags, expr_child_tags, pat_child_tags, type_child_tags}
 use @std.avrac.core.{wc_roundtrip_expr, wc_roundtrip_stmt, wc_roundtrip_pat, wc_roundtrip_type}
 use @std.avrac.core.{AnyNode, SpannedChild, spanned_child, respan_sexpr_opt, respan_sstmt_opt, render_expr, render_stmt, render_pattern}

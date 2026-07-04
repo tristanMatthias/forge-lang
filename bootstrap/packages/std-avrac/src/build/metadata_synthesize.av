@@ -101,7 +101,7 @@ fn stamp_list(stmts: List<SStmt>, file: string, start: int) -> StampOut {
     StampOut { out: out, next: next }
 }
 
-export fn synthesize_unit_body(m: UnitMetadata) -> List<SStmt> {
+export fn synthesize_unit_body(m: UnitMetadata, store: NodeStore) -> List<SStmt> {
     let empty_d: List<SStmt> = []
     let empty = SubMod { name: "", direct: empty_d, children: [] }
     let after_types = insert_types(empty, m.types, m.unit_name)
@@ -110,7 +110,7 @@ export fn synthesize_unit_body(m: UnitMetadata) -> List<SStmt> {
     // and emit a real Function (rather than the empty-body extern-
     // wrapped stub the non-generic path uses). Non-generic exports
     // still take the extern path; private fns never appear in xs.
-    let after_fns = insert_fns(after_types, m.fns, m.unit_name, m.generic_bodies)
+    let after_fns = insert_fns(after_types, m.fns, m.unit_name, m.generic_bodies, store)
     let after_consts = insert_consts(after_fns, m.consts, m.unit_name)
     let after_impls = insert_impls(after_consts, m.impls, m.unit_name, m.types)
     // bd8n / P6 phase 2: inherent impls also surface as
@@ -284,14 +284,14 @@ fn insert_types(trie: SubMod, xs: List<TypeDeclEntry>, unit_name: string) -> Sub
     t
 }
 
-fn insert_fns(trie: SubMod, xs: List<FnDeclEntry>, unit_name: string, bodies: List<GenericBodyEntry>) -> SubMod {
+fn insert_fns(trie: SubMod, xs: List<FnDeclEntry>, unit_name: string, bodies: List<GenericBodyEntry>, store: NodeStore) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
         let e = xs[i]
         let rp = relative_path(e.name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_fn_decl(e, bodies)
+            let decl = synth_fn_decl(e, bodies, store)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -353,8 +353,8 @@ fn insert_impls(trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string, types:
 /// items land at their original qualified paths. Used by inspection
 /// tools (`bs2 metadata_show`); production resolver flows want
 /// `synthesize_unit_body` and supply their own Module wrap.
-export fn synthesize_unit_stmts(m: UnitMetadata) -> List<SStmt> {
-    let body = synthesize_unit_body(m)
+export fn synthesize_unit_stmts(m: UnitMetadata, store: NodeStore) -> List<SStmt> {
+    let body = synthesize_unit_body(m, store)
     if m.unit_name == "" {
         body
     } else {
@@ -465,7 +465,7 @@ fn synth_trait_method_stmts(ms: List<MetaTraitMethod>) -> List<SStmt> {
 
 // ── FNS ──
 
-fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
+fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>, store: NodeStore) -> SStmt {
     let n = local_name(e.name)
     if e.is_extern {
         // ExternFn is C ABI; codegen treats it as a forward decl
@@ -497,7 +497,7 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>) -> SStmt {
     // fall through to the @external_unit stub path — linker resolves
     // at link time.
     if body_source != "" {
-        let parsed_body = parse_body_source(body_source)
+        let parsed_body = parse_body_source(body_source, store)
         let fn_decl = Stmt.Function(n, e.type_params, e.params, e.ret, parsed_body)
         return sstmt_dummy(wrap_export(fn_decl, e.exported))
     }

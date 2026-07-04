@@ -225,7 +225,6 @@ fn lower_stmt(store: NodeStore, stmt: Stmt) -> Stmt {
         .Defer(body) -> .Defer(lower_expr(store, body))
         .Errdefer(body) -> .Errdefer(lower_expr(store, body))
         .LetDestructure(names, init) -> .LetDestructure(names, lower_expr(store, init))
-        .Impl(type_name, methods) -> .Impl(type_name, lower_stmt_list(store, methods))
         .TraitDecl(name, methods) -> .TraitDecl(name, lower_stmt_list(store, methods))
         .Parallel(body) -> .Parallel(lower_stmt_list(store, body))
         _ -> stmt
@@ -348,7 +347,7 @@ fn dispatch_quote_kind(store: NodeStore, kind: string, body: Expr) -> Expr {
         // Malformed `quote arm { ... }` (no arm parsed) — emit a null
         // pattern arm so codegen has something well-typed; the parser
         // already reported the syntax error.
-        return construct_match_arm_null(store, )
+        return construct_match_arm_null(store)
     }
     // Default: kind == "expr" or unrecognized.
     construct_expr(store, unwrap_quote_body(body))
@@ -366,7 +365,7 @@ fn extract_single_match_arm(body: Expr) -> MatchArm? {
     }
 }
 
-fn construct_match_arm_null(store: NodeStore, ) -> Expr {
+fn construct_match_arm_null(store: NodeStore) -> Expr {
     let body_expr = Expr.None
     construct_match_arm(store, MatchArm {
         pattern: Pattern.Wildcard,

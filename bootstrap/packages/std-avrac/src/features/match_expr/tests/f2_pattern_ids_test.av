@@ -5,8 +5,9 @@
 // renders reproduce the source shape, and (2) the compiled behavior of
 // nested/or matching is unchanged (dispatch, binding, guards).
 
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_native_probe, parse_program_source}
 use @std.avrac.core.{Expr, Pattern, render_pattern, NodeStore}
+use @std.avrac.fmt.{fmt_stmt_list}
 
 /// Parse a match expression and render its first arm's pattern through
 /// the store — the flip means rendering MUST resolve ids to reproduce
@@ -47,6 +48,25 @@ spec "F2: nested-variant patterns carry id children that render faithfully" {
     }
 }
 
+fn fmt_of(source: string) -> string {
+    let r = parse_program_source(source)
+    if r.had_error != 0 || r.stmts == null { return "<parse error>" }
+    fmt_stmt_list(r.store, r.stmts!, 0)
+}
+
+spec "F2: fmt resolves pattern ids back to surface text" {
+    given "a fn whose match uses or and nested patterns" {
+        then "the formatter reproduces the or chain" {
+            let out = fmt_of("fn f(n: int) -> int {\n    match n {\n        1 or 2 -> 1\n        _ -> 0\n    }\n}\n")
+            out.contains("1 or 2")
+        }
+        then "the formatter reproduces a nested destructure" {
+            let out = fmt_of("fn g(v: E) -> int {\n    match v {\n        .Some(.Ok(x)) -> x\n        _ -> 0\n    }\n}\n")
+            out.contains(".Some(.Ok(x))")
+        }
+    }
+}
+
 // ── Compiled behavior: the flip must not change match semantics ──
 
 enum F2Inner { IA(x: int), IB }
@@ -75,6 +95,22 @@ fn f2_or_strings(s: string) -> int {
     }
 }
 
+fn f2_or_with_guard(n: int, flag: bool) -> int {
+    match n {
+        1 or 2 if flag -> 10
+        1 or 2 -> 20
+        _ -> 30
+    }
+}
+
+fn f2_deep_or(n: int) -> int {
+    // A 8-way or chain — right-nested Or rows resolve level by level.
+    match n {
+        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 -> 1
+        _ -> 0
+    }
+}
+
 spec "F2: nested and or matching behave identically post-flip" {
     given "a nested constructor subject" {
         then "the inner payload binds through two levels" {
@@ -96,6 +132,17 @@ spec "F2: nested and or matching behave identically post-flip" {
         }
         then "string literal ors compare by value" {
             f2_or_strings("a") == 1 && f2_or_strings("b") == 1 && f2_or_strings("z") == 0
+        }
+    }
+    given "or-patterns combined with guards" {
+        then "the guard gates the or-arm; the unguarded twin catches the rest" {
+            f2_or_with_guard(1, true) == 10 && f2_or_with_guard(2, true) == 10
+                && f2_or_with_guard(1, false) == 20 && f2_or_with_guard(9, true) == 30
+        }
+    }
+    given "a deep or chain (8 alternatives)" {
+        then "every alternative and the fallthrough dispatch correctly" {
+            f2_deep_or(1) == 1 && f2_deep_or(5) == 1 && f2_deep_or(8) == 1 && f2_deep_or(9) == 0
         }
     }
 }

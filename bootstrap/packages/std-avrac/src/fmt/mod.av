@@ -243,9 +243,16 @@ fn fmt_pattern(store: NodeStore, p: Pattern) -> string {
             let bindings_str = fmt_param_list_comma(bindings)
             if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }
         }
-        .Or(left, right) -> "${fmt_pattern(store, store.pats.get(left))} | ${fmt_pattern(store, store.pats.get(right))}"
+        .LitString(value) -> value
+        .LitInt(value) -> string(value)
+        .LitBool(value) -> if value != 0 { "true" } else { "false" }
+        .LitFloat(value) -> value
+        .NestedVariant(name, sub_patterns) -> {
+            let subs = list_map(sub_patterns, (pid: PatId) -> fmt_pattern(store, store.pats.get(pid))).join(", ")
+            ".${name}(${subs})"
+        }
+        .Or(left, right) -> "${fmt_pattern(store, store.pats.get(left))} or ${fmt_pattern(store, store.pats.get(right))}"
         .TypePattern(type_name, binding) -> "${type_name}(${binding})"
-        _ -> "_"
     }
 }
 
