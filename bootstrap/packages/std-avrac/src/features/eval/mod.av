@@ -1089,6 +1089,15 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
         return eval_resolver_ctx_call(runtime, ctx_kind, args)
     }
 
+    // synth_* id shims (features/comptime/synth.av): typed node→id
+    // converters for flipped AST payloads that are IDENTITIES in
+    // Value space — the boxed node Value already is the payload the
+    // decoder consumes, so the call passes its argument straight
+    // through, exactly like the span wrappers above.
+    if call_is_synth_shim(callee) {
+        return eval_span_wrapper_passthrough(runtime, args)
+    }
+
     // List built-in methods (`xs.push(x)`, etc.). Macros constructing
     // AST values frequently call these to grow accumulator lists;
     // without an eval-side intercept, FieldAccess on a list value
@@ -1454,18 +1463,36 @@ fn call_is_list_concat(callee: Expr) -> bool {
 /// future-proofing, the fully-qualified path the regular-fn form
 /// would emit.
 fn ctx_call_kind(callee: Expr) -> string {
+    ctx_kind_from_path(callee_last_segment(callee))
+}
+
+/// The last path segment of a callable's name — bare `Ident`,
+/// in-module, and fully-qualified `QualifiedIdent` forms all resolve
+/// to the same segment. The shared peel under every name-keyed eval
+/// intercept (ctx_*, synth_*); non-name callees map to "".
+fn callee_last_segment(callee: Expr) -> string {
     match callee {
-        .QualifiedIdent(path) -> ctx_kind_from_path(path)
-        .Ident(name)          -> ctx_kind_from_path(name)
+        .QualifiedIdent(path) -> path_last_segment(path)
+        .Ident(name)          -> path_last_segment(name)
         _ -> ""
     }
 }
 
+// ── synth_* id-shim intercepts (B-final flip mechanism) ──
+
+/// True when the callee names a synth_* id shim
+/// (features/comptime/synth.av). Every shim is an identity
+/// passthrough of its first argument, so only presence matters —
+/// mirror of `call_is_list_concat`.
+fn call_is_synth_shim(callee: Expr) -> bool {
+    let last = callee_last_segment(callee)
+    last == "synth_expr_id" || last == "synth_stmt_id" || last == "synth_stmt_ids"
+}
+
 fn ctx_kind_from_path(path: string) -> string {
-    // Last `::` segment of the path — handles bare names, in-module
-    // (`@std::avrac::features::comptime::ctx_*`), and explicit
-    // submodule (`@std::avrac::features::comptime::resolver_ctx::ctx_*`)
-    // forms uniformly.
+    // `path` is the already-peeled last segment (callee_last_segment);
+    // path_last_segment is idempotent on a bare name, so accepting a
+    // full path here stays harmless.
     let last = path_last_segment(path)
     if last == "ctx_current_module" { return "current_module" }
     if last == "ctx_lookup_type"    { return "lookup_type" }
