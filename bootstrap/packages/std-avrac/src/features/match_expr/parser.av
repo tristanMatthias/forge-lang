@@ -99,7 +99,8 @@ impl Parser {
             // becoming a field access on the previous expression
             let saved_dot = self.allow_dot_postfix
             self.allow_dot_postfix = false
-            let pattern = self.pat_of(self.parse_pattern()?)
+            let table_pat_id = self.parse_pattern()?
+            let pattern = self.pat_of(table_pat_id)
             self.allow_dot_postfix = saved_dot
             if self.check(Tk.Pipe) { self.advance() }
             // Parse values — one per column, stopping at | separators
@@ -122,6 +123,11 @@ impl Parser {
                 pattern,
                 guard: null,
                 body: sexpr(body, self.current_line, self.current_column),
+                pattern_id: table_pat_id,
+                guard_id: none,
+                // The synthesized MapLit body is the documented table-path
+                // glue (no native row until that producer converts).
+                body_id: none,
             })
         }
         .Ok(out)
@@ -162,12 +168,17 @@ impl Parser {
                 if self.check(Tk.Comma) { self.advance() }
                 let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
                 let splice = Expr.Splice(target)
-                refs.push(NodeRef.PatRef(self.alloc_pat_leaf(sentinel_pat)))
-                refs.push(NodeRef.ExprRef(self.alloc1(splice, target_id)))
+                let sentinel_pat_id = self.alloc_pat_leaf(sentinel_pat)
+                let splice_id = self.alloc1(splice, target_id)
+                refs.push(NodeRef.PatRef(sentinel_pat_id))
+                refs.push(NodeRef.ExprRef(splice_id))
                 out.push(MatchArm {
                     pattern: sentinel_pat,
                     guard: null,
                     body: sexpr(splice, self.current_line, self.current_column),
+                    pattern_id: sentinel_pat_id,
+                    guard_id: none,
+                    body_id: splice_id,
                 })
                 continue
             }
@@ -176,10 +187,12 @@ impl Parser {
             refs.push(NodeRef.PatRef(pat_id))
             // Optional guard: `pattern if cond ->`
             mut guard: SExpr? = none
+            mut guard_id: ExprId? = none
             if self.check(Tk.KwIf) {
                 self.advance()
                 let g_id = self.parse_expression()?
                 guard = sexpr(self.expr_of(g_id), self.current_line, self.current_column)
+                guard_id = g_id
                 refs.push(NodeRef.ExprRef(g_id))
             }
             if !self.consume(Tk.Arrow, "expected `->` after pattern") {
@@ -212,6 +225,9 @@ impl Parser {
                 pattern,
                 guard,
                 body: sexpr(body_val, self.current_line, self.current_column),
+                pattern_id: pat_id,
+                guard_id,
+                body_id,
             })
         }
         .Ok(MatchArmsParsed { arms: out, refs: refs })

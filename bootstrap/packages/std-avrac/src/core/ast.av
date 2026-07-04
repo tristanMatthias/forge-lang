@@ -643,6 +643,13 @@ export type MatchArm = {
     pattern: Pattern,
     guard: SExpr?,
     body: SExpr,
+    // B-final F1c dual fields (NULLABLE, null = no arena row yet — the F1a
+    // container convention): the rows backing pattern/guard/body. The
+    // parser populates them; transforms leave them null until their pass
+    // migrates. The boxed halves die at F4.
+    pattern_id: PatId?,
+    guard_id: ExprId?,
+    body_id: ExprId?,
 }
 
 /// Type parameter list — used on generic declarations
@@ -675,7 +682,13 @@ export type TypeParamEntry = { name: string, bounds: string }
 /// The `vtype` slot is always Unknown after lowering because quote
 /// captures pre-resolve — the typeck pass fills in real types on
 /// the re-resolved spliced AST.
-export type ParamEntry = { name: string, vtype: ValueType }
+export type ParamEntry = {
+    name: string,
+    vtype: ValueType,
+    // B-final F1d dual field (NULLABLE — see MatchArm): the type row
+    // backing `vtype`.
+    ty_id: TypeId?,
+}
 
 /// Membership test for a `List<TypeParamEntry>`. True iff `name`
 /// appears as a parameter name (bounds ignored).

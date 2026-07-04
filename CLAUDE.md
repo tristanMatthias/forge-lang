@@ -404,6 +404,26 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 5. **Redzones:** `AVRA_REDZONES=1` / `AVRA_PAGE_ALLOC=1` catches cross-allocation writes
 6. Only then read IR
 
+LLDB notes: the runtime's `avra_match_unreachable` reporter calls `exit(99)` (no
+abort), so set `b avra_match_unreachable` BEFORE `run` or you get no stop. The
+orchestrated `bs2 build --lib` spawns the real compile as a CHILD process —
+LLDB on the parent sees only SIGCHLDs; reproduce single-process first (below).
+
+### The full-coverage smoke: the metadata lib build (a green plain compile is NOT enough)
+
+`make build-quick` + `bs2 compile avrac.av` from `src/` can both be green while
+the compiler is broken: comptime macro expansion of component/derive output is
+only consumed on the manifest-driven path. After any compiler change, the probe
+that covers it (this exact shape — cwd at the PACKAGE ROOT so the manifest +
+dep-metadata path engage, and `rm` the entry .ll first so a stale artifact
+can't mask a crashed child, ticket 18z8):
+
+```bash
+cd packages/std-avrac && rm -f src/avrac.av.ll && AVRA_USE_METADATA=1 \
+  AVRA_LIB_PKG_ROOT='@std::avrac' ../../build/bs2 compile --emit_metadata \
+  --module_path='@std::avrac' src/avrac.av; echo "exit: $?"
+```
+
 ### Memory / OOM measurement (READ before diagnosing an OOM)
 
 **Session-accumulated pressure masquerades as a code bug.** A killed `make test` leaves `bs2`/`llc` procs + page cache resident, so the NEXT memory reading is inflated — a whole session was once spent concluding the std-avrac lib build needs ~15GB (it's ~140MB; the rest was session pressure, which `snw0` already documented and warned about). Before trusting ANY memory number: `free` shows recovered avail AND `pgrep -f 'bs2 build|llc'` is empty. Measure whole-tree/cgroup RSS, not `ps --ppid` (misses the `llc` grandchild that does the heavy lifting). Kill stray runs by PID — `pkill -f '<pat>'` self-matches your own shell command (exit 144). The full-suite OOM on a ≤16GB box is a KNOWN, scoped issue (`snw0`) — don't re-diagnose from scratch.
@@ -437,7 +457,8 @@ These bugs build successfully but corrupt memory at runtime.
 - **-O0 works, -O2 crashes:** alignment mismatch. Check LLVM type consistency.
 - **Seed contamination:** auto-cycle overwrote seed.ll. Default `NO_AUTOCYCLE=1` is set.
 - **Stale seed after a base change → misleading `expects X, got X` errors:** after rebasing/restarting a branch onto a newer integration base, the gitignored local `seed/seed.ll` stays at the OLD version and compiles the newer source with an older compiler — throwing F1000 `expects @…::ExprId, got @…::ExprId` (identical expected/got) that mimics a type-checker bug, not a seed mismatch. Re-fetch the pin first: `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch`.
-- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none.
+- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. Known open instance: the lib build's post-compile `file_exists(entry.ll)` check is satisfied by a STALE .ll from an earlier run, so a crashed child compile still reports `Built` (ticket 18z8) — always `rm` the entry `.ll` before using a lib build as a pass/fail probe.
+- **Unmatched tag `-559038737` / `0xffffffffdeadbeef` = the CLOSURE MARKER, not freed memory.** That constant is `closure_marker()` (codegen/types.av) — the head of a closure array `[MARKER, fn_ptr, captures…]`. Seeing it as an enum tag means a FUNCTION REFERENCE landed where a value belongs. First suspect (before any memory-corruption theory): a fn-name/local-name collision — module-private fns currently leak cross-module and a local does NOT reliably shadow a same-named fn (ticket zo1a); the local's reads compile into a closure reference. Before adding ANY new top-level fn to compiler src, grep for locals with that name: `grep -rn "let <name> \|mut <name> " packages/std-avrac/src --include=*.av`. This is the root cause behind the "never shadow fn/type names" naming rule; the rule guards one direction, this guards the other.
 
 ## CLI Commands
 

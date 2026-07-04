@@ -123,9 +123,25 @@ children via `store.<arena>.get(id)`. All transitional machinery dies: the
   containers carry null duals until their pass migrates (the F1005 train
   makes those nulls explicit).
 - **F1b (y5um.8.3)** — flip `FieldInit.value` → `ExprId`.
+  **DONE** — `value_id: ExprId?` on the F1a convention; both parser paths
+  populate (explicit + true-shorthand struct-lit inits, table-literal cells);
+  quote lowering declares explicit null duals (a lowered value is a NEW tree).
+  Parity battery extended; mutation-verified; diff-test byte-identical.
 - **F1c (y5um.8.4)** — flip `MatchArm` → `{pattern: PatId, guard: ExprId?, body: ExprId}`.
+  **DONE** (dual stage, one PR with F1d) — `pattern_id`/`guard_id`/`body_id`
+  populated by all four producers (match arms, table rows — MapLit body stays
+  null as documented glue, splice sentinels, quote-arm envelopes); lowering
+  emits/rebuilds explicit nulls. Parity + mutation verified.
 - **F1d (y5um.8.5)** — flip `ParamEntry.vtype` → `TypeId` (the wide sweep:
   typeck/codegen/closures/resolve/mono).
+  **DONE** (dual stage, one PR with F1c) — `ty_id` allocates a real (orphan)
+  type row wherever a type position exists (fn/method/typed-lambda params via
+  `parse_param_list` including the Int default; the impl receiver), mirroring
+  `vtype` exactly so the F4 flip stays mechanical; positions that can't carry
+  a type (untyped lambdas, destructures, use-name lists, synthesized `it`)
+  pin explicit nulls. NOTE for later stages: do NOT name a new top-level fn
+  after any existing local — module-private fns leak cross-module and locals
+  fail to shadow them (zo1a; cost this stage a debugging session).
 - **F2 (y5um.8.6)** — `Pattern` variant payloads → `PatId` (pilot kind).
 - **F3a (y5um.8.7)** — `Stmt` variant payloads → ids.
 - **F3b (y5um.8.8)** — `Expr` variant payloads → ids (largest; may split by

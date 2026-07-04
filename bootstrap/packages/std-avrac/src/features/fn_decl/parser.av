@@ -31,6 +31,14 @@ fn merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: st
 }
 
 impl Parser {
+    /// Build a ParamEntry for a type-carrying position: the dual `ty_id`
+    /// mirrors `vtype` exactly (defaults included) via a real (orphan) type
+    /// row, so the F4 flip stays mechanical. Positions that can't carry a
+    /// type construct their entries inline with an explicit `ty_id: none`.
+    fn param_entry_typed(self, name: string, vtype: ValueType) -> ParamEntry {
+        ParamEntry { name: name, vtype: vtype, ty_id: self.glue_ingest_type(vtype) }
+    }
+
     fn parse_function_declaration(self) -> Result<StmtId, string> {
         self.advance()
         let name = self.consume_identifier("expected function name")?
@@ -94,7 +102,7 @@ impl Parser {
                 let te = self.parse_type_expr("expected parameter type after `:`")?
                 resolved = type_expr_to_vtype(te)
             }
-            out.push(ParamEntry { name: name, vtype: resolved })
+            out.push(self.param_entry_typed(name, resolved))
             if self.check(Tk.Comma) {
                 self.advance()
                 if self.check(Tk.RightParen) {
