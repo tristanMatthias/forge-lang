@@ -178,8 +178,7 @@ impl Parser {
             }
             // The receiver type is resolved from the impl header — a real
             // type the parser has in hand, so it gets a real (orphan) row.
-            let self_vt = vtype_from_name(type_name)
-            out.push(ParamEntry { name: "self", vtype: self_vt, ty_id: self.glue_ingest_type(self_vt) })
+            out.push(self.param_entry_typed("self", vtype_from_name(type_name)))
             if self.check(Tk.Comma) {
                 self.advance()
                 let rest = self.parse_param_list()?
