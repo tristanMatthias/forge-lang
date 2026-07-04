@@ -157,7 +157,7 @@ impl Parser {
             } else {
                 value_id = self.alloc_leaf(value)
             }
-            out.push(FieldInit { name, value: sexpr(value, self.current_line, self.current_column) })
+            out.push(FieldInit { name, value: sexpr(value, self.current_line, self.current_column), value_id })
             ids.push(value_id)
             if self.check(Tk.Comma) { self.advance() }
         }

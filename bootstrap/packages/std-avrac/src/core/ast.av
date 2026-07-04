@@ -475,7 +475,15 @@ export type FieldEntry = { name: string, resolved: ValueType }
 // `List<FieldInit>` replaces the retired `enum FieldInitList`.
 // Used in literal construction like `Foo { f1: 1, f2: "hi" }` —
 // the payload on `Expr.StructLit` and `Expr.With`.
-export type FieldInit = { name: string, value: SExpr }
+export type FieldInit = {
+    name: string,
+    value: SExpr,
+    // B-final F1b dual field (NULLABLE, null = no arena row yet — see the
+    // F1a container convention on WhenArm): the row backing `value`. The
+    // parser always populates it; transforms leave it null until their
+    // pass migrates to allocating. The boxed half dies at F4.
+    value_id: ExprId?,
+}
 
 // `List<Variant>` replaces the retired `enum VariantList`. Each
 // variant has zero or more payload fields, stored as a

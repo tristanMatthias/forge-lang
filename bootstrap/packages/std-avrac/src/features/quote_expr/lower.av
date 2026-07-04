@@ -299,6 +299,9 @@ fn lower_field_inits(inits: List<FieldInit>) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
         value: sexpr(lower_expr(init.value.node), init.value.line, init.value.col),
+        // The lowered value is a NEW tree with no arena row (F1b dual
+        // convention) — the original id would point at the pre-lowering row.
+        value_id: none,
     })
 }
 
@@ -545,8 +548,8 @@ fn construct_param_list(params: List<ParamEntry>) -> Expr {
 /// per-entry struct literal.
 fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -> Expr {
     mut inits: List<FieldInit> = []
-    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
-    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
+    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1), value_id: none })
+    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2), value_id: none })
     Expr.StructLit(type_name, inits)
 }
 
@@ -555,9 +558,9 @@ fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -
 /// future N-field helpers slot in next to it.
 fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k3: string, v3: Expr) -> Expr {
     mut inits: List<FieldInit> = []
-    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1) })
-    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2) })
-    inits.push(FieldInit { name: k3, value: sexpr_dummy(v3) })
+    inits.push(FieldInit { name: k1, value: sexpr_dummy(v1), value_id: none })
+    inits.push(FieldInit { name: k2, value: sexpr_dummy(v2), value_id: none })
+    inits.push(FieldInit { name: k3, value: sexpr_dummy(v3), value_id: none })
     Expr.StructLit(type_name, inits)
 }
 
@@ -955,9 +958,10 @@ fn construct_field_init_list(list: List<FieldInit>) -> Expr {
     mut i = 0
     while i < list.length {
         let init = list[i]
-        let struct_lit = struct_lit_2("@std::avrac::core::FieldInit",
+        let struct_lit = struct_lit_3("@std::avrac::core::FieldInit",
             "name", string_lit_expr(init.name),
-            "value", construct_sexpr(init.value))
+            "value", construct_sexpr(init.value),
+            "value_id", Expr.None)
         elems.push(sexpr_dummy(struct_lit))
         i = i + 1
     }
