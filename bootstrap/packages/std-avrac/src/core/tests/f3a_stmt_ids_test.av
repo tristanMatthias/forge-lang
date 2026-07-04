@@ -15,6 +15,7 @@
 //   4. provenance (`from_macro`) rides the bridges unchanged.
 
 use @std.avrac.core.{NodeStore, StmtId, ExprId, Stmt, SStmt, Expr, ValueType, SrcPos,
+                     ParamEntry, TypeParamEntry, TypeRegistry, type_registry_new, stamp_ids_stmts,
                      new_node_store, build_line_index, sstmt_at, render_stmt, render_expr}
 use @std.avrac.parse.{parse_program_source}
 
@@ -115,5 +116,26 @@ spec "F3a: render resolves flipped payloads through the store" {
         let init = store.exprs.add_leaf(Expr.Number("5"))
         let rendered = render_stmt(store, Stmt.Let("x", ValueType.Int, init))
         rendered.contains("5") && rendered.contains("x")
+    }
+}
+
+// 07po regression: the typeck id-stamp pass rebuilds every fn-body row.
+// It must inherit the source row's pos column (via `restmt`), not drop it
+// (a bare `add_leaf`), or codegen emits `source_line=0` into null-deref /
+// coverage calls and the compiler diverges from base in diff-test.
+spec "F3a: stamp_ids_stmts preserves fn-body statement positions" {
+    then "a body statement stamped at line 7 still reads line 7 after stamping" {
+        let store = ws()
+        let body_expr = store.exprs.add_leaf(Expr.Number("1"))
+        let body_ids = store.rows_of([sstmt_at(Stmt.Expr(body_expr), 7, 3, "f.av")])
+        let empty_p: List<ParamEntry> = []
+        let empty_tp: List<TypeParamEntry> = []
+        let fn_ss = sstmt_at(Stmt.Function("main", empty_tp, empty_p, ValueType.Void, body_ids), 1, 1, "f.av")
+        let reg = type_registry_new()
+        let stamped = stamp_ids_stmts(store, [fn_ss], reg)
+        match stamped[0].node {
+            .Function(_, _, _, _, sbody) -> sbody.length == 1 && store.stmt_pos(sbody[0]).line == 7
+            _ -> false
+        }
     }
 }
