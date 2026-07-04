@@ -51,9 +51,13 @@ impl Parser {
                 ids.push(assoc_id)
                 continue
             }
+            // Snapshot the method position BEFORE parsing — like the assoc-type
+            // branch above — so the row isn't stamped past its own signature/body.
+            let m_line = self.current_line
+            let m_col = self.current_column
             let method = self.parse_trait_method_sig()?
             let method_id = self.glue_ingest_stmt(method)
-            self.store.stmts.record_pos(method_id, SrcPos { line: self.current_line, col: self.current_column, file: self.file })
+            self.store.stmts.record_pos(method_id, SrcPos { line: m_line, col: m_col, file: self.file })
             ids.push(method_id)
         }
         .Ok(TraitMethodsParsed { ids: ids })

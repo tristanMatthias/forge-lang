@@ -98,8 +98,13 @@ impl Parser {
                 self.set_error("expected `fn` or `type` inside impl block")
                 return .Err("parse error")
             }
+            // Snapshot the `fn` position BEFORE parsing — the parse advances
+            // the cursor past the whole method, so current_line/col would
+            // otherwise stamp the method row past its own body.
+            let m_line = self.current_line
+            let m_col = self.current_column
             let method_id = self.parse_method_declaration(type_name)?
-            self.store.stmts.record_pos(method_id, SrcPos { line: self.current_line, col: self.current_column, file: self.file })
+            self.store.stmts.record_pos(method_id, SrcPos { line: m_line, col: m_col, file: self.file })
             // A doc-wrapped method mirrors the top-level converted pattern:
             // the inner decl rides as the Annotated row's id payload.
             mut elem_id = method_id

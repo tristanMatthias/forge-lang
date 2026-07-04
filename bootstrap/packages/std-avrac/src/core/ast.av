@@ -1438,7 +1438,10 @@ fn stamp_ids_stmt_ids(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) ->
 }
 
 fn stamp_ids_stmt_id(store: NodeStore, id: StmtId, reg: TypeRegistry) -> StmtId {
-    store.stmts.add_leaf(stamp_ids_stmt(store, store.stmts.get(id), reg))
+    // `restmt` (not `add_leaf`) so a single-statement body (If/While/For/
+    // ForIn/Annotated inner) inherits the source row's pos + span +
+    // provenance — the single-stmt twin of the stamp_ids_stmt_ids fix (07po).
+    store.restmt(stamp_ids_stmt(store, store.stmts.get(id), reg), id)
 }
 
 fn stamp_ids_stmt(store: NodeStore, stmt: Stmt, reg: TypeRegistry) -> Stmt {

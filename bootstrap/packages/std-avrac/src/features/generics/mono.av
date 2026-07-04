@@ -1946,6 +1946,8 @@ fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
         .ForIn(v, coll, body) -> .ForIn(v, substitute_expr_id(store, coll, ta), substitute_stmt_id(store, body, ta))
         .Match(subj, arms) -> .Match(substitute_expr_id(store, subj, ta), substitute_match_arms(store, arms, ta))
         .Defer(body) -> .Defer(substitute_expr_id(store, body, ta))
+        .Const(name, vt, init) -> .Const(name, substitute_vtype(vt, ta), substitute_expr_id(store, init, ta))
+        .Annotated(annots, inner) -> .Annotated(annots, substitute_stmt_id(store, inner, ta))
         _ -> stmt
     }
 }
