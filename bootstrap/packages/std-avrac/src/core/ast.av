@@ -1429,7 +1429,11 @@ export fn stamp_ids_stmts(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistr
 /// arena row (transforms allocate; rows are immutable).
 fn stamp_ids_stmt_ids(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<StmtId> {
     mut out: List<StmtId> = []
-    for id in ids { out.push(store.stmts.add_leaf(stamp_ids_stmt(store, store.stmts.get(id), reg))) }
+    // `restmt` (not a bare `add_leaf`) so each rewritten row inherits the
+    // source row's position column + span + provenance — a bare `add_leaf`
+    // drops the pos, zeroing every fn-body statement's source line for
+    // diagnostics (null-deref / coverage) at codegen (07po).
+    for id in ids { out.push(store.restmt(stamp_ids_stmt(store, store.stmts.get(id), reg), id)) }
     out
 }
 

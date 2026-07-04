@@ -2559,11 +2559,6 @@ impl Parser {
         self.store.pats.get(id)
     }
 
-    /// Allocate a parser-built `Pattern` with its children's edge refs.
-    fn alloc_pat(self, node: Pattern, edges: List<NodeRef>) -> PatId {
-        self.store.pats.add(node, NodeEdges { refs: edges }, byte_span_none())
-    }
-
     /// Alloc a pattern LEAF (no node children) — the arena's one-push path.
     fn alloc_pat_leaf(self, node: Pattern) -> PatId {
         self.store.pats.add_leaf(node)
@@ -2661,16 +2656,6 @@ impl Parser {
     /// Alloc a stmt LEAF (no node children) — the arena's one-push path.
     fn alloc_stmt_leaf(self, node: Stmt) -> StmtId {
         self.store.stmts.add_leaf(node)
-    }
-
-    /// Alloc a stmt with ONE expr child (field order).
-    fn alloc_stmt_expr1(self, node: Stmt, a: ExprId) -> StmtId {
-        self.alloc_stmt(node, byte_span_none(), [NodeRef.ExprRef(a)])
-    }
-
-    /// Alloc a stmt with ONE stmt child (field order).
-    fn alloc_stmt_stmt1(self, node: Stmt, a: StmtId) -> StmtId {
-        self.alloc_stmt(node, byte_span_none(), [NodeRef.StmtRef(a)])
     }
 
     /// Edge refs for a stmt-id list (block bodies, decl bodies).
