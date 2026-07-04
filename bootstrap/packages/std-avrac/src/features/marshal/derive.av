@@ -239,7 +239,7 @@ fn list_of_struct_block(store: NodeStore, base: Expr, value_expr: Expr, field_na
     let x_to_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(xvar), "to_bytes"), [])
     let new_b = Expr.Call(Expr.FieldAccess(Expr.Ident(bvar), "write_bytes"),
         [sexpr_dummy(x_to_bytes)])
-    let assign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(bvar, new_b)))
+    let assign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(bvar, store.exprs.add_leaf(new_b))))
     let assign_body: List<StmtId> = [store.stmts.add_leaf(assign_stmt)]
     let body = store.stmts.add_leaf(Stmt.Block(assign_body))
     let for_stmt = Stmt.ForIn(xvar, store.exprs.add_leaf(value_expr), body)
@@ -402,7 +402,7 @@ fn read_then_reassign(store: NodeStore, field_name: string, value_name: string, 
         ParamEntry { name: r_next, vtype: ValueType.Unknown },
     ]
     let destruct_stmt = Stmt.LetDestructure(destruct_names, store.exprs.add_leaf(read_call))
-    let reassign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", Expr.Ident(r_next))))
+    let reassign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", store.exprs.add_leaf(Expr.Ident(r_next)))))
     [store.stmts.add_leaf(destruct_stmt), store.stmts.add_leaf(reassign_stmt)]
 }
 
@@ -456,12 +456,12 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
         [sexpr_dummy(Expr.Ident(rawname))])
     let push_call = Expr.Call(Expr.FieldAccess(Expr.Ident(aname), "push"),
         [sexpr_dummy(from_call)])
-    let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, push_call)))
+    let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, store.exprs.add_leaf(push_call))))
     // r = __r2
-    let r_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", Expr.Ident(rname))))
+    let r_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", store.exprs.add_leaf(Expr.Ident(rname)))))
     // __i = __i + 1
     let i_inc = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(iname,
-        Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1")))))
+        store.exprs.add_leaf(Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1"))))))
 
     let loop_body_stmts: List<StmtId> = [
         store.stmts.add_leaf(raw_stmt),

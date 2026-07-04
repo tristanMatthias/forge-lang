@@ -35,7 +35,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .None -> "none"
         .Ident(name) -> name
         .QualifiedIdent(path) -> path
-        .Assign(name, value) -> "${name} = ${fmt_expr(store, value)}"
+        .Assign(name, value) -> "${name} = ${fmt_expr(store, store.exprs.get(value))}"
         .Grouping(inner) -> "(${fmt_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "${unop_str(op)}${fmt_expr(store, store.exprs.get(right))}"
         .Binary(left, op, right) -> "${fmt_expr(store, left)} ${binop_str(op)} ${fmt_expr(store, right)}"
@@ -48,7 +48,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Index(obj, idx) -> "${fmt_expr(store, obj)}[${fmt_expr(store, idx)}]"
         .Block(body) -> "{\n${fmt_stmt_list(store, body, 1)}\n}"
         .MatchExpr(subject, arms) -> "match ${fmt_expr(store, subject)} {\n${fmt_match_arms(store, arms, 1)}\n}"
-        .FieldAssign(obj, field, value) -> "${fmt_expr(store, obj)}.${field} = ${fmt_expr(store, value)}"
+        .FieldAssign(obj, field, value) -> "${fmt_expr(store, store.exprs.get(obj))}.${field} = ${fmt_expr(store, store.exprs.get(value))}"
         .IfExpr(c, t, e) -> "if ${fmt_expr(store, c)} { ${fmt_expr(store, t)} } else { ${fmt_expr(store, e)} }"
         .NullCoalesce(left, right) -> "${fmt_expr(store, left)} ?? ${fmt_expr(store, right)}"
         .OptionalChain(obj, field) -> "${fmt_expr(store, store.exprs.get(obj))}?.${field}"

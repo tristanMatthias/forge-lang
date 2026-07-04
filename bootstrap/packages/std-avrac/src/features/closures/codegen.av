@@ -91,7 +91,7 @@ fn is_captured(captures: List<Capture>, name: string) -> bool {
 /// closure write-back path runs.
 fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
     match expr {
-        .Assign(name, val) -> name == target || expr_assigns(store, val, target)
+        .Assign(name, val) -> name == target || expr_assigns(store, store.exprs.get(val), target)
         .Binary(l, _, r) -> expr_assigns(store, l, target) || expr_assigns(store, r, target)
         .Unary(_, r) -> expr_assigns(store, store.exprs.get(r), target)
         .Logical(l, _, r) -> expr_assigns(store, l, target) || expr_assigns(store, r, target)
@@ -200,7 +200,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, e, params, env, captures)
         }
         .Block(stmts) -> find_captures_stmts(store, stmts, params, env, captures)
-        .Assign(_, value) -> find_captures(store, value, params, env, captures)
+        .Assign(_, value) -> find_captures(store, store.exprs.get(value), params, env, captures)
         .Index(obj, idx) -> {
             find_captures(store, obj, params, env, captures)
             find_captures(store, idx, params, env, captures)
@@ -213,8 +213,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         .StructLit(_, inits) -> find_captures_field_inits(store, inits, params, env, captures)
         .FieldAccess(obj, _) -> find_captures(store, obj, params, env, captures)
         .FieldAssign(obj, _, val) -> {
-            find_captures(store, obj, params, env, captures)
-            find_captures(store, val, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
+            find_captures(store, store.exprs.get(val), params, env, captures)
         }
         .NullCoalesce(l, r) -> {
             find_captures(store, l, params, env, captures)

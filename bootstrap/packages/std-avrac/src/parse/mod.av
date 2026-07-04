@@ -976,10 +976,10 @@ impl Parser {
         // design Decision 4); its CHILDREN are re-parented by id — the
         // FieldAccess's object id comes off the shell's edge list, no re-walk.
         match self.expr_of(left) {
-            .Ident(name) -> .Ok(self.alloc1(Expr.Assign(name, self.expr_of(value)), value))
-            .FieldAccess(obj, field) -> {
+            .Ident(name) -> .Ok(self.alloc1(Expr.Assign(name, value), value))
+            .FieldAccess(_, field) -> {
                 let obj_id = self.expr_child(left, 0)
-                .Ok(self.alloc2(Expr.FieldAssign(obj, field, self.expr_of(value)), obj_id, value))
+                .Ok(self.alloc2(Expr.FieldAssign(obj_id, field, value), obj_id, value))
             }
             _ -> {
                 self.set_error("invalid assignment target")

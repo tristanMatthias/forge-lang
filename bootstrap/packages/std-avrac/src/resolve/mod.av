@@ -494,7 +494,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             set_resolve_error(r, "undefined variable `${name}`")
         }
         .Assign(name, value) -> {
-            let after_value = resolve_expr(r, value)
+            let after_value = resolve_expr(r, r.nodes.exprs.get(value))
             // Uppercase names are treated as opaque mut globals.
             if starts_with_upper(name) {
                 return after_value
@@ -548,9 +548,9 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .QualifiedIdent(_) -> r
         .FieldAssign(obj, field, value) -> {
-            let ra = resolve_expr(r, obj)
-            let rb = resolve_expr(ra, value)
-            let err = check_immutable_root(rb, obj, "cannot mutate field `${field}`")
+            let ra = resolve_expr(r, r.nodes.exprs.get(obj))
+            let rb = resolve_expr(ra, ra.nodes.exprs.get(value))
+            let err = check_immutable_root(rb, rb.nodes.exprs.get(obj), "cannot mutate field `${field}`")
             if err != null { return err! }
             rb
         }

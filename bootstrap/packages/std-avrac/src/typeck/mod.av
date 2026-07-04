@@ -1617,7 +1617,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
                 lint_sig_or(o, lint_scan_expr(store, idx, coll))
             }
         }
-        .Assign(_, value) -> lint_scan_expr(store, value, coll)
+        .Assign(_, value) -> lint_scan_expr(store, store.exprs.get(value), coll)
         .Grouping(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
@@ -1628,7 +1628,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
         .Block(body) -> lint_scan_sstmts(store, body, coll)
         .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
-        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_expr(store, value, coll))
+        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_expr(store, store.exprs.get(value), coll))
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, c, coll), lint_sig_or(lint_scan_expr(store, t, coll), lint_scan_expr(store, el, coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
@@ -1712,7 +1712,7 @@ fn lint_step_count(store: NodeStore, s: Stmt) -> LintStep {
     match s {
         .Expr(inner_id) -> match store.exprs.get(inner_id) {
             .Assign(n, v) -> if n == "i" {
-                LintStep { total: 1, unit: if lint_is_unit_step(v) { 1 } else { 0 } }
+                LintStep { total: 1, unit: if lint_is_unit_step(store.exprs.get(v)) { 1 } else { 0 } }
             } else { lint_step_none() }
             _ -> lint_step_none()
         }
@@ -2646,7 +2646,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(e.tc, o.ty)
         }
         .Assign(name, value) -> {
-            let v = check_expr(tc, value)
+            let v = check_expr(tc, tc.nodes.exprs.get(value))
             // Reassigning an int into a pointer-layout variable is the wild-pointer
             // hole (ry1a/w0kt): the var's slot is a pointer, the int isn't.
             // (int→numeric stays lenient, matching the let site.)
@@ -4194,8 +4194,8 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
         .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
         .FieldAccess(obj, f) -> .FieldAccess(annotate_expr(tc, obj), f)
-        .Assign(name, val) -> .Assign(name, annotate_expr(tc, val))
-        .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr(tc, obj), f, annotate_expr(tc, val))
+        .Assign(name, val) -> .Assign(name, annotate_expr_id(tc, val))
+        .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr_id(tc, obj), f, annotate_expr_id(tc, val))
         .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
         .Try(e) -> .Try(annotate_expr_id(tc, e))
@@ -4344,7 +4344,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // the RHS sub-expression was annotated by annotate_expr
         // above, looking it up via annotate_sexpr_ty is one
         // tag-dispatch instead of a full check_expr re-walk.
-        .Assign(_, val) -> annotate_sexpr_ty(tc, val)
+        .Assign(_, val) -> annotate_sexpr_ty(tc, tc.nodes.exprs.get(val))
         // kkgf: FieldAccess on a bare ident is the dominant pattern
         // in the bootstrap (self.x, ctx.foo, e.name, ...). When the
         // base is an Ident we know its type from tc.types; the field

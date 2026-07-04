@@ -2180,7 +2180,7 @@ export enum Expr {
     /// when the name resolves to a top-level / module-qualified item.
     Ident(name: string)
     /// `name = value` reassignment. Only valid for `mut` bindings.
-    Assign(name: string, value: Expr)
+    Assign(name: string, value: ExprId)
     /// `(expr)` — preserves source parenthesisation for renderer.
     Grouping(expr: ExprId)
     /// Prefix unary: `!x`, `-x`, `~x`.
@@ -2206,7 +2206,7 @@ export enum Expr {
     /// `match subject { arms }` — match used as an expression.
     MatchExpr(subject: Expr, arms: List<MatchArm>)
     /// Field reassignment: `obj.field = value`.
-    FieldAssign(obj: Expr, field: string, value: Expr)
+    FieldAssign(obj: ExprId, field: string, value: ExprId)
     /// Ternary-like `if cond { then } else { else_branch }` as an expr.
     IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
     /// Null coalesce: `a ?? default`.
@@ -2779,7 +2779,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Bool(value) -> value
         .None -> "none"
         .Ident(name) -> name
-        .Assign(name, value) -> "(assign ${name} ${render_expr(store, value)})"
+        .Assign(name, value) -> "(assign ${name} ${render_expr(store, store.exprs.get(value))})"
         .Grouping(inner) -> "(group ${render_expr(store, inner)})"
         .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
@@ -2792,7 +2792,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Index(obj, idx) -> "(index ${render_expr(store, obj)} ${render_expr(store, idx)})"
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
         .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
-        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, obj)} ${field} ${render_expr(store, value)})"
+        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, c)} ${render_expr(store, t)} ${render_expr(store, e)})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, left)} ${render_expr(store, right)})"
         .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"

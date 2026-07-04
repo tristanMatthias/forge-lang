@@ -241,15 +241,15 @@ fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
                 _ -> Expr.FieldAccess(rw_expr(store, obj, ctx), field)
             }
         }
-        .Assign(name, val) -> Expr.Assign(name, rw_expr(store, val, ctx))
+        .Assign(name, val) -> Expr.Assign(name, rw_expr_id(store, val, ctx))
         .FieldAssign(obj, field, val) -> {
-            match obj {
+            match store.exprs.get(obj) {
                 .Ident(name) -> {
                     if name == "self" && field == "__parent" {
-                        Expr.Assign(ctx.parent_var, rw_expr(store, val, ctx))
-                    } else { Expr.FieldAssign(rw_expr(store, obj, ctx), field, rw_expr(store, val, ctx)) }
+                        Expr.Assign(ctx.parent_var, rw_expr_id(store, val, ctx))
+                    } else { Expr.FieldAssign(rw_expr_id(store, obj, ctx), field, rw_expr_id(store, val, ctx)) }
                 }
-                _ -> Expr.FieldAssign(rw_expr(store, obj, ctx), field, rw_expr(store, val, ctx))
+                _ -> Expr.FieldAssign(rw_expr_id(store, obj, ctx), field, rw_expr_id(store, val, ctx))
             }
         }
         .Ident(name) -> if name == "self" { Expr.Ident(ctx.inst) } else { expr }
@@ -336,15 +336,15 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
             }
         }
         .FieldAssign(obj, field, val) -> {
-            match obj {
+            match store.exprs.get(obj) {
                 .Ident(name) -> {
                     if name == "self" && field == "__parent" {
-                        return Expr.Assign(ctx.parent_var, rw_tpl_expr(store, val, inst, uc, schema, ctx))
+                        return Expr.Assign(ctx.parent_var, rw_tpl_expr_id(store, val, inst, uc, schema, ctx))
                     }
                 }
                 _ -> {}
             }
-            Expr.FieldAssign(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr(store, val, inst, uc, schema, ctx))
+            Expr.FieldAssign(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr_id(store, val, inst, uc, schema, ctx))
         }
         .Call(callee, args) -> Expr.Call(rw_tpl_expr(store, callee, inst, uc, schema, ctx), rw_tpl_expr_list(store, args, inst, uc, schema, ctx))
         .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr(store, l, inst, uc, schema, ctx), op, rw_tpl_expr(store, r, inst, uc, schema, ctx))

@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
 // as siblings, surface flat at `features.struct_decl.{...}`.
 use codegen.{err_emit}
-use core.{feature_new, Feature, vtype_struct_name}
+use core.{feature_new, Feature, vtype_struct_name, ExprId}
 use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
@@ -48,7 +48,7 @@ export fn enum_ctor_feature() -> Feature {
 /// pass-through.
 export fn field_assign_feature() -> Feature {
     feature_new("field_assign") with {
-        expr_tag: Expr.FieldAssign(Expr.None, "", Expr.None),
+        expr_tag: Expr.FieldAssign(ExprId(0), "", ExprId(0)),
         emit_expr: field_assign_emit_expr,
         // FieldAssign resolution is handled directly in resolve/mod.av (deep immutability check)
         resolve_expr: field_assign_resolve_expr,
@@ -191,7 +191,7 @@ fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// `emit_field_assign`.
 fn field_assign_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value)
+        .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, ctx.nodes.exprs.get(obj), field, ctx.nodes.exprs.get(value))
         _ -> err_emit("expected FieldAssign")
     }
 }
@@ -207,8 +207,8 @@ fn field_assign_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .FieldAssign(obj, field, value) -> {
-            let o = check_expr(tc, obj)
-            let v = check_expr(o.tc, value)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
+            let v = check_expr(o.tc, o.tc.nodes.exprs.get(value))
             // Validate the assigned value against the field's declared type —
             // `s.b = Box{val:9}` on `b: Box<string>` was a wild store (tokv),
             // the direct-assignment twin of with-update / struct-literal field
