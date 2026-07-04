@@ -256,8 +256,12 @@ too — no flag needed.
   selfhost fixed point already relies on it), so identical IR ⇒ identical
   object ⇒ identical run-results. IR equality is the strict superset of the
   "binary / test-results" checks. A *legitimate* IR change (e.g. an
-  intended codegen improvement) trips the gate by design — confirm
-  run-results match, then advance the oracle.
+  intended codegen improvement) trips the gate by design — the landing path
+  is `--run-equiv`: label the PR `intended-ir-change` and CI switches the
+  oracle to RUN-equivalence (every corpus artifact must link+run
+  byte-identically under OLD and NEW; corpus skips are forbidden; the suite
+  under NEW — the rc-strict job — completes the evidence). The oracle then
+  advances at merge as usual.
 - **Wired in:** CI (`.github/workflows/diff-test.yml`, full corpus, every
   PR into the integration branch) and the pre-push hook (selfhost + corpus
   check, only when compiler sources changed; `AVRA_SKIP_DIFFTEST=1` to
