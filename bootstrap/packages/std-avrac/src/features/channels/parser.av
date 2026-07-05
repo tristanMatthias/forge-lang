@@ -29,7 +29,8 @@ impl Parser {
         if !self.consume(Tk.RightParen, "expected `)` after channel capacity") {
             return .Err("parse error")
         }
-        // Walker order: the element type's TypeRef, then the capacity ExprRef.
-        .Ok(self.alloc_expr(Expr.ChannelNew(elem, self.expr_of(cap_id)), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(elem)), NodeRef.ExprRef(cap_id)]))
+        // Flipped capacity is an ExprId scalar (walker-opaque) — only the element
+        // type's TypeRef is a child edge; the capacity id is the structure itself.
+        .Ok(self.alloc_expr(Expr.ChannelNew(elem, cap_id), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(elem))]))
     }
 }

@@ -20,7 +20,7 @@ use codegen.{ok_emit, err_emit, EmitValue}
 use features.channels.{channel_methods_help}
 use codegen.{emit_optional_some, emit_optional_none}
 use codegen.{vtype_is_ptr_type}
-use core.{vtype_display}
+use core.{vtype_display, ExprId}
 
 /// Codegen entry for `channel<T>(cap)` — feature-registry hook.
 export fn channel_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
@@ -30,12 +30,12 @@ export fn channel_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Resu
     }
 }
 
-fn emit_channel_new(ctx: Ctx, env: List<VarBinding>, elem: ValueType, capacity: Expr?) -> Result<EmitValue, string> {
+fn emit_channel_new(ctx: Ctx, env: List<VarBinding>, elem: ValueType, capacity: ExprId?) -> Result<EmitValue, string> {
     let cap_val = if capacity == null {
         // Unbounded — the runtime takes any negative capacity.
         ctx.i64(0 - 1)
     } else {
-        let c = ctx.emit(env, capacity!)?
+        let c = ctx.emit(env, ctx.nodes.exprs.get(capacity!))?
         ctx.to_i64(c.value, "chan_cap")
     }
     let handle = ctx.call("avra_channel_new_cap", [cap_val])

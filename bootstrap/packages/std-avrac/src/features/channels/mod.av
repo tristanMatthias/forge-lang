@@ -33,7 +33,7 @@ export fn channel_methods_help(elem: ValueType) -> string {
 fn channel_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .ChannelNew(_, capacity) -> {
-            if capacity == null { r } else { resolve_expr(r, capacity!) }
+            if capacity == null { r } else { resolve_expr(r, r.nodes.exprs.get(capacity!)) }
         }
         _ -> r
     }

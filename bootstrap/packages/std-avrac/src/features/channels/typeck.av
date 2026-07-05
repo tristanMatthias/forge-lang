@@ -23,7 +23,7 @@ export fn channel_check(tc: TC, expr: Expr) -> ExprResult {
                 return tc_er(t1, .Channel(elem))
             }
             if capacity == null { return tc_er(tc, .Channel(elem)) }
-            let c = check_expr(tc, capacity!)
+            let c = check_expr(tc, tc.nodes.exprs.get(capacity!))
             if !vtype_eq(c.ty, .Int) {
                 let t1 = tc_report(c.tc, DiagCode.TypeMismatch,
                     "channel capacity must be an int, got ${vtype_display(c.ty)} — absent = unbounded, 0 = rendezvous, N > 0 = bounded")

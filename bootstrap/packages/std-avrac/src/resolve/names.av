@@ -1555,7 +1555,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             // `channel<Foo>(1)` inside a module resolves Foo to its
             // module-qualified registry name.
             let qelem = rewrite_vtype(ctx, elem)
-            if capacity == null { Expr.ChannelNew(qelem, null) } else { .ChannelNew(qelem, rewrite_expr(ctx, capacity!)) }
+            if capacity == null { Expr.ChannelNew(qelem, null) } else { .ChannelNew(qelem, rewrite_expr_id(ctx, capacity!)) }
         }
         .Isolated(body) -> .Isolated(rewrite_expr_id(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr_id(ctx, subject), variant)
@@ -1850,7 +1850,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, store.exprs.get(body), collect_used_paths_expr(store, store.exprs.get(inner), acc))
         .Spawn(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
         .ChannelNew(_, capacity) -> {
-            if capacity == null { acc } else { collect_used_paths_expr(store, capacity!, acc) }
+            if capacity == null { acc } else { collect_used_paths_expr(store, store.exprs.get(capacity!), acc) }
         }
         .Isolated(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
         .Ident(name) -> {
