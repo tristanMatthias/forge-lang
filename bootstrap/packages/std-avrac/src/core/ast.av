@@ -2246,7 +2246,7 @@ export enum Expr {
     /// (spec Axis 18). `capacity` is null for the unbounded form;
     /// `channel<T>(0)` is a rendezvous channel (send blocks until a
     /// receiver takes the value).
-    ChannelNew(elem: ValueType, capacity: Expr?)
+    ChannelNew(elem: ValueType, capacity: ExprId?)
     /// `isolated { body }` — run `body` in a forked subprocess; the
     /// child's bytes return value travels back through a pipe. Crash-
     /// safe sibling of `spawn { }`. Lowers to `avra_isolated_run` at
@@ -2806,7 +2806,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
             if capacity == null {
                 "(channel<${vtype_render_full(elem)}>)"
             } else {
-                "(channel<${vtype_render_full(elem)}> ${render_expr(store, capacity!)})"
+                "(channel<${vtype_render_full(elem)}> ${render_expr_id(store, capacity!)})"
             }
         }
         .Isolated(body) -> "(isolated ${render_expr(store, store.exprs.get(body))})"

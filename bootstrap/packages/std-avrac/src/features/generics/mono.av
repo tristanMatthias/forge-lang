@@ -1443,7 +1443,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(regs.store.sexprs_of(args), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
         .Spawn(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .ChannelNew(_, capacity) -> {
-            if capacity == null { st } else { collect_inst_expr(capacity!, regs, st) }
+            if capacity == null { st } else { collect_inst_expr(regs.store.exprs.get(capacity!), regs, st) }
         }
         .Isolated(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .Quote(_, body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
@@ -1999,7 +1999,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Spawn(body) -> .Spawn(substitute_expr_id(store, body, ta))
         .ChannelNew(elem, capacity) -> {
             let new_elem = substitute_vtype(elem, ta)
-            if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr(store, capacity!, ta)) }
+            if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr_id(store, capacity!, ta)) }
         }
         .Isolated(body) -> .Isolated(substitute_expr_id(store, body, ta))
         .Quote(k, body) -> .Quote(k, substitute_expr_id(store, body, ta))
@@ -2641,7 +2641,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr_id(obj, regs, insts), m, rewrite_expr_list_ids(a, regs, insts))
         .Spawn(body) -> .Spawn(rewrite_expr_id(body, regs, insts))
         .ChannelNew(elem, capacity) -> {
-            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, regs, insts)) }
+            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr_id(capacity!, regs, insts)) }
         }
         .Isolated(body) -> .Isolated(rewrite_expr_id(body, regs, insts))
         .Quote(k, body) -> .Quote(k, rewrite_expr_id(body, regs, insts))

@@ -157,7 +157,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .Catch(inner, binding, body, line, col) -> .Catch(rewrite_expr_id(inner, reg), binding, rewrite_expr_id(body, reg), line, col)
         .Spawn(body) -> .Spawn(rewrite_expr_id(body, reg))
         .ChannelNew(elem, capacity) -> {
-            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, reg)) }
+            if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr_id(capacity!, reg)) }
         }
         .Isolated(body) -> .Isolated(rewrite_expr_id(body, reg))
         .Quote(kind, body) -> .Quote(kind, rewrite_expr_id(body, reg))

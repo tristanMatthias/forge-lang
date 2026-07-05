@@ -4225,7 +4225,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Spawn(body) -> .Spawn(annotate_expr_id(tc, body))
         .Isolated(body) -> .Isolated(annotate_expr_id(tc, body))
         .ChannelNew(elem, capacity) -> {
-            if capacity == null { expr } else { .ChannelNew(elem, annotate_expr(tc, capacity!)) }
+            if capacity == null { expr } else { .ChannelNew(elem, annotate_expr_id(tc, capacity!)) }
         }
         _ -> expr  // Leaf expressions: Number, String, Bool, Null, Ident, FloatLit, QualifiedIdent
     }

@@ -75,7 +75,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
             if capacity == null {
                 "channel<${vtype_render_full(elem)}>()"
             } else {
-                "channel<${vtype_render_full(elem)}>(${fmt_expr(store, capacity!)})"
+                "channel<${vtype_render_full(elem)}>(${fmt_expr(store, store.exprs.get(capacity!))})"
             }
         }
         .Isolated(body) -> "isolated ${fmt_expr(store, store.exprs.get(body))}"

@@ -231,7 +231,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .EnumCtor(_, _, args) -> remove_escaped_arg_ids(store, args, set)
         .Spawn(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
         .ChannelNew(_, capacity) -> {
-            if capacity == null { set } else { remove_escaped_expr(store, capacity!, set) }
+            if capacity == null { set } else { remove_escaped_expr(store, store.exprs.get(capacity!), set) }
         }
         .Isolated(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
         .Quote(_, body) -> remove_escaped_expr(store, store.exprs.get(body), set)
