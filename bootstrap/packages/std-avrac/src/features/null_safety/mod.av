@@ -38,7 +38,7 @@ export fn optional_chain_feature() -> Feature {
 /// receiver, else calls the method and wraps the result.
 export fn optional_method_call_feature() -> Feature {
     feature_new("optional_method_call") with {
-        expr_tag: Expr.OptionalMethodCall(Expr.None, "", []),
+        expr_tag: Expr.OptionalMethodCall(ExprId(0), "", []),
         emit_expr: optional_method_call_emit_expr,
         resolve_expr: optional_method_call_resolve_expr,
         check_expr: optional_method_call_check_expr,
@@ -159,7 +159,7 @@ fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Resu
 /// Codegen hook for `OptionalMethodCall`. Forwards to emit_optional_method_call.
 fn optional_method_call_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, obj, method, args)
+        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, ctx.nodes.sexprs_of(args))
         _ -> err_emit("expected OptionalMethodCall")
     }
 }
@@ -168,10 +168,10 @@ fn optional_method_call_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -
 fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .OptionalMethodCall(obj, _, args) -> {
-            mut acc = resolve_expr(r, obj)
+            mut acc = resolve_expr(r, r.nodes.exprs.get(obj))
             mut i = 0
             while i < args.length {
-                acc = resolve_expr(acc, args[i].node)
+                acc = resolve_expr(acc, r.nodes.exprs.get(args[i]))
                 i = i + 1
             }
             acc
@@ -185,7 +185,7 @@ fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn optional_method_call_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .OptionalMethodCall(obj, method, args) -> {
-            let r = check_method_call(tc, obj, method, args)
+            let r = check_method_call(tc, tc.nodes.exprs.get(obj), method, tc.nodes.sexprs_of(args))
             if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
             tc_er(r.tc, vtype_wrap_optional(r.ty))
         }

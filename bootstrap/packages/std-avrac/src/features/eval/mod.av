@@ -2379,10 +2379,9 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "OptionalMethodCall" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(store, head)?
+            let obj = value_to_expr_id(store, head)?
             let method_v: Value = p[1]
-            let args_v: Value = p[2]
-            let args = list_value_to_expr_list(store, args_v)?
+            let args = list_value_to_expr_id_list(store, p[2])?
             .Ok(Expr.OptionalMethodCall(obj, method_v.text, args))
         }
         "IsCheck" -> {

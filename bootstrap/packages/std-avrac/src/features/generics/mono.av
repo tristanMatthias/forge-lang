@@ -1438,7 +1438,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .IsCheck(subj, _) -> collect_inst_expr(regs.store.exprs.get(subj), regs, st)
         .InCheck(needle, items) -> collect_inst_exprs(regs.store.sexprs_of(items), regs, collect_inst_expr(regs.store.exprs.get(needle), regs, st))
         .OptionalChain(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
-        .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(args, regs, collect_inst_expr(obj, regs, st))
+        .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(regs.store.sexprs_of(args), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
         .Spawn(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .ChannelNew(_, capacity) -> {
             if capacity == null { st } else { collect_inst_expr(capacity!, regs, st) }
@@ -2016,7 +2016,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .IsCheck(subj, v) -> .IsCheck(substitute_expr_id(store, subj, ta), v)
         .InCheck(needle, items) -> .InCheck(substitute_expr_id(store, needle, ta), substitute_expr_list_ids(store, items, ta))
         .OptionalChain(obj, f) -> .OptionalChain(substitute_expr_id(store, obj, ta), f)
-        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(store, obj, ta), m, substitute_expr_list(store, a, ta))
+        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr_id(store, obj, ta), m, substitute_expr_list_ids(store, a, ta))
         .Spawn(body) -> .Spawn(substitute_expr_id(store, body, ta))
         .ChannelNew(elem, capacity) -> {
             let new_elem = substitute_vtype(elem, ta)
@@ -2659,7 +2659,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .IsCheck(subj, v) -> .IsCheck(rewrite_expr_id(subj, regs, insts), v)
         .InCheck(needle, items) -> .InCheck(rewrite_expr_id(needle, regs, insts), rewrite_expr_list_ids(items, regs, insts))
         .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr_id(obj, regs, insts), f)
-        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr(obj, regs, insts), m, rewrite_expr_list(a, regs, insts))
+        .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr_id(obj, regs, insts), m, rewrite_expr_list_ids(a, regs, insts))
         .Spawn(body) -> .Spawn(rewrite_expr_id(body, regs, insts))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, regs, insts)) }
