@@ -184,8 +184,8 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
             remove_escaped_arg_ids(store, args, s1)
         }
         .GenericCall(callee, _, args) -> {
-            let s1 = remove_escaped_expr(store, callee, set)
-            remove_escaped_args(store, args, s1)
+            let s1 = remove_escaped_expr(store, store.exprs.get(callee), set)
+            remove_escaped_arg_ids(store, args, s1)
         }
         .Binary(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
         .Unary(_, inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)

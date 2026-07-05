@@ -125,7 +125,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .Unary(op, r) -> .Unary(op, rewrite_expr_id(r, reg))
         .Logical(l, op, r) -> .Logical(rewrite_expr_id(l, reg), op, rewrite_expr_id(r, reg))
         .Call(callee, args) -> .Call(rewrite_expr_id(callee, reg), rewrite_expr_list_ids(args, reg))
-        .GenericCall(callee, type_args, args) -> .GenericCall(rewrite_expr(callee, reg), type_args, rewrite_expr_list(args, reg))
+        .GenericCall(callee, type_args, args) -> .GenericCall(rewrite_expr_id(callee, reg), type_args, rewrite_expr_list_ids(args, reg))
         .StructLit(name, inits) -> .StructLit(name, rewrite_field_inits(inits, reg))
         .Grouping(inner) -> .Grouping(rewrite_expr_id(inner, reg))
         .Assign(name, val) -> .Assign(name, rewrite_expr_id(val, reg))

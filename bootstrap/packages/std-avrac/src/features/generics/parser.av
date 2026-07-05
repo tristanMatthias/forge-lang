@@ -87,8 +87,8 @@ impl Parser {
             return .Err("parse error")
         }
 
-        let node = Expr.GenericCall(self.expr_of(callee_id), type_args, parsed.wrapped)
-        .Ok(self.alloc_expr(node, byte_span_none(), self.edges_subject_args(callee_id, parsed.ids)))
+        let node = Expr.GenericCall(callee_id, type_args, parsed.ids)
+        .Ok(self.alloc_leaf(node))
     }
 
     fn parse_type_name_list(self) -> List<string> {
