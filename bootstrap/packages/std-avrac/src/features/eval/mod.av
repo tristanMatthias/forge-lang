@@ -922,7 +922,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .Unary(op, right) -> eval_unary(runtime, op, runtime.nodes.exprs.get(right))
         .Binary(left, op, right) -> eval_binary(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
         .Logical(left, op, right) -> eval_logical(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
-        .Call(callee, args) -> eval_call(runtime, callee, args)
+        .Call(callee, args) -> eval_call(runtime, runtime.nodes.exprs.get(callee), runtime.nodes.sexprs_of(args))
         .QualifiedIdent(path) -> {
             let fn_result = lookup_function(runtime.functions, path)
             if fn_result.found {
@@ -2325,8 +2325,8 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "Call" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let callee = value_to_expr_node(store, head)?
-            let args = list_value_to_expr_list(store, p[1])?
+            let callee = value_to_expr_id(store, head)?
+            let args = list_value_to_expr_id_list(store, p[1])?
             .Ok(Expr.Call(callee, args))
         }
         "GenericCall" -> {
@@ -2566,6 +2566,18 @@ fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>,
 fn list_value_to_expr_list(store: NodeStore, v: Value) -> Result<List<SExpr>, string> {
     if v.kind != "list" { return .Err("decode: expr list not a list") }
     list_value_to_expr_list_at(store, v.list_payload, 0)
+}
+
+/// Decode a list Value into flipped `List<ExprId>` rows (call args) — the id
+/// twin of `list_value_to_expr_list`. Each arg allocates a fresh leaf row (no
+/// recorded arg type, matching the old `sexpr_dummy` ty=Unknown decode).
+fn list_value_to_expr_id_list(store: NodeStore, v: Value) -> Result<List<ExprId>, string> {
+    if v.kind != "list" { return .Err("decode: expr list not a list") }
+    mut out: List<ExprId> = []
+    for entry in v.list_payload {
+        out.push(value_to_expr_id(store, entry)?)
+    }
+    .Ok(out)
 }
 
 fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {

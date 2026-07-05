@@ -131,7 +131,7 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .Binary(l, _, r) -> any_quote_in_expr(store, store.exprs.get(l)) || any_quote_in_expr(store, store.exprs.get(r))
         .Unary(_, r) -> any_quote_in_expr(store, store.exprs.get(r))
         .Logical(l, _, r) -> any_quote_in_expr(store, store.exprs.get(l)) || any_quote_in_expr(store, store.exprs.get(r))
-        .Call(callee, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
+        .Call(callee, args) -> any_quote_in_expr(store, store.exprs.get(callee)) || any_quote_in_expr_id_list(store, args)
         .GenericCall(callee, _, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
         .Grouping(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
         .Block(body) -> any_quote_in_stmt_list(store, body)
@@ -167,6 +167,16 @@ fn any_quote_in_expr_list(store: NodeStore, list: List<SExpr>) -> bool {
     while i < list.length {
         if any_quote_in_expr(store, list[i].node) { return true }
         i = i + 1
+    }
+    false
+}
+
+/// The id twin of `any_quote_in_expr_list` (mirrors `any_quote_in_stmt_ids`):
+/// scan a flipped `List<ExprId>` for a nested quote by resolving each id in
+/// place — keeps this presence check allocation-free (no `sexprs_of` wrapper).
+fn any_quote_in_expr_id_list(store: NodeStore, ids: List<ExprId>) -> bool {
+    for id in ids {
+        if any_quote_in_expr(store, store.exprs.get(id)) { return true }
     }
     false
 }
@@ -268,7 +278,7 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .Binary(l, op, r) -> .Binary(lower_expr_id(store, l), op, lower_expr_id(store, r))
         .Unary(op, r) -> .Unary(op, lower_expr_id(store, r))
         .Logical(l, op, r) -> .Logical(lower_expr_id(store, l), op, lower_expr_id(store, r))
-        .Call(callee, args) -> .Call(lower_expr(store, callee), lower_expr_list(store, args))
+        .Call(callee, args) -> .Call(lower_expr_id(store, callee), lower_expr_list_ids(store, args))
         .GenericCall(callee, ta, args) -> .GenericCall(lower_expr(store, callee), ta, lower_expr_list(store, args))
         .Grouping(inner) -> .Grouping(lower_expr_id(store, inner))
         .Block(body) -> .Block(lower_stmt_list(store, body))
@@ -302,6 +312,12 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
 
 fn lower_expr_list(store: NodeStore, list: List<SExpr>) -> List<SExpr> {
     list_map(list, (se: SExpr) -> sexpr(lower_expr(store, se.node), se.line, se.col))
+}
+
+/// Lower quotes over a flipped `List<ExprId>` (call args) — the id twin of
+/// `lower_expr_list`, via `lower_expr_id` (reexpr each arg row in place).
+fn lower_expr_list_ids(store: NodeStore, ids: List<ExprId>) -> List<ExprId> {
+    list_map(ids, (id: ExprId) -> lower_expr_id(store, id))
 }
 
 /// b85m: lower every Quote in match-arm guards + bodies. Without
@@ -499,12 +515,12 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         }
         .Ident(name) -> expr_ctor("Ident", string_arg(name))
         .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
-        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr_id(store, value)))
+        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(store, string_lit_expr(name)), construct_expr_id(store, value)))
         .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr_id(store, l), construct_binop(store, op), construct_expr_id(store, r)))
         .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(store, op), construct_expr_id(store, r)))
         .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr_id(store, l), construct_logicop(store, op), construct_expr_id(store, r)))
         .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr_id(store, inner)))
-        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr(store, callee), construct_expr_list(store, args)))
+        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr_id(store, callee), construct_expr_ids(store, store.sexprs_of(args))))
         .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
         .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr_id(store, obj), construct_expr_id(store, idx)))
         .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr_id(store, c), construct_expr_id(store, t), construct_expr_id(store, el)))
@@ -716,10 +732,10 @@ fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
         let is_sentinel = is_arm_splice_sentinel(arm)
         if is_sentinel {
             let seg_lit = Expr.ListLit(current_seg)
-            result_opt = if result_opt == null { seg_lit } else { list_concat_call(result_opt!, seg_lit) }
+            result_opt = if result_opt == null { seg_lit } else { list_concat_call(store, result_opt!, seg_lit) }
             let splice_body = arm.body
             let splice_target = extract_splice_target(store, splice_body.node)
-            result_opt = list_concat_call(result_opt!, splice_target)
+            result_opt = list_concat_call(store, result_opt!, splice_target)
             current_seg = []
         } else {
             let arm_lit = construct_match_arm(store, arm)
@@ -728,7 +744,7 @@ fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
         i = i + 1
     }
     let final_seg = Expr.ListLit(current_seg)
-    if result_opt == null { final_seg } else { list_concat_call(result_opt!, final_seg) }
+    if result_opt == null { final_seg } else { list_concat_call(store, result_opt!, final_seg) }
 }
 
 /// Detect the splice-sentinel arm produced by `parse_match_arm_list`
@@ -755,9 +771,11 @@ fn extract_splice_target(store: NodeStore, body: Expr) -> Expr {
 /// expression. The runtime fn is monomorphized per-element-type by
 /// the existing generic dispatch, so the resulting AST type-checks
 /// against whatever element type the surrounding context expects.
-fn list_concat_call(left: Expr, right: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(left), sexpr_dummy(right)]
-    Expr.Call(Expr.QualifiedIdent("@std::avrac::list_ops::list_concat"), args)
+fn list_concat_call(store: NodeStore, left: Expr, right: Expr) -> Expr {
+    Expr.Call(
+        store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::list_ops::list_concat")),
+        [store.exprs.add_leaf(left), store.exprs.add_leaf(right)]
+    )
 }
 
 /// Build an Expr that, when evaluated, produces a single
@@ -1131,33 +1149,46 @@ fn construct_expr_list(store: NodeStore, list: List<SExpr>) -> Expr {
     Expr.ListLit(elems)
 }
 
+/// Reconstruct a flipped `List<ExprId>` args payload — the id twin of
+/// `construct_expr_list`. Each element is `synth_expr_id(construct_expr(item))`,
+/// so the ListLit TYPES as `List<ExprId>` (matching the flipped `Call.args`),
+/// exactly as the scalar `construct_expr_id` types a single operand. Uses
+/// `synth_expr_id` PER ELEMENT (never a whole-list shim), so the pinned seed —
+/// which compiles this reconstructor but never evals it — needs no new eval
+/// intercept. Decoded by `list_value_to_expr_id_list` in eval.
+fn construct_expr_ids(store: NodeStore, list: List<SExpr>) -> Expr {
+    mut elems: List<SExpr> = []
+    for se in list {
+        elems.push(sexpr_dummy(synth_shim_call(store, "synth_expr_id", construct_expr(store, se.node))))
+    }
+    Expr.ListLit(elems)
+}
+
 /// Build an Expr that, when evaluated, produces an SExpr wrapping the
 /// runtime value of the given Expr. Uses `sexpr_dummy(e)` rather than
 /// a struct literal to avoid having to track ValueType / file fields.
 fn construct_sexpr(store: NodeStore, se: SExpr) -> Expr {
-    sexpr_dummy_call(construct_expr(store, se.node))
+    sexpr_dummy_call(store, construct_expr(store, se.node))
 }
 
 /// `sexpr_dummy(arg)` as a Call expression. Helper for constructing
 /// SExpr values at runtime without introducing struct-literal concerns.
 /// Uses QualifiedIdent so the lowered AST round-trips through resolve
 /// without needing the test file to import sexpr_dummy.
-fn sexpr_dummy_call(arg: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(arg)]
+fn sexpr_dummy_call(store: NodeStore, arg: Expr) -> Expr {
     Expr.Call(
-        Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy"),
-        args
+        store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy")),
+        [store.exprs.add_leaf(arg)]
     )
 }
 
 /// `sstmt_dummy(arg)` as a Call expression — sister to sexpr_dummy_call
 /// for SStmt construction. Used when wrapping a runtime Stmt value in
 /// the spanned carrier required by `List<SStmt>` entries.
-fn sstmt_dummy_call(arg: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(arg)]
+fn sstmt_dummy_call(store: NodeStore, arg: Expr) -> Expr {
     Expr.Call(
-        Expr.QualifiedIdent("@std::avrac::core::sstmt_dummy"),
-        args
+        store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::core::sstmt_dummy")),
+        [store.exprs.add_leaf(arg)]
     )
 }
 
@@ -1183,9 +1214,9 @@ fn construct_stmt_list(store: NodeStore, list: List<SStmt>) -> Expr {
 fn construct_stmt_ids(store: NodeStore, ids: List<StmtId>) -> Expr {
     mut elems: List<SExpr> = []
     for id in ids {
-        elems.push(sexpr_dummy(sstmt_dummy_call(construct_stmt(store, store.stmts.get(id)))))
+        elems.push(sexpr_dummy(sstmt_dummy_call(store, construct_stmt(store, store.stmts.get(id)))))
     }
-    synth_shim_call("synth_stmt_ids", Expr.ListLit(elems))
+    synth_shim_call(store, "synth_stmt_ids", Expr.ListLit(elems))
 }
 
 /// Resolve one statement row and build its constructor expression,
@@ -1193,30 +1224,29 @@ fn construct_stmt_ids(store: NodeStore, ids: List<StmtId>) -> Expr {
 /// code type-checks against the flipped `StmtId` payload slot. The
 /// shim is an identity at eval (features/eval intercepts it by name).
 fn construct_stmt_id(store: NodeStore, id: StmtId) -> Expr {
-    synth_shim_call("synth_stmt_id", construct_stmt(store, store.stmts.get(id)))
+    synth_shim_call(store, "synth_stmt_id", construct_stmt(store, store.stmts.get(id)))
 }
 
 /// Resolve one expression row and build its constructor expression,
 /// wrapped in the `synth_expr_id` id shim (see `construct_stmt_id`).
 fn construct_expr_id(store: NodeStore, id: ExprId) -> Expr {
-    synth_shim_call("synth_expr_id", construct_expr(store, store.exprs.get(id)))
+    synth_shim_call(store, "synth_expr_id", construct_expr(store, store.exprs.get(id)))
 }
 
 /// A call to a synth_* id shim around `arg` — the generated-code twin
 /// of `sstmt_dummy_call`, fully qualified so the eval intercept's
 /// last-segment match and the compiled resolver both find it.
-fn synth_shim_call(name: string, arg: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(arg)]
+fn synth_shim_call(store: NodeStore, name: string, arg: Expr) -> Expr {
     Expr.Call(
-        Expr.QualifiedIdent("@std::avrac::features::comptime::${name}"),
-        args
+        store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::features::comptime::${name}")),
+        [store.exprs.add_leaf(arg)]
     )
 }
 
 /// Build an Expr that, when evaluated, produces an SStmt wrapping the
 /// runtime value of `ss.node`.
 fn construct_sstmt(store: NodeStore, ss: SStmt) -> Expr {
-    sstmt_dummy_call(construct_stmt(store, ss.node))
+    sstmt_dummy_call(store, construct_stmt(store, ss.node))
 }
 
 /// Build an Expr that, when evaluated, produces a Stmt AST value

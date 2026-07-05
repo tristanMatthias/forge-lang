@@ -13,7 +13,7 @@ use @std.avrac.test_runner.{write_fixture_and_run}
 spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
     then "Wrap → [node]; DoubleWrap → [value, node]" {
         let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
-            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.core.{Stmt, Expr}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
             "\n" +
@@ -43,8 +43,8 @@ spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
             "        i2 = i2 + 1\n" +
             "    }\n" +
             "    let msg = \"wrap=[\" + s1 + \"]; double=[\" + s2 + \"]\"\n" +
-            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +
@@ -58,7 +58,7 @@ spec "ResolverCtx: ctx_unwrap_path_to walks the field graph" {
 spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
     then "Rec { self_ref: Rec, payload: int } → [payload] without infinite loop" {
         let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
-            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.core.{Stmt, Expr}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}\n" +
             "\n" +
@@ -77,8 +77,8 @@ spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
             "        i = i + 1\n" +
             "    }\n" +
             "    let msg = \"rec=[\" + s + \"]\"\n" +
-            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +
@@ -103,7 +103,7 @@ spec "ResolverCtx: ctx_unwrap_path_to terminates on recursive types" {
 spec "ResolverCtx: ctx_unwrap_path_to on primitives returns []" {
     then "string→int and int→int both return an empty path" {
         let out = write_fixture_and_run("/tmp/avra_resolver_ctx_unwrap_path_test.av", 
-            "use @std.avrac.core.{Stmt, Expr, SExpr, sexpr_dummy, TypeKind}\n" +
+            "use @std.avrac.core.{Stmt, Expr, TypeKind}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedType, ResolvedField, ResolvedVariant, ctx_unwrap_path_to}\n" +
             "\n" +
@@ -126,8 +126,8 @@ spec "ResolverCtx: ctx_unwrap_path_to on primitives returns []" {
             "    let p_string = ctx_unwrap_path_to(ctx, t_string, \"int\")\n" +
             "    let p_int = ctx_unwrap_path_to(ctx, t_int, \"int\")\n" +
             "    let msg = \"string_len=\" + string(p_string.length) + \"; int_len=\" + string(p_int.length)\n" +
-            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +

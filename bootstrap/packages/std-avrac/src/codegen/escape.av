@@ -180,8 +180,8 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Ident(name) -> releasable_remove(set, name)
         // Recurse into sub-expressions
         .Call(callee, args) -> {
-            let s1 = remove_escaped_expr(store, callee, set)
-            remove_escaped_args(store, args, s1)
+            let s1 = remove_escaped_expr(store, store.exprs.get(callee), set)
+            remove_escaped_arg_ids(store, args, s1)
         }
         .GenericCall(callee, _, args) -> {
             let s1 = remove_escaped_expr(store, callee, set)
@@ -290,6 +290,18 @@ fn remove_escaped_args(store: NodeStore, args: List<SExpr>, set: List<string>) -
     mut i = 0
     while i < args.length {
         acc = remove_escaped_expr(store, args[i].node, acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// Walk a flipped `List<ExprId>` (call args) — the id twin of
+/// `remove_escaped_args`.
+fn remove_escaped_arg_ids(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < args.length {
+        acc = remove_escaped_expr(store, store.exprs.get(args[i]), acc)
         i = i + 1
     }
     acc

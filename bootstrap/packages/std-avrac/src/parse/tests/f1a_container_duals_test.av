@@ -420,7 +420,7 @@ fn it_lambda_param_dual_null() -> bool {
     let probe = parse_expression_native_probe("xs.map(it + 1)")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
-        .Call(_, args) -> match args[0].node {
+        .Call(_, args) -> match probe.store.exprs.get(args[0]) {
             .Lambda(params, _) -> {
                 params.length == 1 && params[0].name == "it" && params[0].ty_id == none
             }

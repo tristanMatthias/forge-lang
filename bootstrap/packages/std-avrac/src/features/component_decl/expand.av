@@ -253,7 +253,7 @@ fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
             }
         }
         .Ident(name) -> if name == "self" { Expr.Ident(ctx.inst) } else { expr }
-        .Call(callee, args) -> Expr.Call(rw_expr(store, callee, ctx), rw_expr_list(store, args, ctx))
+        .Call(callee, args) -> Expr.Call(rw_expr_id(store, callee, ctx), rw_expr_list_ids(store, args, ctx))
         .Binary(l, op, r) -> Expr.Binary(rw_expr_id(store, l, ctx), op, rw_expr_id(store, r, ctx))
         .Unary(op, r) -> Expr.Unary(op, rw_expr_id(store, r, ctx))
         .Logical(l, op, r) -> Expr.Logical(rw_expr_id(store, l, ctx), op, rw_expr_id(store, r, ctx))
@@ -266,6 +266,12 @@ fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
 /// Map `rw_expr` over a `List<SExpr>`.
 fn rw_expr_list(store: NodeStore, list: List<SExpr>, ctx: RewriteCtx) -> List<SExpr> {
     list_map(list, (se: SExpr) -> sexpr(rw_expr(store, se.node, ctx), se.line, se.col))
+}
+
+/// Rewrite over a flipped `List<ExprId>` (call args) — the id twin of
+/// `rw_expr_list`, via `rw_expr_id`.
+fn rw_expr_list_ids(store: NodeStore, ids: List<ExprId>, ctx: RewriteCtx) -> List<ExprId> {
+    list_map(ids, (id: ExprId) -> rw_expr_id(store, id, ctx))
 }
 
 // ── Template self-rewriting (inlines config values) ──
@@ -346,7 +352,7 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
             }
             Expr.FieldAssign(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr_id(store, val, inst, uc, schema, ctx))
         }
-        .Call(callee, args) -> Expr.Call(rw_tpl_expr(store, callee, inst, uc, schema, ctx), rw_tpl_expr_list(store, args, inst, uc, schema, ctx))
+        .Call(callee, args) -> Expr.Call(rw_tpl_expr_id(store, callee, inst, uc, schema, ctx), rw_tpl_expr_list_ids(store, args, inst, uc, schema, ctx))
         .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr_id(store, l, inst, uc, schema, ctx), op, rw_tpl_expr_id(store, r, inst, uc, schema, ctx))
         .With(base, overrides) -> Expr.With(rw_tpl_expr(store, base, inst, uc, schema, ctx), rw_tpl_field_inits(store, overrides, inst, uc, schema, ctx))
         .StructLit(name, inits) -> Expr.StructLit(name, rw_tpl_field_inits(store, inits, inst, uc, schema, ctx))
@@ -367,6 +373,12 @@ fn rw_tpl_field_inits(store: NodeStore, inits: List<FieldInit>, inst: string, uc
 /// Map `rw_tpl_expr` over a `List<SExpr>` in a template body.
 fn rw_tpl_expr_list(store: NodeStore, list: List<SExpr>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<SExpr> {
     list_map(list, (se: SExpr) -> sexpr(rw_tpl_expr(store, se.node, inst, uc, schema, ctx), se.line, se.col))
+}
+
+/// Rewrite over a flipped `List<ExprId>` (call args) — the id twin of
+/// `rw_tpl_expr_list`, via `rw_tpl_expr_id`.
+fn rw_tpl_expr_list_ids(store: NodeStore, ids: List<ExprId>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<ExprId> {
+    list_map(ids, (id: ExprId) -> rw_tpl_expr_id(store, id, inst, uc, schema, ctx))
 }
 
 /// Resolve a `@cfg.field` reference: prefer the user's
@@ -613,8 +625,7 @@ fn build_push_stmt(store: NodeStore, parent_var: string, slot: string, child_ins
         store.exprs.add_leaf(Expr.FieldAccess(store.exprs.add_leaf(Expr.Ident(parent_var)), slot)),
         "push"
     )
-    let push_args: List<SExpr> = [sexpr(Expr.Ident(child_inst), line, col)]
-    let push_call = Expr.Call(push_target, push_args)
+    let push_call = Expr.Call(store.exprs.add_leaf(push_target), [store.exprs.add_leaf(Expr.Ident(child_inst))])
     sstmt(Stmt.Expr(store.exprs.add_leaf(push_call)), line, col)
 }
 
@@ -799,10 +810,9 @@ fn splice_template_block(store: NodeStore, comp: string, inst: string, config: L
 fn splice_data_block(store: NodeStore, comp: string, inst: string, config: List<CompConfigPair>, body: List<SStmt>, line: int, col: int, rest: List<SStmt>, reg: List<CompDefEntry>, nest: CompNestCtx, def: CompDefLookup) -> List<SStmt> {
     let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
-    let call_args: List<SExpr> = [sexpr(Expr.String("\"${inst}\""), 0, 0)]
     let call_expr = Expr.Call(
-        Expr.Ident("${comp}_new"),
-        call_args
+        store.exprs.add_leaf(Expr.Ident("${comp}_new")),
+        [store.exprs.add_leaf(Expr.String("\"${inst}\""))]
     )
     let init_expr = apply_config_pairs(call_expr, config)
 

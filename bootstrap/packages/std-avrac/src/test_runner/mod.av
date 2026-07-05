@@ -96,20 +96,8 @@ fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt
     out
 }
 
-/// Convert a `List<Expr>` into a `List<SExpr>` in declaration order.
-/// Each Expr gets a dummy-span SExpr wrapper so the resulting list
-/// can stand in any call-site position.
-fn expr_list_from(args: List<Expr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    for a in args {
-        out.push(sexpr_dummy(a))
-    }
-    out
-}
-
-/// Build a fresh `List<ParamEntry>` from `(name, type)` rows. Same
-/// pattern as `expr_list_from` — declaration order in, parameter
-/// list out.
+/// Build a fresh `List<ParamEntry>` from `(name, type)` rows —
+/// declaration order in, parameter list out.
 type ParamSpec = { name: string, ty: ValueType }
 
 fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {
@@ -230,13 +218,13 @@ fn build_guarded_spec_call(store: NodeStore, orig: SStmt, spec_name_lex: string)
     ]
     let empty_p: List<ParamEntry> = []
     let body_lambda = Expr.Lambda(empty_p, Expr.Block(body_stmts))
-    let args = expr_list_from([
-        Expr.String(spec_name_lex),
-        Expr.String("\"" + orig.file + "\""),
-        Expr.Number(string(orig.line)),
-        body_lambda,
-    ])
-    let call = Expr.Call(Expr.Ident("avra_test_run_spec_guarded"), args)
+    let args: List<ExprId> = [
+        store.exprs.add_leaf(Expr.String(spec_name_lex)),
+        store.exprs.add_leaf(Expr.String("\"" + orig.file + "\"")),
+        store.exprs.add_leaf(Expr.Number(string(orig.line))),
+        store.exprs.add_leaf(body_lambda),
+    ]
+    let call = Expr.Call(store.exprs.add_leaf(Expr.Ident("avra_test_run_spec_guarded")), args)
     sstmt_at(Stmt.Expr(store.exprs.add_leaf(call)), orig.line, orig.col, orig.file)
 }
 
@@ -357,7 +345,7 @@ fn load_support_stmts(path: string, store: NodeStore) -> List<SStmt> {
 /// worker threads. Cons-prepended onto the rest of the assembled
 /// program so the declaration lands first in the rendered AST.
 fn synth_test_main(store: NodeStore, mod_names: List<string>) -> SStmt {
-    let empty_args: List<SExpr> = []
+    let empty_args_ids: List<ExprId> = []
     mut unit_lits: List<SExpr> = []
     for mod_name in mod_names {
         let inits: List<FieldInit> = [
@@ -367,9 +355,9 @@ fn synth_test_main(store: NodeStore, mod_names: List<string>) -> SStmt {
         unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
     }
     let body: List<StmtId> = [
-        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Call(Expr.Ident("run_test_suite"),
-            [sexpr_dummy(Expr.ListLit(unit_lits))])))),
-        store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(Expr.Call(Expr.Ident("test_render_summary"), empty_args)))),
+        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("run_test_suite")),
+            [store.exprs.add_leaf(Expr.ListLit(unit_lits))])))),
+        store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("test_render_summary")), empty_args_ids)))),
     ]
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []

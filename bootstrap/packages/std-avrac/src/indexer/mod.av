@@ -186,7 +186,7 @@ fn scan_stmt_for_calls(store: NodeStore, ss: SStmt, file: string, caller: string
 fn scan_expr_for_calls(store: NodeStore, e: Expr, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
     match e {
         .Call(callee, args) -> {
-            let with_callee = match callee {
+            let with_callee = match store.exprs.get(callee) {
                 .Ident(name) -> calls_add(acc, CallEdge { caller, callee: name, file, line, col })
                 _ -> acc
             }
@@ -207,11 +207,11 @@ fn scan_expr_for_calls(store: NodeStore, e: Expr, file: string, caller: string, 
 
 /// Map `scan_expr_for_calls` over a `List<SExpr>` — used to walk
 /// argument lists when the call site itself is recorded.
-fn scan_expr_list(store: NodeStore, es: List<SExpr>, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
+fn scan_expr_list(store: NodeStore, es: List<ExprId>, file: string, caller: string, line: int, col: int, acc: List<CallEdge>) -> List<CallEdge> {
     mut cur_acc = acc
     mut i = 0
     while i < es.length {
-        cur_acc = scan_expr_for_calls(store, es[i].node, file, caller, line, col, cur_acc)
+        cur_acc = scan_expr_for_calls(store, store.exprs.get(es[i]), file, caller, line, col, cur_acc)
         i = i + 1
     }
     cur_acc

@@ -606,15 +606,6 @@ export fn pattern_optional_binding(p: Pattern) -> string {
 /// construction site uses the constant.)
 export const FORCE_UNWRAP_FN: string = "__avra_force_unwrap"
 
-/// Construct the desugar target of the postfix force-unwrap `!`. Every
-/// parser-side desugar that needs the present value (postfix `!`, `if let`,
-/// `let-else`) builds the call through here, so the builtin's shape lives
-/// in one place.
-export fn expr_force_unwrap(subject: Expr) -> Expr {
-    let fu_args: List<SExpr> = [sexpr_dummy(subject)]
-    Expr.Call(Expr.Ident(FORCE_UNWRAP_FN), fu_args)
-}
-
 // ── Gensym contract ──
 // Compiler-minted temp names are `$tag$N`. The `$` prefix IS the contract:
 // the lexer never admits `$` in a user identifier, so a gensym can neither
@@ -2185,7 +2176,7 @@ export enum Expr {
     /// Short-circuit logical: `a && b`, `a || b`.
     Logical(left: ExprId, op: LogicOp, right: ExprId)
     /// Function call: `f(a, b)`.
-    Call(callee: Expr, args: List<SExpr>)
+    Call(callee: ExprId, args: List<ExprId>)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
     GenericCall(callee: Expr, type_args: List<string>, args: List<SExpr>)
     /// Struct literal: `Foo { x: 1, y: 2 }`.
@@ -2513,7 +2504,7 @@ export fn stmt_diverges(store: NodeStore, stmt: Stmt) -> bool {
 export fn expr_diverges(store: NodeStore, body: Expr) -> bool {
     match body {
         .Block(stmts) -> stmts_diverges(store, stmts)
-        .Call(callee, _) -> expr_is_panic_callee(callee)
+        .Call(callee, _) -> expr_is_panic_callee(store.exprs.get(callee))
         _ -> false
     }
 }
@@ -2779,7 +2770,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
-        .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
+        .Call(callee, args) -> "(call ${render_expr_id(store, callee)} ${render_expr_ids(store, args)})"
         .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"
         .FieldAccess(obj, field) -> "(field ${render_expr(store, store.exprs.get(obj))} ${field})"
@@ -2944,6 +2935,14 @@ export fn render_stmt_id(store: NodeStore, id: StmtId) -> string {
 /// Render a flipped `List<StmtId>` body — the id twin of `render_stmt_list`.
 export fn render_stmt_ids(store: NodeStore, ids: List<StmtId>) -> string {
     list_map(ids, (id: StmtId) -> render_stmt(store, store.stmts.get(id))).join("\n")
+}
+
+/// Render a flipped `List<ExprId>` arg/item list as `(e1, e2, e3)` — the id
+/// twin of `render_expr_list` (which stays for the still-boxed
+/// Tuple/ListLit/MapLit). Format matches `render_expr_list` byte-for-byte.
+export fn render_expr_ids(store: NodeStore, ids: List<ExprId>) -> string {
+    if ids.length == 0 { return "()" }
+    "(${list_map(ids, (id: ExprId) -> render_expr(store, store.exprs.get(id))).join(", ")})"
 }
 
 /// Render a `List<Annotation>` in the source `@name @name2` form.

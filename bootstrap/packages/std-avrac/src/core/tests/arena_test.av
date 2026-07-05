@@ -417,6 +417,29 @@ spec "y5um.2: per-kind linecol accessors recompute (line, col) from the span" {
     }
 }
 
+// F3b: the `arg_tys` side-table is where a flipped `Call` arg's inferred type
+// lives once the payload is a bare `ExprId` (annotate writes it, the mono path
+// reads it back). Pin the contract directly — set an arg's type, then recover
+// it through both the singular `sexpr_of` and the list `sexprs_of` views —
+// rather than leaning only on end-to-end selfhost/diff-test parity.
+spec "F3b: arg_tys round-trips an inferred type through sexpr_of / sexprs_of" {
+    then "a set arg type is recovered by both SExpr views; an unset id reads Unknown" {
+        let store = new_node_store(build_line_index(""))
+        let id = store.exprs.add_leaf(Expr.Number("7"))
+        store.set_arg_ty(id, ValueType.Int)
+        let unset = store.exprs.add_leaf(Expr.Number("9"))
+        let single = store.sexpr_of(id)
+        let listed = store.sexprs_of([id])
+        let stored_int = match store.arg_ty_of(id) { .Int -> true  _ -> false }
+        let single_int = match single.ty { .Int -> true  _ -> false }
+        let listed_int = match listed[0].ty { .Int -> true  _ -> false }
+        let unset_unknown = match store.arg_ty_of(unset) { .Unknown -> true  _ -> false }
+        stored_int && single_int && listed_int && unset_unknown
+            && listed.length == 1
+            && render_expr(store, single.node) == render_expr(store, store.exprs.get(id))
+    }
+}
+
 // Struct-embedded child coverage (y5um.3): the derive walker now descends into
 // `List<MatchArm>` (a plain struct holding a bare Pattern, an optional SExpr
 // guard, and an SExpr body), so the arena's edges COVER match-arm children — the
@@ -598,12 +621,16 @@ spec "F3a: Annotated.inner (a StmtId payload) keeps its recorded position" {
 }
 
 spec "A2: bare children stay span_none while wrapped siblings get real spans" {
-    then "Call(callee bare, arg wrapped) -> callee span_none, arg real, in field order" {
-        // "f(x)\n": offset_of(1,3) = 0+2 = 2. Call field order: callee (bare
-        // DirectSelf) THEN args (WrapperListOfSelf) — so kids = [callee, arg].
+    then "GenericCall(callee bare, arg wrapped) -> callee span_none, arg real, in field order" {
+        // Uses GenericCall — a still-boxed variant carrying the DirectSelf-callee
+        // + WrapperListOfSelf-args shape Call had before F3b flipped Call to
+        // scalar ids (a flipped Call is childless to the walker). "f(x)\n":
+        // offset_of(1,3) = 0+2 = 2. Field order: callee (bare DirectSelf),
+        // type_args (Scalar, no edge), args (WrapperListOfSelf) — kids = [callee, arg].
         let store = new_node_store(build_line_index("f(x)\n"))
+        let no_tp: List<string> = []
         let args: List<SExpr> = [sexpr_at(Expr.Ident("x"), 1, 3, "")]
-        let root = store.ingest_expr(Expr.Call(Expr.Ident("f"), args), byte_span(0, 4))
+        let root = store.ingest_expr(Expr.GenericCall(Expr.Ident("f"), no_tp, args), byte_span(0, 4))
         let kids = store.exprs.children_of(root)
         let callee = expr_ref_id(kids[0])
         let arg = expr_ref_id(kids[1])
@@ -627,16 +654,17 @@ spec "F3a: a body row at line 1 col 1 is a REAL position, not the absent sentine
 }
 
 spec "F3a: positions and spans compose across the id boundary" {
-    then "the body row keeps its pos; the Call arg behind the expr id keeps its wrapper span" {
+    then "the body row keeps its pos; the GenericCall arg behind the expr id keeps its wrapper span" {
         // line_starts for "aaaa\nbbbb\ncccc\n" = [0, 5, 10].
         // Stmt side: the Block body element's (2,1) rides the pos column.
-        // Expr side: the Call subtree still travels boxed under its own
-        // ingest, so the WRAPPED arg `x` at (3,2) lifts to offset 11 while
-        // the bare callee stays span_none — the A2 rules, now reached
-        // through the id payload's own arena row.
+        // Expr side: a still-boxed GenericCall (F3b flipped Call to scalar ids)
+        // travels boxed under its own ingest, so the WRAPPED arg `x` at (3,2)
+        // lifts to offset 11 while the bare callee stays span_none — the A2
+        // rules, reached through the id payload's own arena row.
         let store = new_node_store(build_line_index("aaaa\nbbbb\ncccc\n"))
+        let no_tp: List<string> = []
         let arg: List<SExpr> = [sexpr_at(Expr.Ident("x"), 3, 2, "")]
-        let call_id = store.ingest_expr(Expr.Call(Expr.Ident("g"), arg), byte_span_none())
+        let call_id = store.ingest_expr(Expr.GenericCall(Expr.Ident("g"), no_tp, arg), byte_span_none())
         let body = store.rows_of([sstmt_at(Stmt.Expr(call_id), 2, 1, "")])
         let root = store.ingest_stmt(Stmt.Block(body), byte_span(0, 4))
         let arg_id = expr_ref_id(store.exprs.children_of(call_id)[1])
@@ -709,15 +737,16 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
     }
     then "an expr subtree behind a Stmt.Expr id is untouched by the round-trip" {
         let donor = ts()
-        let args: List<SExpr> = [sexpr_at(Expr.Number("1"), 1, 3, ""), sexpr_at(Expr.Ident("y"), 1, 6, "")]
-        let call = donor.exprs.add_leaf(Expr.Call(Expr.Ident("g"), args))
+        let g = donor.exprs.add_leaf(Expr.Ident("g"))
+        let args: List<ExprId> = [donor.exprs.add_leaf(Expr.Number("1")), donor.exprs.add_leaf(Expr.Ident("y"))]
+        let call = donor.exprs.add_leaf(Expr.Call(g, args))
         let orig = [sstmt_at(Stmt.Expr(call), 1, 1, "")]
         let store = ingest_program(orig, "g(1, y)\n")
         let back = reconstruct_program(store, "")
         let same_id = match back[0].node { .Expr(got) -> got == call  _ -> false }
         // The id resolves in ITS OWN store to the untouched Call subtree.
         back.length == 1 && same_id
-            && render_expr(donor, donor.exprs.get(call)) == render_expr(donor, Expr.Call(Expr.Ident("g"), args))
+            && render_expr(donor, donor.exprs.get(call)) == render_expr(donor, Expr.Call(g, args))
     }
     then "an empty program reconstructs to an empty list" {
         let empty: List<SStmt> = []

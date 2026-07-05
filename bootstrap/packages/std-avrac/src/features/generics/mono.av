@@ -1333,17 +1333,18 @@ fn collect_inst_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, st
 fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .Call(callee, args) -> {
-            let s = collect_inst_exprs(args, regs, st)
-            match callee {
+            let margs = regs.store.sexprs_of(args)
+            let s = collect_inst_exprs(margs, regs, st)
+            match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, regs, s) } else { s }
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, margs, fn_e!.ret_vt, expected, regs, s) } else { s }
                 }
                 .QualifiedIdent(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, regs, s) } else { s }
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, margs, fn_e!.ret_vt, expected, regs, s) } else { s }
                 }
-                _ -> collect_inst_expr(callee, regs, s)
+                _ -> collect_inst_expr(regs.store.exprs.get(callee), regs, s)
             }
         }
         .Grouping(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, st)
@@ -1675,10 +1676,10 @@ fn rename_self_calls_expr_id(store: NodeStore, id: ExprId, orig_name: string, ma
 fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangled: string) -> Expr {
     match expr {
         .Call(callee, args) -> {
-            let new_args = rename_self_calls_sexpr_list(store, args, orig_name, mangled)
-            match callee {
-                .Ident(n) if n == orig_name -> Expr.Call(Expr.Ident(mangled), new_args)
-                _ -> Expr.Call(rename_self_calls_expr(store, callee, orig_name, mangled), new_args)
+            let new_args = rename_self_calls_expr_ids(store, args, orig_name, mangled)
+            match store.exprs.get(callee) {
+                .Ident(n) if n == orig_name -> Expr.Call(store.exprs.add_leaf(Expr.Ident(mangled)), new_args)
+                _ -> Expr.Call(rename_self_calls_expr_id(store, callee, orig_name, mangled), new_args)
             }
         }
         .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr(store, callee, orig_name, mangled), ta, rename_self_calls_sexpr_list(store, args, orig_name, mangled))
@@ -1709,6 +1710,20 @@ fn rename_self_calls_sexpr_list(store: NodeStore, exprs: List<SExpr>, orig_name:
         let se = exprs[i]
         out.push(SExpr { node: rename_self_calls_expr(store, se.node, orig_name, mangled), line: se.line, col: se.col, ty: se.ty, file: se.file })
         i = i + 1
+    }
+    out
+}
+
+/// Rename over a flipped `List<ExprId>` (call args) — the id twin of
+/// `rename_self_calls_sexpr_list`. PRESERVES each arg's recorded type
+/// (`set_arg_ty`), mirroring the boxed version keeping `se.ty`, so the
+/// renamed body's recursive instantiation still sees arg types.
+fn rename_self_calls_expr_ids(store: NodeStore, ids: List<ExprId>, orig_name: string, mangled: string) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids {
+        let new_id = store.reexpr(rename_self_calls_expr(store, store.exprs.get(id), orig_name, mangled), id)
+        store.set_arg_ty(new_id, store.arg_ty_of(id))
+        out.push(new_id)
     }
     out
 }
@@ -1915,6 +1930,15 @@ fn substitute_stmt_id(store: NodeStore, id: StmtId, ta: List<TypeArg>) -> StmtId
 fn substitute_expr_id(store: NodeStore, id: ExprId, ta: List<TypeArg>) -> ExprId {
     store.reexpr(substitute_expr(store, store.exprs.get(id), ta), id)
 }
+/// Map `substitute_expr` over a flipped `List<ExprId>` (call args) — the id
+/// twin of `substitute_expr_list`. Drops the arg type (reexpr leaves it
+/// Unknown), matching the boxed version's `sexpr_at` (ty=Unknown).
+fn substitute_expr_list_ids(store: NodeStore, ids: List<ExprId>, ta: List<TypeArg>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids { out.push(substitute_expr_id(store, id, ta)) }
+    out
+}
+
 /// Map `substitute_expr` over a `List<SExpr>`.
 fn substitute_expr_list(store: NodeStore, exprs: List<SExpr>, ta: List<TypeArg>) -> List<SExpr> {
     mut out: List<SExpr> = []
@@ -1957,7 +1981,7 @@ fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
 /// untouched.
 fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
     match expr {
-        .Call(callee, a) -> .Call(substitute_expr(store, callee, ta), substitute_expr_list(store, a, ta))
+        .Call(callee, a) -> .Call(substitute_expr_id(store, callee, ta), substitute_expr_list_ids(store, a, ta))
         .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr(store, callee, ta), tn, substitute_expr_list(store, a, ta))
         .Binary(l, op, r) -> .Binary(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Logical(l, op, r) -> .Logical(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
@@ -2372,14 +2396,15 @@ fn rewrite_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, insts: 
 fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
     match expr {
         .Call(callee, args) -> {
-            let new_args = rewrite_expr_list(args, regs, insts)
+            let new_args = rewrite_expr_list_ids(args, regs, insts)
+            let margs = regs.store.sexprs_of(args)
             let empty_ta: List<TypeArg> = []
-            match callee {
+            match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta), regs.ambig)), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, margs, fe.ret_vt, expected, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2388,12 +2413,12 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta), regs.ambig)), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, margs, fe.ret_vt, expected, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
                 }
-                _ -> Expr.Call(rewrite_expr(callee, regs, insts), new_args)
+                _ -> Expr.Call(rewrite_expr_id(callee, regs, insts), new_args)
             }
         }
         .Grouping(e) -> Expr.Grouping(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
@@ -2524,14 +2549,15 @@ fn rewrite_select_arms_mono(arms: List<SelectArm>, regs: GenRegs, insts: List<In
 fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
     match expr {
         .Call(callee, args) -> {
-            let new_args = rewrite_expr_list(args, regs, insts)
+            let new_args = rewrite_expr_list_ids(args, regs, insts)
+            let margs = regs.store.sexprs_of(args)
             let empty_ta: List<TypeArg> = []
-            match callee {
+            match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, args, empty_ta), regs.ambig)), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, margs, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2540,37 +2566,39 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, args, empty_ta), regs.ambig)), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, margs, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
                 }
-                _ -> Expr.Call(rewrite_expr(callee, regs, insts), new_args)
+                _ -> Expr.Call(rewrite_expr_id(callee, regs, insts), new_args)
             }
         }
         .GenericCall(callee, type_names, args) -> {
-            // Explicit type args — use them directly, no inference needed
-            let new_args = rewrite_expr_list(args, regs, insts)
+            // Explicit type args — use them directly, no inference needed. The
+            // GenericCall is rewritten INTO a flipped `Call`, so its boxed args
+            // are leaf-wrapped into the arena (`arg_sexprs_to_ids`).
+            let new_args = arg_sexprs_to_ids(regs.store, rewrite_expr_list(args, regs, insts))
             match callee {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, explicit_to_type_args(fe.tp, type_names), regs.ambig)), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, explicit_to_type_args(fe.tp, type_names), regs.ambig))), new_args)
                     } else {
-                        Expr.Call(callee, new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(callee), new_args)
                     }
                 }
                 .QualifiedIdent(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(.Ident(mangle_name_ordered(name, fe.tp, explicit_to_type_args(fe.tp, type_names), regs.ambig)), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, explicit_to_type_args(fe.tp, type_names), regs.ambig))), new_args)
                     } else {
-                        Expr.Call(callee, new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(callee), new_args)
                     }
                 }
-                _ -> Expr.Call(rewrite_expr(callee, regs, insts), new_args)
+                _ -> Expr.Call(regs.store.exprs.add_leaf(rewrite_expr(callee, regs, insts)), new_args)
             }
         }
         .EnumCtor(tn, variant, args) -> rewrite_enum_ctor(tn, variant, args, regs, insts)
@@ -2656,6 +2684,24 @@ fn rewrite_when_arms(arms: List<WhenArm>, regs: GenRegs, insts: List<Inst>) -> L
         out.push(WhenArm { cond: new_cond, body: new_body })
         i = i + 1
     }
+    out
+}
+
+/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args) — the id twin
+/// of `rewrite_expr_list`, via `rewrite_expr_id` (reexpr, arg type dropped to
+/// Unknown, matching the boxed version's `sexpr_at`).
+fn rewrite_expr_list_ids(ids: List<ExprId>, regs: GenRegs, insts: List<Inst>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids { out.push(rewrite_expr_id(id, regs, insts)) }
+    out
+}
+
+/// Leaf-wrap each boxed arg into the arena — the bridge for rewriting a
+/// still-boxed `GenericCall` (its `args` are `List<SExpr>`) INTO a flipped
+/// `Expr.Call` whose `args` are `List<ExprId>`.
+fn arg_sexprs_to_ids(store: NodeStore, args: List<SExpr>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for se in args { out.push(store.exprs.add_leaf(se.node)) }
     out
 }
 

@@ -18,7 +18,7 @@
 //   - non-shim names are NOT intercepted: an unknown fn still errors,
 //     proving the match is exact on the last segment.
 
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, SExpr, sexpr_dummy}
+use @std.avrac.core.{NodeStore, ExprId, new_node_store, build_line_index, Expr, SExpr, sexpr_dummy}
 use @std.avrac.features.eval.{Runtime, runtime_new, eval_expr, step_value, step_had_error}
 
 /// Fresh store + runtime per probe. (Named uniquely — `rt` is a live
@@ -43,23 +43,26 @@ fn boxed_stmt_arg() -> Expr {
 
 spec "synth_expr_id is an identity passthrough at eval" {
     then "a bare-Ident call returns the boxed Expr Value unchanged" {
-        let call = Expr.Call(Expr.Ident("synth_expr_id"), [sexpr_dummy(boxed_expr_arg())])
-        let r = eval_expr(fresh_probe_rt(), call)
+        let rt = fresh_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_expr_id")), [rt.nodes.exprs.add_leaf(boxed_expr_arg())])
+        let r = eval_expr(rt, call)
         !step_had_error(r)
             && step_value(r).kind == "expr"
             && step_value(r).enum_variant == "Number"
     }
     then "a QualifiedIdent call (post-resolve form) is intercepted too" {
-        let call = Expr.Call(Expr.QualifiedIdent("@std::avrac::features::comptime::synth_expr_id"), [sexpr_dummy(boxed_expr_arg())])
-        let r = eval_expr(fresh_probe_rt(), call)
+        let rt = fresh_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::features::comptime::synth_expr_id")), [rt.nodes.exprs.add_leaf(boxed_expr_arg())])
+        let r = eval_expr(rt, call)
         !step_had_error(r) && step_value(r).kind == "expr"
     }
 }
 
 spec "synth_stmt_id is an identity passthrough at eval" {
     then "the boxed Stmt Value passes through with its variant intact" {
-        let call = Expr.Call(Expr.Ident("synth_stmt_id"), [sexpr_dummy(boxed_stmt_arg())])
-        let r = eval_expr(fresh_probe_rt(), call)
+        let rt = fresh_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_id")), [rt.nodes.exprs.add_leaf(boxed_stmt_arg())])
+        let r = eval_expr(rt, call)
         !step_had_error(r)
             && step_value(r).kind == "stmt"
             && step_value(r).enum_variant == "ReturnEmpty"
@@ -68,9 +71,10 @@ spec "synth_stmt_id is an identity passthrough at eval" {
 
 spec "synth_stmt_ids is an identity passthrough at eval" {
     then "a list of boxed Stmt Values passes through unchanged" {
+        let rt = fresh_probe_rt()
         let list_arg = Expr.ListLit([sexpr_dummy(boxed_stmt_arg())])
-        let call = Expr.Call(Expr.Ident("synth_stmt_ids"), [sexpr_dummy(list_arg)])
-        let r = eval_expr(fresh_probe_rt(), call)
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_ids")), [rt.nodes.exprs.add_leaf(list_arg)])
+        let r = eval_expr(rt, call)
         !step_had_error(r)
             && step_value(r).kind == "list"
             && step_value(r).list_payload.length == 1
@@ -80,24 +84,27 @@ spec "synth_stmt_ids is an identity passthrough at eval" {
 
 spec "synth shim edge cases" {
     then "an empty statement list passes through as an empty list Value" {
+        let rt = fresh_probe_rt()
         let no_elems: List<SExpr> = []
-        let call = Expr.Call(Expr.Ident("synth_stmt_ids"), [sexpr_dummy(Expr.ListLit(no_elems))])
-        let r = eval_expr(fresh_probe_rt(), call)
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_ids")), [rt.nodes.exprs.add_leaf(Expr.ListLit(no_elems))])
+        let r = eval_expr(rt, call)
         !step_had_error(r)
             && step_value(r).kind == "list"
             && step_value(r).list_payload.length == 0
     }
     then "a zero-arg shim call errors instead of fabricating a value" {
-        let no_args: List<SExpr> = []
-        let call = Expr.Call(Expr.Ident("synth_expr_id"), no_args)
-        step_had_error(eval_expr(fresh_probe_rt(), call))
+        let rt = fresh_probe_rt()
+        let no_args: List<ExprId> = []
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_expr_id")), no_args)
+        step_had_error(eval_expr(rt, call))
     }
 }
 
 spec "the shim intercept matches exactly, not by substring" {
     then "an unknown fn whose name merely embeds a shim name still errors" {
-        let call = Expr.Call(Expr.Ident("my_synth_expr_id_helper"), [sexpr_dummy(boxed_expr_arg())])
-        let r = eval_expr(fresh_probe_rt(), call)
+        let rt = fresh_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("my_synth_expr_id_helper")), [rt.nodes.exprs.add_leaf(boxed_expr_arg())])
+        let r = eval_expr(rt, call)
         step_had_error(r)
     }
 }
