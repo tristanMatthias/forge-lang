@@ -5,6 +5,6 @@
 #   bash scripts/diagnose.sh --seed-publish
 # Merge conflict on this file = two train advances raced; take the
 # HIGHER version line (artifacts are immutable). docs/SEED_MERGES.md.
-version = 75
-sha256 = e3e1b52a2a08fa3b13e868c0ed694eb24e71d10ad3b1a2dbdcde64627cf4089e
-url = https://github.com/tristanMatthias/forge-lang/releases/download/seed/v75/seed.ll.gz
+version = 76
+sha256 = e036ff318701a26f230d70c918d02cfa49fe8d4b947e4da0cde3e4afa2a225f9
+url = https://github.com/tristanMatthias/forge-lang/releases/download/seed/v76/seed.ll.gz
