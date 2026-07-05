@@ -148,7 +148,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .MapLit(entries) -> .MapLit(rewrite_expr_list(entries, reg))
         .Slice(obj, s, e) -> .Slice(rewrite_expr_id(obj, reg), rewrite_expr_id(s, reg), rewrite_expr_id(e, reg))
         .IsCheck(subj, variant) -> .IsCheck(rewrite_expr_id(subj, reg), variant)
-        .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, reg), rewrite_expr_list(items, reg))
+        .InCheck(needle, items) -> .InCheck(rewrite_expr_id(needle, reg), rewrite_expr_list_ids(items, reg))
         .ListComp(body, variable, collection, filter) -> {
             .ListComp(rewrite_expr(body, reg), variable, rewrite_expr(collection, reg), rewrite_opt_expr(filter, reg))
         }

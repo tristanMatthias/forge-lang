@@ -9,7 +9,7 @@ use core.{Expr, SExpr, BinOp, VarBinding}
 /// `InCheck` AST node and forwards to `emit_in_items`.
 export fn emit_in_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .InCheck(needle, items) -> emit_in_items(ctx, env, needle, items)
+        .InCheck(needle, items) -> emit_in_items(ctx, env, ctx.nodes.exprs.get(needle), ctx.nodes.sexprs_of(items))
         _ -> err_emit("expected InCheck")
     }
 }

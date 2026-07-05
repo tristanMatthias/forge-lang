@@ -237,8 +237,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .IsCheck(subj, _) -> find_captures(store, store.exprs.get(subj), params, env, captures)
         .InCheck(needle, items) -> {
-            find_captures(store, needle, params, env, captures)
-            find_captures_list(store, items, params, env, captures)
+            find_captures(store, store.exprs.get(needle), params, env, captures)
+            find_captures_list(store, store.sexprs_of(items), params, env, captures)
         }
         .OptionalChain(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .OptionalMethodCall(obj, _, args) -> {

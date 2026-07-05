@@ -1559,7 +1559,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         }
         .Isolated(body) -> .Isolated(rewrite_expr_id(ctx, body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr_id(ctx, subject), variant)
-        .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
+        .InCheck(needle, items) -> .InCheck(rewrite_expr_id(ctx, needle), rewrite_expr_list_ids(ctx, items))
         .When(arms) -> .When(rewrite_when_arms(ctx, arms))
         // Catch / Quote / Splice had no arms — identifiers inside
         // their bodies stayed un-rewritten (raw `helper` Idents instead
@@ -1846,7 +1846,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .With(obj, overrides) -> collect_used_paths_field_inits(store, overrides, collect_used_paths_expr(store, obj, acc))
         .Slice(obj, s, e) -> collect_used_paths_expr(store, store.exprs.get(e), collect_used_paths_expr(store, store.exprs.get(s), collect_used_paths_expr(store, store.exprs.get(obj), acc)))
         .IsCheck(subj, _) -> collect_used_paths_expr(store, store.exprs.get(subj), acc)
-        .InCheck(needle, items) -> collect_used_paths_expr_list(store, items, collect_used_paths_expr(store, needle, acc))
+        .InCheck(needle, items) -> collect_used_paths_expr_list_ids(store, items, collect_used_paths_expr(store, store.exprs.get(needle), acc))
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, body, collect_used_paths_expr(store, inner, acc))
         .Spawn(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
         .ChannelNew(_, capacity) -> {
