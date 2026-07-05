@@ -49,7 +49,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Block(body) -> "{\n${fmt_stmt_list(store, body, 1)}\n}"
         .MatchExpr(subject, arms) -> "match ${fmt_expr(store, subject)} {\n${fmt_match_arms(store, arms, 1)}\n}"
         .FieldAssign(obj, field, value) -> "${fmt_expr(store, store.exprs.get(obj))}.${field} = ${fmt_expr(store, store.exprs.get(value))}"
-        .IfExpr(c, t, e) -> "if ${fmt_expr(store, c)} { ${fmt_expr(store, t)} } else { ${fmt_expr(store, e)} }"
+        .IfExpr(c, t, e) -> "if ${fmt_expr(store, store.exprs.get(c))} { ${fmt_expr(store, store.exprs.get(t))} } else { ${fmt_expr(store, store.exprs.get(e))} }"
         .NullCoalesce(left, right) -> "${fmt_expr(store, store.exprs.get(left))} ?? ${fmt_expr(store, store.exprs.get(right))}"
         .OptionalChain(obj, field) -> "${fmt_expr(store, store.exprs.get(obj))}?.${field}"
         .OptionalMethodCall(obj, method, args) -> "${fmt_expr(store, obj)}?.${method}(${fmt_expr_list_comma(store, args)})"

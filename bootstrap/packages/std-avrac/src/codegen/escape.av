@@ -209,7 +209,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         }
         .Lambda(_, body) -> remove_escaped_expr(store, body, set)
         .Block(body) -> single_pass_escape(store, body, set)
-        .IfExpr(cond, t, e) -> remove_escaped_expr(store, e, remove_escaped_expr(store, t, remove_escaped_expr(store, cond, set)))
+        .IfExpr(cond, t, e) -> remove_escaped_expr(store, store.exprs.get(e), remove_escaped_expr(store, store.exprs.get(t), remove_escaped_expr(store, store.exprs.get(cond), set)))
         // Match arms must be walked: a variable used in an arm body
         // (especially as the arm's return value, which escapes) needs
         // to be removed from the releasable set. Without this the

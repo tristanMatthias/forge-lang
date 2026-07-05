@@ -2208,7 +2208,7 @@ export enum Expr {
     /// Field reassignment: `obj.field = value`.
     FieldAssign(obj: ExprId, field: string, value: ExprId)
     /// Ternary-like `if cond { then } else { else_branch }` as an expr.
-    IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
+    IfExpr(condition: ExprId, then_branch: ExprId, else_branch: ExprId)
     /// Null coalesce: `a ?? default`.
     NullCoalesce(left: ExprId, right: ExprId)
     /// Optional chain: `obj?.field` — null obj passes through, no
@@ -2793,7 +2793,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
         .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
         .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"
-        .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, c)} ${render_expr(store, t)} ${render_expr(store, e)})"
+        .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, store.exprs.get(c))} ${render_expr(store, store.exprs.get(t))} ${render_expr(store, store.exprs.get(e))})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"
         .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"

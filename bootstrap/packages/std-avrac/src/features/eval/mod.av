@@ -2419,9 +2419,9 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "IfExpr" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let c = value_to_expr_node(store, head)?
-            let t = value_to_expr_node(store, p[1])?
-            let e = value_to_expr_node(store, p[2])?
+            let c = value_to_expr_id(store, head)?
+            let t = value_to_expr_id(store, p[1])?
+            let e = value_to_expr_id(store, p[2])?
             .Ok(Expr.IfExpr(c, t, e))
         }
         "MatchExpr" -> {

@@ -257,7 +257,7 @@ fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
         .Binary(l, op, r) -> Expr.Binary(rw_expr(store, l, ctx), op, rw_expr(store, r, ctx))
         .Unary(op, r) -> Expr.Unary(op, rw_expr_id(store, r, ctx))
         .Logical(l, op, r) -> Expr.Logical(rw_expr_id(store, l, ctx), op, rw_expr_id(store, r, ctx))
-        .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr(store, c, ctx), rw_expr(store, t, ctx), rw_expr(store, e, ctx))
+        .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr_id(store, c, ctx), rw_expr_id(store, t, ctx), rw_expr_id(store, e, ctx))
         .Block(body) -> Expr.Block(rewrite_self(store, body, ctx))
         _ -> expr
     }

@@ -15,7 +15,7 @@ use typeck.{check_expr, check_stmt, tc_er, tc_report, narrow_guard_of, tc_narrow
 /// up resolver, type-checker, codegen, and eval hooks for each.
 export fn if_stmt_feature() -> Feature {
     feature_new("if") with {
-        expr_tag: Expr.IfExpr(Expr.None, Expr.None, Expr.None),
+        expr_tag: Expr.IfExpr(ExprId(0), ExprId(0), ExprId(0)),
         stmt_tag: Stmt.If(ExprId(0), StmtId(0), null),
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
@@ -34,9 +34,9 @@ export fn if_stmt_feature() -> Feature {
 fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .IfExpr(c, t, e) -> {
-            let after_c = resolve_expr(r, c)
-            let after_t = resolve_expr(after_c, t)
-            resolve_expr(after_t, e)
+            let after_c = resolve_expr(r, r.nodes.exprs.get(c))
+            let after_t = resolve_expr(after_c, r.nodes.exprs.get(t))
+            resolve_expr(after_t, r.nodes.exprs.get(e))
         }
         _ -> r
     }
@@ -50,14 +50,14 @@ fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
         .IfExpr(condition, then_branch, else_branch) -> {
-            let cond_result = eval_expr(rt, condition)
+            let cond_result = eval_expr(rt, rt.nodes.exprs.get(condition))
             if step_had_error(cond_result) {
                 return cond_result
             }
             if is_truthy(step_value(cond_result)) {
-                eval_expr(step_runtime(cond_result), then_branch)
+                eval_expr(step_runtime(cond_result), rt.nodes.exprs.get(then_branch))
             } else {
-                eval_expr(step_runtime(cond_result), else_branch)
+                eval_expr(step_runtime(cond_result), rt.nodes.exprs.get(else_branch))
             }
         }
         _ -> error_result(rt, "expected IfExpr")
@@ -68,7 +68,7 @@ fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 /// emits both branches into a result-slot phi.
 fn if_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .IfExpr(condition, then_branch, else_branch) -> emit_if_expr(ctx, env, condition, then_branch, else_branch)
+        .IfExpr(condition, then_branch, else_branch) -> emit_if_expr(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.exprs.get(then_branch), ctx.nodes.exprs.get(else_branch))
         _ -> err_emit("expected IfExpr")
     }
 }
@@ -170,23 +170,26 @@ fn if_expr_result_type(then_ty: ValueType, else_ty: ValueType) -> ValueType {
 fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IfExpr(cond, then_branch, else_branch) -> {
-            let c = check_expr(tc, cond)
+            let cond_e = tc.nodes.exprs.get(cond)
+            let then_e = tc.nodes.exprs.get(then_branch)
+            let else_e = tc.nodes.exprs.get(else_branch)
+            let c = check_expr(tc, cond_e)
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
-            let guard = narrow_guard_of(cond)
+            let guard = narrow_guard_of(cond_e)
             // Fast path: no `none`-guard → check both arms directly, no
             // env reconstruction.
             if guard.var == "" {
-                let t = check_expr(after_cond, then_branch)
-                let e = check_expr(t.tc, else_branch)
+                let t = check_expr(after_cond, then_e)
+                let e = check_expr(t.tc, else_e)
                 return tc_er(e.tc, if_expr_result_type(t.ty, e.ty))
             }
             // Narrowing path: narrow the present arm, resetting the env
             // to `baseline` after each so narrowing stays branch-local.
             let baseline = after_cond.types
-            let t = check_expr(tc_narrow_true_branch(after_cond, guard), then_branch)
-            let e = check_expr(tc_narrow_false_branch(t.tc with { types: baseline }, guard), else_branch)
+            let t = check_expr(tc_narrow_true_branch(after_cond, guard), then_e)
+            let e = check_expr(tc_narrow_false_branch(t.tc with { types: baseline }, guard), else_e)
             tc_er(e.tc with { types: baseline }, if_expr_result_type(t.ty, e.ty))
         }
         _ -> tc_er(tc, .Unknown)

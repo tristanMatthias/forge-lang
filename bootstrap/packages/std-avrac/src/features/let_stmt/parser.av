@@ -65,7 +65,6 @@ impl Parser {
             self.report(DiagCode.LetElseMustDiverge, "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
         }
         let tmp = self.fresh("letelse")
-        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
         let unwrap_id = self.alloc_force_unwrap_row(tmp)
         let cond = expr_eq_none(Expr.Ident(tmp))
         let cond_id = self.alloc_none_check_row(tmp, cond)
@@ -75,8 +74,8 @@ impl Parser {
         for sid in else_ids { else_edges.push(NodeRef.StmtRef(sid)) }
         let else_block = Expr.Block(self.store.sstmts_of(else_ids))
         let else_block_id = self.alloc_expr(else_block, byte_span_none(), else_edges)
-        let guard = Expr.IfExpr(cond, else_block, unwrap)
-        let guard_id = self.alloc3(guard, cond_id, else_block_id, unwrap_id)
+        let guard = Expr.IfExpr(cond_id, else_block_id, unwrap_id)
+        let guard_id = self.alloc_leaf(guard)
         let tmp_let_id = self.alloc_binding_stmt(Stmt.Let(tmp, ValueType.Unknown, subject_id), ValueType.Unknown)
         let guard_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(guard_id))
         let block_body: List<SStmt> = [

@@ -110,7 +110,7 @@ fn expr_has_spawn(store: NodeStore, ex: Expr) -> bool {
         .Call(callee, args) -> expr_has_spawn(store, callee) || exprs_have_spawn(store, args)
         .Binary(l, _, r) -> expr_has_spawn(store, l) || expr_has_spawn(store, r)
         .Unary(_, e) -> expr_has_spawn(store, store.exprs.get(e))
-        .IfExpr(cond, then_e, else_e) -> expr_has_spawn(store, cond) || expr_has_spawn(store, then_e) || expr_has_spawn(store, else_e)
+        .IfExpr(cond, then_e, else_e) -> expr_has_spawn(store, store.exprs.get(cond)) || expr_has_spawn(store, store.exprs.get(then_e)) || expr_has_spawn(store, store.exprs.get(else_e))
         .MatchExpr(subj, arms) -> expr_has_spawn(store, subj) || arms_have_spawn(store, arms)
         .Lambda(_, body) -> expr_has_spawn(store, body)
         _ -> false

@@ -19,7 +19,7 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .Logical(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .Call(callee, args) -> expr_contains_it(store, callee) || expr_list_contains_it(store, args)
         .Grouping(inner) -> expr_contains_it(store, store.exprs.get(inner))
-        .IfExpr(c, t, e) -> expr_contains_it(store, c) || expr_contains_it(store, t) || expr_contains_it(store, e)
+        .IfExpr(c, t, e) -> expr_contains_it(store, store.exprs.get(c)) || expr_contains_it(store, store.exprs.get(t)) || expr_contains_it(store, store.exprs.get(e))
         .Block(stmts) -> stmt_list_contains_it(store, stmts)
         .Index(obj, idx) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(idx))
         .FieldAccess(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
