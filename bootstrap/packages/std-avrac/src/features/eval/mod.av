@@ -852,7 +852,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
         .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
         .None -> ok_result(runtime, value_null())
-        .EnumCtor(type_name, variant, args) -> eval_enum_ctor(runtime, type_name, variant, args)
+        .EnumCtor(type_name, variant, args) -> eval_enum_ctor(runtime, type_name, variant, runtime.nodes.sexprs_of(args))
         .Ident(name) -> {
             let result = lookup_binding(runtime.bindings, name)
             if result.found {
@@ -2340,7 +2340,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
             if p.length != 3 { return .Err("decode: bad payload") }
             let variant_v: Value = p[1]
             let args_v: Value = p[2]
-            let args = list_value_to_expr_list(store, args_v)?
+            let args = list_value_to_expr_id_list(store, args_v)?
             .Ok(Expr.EnumCtor(head.text, variant_v.text, args))
         }
         "Index" -> {

@@ -104,7 +104,7 @@ spec "comptime.try_fold_call: non-literal args refuse to fold" {
 fn mk_make_ident_fn(ws: NodeStore) -> CompTimeFn {
     let arg: List<SExpr> = [sexpr_dummy(Expr.String("\"x\""))]
     let body: List<StmtId> = [
-        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Ident", arg)))),
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Ident", ws.ingest_sexpr_recipe(arg))))),
     ]
     CompTimeFn {
         name: "make_ident",
@@ -130,7 +130,7 @@ spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4 / vez6.6.5)" {
         let no_args: List<ExprId> = []
         let folded = try_fold_call(reg, mk_call(reg.runtime.nodes, "make_ident", no_args))
         folded != null
-            && render_expr(ts(), folded!) == "(ctor @std::avrac::core::Expr.Ident (\"x\"))"
+            && render_expr(reg.runtime.nodes, folded!) == "(ctor @std::avrac::core::Expr.Ident (\"x\"))"
     }
 }
 
@@ -141,13 +141,13 @@ spec "comptime.try_fold_call: enum-Value Expr decode (vez6.6.4 / vez6.6.5)" {
 fn mk_make_sum_fn(ws: NodeStore) -> CompTimeFn {
     let one_arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"1\""))]
     let two_arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"2\""))]
-    let one_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", one_arg_str)
-    let two_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", two_arg_str)
+    let one_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", ws.ingest_sexpr_recipe(one_arg_str))
+    let two_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Number", ws.ingest_sexpr_recipe(two_arg_str))
     let empty_args: List<SExpr> = []
-    let add_op = Expr.EnumCtor("@std::avrac::core::BinOp", "Add", empty_args)
+    let add_op = Expr.EnumCtor("@std::avrac::core::BinOp", "Add", ws.ingest_sexpr_recipe(empty_args))
     let bin_args: List<SExpr> = [sexpr_dummy(one_expr), sexpr_dummy(add_op), sexpr_dummy(two_expr)]
     let body: List<StmtId> = [
-        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Binary", bin_args)))),
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Binary", ws.ingest_sexpr_recipe(bin_args))))),
     ]
     CompTimeFn {
         name: "make_sum",
@@ -174,10 +174,10 @@ spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4 / vez6.6.5)
         let no_args: List<ExprId> = []
         let folded = try_fold_call(reg, mk_call(reg.runtime.nodes, "make_sum", no_args))
         folded != null
-            && render_expr(ts(), folded!).contains("@std::avrac::core::Expr.Binary")
-            && render_expr(ts(), folded!).contains("@std::avrac::core::BinOp.Add")
-            && render_expr(ts(), folded!).contains("\"1\"")
-            && render_expr(ts(), folded!).contains("\"2\"")
+            && render_expr(reg.runtime.nodes, folded!).contains("@std::avrac::core::Expr.Binary")
+            && render_expr(reg.runtime.nodes, folded!).contains("@std::avrac::core::BinOp.Add")
+            && render_expr(reg.runtime.nodes, folded!).contains("\"1\"")
+            && render_expr(reg.runtime.nodes, folded!).contains("\"2\"")
     }
 }
 
@@ -187,7 +187,7 @@ spec "comptime.try_fold_call: structural enum-Value decode (vez6.6.4 / vez6.6.5)
 // kind="list" Value; the decoder reads it back via list_value_to_expr_list.
 fn mk_make_call_fn(ws: NodeStore) -> CompTimeFn {
     let arg_str: List<SExpr> = [sexpr_dummy(Expr.String("\"7\""))]
-    let inner_num = Expr.EnumCtor("@std::avrac::core::Expr", "Number", arg_str)
+    let inner_num = Expr.EnumCtor("@std::avrac::core::Expr", "Number", ws.ingest_sexpr_recipe(arg_str))
     // Build the arg-list as an Expr.ListLit whose single element is a
     // Call to sexpr_dummy wrapping the inner Number ctor. Mirrors the
     // shape construct_expr_list emits post-lkze.9 #18.
@@ -198,10 +198,10 @@ fn mk_make_call_fn(ws: NodeStore) -> CompTimeFn {
     let args_list_elems: List<SExpr> = [sexpr_dummy(sexpr_dummy_call)]
     let args_list = Expr.ListLit(args_list_elems)
     let f_ident_str: List<SExpr> = [sexpr_dummy(Expr.String("\"f\""))]
-    let callee_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Ident", f_ident_str)
+    let callee_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Ident", ws.ingest_sexpr_recipe(f_ident_str))
     let call_payload: List<SExpr> = [sexpr_dummy(callee_expr), sexpr_dummy(args_list)]
     let body: List<StmtId> = [
-        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Call", call_payload)))),
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.EnumCtor("@std::avrac::core::Expr", "Call", ws.ingest_sexpr_recipe(call_payload))))),
     ]
     CompTimeFn {
         name: "make_call",
@@ -227,9 +227,9 @@ spec "comptime.try_fold_call: Call + List<SExpr> decode (vez6.6.4 / vez6.6.5)" {
         let no_args: List<ExprId> = []
         let folded = try_fold_call(reg, mk_call(reg.runtime.nodes, "make_call", no_args))
         folded != null
-            && render_expr(ts(), folded!).contains("@std::avrac::core::Expr.Call")
-            && render_expr(ts(), folded!).contains("@std::avrac::core::Expr.Ident")
-            && render_expr(ts(), folded!).contains("\"f\"")
-            && render_expr(ts(), folded!).contains("\"7\"")
+            && render_expr(reg.runtime.nodes, folded!).contains("@std::avrac::core::Expr.Call")
+            && render_expr(reg.runtime.nodes, folded!).contains("@std::avrac::core::Expr.Ident")
+            && render_expr(reg.runtime.nodes, folded!).contains("\"f\"")
+            && render_expr(reg.runtime.nodes, folded!).contains("\"7\"")
     }
 }

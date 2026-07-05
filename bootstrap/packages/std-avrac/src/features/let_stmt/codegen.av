@@ -55,7 +55,7 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
         if vtype_is_optional(decl) {
             match initializer {
                 .EnumCtor(tn, variant, args) if tn == "" && variant_is_optional_ctor(variant, args.length) -> {
-                    let r = emit_optional_ctor_value(emit_ctx, env, variant, args, decl)?
+                    let r = emit_optional_ctor_value(emit_ctx, env, variant, emit_ctx.nodes.sexprs_of(args), decl)?
                     return ok_stmt(ctx.bind(env, name, r.value, decl))
                 }
                 _ -> {}

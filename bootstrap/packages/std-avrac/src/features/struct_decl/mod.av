@@ -2,7 +2,7 @@
 // as siblings, surface flat at `features.struct_decl.{...}`.
 use codegen.{err_emit}
 use core.{feature_new, Feature, vtype_struct_name, ExprId}
-use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_with_upper}
+use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
 use typeck.{check_expr, check_expr_list, tc_er, tc_report, tc_struct_lit_vtype}
@@ -159,7 +159,7 @@ fn field_access_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Codegen hook for `EnumCtor`. Forwards to `emit_enum_ctor`.
 fn enum_ctor_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
+        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, ctx.nodes.sexprs_of(args))
         _ -> err_emit("expected EnumCtor")
     }
 }
@@ -167,7 +167,7 @@ fn enum_ctor_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Em
 /// Resolver hook for `EnumCtor`. Walks the constructor args.
 fn enum_ctor_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .EnumCtor(_, _, args) -> resolve_expr_list(r, args)
+        .EnumCtor(_, _, args) -> resolve_expr_list_ids(r, args)
         _ -> r
     }
 }
@@ -179,7 +179,7 @@ fn enum_ctor_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .EnumCtor(type_name, variant, args) -> {
-            let checked = check_expr_list(tc, args)
+            let checked = check_expr_list(tc, tc.nodes.sexprs_of(args))
             let resolved_name = if type_name == "" { tc_enum_find_by_variant(tc.enums, variant) } else { type_name }
             let empty_args: List<ValueType> = []
             tc_er(checked, .Enum(resolved_name, empty_args, 0))

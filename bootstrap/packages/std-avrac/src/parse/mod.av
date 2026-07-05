@@ -1511,11 +1511,11 @@ impl Parser {
                     if !self.consume(Tk.RightParen, "expected `)` after arguments") {
                         return .Err("parse error")
                     }
-                    // The type-name Ident the head parsed becomes scalar data
-                    // on the ctor node; its row orphans (rebuild shells may —
-                    // they are never quote-bearing).
-                    result = Expr.EnumCtor(type_name, field, parsed.wrapped)
-                    rid = self.alloc_expr(result, byte_span_none(), self.edges_of_ids(parsed.ids))
+                    // The arg ids ride verbatim in the flipped payload; the
+                    // ctor node itself is a leaf (its children ARE the id
+                    // fields, so the arena records no edges).
+                    result = Expr.EnumCtor(type_name, field, parsed.ids)
+                    rid = self.alloc_leaf(result)
                 } else {
                     result = Expr.FieldAccess(rid, field)
                     rid = self.alloc_leaf(result)
@@ -1646,10 +1646,10 @@ impl Parser {
                     if !self.consume(Tk.RightParen, "expected `)` after variant args") {
                         return .Err("parse error")
                     }
-                    let ctor = Expr.EnumCtor("", variant, parsed.wrapped)
-                    return .Ok(self.alloc_expr(ctor, byte_span_none(), self.edges_of_ids(parsed.ids)))
+                    let ctor = Expr.EnumCtor("", variant, parsed.ids)
+                    return .Ok(self.alloc_leaf(ctor))
                 }
-                let empty: List<SExpr> = []
+                let empty: List<ExprId> = []
                 return .Ok(self.alloc_leaf(Expr.EnumCtor("", variant, empty)))
             }
         }

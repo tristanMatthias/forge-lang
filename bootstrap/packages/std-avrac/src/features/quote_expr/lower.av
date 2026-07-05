@@ -140,7 +140,7 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .StructLit(_, inits) -> any_quote_in_field_inits(store, inits)
         .FieldAccess(obj, _) -> any_quote_in_expr(store, store.exprs.get(obj))
         .FieldAssign(obj, _, v) -> any_quote_in_expr(store, store.exprs.get(obj)) || any_quote_in_expr(store, store.exprs.get(v))
-        .EnumCtor(_, _, args) -> any_quote_in_expr_list(store, args)
+        .EnumCtor(_, _, args) -> any_quote_in_expr_id_list(store, args)
         .Index(obj, idx) -> any_quote_in_expr(store, store.exprs.get(obj)) || any_quote_in_expr(store, store.exprs.get(idx))
         .NullCoalesce(l, r) -> any_quote_in_expr(store, store.exprs.get(l)) || any_quote_in_expr(store, store.exprs.get(r))
         .OptionalChain(obj, _) -> any_quote_in_expr(store, store.exprs.get(obj))
@@ -287,7 +287,7 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .StructLit(name, inits) -> .StructLit(name, lower_field_inits(store, inits))
         .FieldAccess(obj, field) -> .FieldAccess(lower_expr_id(store, obj), field)
         .FieldAssign(obj, field, v) -> .FieldAssign(lower_expr_id(store, obj), field, lower_expr_id(store, v))
-        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, lower_expr_list(store, args))
+        .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, lower_expr_list_ids(store, args))
         .Index(obj, idx) -> .Index(lower_expr_id(store, obj), lower_expr_id(store, idx))
         .NullCoalesce(l, r) -> .NullCoalesce(lower_expr_id(store, l), lower_expr_id(store, r))
         .OptionalChain(obj, field) -> .OptionalChain(lower_expr_id(store, obj), field)
@@ -443,7 +443,7 @@ fn primitive_value_type(name: string) -> Expr {
 }
 
 fn value_type_ctor(variant: string) -> Expr {
-    let empty: List<SExpr> = []
+    let empty: List<ExprId> = []
     Expr.EnumCtor("@std::avrac::core::ValueType", variant, empty)
 }
 
@@ -506,49 +506,49 @@ fn unwrap_quote_body(store: NodeStore, body: Expr) -> Expr {
 /// case naturally.
 export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
     match e {
-        .Number(v) -> expr_ctor("Number", string_arg(v))
-        .String(v) -> expr_ctor("String", string_arg(v))
-        .Bool(v) -> expr_ctor("Bool", string_arg(v))
+        .Number(v) -> expr_ctor(store, "Number", string_arg(v))
+        .String(v) -> expr_ctor(store, "String", string_arg(v))
+        .Bool(v) -> expr_ctor(store, "Bool", string_arg(v))
         .None -> {
             let empty: List<SExpr> = []
-            expr_ctor("None", empty)
+            expr_ctor(store, "None", empty)
         }
-        .Ident(name) -> expr_ctor("Ident", string_arg(name))
-        .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
-        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(store, string_lit_expr(name)), construct_expr_id(store, value)))
-        .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr_id(store, l), construct_binop(store, op), construct_expr_id(store, r)))
-        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(store, op), construct_expr_id(store, r)))
-        .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr_id(store, l), construct_logicop(store, op), construct_expr_id(store, r)))
-        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr_id(store, inner)))
-        .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr_id(store, callee), construct_expr_ids(store, store.sexprs_of(args))))
-        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
-        .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr_id(store, obj), construct_expr_id(store, idx)))
-        .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr_id(store, c), construct_expr_id(store, t), construct_expr_id(store, el)))
-        .Tuple(elements) -> expr_ctor("Tuple", one_arg(construct_expr_list(store, elements)))
-        .ListLit(elements) -> expr_ctor("ListLit", one_arg(construct_expr_list(store, elements)))
-        .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr_id(store, l), construct_expr_id(store, r)))
-        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
-        .OptionalMethodCall(obj, method, args) -> expr_ctor("OptionalMethodCall", three_args(construct_expr_id(store, obj), string_lit_expr(method), construct_expr_ids(store, store.sexprs_of(args))))
-        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr_id(store, inner)))
-        .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
-        .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(store, name), construct_field_init_list(store, inits)))
-        .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(store, args)))
-        .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(store, entries)))
-        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr_id(store, subj), string_lit_expr(vname)))
-        .InCheck(needle, items) -> expr_ctor("InCheck", two_args(construct_expr_id(store, needle), construct_expr_ids(store, store.sexprs_of(items))))
-        .Slice(obj, start, end) -> expr_ctor("Slice", three_args(construct_expr_id(store, obj), construct_expr_id(store, start), construct_expr_id(store, end)))
-        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr_id(store, obj), Expr.Number(string(idx))))
-        .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(store, obj), construct_field_init_list(store, overrides)))
-        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr_id(store, obj), string_lit_expr(field), construct_expr_id(store, value)))
-        .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(store, params), construct_expr(store, body)))
-        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr_id(store, body)))
-        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr_id(store, body)))
-        .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(store, body)))
+        .Ident(name) -> expr_ctor(store, "Ident", string_arg(name))
+        .QualifiedIdent(path) -> expr_ctor(store, "QualifiedIdent", string_arg(path))
+        .Assign(name, value) -> expr_ctor(store, "Assign", two_args(sexpr_dummy_call(store, string_lit_expr(name)), construct_expr_id(store, value)))
+        .Binary(l, op, r) -> expr_ctor(store, "Binary", three_args(construct_expr_id(store, l), construct_binop(store, op), construct_expr_id(store, r)))
+        .Unary(op, r) -> expr_ctor(store, "Unary", two_args(construct_unop(store, op), construct_expr_id(store, r)))
+        .Logical(l, op, r) -> expr_ctor(store, "Logical", three_args(construct_expr_id(store, l), construct_logicop(store, op), construct_expr_id(store, r)))
+        .Grouping(inner) -> expr_ctor(store, "Grouping", one_arg(construct_expr_id(store, inner)))
+        .Call(callee, args) -> expr_ctor(store, "Call", two_args(construct_expr_id(store, callee), construct_expr_ids(store, store.sexprs_of(args))))
+        .FieldAccess(obj, field) -> expr_ctor(store, "FieldAccess", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
+        .Index(obj, idx) -> expr_ctor(store, "Index", two_args(construct_expr_id(store, obj), construct_expr_id(store, idx)))
+        .IfExpr(c, t, el) -> expr_ctor(store, "IfExpr", three_args(construct_expr_id(store, c), construct_expr_id(store, t), construct_expr_id(store, el)))
+        .Tuple(elements) -> expr_ctor(store, "Tuple", one_arg(construct_expr_list(store, elements)))
+        .ListLit(elements) -> expr_ctor(store, "ListLit", one_arg(construct_expr_list(store, elements)))
+        .NullCoalesce(l, r) -> expr_ctor(store, "NullCoalesce", two_args(construct_expr_id(store, l), construct_expr_id(store, r)))
+        .OptionalChain(obj, field) -> expr_ctor(store, "OptionalChain", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
+        .OptionalMethodCall(obj, method, args) -> expr_ctor(store, "OptionalMethodCall", three_args(construct_expr_id(store, obj), string_lit_expr(method), construct_expr_ids(store, store.sexprs_of(args))))
+        .Try(inner) -> expr_ctor(store, "Try", one_arg(construct_expr_id(store, inner)))
+        .FloatLit(v) -> expr_ctor(store, "FloatLit", string_arg(v))
+        .StructLit(name, inits) -> expr_ctor(store, "StructLit", two_args(name_or_splice(store, name), construct_field_init_list(store, inits)))
+        .EnumCtor(type_name, variant, args) -> expr_ctor(store, "EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_ids(store, store.sexprs_of(args))))
+        .MapLit(entries) -> expr_ctor(store, "MapLit", one_arg(construct_expr_list(store, entries)))
+        .IsCheck(subj, vname) -> expr_ctor(store, "IsCheck", two_args(construct_expr_id(store, subj), string_lit_expr(vname)))
+        .InCheck(needle, items) -> expr_ctor(store, "InCheck", two_args(construct_expr_id(store, needle), construct_expr_ids(store, store.sexprs_of(items))))
+        .Slice(obj, start, end) -> expr_ctor(store, "Slice", three_args(construct_expr_id(store, obj), construct_expr_id(store, start), construct_expr_id(store, end)))
+        .TupleIndex(obj, idx) -> expr_ctor(store, "TupleIndex", two_args(construct_expr_id(store, obj), Expr.Number(string(idx))))
+        .With(obj, overrides) -> expr_ctor(store, "With", two_args(construct_expr(store, obj), construct_field_init_list(store, overrides)))
+        .FieldAssign(obj, field, value) -> expr_ctor(store, "FieldAssign", three_args(construct_expr_id(store, obj), string_lit_expr(field), construct_expr_id(store, value)))
+        .Lambda(params, body) -> expr_ctor(store, "Lambda", two_args(construct_param_list(store, params), construct_expr(store, body)))
+        .Spawn(body) -> expr_ctor(store, "Spawn", one_arg(construct_expr_id(store, body)))
+        .Isolated(body) -> expr_ctor(store, "Isolated", one_arg(construct_expr_id(store, body)))
+        .Block(body) -> expr_ctor(store, "Block", one_arg(construct_stmt_list(store, body)))
         // MatchExpr inside a quote — subject + arms become a runtime
         // `Expr.MatchExpr` value. The arm list goes through
         // `construct_match_arm_list` which expands `~arms` sentinels
         // into `list_concat` calls.
-        .MatchExpr(subject, arms) -> expr_ctor("MatchExpr",
+        .MatchExpr(subject, arms) -> expr_ctor(store, "MatchExpr",
             two_args(construct_expr(store, subject), construct_match_arm_list(store, arms)))
         // Splice (~target) — the target evaluates at expansion time
         // to a runtime AST value of the right shape, so we emit it
@@ -572,8 +572,8 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
 /// — the canonical type name appears 25+ times in construct_expr, so
 /// extracting it removes a thick band of visual noise and centralizes
 /// the path constant.
-fn expr_ctor(variant: string, args: List<SExpr>) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::Expr", variant, args)
+fn expr_ctor(store: NodeStore, variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Expr", variant, store.ingest_sexpr_recipe(args))
 }
 
 /// Build an Expr that, when evaluated, produces a `List<ParamEntry>`
@@ -630,56 +630,56 @@ fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k
 /// by quote_expr's pattern-position splices.
 fn construct_pattern(store: NodeStore, p: Pattern) -> Expr {
     match p {
-        .Wildcard -> pattern_ctor("Wildcard", [])
+        .Wildcard -> pattern_ctor(store, "Wildcard", [])
         .Variant(name, bindings) -> {
             let args: List<SExpr> = [
                 sexpr_dummy(string_lit_expr(name)),
                 sexpr_dummy(construct_param_list(store, bindings)),
             ]
-            pattern_ctor("Variant", args)
+            pattern_ctor(store, "Variant", args)
         }
         .LitString(value) -> {
             let args: List<SExpr> = [sexpr_dummy(string_lit_expr(value))]
-            pattern_ctor("LitString", args)
+            pattern_ctor(store, "LitString", args)
         }
         .LitInt(value) -> {
             let args: List<SExpr> = [sexpr_dummy(Expr.Number(string(value)))]
-            pattern_ctor("LitInt", args)
+            pattern_ctor(store, "LitInt", args)
         }
         .LitBool(value) -> {
             let args: List<SExpr> = [sexpr_dummy(Expr.Number(string(value)))]
-            pattern_ctor("LitBool", args)
+            pattern_ctor(store, "LitBool", args)
         }
         .LitFloat(value) -> {
             let args: List<SExpr> = [sexpr_dummy(string_lit_expr(value))]
-            pattern_ctor("LitFloat", args)
+            pattern_ctor(store, "LitFloat", args)
         }
         .NestedVariant(name, sub_patterns) -> {
             let args: List<SExpr> = [
                 sexpr_dummy(string_lit_expr(name)),
                 sexpr_dummy(construct_pattern_list(store, sub_patterns)),
             ]
-            pattern_ctor("NestedVariant", args)
+            pattern_ctor(store, "NestedVariant", args)
         }
         .Or(left, right) -> {
             let args: List<SExpr> = [
                 sexpr_dummy(construct_pattern(store, store.pats.get(left))),
                 sexpr_dummy(construct_pattern(store, store.pats.get(right))),
             ]
-            pattern_ctor("Or", args)
+            pattern_ctor(store, "Or", args)
         }
         .TypePattern(type_name, binding) -> {
             let args: List<SExpr> = [
                 sexpr_dummy(string_lit_expr(type_name)),
                 sexpr_dummy(string_lit_expr(binding)),
             ]
-            pattern_ctor("TypePattern", args)
+            pattern_ctor(store, "TypePattern", args)
         }
     }
 }
 
-fn pattern_ctor(variant: string, args: List<SExpr>) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::Pattern", variant, args)
+fn pattern_ctor(store: NodeStore, variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Pattern", variant, store.ingest_sexpr_recipe(args))
 }
 
 fn construct_pattern_list(store: NodeStore, patterns: List<PatId>) -> Expr {
@@ -901,7 +901,7 @@ fn construct_param_vtype(store: NodeStore, vt: ValueType) -> Expr {
     match vt {
         .Struct(name, type_args, id) -> {
             if is_splice_name(name) {
-                value_type_ctor_args("Struct",
+                value_type_ctor_args(store, "Struct",
                     three_args(name_or_splice(store, name),
                                construct_value_type_list(store, type_args),
                                int_lit_expr(id)))
@@ -914,7 +914,7 @@ fn construct_param_vtype(store: NodeStore, vt: ValueType) -> Expr {
 }
 
 fn construct_value_type_unknown() -> Expr {
-    let empty: List<SExpr> = []
+    let empty: List<ExprId> = []
     Expr.EnumCtor("@std::avrac::core::ValueType", "Unknown", empty)
 }
 
@@ -945,54 +945,54 @@ fn construct_value_type(store: NodeStore, vt: ValueType) -> Expr {
         .Bytes   -> value_type_ctor("Bytes")
         .Void    -> value_type_ctor("Void")
         .Ptr     -> value_type_ctor("Ptr")
-        .Map(key, value) -> value_type_ctor_args("Map",
+        .Map(key, value) -> value_type_ctor_args(store, "Map",
             two_args(construct_value_type(store, key),
                      construct_value_type(store, value)))
         .Unknown -> value_type_ctor("Unknown")
-        .Struct(name, type_args, id) -> value_type_ctor_args("Struct",
+        .Struct(name, type_args, id) -> value_type_ctor_args(store, "Struct",
             three_args(name_or_splice(store, name),
                        construct_value_type_list(store, type_args),
                        int_lit_expr(id)))
-        .Enum(name, type_args, id) -> value_type_ctor_args("Enum",
+        .Enum(name, type_args, id) -> value_type_ctor_args(store, "Enum",
             three_args(string_lit_expr(name),
                        construct_value_type_list(store, type_args),
                        int_lit_expr(id)))
-        .Tuple(elements) -> value_type_ctor_args("Tuple",
+        .Tuple(elements) -> value_type_ctor_args(store, "Tuple",
             one_arg(construct_value_type_list(store, elements)))
-        .List(elem) -> value_type_ctor_args("List",
+        .List(elem) -> value_type_ctor_args(store, "List",
             one_arg(construct_value_type(store, elem)))
-        .Fn(ret) -> value_type_ctor_args("Fn",
+        .Fn(ret) -> value_type_ctor_args(store, "Fn",
             one_arg(construct_value_type(store, ret)))
-        .Closure(num_captures, ret) -> value_type_ctor_args("Closure",
+        .Closure(num_captures, ret) -> value_type_ctor_args(store, "Closure",
             two_args(int_lit_expr(num_captures), construct_value_type(store, ret)))
-        .FnTyped(params, ret) -> value_type_ctor_args("FnTyped",
+        .FnTyped(params, ret) -> value_type_ctor_args(store, "FnTyped",
             two_args(construct_value_type_list(store, params),
                      construct_value_type(store, ret)))
-        .Trait(name, id) -> value_type_ctor_args("Trait",
+        .Trait(name, id) -> value_type_ctor_args(store, "Trait",
             two_args(string_lit_expr(name), int_lit_expr(id)))
-        .Union(types) -> value_type_ctor_args("Union",
+        .Union(types) -> value_type_ctor_args(store, "Union",
             one_arg(construct_value_type_list(store, types)))
-        .Newtype(name, inner, id) -> value_type_ctor_args("Newtype",
+        .Newtype(name, inner, id) -> value_type_ctor_args(store, "Newtype",
             three_args(string_lit_expr(name),
                        construct_value_type(store, inner),
                        int_lit_expr(id)))
-        .NarrowedEnum(enum_name, variant_name, id) -> value_type_ctor_args("NarrowedEnum",
+        .NarrowedEnum(enum_name, variant_name, id) -> value_type_ctor_args(store, "NarrowedEnum",
             three_args(string_lit_expr(enum_name),
                        string_lit_expr(variant_name),
                        int_lit_expr(id)))
-        .Task(result_ty) -> value_type_ctor_args("Task",
+        .Task(result_ty) -> value_type_ctor_args(store, "Task",
             one_arg(construct_value_type(store, result_ty)))
-        .Channel(elem) -> value_type_ctor_args("Channel",
+        .Channel(elem) -> value_type_ctor_args(store, "Channel",
             one_arg(construct_value_type(store, elem)))
-        .Optional(inner) -> value_type_ctor_args("Optional",
+        .Optional(inner) -> value_type_ctor_args(store, "Optional",
             one_arg(construct_value_type(store, inner)))
     }
 }
 
 /// Variant with payload args. Sister to value_type_ctor for the
 /// payload-bearing arms above.
-fn value_type_ctor_args(variant: string, args: List<SExpr>) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::ValueType", variant, args)
+fn value_type_ctor_args(store: NodeStore, variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::ValueType", variant, store.ingest_sexpr_recipe(args))
 }
 
 /// Build an Expr that produces a `List<ValueType>` Value at runtime.
@@ -1272,61 +1272,61 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
         // types: List vs List". The encoder now handles ValueType
         // construction generically; non-typed quote callers pass
         // ValueType.Unknown which encodes as the same Unknown ctor.
-        .Let(name, vt, init) -> stmt_ctor("Let", three_args(string_lit_expr(name), construct_value_type(store, vt), construct_expr_id(store, init)))
-        .Mut(name, vt, init) -> stmt_ctor("Mut", three_args(string_lit_expr(name), construct_value_type(store, vt), construct_expr_id(store, init)))
-        .Const(name, vt, init) -> stmt_ctor("Const", three_args(string_lit_expr(name), construct_value_type(store, vt), construct_expr_id(store, init)))
-        .Expr(e) -> stmt_ctor("Expr", one_arg(construct_expr_id(store, e)))
-        .Block(body) -> stmt_ctor("Block", one_arg(construct_stmt_ids(store, body)))
-        .Return(e) -> stmt_ctor("Return", one_arg(construct_expr_id(store, e)))
+        .Let(name, vt, init) -> stmt_ctor(store, "Let", three_args(string_lit_expr(name), construct_value_type(store, vt), construct_expr_id(store, init)))
+        .Mut(name, vt, init) -> stmt_ctor(store, "Mut", three_args(string_lit_expr(name), construct_value_type(store, vt), construct_expr_id(store, init)))
+        .Const(name, vt, init) -> stmt_ctor(store, "Const", three_args(string_lit_expr(name), construct_value_type(store, vt), construct_expr_id(store, init)))
+        .Expr(e) -> stmt_ctor(store, "Expr", one_arg(construct_expr_id(store, e)))
+        .Block(body) -> stmt_ctor(store, "Block", one_arg(construct_stmt_ids(store, body)))
+        .Return(e) -> stmt_ctor(store, "Return", one_arg(construct_expr_id(store, e)))
         .ReturnEmpty -> {
             let empty: List<SExpr> = []
-            stmt_ctor("ReturnEmpty", empty)
+            stmt_ctor(store, "ReturnEmpty", empty)
         }
         .NoOp -> {
             let empty: List<SExpr> = []
-            stmt_ctor("NoOp", empty)
+            stmt_ctor(store, "NoOp", empty)
         }
         .Break -> {
             let empty: List<SExpr> = []
-            stmt_ctor("Break", empty)
+            stmt_ctor(store, "Break", empty)
         }
         .Continue -> {
             let empty: List<SExpr> = []
-            stmt_ctor("Continue", empty)
+            stmt_ctor(store, "Continue", empty)
         }
-        .Defer(body) -> stmt_ctor("Defer", one_arg(construct_expr_id(store, body)))
-        .Errdefer(body) -> stmt_ctor("Errdefer", one_arg(construct_expr_id(store, body)))
-        .While(cond, body) -> stmt_ctor("While", two_args(construct_expr_id(store, cond), construct_stmt_id(store, body)))
-        .For(v, start, end, body) -> stmt_ctor("For", four_args(string_lit_expr(v), construct_expr_id(store, start), construct_expr_id(store, end), construct_stmt_id(store, body)))
-        .ForIn(v, coll, body) -> stmt_ctor("ForIn", three_args(string_lit_expr(v), construct_expr_id(store, coll), construct_stmt_id(store, body)))
+        .Defer(body) -> stmt_ctor(store, "Defer", one_arg(construct_expr_id(store, body)))
+        .Errdefer(body) -> stmt_ctor(store, "Errdefer", one_arg(construct_expr_id(store, body)))
+        .While(cond, body) -> stmt_ctor(store, "While", two_args(construct_expr_id(store, cond), construct_stmt_id(store, body)))
+        .For(v, start, end, body) -> stmt_ctor(store, "For", four_args(string_lit_expr(v), construct_expr_id(store, start), construct_expr_id(store, end), construct_stmt_id(store, body)))
+        .ForIn(v, coll, body) -> stmt_ctor(store, "ForIn", three_args(string_lit_expr(v), construct_expr_id(store, coll), construct_stmt_id(store, body)))
         // If has a nullable else_branch — encode null as Expr.None at
         // the AST level so the constructed runtime gets back the
         // null-discriminant.
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                stmt_ctor("If", three_args(construct_expr_id(store, cond), construct_stmt_id(store, then_b), construct_stmt_id(store, else_b!)))
+                stmt_ctor(store, "If", three_args(construct_expr_id(store, cond), construct_stmt_id(store, then_b), construct_stmt_id(store, else_b!)))
             } else {
-                stmt_ctor("If", three_args(construct_expr_id(store, cond), construct_stmt_id(store, then_b), Expr.None))
+                stmt_ctor(store, "If", three_args(construct_expr_id(store, cond), construct_stmt_id(store, then_b), Expr.None))
             }
         }
-        .Impl(type_name, methods) -> stmt_ctor("Impl", two_args(name_or_splice(store, type_name), construct_stmt_ids(store, methods)))
-        .TraitDecl(name, methods) -> stmt_ctor("TraitDecl", two_args(string_lit_expr(name), construct_stmt_ids(store, methods)))
-        .Parallel(body) -> stmt_ctor("Parallel", one_arg(construct_stmt_ids(store, body)))
-        .Function(name, tp, params, rvt, body) -> stmt_ctor("Function",
+        .Impl(type_name, methods) -> stmt_ctor(store, "Impl", two_args(name_or_splice(store, type_name), construct_stmt_ids(store, methods)))
+        .TraitDecl(name, methods) -> stmt_ctor(store, "TraitDecl", two_args(string_lit_expr(name), construct_stmt_ids(store, methods)))
+        .Parallel(body) -> stmt_ctor(store, "Parallel", one_arg(construct_stmt_ids(store, body)))
+        .Function(name, tp, params, rvt, body) -> stmt_ctor(store, "Function",
             five_args(name_or_splice(store, name),
                       construct_type_param_list(tp),
                       construct_param_list(store, params),
                       construct_value_type(store, rvt),
                       construct_stmt_ids(store, body)))
-        .TypeDecl(name, tp, fields) -> stmt_ctor("TypeDecl",
+        .TypeDecl(name, tp, fields) -> stmt_ctor(store, "TypeDecl",
             three_args(name_or_splice(store, name),
                        construct_type_param_list(tp),
                        construct_field_list(store, fields)))
-        .EnumDecl(name, tp, variants) -> stmt_ctor("EnumDecl",
+        .EnumDecl(name, tp, variants) -> stmt_ctor(store, "EnumDecl",
             three_args(name_or_splice(store, name),
                        construct_type_param_list(tp),
                        construct_variant_list(store, variants)))
-        .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor("ComponentBlock",
+        .ComponentBlock(comp_name, instance, config, body) -> stmt_ctor(store, "ComponentBlock",
             four_args(string_lit_expr(comp_name),
                       string_lit_expr(instance),
                       construct_comp_config_pair_list(store, config),
@@ -1335,9 +1335,9 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
         // carries an @expand annotation needs the Annotated layer to
         // roundtrip through quote construction so the outer expand
         // pass sees the new @expand site on the next fixpoint iter.
-        .Annotated(annots, inner) -> stmt_ctor("Annotated",
+        .Annotated(annots, inner) -> stmt_ctor(store, "Annotated",
             two_args(construct_annotation_list(store, annots), construct_stmt_id(store, inner)))
-        _ -> stmt_passthrough(stmt)
+        _ -> stmt_passthrough(store, stmt)
     }
 }
 
@@ -1346,14 +1346,14 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
 /// AST level — at runtime the user gets a NoOp instead of a crash, and
 /// the missing variant becomes a feature request rather than a silent
 /// corruption. Filed as vez6.3.10 (`quote decl`) for completion.
-fn stmt_passthrough(stmt: Stmt) -> Expr {
+fn stmt_passthrough(store: NodeStore, stmt: Stmt) -> Expr {
     let empty: List<SExpr> = []
-    stmt_ctor("NoOp", empty)
+    stmt_ctor(store, "NoOp", empty)
 }
 
 /// Sister to expr_ctor for Stmt.
-fn stmt_ctor(variant: string, args: List<SExpr>) -> Expr {
-    Expr.EnumCtor("@std::avrac::core::Stmt", variant, args)
+fn stmt_ctor(store: NodeStore, variant: string, args: List<SExpr>) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Stmt", variant, store.ingest_sexpr_recipe(args))
 }
 
 fn four_args(a: Expr, b: Expr, c: Expr, d: Expr) -> List<SExpr> {
@@ -1365,15 +1365,15 @@ fn five_args(a: Expr, b: Expr, c: Expr, d: Expr, e: Expr) -> List<SExpr> {
 }
 
 fn construct_binop(store: NodeStore, op: BinOp) -> Expr {
-    let empty: List<SExpr> = []
+    let empty: List<ExprId> = []
     Expr.EnumCtor("@std::avrac::core::BinOp", op_variant_name_bin(op), empty)
 }
 fn construct_unop(store: NodeStore, op: UnOp) -> Expr {
-    let empty: List<SExpr> = []
+    let empty: List<ExprId> = []
     Expr.EnumCtor("@std::avrac::core::UnOp", op_variant_name_un(op), empty)
 }
 fn construct_logicop(store: NodeStore, op: LogicOp) -> Expr {
-    let empty: List<SExpr> = []
+    let empty: List<ExprId> = []
     Expr.EnumCtor("@std::avrac::core::LogicOp", op_variant_name_logic(op), empty)
 }
 
@@ -1412,10 +1412,6 @@ fn op_variant_name_logic(op: LogicOp) -> string {
 }
 
 // ── Constructor-call helpers ──
-
-fn ctor(type_name: string, variant: string, args: List<SExpr>) -> Expr {
-    Expr.EnumCtor(type_name, variant, args)
-}
 
 /// One-element `List<SExpr>` wrapping `string_lit_expr(s)` — the
 /// string-arg form for ctor() invocations. Both ident-like inputs

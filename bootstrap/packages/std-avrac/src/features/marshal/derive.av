@@ -703,7 +703,7 @@ fn build_enum_dispatch(store: NodeStore, type_name: string, variants: List<Varia
     while i < n {
         let v = variants[i]
         let read_payload_stmts = build_reads(store, v.fields)
-        let ctor = build_enum_ctor(type_name, v.name, v.fields)
+        let ctor = build_enum_ctor(store, type_name, v.name, v.fields)
         let ret_stmt = Stmt.Return(store.exprs.add_leaf(ctor))
         let ret_tail: List<StmtId> = [store.stmts.add_leaf(ret_stmt)]
         let block_body = append_ids(read_payload_stmts, ret_tail)
@@ -733,8 +733,8 @@ fn build_enum_dispatch(store: NodeStore, type_name: string, variants: List<Varia
 // build_reads (struct & enum-variant payload share the same read
 // shape since match-arm bindings produce the same locals).
 
-fn build_enum_ctor(type_name: string, variant: string, payload: List<FieldEntry>) -> Expr {
-    Expr.EnumCtor(type_name, variant, field_list_to_arg_list(payload))
+fn build_enum_ctor(store: NodeStore, type_name: string, variant: string, payload: List<FieldEntry>) -> Expr {
+    Expr.EnumCtor(type_name, variant, args_to_ids(store, field_list_to_arg_list(payload)))
 }
 
 fn field_list_to_arg_list(payload: List<FieldEntry>) -> List<SExpr> {
@@ -791,12 +791,12 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + type_name),
         [sexpr_dummy(Expr.Ident("b"))])
     let ok_body = Expr.EnumCtor("Result", "Ok",
-        [sexpr_dummy(from_bytes_call)])
+        args_to_ids(store, [sexpr_dummy(from_bytes_call)]))
     let ok_bindings: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Unknown }]
     let ok_pattern = Pattern.Variant("Ok", ok_bindings)
     // Err arm: Result.Err(e) — pass-through
     let err_body = Expr.EnumCtor("Result", "Err",
-        [sexpr_dummy(Expr.Ident("e"))])
+        args_to_ids(store, [sexpr_dummy(Expr.Ident("e"))]))
     let err_bindings: List<ParamEntry> = [ParamEntry { name: "e", vtype: ValueType.Unknown }]
     let err_pattern = Pattern.Variant("Err", err_bindings)
     mut arms: List<MatchArm> = []

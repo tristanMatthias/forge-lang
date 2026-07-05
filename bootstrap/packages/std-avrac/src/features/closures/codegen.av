@@ -209,7 +209,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, subj, params, env, captures)
             find_captures_arms(store, arms, params, env, captures)
         }
-        .EnumCtor(_, _, args) -> find_captures_list(store, args, params, env, captures)
+        .EnumCtor(_, _, args) -> find_captures_list(store, store.sexprs_of(args), params, env, captures)
         .StructLit(_, inits) -> find_captures_field_inits(store, inits, params, env, captures)
         .FieldAccess(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .FieldAssign(obj, _, val) -> {

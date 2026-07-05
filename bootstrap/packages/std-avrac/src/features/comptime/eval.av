@@ -137,7 +137,7 @@ fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
             } else {
                 let args_opt = payload_to_args(store, v.enum_payload, 0)
                 if args_opt == none { return none }
-                Expr.EnumCtor(v.enum_type, v.enum_variant, args_opt!)
+                Expr.EnumCtor(v.enum_type, v.enum_variant, store.ingest_sexpr_recipe(args_opt!))
             }
         }
         // fwyx: a list Value reconstructs as Expr.ListLit, mirroring

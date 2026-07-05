@@ -688,7 +688,7 @@ fn infer_lit_ty(regs: GenRegs, e: Expr) -> ValueType {
                 let empty: List<ValueType> = []
                 ValueType.Enum(tn, empty, 0)
             } else {
-                let ta = resolve_enum_type_args(ee!.tp, ee!.variants, variant, ctor_args)
+                let ta = resolve_enum_type_args(ee!.tp, ee!.variants, variant, regs.store.sexprs_of(ctor_args))
                 ValueType.Enum(tn, type_args_in_order(ee!.tp, ta), 0)
             }
         }
@@ -1380,8 +1380,10 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                 _ -> collect_inst_expr(regs.store.exprs.get(callee), regs, s)
             }
         }
-        .EnumCtor(tn, variant, args) ->
-            try_add_enum_inst(tn, variant, args, regs, collect_inst_exprs(args, regs, st))
+        .EnumCtor(tn, variant, args) -> {
+            let margs = regs.store.sexprs_of(args)
+            try_add_enum_inst(tn, variant, margs, regs, collect_inst_exprs(margs, regs, st))
+        }
         .StructLit(name, inits) ->
             try_add_struct_inst(name, inits, regs, collect_inst_field_inits(inits, regs, st))
         .FieldAccess(obj, variant_name) -> match regs.store.exprs.get(obj) {
@@ -2756,12 +2758,13 @@ fn mangle_enum_at_site(tn: string, variant: string, tp: List<TypeParamEntry>, va
 /// Rewrite an `EnumCtor(Tn, Variant, args)` site, replacing
 /// the type name with the mangled specialisation that matches
 /// the inferred type-args.
-fn rewrite_enum_ctor(tn: string, variant: string, args: List<SExpr>, regs: GenRegs, insts: List<Inst>) -> Expr {
-    let new_args = rewrite_expr_list(args, regs, insts)
+fn rewrite_enum_ctor(tn: string, variant: string, args: List<ExprId>, regs: GenRegs, insts: List<Inst>) -> Expr {
+    let new_args = rewrite_expr_list_ids(args, regs, insts)
+    let margs = regs.store.sexprs_of(args)
     let e = generic_enum_lookup(regs.enums, tn)
     if e == null { return Expr.EnumCtor(tn, variant, new_args) }
     let entry = e!
-    Expr.EnumCtor(mangle_enum_at_site(tn, variant, entry.tp, entry.variants, args, insts), variant, new_args)
+    Expr.EnumCtor(mangle_enum_at_site(tn, variant, entry.tp, entry.variants, margs, insts), variant, new_args)
 }
 
 /// Variant of `inst_mangled` that prefers the inst whose

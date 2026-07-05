@@ -1527,7 +1527,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         }
         .EnumCtor(type_name, variant, args) -> {
             let qt = if type_name != "" { resolve_type_in_ctx(ctx, type_name) } else { type_name }
-            Expr.EnumCtor(qt, variant, rewrite_expr_list(ctx, args))
+            Expr.EnumCtor(qt, variant, rewrite_expr_list_ids(ctx, args))
         }
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> {
@@ -1839,7 +1839,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         }
         .EnumCtor(tn, _, args) -> {
             acc.push(tn)
-            collect_used_paths_expr_list(store, args, acc)
+            collect_used_paths_expr_list_ids(store, args, acc)
         }
         .MatchExpr(subj, arms) -> collect_used_paths_match_arms(store, arms, collect_used_paths_expr(store, subj, acc))
         .Lambda(_, body) -> collect_used_paths_expr(store, body, acc)

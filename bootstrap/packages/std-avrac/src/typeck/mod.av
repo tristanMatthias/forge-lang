@@ -1629,7 +1629,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
         .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
-        .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
+        .EnumCtor(_, _, args) -> lint_scan_sexprs(store, store.sexprs_of(args), coll)
         .Block(body) -> lint_scan_sstmts(store, body, coll)
         .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
         .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_expr(store, store.exprs.get(value), coll))
@@ -2515,11 +2515,12 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // route through the same layout gate. (`exp` is the optional-stripped
         // expected, so `.Some(x)` into a declared enum still resolves.)
         .EnumCtor(tn, variant, args) if tn == "" -> {
-            let after = check_expr_list(tc, args)
+            let sargs = tc.nodes.sexprs_of(args)
+            let after = check_expr_list(tc, sargs)
             match exp {
                 .Enum(en, _, _) if en != "" -> {
-                    let gated = tc_check_enum_ctor_args(after, en, variant, args)
-                    let result_args = tc_infer_enum_ctor_type_args(gated, en, variant, args)
+                    let gated = tc_check_enum_ctor_args(after, en, variant, sargs)
+                    let result_args = tc_infer_enum_ctor_type_args(gated, en, variant, sargs)
                     let rty = ValueType.Enum(en, result_args, 0)
                     tc_er(check_assign_layout_no_int(gated, rty, exp, "expression"), rty)
                 }
@@ -2534,8 +2535,8 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // so it must fall through to the scalar rejection below — else
                     // `let x: int? = .W(Box{val:9})` smuggles a `Wrap` enum into the
                     // optional-stripped `int` cell.
-                    .Optional(inner) if args.length == 1 && variant_is_optional_present(variant) -> {
-                        let aty = tc_arg_concrete_ty(after, args[0])
+                    .Optional(inner) if sargs.length == 1 && variant_is_optional_present(variant) -> {
+                        let aty = tc_arg_concrete_ty(after, sargs[0])
                         tc_er(check_assign_layout_no_int(after, aty, inner, "expression"), expected)
                     }
                     // `.None` is the empty optional — valid for ANY `T?`, with no
@@ -2544,7 +2545,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // optional-stripped `int` cell reads as value-scalar). The
                     // payload-carrying `.Some` is the only OTHER ctor the optional
                     // accepts; everything else is a wild store and falls through.
-                    .Optional(_) if variant_is_optional_absent(variant) && args.length == 0 -> tc_er(after, expected)
+                    .Optional(_) if variant_is_optional_absent(variant) && sargs.length == 0 -> tc_er(after, expected)
                     _ -> {
                         // A subjectless ctor `.${variant}(…)` is an enum value —
                         // always the pointer-represented {tag,payload} — so into a
@@ -2673,12 +2674,13 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         // falling through to Unknown. Mirrors how StructLit is
         // handled by the struct_decl feature hook.
         .EnumCtor(tn, variant, args) -> {
-            let after_args = check_expr_list(tc, args)
+            let sargs = tc.nodes.sexprs_of(args)
+            let after_args = check_expr_list(tc, sargs)
             if tn == "" { return tc_er(after_args, .Unknown) }
-            let gated = tc_check_enum_ctor_args(after_args, tn, variant, args)
+            let gated = tc_check_enum_ctor_args(after_args, tn, variant, sargs)
             // enwi: carry the type-args inferred from the payload (Wrap<int>, not
             // Wrap<?>) so a mismatched binding annotation is caught downstream.
-            let result_args = tc_infer_enum_ctor_type_args(gated, tn, variant, args)
+            let result_args = tc_infer_enum_ctor_type_args(gated, tn, variant, sargs)
             tc_er(gated, ValueType.Enum(tn, result_args, 0))
         }
         // Parens-less `EnumType.Variant` parses as
@@ -4185,7 +4187,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
     match expr {
         .Call(callee, args) -> annotate_call(tc, callee, args)
         .GenericCall(callee, ta, args) -> .GenericCall(tc.nodes.reexpr(annotate_expr(tc, tc.nodes.exprs.get(callee)), callee), ta, annotate_expr_list_ids(tc, args))
-        .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list(tc, args))
+        .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list_ids(tc, args))
         .StructLit(name, inits) -> .StructLit(name, annotate_field_inits(tc, inits))
         .MatchExpr(subj, arms) -> .MatchExpr(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
         .ListLit(elems) -> .ListLit(annotate_expr_list(tc, elems))
