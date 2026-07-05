@@ -578,9 +578,9 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .ListLit(elems) -> .ListLit(desugar_expr_list_ids(store, elems, sigs))
         .MapLit(entries) -> .MapLit(desugar_expr_list_ids(store, entries, sigs))
         .Slice(obj, s, e) -> .Slice(desugar_expr_id(store, obj, sigs), desugar_expr_id(store, s, sigs), desugar_expr_id(store, e, sigs))
-        .With(obj, overrides) -> .With(desugar_expr(store, obj, sigs), desugar_field_inits(store, overrides, sigs))
-        .Lambda(params, body) -> .Lambda(params, desugar_expr(store, body, sigs))
-        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))
+        .With(obj, overrides) -> .With(desugar_expr_id(store, obj, sigs), desugar_field_inits(store, overrides, sigs))
+        .Lambda(params, body) -> .Lambda(params, desugar_expr_id(store, body, sigs))
+        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr_id(store, subj, sigs), desugar_match_arms(store, arms, sigs))
         .When(arms) -> .When(desugar_when_arms(store, arms, sigs))
         .InCheck(needle, items) -> .InCheck(desugar_expr_id(store, needle, sigs), desugar_expr_list_ids(store, items, sigs))
         .IsCheck(subj, variant) -> .IsCheck(desugar_expr_id(store, subj, sigs), variant)
@@ -589,8 +589,8 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
             // comprehension (assert, dbg, min, max, …) still gets
             // desugared. Without this, `[assert(x > 0) for x in xs]`
             // would leave the assert call intact.
-            let new_filter = if filter != null { desugar_expr(store, filter!, sigs) } else { null }
-            .ListComp(desugar_expr(store, body, sigs), var, desugar_expr(store, coll, sigs), new_filter)
+            let new_filter = if filter != null { desugar_expr_id(store, filter!, sigs) } else { null }
+            .ListComp(desugar_expr_id(store, body, sigs), var, desugar_expr_id(store, coll, sigs), new_filter)
         }
         // Forms that hold sub-expressions and were silently dropped
         // by the old `_ -> expr` fallthrough. Same root cause as the
@@ -600,10 +600,10 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .StructLit(name, inits) -> .StructLit(name, desugar_field_inits(store, inits, sigs))
         .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list_ids(store, args, sigs))
         .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr_id(store, callee, sigs), type_args, desugar_expr_list_ids(store, args, sigs))
-        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(store, inner, sigs), binding, desugar_expr(store, body, sigs), l, c)
+        .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr_id(store, inner, sigs), binding, desugar_expr_id(store, body, sigs), l, c)
         .Spawn(body) -> .Spawn(desugar_expr_id(store, body, sigs))
         .Isolated(body) -> .Isolated(desugar_expr_id(store, body, sigs))
-        .Quote(kind, body) -> .Quote(kind, desugar_expr(store, body, sigs))
+        .Quote(kind, body) -> .Quote(kind, desugar_expr_id(store, body, sigs))
         .Splice(target) -> .Splice(desugar_expr_id(store, target, sigs))
         _ -> expr
     }

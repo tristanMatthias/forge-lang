@@ -148,16 +148,16 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .Try(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
         .Tuple(elems) -> any_quote_in_expr_id_list(store, elems)
         .TupleIndex(obj, _) -> any_quote_in_expr(store, store.exprs.get(obj))
-        .With(obj, overrides) -> any_quote_in_expr(store, obj) || any_quote_in_field_inits(store, overrides)
+        .With(obj, overrides) -> any_quote_in_expr(store, store.exprs.get(obj)) || any_quote_in_field_inits(store, overrides)
         .ListLit(elems) -> any_quote_in_expr_id_list(store, elems)
-        .Lambda(_, body) -> any_quote_in_expr(store, body)
+        .Lambda(_, body) -> any_quote_in_expr(store, store.exprs.get(body))
         .MapLit(entries) -> any_quote_in_expr_id_list(store, entries)
         .Slice(obj, s, e) -> any_quote_in_expr(store, store.exprs.get(obj)) || any_quote_in_expr(store, store.exprs.get(s)) || any_quote_in_expr(store, store.exprs.get(e))
         .IsCheck(subj, _) -> any_quote_in_expr(store, store.exprs.get(subj))
         .InCheck(needle, items) -> any_quote_in_expr(store, store.exprs.get(needle)) || any_quote_in_expr_id_list(store, items)
         .Spawn(body) -> any_quote_in_expr(store, store.exprs.get(body))
         .Isolated(body) -> any_quote_in_expr(store, store.exprs.get(body))
-        .MatchExpr(subj, arms) -> any_quote_in_expr(store, subj) || any_quote_in_match_arms(store, arms)
+        .MatchExpr(subj, arms) -> any_quote_in_expr(store, store.exprs.get(subj)) || any_quote_in_match_arms(store, arms)
         _ -> false
     }
 }
@@ -274,7 +274,7 @@ fn lower_stmt(store: NodeStore, stmt: Stmt) -> Stmt {
 /// Ident/QualifiedIdent/FloatLit) hit the catch-all and pass through.
 fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
     match expr {
-        .Quote(kind, body) -> dispatch_quote_kind(store, kind, body)
+        .Quote(kind, body) -> dispatch_quote_kind(store, kind, store.exprs.get(body))
         .Binary(l, op, r) -> .Binary(lower_expr_id(store, l), op, lower_expr_id(store, r))
         .Unary(op, r) -> .Unary(op, lower_expr_id(store, r))
         .Logical(l, op, r) -> .Logical(lower_expr_id(store, l), op, lower_expr_id(store, r))
@@ -295,16 +295,16 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .Try(inner) -> .Try(lower_expr_id(store, inner))
         .Tuple(elems) -> .Tuple(lower_expr_list_ids(store, elems))
         .TupleIndex(obj, idx) -> .TupleIndex(lower_expr_id(store, obj), idx)
-        .With(obj, overrides) -> .With(lower_expr(store, obj), lower_field_inits(store, overrides))
+        .With(obj, overrides) -> .With(lower_expr_id(store, obj), lower_field_inits(store, overrides))
         .ListLit(elems) -> .ListLit(lower_expr_list_ids(store, elems))
-        .Lambda(params, body) -> .Lambda(params, lower_expr(store, body))
+        .Lambda(params, body) -> .Lambda(params, lower_expr_id(store, body))
         .MapLit(entries) -> .MapLit(lower_expr_list_ids(store, entries))
         .Slice(obj, s, e) -> .Slice(lower_expr_id(store, obj), lower_expr_id(store, s), lower_expr_id(store, e))
         .IsCheck(subj, vname) -> .IsCheck(lower_expr_id(store, subj), vname)
         .InCheck(needle, items) -> .InCheck(lower_expr_id(store, needle), lower_expr_list_ids(store, items))
         .Spawn(body) -> .Spawn(lower_expr_id(store, body))
         .Isolated(body) -> .Isolated(lower_expr_id(store, body))
-        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(store, subj), lower_match_arms(store, arms))
+        .MatchExpr(subj, arms) -> .MatchExpr(lower_expr_id(store, subj), lower_match_arms(store, arms))
         .Splice(target) -> .Splice(lower_expr_id(store, target))
         _ -> expr
     }
@@ -538,9 +538,9 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         .InCheck(needle, items) -> expr_ctor(store, "InCheck", two_args(construct_expr_id(store, needle), construct_expr_ids(store, store.sexprs_of(items))))
         .Slice(obj, start, end) -> expr_ctor(store, "Slice", three_args(construct_expr_id(store, obj), construct_expr_id(store, start), construct_expr_id(store, end)))
         .TupleIndex(obj, idx) -> expr_ctor(store, "TupleIndex", two_args(construct_expr_id(store, obj), Expr.Number(string(idx))))
-        .With(obj, overrides) -> expr_ctor(store, "With", two_args(construct_expr(store, obj), construct_field_init_list(store, overrides)))
+        .With(obj, overrides) -> expr_ctor(store, "With", two_args(construct_expr_id(store, obj), construct_field_init_list(store, overrides)))
         .FieldAssign(obj, field, value) -> expr_ctor(store, "FieldAssign", three_args(construct_expr_id(store, obj), string_lit_expr(field), construct_expr_id(store, value)))
-        .Lambda(params, body) -> expr_ctor(store, "Lambda", two_args(construct_param_list(store, params), construct_expr(store, body)))
+        .Lambda(params, body) -> expr_ctor(store, "Lambda", two_args(construct_param_list(store, params), construct_expr_id(store, body)))
         .Spawn(body) -> expr_ctor(store, "Spawn", one_arg(construct_expr_id(store, body)))
         .Isolated(body) -> expr_ctor(store, "Isolated", one_arg(construct_expr_id(store, body)))
         .Block(body) -> expr_ctor(store, "Block", one_arg(construct_stmt_list(store, body)))
@@ -549,7 +549,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         // `construct_match_arm_list` which expands `~arms` sentinels
         // into `list_concat` calls.
         .MatchExpr(subject, arms) -> expr_ctor(store, "MatchExpr",
-            two_args(construct_expr(store, subject), construct_match_arm_list(store, arms)))
+            two_args(construct_expr_id(store, subject), construct_match_arm_list(store, arms)))
         // Splice (~target) — the target evaluates at expansion time
         // to a runtime AST value of the right shape, so we emit it
         // straight through without a construct_expr wrap. That's the
@@ -562,7 +562,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         // already an AST-build expression) and avoids needing a meta-
         // quote machinery. Proper meta-quote (outer captures inner
         // Quote form verbatim) is a separate language design call.
-        .Quote(_, body) -> construct_expr(store, unwrap_quote_body(store, body))
+        .Quote(_, body) -> construct_expr(store, unwrap_quote_body(store, store.exprs.get(body)))
         .When(_) -> e
         _ -> e
     }

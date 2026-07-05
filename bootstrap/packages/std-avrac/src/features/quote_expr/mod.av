@@ -8,7 +8,7 @@
 // dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surface
 // flat at `features.quote_expr.{...}`.
 
-use core.{feature_new, Feature, Expr}
+use core.{feature_new, Feature, Expr, ExprId}
 
 /// Register the `quote { body }` expression feature. The feature is
 /// minimal at this stage — parser only. Resolver / typeck / codegen
@@ -16,6 +16,6 @@ use core.{feature_new, Feature, Expr}
 /// nodes with concrete AST-construction expressions.
 export fn quote_expr_feature() -> Feature {
     feature_new("quote") with {
-        expr_tag: Expr.Quote("expr", Expr.None),
+        expr_tag: Expr.Quote("expr", ExprId(0)),
     }
 }

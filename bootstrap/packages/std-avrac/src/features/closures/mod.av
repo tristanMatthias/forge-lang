@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av
 // auto-load as siblings, surface flat at `features.closures.{...}`.
 // `emit_lambda` and parser helpers are in scope without self-imports.
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, ExprId}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit}
 
@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, 
 /// Axis 28.
 export fn closures_feature() -> Feature {
     feature_new("lambda") with {
-        expr_tag: Expr.Lambda([], Expr.None),
+        expr_tag: Expr.Lambda([], ExprId(0)),
         emit_expr: emit_lambda,
         resolve_expr: closure_resolve,
         check_expr: closure_check,
@@ -26,7 +26,7 @@ fn closure_resolve(r: Resolver, expr: Expr) -> Resolver {
         .Lambda(params, body) -> {
             let entered = enter_resolve_scope(r)
             let with_params = declare_params(entered, params)
-            let after_body = resolve_expr(with_params, body)
+            let after_body = resolve_expr(with_params, with_params.nodes.exprs.get(body))
             exit_resolve_scope(after_body)
         }
         _ -> r
@@ -45,7 +45,7 @@ fn closure_check(tc: TC, expr: Expr) -> ExprResult {
             // hole. (No return annotation on a lambda, so gate params only.)
             let gated = tc_check_signature_arity_top(inner, params, ValueType.Void)
             let with_params = tc_bind_params(gated, params)
-            let b = check_expr(with_params, body)
+            let b = check_expr(with_params, with_params.nodes.exprs.get(body))
             let after = tc_exit(b.tc)
             tc_er(after, ValueType.Fn(b.ty))
         }

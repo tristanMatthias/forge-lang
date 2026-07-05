@@ -14,7 +14,7 @@ use codegen.{emit_optional_coerce}
 /// matches the `With` AST node and forwards to `emit_with_inner`.
 export fn emit_with(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .With(obj, overrides) -> emit_with_inner(ctx, env, obj, overrides)
+        .With(obj, overrides) -> emit_with_inner(ctx, env, ctx.nodes.exprs.get(obj), overrides)
         _ -> err_emit("expected With")
     }
 }

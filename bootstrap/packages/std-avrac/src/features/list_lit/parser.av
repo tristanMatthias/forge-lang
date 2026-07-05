@@ -20,17 +20,15 @@ impl Parser {
             let var_name = self.consume_identifier("expected variable name after `for`")?
             if !self.consume(Tk.KwIn, "expected `in` after comprehension variable") { return .Err("parse error") }
             let collection_id = self.parse_expression()?
-            mut filter: Expr? = none
-            let comp_id = if self.check(Tk.KwIf) {
+            // Flipped ListComp holds body/collection/filter as ExprId scalars —
+            // all walker-opaque, so the comp is a leaf row.
+            mut filter: ExprId? = none
+            if self.check(Tk.KwIf) {
                 self.advance()
-                let filter_id = self.parse_expression()?
-                filter = self.expr_of(filter_id)
-                let comp = Expr.ListComp(self.expr_of(expr_id), var_name, self.expr_of(collection_id), filter)
-                self.alloc3(comp, expr_id, collection_id, filter_id)
-            } else {
-                let comp = Expr.ListComp(self.expr_of(expr_id), var_name, self.expr_of(collection_id), filter)
-                self.alloc2(comp, expr_id, collection_id)
+                filter = self.parse_expression()?
             }
+            let comp = Expr.ListComp(expr_id, var_name, collection_id, filter)
+            let comp_id = self.alloc_leaf(comp)
             out.push(sexpr(self.expr_of(comp_id), self.current_line, self.current_column))
             ids.push(comp_id)
             return .Ok(ArgListIds { wrapped: out, ids: ids })

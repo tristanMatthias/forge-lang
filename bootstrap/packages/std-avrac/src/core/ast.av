@@ -2190,7 +2190,7 @@ export enum Expr {
     /// Block expression — value is the last statement's value.
     Block(body: List<SStmt>)
     /// `match subject { arms }` — match used as an expression.
-    MatchExpr(subject: Expr, arms: List<MatchArm>)
+    MatchExpr(subject: ExprId, arms: List<MatchArm>)
     /// Field reassignment: `obj.field = value`.
     FieldAssign(obj: ExprId, field: string, value: ExprId)
     /// Ternary-like `if cond { then } else { else_branch }` as an expr.
@@ -2214,11 +2214,11 @@ export enum Expr {
     /// Tuple index: `t.0`, `t.1`.
     TupleIndex(obj: ExprId, index: int)
     /// Functional struct update: `obj with { field: new_value }`.
-    With(obj: Expr, overrides: List<FieldInit>)
+    With(obj: ExprId, overrides: List<FieldInit>)
     /// List literal: `[1, 2, 3]`.
     ListLit(elements: List<ExprId>)
     /// Closure literal: `(x, y) -> body`.
-    Lambda(params: List<ParamEntry>, body: Expr)
+    Lambda(params: List<ParamEntry>, body: ExprId)
     /// Map literal — flat list of alternating key/value:
     /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
     MapLit(entries: List<ExprId>)
@@ -2231,7 +2231,7 @@ export enum Expr {
     /// Membership test: `needle in [a, b, c]`.
     InCheck(needle: ExprId, items: List<ExprId>)
     /// List comprehension: `[body for variable in collection if filter]`.
-    ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
+    ListComp(body: ExprId, variable: string, collection: ExprId, filter: ExprId?)
     /// Module-qualified identifier — produced by the resolver from
     /// `Ident(name)` once the name's canonical path is known.
     QualifiedIdent(path: string)
@@ -2239,7 +2239,7 @@ export enum Expr {
     When(arms: List<WhenArm>)
     /// Catch block: `expr catch (e) { body }` — recovers from an
     /// erroring `expr` by binding the error to `e`.
-    Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
+    Catch(inner: ExprId, binding: string, body: ExprId, line: int, col: int)
     /// `spawn body` — start a green-thread Task running `body`.
     Spawn(body: ExprId)
     /// `channel<T>()` / `channel<T>(cap)` — construct a typed channel
@@ -2257,7 +2257,7 @@ export enum Expr {
     /// evaluating the result rebuilds the original AST node.
     /// `kind` is one of "expr" / "stmt" / "stmts" / "type" / "decl";
     /// the default form `quote { ... }` uses "expr".
-    Quote(kind: string, body: Expr)
+    Quote(kind: string, body: ExprId)
     /// `~target` inside a quote body — splice the value of `target`
     /// directly into the constructed AST instead of rebuilding it.
     /// Outside a quote body the parser produces Expr.Unary(BitNot, ...)
@@ -2777,7 +2777,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_ids(store, args)})"
         .Index(obj, idx) -> "(index ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(idx))})"
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
-        .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
+        .MatchExpr(subject, arms) -> "(match-expr ${render_expr_id(store, subject)} ${render_match_arm_list(store, arms)})"
         .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, store.exprs.get(c))} ${render_expr(store, store.exprs.get(t))} ${render_expr(store, store.exprs.get(e))})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
@@ -2786,9 +2786,9 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
         .Tuple(elements) -> "(tuple ${render_expr_ids(store, elements)})"
         .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, store.exprs.get(obj))} ${string(idx)})"
-        .With(obj, overrides) -> "(with ${render_expr(store, obj)} ${render_field_init_list(store, overrides)})"
+        .With(obj, overrides) -> "(with ${render_expr_id(store, obj)} ${render_field_init_list(store, overrides)})"
         .ListLit(elements) -> "(list ${render_expr_ids(store, elements)})"
-        .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
+        .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr_id(store, body)})"
         .MapLit(entries) -> "(map ${render_expr_ids(store, entries)})"
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(start))}..${render_expr(store, store.exprs.get(end))})"
@@ -2797,10 +2797,10 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(store, arms)})"
         .ListComp(body, variable, collection, filter) -> {
-            let head = "(list-comp ${render_expr(store, body)} for ${variable} in ${render_expr(store, collection)}"
-            if filter != null { "${head} if ${render_expr(store, filter!)})" } else { "${head})" }
+            let head = "(list-comp ${render_expr_id(store, body)} for ${variable} in ${render_expr_id(store, collection)}"
+            if filter != null { "${head} if ${render_expr_id(store, filter!)})" } else { "${head})" }
         }
-        .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(store, inner)} (${binding}) ${render_expr(store, body)})"
+        .Catch(inner, binding, body, _, _) -> "(catch ${render_expr_id(store, inner)} (${binding}) ${render_expr_id(store, body)})"
         .Spawn(body) -> "(spawn ${render_expr(store, store.exprs.get(body))})"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
@@ -2810,7 +2810,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
             }
         }
         .Isolated(body) -> "(isolated ${render_expr(store, store.exprs.get(body))})"
-        .Quote(kind, body) -> "(quote ${kind} ${render_expr(store, body)})"
+        .Quote(kind, body) -> "(quote ${kind} ${render_expr_id(store, body)})"
         .Splice(target) -> "(splice ${render_expr(store, store.exprs.get(target))})"
     }
 }

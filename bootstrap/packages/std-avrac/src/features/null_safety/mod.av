@@ -59,7 +59,7 @@ export fn try_feature() -> Feature {
 /// recover an error path with a fallback value.
 export fn catch_feature() -> Feature {
     feature_new("catch") with {
-        expr_tag: Expr.Catch(Expr.None, "", Expr.None, 0, 0),
+        expr_tag: Expr.Catch(ExprId(0), "", ExprId(0), 0, 0),
         emit_expr: catch_emit_expr,
         resolve_expr: catch_resolve_expr,
         check_expr: check_catch,
@@ -118,12 +118,12 @@ fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .Catch(inner, binding, body, _, _) -> {
-            let ri = resolve_expr(r, inner)
+            let ri = resolve_expr(r, r.nodes.exprs.get(inner))
             let scoped = if binding.length > 0 {
                 let entered = enter_resolve_scope(ri)
                 define_name(declare_name(entered, binding), binding)
             } else { ri }
-            let rb = resolve_expr(scoped, body)
+            let rb = resolve_expr(scoped, scoped.nodes.exprs.get(body))
             if binding.length > 0 { exit_resolve_scope(rb) } else { rb }
         }
         _ -> r
@@ -133,7 +133,7 @@ fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// Codegen hook for `Catch`. Forwards to `emit_catch`.
 fn catch_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Catch(inner, binding, body, _, _) -> emit_catch(ctx, env, inner, binding, body)
+        .Catch(inner, binding, body, _, _) -> emit_catch(ctx, env, ctx.nodes.exprs.get(inner), binding, ctx.nodes.exprs.get(body))
         _ -> err_emit("expected Catch")
     }
 }

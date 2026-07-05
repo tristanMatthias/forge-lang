@@ -1520,7 +1520,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .ListLit(elems) -> .ListLit(rewrite_expr_list_ids(ctx, elems))
         .MapLit(entries) -> .MapLit(rewrite_expr_list_ids(ctx, entries))
         .Slice(obj, s, e) -> .Slice(rewrite_expr_id(ctx, obj), rewrite_expr_id(ctx, s), rewrite_expr_id(ctx, e))
-        .With(obj, overrides) -> .With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
+        .With(obj, overrides) -> .With(rewrite_expr_id(ctx, obj), rewrite_field_inits(ctx, overrides))
         .StructLit(name, inits) -> {
             let qn = if name != "" { resolve_type_in_ctx(ctx, name) } else { name }
             Expr.StructLit(qn, rewrite_field_inits(ctx, inits))
@@ -1529,7 +1529,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             let qt = if type_name != "" { resolve_type_in_ctx(ctx, type_name) } else { type_name }
             Expr.EnumCtor(qt, variant, rewrite_expr_list_ids(ctx, args))
         }
-        .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
+        .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr_id(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> {
             // Qualify the closure's PARAM type annotations (a generic instance
             // `Box<int>` -> `mymod::Box<int>`) exactly as a fn decl's params are,
@@ -1537,7 +1537,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             // method/field on the param later resolves against the un-qualified
             // name and mono can't find the instance (the closure-receiver gap).
             let rp = rewrite_param_types(ctx, params)
-            Expr.Lambda(rp, rewrite_expr(bind_params_ctx(ctx, rp), body))
+            Expr.Lambda(rp, rewrite_expr_id(bind_params_ctx(ctx, rp), body))
         }
         .ListComp(body, var, coll, filter) -> {
             // Collection sees the outer scope; body+filter see `var` bound.
@@ -1545,8 +1545,8 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             // qualified to a module-level identifier of the same name.
             let comp_params: List<ParamEntry> = [ParamEntry { name: var, vtype: ValueType.Unknown }]
             let inner = bind_params_ctx(ctx, comp_params)
-            let new_filter = if filter != null { rewrite_expr(inner, filter!) } else { null }
-            Expr.ListComp(rewrite_expr(inner, body), var, rewrite_expr(ctx, coll), new_filter)
+            let new_filter = if filter != null { rewrite_expr_id(inner, filter!) } else { null }
+            Expr.ListComp(rewrite_expr_id(inner, body), var, rewrite_expr_id(ctx, coll), new_filter)
         }
         .Spawn(body) -> .Spawn(rewrite_expr_id(ctx, body))
         .ChannelNew(elem, capacity) -> {
@@ -1571,9 +1571,9 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
             // mis-qualified as module-level.
             let body_params: List<ParamEntry> = if binding == "" { [] } else { [ParamEntry { name: binding, vtype: ValueType.Unknown }] }
             let body_ctx = bind_params_ctx(ctx, body_params)
-            Expr.Catch(rewrite_expr(ctx, inner), binding, rewrite_expr(body_ctx, body), line, col)
+            Expr.Catch(rewrite_expr_id(ctx, inner), binding, rewrite_expr_id(body_ctx, body), line, col)
         }
-        .Quote(kind, body) -> Expr.Quote(kind, rewrite_expr(ctx, body))
+        .Quote(kind, body) -> Expr.Quote(kind, rewrite_expr_id(ctx, body))
         .Splice(target) -> Expr.Splice(rewrite_expr_id(ctx, target))
         _ -> expr
     }
@@ -1841,13 +1841,13 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
             acc.push(tn)
             collect_used_paths_expr_list_ids(store, args, acc)
         }
-        .MatchExpr(subj, arms) -> collect_used_paths_match_arms(store, arms, collect_used_paths_expr(store, subj, acc))
-        .Lambda(_, body) -> collect_used_paths_expr(store, body, acc)
-        .With(obj, overrides) -> collect_used_paths_field_inits(store, overrides, collect_used_paths_expr(store, obj, acc))
+        .MatchExpr(subj, arms) -> collect_used_paths_match_arms(store, arms, collect_used_paths_expr(store, store.exprs.get(subj), acc))
+        .Lambda(_, body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
+        .With(obj, overrides) -> collect_used_paths_field_inits(store, overrides, collect_used_paths_expr(store, store.exprs.get(obj), acc))
         .Slice(obj, s, e) -> collect_used_paths_expr(store, store.exprs.get(e), collect_used_paths_expr(store, store.exprs.get(s), collect_used_paths_expr(store, store.exprs.get(obj), acc)))
         .IsCheck(subj, _) -> collect_used_paths_expr(store, store.exprs.get(subj), acc)
         .InCheck(needle, items) -> collect_used_paths_expr_list_ids(store, items, collect_used_paths_expr(store, store.exprs.get(needle), acc))
-        .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, body, collect_used_paths_expr(store, inner, acc))
+        .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, store.exprs.get(body), collect_used_paths_expr(store, store.exprs.get(inner), acc))
         .Spawn(body) -> collect_used_paths_expr(store, store.exprs.get(body), acc)
         .ChannelNew(_, capacity) -> {
             if capacity == null { acc } else { collect_used_paths_expr(store, capacity!, acc) }

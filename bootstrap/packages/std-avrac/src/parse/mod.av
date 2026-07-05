@@ -1296,7 +1296,9 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
                 return .Err("parse error")
             }
-            eid = self.alloc_expr(Expr.With(self.expr_of(eid), parsed.inits), byte_span_none(), self.edges_subject_args(eid, parsed.ids))
+            // Flipped With.obj is an ExprId scalar (walker-opaque) — no subject
+            // edge; only the field-init overrides' children, exactly like StructLit.
+            eid = self.alloc_expr(Expr.With(eid, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids))
         }
         .Ok(eid)
     }
@@ -1397,8 +1399,10 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
                 let handler = Expr.Block(body_stmts.wrapped)
                 let handler_id = self.alloc_expr(handler, byte_span_none(), self.edges_of_stmt_ids(body_stmts.ids))
-                result = Expr.Catch(result, binding, handler, catch_line, catch_col)
-                rid = self.alloc2(result, rid, handler_id)
+                // Flipped Catch.inner/.body are ExprId scalars (walker-opaque) — the
+                // node holds both arena ids directly, so the Catch row is a leaf.
+                result = Expr.Catch(rid, binding, handler_id, catch_line, catch_col)
+                rid = self.alloc_leaf(result)
                 continue
             }
             // Optional chaining `expr?.field` / `expr?.method(args)`.
@@ -1563,8 +1567,10 @@ impl Parser {
                     .Lambda(_, _) -> raw_expr
                     _ -> {
                         if expr_contains_it(self.store, raw_expr) {
-                            let wrapped = wrap_in_it_lambda(raw_expr)
-                            eid = self.alloc1(wrapped, raw_id)
+                            // Flipped Lambda.body is an ExprId scalar — the body row
+                            // IS the structure, so the lambda is a walker leaf.
+                            let wrapped = wrap_in_it_lambda(raw_id)
+                            eid = self.alloc_leaf(wrapped)
                             wrapped
                         } else {
                             raw_expr
@@ -1696,7 +1702,7 @@ impl Parser {
                     self.advance()
                     let body = self.parse_lambda_body()?
                     let empty_ps: List<ParamEntry> = []
-                    return .Ok(self.alloc1(Expr.Lambda(empty_ps, self.expr_of(body)), body))
+                    return .Ok(self.alloc_leaf(Expr.Lambda(empty_ps, body)))
                 }
                 let empty: List<ExprId> = []
                 return .Ok(self.alloc_leaf(Expr.Tuple(empty)))
@@ -1713,7 +1719,7 @@ impl Parser {
                     return .Err("parse error")
                 }
                 let body = self.parse_lambda_body()?
-                return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
+                return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
             }
             let expr_opt = self.parse_expression()
             self.allow_dot_postfix = saved
@@ -1733,7 +1739,7 @@ impl Parser {
                     for w in rest.wrapped { combined.push(w) }
                     let params = exprs_to_params(combined)
                     let body = self.parse_lambda_body()?
-                    return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
+                    return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
                 }
                 mut tuple_ids: List<ExprId> = [expr]
                 for tid in rest.ids { tuple_ids.push(tid) }
@@ -1748,7 +1754,7 @@ impl Parser {
                 let one: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
                 let params = exprs_to_params(one)
                 let body = self.parse_lambda_body()?
-                return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
+                return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
             }
             return .Ok(self.alloc_leaf(Expr.Grouping(expr)))
         }
@@ -2383,11 +2389,12 @@ impl Parser {
         if kind == "arm" {
             let body_id = self.parse_quote_arm_body()?
             self.quote_depth = self.quote_depth - 1
-            return .Ok(self.alloc1(Expr.Quote(kind, self.expr_of(body_id)), body_id))
+            // Flipped Quote.body is an ExprId scalar (walker-opaque) — leaf row.
+            return .Ok(self.alloc_leaf(Expr.Quote(kind, body_id)))
         }
         let body_id = self.parse_block_expression()?
         self.quote_depth = self.quote_depth - 1
-        .Ok(self.alloc1(Expr.Quote(kind, self.expr_of(body_id)), body_id))
+        .Ok(self.alloc_leaf(Expr.Quote(kind, body_id)))
     }
 
     fn parse_quote_kind(self) -> string {
@@ -2406,7 +2413,7 @@ impl Parser {
     }
 
     /// Parse `{ pattern -> body }` for `quote arm { ... }`. Wraps the
-    /// resulting arm in a single-armed `Expr.MatchExpr(Expr.None, [arm])`
+    /// resulting arm in a single-armed `Expr.MatchExpr(<None-leaf id>, [arm])`
     /// so the existing Quote(kind, body) shape stays — the lowering
     /// pass picks the arm back out via its `arm` kind discriminator.
     fn parse_quote_arm_body(self) -> Result<ExprId, string> {
@@ -2431,21 +2438,17 @@ impl Parser {
         let arm_guard_id: ExprId? = if has_guard { guard_id } else { none }
         let arm = MatchArm { pattern, guard, body: body_se, pattern_id: pat_id, guard_id: arm_guard_id, body_id }
         let arms: List<MatchArm> = [arm]
-        // The synthetic envelope's subject is a BARE `Expr` (the field type), not
-        // an `sexpr(...)` wrapper: storing an SExpr struct in the `subject: Expr`
-        // slot type-checks only because both lower to `ptr`, but it makes the
-        // node ill-formed — a walker (e.g. arena ingest's `all_children_spanned`)
-        // that descends `subject` as a bare Expr reads the SExpr's first word as
-        // an enum tag and traps. The lowering pass ignores `subject` anyway
-        // (`extract_single_match_arm` matches `.MatchExpr(_, arms)`).
-        // Edges in walker order: subject, then the arm's pattern, guard
-        // (only when present), body — `match_arm_children_spanned`'s
-        // flattening.
+        // The synthetic envelope's subject is now a real `ExprId` (a leaf `Expr.None`
+        // row), so the node is well-formed — the flipped `subject: ExprId` is a
+        // walker-opaque scalar, so it records NO edge. The lowering pass ignores
+        // `subject` anyway (`extract_single_match_arm` matches `.MatchExpr(_, arms)`).
+        // Edges in walker order: the arm's pattern, guard (only when present), body —
+        // `match_arm_children_spanned`'s flattening.
         let subject_id = self.alloc_leaf(Expr.None)
-        mut edges: List<NodeRef> = [NodeRef.ExprRef(subject_id), NodeRef.PatRef(pat_id)]
+        mut edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
         if has_guard { edges.push(NodeRef.ExprRef(guard_id)) }
         edges.push(NodeRef.ExprRef(body_id))
-        .Ok(self.alloc_expr(Expr.MatchExpr(Expr.None, arms), byte_span_none(), edges))
+        .Ok(self.alloc_expr(Expr.MatchExpr(subject_id, arms), byte_span_none(), edges))
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.

@@ -377,8 +377,10 @@ impl Parser {
             if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return .Err("parse error") }
             let arms = self.parse_match_table_arms()?
             if !self.consume(Tk.RightBrace, "expected `}` after match table") { return .Err("parse error") }
-            let node = Expr.MatchExpr(self.expr_of(subject), arms)
-            return .Ok(self.alloc_expr(node, byte_span_none(), self.match_edges(subject, self.glue_match_arm_refs(arms))))
+            // Flipped: subject is an ExprId scalar (walker-opaque), so it records
+            // NO edge — only the arms' children (glued whole on this boxed path).
+            let node = Expr.MatchExpr(subject, arms)
+            return .Ok(self.alloc_expr(node, byte_span_none(), self.glue_match_arm_refs(arms)))
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
             return .Err("parse error")
@@ -387,15 +389,10 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
             return .Err("parse error")
         }
-        let node = Expr.MatchExpr(self.expr_of(subject), parsed.arms)
-        .Ok(self.alloc_expr(node, byte_span_none(), self.match_edges(subject, parsed.refs)))
-    }
-
-    /// Edge refs `[subject, arm-children…]` for a MatchExpr row.
-    fn match_edges(self, subject: ExprId, arm_refs: List<NodeRef>) -> List<NodeRef> {
-        mut edges: List<NodeRef> = [NodeRef.ExprRef(subject)]
-        for r in arm_refs { edges.push(r) }
-        edges
+        // Flipped: subject is an ExprId scalar (walker-opaque) — no subject edge;
+        // the row's children are exactly the arms' flattened children.
+        let node = Expr.MatchExpr(subject, parsed.arms)
+        .Ok(self.alloc_expr(node, byte_span_none(), parsed.refs))
     }
 
     /// Edge refs for a BOXED arm list (the match-table path): each arm's

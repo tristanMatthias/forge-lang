@@ -31,12 +31,12 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .Try(inner) -> expr_contains_it(store, store.exprs.get(inner))
         .Tuple(elems) -> expr_list_contains_it(store, store.sexprs_of(elems))
         .TupleIndex(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
-        .With(obj, _) -> expr_contains_it(store, obj)
+        .With(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .ListLit(elems) -> expr_list_contains_it(store, store.sexprs_of(elems))
         .MapLit(entries) -> expr_list_contains_it(store, store.sexprs_of(entries))
         .Slice(obj, s, e) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(s)) || expr_contains_it(store, store.exprs.get(e))
-        .MatchExpr(subj, _) -> expr_contains_it(store, subj)
-        .Catch(inner, _, body, _, _) -> expr_contains_it(store, inner) || expr_contains_it(store, body)
+        .MatchExpr(subj, _) -> expr_contains_it(store, store.exprs.get(subj))
+        .Catch(inner, _, body, _, _) -> expr_contains_it(store, store.exprs.get(inner)) || expr_contains_it(store, store.exprs.get(body))
         _ -> false
     }
 }
@@ -69,10 +69,12 @@ fn stmt_contains_it(store: NodeStore, s: Stmt) -> bool {
 /// Wrap a body that mentions `it` in an implicit
 /// `(it) -> body` lambda. The parameter type is left as
 /// `Unknown` so the regular type-inference path picks it up.
-export fn wrap_in_it_lambda(expr: Expr) -> Expr {
+/// `body_id` is the already-ingested arena row of the body — the flipped
+/// `Lambda.body: ExprId` holds it directly (a walker-opaque leaf).
+export fn wrap_in_it_lambda(body_id: ExprId) -> Expr {
     // The `it` param is synthesized (never written) — no row backs its type.
     let ps: List<ParamEntry> = [ParamEntry { name: "it", vtype: ValueType.Unknown, ty_id: none }]
-    Expr.Lambda(ps, expr)
+    Expr.Lambda(ps, body_id)
 }
 
 impl Parser {

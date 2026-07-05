@@ -1,6 +1,6 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.with_expr.{...}`.
-use core.{feature_new, Feature, vtype_struct_name}
+use core.{feature_new, Feature, vtype_struct_name, ExprId}
 use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.{check_field_inits, check_struct_lit_fields}
 use typeck.{check_expr, tc_er}
@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_er}
 /// `point with { x: 5 }`. Spec axis 28.
 export fn with_expr_feature() -> Feature {
     feature_new("with") with {
-        expr_tag: Expr.With(Expr.None, []),
+        expr_tag: Expr.With(ExprId(0), []),
         emit_expr: emit_with,
         resolve_expr: with_resolve,
         check_expr: with_check,
@@ -22,7 +22,7 @@ export fn with_expr_feature() -> Feature {
 fn with_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .With(obj, overrides) -> {
-            let after_obj = resolve_expr(r, obj)
+            let after_obj = resolve_expr(r, r.nodes.exprs.get(obj))
             resolve_field_init_list(after_obj, overrides)
         }
         _ -> r
@@ -41,7 +41,7 @@ fn with_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn with_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .With(obj, overrides) -> {
-            let o = check_expr(tc, obj)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let name = vtype_struct_name(o.ty)
             let checked = if name == "" { check_field_inits(o.tc, overrides) } else { check_struct_lit_fields(o.tc, o.ty, name, overrides) }
             tc_er(checked, o.ty)

@@ -606,7 +606,7 @@ fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let params: List<ParamEntry> = [self_param]
     let empty_tp: List<TypeParamEntry> = []
     let ret_ty = ValueType.List(self_ty)
-    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
     // Typed-empty binding at fn-body top so scalar arms produce
     // `List<Self>`-typed values that unify with sibling list-typed
     // arms. The Let decoder preserves the resolved-vtype slot, so the
@@ -937,7 +937,7 @@ fn build_all_children_spanned_fn(arms: List<MatchArm>, enum_name: string) -> Stm
     let params: List<ParamEntry> = [self_param]
     let empty_tp: List<TypeParamEntry> = []
     let ret_ty = ValueType.List(sc_ty)
-    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
     let empty_elems: List<ExprId> = []
     let typed_empty = Stmt.Let(all_spanned_empty_binding_name(), ret_ty, synth_expr_id(Expr.ListLit(empty_elems)))
     let body: List<SStmt> = [
@@ -1175,7 +1175,7 @@ fn build_with_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let kids_param = ParamEntry { name: "kids", vtype: kids_ty }
     let params: List<ParamEntry> = [self_param, kids_param]
     let empty_tp: List<TypeParamEntry> = []
-    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
     let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(synth_expr_id(match_expr)))]
     Stmt.Function("${enum_name}__with_children", empty_tp, params, self_ty, synth_stmt_ids(body))
 }
@@ -1512,7 +1512,7 @@ fn build_map_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let f_param = ParamEntry { name: "f", vtype: f_ty }
     let params: List<ParamEntry> = [self_param, f_param]
     let empty_tp: List<TypeParamEntry> = []
-    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
     let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(synth_expr_id(match_expr)))]
     Stmt.Function("${enum_name}__map", empty_tp, params, self_ty, synth_stmt_ids(body))
 }

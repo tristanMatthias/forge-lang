@@ -1631,7 +1631,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .EnumCtor(_, _, args) -> lint_scan_sexprs(store, store.sexprs_of(args), coll)
         .Block(body) -> lint_scan_sstmts(store, body, coll)
-        .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
+        .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(subject), coll), lint_scan_arms(store, arms, coll))
         .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_expr(store, store.exprs.get(value), coll))
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(t), coll), lint_scan_expr(store, store.exprs.get(el), coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
@@ -1640,9 +1640,9 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Tuple(els) -> lint_scan_sexprs(store, store.sexprs_of(els), coll)
         .TupleIndex(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
-        .With(obj, _) -> lint_scan_expr(store, obj, coll)
+        .With(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .ListLit(els) -> lint_scan_sexprs(store, store.sexprs_of(els), coll)
-        .Lambda(_, body) -> lint_scan_expr(store, body, coll)
+        .Lambda(_, body) -> lint_scan_expr(store, store.exprs.get(body), coll)
         .MapLit(entries) -> lint_scan_sexprs(store, store.sexprs_of(entries), coll)
         .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(start), coll), lint_scan_expr(store, store.exprs.get(end), coll)))
         .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
@@ -4189,11 +4189,11 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .GenericCall(callee, ta, args) -> .GenericCall(tc.nodes.reexpr(annotate_expr(tc, tc.nodes.exprs.get(callee)), callee), ta, annotate_expr_list_ids(tc, args))
         .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list_ids(tc, args))
         .StructLit(name, inits) -> .StructLit(name, annotate_field_inits(tc, inits))
-        .MatchExpr(subj, arms) -> .MatchExpr(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
+        .MatchExpr(subj, arms) -> .MatchExpr(annotate_expr_id(tc, subj), annotate_match_arms(tc, arms))
         .ListLit(elems) -> .ListLit(annotate_expr_list_ids(tc, elems))
         .Tuple(elems) -> .Tuple(annotate_expr_list_ids(tc, elems))
         .MapLit(entries) -> .MapLit(annotate_expr_list_ids(tc, entries))
-        .With(obj, inits) -> .With(annotate_expr(tc, obj), annotate_field_inits(tc, inits))
+        .With(obj, inits) -> .With(annotate_expr_id(tc, obj), annotate_field_inits(tc, inits))
         .Block(body) -> .Block(annotate_stmts(tc, body))
         .Binary(l, op, r) -> .Binary(annotate_expr_id(tc, l), op, annotate_expr_id(tc, r))
         .Logical(l, op, r) -> .Logical(annotate_expr_id(tc, l), op, annotate_expr_id(tc, r))
@@ -4204,7 +4204,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .FieldAccess(obj, f) -> .FieldAccess(annotate_expr_id(tc, obj), f)
         .Assign(name, val) -> .Assign(name, annotate_expr_id(tc, val))
         .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr_id(tc, obj), f, annotate_expr_id(tc, val))
-        .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
+        .Lambda(params, body) -> .Lambda(params, annotate_expr_id(tc_bind_params(tc, params), body))
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr_id(tc, l), annotate_expr_id(tc, r))
         .Try(e) -> .Try(annotate_expr_id(tc, e))
         .Slice(obj, start, end) -> .Slice(annotate_expr_id(tc, obj), annotate_expr_id(tc, start), annotate_expr_id(tc, end))
@@ -4212,12 +4212,12 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .InCheck(needle, items) -> .InCheck(annotate_expr_id(tc, needle), annotate_expr_list_ids(tc, items))
         .ListComp(body, var, coll, filter) -> {
             if filter != null {
-                .ListComp(annotate_expr(tc, body), var, annotate_expr(tc, coll), annotate_expr(tc, filter!))
+                .ListComp(annotate_expr_id(tc, body), var, annotate_expr_id(tc, coll), annotate_expr_id(tc, filter!))
             } else {
-                .ListComp(annotate_expr(tc, body), var, annotate_expr(tc, coll), null)
+                .ListComp(annotate_expr_id(tc, body), var, annotate_expr_id(tc, coll), null)
             }
         }
-        .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body), cl, cc)
+        .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr_id(tc, inner), b, annotate_expr_id(tc, body), cl, cc)
         .OptionalChain(obj, f) -> .OptionalChain(annotate_expr_id(tc, obj), f)
         .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr_id(tc, obj), m, annotate_expr_list_ids(tc, args))
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr_id(tc, obj), idx)
@@ -4334,7 +4334,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .Tuple(elems) -> ValueType.Tuple(list_map(tc.nodes.sexprs_of(elems), (e: SExpr) -> e.ty))
         // Lambda body type needs a real check — fall through. Cheap
         // because annotate_expr already walked the body recursively.
-        .Lambda(params, body) -> ValueType.FnTyped(tc_param_types(params), check_expr(tc, body).ty)
+        .Lambda(params, body) -> ValueType.FnTyped(tc_param_types(params), check_expr(tc, tc.nodes.exprs.get(body)).ty)
         // Grouping forwards its inner expression's type. Used heavily
         // by parser-emitted parenthesised forms; falling through to
         // check_expr was a needless re-walk.
