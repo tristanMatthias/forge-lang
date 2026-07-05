@@ -131,14 +131,15 @@ fn field_access_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result
 fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .FieldAccess(obj, _) -> {
-            match r.nodes.exprs.get(obj) {
+            let obj_expr = r.nodes.exprs.get(obj)
+            match obj_expr {
                 .Ident(name) -> {
                     if starts_with_upper(name) {
                         return r
                     }
-                    resolve_expr(r, r.nodes.exprs.get(obj))
+                    resolve_expr(r, obj_expr)
                 }
-                _ -> resolve_expr(r, r.nodes.exprs.get(obj))
+                _ -> resolve_expr(r, obj_expr)
             }
         }
         _ -> r

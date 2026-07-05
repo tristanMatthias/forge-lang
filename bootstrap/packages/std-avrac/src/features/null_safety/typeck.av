@@ -67,7 +67,7 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
             }
             let inner_name = match r.ty { .Enum(n, _, _) -> n, _ -> "" }
             if is_result_enum_name(inner_name) {
-                let maybe_ok = tc_catch_ok_type(r.tc, inner)
+                let maybe_ok = tc_catch_ok_type(r.tc, tc.nodes.exprs.get(inner))
                 if maybe_ok != null {
                     return tc_er(r.tc, maybe_ok!)
                 }

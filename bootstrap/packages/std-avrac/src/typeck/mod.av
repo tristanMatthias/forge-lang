@@ -4259,7 +4259,7 @@ fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
             // emit_method_call (which prepends self at the call
             // site without needing a syntactic rewrite).
             if !r.found || r.tp.length == 0 { return null }
-            let annotated_obj = annotate_expr(tc, obj)
+            let annotated_obj = annotate_expr(tc, tc.nodes.exprs.get(obj))
             mut new_args: List<SExpr> = []
             new_args.push(sexpr_typed(annotated_obj, 0, 0, o.ty))
             for a in annotate_expr_list(tc, args) {

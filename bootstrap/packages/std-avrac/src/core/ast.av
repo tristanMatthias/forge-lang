@@ -2780,7 +2780,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .None -> "none"
         .Ident(name) -> name
         .Assign(name, value) -> "(assign ${name} ${render_expr(store, store.exprs.get(value))})"
-        .Grouping(inner) -> "(group ${render_expr(store, inner)})"
+        .Grouping(inner) -> "(group ${render_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
         .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"

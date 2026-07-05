@@ -169,9 +169,12 @@ fn is_allocating_expr(expr: Expr) -> bool {
 fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
-        .FieldAccess(obj, _) -> match store.exprs.get(obj) {
-            .Ident(_) -> set  // p.x is safe — don't remove p
-            _ -> remove_escaped_expr(store, store.exprs.get(obj), set)  // nested: (expr).field
+        .FieldAccess(obj, _) -> {
+            let obj_expr = store.exprs.get(obj)
+            match obj_expr {
+                .Ident(_) -> set  // p.x is safe — don't remove p
+                _ -> remove_escaped_expr(store, obj_expr, set)  // nested: (expr).field
+            }
         }
         // These are escaping uses:
         .Ident(name) -> releasable_remove(set, name)
