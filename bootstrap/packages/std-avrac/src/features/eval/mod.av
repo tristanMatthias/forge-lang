@@ -2331,9 +2331,9 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "GenericCall" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let callee = value_to_expr_node(store, head)?
+            let callee = value_to_expr_id(store, head)?
             let type_args = list_value_to_string_list(p[1])?
-            let args = list_value_to_expr_list(store, p[2])?
+            let args = list_value_to_expr_id_list(store, p[2])?
             .Ok(Expr.GenericCall(callee, type_args, args))
         }
         "EnumCtor" -> {

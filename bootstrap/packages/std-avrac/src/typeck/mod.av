@@ -247,7 +247,7 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
             .QualifiedIdent(path) -> path
             _ -> ""
         }
-        .GenericCall(callee, _, _) -> match callee {
+        .GenericCall(callee, _, _) -> match tc.nodes.exprs.get(callee) {
             .Ident(name) -> name
             .QualifiedIdent(path) -> path
             _ -> ""
@@ -1627,7 +1627,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
-        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
+        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
         .Block(body) -> lint_scan_sstmts(store, body, coll)
@@ -2618,7 +2618,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
         .Call(callee, args) -> check_call(tc, tc.nodes.exprs.get(callee), tc.nodes.sexprs_of(args))
-        .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
+        .GenericCall(callee, type_args, args) -> check_generic_call(tc, tc.nodes.exprs.get(callee), type_args, tc.nodes.sexprs_of(args))
         .Index(obj, idx) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let i = check_expr(o.tc, tc.nodes.exprs.get(idx))
@@ -4184,7 +4184,7 @@ fn annotate_select_arms(tc: TC, arms: List<SelectArm>) -> List<SelectArm> {
 fn annotate_expr(tc: TC, expr: Expr) -> Expr {
     match expr {
         .Call(callee, args) -> annotate_call(tc, callee, args)
-        .GenericCall(callee, ta, args) -> .GenericCall(annotate_expr(tc, callee), ta, annotate_expr_list(tc, args))
+        .GenericCall(callee, ta, args) -> .GenericCall(tc.nodes.reexpr(annotate_expr(tc, tc.nodes.exprs.get(callee)), callee), ta, annotate_expr_list_ids(tc, args))
         .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list(tc, args))
         .StructLit(name, inits) -> .StructLit(name, annotate_field_inits(tc, inits))
         .MatchExpr(subj, arms) -> .MatchExpr(annotate_expr(tc, subj), annotate_match_arms(tc, arms))

@@ -1479,7 +1479,7 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
             }
             Expr.Call(ctx.nodes.reexpr(rewritten_callee, callee), rewrite_expr_list_ids(ctx, args))
         }
-        .GenericCall(callee, ta, args) -> .GenericCall(rewrite_expr(ctx, callee), ta, rewrite_expr_list(ctx, args))
+        .GenericCall(callee, ta, args) -> .GenericCall(rewrite_expr_id(ctx, callee), ta, rewrite_expr_list_ids(ctx, args))
         .Binary(l, op, r) -> .Binary(rewrite_expr_id(ctx, l), op, rewrite_expr_id(ctx, r))
         .Unary(op, r) -> .Unary(op, rewrite_expr_id(ctx, r))
         .Logical(l, op, r) -> .Logical(rewrite_expr_id(ctx, l), op, rewrite_expr_id(ctx, r))
@@ -1815,7 +1815,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
             acc
         }
         .Call(callee, args) -> collect_used_paths_expr_list_ids(store, args, collect_used_paths_expr(store, store.exprs.get(callee), acc))
-        .GenericCall(callee, _, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, callee, acc))
+        .GenericCall(callee, _, args) -> collect_used_paths_expr_list_ids(store, args, collect_used_paths_expr(store, store.exprs.get(callee), acc))
         .Binary(l, _, r) -> collect_used_paths_expr(store, store.exprs.get(r), collect_used_paths_expr(store, store.exprs.get(l), acc))
         .Unary(_, r) -> collect_used_paths_expr(store, store.exprs.get(r), acc)
         .Logical(l, _, r) -> collect_used_paths_expr(store, store.exprs.get(r), collect_used_paths_expr(store, store.exprs.get(l), acc))

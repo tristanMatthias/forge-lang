@@ -261,8 +261,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .When(arms) -> find_captures_when_arms(store, arms, params, env, captures)
         .GenericCall(callee, _, args) -> {
-            find_captures(store, callee, params, env, captures)
-            find_captures_list(store, args, params, env, captures)
+            find_captures(store, store.exprs.get(callee), params, env, captures)
+            find_captures_list(store, store.sexprs_of(args), params, env, captures)
         }
         // Spawn/Isolated/Quote/Splice/Lambda were missing — closure
         // bodies that wrap their work in any of these would silently
@@ -461,7 +461,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .Unary(_, inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Grouping(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Call(callee, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(ctx.nodes.sexprs_of(args), ctx, env, captures, params)
-        .GenericCall(callee, _, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
+        .GenericCall(callee, _, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(ctx.nodes.sexprs_of(args), ctx, env, captures, params)
         .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
         .Index(obj, idx) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(idx), ctx, env, captures, params)
         .IfExpr(c, t, e) -> has_float_ident(ctx.nodes.exprs.get(c), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(t), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(e), ctx, env, captures, params)

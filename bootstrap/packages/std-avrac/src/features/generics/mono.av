@@ -1367,8 +1367,8 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
 fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .GenericCall(callee, type_names, args) -> {
-            let s = collect_inst_exprs(args, regs, st)
-            match callee {
+            let s = collect_inst_exprs(regs.store.sexprs_of(args), regs, st)
+            match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null { add_resolved_inst(name, fn_e!.tp, explicit_to_type_args(fn_e!.tp, type_names), regs.ambig, s) } else { s }
@@ -1377,7 +1377,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null { add_resolved_inst(name, fn_e!.tp, explicit_to_type_args(fn_e!.tp, type_names), regs.ambig, s) } else { s }
                 }
-                _ -> collect_inst_expr(callee, regs, s)
+                _ -> collect_inst_expr(regs.store.exprs.get(callee), regs, s)
             }
         }
         .EnumCtor(tn, variant, args) ->
@@ -1682,7 +1682,7 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
                 _ -> Expr.Call(rename_self_calls_expr_id(store, callee, orig_name, mangled), new_args)
             }
         }
-        .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr(store, callee, orig_name, mangled), ta, rename_self_calls_sexpr_list(store, args, orig_name, mangled))
+        .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr_id(store, callee, orig_name, mangled), ta, rename_self_calls_expr_ids(store, args, orig_name, mangled))
         .Binary(l, op, r) -> .Binary(rename_self_calls_expr_id(store, l, orig_name, mangled), op, rename_self_calls_expr_id(store, r, orig_name, mangled))
         .Logical(l, op, r) -> .Logical(rename_self_calls_expr_id(store, l, orig_name, mangled), op, rename_self_calls_expr_id(store, r, orig_name, mangled))
         .Unary(op, e) -> .Unary(op, rename_self_calls_expr_id(store, e, orig_name, mangled))
@@ -1982,7 +1982,7 @@ fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
 fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
     match expr {
         .Call(callee, a) -> .Call(substitute_expr_id(store, callee, ta), substitute_expr_list_ids(store, a, ta))
-        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr(store, callee, ta), tn, substitute_expr_list(store, a, ta))
+        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr_id(store, callee, ta), tn, substitute_expr_list_ids(store, a, ta))
         .Binary(l, op, r) -> .Binary(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Logical(l, op, r) -> .Logical(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Unary(op, e) -> .Unary(op, substitute_expr_id(store, e, ta))
@@ -2576,17 +2576,18 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         }
         .GenericCall(callee, type_names, args) -> {
             // Explicit type args — use them directly, no inference needed. The
-            // GenericCall is rewritten INTO a flipped `Call`, so its boxed args
-            // are leaf-wrapped into the arena (`arg_sexprs_to_ids`).
-            let new_args = arg_sexprs_to_ids(regs.store, rewrite_expr_list(args, regs, insts))
-            match callee {
+            // GenericCall is rewritten INTO a flipped `Call`; its args are already
+            // a `List<ExprId>`, so they thread straight into the Call (no
+            // leaf-wrapping needed).
+            let new_args = rewrite_expr_list_ids(args, regs, insts)
+            match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
                         Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, explicit_to_type_args(fe.tp, type_names), regs.ambig))), new_args)
                     } else {
-                        Expr.Call(regs.store.exprs.add_leaf(callee), new_args)
+                        Expr.Call(callee, new_args)
                     }
                 }
                 .QualifiedIdent(name) -> {
@@ -2595,10 +2596,10 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
                         let fe = fn_e!
                         Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, explicit_to_type_args(fe.tp, type_names), regs.ambig))), new_args)
                     } else {
-                        Expr.Call(regs.store.exprs.add_leaf(callee), new_args)
+                        Expr.Call(callee, new_args)
                     }
                 }
-                _ -> Expr.Call(regs.store.exprs.add_leaf(rewrite_expr(callee, regs, insts)), new_args)
+                _ -> Expr.Call(rewrite_expr_id(callee, regs, insts), new_args)
             }
         }
         .EnumCtor(tn, variant, args) -> rewrite_enum_ctor(tn, variant, args, regs, insts)
@@ -2693,15 +2694,6 @@ fn rewrite_when_arms(arms: List<WhenArm>, regs: GenRegs, insts: List<Inst>) -> L
 fn rewrite_expr_list_ids(ids: List<ExprId>, regs: GenRegs, insts: List<Inst>) -> List<ExprId> {
     mut out: List<ExprId> = []
     for id in ids { out.push(rewrite_expr_id(id, regs, insts)) }
-    out
-}
-
-/// Leaf-wrap each boxed arg into the arena — the bridge for rewriting a
-/// still-boxed `GenericCall` (its `args` are `List<SExpr>`) INTO a flipped
-/// `Expr.Call` whose `args` are `List<ExprId>`.
-fn arg_sexprs_to_ids(store: NodeStore, args: List<SExpr>) -> List<ExprId> {
-    mut out: List<ExprId> = []
-    for se in args { out.push(store.exprs.add_leaf(se.node)) }
     out
 }
 

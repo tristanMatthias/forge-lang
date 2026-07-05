@@ -479,9 +479,9 @@ fn direct_child_expr(b: Binding) -> Expr {
 /// vtype_eq, not in the registry probe).
 @comptime
 fn unwrap_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
     let type_args: List<string> = [wrapper, parent_name]
-    Expr.GenericCall(Expr.Ident("unwrap_node_list"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_list")), type_args, args)
 }
 
 @comptime
@@ -569,18 +569,18 @@ fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr
 /// type-checks without relying on optional-aware inference.
 @comptime
 fn self_opt_to_list_call(field_name: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
     let type_args: List<string> = [parent_name]
-    Expr.GenericCall(Expr.Ident("self_opt_to_list"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("self_opt_to_list")), type_args, args)
 }
 
 /// `unwrap_node_opt::<W, Parent>(field)` — a `Wrapper<Self>?` child as a
 /// 0-or-1 element list of the unwrapped `.node`.
 @comptime
 fn unwrap_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
     let type_args: List<string> = [wrapper, parent_name]
-    Expr.GenericCall(Expr.Ident("unwrap_node_opt"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_opt")), type_args, args)
 }
 
 // ── children() fn builder ──
@@ -1437,18 +1437,18 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
 /// child. Explicit type-arg so the call type-checks without inference.
 @comptime
 fn map_self_opt_call(field_name: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<string> = [parent_name]
-    Expr.GenericCall(Expr.Ident("map_self_opt"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_self_opt")), type_args, args)
 }
 
 /// `map_node_opt::<W, Parent>(field, f)` — span-preserving none-guarded
 /// map over a `Wrapper<Self>?` child.
 @comptime
 fn map_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<string> = [wrapper, parent_name]
-    Expr.GenericCall(Expr.Ident("map_node_opt"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_opt")), type_args, args)
 }
 
 /// `f(bind_name)` — the per-field transform applied to a direct-Self.
@@ -1474,9 +1474,9 @@ fn list_map_call(bind_name: string) -> Expr {
 /// the same per-node transform map threads everywhere else.
 @comptime
 fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<string> = [wrapper, parent_name]
-    Expr.GenericCall(Expr.Ident("map_node_list"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_list")), type_args, args)
 }
 
 /// `map_node::<Wrapper, Parent>(field_name, f)` — span-preserving map of
@@ -1485,9 +1485,9 @@ fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) 
 /// check_generic_call pins W + T unambiguously and mono inherits them.
 @comptime
 fn map_node_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident(field_name)), sexpr_dummy(Expr.Ident("f"))]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<string> = [wrapper, parent_name]
-    Expr.GenericCall(Expr.Ident("map_node"), type_args, args)
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node")), type_args, args)
 }
 
 @comptime
