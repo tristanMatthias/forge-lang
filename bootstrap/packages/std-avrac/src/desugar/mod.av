@@ -574,7 +574,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr_id(store, obj, sigs), idx)
         .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
         .MapLit(entries) -> .MapLit(desugar_expr_list(store, entries, sigs))
-        .Slice(obj, s, e) -> .Slice(desugar_expr(store, obj, sigs), desugar_expr(store, s, sigs), desugar_expr(store, e, sigs))
+        .Slice(obj, s, e) -> .Slice(desugar_expr_id(store, obj, sigs), desugar_expr_id(store, s, sigs), desugar_expr_id(store, e, sigs))
         .With(obj, overrides) -> .With(desugar_expr(store, obj, sigs), desugar_field_inits(store, overrides, sigs))
         .Lambda(params, body) -> .Lambda(params, desugar_expr(store, body, sigs))
         .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))

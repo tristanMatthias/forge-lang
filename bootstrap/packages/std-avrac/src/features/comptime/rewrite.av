@@ -146,7 +146,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .ListLit(elems) -> .ListLit(rewrite_expr_list(elems, reg))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(body, reg))
         .MapLit(entries) -> .MapLit(rewrite_expr_list(entries, reg))
-        .Slice(obj, s, e) -> .Slice(rewrite_expr(obj, reg), rewrite_expr(s, reg), rewrite_expr(e, reg))
+        .Slice(obj, s, e) -> .Slice(rewrite_expr_id(obj, reg), rewrite_expr_id(s, reg), rewrite_expr_id(e, reg))
         .IsCheck(subj, variant) -> .IsCheck(rewrite_expr_id(subj, reg), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, reg), rewrite_expr_list(items, reg))
         .ListComp(body, variable, collection, filter) -> {

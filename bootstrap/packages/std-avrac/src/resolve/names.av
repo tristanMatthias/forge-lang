@@ -1518,7 +1518,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr_id(ctx, obj), idx)
         .ListLit(elems) -> .ListLit(rewrite_expr_list(ctx, elems))
         .MapLit(entries) -> .MapLit(rewrite_expr_list(ctx, entries))
-        .Slice(obj, s, e) -> .Slice(rewrite_expr(ctx, obj), rewrite_expr(ctx, s), rewrite_expr(ctx, e))
+        .Slice(obj, s, e) -> .Slice(rewrite_expr_id(ctx, obj), rewrite_expr_id(ctx, s), rewrite_expr_id(ctx, e))
         .With(obj, overrides) -> .With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
         .StructLit(name, inits) -> {
             let qn = if name != "" { resolve_type_in_ctx(ctx, name) } else { name }
@@ -1830,7 +1830,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .MatchExpr(subj, arms) -> collect_used_paths_match_arms(store, arms, collect_used_paths_expr(store, subj, acc))
         .Lambda(_, body) -> collect_used_paths_expr(store, body, acc)
         .With(obj, overrides) -> collect_used_paths_field_inits(store, overrides, collect_used_paths_expr(store, obj, acc))
-        .Slice(obj, s, e) -> collect_used_paths_expr(store, e, collect_used_paths_expr(store, s, collect_used_paths_expr(store, obj, acc)))
+        .Slice(obj, s, e) -> collect_used_paths_expr(store, store.exprs.get(e), collect_used_paths_expr(store, store.exprs.get(s), collect_used_paths_expr(store, store.exprs.get(obj), acc)))
         .IsCheck(subj, _) -> collect_used_paths_expr(store, store.exprs.get(subj), acc)
         .InCheck(needle, items) -> collect_used_paths_expr_list(store, items, collect_used_paths_expr(store, needle, acc))
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(store, body, collect_used_paths_expr(store, inner, acc))

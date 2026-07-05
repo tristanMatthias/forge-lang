@@ -1642,7 +1642,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .ListLit(els) -> lint_scan_sexprs(store, els, coll)
         .Lambda(_, body) -> lint_scan_expr(store, body, coll)
         .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
-        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_sig_or(lint_scan_expr(store, start, coll), lint_scan_expr(store, end, coll)))
+        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(start), coll), lint_scan_expr(store, store.exprs.get(end), coll)))
         .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
         .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, needle, coll), lint_scan_sexprs(store, items, coll))
         _ -> lint_sig_none()
@@ -2642,9 +2642,9 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Block(body) -> check_block(tc, body)
         .Slice(obj, start, end) -> {
-            let o = check_expr(tc, obj)
-            let s = check_expr(o.tc, start)
-            let e = check_expr(s.tc, end)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
+            let s = check_expr(o.tc, tc.nodes.exprs.get(start))
+            let e = check_expr(s.tc, tc.nodes.exprs.get(end))
             tc_er(e.tc, o.ty)
         }
         .Assign(name, value) -> {
@@ -4201,7 +4201,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
         .Try(e) -> .Try(annotate_expr_id(tc, e))
-        .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
+        .Slice(obj, start, end) -> .Slice(annotate_expr_id(tc, obj), annotate_expr_id(tc, start), annotate_expr_id(tc, end))
         .IsCheck(subj, vname) -> .IsCheck(annotate_expr_id(tc, subj), vname)
         .InCheck(needle, items) -> .InCheck(annotate_expr(tc, needle), annotate_expr_list(tc, items))
         .ListComp(body, var, coll, filter) -> {

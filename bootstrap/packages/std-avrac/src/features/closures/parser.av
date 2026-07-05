@@ -34,7 +34,7 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .With(obj, _) -> expr_contains_it(store, obj)
         .ListLit(elems) -> expr_list_contains_it(store, elems)
         .MapLit(entries) -> expr_list_contains_it(store, entries)
-        .Slice(obj, s, e) -> expr_contains_it(store, obj) || expr_contains_it(store, s) || expr_contains_it(store, e)
+        .Slice(obj, s, e) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(s)) || expr_contains_it(store, store.exprs.get(e))
         .MatchExpr(subj, _) -> expr_contains_it(store, subj)
         .Catch(inner, _, body, _, _) -> expr_contains_it(store, inner) || expr_contains_it(store, body)
         _ -> false

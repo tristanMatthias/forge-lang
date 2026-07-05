@@ -1432,7 +1432,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .Catch(inner, _, body, _, _) -> collect_inst_expr(body, regs, collect_inst_expr(inner, regs, st))
         // Forms that hold sub-expressions: every walker must recurse
         // or generic calls inside silently slip past mono.
-        .Slice(obj, start, end) -> collect_inst_expr(end, regs, collect_inst_expr(start, regs, collect_inst_expr(obj, regs, st)))
+        .Slice(obj, start, end) -> collect_inst_expr(regs.store.exprs.get(end), regs, collect_inst_expr(regs.store.exprs.get(start), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st)))
         .TupleIndex(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         .IsCheck(subj, _) -> collect_inst_expr(regs.store.exprs.get(subj), regs, st)
         .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
@@ -1987,7 +1987,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Catch(inner, b, body, cl, cc) -> .Catch(substitute_expr(store, inner, ta), b, substitute_expr(store, body, ta), cl, cc)
         // Mirror collect_inst_expr — every sub-expression in a generic
         // body must get its T-references substituted.
-        .Slice(obj, start, end) -> .Slice(substitute_expr(store, obj, ta), substitute_expr(store, start, ta), substitute_expr(store, end, ta))
+        .Slice(obj, start, end) -> .Slice(substitute_expr_id(store, obj, ta), substitute_expr_id(store, start, ta), substitute_expr_id(store, end, ta))
         .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr_id(store, obj, ta), idx)
         .IsCheck(subj, v) -> .IsCheck(substitute_expr_id(store, subj, ta), v)
         .InCheck(needle, items) -> .InCheck(substitute_expr(store, needle, ta), substitute_expr_list(store, items, ta))
@@ -2625,7 +2625,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .Catch(inner, b, body, cl, cc) -> .Catch(rewrite_expr(inner, regs, insts), b, rewrite_expr(body, regs, insts), cl, cc)
         // Mirror collect_inst_expr — must rewrite every sub-expression
         // so mangled-name substitution reaches them too.
-        .Slice(obj, start, end) -> .Slice(rewrite_expr(obj, regs, insts), rewrite_expr(start, regs, insts), rewrite_expr(end, regs, insts))
+        .Slice(obj, start, end) -> .Slice(rewrite_expr_id(obj, regs, insts), rewrite_expr_id(start, regs, insts), rewrite_expr_id(end, regs, insts))
         .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr_id(obj, regs, insts), idx)
         .IsCheck(subj, v) -> .IsCheck(rewrite_expr_id(subj, regs, insts), v)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))

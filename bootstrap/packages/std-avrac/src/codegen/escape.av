@@ -219,7 +219,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Tuple(elems) -> remove_escaped_args(store, elems, set)
         .TupleIndex(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
         .MapLit(entries) -> remove_escaped_args(store, entries, set)
-        .Slice(obj, start, end) -> remove_escaped_expr(store, end, remove_escaped_expr(store, start, remove_escaped_expr(store, obj, set)))
+        .Slice(obj, start, end) -> remove_escaped_expr(store, store.exprs.get(end), remove_escaped_expr(store, store.exprs.get(start), remove_escaped_expr(store, store.exprs.get(obj), set)))
         .Try(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
         .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, body, remove_escaped_expr(store, inner, set))
         .NullCoalesce(left, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))

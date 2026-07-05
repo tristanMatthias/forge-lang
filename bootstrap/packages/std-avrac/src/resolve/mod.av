@@ -542,9 +542,9 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             exit_resolve_scope(after)
         }
         .Slice(obj, start, end) -> {
-            let a = resolve_expr(r, obj)
-            let b = resolve_expr(a, start)
-            resolve_expr(b, end)
+            let a = resolve_expr(r, r.nodes.exprs.get(obj))
+            let b = resolve_expr(a, r.nodes.exprs.get(start))
+            resolve_expr(b, r.nodes.exprs.get(end))
         }
         .QualifiedIdent(_) -> r
         .FieldAssign(obj, field, value) -> {

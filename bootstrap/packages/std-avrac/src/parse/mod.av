@@ -1455,8 +1455,8 @@ impl Parser {
                     if !self.consume(Tk.RightBracket, "expected `]` after slice") {
                         return .Err("parse error")
                     }
-                    result = Expr.Slice(result, self.expr_of(idx), self.expr_of(end))
-                    rid = self.alloc3(result, rid, idx, end)
+                    result = Expr.Slice(rid, idx, end)
+                    rid = self.alloc_leaf(result)
                     continue
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after index") {

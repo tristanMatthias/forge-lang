@@ -231,9 +231,9 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures_field_inits(store, inits, params, env, captures)
         }
         .Slice(obj, s, e) -> {
-            find_captures(store, obj, params, env, captures)
-            find_captures(store, s, params, env, captures)
-            find_captures(store, e, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
+            find_captures(store, store.exprs.get(s), params, env, captures)
+            find_captures(store, store.exprs.get(e), params, env, captures)
         }
         .IsCheck(subj, _) -> find_captures(store, store.exprs.get(subj), params, env, captures)
         .InCheck(needle, items) -> {

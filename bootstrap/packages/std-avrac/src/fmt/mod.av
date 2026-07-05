@@ -61,7 +61,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(store, body)}"
         .MapLit(entries) -> "{ ${fmt_map_entries(store, entries)} }"
         .FloatLit(v) -> v
-        .Slice(obj, start, end) -> "${fmt_expr(store, obj)}[${fmt_expr(store, start)}..${fmt_expr(store, end)}]"
+        .Slice(obj, start, end) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(start))}..${fmt_expr(store, store.exprs.get(end))}]"
         .IsCheck(subject, vname) -> "${fmt_expr(store, store.exprs.get(subject))} is .${vname}"
         .InCheck(needle, items) -> "${fmt_expr(store, needle)} in [${fmt_expr_list_comma(store, items)}]"
         .ListComp(body, variable, collection, filter) -> {

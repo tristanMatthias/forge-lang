@@ -2237,7 +2237,7 @@ export enum Expr {
     /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
     MapLit(entries: List<SExpr>)
     /// Slice: `list[start..end]`.
-    Slice(obj: Expr, start: Expr, end: Expr)
+    Slice(obj: ExprId, start: ExprId, end: ExprId)
     /// Float literal (text form, like Number).
     FloatLit(value: string)
     /// Type-narrowing test: `subject is .Variant`.
@@ -2805,7 +2805,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
         .MapLit(entries) -> "(map ${render_expr_list(store, entries)})"
         .FloatLit(value) -> value
-        .Slice(obj, start, end) -> "(slice ${render_expr(store, obj)} ${render_expr(store, start)}..${render_expr(store, end)})"
+        .Slice(obj, start, end) -> "(slice ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(start))}..${render_expr(store, store.exprs.get(end))})"
         .IsCheck(subject, vname) -> "(is ${render_expr(store, store.exprs.get(subject))} .${vname})"
         .InCheck(needle, items) -> "(in ${render_expr(store, needle)} [${render_expr_list(store, items)}])"
         .QualifiedIdent(path) -> path
