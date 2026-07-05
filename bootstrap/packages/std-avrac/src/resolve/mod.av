@@ -533,8 +533,8 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             after_args
         }
         .Index(obj, idx) -> {
-            let after_obj = resolve_expr(r, obj)
-            resolve_expr(after_obj, idx)
+            let after_obj = resolve_expr(r, r.nodes.exprs.get(obj))
+            resolve_expr(after_obj, r.nodes.exprs.get(idx))
         }
         .Block(body) -> {
             let entered = enter_resolve_scope(r)

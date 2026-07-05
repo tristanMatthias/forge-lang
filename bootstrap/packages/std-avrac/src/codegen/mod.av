@@ -436,7 +436,7 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             err_emit("assignment to undefined variable `${name}`")
         }
         .Call(callee, args) -> emit_call(ctx, env, callee, args)
-        .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
+        .Index(obj, idx) -> emit_index(ctx, env, ctx.nodes.exprs.get(obj), ctx.nodes.exprs.get(idx))
         .Block(body) -> emit_block_expr(ctx, env, body)
         .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
         _ -> {

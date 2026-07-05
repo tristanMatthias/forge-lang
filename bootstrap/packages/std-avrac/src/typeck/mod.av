@@ -1608,13 +1608,15 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
     match e {
         .Ident(n) -> LintSig { value_i: n == "i", elem: false }
         .Index(obj, idx) -> {
-            let o = lint_scan_expr(store, obj, coll)
-            let obj_is_coll = match obj { .Ident(c) -> c == coll, _ -> false }
-            let idx_is_i = match idx { .Ident(x) -> x == "i", _ -> false }
+            let obj_e = store.exprs.get(obj)
+            let idx_e = store.exprs.get(idx)
+            let o = lint_scan_expr(store, obj_e, coll)
+            let obj_is_coll = match obj_e { .Ident(c) -> c == coll, _ -> false }
+            let idx_is_i = match idx_e { .Ident(x) -> x == "i", _ -> false }
             if obj_is_coll && idx_is_i {
                 LintSig { value_i: o.value_i, elem: true }
             } else {
-                lint_sig_or(o, lint_scan_expr(store, idx, coll))
+                lint_sig_or(o, lint_scan_expr(store, idx_e, coll))
             }
         }
         .Assign(_, value) -> lint_scan_expr(store, store.exprs.get(value), coll)
@@ -2614,8 +2616,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Call(callee, args) -> check_call(tc, callee, args)
         .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
         .Index(obj, idx) -> {
-            let o = check_expr(tc, obj)
-            let i = check_expr(o.tc, idx)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
+            let i = check_expr(o.tc, tc.nodes.exprs.get(idx))
             // String indexing returns a string (single character)
             if vtype_eq(o.ty, .Str) {
                 return tc_er(i.tc, .Str)
@@ -4192,7 +4194,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Unary(op, e) -> .Unary(op, annotate_expr_id(tc, e))
         .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
-        .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
+        .Index(obj, idx) -> .Index(annotate_expr_id(tc, obj), annotate_expr_id(tc, idx))
         .FieldAccess(obj, f) -> .FieldAccess(annotate_expr_id(tc, obj), f)
         .Assign(name, val) -> .Assign(name, annotate_expr_id(tc, val))
         .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr_id(tc, obj), f, annotate_expr_id(tc, val))
@@ -4373,7 +4375,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // kkgf: Index on a bare ident — common pattern is `xs[i]`
         // where xs is a List. Falls back when base type isn't a
         // List (string indexing, map indexing, custom Index impls).
-        .Index(base, _) -> match base {
+        .Index(base, _) -> match tc.nodes.exprs.get(base) {
             .Ident(obj_name) -> {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let elem_ty = vtype_list_elem(base_ty)

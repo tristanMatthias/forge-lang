@@ -2200,7 +2200,7 @@ export enum Expr {
     /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
     EnumCtor(type_name: string, variant: string, args: List<SExpr>)
     /// Index access: `list[i]` / `map["key"]`.
-    Index(obj: Expr, idx: Expr)
+    Index(obj: ExprId, idx: ExprId)
     /// Block expression — value is the last statement's value.
     Block(body: List<SStmt>)
     /// `match subject { arms }` — match used as an expression.
@@ -2789,7 +2789,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"
         .FieldAccess(obj, field) -> "(field ${render_expr(store, store.exprs.get(obj))} ${field})"
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(store, args)})"
-        .Index(obj, idx) -> "(index ${render_expr(store, obj)} ${render_expr(store, idx)})"
+        .Index(obj, idx) -> "(index ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(idx))})"
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
         .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
         .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"

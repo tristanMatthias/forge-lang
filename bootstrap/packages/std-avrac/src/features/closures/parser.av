@@ -21,7 +21,7 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .Grouping(inner) -> expr_contains_it(store, store.exprs.get(inner))
         .IfExpr(c, t, e) -> expr_contains_it(store, c) || expr_contains_it(store, t) || expr_contains_it(store, e)
         .Block(stmts) -> stmt_list_contains_it(store, stmts)
-        .Index(obj, idx) -> expr_contains_it(store, obj) || expr_contains_it(store, idx)
+        .Index(obj, idx) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(idx))
         .FieldAccess(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .FieldAssign(obj, _, val) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(val))
         .Assign(_, val) -> expr_contains_it(store, store.exprs.get(val))

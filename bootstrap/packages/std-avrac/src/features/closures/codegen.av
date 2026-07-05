@@ -202,8 +202,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         .Block(stmts) -> find_captures_stmts(store, stmts, params, env, captures)
         .Assign(_, value) -> find_captures(store, store.exprs.get(value), params, env, captures)
         .Index(obj, idx) -> {
-            find_captures(store, obj, params, env, captures)
-            find_captures(store, idx, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
+            find_captures(store, store.exprs.get(idx), params, env, captures)
         }
         .MatchExpr(subj, arms) -> {
             find_captures(store, subj, params, env, captures)
@@ -463,7 +463,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .Call(callee, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
         .GenericCall(callee, _, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
         .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
-        .Index(obj, idx) -> has_float_ident(obj, ctx, env, captures, params) || has_float_ident(idx, ctx, env, captures, params)
+        .Index(obj, idx) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(idx), ctx, env, captures, params)
         .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
         .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
         .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)

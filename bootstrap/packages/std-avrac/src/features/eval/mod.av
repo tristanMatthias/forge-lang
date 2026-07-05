@@ -940,9 +940,9 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             // (so07.7.9 — strings index to a single-char string,
             // matching the runtime). Out-of-range surfaces as a
             // clean error rather than a runtime crash.
-            let obj_result = eval_expr(runtime, obj)
+            let obj_result = eval_expr(runtime, runtime.nodes.exprs.get(obj))
             if obj_result.had_error { return obj_result }
-            let idx_result = eval_expr(obj_result.runtime, idx)
+            let idx_result = eval_expr(obj_result.runtime, obj_result.runtime.nodes.exprs.get(idx))
             if idx_result.had_error { return idx_result }
             let v = obj_result.value
             let iv = idx_result.value
@@ -2343,7 +2343,12 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
             let args = list_value_to_expr_list(store, args_v)?
             .Ok(Expr.EnumCtor(head.text, variant_v.text, args))
         }
-        "Index" -> two_expr_decode(store, p, "Index")
+        "Index" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_id(store, head)?
+            let idx = value_to_expr_id(store, p[1])?
+            .Ok(Expr.Index(obj, idx))
+        }
         "NullCoalesce" -> two_expr_decode(store, p, "NullCoalesce")
         "Try" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
@@ -2558,7 +2563,6 @@ fn two_expr_decode(store: NodeStore, p: List<Value>, variant: string) -> Result<
     let l = value_to_expr_node(store, p[0])?
     let r = value_to_expr_node(store, p[1])?
     match variant {
-        "Index" -> .Ok(Expr.Index(l, r))
         "NullCoalesce" -> .Ok(Expr.NullCoalesce(l, r))
         _ -> .Err("decode: unknown two-expr variant `${variant}`")
     }

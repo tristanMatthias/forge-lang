@@ -1462,8 +1462,8 @@ impl Parser {
                 if !self.consume(Tk.RightBracket, "expected `]` after index") {
                     return .Err("parse error")
                 }
-                result = Expr.Index(result, self.expr_of(idx))
-                rid = self.alloc2(result, rid, idx)
+                result = Expr.Index(rid, idx)
+                rid = self.alloc_leaf(result)
             } else if self.check(Tk.Less) && is_callable(result) {
                 // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
                 match self.try_parse_generic_call(rid) {
