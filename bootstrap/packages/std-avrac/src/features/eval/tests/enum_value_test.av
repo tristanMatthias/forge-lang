@@ -194,8 +194,9 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
 
 spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
     then "empty Expr.ListLit decodes to an empty List<SStmt>" {
-        let e = Expr.ListLit(empty_args())
-        let r: StepResult = eval_expr(runtime_new(ts()), e)
+        let store = ts()
+        let e = Expr.ListLit(store.ingest_sexpr_recipe(empty_args()))
+        let r: StepResult = eval_expr(runtime_new(store), e)
         is_stmt_list_end(r.value)
     }
 }
@@ -226,7 +227,7 @@ spec "ValueType TypeId survives the boxed Stmt roundtrip (no info loss)" {
         // ValueType.Enum("Foo", [], 42) — the 42 is the TypeId slot.
         let ws = ts()
         let vt = Expr.EnumCtor("@std::avrac::core::ValueType", "Enum",
-            ws.ingest_sexpr_recipe(three_args_se(Expr.String("\"Foo\""), Expr.ListLit(empty_args()), Expr.Number("42"))))
+            ws.ingest_sexpr_recipe(three_args_se(Expr.String("\"Foo\""), Expr.ListLit(ws.ingest_sexpr_recipe(empty_args())), Expr.Number("42"))))
         let init = Expr.EnumCtor("@std::avrac::core::Expr", "Number", ws.ingest_sexpr_recipe(one_arg_se(Expr.String("\"1\""))))
         let e = Expr.EnumCtor("@std::avrac::core::Stmt", "Let",
             ws.ingest_sexpr_recipe(three_args_se(Expr.String("\"x\""), vt, init)))

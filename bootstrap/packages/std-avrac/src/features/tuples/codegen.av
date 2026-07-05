@@ -24,7 +24,7 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base,
 /// and forwards to `emit_tuple_inner`.
 export fn emit_tuple(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Tuple(elements) -> emit_tuple_inner(ctx, env, elements)
+        .Tuple(elements) -> emit_tuple_inner(ctx, env, ctx.nodes.sexprs_of(elements))
         _ -> err_emit("expected Tuple")
     }
 }

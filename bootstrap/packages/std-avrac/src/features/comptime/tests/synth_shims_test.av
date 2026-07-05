@@ -72,7 +72,7 @@ spec "synth_stmt_id is an identity passthrough at eval" {
 spec "synth_stmt_ids is an identity passthrough at eval" {
     then "a list of boxed Stmt Values passes through unchanged" {
         let rt = fresh_probe_rt()
-        let list_arg = Expr.ListLit([sexpr_dummy(boxed_stmt_arg(rt.nodes))])
+        let list_arg = Expr.ListLit(rt.nodes.ingest_sexpr_recipe([sexpr_dummy(boxed_stmt_arg(rt.nodes))]))
         let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_ids")), [rt.nodes.exprs.add_leaf(list_arg)])
         let r = eval_expr(rt, call)
         !step_had_error(r)
@@ -85,7 +85,7 @@ spec "synth_stmt_ids is an identity passthrough at eval" {
 spec "synth shim edge cases" {
     then "an empty statement list passes through as an empty list Value" {
         let rt = fresh_probe_rt()
-        let no_elems: List<SExpr> = []
+        let no_elems: List<ExprId> = []
         let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_ids")), [rt.nodes.exprs.add_leaf(Expr.ListLit(no_elems))])
         let r = eval_expr(rt, call)
         !step_had_error(r)

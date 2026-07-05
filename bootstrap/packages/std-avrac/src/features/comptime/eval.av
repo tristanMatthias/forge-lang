@@ -145,7 +145,7 @@ fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
         "list" -> {
             let elems_opt = payload_to_args(store, v.list_payload, 0)
             if elems_opt == none { return none }
-            Expr.ListLit(elems_opt!)
+            Expr.ListLit(store.ingest_sexpr_recipe(elems_opt!))
         }
         // fwyx: a struct Value reconstructs as Expr.StructLit, mirroring
         // the struct_lit_2 output (every FieldInit recurses).

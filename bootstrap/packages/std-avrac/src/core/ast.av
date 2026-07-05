@@ -2210,18 +2210,18 @@ export enum Expr {
     /// if `expr` is Err / null.
     Try(expr: ExprId)
     /// Tuple literal: `(a, b, c)`.
-    Tuple(elements: List<SExpr>)
+    Tuple(elements: List<ExprId>)
     /// Tuple index: `t.0`, `t.1`.
     TupleIndex(obj: ExprId, index: int)
     /// Functional struct update: `obj with { field: new_value }`.
     With(obj: Expr, overrides: List<FieldInit>)
     /// List literal: `[1, 2, 3]`.
-    ListLit(elements: List<SExpr>)
+    ListLit(elements: List<ExprId>)
     /// Closure literal: `(x, y) -> body`.
     Lambda(params: List<ParamEntry>, body: Expr)
     /// Map literal — flat list of alternating key/value:
     /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
-    MapLit(entries: List<SExpr>)
+    MapLit(entries: List<ExprId>)
     /// Slice: `list[start..end]`.
     Slice(obj: ExprId, start: ExprId, end: ExprId)
     /// Float literal (text form, like Number).
@@ -2784,12 +2784,12 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"
         .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr_id(store, obj)} ${method} ${render_expr_ids(store, args)})"
         .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
-        .Tuple(elements) -> "(tuple ${render_expr_list(store, elements)})"
+        .Tuple(elements) -> "(tuple ${render_expr_ids(store, elements)})"
         .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, store.exprs.get(obj))} ${string(idx)})"
         .With(obj, overrides) -> "(with ${render_expr(store, obj)} ${render_field_init_list(store, overrides)})"
-        .ListLit(elements) -> "(list ${render_expr_list(store, elements)})"
+        .ListLit(elements) -> "(list ${render_expr_ids(store, elements)})"
         .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
-        .MapLit(entries) -> "(map ${render_expr_list(store, entries)})"
+        .MapLit(entries) -> "(map ${render_expr_ids(store, entries)})"
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(start))}..${render_expr(store, store.exprs.get(end))})"
         .IsCheck(subject, vname) -> "(is ${render_expr(store, store.exprs.get(subject))} .${vname})"
@@ -2843,12 +2843,6 @@ export fn render_field_list(fields: List<FieldEntry>) -> string {
 /// Render a `List<string>` of type names as a comma-separated string.
 export fn render_type_name_list(names: List<string>) -> string {
     names.join(", ")
-}
-
-/// Render a `List<SExpr>` as an S-expression: `(e1, e2, e3)`.
-export fn render_expr_list(store: NodeStore, exprs: List<SExpr>) -> string {
-    if exprs.length == 0 { return "()" }
-    "(${list_map(exprs, (se: SExpr) -> render_expr(store, se.node)).join(", ")})"
 }
 
 /// Render a `List<ParamEntry>` as `(name, name2)`.
@@ -2937,9 +2931,8 @@ export fn render_stmt_ids(store: NodeStore, ids: List<StmtId>) -> string {
     list_map(ids, (id: StmtId) -> render_stmt(store, store.stmts.get(id))).join("\n")
 }
 
-/// Render a flipped `List<ExprId>` arg/item list as `(e1, e2, e3)` — the id
-/// twin of `render_expr_list` (which stays for the still-boxed
-/// Tuple/ListLit/MapLit). Format matches `render_expr_list` byte-for-byte.
+/// Render a flipped `List<ExprId>` arg/item list as `(e1, e2, e3)` — used by
+/// call args, generic-call args, and the Tuple/ListLit/MapLit literals.
 export fn render_expr_ids(store: NodeStore, ids: List<ExprId>) -> string {
     if ids.length == 0 { return "()" }
     "(${list_map(ids, (id: ExprId) -> render_expr(store, store.exprs.get(id))).join(", ")})"

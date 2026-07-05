@@ -196,7 +196,7 @@ fn mk_make_call_fn(ws: NodeStore) -> CompTimeFn {
         ws.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy")),
         sexpr_dummy_args)
     let args_list_elems: List<SExpr> = [sexpr_dummy(sexpr_dummy_call)]
-    let args_list = Expr.ListLit(args_list_elems)
+    let args_list = Expr.ListLit(ws.ingest_sexpr_recipe(args_list_elems))
     let f_ident_str: List<SExpr> = [sexpr_dummy(Expr.String("\"f\""))]
     let callee_expr = Expr.EnumCtor("@std::avrac::core::Expr", "Ident", ws.ingest_sexpr_recipe(f_ident_str))
     let call_payload: List<SExpr> = [sexpr_dummy(callee_expr), sexpr_dummy(args_list)]

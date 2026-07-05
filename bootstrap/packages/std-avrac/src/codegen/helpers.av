@@ -72,9 +72,10 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
                 let pvt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
                 if vtype_is_list(pvt) && vtype_is_optional(vtype_list_elem(pvt)) {
                     mut vals: List<EmitValue> = []
+                    let els = ctx.nodes.sexprs_of(elements)
                     mut j = 0
-                    while j < elements.length {
-                        vals.push(ctx.emit(env, elements[j].node)?)
+                    while j < els.length {
+                        vals.push(ctx.emit(env, els[j].node)?)
                         j = j + 1
                     }
                     r = box_into_list(ctx, vals, vtype_list_elem(pvt))?
