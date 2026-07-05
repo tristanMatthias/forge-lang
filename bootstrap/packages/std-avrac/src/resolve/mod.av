@@ -511,8 +511,8 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Grouping(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
         .Unary(_, right) -> resolve_expr(r, r.nodes.exprs.get(right))
         .Binary(left, _, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
+            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
+            resolve_expr(after_left, r.nodes.exprs.get(right))
         }
         .Logical(left, _, right) -> {
             let after_left = resolve_expr(r, r.nodes.exprs.get(left))

@@ -122,7 +122,7 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
-            let guard = narrow_guard_of(cond)
+            let guard = narrow_guard_of(tc.nodes, cond)
             // Fast path: no `none`-guard (the common case) → check the
             // branches directly, with no env reconstruction.
             if guard.var == "" {
@@ -177,7 +177,7 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
-            let guard = narrow_guard_of(cond_e)
+            let guard = narrow_guard_of(tc.nodes, cond_e)
             // Fast path: no `none`-guard → check both arms directly, no
             // env reconstruction.
             if guard.var == "" {

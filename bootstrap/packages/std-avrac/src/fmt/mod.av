@@ -38,7 +38,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Assign(name, value) -> "${name} = ${fmt_expr(store, store.exprs.get(value))}"
         .Grouping(inner) -> "(${fmt_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "${unop_str(op)}${fmt_expr(store, store.exprs.get(right))}"
-        .Binary(left, op, right) -> "${fmt_expr(store, left)} ${binop_str(op)} ${fmt_expr(store, right)}"
+        .Binary(left, op, right) -> "${fmt_expr(store, store.exprs.get(left))} ${binop_str(op)} ${fmt_expr(store, store.exprs.get(right))}"
         .Logical(left, op, right) -> "${fmt_expr(store, store.exprs.get(left))} ${logicop_str(op)} ${fmt_expr(store, store.exprs.get(right))}"
         .Call(callee, args) -> "${fmt_expr(store, callee)}(${fmt_expr_list_comma(store, args)})"
         .GenericCall(callee, ta, args) -> "${fmt_expr(store, callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(store, args)})"

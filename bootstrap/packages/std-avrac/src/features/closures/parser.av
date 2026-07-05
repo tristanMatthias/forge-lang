@@ -14,7 +14,7 @@ use list_ops.{list_any}
 export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Ident(n) -> n == "it"
-        .Binary(l, _, r) -> expr_contains_it(store, l) || expr_contains_it(store, r)
+        .Binary(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .Unary(_, r) -> expr_contains_it(store, store.exprs.get(r))
         .Logical(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .Call(callee, args) -> expr_contains_it(store, callee) || expr_list_contains_it(store, args)

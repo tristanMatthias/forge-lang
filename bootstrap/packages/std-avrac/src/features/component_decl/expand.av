@@ -254,7 +254,7 @@ fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
         }
         .Ident(name) -> if name == "self" { Expr.Ident(ctx.inst) } else { expr }
         .Call(callee, args) -> Expr.Call(rw_expr(store, callee, ctx), rw_expr_list(store, args, ctx))
-        .Binary(l, op, r) -> Expr.Binary(rw_expr(store, l, ctx), op, rw_expr(store, r, ctx))
+        .Binary(l, op, r) -> Expr.Binary(rw_expr_id(store, l, ctx), op, rw_expr_id(store, r, ctx))
         .Unary(op, r) -> Expr.Unary(op, rw_expr_id(store, r, ctx))
         .Logical(l, op, r) -> Expr.Logical(rw_expr_id(store, l, ctx), op, rw_expr_id(store, r, ctx))
         .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr_id(store, c, ctx), rw_expr_id(store, t, ctx), rw_expr_id(store, e, ctx))
@@ -347,7 +347,7 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
             Expr.FieldAssign(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr_id(store, val, inst, uc, schema, ctx))
         }
         .Call(callee, args) -> Expr.Call(rw_tpl_expr(store, callee, inst, uc, schema, ctx), rw_tpl_expr_list(store, args, inst, uc, schema, ctx))
-        .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr(store, l, inst, uc, schema, ctx), op, rw_tpl_expr(store, r, inst, uc, schema, ctx))
+        .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr_id(store, l, inst, uc, schema, ctx), op, rw_tpl_expr_id(store, r, inst, uc, schema, ctx))
         .With(base, overrides) -> Expr.With(rw_tpl_expr(store, base, inst, uc, schema, ctx), rw_tpl_field_inits(store, overrides, inst, uc, schema, ctx))
         .StructLit(name, inits) -> Expr.StructLit(name, rw_tpl_field_inits(store, inits, inst, uc, schema, ctx))
         .Ident(name) -> if name == "self" { Expr.String("\"${inst}\"") } else { expr }

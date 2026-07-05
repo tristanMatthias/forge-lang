@@ -4,7 +4,7 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, expr_eq_none, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 use diagnostics.{DiagCode}
@@ -66,8 +66,7 @@ impl Parser {
         }
         let tmp = self.fresh("letelse")
         let unwrap_id = self.alloc_force_unwrap_row(tmp)
-        let cond = expr_eq_none(Expr.Ident(tmp))
-        let cond_id = self.alloc_none_check_row(tmp, cond)
+        let cond_id = self.alloc_none_check_row(tmp, BinOp.Eq)
         // Expr.Block still carries boxed wrappers (F3b flips it); its edges
         // are the reused body rows.
         mut else_edges: List<NodeRef> = []

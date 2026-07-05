@@ -615,11 +615,6 @@ export fn expr_force_unwrap(subject: Expr) -> Expr {
     Expr.Call(Expr.Ident(FORCE_UNWRAP_FN), fu_args)
 }
 
-/// `<e> != none` / `<e> == none` — the present/absent tests every optional
-/// desugar (`if let`, `let-else`) branches on, built in one place.
-export fn expr_ne_none(e: Expr) -> Expr { Expr.Binary(e, BinOp.Ne, Expr.None) }
-export fn expr_eq_none(e: Expr) -> Expr { Expr.Binary(e, BinOp.Eq, Expr.None) }
-
 // ── Gensym contract ──
 // Compiler-minted temp names are `$tag$N`. The `$` prefix IS the contract:
 // the lexer never admits `$` in a user identifier, so a gensym can neither
@@ -2186,7 +2181,7 @@ export enum Expr {
     /// Prefix unary: `!x`, `-x`, `~x`.
     Unary(op: UnOp, right: ExprId)
     /// Binary infix: `a + b`, `x == y`, `a & b`.
-    Binary(left: Expr, op: BinOp, right: Expr)
+    Binary(left: ExprId, op: BinOp, right: ExprId)
     /// Short-circuit logical: `a && b`, `a || b`.
     Logical(left: ExprId, op: LogicOp, right: ExprId)
     /// Function call: `f(a, b)`.
@@ -2782,7 +2777,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Assign(name, value) -> "(assign ${name} ${render_expr(store, store.exprs.get(value))})"
         .Grouping(inner) -> "(group ${render_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
-        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
+        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
         .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"

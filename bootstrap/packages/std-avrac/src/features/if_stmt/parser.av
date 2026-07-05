@@ -5,7 +5,7 @@
 // binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
 // no codegen.
 
-use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use list_ops.{list_concat}
 use parse.{Parser}
 use diagnostics.{DiagCode}
@@ -162,7 +162,7 @@ impl Parser {
 
     // Row twin of the `__tmp != none` condition.
     fn iflet_cond_row(self, tmp: string) -> ExprId {
-        self.alloc_none_check_row(tmp, expr_ne_none(Expr.Ident(tmp)))
+        self.alloc_none_check_row(tmp, BinOp.Ne)
     }
 
     // Prepend the unwrap-bind row to a then-block's row list.

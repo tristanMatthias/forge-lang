@@ -53,14 +53,12 @@ spec "derive_walker: Expr enum carries .children()" {
             "}\n")
         out.contains("empty=true")
     }
-    then "two-direct-Self (Expr.Binary) — both operands" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
-            "use @std.avrac.core.{Expr, BinOp}\n" +
+    then "Expr.Binary — operand ids are scalar, children() skips them (F3b)" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av",
+            "use @std.avrac.core.{Expr, BinOp, ExprId}\n" +
             "fn main() {\n" +
-            "    let lhs = Expr.Number(\"1\")\n" +
-            "    let rhs = Expr.Number(\"2\")\n" +
-            "    let bin = Expr.Binary(lhs, BinOp.Add, rhs)\n" +
-            "    println(\"two=\" + string(bin.children().length == 2))\n" +
+            "    let bin = Expr.Binary(ExprId(1), BinOp.Add, ExprId(2))\n" +
+            "    println(\"two=\" + string(bin.children().length == 0))\n" +
             "}\n")
         out.contains("two=true")
     }

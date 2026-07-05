@@ -26,7 +26,7 @@ export fn is_const_expr(store: NodeStore, expr: Expr) -> bool {
         .Bool(_) -> true
         .None -> true
         .Unary(_, inner) -> is_const_expr(store, store.exprs.get(inner))
-        .Binary(left, _, right) -> is_const_expr(store, left) && is_const_expr(store, right)
+        .Binary(left, _, right) -> is_const_expr(store, store.exprs.get(left)) && is_const_expr(store, store.exprs.get(right))
         .Grouping(inner) -> is_const_expr(store, store.exprs.get(inner))
         .Ident(_) -> true  // could be another const — resolver ensures it's defined
         _ -> false

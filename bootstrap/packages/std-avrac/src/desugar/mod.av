@@ -443,8 +443,8 @@ fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr
     match name {
         "assert" -> desugar_assert(store, args)
         "dbg" -> desugar_dbg(store, args)
-        "todo" -> desugar_todo(args)
-        "unreachable" -> desugar_unreachable(args)
+        "todo" -> desugar_todo(store, args)
+        "unreachable" -> desugar_unreachable(store, args)
         "min" -> desugar_min_max(store, args, true)
         "max" -> desugar_min_max(store, args, false)
         _ -> original
@@ -482,9 +482,9 @@ fn desugar_dbg(store: NodeStore, args: List<SExpr>) -> Expr {
     let val = args[0].node
     let string_args: List<SExpr> = [sexpr_dummy(Expr.Ident("__dbg"))]
     let print_arg = Expr.Binary(
-        Expr.String("\"[dbg] \""),
+        store.exprs.add_leaf(Expr.String("\"[dbg] \"")),
         BinOp.Add,
-        Expr.Call(Expr.Ident("string"), string_args)
+        store.exprs.add_leaf(Expr.Call(Expr.Ident("string"), string_args))
     )
     let println_args: List<SExpr> = [sexpr_dummy(print_arg)]
     let body: List<SStmt> = [
@@ -497,9 +497,9 @@ fn desugar_dbg(store: NodeStore, args: List<SExpr>) -> Expr {
 
 /// Rewrite `todo()` / `todo("message")` into a `panic` with a
 /// `"not yet implemented"` prefix.
-fn desugar_todo(args: List<SExpr>) -> Expr {
+fn desugar_todo(store: NodeStore, args: List<SExpr>) -> Expr {
     let msg = if args.length > 0 {
-        Expr.Binary(Expr.String("\"not yet implemented: \""), BinOp.Add, args[0].node)
+        Expr.Binary(store.exprs.add_leaf(Expr.String("\"not yet implemented: \"")), BinOp.Add, store.exprs.add_leaf(args[0].node))
     } else {
         Expr.String("\"not yet implemented\"")
     }
@@ -510,9 +510,9 @@ fn desugar_todo(args: List<SExpr>) -> Expr {
 /// Rewrite `unreachable()` / `unreachable("reason")` into a `panic`
 /// with `"unreachable code reached"` prefix. For impossible code
 /// paths the type-checker can't yet prove dead.
-fn desugar_unreachable(args: List<SExpr>) -> Expr {
+fn desugar_unreachable(store: NodeStore, args: List<SExpr>) -> Expr {
     let msg = if args.length > 0 {
-        Expr.Binary(Expr.String("\"unreachable: \""), BinOp.Add, args[0].node)
+        Expr.Binary(store.exprs.add_leaf(Expr.String("\"unreachable: \"")), BinOp.Add, store.exprs.add_leaf(args[0].node))
     } else {
         Expr.String("\"unreachable code reached\"")
     }
@@ -533,7 +533,7 @@ fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
     let b_se = args[1]
     let op = if is_min { BinOp.Lt } else { BinOp.Gt }
     let pick = Expr.IfExpr(
-        store.exprs.add_leaf(Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b"))),
+        store.exprs.add_leaf(Expr.Binary(store.exprs.add_leaf(Expr.Ident("__a")), op, store.exprs.add_leaf(Expr.Ident("__b")))),
         store.exprs.add_leaf(Expr.Ident("__a")),
         store.exprs.add_leaf(Expr.Ident("__b"))
     )
@@ -553,7 +553,7 @@ fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
 /// without sub-nodes pass through unchanged.
 fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
-        .Binary(l, op, r) -> .Binary(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
+        .Binary(l, op, r) -> .Binary(desugar_expr_id(store, l, sigs), op, desugar_expr_id(store, r, sigs))
         .Unary(op, r) -> .Unary(op, desugar_expr_id(store, r, sigs))
         .Logical(l, op, r) -> .Logical(desugar_expr_id(store, l, sigs), op, desugar_expr_id(store, r, sigs))
         // Call args: desugar each arg, then pin any anonymous table row

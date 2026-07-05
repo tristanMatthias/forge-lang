@@ -40,7 +40,7 @@ spec "lower_quotes_via_store: equivalence with the boxed scan" {
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) != render_stmt_list(pw.store, pw.stmts)
     }
     then "a no-quote program takes the fast path unchanged" {
-        let pw = program_of(Expr.Binary(Expr.Number("1"), .Add, Expr.Number("2")))
+        let pw = program_of(Expr.Number("42"))
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, pw.stmts)
     }
     then "an empty program takes the fast path" {

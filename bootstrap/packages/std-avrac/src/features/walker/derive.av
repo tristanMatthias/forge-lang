@@ -1309,7 +1309,7 @@ fn build_find_fn(enum_name: string) -> Stmt {
     let find_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
     let c_find_call = Expr.Call(ident_field_access("c", "find"), find_args)
     let let_r = Stmt.Let("r", self_ty, synth_expr_id(c_find_call))
-    let r_not_null = Expr.Binary(Expr.Ident("r"), BinOp.Ne, Expr.None)
+    let r_not_null = Expr.Binary(synth_expr_id(Expr.Ident("r")), BinOp.Ne, synth_expr_id(Expr.None))
     let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Ident("r"))))]
     let return_r_block = Stmt.Block(synth_stmt_ids(return_r_stmts))
     let if_r_not_null = Stmt.If(synth_expr_id(r_not_null), synth_stmt_id(return_r_block), null)
