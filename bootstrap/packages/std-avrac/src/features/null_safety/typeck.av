@@ -97,8 +97,8 @@ export fn check_try(tc: TC, expr: Expr) -> ExprResult {
 export fn check_null_coalesce(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .NullCoalesce(left, right) -> {
-            let l = check_expr(tc, left)
-            let r = check_expr(l.tc, right)
+            let l = check_expr(tc, tc.nodes.exprs.get(left))
+            let r = check_expr(l.tc, tc.nodes.exprs.get(right))
             // `left ?? right` — result type is the right side (fallback value).
             // If both sides have known non-Unknown types, prefer the more specific one.
             if l.ty is .Unknown { return tc_er(r.tc, r.ty) }

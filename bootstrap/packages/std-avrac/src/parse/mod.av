@@ -1082,7 +1082,7 @@ impl Parser {
         while self.check(Tk.QuestionQuestion) {
             self.advance()
             let right = self.parse_or()?
-            eid = self.alloc2(Expr.NullCoalesce(self.expr_of(eid), self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.NullCoalesce(eid, right))
         }
 
         .Ok(eid)

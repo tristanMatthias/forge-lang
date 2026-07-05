@@ -25,7 +25,7 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .FieldAccess(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .FieldAssign(obj, _, val) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(val))
         .Assign(_, val) -> expr_contains_it(store, store.exprs.get(val))
-        .NullCoalesce(l, r) -> expr_contains_it(store, l) || expr_contains_it(store, r)
+        .NullCoalesce(l, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .OptionalChain(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .OptionalMethodCall(obj, _, args) -> expr_contains_it(store, obj) || expr_list_contains_it(store, args)
         .Try(inner) -> expr_contains_it(store, store.exprs.get(inner))

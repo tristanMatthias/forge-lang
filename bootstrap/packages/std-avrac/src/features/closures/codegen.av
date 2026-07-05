@@ -217,8 +217,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(val), params, env, captures)
         }
         .NullCoalesce(l, r) -> {
-            find_captures(store, l, params, env, captures)
-            find_captures(store, r, params, env, captures)
+            find_captures(store, store.exprs.get(l), params, env, captures)
+            find_captures(store, store.exprs.get(r), params, env, captures)
         }
         .Try(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
         .ListLit(elems) -> find_captures_list(store, elems, params, env, captures)
@@ -465,7 +465,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
         .Index(obj, idx) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(idx), ctx, env, captures, params)
         .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
-        .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+        .NullCoalesce(left, right) -> has_float_ident(ctx.nodes.exprs.get(left), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(right), ctx, env, captures, params)
         .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
         .TupleIndex(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)

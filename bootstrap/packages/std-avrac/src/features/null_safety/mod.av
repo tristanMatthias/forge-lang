@@ -12,7 +12,7 @@ use typeck.{check_expr, tc_er, check_method_call}
 /// (`x ?? fallback`).
 export fn null_coalesce_feature() -> Feature {
     feature_new("null_coalesce") with {
-        expr_tag: Expr.NullCoalesce(Expr.None, Expr.None),
+        expr_tag: Expr.NullCoalesce(ExprId(0), ExprId(0)),
         emit_expr: null_coalesce_emit_expr,
         resolve_expr: null_coalesce_resolve_expr,
         check_expr: check_null_coalesce,
@@ -70,8 +70,8 @@ export fn catch_feature() -> Feature {
 fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .NullCoalesce(left, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
+            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
+            resolve_expr(after_left, r.nodes.exprs.get(right))
         }
         _ -> r
     }
@@ -142,7 +142,7 @@ fn catch_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitVa
 /// `emit_null_coalesce`.
 fn null_coalesce_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
+        .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, ctx.nodes.exprs.get(left), ctx.nodes.exprs.get(right))
         _ -> err_emit("expected NullCoalesce")
     }
 }

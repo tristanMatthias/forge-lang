@@ -136,7 +136,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(c, reg), rewrite_expr(t, reg), rewrite_expr(e, reg))
         .Block(body) -> .Block(rewrite_stmt_list(body, reg))
         .MatchExpr(subj, arms) -> .MatchExpr(rewrite_expr(subj, reg), rewrite_match_arms(arms, reg))
-        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, reg), rewrite_expr(r, reg))
+        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr_id(l, reg), rewrite_expr_id(r, reg))
         .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr_id(obj, reg), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(rewrite_expr(obj, reg), method, rewrite_expr_list(args, reg))
         .Try(inner) -> .Try(rewrite_expr_id(inner, reg))

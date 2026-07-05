@@ -566,7 +566,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr_id(store, obj, sigs), field, desugar_expr_id(store, val, sigs))
         .IfExpr(c, t, e) -> .IfExpr(desugar_expr(store, c, sigs), desugar_expr(store, t, sigs), desugar_expr(store, e, sigs))
         .Block(body) -> .Block(desugar_stmt_list(store, body, sigs))
-        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(store, l, sigs), desugar_expr(store, r, sigs))
+        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr_id(store, l, sigs), desugar_expr_id(store, r, sigs))
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr_id(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(store, obj, sigs), method, desugar_expr_list(store, args, sigs))
         .Try(inner) -> .Try(desugar_expr_id(store, inner, sigs))

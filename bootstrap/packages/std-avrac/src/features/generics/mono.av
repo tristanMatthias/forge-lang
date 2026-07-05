@@ -1411,7 +1411,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         }
         .Binary(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
         .Logical(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
-        .NullCoalesce(l, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
+        .NullCoalesce(l, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .FieldAssign(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .Index(obj, idx) -> collect_inst_expr(regs.store.exprs.get(idx), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
         .IfExpr(c, t, e) -> collect_inst_expr(e, regs, collect_inst_expr(t, regs, collect_inst_expr(c, regs, st)))
@@ -1696,7 +1696,7 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
         .ListLit(elems) -> .ListLit(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
         .Tuple(elems) -> .Tuple(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
         .Lambda(params, body) -> .Lambda(params, rename_self_calls_expr(store, body, orig_name, mangled))
-        .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr(store, l, orig_name, mangled), rename_self_calls_expr(store, r, orig_name, mangled))
+        .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr_id(store, l, orig_name, mangled), rename_self_calls_expr_id(store, r, orig_name, mangled))
         .Try(e) -> .Try(rename_self_calls_expr_id(store, e, orig_name, mangled))
         _ -> expr
     }
@@ -1974,7 +1974,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Tuple(elems) -> .Tuple(substitute_expr_list(store, elems, ta))
         .MapLit(entries) -> .MapLit(substitute_expr_list(store, entries, ta))
         .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr(store, body, ta))
-        .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr(store, l, ta), substitute_expr(store, r, ta))
+        .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr_id(store, l, ta), substitute_expr_id(store, r, ta))
         .Try(e) -> .Try(substitute_expr_id(store, e, ta))
         .With(obj, inits) -> .With(substitute_expr(store, obj, ta), inits)
         .ListComp(body, v, coll, filter) -> {
@@ -2612,7 +2612,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         // up the monomorphized name, or a method/field on it dispatches to the
         // bare `Box`. Mirrors how fn params are rewritten.
         .Lambda(params, body) -> .Lambda(rewrite_param_types(params, regs, insts), rewrite_expr(body, regs, insts))
-        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, regs, insts), rewrite_expr(r, regs, insts))
+        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr_id(l, regs, insts), rewrite_expr_id(r, regs, insts))
         .Try(e) -> .Try(rewrite_expr_id(e, regs, insts))
         .With(obj, overrides) -> .With(rewrite_expr(obj, regs, insts), rewrite_field_inits(overrides, regs, insts))
         .ListComp(body, v, coll, filter) -> {

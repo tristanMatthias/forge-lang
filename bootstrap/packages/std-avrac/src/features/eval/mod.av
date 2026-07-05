@@ -2349,7 +2349,12 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
             let idx = value_to_expr_id(store, p[1])?
             .Ok(Expr.Index(obj, idx))
         }
-        "NullCoalesce" -> two_expr_decode(store, p, "NullCoalesce")
+        "NullCoalesce" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let left = value_to_expr_id(store, head)?
+            let right = value_to_expr_id(store, p[1])?
+            .Ok(Expr.NullCoalesce(left, right))
+        }
         "Try" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
             let inner = value_to_expr_id(store, head)?
@@ -2556,16 +2561,6 @@ fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>,
         out.push(store.pats.add_leaf(p))
     }
     .Ok(out)
-}
-
-fn two_expr_decode(store: NodeStore, p: List<Value>, variant: string) -> Result<Expr, string> {
-    if p.length != 2 { return .Err("decode: two-expr arity") }
-    let l = value_to_expr_node(store, p[0])?
-    let r = value_to_expr_node(store, p[1])?
-    match variant {
-        "NullCoalesce" -> .Ok(Expr.NullCoalesce(l, r))
-        _ -> .Err("decode: unknown two-expr variant `${variant}`")
-    }
 }
 
 fn list_value_to_expr_list(store: NodeStore, v: Value) -> Result<List<SExpr>, string> {
