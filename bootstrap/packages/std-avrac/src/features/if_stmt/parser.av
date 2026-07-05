@@ -5,7 +5,7 @@
 // binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
 // no codegen.
 
-use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use list_ops.{list_concat}
 use parse.{Parser}
 use diagnostics.{DiagCode}
@@ -109,7 +109,6 @@ impl Parser {
         // Else mirrors `parse_if_expression`: block / `else if` / bare expr;
         // a missing else yields the same `0` default a plain if-expr uses
         // (a real child row, exactly as the canonical ingest records it).
-        mut else_expr = Expr.Number("0")
         mut else_id = ExprId(0)
         mut has_else = false
         if self.check(Tk.KwElse) {
@@ -121,7 +120,6 @@ impl Parser {
             } else {
                 else_id = self.parse_expression()?
             }
-            else_expr = self.expr_of(else_id)
             has_else = true
         }
         if !has_else { else_id = self.alloc_leaf(Expr.Number("0")) }
@@ -144,10 +142,9 @@ impl Parser {
             }
         }
         let new_then_id = self.alloc_expr(new_then, byte_span_none(), then_edges)
-        let cond = expr_ne_none(Expr.Ident(h.tmp))
         let cond_id = self.iflet_cond_row(h.tmp)
-        let inner_if = Expr.IfExpr(cond, new_then, else_expr)
-        let inner_if_id = self.alloc3(inner_if, cond_id, new_then_id, else_id)
+        let inner_if = Expr.IfExpr(cond_id, new_then_id, else_id)
+        let inner_if_id = self.alloc_leaf(inner_if)
         let outer_let_id = self.alloc_binding_stmt(Stmt.Let(h.tmp, ValueType.Unknown, h.subject_id), ValueType.Unknown)
         let inner_if_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(inner_if_id))
         let outer: List<SStmt> = [sstmt_dummy(self.stmt_of(outer_let_id)), sstmt_dummy(Stmt.Expr(inner_if_id))]
@@ -165,7 +162,7 @@ impl Parser {
 
     // Row twin of the `__tmp != none` condition.
     fn iflet_cond_row(self, tmp: string) -> ExprId {
-        self.alloc_none_check_row(tmp, expr_ne_none(Expr.Ident(tmp)))
+        self.alloc_none_check_row(tmp, BinOp.Ne)
     }
 
     // Prepend the unwrap-bind row to a then-block's row list.
@@ -190,25 +187,24 @@ impl Parser {
             return .Err("parse error")
         }
         let then_id = self.parse_block_expression()?
-        let then_branch = self.expr_of(then_id)
         if !self.check(Tk.KwElse) {
             // The synthesized `0` else-arm is a real child row, exactly as
             // the canonical ingest would record it.
             let zero_id = self.alloc_leaf(Expr.Number("0"))
-            return .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, Expr.Number("0")), condition, then_id, zero_id))
+            return .Ok(self.alloc_leaf(Expr.IfExpr(condition, then_id, zero_id)))
         }
         self.advance()
         // Else can be either a block, another if-expression
         // (`else if`), or a single expression.
         if self.check(Tk.KwIf) {
             let else_id = self.parse_if_expression()?
-            return .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, self.expr_of(else_id)), condition, then_id, else_id))
+            return .Ok(self.alloc_leaf(Expr.IfExpr(condition, then_id, else_id)))
         }
         if self.check(Tk.LeftBrace) {
             let else_id = self.parse_block_expression()?
-            return .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, self.expr_of(else_id)), condition, then_id, else_id))
+            return .Ok(self.alloc_leaf(Expr.IfExpr(condition, then_id, else_id)))
         }
         let else_id = self.parse_expression()?
-        .Ok(self.alloc3(Expr.IfExpr(self.expr_of(condition), then_branch, self.expr_of(else_id)), condition, then_id, else_id))
+        .Ok(self.alloc_leaf(Expr.IfExpr(condition, then_id, else_id)))
     }
 }

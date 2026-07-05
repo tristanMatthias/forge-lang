@@ -402,8 +402,8 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
         }
         .Grouping(inner) -> emit_expr(ctx, env, ctx.nodes.exprs.get(inner))
         .Unary(op, right) -> emit_unary(ctx, env, op, ctx.nodes.exprs.get(right))
-        .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
-        .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
+        .Binary(left, op, right) -> emit_binary(ctx, env, ctx.nodes.exprs.get(left), op, ctx.nodes.exprs.get(right))
+        .Logical(left, op, right) -> emit_logical(ctx, env, ctx.nodes.exprs.get(left), op, ctx.nodes.exprs.get(right))
         .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
         .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {
@@ -436,9 +436,9 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             err_emit("assignment to undefined variable `${name}`")
         }
         .Call(callee, args) -> emit_call(ctx, env, callee, args)
-        .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
+        .Index(obj, idx) -> emit_index(ctx, env, ctx.nodes.exprs.get(obj), ctx.nodes.exprs.get(idx))
         .Block(body) -> emit_block_expr(ctx, env, body)
-        .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
+        .Slice(obj, start, end) -> emit_slice(ctx, env, ctx.nodes.exprs.get(obj), ctx.nodes.exprs.get(start), ctx.nodes.exprs.get(end))
         _ -> {
             let tag = avra_expr_tag(expr)
             if has_expr_emit(ctx.features, tag) {

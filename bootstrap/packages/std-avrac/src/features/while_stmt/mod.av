@@ -32,7 +32,7 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `${vtype_render_full(c.ty)}`")
             } else { c.tc }
-            let guard = narrow_guard_of(cond)
+            let guard = narrow_guard_of(tc.nodes, cond)
             // Fast path: no `none`-guard → check the body directly.
             if guard.var == "" { return check_stmt(after_cond, body) }
             // Optional flow-narrowing: in `while x != none { … }` the body

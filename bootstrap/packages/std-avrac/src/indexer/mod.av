@@ -193,12 +193,12 @@ fn scan_expr_for_calls(store: NodeStore, e: Expr, file: string, caller: string, 
             scan_expr_list(store, args, file, caller, line, col, with_callee)
         }
         .Binary(left, _, right) -> {
-            let a1 = scan_expr_for_calls(store, left, file, caller, line, col, acc)
-            scan_expr_for_calls(store, right, file, caller, line, col, a1)
+            let a1 = scan_expr_for_calls(store, store.exprs.get(left), file, caller, line, col, acc)
+            scan_expr_for_calls(store, store.exprs.get(right), file, caller, line, col, a1)
         }
         .Logical(left, _, right) -> {
-            let a1 = scan_expr_for_calls(store, left, file, caller, line, col, acc)
-            scan_expr_for_calls(store, right, file, caller, line, col, a1)
+            let a1 = scan_expr_for_calls(store, store.exprs.get(left), file, caller, line, col, acc)
+            scan_expr_for_calls(store, store.exprs.get(right), file, caller, line, col, a1)
         }
         .Grouping(inner) -> scan_expr_for_calls(store, store.exprs.get(inner), file, caller, line, col, acc)
         _ -> acc

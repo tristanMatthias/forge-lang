@@ -187,11 +187,11 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
             let s1 = remove_escaped_expr(store, callee, set)
             remove_escaped_args(store, args, s1)
         }
-        .Binary(left, _, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .Binary(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
         .Unary(_, inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
-        .Logical(left, _, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .Logical(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
         .Grouping(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
-        .Index(obj, idx) -> remove_escaped_expr(store, idx, remove_escaped_expr(store, obj, set))
+        .Index(obj, idx) -> remove_escaped_expr(store, store.exprs.get(idx), remove_escaped_expr(store, store.exprs.get(obj), set))
         .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set)
         .FieldAssign(obj, _, val) -> remove_escaped_expr(store, store.exprs.get(val), remove_escaped_expr(store, store.exprs.get(obj), set))
         .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set)
@@ -209,7 +209,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         }
         .Lambda(_, body) -> remove_escaped_expr(store, body, set)
         .Block(body) -> single_pass_escape(store, body, set)
-        .IfExpr(cond, t, e) -> remove_escaped_expr(store, e, remove_escaped_expr(store, t, remove_escaped_expr(store, cond, set)))
+        .IfExpr(cond, t, e) -> remove_escaped_expr(store, store.exprs.get(e), remove_escaped_expr(store, store.exprs.get(t), remove_escaped_expr(store, store.exprs.get(cond), set)))
         // Match arms must be walked: a variable used in an arm body
         // (especially as the arm's return value, which escapes) needs
         // to be removed from the releasable set. Without this the
@@ -219,10 +219,10 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Tuple(elems) -> remove_escaped_args(store, elems, set)
         .TupleIndex(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
         .MapLit(entries) -> remove_escaped_args(store, entries, set)
-        .Slice(obj, start, end) -> remove_escaped_expr(store, end, remove_escaped_expr(store, start, remove_escaped_expr(store, obj, set)))
+        .Slice(obj, start, end) -> remove_escaped_expr(store, store.exprs.get(end), remove_escaped_expr(store, store.exprs.get(start), remove_escaped_expr(store, store.exprs.get(obj), set)))
         .Try(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
         .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, body, remove_escaped_expr(store, inner, set))
-        .NullCoalesce(left, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .NullCoalesce(left, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
         .OptionalChain(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
         .OptionalMethodCall(obj, _, args) -> remove_escaped_args(store, args, remove_escaped_expr(store, obj, set))
         .IsCheck(subj, _) -> remove_escaped_expr(store, store.exprs.get(subj), set)

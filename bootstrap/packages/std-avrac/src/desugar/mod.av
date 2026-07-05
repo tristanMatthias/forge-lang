@@ -309,7 +309,7 @@ fn stamp_table_rows(store: NodeStore, expr: Expr, sname: string) -> Expr {
     match expr {
         .ListLit(rows) -> .ListLit(stamp_table_row_list(rows, sname))
         .Block(body) -> .Block(stamp_block_tail(store, body, sname))
-        .IfExpr(c, t, e) -> .IfExpr(c, stamp_table_rows(store, t, sname), stamp_table_rows(store, e, sname))
+        .IfExpr(c, t, e) -> .IfExpr(c, store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(t), sname)), store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(e), sname)))
         .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(store, arms, sname))
         .When(arms) -> .When(stamp_table_when_arms(store, arms, sname))
         _ -> expr
@@ -443,8 +443,8 @@ fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr
     match name {
         "assert" -> desugar_assert(store, args)
         "dbg" -> desugar_dbg(store, args)
-        "todo" -> desugar_todo(args)
-        "unreachable" -> desugar_unreachable(args)
+        "todo" -> desugar_todo(store, args)
+        "unreachable" -> desugar_unreachable(store, args)
         "min" -> desugar_min_max(store, args, true)
         "max" -> desugar_min_max(store, args, false)
         _ -> original
@@ -464,9 +464,9 @@ fn desugar_assert(store: NodeStore, args: List<SExpr>) -> Expr {
     let msg = if args.length > 1 { args[1].node } else { Expr.String("\"assertion failed\"") }
     let panic_args: List<SExpr> = [sexpr_dummy(msg)]
     Expr.IfExpr(
-        Expr.Unary(UnOp.Not, store.exprs.add_leaf(cond)),
-        Expr.Call(Expr.Ident("panic"), panic_args),
-        Expr.None
+        store.exprs.add_leaf(Expr.Unary(UnOp.Not, store.exprs.add_leaf(cond))),
+        store.exprs.add_leaf(Expr.Call(Expr.Ident("panic"), panic_args)),
+        store.exprs.add_leaf(Expr.None)
     )
 }
 
@@ -482,9 +482,9 @@ fn desugar_dbg(store: NodeStore, args: List<SExpr>) -> Expr {
     let val = args[0].node
     let string_args: List<SExpr> = [sexpr_dummy(Expr.Ident("__dbg"))]
     let print_arg = Expr.Binary(
-        Expr.String("\"[dbg] \""),
+        store.exprs.add_leaf(Expr.String("\"[dbg] \"")),
         BinOp.Add,
-        Expr.Call(Expr.Ident("string"), string_args)
+        store.exprs.add_leaf(Expr.Call(Expr.Ident("string"), string_args))
     )
     let println_args: List<SExpr> = [sexpr_dummy(print_arg)]
     let body: List<SStmt> = [
@@ -497,9 +497,9 @@ fn desugar_dbg(store: NodeStore, args: List<SExpr>) -> Expr {
 
 /// Rewrite `todo()` / `todo("message")` into a `panic` with a
 /// `"not yet implemented"` prefix.
-fn desugar_todo(args: List<SExpr>) -> Expr {
+fn desugar_todo(store: NodeStore, args: List<SExpr>) -> Expr {
     let msg = if args.length > 0 {
-        Expr.Binary(Expr.String("\"not yet implemented: \""), BinOp.Add, args[0].node)
+        Expr.Binary(store.exprs.add_leaf(Expr.String("\"not yet implemented: \"")), BinOp.Add, store.exprs.add_leaf(args[0].node))
     } else {
         Expr.String("\"not yet implemented\"")
     }
@@ -510,9 +510,9 @@ fn desugar_todo(args: List<SExpr>) -> Expr {
 /// Rewrite `unreachable()` / `unreachable("reason")` into a `panic`
 /// with `"unreachable code reached"` prefix. For impossible code
 /// paths the type-checker can't yet prove dead.
-fn desugar_unreachable(args: List<SExpr>) -> Expr {
+fn desugar_unreachable(store: NodeStore, args: List<SExpr>) -> Expr {
     let msg = if args.length > 0 {
-        Expr.Binary(Expr.String("\"unreachable: \""), BinOp.Add, args[0].node)
+        Expr.Binary(store.exprs.add_leaf(Expr.String("\"unreachable: \"")), BinOp.Add, store.exprs.add_leaf(args[0].node))
     } else {
         Expr.String("\"unreachable code reached\"")
     }
@@ -533,9 +533,9 @@ fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
     let b_se = args[1]
     let op = if is_min { BinOp.Lt } else { BinOp.Gt }
     let pick = Expr.IfExpr(
-        Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
-        Expr.Ident("__a"),
-        Expr.Ident("__b")
+        store.exprs.add_leaf(Expr.Binary(store.exprs.add_leaf(Expr.Ident("__a")), op, store.exprs.add_leaf(Expr.Ident("__b")))),
+        store.exprs.add_leaf(Expr.Ident("__a")),
+        store.exprs.add_leaf(Expr.Ident("__b"))
     )
     let body: List<SStmt> = [
         sstmt(Stmt.Let("__a", ValueType.Unknown, store.exprs.add_leaf(a_se.node)), 0, 0),
@@ -553,20 +553,20 @@ fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
 /// without sub-nodes pass through unchanged.
 fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
-        .Binary(l, op, r) -> .Binary(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
+        .Binary(l, op, r) -> .Binary(desugar_expr_id(store, l, sigs), op, desugar_expr_id(store, r, sigs))
         .Unary(op, r) -> .Unary(op, desugar_expr_id(store, r, sigs))
-        .Logical(l, op, r) -> .Logical(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
+        .Logical(l, op, r) -> .Logical(desugar_expr_id(store, l, sigs), op, desugar_expr_id(store, r, sigs))
         // Call args: desugar each arg, then pin any anonymous table row
         // to the callee's declared `List<Row>` parameter type (c080).
         .Call(callee, args) -> .Call(desugar_expr(store, callee, sigs), stamp_call_arg_tables(store, callee, desugar_expr_list(store, args, sigs), sigs))
         .Grouping(inner) -> .Grouping(desugar_expr_id(store, inner, sigs))
         .Assign(name, val) -> .Assign(name, desugar_expr_id(store, val, sigs))
-        .Index(obj, idx) -> .Index(desugar_expr(store, obj, sigs), desugar_expr(store, idx, sigs))
+        .Index(obj, idx) -> .Index(desugar_expr_id(store, obj, sigs), desugar_expr_id(store, idx, sigs))
         .FieldAccess(obj, field) -> .FieldAccess(desugar_expr_id(store, obj, sigs), field)
         .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr_id(store, obj, sigs), field, desugar_expr_id(store, val, sigs))
-        .IfExpr(c, t, e) -> .IfExpr(desugar_expr(store, c, sigs), desugar_expr(store, t, sigs), desugar_expr(store, e, sigs))
+        .IfExpr(c, t, e) -> .IfExpr(desugar_expr_id(store, c, sigs), desugar_expr_id(store, t, sigs), desugar_expr_id(store, e, sigs))
         .Block(body) -> .Block(desugar_stmt_list(store, body, sigs))
-        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(store, l, sigs), desugar_expr(store, r, sigs))
+        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr_id(store, l, sigs), desugar_expr_id(store, r, sigs))
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr_id(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(store, obj, sigs), method, desugar_expr_list(store, args, sigs))
         .Try(inner) -> .Try(desugar_expr_id(store, inner, sigs))
@@ -574,7 +574,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr_id(store, obj, sigs), idx)
         .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
         .MapLit(entries) -> .MapLit(desugar_expr_list(store, entries, sigs))
-        .Slice(obj, s, e) -> .Slice(desugar_expr(store, obj, sigs), desugar_expr(store, s, sigs), desugar_expr(store, e, sigs))
+        .Slice(obj, s, e) -> .Slice(desugar_expr_id(store, obj, sigs), desugar_expr_id(store, s, sigs), desugar_expr_id(store, e, sigs))
         .With(obj, overrides) -> .With(desugar_expr(store, obj, sigs), desugar_field_inits(store, overrides, sigs))
         .Lambda(params, body) -> .Lambda(params, desugar_expr(store, body, sigs))
         .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))

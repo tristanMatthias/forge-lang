@@ -511,12 +511,12 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Grouping(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
         .Unary(_, right) -> resolve_expr(r, r.nodes.exprs.get(right))
         .Binary(left, _, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
+            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
+            resolve_expr(after_left, r.nodes.exprs.get(right))
         }
         .Logical(left, _, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
+            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
+            resolve_expr(after_left, r.nodes.exprs.get(right))
         }
         .Call(callee, args) -> {
             let after_callee = resolve_expr(r, callee)
@@ -533,8 +533,8 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             after_args
         }
         .Index(obj, idx) -> {
-            let after_obj = resolve_expr(r, obj)
-            resolve_expr(after_obj, idx)
+            let after_obj = resolve_expr(r, r.nodes.exprs.get(obj))
+            resolve_expr(after_obj, r.nodes.exprs.get(idx))
         }
         .Block(body) -> {
             let entered = enter_resolve_scope(r)
@@ -542,9 +542,9 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             exit_resolve_scope(after)
         }
         .Slice(obj, start, end) -> {
-            let a = resolve_expr(r, obj)
-            let b = resolve_expr(a, start)
-            resolve_expr(b, end)
+            let a = resolve_expr(r, r.nodes.exprs.get(obj))
+            let b = resolve_expr(a, r.nodes.exprs.get(start))
+            resolve_expr(b, r.nodes.exprs.get(end))
         }
         .QualifiedIdent(_) -> r
         .FieldAssign(obj, field, value) -> {

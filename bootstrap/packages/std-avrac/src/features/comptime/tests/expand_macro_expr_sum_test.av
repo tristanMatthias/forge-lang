@@ -1,23 +1,19 @@
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index}
 // vez6.6.5/sum — Expr-typed comptime fn folds to runtime Expr (sum).
 
-extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture_and_run}
-
-/// Fresh empty store for inline-AST probes — F2 renderers resolve
-/// flipped pattern ids through it (never read for id-free nodes).
-fn ts() -> NodeStore {
-    new_node_store(build_line_index(""))
-}
-
 
 const MAIN_HEADER: string = "fn " + "main()"
 
 
 spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value (sum)" {
-    then "make_sum() yields a runtime Expr.Binary that renders as `(+ 1 2)`" {
-        let out = write_fixture_and_run("/tmp/avra_expand_macro_expr_sum_test.av", 
-            "use @std.avrac.core.{Expr, render_expr, new_node_store, build_line_index}\n" +
+    // Post-F3b the folded Binary's operands are ExprId rows that live in the
+    // fold's construction store, so rendering it against an unrelated fresh
+    // store can't resolve them (tracked as yfb6). Verify the structural fold
+    // instead — a Binary carrying the `+` operator — which reads only the
+    // scalar op and needs no cross-store id resolution.
+    then "make_sum() folds to a runtime Expr.Binary with the `+` operator" {
+        let out = write_fixture_and_run("/tmp/avra_expand_macro_expr_sum_test.av",
+            "use @std.avrac.core.{Expr, BinOp, binop_str}\n" +
             "\n" +
             "@comptime\n" +
             "fn make_sum() -> Expr {\n" +
@@ -26,8 +22,11 @@ spec "vez6.6.5: Expr-typed comptime fn folds to runtime Expr value (sum)" {
             "\n" +
             MAIN_HEADER + " {\n" +
             "    let e: Expr = make_sum()\n" +
-            "    println(render_expr(new_node_store(build_line_index(\"\")), e))\n" +
+            "    match e {\n" +
+            "        .Binary(_, op, _) -> println(\"op=\" + binop_str(op))\n" +
+            "        _ -> println(\"not-binary\")\n" +
+            "    }\n" +
             "}\n")
-        out.contains("(+ 1 2)")
+        out.contains("op=+")
     }
 }

@@ -257,7 +257,7 @@ spec "ingest: combinatorial cross-kind nesting travels by id" {
         let no_pp: List<ParamEntry> = []
         let no_el: List<SExpr> = []
         let store = ts()
-        let cond = store.exprs.add_leaf(Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2")))
+        let cond = store.exprs.add_leaf(Expr.Binary(store.exprs.add_leaf(Expr.Number("1")), BinOp.Lt, store.exprs.add_leaf(Expr.Number("2"))))
         let init = store.exprs.add_leaf(Expr.ListLit(no_el))
         let inner_let = store.stmts.add_leaf(Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), init))
         let if_id = store.stmts.add_leaf(Stmt.If(cond, inner_let, null))
@@ -315,13 +315,30 @@ spec "ingest_program: stress — wide (1000) and deep (300)" {
         let store = ingest_program(stmts, "")
         store.stmts.count() == 1000 && store.exprs.count() == 0 && store.types.count() == 1000
     }
-    then "a 300-deep binary chain ingests fully (601 exprs) without stack overflow" {
-        mut e: Expr = Expr.Number("0")
-        for i in 0..300 { e = Expr.Binary(e, BinOp.Add, Expr.Number("1")) }
+    then "a 300-deep binary chain builds fully (601 exprs) via arena ids, no stack overflow" {
+        // Post-F3b a Binary's operands are ExprId rows, so a deep chain is
+        // built iteratively through the arena (each add_leaf is O(1)) rather
+        // than as a boxed tree — inherently overflow-free.
         let store = ts()
-        let _ = store.ingest_expr(e, byte_span_none())
-        // 300 Binary + 301 Number = 601 exprs.
+        mut e = store.exprs.add_leaf(Expr.Number("0"))
+        for i in 0..300 { e = store.exprs.add_leaf(Expr.Binary(e, BinOp.Add, store.exprs.add_leaf(Expr.Number("1")))) }
+        // 1 initial Number + 300 × (Binary + Number) = 601 exprs.
         store.exprs.count() == 601
+    }
+    then "a recursive consumer walks the full 300-deep chain end-to-end without stack overflow" {
+        // Building the chain iteratively proves the arena SCALES, but the
+        // recursion-safety guarantee now lives in the CONSUMERS: passes that
+        // resolve nested ExprId operands lazily (render_expr / eval / codegen
+        // emit) still recurse one frame per level through store.exprs.get.
+        // Render the deep chain to force 300 frames of descent and confirm it
+        // reaches the innermost leaf — the depth coverage the pre-flip
+        // ingest_expr recursion used to give.
+        let store = ts()
+        mut e = store.exprs.add_leaf(Expr.Number("0"))
+        for i in 0..300 { e = store.exprs.add_leaf(Expr.Binary(e, BinOp.Add, store.exprs.add_leaf(Expr.Number("1")))) }
+        // "(+ 0 1)" can only appear if the recursion descended all 300 levels
+        // to the base Number("0") — a smoke test that couldn't would return "".
+        render_expr(store, store.exprs.get(e)).contains("(+ 0 1)")
     }
 }
 
@@ -673,7 +690,7 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
         let no_el: List<SExpr> = []
-        let cond = donor.exprs.add_leaf(Expr.Binary(Expr.Number("1"), BinOp.Lt, Expr.Number("2")))
+        let cond = donor.exprs.add_leaf(Expr.Binary(donor.exprs.add_leaf(Expr.Number("1")), BinOp.Lt, donor.exprs.add_leaf(Expr.Number("2"))))
         let init = donor.exprs.add_leaf(Expr.ListLit(no_el))
         let inner_let = donor.stmts.add_leaf(Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), init))
         let if_id = donor.stmts.add_leaf(Stmt.If(cond, inner_let, null))

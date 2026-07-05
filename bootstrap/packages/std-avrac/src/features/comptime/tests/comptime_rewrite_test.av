@@ -18,7 +18,7 @@ fn ts() -> NodeStore {
 // registry's runtime resolves through, so every probe threads one
 // store end to end.
 fn mk_add_decl(ws: NodeStore) -> Stmt {
-    let ret_val = ws.exprs.add_leaf(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y")))
+    let ret_val = ws.exprs.add_leaf(Expr.Binary(ws.exprs.add_leaf(Expr.Ident("x")), BinOp.Add, ws.exprs.add_leaf(Expr.Ident("y"))))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(ret_val))]
     let empty_tp: List<TypeParamEntry> = []
     let params: List<ParamEntry> = [

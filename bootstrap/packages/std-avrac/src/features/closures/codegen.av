@@ -92,13 +92,13 @@ fn is_captured(captures: List<Capture>, name: string) -> bool {
 fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
     match expr {
         .Assign(name, val) -> name == target || expr_assigns(store, store.exprs.get(val), target)
-        .Binary(l, _, r) -> expr_assigns(store, l, target) || expr_assigns(store, r, target)
+        .Binary(l, _, r) -> expr_assigns(store, store.exprs.get(l), target) || expr_assigns(store, store.exprs.get(r), target)
         .Unary(_, r) -> expr_assigns(store, store.exprs.get(r), target)
-        .Logical(l, _, r) -> expr_assigns(store, l, target) || expr_assigns(store, r, target)
+        .Logical(l, _, r) -> expr_assigns(store, store.exprs.get(l), target) || expr_assigns(store, store.exprs.get(r), target)
         .Grouping(inner) -> expr_assigns(store, store.exprs.get(inner), target)
         .Call(callee, args) -> expr_assigns(store, callee, target) || expr_list_assigns(store, args, target)
         .Block(body) -> stmt_list_assigns(store, body, target)
-        .IfExpr(c, t, e) -> expr_assigns(store, c, target) || expr_assigns(store, t, target) || expr_assigns(store, e, target)
+        .IfExpr(c, t, e) -> expr_assigns(store, store.exprs.get(c), target) || expr_assigns(store, store.exprs.get(t), target) || expr_assigns(store, store.exprs.get(e), target)
         .Lambda(_, body) -> expr_assigns(store, body, target)
         _ -> false
     }
@@ -181,13 +181,13 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             local.push(Capture { name: name, alloca: lookup.alloca, ty: lookup.ty, is_mut: false })
         }
         .Binary(left, _, right) -> {
-            find_captures(store, left, params, env, captures)
-            find_captures(store, right, params, env, captures)
+            find_captures(store, store.exprs.get(left), params, env, captures)
+            find_captures(store, store.exprs.get(right), params, env, captures)
         }
         .Unary(_, right) -> find_captures(store, store.exprs.get(right), params, env, captures)
         .Logical(left, _, right) -> {
-            find_captures(store, left, params, env, captures)
-            find_captures(store, right, params, env, captures)
+            find_captures(store, store.exprs.get(left), params, env, captures)
+            find_captures(store, store.exprs.get(right), params, env, captures)
         }
         .Call(callee, args) -> {
             find_captures(store, callee, params, env, captures)
@@ -195,15 +195,15 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .Grouping(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
         .IfExpr(c, t, e) -> {
-            find_captures(store, c, params, env, captures)
-            find_captures(store, t, params, env, captures)
-            find_captures(store, e, params, env, captures)
+            find_captures(store, store.exprs.get(c), params, env, captures)
+            find_captures(store, store.exprs.get(t), params, env, captures)
+            find_captures(store, store.exprs.get(e), params, env, captures)
         }
         .Block(stmts) -> find_captures_stmts(store, stmts, params, env, captures)
         .Assign(_, value) -> find_captures(store, store.exprs.get(value), params, env, captures)
         .Index(obj, idx) -> {
-            find_captures(store, obj, params, env, captures)
-            find_captures(store, idx, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
+            find_captures(store, store.exprs.get(idx), params, env, captures)
         }
         .MatchExpr(subj, arms) -> {
             find_captures(store, subj, params, env, captures)
@@ -217,8 +217,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(val), params, env, captures)
         }
         .NullCoalesce(l, r) -> {
-            find_captures(store, l, params, env, captures)
-            find_captures(store, r, params, env, captures)
+            find_captures(store, store.exprs.get(l), params, env, captures)
+            find_captures(store, store.exprs.get(r), params, env, captures)
         }
         .Try(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
         .ListLit(elems) -> find_captures_list(store, elems, params, env, captures)
@@ -231,9 +231,9 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures_field_inits(store, inits, params, env, captures)
         }
         .Slice(obj, s, e) -> {
-            find_captures(store, obj, params, env, captures)
-            find_captures(store, s, params, env, captures)
-            find_captures(store, e, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
+            find_captures(store, store.exprs.get(s), params, env, captures)
+            find_captures(store, store.exprs.get(e), params, env, captures)
         }
         .IsCheck(subj, _) -> find_captures(store, store.exprs.get(subj), params, env, captures)
         .InCheck(needle, items) -> {
@@ -456,16 +456,16 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         }
         .FloatLit(_) -> true
         .Binary(left, _, right) -> {
-            has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+            has_float_ident(ctx.nodes.exprs.get(left), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(right), ctx, env, captures, params)
         }
         .Unary(_, inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Grouping(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Call(callee, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
         .GenericCall(callee, _, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
         .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
-        .Index(obj, idx) -> has_float_ident(obj, ctx, env, captures, params) || has_float_ident(idx, ctx, env, captures, params)
-        .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
-        .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+        .Index(obj, idx) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(idx), ctx, env, captures, params)
+        .IfExpr(c, t, e) -> has_float_ident(ctx.nodes.exprs.get(c), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(t), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(e), ctx, env, captures, params)
+        .NullCoalesce(left, right) -> has_float_ident(ctx.nodes.exprs.get(left), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(right), ctx, env, captures, params)
         .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
         .TupleIndex(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
@@ -491,11 +491,13 @@ fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, cap
 fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     match expr {
         .Binary(left, _, right) -> {
-            let left_is_param = match left { .Ident(n) -> n == param_name, _ -> false }
-            let right_is_param = match right { .Ident(n) -> n == param_name, _ -> false }
-            if left_is_param && has_float_ident(right, ctx, env, captures, params) { return true }
-            if right_is_param && has_float_ident(left, ctx, env, captures, params) { return true }
-            param_used_with_float(param_name, left, ctx, env, captures, params) || param_used_with_float(param_name, right, ctx, env, captures, params)
+            let left_e = ctx.nodes.exprs.get(left)
+            let right_e = ctx.nodes.exprs.get(right)
+            let left_is_param = match left_e { .Ident(n) -> n == param_name, _ -> false }
+            let right_is_param = match right_e { .Ident(n) -> n == param_name, _ -> false }
+            if left_is_param && has_float_ident(right_e, ctx, env, captures, params) { return true }
+            if right_is_param && has_float_ident(left_e, ctx, env, captures, params) { return true }
+            param_used_with_float(param_name, left_e, ctx, env, captures, params) || param_used_with_float(param_name, right_e, ctx, env, captures, params)
         }
         .Unary(_, inner) -> param_used_with_float(param_name, ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Grouping(inner) -> param_used_with_float(param_name, ctx.nodes.exprs.get(inner), ctx, env, captures, params)
@@ -504,7 +506,7 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<Var
         }
         .Block(stmts) -> param_used_with_float_stmts(param_name, stmts, ctx, env, captures, params)
         .IfExpr(c, t, e) -> {
-            param_used_with_float(param_name, c, ctx, env, captures, params) || param_used_with_float(param_name, t, ctx, env, captures, params) || param_used_with_float(param_name, e, ctx, env, captures, params)
+            param_used_with_float(param_name, ctx.nodes.exprs.get(c), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(t), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
         }
         _ -> false
     }

@@ -615,11 +615,6 @@ export fn expr_force_unwrap(subject: Expr) -> Expr {
     Expr.Call(Expr.Ident(FORCE_UNWRAP_FN), fu_args)
 }
 
-/// `<e> != none` / `<e> == none` — the present/absent tests every optional
-/// desugar (`if let`, `let-else`) branches on, built in one place.
-export fn expr_ne_none(e: Expr) -> Expr { Expr.Binary(e, BinOp.Ne, Expr.None) }
-export fn expr_eq_none(e: Expr) -> Expr { Expr.Binary(e, BinOp.Eq, Expr.None) }
-
 // ── Gensym contract ──
 // Compiler-minted temp names are `$tag$N`. The `$` prefix IS the contract:
 // the lexer never admits `$` in a user identifier, so a gensym can neither
@@ -2186,9 +2181,9 @@ export enum Expr {
     /// Prefix unary: `!x`, `-x`, `~x`.
     Unary(op: UnOp, right: ExprId)
     /// Binary infix: `a + b`, `x == y`, `a & b`.
-    Binary(left: Expr, op: BinOp, right: Expr)
+    Binary(left: ExprId, op: BinOp, right: ExprId)
     /// Short-circuit logical: `a && b`, `a || b`.
-    Logical(left: Expr, op: LogicOp, right: Expr)
+    Logical(left: ExprId, op: LogicOp, right: ExprId)
     /// Function call: `f(a, b)`.
     Call(callee: Expr, args: List<SExpr>)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
@@ -2200,7 +2195,7 @@ export enum Expr {
     /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
     EnumCtor(type_name: string, variant: string, args: List<SExpr>)
     /// Index access: `list[i]` / `map["key"]`.
-    Index(obj: Expr, idx: Expr)
+    Index(obj: ExprId, idx: ExprId)
     /// Block expression — value is the last statement's value.
     Block(body: List<SStmt>)
     /// `match subject { arms }` — match used as an expression.
@@ -2208,9 +2203,9 @@ export enum Expr {
     /// Field reassignment: `obj.field = value`.
     FieldAssign(obj: ExprId, field: string, value: ExprId)
     /// Ternary-like `if cond { then } else { else_branch }` as an expr.
-    IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
+    IfExpr(condition: ExprId, then_branch: ExprId, else_branch: ExprId)
     /// Null coalesce: `a ?? default`.
-    NullCoalesce(left: Expr, right: Expr)
+    NullCoalesce(left: ExprId, right: ExprId)
     /// Optional chain: `obj?.field` — null obj passes through, no
     /// deref on null.
     OptionalChain(obj: ExprId, field: string)
@@ -2237,7 +2232,7 @@ export enum Expr {
     /// `{ "a": 1, "b": 2 }` → entries = [key1, val1, key2, val2, ...].
     MapLit(entries: List<SExpr>)
     /// Slice: `list[start..end]`.
-    Slice(obj: Expr, start: Expr, end: Expr)
+    Slice(obj: ExprId, start: ExprId, end: ExprId)
     /// Float literal (text form, like Number).
     FloatLit(value: string)
     /// Type-narrowing test: `subject is .Variant`.
@@ -2782,19 +2777,19 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Assign(name, value) -> "(assign ${name} ${render_expr(store, store.exprs.get(value))})"
         .Grouping(inner) -> "(group ${render_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
-        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
-        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
+        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
+        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
         .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"
         .FieldAccess(obj, field) -> "(field ${render_expr(store, store.exprs.get(obj))} ${field})"
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(store, args)})"
-        .Index(obj, idx) -> "(index ${render_expr(store, obj)} ${render_expr(store, idx)})"
+        .Index(obj, idx) -> "(index ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(idx))})"
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
         .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
         .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"
-        .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, c)} ${render_expr(store, t)} ${render_expr(store, e)})"
-        .NullCoalesce(left, right) -> "(?? ${render_expr(store, left)} ${render_expr(store, right)})"
+        .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, store.exprs.get(c))} ${render_expr(store, store.exprs.get(t))} ${render_expr(store, store.exprs.get(e))})"
+        .NullCoalesce(left, right) -> "(?? ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"
         .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"
         .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
@@ -2805,7 +2800,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
         .MapLit(entries) -> "(map ${render_expr_list(store, entries)})"
         .FloatLit(value) -> value
-        .Slice(obj, start, end) -> "(slice ${render_expr(store, obj)} ${render_expr(store, start)}..${render_expr(store, end)})"
+        .Slice(obj, start, end) -> "(slice ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(start))}..${render_expr(store, store.exprs.get(end))})"
         .IsCheck(subject, vname) -> "(is ${render_expr(store, store.exprs.get(subject))} .${vname})"
         .InCheck(needle, items) -> "(in ${render_expr(store, needle)} [${render_expr_list(store, items)}])"
         .QualifiedIdent(path) -> path

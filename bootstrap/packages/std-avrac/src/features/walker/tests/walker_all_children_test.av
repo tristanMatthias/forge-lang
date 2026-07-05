@@ -28,8 +28,12 @@ spec "derive all_children_spanned: cross-type children, in order" {
         let ws = ts()
         stmt_child_tags(Stmt.Let("x", ValueType.Int, ws.exprs.add_leaf(Expr.Number("1")))) == "T"
     }
-    then "Expr.Binary -> both operand Exprs (op scalar skipped)" {
-        expr_child_tags(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2"))) == "EE"
+    then "Expr.Binary -> both operand ids are scalar, no walker children (F3b)" {
+        // Post-F3b the operands are ExprId arena rows — the id payload IS
+        // the child mechanism, so the walker skips both; only the BinOp
+        // scalar remains, which is never a child.
+        let ws = ts()
+        expr_child_tags(Expr.Binary(ws.exprs.add_leaf(Expr.Number("1")), BinOp.Add, ws.exprs.add_leaf(Expr.Number("2")))) == ""
     }
     then "Expr.Block -> its body Stmts via wrapper-list .node unwrap" {
         let body: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
@@ -82,8 +86,9 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
     then "all-scalar leaves rebuild identically (Stmt.Break, Expr.Number)" {
         wc_roundtrip_stmt(ts(), Stmt.Break) && wc_roundtrip_expr(ts(), Expr.Number("5"))
     }
-    then "bare single children + scalar (Expr.Binary: two operands, op passes through)" {
-        wc_roundtrip_expr(ts(), Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2")))
+    then "id-payload operands + scalar (Expr.Binary: two ExprIds verbatim, op passes through)" {
+        let ws = ts()
+        wc_roundtrip_expr(ws, Expr.Binary(ws.exprs.add_leaf(Expr.Number("1")), BinOp.Add, ws.exprs.add_leaf(Expr.Number("2"))))
     }
     then "cross-type bare single + id payload (Stmt.Let: ValueType walked, ExprId verbatim)" {
         let ws = ts()
@@ -137,7 +142,7 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
     }
     then "nested (Block holds an Expr-stmt holding a Binary) round-trips at depth" {
         let ws = ts()
-        let bin = ws.exprs.add_leaf(Expr.Binary(Expr.Number("1"), BinOp.Add, Expr.Number("2")))
+        let bin = ws.exprs.add_leaf(Expr.Binary(ws.exprs.add_leaf(Expr.Number("1")), BinOp.Add, ws.exprs.add_leaf(Expr.Number("2"))))
         let inner: List<SStmt> = [sstmt(Stmt.Expr(bin), 1, 1)]
         wc_roundtrip_expr(ws, Expr.Block(inner))
     }

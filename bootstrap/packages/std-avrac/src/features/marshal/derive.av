@@ -453,7 +453,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     let i_stmt = Stmt.Mut(iname, ValueType.Int, store.exprs.add_leaf(Expr.Number("0")))
 
     // while __i < __count { ... }
-    let cond = Expr.Binary(Expr.Ident(iname), BinOp.Lt, Expr.Ident(cname))
+    let cond = Expr.Binary(store.exprs.add_leaf(Expr.Ident(iname)), BinOp.Lt, store.exprs.add_leaf(Expr.Ident(cname)))
     // let (__raw, __r2) = r.read_bytes()
     let raw_read = method_call(store, Expr.Ident("r"), "read_bytes", [])
     let raw_names: List<ParamEntry> = [
@@ -470,7 +470,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     let r_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", store.exprs.add_leaf(Expr.Ident(rname)))))
     // __i = __i + 1
     let i_inc = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(iname,
-        store.exprs.add_leaf(Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1"))))))
+        store.exprs.add_leaf(Expr.Binary(store.exprs.add_leaf(Expr.Ident(iname)), BinOp.Add, store.exprs.add_leaf(Expr.Number("1")))))))
 
     let loop_body_stmts: List<StmtId> = [
         store.stmts.add_leaf(raw_stmt),
@@ -703,7 +703,7 @@ fn build_enum_dispatch(store: NodeStore, type_name: string, variants: List<Varia
             block_body
         } else {
             let tag_lit = Expr.Number(string(i))
-            let cmp = Expr.Binary(Expr.Ident("tag"), BinOp.Eq, tag_lit)
+            let cmp = Expr.Binary(store.exprs.add_leaf(Expr.Ident("tag")), BinOp.Eq, store.exprs.add_leaf(tag_lit))
             let then_block = store.stmts.add_leaf(Stmt.Block(block_body))
             let if_stmt = Stmt.If(store.exprs.add_leaf(cmp), then_block, null)
             [store.stmts.add_leaf(if_stmt)]

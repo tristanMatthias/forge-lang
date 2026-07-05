@@ -775,16 +775,18 @@ fn narrow_guard_none() -> NarrowGuard { NarrowGuard { var: "", present_when_true
 /// Conservative: only a bare identifier compared directly to the
 /// `none` literal narrows — anything more complex is ignored so
 /// narrowing never fires on an expression it can't prove.
-export fn narrow_guard_of(cond: Expr) -> NarrowGuard {
+export fn narrow_guard_of(store: NodeStore, cond: Expr) -> NarrowGuard {
     match cond {
         .Binary(left, op, right) -> {
             let is_ne = op is .Ne
             let is_eq = op is .Eq
             if !is_ne && !is_eq { return narrow_guard_none() }
-            let lname = match left { .Ident(n) -> n, _ -> "" }
-            let rname = match right { .Ident(n) -> n, _ -> "" }
-            let l_is_none = left is .None
-            let r_is_none = right is .None
+            let left_e = store.exprs.get(left)
+            let right_e = store.exprs.get(right)
+            let lname = match left_e { .Ident(n) -> n, _ -> "" }
+            let rname = match right_e { .Ident(n) -> n, _ -> "" }
+            let l_is_none = left_e is .None
+            let r_is_none = right_e is .None
             if lname != "" && r_is_none { return NarrowGuard { var: lname, present_when_true: is_ne } }
             if rname != "" && l_is_none { return NarrowGuard { var: rname, present_when_true: is_ne } }
             narrow_guard_none()
@@ -1536,9 +1538,9 @@ fn lint_expr_is_zero(e: Expr) -> bool {
 fn lint_index_guard_coll(store: NodeStore, cond: Expr) -> string {
     match cond {
         .Binary(left, op, right) -> match op {
-            .Lt -> match left {
+            .Lt -> match store.exprs.get(left) {
                 .Ident(ln) -> if ln != "i" { "" } else {
-                    match right {
+                    match store.exprs.get(right) {
                         .FieldAccess(obj, field) -> if field != "length" { "" } else {
                             match store.exprs.get(obj) { .Ident(n) -> n, _ -> "" }
                         }
@@ -1608,20 +1610,22 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
     match e {
         .Ident(n) -> LintSig { value_i: n == "i", elem: false }
         .Index(obj, idx) -> {
-            let o = lint_scan_expr(store, obj, coll)
-            let obj_is_coll = match obj { .Ident(c) -> c == coll, _ -> false }
-            let idx_is_i = match idx { .Ident(x) -> x == "i", _ -> false }
+            let obj_e = store.exprs.get(obj)
+            let idx_e = store.exprs.get(idx)
+            let o = lint_scan_expr(store, obj_e, coll)
+            let obj_is_coll = match obj_e { .Ident(c) -> c == coll, _ -> false }
+            let idx_is_i = match idx_e { .Ident(x) -> x == "i", _ -> false }
             if obj_is_coll && idx_is_i {
                 LintSig { value_i: o.value_i, elem: true }
             } else {
-                lint_sig_or(o, lint_scan_expr(store, idx, coll))
+                lint_sig_or(o, lint_scan_expr(store, idx_e, coll))
             }
         }
         .Assign(_, value) -> lint_scan_expr(store, store.exprs.get(value), coll)
         .Grouping(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
-        .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
-        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
+        .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
+        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
@@ -1629,8 +1633,8 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Block(body) -> lint_scan_sstmts(store, body, coll)
         .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
         .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_expr(store, store.exprs.get(value), coll))
-        .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, c, coll), lint_sig_or(lint_scan_expr(store, t, coll), lint_scan_expr(store, el, coll)))
-        .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
+        .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(t), coll), lint_scan_expr(store, store.exprs.get(el), coll)))
+        .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_sexprs(store, args, coll))
         .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
@@ -1640,7 +1644,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .ListLit(els) -> lint_scan_sexprs(store, els, coll)
         .Lambda(_, body) -> lint_scan_expr(store, body, coll)
         .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
-        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_sig_or(lint_scan_expr(store, start, coll), lint_scan_expr(store, end, coll)))
+        .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(start), coll), lint_scan_expr(store, store.exprs.get(end), coll)))
         .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
         .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, needle, coll), lint_scan_sexprs(store, items, coll))
         _ -> lint_sig_none()
@@ -1694,12 +1698,12 @@ fn lint_step_add(a: LintStep, b: LintStep) -> LintStep {
 }
 
 /// True when `e` is `i + 1` (the unit-step RHS).
-fn lint_is_unit_step(e: Expr) -> bool {
+fn lint_is_unit_step(store: NodeStore, e: Expr) -> bool {
     match e {
         .Binary(left, op, right) -> match op {
             .Add -> {
-                let l_is_i = match left { .Ident(n) -> n == "i", _ -> false }
-                let r_is_one = match right { .Number(v) -> v == "1", _ -> false }
+                let l_is_i = match store.exprs.get(left) { .Ident(n) -> n == "i", _ -> false }
+                let r_is_one = match store.exprs.get(right) { .Number(v) -> v == "1", _ -> false }
                 l_is_i && r_is_one
             }
             _ -> false
@@ -1712,7 +1716,7 @@ fn lint_step_count(store: NodeStore, s: Stmt) -> LintStep {
     match s {
         .Expr(inner_id) -> match store.exprs.get(inner_id) {
             .Assign(n, v) -> if n == "i" {
-                LintStep { total: 1, unit: if lint_is_unit_step(store.exprs.get(v)) { 1 } else { 0 } }
+                LintStep { total: 1, unit: if lint_is_unit_step(store, store.exprs.get(v)) { 1 } else { 0 } }
             } else { lint_step_none() }
             _ -> lint_step_none()
         }
@@ -2594,9 +2598,11 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(tc, ty)
         }
         .Binary(left, op, right) -> {
-            let l = check_expr(tc, left)
-            let r = check_expr(l.tc, right)
-            let tc2 = check_none_compare(r.tc, left, op, l.ty, right, r.ty)
+            let left_e = tc.nodes.exprs.get(left)
+            let right_e = tc.nodes.exprs.get(right)
+            let l = check_expr(tc, left_e)
+            let r = check_expr(l.tc, right_e)
+            let tc2 = check_none_compare(r.tc, left_e, op, l.ty, right_e, r.ty)
             let tc3 = check_optional_ordering(tc2, op, l.ty, r.ty)
             let tc4 = check_optional_arithmetic(tc3, op, l.ty, r.ty)
             check_binary_type(tc4, l.ty, op, r.ty)
@@ -2606,16 +2612,16 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, r.ty)
         }
         .Logical(left, _, right) -> {
-            let l = check_expr(tc, left)
-            let r = check_expr(l.tc, right)
+            let l = check_expr(tc, tc.nodes.exprs.get(left))
+            let r = check_expr(l.tc, tc.nodes.exprs.get(right))
             tc_er(r.tc, .Bool)
         }
         .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
         .Call(callee, args) -> check_call(tc, callee, args)
         .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
         .Index(obj, idx) -> {
-            let o = check_expr(tc, obj)
-            let i = check_expr(o.tc, idx)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
+            let i = check_expr(o.tc, tc.nodes.exprs.get(idx))
             // String indexing returns a string (single character)
             if vtype_eq(o.ty, .Str) {
                 return tc_er(i.tc, .Str)
@@ -2640,9 +2646,9 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Block(body) -> check_block(tc, body)
         .Slice(obj, start, end) -> {
-            let o = check_expr(tc, obj)
-            let s = check_expr(o.tc, start)
-            let e = check_expr(s.tc, end)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
+            let s = check_expr(o.tc, tc.nodes.exprs.get(start))
+            let e = check_expr(s.tc, tc.nodes.exprs.get(end))
             tc_er(e.tc, o.ty)
         }
         .Assign(name, value) -> {
@@ -4187,19 +4193,19 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .MapLit(entries) -> .MapLit(annotate_expr_list(tc, entries))
         .With(obj, inits) -> .With(annotate_expr(tc, obj), annotate_field_inits(tc, inits))
         .Block(body) -> .Block(annotate_stmts(tc, body))
-        .Binary(l, op, r) -> .Binary(annotate_expr(tc, l), op, annotate_expr(tc, r))
-        .Logical(l, op, r) -> .Logical(annotate_expr(tc, l), op, annotate_expr(tc, r))
+        .Binary(l, op, r) -> .Binary(annotate_expr_id(tc, l), op, annotate_expr_id(tc, r))
+        .Logical(l, op, r) -> .Logical(annotate_expr_id(tc, l), op, annotate_expr_id(tc, r))
         .Unary(op, e) -> .Unary(op, annotate_expr_id(tc, e))
         .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
-        .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
-        .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
+        .IfExpr(c, t, e) -> .IfExpr(annotate_expr_id(tc, c), annotate_expr_id(tc, t), annotate_expr_id(tc, e))
+        .Index(obj, idx) -> .Index(annotate_expr_id(tc, obj), annotate_expr_id(tc, idx))
         .FieldAccess(obj, f) -> .FieldAccess(annotate_expr_id(tc, obj), f)
         .Assign(name, val) -> .Assign(name, annotate_expr_id(tc, val))
         .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr_id(tc, obj), f, annotate_expr_id(tc, val))
         .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
-        .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
+        .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr_id(tc, l), annotate_expr_id(tc, r))
         .Try(e) -> .Try(annotate_expr_id(tc, e))
-        .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
+        .Slice(obj, start, end) -> .Slice(annotate_expr_id(tc, obj), annotate_expr_id(tc, start), annotate_expr_id(tc, end))
         .IsCheck(subj, vname) -> .IsCheck(annotate_expr_id(tc, subj), vname)
         .InCheck(needle, items) -> .InCheck(annotate_expr(tc, needle), annotate_expr_list(tc, items))
         .ListComp(body, var, coll, filter) -> {
@@ -4373,7 +4379,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // kkgf: Index on a bare ident — common pattern is `xs[i]`
         // where xs is a List. Falls back when base type isn't a
         // List (string indexing, map indexing, custom Index impls).
-        .Index(base, _) -> match base {
+        .Index(base, _) -> match tc.nodes.exprs.get(base) {
             .Ident(obj_name) -> {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let elem_ty = vtype_list_elem(base_ty)

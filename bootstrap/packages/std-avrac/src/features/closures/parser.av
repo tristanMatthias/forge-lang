@@ -14,18 +14,18 @@ use list_ops.{list_any}
 export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Ident(n) -> n == "it"
-        .Binary(l, _, r) -> expr_contains_it(store, l) || expr_contains_it(store, r)
+        .Binary(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .Unary(_, r) -> expr_contains_it(store, store.exprs.get(r))
-        .Logical(l, _, r) -> expr_contains_it(store, l) || expr_contains_it(store, r)
+        .Logical(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .Call(callee, args) -> expr_contains_it(store, callee) || expr_list_contains_it(store, args)
         .Grouping(inner) -> expr_contains_it(store, store.exprs.get(inner))
-        .IfExpr(c, t, e) -> expr_contains_it(store, c) || expr_contains_it(store, t) || expr_contains_it(store, e)
+        .IfExpr(c, t, e) -> expr_contains_it(store, store.exprs.get(c)) || expr_contains_it(store, store.exprs.get(t)) || expr_contains_it(store, store.exprs.get(e))
         .Block(stmts) -> stmt_list_contains_it(store, stmts)
-        .Index(obj, idx) -> expr_contains_it(store, obj) || expr_contains_it(store, idx)
+        .Index(obj, idx) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(idx))
         .FieldAccess(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .FieldAssign(obj, _, val) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(val))
         .Assign(_, val) -> expr_contains_it(store, store.exprs.get(val))
-        .NullCoalesce(l, r) -> expr_contains_it(store, l) || expr_contains_it(store, r)
+        .NullCoalesce(l, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .OptionalChain(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .OptionalMethodCall(obj, _, args) -> expr_contains_it(store, obj) || expr_list_contains_it(store, args)
         .Try(inner) -> expr_contains_it(store, store.exprs.get(inner))
@@ -34,7 +34,7 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .With(obj, _) -> expr_contains_it(store, obj)
         .ListLit(elems) -> expr_list_contains_it(store, elems)
         .MapLit(entries) -> expr_list_contains_it(store, entries)
-        .Slice(obj, s, e) -> expr_contains_it(store, obj) || expr_contains_it(store, s) || expr_contains_it(store, e)
+        .Slice(obj, s, e) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(s)) || expr_contains_it(store, store.exprs.get(e))
         .MatchExpr(subj, _) -> expr_contains_it(store, subj)
         .Catch(inner, _, body, _, _) -> expr_contains_it(store, inner) || expr_contains_it(store, body)
         _ -> false

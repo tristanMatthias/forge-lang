@@ -16,7 +16,7 @@ fn ts() -> NodeStore {
 // `fn add(x: int, y: int) -> int { return x + y }`
 fn mk_add_fn(ws: NodeStore) -> CompTimeFn {
     let body: List<StmtId> = [
-        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.Binary(Expr.Ident("x"), BinOp.Add, Expr.Ident("y"))))),
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.Binary(ws.exprs.add_leaf(Expr.Ident("x")), BinOp.Add, ws.exprs.add_leaf(Expr.Ident("y")))))),
     ]
     CompTimeFn {
         name: "add",

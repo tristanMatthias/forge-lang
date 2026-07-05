@@ -920,8 +920,8 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .ListLit(elems) -> eval_list_lit(runtime, elems)
         .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
         .Unary(op, right) -> eval_unary(runtime, op, runtime.nodes.exprs.get(right))
-        .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
-        .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
+        .Binary(left, op, right) -> eval_binary(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
+        .Logical(left, op, right) -> eval_logical(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
         .Call(callee, args) -> eval_call(runtime, callee, args)
         .QualifiedIdent(path) -> {
             let fn_result = lookup_function(runtime.functions, path)
@@ -940,9 +940,9 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             // (so07.7.9 — strings index to a single-char string,
             // matching the runtime). Out-of-range surfaces as a
             // clean error rather than a runtime crash.
-            let obj_result = eval_expr(runtime, obj)
+            let obj_result = eval_expr(runtime, runtime.nodes.exprs.get(obj))
             if obj_result.had_error { return obj_result }
-            let idx_result = eval_expr(obj_result.runtime, idx)
+            let idx_result = eval_expr(obj_result.runtime, obj_result.runtime.nodes.exprs.get(idx))
             if idx_result.had_error { return idx_result }
             let v = obj_result.value
             let iv = idx_result.value
@@ -2311,16 +2311,16 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "Binary" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let left = value_to_expr_node(store, head)?
+            let left = value_to_expr_id(store, head)?
             let op = enum_value_to_binop(p[1])?
-            let right = value_to_expr_node(store, p[2])?
+            let right = value_to_expr_id(store, p[2])?
             .Ok(Expr.Binary(left, op, right))
         }
         "Logical" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let left = value_to_expr_node(store, head)?
+            let left = value_to_expr_id(store, head)?
             let op = enum_value_to_logicop(p[1])?
-            let right = value_to_expr_node(store, p[2])?
+            let right = value_to_expr_id(store, p[2])?
             .Ok(Expr.Logical(left, op, right))
         }
         "Call" -> {
@@ -2343,8 +2343,18 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
             let args = list_value_to_expr_list(store, args_v)?
             .Ok(Expr.EnumCtor(head.text, variant_v.text, args))
         }
-        "Index" -> two_expr_decode(store, p, "Index")
-        "NullCoalesce" -> two_expr_decode(store, p, "NullCoalesce")
+        "Index" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let obj = value_to_expr_id(store, head)?
+            let idx = value_to_expr_id(store, p[1])?
+            .Ok(Expr.Index(obj, idx))
+        }
+        "NullCoalesce" -> {
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let left = value_to_expr_id(store, head)?
+            let right = value_to_expr_id(store, p[1])?
+            .Ok(Expr.NullCoalesce(left, right))
+        }
         "Try" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
             let inner = value_to_expr_id(store, head)?
@@ -2409,9 +2419,9 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "IfExpr" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let c = value_to_expr_node(store, head)?
-            let t = value_to_expr_node(store, p[1])?
-            let e = value_to_expr_node(store, p[2])?
+            let c = value_to_expr_id(store, head)?
+            let t = value_to_expr_id(store, p[1])?
+            let e = value_to_expr_id(store, p[2])?
             .Ok(Expr.IfExpr(c, t, e))
         }
         "MatchExpr" -> {
@@ -2551,17 +2561,6 @@ fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>,
         out.push(store.pats.add_leaf(p))
     }
     .Ok(out)
-}
-
-fn two_expr_decode(store: NodeStore, p: List<Value>, variant: string) -> Result<Expr, string> {
-    if p.length != 2 { return .Err("decode: two-expr arity") }
-    let l = value_to_expr_node(store, p[0])?
-    let r = value_to_expr_node(store, p[1])?
-    match variant {
-        "Index" -> .Ok(Expr.Index(l, r))
-        "NullCoalesce" -> .Ok(Expr.NullCoalesce(l, r))
-        _ -> .Err("decode: unknown two-expr variant `${variant}`")
-    }
 }
 
 fn list_value_to_expr_list(store: NodeStore, v: Value) -> Result<List<SExpr>, string> {

@@ -13,7 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
-use core.{gensym_name, expr_force_unwrap, expr_ne_none, FORCE_UNWRAP_FN}
+use core.{gensym_name, expr_force_unwrap, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
@@ -1082,7 +1082,7 @@ impl Parser {
         while self.check(Tk.QuestionQuestion) {
             self.advance()
             let right = self.parse_or()?
-            eid = self.alloc2(Expr.NullCoalesce(self.expr_of(eid), self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.NullCoalesce(eid, right))
         }
 
         .Ok(eid)
@@ -1095,7 +1095,7 @@ impl Parser {
         while self.current_kind in [Tk.PipePipe, Tk.KwOr] {
             self.advance()
             let right = self.parse_and()?
-            eid = self.alloc2(Expr.Logical(self.expr_of(eid), LogicOp.Or, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Logical(eid, LogicOp.Or, right))
         }
 
         .Ok(eid)
@@ -1108,7 +1108,7 @@ impl Parser {
         while self.current_kind in [Tk.AmpAmp, Tk.KwAnd] {
             self.advance()
             let right = self.parse_equality()?
-            eid = self.alloc2(Expr.Logical(self.expr_of(eid), LogicOp.And, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Logical(eid, LogicOp.And, right))
         }
 
         .Ok(eid)
@@ -1152,9 +1152,9 @@ impl Parser {
                 return .Err("parse error")
             }
             let end = self.parse_bitwise_or()?
-            let ge = self.alloc2(Expr.Binary(self.expr_of(left), BinOp.Ge, self.expr_of(start)), left, start)
-            let le = self.alloc2(Expr.Binary(self.expr_of(left), BinOp.Le, self.expr_of(end)), left, end)
-            return .Ok(self.alloc2(Expr.Logical(self.expr_of(ge), LogicOp.And, self.expr_of(le)), ge, le))
+            let ge = self.alloc_leaf(Expr.Binary(left, BinOp.Ge, start))
+            let le = self.alloc_leaf(Expr.Binary(left, BinOp.Le, end))
+            return .Ok(self.alloc_leaf(Expr.Logical(ge, LogicOp.And, le)))
         }
 
         mut eid = left
@@ -1162,7 +1162,7 @@ impl Parser {
             let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }
             self.advance()
             let right = self.parse_bitwise_or()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
         }
 
         .Ok(eid)
@@ -1174,7 +1174,7 @@ impl Parser {
         while self.check(Tk.Pipe) {
             self.advance()
             let right = self.parse_bitwise_xor()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), BinOp.BitOr, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, BinOp.BitOr, right))
         }
         .Ok(eid)
     }
@@ -1185,7 +1185,7 @@ impl Parser {
         while self.check(Tk.Caret) {
             self.advance()
             let right = self.parse_bitwise_and()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), BinOp.BitXor, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, BinOp.BitXor, right))
         }
         .Ok(eid)
     }
@@ -1196,7 +1196,7 @@ impl Parser {
         while self.check(Tk.Amp) {
             self.advance()
             let right = self.parse_comparison()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), BinOp.BitAnd, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, BinOp.BitAnd, right))
         }
         .Ok(eid)
     }
@@ -1214,7 +1214,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_shift()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
         }
 
         .Ok(eid)
@@ -1227,7 +1227,7 @@ impl Parser {
             let op = if self.check(Tk.Shl) { BinOp.Shl } else { BinOp.Shr }
             self.advance()
             let right = self.parse_term()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
         }
         .Ok(eid)
     }
@@ -1242,7 +1242,7 @@ impl Parser {
             let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
         }
 
         .Ok(eid)
@@ -1260,7 +1260,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_unary()?
-            eid = self.alloc2(Expr.Binary(self.expr_of(eid), op, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
         }
 
         .Ok(eid)
@@ -1455,15 +1455,15 @@ impl Parser {
                     if !self.consume(Tk.RightBracket, "expected `]` after slice") {
                         return .Err("parse error")
                     }
-                    result = Expr.Slice(result, self.expr_of(idx), self.expr_of(end))
-                    rid = self.alloc3(result, rid, idx, end)
+                    result = Expr.Slice(rid, idx, end)
+                    rid = self.alloc_leaf(result)
                     continue
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after index") {
                     return .Err("parse error")
                 }
-                result = Expr.Index(result, self.expr_of(idx))
-                rid = self.alloc2(result, rid, idx)
+                result = Expr.Index(rid, idx)
+                rid = self.alloc_leaf(result)
             } else if self.check(Tk.Less) && is_callable(result) {
                 // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
                 match self.try_parse_generic_call(rid) {
@@ -1957,8 +1957,8 @@ impl Parser {
         if !acc.have {
             return TemplateFold { have: true, result: node, result_id: id }
         }
-        let combined = Expr.Binary(acc.result, BinOp.Add, node)
-        TemplateFold { have: true, result: combined, result_id: self.alloc2(combined, acc.result_id, id) }
+        let combined = Expr.Binary(acc.result_id, BinOp.Add, id)
+        TemplateFold { have: true, result: combined, result_id: self.alloc_leaf(combined) }
     }
 
     fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
@@ -2574,13 +2574,13 @@ impl Parser {
         self.alloc2(expr_force_unwrap(Expr.Ident(name)), callee_id, subject_id)
     }
 
-    /// Row twin of an `<ident> == none` / `!= none` test: two leaves under
-    /// the Binary row, edges [left, right]. `cmp` is the boxed comparison
-    /// the caller built (expr_eq_none / expr_ne_none).
-    fn alloc_none_check_row(self, name: string, cmp: Expr) -> ExprId {
+    /// Row twin of an `<ident> == none` / `!= none` test: an `<ident>` leaf
+    /// and a `none` leaf under a Binary row holding their ids. `op` picks the
+    /// present (`Ne`) or absent (`Eq`) comparison the optional desugars branch on.
+    fn alloc_none_check_row(self, name: string, op: BinOp) -> ExprId {
         let left_id = self.alloc_leaf(Expr.Ident(name))
         let right_id = self.alloc_leaf(Expr.None)
-        self.alloc2(cmp, left_id, right_id)
+        self.alloc_leaf(Expr.Binary(left_id, op, right_id))
     }
 
     /// Boxed readback of an allocated expr — an O(1) row read. The chain uses

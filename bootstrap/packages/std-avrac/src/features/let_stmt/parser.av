@@ -4,7 +4,7 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, expr_eq_none, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 use diagnostics.{DiagCode}
@@ -65,18 +65,16 @@ impl Parser {
             self.report(DiagCode.LetElseMustDiverge, "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
         }
         let tmp = self.fresh("letelse")
-        let unwrap = expr_force_unwrap(Expr.Ident(tmp))
         let unwrap_id = self.alloc_force_unwrap_row(tmp)
-        let cond = expr_eq_none(Expr.Ident(tmp))
-        let cond_id = self.alloc_none_check_row(tmp, cond)
+        let cond_id = self.alloc_none_check_row(tmp, BinOp.Eq)
         // Expr.Block still carries boxed wrappers (F3b flips it); its edges
         // are the reused body rows.
         mut else_edges: List<NodeRef> = []
         for sid in else_ids { else_edges.push(NodeRef.StmtRef(sid)) }
         let else_block = Expr.Block(self.store.sstmts_of(else_ids))
         let else_block_id = self.alloc_expr(else_block, byte_span_none(), else_edges)
-        let guard = Expr.IfExpr(cond, else_block, unwrap)
-        let guard_id = self.alloc3(guard, cond_id, else_block_id, unwrap_id)
+        let guard = Expr.IfExpr(cond_id, else_block_id, unwrap_id)
+        let guard_id = self.alloc_leaf(guard)
         let tmp_let_id = self.alloc_binding_stmt(Stmt.Let(tmp, ValueType.Unknown, subject_id), ValueType.Unknown)
         let guard_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(guard_id))
         let block_body: List<SStmt> = [
