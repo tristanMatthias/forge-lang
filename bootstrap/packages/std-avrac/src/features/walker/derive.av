@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name}
+use core.{Stmt, SStmt, Expr, SExpr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to, synth_expr_id, synth_stmt_id, synth_stmt_ids}
 use diagnostics.{Span}
 

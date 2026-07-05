@@ -131,7 +131,7 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .Binary(l, _, r) -> any_quote_in_expr(store, store.exprs.get(l)) || any_quote_in_expr(store, store.exprs.get(r))
         .Unary(_, r) -> any_quote_in_expr(store, store.exprs.get(r))
         .Logical(l, _, r) -> any_quote_in_expr(store, store.exprs.get(l)) || any_quote_in_expr(store, store.exprs.get(r))
-        .Call(callee, args) -> any_quote_in_expr(store, store.exprs.get(callee)) || any_quote_in_expr_list(store, store.sexprs_of(args))
+        .Call(callee, args) -> any_quote_in_expr(store, store.exprs.get(callee)) || any_quote_in_expr_id_list(store, args)
         .GenericCall(callee, _, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
         .Grouping(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
         .Block(body) -> any_quote_in_stmt_list(store, body)
@@ -167,6 +167,16 @@ fn any_quote_in_expr_list(store: NodeStore, list: List<SExpr>) -> bool {
     while i < list.length {
         if any_quote_in_expr(store, list[i].node) { return true }
         i = i + 1
+    }
+    false
+}
+
+/// The id twin of `any_quote_in_expr_list` (mirrors `any_quote_in_stmt_ids`):
+/// scan a flipped `List<ExprId>` for a nested quote by resolving each id in
+/// place — keeps this presence check allocation-free (no `sexprs_of` wrapper).
+fn any_quote_in_expr_id_list(store: NodeStore, ids: List<ExprId>) -> bool {
+    for id in ids {
+        if any_quote_in_expr(store, store.exprs.get(id)) { return true }
     }
     false
 }

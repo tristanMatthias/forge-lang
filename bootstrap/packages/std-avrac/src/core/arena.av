@@ -649,18 +649,22 @@ impl NodeStore {
         for id in ids { out.push(self.sstmt_of(id)) }
         out
     }
+    /// The positioned `SExpr` view of one flipped `ExprId` — the expr twin of
+    /// `sstmt_of`. Position from the row's span, `ty` from the `arg_tys`
+    /// side-table; the wrapper file rides empty (consumers use it only for
+    /// diagnostics, which never fire on the byte-identical valid-program path).
+    /// Wrappers die at F4.
+    fn sexpr_of(self, id: ExprId) -> SExpr {
+        let lc = self.expr_linecol(id)
+        SExpr { node: self.exprs.get(id), line: lc.line, col: lc.col, ty: self.arg_ty_of(id), file: "" }
+    }
     /// The positioned `SExpr` views of a flipped `List<ExprId>` — the expr
     /// twin of `sstmts_of`, for read-only consumers handing a whole arg list
     /// to an un-migrated `List<SExpr>` API (typeck check, codegen emit,
-    /// comptime eval). Position from the row's span; the wrapper file rides
-    /// empty (these consumers use it only for diagnostics, which never fire
-    /// on the byte-identical valid-program path). Wrappers die at F4.
+    /// comptime eval).
     fn sexprs_of(self, ids: List<ExprId>) -> List<SExpr> {
         mut out: List<SExpr> = []
-        for id in ids {
-            let lc = self.expr_linecol(id)
-            out.push(SExpr { node: self.exprs.get(id), line: lc.line, col: lc.col, ty: self.arg_ty_of(id), file: "" })
-        }
+        for id in ids { out.push(self.sexpr_of(id)) }
         out
     }
     /// Recompute an expression node's (line, col) from its recorded span.

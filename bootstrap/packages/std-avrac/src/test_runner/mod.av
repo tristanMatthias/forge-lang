@@ -96,20 +96,8 @@ fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt
     out
 }
 
-/// Convert a `List<Expr>` into a `List<SExpr>` in declaration order.
-/// Each Expr gets a dummy-span SExpr wrapper so the resulting list
-/// can stand in any call-site position.
-fn expr_list_from(args: List<Expr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    for a in args {
-        out.push(sexpr_dummy(a))
-    }
-    out
-}
-
-/// Build a fresh `List<ParamEntry>` from `(name, type)` rows. Same
-/// pattern as `expr_list_from` — declaration order in, parameter
-/// list out.
+/// Build a fresh `List<ParamEntry>` from `(name, type)` rows —
+/// declaration order in, parameter list out.
 type ParamSpec = { name: string, ty: ValueType }
 
 fn param_list_from(specs: List<ParamSpec>) -> List<ParamEntry> {

@@ -4438,7 +4438,7 @@ fn annotate_expr_list(tc: TC, exprs: List<SExpr>) -> List<SExpr> {
 fn annotate_expr_list_ids(tc: TC, ids: List<ExprId>) -> List<ExprId> {
     mut out: List<ExprId> = []
     for id in ids {
-        let annotated = annotate_sexpr(tc, tc.nodes.sexprs_of([id])[0])
+        let annotated = annotate_sexpr(tc, tc.nodes.sexpr_of(id))
         let new_id = tc.nodes.reexpr(annotated.node, id)
         tc.nodes.set_arg_ty(new_id, annotated.ty)
         out.push(new_id)

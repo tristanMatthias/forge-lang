@@ -417,6 +417,29 @@ spec "y5um.2: per-kind linecol accessors recompute (line, col) from the span" {
     }
 }
 
+// F3b: the `arg_tys` side-table is where a flipped `Call` arg's inferred type
+// lives once the payload is a bare `ExprId` (annotate writes it, the mono path
+// reads it back). Pin the contract directly — set an arg's type, then recover
+// it through both the singular `sexpr_of` and the list `sexprs_of` views —
+// rather than leaning only on end-to-end selfhost/diff-test parity.
+spec "F3b: arg_tys round-trips an inferred type through sexpr_of / sexprs_of" {
+    then "a set arg type is recovered by both SExpr views; an unset id reads Unknown" {
+        let store = new_node_store(build_line_index(""))
+        let id = store.exprs.add_leaf(Expr.Number("7"))
+        store.set_arg_ty(id, ValueType.Int)
+        let unset = store.exprs.add_leaf(Expr.Number("9"))
+        let single = store.sexpr_of(id)
+        let listed = store.sexprs_of([id])
+        let stored_int = match store.arg_ty_of(id) { .Int -> true  _ -> false }
+        let single_int = match single.ty { .Int -> true  _ -> false }
+        let listed_int = match listed[0].ty { .Int -> true  _ -> false }
+        let unset_unknown = match store.arg_ty_of(unset) { .Unknown -> true  _ -> false }
+        stored_int && single_int && listed_int && unset_unknown
+            && listed.length == 1
+            && render_expr(store, single.node) == render_expr(store, store.exprs.get(id))
+    }
+}
+
 // Struct-embedded child coverage (y5um.3): the derive walker now descends into
 // `List<MatchArm>` (a plain struct holding a bare Pattern, an optional SExpr
 // guard, and an SExpr body), so the arena's edges COVER match-arm children — the
