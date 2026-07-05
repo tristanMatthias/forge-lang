@@ -325,6 +325,21 @@ spec "ingest_program: stress — wide (1000) and deep (300)" {
         // 1 initial Number + 300 × (Binary + Number) = 601 exprs.
         store.exprs.count() == 601
     }
+    then "a recursive consumer walks the full 300-deep chain end-to-end without stack overflow" {
+        // Building the chain iteratively proves the arena SCALES, but the
+        // recursion-safety guarantee now lives in the CONSUMERS: passes that
+        // resolve nested ExprId operands lazily (render_expr / eval / codegen
+        // emit) still recurse one frame per level through store.exprs.get.
+        // Render the deep chain to force 300 frames of descent and confirm it
+        // reaches the innermost leaf — the depth coverage the pre-flip
+        // ingest_expr recursion used to give.
+        let store = ts()
+        mut e = store.exprs.add_leaf(Expr.Number("0"))
+        for i in 0..300 { e = store.exprs.add_leaf(Expr.Binary(e, BinOp.Add, store.exprs.add_leaf(Expr.Number("1")))) }
+        // "(+ 0 1)" can only appear if the recursion descended all 300 levels
+        // to the base Number("0") — a smoke test that couldn't would return "".
+        render_expr(store, store.exprs.get(e)).contains("(+ 0 1)")
+    }
 }
 
 // A synthesised statement (line 0, e.g. an injected intrinsic) has no source
