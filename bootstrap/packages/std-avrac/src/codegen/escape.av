@@ -195,7 +195,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set)
         .FieldAssign(obj, _, val) -> remove_escaped_expr(store, store.exprs.get(val), remove_escaped_expr(store, store.exprs.get(obj), set))
         .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set)
-        .ListLit(elems) -> remove_escaped_args(store, elems, set)
+        .ListLit(elems) -> remove_escaped_arg_ids(store, elems, set)
         // `with` reads obj field-by-field and emits rc_retain on ptr
         // fields the new struct keeps (see with_expr/codegen.av).
         // So `let u = h with { ... }` is a READ of `h` — the new
@@ -216,9 +216,9 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         // scope-exit release path frees a struct the match expression
         // returned — UAF on the returned value.
         .MatchExpr(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, subj, set))
-        .Tuple(elems) -> remove_escaped_args(store, elems, set)
+        .Tuple(elems) -> remove_escaped_arg_ids(store, elems, set)
         .TupleIndex(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
-        .MapLit(entries) -> remove_escaped_args(store, entries, set)
+        .MapLit(entries) -> remove_escaped_arg_ids(store, entries, set)
         .Slice(obj, start, end) -> remove_escaped_expr(store, store.exprs.get(end), remove_escaped_expr(store, store.exprs.get(start), remove_escaped_expr(store, store.exprs.get(obj), set)))
         .Try(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
         .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, body, remove_escaped_expr(store, inner, set))
@@ -284,19 +284,8 @@ fn remove_escaped_when_arms(store: NodeStore, arms: List<WhenArm>, set: List<str
     acc
 }
 
-/// Apply `remove_escaped_expr` to every element of a `List<SExpr>`.
-fn remove_escaped_args(store: NodeStore, args: List<SExpr>, set: List<string>) -> List<string> {
-    mut acc = set
-    mut i = 0
-    while i < args.length {
-        acc = remove_escaped_expr(store, args[i].node, acc)
-        i = i + 1
-    }
-    acc
-}
-
-/// Walk a flipped `List<ExprId>` (call args) — the id twin of
-/// `remove_escaped_args`.
+/// Apply `remove_escaped_expr` to every element of a flipped `List<ExprId>`
+/// (call/collection args).
 fn remove_escaped_arg_ids(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
     mut acc = set
     mut i = 0

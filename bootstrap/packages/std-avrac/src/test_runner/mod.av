@@ -356,7 +356,7 @@ fn synth_test_main(store: NodeStore, mod_names: List<string>) -> SStmt {
     }
     let body: List<StmtId> = [
         store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("run_test_suite")),
-            [store.exprs.add_leaf(Expr.ListLit(unit_lits))])))),
+            [store.exprs.add_leaf(Expr.ListLit(store.ingest_sexpr_recipe(unit_lits)))])))),
         store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("test_render_summary")), empty_args_ids)))),
     ]
     let empty_tp: List<TypeParamEntry> = []

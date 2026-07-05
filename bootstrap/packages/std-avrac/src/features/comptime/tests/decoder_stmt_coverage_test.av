@@ -29,10 +29,10 @@ spec "@comptime decoder: Stmt.ForIn roundtrips through the macro pipeline" {
             "    let print_args: List<ExprId> = [synth_expr_id(Expr.Ident(\"x\"))]\n" +
             "    let body_stmts: List<SStmt> = [sstmt_dummy(Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), print_args))))]\n" +
             "    let loop_body = Stmt.Block(synth_stmt_ids(body_stmts))\n" +
-            "    let list_elems: List<SExpr> = [\n" +
-            "        sexpr_dummy(Expr.String(\"\\\"alpha\\\"\")),\n" +
-            "        sexpr_dummy(Expr.String(\"\\\"beta\\\"\")),\n" +
-            "        sexpr_dummy(Expr.String(\"\\\"gamma\\\"\"))\n" +
+            "    let list_elems: List<ExprId> = [\n" +
+            "        synth_expr_id(Expr.String(\"\\\"alpha\\\"\")),\n" +
+            "        synth_expr_id(Expr.String(\"\\\"beta\\\"\")),\n" +
+            "        synth_expr_id(Expr.String(\"\\\"gamma\\\"\"))\n" +
             "    ]\n" +
             "    let list_lit = Expr.ListLit(list_elems)\n" +
             "    let for_stmt = Stmt.ForIn(\"x\", synth_expr_id(list_lit), synth_stmt_id(loop_body))\n" +

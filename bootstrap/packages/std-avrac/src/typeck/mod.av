@@ -1638,12 +1638,12 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
         .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
-        .Tuple(els) -> lint_scan_sexprs(store, els, coll)
+        .Tuple(els) -> lint_scan_sexprs(store, store.sexprs_of(els), coll)
         .TupleIndex(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .With(obj, _) -> lint_scan_expr(store, obj, coll)
-        .ListLit(els) -> lint_scan_sexprs(store, els, coll)
+        .ListLit(els) -> lint_scan_sexprs(store, store.sexprs_of(els), coll)
         .Lambda(_, body) -> lint_scan_expr(store, body, coll)
-        .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
+        .MapLit(entries) -> lint_scan_sexprs(store, store.sexprs_of(entries), coll)
         .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(start), coll), lint_scan_expr(store, store.exprs.get(end), coll)))
         .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
         .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(needle), coll), lint_scan_sexprs(store, store.sexprs_of(items), coll))
@@ -2470,8 +2470,8 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // errors inside the literal surface too; `reject_literal_into_value_scalar`
         // then rejects only the value-scalar slot (a non-scalar pointer slot like
         // `string` is a nominal mismatch handled elsewhere, not a layout one).
-        .ListLit(elements) -> reject_literal_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
-        .MapLit(entries) -> reject_literal_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
+        .ListLit(elements) -> reject_literal_into_value_scalar(check_list_lit_with_expected(tc, tc.nodes.sexprs_of(elements), vtype_list_elem(exp)), exp, "list")
+        .MapLit(entries) -> reject_literal_into_value_scalar(check_map_lit_with_expected(tc, tc.nodes.sexprs_of(entries), vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
             let r = check_call_with_expected(tc, tc.nodes.exprs.get(callee), tc.nodes.sexprs_of(args), exp)
             // The call result meets the expected type. Route through the no-int
@@ -3475,7 +3475,7 @@ fn tc_infer_lit_ty(store: NodeStore, e: Expr) -> ValueType {
             ValueType.Enum(tn, empty_args, 0)
         }
         .Grouping(inner) -> tc_infer_lit_ty(store, store.exprs.get(inner))
-        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(store, elements))
+        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(store, store.sexprs_of(elements)))
         .Lambda(params, _) -> ValueType.FnTyped(tc_param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
@@ -4190,9 +4190,9 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list_ids(tc, args))
         .StructLit(name, inits) -> .StructLit(name, annotate_field_inits(tc, inits))
         .MatchExpr(subj, arms) -> .MatchExpr(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
-        .ListLit(elems) -> .ListLit(annotate_expr_list(tc, elems))
-        .Tuple(elems) -> .Tuple(annotate_expr_list(tc, elems))
-        .MapLit(entries) -> .MapLit(annotate_expr_list(tc, entries))
+        .ListLit(elems) -> .ListLit(annotate_expr_list_ids(tc, elems))
+        .Tuple(elems) -> .Tuple(annotate_expr_list_ids(tc, elems))
+        .MapLit(entries) -> .MapLit(annotate_expr_list_ids(tc, entries))
         .With(obj, inits) -> .With(annotate_expr(tc, obj), annotate_field_inits(tc, inits))
         .Block(body) -> .Block(annotate_stmts(tc, body))
         .Binary(l, op, r) -> .Binary(annotate_expr_id(tc, l), op, annotate_expr_id(tc, r))
@@ -4325,13 +4325,13 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                 ValueType.Enum(name, empty_args, 0)
             } else { check_expr(tc, se.node).ty }
         }
-        .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
-        .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, entries))
+        .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, tc.nodes.sexprs_of(elements)))
+        .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, tc.nodes.sexprs_of(entries)))
         // Build the tuple type from the already-annotated elements'
         // stamped `.ty` (annotate_expr recursed into them). Typing the
         // literal as an empty Tuple lost the element types, which broke
         // structural type-param inference through a tuple-typed param/field.
-        .Tuple(elems) -> ValueType.Tuple(list_map(elems, (e: SExpr) -> e.ty))
+        .Tuple(elems) -> ValueType.Tuple(list_map(tc.nodes.sexprs_of(elems), (e: SExpr) -> e.ty))
         // Lambda body type needs a real check — fall through. Cheap
         // because annotate_expr already walked the body recursively.
         .Lambda(params, body) -> ValueType.FnTyped(tc_param_types(params), check_expr(tc, body).ty)
@@ -4426,13 +4426,8 @@ fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
     }
 }
 
-/// Map `annotate_sexpr` over a `List<SExpr>`.
-fn annotate_expr_list(tc: TC, exprs: List<SExpr>) -> List<SExpr> {
-    list_map(exprs, (se: SExpr) -> annotate_sexpr(tc, se))
-}
-
-/// Annotate a flipped `List<ExprId>` (call args) — the id twin of
-/// `annotate_expr_list`. Reuses `annotate_sexpr` so each arg's inferred type
+/// Annotate a flipped `List<ExprId>` (call/collection args). Reuses
+/// `annotate_sexpr` so each arg's inferred type
 /// is computed EXACTLY as the boxed path did, then records it on the arena via
 /// `set_arg_ty` (keyed by the post-`reexpr` row) so the monomorphizer — which
 /// materializes args back to `SExpr` via `sexprs_of` — reads the same `.ty` it

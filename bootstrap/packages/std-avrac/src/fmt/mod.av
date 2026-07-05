@@ -54,12 +54,12 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .OptionalChain(obj, field) -> "${fmt_expr(store, store.exprs.get(obj))}?.${field}"
         .OptionalMethodCall(obj, method, args) -> "${fmt_expr(store, store.exprs.get(obj))}?.${method}(${fmt_expr_ids_comma(store, args)})"
         .Try(inner) -> "${fmt_expr(store, store.exprs.get(inner))}?"
-        .Tuple(elements) -> "(${fmt_expr_list_comma(store, elements)})"
+        .Tuple(elements) -> "(${fmt_expr_ids_comma(store, elements)})"
         .TupleIndex(obj, idx) -> "${fmt_expr(store, store.exprs.get(obj))}.${string(idx)}"
         .With(obj, overrides) -> "${fmt_expr(store, obj)} with { ${fmt_field_init_list(store, overrides)} }"
-        .ListLit(elements) -> "[${fmt_expr_list_comma(store, elements)}]"
+        .ListLit(elements) -> "[${fmt_expr_ids_comma(store, elements)}]"
         .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(store, body)}"
-        .MapLit(entries) -> "{ ${fmt_map_entries(store, entries)} }"
+        .MapLit(entries) -> "{ ${fmt_map_entries(store, store.sexprs_of(entries))} }"
         .FloatLit(v) -> v
         .Slice(obj, start, end) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(start))}..${fmt_expr(store, store.exprs.get(end))}]"
         .IsCheck(subject, vname) -> "${fmt_expr(store, store.exprs.get(subject))} is .${vname}"
@@ -183,14 +183,8 @@ export fn fmt_stmt_ids(store: NodeStore, ids: List<StmtId>, depth: int) -> strin
     list_map(ids, (id: StmtId) -> fmt_stmt(store, store.stmts.get(id), depth)).join("\n")
 }
 
-/// Render a `List<SExpr>` as comma-separated expressions — used
+/// Render a flipped `List<ExprId>` as comma-separated expressions — used
 /// inside call args, list literals, tuple elements, and generic call args.
-fn fmt_expr_list_comma(store: NodeStore, exprs: List<SExpr>) -> string {
-    list_map(exprs, (se: SExpr) -> fmt_expr(store, se.node)).join(", ")
-}
-
-/// Comma-separated render of a flipped `List<ExprId>` — the id twin of
-/// `fmt_expr_list_comma` (kept for the still-boxed Tuple/ListLit/MapLit).
 fn fmt_expr_ids_comma(store: NodeStore, ids: List<ExprId>) -> string {
     list_map(ids, (id: ExprId) -> fmt_expr(store, store.exprs.get(id))).join(", ")
 }

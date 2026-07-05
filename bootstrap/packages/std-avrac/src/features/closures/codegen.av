@@ -221,9 +221,9 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(r), params, env, captures)
         }
         .Try(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
-        .ListLit(elems) -> find_captures_list(store, elems, params, env, captures)
-        .Tuple(elems) -> find_captures_list(store, elems, params, env, captures)
-        .MapLit(entries) -> find_captures_list(store, entries, params, env, captures)
+        .ListLit(elems) -> find_captures_list(store, store.sexprs_of(elems), params, env, captures)
+        .Tuple(elems) -> find_captures_list(store, store.sexprs_of(elems), params, env, captures)
+        .MapLit(entries) -> find_captures_list(store, store.sexprs_of(entries), params, env, captures)
         .With(obj, inits) -> {
             // Walk both obj AND field initialisers — closure that
             // uses `bag with { f: outer_var }` must capture outer_var.

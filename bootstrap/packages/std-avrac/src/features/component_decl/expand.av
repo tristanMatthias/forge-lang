@@ -597,7 +597,7 @@ fn append_children_inits(inits: List<FieldInit>, children: List<ChildrenSlot>) -
         i = i + 1
     }
     for slot in children {
-        let empty_elems: List<SExpr> = []
+        let empty_elems: List<ExprId> = []
         let empty_list = sexpr(Expr.ListLit(empty_elems), 0, 0)
         out.push(FieldInit { name: slot.slot_name, value: empty_list })
     }

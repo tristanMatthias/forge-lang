@@ -839,7 +839,7 @@ impl Parser {
         let header_count = col_names.length
         if header_count == 0 {
             if !self.consume(Tk.RightBrace, "expected `}` to close table") { return .Err("parse error") }
-            let empty: List<SExpr> = []
+            let empty: List<ExprId> = []
             return .Ok(self.alloc_leaf(Expr.ListLit(empty)))
         }
         // Reject duplicate column names — they would silently collide on the
@@ -860,7 +860,6 @@ impl Parser {
         // field names come from the header and whose values come from
         // the cells (left-to-right, one per column). A row occupies a
         // single source line; its cell count must match the header width.
-        mut rows: List<SExpr> = []
         mut row_ids: List<ExprId> = []
         // Bound each cell expression to its row's line so a value at the end
         // of one row doesn't merge with a `-`/`.Variant` starting the next.
@@ -894,14 +893,13 @@ impl Parser {
             }
             // Row StructLit: one ExprRef per FieldInit value, in column order.
             let row_node = Expr.StructLit(row_type, inits)
-            rows.push(sexpr_at(row_node, row_line, 0, self.file))
             row_ids.push(self.alloc_expr(row_node, byte_span_none(), self.edges_of_ids(cell_ids)))
         }
         self.cell_mode = saved_cell_mode
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return .Err("parse error")
         }
-        .Ok(self.alloc_expr(Expr.ListLit(rows), byte_span_none(), self.edges_of_ids(row_ids)))
+        .Ok(self.alloc_leaf(Expr.ListLit(row_ids)))
     }
 
     // Module parser (parse_module_declaration, parse_use_declaration)
@@ -1700,7 +1698,7 @@ impl Parser {
                     let empty_ps: List<ParamEntry> = []
                     return .Ok(self.alloc1(Expr.Lambda(empty_ps, self.expr_of(body)), body))
                 }
-                let empty: List<SExpr> = []
+                let empty: List<ExprId> = []
                 return .Ok(self.alloc_leaf(Expr.Tuple(empty)))
             }
             // Typed lambda: (x: int, y: string) -> body
@@ -1737,13 +1735,9 @@ impl Parser {
                     let body = self.parse_lambda_body()?
                     return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
                 }
-                mut tuple_elems: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
                 mut tuple_ids: List<ExprId> = [expr]
-                for (tj, w) in rest.wrapped.enumerate() {
-                    tuple_elems.push(w)
-                    tuple_ids.push(rest.ids[tj])
-                }
-                return .Ok(self.alloc_expr(Expr.Tuple(tuple_elems), byte_span_none(), self.edges_of_ids(tuple_ids)))
+                for tid in rest.ids { tuple_ids.push(tid) }
+                return .Ok(self.alloc_leaf(Expr.Tuple(tuple_ids)))
             }
             if !self.consume(Tk.RightParen, "expected `)` after expression") {
                 return .Err("parse error")
@@ -1764,7 +1758,7 @@ impl Parser {
             self.advance()
             if self.check(Tk.RightBracket) {
                 self.advance()
-                let empty: List<SExpr> = []
+                let empty: List<ExprId> = []
                 return .Ok(self.alloc_leaf(Expr.ListLit(empty)))
             }
             let elements = self.parse_list_elements()?
@@ -1782,7 +1776,7 @@ impl Parser {
                     _ -> {}
                 }
             }
-            return .Ok(self.alloc_expr(Expr.ListLit(elements.wrapped), byte_span_none(), self.edges_of_ids(elements.ids)))
+            return .Ok(self.alloc_leaf(Expr.ListLit(elements.ids)))
         }
 
         if self.check(Tk.KwMatch) {

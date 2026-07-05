@@ -307,7 +307,7 @@ fn lower_table_rows(store: NodeStore, expr: Expr, expected: ValueType) -> Expr {
 /// Recursively stamp `sname` onto anonymous table rows in value position.
 fn stamp_table_rows(store: NodeStore, expr: Expr, sname: string) -> Expr {
     match expr {
-        .ListLit(rows) -> .ListLit(stamp_table_row_list(rows, sname))
+        .ListLit(rows) -> .ListLit(stamp_table_row_list(store, rows, sname))
         .Block(body) -> .Block(stamp_block_tail(store, body, sname))
         .IfExpr(c, t, e) -> .IfExpr(c, store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(t), sname)), store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(e), sname)))
         .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(store, arms, sname))
@@ -316,9 +316,12 @@ fn stamp_table_rows(store: NodeStore, expr: Expr, sname: string) -> Expr {
     }
 }
 
-/// Map the row-stamp over each `SExpr` row in a table's ListLit.
-fn stamp_table_row_list(rows: List<SExpr>, sname: string) -> List<SExpr> {
-    list_map(rows, (se: SExpr) -> sexpr(stamp_table_row(se.node, sname), se.line, se.col))
+/// Map the row-stamp over each arena row in a table's ListLit. Rows are a
+/// flipped `List<ExprId>` — read each via `store.exprs.get`, stamp, and
+/// re-store in place with `store.reexpr` (mirrors `stamp_block_tail`'s
+/// id-rewrite pattern below).
+fn stamp_table_row_list(store: NodeStore, ids: List<ExprId>, sname: string) -> List<ExprId> {
+    list_map(ids, (id: ExprId) -> store.reexpr(stamp_table_row(store.exprs.get(id), sname), id))
 }
 
 /// Stamp `sname` onto one anonymous `StructLit("")`; leave named rows
@@ -570,10 +573,10 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr_id(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr_id(store, obj, sigs), method, desugar_expr_list_ids(store, args, sigs))
         .Try(inner) -> .Try(desugar_expr_id(store, inner, sigs))
-        .Tuple(elems) -> .Tuple(desugar_expr_list(store, elems, sigs))
+        .Tuple(elems) -> .Tuple(desugar_expr_list_ids(store, elems, sigs))
         .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr_id(store, obj, sigs), idx)
-        .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
-        .MapLit(entries) -> .MapLit(desugar_expr_list(store, entries, sigs))
+        .ListLit(elems) -> .ListLit(desugar_expr_list_ids(store, elems, sigs))
+        .MapLit(entries) -> .MapLit(desugar_expr_list_ids(store, entries, sigs))
         .Slice(obj, s, e) -> .Slice(desugar_expr_id(store, obj, sigs), desugar_expr_id(store, s, sigs), desugar_expr_id(store, e, sigs))
         .With(obj, overrides) -> .With(desugar_expr(store, obj, sigs), desugar_field_inits(store, overrides, sigs))
         .Lambda(params, body) -> .Lambda(params, desugar_expr(store, body, sigs))
@@ -606,14 +609,8 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     }
 }
 
-/// Map `desugar_expr` over every element of a `List<SExpr>`,
-/// preserving span info on each rewritten node.
-fn desugar_expr_list(store: NodeStore, list: List<SExpr>, sigs: List<FnSig>) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(desugar_expr(store, se.node, sigs), se.line, se.col))
-}
-
-/// Map `desugar_expr` over a flipped `List<ExprId>` (call args) — the id
-/// twin of `desugar_expr_list`; rewrites each arg row in place.
+/// Map `desugar_expr` over a flipped `List<ExprId>` (call/collection args),
+/// rewriting each arg row in place.
 fn desugar_expr_list_ids(store: NodeStore, list: List<ExprId>, sigs: List<FnSig>) -> List<ExprId> {
     list_map(list, (id: ExprId) -> store.reexpr(desugar_expr(store, store.exprs.get(id), sigs), id))
 }

@@ -1515,10 +1515,10 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr_id(ctx, l), rewrite_expr_id(ctx, r))
         .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr_id(ctx, obj), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(rewrite_expr_id(ctx, obj), method, rewrite_expr_list_ids(ctx, args))
-        .Tuple(elems) -> .Tuple(rewrite_expr_list(ctx, elems))
+        .Tuple(elems) -> .Tuple(rewrite_expr_list_ids(ctx, elems))
         .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr_id(ctx, obj), idx)
-        .ListLit(elems) -> .ListLit(rewrite_expr_list(ctx, elems))
-        .MapLit(entries) -> .MapLit(rewrite_expr_list(ctx, entries))
+        .ListLit(elems) -> .ListLit(rewrite_expr_list_ids(ctx, elems))
+        .MapLit(entries) -> .MapLit(rewrite_expr_list_ids(ctx, entries))
         .Slice(obj, s, e) -> .Slice(rewrite_expr_id(ctx, obj), rewrite_expr_id(ctx, s), rewrite_expr_id(ctx, e))
         .With(obj, overrides) -> .With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
         .StructLit(name, inits) -> {
@@ -1830,9 +1830,9 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .OptionalChain(obj, _) -> collect_used_paths_expr(store, store.exprs.get(obj), acc)
         .OptionalMethodCall(obj, _, args) -> collect_used_paths_expr_list_ids(store, args, collect_used_paths_expr(store, store.exprs.get(obj), acc))
         .Try(inner) -> collect_used_paths_expr(store, store.exprs.get(inner), acc)
-        .Tuple(elems) -> collect_used_paths_expr_list(store, elems, acc)
-        .ListLit(elems) -> collect_used_paths_expr_list(store, elems, acc)
-        .MapLit(entries) -> collect_used_paths_expr_list(store, entries, acc)
+        .Tuple(elems) -> collect_used_paths_expr_list_ids(store, elems, acc)
+        .ListLit(elems) -> collect_used_paths_expr_list_ids(store, elems, acc)
+        .MapLit(entries) -> collect_used_paths_expr_list_ids(store, entries, acc)
         .StructLit(sn, inits) -> {
             acc.push(sn)
             collect_used_paths_field_inits(store, inits, acc)
@@ -1866,19 +1866,8 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
     }
 }
 
-/// Map `collect_used_paths_expr` over a `List<SExpr>`.
-fn collect_used_paths_expr_list(store: NodeStore, exprs: List<SExpr>, acc: List<string>) -> List<string> {
-    mut out = acc
-    mut i = 0
-    while i < exprs.length {
-        out = collect_used_paths_expr(store, exprs[i].node, out)
-        i = i + 1
-    }
-    out
-}
-
-/// Walk a flipped `List<ExprId>` (call args) for the unused-import sweep —
-/// the id twin of `collect_used_paths_expr_list`.
+/// Walk a flipped `List<ExprId>` (call/collection args) for the unused-import
+/// sweep, collecting used qualified paths.
 fn collect_used_paths_expr_list_ids(store: NodeStore, ids: List<ExprId>, acc: List<string>) -> List<string> {
     mut out = acc
     mut i = 0

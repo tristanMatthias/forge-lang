@@ -917,7 +917,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         // the comptime decoder can read AST list / struct payloads
         // directly. lower.av emits Expr.ListLit + Expr.StructLit
         // for AST list / struct payloads.
-        .ListLit(elems) -> eval_list_lit(runtime, elems)
+        .ListLit(elems) -> eval_list_lit(runtime, runtime.nodes.sexprs_of(elems))
         .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
         .Unary(op, right) -> eval_unary(runtime, op, runtime.nodes.exprs.get(right))
         .Binary(left, op, right) -> eval_binary(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
@@ -2392,17 +2392,17 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "Tuple" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let elems = list_value_to_expr_list(store, head)?
+            let elems = list_value_to_expr_id_list(store, head)?
             .Ok(Expr.Tuple(elems))
         }
         "ListLit" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let elems = list_value_to_expr_list(store, head)?
+            let elems = list_value_to_expr_id_list(store, head)?
             .Ok(Expr.ListLit(elems))
         }
         "MapLit" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let entries = list_value_to_expr_list(store, head)?
+            let entries = list_value_to_expr_id_list(store, head)?
             .Ok(Expr.MapLit(entries))
         }
         "StructLit" -> {

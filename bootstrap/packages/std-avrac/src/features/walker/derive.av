@@ -428,10 +428,10 @@ fn arm_body(bindings: List<Binding>, parent_name: string) -> Expr {
     }
 
     if total_list == 0 {
-        mut elems: List<SExpr> = []
+        mut elems: List<ExprId> = []
         for b in bindings {
             if is_single_child(b.kind) {
-                elems.push(sexpr_dummy(direct_child_expr(b)))
+                elems.push(synth_expr_id(direct_child_expr(b)))
             }
         }
         return Expr.ListLit(elems)
@@ -545,7 +545,7 @@ fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr
     mut acc: Expr = Expr.Ident(empty_binding_name())
     for b in bindings {
         if is_single_child(b.kind) {
-            let one: List<SExpr> = [sexpr_dummy(direct_child_expr(b))]
+            let one: List<ExprId> = [synth_expr_id(direct_child_expr(b))]
             acc = cross_concat(acc, Expr.ListLit(one))
         }
         if b.kind is .ListOfSelf {
@@ -611,7 +611,7 @@ fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     // `List<Self>`-typed values that unify with sibling list-typed
     // arms. The Let decoder preserves the resolved-vtype slot, so the
     // annotation survives the synth roundtrip.
-    let empty_elems: List<SExpr> = []
+    let empty_elems: List<ExprId> = []
     let typed_empty = Stmt.Let(empty_binding_name(), ret_ty, synth_expr_id(Expr.ListLit(empty_elems)))
     let body: List<SStmt> = [
         sstmt_dummy(typed_empty),
@@ -938,7 +938,7 @@ fn build_all_children_spanned_fn(arms: List<MatchArm>, enum_name: string) -> Stm
     let empty_tp: List<TypeParamEntry> = []
     let ret_ty = ValueType.List(sc_ty)
     let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
-    let empty_elems: List<SExpr> = []
+    let empty_elems: List<ExprId> = []
     let typed_empty = Stmt.Let(all_spanned_empty_binding_name(), ret_ty, synth_expr_id(Expr.ListLit(empty_elems)))
     let body: List<SStmt> = [
         sstmt_dummy(typed_empty),

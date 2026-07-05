@@ -693,7 +693,7 @@ fn infer_lit_ty(regs: GenRegs, e: Expr) -> ValueType {
             }
         }
         .Grouping(inner) -> infer_lit_ty(regs, regs.store.exprs.get(inner))
-        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, elements))
+        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, regs.store.sexprs_of(elements)))
         .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
@@ -1424,9 +1424,9 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .Lambda(_, body) -> collect_inst_expr(body, regs, st)
         .Block(body) -> collect_inst_stmts(body, regs, st)
         .MatchExpr(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(subj, regs, st))
-        .ListLit(elems) -> collect_inst_exprs(elems, regs, st)
-        .Tuple(elems) -> collect_inst_exprs(elems, regs, st)
-        .MapLit(entries) -> collect_inst_exprs(entries, regs, st)
+        .ListLit(elems) -> collect_inst_exprs(regs.store.sexprs_of(elems), regs, st)
+        .Tuple(elems) -> collect_inst_exprs(regs.store.sexprs_of(elems), regs, st)
+        .MapLit(entries) -> collect_inst_exprs(regs.store.sexprs_of(entries), regs, st)
         .ListComp(body, _, coll, filter) -> {
             let s1 = collect_inst_expr(body, regs, st)
             let s2 = collect_inst_expr(coll, regs, s1)
@@ -1696,8 +1696,8 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
         .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr_id(store, obj, orig_name, mangled), f)
         .Assign(n, val) -> .Assign(n, rename_self_calls_expr_id(store, val, orig_name, mangled))
         .FieldAssign(obj, f, val) -> .FieldAssign(rename_self_calls_expr_id(store, obj, orig_name, mangled), f, rename_self_calls_expr_id(store, val, orig_name, mangled))
-        .ListLit(elems) -> .ListLit(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
-        .Tuple(elems) -> .Tuple(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
+        .ListLit(elems) -> .ListLit(rename_self_calls_expr_ids(store, elems, orig_name, mangled))
+        .Tuple(elems) -> .Tuple(rename_self_calls_expr_ids(store, elems, orig_name, mangled))
         .Lambda(params, body) -> .Lambda(params, rename_self_calls_expr(store, body, orig_name, mangled))
         .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr_id(store, l, orig_name, mangled), rename_self_calls_expr_id(store, r, orig_name, mangled))
         .Try(e) -> .Try(rename_self_calls_expr_id(store, e, orig_name, mangled))
@@ -1705,19 +1705,8 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
     }
 }
 
-fn rename_self_calls_sexpr_list(store: NodeStore, exprs: List<SExpr>, orig_name: string, mangled: string) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < exprs.length {
-        let se = exprs[i]
-        out.push(SExpr { node: rename_self_calls_expr(store, se.node, orig_name, mangled), line: se.line, col: se.col, ty: se.ty, file: se.file })
-        i = i + 1
-    }
-    out
-}
-
-/// Rename over a flipped `List<ExprId>` (call args) — the id twin of
-/// `rename_self_calls_sexpr_list`. PRESERVES each arg's recorded type
+/// Rename over a flipped `List<ExprId>` (call/collection args). PRESERVES
+/// each arg's recorded type
 /// (`set_arg_ty`), mirroring the boxed version keeping `se.ty`, so the
 /// renamed body's recursive instantiation still sees arg types.
 fn rename_self_calls_expr_ids(store: NodeStore, ids: List<ExprId>, orig_name: string, mangled: string) -> List<ExprId> {
@@ -1941,18 +1930,6 @@ fn substitute_expr_list_ids(store: NodeStore, ids: List<ExprId>, ta: List<TypeAr
     out
 }
 
-/// Map `substitute_expr` over a `List<SExpr>`.
-fn substitute_expr_list(store: NodeStore, exprs: List<SExpr>, ta: List<TypeArg>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < exprs.length {
-        let se = exprs[i]
-        out.push(sexpr_at(substitute_expr(store, se.node, ta), se.line, se.col, se.file))
-        i = i + 1
-    }
-    out
-}
-
 /// Substitute type-args into a single statement. Recurses into
 /// expression payloads + nested bodies.
 fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
@@ -1996,9 +1973,9 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .FieldAccess(obj, f) -> .FieldAccess(substitute_expr_id(store, obj, ta), f)
         .Assign(name, val) -> .Assign(name, substitute_expr_id(store, val, ta))
         .FieldAssign(obj, f, val) -> .FieldAssign(substitute_expr_id(store, obj, ta), f, substitute_expr_id(store, val, ta))
-        .ListLit(elems) -> .ListLit(substitute_expr_list(store, elems, ta))
-        .Tuple(elems) -> .Tuple(substitute_expr_list(store, elems, ta))
-        .MapLit(entries) -> .MapLit(substitute_expr_list(store, entries, ta))
+        .ListLit(elems) -> .ListLit(substitute_expr_list_ids(store, elems, ta))
+        .Tuple(elems) -> .Tuple(substitute_expr_list_ids(store, elems, ta))
+        .MapLit(entries) -> .MapLit(substitute_expr_list_ids(store, entries, ta))
         .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr(store, body, ta))
         .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr_id(store, l, ta), substitute_expr_id(store, r, ta))
         .Try(e) -> .Try(substitute_expr_id(store, e, ta))
@@ -2635,9 +2612,9 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         .Index(obj, idx) -> .Index(rewrite_expr_id(obj, regs, insts), rewrite_expr_id(idx, regs, insts))
         .Assign(name, val) -> .Assign(name, rewrite_expr_id(val, regs, insts))
         .FieldAssign(obj, f, val) -> .FieldAssign(rewrite_expr_id(obj, regs, insts), f, rewrite_expr_id(val, regs, insts))
-        .ListLit(elems) -> .ListLit(rewrite_expr_list(elems, regs, insts))
-        .Tuple(elems) -> .Tuple(rewrite_expr_list(elems, regs, insts))
-        .MapLit(entries) -> .MapLit(rewrite_expr_list(entries, regs, insts))
+        .ListLit(elems) -> .ListLit(rewrite_expr_list_ids(elems, regs, insts))
+        .Tuple(elems) -> .Tuple(rewrite_expr_list_ids(elems, regs, insts))
+        .MapLit(entries) -> .MapLit(rewrite_expr_list_ids(entries, regs, insts))
         // Mangle the closure's PARAM types too (not just the body): a param
         // typed with a generic instance (`(x: Box<int>) -> x.count()`) must pick
         // up the monomorphized name, or a method/field on it dispatches to the

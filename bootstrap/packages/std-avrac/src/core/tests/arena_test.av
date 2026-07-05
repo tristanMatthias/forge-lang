@@ -255,7 +255,7 @@ spec "ingest: combinatorial cross-kind nesting travels by id" {
     then "fn { if (1<2) { let xs: List<List<int>> = [] } } resolves level-by-level" {
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
-        let no_el: List<SExpr> = []
+        let no_el: List<ExprId> = []
         let store = ts()
         let cond = store.exprs.add_leaf(Expr.Binary(store.exprs.add_leaf(Expr.Number("1")), BinOp.Lt, store.exprs.add_leaf(Expr.Number("2"))))
         let init = store.exprs.add_leaf(Expr.ListLit(no_el))
@@ -718,7 +718,7 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
         let donor = ts()
         let no_tp: List<TypeParamEntry> = []
         let no_pp: List<ParamEntry> = []
-        let no_el: List<SExpr> = []
+        let no_el: List<ExprId> = []
         let cond = donor.exprs.add_leaf(Expr.Binary(donor.exprs.add_leaf(Expr.Number("1")), BinOp.Lt, donor.exprs.add_leaf(Expr.Number("2"))))
         let init = donor.exprs.add_leaf(Expr.ListLit(no_el))
         let inner_let = donor.stmts.add_leaf(Stmt.Let("xs", ValueType.List(ValueType.List(ValueType.Int)), init))

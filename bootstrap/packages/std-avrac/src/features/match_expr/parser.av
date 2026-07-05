@@ -117,7 +117,7 @@ impl Parser {
                 if self.check(Tk.Pipe) { self.advance() }
             }
             let map_entries = table_zip_entries(headers, vals)
-            let body = Expr.MapLit(map_entries)
+            let body = Expr.MapLit(self.store.ingest_sexpr_recipe(map_entries))
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {
                 pattern,

@@ -206,7 +206,7 @@ spec "render_pattern: literal + nested arms render distinctly" {
 spec "render_stmt: binding/fn type annotations render faithfully (round-trip oracle non-vacuity)" {
     then "Let element type is faithful (List<int> != List<string>; was both 'List')" {
         let ws = ts()
-        let no_el: List<SExpr> = []
+        let no_el: List<ExprId> = []
         let init = ws.exprs.add_leaf(Expr.ListLit(no_el))
         let a = render_stmt(ws, Stmt.Let("x", ValueType.List(ValueType.Int), init))
         let b = render_stmt(ws, Stmt.Let("x", ValueType.List(ValueType.Str), init))

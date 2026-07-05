@@ -27,7 +27,7 @@ fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
         .Tuple(elements) -> {
             mut vals: List<Value> = []
             mut cur = rt
-            for el in elements {
+            for el in rt.nodes.sexprs_of(elements) {
                 let r = eval_expr(cur, el.node)
                 if r.had_error { return r }
                 cur = r.runtime
@@ -54,7 +54,7 @@ export fn tuple_index_feature() -> Feature {
 /// Resolver hook for `Tuple` literals. Walks every element.
 fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .Tuple(elements) -> resolve_expr_list(r, elements)
+        .Tuple(elements) -> resolve_expr_list(r, r.nodes.sexprs_of(elements))
         _ -> r
     }
 }
@@ -64,7 +64,7 @@ fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Tuple(elements) -> {
-            let pair = check_expr_list_types(tc, elements)
+            let pair = check_expr_list_types(tc, tc.nodes.sexprs_of(elements))
             tc_er(pair.tc, .Tuple(pair.types))
         }
         _ -> tc_er(tc, .Unknown)
