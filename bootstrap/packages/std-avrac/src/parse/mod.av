@@ -13,7 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
-use core.{gensym_name, expr_force_unwrap, FORCE_UNWRAP_FN}
+use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
@@ -999,39 +999,25 @@ impl Parser {
             self.allow_it_sugar = true
             let rhs = self.parse_or()?
             self.allow_it_sugar = saved_it
-            let se = sexpr_at(self.expr_of(eid), self.current_line, self.current_column, self.file)
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
             // If any arg is `_`, replace it with the piped value (spec Axis 28.7).
-            // The RHS Call shell is discarded (orphan row); callee + surviving
-            // args are re-parented by id off the shell's edge list, and the
-            // piped LHS id takes each placeholder's edge slot.
+            // The RHS Call shell is discarded; its callee + surviving arg ids
+            // are read straight off the flipped Call's id fields (post-F3b a
+            // Call row is a leaf — the ids ARE the structure, no edge list),
+            // and the piped LHS id takes each placeholder's slot.
             eid = match self.expr_of(rhs) {
                 .Call(callee, args) -> {
-                    let rhs_kids = self.store.exprs.children_of(rhs)
-                    let callee_id = self.expr_child(rhs, 0)
-                    if pipe_args_has_placeholder(args) {
-                        mut edges: List<NodeRef> = [NodeRef.ExprRef(callee_id)]
-                        for (i, a) in args.enumerate() {
-                            let is_placeholder = match a.node {
-                                .Ident(n) -> n == "_"
-                                _ -> false
-                            }
-                            if is_placeholder { edges.push(NodeRef.ExprRef(eid)) } else { edges.push(rhs_kids[i + 1]) }
-                        }
-                        self.alloc_expr(Expr.Call(callee, pipe_replace_placeholder(args, se)), byte_span_none(), edges)
+                    if pipe_args_has_placeholder(self.store, args) {
+                        self.alloc_leaf(Expr.Call(callee, pipe_replace_placeholder(self.store, args, eid)))
                     } else {
-                        mut prepended: List<SExpr> = [se]
-                        mut edges: List<NodeRef> = [NodeRef.ExprRef(callee_id), NodeRef.ExprRef(eid)]
-                        for (i, a) in args.enumerate() {
-                            prepended.push(a)
-                            edges.push(rhs_kids[i + 1])
-                        }
-                        self.alloc_expr(Expr.Call(callee, prepended), byte_span_none(), edges)
+                        mut prepended: List<ExprId> = [eid]
+                        for a in args { prepended.push(a) }
+                        self.alloc_leaf(Expr.Call(callee, prepended))
                     }
                 }
                 _ -> {
-                    let one: List<SExpr> = [se]
-                    self.alloc2(Expr.Call(self.expr_of(rhs), one), rhs, eid)
+                    let one: List<ExprId> = [eid]
+                    self.alloc_leaf(Expr.Call(rhs, one))
                 }
             }
         }
@@ -1044,11 +1030,10 @@ impl Parser {
 /// True iff the pipe RHS arg list contains an `_` placeholder.
 /// `x |> f(_, 2)` uses the placeholder to position the LHS at a
 /// specific arg slot; without one, the LHS becomes the first arg.
-fn pipe_args_has_placeholder(args: List<SExpr>) -> bool {
+fn pipe_args_has_placeholder(store: NodeStore, args: List<ExprId>) -> bool {
     mut i = 0
     while i < args.length {
-        let se = args[i]
-        match se.node {
+        match store.exprs.get(args[i]) {
             .Ident(n) -> if n == "_" { return true }
             _ -> {}
         }
@@ -1059,16 +1044,16 @@ fn pipe_args_has_placeholder(args: List<SExpr>) -> bool {
 
 /// Replace the first `_` placeholder in `args` with the pipe's LHS
 /// expression. Counterpart to `pipe_args_has_placeholder`.
-fn pipe_replace_placeholder(args: List<SExpr>, replacement: SExpr) -> List<SExpr> {
-    mut out: List<SExpr> = []
+fn pipe_replace_placeholder(store: NodeStore, args: List<ExprId>, replacement: ExprId) -> List<ExprId> {
+    mut out: List<ExprId> = []
     mut i = 0
     while i < args.length {
-        let se = args[i]
-        let is_placeholder = match se.node {
+        let id = args[i]
+        let is_placeholder = match store.exprs.get(id) {
             .Ident(n) -> n == "_"
             _ -> false
         }
-        if is_placeholder { out.push(replacement) } else { out.push(se) }
+        if is_placeholder { out.push(replacement) } else { out.push(id) }
         i = i + 1
     }
     out
@@ -1383,11 +1368,11 @@ impl Parser {
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
                 self.advance()
-                result = expr_force_unwrap(result)
                 // Call(Ident($force_unwrap), [subject]) — fresh callee leaf,
-                // the subject re-parented under it.
+                // the subject rides in the flipped Call's id fields (leaf row).
                 let fu_callee = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
-                rid = self.alloc2(result, fu_callee, rid)
+                result = Expr.Call(fu_callee, [rid])
+                rid = self.alloc_leaf(result)
             }
             // Error propagation: `expr?` — if null, return .Err("parse error")
             // from the enclosing function.
@@ -1495,8 +1480,8 @@ impl Parser {
                 if !self.consume(Tk.RightParen, "expected `)` after arguments") {
                     return .Err("parse error")
                 }
-                result = Expr.Call(result, parsed.wrapped)
-                rid = self.alloc_expr(result, byte_span_none(), self.edges_subject_args(rid, parsed.ids))
+                result = Expr.Call(rid, parsed.ids)
+                rid = self.alloc_leaf(result)
             } else {
                 self.advance()
                 // Tuple index: `t.0`, `t.1` — number after dot
@@ -1696,10 +1681,8 @@ impl Parser {
                 let raw = self.current_lexeme
                 self.advance()
                 let template_id = self.desugar_template(raw)?
-                let template_expr = self.expr_of(template_id)
-                let args: List<SExpr> = [sexpr_at(template_expr, self.current_line, self.current_column, self.file)]
                 let tag_callee = self.alloc_leaf(Expr.Ident(name))
-                return .Ok(self.alloc2(Expr.Call(Expr.Ident(name), args), tag_callee, template_id))
+                return .Ok(self.alloc_leaf(Expr.Call(tag_callee, [template_id])))
             }
             return .Ok(self.alloc_leaf(Expr.Ident(name)))
         }
@@ -1905,7 +1888,6 @@ impl Parser {
                         }
                     }
                 }
-                let parsed = self.expr_of(parsed_id)
                 // If format spec exists, use avra_format_float/int; otherwise string().
                 mut str_call = Expr.None
                 mut call_id = ExprId(0)
@@ -1917,19 +1899,14 @@ impl Parser {
                     let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
                     let fmt_fn = if is_float_fmt { "avra_format_float" } else { "avra_format_int" }
                     let spec_lit = Expr.String("\"${fmt_spec}\"")
-                    let fmt_args: List<SExpr> = [
-                        sexpr_dummy(parsed),
-                        sexpr_dummy(spec_lit)
-                    ]
                     let callee_id = self.alloc_leaf(Expr.Ident(fmt_fn))
                     let spec_id = self.alloc_leaf(spec_lit)
-                    str_call = Expr.Call(Expr.Ident(fmt_fn), fmt_args)
-                    call_id = self.alloc3(str_call, callee_id, parsed_id, spec_id)
+                    str_call = Expr.Call(callee_id, [parsed_id, spec_id])
+                    call_id = self.alloc_leaf(str_call)
                 } else {
-                    let str_args: List<SExpr> = [sexpr_dummy(parsed)]
                     let callee_id = self.alloc_leaf(Expr.Ident("string"))
-                    str_call = Expr.Call(Expr.Ident("string"), str_args)
-                    call_id = self.alloc2(str_call, callee_id, parsed_id)
+                    str_call = Expr.Call(callee_id, [parsed_id])
+                    call_id = self.alloc_leaf(str_call)
                 }
                 acc = self.template_fold(acc, str_call, call_id)
                 i = j + 1
@@ -2565,13 +2542,13 @@ impl Parser {
     }
 
     /// Row twin of `expr_force_unwrap(Ident(name))`: subject leaf + fresh
-    /// callee leaf under a Call row, edges [callee, subject] — the ONE place
-    /// this ordering convention lives (the if-let and let-else desugars both
-    /// mint it).
+    /// callee leaf, both carried in the flipped Call's id fields (a leaf row
+    /// post-F3b) — the ONE place this ordering convention lives (the if-let
+    /// and let-else desugars both mint it).
     fn alloc_force_unwrap_row(self, name: string) -> ExprId {
         let subject_id = self.alloc_leaf(Expr.Ident(name))
         let callee_id = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
-        self.alloc2(expr_force_unwrap(Expr.Ident(name)), callee_id, subject_id)
+        self.alloc_leaf(Expr.Call(callee_id, [subject_id]))
     }
 
     /// Row twin of an `<ident> == none` / `!= none` test: an `<ident>` leaf
@@ -2587,13 +2564,6 @@ impl Parser {
     /// it to embed already-allocated children into a parent's boxed payload.
     fn expr_of(self, id: ExprId) -> Expr {
         self.store.exprs.get(id)
-    }
-
-    /// The i-th recorded edge of `id`, unwrapped as an expr child. Used when
-    /// a rebuild discards a shell node (assignment retarget, pipe desugar)
-    /// and re-parents the shell's children by id — no re-walk.
-    fn expr_child(self, id: ExprId, i: int) -> ExprId {
-        expr_ref_id(self.store.exprs.children_of(id)[i])
     }
 
     /// Alloc an expr LEAF (no node children) — the arena's one-push path.

@@ -18,7 +18,7 @@ use @std.avrac.test_runner.{write_fixture_and_run}
 spec "@expand: introduced fn is registered for downstream macros" {
     then "second 2-arg macro qualifies the introduced name via ctx" {
         let out = write_fixture_and_run("/tmp/avra_expand_introduces_registration_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ctx_qualify_ident}\n" +
@@ -47,8 +47,8 @@ spec "@expand: introduced fn is registered for downstream macros" {
             "    mut qstr = \"NULL\"\n" +
             "    if q != null { qstr = q! }\n" +
             "    let msg = \"qualified=\" + qstr\n" +
-            "    let args: List<SExpr> = [sexpr_dummy(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
-            "    return Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident(\"println\"), args)))\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
             "}\n" +
             "\n" +
             "@expand(introducer)\n" +

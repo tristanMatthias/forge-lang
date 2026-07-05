@@ -124,7 +124,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .Binary(l, op, r) -> .Binary(rewrite_expr_id(l, reg), op, rewrite_expr_id(r, reg))
         .Unary(op, r) -> .Unary(op, rewrite_expr_id(r, reg))
         .Logical(l, op, r) -> .Logical(rewrite_expr_id(l, reg), op, rewrite_expr_id(r, reg))
-        .Call(callee, args) -> .Call(rewrite_expr(callee, reg), rewrite_expr_list(args, reg))
+        .Call(callee, args) -> .Call(rewrite_expr_id(callee, reg), rewrite_expr_list_ids(args, reg))
         .GenericCall(callee, type_args, args) -> .GenericCall(rewrite_expr(callee, reg), type_args, rewrite_expr_list(args, reg))
         .StructLit(name, inits) -> .StructLit(name, rewrite_field_inits(inits, reg))
         .Grouping(inner) -> .Grouping(rewrite_expr_id(inner, reg))
@@ -172,6 +172,14 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
 fn rewrite_opt_expr(opt: Expr?, reg: CompTimeRegistry) -> Expr? {
     if opt == none { return none }
     rewrite_expr(opt!, reg)
+}
+
+/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args) — the id twin
+/// of `rewrite_expr_list`, via `rewrite_expr_id` (reexpr).
+fn rewrite_expr_list_ids(ids: List<ExprId>, reg: CompTimeRegistry) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids { out.push(rewrite_expr_id(id, reg)) }
+    out
 }
 
 fn rewrite_expr_list(list: List<SExpr>, reg: CompTimeRegistry) -> List<SExpr> {

@@ -7,7 +7,7 @@
 // Public entry point is `fmt_stmt_list(store, stmts, 0)`.
 
 use core.{
-    Expr, SExpr, Stmt, StmtId, NodeStore, ParamEntry,
+    Expr, SExpr, Stmt, StmtId, ExprId, NodeStore, ParamEntry,
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
@@ -40,7 +40,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Unary(op, right) -> "${unop_str(op)}${fmt_expr(store, store.exprs.get(right))}"
         .Binary(left, op, right) -> "${fmt_expr(store, store.exprs.get(left))} ${binop_str(op)} ${fmt_expr(store, store.exprs.get(right))}"
         .Logical(left, op, right) -> "${fmt_expr(store, store.exprs.get(left))} ${logicop_str(op)} ${fmt_expr(store, store.exprs.get(right))}"
-        .Call(callee, args) -> "${fmt_expr(store, callee)}(${fmt_expr_list_comma(store, args)})"
+        .Call(callee, args) -> "${fmt_expr(store, store.exprs.get(callee))}(${fmt_expr_ids_comma(store, args)})"
         .GenericCall(callee, ta, args) -> "${fmt_expr(store, callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(store, args)})"
         .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(store, inits)} }"
         .FieldAccess(obj, field) -> "${fmt_expr(store, store.exprs.get(obj))}.${field}"
@@ -187,6 +187,12 @@ export fn fmt_stmt_ids(store: NodeStore, ids: List<StmtId>, depth: int) -> strin
 /// inside call args, list literals, tuple elements, and generic call args.
 fn fmt_expr_list_comma(store: NodeStore, exprs: List<SExpr>) -> string {
     list_map(exprs, (se: SExpr) -> fmt_expr(store, se.node)).join(", ")
+}
+
+/// Comma-separated render of a flipped `List<ExprId>` — the id twin of
+/// `fmt_expr_list_comma` (kept for the still-boxed Tuple/ListLit/MapLit).
+fn fmt_expr_ids_comma(store: NodeStore, ids: List<ExprId>) -> string {
+    list_map(ids, (id: ExprId) -> fmt_expr(store, store.exprs.get(id))).join(", ")
 }
 
 /// Render `List<ParamEntry>` as comma-separated names (no types).

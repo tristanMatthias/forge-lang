@@ -746,18 +746,27 @@ fn classify_variant_crosstype(v: Variant, parent_name: string, ctx: ResolverCtx)
     out
 }
 
+/// `callee(args)` as a flipped @comptime-built `Expr.Call`: the callee and
+/// each arg ride the identity id-shims (`synth_expr_id`/`synth_expr_ids`) so
+/// the emitted payload is the `ExprId` / `List<ExprId>` the flipped `Call`
+/// now holds. One place so every generated call site flips consistently.
+@comptime
+fn wc_call(callee: Expr, args: List<ExprId>) -> Expr {
+    Expr.Call(synth_expr_id(callee), args)
+}
+
 /// `box_<target>_list(arg)` — box a `List<Node>` as `List<AnyNode>`.
 @comptime
 fn box_list_call(target: string, arg: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(arg)]
-    Expr.Call(Expr.Ident(box_list_fn(target)), args)
+    let args: List<ExprId> = [synth_expr_id(arg)]
+    wc_call(Expr.Ident(box_list_fn(target)), args)
 }
 
 /// `list_concat(acc, item)`.
 @comptime
 fn cross_concat(acc: Expr, item: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(acc), sexpr_dummy(item)]
-    Expr.Call(Expr.Ident("list_concat"), args)
+    let args: List<ExprId> = [synth_expr_id(acc), synth_expr_id(item)]
+    wc_call(Expr.Ident("list_concat"), args)
 }
 
 /// `AnyNode.AnyX(inner)` for a single child — `inner` is the binding itself
@@ -776,8 +785,8 @@ fn box_single(b: CrossBinding) -> Expr {
 /// `fn(arg)` — call a named @std helper with one argument.
 @comptime
 fn helper_call(fn_name: string, arg: Expr) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(arg)]
-    Expr.Call(Expr.Ident(fn_name), args)
+    let args: List<ExprId> = [synth_expr_id(arg)]
+    wc_call(Expr.Ident(fn_name), args)
 }
 
 /// The `spanned_one_*` helper for a single WRAPPER child, by target kind.
@@ -996,27 +1005,27 @@ fn wc_run_helper(b: CrossBinding) -> string {
 /// `wc_at(kids, i)` — the i-th spanned child (a single slot before the var slot).
 @comptime
 fn wc_at_call(i: int) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident("kids")), sexpr_dummy(Expr.Number(string(i)))]
-    Expr.Call(Expr.Ident("wc_at"), args)
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident("kids")), synth_expr_id(Expr.Number(string(i)))]
+    wc_call(Expr.Ident("wc_at"), args)
 }
 
 /// `wc_at_end(kids, j)` — the spanned child j-from-end (a single slot AFTER the
 /// var slot, e.g. FnTyped.ret following the params list).
 @comptime
 fn wc_at_end_call(j: int) -> Expr {
-    let args: List<SExpr> = [sexpr_dummy(Expr.Ident("kids")), sexpr_dummy(Expr.Number(string(j)))]
-    Expr.Call(Expr.Ident("wc_at_end"), args)
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident("kids")), synth_expr_id(Expr.Number(string(j)))]
+    wc_call(Expr.Ident("wc_at_end"), args)
 }
 
 /// `wc_run(kids, before, after)` — the variable-arity slot's run.
 @comptime
 fn wc_run_call(before: int, after: int) -> Expr {
-    let args: List<SExpr> = [
-        sexpr_dummy(Expr.Ident("kids")),
-        sexpr_dummy(Expr.Number(string(before))),
-        sexpr_dummy(Expr.Number(string(after))),
+    let args: List<ExprId> = [
+        synth_expr_id(Expr.Ident("kids")),
+        synth_expr_id(Expr.Number(string(before))),
+        synth_expr_id(Expr.Number(string(after))),
     ]
-    Expr.Call(Expr.Ident("wc_run"), args)
+    wc_call(Expr.Ident("wc_run"), args)
 }
 
 /// Pattern binding names for with_children's arm: scalars get a readable minted
@@ -1106,8 +1115,8 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
         // fails LOUDLY, naming the variant, instead of silently assigning the whole
         // run to both slots. Such a variant must first teach with_children a run
         // boundary representation (spine §14.1) — mirrors the `__no_kind_` poison.
-        let no_args: List<SExpr> = []
-        let poison = Expr.Call(Expr.Ident("__avra_wc_unsupported_multiple_var_slots__${parent_name}_${v.name}"), no_args)
+        let no_args: List<ExprId> = []
+        let poison = wc_call(Expr.Ident("__avra_wc_unsupported_multiple_var_slots__${parent_name}_${v.name}"), no_args)
         return MatchArm { pattern: pat, guard: null, body: sexpr_dummy(poison) }
     }
     let before = wc_singles_before_var(bindings)
@@ -1131,8 +1140,8 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
             // ORIGINAL bound list (`names[i]` is the field name — supplies shape:
             // element count + per-element optional presence) plus the flat run
             // (node values + recovered spans).
-            let reb_args: List<SExpr> = [sexpr_dummy(Expr.Ident(names[i])), sexpr_dummy(wc_run_call(before, after))]
-            args.push(sexpr_dummy(Expr.Call(Expr.Ident(struct_list_helpers(struct_of(b.kind)).rebuild), reb_args)))
+            let reb_args: List<ExprId> = [synth_expr_id(Expr.Ident(names[i])), synth_expr_id(wc_run_call(before, after))]
+            args.push(sexpr_dummy(wc_call(Expr.Ident(struct_list_helpers(struct_of(b.kind)).rebuild), reb_args)))
             seen_var = true
         } else {
             // The one variable-arity slot (list / optional).
@@ -1196,14 +1205,14 @@ fn build_visit_fn(enum_name: string) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
 
     // f(self)
-    let f_args: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
-    let f_call = Stmt.Expr(synth_expr_id(Expr.Call(Expr.Ident("f"), f_args)))
+    let f_args: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
+    let f_call = Stmt.Expr(synth_expr_id(wc_call(Expr.Ident("f"), f_args)))
 
     // for c in self.children() { c.visit(f) }
-    let no_call_args: List<SExpr> = []
-    let children_call = Expr.Call(ident_field_access("self", "children"), no_call_args)
-    let visit_args: List<SExpr> = [sexpr_dummy(Expr.Ident("f"))]
-    let visit_call = Stmt.Expr(synth_expr_id(Expr.Call(ident_field_access("c", "visit"), visit_args)))
+    let no_call_args: List<ExprId> = []
+    let children_call = wc_call(ident_field_access("self", "children"), no_call_args)
+    let visit_args: List<ExprId> = [synth_expr_id(Expr.Ident("f"))]
+    let visit_call = Stmt.Expr(synth_expr_id(wc_call(ident_field_access("c", "visit"), visit_args)))
     let for_body_stmts: List<SStmt> = [sstmt_dummy(visit_call)]
     let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
     let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
@@ -1236,17 +1245,17 @@ fn build_any_fn(enum_name: string) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
 
     // if pred(self) { return true }
-    let pred_args_self: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
-    let pred_call_self = Expr.Call(Expr.Ident("pred"), pred_args_self)
+    let pred_args_self: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
+    let pred_call_self = wc_call(Expr.Ident("pred"), pred_args_self)
     let return_true_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Bool("true"))))]
     let return_true_block = Stmt.Block(synth_stmt_ids(return_true_stmts))
     let if_pred_self = Stmt.If(synth_expr_id(pred_call_self), synth_stmt_id(return_true_block), null)
 
     // for c in self.children() { if c.any(pred) { return true } }
-    let no_call_args: List<SExpr> = []
-    let children_call = Expr.Call(ident_field_access("self", "children"), no_call_args)
-    let any_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
-    let c_any_call = Expr.Call(ident_field_access("c", "any"), any_args)
+    let no_call_args: List<ExprId> = []
+    let children_call = wc_call(ident_field_access("self", "children"), no_call_args)
+    let any_args: List<ExprId> = [synth_expr_id(Expr.Ident("pred"))]
+    let c_any_call = wc_call(ident_field_access("c", "any"), any_args)
     let inner_return_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Bool("true"))))]
     let inner_return_block = Stmt.Block(synth_stmt_ids(inner_return_stmts))
     let if_c_any = Stmt.If(synth_expr_id(c_any_call), synth_stmt_id(inner_return_block), null)
@@ -1294,8 +1303,8 @@ fn build_find_fn(enum_name: string) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
 
     // if pred(self) { return self }
-    let pred_args_self: List<SExpr> = [sexpr_dummy(Expr.Ident("self"))]
-    let pred_call_self = Expr.Call(Expr.Ident("pred"), pred_args_self)
+    let pred_args_self: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
+    let pred_call_self = wc_call(Expr.Ident("pred"), pred_args_self)
     let return_self_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Ident("self"))))]
     let return_self_block = Stmt.Block(synth_stmt_ids(return_self_stmts))
     let if_pred_self = Stmt.If(synth_expr_id(pred_call_self), synth_stmt_id(return_self_block), null)
@@ -1304,10 +1313,10 @@ fn build_find_fn(enum_name: string) -> Stmt {
     //     let r = c.find(pred)
     //     if r != null { return r }
     // }
-    let no_call_args: List<SExpr> = []
-    let children_call = Expr.Call(ident_field_access("self", "children"), no_call_args)
-    let find_args: List<SExpr> = [sexpr_dummy(Expr.Ident("pred"))]
-    let c_find_call = Expr.Call(ident_field_access("c", "find"), find_args)
+    let no_call_args: List<ExprId> = []
+    let children_call = wc_call(ident_field_access("self", "children"), no_call_args)
+    let find_args: List<ExprId> = [synth_expr_id(Expr.Ident("pred"))]
+    let c_find_call = wc_call(ident_field_access("c", "find"), find_args)
     let let_r = Stmt.Let("r", self_ty, synth_expr_id(c_find_call))
     let r_not_null = Expr.Binary(synth_expr_id(Expr.Ident("r")), BinOp.Ne, synth_expr_id(Expr.None))
     let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Ident("r"))))]
@@ -1445,8 +1454,8 @@ fn map_node_opt_call(field_name: string, wrapper: string, parent_name: string) -
 /// `f(bind_name)` — the per-field transform applied to a direct-Self.
 @comptime
 fn map_call_on_field(bind_name: string) -> Expr {
-    let call_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name))]
-    Expr.Call(Expr.Ident("f"), call_args)
+    let call_args: List<ExprId> = [synth_expr_id(Expr.Ident(bind_name))]
+    wc_call(Expr.Ident("f"), call_args)
 }
 
 /// `list_map(bind_name, f)` — map f over a List<Self>. The generic
@@ -1454,8 +1463,8 @@ fn map_call_on_field(bind_name: string) -> Expr {
 /// f's signature, so no explicit type-args needed here.
 @comptime
 fn list_map_call(bind_name: string) -> Expr {
-    let lm_args: List<SExpr> = [sexpr_dummy(Expr.Ident(bind_name)), sexpr_dummy(Expr.Ident("f"))]
-    Expr.Call(Expr.Ident("list_map"), lm_args)
+    let lm_args: List<ExprId> = [synth_expr_id(Expr.Ident(bind_name)), synth_expr_id(Expr.Ident("f"))]
+    wc_call(Expr.Ident("list_map"), lm_args)
 }
 
 /// `map_node_list::<Wrapper, Parent>(bind_name, f)` — span-preserving

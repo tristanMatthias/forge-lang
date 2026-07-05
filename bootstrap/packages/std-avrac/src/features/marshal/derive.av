@@ -151,9 +151,22 @@ fn field_access(store: NodeStore, receiver: Expr, field: string) -> Expr {
     Expr.FieldAccess(store.exprs.add_leaf(receiver), field)
 }
 
+/// Leaf-wrap each boxed arg into the arena, yielding the flipped
+/// `List<ExprId>` a `Expr.Call` payload now holds. One place so no synthesis
+/// site can forget the wrap.
+fn args_to_ids(store: NodeStore, args: List<SExpr>) -> List<ExprId> {
+    list_map(args, (se: SExpr) -> store.exprs.add_leaf(se.node))
+}
+
+/// `callee(args)` — synthesise a flipped `Expr.Call`: callee + each arg are
+/// leaf-wrapped into the arena.
+fn mk_call(store: NodeStore, callee: Expr, args: List<SExpr>) -> Expr {
+    Expr.Call(store.exprs.add_leaf(callee), args_to_ids(store, args))
+}
+
 /// `receiver.method(args)` — the call wrapper over `field_access`.
 fn method_call(store: NodeStore, receiver: Expr, method: string, args: List<SExpr>) -> Expr {
-    Expr.Call(field_access(store, receiver, method), args)
+    mk_call(store, field_access(store, receiver, method), args)
 }
 
 fn build_chain(store: NodeStore, fields: List<FieldEntry>) -> Expr {
@@ -161,7 +174,7 @@ fn build_chain(store: NodeStore, fields: List<FieldEntry>) -> Expr {
     // resolver short-circuits on QualifiedIdent and binds straight
     // to @std::process. Bare Ident here would force every consumer
     // of @marshal to import the byte primitives explicitly.
-    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
+    let start = mk_call(store, Expr.QualifiedIdent("@std::process::bytes_builder"), [])
     let written = chain_writes(store, start, fields, true)
     // Cap with `.finish()` so the chain produces a `bytes` value.
     method_call(store, written, "finish", [])
@@ -322,7 +335,7 @@ fn build_from_bytes_fn(store: NodeStore, type_name: string, fields: List<FieldEn
     // cursor across loop iterations, and primitive reads thread
     // via explicit reassignment (avoids the let-shadow that
     // would hide the mut from inner scopes).
-    let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
+    let init_call = mk_call(store, Expr.QualifiedIdent("@std::process::bytes_reader"),
         [sexpr_dummy(Expr.Ident("b"))])
     let init_let = Stmt.Mut("r", ValueType.Unknown, store.exprs.add_leaf(init_call))
     let reads_then_ctor = build_reads_and_ctor(store, type_name, fields)
@@ -371,7 +384,7 @@ fn build_reads(store: NodeStore, fields: List<FieldEntry>) -> List<StmtId> {
         let per_field = match ty {
             .Struct(inner_name, _, _) -> {
                 let stmts = read_then_reassign(store, name, "__nested_" + name, "read_bytes")
-                let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
+                let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
                     [sexpr_dummy(Expr.Ident("__nested_" + name))])
                 let bind_stmt = Stmt.Let(name, ValueType.Unknown, store.exprs.add_leaf(from_bytes_call))
                 let tail: List<StmtId> = [store.stmts.add_leaf(bind_stmt)]
@@ -462,7 +475,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     ]
     let raw_stmt = Stmt.LetDestructure(raw_names, store.exprs.add_leaf(raw_read))
     // __acc = __acc.push(from_bytes_<Inner>(__raw))
-    let from_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
+    let from_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
         [sexpr_dummy(Expr.Ident(rawname))])
     let push_call = method_call(store, Expr.Ident(aname), "push", [sexpr_dummy(from_call)])
     let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, store.exprs.add_leaf(push_call))))
@@ -645,7 +658,7 @@ fn field_list_to_param_list(fields: List<FieldEntry>) -> List<ParamEntry> {
 /// match-arm-bound idents (no `self.` prefix — they're locals).
 fn build_variant_write_chain(store: NodeStore, tag: int, payload: List<FieldEntry>) -> Expr {
     let tag_arg: List<SExpr> = [sexpr_dummy(Expr.Number(string(tag)))]
-    let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
+    let start = mk_call(store, Expr.QualifiedIdent("@std::process::bytes_builder"), [])
     let with_tag = method_call(store, start, "write_int", tag_arg)
     // Variant payloads are match-arm bindings (local idents),
     // hence from_self=false. Reuses the same codec table as
@@ -663,7 +676,7 @@ fn build_variant_write_chain(store: NodeStore, tag: int, payload: List<FieldEntr
 /// }
 fn build_enum_from_bytes_fn(store: NodeStore, type_name: string, variants: List<Variant>) -> Stmt {
     let params: List<ParamEntry> = [ParamEntry { name: "b", vtype: ValueType.Bytes }]
-    let init_call = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_reader"),
+    let init_call = mk_call(store, Expr.QualifiedIdent("@std::process::bytes_reader"),
         [sexpr_dummy(Expr.Ident("b"))])
     let init_let = Stmt.Mut("r", ValueType.Unknown, store.exprs.add_leaf(init_call))
     // Tag read uses the new explicit-reassign pattern so the
@@ -764,7 +777,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     result_type_args.push(isolated_err_ty)
     let ret_ty = ValueType.Enum("Result", result_type_args, 0)
     // Inner closure: () -> body().to_bytes()
-    let body_call = Expr.Call(Expr.Ident("body"), [])
+    let body_call = mk_call(store, Expr.Ident("body"), [])
     let to_bytes_call = method_call(store, body_call, "to_bytes", [])
     let empty_lp: List<ParamEntry> = []
     let inner_closure = Expr.Lambda(empty_lp, to_bytes_call)
@@ -772,10 +785,10 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     // so consumers of @marshal don't need to `use isolated_bytes`
     // — only types that actually fork pay the import cost (via
     // their own use of `isolated_<T>` somewhere reachable).
-    let isolated_call = Expr.Call(Expr.QualifiedIdent("@std::process::isolated_bytes"),
+    let isolated_call = mk_call(store, Expr.QualifiedIdent("@std::process::isolated_bytes"),
         [sexpr_dummy(inner_closure)])
     // Ok arm: Result.Ok(from_bytes_<T>(b))
-    let from_bytes_call = Expr.Call(Expr.Ident("from_bytes_" + type_name),
+    let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + type_name),
         [sexpr_dummy(Expr.Ident("b"))])
     let ok_body = Expr.EnumCtor("Result", "Ok",
         [sexpr_dummy(from_bytes_call)])

@@ -519,9 +519,9 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_expr(after_left, r.nodes.exprs.get(right))
         }
         .Call(callee, args) -> {
-            let after_callee = resolve_expr(r, callee)
-            let after_args = resolve_expr_list(after_callee, args)
-            match callee {
+            let after_callee = resolve_expr(r, r.nodes.exprs.get(callee))
+            let after_args = resolve_expr_list_ids(after_callee, args)
+            match r.nodes.exprs.get(callee) {
                 .FieldAccess(obj, method) -> {
                     if is_mutating_method(method) {
                         let err = check_immutable_root(after_args, after_args.nodes.exprs.get(obj), "cannot call mutating method `${method}`")
@@ -595,6 +595,19 @@ export fn resolve_expr_list(r: Resolver, exprs: List<SExpr>) -> Resolver {
     while i < exprs.length {
         if res.had_error { return res }
         res = resolve_expr(res, exprs[i].node)
+        i = i + 1
+    }
+    res
+}
+
+/// Resolve every Expr behind a flipped `List<ExprId>` (call args) —
+/// the id twin of `resolve_expr_list`.
+export fn resolve_expr_list_ids(r: Resolver, ids: List<ExprId>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < ids.length {
+        if res.had_error { return res }
+        res = resolve_expr(res, res.nodes.exprs.get(ids[i]))
         i = i + 1
     }
     res

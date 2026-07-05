@@ -17,8 +17,8 @@
 // fold path (Value → construct-expression source form) and the
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
-use core.{Expr, SExpr, sexpr_dummy, Stmt, FieldInit}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind}
+use core.{Expr, SExpr, sexpr_dummy, Stmt, FieldInit, NodeStore}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind, value_to_stmt}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
 use features.quote_expr.{construct_stmt}
 
@@ -43,11 +43,11 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
     // Only after all three pass do we run the tree-walk evaluator.
     match call {
         .Call(callee, args) -> {
-            match callee {
+            match reg.runtime.nodes.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_def_opt = comptime_lookup_lazy(reg, name)
                     if fn_def_opt == none { return none }
-                    let arg_values_opt = literal_args_to_values(args)
+                    let arg_values_opt = literal_args_to_values(reg.runtime.nodes.sexprs_of(args))
                     if arg_values_opt == none { return none }
                     fold_call(reg, fn_def_opt!, arg_values_opt!)
                 }
@@ -68,7 +68,7 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
 fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     if step_had_error(result) != 0 { return null }
-    value_to_expr(step_value(result))
+    value_to_expr(reg.runtime.nodes, step_value(result))
 }
 
 // ── Value → Expr (construct-expression) conversion ──
@@ -91,13 +91,13 @@ fn fold_kind(v: Value) -> string {
 /// decoded back to a value-construction expression (`Expr.EnumCtor`
 /// source form) so the spliced fold result reads as the construction
 /// of the original Value rather than a post-resolve raw AST node.
-fn value_to_expr(v: Value) -> Expr? {
+fn value_to_expr(store: NodeStore, v: Value) -> Expr? {
     match fold_kind(v) {
         "number" -> Expr.Number(v.number_text)
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.None
-        "enum"   -> value_to_construct_expr(v)
+        "enum"   -> value_to_construct_expr(store, v)
         _        -> null
     }
 }
@@ -107,21 +107,43 @@ fn value_to_expr(v: Value) -> Expr? {
 /// `Expr.EnumCtor(type, variant, args)` matching the shape
 /// `lower_quotes` would emit for the equivalent `quote { ... }`
 /// source. Primitives reuse the fast-path forms in `value_to_expr`.
-fn value_to_construct_expr(v: Value) -> Expr? {
+fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
     match fold_kind(v) {
         "number" -> Expr.Number(v.number_text)
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.None
-        "enum"   -> {
-            let args_opt = payload_to_args(v.enum_payload, 0)
-            if args_opt == none { return none }
-            Expr.EnumCtor(v.enum_type, v.enum_variant, args_opt!)
+        // A boxed Stmt-node Value reconstructs through the flip-aware
+        // `construct_stmt`, NOT the generic payload rebuild below. Since
+        // B-final flipped Stmt/Expr payloads to arena ids (`Call.args:
+        // List<ExprId>`, `Stmt.Expr: ExprId`, …), the generic `Expr.EnumCtor(
+        // type, variant, payload_to_args(…))` rebuilds each id field as a boxed
+        // `Expr` — a `List<Expr>` / `Expr` where the flipped slot demands
+        // `List<ExprId>` / `ExprId`. That only bites when the fold result is
+        // COMPILED into a program (a `quote` returned through a sibling
+        // @comptime helper — the fold path, invisible to diff-test since the
+        // compiler never folds a quote); a render-only fold is unaffected.
+        // Decoding to the native Stmt then re-emitting via `construct_stmt`
+        // yields exactly what a direct `quote stmt` would — nested Exprs ride
+        // the constructor's own recursion, so no Expr-level route is needed.
+        // (Expr Values stay on the generic rebuild: it renders identically and
+        // decoding some hand-built Expr Values can abort the decoder.)
+        "enum" -> {
+            if v.enum_type == "@std::avrac::core::Stmt" {
+                match value_to_stmt(store, v) {
+                    .Ok(n) -> construct_stmt(store, n)
+                    .Err(_) -> null
+                }
+            } else {
+                let args_opt = payload_to_args(store, v.enum_payload, 0)
+                if args_opt == none { return none }
+                Expr.EnumCtor(v.enum_type, v.enum_variant, args_opt!)
+            }
         }
         // fwyx: a list Value reconstructs as Expr.ListLit, mirroring
         // the construct_expr_list output that produced it.
         "list" -> {
-            let elems_opt = payload_to_args(v.list_payload, 0)
+            let elems_opt = payload_to_args(store, v.list_payload, 0)
             if elems_opt == none { return none }
             Expr.ListLit(elems_opt!)
         }
@@ -130,7 +152,7 @@ fn value_to_construct_expr(v: Value) -> Expr? {
         "struct" -> {
             mut inits: List<FieldInit> = []
             for f in v.struct_payload {
-                let inner_opt = value_to_construct_expr(f.value)
+                let inner_opt = value_to_construct_expr(store, f.value)
                 if inner_opt == none { return none }
                 inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner_opt!) })
             }
@@ -144,11 +166,11 @@ fn value_to_construct_expr(v: Value) -> Expr? {
 /// reconstruct each value at runtime. Each value is wrapped via
 /// `sexpr_dummy` — same as `lower_quotes` does when it builds
 /// construct-expression payloads.
-fn payload_to_args(payload: List<Value>, i: int) -> List<SExpr>? {
+fn payload_to_args(store: NodeStore, payload: List<Value>, i: int) -> List<SExpr>? {
     mut out: List<SExpr> = []
     mut j = i
     while j < payload.length {
-        let inner_opt = value_to_construct_expr(payload[j])
+        let inner_opt = value_to_construct_expr(store, payload[j])
         if inner_opt == none { return none }
         out.push(sexpr_dummy(inner_opt!))
         j = j + 1

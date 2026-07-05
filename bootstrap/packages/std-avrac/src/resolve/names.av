@@ -1469,14 +1469,15 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
         .Ident(name) -> rewrite_ident(ctx, name, expr)
         .Call(callee, args) -> {
             // Qualify uppercase callee in Call context (newtype constructors)
-            let rewritten_callee = match callee {
+            let callee_node = ctx.nodes.exprs.get(callee)
+            let rewritten_callee = match callee_node {
                 .Ident(name) if name.length > 0 && name[0] in "A".."Z" -> {
                     let resolved = resolve_type_in_ctx(ctx, name)
-                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, callee) }
+                    if resolved != name { Expr.QualifiedIdent(resolved) } else { rewrite_ident(ctx, name, callee_node) }
                 }
-                _ -> rewrite_expr(ctx, callee)
+                _ -> rewrite_expr(ctx, callee_node)
             }
-            Expr.Call(rewritten_callee, rewrite_expr_list(ctx, args))
+            Expr.Call(ctx.nodes.reexpr(rewritten_callee, callee), rewrite_expr_list_ids(ctx, args))
         }
         .GenericCall(callee, ta, args) -> .GenericCall(rewrite_expr(ctx, callee), ta, rewrite_expr_list(ctx, args))
         .Binary(l, op, r) -> .Binary(rewrite_expr_id(ctx, l), op, rewrite_expr_id(ctx, r))
@@ -1613,6 +1614,19 @@ fn rewrite_expr_list(ctx: NameCtx, exprs: List<SExpr>) -> List<SExpr> {
     while i < exprs.length {
         let se = exprs[i]
         out.push(sexpr_at(rewrite_expr(ctx, se.node), se.line, se.col, se.file))
+        i = i + 1
+    }
+    out
+}
+
+/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args) — the id
+/// twin of `rewrite_expr_list`; rewrites each arg row in place via reexpr.
+fn rewrite_expr_list_ids(ctx: NameCtx, ids: List<ExprId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    mut i = 0
+    while i < ids.length {
+        let id = ids[i]
+        out.push(ctx.nodes.reexpr(rewrite_expr(ctx, ctx.nodes.exprs.get(id)), id))
         i = i + 1
     }
     out
@@ -1800,7 +1814,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
             acc.push(path)
             acc
         }
-        .Call(callee, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, callee, acc))
+        .Call(callee, args) -> collect_used_paths_expr_list_ids(store, args, collect_used_paths_expr(store, store.exprs.get(callee), acc))
         .GenericCall(callee, _, args) -> collect_used_paths_expr_list(store, args, collect_used_paths_expr(store, callee, acc))
         .Binary(l, _, r) -> collect_used_paths_expr(store, store.exprs.get(r), collect_used_paths_expr(store, store.exprs.get(l), acc))
         .Unary(_, r) -> collect_used_paths_expr(store, store.exprs.get(r), acc)
@@ -1858,6 +1872,18 @@ fn collect_used_paths_expr_list(store: NodeStore, exprs: List<SExpr>, acc: List<
     mut i = 0
     while i < exprs.length {
         out = collect_used_paths_expr(store, exprs[i].node, out)
+        i = i + 1
+    }
+    out
+}
+
+/// Walk a flipped `List<ExprId>` (call args) for the unused-import sweep —
+/// the id twin of `collect_used_paths_expr_list`.
+fn collect_used_paths_expr_list_ids(store: NodeStore, ids: List<ExprId>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < ids.length {
+        out = collect_used_paths_expr(store, store.exprs.get(ids[i]), out)
         i = i + 1
     }
     out

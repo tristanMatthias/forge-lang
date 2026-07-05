@@ -458,9 +458,21 @@ export type NodeStore = {
     // an id IS the fact (`from_macro`), read via `.has`, so the reverse shim
     // restores provenance instead of flattening every node to non-macro.
     provenance: SparseTable<StmtId, bool>,
+    // Per-arg inferred types (F3b). When a Call arg flips from `SExpr` to
+    // `ExprId` it loses the `SExpr.ty` typeck annotation the monomorphizer
+    // reads for generic instantiation (`infer_from_params`). `annotate` records
+    // each arg's inferred type here keyed by its (post-annotate) `ExprId`, and
+    // `sexprs_of` reads it back so the materialized `SExpr` carries the same
+    // `.ty`. Sparse — only annotated call args get an entry. This is the arena
+    // home the inferred type moves to when `SExpr` dies at F4.
+    arg_tys: SparseTable<ExprId, ValueType>,
 }
 
 impl NodeStore {
+    /// Record the typeck-inferred type of an arg node (F3b — see `arg_tys`).
+    fn set_arg_ty(self, id: ExprId, ty: ValueType) { self.arg_tys.set(id, ty) }
+    /// The inferred type recorded for an arg node, or Unknown if none.
+    fn arg_ty_of(self, id: ExprId) -> ValueType { self.arg_tys.get_or(id, ValueType.Unknown) }
     /// Transform-alloc: append an `Expr` row with its children's edge refs in
     /// walker order. The store-level core that the parser's `alloc_*` family
     /// delegates to and that tree-synthesizing transforms (desugar, mono,
@@ -637,6 +649,20 @@ impl NodeStore {
         for id in ids { out.push(self.sstmt_of(id)) }
         out
     }
+    /// The positioned `SExpr` views of a flipped `List<ExprId>` — the expr
+    /// twin of `sstmts_of`, for read-only consumers handing a whole arg list
+    /// to an un-migrated `List<SExpr>` API (typeck check, codegen emit,
+    /// comptime eval). Position from the row's span; the wrapper file rides
+    /// empty (these consumers use it only for diagnostics, which never fire
+    /// on the byte-identical valid-program path). Wrappers die at F4.
+    fn sexprs_of(self, ids: List<ExprId>) -> List<SExpr> {
+        mut out: List<SExpr> = []
+        for id in ids {
+            let lc = self.expr_linecol(id)
+            out.push(SExpr { node: self.exprs.get(id), line: lc.line, col: lc.col, ty: self.arg_ty_of(id), file: "" })
+        }
+        out
+    }
     /// Recompute an expression node's (line, col) from its recorded span.
     fn expr_linecol(self, id: ExprId) -> LineCol {
         self.linecol_of_span(self.exprs.span_of(id))
@@ -736,6 +762,7 @@ impl NodeStore {
 export fn new_node_store(lines: LineIndex) -> NodeStore {
     let roots: List<StmtId> = []
     let provenance: SparseTable<StmtId, bool> = new_sparse_table()
+    let arg_tys: SparseTable<ExprId, ValueType> = new_sparse_table()
     NodeStore {
         exprs: new_expr_arena(),
         stmts: new_stmt_arena(),
@@ -744,6 +771,7 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
         lines,
         roots,
         provenance,
+        arg_tys,
     }
 }
 

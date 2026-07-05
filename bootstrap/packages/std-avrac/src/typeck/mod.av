@@ -242,7 +242,7 @@ fn tc_count_args(list: List<SExpr>) -> int {
 /// against the same type. Returns null when `expr` isn't a Result.
 export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
     let fn_name = match inner {
-        .Call(callee, _) -> match callee {
+        .Call(callee, _) -> match tc.nodes.exprs.get(callee) {
             .Ident(name) -> name
             .QualifiedIdent(path) -> path
             _ -> ""
@@ -1626,7 +1626,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
-        .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
+        .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
         .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
@@ -2473,7 +2473,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         .ListLit(elements) -> reject_literal_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
         .MapLit(entries) -> reject_literal_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
-            let r = check_call_with_expected(tc, callee, args, exp)
+            let r = check_call_with_expected(tc, tc.nodes.exprs.get(callee), tc.nodes.sexprs_of(args), exp)
             // The call result meets the expected type. Route through the no-int
             // gate (generic-arg + collection→scalar): the fn-side of the hole
             // (`let b: Box<string> = make_box_int()`, `let x: int = make_list()`).
@@ -2617,7 +2617,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, .Bool)
         }
         .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
-        .Call(callee, args) -> check_call(tc, callee, args)
+        .Call(callee, args) -> check_call(tc, tc.nodes.exprs.get(callee), tc.nodes.sexprs_of(args))
         .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
         .Index(obj, idx) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
@@ -4237,18 +4237,19 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
 /// calls — no separate mono-side method-dispatch path required.
 /// Non-method calls + non-generic method calls pass through
 /// unchanged.
-fn annotate_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr {
+fn annotate_call(tc: TC, callee: ExprId, args: List<ExprId>) -> Expr {
     let rewritten = method_to_free_fn_call(tc, callee, args)
     if rewritten != null { return rewritten! }
-    .Call(annotate_expr(tc, callee), annotate_expr_list(tc, args))
+    let new_callee = tc.nodes.reexpr(annotate_expr(tc, tc.nodes.exprs.get(callee)), callee)
+    Expr.Call(new_callee, annotate_expr_list_ids(tc, args))
 }
 
 /// Try to rewrite `obj.method(args)` to `Type__method(obj, args)`
 /// when Type__method is a registered generic free-fn. Returns null
 /// when the rewrite doesn't apply (non-method call, obj's type
 /// not nominal, no matching generic free-fn).
-fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
-    match callee {
+fn method_to_free_fn_call(tc: TC, callee: ExprId, args: List<ExprId>) -> Expr? {
+    match tc.nodes.exprs.get(callee) {
         .FieldAccess(obj, method) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let type_name = match o.ty {
@@ -4266,12 +4267,16 @@ fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
             // site without needing a syntactic rewrite).
             if !r.found || r.tp.length == 0 { return null }
             let annotated_obj = annotate_expr(tc, tc.nodes.exprs.get(obj))
-            mut new_args: List<SExpr> = []
-            new_args.push(sexpr_typed(annotated_obj, 0, 0, o.ty))
-            for a in annotate_expr_list(tc, args) {
-                new_args.push(a)
+            // Prepend `self` as an arena arg row carrying its receiver type
+            // (the id twin of the old `sexpr_typed(obj, .., o.ty)` self-slot) so
+            // the monomorphizer, materializing args via `sexprs_of`, reads it.
+            let self_id = tc.nodes.exprs.add_leaf(annotated_obj)
+            tc.nodes.set_arg_ty(self_id, o.ty)
+            mut new_args: List<ExprId> = [self_id]
+            for a_id in annotate_expr_list_ids(tc, args) {
+                new_args.push(a_id)
             }
-            Expr.Call(Expr.Ident(mangled), new_args)
+            Expr.Call(tc.nodes.exprs.add_leaf(Expr.Ident(mangled)), new_args)
         }
         _ -> null
     }
@@ -4297,14 +4302,14 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // Arithmetic binary/unary: fall through to check_expr for float handling
         // Unary: falls through to check_expr for correct float handling
         // Call: look up return type from function registry
-        .Call(callee, args) -> match callee {
+        .Call(callee, args) -> match tc.nodes.exprs.get(callee) {
             .Ident(name) -> {
                 let rec = fn_type_get(tc.fns, name)
-                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
+                tc_subst_generic_ret(tc, rec.tp, rec.params, tc.nodes.sexprs_of(args), rec.ret_ty)
             }
             .QualifiedIdent(name) -> {
                 let rec = fn_type_get(tc.fns, name)
-                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
+                tc_subst_generic_ret(tc, rec.tp, rec.params, tc.nodes.sexprs_of(args), rec.ret_ty)
             }
             _ -> check_expr(tc, se.node).ty
         }
@@ -4422,6 +4427,23 @@ fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
 /// Map `annotate_sexpr` over a `List<SExpr>`.
 fn annotate_expr_list(tc: TC, exprs: List<SExpr>) -> List<SExpr> {
     list_map(exprs, (se: SExpr) -> annotate_sexpr(tc, se))
+}
+
+/// Annotate a flipped `List<ExprId>` (call args) — the id twin of
+/// `annotate_expr_list`. Reuses `annotate_sexpr` so each arg's inferred type
+/// is computed EXACTLY as the boxed path did, then records it on the arena via
+/// `set_arg_ty` (keyed by the post-`reexpr` row) so the monomorphizer — which
+/// materializes args back to `SExpr` via `sexprs_of` — reads the same `.ty` it
+/// read pre-flip. This is what keeps the args flip byte-identical.
+fn annotate_expr_list_ids(tc: TC, ids: List<ExprId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids {
+        let annotated = annotate_sexpr(tc, tc.nodes.sexprs_of([id])[0])
+        let new_id = tc.nodes.reexpr(annotated.node, id)
+        tc.nodes.set_arg_ty(new_id, annotated.ty)
+        out.push(new_id)
+    }
+    out
 }
 
 /// Walk every match arm, binding pattern captures into the type
