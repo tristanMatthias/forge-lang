@@ -63,7 +63,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .FloatLit(v) -> v
         .Slice(obj, start, end) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(start))}..${fmt_expr(store, store.exprs.get(end))}]"
         .IsCheck(subject, vname) -> "${fmt_expr(store, store.exprs.get(subject))} is .${vname}"
-        .InCheck(needle, items) -> "${fmt_expr(store, needle)} in [${fmt_expr_list_comma(store, items)}]"
+        .InCheck(needle, items) -> "${fmt_expr(store, store.exprs.get(needle))} in [${fmt_expr_ids_comma(store, items)}]"
         .ListComp(body, variable, collection, filter) -> {
             let head = "[${fmt_expr(store, body)} for ${variable} in ${fmt_expr(store, collection)}"
             if filter != null { "${head} if ${fmt_expr(store, filter!)}]" } else { "${head}]" }

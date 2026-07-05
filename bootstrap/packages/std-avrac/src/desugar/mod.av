@@ -579,7 +579,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .Lambda(params, body) -> .Lambda(params, desugar_expr(store, body, sigs))
         .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))
         .When(arms) -> .When(desugar_when_arms(store, arms, sigs))
-        .InCheck(needle, items) -> .InCheck(desugar_expr(store, needle, sigs), desugar_expr_list(store, items, sigs))
+        .InCheck(needle, items) -> .InCheck(desugar_expr_id(store, needle, sigs), desugar_expr_list_ids(store, items, sigs))
         .IsCheck(subj, variant) -> .IsCheck(desugar_expr_id(store, subj, sigs), variant)
         .ListComp(body, var, coll, filter) -> {
             // Recurse into body / coll / filter so sugar inside the

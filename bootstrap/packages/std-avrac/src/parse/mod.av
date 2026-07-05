@@ -1116,17 +1116,15 @@ impl Parser {
             if self.check(Tk.LeftBracket) {
                 // List membership: x in [a, b, c]
                 self.advance()
-                mut items: List<SExpr> = []
-                mut item_ids: List<NodeRef> = [NodeRef.ExprRef(left)]
+                mut items: List<ExprId> = []
                 if !self.check(Tk.RightBracket) {
                     let parsed = self.parse_arg_list_ids()?
-                    items = parsed.wrapped
-                    for id in parsed.ids { item_ids.push(NodeRef.ExprRef(id)) }
+                    items = parsed.ids
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_expr(Expr.InCheck(self.expr_of(left), items), byte_span_none(), item_ids))
+                return .Ok(self.alloc_leaf(Expr.InCheck(left, items)))
             }
             // Range membership: x in start..end → x >= start && x <= end.
             // `left` is SHARED by both comparisons — in the boxed tree the same

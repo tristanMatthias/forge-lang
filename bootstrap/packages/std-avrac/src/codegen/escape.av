@@ -226,7 +226,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .OptionalChain(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
         .OptionalMethodCall(obj, _, args) -> remove_escaped_args(store, args, remove_escaped_expr(store, obj, set))
         .IsCheck(subj, _) -> remove_escaped_expr(store, store.exprs.get(subj), set)
-        .InCheck(needle, items) -> remove_escaped_args(store, items, remove_escaped_expr(store, needle, set))
+        .InCheck(needle, items) -> remove_escaped_arg_ids(store, items, remove_escaped_expr(store, store.exprs.get(needle), set))
         .EnumCtor(_, _, args) -> remove_escaped_args(store, args, set)
         .Spawn(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
         .ChannelNew(_, capacity) -> {

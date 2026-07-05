@@ -2229,7 +2229,7 @@ export enum Expr {
     /// Type-narrowing test: `subject is .Variant`.
     IsCheck(subject: ExprId, variant_name: string)
     /// Membership test: `needle in [a, b, c]`.
-    InCheck(needle: Expr, items: List<SExpr>)
+    InCheck(needle: ExprId, items: List<ExprId>)
     /// List comprehension: `[body for variable in collection if filter]`.
     ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
     /// Module-qualified identifier — produced by the resolver from
@@ -2793,7 +2793,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(start))}..${render_expr(store, store.exprs.get(end))})"
         .IsCheck(subject, vname) -> "(is ${render_expr(store, store.exprs.get(subject))} .${vname})"
-        .InCheck(needle, items) -> "(in ${render_expr(store, needle)} [${render_expr_list(store, items)}])"
+        .InCheck(needle, items) -> "(in ${render_expr_id(store, needle)} [${render_expr_ids(store, items)}])"
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(store, arms)})"
         .ListComp(body, variable, collection, filter) -> {
