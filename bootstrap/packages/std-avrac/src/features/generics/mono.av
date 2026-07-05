@@ -1410,7 +1410,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
             _ -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         }
         .Binary(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
-        .Logical(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
+        .Logical(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .NullCoalesce(l, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .FieldAssign(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .Index(obj, idx) -> collect_inst_expr(regs.store.exprs.get(idx), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
@@ -1683,7 +1683,7 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
         }
         .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr(store, callee, orig_name, mangled), ta, rename_self_calls_sexpr_list(store, args, orig_name, mangled))
         .Binary(l, op, r) -> .Binary(rename_self_calls_expr(store, l, orig_name, mangled), op, rename_self_calls_expr(store, r, orig_name, mangled))
-        .Logical(l, op, r) -> .Logical(rename_self_calls_expr(store, l, orig_name, mangled), op, rename_self_calls_expr(store, r, orig_name, mangled))
+        .Logical(l, op, r) -> .Logical(rename_self_calls_expr_id(store, l, orig_name, mangled), op, rename_self_calls_expr_id(store, r, orig_name, mangled))
         .Unary(op, e) -> .Unary(op, rename_self_calls_expr_id(store, e, orig_name, mangled))
         .Grouping(e) -> .Grouping(rename_self_calls_expr_id(store, e, orig_name, mangled))
         .Block(body) -> .Block(rename_self_calls_stmts(store, body, orig_name, mangled))
@@ -1960,7 +1960,7 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Call(callee, a) -> .Call(substitute_expr(store, callee, ta), substitute_expr_list(store, a, ta))
         .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr(store, callee, ta), tn, substitute_expr_list(store, a, ta))
         .Binary(l, op, r) -> .Binary(substitute_expr(store, l, ta), op, substitute_expr(store, r, ta))
-        .Logical(l, op, r) -> .Logical(substitute_expr(store, l, ta), op, substitute_expr(store, r, ta))
+        .Logical(l, op, r) -> .Logical(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Unary(op, e) -> .Unary(op, substitute_expr_id(store, e, ta))
         .Grouping(e) -> .Grouping(substitute_expr_id(store, e, ta))
         .Block(body) -> .Block(substitute_stmts(store, body, ta))
@@ -2595,7 +2595,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
             _ -> Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
         }
         .Binary(l, op, r) -> .Binary(rewrite_expr(l, regs, insts), op, rewrite_expr(r, regs, insts))
-        .Logical(l, op, r) -> .Logical(rewrite_expr(l, regs, insts), op, rewrite_expr(r, regs, insts))
+        .Logical(l, op, r) -> .Logical(rewrite_expr_id(l, regs, insts), op, rewrite_expr_id(r, regs, insts))
         .Unary(op, e) -> .Unary(op, rewrite_expr_id(e, regs, insts))
         .Grouping(e) -> .Grouping(rewrite_expr_id(e, regs, insts))
         .Block(body) -> .Block(rewrite_stmts(body, regs, insts))

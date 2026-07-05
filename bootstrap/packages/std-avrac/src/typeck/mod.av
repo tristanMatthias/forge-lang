@@ -1623,7 +1623,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Grouping(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
-        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
+        .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
@@ -2608,8 +2608,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, r.ty)
         }
         .Logical(left, _, right) -> {
-            let l = check_expr(tc, left)
-            let r = check_expr(l.tc, right)
+            let l = check_expr(tc, tc.nodes.exprs.get(left))
+            let r = check_expr(l.tc, tc.nodes.exprs.get(right))
             tc_er(r.tc, .Bool)
         }
         .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
@@ -4190,7 +4190,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .With(obj, inits) -> .With(annotate_expr(tc, obj), annotate_field_inits(tc, inits))
         .Block(body) -> .Block(annotate_stmts(tc, body))
         .Binary(l, op, r) -> .Binary(annotate_expr(tc, l), op, annotate_expr(tc, r))
-        .Logical(l, op, r) -> .Logical(annotate_expr(tc, l), op, annotate_expr(tc, r))
+        .Logical(l, op, r) -> .Logical(annotate_expr_id(tc, l), op, annotate_expr_id(tc, r))
         .Unary(op, e) -> .Unary(op, annotate_expr_id(tc, e))
         .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))

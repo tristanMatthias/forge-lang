@@ -189,7 +189,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         }
         .Binary(left, _, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
         .Unary(_, inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
-        .Logical(left, _, right) -> remove_escaped_expr(store, right, remove_escaped_expr(store, left, set))
+        .Logical(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
         .Grouping(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
         .Index(obj, idx) -> remove_escaped_expr(store, store.exprs.get(idx), remove_escaped_expr(store, store.exprs.get(obj), set))
         .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set)

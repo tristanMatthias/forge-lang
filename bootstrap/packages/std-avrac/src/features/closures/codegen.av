@@ -94,7 +94,7 @@ fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
         .Assign(name, val) -> name == target || expr_assigns(store, store.exprs.get(val), target)
         .Binary(l, _, r) -> expr_assigns(store, l, target) || expr_assigns(store, r, target)
         .Unary(_, r) -> expr_assigns(store, store.exprs.get(r), target)
-        .Logical(l, _, r) -> expr_assigns(store, l, target) || expr_assigns(store, r, target)
+        .Logical(l, _, r) -> expr_assigns(store, store.exprs.get(l), target) || expr_assigns(store, store.exprs.get(r), target)
         .Grouping(inner) -> expr_assigns(store, store.exprs.get(inner), target)
         .Call(callee, args) -> expr_assigns(store, callee, target) || expr_list_assigns(store, args, target)
         .Block(body) -> stmt_list_assigns(store, body, target)
@@ -186,8 +186,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .Unary(_, right) -> find_captures(store, store.exprs.get(right), params, env, captures)
         .Logical(left, _, right) -> {
-            find_captures(store, left, params, env, captures)
-            find_captures(store, right, params, env, captures)
+            find_captures(store, store.exprs.get(left), params, env, captures)
+            find_captures(store, store.exprs.get(right), params, env, captures)
         }
         .Call(callee, args) -> {
             find_captures(store, callee, params, env, captures)

@@ -515,8 +515,8 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_expr(after_left, right)
         }
         .Logical(left, _, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
+            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
+            resolve_expr(after_left, r.nodes.exprs.get(right))
         }
         .Call(callee, args) -> {
             let after_callee = resolve_expr(r, callee)

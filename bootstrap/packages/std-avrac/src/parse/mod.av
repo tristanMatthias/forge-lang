@@ -1095,7 +1095,7 @@ impl Parser {
         while self.current_kind in [Tk.PipePipe, Tk.KwOr] {
             self.advance()
             let right = self.parse_and()?
-            eid = self.alloc2(Expr.Logical(self.expr_of(eid), LogicOp.Or, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Logical(eid, LogicOp.Or, right))
         }
 
         .Ok(eid)
@@ -1108,7 +1108,7 @@ impl Parser {
         while self.current_kind in [Tk.AmpAmp, Tk.KwAnd] {
             self.advance()
             let right = self.parse_equality()?
-            eid = self.alloc2(Expr.Logical(self.expr_of(eid), LogicOp.And, self.expr_of(right)), eid, right)
+            eid = self.alloc_leaf(Expr.Logical(eid, LogicOp.And, right))
         }
 
         .Ok(eid)
@@ -1154,7 +1154,7 @@ impl Parser {
             let end = self.parse_bitwise_or()?
             let ge = self.alloc2(Expr.Binary(self.expr_of(left), BinOp.Ge, self.expr_of(start)), left, start)
             let le = self.alloc2(Expr.Binary(self.expr_of(left), BinOp.Le, self.expr_of(end)), left, end)
-            return .Ok(self.alloc2(Expr.Logical(self.expr_of(ge), LogicOp.And, self.expr_of(le)), ge, le))
+            return .Ok(self.alloc_leaf(Expr.Logical(ge, LogicOp.And, le)))
         }
 
         mut eid = left

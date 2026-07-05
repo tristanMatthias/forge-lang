@@ -2188,7 +2188,7 @@ export enum Expr {
     /// Binary infix: `a + b`, `x == y`, `a & b`.
     Binary(left: Expr, op: BinOp, right: Expr)
     /// Short-circuit logical: `a && b`, `a || b`.
-    Logical(left: Expr, op: LogicOp, right: Expr)
+    Logical(left: ExprId, op: LogicOp, right: ExprId)
     /// Function call: `f(a, b)`.
     Call(callee: Expr, args: List<SExpr>)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
@@ -2783,7 +2783,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Grouping(inner) -> "(group ${render_expr(store, store.exprs.get(inner))})"
         .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
-        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
+        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
         .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"

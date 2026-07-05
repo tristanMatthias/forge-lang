@@ -921,7 +921,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
         .Unary(op, right) -> eval_unary(runtime, op, runtime.nodes.exprs.get(right))
         .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
-        .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
+        .Logical(left, op, right) -> eval_logical(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
         .Call(callee, args) -> eval_call(runtime, callee, args)
         .QualifiedIdent(path) -> {
             let fn_result = lookup_function(runtime.functions, path)
@@ -2318,9 +2318,9 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "Logical" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
-            let left = value_to_expr_node(store, head)?
+            let left = value_to_expr_id(store, head)?
             let op = enum_value_to_logicop(p[1])?
-            let right = value_to_expr_node(store, p[2])?
+            let right = value_to_expr_id(store, p[2])?
             .Ok(Expr.Logical(left, op, right))
         }
         "Call" -> {

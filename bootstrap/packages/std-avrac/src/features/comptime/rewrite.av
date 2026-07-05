@@ -123,7 +123,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
     match expr {
         .Binary(l, op, r) -> .Binary(rewrite_expr(l, reg), op, rewrite_expr(r, reg))
         .Unary(op, r) -> .Unary(op, rewrite_expr_id(r, reg))
-        .Logical(l, op, r) -> .Logical(rewrite_expr(l, reg), op, rewrite_expr(r, reg))
+        .Logical(l, op, r) -> .Logical(rewrite_expr_id(l, reg), op, rewrite_expr_id(r, reg))
         .Call(callee, args) -> .Call(rewrite_expr(callee, reg), rewrite_expr_list(args, reg))
         .GenericCall(callee, type_args, args) -> .GenericCall(rewrite_expr(callee, reg), type_args, rewrite_expr_list(args, reg))
         .StructLit(name, inits) -> .StructLit(name, rewrite_field_inits(inits, reg))

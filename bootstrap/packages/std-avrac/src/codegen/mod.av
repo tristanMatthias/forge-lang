@@ -403,7 +403,7 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
         .Grouping(inner) -> emit_expr(ctx, env, ctx.nodes.exprs.get(inner))
         .Unary(op, right) -> emit_unary(ctx, env, op, ctx.nodes.exprs.get(right))
         .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
-        .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
+        .Logical(left, op, right) -> emit_logical(ctx, env, ctx.nodes.exprs.get(left), op, ctx.nodes.exprs.get(right))
         .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
         .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {

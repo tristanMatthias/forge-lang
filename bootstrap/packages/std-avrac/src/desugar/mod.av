@@ -555,7 +555,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
         .Binary(l, op, r) -> .Binary(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
         .Unary(op, r) -> .Unary(op, desugar_expr_id(store, r, sigs))
-        .Logical(l, op, r) -> .Logical(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
+        .Logical(l, op, r) -> .Logical(desugar_expr_id(store, l, sigs), op, desugar_expr_id(store, r, sigs))
         // Call args: desugar each arg, then pin any anonymous table row
         // to the callee's declared `List<Row>` parameter type (c080).
         .Call(callee, args) -> .Call(desugar_expr(store, callee, sigs), stamp_call_arg_tables(store, callee, desugar_expr_list(store, args, sigs), sigs))
