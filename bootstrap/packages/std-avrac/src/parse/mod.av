@@ -1422,8 +1422,8 @@ impl Parser {
                     let parsed = self.parse_arg_list_ids()?
                     self.allow_it_sugar = saved_it
                     if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
-                    result = Expr.OptionalMethodCall(result, field, parsed.wrapped)
-                    rid = self.alloc_expr(result, byte_span_none(), self.edges_subject_args(rid, parsed.ids))
+                    result = Expr.OptionalMethodCall(rid, field, parsed.ids)
+                    rid = self.alloc_leaf(result)
                 } else {
                     result = Expr.OptionalChain(rid, field)
                     rid = self.alloc_leaf(result)

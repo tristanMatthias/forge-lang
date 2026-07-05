@@ -2205,7 +2205,7 @@ export enum Expr {
     /// the result. Sibling of OptionalChain for the call form (which needs to
     /// carry args); a first-class node so `quote`/macros see `?.m()` the same
     /// way they see `?.field`.
-    OptionalMethodCall(obj: Expr, method: string, args: List<SExpr>)
+    OptionalMethodCall(obj: ExprId, method: string, args: List<ExprId>)
     /// Error / null propagate: `expr?` — bails the enclosing fn early
     /// if `expr` is Err / null.
     Try(expr: ExprId)
@@ -2782,7 +2782,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, store.exprs.get(c))} ${render_expr(store, store.exprs.get(t))} ${render_expr(store, store.exprs.get(e))})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, store.exprs.get(left))} ${render_expr(store, store.exprs.get(right))})"
         .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"
-        .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"
+        .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr_id(store, obj)} ${method} ${render_expr_ids(store, args)})"
         .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
         .Tuple(elements) -> "(tuple ${render_expr_list(store, elements)})"
         .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, store.exprs.get(obj))} ${string(idx)})"

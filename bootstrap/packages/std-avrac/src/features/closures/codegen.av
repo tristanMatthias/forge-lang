@@ -242,8 +242,8 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .OptionalChain(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .OptionalMethodCall(obj, _, args) -> {
-            find_captures(store, obj, params, env, captures)
-            find_captures_list(store, args, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
+            find_captures_list(store, store.sexprs_of(args), params, env, captures)
         }
         .TupleIndex(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .ListComp(body, var, coll, filter) -> {

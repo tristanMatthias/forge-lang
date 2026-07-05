@@ -1636,7 +1636,7 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(t), coll), lint_scan_expr(store, store.exprs.get(el), coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
-        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_sexprs(store, args, coll))
+        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
         .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Tuple(els) -> lint_scan_sexprs(store, els, coll)
         .TupleIndex(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
@@ -4217,7 +4217,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body), cl, cc)
         .OptionalChain(obj, f) -> .OptionalChain(annotate_expr_id(tc, obj), f)
-        .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr(tc, obj), m, annotate_expr_list(tc, args))
+        .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr_id(tc, obj), m, annotate_expr_list_ids(tc, args))
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr_id(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
         .Spawn(body) -> .Spawn(annotate_expr_id(tc, body))
