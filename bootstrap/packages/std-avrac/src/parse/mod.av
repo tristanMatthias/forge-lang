@@ -976,11 +976,11 @@ impl Parser {
         // design Decision 4); its CHILDREN are re-parented by id — the
         // FieldAccess's object id comes off the shell's edge list, no re-walk.
         match self.expr_of(left) {
-            .Ident(name) -> .Ok(self.alloc1(Expr.Assign(name, value), value))
-            .FieldAccess(_, field) -> {
-                let obj_id = self.expr_child(left, 0)
-                .Ok(self.alloc2(Expr.FieldAssign(obj_id, field, value), obj_id, value))
-            }
+            // Flipped payloads are inline ids (F3b) — the node IS its own edge,
+            // so these build as leaves (no recorded child edge), matching F3a's
+            // alloc_stmt_leaf and the walker's scalar view of id fields.
+            .Ident(name) -> .Ok(self.alloc_leaf(Expr.Assign(name, value)))
+            .FieldAccess(obj, field) -> .Ok(self.alloc_leaf(Expr.FieldAssign(obj, field, value)))
             _ -> {
                 self.set_error("invalid assignment target")
                 .Err("invalid assignment target")
@@ -1123,7 +1123,7 @@ impl Parser {
                 return .Err("parse error")
             }
             let vname = self.consume_identifier("expected variant name after `is .`")?
-            return .Ok(self.alloc1(Expr.IsCheck(left, vname), left))
+            return .Ok(self.alloc_leaf(Expr.IsCheck(left, vname)))
         }
 
         if self.check(Tk.KwIn) {
@@ -1291,7 +1291,7 @@ impl Parser {
                 return .Ok(self.alloc_expr(Expr.StructLit("~" + var_name, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids)))
             }
             let target = self.parse_unary()?
-            return .Ok(self.alloc1(Expr.Splice(target), target))
+            return .Ok(self.alloc_leaf(Expr.Splice(target)))
         }
         if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
             let op = match {
@@ -1301,7 +1301,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_unary()?
-            return .Ok(self.alloc1(Expr.Unary(op, right), right))
+            return .Ok(self.alloc_leaf(Expr.Unary(op, right)))
         }
 
         mut eid = self.parse_call()?
@@ -1394,7 +1394,7 @@ impl Parser {
             if self.check(Tk.Question) {
                 self.advance()
                 result = Expr.Try(rid)
-                rid = self.alloc1(result, rid)
+                rid = self.alloc_leaf(result)
                 continue
             }
             // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
@@ -1443,7 +1443,7 @@ impl Parser {
                     rid = self.alloc_expr(result, byte_span_none(), self.edges_subject_args(rid, parsed.ids))
                 } else {
                     result = Expr.OptionalChain(rid, field)
-                    rid = self.alloc1(result, rid)
+                    rid = self.alloc_leaf(result)
                 }
             } else if self.check(Tk.LeftBracket) {
                 self.advance()
@@ -1504,7 +1504,7 @@ impl Parser {
                     let idx_text = self.current_lexeme
                     self.advance()
                     result = Expr.TupleIndex(rid, int(idx_text))
-                    rid = self.alloc1(result, rid)
+                    rid = self.alloc_leaf(result)
                     continue
                 }
                 let field = self.consume_field_name("expected field name after `.`")?
@@ -1535,7 +1535,7 @@ impl Parser {
                     rid = self.alloc_expr(result, byte_span_none(), self.edges_of_ids(parsed.ids))
                 } else {
                     result = Expr.FieldAccess(rid, field)
-                    rid = self.alloc1(result, rid)
+                    rid = self.alloc_leaf(result)
                 }
             }
             }
@@ -1775,7 +1775,7 @@ impl Parser {
                 let body = self.parse_lambda_body()?
                 return .Ok(self.alloc1(Expr.Lambda(params, self.expr_of(body)), body))
             }
-            return .Ok(self.alloc1(Expr.Grouping(expr), expr))
+            return .Ok(self.alloc_leaf(Expr.Grouping(expr)))
         }
 
         // List literal: [expr, expr, ...]

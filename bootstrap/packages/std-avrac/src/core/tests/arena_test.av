@@ -111,11 +111,15 @@ spec "L1 typed ids reject wrong-arena use" {
 // recorded. These trees are all-one-kind, so each lands wholly in its own
 // arena (no cross-kind children to scatter).
 spec "L1 ExprArena ingests recursively" {
-    then "Grouping(Number) flattens to 2 expr nodes" {
+    then "Grouping(id): the inner id is an inline scalar, not a recursed child edge" {
         let store = new_node_store(build_line_index(""))
-        let root = store.ingest_expr(Expr.Grouping(Expr.Number("5")), byte_span_none())
-        // root is the parent (Grouping); it has exactly one child edge.
-        store.exprs.count() == 2 && store.exprs.children_of(root).length == 1
+        let inner = store.exprs.add_leaf(Expr.Number("5"))
+        let root = store.ingest_expr(Expr.Grouping(inner), byte_span_none())
+        // F3b: Grouping.expr is an arena ExprId — a scalar to the walker, so
+        // ingest records NO child edge. The two rows are the leaf + the Grouping,
+        // and the inline id survives the ingest verbatim.
+        let kept = match store.exprs.get(root) { .Grouping(got) -> got == inner, _ -> false }
+        store.exprs.count() == 2 && store.exprs.children_of(root).length == 0 && kept
     }
 }
 
@@ -347,19 +351,19 @@ spec "ingest_program: hi skips synthesised statements to the next real one" {
 }
 
 // The byte-offset SPAN side-table: a node ingested with a real span reports
-// it back via span_of (a side-table lookup, not a field on the
-// node); children reached through the bare children() recursion carry the
-// byte_span_none() sentinel until the parser migration threads precise spans.
+// it back via span_of (a side-table lookup, not a field on the node). A
+// flipped id payload (F3b) is a scalar — ingest doesn't recurse into it — so
+// the inline child keeps whatever span it was allocated with (add_leaf ⇒ none).
 spec "L1 ExprArena records the node's span" {
-    then "the ingested root keeps its span; the recursed BARE child is byte_span_none" {
-        // Grouping.expr is a BARE `Expr` field (no wrapper carries its offset),
-        // so the child stays span_none even under A2 — only WRAPPED children
-        // (SExpr/SStmt entries) get a real span.
+    then "the ingested root keeps its span; the inline id payload is left untouched" {
+        // Grouping.expr is an arena ExprId (F3b): a scalar to the walker, so
+        // ingest records no child edge and never re-spans the inline id.
         let store = new_node_store(build_line_index(""))
-        let root = store.ingest_expr(Expr.Grouping(Expr.Number("5")), byte_span(10, 13))
-        let child = expr_ref_id(store.exprs.children_of(root)[0])
+        let inner = store.exprs.add_leaf(Expr.Number("5"))
+        let root = store.ingest_expr(Expr.Grouping(inner), byte_span(10, 13))
         let rs = store.exprs.span_of(root)
-        rs.lo == 10 && rs.hi == 13 && byte_span_is_none(store.exprs.span_of(child))
+        rs.lo == 10 && rs.hi == 13 && store.exprs.children_of(root).length == 0
+            && byte_span_is_none(store.exprs.span_of(inner))
     }
 }
 
@@ -520,7 +524,7 @@ spec "B1: StoreMark truncation rolls back speculative allocation" {
         let store = new_node_store(build_line_index(""))
         let keep = store.ingest_expr(Expr.Number("1"), byte_span(0, 1))
         let m = store.mark()
-        let _ = store.ingest_expr(Expr.Grouping(Expr.Number("2")), byte_span(2, 3))
+        let _ = store.ingest_expr(Expr.Grouping(store.exprs.add_leaf(Expr.Number("2"))), byte_span(2, 3))
         let _ = store.ingest_pat(Pattern.Wildcard, byte_span_none())
         let _ = store.ingest_type(ValueType.Int, byte_span_none())
         store.truncate_to_mark(m)
@@ -530,8 +534,8 @@ spec "B1: StoreMark truncation rolls back speculative allocation" {
     then "a re-issued id after truncation gets fresh edges and span (no stale columns)" {
         let store = new_node_store(build_line_index(""))
         let m = store.mark()
-        // Allocate a parent with a child edge + a real span, then roll back.
-        let _ = store.ingest_expr(Expr.Grouping(Expr.Number("9")), byte_span(5, 9))
+        // Allocate a parent (an inline-id leaf) with a real span, then roll back.
+        let _ = store.ingest_expr(Expr.Grouping(store.exprs.add_leaf(Expr.Number("9"))), byte_span(5, 9))
         store.truncate_to_mark(m)
         // The same raw ids are re-issued for a childless node with span_none.
         let fresh = store.ingest_expr(Expr.Ident("x"), byte_span_none())
