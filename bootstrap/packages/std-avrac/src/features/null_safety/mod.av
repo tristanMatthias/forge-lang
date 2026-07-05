@@ -3,7 +3,7 @@
 // Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
 // without explicit self-imports.
 use codegen.{err_emit}
-use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown}
+use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
@@ -24,7 +24,7 @@ export fn null_coalesce_feature() -> Feature {
 /// null.
 export fn optional_chain_feature() -> Feature {
     feature_new("optional_chain") with {
-        expr_tag: Expr.OptionalChain(Expr.None, ""),
+        expr_tag: Expr.OptionalChain(ExprId(0), ""),
         emit_expr: optional_chain_emit_expr,
         resolve_expr: optional_chain_resolve_expr,
         check_expr: optional_chain_check_expr,
@@ -47,7 +47,7 @@ export fn optional_method_call_feature() -> Feature {
 
 export fn try_feature() -> Feature {
     feature_new("try") with {
-        expr_tag: Expr.Try(Expr.None),
+        expr_tag: Expr.Try(ExprId(0)),
         emit_expr: try_emit_expr,
         resolve_expr: try_resolve_expr,
         check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
@@ -81,7 +81,7 @@ fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// name resolution.
 fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .OptionalChain(obj, _) -> resolve_expr(r, obj)
+        .OptionalChain(obj, _) -> resolve_expr(r, r.nodes.exprs.get(obj))
         _ -> r
     }
 }
@@ -96,7 +96,7 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
             // `obj?.field` short-circuits to `none` when `obj` is null → `U?`.
             // Unknown/already-optional field types stay as-is (no double-wrap,
             // no `Optional(Unknown)` rendered as a bare `?`).
-            let r = check_field_access(tc, obj, field)
+            let r = check_field_access(tc, tc.nodes.exprs.get(obj), field)
             if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
             tc_er(r.tc, vtype_wrap_optional(r.ty))
         }
@@ -107,7 +107,7 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Resolver hook for `Try`. Walks the inner expression.
 fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .Try(inner) -> resolve_expr(r, inner)
+        .Try(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
         _ -> r
     }
 }
@@ -151,7 +151,7 @@ fn null_coalesce_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Resul
 /// `emit_optional_chain`.
 fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
+        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, ctx.nodes.exprs.get(obj), field)
         _ -> err_emit("expected OptionalChain")
     }
 }
@@ -196,7 +196,7 @@ fn optional_method_call_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Codegen hook for `Try`. Forwards to `emit_try`.
 fn try_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Try(inner) -> emit_try(ctx, env, inner)
+        .Try(inner) -> emit_try(ctx, env, ctx.nodes.exprs.get(inner))
         _ -> err_emit("expected Try")
     }
 }

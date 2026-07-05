@@ -16,7 +16,7 @@ use core.{ParamEntry}
 /// `Isolated` AST node and forwards to `emit_isolated`.
 export fn isolated_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Isolated(body) -> emit_isolated(ctx, env, body)
+        .Isolated(body) -> emit_isolated(ctx, env, ctx.nodes.exprs.get(body))
         _ -> err_emit("isolated_emit_expr: expected Isolated")
     }
 }

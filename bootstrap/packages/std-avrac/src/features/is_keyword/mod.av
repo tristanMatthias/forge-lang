@@ -1,5 +1,5 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.is_keyword.{...}`
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
 use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value, value_is_enumish}
@@ -11,7 +11,7 @@ use typeck.{check_expr, tc_er}
 /// via the standard tag-based dispatch.
 export fn is_keyword_feature() -> Feature {
     feature_new("is") with {
-        expr_tag: Expr.IsCheck(Expr.None, ""),
+        expr_tag: Expr.IsCheck(ExprId(0), ""),
         emit_expr: emit_is_check,
         resolve_expr: is_resolve,
         check_expr: is_check,
@@ -24,7 +24,7 @@ export fn is_keyword_feature() -> Feature {
 /// here we only need to walk the subject expression.
 fn is_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .IsCheck(subject, _) -> resolve_expr(r, subject)
+        .IsCheck(subject, _) -> resolve_expr(r, r.nodes.exprs.get(subject))
         _ -> r
     }
 }
@@ -36,7 +36,7 @@ fn is_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn is_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IsCheck(subject, _) -> {
-            let s = check_expr(tc, subject)
+            let s = check_expr(tc, tc.nodes.exprs.get(subject))
             tc_er(s.tc, .Bool)
         }
         _ -> tc_er(tc, .Unknown)
@@ -52,7 +52,7 @@ fn is_check(tc: TC, expr: Expr) -> ExprResult {
 fn is_eval(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
         .IsCheck(subject, variant_name) -> {
-            let s = eval_expr(rt, subject)
+            let s = eval_expr(rt, rt.nodes.exprs.get(subject))
             if step_had_error(s) { return s }
             let v = step_value(s)
             let matched = value_is_enumish(v) && v.enum_variant == variant_name

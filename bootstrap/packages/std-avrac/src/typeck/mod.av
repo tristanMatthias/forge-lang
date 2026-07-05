@@ -1533,14 +1533,14 @@ fn lint_expr_is_zero(e: Expr) -> bool {
 
 /// If `cond` is `i < <coll>.length`, return the collection's name;
 /// otherwise "". Conservative — only the canonical index-loop guard.
-fn lint_index_guard_coll(cond: Expr) -> string {
+fn lint_index_guard_coll(store: NodeStore, cond: Expr) -> string {
     match cond {
         .Binary(left, op, right) -> match op {
             .Lt -> match left {
                 .Ident(ln) -> if ln != "i" { "" } else {
                     match right {
                         .FieldAccess(obj, field) -> if field != "length" { "" } else {
-                            match obj { .Ident(n) -> n, _ -> "" }
+                            match store.exprs.get(obj) { .Ident(n) -> n, _ -> "" }
                         }
                         _ -> ""
                     }
@@ -1617,31 +1617,31 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
                 lint_sig_or(o, lint_scan_expr(store, idx, coll))
             }
         }
-        .Assign(_, value) -> lint_scan_expr(store, value, coll)
-        .Grouping(inner) -> lint_scan_expr(store, inner, coll)
-        .Unary(_, right) -> lint_scan_expr(store, right, coll)
+        .Assign(_, value) -> lint_scan_expr(store, store.exprs.get(value), coll)
+        .Grouping(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
+        .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
         .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
         .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, callee, coll), lint_scan_sexprs(store, args, coll))
-        .FieldAccess(obj, _) -> lint_scan_expr(store, obj, coll)
+        .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
         .Block(body) -> lint_scan_sstmts(store, body, coll)
         .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, subject, coll), lint_scan_arms(store, arms, coll))
-        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_expr(store, value, coll))
+        .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_expr(store, store.exprs.get(value), coll))
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, c, coll), lint_sig_or(lint_scan_expr(store, t, coll), lint_scan_expr(store, el, coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, left, coll), lint_scan_expr(store, right, coll))
-        .OptionalChain(obj, _) -> lint_scan_expr(store, obj, coll)
+        .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_scan_sexprs(store, args, coll))
-        .Try(inner) -> lint_scan_expr(store, inner, coll)
+        .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
         .Tuple(els) -> lint_scan_sexprs(store, els, coll)
-        .TupleIndex(obj, _) -> lint_scan_expr(store, obj, coll)
+        .TupleIndex(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .With(obj, _) -> lint_scan_expr(store, obj, coll)
         .ListLit(els) -> lint_scan_sexprs(store, els, coll)
         .Lambda(_, body) -> lint_scan_expr(store, body, coll)
         .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
         .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, obj, coll), lint_sig_or(lint_scan_expr(store, start, coll), lint_scan_expr(store, end, coll)))
-        .IsCheck(subject, _) -> lint_scan_expr(store, subject, coll)
+        .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
         .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, needle, coll), lint_scan_sexprs(store, items, coll))
         _ -> lint_sig_none()
     }
@@ -1712,7 +1712,7 @@ fn lint_step_count(store: NodeStore, s: Stmt) -> LintStep {
     match s {
         .Expr(inner_id) -> match store.exprs.get(inner_id) {
             .Assign(n, v) -> if n == "i" {
-                LintStep { total: 1, unit: if lint_is_unit_step(v) { 1 } else { 0 } }
+                LintStep { total: 1, unit: if lint_is_unit_step(store.exprs.get(v)) { 1 } else { 0 } }
             } else { lint_step_none() }
             _ -> lint_step_none()
         }
@@ -1747,7 +1747,7 @@ fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
                     if name == "i" && lint_expr_is_zero(tc.nodes.exprs.get(init)) {
                         match stmts[k + 1].node {
                             .While(cond, body) -> {
-                                let coll = lint_index_guard_coll(tc.nodes.exprs.get(cond))
+                                let coll = lint_index_guard_coll(tc.nodes, tc.nodes.exprs.get(cond))
                                 if coll != "" && vtype_is_list(type_lookup(cur.types, coll)) {
                                     let sig = lint_scan_stmt(tc.nodes, tc.nodes.stmts.get(body), coll)
                                     let step = lint_step_count(tc.nodes, tc.nodes.stmts.get(body))
@@ -2167,7 +2167,7 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
         let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
-    if is_const && !is_const_expr(init) {
+    if is_const && !is_const_expr(tc.nodes, init) {
         let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
@@ -2458,7 +2458,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // subjectless-enum gates, so a wild store hides behind one pair of parens
         // (`let x: int = (Box { val: 9 })`). Recurse on the inner with the SAME raw
         // `expected` so it re-strips the optional and lands in the right arm.
-        .Grouping(inner) -> check_expr_expected(tc, inner, expected)
+        .Grouping(inner) -> check_expr_expected(tc, tc.nodes.exprs.get(inner), expected)
         // A list/map literal (always a pointer) meeting a VALUE-SCALAR expected
         // type (int/float/bool/…) is the inverse of the ry1a scalar→ptr hole:
         // a pointer stored in a scalar slot. `let x: int = [1,2]` / `{"k":1}`
@@ -2602,7 +2602,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             check_binary_type(tc4, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
-            let r = check_expr(tc, right)
+            let r = check_expr(tc, tc.nodes.exprs.get(right))
             tc_er(r.tc, r.ty)
         }
         .Logical(left, _, right) -> {
@@ -2610,7 +2610,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let r = check_expr(l.tc, right)
             tc_er(r.tc, .Bool)
         }
-        .Grouping(inner) -> check_expr(tc, inner)
+        .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
         .Call(callee, args) -> check_call(tc, callee, args)
         .GenericCall(callee, type_args, args) -> check_generic_call(tc, callee, type_args, args)
         .Index(obj, idx) -> {
@@ -2646,7 +2646,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(e.tc, o.ty)
         }
         .Assign(name, value) -> {
-            let v = check_expr(tc, value)
+            let v = check_expr(tc, tc.nodes.exprs.get(value))
             // Reassigning an int into a pointer-layout variable is the wild-pointer
             // hole (ry1a/w0kt): the var's slot is a pointer, the int isn't.
             // (int→numeric stays lenient, matching the let site.)
@@ -2683,7 +2683,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         // the codegen F9999 backstop instead of the typeck-side
         // F1003 (shortcut #4 — Display strictness).
         .FieldAccess(obj, _) -> {
-            match obj {
+            match tc.nodes.exprs.get(obj) {
                 .Ident(type_name) if enum_type_has(tc.enums, type_name) -> {
                     let empty_args: List<ValueType> = []
                     return tc_er(tc, ValueType.Enum(type_name, empty_args, 0))
@@ -3449,13 +3449,13 @@ fn tc_arg_concrete_ty(tc: TC, arg: SExpr) -> ValueType {
     if !vtype_is_unknown(arg.ty) { return arg.ty }
     let r = check_expr(tc, arg.node)
     if !vtype_is_unknown(r.ty) { return r.ty }
-    tc_infer_lit_ty(arg.node)
+    tc_infer_lit_ty(tc.nodes, arg.node)
 }
 
 /// Lightweight literal-shape inference for arg types when typeck
 /// hasn't annotated. Mirrors mono's `infer_lit_ty` but uses
 /// typeck-local helpers (no cross-module import).
-fn tc_infer_lit_ty(e: Expr) -> ValueType {
+fn tc_infer_lit_ty(store: NodeStore, e: Expr) -> ValueType {
     match e {
         .Number(_) -> ValueType.Int
         .FloatLit(_) -> ValueType.Float
@@ -3466,8 +3466,8 @@ fn tc_infer_lit_ty(e: Expr) -> ValueType {
             let empty_args: List<ValueType> = []
             ValueType.Enum(tn, empty_args, 0)
         }
-        .Grouping(inner) -> tc_infer_lit_ty(inner)
-        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(elements))
+        .Grouping(inner) -> tc_infer_lit_ty(store, store.exprs.get(inner))
+        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(store, elements))
         .Lambda(params, _) -> ValueType.FnTyped(tc_param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
@@ -3493,7 +3493,7 @@ fn list_lit_optionalize(elements: List<SExpr>, base: ValueType) -> ValueType {
     if list_lit_has_none(elements) { ValueType.Optional(base) } else { base }
 }
 
-fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
+fn tc_infer_list_elem(store: NodeStore, elements: List<SExpr>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
     // Pin the inner type from the first present element (a leading `none`
     // carries no type), then re-wrap in `T?` when a `none` is present.
@@ -3501,7 +3501,7 @@ fn tc_infer_list_elem(elements: List<SExpr>) -> ValueType {
     mut i = 0
     while i < elements.length {
         if !(elements[i].node is .None) {
-            base = tc_infer_lit_ty(elements[i].node)
+            base = tc_infer_lit_ty(store, elements[i].node)
             i = elements.length
         } else {
             i = i + 1
@@ -3538,7 +3538,7 @@ fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
 /// pins). Shared by the quick-type inference for list elements and map values.
 fn tc_expr_or_lit_ty(tc: TC, node: Expr) -> ValueType {
     let r = check_expr(tc, node)
-    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(node) } else { r.ty }
+    if vtype_is_unknown(r.ty) { tc_infer_lit_ty(tc.nodes, node) } else { r.ty }
 }
 
 /// First map VALUE type for quick `MapLit` typing — the value analog of
@@ -3715,7 +3715,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: V
             }
             tc_er(checked, .Unknown)
         }
-        .FieldAccess(obj, method) -> check_method_call(tc, obj, method, args)
+        .FieldAccess(obj, method) -> check_method_call(tc, tc.nodes.exprs.get(obj), method, args)
         _ -> {
             // Expression callee (e.g. compose(f,g)(x))
             let c = check_expr(tc, callee)
@@ -3956,7 +3956,7 @@ fn infer_arg_for_display(tc: TC, expr: Expr) -> ValueType {
         // payload-less ctor — recover the enum type so
         // display_check_arg can fire F1003. Doesn't disturb the
         // parser; safer than changing the AST shape globally.
-        .FieldAccess(obj, _) -> match obj {
+        .FieldAccess(obj, _) -> match tc.nodes.exprs.get(obj) {
             .Ident(type_name) -> if enum_type_has(tc.enums, type_name) {
                 let empty_args: List<ValueType> = []
                 ValueType.Enum(type_name, empty_args, 0)
@@ -4189,18 +4189,18 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
         .Block(body) -> .Block(annotate_stmts(tc, body))
         .Binary(l, op, r) -> .Binary(annotate_expr(tc, l), op, annotate_expr(tc, r))
         .Logical(l, op, r) -> .Logical(annotate_expr(tc, l), op, annotate_expr(tc, r))
-        .Unary(op, e) -> .Unary(op, annotate_expr(tc, e))
-        .Grouping(e) -> .Grouping(annotate_expr(tc, e))
+        .Unary(op, e) -> .Unary(op, annotate_expr_id(tc, e))
+        .Grouping(e) -> .Grouping(annotate_expr_id(tc, e))
         .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
         .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
-        .FieldAccess(obj, f) -> .FieldAccess(annotate_expr(tc, obj), f)
-        .Assign(name, val) -> .Assign(name, annotate_expr(tc, val))
-        .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr(tc, obj), f, annotate_expr(tc, val))
+        .FieldAccess(obj, f) -> .FieldAccess(annotate_expr_id(tc, obj), f)
+        .Assign(name, val) -> .Assign(name, annotate_expr_id(tc, val))
+        .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr_id(tc, obj), f, annotate_expr_id(tc, val))
         .Lambda(params, body) -> .Lambda(params, annotate_expr(tc_bind_params(tc, params), body))
         .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
-        .Try(e) -> .Try(annotate_expr(tc, e))
+        .Try(e) -> .Try(annotate_expr_id(tc, e))
         .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
-        .IsCheck(subj, vname) -> .IsCheck(annotate_expr(tc, subj), vname)
+        .IsCheck(subj, vname) -> .IsCheck(annotate_expr_id(tc, subj), vname)
         .InCheck(needle, items) -> .InCheck(annotate_expr(tc, needle), annotate_expr_list(tc, items))
         .ListComp(body, var, coll, filter) -> {
             if filter != null {
@@ -4210,12 +4210,12 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
             }
         }
         .Catch(inner, b, body, cl, cc) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body), cl, cc)
-        .OptionalChain(obj, f) -> .OptionalChain(annotate_expr(tc, obj), f)
+        .OptionalChain(obj, f) -> .OptionalChain(annotate_expr_id(tc, obj), f)
         .OptionalMethodCall(obj, m, args) -> .OptionalMethodCall(annotate_expr(tc, obj), m, annotate_expr_list(tc, args))
-        .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
+        .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr_id(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))
-        .Spawn(body) -> .Spawn(annotate_expr(tc, body))
-        .Isolated(body) -> .Isolated(annotate_expr(tc, body))
+        .Spawn(body) -> .Spawn(annotate_expr_id(tc, body))
+        .Isolated(body) -> .Isolated(annotate_expr_id(tc, body))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { expr } else { .ChannelNew(elem, annotate_expr(tc, capacity!)) }
         }
@@ -4244,7 +4244,7 @@ fn annotate_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr {
 fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
     match callee {
         .FieldAccess(obj, method) -> {
-            let o = check_expr(tc, obj)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let type_name = match o.ty {
                 .Struct(n, _, _) -> n
                 .Enum(n, _, _) -> n
@@ -4259,7 +4259,7 @@ fn method_to_free_fn_call(tc: TC, callee: Expr, args: List<SExpr>) -> Expr? {
             // emit_method_call (which prepends self at the call
             // site without needing a syntactic rewrite).
             if !r.found || r.tp.length == 0 { return null }
-            let annotated_obj = annotate_expr(tc, obj)
+            let annotated_obj = annotate_expr(tc, tc.nodes.exprs.get(obj))
             mut new_args: List<SExpr> = []
             new_args.push(sexpr_typed(annotated_obj, 0, 0, o.ty))
             for a in annotate_expr_list(tc, args) {
@@ -4325,7 +4325,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // Grouping forwards its inner expression's type. Used heavily
         // by parser-emitted parenthesised forms; falling through to
         // check_expr was a needless re-walk.
-        .Grouping(inner) -> annotate_sexpr_ty(tc, inner)
+        .Grouping(inner) -> annotate_sexpr_ty(tc, tc.nodes.exprs.get(inner))
         // Range forms always produce an Int range (codegen doesn't
         // distinguish further). Avoids check_expr on every range-for.
         .Range(_, _) -> ValueType.Int
@@ -4344,14 +4344,14 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         // the RHS sub-expression was annotated by annotate_expr
         // above, looking it up via annotate_sexpr_ty is one
         // tag-dispatch instead of a full check_expr re-walk.
-        .Assign(_, val) -> annotate_sexpr_ty(tc, val)
+        .Assign(_, val) -> annotate_sexpr_ty(tc, tc.nodes.exprs.get(val))
         // kkgf: FieldAccess on a bare ident is the dominant pattern
         // in the bootstrap (self.x, ctx.foo, e.name, ...). When the
         // base is an Ident we know its type from tc.types; the field
         // type comes from the struct registry. Falls back to
         // check_expr only when the base is a more complex expression
         // (chained field accesses, calls returning structs, etc.).
-        .FieldAccess(base, fname) -> match base {
+        .FieldAccess(base, fname) -> match tc.nodes.exprs.get(base) {
             .Ident(obj_name) -> {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let sname = vtype_struct_name(base_ty)

@@ -871,7 +871,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             error_result(runtime, "undefined variable `${name}`")
         }
         .Assign(name, value_expr) -> {
-            let value_result = eval_expr(runtime, value_expr)
+            let value_result = eval_expr(runtime, runtime.nodes.exprs.get(value_expr))
             if value_result.had_error {
                 return value_result
             }
@@ -894,7 +894,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             let next_runtime = value_result.runtime with { bindings: assigned.bindings }
             ok_result(next_runtime, value_result.value)
         }
-        .Grouping(inner) -> eval_expr(runtime, inner)
+        .Grouping(inner) -> eval_expr(runtime, runtime.nodes.exprs.get(inner))
         .Block(body) -> {
             // Value-position block: runs each stmt, the result is the
             // value of the final expression statement (or null when
@@ -919,7 +919,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         // for AST list / struct payloads.
         .ListLit(elems) -> eval_list_lit(runtime, elems)
         .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
-        .Unary(op, right) -> eval_unary(runtime, op, right)
+        .Unary(op, right) -> eval_unary(runtime, op, runtime.nodes.exprs.get(right))
         .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
         .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
         .Call(callee, args) -> eval_call(runtime, callee, args)
@@ -969,7 +969,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             // `r!.canonical_name` parses as FieldAccess(r, "canonical_name");
             // the parser's force-unwrap (`!`) is a no-op so this arm
             // handles both nullable-unwrap and direct-struct cases.
-            let obj_result = eval_expr(runtime, obj)
+            let obj_result = eval_expr(runtime, runtime.nodes.exprs.get(obj))
             if obj_result.had_error { return obj_result }
             let v = obj_result.value
             if v.kind == "list" && field == "length" {
@@ -1125,13 +1125,13 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     // the `mut arms = []; arms.push(...)` pattern macros rely on.
     match callee {
         .FieldAccess(obj, method) -> {
-            let probe = eval_expr(runtime, obj)
+            let probe = eval_expr(runtime, runtime.nodes.exprs.get(obj))
             if !probe.had_error && probe.value.kind == "list" {
                 let lm = eval_list_method(probe.runtime, probe.value, method, args)
                 if lm != null {
                     let lm_val = lm!
                     if lm_val.had_error { return lm_val }
-                    match obj {
+                    match runtime.nodes.exprs.get(obj) {
                         .Ident(name) -> {
                             let assigned = assign_binding(lm_val.runtime.bindings, name, lm_val.value)
                             if assigned.found {
@@ -2300,13 +2300,13 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         "QualifiedIdent"  -> .Ok(Expr.QualifiedIdent(head.text))
         "FloatLit"        -> .Ok(Expr.FloatLit(head.text))
         "Grouping"        -> {
-            let inner = value_to_expr_node(store, head)?
+            let inner = value_to_expr_id(store, head)?
             .Ok(Expr.Grouping(inner))
         }
         "Unary" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let op = enum_value_to_unop(head)?
-            let right = value_to_expr_node(store, p[1])?
+            let right = value_to_expr_id(store, p[1])?
             .Ok(Expr.Unary(op, right))
         }
         "Binary" -> {
@@ -2347,23 +2347,23 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         "NullCoalesce" -> two_expr_decode(store, p, "NullCoalesce")
         "Try" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(store, head)?
+            let inner = value_to_expr_id(store, head)?
             .Ok(Expr.Try(inner))
         }
         "Spawn" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let inner = value_to_expr_node(store, head)?
+            let inner = value_to_expr_id(store, head)?
             .Ok(Expr.Spawn(inner))
         }
         "FieldAccess" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(store, head)?
+            let obj = value_to_expr_id(store, head)?
             let field_v: Value = p[1]
             .Ok(Expr.FieldAccess(obj, field_v.text))
         }
         "OptionalChain" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let obj = value_to_expr_node(store, head)?
+            let obj = value_to_expr_id(store, head)?
             let field_v: Value = p[1]
             .Ok(Expr.OptionalChain(obj, field_v.text))
         }
@@ -2377,7 +2377,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "IsCheck" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
-            let subj = value_to_expr_node(store, head)?
+            let subj = value_to_expr_id(store, head)?
             let vname_v: Value = p[1]
             .Ok(Expr.IsCheck(subj, vname_v.text))
         }
@@ -2428,7 +2428,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         "Assign" -> {
             if p.length != 2 { return .Err("decode: Assign arity") }
             let name_v: Value = p[0]
-            let value = value_to_expr_node(store, p[1])?
+            let value = value_to_expr_id(store, p[1])?
             .Ok(Expr.Assign(name_v.text, value))
         }
         _                 -> .Err("decode: unknown Expr variant `${v.enum_variant}`")

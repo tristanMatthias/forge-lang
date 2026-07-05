@@ -692,7 +692,7 @@ fn infer_lit_ty(regs: GenRegs, e: Expr) -> ValueType {
                 ValueType.Enum(tn, type_args_in_order(ee!.tp, ta), 0)
             }
         }
-        .Grouping(inner) -> infer_lit_ty(regs, inner)
+        .Grouping(inner) -> infer_lit_ty(regs, regs.store.exprs.get(inner))
         .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, elements))
         .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
@@ -1346,8 +1346,8 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
                 _ -> collect_inst_expr(callee, regs, s)
             }
         }
-        .Grouping(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
-        .Try(e) -> collect_inst_expr_with_expected(e, expected, regs, st)
+        .Grouping(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, st)
+        .Try(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, st)
         // A struct literal in expected-type position (let/return annotation):
         // thread the annotation in so a phantom or empty-collection-only param
         // binds from it. Recurse into the field inits first (matching the
@@ -1383,7 +1383,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
             try_add_enum_inst(tn, variant, args, regs, collect_inst_exprs(args, regs, st))
         .StructLit(name, inits) ->
             try_add_struct_inst(name, inits, regs, collect_inst_field_inits(inits, regs, st))
-        .FieldAccess(obj, variant_name) -> match obj {
+        .FieldAccess(obj, variant_name) -> match regs.store.exprs.get(obj) {
             // Bare variant access (e.g. Option.None) — no args to infer from.
             // Valid only if another ctor site already provided type args via merging.
             // We don't error here — finalize_insts will catch missing instantiations.
@@ -1394,7 +1394,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                     let empty_ta: List<TypeArg> = []
                     st with { insts: merge_partial(ename, empty_ta, st.insts) }
                 } else {
-                    collect_inst_expr(obj, regs, st)
+                    collect_inst_expr(regs.store.exprs.get(obj), regs, st)
                 }
             }
             // Module-qualified bare variant access (resolver
@@ -1404,19 +1404,19 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                     let empty_ta: List<TypeArg> = []
                     st with { insts: merge_partial(ename, empty_ta, st.insts) }
                 } else {
-                    collect_inst_expr(obj, regs, st)
+                    collect_inst_expr(regs.store.exprs.get(obj), regs, st)
                 }
             }
-            _ -> collect_inst_expr(obj, regs, st)
+            _ -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         }
         .Binary(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
         .Logical(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
         .NullCoalesce(l, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
-        .FieldAssign(l, _, r) -> collect_inst_expr(r, regs, collect_inst_expr(l, regs, st))
+        .FieldAssign(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .Index(obj, idx) -> collect_inst_expr(idx, regs, collect_inst_expr(obj, regs, st))
         .IfExpr(c, t, e) -> collect_inst_expr(e, regs, collect_inst_expr(t, regs, collect_inst_expr(c, regs, st)))
-        .Unary(_, e) -> collect_inst_expr(e, regs, st)
-        .Assign(_, val) -> collect_inst_expr(val, regs, st)
+        .Unary(_, e) -> collect_inst_expr(regs.store.exprs.get(e), regs, st)
+        .Assign(_, val) -> collect_inst_expr(regs.store.exprs.get(val), regs, st)
         .With(obj, inits) -> collect_inst_field_inits(inits, regs, collect_inst_expr(obj, regs, st))
         .Lambda(_, body) -> collect_inst_expr(body, regs, st)
         .Block(body) -> collect_inst_stmts(body, regs, st)
@@ -1433,18 +1433,18 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         // Forms that hold sub-expressions: every walker must recurse
         // or generic calls inside silently slip past mono.
         .Slice(obj, start, end) -> collect_inst_expr(end, regs, collect_inst_expr(start, regs, collect_inst_expr(obj, regs, st)))
-        .TupleIndex(obj, _) -> collect_inst_expr(obj, regs, st)
-        .IsCheck(subj, _) -> collect_inst_expr(subj, regs, st)
+        .TupleIndex(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
+        .IsCheck(subj, _) -> collect_inst_expr(regs.store.exprs.get(subj), regs, st)
         .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(needle, regs, st))
-        .OptionalChain(obj, _) -> collect_inst_expr(obj, regs, st)
+        .OptionalChain(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(args, regs, collect_inst_expr(obj, regs, st))
-        .Spawn(body) -> collect_inst_expr(body, regs, st)
+        .Spawn(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .ChannelNew(_, capacity) -> {
             if capacity == null { st } else { collect_inst_expr(capacity!, regs, st) }
         }
-        .Isolated(body) -> collect_inst_expr(body, regs, st)
+        .Isolated(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .Quote(_, body) -> collect_inst_expr(body, regs, st)
-        .Splice(target) -> collect_inst_expr(target, regs, st)
+        .Splice(target) -> collect_inst_expr(regs.store.exprs.get(target), regs, st)
         .When(arms) -> collect_inst_when_arms(arms, regs, st)
         _ -> st
     }
@@ -1684,20 +1684,20 @@ fn rename_self_calls_expr(store: NodeStore, expr: Expr, orig_name: string, mangl
         .GenericCall(callee, ta, args) -> .GenericCall(rename_self_calls_expr(store, callee, orig_name, mangled), ta, rename_self_calls_sexpr_list(store, args, orig_name, mangled))
         .Binary(l, op, r) -> .Binary(rename_self_calls_expr(store, l, orig_name, mangled), op, rename_self_calls_expr(store, r, orig_name, mangled))
         .Logical(l, op, r) -> .Logical(rename_self_calls_expr(store, l, orig_name, mangled), op, rename_self_calls_expr(store, r, orig_name, mangled))
-        .Unary(op, e) -> .Unary(op, rename_self_calls_expr(store, e, orig_name, mangled))
-        .Grouping(e) -> .Grouping(rename_self_calls_expr(store, e, orig_name, mangled))
+        .Unary(op, e) -> .Unary(op, rename_self_calls_expr_id(store, e, orig_name, mangled))
+        .Grouping(e) -> .Grouping(rename_self_calls_expr_id(store, e, orig_name, mangled))
         .Block(body) -> .Block(rename_self_calls_stmts(store, body, orig_name, mangled))
         .IfExpr(c, t, e) -> .IfExpr(rename_self_calls_expr(store, c, orig_name, mangled), rename_self_calls_expr(store, t, orig_name, mangled), rename_self_calls_expr(store, e, orig_name, mangled))
         .MatchExpr(subj, arms) -> .MatchExpr(rename_self_calls_expr(store, subj, orig_name, mangled), rename_self_calls_arms(store, arms, orig_name, mangled))
         .Index(obj, idx) -> .Index(rename_self_calls_expr(store, obj, orig_name, mangled), rename_self_calls_expr(store, idx, orig_name, mangled))
-        .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr(store, obj, orig_name, mangled), f)
-        .Assign(n, val) -> .Assign(n, rename_self_calls_expr(store, val, orig_name, mangled))
-        .FieldAssign(obj, f, val) -> .FieldAssign(rename_self_calls_expr(store, obj, orig_name, mangled), f, rename_self_calls_expr(store, val, orig_name, mangled))
+        .FieldAccess(obj, f) -> .FieldAccess(rename_self_calls_expr_id(store, obj, orig_name, mangled), f)
+        .Assign(n, val) -> .Assign(n, rename_self_calls_expr_id(store, val, orig_name, mangled))
+        .FieldAssign(obj, f, val) -> .FieldAssign(rename_self_calls_expr_id(store, obj, orig_name, mangled), f, rename_self_calls_expr_id(store, val, orig_name, mangled))
         .ListLit(elems) -> .ListLit(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
         .Tuple(elems) -> .Tuple(rename_self_calls_sexpr_list(store, elems, orig_name, mangled))
         .Lambda(params, body) -> .Lambda(params, rename_self_calls_expr(store, body, orig_name, mangled))
         .NullCoalesce(l, r) -> .NullCoalesce(rename_self_calls_expr(store, l, orig_name, mangled), rename_self_calls_expr(store, r, orig_name, mangled))
-        .Try(e) -> .Try(rename_self_calls_expr(store, e, orig_name, mangled))
+        .Try(e) -> .Try(rename_self_calls_expr_id(store, e, orig_name, mangled))
         _ -> expr
     }
 }
@@ -1961,21 +1961,21 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr(store, callee, ta), tn, substitute_expr_list(store, a, ta))
         .Binary(l, op, r) -> .Binary(substitute_expr(store, l, ta), op, substitute_expr(store, r, ta))
         .Logical(l, op, r) -> .Logical(substitute_expr(store, l, ta), op, substitute_expr(store, r, ta))
-        .Unary(op, e) -> .Unary(op, substitute_expr(store, e, ta))
-        .Grouping(e) -> .Grouping(substitute_expr(store, e, ta))
+        .Unary(op, e) -> .Unary(op, substitute_expr_id(store, e, ta))
+        .Grouping(e) -> .Grouping(substitute_expr_id(store, e, ta))
         .Block(body) -> .Block(substitute_stmts(store, body, ta))
         .IfExpr(c, t, e) -> .IfExpr(substitute_expr(store, c, ta), substitute_expr(store, t, ta), substitute_expr(store, e, ta))
         .MatchExpr(subj, arms) -> .MatchExpr(substitute_expr(store, subj, ta), substitute_match_arms(store, arms, ta))
         .Index(obj, idx) -> .Index(substitute_expr(store, obj, ta), substitute_expr(store, idx, ta))
-        .FieldAccess(obj, f) -> .FieldAccess(substitute_expr(store, obj, ta), f)
-        .Assign(name, val) -> .Assign(name, substitute_expr(store, val, ta))
-        .FieldAssign(obj, f, val) -> .FieldAssign(substitute_expr(store, obj, ta), f, substitute_expr(store, val, ta))
+        .FieldAccess(obj, f) -> .FieldAccess(substitute_expr_id(store, obj, ta), f)
+        .Assign(name, val) -> .Assign(name, substitute_expr_id(store, val, ta))
+        .FieldAssign(obj, f, val) -> .FieldAssign(substitute_expr_id(store, obj, ta), f, substitute_expr_id(store, val, ta))
         .ListLit(elems) -> .ListLit(substitute_expr_list(store, elems, ta))
         .Tuple(elems) -> .Tuple(substitute_expr_list(store, elems, ta))
         .MapLit(entries) -> .MapLit(substitute_expr_list(store, entries, ta))
         .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr(store, body, ta))
         .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr(store, l, ta), substitute_expr(store, r, ta))
-        .Try(e) -> .Try(substitute_expr(store, e, ta))
+        .Try(e) -> .Try(substitute_expr_id(store, e, ta))
         .With(obj, inits) -> .With(substitute_expr(store, obj, ta), inits)
         .ListComp(body, v, coll, filter) -> {
             if filter != null {
@@ -1988,19 +1988,19 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         // Mirror collect_inst_expr — every sub-expression in a generic
         // body must get its T-references substituted.
         .Slice(obj, start, end) -> .Slice(substitute_expr(store, obj, ta), substitute_expr(store, start, ta), substitute_expr(store, end, ta))
-        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr(store, obj, ta), idx)
-        .IsCheck(subj, v) -> .IsCheck(substitute_expr(store, subj, ta), v)
+        .TupleIndex(obj, idx) -> .TupleIndex(substitute_expr_id(store, obj, ta), idx)
+        .IsCheck(subj, v) -> .IsCheck(substitute_expr_id(store, subj, ta), v)
         .InCheck(needle, items) -> .InCheck(substitute_expr(store, needle, ta), substitute_expr_list(store, items, ta))
-        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr(store, obj, ta), f)
+        .OptionalChain(obj, f) -> .OptionalChain(substitute_expr_id(store, obj, ta), f)
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(substitute_expr(store, obj, ta), m, substitute_expr_list(store, a, ta))
-        .Spawn(body) -> .Spawn(substitute_expr(store, body, ta))
+        .Spawn(body) -> .Spawn(substitute_expr_id(store, body, ta))
         .ChannelNew(elem, capacity) -> {
             let new_elem = substitute_vtype(elem, ta)
             if capacity == null { .ChannelNew(new_elem, null) } else { .ChannelNew(new_elem, substitute_expr(store, capacity!, ta)) }
         }
-        .Isolated(body) -> .Isolated(substitute_expr(store, body, ta))
+        .Isolated(body) -> .Isolated(substitute_expr_id(store, body, ta))
         .Quote(k, body) -> .Quote(k, substitute_expr(store, body, ta))
-        .Splice(target) -> .Splice(substitute_expr(store, target, ta))
+        .Splice(target) -> .Splice(substitute_expr_id(store, target, ta))
         .When(arms) -> .When(substitute_when_arms(store, arms, ta))
         _ -> expr
     }
@@ -2396,8 +2396,8 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
                 _ -> Expr.Call(rewrite_expr(callee, regs, insts), new_args)
             }
         }
-        .Grouping(e) -> Expr.Grouping(rewrite_expr_with_expected(e, expected, regs, insts))
-        .Try(e) -> Expr.Try(rewrite_expr_with_expected(e, expected, regs, insts))
+        .Grouping(e) -> Expr.Grouping(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
+        .Try(e) -> Expr.Try(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
         .StructLit(name, inits) -> rewrite_struct_lit_with_expected(name, inits, expected, regs, insts)
         _ -> rewrite_expr(expr, regs, insts)
     }
@@ -2575,35 +2575,35 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         }
         .EnumCtor(tn, variant, args) -> rewrite_enum_ctor(tn, variant, args, regs, insts)
         .StructLit(name, inits) -> rewrite_struct_lit(name, inits, regs, insts)
-        .FieldAccess(obj, f) -> match obj {
+        .FieldAccess(obj, f) -> match regs.store.exprs.get(obj) {
             .Ident(ename) -> {
                 if generic_enum_lookup(regs.enums, ename) != null {
-                    Expr.FieldAccess(.Ident(inst_mangled(insts, ename)), f)
+                    Expr.FieldAccess(regs.store.reexpr(Expr.Ident(inst_mangled(insts, ename)), obj), f)
                 } else {
-                    Expr.FieldAccess(rewrite_expr(obj, regs, insts), f)
+                    Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
                 }
             }
             // Module-qualified enum reference (resolver rewrote
             // `RgmList` → `mod::RgmList`). Same mangling logic.
             .QualifiedIdent(ename) -> {
                 if generic_enum_lookup(regs.enums, ename) != null {
-                    Expr.FieldAccess(.QualifiedIdent(inst_mangled(insts, ename)), f)
+                    Expr.FieldAccess(regs.store.reexpr(Expr.QualifiedIdent(inst_mangled(insts, ename)), obj), f)
                 } else {
-                    Expr.FieldAccess(rewrite_expr(obj, regs, insts), f)
+                    Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
                 }
             }
-            _ -> Expr.FieldAccess(rewrite_expr(obj, regs, insts), f)
+            _ -> Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
         }
         .Binary(l, op, r) -> .Binary(rewrite_expr(l, regs, insts), op, rewrite_expr(r, regs, insts))
         .Logical(l, op, r) -> .Logical(rewrite_expr(l, regs, insts), op, rewrite_expr(r, regs, insts))
-        .Unary(op, e) -> .Unary(op, rewrite_expr(e, regs, insts))
-        .Grouping(e) -> .Grouping(rewrite_expr(e, regs, insts))
+        .Unary(op, e) -> .Unary(op, rewrite_expr_id(e, regs, insts))
+        .Grouping(e) -> .Grouping(rewrite_expr_id(e, regs, insts))
         .Block(body) -> .Block(rewrite_stmts(body, regs, insts))
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(c, regs, insts), rewrite_expr(t, regs, insts), rewrite_expr(e, regs, insts))
         .MatchExpr(subj, arms) -> .MatchExpr(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Index(obj, idx) -> .Index(rewrite_expr(obj, regs, insts), rewrite_expr(idx, regs, insts))
-        .Assign(name, val) -> .Assign(name, rewrite_expr(val, regs, insts))
-        .FieldAssign(obj, f, val) -> .FieldAssign(rewrite_expr(obj, regs, insts), f, rewrite_expr(val, regs, insts))
+        .Assign(name, val) -> .Assign(name, rewrite_expr_id(val, regs, insts))
+        .FieldAssign(obj, f, val) -> .FieldAssign(rewrite_expr_id(obj, regs, insts), f, rewrite_expr_id(val, regs, insts))
         .ListLit(elems) -> .ListLit(rewrite_expr_list(elems, regs, insts))
         .Tuple(elems) -> .Tuple(rewrite_expr_list(elems, regs, insts))
         .MapLit(entries) -> .MapLit(rewrite_expr_list(entries, regs, insts))
@@ -2613,7 +2613,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         // bare `Box`. Mirrors how fn params are rewritten.
         .Lambda(params, body) -> .Lambda(rewrite_param_types(params, regs, insts), rewrite_expr(body, regs, insts))
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, regs, insts), rewrite_expr(r, regs, insts))
-        .Try(e) -> .Try(rewrite_expr(e, regs, insts))
+        .Try(e) -> .Try(rewrite_expr_id(e, regs, insts))
         .With(obj, overrides) -> .With(rewrite_expr(obj, regs, insts), rewrite_field_inits(overrides, regs, insts))
         .ListComp(body, v, coll, filter) -> {
             if filter != null {
@@ -2626,18 +2626,18 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         // Mirror collect_inst_expr — must rewrite every sub-expression
         // so mangled-name substitution reaches them too.
         .Slice(obj, start, end) -> .Slice(rewrite_expr(obj, regs, insts), rewrite_expr(start, regs, insts), rewrite_expr(end, regs, insts))
-        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr(obj, regs, insts), idx)
-        .IsCheck(subj, v) -> .IsCheck(rewrite_expr(subj, regs, insts), v)
+        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr_id(obj, regs, insts), idx)
+        .IsCheck(subj, v) -> .IsCheck(rewrite_expr_id(subj, regs, insts), v)
         .InCheck(needle, items) -> .InCheck(rewrite_expr(needle, regs, insts), rewrite_expr_list(items, regs, insts))
-        .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr(obj, regs, insts), f)
+        .OptionalChain(obj, f) -> .OptionalChain(rewrite_expr_id(obj, regs, insts), f)
         .OptionalMethodCall(obj, m, a) -> .OptionalMethodCall(rewrite_expr(obj, regs, insts), m, rewrite_expr_list(a, regs, insts))
-        .Spawn(body) -> .Spawn(rewrite_expr(body, regs, insts))
+        .Spawn(body) -> .Spawn(rewrite_expr_id(body, regs, insts))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, regs, insts)) }
         }
-        .Isolated(body) -> .Isolated(rewrite_expr(body, regs, insts))
+        .Isolated(body) -> .Isolated(rewrite_expr_id(body, regs, insts))
         .Quote(k, body) -> .Quote(k, rewrite_expr(body, regs, insts))
-        .Splice(target) -> .Splice(rewrite_expr(target, regs, insts))
+        .Splice(target) -> .Splice(rewrite_expr_id(target, regs, insts))
         .When(arms) -> .When(rewrite_when_arms(arms, regs, insts))
         _ -> expr
     }

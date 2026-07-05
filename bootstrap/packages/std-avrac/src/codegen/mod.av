@@ -400,14 +400,14 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
             let str_ptr = ctx.global_str(inner, ".str")
             ok_emit(str_ptr, .Str)
         }
-        .Grouping(inner) -> emit_expr(ctx, env, inner)
-        .Unary(op, right) -> emit_unary(ctx, env, op, right)
+        .Grouping(inner) -> emit_expr(ctx, env, ctx.nodes.exprs.get(inner))
+        .Unary(op, right) -> emit_unary(ctx, env, op, ctx.nodes.exprs.get(right))
         .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
         .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
         .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
         .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {
-            mut r = emit_expr(ctx, env, value)?
+            mut r = emit_expr(ctx, env, ctx.nodes.exprs.get(value))?
             let local = env_lookup(env, name)
             if local.found {
                 // Optional box/unbox into the variable's slot (no-op when neither applies).

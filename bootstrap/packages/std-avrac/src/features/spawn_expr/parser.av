@@ -13,6 +13,6 @@ impl Parser {
         }
         // parse_block_expression consumes { stmts }
         let body_id = self.parse_block_expression()?
-        .Ok(self.alloc1(Expr.Spawn(self.expr_of(body_id)), body_id))
+        .Ok(self.alloc_leaf(Expr.Spawn(body_id)))
     }
 }

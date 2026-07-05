@@ -2180,11 +2180,11 @@ export enum Expr {
     /// when the name resolves to a top-level / module-qualified item.
     Ident(name: string)
     /// `name = value` reassignment. Only valid for `mut` bindings.
-    Assign(name: string, value: Expr)
+    Assign(name: string, value: ExprId)
     /// `(expr)` — preserves source parenthesisation for renderer.
-    Grouping(expr: Expr)
+    Grouping(expr: ExprId)
     /// Prefix unary: `!x`, `-x`, `~x`.
-    Unary(op: UnOp, right: Expr)
+    Unary(op: UnOp, right: ExprId)
     /// Binary infix: `a + b`, `x == y`, `a & b`.
     Binary(left: Expr, op: BinOp, right: Expr)
     /// Short-circuit logical: `a && b`, `a || b`.
@@ -2196,7 +2196,7 @@ export enum Expr {
     /// Struct literal: `Foo { x: 1, y: 2 }`.
     StructLit(name: string, inits: List<FieldInit>)
     /// Field access: `obj.field`.
-    FieldAccess(obj: Expr, field: string)
+    FieldAccess(obj: ExprId, field: string)
     /// Enum constructor with payload: `Color.Red(255)` or `.Some(x)`.
     EnumCtor(type_name: string, variant: string, args: List<SExpr>)
     /// Index access: `list[i]` / `map["key"]`.
@@ -2206,14 +2206,14 @@ export enum Expr {
     /// `match subject { arms }` — match used as an expression.
     MatchExpr(subject: Expr, arms: List<MatchArm>)
     /// Field reassignment: `obj.field = value`.
-    FieldAssign(obj: Expr, field: string, value: Expr)
+    FieldAssign(obj: ExprId, field: string, value: ExprId)
     /// Ternary-like `if cond { then } else { else_branch }` as an expr.
     IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
     /// Null coalesce: `a ?? default`.
     NullCoalesce(left: Expr, right: Expr)
     /// Optional chain: `obj?.field` — null obj passes through, no
     /// deref on null.
-    OptionalChain(obj: Expr, field: string)
+    OptionalChain(obj: ExprId, field: string)
     /// Optional method call: `obj?.method(args)` — null obj short-circuits
     /// to none, otherwise calls the method on the present receiver and wraps
     /// the result. Sibling of OptionalChain for the call form (which needs to
@@ -2222,11 +2222,11 @@ export enum Expr {
     OptionalMethodCall(obj: Expr, method: string, args: List<SExpr>)
     /// Error / null propagate: `expr?` — bails the enclosing fn early
     /// if `expr` is Err / null.
-    Try(expr: Expr)
+    Try(expr: ExprId)
     /// Tuple literal: `(a, b, c)`.
     Tuple(elements: List<SExpr>)
     /// Tuple index: `t.0`, `t.1`.
-    TupleIndex(obj: Expr, index: int)
+    TupleIndex(obj: ExprId, index: int)
     /// Functional struct update: `obj with { field: new_value }`.
     With(obj: Expr, overrides: List<FieldInit>)
     /// List literal: `[1, 2, 3]`.
@@ -2241,7 +2241,7 @@ export enum Expr {
     /// Float literal (text form, like Number).
     FloatLit(value: string)
     /// Type-narrowing test: `subject is .Variant`.
-    IsCheck(subject: Expr, variant_name: string)
+    IsCheck(subject: ExprId, variant_name: string)
     /// Membership test: `needle in [a, b, c]`.
     InCheck(needle: Expr, items: List<SExpr>)
     /// List comprehension: `[body for variable in collection if filter]`.
@@ -2255,7 +2255,7 @@ export enum Expr {
     /// erroring `expr` by binding the error to `e`.
     Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
     /// `spawn body` — start a green-thread Task running `body`.
-    Spawn(body: Expr)
+    Spawn(body: ExprId)
     /// `channel<T>()` / `channel<T>(cap)` — construct a typed channel
     /// (spec Axis 18). `capacity` is null for the unbounded form;
     /// `channel<T>(0)` is a rendezvous channel (send blocks until a
@@ -2265,7 +2265,7 @@ export enum Expr {
     /// child's bytes return value travels back through a pipe. Crash-
     /// safe sibling of `spawn { }`. Lowers to `avra_isolated_run` at
     /// codegen with body wrapped in a zero-arg closure.
-    Isolated(body: Expr)
+    Isolated(body: ExprId)
     /// `quote { body }` — captures the AST of `body` as a value.
     /// Lowering pass turns this into AST-construction calls so
     /// evaluating the result rebuilds the original AST node.
@@ -2277,7 +2277,7 @@ export enum Expr {
     /// Outside a quote body the parser produces Expr.Unary(BitNot, ...)
     /// instead, so the same `~` token is overloaded by context.
     /// Phase 4 (vez6.4) of Components V2.
-    Splice(target: Expr)
+    Splice(target: ExprId)
 }
 
 /// Avra statement AST. Anything that doesn't produce a value lowers
@@ -2779,34 +2779,34 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Bool(value) -> value
         .None -> "none"
         .Ident(name) -> name
-        .Assign(name, value) -> "(assign ${name} ${render_expr(store, value)})"
-        .Grouping(inner) -> "(group ${render_expr(store, inner)})"
-        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, right)})"
+        .Assign(name, value) -> "(assign ${name} ${render_expr(store, store.exprs.get(value))})"
+        .Grouping(inner) -> "(group ${render_expr(store, store.exprs.get(inner))})"
+        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(store, store.exprs.get(right))})"
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
         .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(store, left)} ${render_expr(store, right)})"
         .Call(callee, args) -> "(call ${render_expr(store, callee)} ${render_expr_list(store, args)})"
         .GenericCall(callee, type_args, args) -> "(call ${render_expr(store, callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(store, args)})"
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(store, inits)})"
-        .FieldAccess(obj, field) -> "(field ${render_expr(store, obj)} ${field})"
+        .FieldAccess(obj, field) -> "(field ${render_expr(store, store.exprs.get(obj))} ${field})"
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(store, args)})"
         .Index(obj, idx) -> "(index ${render_expr(store, obj)} ${render_expr(store, idx)})"
         .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
         .MatchExpr(subject, arms) -> "(match-expr ${render_expr(store, subject)} ${render_match_arm_list(store, arms)})"
-        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, obj)} ${field} ${render_expr(store, value)})"
+        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, c)} ${render_expr(store, t)} ${render_expr(store, e)})"
         .NullCoalesce(left, right) -> "(?? ${render_expr(store, left)} ${render_expr(store, right)})"
-        .OptionalChain(obj, field) -> "(?. ${render_expr(store, obj)} ${field})"
+        .OptionalChain(obj, field) -> "(?. ${render_expr(store, store.exprs.get(obj))} ${field})"
         .OptionalMethodCall(obj, method, args) -> "(?.call ${render_expr(store, obj)} ${method} ${render_expr_list(store, args)})"
-        .Try(inner) -> "(? ${render_expr(store, inner)})"
+        .Try(inner) -> "(? ${render_expr(store, store.exprs.get(inner))})"
         .Tuple(elements) -> "(tuple ${render_expr_list(store, elements)})"
-        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, obj)} ${string(idx)})"
+        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(store, store.exprs.get(obj))} ${string(idx)})"
         .With(obj, overrides) -> "(with ${render_expr(store, obj)} ${render_field_init_list(store, overrides)})"
         .ListLit(elements) -> "(list ${render_expr_list(store, elements)})"
         .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(store, body)})"
         .MapLit(entries) -> "(map ${render_expr_list(store, entries)})"
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice ${render_expr(store, obj)} ${render_expr(store, start)}..${render_expr(store, end)})"
-        .IsCheck(subject, vname) -> "(is ${render_expr(store, subject)} .${vname})"
+        .IsCheck(subject, vname) -> "(is ${render_expr(store, store.exprs.get(subject))} .${vname})"
         .InCheck(needle, items) -> "(in ${render_expr(store, needle)} [${render_expr_list(store, items)}])"
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(store, arms)})"
@@ -2815,7 +2815,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
             if filter != null { "${head} if ${render_expr(store, filter!)})" } else { "${head})" }
         }
         .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(store, inner)} (${binding}) ${render_expr(store, body)})"
-        .Spawn(body) -> "(spawn ${render_expr(store, body)})"
+        .Spawn(body) -> "(spawn ${render_expr(store, store.exprs.get(body))})"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
                 "(channel<${vtype_render_full(elem)}>)"
@@ -2823,9 +2823,9 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
                 "(channel<${vtype_render_full(elem)}> ${render_expr(store, capacity!)})"
             }
         }
-        .Isolated(body) -> "(isolated ${render_expr(store, body)})"
+        .Isolated(body) -> "(isolated ${render_expr(store, store.exprs.get(body))})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr(store, body)})"
-        .Splice(target) -> "(splice ${render_expr(store, target)})"
+        .Splice(target) -> "(splice ${render_expr(store, store.exprs.get(target))})"
     }
 }
 

@@ -144,6 +144,18 @@ fn build_to_bytes_fn(store: NodeStore, fields: List<FieldEntry>) -> Stmt {
     Stmt.Function("to_bytes", empty_tp, params, ValueType.Bytes, body)
 }
 
+/// `receiver.field` — the receiver is a synthesised boxed node, so it
+/// must be allocated into the arena (FieldAccess holds an ExprId). One
+/// place to remember the leaf-wrap, so a new access site can't drop it.
+fn field_access(store: NodeStore, receiver: Expr, field: string) -> Expr {
+    Expr.FieldAccess(store.exprs.add_leaf(receiver), field)
+}
+
+/// `receiver.method(args)` — the call wrapper over `field_access`.
+fn method_call(store: NodeStore, receiver: Expr, method: string, args: List<SExpr>) -> Expr {
+    Expr.Call(field_access(store, receiver, method), args)
+}
+
 fn build_chain(store: NodeStore, fields: List<FieldEntry>) -> Expr {
     // Qualified call so callers don't need `use bytes_builder`. The
     // resolver short-circuits on QualifiedIdent and binds straight
@@ -152,7 +164,7 @@ fn build_chain(store: NodeStore, fields: List<FieldEntry>) -> Expr {
     let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
     let written = chain_writes(store, start, fields, true)
     // Cap with `.finish()` so the chain produces a `bytes` value.
-    Expr.Call(Expr.FieldAccess(written, "finish"), [])
+    method_call(store, written, "finish", [])
 }
 
 /// `from_self == true` references each field via `self.<name>`
@@ -169,7 +181,7 @@ fn chain_writes(store: NodeStore, base: Expr, fields: List<FieldEntry>, from_sel
         let name = e.name
         let ty = e.resolved
         let value_expr = if from_self {
-            Expr.FieldAccess(Expr.Ident("self"), name)
+            field_access(store, Expr.Ident("self"), name)
         } else {
             Expr.Ident(name)
         }
@@ -181,9 +193,9 @@ fn chain_writes(store: NodeStore, base: Expr, fields: List<FieldEntry>, from_sel
         // doesn't, the type-checker will catch the undefined
         // `to_bytes` later with a clear error.
         if ty is .Struct {
-            let inner_bytes = Expr.Call(Expr.FieldAccess(value_expr, "to_bytes"), [])
+            let inner_bytes = method_call(store, value_expr, "to_bytes", [])
             let args = [sexpr_dummy(inner_bytes)]
-            acc = Expr.Call(Expr.FieldAccess(acc, "write_bytes"), args)
+            acc = method_call(store, acc, "write_bytes", args)
             i = i + 1
             continue
         }
@@ -204,7 +216,7 @@ fn chain_writes(store: NodeStore, base: Expr, fields: List<FieldEntry>, from_sel
                 // the impl still type-checks; round-trip is lossy
                 // until follow-up sub-tickets extend the table.
                 let args = [sexpr_dummy(value_expr)]
-                acc = Expr.Call(Expr.FieldAccess(acc, writer), args)
+                acc = method_call(store, acc, writer, args)
             }
         }
         i = i + 1
@@ -231,15 +243,13 @@ fn list_of_struct_block(store: NodeStore, base: Expr, value_expr: Expr, field_na
     let bvar = "__b_" + field_name
     let xvar = "__x_" + field_name
     // mut __b_<n> = base.write_int(value_expr.length)
-    let len_expr = Expr.FieldAccess(value_expr, "length")
-    let init_call = Expr.Call(Expr.FieldAccess(base, "write_int"),
-        [sexpr_dummy(len_expr)])
+    let len_expr = field_access(store, value_expr, "length")
+    let init_call = method_call(store, base, "write_int", [sexpr_dummy(len_expr)])
     let init_stmt = Stmt.Mut(bvar, ValueType.Unknown, store.exprs.add_leaf(init_call))
     // body: __b_<n> = __b_<n>.write_bytes(__x_<n>.to_bytes())
-    let x_to_bytes = Expr.Call(Expr.FieldAccess(Expr.Ident(xvar), "to_bytes"), [])
-    let new_b = Expr.Call(Expr.FieldAccess(Expr.Ident(bvar), "write_bytes"),
-        [sexpr_dummy(x_to_bytes)])
-    let assign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(bvar, new_b)))
+    let x_to_bytes = method_call(store, Expr.Ident(xvar), "to_bytes", [])
+    let new_b = method_call(store, Expr.Ident(bvar), "write_bytes", [sexpr_dummy(x_to_bytes)])
+    let assign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(bvar, store.exprs.add_leaf(new_b))))
     let assign_body: List<StmtId> = [store.stmts.add_leaf(assign_stmt)]
     let body = store.stmts.add_leaf(Stmt.Block(assign_body))
     let for_stmt = Stmt.ForIn(xvar, store.exprs.add_leaf(value_expr), body)
@@ -396,13 +406,13 @@ fn build_reads(store: NodeStore, fields: List<FieldEntry>) -> List<StmtId> {
 /// hiding the mut.
 fn read_then_reassign(store: NodeStore, field_name: string, value_name: string, reader: string) -> List<StmtId> {
     let r_next = "__r_" + field_name
-    let read_call = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), reader), [])
+    let read_call = method_call(store, Expr.Ident("r"), reader, [])
     let destruct_names: List<ParamEntry> = [
         ParamEntry { name: value_name, vtype: ValueType.Unknown },
         ParamEntry { name: r_next, vtype: ValueType.Unknown },
     ]
     let destruct_stmt = Stmt.LetDestructure(destruct_names, store.exprs.add_leaf(read_call))
-    let reassign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", Expr.Ident(r_next))))
+    let reassign_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", store.exprs.add_leaf(Expr.Ident(r_next)))))
     [store.stmts.add_leaf(destruct_stmt), store.stmts.add_leaf(reassign_stmt)]
 }
 
@@ -445,7 +455,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     // while __i < __count { ... }
     let cond = Expr.Binary(Expr.Ident(iname), BinOp.Lt, Expr.Ident(cname))
     // let (__raw, __r2) = r.read_bytes()
-    let raw_read = Expr.Call(Expr.FieldAccess(Expr.Ident("r"), "read_bytes"), [])
+    let raw_read = method_call(store, Expr.Ident("r"), "read_bytes", [])
     let raw_names: List<ParamEntry> = [
         ParamEntry { name: rawname, vtype: ValueType.Unknown },
         ParamEntry { name: rname, vtype: ValueType.Unknown },
@@ -454,14 +464,13 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     // __acc = __acc.push(from_bytes_<Inner>(__raw))
     let from_call = Expr.Call(Expr.Ident("from_bytes_" + inner_name),
         [sexpr_dummy(Expr.Ident(rawname))])
-    let push_call = Expr.Call(Expr.FieldAccess(Expr.Ident(aname), "push"),
-        [sexpr_dummy(from_call)])
-    let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, push_call)))
+    let push_call = method_call(store, Expr.Ident(aname), "push", [sexpr_dummy(from_call)])
+    let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, store.exprs.add_leaf(push_call))))
     // r = __r2
-    let r_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", Expr.Ident(rname))))
+    let r_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign("r", store.exprs.add_leaf(Expr.Ident(rname)))))
     // __i = __i + 1
     let i_inc = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(iname,
-        Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1")))))
+        store.exprs.add_leaf(Expr.Binary(Expr.Ident(iname), BinOp.Add, Expr.Number("1"))))))
 
     let loop_body_stmts: List<StmtId> = [
         store.stmts.add_leaf(raw_stmt),
@@ -637,12 +646,12 @@ fn field_list_to_param_list(fields: List<FieldEntry>) -> List<ParamEntry> {
 fn build_variant_write_chain(store: NodeStore, tag: int, payload: List<FieldEntry>) -> Expr {
     let tag_arg: List<SExpr> = [sexpr_dummy(Expr.Number(string(tag)))]
     let start = Expr.Call(Expr.QualifiedIdent("@std::process::bytes_builder"), [])
-    let with_tag = Expr.Call(Expr.FieldAccess(start, "write_int"), tag_arg)
+    let with_tag = method_call(store, start, "write_int", tag_arg)
     // Variant payloads are match-arm bindings (local idents),
     // hence from_self=false. Reuses the same codec table as
     // struct fields via the shared chain_writes.
     let with_payload = chain_writes(store, with_tag, payload, false)
-    Expr.Call(Expr.FieldAccess(with_payload, "finish"), [])
+    method_call(store, with_payload, "finish", [])
 }
 
 /// fn from_bytes_<T>(b: bytes) -> T {
@@ -756,7 +765,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     let ret_ty = ValueType.Enum("Result", result_type_args, 0)
     // Inner closure: () -> body().to_bytes()
     let body_call = Expr.Call(Expr.Ident("body"), [])
-    let to_bytes_call = Expr.Call(Expr.FieldAccess(body_call, "to_bytes"), [])
+    let to_bytes_call = method_call(store, body_call, "to_bytes", [])
     let empty_lp: List<ParamEntry> = []
     let inner_closure = Expr.Lambda(empty_lp, to_bytes_call)
     // Subject: @std::process::isolated_bytes(closure). Qualified

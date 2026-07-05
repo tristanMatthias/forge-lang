@@ -127,36 +127,36 @@ fn any_quote_in_stmt(store: NodeStore, stmt: Stmt) -> bool {
 fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Quote(_, _) -> true
-        .Splice(target) -> any_quote_in_expr(store, target)
+        .Splice(target) -> any_quote_in_expr(store, store.exprs.get(target))
         .Binary(l, _, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
-        .Unary(_, r) -> any_quote_in_expr(store, r)
+        .Unary(_, r) -> any_quote_in_expr(store, store.exprs.get(r))
         .Logical(l, _, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
         .Call(callee, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
         .GenericCall(callee, _, args) -> any_quote_in_expr(store, callee) || any_quote_in_expr_list(store, args)
-        .Grouping(inner) -> any_quote_in_expr(store, inner)
+        .Grouping(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
         .Block(body) -> any_quote_in_stmt_list(store, body)
         .IfExpr(c, t, e) -> any_quote_in_expr(store, c) || any_quote_in_expr(store, t) || any_quote_in_expr(store, e)
-        .Assign(_, v) -> any_quote_in_expr(store, v)
+        .Assign(_, v) -> any_quote_in_expr(store, store.exprs.get(v))
         .StructLit(_, inits) -> any_quote_in_field_inits(store, inits)
-        .FieldAccess(obj, _) -> any_quote_in_expr(store, obj)
-        .FieldAssign(obj, _, v) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, v)
+        .FieldAccess(obj, _) -> any_quote_in_expr(store, store.exprs.get(obj))
+        .FieldAssign(obj, _, v) -> any_quote_in_expr(store, store.exprs.get(obj)) || any_quote_in_expr(store, store.exprs.get(v))
         .EnumCtor(_, _, args) -> any_quote_in_expr_list(store, args)
         .Index(obj, idx) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, idx)
         .NullCoalesce(l, r) -> any_quote_in_expr(store, l) || any_quote_in_expr(store, r)
-        .OptionalChain(obj, _) -> any_quote_in_expr(store, obj)
+        .OptionalChain(obj, _) -> any_quote_in_expr(store, store.exprs.get(obj))
         .OptionalMethodCall(obj, _, args) -> any_quote_in_expr(store, obj) || any_quote_in_expr_list(store, args)
-        .Try(inner) -> any_quote_in_expr(store, inner)
+        .Try(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
         .Tuple(elems) -> any_quote_in_expr_list(store, elems)
-        .TupleIndex(obj, _) -> any_quote_in_expr(store, obj)
+        .TupleIndex(obj, _) -> any_quote_in_expr(store, store.exprs.get(obj))
         .With(obj, overrides) -> any_quote_in_expr(store, obj) || any_quote_in_field_inits(store, overrides)
         .ListLit(elems) -> any_quote_in_expr_list(store, elems)
         .Lambda(_, body) -> any_quote_in_expr(store, body)
         .MapLit(entries) -> any_quote_in_expr_list(store, entries)
         .Slice(obj, s, e) -> any_quote_in_expr(store, obj) || any_quote_in_expr(store, s) || any_quote_in_expr(store, e)
-        .IsCheck(subj, _) -> any_quote_in_expr(store, subj)
+        .IsCheck(subj, _) -> any_quote_in_expr(store, store.exprs.get(subj))
         .InCheck(needle, items) -> any_quote_in_expr(store, needle) || any_quote_in_expr_list(store, items)
-        .Spawn(body) -> any_quote_in_expr(store, body)
-        .Isolated(body) -> any_quote_in_expr(store, body)
+        .Spawn(body) -> any_quote_in_expr(store, store.exprs.get(body))
+        .Isolated(body) -> any_quote_in_expr(store, store.exprs.get(body))
         .MatchExpr(subj, arms) -> any_quote_in_expr(store, subj) || any_quote_in_match_arms(store, arms)
         _ -> false
     }
@@ -266,36 +266,36 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
     match expr {
         .Quote(kind, body) -> dispatch_quote_kind(store, kind, body)
         .Binary(l, op, r) -> .Binary(lower_expr(store, l), op, lower_expr(store, r))
-        .Unary(op, r) -> .Unary(op, lower_expr(store, r))
+        .Unary(op, r) -> .Unary(op, lower_expr_id(store, r))
         .Logical(l, op, r) -> .Logical(lower_expr(store, l), op, lower_expr(store, r))
         .Call(callee, args) -> .Call(lower_expr(store, callee), lower_expr_list(store, args))
         .GenericCall(callee, ta, args) -> .GenericCall(lower_expr(store, callee), ta, lower_expr_list(store, args))
-        .Grouping(inner) -> .Grouping(lower_expr(store, inner))
+        .Grouping(inner) -> .Grouping(lower_expr_id(store, inner))
         .Block(body) -> .Block(lower_stmt_list(store, body))
         .IfExpr(c, t, e) -> .IfExpr(lower_expr(store, c), lower_expr(store, t), lower_expr(store, e))
-        .Assign(name, v) -> .Assign(name, lower_expr(store, v))
+        .Assign(name, v) -> .Assign(name, lower_expr_id(store, v))
         .StructLit(name, inits) -> .StructLit(name, lower_field_inits(store, inits))
-        .FieldAccess(obj, field) -> .FieldAccess(lower_expr(store, obj), field)
-        .FieldAssign(obj, field, v) -> .FieldAssign(lower_expr(store, obj), field, lower_expr(store, v))
+        .FieldAccess(obj, field) -> .FieldAccess(lower_expr_id(store, obj), field)
+        .FieldAssign(obj, field, v) -> .FieldAssign(lower_expr_id(store, obj), field, lower_expr_id(store, v))
         .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, lower_expr_list(store, args))
         .Index(obj, idx) -> .Index(lower_expr(store, obj), lower_expr(store, idx))
         .NullCoalesce(l, r) -> .NullCoalesce(lower_expr(store, l), lower_expr(store, r))
-        .OptionalChain(obj, field) -> .OptionalChain(lower_expr(store, obj), field)
+        .OptionalChain(obj, field) -> .OptionalChain(lower_expr_id(store, obj), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(lower_expr(store, obj), method, lower_expr_list(store, args))
-        .Try(inner) -> .Try(lower_expr(store, inner))
+        .Try(inner) -> .Try(lower_expr_id(store, inner))
         .Tuple(elems) -> .Tuple(lower_expr_list(store, elems))
-        .TupleIndex(obj, idx) -> .TupleIndex(lower_expr(store, obj), idx)
+        .TupleIndex(obj, idx) -> .TupleIndex(lower_expr_id(store, obj), idx)
         .With(obj, overrides) -> .With(lower_expr(store, obj), lower_field_inits(store, overrides))
         .ListLit(elems) -> .ListLit(lower_expr_list(store, elems))
         .Lambda(params, body) -> .Lambda(params, lower_expr(store, body))
         .MapLit(entries) -> .MapLit(lower_expr_list(store, entries))
         .Slice(obj, s, e) -> .Slice(lower_expr(store, obj), lower_expr(store, s), lower_expr(store, e))
-        .IsCheck(subj, vname) -> .IsCheck(lower_expr(store, subj), vname)
+        .IsCheck(subj, vname) -> .IsCheck(lower_expr_id(store, subj), vname)
         .InCheck(needle, items) -> .InCheck(lower_expr(store, needle), lower_expr_list(store, items))
-        .Spawn(body) -> .Spawn(lower_expr(store, body))
-        .Isolated(body) -> .Isolated(lower_expr(store, body))
+        .Spawn(body) -> .Spawn(lower_expr_id(store, body))
+        .Isolated(body) -> .Isolated(lower_expr_id(store, body))
         .MatchExpr(subj, arms) -> .MatchExpr(lower_expr(store, subj), lower_match_arms(store, arms))
-        .Splice(target) -> .Splice(lower_expr(store, target))
+        .Splice(target) -> .Splice(lower_expr_id(store, target))
         _ -> expr
     }
 }
@@ -499,34 +499,34 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         }
         .Ident(name) -> expr_ctor("Ident", string_arg(name))
         .QualifiedIdent(path) -> expr_ctor("QualifiedIdent", string_arg(path))
-        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr(store, value)))
+        .Assign(name, value) -> expr_ctor("Assign", two_args(sexpr_dummy_call(string_lit_expr(name)), construct_expr_id(store, value)))
         .Binary(l, op, r) -> expr_ctor("Binary", three_args(construct_expr(store, l), construct_binop(store, op), construct_expr(store, r)))
-        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(store, op), construct_expr(store, r)))
+        .Unary(op, r) -> expr_ctor("Unary", two_args(construct_unop(store, op), construct_expr_id(store, r)))
         .Logical(l, op, r) -> expr_ctor("Logical", three_args(construct_expr(store, l), construct_logicop(store, op), construct_expr(store, r)))
-        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr(store, inner)))
+        .Grouping(inner) -> expr_ctor("Grouping", one_arg(construct_expr_id(store, inner)))
         .Call(callee, args) -> expr_ctor("Call", two_args(construct_expr(store, callee), construct_expr_list(store, args)))
-        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr(store, obj), string_lit_expr(field)))
+        .FieldAccess(obj, field) -> expr_ctor("FieldAccess", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
         .Index(obj, idx) -> expr_ctor("Index", two_args(construct_expr(store, obj), construct_expr(store, idx)))
         .IfExpr(c, t, el) -> expr_ctor("IfExpr", three_args(construct_expr(store, c), construct_expr(store, t), construct_expr(store, el)))
         .Tuple(elements) -> expr_ctor("Tuple", one_arg(construct_expr_list(store, elements)))
         .ListLit(elements) -> expr_ctor("ListLit", one_arg(construct_expr_list(store, elements)))
         .NullCoalesce(l, r) -> expr_ctor("NullCoalesce", two_args(construct_expr(store, l), construct_expr(store, r)))
-        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr(store, obj), string_lit_expr(field)))
+        .OptionalChain(obj, field) -> expr_ctor("OptionalChain", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
         .OptionalMethodCall(obj, method, args) -> expr_ctor("OptionalMethodCall", three_args(construct_expr(store, obj), string_lit_expr(method), construct_expr_list(store, args)))
-        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr(store, inner)))
+        .Try(inner) -> expr_ctor("Try", one_arg(construct_expr_id(store, inner)))
         .FloatLit(v) -> expr_ctor("FloatLit", string_arg(v))
         .StructLit(name, inits) -> expr_ctor("StructLit", two_args(name_or_splice(name), construct_field_init_list(store, inits)))
         .EnumCtor(type_name, variant, args) -> expr_ctor("EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_list(store, args)))
         .MapLit(entries) -> expr_ctor("MapLit", one_arg(construct_expr_list(store, entries)))
-        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr(store, subj), string_lit_expr(vname)))
+        .IsCheck(subj, vname) -> expr_ctor("IsCheck", two_args(construct_expr_id(store, subj), string_lit_expr(vname)))
         .InCheck(needle, items) -> expr_ctor("InCheck", two_args(construct_expr(store, needle), construct_expr_list(store, items)))
         .Slice(obj, start, end) -> expr_ctor("Slice", three_args(construct_expr(store, obj), construct_expr(store, start), construct_expr(store, end)))
-        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr(store, obj), Expr.Number(string(idx))))
+        .TupleIndex(obj, idx) -> expr_ctor("TupleIndex", two_args(construct_expr_id(store, obj), Expr.Number(string(idx))))
         .With(obj, overrides) -> expr_ctor("With", two_args(construct_expr(store, obj), construct_field_init_list(store, overrides)))
-        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr(store, obj), string_lit_expr(field), construct_expr(store, value)))
+        .FieldAssign(obj, field, value) -> expr_ctor("FieldAssign", three_args(construct_expr_id(store, obj), string_lit_expr(field), construct_expr_id(store, value)))
         .Lambda(params, body) -> expr_ctor("Lambda", two_args(construct_param_list(store, params), construct_expr(store, body)))
-        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr(store, body)))
-        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr(store, body)))
+        .Spawn(body) -> expr_ctor("Spawn", one_arg(construct_expr_id(store, body)))
+        .Isolated(body) -> expr_ctor("Isolated", one_arg(construct_expr_id(store, body)))
         .Block(body) -> expr_ctor("Block", one_arg(construct_stmt_list(store, body)))
         // MatchExpr inside a quote — subject + arms become a runtime
         // `Expr.MatchExpr` value. The arm list goes through
@@ -538,7 +538,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         // to a runtime AST value of the right shape, so we emit it
         // straight through without a construct_expr wrap. That's the
         // whole point of splice: skip construction, paste the value.
-        .Splice(target) -> target
+        .Splice(target) -> store.exprs.get(target)
         // Nested Quote: `quote { ... quote { x } ... }` collapses one
         // level — the inner quote's BODY is what gets constructed, as
         // if the user had written `quote { ... x ... }` directly. This
@@ -718,7 +718,7 @@ fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
             let seg_lit = Expr.ListLit(current_seg)
             result_opt = if result_opt == null { seg_lit } else { list_concat_call(result_opt!, seg_lit) }
             let splice_body = arm.body
-            let splice_target = extract_splice_target(splice_body.node)
+            let splice_target = extract_splice_target(store, splice_body.node)
             result_opt = list_concat_call(result_opt!, splice_target)
             current_seg = []
         } else {
@@ -744,9 +744,9 @@ fn is_arm_splice_sentinel(arm: MatchArm) -> bool {
 /// The parser stores it as `Expr.Splice(target)`; we want just the
 /// target so its runtime value (a `List<MatchArm>`) flows into
 /// `list_concat` directly.
-fn extract_splice_target(body: Expr) -> Expr {
+fn extract_splice_target(store: NodeStore, body: Expr) -> Expr {
     match body {
-        .Splice(t) -> t
+        .Splice(t) -> store.exprs.get(t)
         _ -> body
     }
 }

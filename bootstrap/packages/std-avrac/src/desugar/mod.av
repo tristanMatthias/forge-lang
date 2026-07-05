@@ -441,7 +441,7 @@ fn rewrite_expr(store: NodeStore, expr: Expr) -> Expr {
 fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr>) -> Expr {
     let name = match callee { .Ident(n) -> n, _ -> "" }
     match name {
-        "assert" -> desugar_assert(args)
+        "assert" -> desugar_assert(store, args)
         "dbg" -> desugar_dbg(store, args)
         "todo" -> desugar_todo(args)
         "unreachable" -> desugar_unreachable(args)
@@ -455,7 +455,7 @@ fn rewrite_call(store: NodeStore, original: Expr, callee: Expr, args: List<SExpr
 /// `if !cond { panic(msg) } else null`. Default message is
 /// `"assertion failed"`. Calls without args become a panic so the
 /// failure surfaces immediately.
-fn desugar_assert(args: List<SExpr>) -> Expr {
+fn desugar_assert(store: NodeStore, args: List<SExpr>) -> Expr {
     if args.length == 0 {
         let panic_args: List<SExpr> = [sexpr_dummy(Expr.String("\"assert: no condition\""))]
         return Expr.Call(Expr.Ident("panic"), panic_args)
@@ -464,7 +464,7 @@ fn desugar_assert(args: List<SExpr>) -> Expr {
     let msg = if args.length > 1 { args[1].node } else { Expr.String("\"assertion failed\"") }
     let panic_args: List<SExpr> = [sexpr_dummy(msg)]
     Expr.IfExpr(
-        Expr.Unary(UnOp.Not, cond),
+        Expr.Unary(UnOp.Not, store.exprs.add_leaf(cond)),
         Expr.Call(Expr.Ident("panic"), panic_args),
         Expr.None
     )
@@ -554,24 +554,24 @@ fn desugar_min_max(store: NodeStore, args: List<SExpr>, is_min: int) -> Expr {
 fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
     match expr {
         .Binary(l, op, r) -> .Binary(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
-        .Unary(op, r) -> .Unary(op, desugar_expr(store, r, sigs))
+        .Unary(op, r) -> .Unary(op, desugar_expr_id(store, r, sigs))
         .Logical(l, op, r) -> .Logical(desugar_expr(store, l, sigs), op, desugar_expr(store, r, sigs))
         // Call args: desugar each arg, then pin any anonymous table row
         // to the callee's declared `List<Row>` parameter type (c080).
         .Call(callee, args) -> .Call(desugar_expr(store, callee, sigs), stamp_call_arg_tables(store, callee, desugar_expr_list(store, args, sigs), sigs))
-        .Grouping(inner) -> .Grouping(desugar_expr(store, inner, sigs))
-        .Assign(name, val) -> .Assign(name, desugar_expr(store, val, sigs))
+        .Grouping(inner) -> .Grouping(desugar_expr_id(store, inner, sigs))
+        .Assign(name, val) -> .Assign(name, desugar_expr_id(store, val, sigs))
         .Index(obj, idx) -> .Index(desugar_expr(store, obj, sigs), desugar_expr(store, idx, sigs))
-        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(store, obj, sigs), field)
-        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(store, obj, sigs), field, desugar_expr(store, val, sigs))
+        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr_id(store, obj, sigs), field)
+        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr_id(store, obj, sigs), field, desugar_expr_id(store, val, sigs))
         .IfExpr(c, t, e) -> .IfExpr(desugar_expr(store, c, sigs), desugar_expr(store, t, sigs), desugar_expr(store, e, sigs))
         .Block(body) -> .Block(desugar_stmt_list(store, body, sigs))
         .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(store, l, sigs), desugar_expr(store, r, sigs))
-        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(store, obj, sigs), field)
+        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr_id(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr(store, obj, sigs), method, desugar_expr_list(store, args, sigs))
-        .Try(inner) -> .Try(desugar_expr(store, inner, sigs))
+        .Try(inner) -> .Try(desugar_expr_id(store, inner, sigs))
         .Tuple(elems) -> .Tuple(desugar_expr_list(store, elems, sigs))
-        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(store, obj, sigs), idx)
+        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr_id(store, obj, sigs), idx)
         .ListLit(elems) -> .ListLit(desugar_expr_list(store, elems, sigs))
         .MapLit(entries) -> .MapLit(desugar_expr_list(store, entries, sigs))
         .Slice(obj, s, e) -> .Slice(desugar_expr(store, obj, sigs), desugar_expr(store, s, sigs), desugar_expr(store, e, sigs))
@@ -580,7 +580,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(store, subj, sigs), desugar_match_arms(store, arms, sigs))
         .When(arms) -> .When(desugar_when_arms(store, arms, sigs))
         .InCheck(needle, items) -> .InCheck(desugar_expr(store, needle, sigs), desugar_expr_list(store, items, sigs))
-        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(store, subj, sigs), variant)
+        .IsCheck(subj, variant) -> .IsCheck(desugar_expr_id(store, subj, sigs), variant)
         .ListComp(body, var, coll, filter) -> {
             // Recurse into body / coll / filter so sugar inside the
             // comprehension (assert, dbg, min, max, …) still gets
@@ -598,10 +598,10 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .EnumCtor(tn, variant, args) -> .EnumCtor(tn, variant, desugar_expr_list(store, args, sigs))
         .GenericCall(callee, type_args, args) -> .GenericCall(desugar_expr(store, callee, sigs), type_args, desugar_expr_list(store, args, sigs))
         .Catch(inner, binding, body, l, c) -> .Catch(desugar_expr(store, inner, sigs), binding, desugar_expr(store, body, sigs), l, c)
-        .Spawn(body) -> .Spawn(desugar_expr(store, body, sigs))
-        .Isolated(body) -> .Isolated(desugar_expr(store, body, sigs))
+        .Spawn(body) -> .Spawn(desugar_expr_id(store, body, sigs))
+        .Isolated(body) -> .Isolated(desugar_expr_id(store, body, sigs))
         .Quote(kind, body) -> .Quote(kind, desugar_expr(store, body, sigs))
-        .Splice(target) -> .Splice(desugar_expr(store, target, sigs))
+        .Splice(target) -> .Splice(desugar_expr_id(store, target, sigs))
         _ -> expr
     }
 }

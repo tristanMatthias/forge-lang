@@ -220,42 +220,42 @@ fn rw_stmt_ids(store: NodeStore, ids: List<StmtId>, ctx: RewriteCtx) -> List<Stm
 fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
-            match obj {
+            match store.exprs.get(obj) {
                 .Ident(name) -> {
                     if name == "self" {
                         if field == "__parent" { return Expr.Ident(ctx.parent_var) }
                         if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
-                        Expr.FieldAccess(Expr.Ident(ctx.inst), field)
-                    } else { Expr.FieldAccess(rw_expr(store, obj, ctx), field) }
+                        Expr.FieldAccess(store.exprs.add_leaf(Expr.Ident(ctx.inst)), field)
+                    } else { Expr.FieldAccess(rw_expr_id(store, obj, ctx), field) }
                 }
                 .FieldAccess(inner_obj, inner_field) -> {
-                    match inner_obj {
+                    match store.exprs.get(inner_obj) {
                         .Ident(name) -> {
                             if name == "self" && inner_field == "config" {
-                                Expr.FieldAccess(Expr.Ident(ctx.inst), field)
-                            } else { Expr.FieldAccess(rw_expr(store, obj, ctx), field) }
+                                Expr.FieldAccess(store.exprs.add_leaf(Expr.Ident(ctx.inst)), field)
+                            } else { Expr.FieldAccess(rw_expr_id(store, obj, ctx), field) }
                         }
-                        _ -> Expr.FieldAccess(rw_expr(store, obj, ctx), field)
+                        _ -> Expr.FieldAccess(rw_expr_id(store, obj, ctx), field)
                     }
                 }
-                _ -> Expr.FieldAccess(rw_expr(store, obj, ctx), field)
+                _ -> Expr.FieldAccess(rw_expr_id(store, obj, ctx), field)
             }
         }
-        .Assign(name, val) -> Expr.Assign(name, rw_expr(store, val, ctx))
+        .Assign(name, val) -> Expr.Assign(name, rw_expr_id(store, val, ctx))
         .FieldAssign(obj, field, val) -> {
-            match obj {
+            match store.exprs.get(obj) {
                 .Ident(name) -> {
                     if name == "self" && field == "__parent" {
-                        Expr.Assign(ctx.parent_var, rw_expr(store, val, ctx))
-                    } else { Expr.FieldAssign(rw_expr(store, obj, ctx), field, rw_expr(store, val, ctx)) }
+                        Expr.Assign(ctx.parent_var, rw_expr_id(store, val, ctx))
+                    } else { Expr.FieldAssign(rw_expr_id(store, obj, ctx), field, rw_expr_id(store, val, ctx)) }
                 }
-                _ -> Expr.FieldAssign(rw_expr(store, obj, ctx), field, rw_expr(store, val, ctx))
+                _ -> Expr.FieldAssign(rw_expr_id(store, obj, ctx), field, rw_expr_id(store, val, ctx))
             }
         }
         .Ident(name) -> if name == "self" { Expr.Ident(ctx.inst) } else { expr }
         .Call(callee, args) -> Expr.Call(rw_expr(store, callee, ctx), rw_expr_list(store, args, ctx))
         .Binary(l, op, r) -> Expr.Binary(rw_expr(store, l, ctx), op, rw_expr(store, r, ctx))
-        .Unary(op, r) -> Expr.Unary(op, rw_expr(store, r, ctx))
+        .Unary(op, r) -> Expr.Unary(op, rw_expr_id(store, r, ctx))
         .Logical(l, op, r) -> Expr.Logical(rw_expr(store, l, ctx), op, rw_expr(store, r, ctx))
         .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr(store, c, ctx), rw_expr(store, t, ctx), rw_expr(store, e, ctx))
         .Block(body) -> Expr.Block(rewrite_self(store, body, ctx))
@@ -311,7 +311,7 @@ fn rw_tpl_stmt_id(store: NodeStore, id: StmtId, inst: string, uc: List<CompConfi
 fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> Expr {
     match expr {
         .FieldAccess(obj, field) -> {
-            match obj {
+            match store.exprs.get(obj) {
                 .Ident(name) -> {
                     if name == "self" {
                         if field == "name" { return Expr.String("\"${inst}\"") }
@@ -319,10 +319,10 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
                         if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
                         return resolve_config_value(field, uc, schema)
                     }
-                    Expr.FieldAccess(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field)
+                    Expr.FieldAccess(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field)
                 }
                 .FieldAccess(inner_obj, inner_field) -> {
-                    match inner_obj {
+                    match store.exprs.get(inner_obj) {
                         .Ident(name) -> {
                             if name == "self" && inner_field == "config" {
                                 return resolve_config_value(field, uc, schema)
@@ -330,21 +330,21 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
                         }
                         _ -> {}
                     }
-                    Expr.FieldAccess(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field)
+                    Expr.FieldAccess(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field)
                 }
-                _ -> Expr.FieldAccess(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field)
+                _ -> Expr.FieldAccess(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field)
             }
         }
         .FieldAssign(obj, field, val) -> {
-            match obj {
+            match store.exprs.get(obj) {
                 .Ident(name) -> {
                     if name == "self" && field == "__parent" {
-                        return Expr.Assign(ctx.parent_var, rw_tpl_expr(store, val, inst, uc, schema, ctx))
+                        return Expr.Assign(ctx.parent_var, rw_tpl_expr_id(store, val, inst, uc, schema, ctx))
                     }
                 }
                 _ -> {}
             }
-            Expr.FieldAssign(rw_tpl_expr(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr(store, val, inst, uc, schema, ctx))
+            Expr.FieldAssign(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field, rw_tpl_expr_id(store, val, inst, uc, schema, ctx))
         }
         .Call(callee, args) -> Expr.Call(rw_tpl_expr(store, callee, inst, uc, schema, ctx), rw_tpl_expr_list(store, args, inst, uc, schema, ctx))
         .Binary(l, op, r) -> Expr.Binary(rw_tpl_expr(store, l, inst, uc, schema, ctx), op, rw_tpl_expr(store, r, inst, uc, schema, ctx))
@@ -610,7 +610,7 @@ fn slot_name_for_child(schema: List<ChildrenSlot>, child_comp: string) -> string
 /// matched the child's type.
 fn build_push_stmt(store: NodeStore, parent_var: string, slot: string, child_inst: string, line: int, col: int) -> SStmt {
     let push_target = Expr.FieldAccess(
-        Expr.FieldAccess(Expr.Ident(parent_var), slot),
+        store.exprs.add_leaf(Expr.FieldAccess(store.exprs.add_leaf(Expr.Ident(parent_var)), slot)),
         "push"
     )
     let push_args: List<SExpr> = [sexpr(Expr.Ident(child_inst), line, col)]

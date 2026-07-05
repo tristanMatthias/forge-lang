@@ -7,7 +7,7 @@ use codegen.{Ctx, EmitValue, err_emit, ok_emit}
 /// `IsCheck` AST node and forwards to `emit_is_check_inner`.
 export fn emit_is_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .IsCheck(subject, vname) -> emit_is_check_inner(ctx, env, subject, vname)
+        .IsCheck(subject, vname) -> emit_is_check_inner(ctx, env, ctx.nodes.exprs.get(subject), vname)
         _ -> err_emit("expected IsCheck")
     }
 }

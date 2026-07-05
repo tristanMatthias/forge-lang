@@ -13,6 +13,6 @@ impl Parser {
             return .Err("parse error")
         }
         let body_id = self.parse_block_expression()?
-        .Ok(self.alloc1(Expr.Isolated(self.expr_of(body_id)), body_id))
+        .Ok(self.alloc_leaf(Expr.Isolated(body_id)))
     }
 }

@@ -166,12 +166,11 @@ impl Parser {
             if self.check(Tk.Tilde) && self.quote_depth > 0 {
                 self.advance()
                 let target_id = self.parse_unary()?
-                let target = self.expr_of(target_id)
                 if self.check(Tk.Comma) { self.advance() }
                 let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
-                let splice = Expr.Splice(target)
+                let splice = Expr.Splice(target_id)
                 let sentinel_pat_id = self.alloc_pat_leaf(sentinel_pat)
-                let splice_id = self.alloc1(splice, target_id)
+                let splice_id = self.alloc_leaf(splice)
                 refs.push(NodeRef.PatRef(sentinel_pat_id))
                 refs.push(NodeRef.ExprRef(splice_id))
                 out.push(MatchArm {

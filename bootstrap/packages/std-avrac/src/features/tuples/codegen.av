@@ -50,7 +50,7 @@ fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> R
 /// node and forwards to `emit_tuple_index_inner`.
 export fn emit_tuple_index(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .TupleIndex(obj, idx) -> emit_tuple_index_inner(ctx, env, obj, idx)
+        .TupleIndex(obj, idx) -> emit_tuple_index_inner(ctx, env, ctx.nodes.exprs.get(obj), idx)
         _ -> err_emit("expected TupleIndex")
     }
 }

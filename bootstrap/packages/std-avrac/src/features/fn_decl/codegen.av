@@ -302,7 +302,7 @@ export fn emit_call(ctx: Ctx, env: List<VarBinding>, callee: Expr, args: List<SE
     match callee {
         .Ident(name) -> emit_call_named(ctx, env, name, args)
         .QualifiedIdent(path) -> emit_call_named(ctx, env, path, args)
-        .FieldAccess(obj, method) -> emit_method_call(ctx, env, obj, method, args)
+        .FieldAccess(obj, method) -> emit_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, args)
         _ -> {
             // Expression callee: evaluate it and call indirectly.
             // All callable values are closure arrays, so route through

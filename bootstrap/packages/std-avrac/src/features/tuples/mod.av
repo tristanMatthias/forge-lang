@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.tuples.{...}`.
 use core.{vtype_tuple_at}
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr, resolve_expr_list}
 use typeck.{check_expr, check_expr_list_types, tc_er}
 use features.eval.{Runtime, StepResult, Value, eval_expr, ok_result, error_result, value_list}
@@ -44,7 +44,7 @@ fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
 /// elements are positional.
 export fn tuple_index_feature() -> Feature {
     feature_new("tuple_index") with {
-        expr_tag: Expr.TupleIndex(Expr.None, 0),
+        expr_tag: Expr.TupleIndex(ExprId(0), 0),
         emit_expr: emit_tuple_index,
         resolve_expr: tuple_index_resolve,
         check_expr: tuple_index_check,
@@ -76,7 +76,7 @@ fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
 /// needs name resolution — the index is a literal.
 fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .TupleIndex(obj, _) -> resolve_expr(r, obj)
+        .TupleIndex(obj, _) -> resolve_expr(r, r.nodes.exprs.get(obj))
         _ -> r
     }
 }
@@ -86,7 +86,7 @@ fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .TupleIndex(obj, idx) -> {
-            let o = check_expr(tc, obj)
+            let o = check_expr(tc, tc.nodes.exprs.get(obj))
             tc_er(o.tc, vtype_tuple_at(o.ty, idx))
         }
         _ -> tc_er(tc, .Unknown)
