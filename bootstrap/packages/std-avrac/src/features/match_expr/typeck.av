@@ -640,7 +640,15 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
     while i < arms.length {
         let arm = arms[i]
         match arm.body.node {
-            .Block(stmts) -> acc = tc_check_explicit_returns(acc, fn_name, declared, acc.nodes.rows_of(stmts))
+            // Each arm's block is checked in a fresh scope so its local
+            // `let`s can't leak into sibling arms. Without the tc_enter/
+            // tc_exit, a `let value = …` in one arm (e.g. `.Number` binding
+            // an `int`) stays in `acc` and shadows a LATER arm's pattern var
+            // of the same name (e.g. `.Assign(name, value)` where `value` is
+            // an `ExprId`) — the use then type-checks against the stale
+            // binding. tc_exit keeps reported diagnostics; it only pops the
+            // arm's own bindings.
+            .Block(stmts) -> acc = tc_exit(tc_check_explicit_returns(tc_enter(acc), fn_name, declared, acc.nodes.rows_of(stmts)))
             // A non-block arm body's generic-arg conflict against the return type
             // is handled by `tc_check_match_tail_conflict` (called from
             // tc_check_implicit_return) — it binds the arm pattern correctly and

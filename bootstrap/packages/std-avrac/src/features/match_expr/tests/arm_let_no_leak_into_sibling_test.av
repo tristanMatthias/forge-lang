@@ -1,0 +1,52 @@
+// WHY: a `let` binding inside one match arm's block must NOT leak into a
+// SIBLING arm's scope. The return-type checker (`tc_check_match_arm_returns`)
+// threads one accumulator across every arm; without a fresh scope per arm, a
+// `let value = <int>` in an earlier arm stayed bound and SHADOWED a later
+// arm's pattern variable of the same name. When that pattern var is a newtype
+// (e.g. an `ExprId` arena handle) the use type-checked against the stale
+// `int`, producing a spurious F1000 ("expects NodeRef, got int"). This was
+// latent while the field type was a pointer (int→ptr is lenient) and surfaced
+// once the B-final flip made the payload a newtype-over-int arena id.
+
+/// A newtype arena handle — nominally distinct from the bare `int` it wraps.
+type NodeRef = int
+
+/// A tiny arena whose `get` demands the newtype handle, so a stale `int`
+/// binding is rejected at the call site instead of silently coercing.
+type RefArena = { slots: List<int> }
+impl RefArena {
+    fn get(self, id: NodeRef) -> int { self.slots[id.raw() - 1] }
+}
+
+/// Two variants whose payload names collide: `Lit`'s arm introduces a local
+/// `value: int` via `let`, and `Ref`'s arm binds a pattern `value: NodeRef`.
+enum RefNode {
+    Lit(text: string)
+    Ref(value: NodeRef)
+}
+
+/// Block arms with explicit `return`s — the exact shape that routes through
+/// `tc_check_match_arm_returns`. The `.Lit` arm's `let value` must stay local
+/// to it; the `.Ref` arm's `value` must resolve as the `NodeRef` pattern var.
+fn resolve_ref(a: RefArena, n: RefNode) -> int {
+    match n {
+        .Lit(text) -> {
+            let value = 100
+            return value
+        }
+        .Ref(value) -> {
+            return a.get(value)
+        }
+    }
+}
+
+spec "match arm let does not leak into sibling arm" {
+    then "the literal arm returns its own local let value" {
+        let arena = RefArena { slots: [11, 22, 33] }
+        resolve_ref(arena, RefNode.Lit("x")) == 100
+    }
+    then "the newtype-handle arm resolves through the arena" {
+        let arena = RefArena { slots: [11, 22, 33] }
+        resolve_ref(arena, RefNode.Ref(NodeRef(2))) == 22
+    }
+}
