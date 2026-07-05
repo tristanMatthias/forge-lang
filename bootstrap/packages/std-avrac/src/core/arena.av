@@ -550,6 +550,19 @@ impl NodeStore {
     fn ingest_stmt(self, node: Stmt, sp: ByteSpan) -> StmtId {
         self.stmts.add(node, NodeEdges { refs: self.ingest_children(node.all_children_spanned()) }, sp)
     }
+    /// Ingest each element of a boxed `SExpr` recipe as its own arena row,
+    /// returning the `List<ExprId>` a flipped id-list payload holds. Recipe
+    /// nodes carry no meaningful source position, so each rides `ingest_expr`
+    /// with `byte_span_none()` (its boxed children still walk normally). Used
+    /// to materialise a flipped `EnumCtor.args` / quote-constructed arg list
+    /// from the SExpr forms the reconstruction builders assemble.
+    fn ingest_sexpr_recipe(self, recipe: List<SExpr>) -> List<ExprId> {
+        mut ids: List<ExprId> = []
+        for se in recipe {
+            ids.push(self.ingest_expr(se.node, byte_span_none()))
+        }
+        ids
+    }
     /// Register `node` as a top-level root WITHOUT ingesting its subtree or a
     /// span — the shallow, source-free counterpart of `ingest_stmt`. No child
     /// edges and `byte_span_none()`, so no `LineIndex` is consulted and no span

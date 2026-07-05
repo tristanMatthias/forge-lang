@@ -30,21 +30,21 @@ fn fresh_probe_rt() -> Runtime {
 
 /// An argument expression that EVALUATES to a boxed Expr Value:
 /// the AST-construction form of `Expr.Number("42")`.
-fn boxed_expr_arg() -> Expr {
-    Expr.EnumCtor("@std::avrac::core::Expr", "Number", [sexpr_dummy(Expr.String("\"42\""))])
+fn boxed_expr_arg(store: NodeStore) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Expr", "Number", store.ingest_sexpr_recipe([sexpr_dummy(Expr.String("\"42\""))]))
 }
 
 /// An argument expression that EVALUATES to a boxed Stmt Value:
 /// the AST-construction form of `Stmt.ReturnEmpty`.
-fn boxed_stmt_arg() -> Expr {
+fn boxed_stmt_arg(store: NodeStore) -> Expr {
     let no_args: List<SExpr> = []
-    Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", no_args)
+    Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", store.ingest_sexpr_recipe(no_args))
 }
 
 spec "synth_expr_id is an identity passthrough at eval" {
     then "a bare-Ident call returns the boxed Expr Value unchanged" {
         let rt = fresh_probe_rt()
-        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_expr_id")), [rt.nodes.exprs.add_leaf(boxed_expr_arg())])
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_expr_id")), [rt.nodes.exprs.add_leaf(boxed_expr_arg(rt.nodes))])
         let r = eval_expr(rt, call)
         !step_had_error(r)
             && step_value(r).kind == "expr"
@@ -52,7 +52,7 @@ spec "synth_expr_id is an identity passthrough at eval" {
     }
     then "a QualifiedIdent call (post-resolve form) is intercepted too" {
         let rt = fresh_probe_rt()
-        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::features::comptime::synth_expr_id")), [rt.nodes.exprs.add_leaf(boxed_expr_arg())])
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::features::comptime::synth_expr_id")), [rt.nodes.exprs.add_leaf(boxed_expr_arg(rt.nodes))])
         let r = eval_expr(rt, call)
         !step_had_error(r) && step_value(r).kind == "expr"
     }
@@ -61,7 +61,7 @@ spec "synth_expr_id is an identity passthrough at eval" {
 spec "synth_stmt_id is an identity passthrough at eval" {
     then "the boxed Stmt Value passes through with its variant intact" {
         let rt = fresh_probe_rt()
-        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_id")), [rt.nodes.exprs.add_leaf(boxed_stmt_arg())])
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_id")), [rt.nodes.exprs.add_leaf(boxed_stmt_arg(rt.nodes))])
         let r = eval_expr(rt, call)
         !step_had_error(r)
             && step_value(r).kind == "stmt"
@@ -72,7 +72,7 @@ spec "synth_stmt_id is an identity passthrough at eval" {
 spec "synth_stmt_ids is an identity passthrough at eval" {
     then "a list of boxed Stmt Values passes through unchanged" {
         let rt = fresh_probe_rt()
-        let list_arg = Expr.ListLit([sexpr_dummy(boxed_stmt_arg())])
+        let list_arg = Expr.ListLit([sexpr_dummy(boxed_stmt_arg(rt.nodes))])
         let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_stmt_ids")), [rt.nodes.exprs.add_leaf(list_arg)])
         let r = eval_expr(rt, call)
         !step_had_error(r)
@@ -103,7 +103,7 @@ spec "synth shim edge cases" {
 spec "the shim intercept matches exactly, not by substring" {
     then "an unknown fn whose name merely embeds a shim name still errors" {
         let rt = fresh_probe_rt()
-        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("my_synth_expr_id_helper")), [rt.nodes.exprs.add_leaf(boxed_expr_arg())])
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("my_synth_expr_id_helper")), [rt.nodes.exprs.add_leaf(boxed_expr_arg(rt.nodes))])
         let r = eval_expr(rt, call)
         step_had_error(r)
     }
