@@ -19,28 +19,35 @@ use @std.avrac.features.quote_expr.{lower_quotes, lower_quotes_via_store}
 /// — which is also exactly what makes the flat store scan see it.
 type ProgramWithStore = { stmts: List<SStmt>, store: NodeStore }
 
-/// One top-level `let q = <expr>` statement as a program.
-fn program_of(e: Expr) -> ProgramWithStore {
-    let store = new_node_store(build_line_index(""))
+/// One top-level `let q = <expr>` statement as a program, ingested into the
+/// caller-supplied store — so the expr's flipped `ExprId` children (e.g. a
+/// Quote body, a MatchExpr subject) already live in the SAME store the flat
+/// scan resolves through.
+fn program_of(e: Expr, store: NodeStore) -> ProgramWithStore {
     let init = store.ingest_expr(e, byte_span_none())
     ProgramWithStore { stmts: [sstmt_at(Stmt.Let("q", ValueType.Unknown, init), 1, 1, "")], store }
 }
 
-fn quote_num() -> Expr {
-    Expr.Quote("expr", Expr.Number("5"))
+/// `quote { 5 }` with its body ingested into `store` — the flipped `Quote.body`
+/// holds the body's arena id directly.
+fn quote_num(store: NodeStore) -> Expr {
+    Expr.Quote("expr", store.exprs.add_leaf(Expr.Number("5")))
 }
 
 spec "lower_quotes_via_store: equivalence with the boxed scan" {
     then "a program with a top-level quote lowers identically to lower_quotes" {
-        let pw = program_of(quote_num())
+        let store = new_node_store(build_line_index(""))
+        let pw = program_of(quote_num(store), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))
     }
     then "the lowered output differs from the input (the quote was rewritten)" {
-        let pw = program_of(quote_num())
+        let store = new_node_store(build_line_index(""))
+        let pw = program_of(quote_num(store), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) != render_stmt_list(pw.store, pw.stmts)
     }
     then "a no-quote program takes the fast path unchanged" {
-        let pw = program_of(Expr.Number("42"))
+        let store = new_node_store(build_line_index(""))
+        let pw = program_of(Expr.Number("42"), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, pw.stmts)
     }
     then "an empty program takes the fast path" {
@@ -52,22 +59,25 @@ spec "lower_quotes_via_store: equivalence with the boxed scan" {
 
 spec "lower_quotes_via_store: arena rows cover struct-embedded positions" {
     then "a quote ONLY inside a match-arm body is found and lowered" {
-        let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(quote_num(), 2, 3, "") }
+        let store = new_node_store(build_line_index(""))
+        let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(quote_num(store), 2, 3, "") }
         let arms: List<MatchArm> = [arm]
-        let pw = program_of(Expr.MatchExpr(Expr.Ident("x"), arms))
+        let pw = program_of(Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("x")), arms), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))
             && render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) != render_stmt_list(pw.store, pw.stmts)
     }
     then "a quote ONLY inside a struct-lit field init is found and lowered" {
-        let inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(quote_num(), 2, 3, "") }]
-        let pw = program_of(Expr.StructLit("P", inits))
+        let store = new_node_store(build_line_index(""))
+        let inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(quote_num(store), 2, 3, "") }]
+        let pw = program_of(Expr.StructLit("P", inits), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))
             && render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) != render_stmt_list(pw.store, pw.stmts)
     }
     then "a quote ONLY inside a guarded arm's guard is found and lowered" {
-        let arm = MatchArm { pattern: Pattern.Wildcard, guard: sexpr_at(quote_num(), 2, 1, ""), body: sexpr_at(Expr.Number("1"), 2, 5, "") }
+        let store = new_node_store(build_line_index(""))
+        let arm = MatchArm { pattern: Pattern.Wildcard, guard: sexpr_at(quote_num(store), 2, 1, ""), body: sexpr_at(Expr.Number("1"), 2, 5, "") }
         let arms: List<MatchArm> = [arm]
-        let pw = program_of(Expr.MatchExpr(Expr.Ident("x"), arms))
+        let pw = program_of(Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("x")), arms), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))
             && render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) != render_stmt_list(pw.store, pw.stmts)
     }

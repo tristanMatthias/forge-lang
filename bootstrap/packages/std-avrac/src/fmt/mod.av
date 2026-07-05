@@ -47,7 +47,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_ids_comma(store, args)})"
         .Index(obj, idx) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(idx))}]"
         .Block(body) -> "{\n${fmt_stmt_list(store, body, 1)}\n}"
-        .MatchExpr(subject, arms) -> "match ${fmt_expr(store, subject)} {\n${fmt_match_arms(store, arms, 1)}\n}"
+        .MatchExpr(subject, arms) -> "match ${fmt_expr(store, store.exprs.get(subject))} {\n${fmt_match_arms(store, arms, 1)}\n}"
         .FieldAssign(obj, field, value) -> "${fmt_expr(store, store.exprs.get(obj))}.${field} = ${fmt_expr(store, store.exprs.get(value))}"
         .IfExpr(c, t, e) -> "if ${fmt_expr(store, store.exprs.get(c))} { ${fmt_expr(store, store.exprs.get(t))} } else { ${fmt_expr(store, store.exprs.get(e))} }"
         .NullCoalesce(left, right) -> "${fmt_expr(store, store.exprs.get(left))} ?? ${fmt_expr(store, store.exprs.get(right))}"
@@ -56,20 +56,20 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Try(inner) -> "${fmt_expr(store, store.exprs.get(inner))}?"
         .Tuple(elements) -> "(${fmt_expr_ids_comma(store, elements)})"
         .TupleIndex(obj, idx) -> "${fmt_expr(store, store.exprs.get(obj))}.${string(idx)}"
-        .With(obj, overrides) -> "${fmt_expr(store, obj)} with { ${fmt_field_init_list(store, overrides)} }"
+        .With(obj, overrides) -> "${fmt_expr(store, store.exprs.get(obj))} with { ${fmt_field_init_list(store, overrides)} }"
         .ListLit(elements) -> "[${fmt_expr_ids_comma(store, elements)}]"
-        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(store, body)}"
+        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(store, store.exprs.get(body))}"
         .MapLit(entries) -> "{ ${fmt_map_entries(store, store.sexprs_of(entries))} }"
         .FloatLit(v) -> v
         .Slice(obj, start, end) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(start))}..${fmt_expr(store, store.exprs.get(end))}]"
         .IsCheck(subject, vname) -> "${fmt_expr(store, store.exprs.get(subject))} is .${vname}"
         .InCheck(needle, items) -> "${fmt_expr(store, store.exprs.get(needle))} in [${fmt_expr_ids_comma(store, items)}]"
         .ListComp(body, variable, collection, filter) -> {
-            let head = "[${fmt_expr(store, body)} for ${variable} in ${fmt_expr(store, collection)}"
-            if filter != null { "${head} if ${fmt_expr(store, filter!)}]" } else { "${head}]" }
+            let head = "[${fmt_expr(store, store.exprs.get(body))} for ${variable} in ${fmt_expr(store, store.exprs.get(collection))}"
+            if filter != null { "${head} if ${fmt_expr(store, store.exprs.get(filter!))}]" } else { "${head}]" }
         }
         .When(arms) -> "when {\n${fmt_when_arms(store, arms, 1)}\n}"
-        .Catch(inner, binding, body, _, _) -> "${fmt_expr(store, inner)} catch ${binding} { ${fmt_expr(store, body)} }"
+        .Catch(inner, binding, body, _, _) -> "${fmt_expr(store, store.exprs.get(inner))} catch ${binding} { ${fmt_expr(store, store.exprs.get(body))} }"
         .Spawn(body) -> "spawn ${fmt_expr(store, store.exprs.get(body))}"
         .ChannelNew(elem, capacity) -> {
             if capacity == null {
@@ -79,7 +79,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
             }
         }
         .Isolated(body) -> "isolated ${fmt_expr(store, store.exprs.get(body))}"
-        .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(store, body)}" } else { "quote ${kind} ${fmt_expr(store, body)}" }
+        .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(store, store.exprs.get(body))}" } else { "quote ${kind} ${fmt_expr(store, store.exprs.get(body))}" }
         .Splice(target) -> "~${fmt_expr(store, store.exprs.get(target))}"
     }
 }

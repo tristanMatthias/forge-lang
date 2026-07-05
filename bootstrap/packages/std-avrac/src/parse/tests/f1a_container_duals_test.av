@@ -192,7 +192,7 @@ fn table_row_field_duals_mirror() -> bool {
     if r.had_error != 0 || r.stmts == null { return false }
     match first_body_stmt(r.store, r.stmts!) {
         .Let(_, _, init) -> match r.store.exprs.get(init) {
-            .ListLit(rows) -> match rows[0].node {
+            .ListLit(rows) -> match r.store.exprs.get(rows[0]) {
                 .StructLit(_, inits) -> {
                     if inits.length != 2 { return false }
                     for fi in inits {
@@ -249,7 +249,7 @@ fn quote_arm_duals_mirror() -> bool {
     let probe = parse_expression_native_probe("quote arm { 1 if g -> 2 }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
-        .Quote(_, body) -> match body {
+        .Quote(_, body) -> match probe.store.exprs.get(body) {
             .MatchExpr(_, arms) -> {
                 if arms.length != 1 { return false }
                 let arm = arms[0]
@@ -269,7 +269,7 @@ fn unguarded_quote_arm_guard_dual_null() -> bool {
     let probe = parse_expression_native_probe("quote arm { 1 -> 2 }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
-        .Quote(_, body) -> match body {
+        .Quote(_, body) -> match probe.store.exprs.get(body) {
             .MatchExpr(_, arms) -> {
                 if arms.length != 1 { return false }
                 let arm = arms[0]

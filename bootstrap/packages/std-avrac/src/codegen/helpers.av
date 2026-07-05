@@ -60,7 +60,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
             .Lambda(params, body) -> {
                 let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
                 let lambda_types = vtype_fn_params(fn_vt)
-                r = emit_lambda_typed(ctx, env, params, body, lambda_types)?
+                r = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), lambda_types)?
             }
             // A list-literal arg for a `List<T?>` param must box each present
             // element into the optional repr, even with no `none` in the

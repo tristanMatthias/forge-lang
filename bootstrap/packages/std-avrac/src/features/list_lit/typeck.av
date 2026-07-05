@@ -85,7 +85,7 @@ fn tc_infer_lambda_ret(tc: TC, args: List<SExpr>, elem_ty: ValueType) -> ValueTy
         .Lambda(params, body) -> {
             let inner = tc_enter(tc)
             let with_params = if params.length == 0 { inner } else { tc_bind(inner, params[0].name, elem_ty) }
-            let r = check_expr(with_params, body)
+            let r = check_expr(with_params, with_params.nodes.exprs.get(body))
             tc_exit(r.tc)
             r.ty
         }

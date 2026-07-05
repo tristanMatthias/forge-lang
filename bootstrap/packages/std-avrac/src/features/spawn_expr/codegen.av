@@ -11,7 +11,7 @@ use features.closures.{emit_lambda}
 /// `Spawn` AST node and forwards to `emit_spawn`.
 export fn spawn_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Spawn(body) -> emit_spawn(ctx, env, ctx.nodes.exprs.get(body))
+        .Spawn(body) -> emit_spawn(ctx, env, body)
         _ -> err_emit("spawn_emit_expr: expected Spawn")
     }
 }
@@ -21,10 +21,11 @@ export fn spawn_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result
 /// active structured-concurrency task group (when one exists).
 /// Result type is `Task<RetTy>` inferred from the lambda's return
 /// type so `await` later sees the right type.
-fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, string> {
-    // Wrap body in a zero-arg lambda: () -> { body }
+fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body_id: ExprId) -> Result<EmitValue, string> {
+    // Wrap body in a zero-arg lambda: () -> { body }. The flipped Lambda.body
+    // holds the body's arena id directly.
     let empty_p: List<ParamEntry> = []
-    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body))?
+    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body_id))?
 
     // Call avra_spawn(closure_ptr) which returns a thread handle
     let handle = ctx.call("avra_spawn", [closure.value])
@@ -111,8 +112,8 @@ fn expr_has_spawn(store: NodeStore, ex: Expr) -> bool {
         .Binary(l, _, r) -> expr_has_spawn(store, store.exprs.get(l)) || expr_has_spawn(store, store.exprs.get(r))
         .Unary(_, e) -> expr_has_spawn(store, store.exprs.get(e))
         .IfExpr(cond, then_e, else_e) -> expr_has_spawn(store, store.exprs.get(cond)) || expr_has_spawn(store, store.exprs.get(then_e)) || expr_has_spawn(store, store.exprs.get(else_e))
-        .MatchExpr(subj, arms) -> expr_has_spawn(store, subj) || arms_have_spawn(store, arms)
-        .Lambda(_, body) -> expr_has_spawn(store, body)
+        .MatchExpr(subj, arms) -> expr_has_spawn(store, store.exprs.get(subj)) || arms_have_spawn(store, arms)
+        .Lambda(_, body) -> expr_has_spawn(store, store.exprs.get(body))
         _ -> false
     }
 }

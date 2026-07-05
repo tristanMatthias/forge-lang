@@ -10,13 +10,13 @@
 
 use codegen.{ok_emit, err_emit, EmitValue}
 use features.closures.{emit_lambda}
-use core.{ParamEntry}
+use core.{ParamEntry, ExprId}
 
 /// Codegen entry for `isolated { body }`. Pattern-matches the
 /// `Isolated` AST node and forwards to `emit_isolated`.
 export fn isolated_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Isolated(body) -> emit_isolated(ctx, env, ctx.nodes.exprs.get(body))
+        .Isolated(body) -> emit_isolated(ctx, env, body)
         _ -> err_emit("isolated_emit_expr: expected Isolated")
     }
 }
@@ -25,9 +25,10 @@ export fn isolated_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Res
 /// closure pointer to `avra_isolated_run`, return the framed
 /// payload as a `bytes` value. Caller (stdlib) is responsible for
 /// unframing into a `Result`.
-fn emit_isolated(ctx: Ctx, env: List<VarBinding>, body: Expr) -> Result<EmitValue, string> {
+fn emit_isolated(ctx: Ctx, env: List<VarBinding>, body_id: ExprId) -> Result<EmitValue, string> {
     let empty_p: List<ParamEntry> = []
-    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body))?
+    // The flipped Lambda.body holds the body's arena id directly.
+    let closure = emit_lambda(ctx, env, Expr.Lambda(empty_p, body_id))?
     let payload = ctx.call("avra_isolated_run", [closure.value])
     ok_emit(payload, .Bytes)
 }

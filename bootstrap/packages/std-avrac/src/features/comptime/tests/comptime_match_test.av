@@ -26,7 +26,7 @@ fn mk_int_match_fn(ws: NodeStore) -> CompTimeFn {
     arms.push(MatchArm { pattern: Pattern.LitInt(0), guard: null, body: sexpr_dummy(Expr.Number("100")) })
     arms.push(MatchArm { pattern: Pattern.LitInt(1), guard: null, body: sexpr_dummy(Expr.Number("200")) })
     arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(Expr.Number("999")) })
-    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(Expr.Ident("x"), arms))
+    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("x")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
         name: "classify",
@@ -92,7 +92,7 @@ fn mk_string_match_fn(ws: NodeStore) -> CompTimeFn {
     arms.push(MatchArm { pattern: Pattern.LitString("one"), guard: null, body: sexpr_dummy(Expr.Number("1")) })
     arms.push(MatchArm { pattern: Pattern.LitString("two"), guard: null, body: sexpr_dummy(Expr.Number("2")) })
     arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(Expr.Number("0")) })
-    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(Expr.Ident("s"), arms))
+    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("s")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
         name: "label",
@@ -149,7 +149,7 @@ fn mk_unwrap_fn(ws: NodeStore) -> CompTimeFn {
     mut arms: List<MatchArm> = []
     arms.push(MatchArm { pattern: some_pat, guard: null, body: sexpr_dummy(Expr.Ident("x")) })
     arms.push(MatchArm { pattern: none_pat, guard: null, body: sexpr_dummy(Expr.Number("0")) })
-    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(Expr.Ident("arg"), arms))
+    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("arg")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
         name: "unwrap_or_zero",
@@ -195,7 +195,7 @@ fn mk_or_pattern_fn(ws: NodeStore) -> CompTimeFn {
     mut arms: List<MatchArm> = []
     arms.push(MatchArm { pattern: or_pat, guard: null, body: sexpr_dummy(Expr.Number("1")) })
     arms.push(MatchArm { pattern: blue_pat, guard: null, body: sexpr_dummy(Expr.Number("2")) })
-    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(Expr.Ident("c"), arms))
+    let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("c")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
         name: "red_or_green",

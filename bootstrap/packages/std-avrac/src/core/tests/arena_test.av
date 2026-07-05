@@ -446,28 +446,32 @@ spec "F3b: arg_tys round-trips an inferred type through sexpr_of / sexprs_of" {
 // cai8-relevant case a deep arena consumer needs. Cross-type only: `children()`
 // still leaves arms Scalar; only all_children_spanned + with_children walk them.
 spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
-    then "MatchExpr walks arm children cross-type (subject, pattern, guard?, body)" {
+    then "MatchExpr walks arm children cross-type (pattern, guard?, body); subject is an opaque id" {
         let unguarded = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("1"), 1, 1, "") }
         let guarded = MatchArm { pattern: Pattern.LitInt(0), guard: sexpr_at(Expr.Ident("g"), 1, 1, ""), body: sexpr_at(Expr.Number("2"), 1, 1, "") }
         let one: List<MatchArm> = [unguarded]
         let two: List<MatchArm> = [guarded, unguarded]
-        // subject E; unguarded arm P E; guarded arm P E(guard) E(body).
-        expr_child_tags(Expr.MatchExpr(Expr.Ident("x"), one)) == "EPE"
-            && expr_child_tags(Expr.MatchExpr(Expr.Ident("x"), two)) == "EPEEPE"
+        // B-final: subject is a flipped ExprId (walker-opaque) — no subject edge.
+        // unguarded arm P E; guarded arm P E(guard) E(body).
+        expr_child_tags(Expr.MatchExpr(ExprId(0), one)) == "PE"
+            && expr_child_tags(Expr.MatchExpr(ExprId(0), two)) == "PEEPE"
     }
     then "the arena records the arm children as real edges (children_of)" {
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("9"), 1, 1, "") }
         let arms: List<MatchArm> = [arm]
         let store = new_node_store(build_line_index(""))
-        let root = store.ingest_expr(Expr.MatchExpr(Expr.Ident("x"), arms), byte_span_none())
-        // subject (Expr), arm pattern (Pat), arm body (Expr) → 3 edges, tags E P E.
-        edge_tags(store.exprs.children_of(root)) == "EPE"
+        let subj = store.exprs.add_leaf(Expr.Ident("x"))
+        let root = store.ingest_expr(Expr.MatchExpr(subj, arms), byte_span_none())
+        // subject is opaque; arm pattern (Pat), arm body (Expr) → 2 edges, tags P E.
+        edge_tags(store.exprs.children_of(root)) == "PE"
     }
     then "MatchExpr with guarded + unguarded arms reconstructs faithfully" {
         let guarded = MatchArm { pattern: Pattern.LitInt(0), guard: sexpr_at(Expr.Ident("cond"), 2, 1, ""), body: sexpr_at(Expr.Number("10"), 2, 3, "") }
         let unguarded = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Ident("fb"), 3, 3, "") }
         let arms: List<MatchArm> = [guarded, unguarded]
-        wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), arms))
+        let store = ts()
+        let subj = store.exprs.add_leaf(Expr.Ident("x"))
+        wc_roundtrip_expr(store, Expr.MatchExpr(subj, arms))
     }
     then "Stmt.Match reconstructs faithfully" {
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("7"), 1, 1, "") }
@@ -476,20 +480,24 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let subj = store.exprs.add_leaf(Expr.Ident("y"))
         wc_roundtrip_stmt(store, Stmt.Match(subj, arms))
     }
-    then "an empty arm list round-trips (only the subject is a child)" {
+    then "an empty arm list has no children (subject is an opaque id)" {
         let none_arms: List<MatchArm> = []
-        expr_child_tags(Expr.MatchExpr(Expr.Ident("x"), none_arms)) == "E"
-            && wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), none_arms))
+        let store = ts()
+        let subj = store.exprs.add_leaf(Expr.Ident("x"))
+        expr_child_tags(Expr.MatchExpr(ExprId(0), none_arms)) == ""
+            && wc_roundtrip_expr(store, Expr.MatchExpr(subj, none_arms))
     }
     then "a match nested in a match-arm body round-trips (combinatorial)" {
         // A guarded outer arm whose body is another MatchExpr — the arm-child walk
-        // must recurse through the inner match's own arm children.
+        // must recurse through the inner match's own arm children. Both matches'
+        // subjects are opaque ids ingested into the shared store.
+        let store = ts()
         let inner_arm = MatchArm { pattern: Pattern.LitInt(1), guard: null, body: sexpr_at(Expr.Number("11"), 2, 5, "") }
         let inner_arms: List<MatchArm> = [inner_arm]
-        let inner = Expr.MatchExpr(Expr.Ident("y"), inner_arms)
+        let inner = Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("y")), inner_arms)
         let outer_arm = MatchArm { pattern: Pattern.Wildcard, guard: sexpr_at(Expr.Ident("g"), 1, 1, ""), body: sexpr_at(inner, 3, 3, "") }
         let outer_arms: List<MatchArm> = [outer_arm]
-        wc_roundtrip_expr(ts(), Expr.MatchExpr(Expr.Ident("x"), outer_arms))
+        wc_roundtrip_expr(store, Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("x")), outer_arms))
     }
     then "ingest → program_from_store preserves a nested-match id payload verbatim" {
         // F3a: Stmt.Expr carries an ExprId — the nested match rides behind the
@@ -499,10 +507,10 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
         let donor = ts()
         let inner_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("11"), 2, 5, "") }
         let inner_arms: List<MatchArm> = [inner_arm]
-        let inner = Expr.MatchExpr(Expr.Ident("y"), inner_arms)
+        let inner = Expr.MatchExpr(donor.exprs.add_leaf(Expr.Ident("y")), inner_arms)
         let outer_arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(inner, 3, 3, "") }
         let outer_arms: List<MatchArm> = [outer_arm]
-        let subj = donor.exprs.add_leaf(Expr.MatchExpr(Expr.Ident("x"), outer_arms))
+        let subj = donor.exprs.add_leaf(Expr.MatchExpr(donor.exprs.add_leaf(Expr.Ident("x")), outer_arms))
         let stmts: List<SStmt> = [sstmt_at(Stmt.Expr(subj), 1, 1, "")]
         let store = ingest_program(stmts, "")
         let back = program_from_store(store, "")
@@ -517,14 +525,16 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
 // arena via the same mechanism as MatchArm (a second entry in struct_list_helpers).
 // Each init contributes exactly one Expr child (its `value`; `name` is a scalar).
 spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
-    then "StructLit walks one Expr child per init; With is obj then overrides" {
+    then "StructLit walks one Expr child per init; With walks its overrides (obj is an opaque id)" {
         let inits: List<FieldInit> = [
             FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 1, 1, "") },
             FieldInit { name: "b", value: sexpr_at(Expr.Number("2"), 1, 1, "") },
         ]
         let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 1, 1, "") }]
+        // B-final: With.obj is a flipped ExprId (walker-opaque) — only the
+        // override value is a child.
         expr_child_tags(Expr.StructLit("P", inits)) == "EE"
-            && expr_child_tags(Expr.With(Expr.Ident("o"), ovr)) == "EE"
+            && expr_child_tags(Expr.With(ExprId(0), ovr)) == "E"
     }
     then "the arena records each init value as a real edge (children_of)" {
         let inits: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("7"), 1, 1, "") }]
@@ -539,19 +549,21 @@ spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
         ]
         let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 4, 1, "") }]
         let empty: List<FieldInit> = []
-        wc_roundtrip_expr(ts(), Expr.StructLit("Point", inits))
-            && wc_roundtrip_expr(ts(), Expr.With(Expr.Ident("o"), ovr))
-            && wc_roundtrip_expr(ts(), Expr.StructLit("E", empty))
+        let ws = ts()
+        wc_roundtrip_expr(ws, Expr.StructLit("Point", inits))
+            && wc_roundtrip_expr(ws, Expr.With(ws.exprs.add_leaf(Expr.Ident("o")), ovr))
+            && wc_roundtrip_expr(ws, Expr.StructLit("E", empty))
     }
     then "FieldInit crossed with other walked structs round-trips (combinatorial)" {
         // A struct-init value that is itself a walked struct — the arena walk must
         // recurse from the FieldInit value into the inner MatchExpr / StructLit.
+        let ws = ts()
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("1"), 2, 2, "") }
-        let m_inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(Expr.MatchExpr(Expr.Ident("y"), [arm]), 3, 3, "") }]
+        let m_inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("y")), [arm]), 3, 3, "") }]
         let inner: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 2, 2, "") }]
         let s_ovr: List<FieldInit> = [FieldInit { name: "b", value: sexpr_at(Expr.StructLit("Q", inner), 3, 3, "") }]
-        wc_roundtrip_expr(ts(), Expr.StructLit("P", m_inits))              // struct-init value is a match
-            && wc_roundtrip_expr(ts(), Expr.With(Expr.Ident("o"), s_ovr))  // with-override value is a struct
+        wc_roundtrip_expr(ws, Expr.StructLit("P", m_inits))                             // struct-init value is a match
+            && wc_roundtrip_expr(ws, Expr.With(ws.exprs.add_leaf(Expr.Ident("o")), s_ovr))  // with-override value is a struct
     }
 }
 
@@ -621,22 +633,22 @@ spec "F3a: Annotated.inner (a StmtId payload) keeps its recorded position" {
 }
 
 spec "A2: bare children stay span_none while wrapped siblings get real spans" {
-    then "MatchExpr(subject bare, arm body wrapped) -> subject span_none, body real span, in walker order" {
-        // Uses MatchExpr — a still-boxed variant carrying the DirectSelf-subject
-        // + positioned-SExpr-arm-body shape the flipped call-likes (Call /
-        // GenericCall / InCheck / OptionalMethodCall) had before F3b flipped them
-        // to scalar ids (a flipped call is childless to the walker). "f(x)\n":
-        // offset_of(1,3) = 0+2 = 2. Walker order: subject (E, bare), arm pattern
-        // (P), arm body (E, positioned) — tags EPE, so kids = [subject, pat, body].
+    then "MatchExpr(arm pattern bare, arm body wrapped) -> pattern span_none, body real span, in walker order" {
+        // B-final: MatchExpr.subject is a flipped ExprId (walker-opaque). The walked
+        // children are now the arm's BARE pattern (span_none) + its POSITIONED SExpr
+        // body (real span) — the same bare-vs-wrapped span composition the subject
+        // used to demonstrate. "f(x)\n": offset_of(1,3) = 0+2 = 2. Walker order: arm
+        // pattern (P, bare), arm body (E, positioned) — tags PE, kids = [pat, body].
         let store = new_node_store(build_line_index("f(x)\n"))
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Ident("x"), 1, 3, "") }
         let arms: List<MatchArm> = [arm]
-        let root = store.ingest_expr(Expr.MatchExpr(Expr.Ident("f"), arms), byte_span(0, 4))
+        let subj = store.exprs.add_leaf(Expr.Ident("f"))
+        let root = store.ingest_expr(Expr.MatchExpr(subj, arms), byte_span(0, 4))
         let kids = store.exprs.children_of(root)
-        let subject = expr_ref_id(kids[0])
-        let arm_body = expr_ref_id(kids[2])
-        kids.length == 3
-            && byte_span_is_none(store.exprs.span_of(subject))
+        let arm_pat = pat_ref_id(kids[0])
+        let arm_body = expr_ref_id(kids[1])
+        kids.length == 2
+            && byte_span_is_none(store.pats.span_of(arm_pat))
             && !byte_span_is_none(store.exprs.span_of(arm_body))
             && store.exprs.span_of(arm_body).lo == 2
     }
@@ -665,10 +677,12 @@ spec "F3a: positions and spans compose across the id boundary" {
         let store = new_node_store(build_line_index("aaaa\nbbbb\ncccc\n"))
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Ident("x"), 3, 2, "") }
         let arms: List<MatchArm> = [arm]
-        let match_id = store.ingest_expr(Expr.MatchExpr(Expr.Ident("g"), arms), byte_span_none())
+        let subj = store.exprs.add_leaf(Expr.Ident("g"))
+        let match_id = store.ingest_expr(Expr.MatchExpr(subj, arms), byte_span_none())
         let stmt_body = store.rows_of([sstmt_at(Stmt.Expr(match_id), 2, 1, "")])
         let root = store.ingest_stmt(Stmt.Block(stmt_body), byte_span(0, 4))
-        let arm_body_id = expr_ref_id(store.exprs.children_of(match_id)[2])
+        // B-final: subject is a flipped opaque id; the arm body is kids[1] (pattern is kids[0]).
+        let arm_body_id = expr_ref_id(store.exprs.children_of(match_id)[1])
         store.stmts.children_of(root).length == 0
             && store.stmt_pos(stmt_body[0]).line == 2
             && store.exprs.span_of(arm_body_id).lo == 11
@@ -756,13 +770,11 @@ spec "B1: reconstruct_program round-trips a program from arena edges" {
 }
 
 // ps3t.3.7.1 regression: `quote arm { p -> e }` parses to a synthetic
-// `Expr.MatchExpr(Expr.None, [arm])`. The subject MUST be a bare `Expr` (its
-// declared field type). The parser once stored an `sexpr(...)` WRAPPER there —
-// type-checks because both lower to `ptr`, harmless to the normal pipeline (quote
-// lowering ignores the subject), but it makes the node ill-formed: arena ingest's
-// `all_children_spanned` descends `subject` as a bare Expr, reads the SExpr
-// struct's first word as an enum tag, and traps ("unmatched tag <heap ptr>"). This
-// only surfaced once ingest ran on the pre-lowering tree. Guard the walked path.
+// `Expr.MatchExpr(<subject id>, [arm])`. B-final flipped `MatchExpr.subject` to an
+// ExprId, so the parser allocates a real leaf `Expr.None` row for it (walker-opaque)
+// and the node is well-formed. Historically the subject was a bare `Expr` and a
+// stored `sexpr(...)` WRAPPER there made ingest's `all_children_spanned` trap
+// ("unmatched tag <heap ptr>") — the id payload closes that hole. Guard the path.
 spec "ps3t.3.7.1: ingest walks a quote-arm synthetic MatchExpr without trapping" {
     then "AVRA_L1_INGEST on a quote-arm program reconstructs faithfully and never traps" {
         let fixture = "/tmp/avra_l1_quote_arm_regress.av"

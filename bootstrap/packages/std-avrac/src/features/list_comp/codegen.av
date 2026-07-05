@@ -9,7 +9,7 @@
 // type on the surrounding SExpr so downstream `.length` / index /
 // `.map` see a proper element type).
 
-use core.{Expr, VarBinding, ValueType, env_extend, vtype_list_elem}
+use core.{Expr, ExprId, VarBinding, ValueType, env_extend, vtype_list_elem}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_value_ptr, emit_value_ty}
 
 /// Lower a list comprehension to LLVM IR. Produces a fresh
@@ -19,14 +19,14 @@ use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_value_ptr, emit_value_ty}
 export fn emit_list_comp(
     ctx: Ctx,
     env: List<VarBinding>,
-    body: Expr,
+    body: ExprId,
     variable: string,
-    collection: Expr,
-    filter: Expr?,
+    collection: ExprId,
+    filter: ExprId?,
 ) -> Result<EmitValue, string> {
     ctx.cov_line()
 
-    let coll_r = ctx.emit(env, collection)?
+    let coll_r = ctx.emit(env, ctx.nodes.exprs.get(collection))?
     let coll_ptr = emit_value_ptr(coll_r)
     let elem_ty = vtype_list_elem(emit_value_ty(coll_r))
 
@@ -79,22 +79,22 @@ export fn emit_list_comp(
 fn emit_lc_step(
     ctx: Ctx,
     env: List<VarBinding>,
-    body: Expr,
-    filter: Expr?,
+    body: ExprId,
+    filter: ExprId?,
     result_arr: ptr,
     incr_bb: ptr,
 ) -> Result<EmitValue, string> {
     if filter == null {
-        let body_r = ctx.emit(env, body)?
+        let body_r = ctx.emit(env, ctx.nodes.exprs.get(body))?
         ctx.array_push(result_arr, emit_value_ptr(body_r))
         ctx.br_if_open(incr_bb)
         return ok_emit(emit_value_ptr(body_r), emit_value_ty(body_r))
     }
 
-    let filter_r = ctx.emit(env, filter!)?
+    let filter_r = ctx.emit(env, ctx.nodes.exprs.get(filter!))?
     let skip_bb = ctx.if_true(emit_value_ptr(filter_r), "lc_filter")
     // Positioned at filter-true block: emit body + push, then to incr.
-    let body_r = ctx.emit(env, body)?
+    let body_r = ctx.emit(env, ctx.nodes.exprs.get(body))?
     ctx.array_push(result_arr, emit_value_ptr(body_r))
     ctx.br_if_open(incr_bb)
     // Filter-false block: skip push.

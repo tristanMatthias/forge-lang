@@ -619,7 +619,8 @@ fn derive_enum_stmts(store: NodeStore, type_name: string, variants: List<Variant
 
 fn build_enum_to_bytes_fn(store: NodeStore, type_name: string, variants: List<Variant>) -> Stmt {
     let arms = build_variant_arms(store, variants)
-    let match_expr = Expr.MatchExpr(Expr.Ident("self"), arms)
+    // Flipped MatchExpr.subject is an ExprId — ingest the subject leaf first.
+    let match_expr = Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("self")), arms)
     let body: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(match_expr)))]
     let params: List<ParamEntry> = [ParamEntry { name: "self", vtype: ValueType.Unknown }]
     let empty_tp: List<TypeParamEntry> = []
@@ -780,7 +781,8 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     let body_call = mk_call(store, Expr.Ident("body"), [])
     let to_bytes_call = method_call(store, body_call, "to_bytes", [])
     let empty_lp: List<ParamEntry> = []
-    let inner_closure = Expr.Lambda(empty_lp, to_bytes_call)
+    // Flipped Lambda.body is an ExprId — ingest the body leaf.
+    let inner_closure = Expr.Lambda(empty_lp, store.exprs.add_leaf(to_bytes_call))
     // Subject: @std::process::isolated_bytes(closure). Qualified
     // so consumers of @marshal don't need to `use isolated_bytes`
     // — only types that actually fork pay the import cost (via
@@ -802,7 +804,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     mut arms: List<MatchArm> = []
     arms.push(MatchArm { pattern: ok_pattern, guard: null, body: sexpr_dummy(ok_body) })
     arms.push(MatchArm { pattern: err_pattern, guard: null, body: sexpr_dummy(err_body) })
-    let match_expr = Expr.MatchExpr(isolated_call, arms)
+    let match_expr = Expr.MatchExpr(store.exprs.add_leaf(isolated_call), arms)
     let body_stmts: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(match_expr)))]
     let fn_name = "isolated_" + type_name
     let empty_tp: List<TypeParamEntry> = []

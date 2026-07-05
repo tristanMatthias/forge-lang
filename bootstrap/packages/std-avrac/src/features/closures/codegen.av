@@ -99,7 +99,7 @@ fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
         .Call(callee, args) -> expr_assigns(store, store.exprs.get(callee), target) || expr_list_assigns(store, store.sexprs_of(args), target)
         .Block(body) -> stmt_list_assigns(store, body, target)
         .IfExpr(c, t, e) -> expr_assigns(store, store.exprs.get(c), target) || expr_assigns(store, store.exprs.get(t), target) || expr_assigns(store, store.exprs.get(e), target)
-        .Lambda(_, body) -> expr_assigns(store, body, target)
+        .Lambda(_, body) -> expr_assigns(store, store.exprs.get(body), target)
         _ -> false
     }
 }
@@ -206,7 +206,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(idx), params, env, captures)
         }
         .MatchExpr(subj, arms) -> {
-            find_captures(store, subj, params, env, captures)
+            find_captures(store, store.exprs.get(subj), params, env, captures)
             find_captures_arms(store, arms, params, env, captures)
         }
         .EnumCtor(_, _, args) -> find_captures_list(store, store.sexprs_of(args), params, env, captures)
@@ -227,7 +227,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         .With(obj, inits) -> {
             // Walk both obj AND field initialisers — closure that
             // uses `bag with { f: outer_var }` must capture outer_var.
-            find_captures(store, obj, params, env, captures)
+            find_captures(store, store.exprs.get(obj), params, env, captures)
             find_captures_field_inits(store, inits, params, env, captures)
         }
         .Slice(obj, s, e) -> {
@@ -248,16 +248,16 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         .TupleIndex(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .ListComp(body, var, coll, filter) -> {
             // Collection is evaluated in the outer scope.
-            find_captures(store, coll, params, env, captures)
+            find_captures(store, store.exprs.get(coll), params, env, captures)
             // Body + filter run with `var` bound — extend params so a
             // reference to the loop variable isn't flagged as a capture.
             let inner_params = copy_params_with(params, ParamEntry { name: var, vtype: ValueType.Unknown })
-            find_captures(store, body, inner_params, env, captures)
-            if filter != null { find_captures(store, filter!, inner_params, env, captures) }
+            find_captures(store, store.exprs.get(body), inner_params, env, captures)
+            if filter != null { find_captures(store, store.exprs.get(filter!), inner_params, env, captures) }
         }
         .Catch(inner, _, body, _, _) -> {
-            find_captures(store, inner, params, env, captures)
-            find_captures(store, body, params, env, captures)
+            find_captures(store, store.exprs.get(inner), params, env, captures)
+            find_captures(store, store.exprs.get(body), params, env, captures)
         }
         .When(arms) -> find_captures_when_arms(store, arms, params, env, captures)
         .GenericCall(callee, _, args) -> {
@@ -269,14 +269,14 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         // skip captures for vars referenced inside.
         .Spawn(body) -> find_captures(store, store.exprs.get(body), params, env, captures)
         .Isolated(body) -> find_captures(store, store.exprs.get(body), params, env, captures)
-        .Quote(_, body) -> find_captures(store, body, params, env, captures)
+        .Quote(_, body) -> find_captures(store, store.exprs.get(body), params, env, captures)
         .Splice(target) -> find_captures(store, store.exprs.get(target), params, env, captures)
         .Lambda(inner_params, inner_body) -> {
             // Inner lambda's body — its OWN params shadow the outer's
             // for capture detection, but captures inside it that come
             // from the outer environment must still bubble up.
             let merged = copy_params_append(params, inner_params)
-            find_captures(store, inner_body, merged, env, captures)
+            find_captures(store, store.exprs.get(inner_body), merged, env, captures)
         }
         _ -> {}  // Number, String, Bool, FloatLit, Null, QualifiedIdent — leaf nodes
     }
@@ -467,7 +467,7 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         .IfExpr(c, t, e) -> has_float_ident(ctx.nodes.exprs.get(c), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(t), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(e), ctx, env, captures, params)
         .NullCoalesce(left, right) -> has_float_ident(ctx.nodes.exprs.get(left), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(right), ctx, env, captures, params)
         .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
+        .With(base, _) -> has_float_ident(ctx.nodes.exprs.get(base), ctx, env, captures, params)
         .TupleIndex(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
         _ -> false
     }
@@ -575,7 +575,7 @@ export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
     match expr {
         .Lambda(params, body) -> {
             let empty_types: List<ValueType> = []
-            emit_lambda_typed(ctx, env, params, body, empty_types)
+            emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), empty_types)
         }
         _ -> err_emit("expected Lambda")
     }
@@ -730,7 +730,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExp
     if args.length == 0 { return err_emit("expected 1 argument, got 0") }
     let se = args[0]
     match se.node {
-        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, param_types)
+        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), param_types)
         _ -> ctx.emit(env, se.node)
     }
 }

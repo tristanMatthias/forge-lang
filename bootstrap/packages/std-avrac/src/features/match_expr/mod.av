@@ -17,7 +17,7 @@ use typeck.{check_expr, tc_er}
 export fn match_feature() -> Feature {
     let empty_arms: List<MatchArm> = []
     feature_new("match") with {
-        expr_tag: Expr.MatchExpr(Expr.None, empty_arms),
+        expr_tag: Expr.MatchExpr(ExprId(0), empty_arms),
         stmt_tag: Stmt.Match(ExprId(0), empty_arms),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
@@ -63,7 +63,7 @@ fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .MatchExpr(subject, arms) -> {
-            let after_subject = resolve_expr(r, subject)
+            let after_subject = resolve_expr(r, r.nodes.exprs.get(subject))
             resolve_match_arms(after_subject, arms)
         }
         _ -> r
@@ -91,7 +91,7 @@ fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     match expr {
         .MatchExpr(subject, arms) -> {
-            let subject_result = eval_expr(rt, subject)
+            let subject_result = eval_expr(rt, rt.nodes.exprs.get(subject))
             if step_had_error(subject_result) { return subject_result }
             eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
         }
@@ -326,7 +326,7 @@ fn when_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 /// Codegen hook for `MatchExpr`. Forwards to `emit_match_expr`.
 fn match_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
+        .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)
         _ -> err_emit("expected MatchExpr")
     }
 }
@@ -369,7 +369,7 @@ fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
 fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MatchExpr(subject, arms) -> {
-            let s = check_expr(tc, subject)
+            let s = check_expr(tc, tc.nodes.exprs.get(subject))
             let checked = tc_check_exhaustive(s.tc, s.ty, arms)
             check_match_expr_infer(checked, s.ty, arms)
         }

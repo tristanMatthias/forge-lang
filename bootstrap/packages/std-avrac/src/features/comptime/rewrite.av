@@ -135,31 +135,32 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, rewrite_expr_list_ids(args, reg))
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr_id(c, reg), rewrite_expr_id(t, reg), rewrite_expr_id(e, reg))
         .Block(body) -> .Block(rewrite_stmt_list(body, reg))
-        .MatchExpr(subj, arms) -> .MatchExpr(rewrite_expr(subj, reg), rewrite_match_arms(arms, reg))
+        .MatchExpr(subj, arms) -> .MatchExpr(rewrite_expr_id(subj, reg), rewrite_match_arms(arms, reg))
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr_id(l, reg), rewrite_expr_id(r, reg))
         .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr_id(obj, reg), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(rewrite_expr_id(obj, reg), method, rewrite_expr_list_ids(args, reg))
         .Try(inner) -> .Try(rewrite_expr_id(inner, reg))
         .Tuple(elems) -> .Tuple(rewrite_expr_list_ids(elems, reg))
         .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr_id(obj, reg), idx)
-        .With(obj, overrides) -> .With(rewrite_expr(obj, reg), rewrite_field_inits(overrides, reg))
+        .With(obj, overrides) -> .With(rewrite_expr_id(obj, reg), rewrite_field_inits(overrides, reg))
         .ListLit(elems) -> .ListLit(rewrite_expr_list_ids(elems, reg))
-        .Lambda(params, body) -> .Lambda(params, rewrite_expr(body, reg))
+        .Lambda(params, body) -> .Lambda(params, rewrite_expr_id(body, reg))
         .MapLit(entries) -> .MapLit(rewrite_expr_list_ids(entries, reg))
         .Slice(obj, s, e) -> .Slice(rewrite_expr_id(obj, reg), rewrite_expr_id(s, reg), rewrite_expr_id(e, reg))
         .IsCheck(subj, variant) -> .IsCheck(rewrite_expr_id(subj, reg), variant)
         .InCheck(needle, items) -> .InCheck(rewrite_expr_id(needle, reg), rewrite_expr_list_ids(items, reg))
         .ListComp(body, variable, collection, filter) -> {
-            .ListComp(rewrite_expr(body, reg), variable, rewrite_expr(collection, reg), rewrite_opt_expr(filter, reg))
+            let new_filter = if filter != null { rewrite_expr_id(filter!, reg) } else { null }
+            .ListComp(rewrite_expr_id(body, reg), variable, rewrite_expr_id(collection, reg), new_filter)
         }
         .When(arms) -> .When(rewrite_when_arms(arms, reg))
-        .Catch(inner, binding, body, line, col) -> .Catch(rewrite_expr(inner, reg), binding, rewrite_expr(body, reg), line, col)
+        .Catch(inner, binding, body, line, col) -> .Catch(rewrite_expr_id(inner, reg), binding, rewrite_expr_id(body, reg), line, col)
         .Spawn(body) -> .Spawn(rewrite_expr_id(body, reg))
         .ChannelNew(elem, capacity) -> {
             if capacity == null { Expr.ChannelNew(elem, null) } else { .ChannelNew(elem, rewrite_expr(capacity!, reg)) }
         }
         .Isolated(body) -> .Isolated(rewrite_expr_id(body, reg))
-        .Quote(kind, body) -> .Quote(kind, rewrite_expr(body, reg))
+        .Quote(kind, body) -> .Quote(kind, rewrite_expr_id(body, reg))
         .Splice(target) -> .Splice(rewrite_expr_id(target, reg))
         // Number, String, Bool, Null, Ident, QualifiedIdent, FloatLit
         // are leaves with no sub-expressions to recurse into.
@@ -168,11 +169,6 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
 }
 
 // ── List / sub-structure helpers ──
-
-fn rewrite_opt_expr(opt: Expr?, reg: CompTimeRegistry) -> Expr? {
-    if opt == none { return none }
-    rewrite_expr(opt!, reg)
-}
 
 /// Map `rewrite_expr` over a flipped `List<ExprId>` (call args) — the id twin
 /// of `rewrite_expr_list`, via `rewrite_expr_id` (reexpr).
