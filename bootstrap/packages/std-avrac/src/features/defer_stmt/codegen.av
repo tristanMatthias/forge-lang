@@ -32,12 +32,12 @@ fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>,
     while i >= 0 {
         match stack[i] {
             .Frame(body) -> {
-                // defer always runs
-                ctx.emit(env, body.node)
+                // defer always runs (body is an arena ExprId — F4d)
+                ctx.emit(env, ctx.nodes.exprs.get(body))
             }
             .ErrFrame(body) -> {
                 // errdefer only runs on error path
-                if is_error { ctx.emit(env, body.node) }
+                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body)) }
             }
             .Release(name, alloca, ty) -> {
                 // RC release — load and release the value

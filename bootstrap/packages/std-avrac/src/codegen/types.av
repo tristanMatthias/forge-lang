@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, SExpr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe, vtype_struct_name}
+use core.{Expr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe, vtype_struct_name}
 
 // LLVMTypeKind values from llvm-c/Core.h (LLVM 20). Only the kinds the
 // value-dispatch helpers test; keep in sync with the pinned LLVM major.
@@ -445,8 +445,8 @@ export type LoopStackFrame = { cond_bb: ptr, exit_bb: ptr }
 ///   - `ErrFrame`  → `errdefer` body (only on error return)
 ///   - `Release`   → RC drop pushed by the binder (spec 9.4)
 export enum DeferEntry {
-    Frame(body: SExpr)
-    ErrFrame(body: SExpr)
+    Frame(body: ExprId)
+    ErrFrame(body: ExprId)
     Release(name: string, alloca: ptr, ty: ValueType)
 }
 
