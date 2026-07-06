@@ -81,11 +81,11 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close then block") {
             return .Err("parse error")
         }
-        // The Block cond records one StmtRef per body statement (the
-        // parse_block_expression shape); the ThenBlock row itself is a
-        // leaf — the cond is its id payload.
-        let cond = Expr.Block(body.wrapped)
-        let cond_id = self.alloc_expr(cond, byte_span_none(), self.edges_of_stmt_ids(body.ids))
+        // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf, the
+        // parse_block_expression shape) — the body rows ARE the structure,
+        // so the Block cond is a leaf row.
+        let cond = Expr.Block(body.ids)
+        let cond_id = self.alloc_leaf(cond)
         .Ok(self.alloc_stmt_leaf(Stmt.ThenBlock(name, cond_id)))
     }
 }

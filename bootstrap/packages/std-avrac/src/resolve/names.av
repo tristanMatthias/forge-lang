@@ -1487,7 +1487,7 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
         .Assign(name, val) -> .Assign(name, rewrite_expr_id(ctx, val))
         .Index(obj, idx) -> .Index(rewrite_expr_id(ctx, obj), rewrite_expr_id(ctx, idx))
         .Try(inner) -> .Try(rewrite_expr_id(ctx, inner))
-        .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
+        .Block(body) -> .Block(rewrite_stmt_ids(ctx, body))
         _ -> rewrite_expr_compound(ctx, expr)
     }
 }
@@ -1822,7 +1822,7 @@ fn collect_used_paths_expr(store: NodeStore, expr: Expr, acc_ref: List<string>) 
         .Grouping(inner) -> collect_used_paths_expr(store, store.exprs.get(inner), acc)
         .Assign(_, val) -> collect_used_paths_expr(store, store.exprs.get(val), acc)
         .Index(obj, idx) -> collect_used_paths_expr(store, store.exprs.get(idx), collect_used_paths_expr(store, store.exprs.get(obj), acc))
-        .Block(body) -> collect_used_paths_stmts(store, body, acc)
+        .Block(body) -> collect_used_paths_stmt_ids(store, body, acc)
         .FieldAccess(obj, _) -> collect_used_paths_expr(store, store.exprs.get(obj), acc)
         .FieldAssign(obj, _, val) -> collect_used_paths_expr(store, store.exprs.get(val), collect_used_paths_expr(store, store.exprs.get(obj), acc))
         .IfExpr(c, t, e) -> collect_used_paths_expr(store, store.exprs.get(e), collect_used_paths_expr(store, store.exprs.get(t), collect_used_paths_expr(store, store.exprs.get(c), acc)))

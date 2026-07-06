@@ -97,7 +97,7 @@ fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
         .Logical(l, _, r) -> expr_assigns(store, store.exprs.get(l), target) || expr_assigns(store, store.exprs.get(r), target)
         .Grouping(inner) -> expr_assigns(store, store.exprs.get(inner), target)
         .Call(callee, args) -> expr_assigns(store, store.exprs.get(callee), target) || expr_list_assigns(store, store.sexprs_of(args), target)
-        .Block(body) -> stmt_list_assigns(store, body, target)
+        .Block(body) -> stmt_id_list_assigns(store, body, target)
         .IfExpr(c, t, e) -> expr_assigns(store, store.exprs.get(c), target) || expr_assigns(store, store.exprs.get(t), target) || expr_assigns(store, store.exprs.get(e), target)
         .Lambda(_, body) -> expr_assigns(store, store.exprs.get(body), target)
         _ -> false
@@ -199,7 +199,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(t), params, env, captures)
             find_captures(store, store.exprs.get(e), params, env, captures)
         }
-        .Block(stmts) -> find_captures_stmts(store, stmts, params, env, captures)
+        .Block(stmts) -> find_captures_stmt_ids(store, stmts, params, env, captures)
         .Assign(_, value) -> find_captures(store, store.exprs.get(value), params, env, captures)
         .Index(obj, idx) -> {
             find_captures(store, store.exprs.get(obj), params, env, captures)
@@ -504,7 +504,7 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<Var
         .Call(callee, args) -> {
             param_used_with_float(param_name, ctx.nodes.exprs.get(callee), ctx, env, captures, params) || param_used_with_float_list(param_name, ctx.nodes.sexprs_of(args), ctx, env, captures, params)
         }
-        .Block(stmts) -> param_used_with_float_stmts(param_name, stmts, ctx, env, captures, params)
+        .Block(stmts) -> param_used_with_float_stmts(param_name, ctx.nodes.sstmts_of(stmts), ctx, env, captures, params)
         .IfExpr(c, t, e) -> {
             param_used_with_float(param_name, ctx.nodes.exprs.get(c), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(t), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
         }

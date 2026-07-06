@@ -2188,7 +2188,7 @@ export enum Expr {
     /// Index access: `list[i]` / `map["key"]`.
     Index(obj: ExprId, idx: ExprId)
     /// Block expression — value is the last statement's value.
-    Block(body: List<SStmt>)
+    Block(body: List<StmtId>)
     /// `match subject { arms }` — match used as an expression.
     MatchExpr(subject: ExprId, arms: List<MatchArm>)
     /// Field reassignment: `obj.field = value`.
@@ -2503,7 +2503,7 @@ export fn stmt_diverges(store: NodeStore, stmt: Stmt) -> bool {
 /// forms `return` / `break` / `continue` are statements).
 export fn expr_diverges(store: NodeStore, body: Expr) -> bool {
     match body {
-        .Block(stmts) -> stmts_diverges(store, stmts)
+        .Block(stmts) -> stmt_ids_diverge(store, stmts)
         .Call(callee, _) -> expr_is_panic_callee(store.exprs.get(callee))
         _ -> false
     }
@@ -2776,7 +2776,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .FieldAccess(obj, field) -> "(field ${render_expr(store, store.exprs.get(obj))} ${field})"
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_ids(store, args)})"
         .Index(obj, idx) -> "(index ${render_expr(store, store.exprs.get(obj))} ${render_expr(store, store.exprs.get(idx))})"
-        .Block(body) -> "(block-expr ${render_stmt_list(store, body)})"
+        .Block(body) -> "(block-expr ${render_stmt_ids(store, body)})"
         .MatchExpr(subject, arms) -> "(match-expr ${render_expr_id(store, subject)} ${render_match_arm_list(store, arms)})"
         .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(store, store.exprs.get(obj))} ${field} ${render_expr(store, store.exprs.get(value))})"
         .IfExpr(c, t, e) -> "(if-expr ${render_expr(store, store.exprs.get(c))} ${render_expr(store, store.exprs.get(t))} ${render_expr(store, store.exprs.get(e))})"

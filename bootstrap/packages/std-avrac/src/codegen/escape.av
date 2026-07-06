@@ -51,7 +51,7 @@ export fn analyze_releasable(store: NodeStore, body: List<SStmt>) -> List<string
 /// inner List<SStmt>.
 export fn analyze_releasable_expr(store: NodeStore, body: Expr) -> List<string> {
     match body {
-        .Block(stmts) -> analyze_releasable(store, stmts)
+        .Block(stmts) -> analyze_releasable(store, store.sstmts_of(stmts))
         _ -> {
             let empty: List<string> = []
             empty
@@ -209,7 +209,7 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
             remove_escaped_field_inits(store, inits, s1)
         }
         .Lambda(_, body) -> remove_escaped_expr(store, store.exprs.get(body), set)
-        .Block(body) -> single_pass_escape(store, body, set)
+        .Block(body) -> single_pass_escape_ids(store, body, set)
         .IfExpr(cond, t, e) -> remove_escaped_expr(store, store.exprs.get(e), remove_escaped_expr(store, store.exprs.get(t), remove_escaped_expr(store, store.exprs.get(cond), set)))
         // Match arms must be walked: a variable used in an arm body
         // (especially as the arm's return value, which escapes) needs

@@ -107,7 +107,7 @@ fn arms_have_spawn(store: NodeStore, arms: List<MatchArm>) -> bool {
 fn expr_has_spawn(store: NodeStore, ex: Expr) -> bool {
     match ex {
         .Spawn(_) -> true
-        .Block(stmts) -> stmts_has_spawn(store, stmts)
+        .Block(stmts) -> stmt_ids_have_spawn(store, stmts)
         .Call(callee, args) -> expr_has_spawn(store, store.exprs.get(callee)) || exprs_have_spawn(store, args)
         .Binary(l, _, r) -> expr_has_spawn(store, store.exprs.get(l)) || expr_has_spawn(store, store.exprs.get(r))
         .Unary(_, e) -> expr_has_spawn(store, store.exprs.get(e))

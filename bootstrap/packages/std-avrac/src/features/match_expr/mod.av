@@ -178,7 +178,7 @@ fn finalize_arm_result(body_result: StepResult) -> StepResult {
 /// `is_return` and propagate up.
 fn eval_match_body(rt: Runtime, body: SExpr) -> StepResult {
     match body.node {
-        .Block(stmts) -> execute_stmt(rt, Stmt.Block(rt.nodes.rows_of(stmts)))
+        .Block(stmts) -> execute_stmt(rt, Stmt.Block(stmts))
         _ -> eval_expr(rt, body.node)
     }
 }

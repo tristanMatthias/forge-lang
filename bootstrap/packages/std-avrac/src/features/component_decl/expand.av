@@ -258,7 +258,7 @@ fn rw_expr(store: NodeStore, expr: Expr, ctx: RewriteCtx) -> Expr {
         .Unary(op, r) -> Expr.Unary(op, rw_expr_id(store, r, ctx))
         .Logical(l, op, r) -> Expr.Logical(rw_expr_id(store, l, ctx), op, rw_expr_id(store, r, ctx))
         .IfExpr(c, t, e) -> Expr.IfExpr(rw_expr_id(store, c, ctx), rw_expr_id(store, t, ctx), rw_expr_id(store, e, ctx))
-        .Block(body) -> Expr.Block(rewrite_self(store, body, ctx))
+        .Block(body) -> Expr.Block(rw_stmt_ids(store, body, ctx))
         _ -> expr
     }
 }
@@ -780,7 +780,7 @@ fn splice_template_block(store: NodeStore, comp: string, inst: string, config: L
 
     if has_fn(def.body, "drop") {
         let rewritten = rw_template(store, store.sstmts_of(find_fn_body(def.body, "drop")), inst, config, def.config, rw_ctx)
-        stmts = prepend_stmt(Stmt.Defer(store.exprs.add_leaf(Expr.Block(rewritten))), line, col, stmts)
+        stmts = prepend_stmt(Stmt.Defer(store.exprs.add_leaf(Expr.Block(store.rows_of(rewritten)))), line, col, stmts)
     }
 
     if has_fn(def.body, "__on_after_children") {
@@ -821,7 +821,7 @@ fn splice_data_block(store: NodeStore, comp: string, inst: string, config: List<
 
     if def.found && has_fn(def.body, "drop") {
         let rewritten = rewrite_self(store, store.sstmts_of(find_fn_body(def.body, "drop")), rw_ctx)
-        stmts = prepend_stmt(Stmt.Defer(store.exprs.add_leaf(Expr.Block(rewritten))), line, col, stmts)
+        stmts = prepend_stmt(Stmt.Defer(store.exprs.add_leaf(Expr.Block(store.rows_of(rewritten)))), line, col, stmts)
     }
 
     if def.found && has_fn(def.body, "__on_after_children") {

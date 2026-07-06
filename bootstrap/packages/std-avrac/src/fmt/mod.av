@@ -46,7 +46,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .FieldAccess(obj, field) -> "${fmt_expr(store, store.exprs.get(obj))}.${field}"
         .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_ids_comma(store, args)})"
         .Index(obj, idx) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(idx))}]"
-        .Block(body) -> "{\n${fmt_stmt_list(store, body, 1)}\n}"
+        .Block(body) -> "{\n${fmt_stmt_ids(store, body, 1)}\n}"
         .MatchExpr(subject, arms) -> "match ${fmt_expr(store, store.exprs.get(subject))} {\n${fmt_match_arms(store, arms, 1)}\n}"
         .FieldAssign(obj, field, value) -> "${fmt_expr(store, store.exprs.get(obj))}.${field} = ${fmt_expr(store, store.exprs.get(value))}"
         .IfExpr(c, t, e) -> "if ${fmt_expr(store, store.exprs.get(c))} { ${fmt_expr(store, store.exprs.get(t))} } else { ${fmt_expr(store, store.exprs.get(e))} }"
