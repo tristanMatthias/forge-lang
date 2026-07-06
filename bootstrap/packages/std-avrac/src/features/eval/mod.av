@@ -2819,7 +2819,13 @@ fn list_value_to_annotation_list(store: NodeStore, v: Value) -> Result<List<Anno
 fn annotation_arg_ids_of(store: NodeStore, entry: Value, args: List<SExpr>) -> List<ExprId> {
     for f in entry.struct_payload {
         if f.name == "arg_ids" && f.value.kind == "list" {
-            return decode_or(list_value_to_expr_id_list(store, f.value), store.ingest_sexpr_recipe(args))
+            // Lazy fallback: only re-ingest args when the id list fails to
+            // decode, so the post-flip fast path (real arg_ids present) pays no
+            // redundant arena allocation — decode_or evaluates its default eagerly.
+            match list_value_to_expr_id_list(store, f.value) {
+                .Ok(ids) -> return ids
+                .Err(_) -> return store.ingest_sexpr_recipe(args)
+            }
         }
     }
     store.ingest_sexpr_recipe(args)
