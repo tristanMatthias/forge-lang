@@ -2365,11 +2365,13 @@ export type WhenArm = {
 /// Used as `arms: List<SelectArm>` on Stmt.Select.
 export type SelectArm = {
     binding: string,
-    chan: Expr,
-    body: List<SStmt>,
-    // B-final F1a dual fields (see WhenArm — NULLABLE, null = no row yet).
-    chan_id: ExprId?,
-    body_ids: List<StmtId>?,
+    // B-final F4d: fully flipped to arena ids — the boxed `chan: Expr` /
+    // `body: List<SStmt>` are gone. `chan` is required (`chan_id`), the arm
+    // body is the flipped `body_ids`. Consumers read via `store.exprs.get` /
+    // `store.stmts.get`; rewrite passes rewrite the ids (rewrite_expr_id /
+    // rewrite_stmt_ids), not boxed halves.
+    chan_id: ExprId,
+    body_ids: List<StmtId>,
 }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.

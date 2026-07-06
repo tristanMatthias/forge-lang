@@ -1289,8 +1289,8 @@ fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectSta
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let after_ch = collect_inst_expr(arm.chan, regs, cur)
-        cur = collect_inst_stmts(arm.body, regs, after_ch)
+        let after_ch = collect_inst_expr(regs.store.exprs.get(arm.chan_id), regs, cur)
+        cur = collect_inst_stmts(regs.store.sstmts_of(arm.body_ids), regs, after_ch)
         i = i + 1
     }
     cur
@@ -2518,8 +2518,8 @@ fn rewrite_select_arms_mono(arms: List<SelectArm>, regs: GenRegs, insts: List<In
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            chan: rewrite_expr(arm.chan, regs, insts),
-            body: rewrite_stmts(arm.body, regs, insts),
+            chan_id: rewrite_expr_id(arm.chan_id, regs, insts),
+            body_ids: rewrite_stmt_ids(arm.body_ids, regs, insts),
         })
         i = i + 1
     }

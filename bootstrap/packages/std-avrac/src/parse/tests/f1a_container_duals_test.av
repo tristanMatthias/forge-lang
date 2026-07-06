@@ -1,11 +1,11 @@
 // WHY: B-final F1a/F4 — the walker-opaque containers (WhenArm, SelectArm,
 // MatchArm, Annotation, CompConfig) hold their child exprs/stmts as arena ids.
-// Containers still mid-migration (SelectArm, Annotation, CompConfig) carry
-// DUAL fields — a nullable id beside the boxed child — and these specs pin
-// that on the PARSE path the id is present and `store.get(id)` renders
-// identically to the boxed half (the agreement that lets consumers migrate off
-// the boxed halves one at a time without drift). Fully-flipped containers
-// (WhenArm — F4c; MatchArm guard/body — F4b) have dropped the boxed half
+// Containers still mid-migration (Annotation, CompConfig) carry DUAL fields —
+// a nullable id beside the boxed child — and these specs pin that on the PARSE
+// path the id is present and `store.get(id)` renders identically to the boxed
+// half (the agreement that lets consumers migrate off the boxed halves one at a
+// time without drift). Fully-flipped containers (WhenArm — F4c; MatchArm
+// guard/body — F4b; SelectArm chan/body — F4d) have dropped the boxed half
 // entirely; their specs verify the id is present and resolves to the EXACT
 // expected node. MatchArm's pattern stays dual — only its guard/body flipped.
 
@@ -63,15 +63,13 @@ fn select_arm_mirrors() -> bool {
         .Select(arms) -> {
             if arms.length != 1 { return false }
             let arm = arms[0]
-            if arm.chan_id == none { return false }
-            if render_expr(r.store, r.store.exprs.get(arm.chan_id!)) != render_expr(r.store, arm.chan) { return false }
-            if arm.body_ids == none { return false }
-            let ids = arm.body_ids!
-            if ids.length != arm.body.length { return false }
-            for (i, id) in ids.enumerate() {
-                if render_stmt(r.store, r.store.stmts.get(id)) != render_stmt(r.store, arm.body[i].node) { return false }
-            }
-            true
+            // F4d: SelectArm is arena-only (boxed chan/body dropped). chan_id
+            // resolves to the exact channel expr; body_ids to the arm's stmts.
+            if render_expr(r.store, r.store.exprs.get(arm.chan_id)) != render_expr(r.store, Expr.Ident("c")) { return false }
+            if arm.body_ids.length != 2 { return false }
+            let s0 = render_stmt(r.store, r.store.stmts.get(arm.body_ids[0]))
+            let s1 = render_stmt(r.store, r.store.stmts.get(arm.body_ids[1]))
+            s0.contains("handle") && s1.contains("log")
         }
         _ -> false
     }

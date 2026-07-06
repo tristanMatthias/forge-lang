@@ -36,7 +36,6 @@ impl Parser {
                 .Ok(c) -> c
                 .Err(_) -> return out
             }
-            let chan = self.expr_of(chan_id)
             // Expect `->`
             if !self.consume(Tk.Arrow, "expected `->` after channel in select arm") {
                 return out
@@ -49,11 +48,10 @@ impl Parser {
                 .Ok(b) -> b
                 .Err(_) -> return out
             }
-            let body = body_parsed.wrapped
             if !self.consume(Tk.RightBrace, "expected `}` to close select arm") {
                 return out
             }
-            out.push(SelectArm { binding, chan: chan, body: body, chan_id, body_ids: body_parsed.ids })
+            out.push(SelectArm { binding, chan_id, body_ids: body_parsed.ids })
         }
         out
     }

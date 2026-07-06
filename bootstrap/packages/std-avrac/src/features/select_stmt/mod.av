@@ -24,14 +24,14 @@ fn select_check(tc: TC, stmt: Stmt) -> TC {
             mut i = 0
             while i < arms.length {
                 let arm = arms[i]
-                let c = check_expr(cur, arm.chan)
+                let c = check_expr(cur, cur.nodes.exprs.get(arm.chan_id))
                 let elem = match c.ty {
                     .Channel(e) -> e
                     _ -> ValueType.Unknown
                 }
                 let inner = tc_enter(c.tc)
                 let bound = tc_bind(inner, arm.binding, elem)
-                let after = check_stmts(bound, arm.body)
+                let after = check_stmts(bound, bound.nodes.sstmts_of(arm.body_ids))
                 cur = tc_exit(after)
                 i = i + 1
             }

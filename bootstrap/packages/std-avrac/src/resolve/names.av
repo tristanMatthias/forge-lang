@@ -1194,8 +1194,8 @@ fn rewrite_select_arms(ctx: NameCtx, arms: List<SelectArm>) -> List<SelectArm> {
         let arm = arms[i]
         out.push(SelectArm {
             binding: arm.binding,
-            chan: rewrite_expr(ctx, arm.chan),
-            body: rewrite_stmt_list(ctx, arm.body),
+            chan_id: rewrite_expr_id(ctx, arm.chan_id),
+            body_ids: rewrite_stmt_ids(ctx, arm.body_ids),
         })
         i = i + 1
     }

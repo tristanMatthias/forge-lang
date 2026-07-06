@@ -13,11 +13,11 @@ export fn resolve_select_arms(r: Resolver, arms: List<SelectArm>) -> Resolver {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let after_ch = resolve_expr(cur, arm.chan)
+        let after_ch = resolve_expr(cur, cur.nodes.exprs.get(arm.chan_id))
         let scoped = enter_resolve_scope(after_ch)
         let with_binding = declare_name(scoped, arm.binding)
         let defined = define_name(with_binding, arm.binding)
-        let after_body = resolve_stmt_list(defined, arm.body)
+        let after_body = resolve_stmt_list(defined, defined.nodes.sstmts_of(arm.body_ids))
         cur = exit_resolve_scope(after_body)
         i = i + 1
     }
