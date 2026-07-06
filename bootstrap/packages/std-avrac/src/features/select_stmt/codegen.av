@@ -41,7 +41,7 @@ fn push_channels(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, arr: pt
     mut elems: List<ValueType> = []
     mut i = 0
     while i < arms.length {
-        let r = ctx.emit(env, arms[i].chan)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(arms[i].chan_id))?
         ctx.array_push(arr, ctx.to_i64(r.value, "ch_i64"))
         let elem = match r.ty {
             .Channel(e) -> e
@@ -73,7 +73,7 @@ fn emit_select_dispatch(ctx: Ctx, env: List<VarBinding>, arms: List<SelectArm>, 
         .Unknown -> ctx.bind(env, arm.binding, val, .Unknown)
         _ -> ctx.bind(env, arm.binding, channel_slot_out(ctx, val, elem), elem)
     }
-    emit_block_loop(ctx, body_env, arm.body, ctx.i64(0), .Unknown)?
+    emit_block_loop(ctx, body_env, ctx.nodes.sstmts_of(arm.body_ids), ctx.i64(0), .Unknown)?
     ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)

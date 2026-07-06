@@ -4169,13 +4169,17 @@ fn annotate_expr_id(tc: TC, id: ExprId) -> ExprId {
 fn annotate_select_arms(tc: TC, arms: List<SelectArm>) -> List<SelectArm> {
     mut out: List<SelectArm> = []
     for arm in arms {
-        let new_chan = annotate_expr(tc, arm.chan)
-        let elem = match check_expr(tc, arm.chan).ty {
+        // F4d: annotate the arena chan/body ids and stamp the chan's resolved
+        // type into `arg_tys` (mirrors annotate_match_arms).
+        let chan_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.chan_id))
+        let new_chan_id = tc.nodes.reexpr(chan_ann.node, arm.chan_id)
+        tc.nodes.set_arg_ty(new_chan_id, chan_ann.ty)
+        let elem = match check_expr(tc, tc.nodes.exprs.get(arm.chan_id)).ty {
             .Channel(e) -> e
             _ -> ValueType.Unknown
         }
         let inner = tc_bind(tc, arm.binding, elem)
-        out.push(arm with { chan: new_chan, body: annotate_stmts(inner, arm.body) })
+        out.push(SelectArm { binding: arm.binding, chan_id: new_chan_id, body_ids: annotate_stmt_ids(inner, arm.body_ids) })
     }
     out
 }
