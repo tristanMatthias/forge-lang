@@ -538,7 +538,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .Block(body) -> {
             let entered = enter_resolve_scope(r)
-            let after = resolve_stmt_list(entered, body)
+            let after = resolve_stmt_ids(entered, body)
             exit_resolve_scope(after)
         }
         .Slice(obj, start, end) -> {

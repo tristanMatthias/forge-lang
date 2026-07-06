@@ -35,9 +35,12 @@ spec "derive all_children_spanned: cross-type children, in order" {
         let ws = ts()
         expr_child_tags(Expr.Binary(ws.exprs.add_leaf(Expr.Number("1")), BinOp.Add, ws.exprs.add_leaf(Expr.Number("2")))) == ""
     }
-    then "Expr.Block -> its body Stmts via wrapper-list .node unwrap" {
-        let body: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
-        expr_child_tags(Expr.Block(body)) == "SS"
+    then "Expr.Block -> body StmtIds are walker-opaque (no children, like Stmt.Block)" {
+        // B-final: Expr.Block.body flipped to List<StmtId>. The ids ARE the
+        // structure, so the walker sees no children — the id-list is a scalar.
+        let ws = ts()
+        let body: List<StmtId> = ws.rows_of([sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)])
+        expr_child_tags(Expr.Block(body)) == ""
     }
     then "a scalar-only node has no children" {
         stmt_child_tags(Stmt.Break) == ""
@@ -94,9 +97,12 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
         let ws = ts()
         wc_roundtrip_stmt(ws, Stmt.Let("x", ValueType.Int, ws.exprs.add_leaf(Expr.Number("1"))))
     }
-    then "wrapper-list child (Expr.Block: List<SStmt> rebuilt with recovered spans)" {
-        let body: List<SStmt> = [sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)]
-        wc_roundtrip_expr(ts(), Expr.Block(body))
+    then "id-payload body (Expr.Block: List<StmtId> passthrough, walker-opaque)" {
+        // B-final: the flipped Block body is a scalar id-list — the round-trip
+        // pins id passthrough (the store resolves the rows on render).
+        let ws = ts()
+        let body: List<StmtId> = ws.rows_of([sstmt(Stmt.Break, 1, 1), sstmt(Stmt.Continue, 2, 1)])
+        wc_roundtrip_expr(ws, Expr.Block(body))
     }
     then "id-payload callee + arg-list ids (Expr.Call: callee + args all verbatim, F3b)" {
         // Post-flip Call carries an ExprId callee and a List<ExprId> args —
@@ -148,7 +154,7 @@ spec "derive with_children: round-trips every field-kind shape (inverse-walker l
     then "nested (Block holds an Expr-stmt holding a Binary) round-trips at depth" {
         let ws = ts()
         let bin = ws.exprs.add_leaf(Expr.Binary(ws.exprs.add_leaf(Expr.Number("1")), BinOp.Add, ws.exprs.add_leaf(Expr.Number("2"))))
-        let inner: List<SStmt> = [sstmt(Stmt.Expr(bin), 1, 1)]
+        let inner: List<StmtId> = ws.rows_of([sstmt(Stmt.Expr(bin), 1, 1)])
         wc_roundtrip_expr(ws, Expr.Block(inner))
     }
 }

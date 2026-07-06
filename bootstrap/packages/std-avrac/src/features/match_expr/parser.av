@@ -209,11 +209,13 @@ impl Parser {
             if self.check(Tk.KwReturn) {
                 self.advance()
                 let rv_id = self.parse_expression()?
-                let ret_id = self.alloc_stmt_leaf(Stmt.Return(rv_id))
-                let ret_stmt = sstmt(Stmt.Return(rv_id), self.current_line, self.current_column)
-                let body_stmts: List<SStmt> = [ret_stmt]
-                body_val = Expr.Block(body_stmts)
-                body_id = self.alloc_expr(body_val, byte_span_none(), [NodeRef.StmtRef(ret_id)])
+                // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf).
+                // Ingest the synthesized return via `rows_of` so the row keeps
+                // the position the boxed `sstmt` wrapper carried (file "") — the
+                // return's field-access null-traps embed that same source line.
+                let body_stmts: List<SStmt> = [sstmt(Stmt.Return(rv_id), self.current_line, self.current_column)]
+                body_val = Expr.Block(self.store.rows_of(body_stmts))
+                body_id = self.alloc_leaf(body_val)
             } else {
                 body_id = self.parse_expression()?
                 body_val = self.expr_of(body_id)

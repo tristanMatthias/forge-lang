@@ -124,31 +124,24 @@ impl Parser {
         }
         if !has_else { else_id = self.alloc_leaf(Expr.Number("0")) }
         let bind_id = self.iflet_bind_row(h.tmp, h.binding)
-        let bind_stmt = sstmt_dummy(self.stmt_of(bind_id))
-        // Prepend the unwrap-bind to the then-block (see the statement form:
-        // a parsed then-Block's recorded children are reused verbatim).
-        mut then_edges: List<NodeRef> = [NodeRef.StmtRef(bind_id)]
+        // Prepend the unwrap-bind to the then-block. Flipped Expr.Block holds
+        // List<StmtId> (walker-opaque leaf) — the rows ARE the structure, so
+        // a parsed then-Block's rows are reused verbatim.
         let new_then = match then_expr {
-            .Block(body) -> {
-                for r in self.store.exprs.children_of(then_id) { then_edges.push(r) }
-                let head: List<SStmt> = [bind_stmt]
-                Expr.Block(list_concat(head, body))
-            }
+            .Block(body) -> Expr.Block(list_concat([bind_id], body))
             _ -> {
                 let then_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(then_id))
-                then_edges.push(NodeRef.StmtRef(then_stmt_id))
-                let one: List<SStmt> = [bind_stmt, sstmt_dummy(Stmt.Expr(then_id))]
-                Expr.Block(one)
+                Expr.Block([bind_id, then_stmt_id])
             }
         }
-        let new_then_id = self.alloc_expr(new_then, byte_span_none(), then_edges)
+        let new_then_id = self.alloc_leaf(new_then)
         let cond_id = self.iflet_cond_row(h.tmp)
         let inner_if = Expr.IfExpr(cond_id, new_then_id, else_id)
         let inner_if_id = self.alloc_leaf(inner_if)
         let outer_let_id = self.alloc_binding_stmt(Stmt.Let(h.tmp, ValueType.Unknown, h.subject_id), ValueType.Unknown)
         let inner_if_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(inner_if_id))
-        let outer: List<SStmt> = [sstmt_dummy(self.stmt_of(outer_let_id)), sstmt_dummy(Stmt.Expr(inner_if_id))]
-        .Ok(self.alloc_expr(Expr.Block(outer), byte_span_none(), [NodeRef.StmtRef(outer_let_id), NodeRef.StmtRef(inner_if_stmt_id)]))
+        let outer: List<StmtId> = [outer_let_id, inner_if_stmt_id]
+        .Ok(self.alloc_leaf(Expr.Block(outer)))
     }
 
     // The `let <binding> = __tmp!` row shared by both if-let desugars:

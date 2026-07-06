@@ -134,7 +134,7 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
         .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr_id(obj, reg), field, rewrite_expr_id(val, reg))
         .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, rewrite_expr_list_ids(args, reg))
         .IfExpr(c, t, e) -> .IfExpr(rewrite_expr_id(c, reg), rewrite_expr_id(t, reg), rewrite_expr_id(e, reg))
-        .Block(body) -> .Block(rewrite_stmt_list(body, reg))
+        .Block(body) -> .Block(rewrite_stmt_ids(body, reg))
         .MatchExpr(subj, arms) -> .MatchExpr(rewrite_expr_id(subj, reg), rewrite_match_arms(arms, reg))
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr_id(l, reg), rewrite_expr_id(r, reg))
         .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr_id(obj, reg), field)

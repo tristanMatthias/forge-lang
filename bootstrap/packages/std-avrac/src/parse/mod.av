@@ -1397,8 +1397,8 @@ impl Parser {
                 let body_stmts = self.parse_statement_list_ids(true)?
                 self.allow_dot_postfix = saved_dot
                 if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
-                let handler = Expr.Block(body_stmts.wrapped)
-                let handler_id = self.alloc_expr(handler, byte_span_none(), self.edges_of_stmt_ids(body_stmts.ids))
+                let handler = Expr.Block(body_stmts.ids)
+                let handler_id = self.alloc_leaf(handler)
                 // Flipped Catch.inner/.body are ExprId scalars (walker-opaque) — the
                 // node holds both arena ids directly, so the Catch row is a leaf.
                 result = Expr.Catch(rid, binding, handler_id, catch_line, catch_col)
@@ -1971,7 +1971,9 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
             return .Err("parse error")
         }
-        .Ok(self.alloc_expr(Expr.Block(body_val.wrapped), byte_span_none(), self.edges_of_stmt_ids(body_val.ids)))
+        // Flipped Expr.Block holds List<StmtId> (walker-opaque, like Stmt.Block) —
+        // the stmt ids ARE the structure, so the block-expr is a leaf row.
+        .Ok(self.alloc_leaf(Expr.Block(body_val.ids)))
     }
 
     fn check(self, kind: Tk) -> bool {

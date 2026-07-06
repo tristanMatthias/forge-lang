@@ -902,7 +902,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             // Scope discipline matches `Stmt.Block` so let/mut bindings
             // declared inside don't leak out into the surrounding expr.
             let entered = enter_scope(runtime)
-            let body_result = execute_stmt_list(entered, body)
+            let body_result = execute_stmt_ids(entered, body)
             let exited = exit_scope(body_result.runtime)
             if body_result.had_error {
                 return StepResult { runtime: exited, value: value_null(), had_error: true, is_return: false, error_message: body_result.error_message }
@@ -2431,7 +2431,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         }
         "Block" -> {
             if p.length != 1 { return .Err("decode: bad payload") }
-            let body = list_value_to_stmt_list(store, head)?
+            let body = list_value_to_stmt_id_list(store, head)?
             .Ok(Expr.Block(body))
         }
         "Assign" -> {

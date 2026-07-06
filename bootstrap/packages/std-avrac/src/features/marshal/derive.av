@@ -268,7 +268,7 @@ fn list_of_struct_block(store: NodeStore, base: Expr, value_expr: Expr, field_na
     let for_stmt = Stmt.ForIn(xvar, store.exprs.add_leaf(value_expr), body)
     let yield_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Ident(bvar)))
     let block_body: List<SStmt> = [sstmt_dummy(init_stmt), sstmt_dummy(for_stmt), sstmt_dummy(yield_stmt)]
-    Expr.Block(block_body)
+    Expr.Block(store.rows_of(block_body))
 }
 
 fn writer_for(ty: ValueType) -> string {

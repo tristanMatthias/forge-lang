@@ -239,9 +239,9 @@ spec "ty5v: or-pattern matches either variant" {
 // }`
 fn mk_match_stmt_with_return_fn(ws: NodeStore) -> CompTimeFn {
     let arm0_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(ws.exprs.add_leaf(Expr.Number("10"))))]
-    let arm0_block = Expr.Block(arm0_stmts)
+    let arm0_block = Expr.Block(ws.rows_of(arm0_stmts))
     let arm_wild_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(ws.exprs.add_leaf(Expr.Number("99"))))]
-    let arm_wild_block = Expr.Block(arm_wild_stmts)
+    let arm_wild_block = Expr.Block(ws.rows_of(arm_wild_stmts))
     mut arms: List<MatchArm> = []
     arms.push(MatchArm { pattern: Pattern.LitInt(0), guard: null, body: sexpr_dummy(arm0_block) })
     arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(arm_wild_block) })

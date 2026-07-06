@@ -134,7 +134,7 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .Call(callee, args) -> any_quote_in_expr(store, store.exprs.get(callee)) || any_quote_in_expr_id_list(store, args)
         .GenericCall(callee, _, args) -> any_quote_in_expr(store, store.exprs.get(callee)) || any_quote_in_expr_id_list(store, args)
         .Grouping(inner) -> any_quote_in_expr(store, store.exprs.get(inner))
-        .Block(body) -> any_quote_in_stmt_list(store, body)
+        .Block(body) -> any_quote_in_stmt_ids(store, body)
         .IfExpr(c, t, e) -> any_quote_in_expr(store, store.exprs.get(c)) || any_quote_in_expr(store, store.exprs.get(t)) || any_quote_in_expr(store, store.exprs.get(e))
         .Assign(_, v) -> any_quote_in_expr(store, store.exprs.get(v))
         .StructLit(_, inits) -> any_quote_in_field_inits(store, inits)
@@ -281,7 +281,7 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .Call(callee, args) -> .Call(lower_expr_id(store, callee), lower_expr_list_ids(store, args))
         .GenericCall(callee, ta, args) -> .GenericCall(lower_expr_id(store, callee), ta, lower_expr_list_ids(store, args))
         .Grouping(inner) -> .Grouping(lower_expr_id(store, inner))
-        .Block(body) -> .Block(lower_stmt_list(store, body))
+        .Block(body) -> .Block(lower_stmt_ids(store, body))
         .IfExpr(c, t, e) -> .IfExpr(lower_expr_id(store, c), lower_expr_id(store, t), lower_expr_id(store, e))
         .Assign(name, v) -> .Assign(name, lower_expr_id(store, v))
         .StructLit(name, inits) -> .StructLit(name, lower_field_inits(store, inits))
@@ -367,15 +367,15 @@ fn lower_field_inits(store: NodeStore, inits: List<FieldInit>) -> List<FieldInit
 /// that invokes parse_type_expr inside the braces (vez6.3.13 follow-up).
 fn dispatch_quote_kind(store: NodeStore, kind: string, body: Expr) -> Expr {
     if kind == "stmt" || kind == "decl" {
-        let single = extract_single_stmt(body)
+        let single = extract_single_stmt(store, body)
         if single != null { return construct_stmt(store, single!) }
         // Block has 0 or 2+ statements — fall back to constructing
         // the List<SStmt> as if `stmts` was used. The user gets a
         // list instead of a Stmt, which surfaces the mismatch.
-        return construct_stmt_list(store, extract_stmt_list(body))
+        return construct_stmt_list(store, extract_stmt_list(store, body))
     }
     if kind == "stmts" {
-        return construct_stmt_list(store, extract_stmt_list(body))
+        return construct_stmt_list(store, extract_stmt_list(store, body))
     }
     if kind == "type" {
         return construct_value_type_from_body(store, body)
@@ -449,19 +449,19 @@ fn value_type_ctor(variant: string) -> Expr {
 
 /// Extract the single Stmt from a `Block(List<SStmt>)` of length 1.
 /// Returns null if the block is empty or has multiple statements.
-fn extract_single_stmt(body: Expr) -> Stmt? {
+fn extract_single_stmt(store: NodeStore, body: Expr) -> Stmt? {
     match body {
         .Block(stmts) -> {
-            if stmts.length == 1 { stmts[0].node } else { null }
+            if stmts.length == 1 { store.stmts.get(stmts[0]) } else { null }
         }
         _ -> null
     }
 }
 
 /// Extract the List<SStmt> from a Block; otherwise empty.
-fn extract_stmt_list(body: Expr) -> List<SStmt> {
+fn extract_stmt_list(store: NodeStore, body: Expr) -> List<SStmt> {
     match body {
-        .Block(stmts) -> stmts
+        .Block(stmts) -> store.sstmts_of(stmts)
         _ -> {
             let empty: List<SStmt> = []
             empty
@@ -479,7 +479,7 @@ fn unwrap_quote_body(store: NodeStore, body: Expr) -> Expr {
     match body {
         .Block(stmts) -> {
             if stmts.length == 1 {
-                match stmts[0].node {
+                match store.stmts.get(stmts[0]) {
                     .Expr(inner) -> store.exprs.get(inner)
                     _ -> body
                 }
@@ -543,7 +543,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         .Lambda(params, body) -> expr_ctor(store, "Lambda", two_args(construct_param_list(store, params), construct_expr_id(store, body)))
         .Spawn(body) -> expr_ctor(store, "Spawn", one_arg(construct_expr_id(store, body)))
         .Isolated(body) -> expr_ctor(store, "Isolated", one_arg(construct_expr_id(store, body)))
-        .Block(body) -> expr_ctor(store, "Block", one_arg(construct_stmt_list(store, body)))
+        .Block(body) -> expr_ctor(store, "Block", one_arg(construct_stmt_ids(store, body)))
         // MatchExpr inside a quote — subject + arms become a runtime
         // `Expr.MatchExpr` value. The arm list goes through
         // `construct_match_arm_list` which expands `~arms` sentinels

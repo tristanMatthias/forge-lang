@@ -308,7 +308,7 @@ fn lower_table_rows(store: NodeStore, expr: Expr, expected: ValueType) -> Expr {
 fn stamp_table_rows(store: NodeStore, expr: Expr, sname: string) -> Expr {
     match expr {
         .ListLit(rows) -> .ListLit(stamp_table_row_list(store, rows, sname))
-        .Block(body) -> .Block(stamp_block_tail(store, body, sname))
+        .Block(body) -> .Block(store.rows_of(stamp_block_tail(store, store.sstmts_of(body), sname)))
         .IfExpr(c, t, e) -> .IfExpr(c, store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(t), sname)), store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(e), sname)))
         .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(store, arms, sname))
         .When(arms) -> .When(stamp_table_when_arms(store, arms, sname))
@@ -495,7 +495,7 @@ fn desugar_dbg(store: NodeStore, args: List<ExprId>) -> Expr {
         sstmt(Stmt.Expr(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("println")), println_args))), 0, 0),
         sstmt(Stmt.Expr(store.exprs.add_leaf(Expr.Ident("__dbg"))), 0, 0),
     ]
-    Expr.Block(body)
+    Expr.Block(store.rows_of(body))
 }
 
 /// Rewrite `todo()` / `todo("message")` into a `panic` with a
@@ -545,7 +545,7 @@ fn desugar_min_max(store: NodeStore, args: List<ExprId>, is_min: int) -> Expr {
         sstmt(Stmt.Let("__b", ValueType.Unknown, store.exprs.add_leaf(b_val)), 0, 0),
         sstmt(Stmt.Expr(store.exprs.add_leaf(pick)), 0, 0),
     ]
-    Expr.Block(body)
+    Expr.Block(store.rows_of(body))
 }
 
 // ── Generic expression walker ──
@@ -568,7 +568,7 @@ fn walk_expr(store: NodeStore, expr: Expr, sigs: List<FnSig>) -> Expr {
         .FieldAccess(obj, field) -> .FieldAccess(desugar_expr_id(store, obj, sigs), field)
         .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr_id(store, obj, sigs), field, desugar_expr_id(store, val, sigs))
         .IfExpr(c, t, e) -> .IfExpr(desugar_expr_id(store, c, sigs), desugar_expr_id(store, t, sigs), desugar_expr_id(store, e, sigs))
-        .Block(body) -> .Block(desugar_stmt_list(store, body, sigs))
+        .Block(body) -> .Block(desugar_stmt_ids(store, body, sigs))
         .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr_id(store, l, sigs), desugar_expr_id(store, r, sigs))
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr_id(store, obj, sigs), field)
         .OptionalMethodCall(obj, method, args) -> .OptionalMethodCall(desugar_expr_id(store, obj, sigs), method, desugar_expr_list_ids(store, args, sigs))

@@ -67,22 +67,17 @@ impl Parser {
         let tmp = self.fresh("letelse")
         let unwrap_id = self.alloc_force_unwrap_row(tmp)
         let cond_id = self.alloc_none_check_row(tmp, BinOp.Eq)
-        // Expr.Block still carries boxed wrappers (F3b flips it); its edges
-        // are the reused body rows.
-        mut else_edges: List<NodeRef> = []
-        for sid in else_ids { else_edges.push(NodeRef.StmtRef(sid)) }
-        let else_block = Expr.Block(self.store.sstmts_of(else_ids))
-        let else_block_id = self.alloc_expr(else_block, byte_span_none(), else_edges)
+        // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf) — the
+        // reused else-body rows ARE the structure, so the block-expr is a leaf.
+        let else_block = Expr.Block(else_ids)
+        let else_block_id = self.alloc_leaf(else_block)
         let guard = Expr.IfExpr(cond_id, else_block_id, unwrap_id)
         let guard_id = self.alloc_leaf(guard)
         let tmp_let_id = self.alloc_binding_stmt(Stmt.Let(tmp, ValueType.Unknown, subject_id), ValueType.Unknown)
         let guard_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(guard_id))
-        let block_body: List<SStmt> = [
-            sstmt_dummy(self.stmt_of(tmp_let_id)),
-            sstmt_dummy(Stmt.Expr(guard_id)),
-        ]
-        let init = Expr.Block(block_body)
-        let init_id = self.alloc_expr(init, byte_span_none(), [NodeRef.StmtRef(tmp_let_id), NodeRef.StmtRef(guard_stmt_id)])
+        // The block body rows ARE its two synthesized statements' ids.
+        let init = Expr.Block([tmp_let_id, guard_stmt_id])
+        let init_id = self.alloc_leaf(init)
         if is_mut { .Ok(self.alloc_binding_stmt(Stmt.Mut(name, ty_vt, init_id), ty_vt)) } else { .Ok(self.alloc_binding_stmt(Stmt.Let(name, ty_vt, init_id), ty_vt)) }
     }
 

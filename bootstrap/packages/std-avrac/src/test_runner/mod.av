@@ -217,8 +217,9 @@ fn build_guarded_spec_call(store: NodeStore, orig: SStmt, spec_name_lex: string)
         sstmt_dummy(Stmt.Expr(store.exprs.add_leaf(Expr.Number("0")))),
     ]
     let empty_p: List<ParamEntry> = []
-    // Flipped Lambda.body is an ExprId — ingest the block leaf.
-    let body_lambda = Expr.Lambda(empty_p, store.exprs.add_leaf(Expr.Block(body_stmts)))
+    // Flipped Lambda.body is an ExprId — ingest the block leaf. Flipped
+    // Expr.Block holds List<StmtId>, so ingest the synthesized rows.
+    let body_lambda = Expr.Lambda(empty_p, store.exprs.add_leaf(Expr.Block(store.rows_of(body_stmts))))
     let args: List<ExprId> = [
         store.exprs.add_leaf(Expr.String(spec_name_lex)),
         store.exprs.add_leaf(Expr.String("\"" + orig.file + "\"")),

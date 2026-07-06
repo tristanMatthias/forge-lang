@@ -648,7 +648,7 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
             // an `ExprId`) — the use then type-checks against the stale
             // binding. tc_exit keeps reported diagnostics; it only pops the
             // arm's own bindings.
-            .Block(stmts) -> acc = tc_exit(tc_check_explicit_returns(tc_enter(acc), fn_name, declared, acc.nodes.rows_of(stmts)))
+            .Block(stmts) -> acc = tc_exit(tc_check_explicit_returns(tc_enter(acc), fn_name, declared, stmts))
             // A non-block arm body's generic-arg conflict against the return type
             // is handled by `tc_check_match_tail_conflict` (called from
             // tc_check_implicit_return) — it binds the arm pattern correctly and
