@@ -447,7 +447,7 @@ fn value_type_ctor(variant: string) -> Expr {
     Expr.EnumCtor("@std::avrac::core::ValueType", variant, empty)
 }
 
-/// Extract the single Stmt from a `Block(List<SStmt>)` of length 1.
+/// Extract the single Stmt from a `Block(List<StmtId>)` of length 1.
 /// Returns null if the block is empty or has multiple statements.
 fn extract_single_stmt(store: NodeStore, body: Expr) -> Stmt? {
     match body {
