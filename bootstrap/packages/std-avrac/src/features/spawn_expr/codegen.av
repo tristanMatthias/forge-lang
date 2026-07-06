@@ -95,7 +95,7 @@ fn stmt_has_spawn(store: NodeStore, st: Stmt) -> bool {
 fn arms_have_spawn(store: NodeStore, arms: List<MatchArm>) -> bool {
     mut i = 0
     while i < arms.length {
-        if expr_has_spawn(store, arms[i].body.node) { return true }
+        if expr_has_spawn(store, store.exprs.get(arms[i].body_id)) { return true }
         i = i + 1
     }
     false

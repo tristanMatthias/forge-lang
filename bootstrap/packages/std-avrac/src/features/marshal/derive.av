@@ -639,7 +639,7 @@ fn build_variant_arms(store: NodeStore, variants: List<Variant>) -> List<MatchAr
         let bindings = field_list_to_param_list(v.fields)
         let pattern = Pattern.Variant(v.name, bindings)
         let chain = build_variant_write_chain(store, i, v.fields)
-        out.push(MatchArm { pattern, guard: null, body: sexpr_dummy(chain) })
+        out.push(MatchArm { pattern, guard_id: null, body_id: store.exprs.add_leaf(chain) })
     }
     out
 }
@@ -802,8 +802,8 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     let err_bindings: List<ParamEntry> = [ParamEntry { name: "e", vtype: ValueType.Unknown }]
     let err_pattern = Pattern.Variant("Err", err_bindings)
     mut arms: List<MatchArm> = []
-    arms.push(MatchArm { pattern: ok_pattern, guard: null, body: sexpr_dummy(ok_body) })
-    arms.push(MatchArm { pattern: err_pattern, guard: null, body: sexpr_dummy(err_body) })
+    arms.push(MatchArm { pattern: ok_pattern, guard_id: null, body_id: store.exprs.add_leaf(ok_body) })
+    arms.push(MatchArm { pattern: err_pattern, guard_id: null, body_id: store.exprs.add_leaf(err_body) })
     let match_expr = Expr.MatchExpr(store.exprs.add_leaf(isolated_call), arms)
     let body_stmts: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(match_expr)))]
     let fn_name = "isolated_" + type_name

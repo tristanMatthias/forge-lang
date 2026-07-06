@@ -469,8 +469,8 @@ fn find_variant_fields(reg: EnumTypeReg, enum_name: string, variant_name: string
 /// check_match_expr_arms, and check_match_expr_infer.
 fn enter_arm_with_guard(acc: TC, arm: MatchArm, subject_ty: ValueType) -> TC {
     let with_bindings = tc_enter_pattern_scope(acc, arm.pattern, subject_ty)
-    if arm.guard == null { return with_bindings }
-    check_expr(with_bindings, arm.guard!.node).tc
+    if arm.guard_id == null { return with_bindings }
+    check_expr(with_bindings, acc.nodes.exprs.get(arm.guard_id!)).tc
 }
 
 /// Statement-position arm checker. Type-checks every arm's
@@ -507,7 +507,7 @@ export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) 
     mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
     mut i = 0
     while i < arms.length {
-        let b = check_expr(enter_arm_with_guard(acc, arms[i], subject_ty), arms[i].body.node)
+        let b = check_expr(enter_arm_with_guard(acc, arms[i], subject_ty), acc.nodes.exprs.get(arms[i].body_id))
         acc = tc_exit(b.tc)
         i = i + 1
     }
@@ -532,10 +532,10 @@ export fn tc_check_match_tail_conflict(tc: TC, fn_name: string, subject: Expr, a
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        match arm.body.node {
+        match acc.nodes.exprs.get(arm.body_id) {
             .Block(_) -> {}
             _ -> {
-                let br = check_expr(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node)
+                let br = check_expr(enter_arm_with_guard(acc, arm, subject_ty), acc.nodes.exprs.get(arm.body_id))
                 acc = tc_exit(br.tc)
                 // A memory-unsafe arm/return mismatch: a generic-arg conflict, an
                 // int into a string/bytes (scalar→pointer) slot, or a List/Map into
@@ -584,8 +584,8 @@ export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchA
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let b = check_expr_expected(enter_arm_with_guard(acc, arm, subject_ty), arm.body.node, first_ty)
-        acc = unify_arm_types(tc_exit(b.tc), first_ty, arm.body.node, b.ty)
+        let b = check_expr_expected(enter_arm_with_guard(acc, arm, subject_ty), acc.nodes.exprs.get(arm.body_id), first_ty)
+        acc = unify_arm_types(tc_exit(b.tc), first_ty, acc.nodes.exprs.get(arm.body_id), b.ty)
         i = i + 1
     }
     tc_er(acc, first_ty)
@@ -605,13 +605,13 @@ export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<Match
         // so07.4 (T4): once a seed is set, thread it as the expected
         // type so subsequent ListLit arms inherit the element type.
         // Before the seed is known, fall back to bottom-up inference.
-        let b = if found_seed { check_expr_expected(with_guard, arm.body.node, seed) }
-                else { check_expr(with_guard, arm.body.node) }
+        let b = if found_seed { check_expr_expected(with_guard, acc.nodes.exprs.get(arm.body_id), seed) }
+                else { check_expr(with_guard, acc.nodes.exprs.get(arm.body_id)) }
         let after = tc_exit(b.tc)
         if !found_seed {
             // First arm whose body actually produces a usable type
             // seeds the unification target for the remaining arms.
-            if !arm_type_skip(acc, arm.body.node, b.ty) {
+            if !arm_type_skip(acc, acc.nodes.exprs.get(arm.body_id), b.ty) {
                 seed = b.ty
                 found_seed = true
                 acc = after
@@ -623,7 +623,7 @@ export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<Match
             continue
         }
         // Seed is set: unify subsequent arms against it.
-        acc = unify_arm_types(after, seed, arm.body.node, b.ty)
+        acc = unify_arm_types(after, seed, acc.nodes.exprs.get(arm.body_id), b.ty)
         i = i + 1
     }
     tc_er(acc, seed)
@@ -639,7 +639,7 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        match arm.body.node {
+        match acc.nodes.exprs.get(arm.body_id) {
             // Each arm's block is checked in a fresh scope so its local
             // `let`s can't leak into sibling arms. Without the tc_enter/
             // tc_exit, a `let value = …` in one arm (e.g. `.Number` binding

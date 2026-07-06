@@ -118,16 +118,13 @@ impl Parser {
             }
             let map_entries = table_zip_entries(headers, vals)
             let body = Expr.MapLit(self.store.ingest_sexpr_recipe(map_entries))
+            let table_body_id = self.alloc_leaf(body)
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {
                 pattern,
-                guard: null,
-                body: sexpr(body, self.current_line, self.current_column),
                 pattern_id: table_pat_id,
                 guard_id: none,
-                // The synthesized MapLit body is the documented table-path
-                // glue (no native row until that producer converts).
-                body_id: none,
+                body_id: table_body_id,
             })
         }
         .Ok(out)
@@ -171,12 +168,11 @@ impl Parser {
                 let splice = Expr.Splice(target_id)
                 let sentinel_pat_id = self.alloc_pat_leaf(sentinel_pat)
                 let splice_id = self.alloc_leaf(splice)
+                // B-final F4b: MatchArm is MIXED — only the pattern is a walked
+                // child; the body is an opaque ExprId carried structurally.
                 refs.push(NodeRef.PatRef(sentinel_pat_id))
-                refs.push(NodeRef.ExprRef(splice_id))
                 out.push(MatchArm {
                     pattern: sentinel_pat,
-                    guard: null,
-                    body: sexpr(splice, self.current_line, self.current_column),
                     pattern_id: sentinel_pat_id,
                     guard_id: none,
                     body_id: splice_id,
@@ -187,14 +183,12 @@ impl Parser {
             let pattern = self.pat_of(pat_id)
             refs.push(NodeRef.PatRef(pat_id))
             // Optional guard: `pattern if cond ->`
-            mut guard: SExpr? = none
+            // B-final F4b: guard/body are opaque ExprIds carried structurally —
+            // MatchArm is a MIXED walker node whose only walked child is the pattern.
             mut guard_id: ExprId? = none
             if self.check(Tk.KwIf) {
                 self.advance()
-                let g_id = self.parse_expression()?
-                guard = sexpr(self.expr_of(g_id), self.current_line, self.current_column)
-                guard_id = g_id
-                refs.push(NodeRef.ExprRef(g_id))
+                guard_id = self.parse_expression()?
             }
             if !self.consume(Tk.Arrow, "expected `->` after pattern") {
                 return .Err("parse error")
@@ -204,7 +198,6 @@ impl Parser {
             // Allow `return expr` in bare match arm position by
             // wrapping it in a Block expression: `{ return expr }`.
             // The wrap is stmt-bearing, so it bridges at its boundary.
-            mut body_val = Expr.None
             mut body_id = ExprId(0)
             if self.check(Tk.KwReturn) {
                 self.advance()
@@ -214,19 +207,14 @@ impl Parser {
                 // the position the boxed `sstmt` wrapper carried (file "") — the
                 // return's field-access null-traps embed that same source line.
                 let body_stmts: List<SStmt> = [sstmt(Stmt.Return(rv_id), self.current_line, self.current_column)]
-                body_val = Expr.Block(self.store.rows_of(body_stmts))
-                body_id = self.alloc_leaf(body_val)
+                body_id = self.alloc_leaf(Expr.Block(self.store.rows_of(body_stmts)))
             } else {
                 body_id = self.parse_expression()?
-                body_val = self.expr_of(body_id)
             }
-            refs.push(NodeRef.ExprRef(body_id))
             self.allow_dot_postfix = saved
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {
                 pattern,
-                guard,
-                body: sexpr(body_val, self.current_line, self.current_column),
                 pattern_id: pat_id,
                 guard_id,
                 body_id,
@@ -397,17 +385,14 @@ impl Parser {
         .Ok(self.alloc_expr(node, byte_span_none(), parsed.refs))
     }
 
-    /// Edge refs for a BOXED arm list (the match-table path): each arm's
-    /// children bridge whole, in walker order (pattern, guard when present,
-    /// body) — the same flattening as `match_arm_children_spanned`.
+    /// Edge refs for an arm list (the match-table path). B-final F4b: MatchArm
+    /// is a MIXED walker node — only the pattern is a walked child; guard/body
+    /// are opaque `ExprId`s carried structurally. So each arm bridges exactly
+    /// its pattern, mirroring `match_arm_children_spanned`.
     fn glue_match_arm_refs(self, arms: List<MatchArm>) -> List<NodeRef> {
         mut refs: List<NodeRef> = []
         for arm in arms {
             refs.push(NodeRef.PatRef(self.glue_ingest_pat(arm.pattern)))
-            if arm.guard != none {
-                refs.push(NodeRef.ExprRef(self.glue_ingest_expr(arm.guard!.node)))
-            }
-            refs.push(NodeRef.ExprRef(self.glue_ingest_expr(arm.body.node)))
         }
         refs
     }

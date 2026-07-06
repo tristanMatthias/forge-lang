@@ -287,8 +287,8 @@ fn find_captures_arms(store: NodeStore, arms: List<MatchArm>, params: List<Param
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.guard != null { find_captures(store, arm.guard!.node, params, env, captures) }
-        find_captures(store, arm.body.node, params, env, captures)
+        if arm.guard_id != null { find_captures(store, store.exprs.get(arm.guard_id!), params, env, captures) }
+        find_captures(store, store.exprs.get(arm.body_id), params, env, captures)
         i = i + 1
     }
 }

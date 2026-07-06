@@ -1491,10 +1491,10 @@ fn collect_inst_arms(arms: List<MatchArm>, regs: GenRegs, st: CollectState) -> C
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.guard != null {
-            acc = collect_inst_expr(arm.guard!.node, regs, acc)
+        if arm.guard_id != null {
+            acc = collect_inst_expr(regs.store.exprs.get(arm.guard_id!), regs, acc)
         }
-        acc = collect_inst_expr(arm.body.node, regs, acc)
+        acc = collect_inst_expr(regs.store.exprs.get(arm.body_id), regs, acc)
         i = i + 1
     }
     acc
@@ -1727,9 +1727,7 @@ fn rename_self_calls_arms(store: NodeStore, arms: List<MatchArm>, orig_name: str
     mut i = 0
     while i < arms.length {
         let a = arms[i]
-        let new_body_node = rename_self_calls_expr(store, a.body.node, orig_name, mangled)
-        let new_body = SExpr { node: new_body_node, line: a.body.line, col: a.body.col, ty: a.body.ty, file: a.body.file }
-        out.push(MatchArm { pattern: a.pattern, guard: a.guard, body: new_body })
+        out.push(MatchArm { pattern: a.pattern, pattern_id: a.pattern_id, guard_id: a.guard_id, body_id: rename_self_calls_expr_id(store, a.body_id, orig_name, mangled) })
         i = i + 1
     }
     out
@@ -2034,12 +2032,10 @@ fn substitute_match_arms(store: NodeStore, arms: List<MatchArm>, ta: List<TypeAr
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_guard = if arm.guard != null {
-            let g = arm.guard!
-            sexpr_at(substitute_expr(store, g.node, ta), g.line, g.col, g.file)
+        let new_guard_id = if arm.guard_id != null {
+            substitute_expr_id(store, arm.guard_id!, ta)
         } else { null }
-        let new_body = sexpr_at(substitute_expr(store, arm.body.node, ta), arm.body.line, arm.body.col, arm.body.file)
-        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        out.push(MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: substitute_expr_id(store, arm.body_id, ta) })
         i = i + 1
     }
     out
@@ -2696,12 +2692,10 @@ fn rewrite_arms(arms: List<MatchArm>, regs: GenRegs, insts: List<Inst>) -> List<
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_guard = if arm.guard != null {
-            let g = arm.guard!
-            sexpr_at(rewrite_expr(g.node, regs, insts), g.line, g.col, g.file)
+        let new_guard_id = if arm.guard_id != null {
+            rewrite_expr_id(arm.guard_id!, regs, insts)
         } else { null }
-        let new_body = sexpr_at(rewrite_expr(arm.body.node, regs, insts), arm.body.line, arm.body.col, arm.body.file)
-        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        out.push(MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: rewrite_expr_id(arm.body_id, regs, insts) })
         i = i + 1
     }
     out

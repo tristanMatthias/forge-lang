@@ -2456,18 +2456,18 @@ fn list_value_to_match_arm_list(store: NodeStore, v: Value) -> Result<List<Match
 
 fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
     if v.kind != "struct" { return .Err("decode: match arm not a struct") }
+    // B-final F4b — the MatchArm TYPE is id-only (`guard_id`/`body_id`); the
+    // boxed `guard`/`body` fields are gone. This decoder stays tolerant of BOTH
+    // value shapes for the seed-migration window, and always produces ids:
+    //   - id shape: the slot carries the Expr node itself (the `synth_expr_id`
+    //     comptime identity), decoded by `value_to_expr_id`;
+    //   - boxed shape: a `guard`/`body` Expr node is re-ingested via `add_leaf`.
+    // A real id wins; a boxed half only fills an unset slot. The dual value
+    // tolerance is REQUIRED both directions: the pinned seed's derive_walker
+    // emits ids, while the previous compiler source this compiler must still
+    // build (the diff-test selfhost oracle) emits the boxed shape. It can be
+    // dropped once the seed train advances past this flip (boxed macros gone).
     mut pat_opt: Pattern? = null
-    mut guard_opt: SExpr? = null
-    mut body_opt: SExpr? = null
-    // B-final F4b PHASE 1 — dual-tolerant decode. A flipped MatchArm value
-    // (F4b phase 2 / the fully-migrated shape) carries `guard_id`/`body_id`
-    // and drops the boxed `guard`/`body`. The id-typed slot carries the Expr
-    // node itself (the `synth_expr_id` comptime identity), so `value_to_expr_id`
-    // decodes + re-ingests it into `store`. We PREFER the ids when present and
-    // materialise the boxed view so this decoder keeps producing a valid
-    // still-dual MatchArm; the boxed halves remain the fallback for values
-    // that only carry them. This is what teaches the next seed to decode the
-    // id shape before phase 2 removes the boxed fields.
     mut guard_id_opt: ExprId? = null
     mut body_id_opt: ExprId? = null
     for f in v.struct_payload {
@@ -2478,30 +2478,9 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
                     .Err(_) -> {}
                 }
             }
-            "guard" -> {
-                let g_val = f.value
-                // Absent guards are encoded as the Expr.None sentinel.
-                // Check the variant name (intact for both kind="enum"
-                // and a boxed kind="expr") rather than kind so a boxed
-                // Null still reads as "no guard".
-                if variant_is_optional_absent(g_val.enum_variant) {
-                    guard_opt = null
-                } else {
-                    match value_to_expr_node(store, g_val) {
-                        .Ok(g_expr) -> guard_opt = sexpr_dummy(g_expr)
-                        .Err(_) -> {}
-                    }
-                }
-            }
-            "body" -> {
-                match value_to_expr_node(store, f.value) {
-                    .Ok(b_expr) -> body_opt = sexpr_dummy(b_expr)
-                    .Err(_) -> {}
-                }
-            }
             "guard_id" -> {
-                // Absent guard is the None/absent sentinel; otherwise the slot
-                // carries the guard Expr node (synth_expr_id identity).
+                // Absent guard is the None/absent sentinel; else the slot
+                // carries the guard Expr node.
                 if !variant_is_optional_absent(f.value.enum_variant) {
                     match value_to_expr_id(store, f.value) {
                         .Ok(gid) -> guard_id_opt = gid
@@ -2510,25 +2489,41 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
                 }
             }
             "body_id" -> {
-                match value_to_expr_id(store, f.value) {
-                    .Ok(bid) -> body_id_opt = bid
-                    .Err(_) -> {}
+                // A real body id wins; a none sentinel (a boxed-shape value that
+                // left `body_id` unset) leaves the slot for the `body` fallback.
+                if !variant_is_optional_absent(f.value.enum_variant) {
+                    match value_to_expr_id(store, f.value) {
+                        .Ok(bid) -> body_id_opt = bid
+                        .Err(_) -> {}
+                    }
+                }
+            }
+            "guard" -> {
+                // Boxed fallback (previous-shape value): re-ingest the guard as an
+                // arena leaf, but only if no real `guard_id` filled the slot.
+                if guard_id_opt == none && !variant_is_optional_absent(f.value.enum_variant) {
+                    match value_to_expr_id(store, f.value) {
+                        .Ok(gid) -> guard_id_opt = gid
+                        .Err(_) -> {}
+                    }
+                }
+            }
+            "body" -> {
+                // Boxed fallback: re-ingest the body as an arena leaf unless a
+                // real `body_id` already filled the slot.
+                if body_id_opt == none {
+                    match value_to_expr_id(store, f.value) {
+                        .Ok(bid) -> body_id_opt = bid
+                        .Err(_) -> {}
+                    }
                 }
             }
             _ -> { /* ignore unknown fields */ }
         }
     }
     if pat_opt == none { return .Err("decode: match arm missing pattern") }
-    // Prefer the flipped ids: when a value carries `body_id`/`guard_id` but not
-    // the boxed half, materialise the boxed view from the arena row.
-    if body_id_opt != none && body_opt == none {
-        body_opt = sexpr_dummy(store.exprs.get(body_id_opt!))
-    }
-    if guard_id_opt != none && guard_opt == none {
-        guard_opt = sexpr_dummy(store.exprs.get(guard_id_opt!))
-    }
-    if body_opt == none { return .Err("decode: match arm missing body") }
-    .Ok(MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt!, guard_id: guard_id_opt, body_id: body_id_opt })
+    if body_id_opt == none { return .Err("decode: match arm missing body") }
+    .Ok(MatchArm { pattern: pat_opt!, guard_id: guard_id_opt, body_id: body_id_opt! })
 }
 
 fn value_to_pattern(store: NodeStore, v: Value) -> Result<Pattern, string> {

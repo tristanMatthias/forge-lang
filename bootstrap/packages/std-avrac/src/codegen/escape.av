@@ -261,10 +261,10 @@ fn remove_escaped_match_arms(store: NodeStore, arms: List<MatchArm>, set: List<s
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.guard != null {
-            acc = remove_escaped_expr(store, arm.guard!.node, acc)
+        if arm.guard_id != null {
+            acc = remove_escaped_expr(store, store.exprs.get(arm.guard_id!), acc)
         }
-        acc = remove_escaped_expr(store, arm.body.node, acc)
+        acc = remove_escaped_expr(store, store.exprs.get(arm.body_id), acc)
         i = i + 1
     }
     acc

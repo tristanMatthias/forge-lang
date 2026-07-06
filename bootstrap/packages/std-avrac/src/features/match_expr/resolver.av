@@ -15,8 +15,8 @@ export fn resolve_match_arms(r: Resolver, arms: List<MatchArm>) -> Resolver {
         let arm = arms[i]
         let entered = enter_resolve_scope(res)
         let with_bindings = declare_pattern_bindings(entered, arm.pattern)
-        let after_guard = if arm.guard != null { resolve_expr(with_bindings, arm.guard!.node) } else { with_bindings }
-        let after_body = resolve_expr(after_guard, arm.body.node)
+        let after_guard = if arm.guard_id != null { resolve_expr(with_bindings, res.nodes.exprs.get(arm.guard_id!)) } else { with_bindings }
+        let after_body = resolve_expr(after_guard, res.nodes.exprs.get(arm.body_id))
         res = exit_resolve_scope(after_body)
         i = i + 1
     }
