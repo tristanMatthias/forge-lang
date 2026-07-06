@@ -20,8 +20,21 @@ fn clc_run() -> string {
     avra_test_capture_stop()
 }
 
+// Same component, instantiated WITHOUT the `port` override: the init body's
+// `self.config.port` must fall back to the schema default (3000). This pins the
+// schema-default arm of config resolution — distinct from clc_run above, which
+// supplies an override and exercises the user-value arm.
+fn clc_run_default() -> string {
+    avra_test_capture_start()
+    component server_lc srv {}
+    avra_test_capture_stop()
+}
+
 spec "component lifecycle" {
     then "init then after_children" {
         clc_run() == "init: srv on port 8080\nafter: srv ready"
+    }
+    then "omitting a config override falls back to the schema default" {
+        clc_run_default() == "init: srv on port 3000\nafter: srv ready"
     }
 }

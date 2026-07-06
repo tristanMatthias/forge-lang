@@ -1,13 +1,14 @@
 // WHY: B-final F1a/F4 — the walker-opaque containers (WhenArm, SelectArm,
 // MatchArm, Annotation, CompConfig) hold their child exprs/stmts as arena ids.
-// Containers still mid-migration (Annotation, CompConfig) carry DUAL fields —
-// a nullable id beside the boxed child — and these specs pin that on the PARSE
-// path the id is present and `store.get(id)` renders identically to the boxed
-// half (the agreement that lets consumers migrate off the boxed halves one at a
-// time without drift). Fully-flipped containers (WhenArm — F4c; MatchArm
-// guard/body — F4b; SelectArm chan/body — F4d) have dropped the boxed half
-// entirely; their specs verify the id is present and resolves to the EXACT
-// expected node. MatchArm's pattern stays dual — only its guard/body flipped.
+// Annotation still carries a DUAL field (args beside arg_ids) — a nullable id
+// list beside the boxed child — and its spec pins that on the PARSE path the id
+// is present and `store.get(id)` renders identically to the boxed half (the
+// agreement that lets consumers migrate off the boxed half without drift).
+// Fully-flipped child slots (WhenArm cond/body — F4c; MatchArm guard/body —
+// F4b; SelectArm chan/body — F4d; CompConfig default — F4d) have dropped the
+// boxed half entirely; their specs verify the id is present and resolves to the
+// EXACT expected node. Two slots stay dual on otherwise-flipped containers:
+// MatchArm's pattern, and CompConfig's ty_vt/ty_id (the ValueType/TypeId dual).
 
 use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
 use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
@@ -120,9 +121,11 @@ fn comp_config_mirrors() -> bool {
             let with_default = config[0]
             let plain = config[1]
             if with_default.ty_id == none || plain.ty_id == none { return false }
-            if with_default.default_id == none || with_default.default_val == none { return false }
-            if render_expr(r.store, r.store.exprs.get(with_default.default_id!)) != render_expr(r.store, with_default.default_val!) { return false }
-            plain.default_id == none && plain.default_val == none
+            // The defaulted key (`start: int = 5`) carries a default_id row
+            // resolving to its literal; the undefaulted key (`label`) carries none.
+            if with_default.default_id == none { return false }
+            if render_expr(r.store, r.store.exprs.get(with_default.default_id!)) != "5" { return false }
+            plain.default_id == none
         }
         _ -> false
     }
@@ -160,7 +163,7 @@ spec "F1a duals: annotation args carry one row per arg, in order" {
 
 spec "F1a duals: component config rows carry type + default ids" {
     given "a component with a defaulted and an undefaulted config key" {
-        then "ty_id is always present; default_id mirrors default_val presence" {
+        then "ty_id is always present; default_id resolves for a defaulted key, none otherwise" {
             comp_config_mirrors()
         }
     }
