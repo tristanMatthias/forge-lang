@@ -323,7 +323,7 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
                         if field == "name" { return Expr.String("\"${inst}\"") }
                         if field == "__parent" { return Expr.Ident(ctx.parent_var) }
                         if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
-                        return resolve_config_value(field, uc, schema)
+                        return resolve_config_value(store, field, uc, schema)
                     }
                     Expr.FieldAccess(rw_tpl_expr_id(store, obj, inst, uc, schema, ctx), field)
                 }
@@ -331,7 +331,7 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
                     match store.exprs.get(inner_obj) {
                         .Ident(name) -> {
                             if name == "self" && inner_field == "config" {
-                                return resolve_config_value(field, uc, schema)
+                                return resolve_config_value(store, field, uc, schema)
                             }
                         }
                         _ -> {}
@@ -384,7 +384,7 @@ fn rw_tpl_expr_list_ids(store: NodeStore, ids: List<ExprId>, inst: string, uc: L
 /// Resolve a `@cfg.field` reference: prefer the user's
 /// instantiation override, fall back to the schema's default,
 /// finally `Expr.None` when neither exists.
-export fn resolve_config_value(field: string, user_config: List<CompConfigPair>, schema: List<CompConfig>) -> Expr {
+export fn resolve_config_value(store: NodeStore, field: string, user_config: List<CompConfigPair>, schema: List<CompConfig>) -> Expr {
     mut i = 0
     while i < user_config.length {
         let pair = user_config[i]
@@ -395,7 +395,7 @@ export fn resolve_config_value(field: string, user_config: List<CompConfigPair>,
     while j < schema.length {
         let entry = schema[j]
         if entry.key == field {
-            if entry.default_val != null { return entry.default_val! }
+            if entry.default_id != none { return store.exprs.get(entry.default_id!) }
             return Expr.String("\"\"")
         }
         j = j + 1
@@ -437,7 +437,7 @@ fn config_to_fields(config: List<CompConfig>) -> List<FieldEntry> {
 fn config_to_factory_inits(store: NodeStore, config: List<CompConfig>) -> List<FieldInit> {
     list_map(config, (entry: CompConfig) -> FieldInit {
         name: entry.key,
-        value_id: store.exprs.add_leaf(entry.default_val ?? Expr.None),
+        value_id: store.exprs.add_leaf(if entry.default_id != none { store.exprs.get(entry.default_id!) } else { Expr.None }),
     })
 }
 

@@ -2399,10 +2399,12 @@ export type Annotation = {
 export type CompConfig = {
     key: string,
     ty_vt: ValueType,
-    default_val: Expr?,
-    // B-final F1a dual fields (see WhenArm — NULLABLE, null = no row yet).
-    ty_id: TypeId?,
+    // B-final: the default is arena-only now — the boxed `default_val: Expr?`
+    // is gone. `default_id` is NULLABLE (null = the key declared no default);
+    // consumers read the expr via `store.exprs.get(default_id!)`.
     default_id: ExprId?,
+    // ty_id mirrors ty_vt (B-final F1a dual, still mid-migration).
+    ty_id: TypeId?,
 }
 
 /// Component config pair: one `key: value` supplied at a
