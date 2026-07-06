@@ -76,7 +76,7 @@ fn annotate_external(store: NodeStore, ss: SStmt) -> SStmt {
     // single-entry list for bare stmts.
     mut combined: List<Annotation> = []
     let empty_args: List<SExpr> = []
-    combined.push(Annotation { name: "external_unit", args: empty_args })
+    combined.push(Annotation { name: "external_unit", args: empty_args, arg_ids: [] })
     let inner_id = match ss.node {
         .Annotated(annots, inner) -> {
             mut i = 0
