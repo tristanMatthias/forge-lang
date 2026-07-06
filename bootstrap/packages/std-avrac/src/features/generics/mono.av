@@ -1613,7 +1613,7 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
     // final link in library-mode (multiple packages share specs).
     let empty_args: List<SExpr> = []
     mut annots: List<Annotation> = []
-    annots.push(Annotation { name: "mono_spec", args: empty_args })
+    annots.push(Annotation { name: "mono_spec", args: empty_args, arg_ids: [] })
     Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
 }
 
@@ -1769,7 +1769,7 @@ fn specialize_method(store: NodeStore, mangled_type: string, method: Stmt, ta_ex
             // method may be monomorphized in multiple consuming packages.
             let empty_args: List<SExpr> = []
             mut annots: List<Annotation> = []
-            annots.push(Annotation { name: "mono_spec", args: empty_args })
+            annots.push(Annotation { name: "mono_spec", args: empty_args, arg_ids: [] })
             Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
         }
         .Annotated(_, inner) -> specialize_method(store, mangled_type, store.stmts.get(inner), ta_ext)

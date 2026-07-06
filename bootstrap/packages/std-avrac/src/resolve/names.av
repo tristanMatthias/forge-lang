@@ -1647,9 +1647,25 @@ fn rewrite_annotations(ctx: NameCtx, annots: List<Annotation>) -> List<Annotatio
     mut i = 0
     while i < annots.length {
         let a = annots[i]
-        out.push(Annotation { name: a.name, args: rewrite_expr_list(ctx, a.args) })
+        // B-final F4d: rewrite the dual arg_ids row through the id twin
+        // (rewrite_expr_id) so it carries the same resolved content as the
+        // boxed args, keeping the pair in lockstep until the boxed half drops.
+        out.push(Annotation {
+            name: a.name,
+            args: rewrite_expr_list(ctx, a.args),
+            arg_ids: rewrite_annotation_arg_ids(ctx, a.arg_ids),
+        })
         i = i + 1
     }
+    out
+}
+
+/// Rewrite each id in an annotation's nullable arg_ids row via the
+/// `rewrite_expr_id` id twin; null (no row) passes through unchanged.
+fn rewrite_annotation_arg_ids(ctx: NameCtx, ids: List<ExprId>?) -> List<ExprId>? {
+    if ids == none { return none }
+    mut out: List<ExprId> = []
+    for id in ids! { out.push(rewrite_expr_id(ctx, id)) }
     out
 }
 
