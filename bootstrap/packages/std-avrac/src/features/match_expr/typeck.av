@@ -676,8 +676,8 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
 export fn check_when_expr(tc: TC, arms: List<WhenArm>) -> ExprResult {
     if arms.length == 0 { return tc_er(tc, .Unknown) }
     let first = arms[0]
-    let after_cond = if first.cond == null { tc } else { check_expr(tc, first.cond!.node).tc }
-    let b = check_expr(after_cond, first.body.node)
+    let after_cond = if first.cond_id == null { tc } else { check_expr(tc, tc.nodes.exprs.get(first.cond_id!)).tc }
+    let b = check_expr(after_cond, tc.nodes.exprs.get(first.body_id))
     check_when_arms(b.tc, arms, 1, b.ty)
 }
 
@@ -688,10 +688,10 @@ fn check_when_arms(tc: TC, arms: List<WhenArm>, start_idx: int, first_ty: ValueT
     mut i = start_idx
     while i < arms.length {
         let arm = arms[i]
-        let after_cond = if arm.cond == null { cur } else { check_expr(cur, arm.cond!.node).tc }
+        let after_cond = if arm.cond_id == null { cur } else { check_expr(cur, tc.nodes.exprs.get(arm.cond_id!)).tc }
         // so07.4 (T4): thread first_ty so ListLit arms inherit the element type.
-        let b = check_expr_expected(after_cond, arm.body.node, first_ty)
-        cur = unify_arm_types(b.tc, first_ty, arm.body.node, b.ty)
+        let b = check_expr_expected(after_cond, tc.nodes.exprs.get(arm.body_id), first_ty)
+        cur = unify_arm_types(b.tc, first_ty, tc.nodes.exprs.get(arm.body_id), b.ty)
         i = i + 1
     }
     tc_er(cur, first_ty)

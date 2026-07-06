@@ -1463,10 +1463,10 @@ fn collect_inst_when_arms(arms: List<WhenArm>, regs: GenRegs, st: CollectState) 
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.cond != null {
-            acc = collect_inst_expr(arm.cond!.node, regs, acc)
+        if arm.cond_id != null {
+            acc = collect_inst_expr(regs.store.exprs.get(arm.cond_id!), regs, acc)
         }
-        acc = collect_inst_expr(arm.body.node, regs, acc)
+        acc = collect_inst_expr(regs.store.exprs.get(arm.body_id), regs, acc)
         i = i + 1
     }
     acc
@@ -2018,11 +2018,10 @@ fn substitute_when_arms(store: NodeStore, arms: List<WhenArm>, ta: List<TypeArg>
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_cond = if arm.cond != null {
-            sexpr(substitute_expr(store, arm.cond!.node, ta), arm.cond!.line, arm.cond!.col)
+        let new_cond_id = if arm.cond_id != null {
+            substitute_expr_id(store, arm.cond_id!, ta)
         } else { null }
-        let new_body = sexpr(substitute_expr(store, arm.body.node, ta), arm.body.line, arm.body.col)
-        out.push(WhenArm { cond: new_cond, body: new_body })
+        out.push(WhenArm { cond_id: new_cond_id, body_id: substitute_expr_id(store, arm.body_id, ta) })
         i = i + 1
     }
     out
@@ -2660,11 +2659,10 @@ fn rewrite_when_arms(arms: List<WhenArm>, regs: GenRegs, insts: List<Inst>) -> L
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_cond = if arm.cond != null {
-            sexpr(rewrite_expr(arm.cond!.node, regs, insts), arm.cond!.line, arm.cond!.col)
+        let new_cond_id = if arm.cond_id != null {
+            rewrite_expr_id(arm.cond_id!, regs, insts)
         } else { null }
-        let new_body = sexpr(rewrite_expr(arm.body.node, regs, insts), arm.body.line, arm.body.col)
-        out.push(WhenArm { cond: new_cond, body: new_body })
+        out.push(WhenArm { cond_id: new_cond_id, body_id: rewrite_expr_id(arm.body_id, regs, insts) })
         i = i + 1
     }
     out

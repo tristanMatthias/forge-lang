@@ -220,12 +220,12 @@ fn rewrite_when_arms(arms: List<WhenArm>, reg: CompTimeRegistry) -> List<WhenArm
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_cond = if arm.cond != null {
-            sexpr(rewrite_expr(arm.cond!.node, reg), arm.cond!.line, arm.cond!.col)
+        let new_cond_id = if arm.cond_id != null {
+            rewrite_expr_id(arm.cond_id!, reg)
         } else { null }
         out.push(WhenArm {
-            cond: new_cond,
-            body: sexpr(rewrite_expr(arm.body.node, reg), arm.body.line, arm.body.col),
+            cond_id: new_cond_id,
+            body_id: rewrite_expr_id(arm.body_id, reg),
         })
         i = i + 1
     }

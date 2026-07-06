@@ -2362,14 +2362,14 @@ export enum Stmt {
 /// `List<WhenArm>` replaces the retired `enum WhenArmList`. Used as
 /// `arms: List<WhenArm>` on Expr.When.
 export type WhenArm = {
-    cond: SExpr?,
-    body: SExpr,
-    // B-final F1a dual fields — NULLABLE: null means "no arena row yet"
-    // (a transform rebuilt this container and its pass hasn't migrated to
-    // allocating; readers fall back to the boxed half). The parser always
-    // populates real ids. The boxed halves die at F4.
+    // B-final F4c: cond/body fully flipped to arena ids — the boxed
+    // `cond: SExpr?` / `body: SExpr` are gone. Consumers read the exprs via
+    // `store.exprs.get(*_id)`. `When` is a walker-opaque leaf (WhenArm isn't a
+    // registered walker container), so these scalar ids carry no edges.
+    // `cond_id` stays nullable (the `else` arm has no condition); `body_id` is
+    // non-null (a body is always present).
     cond_id: ExprId?,
-    body_id: ExprId?,
+    body_id: ExprId,
 }
 
 /// Select arm: one branch `binding <- channel -> body` of a
@@ -2814,8 +2814,8 @@ fn render_when_arm_list(store: NodeStore, arms: List<WhenArm>) -> string {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let cond_str = if arm.cond == null { "_" } else { render_expr(store, arm.cond!.node) }
-        out = out + "${cond_str} -> ${render_expr(store, arm.body.node)} "
+        let cond_str = if arm.cond_id == null { "_" } else { render_expr_id(store, arm.cond_id!) }
+        out = out + "${cond_str} -> ${render_expr_id(store, arm.body_id)} "
         i = i + 1
     }
     out
