@@ -12,9 +12,10 @@ use parse.{Parser, table_zip_entries}
 use core.{Tk}
 
 /// One parse of a match-arm list, surfaced both ways: `arms` is the boxed
-/// view; `refs` the arena rows backing each arm's children in walker order
-/// (pattern, guard when present, body — `match_arm_children_spanned`'s
-/// flattening) for the parent MatchExpr's edge list.
+/// view; `refs` the arena rows backing each arm's WALKED children for the
+/// parent MatchExpr's edge list. B-final F4b: MatchArm is a MIXED node, so
+/// that is the pattern only (guard/body are opaque `ExprId`s) — mirroring
+/// `match_arm_children_spanned`.
 type MatchArmsParsed = { arms: List<MatchArm>, refs: List<NodeRef> }
 
 impl Parser {
@@ -392,7 +393,11 @@ impl Parser {
     fn glue_match_arm_refs(self, arms: List<MatchArm>) -> List<NodeRef> {
         mut refs: List<NodeRef> = []
         for arm in arms {
-            refs.push(NodeRef.PatRef(self.glue_ingest_pat(arm.pattern)))
+            // Reuse the arm's own pattern row so the parent edge and
+            // `MatchArm.pattern_id` point at the SAME native pattern (table arms
+            // already stored it); only re-ingest when no id exists.
+            let pid = if arm.pattern_id != null { arm.pattern_id! } else { self.glue_ingest_pat(arm.pattern) }
+            refs.push(NodeRef.PatRef(pid))
         }
         refs
     }

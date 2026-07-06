@@ -685,13 +685,15 @@ fn construct_pattern_list(store: NodeStore, patterns: List<PatId>) -> Expr {
 /// the constructed arm is a NEW synthetic tree with no arena rows —
 /// re-ingest allocates them when the spliced AST re-enters a store.
 fn construct_match_arm(store: NodeStore, arm: MatchArm) -> Expr {
-    // B-final F4b: guard/body are arena ids. Reify the underlying exprs into the
-    // `guard_id`/`body_id` slots (an absent guard reifies as the `Expr.None`
-    // sentinel) — the decoder's `value_to_expr_id` re-ingests them, the same
-    // round-trip EnumCtor.args uses.
+    // B-final F4b: guard/body are arena ids, so reify them through the
+    // `synth_expr_id` shim (`construct_expr_id`) — that types the generated
+    // `guard_id`/`body_id` inits as `ExprId`, exactly what the decoder's
+    // `value_to_expr_id` re-ingests (the same round-trip `EnumCtor.args` uses).
+    // An absent guard reifies as the `Expr.None` sentinel the decoder reads as
+    // "no guard".
     let pattern_expr = construct_pattern(store, arm.pattern)
-    let guard_expr = if arm.guard_id != null { construct_sexpr(store, store.sexpr_of(arm.guard_id!)) } else { Expr.None }
-    let body_expr = construct_sexpr(store, store.sexpr_of(arm.body_id))
+    let guard_expr = if arm.guard_id != null { construct_expr_id(store, arm.guard_id!) } else { Expr.None }
+    let body_expr = construct_expr_id(store, arm.body_id)
     mut inits: List<FieldInit> = []
     inits.push(synth_init(store, "pattern", pattern_expr))
     inits.push(synth_init(store, "pattern_id", Expr.None))

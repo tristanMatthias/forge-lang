@@ -383,21 +383,19 @@ export fn wc_run(scs: List<SpannedChild>, before: int, after: int) -> List<Spann
 
 // ── Struct-embedded child helpers (y5um.3 / spine §14.1) ──
 //
-// A `MatchArm` is a plain struct holding node children the derive walker can't
-// reach through its Self/wrapper-of-Self classification (a bare `Pattern`, an
-// optional `SExpr` guard, and an `SExpr` body). These hand-written extract +
-// rebuild helpers teach the arena to cover them: `match_arm_children_spanned`
-// flattens the arm list into the cross-type child run (in field order: pattern,
-// guard?, body — the same order the reconstruct consumes), and
-// `rebuild_match_arms` inverts it. The rebuild takes the ORIGINAL arm list for
-// SHAPE (arm count + per-arm guard presence — the flat run has no boundary
-// marker, and guard optionality makes per-arm arity variable) and pulls each
-// node VALUE + span from the run, mirroring how reconstruct already carries a
-// node's un-walked struct fields through from the stored node.
+// B-final F4b: a `MatchArm` is a MIXED struct — `pattern` is the one walked
+// child the derive walker can't reach through its Self/wrapper-of-Self
+// classification, while `guard_id`/`body_id` are opaque arena `ExprId`s carried
+// structurally (never walked). These hand-written extract + rebuild helpers
+// teach the arena to cover the pattern: `match_arm_children_spanned` flattens
+// the arm list into the cross-type child run (one pattern per arm), and
+// `rebuild_match_arms` inverts it, taking the ORIGINAL arm list for SHAPE (arm
+// count) and pulling each pattern VALUE + span from the run while carrying the
+// opaque `pattern_id`/`guard_id`/`body_id` through unchanged.
 
-/// Flatten a `List<MatchArm>` into cross-type spanned children, per arm in field
-/// order: the bare `pattern` (position 0 ⇒ span_none), the 0-or-1 `guard` at its
-/// SExpr wrapper's (line, col), then the `body` at its wrapper's (line, col).
+/// Flatten a `List<MatchArm>` into cross-type spanned children: one child per
+/// arm — the bare `pattern` (position 0 ⇒ span_none). Guard/body are opaque
+/// `ExprId`s and are NOT walked.
 export fn match_arm_children_spanned(arms: List<MatchArm>) -> List<SpannedChild> {
     // B-final F4b: MatchArm is a MIXED node — the pattern is still a walked
     // child, but guard/body are now walker-opaque `ExprId` scalars carried
@@ -606,10 +604,11 @@ export fn is_gensym_name(name: string) -> bool {
 
 // `List<MatchArm>` replaces the retired `enum MatchArmList`. Arm
 // order matters: match exhaustiveness uses first-match-wins, so
-// every walker iterates source-order. Body is an SExpr —
-// single-expression arms are common, and a brace block is itself an
-// `Expr.Block`. Optional `guard` adds an `if` condition that must
-// hold for the arm to fire.
+// every walker iterates source-order. Guard/body are arena `ExprId`s:
+// `body_id` is required (a single-expression arm, or a brace block that
+// is itself an `Expr.Block`), and the nullable `guard_id` adds an `if`
+// condition that must hold for the arm to fire. The pattern is dual —
+// both the walked child and the `pattern_id` metadata.
 export type MatchArm = {
     pattern: Pattern,
     // B-final F4b: guard/body fully flipped to arena ids — the boxed

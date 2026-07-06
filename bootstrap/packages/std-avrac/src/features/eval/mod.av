@@ -2489,13 +2489,14 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
                 }
             }
             "body_id" -> {
-                // A real body id wins; a none sentinel (a boxed-shape value that
-                // left `body_id` unset) leaves the slot for the `body` fallback.
-                if !variant_is_optional_absent(f.value.enum_variant) {
-                    match value_to_expr_id(store, f.value) {
-                        .Ok(bid) -> body_id_opt = bid
-                        .Err(_) -> {}
-                    }
+                // Always decode: a body is required, and `Expr.None` (variant
+                // "None") is a legitimate body — do NOT treat it as absent. A
+                // boxed-shape value that left `body_id` unset decodes to `.Err`
+                // here (a null slot is not an Expr), leaving the `body` fallback
+                // to fill it.
+                match value_to_expr_id(store, f.value) {
+                    .Ok(bid) -> body_id_opt = bid
+                    .Err(_) -> {}
                 }
             }
             "guard" -> {
@@ -2523,7 +2524,9 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
     }
     if pat_opt == none { return .Err("decode: match arm missing pattern") }
     if body_id_opt == none { return .Err("decode: match arm missing body") }
-    .Ok(MatchArm { pattern: pat_opt!, guard_id: guard_id_opt, body_id: body_id_opt! })
+    // Keep the mixed-node dual: pattern rides both the boxed slot and a fresh
+    // arena row, so a decoded arm matches the parser's pattern/pattern_id shape.
+    .Ok(MatchArm { pattern: pat_opt!, pattern_id: store.pats.add_leaf(pat_opt!), guard_id: guard_id_opt, body_id: body_id_opt! })
 }
 
 fn value_to_pattern(store: NodeStore, v: Value) -> Result<Pattern, string> {

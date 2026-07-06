@@ -1727,7 +1727,13 @@ fn rename_self_calls_arms(store: NodeStore, arms: List<MatchArm>, orig_name: str
     mut i = 0
     while i < arms.length {
         let a = arms[i]
-        out.push(MatchArm { pattern: a.pattern, pattern_id: a.pattern_id, guard_id: a.guard_id, body_id: rename_self_calls_expr_id(store, a.body_id, orig_name, mangled) })
+        // A self-recursive call can hide in the guard too (`if f(x) ->`), so
+        // rename it there as well — mirroring the body and the sibling
+        // substitute/rewrite arm passes.
+        let new_guard_id = if a.guard_id != null {
+            rename_self_calls_expr_id(store, a.guard_id!, orig_name, mangled)
+        } else { null }
+        out.push(MatchArm { pattern: a.pattern, pattern_id: a.pattern_id, guard_id: new_guard_id, body_id: rename_self_calls_expr_id(store, a.body_id, orig_name, mangled) })
         i = i + 1
     }
     out

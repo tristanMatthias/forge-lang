@@ -208,7 +208,7 @@ fn rewrite_match_arms(arms: List<MatchArm>, reg: CompTimeRegistry) -> List<Match
         let new_guard_id = if arm.guard_id != null {
             rewrite_expr_id(arm.guard_id!, reg)
         } else { null }
-        out.push(MatchArm { pattern: arm.pattern, guard_id: new_guard_id, body_id: rewrite_expr_id(arm.body_id, reg) })
+        out.push(MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: rewrite_expr_id(arm.body_id, reg) })
         i = i + 1
     }
     out

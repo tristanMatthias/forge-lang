@@ -1673,7 +1673,9 @@ fn rewrite_match_arms(ctx: NameCtx, arms: List<MatchArm>) -> List<MatchArm> {
         let new_guard_id = if arm.guard_id != null {
             rewrite_expr_id(arm_ctx, arm.guard_id!)
         } else { null }
-        out.push(MatchArm { pattern: rp, guard_id: new_guard_id, body_id: rewrite_expr_id(arm_ctx, arm.body_id) })
+        // Pattern is rewritten to `rp`, so `pattern_id` must track the NEW
+        // pattern — preserving the pre-resolve id would mis-point the dual.
+        out.push(MatchArm { pattern: rp, pattern_id: ctx.nodes.pats.add_leaf(rp), guard_id: new_guard_id, body_id: rewrite_expr_id(arm_ctx, arm.body_id) })
         i = i + 1
     }
     out
