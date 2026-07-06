@@ -3614,7 +3614,7 @@ export fn tc_infer_struct_type_args(tc: TC, name: string, inits: List<FieldInit>
     for init in inits {
         let fdecl = resolve_vtype(tc, field_type_lookup(fields, init.name))
         if !vtype_is_unknown(fdecl) {
-            let vty = tc_arg_concrete_ty(tc, init.value)
+            let vty = tc_arg_concrete_ty(tc, tc.nodes.sexpr_of(init.value_id))
             acc = tc_unify(tps, fdecl, vty, acc)
         }
     }
@@ -4455,7 +4455,15 @@ fn annotate_match_arms(tc: TC, arms: List<MatchArm>) -> List<MatchArm> {
 
 /// Map `annotate_sexpr` over each `List<FieldInit>` value.
 fn annotate_field_inits(tc: TC, inits: List<FieldInit>) -> List<FieldInit> {
-    list_map(inits, (init: FieldInit) -> FieldInit { name: init.name, value: annotate_sexpr(tc, init.value) })
+    // B-final F4: annotate the value's node and stamp its resolved type into
+    // the arena's `arg_tys` side-table (keyed by the value_id) — the id-based
+    // successor of the boxed `SExpr.ty` slot that mono reads via `arg_ty_of`.
+    list_map(inits, (init: FieldInit) -> {
+        let annotated = annotate_sexpr(tc, tc.nodes.sexpr_of(init.value_id))
+        let new_id = tc.nodes.reexpr(annotated.node, init.value_id)
+        tc.nodes.set_arg_ty(new_id, annotated.ty)
+        FieldInit { name: init.name, value_id: new_id }
+    })
 }
 
 /// Walk every `when` arm, annotating cond + body SExprs.

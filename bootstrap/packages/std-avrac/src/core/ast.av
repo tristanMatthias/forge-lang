@@ -436,26 +436,20 @@ export fn rebuild_match_arms(original: List<MatchArm>, run: List<SpannedChild>) 
 /// `value` (an Expr) at its SExpr wrapper's (line, col). The `name` is a scalar,
 /// not a node child — exactly one child per init. The FieldInit analogue of
 /// `match_arm_children_spanned`.
-export fn field_init_children_spanned(inits: List<FieldInit>) -> List<SpannedChild> {
-    mut out: List<SpannedChild> = []
-    for fi in inits {
-        out.push(spanned_child(AnyNode.AnyExpr(fi.value.node), fi.value.line, fi.value.col))
-    }
-    out
+export fn field_init_children_spanned(_inits: List<FieldInit>) -> List<SpannedChild> {
+    // B-final F4: each init's value is a walker-opaque `ExprId` scalar, so a
+    // FieldInit contributes no spanned children — `StructLit`/`With` are leaves
+    // over their inits (the value_ids are carried structurally, not walked).
+    []
 }
 
-/// Rebuild a `List<FieldInit>` from `run` (produced by
-/// `field_init_children_spanned`), taking each init's scalar `name` from
-/// `original` (shape) and its `value` + recovered span from `run`. Each init
-/// contributes exactly one child, so the run index IS the init index (unlike
-/// `rebuild_match_arms`, where the optional guard makes arity variable). A
-/// faithfully-ingested tree round-trips identically.
-export fn rebuild_field_inits(original: List<FieldInit>, run: List<SpannedChild>) -> List<FieldInit> {
-    mut out: List<FieldInit> = []
-    for (idx, fi) in original.enumerate() {
-        out.push(FieldInit { name: fi.name, value: respan_sexpr(run[idx]) })
-    }
-    out
+/// Rebuild a `List<FieldInit>`. B-final F4: each init's value is an opaque
+/// `ExprId` carried structurally, so `field_init_children_spanned` walks
+/// nothing and `run` is empty — the `original` list (value_ids intact) IS the
+/// faithful reconstruction. Kept as the inverse-walker counterpart of the
+/// other `rebuild_*` helpers for a uniform reconstruct surface.
+export fn rebuild_field_inits(original: List<FieldInit>, _run: List<SpannedChild>) -> List<FieldInit> {
+    original
 }
 
 /// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
@@ -479,12 +473,11 @@ export type FieldEntry = { name: string, resolved: ValueType }
 // the payload on `Expr.StructLit` and `Expr.With`.
 export type FieldInit = {
     name: string,
-    value: SExpr,
-    // B-final F1b dual field (NULLABLE, null = no arena row yet — see the
-    // F1a container convention on WhenArm): the row backing `value`. The
-    // parser always populates it; transforms leave it null until their
-    // pass migrates to allocating. The boxed half dies at F4.
-    value_id: ExprId?,
+    // B-final F4: the arena row backing this init's value. Fully flipped —
+    // the boxed `value: SExpr` is gone; consumers read the expr via
+    // `store.exprs.get(value_id)` and its annotated type via
+    // `store.arg_ty_of(value_id)`. Walker-opaque (a scalar id, no edge).
+    value_id: ExprId,
 }
 
 // `List<Variant>` replaces the retired `enum VariantList`. Each
@@ -2831,7 +2824,7 @@ fn render_when_arm_list(store: NodeStore, arms: List<WhenArm>) -> string {
 /// Render a `List<FieldInit>` as an S-expression: `(k=v, k2=v2)`.
 export fn render_field_init_list(store: NodeStore, inits: List<FieldInit>) -> string {
     if inits.length == 0 { return "()" }
-    "(${list_map(inits, (e: FieldInit) -> "${e.name}=${render_expr(store, e.value.node)}").join(", ")})"
+    "(${list_map(inits, (e: FieldInit) -> "${e.name}=${render_expr_id(store, e.value_id)}").join(", ")})"
 }
 
 /// Render a `List<FieldEntry>` as an S-expression: `(name:Type, name2:Type)`.

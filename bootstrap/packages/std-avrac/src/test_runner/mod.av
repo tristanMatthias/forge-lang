@@ -351,8 +351,8 @@ fn synth_test_main(store: NodeStore, mod_names: List<string>) -> SStmt {
     mut unit_lits: List<SExpr> = []
     for mod_name in mod_names {
         let inits: List<FieldInit> = [
-            FieldInit { name: "name", value: sexpr_dummy(Expr.String("\"${mod_name}\"")) },
-            FieldInit { name: "run", value: sexpr_dummy(Expr.Ident("__init_${mod_name}")) },
+            FieldInit { name: "name", value_id: store.exprs.add_leaf(Expr.String("\"${mod_name}\"")) },
+            FieldInit { name: "run", value_id: store.exprs.add_leaf(Expr.Ident("__init_${mod_name}")) },
         ]
         unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
     }

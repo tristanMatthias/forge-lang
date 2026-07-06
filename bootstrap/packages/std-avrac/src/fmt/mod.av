@@ -213,7 +213,7 @@ fn fmt_type_name_list(names: List<string>) -> string {
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.
 fn fmt_field_init_list(store: NodeStore, inits: List<FieldInit>) -> string {
-    list_map(inits, (init: FieldInit) -> "${init.name}: ${fmt_expr(store, init.value.node)}").join(", ")
+    list_map(inits, (init: FieldInit) -> "${init.name}: ${fmt_expr(store, store.exprs.get(init.value_id))}").join(", ")
 }
 
 /// Render a struct-decl/shape field list — one `name: Type` per

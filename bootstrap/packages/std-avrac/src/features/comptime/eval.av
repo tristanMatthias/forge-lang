@@ -154,7 +154,7 @@ fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
             for f in v.struct_payload {
                 let inner_opt = value_to_construct_expr(store, f.value)
                 if inner_opt == none { return none }
-                inits.push(FieldInit { name: f.name, value: sexpr_dummy(inner_opt!) })
+                inits.push(FieldInit { name: f.name, value_id: store.exprs.add_leaf(inner_opt!) })
             }
             Expr.StructLit(v.struct_type, inits)
         }

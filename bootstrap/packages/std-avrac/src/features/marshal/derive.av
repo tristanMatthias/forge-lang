@@ -360,7 +360,7 @@ fn build_from_bytes_fn(store: NodeStore, type_name: string, fields: List<FieldEn
 /// step and produce the value at the end.
 fn build_reads_and_ctor(store: NodeStore, type_name: string, fields: List<FieldEntry>) -> List<StmtId> {
     let reads = build_reads(store, fields)
-    let ctor = build_ctor(type_name, fields)
+    let ctor = build_ctor(store, type_name, fields)
     let tail: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(ctor)))]
     append_ids(reads, tail)
 }
@@ -507,11 +507,11 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
 }
 
 /// Build the final `T { f1: f1, f2: f2, … }` constructor.
-fn build_ctor(type_name: string, fields: List<FieldEntry>) -> Expr {
-    Expr.StructLit(type_name, build_field_inits(fields))
+fn build_ctor(store: NodeStore, type_name: string, fields: List<FieldEntry>) -> Expr {
+    Expr.StructLit(type_name, build_field_inits(store, fields))
 }
 
-fn build_field_inits(fields: List<FieldEntry>) -> List<FieldInit> {
+fn build_field_inits(store: NodeStore, fields: List<FieldEntry>) -> List<FieldInit> {
     // List<FieldInit>.push appends forward — walk source order.
     mut out: List<FieldInit> = []
     mut i = 0
@@ -534,7 +534,7 @@ fn build_field_inits(fields: List<FieldEntry>) -> List<FieldInit> {
             // chain_writes / build_reads.
             default_for(ty)
         }
-        out.push(FieldInit { name, value: sexpr_dummy(init_expr) })
+        out.push(FieldInit { name, value_id: store.exprs.add_leaf(init_expr) })
         i = i + 1
     }
     out

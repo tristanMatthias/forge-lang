@@ -54,7 +54,7 @@ export fn check_field_inits(tc: TC, inits: List<FieldInit>) -> TC {
     mut acc = tc
     mut i = 0
     while i < inits.length {
-        let r = check_expr(acc, inits[i].value.node)
+        let r = check_expr(acc, acc.nodes.exprs.get(inits[i].value_id))
         acc = r.tc
         i = i + 1
     }
@@ -78,7 +78,7 @@ export fn check_struct_lit_fields(tc: TC, receiver_ty: ValueType, name: string, 
     mut i = 0
     while i < inits.length {
         let init = inits[i]
-        let r = check_expr(acc, init.value.node)
+        let r = check_expr(acc, acc.nodes.exprs.get(init.value_id))
         acc = r.tc
         if fields.length > 0 {
             if !tc_field_exists(fields, init.name) {

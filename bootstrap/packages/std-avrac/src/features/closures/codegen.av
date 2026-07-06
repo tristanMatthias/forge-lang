@@ -298,7 +298,7 @@ fn find_captures_arms(store: NodeStore, arms: List<MatchArm>, params: List<Param
 fn find_captures_field_inits(store: NodeStore, inits: List<FieldInit>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     mut i = 0
     while i < inits.length {
-        find_captures(store, inits[i].value.node, params, env, captures)
+        find_captures(store, store.exprs.get(inits[i].value_id), params, env, captures)
         i = i + 1
     }
 }

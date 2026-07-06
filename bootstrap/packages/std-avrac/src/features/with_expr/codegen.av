@@ -129,7 +129,7 @@ fn apply_overrides(ctx: Ctx, env: List<VarBinding>, dst: ptr, struct_name: strin
         let ov = overrides[i]
         let idx = field_index_of(fields, ov.name)
         if idx >= 0 {
-            mut r = ctx.emit(env, ov.value.node)?
+            mut r = ctx.emit(env, ctx.nodes.exprs.get(ov.value_id))?
             let st_ty = ctx.get_type(struct_name)
             let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
             let fld_ty = ctx.resolve_field_type(fields, ov.name)

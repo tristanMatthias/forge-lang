@@ -366,7 +366,7 @@ fn rw_tpl_expr(store: NodeStore, expr: Expr, inst: string, uc: List<CompConfigPa
 fn rw_tpl_field_inits(store: NodeStore, inits: List<FieldInit>, inst: string, uc: List<CompConfigPair>, schema: List<CompConfig>, ctx: RewriteCtx) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(rw_tpl_expr(store, init.value.node, inst, uc, schema, ctx), init.value.line, init.value.col),
+        value_id: store.reexpr(rw_tpl_expr(store, store.exprs.get(init.value_id), inst, uc, schema, ctx), init.value_id),
     })
 }
 
@@ -434,10 +434,10 @@ fn config_to_fields(config: List<CompConfig>) -> List<FieldEntry> {
 /// Convert a config schema to the `Foo { field: cfg.field, …}`
 /// FieldInitList used when instantiating the synthesized struct
 /// from inside the factory function.
-fn config_to_factory_inits(config: List<CompConfig>) -> List<FieldInit> {
+fn config_to_factory_inits(store: NodeStore, config: List<CompConfig>) -> List<FieldInit> {
     list_map(config, (entry: CompConfig) -> FieldInit {
         name: entry.key,
-        value: sexpr(entry.default_val ?? Expr.None, 0, 0),
+        value_id: store.exprs.add_leaf(entry.default_val ?? Expr.None),
     })
 }
 
@@ -483,19 +483,19 @@ fn prepend_stmt(stmt: Stmt, line: int, col: int, rest: List<SStmt>) -> List<SStm
 fn apply_config_pairs(store: NodeStore, base: Expr, config: List<CompConfigPair>) -> Expr {
     if config.length == 0 { return base }
     // Flipped With.obj is an ExprId — ingest the base leaf.
-    Expr.With(store.exprs.add_leaf(base), config_pairs_to_field_inits(config))
+    Expr.With(store.exprs.add_leaf(base), config_pairs_to_field_inits(store, config))
 }
 
 /// Convert a `List<CompConfigPair>` (user instantiation config)
 /// into a FieldInitList for direct splicing into a struct
 /// literal.
-fn config_pairs_to_field_inits(pairs: List<CompConfigPair>) -> List<FieldInit> {
+fn config_pairs_to_field_inits(store: NodeStore, pairs: List<CompConfigPair>) -> List<FieldInit> {
     // List<FieldInit>.push appends forward — walk source order.
     mut out: List<FieldInit> = []
     mut i = 0
     while i < pairs.length {
         let pair = pairs[i]
-        out.push(FieldInit { name: pair.key, value: sexpr(pair.value, 0, 0) })
+        out.push(FieldInit { name: pair.key, value_id: store.exprs.add_leaf(pair.value) })
         i = i + 1
     }
     out
@@ -535,13 +535,13 @@ export fn splice_component_def(store: NodeStore, name: string, params: List<Para
 
     // Factory: comp_new(name: string) -> TypeName { TypeName { name, config_defaults..., empty_lists... } }
     let name_param: List<ParamEntry> = [ParamEntry { name: "name", vtype: ValueType.Str }]
-    let config_inits = config_to_factory_inits(config)
-    let with_child_inits = append_children_inits(config_inits, children)
+    let config_inits = config_to_factory_inits(store, config)
+    let with_child_inits = append_children_inits(store, config_inits, children)
     // Prepend the implicit `name: name` init. List<FieldInit> grows
     // forward, so build a fresh list with `name` first, then push
     // the existing entries.
     mut name_init: List<FieldInit> = []
-    name_init.push(FieldInit { name: "name", value: sexpr(Expr.Ident("name"), 0, 0) })
+    name_init.push(FieldInit { name: "name", value_id: store.exprs.add_leaf(Expr.Ident("name")) })
     mut ni_i = 0
     while ni_i < with_child_inits.length {
         name_init.push(with_child_inits[ni_i])
@@ -590,7 +590,7 @@ fn append_children_fields(fields: List<FieldEntry>, children: List<ChildrenSlot>
 /// `append_children_fields`. Copy + push appends; the prior linked
 /// `field_init_list_append` tail-walker is gone (List<T>.push is
 /// O(1) amortised).
-fn append_children_inits(inits: List<FieldInit>, children: List<ChildrenSlot>) -> List<FieldInit> {
+fn append_children_inits(store: NodeStore, inits: List<FieldInit>, children: List<ChildrenSlot>) -> List<FieldInit> {
     mut out: List<FieldInit> = []
     mut i = 0
     while i < inits.length {
@@ -599,8 +599,8 @@ fn append_children_inits(inits: List<FieldInit>, children: List<ChildrenSlot>) -
     }
     for slot in children {
         let empty_elems: List<ExprId> = []
-        let empty_list = sexpr(Expr.ListLit(empty_elems), 0, 0)
-        out.push(FieldInit { name: slot.slot_name, value: empty_list })
+        let empty_list_id = store.exprs.add_leaf(Expr.ListLit(empty_elems))
+        out.push(FieldInit { name: slot.slot_name, value_id: empty_list_id })
     }
     out
 }

@@ -303,7 +303,7 @@ fn remove_escaped_field_inits(store: NodeStore, inits: List<FieldInit>, set: Lis
     mut acc = set
     mut i = 0
     while i < inits.length {
-        acc = remove_escaped_expr(store, inits[i].value.node, acc)
+        acc = remove_escaped_expr(store, store.exprs.get(inits[i].value_id), acc)
         i = i + 1
     }
     acc

@@ -194,8 +194,7 @@ fn rewrite_field_inits(inits: List<FieldInit>, reg: CompTimeRegistry) -> List<Fi
     mut i = 0
     while i < inits.length {
         let init = inits[i]
-        let new_val = sexpr(rewrite_expr(init.value.node, reg), init.value.line, init.value.col)
-        out.push(FieldInit { name: init.name, value: new_val })
+        out.push(FieldInit { name: init.name, value_id: rewrite_expr_id(init.value_id, reg) })
         i = i + 1
     }
     out

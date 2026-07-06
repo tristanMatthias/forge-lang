@@ -55,7 +55,7 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
         let init = inits[i]
         let idx = field_index_of(fields, init.name)
         if idx < 0 { return err_emit("unknown field `${init.name}`") }
-        mut r = ctx.emit(env, init.value.node)?
+        mut r = ctx.emit(env, ctx.nodes.exprs.get(init.value_id))?
         let fld_ty = ctx.resolve_field_type(fields, init.name)
         let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
         // Optional box/unbox into the field's slot (no-op when neither applies).

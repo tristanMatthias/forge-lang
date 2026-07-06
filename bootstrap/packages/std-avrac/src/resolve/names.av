@@ -1655,8 +1655,7 @@ fn rewrite_field_inits(ctx: NameCtx, inits: List<FieldInit>) -> List<FieldInit> 
     mut i = 0
     while i < inits.length {
         let init = inits[i]
-        let new_val = sexpr_at(rewrite_expr(ctx, init.value.node), init.value.line, init.value.col, init.value.file)
-        out.push(FieldInit { name: init.name, value: new_val })
+        out.push(FieldInit { name: init.name, value_id: rewrite_expr_id(ctx, init.value_id) })
         i = i + 1
     }
     out
@@ -1883,7 +1882,7 @@ fn collect_used_paths_field_inits(store: NodeStore, inits: List<FieldInit>, acc:
     mut out = acc
     mut i = 0
     while i < inits.length {
-        out = collect_used_paths_expr(store, inits[i].value.node, out)
+        out = collect_used_paths_expr(store, store.exprs.get(inits[i].value_id), out)
         i = i + 1
     }
     out
