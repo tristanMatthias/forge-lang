@@ -1192,10 +1192,15 @@ fn rewrite_select_arms(ctx: NameCtx, arms: List<SelectArm>) -> List<SelectArm> {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
+        // Bind the received value so refs to it inside the body aren't
+        // mis-qualified as module-level (mirrors Catch/Lambda). The channel
+        // expression is rewritten in the OUTER ctx — it precedes the binding.
+        let body_params: List<ParamEntry> = if arm.binding == "" { [] } else { [ParamEntry { name: arm.binding, vtype: ValueType.Unknown }] }
+        let body_ctx = bind_params_ctx(ctx, body_params)
         out.push(SelectArm {
             binding: arm.binding,
             chan_id: rewrite_expr_id(ctx, arm.chan_id),
-            body_ids: rewrite_stmt_ids(ctx, arm.body_ids),
+            body_ids: rewrite_stmt_ids(body_ctx, arm.body_ids),
         })
         i = i + 1
     }
