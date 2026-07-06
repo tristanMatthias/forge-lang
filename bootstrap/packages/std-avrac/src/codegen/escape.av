@@ -276,10 +276,10 @@ fn remove_escaped_when_arms(store: NodeStore, arms: List<WhenArm>, set: List<str
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.cond != null {
-            acc = remove_escaped_expr(store, arm.cond!.node, acc)
+        if arm.cond_id != null {
+            acc = remove_escaped_expr(store, store.exprs.get(arm.cond_id!), acc)
         }
-        acc = remove_escaped_expr(store, arm.body.node, acc)
+        acc = remove_escaped_expr(store, store.exprs.get(arm.body_id), acc)
         i = i + 1
     }
     acc

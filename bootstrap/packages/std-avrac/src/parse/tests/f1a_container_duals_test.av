@@ -27,9 +27,10 @@ fn when_bodies_mirror() -> bool {
     match probe.store.exprs.get(probe.root) {
         .When(arms) -> {
             if arms.length != 2 { return false }
+            // B-final F4c: WhenArm.body is arena-only (boxed body gone), so
+            // `body_id` is non-null — verify each resolves to a real expr row.
             for arm in arms {
-                if arm.body_id == none { return false }
-                if render_expr(probe.store, probe.store.exprs.get(arm.body_id!)) != render_expr(probe.store, arm.body.node) { return false }
+                if render_expr(probe.store, probe.store.exprs.get(arm.body_id)) == "" { return false }
             }
             true
         }
@@ -42,10 +43,11 @@ fn when_conds_mirror() -> bool {
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .When(arms) -> {
+            // B-final F4c: cond is arena-only — arm[0] has a resolving cond_id,
+            // arm[1] is the `_` else arm (no condition).
             if arms[0].cond_id == none { return false }
-            if arms[0].cond == none { return false }
-            if render_expr(probe.store, probe.store.exprs.get(arms[0].cond_id!)) != render_expr(probe.store, arms[0].cond!.node) { return false }
-            arms[1].cond_id == none && arms[1].cond == none
+            if render_expr(probe.store, probe.store.exprs.get(arms[0].cond_id!)) == "" { return false }
+            arms[1].cond_id == none
         }
         _ -> false
     }

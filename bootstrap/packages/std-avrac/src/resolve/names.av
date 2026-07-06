@@ -1724,10 +1724,10 @@ fn rewrite_when_arms(ctx: NameCtx, arms: List<WhenArm>) -> List<WhenArm> {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_cond = if arm.cond == null { null } else { sexpr_at(rewrite_expr(ctx, arm.cond!.node), arm.cond!.line, arm.cond!.col, arm.cond!.file) }
+        let new_cond_id = if arm.cond_id == null { null } else { rewrite_expr_id(ctx, arm.cond_id!) }
         out.push(WhenArm {
-            cond: new_cond,
-            body: sexpr_at(rewrite_expr(ctx, arm.body.node), arm.body.line, arm.body.col, arm.body.file),
+            cond_id: new_cond_id,
+            body_id: rewrite_expr_id(ctx, arm.body_id),
         })
         i = i + 1
     }

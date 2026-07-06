@@ -974,22 +974,22 @@ fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int
         return ok_match_ty(.Unknown)
     }
     let arm = arms[idx]
-    ctx.cov_match_arm(arm.body.line)
-    if arm.cond == null {
+    ctx.cov_match_arm(ctx.nodes.expr_linecol(arm.body_id).line)
+    if arm.cond_id == null {
         // Else arm — emit body directly, store, branch to merge
-        let r = ctx.emit(env, arm.body.node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
         ctx.store(emit_value_ptr(r), result_slot)
         ctx.br_if_open(merge_bb)
         ok_match_ty(emit_value_ty(r))
     } else {
-        let cond_r = ctx.emit(env, arm.cond!.node)?
+        let cond_r = ctx.emit(env, ctx.nodes.exprs.get(arm.cond_id!))?
         let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
         let arm_bb = ctx.bb("when_arm")
         let next_bb = ctx.bb("when_next")
         ctx.cond_br(cond_i1, arm_bb, next_bb)
         // Arm body
         ctx.position(arm_bb)
-        let body_r = ctx.emit(env, arm.body.node)?
+        let body_r = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
         ctx.store(emit_value_ptr(body_r), result_slot)
         let arm_ty = emit_value_ty(body_r)
         ctx.br_if_open(merge_bb)

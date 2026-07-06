@@ -367,8 +367,8 @@ fn stamp_table_match_arms(store: NodeStore, arms: List<MatchArm>, sname: string)
 /// Stamp each `when`-arm body.
 fn stamp_table_when_arms(store: NodeStore, arms: List<WhenArm>, sname: string) -> List<WhenArm> {
     list_map(arms, (arm: WhenArm) -> WhenArm {
-        cond: arm.cond,
-        body: sexpr(stamp_table_rows(store, arm.body.node, sname), arm.body.line, arm.body.col),
+        cond_id: arm.cond_id,
+        body_id: store.reexpr(stamp_table_rows(store, store.exprs.get(arm.body_id), sname), arm.body_id),
     })
 }
 
@@ -635,8 +635,8 @@ fn desugar_match_arms(store: NodeStore, arms: List<MatchArm>, sigs: List<FnSig>)
 /// `when` arms have an optional condition (the `else` arm is null).
 fn desugar_when_arms(store: NodeStore, arms: List<WhenArm>, sigs: List<FnSig>) -> List<WhenArm> {
     list_map(arms, (arm: WhenArm) -> WhenArm {
-        cond: if arm.cond != null { sexpr(desugar_expr(store, arm.cond!.node, sigs), arm.cond!.line, arm.cond!.col) } else { null },
-        body: sexpr(desugar_expr(store, arm.body.node, sigs), arm.body.line, arm.body.col),
+        cond_id: if arm.cond_id != null { desugar_expr_id(store, arm.cond_id!, sigs) } else { null },
+        body_id: desugar_expr_id(store, arm.body_id, sigs),
     })
 }
 

@@ -275,8 +275,8 @@ fn fmt_match_arms(store: NodeStore, arms: List<MatchArm>, depth: int) -> string 
 fn fmt_when_arms(store: NodeStore, arms: List<WhenArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
     list_map(arms, (arm: WhenArm) -> {
-        let cond_str = if arm.cond == null { "_" } else { fmt_expr(store, arm.cond!.node) }
-        "${ind}${cond_str} -> ${fmt_expr(store, arm.body.node)}"
+        let cond_str = if arm.cond_id == null { "_" } else { fmt_expr(store, store.exprs.get(arm.cond_id!)) }
+        "${ind}${cond_str} -> ${fmt_expr(store, store.exprs.get(arm.body_id))}"
     }).join("\n")
 }
 

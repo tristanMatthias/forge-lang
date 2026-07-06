@@ -4468,9 +4468,20 @@ fn annotate_field_inits(tc: TC, inits: List<FieldInit>) -> List<FieldInit> {
 
 /// Walk every `when` arm, annotating cond + body SExprs.
 fn annotate_when_arms(tc: TC, arms: List<WhenArm>) -> List<WhenArm> {
-    list_map(arms, (arm: WhenArm) -> WhenArm {
-        cond: if arm.cond != null { annotate_sexpr(tc, arm.cond!) } else { null },
-        body: annotate_sexpr(tc, arm.body),
+    // B-final F4c: annotate cond/body nodes and stamp their resolved types into
+    // the arena `arg_tys` side-table (keyed by id) — id-based successor of the
+    // boxed `SExpr.ty` slot.
+    list_map(arms, (arm: WhenArm) -> {
+        let new_cond_id = if arm.cond_id != null {
+            let c_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.cond_id!))
+            let cid = tc.nodes.reexpr(c_ann.node, arm.cond_id!)
+            tc.nodes.set_arg_ty(cid, c_ann.ty)
+            cid
+        } else { null }
+        let b_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.body_id))
+        let new_body_id = tc.nodes.reexpr(b_ann.node, arm.body_id)
+        tc.nodes.set_arg_ty(new_body_id, b_ann.ty)
+        WhenArm { cond_id: new_cond_id, body_id: new_body_id }
     })
 }
 

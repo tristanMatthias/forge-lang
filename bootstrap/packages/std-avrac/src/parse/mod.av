@@ -2471,23 +2471,15 @@ impl Parser {
         mut out: List<WhenArm> = []
         while !self.check(Tk.RightBrace) {
             // `_ -> body` or `else -> body` is the default arm (null condition)
-            let line = self.current_line
-            let col = self.current_column
-            mut cond: SExpr? = none
             mut cond_id: ExprId? = none
             if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
                 self.advance()
             } else {
-                let c_id = self.parse_expression()?
-                cond = sexpr_at(self.expr_of(c_id), line, col, self.file)
-                cond_id = c_id
+                cond_id = self.parse_expression()?
             }
             if !self.consume(Tk.Arrow, "expected `->` after when condition") { return .Err("parse error") }
-            let body_line = self.current_line
-            let body_col = self.current_column
             let body_id = self.parse_expression()?
-            let body_se = sexpr_at(self.expr_of(body_id), body_line, body_col, self.file)
-            out.push(WhenArm { cond, body: body_se, cond_id, body_id })
+            out.push(WhenArm { cond_id, body_id })
         }
         .Ok(out)
     }

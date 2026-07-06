@@ -417,14 +417,11 @@ impl Parser {
         mut out: List<WhenArm> = []
         while !self.check(Tk.RightBrace) {
             // `_` → else/wildcard arm (no condition)
-            mut cond: SExpr? = none
             mut cond_id: ExprId? = none
             if self.check(Tk.Identifier) && self.current_lexeme == "_" {
                 self.advance()
             } else {
-                let c_id = self.parse_expression()?
-                cond = sexpr(self.expr_of(c_id), self.current_line, self.current_column)
-                cond_id = c_id
+                cond_id = self.parse_expression()?
             }
             if !self.consume(Tk.Arrow, "expected `->` in match arm") { return .Err("parse error") }
             let saved = self.allow_dot_postfix
@@ -433,7 +430,7 @@ impl Parser {
             self.allow_dot_postfix = saved
             let body_id = body_res?
             if self.check(Tk.Comma) { self.advance() }
-            out.push(WhenArm { cond, body: sexpr(self.expr_of(body_id), self.current_line, self.current_column), cond_id, body_id })
+            out.push(WhenArm { cond_id, body_id })
         }
         .Ok(out)
     }

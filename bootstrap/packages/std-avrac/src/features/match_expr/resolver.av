@@ -59,8 +59,8 @@ export fn resolve_when_arms(r: Resolver, arms: List<WhenArm>) -> Resolver {
     while i < arms.length {
         if res.had_error { return res }
         let arm = arms[i]
-        let after_cond = if arm.cond == null { res } else { resolve_expr(res, arm.cond!.node) }
-        res = resolve_expr(after_cond, arm.body.node)
+        let after_cond = if arm.cond_id == null { res } else { resolve_expr(res, res.nodes.exprs.get(arm.cond_id!)) }
+        res = resolve_expr(after_cond, res.nodes.exprs.get(arm.body_id))
         i = i + 1
     }
     res

@@ -309,8 +309,8 @@ fn find_captures_when_arms(store: NodeStore, arms: List<WhenArm>, params: List<P
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.cond != null { find_captures(store, arm.cond!.node, params, env, captures) }
-        find_captures(store, arm.body.node, params, env, captures)
+        if arm.cond_id != null { find_captures(store, store.exprs.get(arm.cond_id!), params, env, captures) }
+        find_captures(store, store.exprs.get(arm.body_id), params, env, captures)
         i = i + 1
     }
 }
