@@ -1612,20 +1612,8 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     original
 }
 
-/// Map `rewrite_expr` over a `List<SExpr>`.
-fn rewrite_expr_list(ctx: NameCtx, exprs: List<SExpr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < exprs.length {
-        let se = exprs[i]
-        out.push(sexpr_at(rewrite_expr(ctx, se.node), se.line, se.col, se.file))
-        i = i + 1
-    }
-    out
-}
-
-/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args) — the id
-/// twin of `rewrite_expr_list`; rewrites each arg row in place via reexpr.
+/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args); rewrites
+/// each arg row in place via reexpr.
 fn rewrite_expr_list_ids(ctx: NameCtx, ids: List<ExprId>) -> List<ExprId> {
     mut out: List<ExprId> = []
     mut i = 0
@@ -1647,12 +1635,10 @@ fn rewrite_annotations(ctx: NameCtx, annots: List<Annotation>) -> List<Annotatio
     mut i = 0
     while i < annots.length {
         let a = annots[i]
-        // B-final F4d: rewrite the dual arg_ids row through the id twin
-        // (rewrite_expr_id) so it carries the same resolved content as the
-        // boxed args, keeping the pair in lockstep until the boxed half drops.
+        // B-final F4d: annotation args are arena-only — rewrite each arg id
+        // through the id twin (rewrite_expr_id) so it carries resolved content.
         out.push(Annotation {
             name: a.name,
-            args: rewrite_expr_list(ctx, a.args),
             arg_ids: rewrite_annotation_arg_ids(ctx, a.arg_ids),
         })
         i = i + 1

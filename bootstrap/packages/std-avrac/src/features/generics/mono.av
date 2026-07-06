@@ -1611,9 +1611,8 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
     // linkage. Each consuming .o that monomorphizes the same generic
     // would otherwise emit a duplicate global symbol, breaking the
     // final link in library-mode (multiple packages share specs).
-    let empty_args: List<SExpr> = []
     mut annots: List<Annotation> = []
-    annots.push(Annotation { name: "mono_spec", args: empty_args, arg_ids: [] })
+    annots.push(Annotation { name: "mono_spec", arg_ids: [] })
     Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
 }
 
@@ -1767,9 +1766,8 @@ fn specialize_method(store: NodeStore, mangled_type: string, method: Stmt, ta_ex
             let fn_stmt = Stmt.Function(new_name, mtp, substitute_params(params, ta_ext), substitute_vtype(ret_vt, ta_ext), substitute_stmt_ids(store, body, ta_ext))
             // @mono_spec → linkonce_odr, exactly as specialize_fn: the same
             // method may be monomorphized in multiple consuming packages.
-            let empty_args: List<SExpr> = []
             mut annots: List<Annotation> = []
-            annots.push(Annotation { name: "mono_spec", args: empty_args, arg_ids: [] })
+            annots.push(Annotation { name: "mono_spec", arg_ids: [] })
             Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
         }
         .Annotated(_, inner) -> specialize_method(store, mangled_type, store.stmts.get(inner), ta_ext)

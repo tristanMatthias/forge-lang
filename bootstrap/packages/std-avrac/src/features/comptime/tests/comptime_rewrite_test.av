@@ -31,8 +31,7 @@ fn mk_add_decl(ws: NodeStore) -> Stmt {
         params,
         ValueType.Int,
         body)
-    let empty_args: List<SExpr> = []
-    let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args }]
+    let annots: List<Annotation> = [Annotation { name: "comptime", arg_ids: [] }]
     Stmt.Annotated(annots, ws.stmts.add_leaf(fn_decl))
 }
 

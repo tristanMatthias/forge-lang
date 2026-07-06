@@ -1,14 +1,11 @@
 // WHY: B-final F1a/F4 — the walker-opaque containers (WhenArm, SelectArm,
 // MatchArm, Annotation, CompConfig) hold their child exprs/stmts as arena ids.
-// Annotation still carries a DUAL field (args beside arg_ids) — a nullable id
-// list beside the boxed child — and its spec pins that on the PARSE path the id
-// is present and `store.get(id)` renders identically to the boxed half (the
-// agreement that lets consumers migrate off the boxed half without drift).
-// Fully-flipped child slots (WhenArm cond/body — F4c; MatchArm guard/body —
-// F4b; SelectArm chan/body — F4d; CompConfig default — F4d) have dropped the
-// boxed half entirely; their specs verify the id is present and resolves to the
-// EXACT expected node. Two slots stay dual on otherwise-flipped containers:
-// MatchArm's pattern, and CompConfig's ty_vt/ty_id (the ValueType/TypeId dual).
+// Fully-flipped child slots (WhenArm cond/body — F4c; MatchArm guard/body — F4b;
+// SelectArm chan/body — F4d; CompConfig default — F4d; Annotation args — F4d)
+// have dropped the boxed half entirely; their specs verify the id is present and
+// resolves to the EXACT expected node. Two slots stay dual on otherwise-flipped
+// containers: MatchArm's pattern, and CompConfig's ty_vt/ty_id (the
+// ValueType/TypeId dual).
 
 use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
 use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
@@ -86,11 +83,11 @@ fn annotation_args_mirror() -> bool {
             let a = annots[0]
             if a.arg_ids == none { return false }
             let ids = a.arg_ids!
-            if ids.length != a.args.length || ids.length != 2 { return false }
-            for (i, id) in ids.enumerate() {
-                if render_expr(r.store, r.store.exprs.get(id)) != render_expr(r.store, a.args[i].node) { return false }
-            }
-            true
+            if ids.length != 2 { return false }
+            // Args are arena-only now (boxed args dropped) — each arg_id resolves
+            // to its exact expr: `@limit(3 + 4, name)` → `(+ 3 4)`, `name`.
+            render_expr(r.store, r.store.exprs.get(ids[0])) == "(+ 3 4)"
+                && render_expr(r.store, r.store.exprs.get(ids[1])) == "name"
         }
         _ -> false
     }
@@ -103,9 +100,8 @@ fn doc_annotation_mirrors() -> bool {
     match r.stmts![0].node {
         .Annotated(annots, _) -> {
             let a = annots[0]
-            if a.arg_ids == none { return false }
-            a.arg_ids!.length == 1
-                && render_expr(r.store, r.store.exprs.get(a.arg_ids![0])) == render_expr(r.store, a.args[0].node)
+            if a.arg_ids == none || a.arg_ids!.length != 1 { return false }
+            render_expr(r.store, r.store.exprs.get(a.arg_ids![0])).contains("adds one")
         }
         _ -> false
     }
@@ -150,9 +146,9 @@ spec "F1a duals: select arms carry chan/body rows that mirror the boxed halves" 
     }
 }
 
-spec "F1a duals: annotation args carry one row per arg, in order" {
+spec "F4d: annotation args are arena ids (boxed args removed)" {
     given "an annotated declaration with expression args" {
-        then "arg_ids agree element-wise with the boxed args" {
+        then "each arg_id resolves to its exact arg expr, in order" {
             annotation_args_mirror()
         }
         then "a doc comment's synthesized annotation carries its string row" {

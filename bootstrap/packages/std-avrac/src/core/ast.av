@@ -2375,8 +2375,8 @@ export type SelectArm = {
 }
 
 /// Annotations attached to declarations: `@name` or `@name(args)`.
-/// Args are stored as `List<SExpr>` for generality so any annotation
-/// shape works without dedicated AST variants.
+/// Args are stored as arena `arg_ids: List<ExprId>` rows, so any
+/// annotation shape works without dedicated AST variants.
 ///
 /// `List<Annotation>` replaces the retired `enum AnnotationList`.
 /// Used as `annotations: List<Annotation>` on Stmt.Annotated and
@@ -2384,9 +2384,10 @@ export type SelectArm = {
 /// metadata extractor and formatter.
 export type Annotation = {
     name: string,
-    args: List<SExpr>,
-    // B-final F1a dual field (see WhenArm — NULLABLE, null = no rows yet):
-    // one row per arg, in order.
+    // B-final: args are arena-only now — the boxed `args: List<SExpr>` is gone.
+    // Consumers read each arg via `store.exprs.get(arg_ids![i])`. NULLABLE only
+    // for the pre-population sentinel; every constructor now fills it (`[]` for a
+    // bare `@name`), so a decoded/parsed annotation always carries a real row.
     arg_ids: List<ExprId>?,
 }
 
@@ -2539,7 +2540,7 @@ export fn find_annotation(store: NodeStore, s: Stmt, name: string) -> Annotation
 export fn doc_string_for(store: NodeStore, s: Stmt) -> string {
     let found = find_annotation(store, s, "doc")
     if found == null { return "" }
-    annotation_first_string(found!)
+    annotation_first_string(store, found!)
 }
 
 /// Linear scan for an annotation by name within a single
@@ -2558,9 +2559,9 @@ fn annotation_list_find(annots: List<Annotation>, name: string) -> Annotation? {
 /// Pull the first arg's string body out of an annotation. The parser
 /// stores doc comments as `Expr.String("\"…raw text…\"")` — quotes
 /// are part of the literal form, so we strip them here.
-fn annotation_first_string(a: Annotation) -> string {
-    if a.args.length == 0 { return "" }
-    match a.args[0].node {
+fn annotation_first_string(store: NodeStore, a: Annotation) -> string {
+    if a.arg_ids == none || a.arg_ids!.length == 0 { return "" }
+    match store.exprs.get(a.arg_ids![0]) {
         .String(literal) -> strip_quotes(literal)
         _ -> ""
     }

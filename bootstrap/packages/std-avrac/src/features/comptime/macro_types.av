@@ -22,12 +22,22 @@
 //   MacroProvenance fields — macro_name, target_canonical,
 //     target_source_span.
 
-use core.{Stmt, SStmt, Annotation}
+use core.{Stmt, SStmt, SExpr}
 use diagnostics.{Span}
+
+/// Macro-facing view of the `@expand(...)` annotation. Its `args` are a
+/// materialized `List<SExpr>` (each carries the arg's `.node`) — a stable,
+/// convenient macro API decoupled from the compiler's internal `Annotation`,
+/// whose args now live as arena `ExprId` rows. `build_annotation_value`
+/// materializes this from the resolved annotation's `arg_ids`.
+export type MacroAnnotation = {
+    name: string,
+    args: List<SExpr>,
+}
 
 export type AnnotatedDecl = {
     stmt: Stmt,
-    annotation: Annotation,
+    annotation: MacroAnnotation,
     canonical_path: string,
 }
 
