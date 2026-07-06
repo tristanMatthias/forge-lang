@@ -1,11 +1,12 @@
-// WHY: B-final F1a — the four walker-opaque containers (WhenArm, SelectArm,
-// Annotation, CompConfig) carry DUAL id fields beside their boxed children
-// (nullable: null = "no arena row yet", the transform-rebuilt state). On the
-// PARSE path the ids must always be present and must denote the same node
-// the boxed half carries — that agreement is what lets consumers migrate
-// from the boxed halves to store reads one at a time without drift. These
-// specs pin it: for each container parsed from source, the dual id is
-// non-null and `store.get(id)` renders identically to the boxed child.
+// WHY: B-final F1a/F4 — the walker-opaque containers (WhenArm, SelectArm,
+// MatchArm, Annotation, CompConfig) hold their child exprs/stmts as arena ids.
+// Containers still mid-migration (SelectArm, MatchArm, Annotation, CompConfig)
+// carry DUAL fields — a nullable id beside the boxed child — and these specs
+// pin that on the PARSE path the id is present and `store.get(id)` renders
+// identically to the boxed half (the agreement that lets consumers migrate off
+// the boxed halves one at a time without drift). Fully-flipped containers
+// (WhenArm — F4c) have dropped the boxed half entirely; their specs verify the
+// id is present and resolves to the EXACT expected node.
 
 use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
 use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
@@ -27,12 +28,12 @@ fn when_bodies_mirror() -> bool {
     match probe.store.exprs.get(probe.root) {
         .When(arms) -> {
             if arms.length != 2 { return false }
-            // B-final F4c: WhenArm.body is arena-only (boxed body gone), so
-            // `body_id` is non-null — verify each resolves to a real expr row.
-            for arm in arms {
-                if render_expr(probe.store, probe.store.exprs.get(arm.body_id)) == "" { return false }
-            }
-            true
+            // B-final F4c: WhenArm.body is arena-only (boxed body gone). Verify
+            // each body_id resolves to its EXACT expr — a miswired/swapped id
+            // renders differently, so exact-match keeps the coverage the old
+            // boxed-vs-id equality gave.
+            if render_expr(probe.store, probe.store.exprs.get(arms[0].body_id)) != "(call f (a))" { return false }
+            render_expr(probe.store, probe.store.exprs.get(arms[1].body_id)) == "(call g ())"
         }
         _ -> false
     }
@@ -43,10 +44,10 @@ fn when_conds_mirror() -> bool {
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .When(arms) -> {
-            // B-final F4c: cond is arena-only — arm[0] has a resolving cond_id,
-            // arm[1] is the `_` else arm (no condition).
+            // B-final F4c: cond is arena-only. arm[0]'s cond_id resolves to the
+            // exact condition; arm[1] is the `_` else arm (no condition).
             if arms[0].cond_id == none { return false }
-            if render_expr(probe.store, probe.store.exprs.get(arms[0].cond_id!)) == "" { return false }
+            if render_expr(probe.store, probe.store.exprs.get(arms[0].cond_id!)) != "(> a 1)" { return false }
             arms[1].cond_id == none
         }
         _ -> false
@@ -128,9 +129,9 @@ fn comp_config_mirrors() -> bool {
     }
 }
 
-spec "F1a duals: when arms carry cond/body rows that mirror the boxed halves" {
+spec "F4c: when arms carry arena cond/body ids (boxed halves removed)" {
     given "a when expression parsed through the native probe" {
-        then "every arm's body_id is present and renders identically" {
+        then "each arm's body_id resolves to its exact body expr" {
             when_bodies_mirror()
         }
         then "a conditioned arm carries cond_id; the wildcard arm carries none" {
