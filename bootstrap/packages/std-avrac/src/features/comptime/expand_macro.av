@@ -42,7 +42,7 @@
 // block as the Stmt arg.
 
 use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
-use core.{NodeStore, StmtId}
+use core.{NodeStore, StmtId, ExprId}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
@@ -820,12 +820,12 @@ fn collect_decl_names(store: NodeStore, decls: List<SStmt>) -> List<string> {
 fn expand_target_name(store: NodeStore, stmt: Stmt) -> string {
     let found = find_annotation(store, stmt, "expand")
     if found == null { return "" }
-    first_arg_ident(found!.args)
+    first_arg_ident(store, found!.arg_ids)
 }
 
-fn first_arg_ident(args: List<SExpr>) -> string {
-    if args.length == 0 { return "" }
-    match args[0].node {
+fn first_arg_ident(store: NodeStore, ids: List<ExprId>?) -> string {
+    if ids == none || ids!.length == 0 { return "" }
+    match store.exprs.get(ids![0]) {
         .Ident(name) -> name
         .QualifiedIdent(path) -> path
         _ -> ""
@@ -873,15 +873,15 @@ fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string
 fn build_annotation_value(stmt: Stmt, runtime: Runtime) -> Value {
     let found = find_annotation(runtime.nodes, stmt, "expand")
     mut args_values: List<Value> = []
-    if found != null {
-        for arg in found!.args {
-            args_values.push(build_arg_sexpr_value(arg.node, runtime))
+    if found != null && found!.arg_ids != none {
+        for id in found!.arg_ids! {
+            args_values.push(build_arg_sexpr_value(runtime.nodes.exprs.get(id), runtime))
         }
     }
     mut ann_fields: List<StructField> = []
     ann_fields.push(struct_field("name", value_string("expand")))
     ann_fields.push(struct_field("args", value_list(args_values)))
-    value_struct("@std::avrac::core::Annotation", ann_fields)
+    value_struct("@std::avrac::features::comptime::macro_types::MacroAnnotation", ann_fields)
 }
 
 /// Wrap an Expr in an SExpr Value carrier — {node, line, col, ty, file}.

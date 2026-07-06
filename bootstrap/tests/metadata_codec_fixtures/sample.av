@@ -728,7 +728,7 @@ fn main() -> int {
     let empty_body_fn: List<StmtId> = []
     let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, empty_body_fn)
     let s_fn_inner_id = ext_store.rows_of([sstmt_dummy(s_fn_inner)])[0]
-    let exp_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
+    let exp_annots: List<Annotation> = [Annotation { name: "export", arg_ids: [] }]
     let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner_id))
 
     // const VERSION: string = "1.0" — the initializer is an ExprId row,
@@ -885,7 +885,7 @@ fn main() -> int {
     let synth_store = new_node_store(build_line_index(""))
     mut synth_fields: List<FieldEntry> = []
     synth_fields.push(FieldEntry { name: "x", resolved: ValueType.Int })
-    let greet_annots: List<Annotation> = [Annotation { name: "export", args: [] }]
+    let greet_annots: List<Annotation> = [Annotation { name: "export", arg_ids: [] }]
     let empty_tp_synth: List<TypeParamEntry> = []
     let empty_greet_body: List<StmtId> = []
     let greet_fn = Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body)

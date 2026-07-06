@@ -16,8 +16,7 @@ fn mk_empty_params() -> List<ParamEntry> {
 // Build an @<name>-annotated fn statement for testing. F3a: the
 // Annotated inner and the fn body are arena rows in `ws`.
 fn mk_annotated_fn(ws: NodeStore, annot_name: string, fn_name: string) -> Stmt {
-    let empty_args: List<SExpr> = []
-    let annots: List<Annotation> = [Annotation { name: annot_name, args: empty_args }]
+    let annots: List<Annotation> = [Annotation { name: annot_name, arg_ids: [] }]
     let empty_tp: List<TypeParamEntry> = []
     let empty_body: List<StmtId> = []
     Stmt.Annotated(

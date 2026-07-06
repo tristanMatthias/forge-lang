@@ -767,17 +767,28 @@ fn list_concat_call(store: NodeStore, left: Expr, right: Expr) -> Expr {
 }
 
 /// Build an Expr that, when evaluated, produces a single
-/// `Annotation { name, args, arg_ids }` value. Step 4 — needed so a
-/// macro's quote-emitted `@expand(...)` annotation roundtrips through
-/// the expand pass's fixpoint loop and the inner @expand re-fires.
-/// `arg_ids` is explicitly null: a quote-rebuilt annotation has no
-/// arena rows until its consumer's pass migrates (the F1a dual-field
-/// convention).
+/// `Annotation { name, arg_ids }` value. Step 4 — needed so a macro's
+/// quote-emitted `@expand(...)` annotation roundtrips through the expand
+/// pass's fixpoint loop and the inner @expand re-fires. Args are arena-only:
+/// the id row is emitted as `synth_expr_id`-shaped elements decoded by
+/// `list_value_to_expr_id_list`.
 fn construct_annotation(store: NodeStore, a: Annotation) -> Expr {
-    struct_lit_3(store, "@std::avrac::core::Annotation",
+    struct_lit_2(store, "@std::avrac::core::Annotation",
         "name", string_lit_expr(a.name),
-        "args", construct_expr_list(store, a.args),
-        "arg_ids", Expr.None)
+        "arg_ids", construct_arg_id_list(store, a.arg_ids))
+}
+
+/// Reconstruct an annotation's `List<ExprId>` arg row: each element a
+/// `synth_expr_id(construct_expr(...))` call so the ListLit eval yields
+/// id-shaped values. Null (no row) produces an empty list.
+fn construct_arg_id_list(store: NodeStore, ids: List<ExprId>?) -> Expr {
+    mut elems: List<SExpr> = []
+    if ids != none {
+        for id in ids! {
+            elems.push(sexpr_dummy(construct_expr_id(store, id)))
+        }
+    }
+    listlit_of(store, elems)
 }
 
 /// Build an Expr producing a `List<Annotation>` AST value at
@@ -1132,25 +1143,8 @@ fn listlit_of(store: NodeStore, elems: List<SExpr>) -> Expr {
     Expr.ListLit(store.ingest_sexpr_recipe(elems))
 }
 
-/// Build an Expr that, when evaluated, produces a `List<SExpr>` AST
-/// value matching `list`. Emits `Expr.ListLit([sexpr_call_0, ...])`
-/// — each element is a Call to `sexpr_dummy(construct_expr(store, item))`,
-/// so at runtime the ListLit eval produces a list of SExpr values
-/// shaped like the original `List<SExpr>`. Decoded by
-/// `list_value_to_expr_list` in comptime/eval.av.
-fn construct_expr_list(store: NodeStore, list: List<SExpr>) -> Expr {
-    mut elems: List<SExpr> = []
-    mut i = 0
-    while i < list.length {
-        let se = list[i]
-        elems.push(sexpr_dummy(construct_sexpr(store, se)))
-        i = i + 1
-    }
-    listlit_of(store, elems)
-}
-
-/// Reconstruct a flipped `List<ExprId>` args payload — the id twin of
-/// `construct_expr_list`. Each element is `synth_expr_id(construct_expr(item))`,
+/// Reconstruct a flipped `List<ExprId>` args payload. Each element is
+/// `synth_expr_id(construct_expr(item))`,
 /// so the ListLit TYPES as `List<ExprId>` (matching the flipped `Call.args`),
 /// exactly as the scalar `construct_expr_id` types a single operand. Uses
 /// `synth_expr_id` PER ELEMENT (never a whole-list shim), so the pinned seed —
@@ -1162,13 +1156,6 @@ fn construct_expr_ids(store: NodeStore, list: List<SExpr>) -> Expr {
         elems.push(sexpr_dummy(synth_shim_call(store, "synth_expr_id", construct_expr(store, se.node))))
     }
     listlit_of(store, elems)
-}
-
-/// Build an Expr that, when evaluated, produces an SExpr wrapping the
-/// runtime value of the given Expr. Uses `sexpr_dummy(e)` rather than
-/// a struct literal to avoid having to track ValueType / file fields.
-fn construct_sexpr(store: NodeStore, se: SExpr) -> Expr {
-    sexpr_dummy_call(store, construct_expr(store, se.node))
 }
 
 /// `sexpr_dummy(arg)` as a Call expression. Helper for constructing

@@ -2802,33 +2802,29 @@ fn list_value_to_annotation_list(store: NodeStore, v: Value) -> Result<List<Anno
     for entry in v.list_payload {
         if entry.kind != "struct" { return .Err("decode: annotation not a struct") }
         let name = struct_field_string(entry, "name")
-        let args = decode_or(struct_field_expr_list(store, entry, "args"), [])
-        // B-final F4d: populate the dual arg_ids row. Dual tolerance spans the
-        // seed-migration window: pre-flip synthesis emits `arg_ids: Expr.None`
-        // (and the boxed `args`), post-flip synthesis emits a real id list.
-        let arg_ids = annotation_arg_ids_of(store, entry, args)
-        out.push(Annotation { name, args, arg_ids })
+        let arg_ids = annotation_arg_ids_of(store, entry)
+        out.push(Annotation { name, arg_ids })
     }
     .Ok(out)
 }
 
 /// Resolve an annotation entry's arg_ids row. A real "arg_ids" LIST value
 /// (id shape, post-flip synthesis) is decoded directly; an absent field or a
-/// null value (the `Expr.None` pre-flip synthesis emits) falls back to
-/// re-ingesting the boxed `args` as arena leaves, so the pair stays in sync.
-fn annotation_arg_ids_of(store: NodeStore, entry: Value, args: List<SExpr>) -> List<ExprId> {
+/// null value (the `Expr.None` a pre-flip / base-source synthesis emits) falls
+/// back to re-ingesting the boxed "args" value as arena leaves. The dual
+/// tolerance lets this compiler still decode the older boxed shape (the
+/// diff-test oracle) after the synthesis flips to the id shape.
+fn annotation_arg_ids_of(store: NodeStore, entry: Value) -> List<ExprId> {
     for f in entry.struct_payload {
         if f.name == "arg_ids" && f.value.kind == "list" {
-            // Lazy fallback: only re-ingest args when the id list fails to
-            // decode, so the post-flip fast path (real arg_ids present) pays no
-            // redundant arena allocation — decode_or evaluates its default eagerly.
             match list_value_to_expr_id_list(store, f.value) {
                 .Ok(ids) -> return ids
-                .Err(_) -> return store.ingest_sexpr_recipe(args)
+                .Err(_) -> {}
             }
         }
     }
-    store.ingest_sexpr_recipe(args)
+    // Boxed fallback: re-ingest the "args" value (pre-flip / base-source shape).
+    store.ingest_sexpr_recipe(decode_or(struct_field_expr_list(store, entry, "args"), []))
 }
 
 fn struct_field_expr_list(store: NodeStore, v: Value, name: string) -> Result<List<SExpr>, string> {

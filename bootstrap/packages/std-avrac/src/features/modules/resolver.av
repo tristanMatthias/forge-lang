@@ -1195,8 +1195,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             // the producer's compiled .o which the linker resolves).
             let module_stmt = Stmt.Module(name, store.rows_of(resolved.stmts))
             let final_stmt = if take_meta {
-                let ext_args: List<SExpr> = []
-                let ext_annots: List<Annotation> = [Annotation { name: "external_unit", args: ext_args, arg_ids: [] }]
+                let ext_annots: List<Annotation> = [Annotation { name: "external_unit", arg_ids: [] }]
                 Stmt.Annotated(ext_annots, store.stmts.add_leaf(module_stmt))
             } else {
                 module_stmt

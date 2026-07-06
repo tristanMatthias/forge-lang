@@ -410,7 +410,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
         // Every test module is deferred — codegen synthesizes
         // __init_<mod> without the top-level auto-call; the runner
         // invokes the units across worker threads.
-        let deferred: List<Annotation> = [Annotation { name: "deferred_init", args: [], arg_ids: [] }]
+        let deferred: List<Annotation> = [Annotation { name: "deferred_init", arg_ids: [] }]
         modules.push(sstmt_dummy(Stmt.Annotated(deferred,
             store.stmts.add_leaf(Stmt.Module(a.mod_name, store.rows_of(a.wrapped_body))))))
         mod_names.push(a.mod_name)

@@ -393,8 +393,7 @@ fn synth_type_decl(store: NodeStore, e: TypeDeclEntry) -> SStmt {
 // `use foo::Bar` lookup, which gates on @export.
 fn wrap_export(store: NodeStore, s: Stmt, exported: bool) -> Stmt {
     if exported {
-        let empty_args: List<SExpr> = []
-        let annots: List<Annotation> = [Annotation { name: "export", args: empty_args, arg_ids: [] }]
+        let annots: List<Annotation> = [Annotation { name: "export", arg_ids: [] }]
         Stmt.Annotated(annots, store.stmts.add_leaf(s))
     } else {
         s
@@ -408,8 +407,7 @@ fn wrap_export(store: NodeStore, s: Stmt, exported: bool) -> Stmt {
 // references don't need it (consts inline values; impl methods route
 // through the same Function gate).
 fn wrap_external_unit(store: NodeStore, s: Stmt) -> Stmt {
-    let empty_args: List<SExpr> = []
-    let annots: List<Annotation> = [Annotation { name: "external_unit", args: empty_args, arg_ids: [] }]
+    let annots: List<Annotation> = [Annotation { name: "external_unit", arg_ids: [] }]
     Stmt.Annotated(annots, store.stmts.add_leaf(s))
 }
 
@@ -513,8 +511,7 @@ fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>, store: NodeStor
 // synthesized fn up. Body is empty at synth; `invoke_macro` lazy-
 // rehydrates from `avra_lazy_comptime_get(qn)` on first lookup.
 fn wrap_comptime(store: NodeStore, s: Stmt) -> Stmt {
-    let empty_args: List<SExpr> = []
-    let annots: List<Annotation> = [Annotation { name: "comptime", args: empty_args, arg_ids: [] }]
+    let annots: List<Annotation> = [Annotation { name: "comptime", arg_ids: [] }]
     Stmt.Annotated(annots, store.stmts.add_leaf(s))
 }
 
