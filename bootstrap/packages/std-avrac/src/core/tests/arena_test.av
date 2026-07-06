@@ -521,49 +521,49 @@ spec "y5um.3: struct-embedded match-arm children are walked + reconstruct" {
     }
 }
 
-// Stage 2 (y5um.3): FieldInit — StructLit/With inits are now walked into the
-// arena via the same mechanism as MatchArm (a second entry in struct_list_helpers).
-// Each init contributes exactly one Expr child (its `value`; `name` is a scalar).
-spec "y5um.3: FieldInit (StructLit/With) inits are walked + reconstruct" {
-    then "StructLit walks one Expr child per init; With walks its overrides (obj is an opaque id)" {
+// Stage 2 (y5um.3 → F4): FieldInit — StructLit/With inits hold a flipped
+// `value_id: ExprId` (walker-opaque, like the flipped MatchArm/Block payloads).
+// A FieldInit contributes NO walked child; `name` and `value_id` are both scalars.
+spec "F4: FieldInit (StructLit/With) value is a walker-opaque id" {
+    then "StructLit/With contribute no walked child per init (value_id is opaque)" {
+        let ws = ts()
         let inits: List<FieldInit> = [
-            FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 1, 1, "") },
-            FieldInit { name: "b", value: sexpr_at(Expr.Number("2"), 1, 1, "") },
+            FieldInit { name: "a", value_id: ws.exprs.add_leaf(Expr.Number("1")) },
+            FieldInit { name: "b", value_id: ws.exprs.add_leaf(Expr.Number("2")) },
         ]
-        let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 1, 1, "") }]
-        // B-final: With.obj is a flipped ExprId (walker-opaque) — only the
-        // override value is a child.
-        expr_child_tags(Expr.StructLit("P", inits)) == "EE"
-            && expr_child_tags(Expr.With(ExprId(0), ovr)) == "E"
+        let ovr: List<FieldInit> = [FieldInit { name: "x", value_id: ws.exprs.add_leaf(Expr.Number("9")) }]
+        // B-final F4: both the StructLit inits and With.obj are flipped ids — no walked children.
+        expr_child_tags(Expr.StructLit("P", inits)) == ""
+            && expr_child_tags(Expr.With(ExprId(0), ovr)) == ""
     }
-    then "the arena records each init value as a real edge (children_of)" {
-        let inits: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("7"), 1, 1, "") }]
+    then "the arena records no init-value edge (children_of is empty)" {
         let store = new_node_store(build_line_index(""))
+        let inits: List<FieldInit> = [FieldInit { name: "a", value_id: store.exprs.add_leaf(Expr.Number("7")) }]
         let root = store.ingest_expr(Expr.StructLit("P", inits), byte_span_none())
-        edge_tags(store.exprs.children_of(root)) == "E"
+        edge_tags(store.exprs.children_of(root)) == ""
     }
     then "StructLit and With reconstruct faithfully (incl. empty)" {
-        let inits: List<FieldInit> = [
-            FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 2, 3, "") },
-            FieldInit { name: "b", value: sexpr_at(Expr.Ident("z"), 2, 7, "") },
-        ]
-        let ovr: List<FieldInit> = [FieldInit { name: "x", value: sexpr_at(Expr.Number("9"), 4, 1, "") }]
-        let empty: List<FieldInit> = []
         let ws = ts()
+        let inits: List<FieldInit> = [
+            FieldInit { name: "a", value_id: ws.exprs.add_leaf(Expr.Number("1")) },
+            FieldInit { name: "b", value_id: ws.exprs.add_leaf(Expr.Ident("z")) },
+        ]
+        let ovr: List<FieldInit> = [FieldInit { name: "x", value_id: ws.exprs.add_leaf(Expr.Number("9")) }]
+        let empty: List<FieldInit> = []
         wc_roundtrip_expr(ws, Expr.StructLit("Point", inits))
             && wc_roundtrip_expr(ws, Expr.With(ws.exprs.add_leaf(Expr.Ident("o")), ovr))
             && wc_roundtrip_expr(ws, Expr.StructLit("E", empty))
     }
-    then "FieldInit crossed with other walked structs round-trips (combinatorial)" {
-        // A struct-init value that is itself a walked struct — the arena walk must
-        // recurse from the FieldInit value into the inner MatchExpr / StructLit.
+    then "a FieldInit value_id may reference any expr; the container round-trips" {
+        // The value_id is opaque to the walk — the container reconstructs with its
+        // ids intact regardless of what they reference (match, nested struct, …).
         let ws = ts()
         let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(Expr.Number("1"), 2, 2, "") }
-        let m_inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("y")), [arm]), 3, 3, "") }]
-        let inner: List<FieldInit> = [FieldInit { name: "a", value: sexpr_at(Expr.Number("1"), 2, 2, "") }]
-        let s_ovr: List<FieldInit> = [FieldInit { name: "b", value: sexpr_at(Expr.StructLit("Q", inner), 3, 3, "") }]
-        wc_roundtrip_expr(ws, Expr.StructLit("P", m_inits))                             // struct-init value is a match
-            && wc_roundtrip_expr(ws, Expr.With(ws.exprs.add_leaf(Expr.Ident("o")), s_ovr))  // with-override value is a struct
+        let m_inits: List<FieldInit> = [FieldInit { name: "f", value_id: ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("y")), [arm])) }]
+        let inner: List<FieldInit> = [FieldInit { name: "a", value_id: ws.exprs.add_leaf(Expr.Number("1")) }]
+        let s_ovr: List<FieldInit> = [FieldInit { name: "b", value_id: ws.exprs.add_leaf(Expr.StructLit("Q", inner)) }]
+        wc_roundtrip_expr(ws, Expr.StructLit("P", m_inits))
+            && wc_roundtrip_expr(ws, Expr.With(ws.exprs.add_leaf(Expr.Ident("o")), s_ovr))
     }
 }
 

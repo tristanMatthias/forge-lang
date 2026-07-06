@@ -184,7 +184,7 @@ fn any_quote_in_expr_id_list(store: NodeStore, ids: List<ExprId>) -> bool {
 fn any_quote_in_field_inits(store: NodeStore, list: List<FieldInit>) -> bool {
     mut i = 0
     while i < list.length {
-        if any_quote_in_expr(store, list[i].value.node) { return true }
+        if any_quote_in_expr(store, store.exprs.get(list[i].value_id)) { return true }
         i = i + 1
     }
     false
@@ -348,10 +348,7 @@ fn lower_match_arms(store: NodeStore, arms: List<MatchArm>) -> List<MatchArm> {
 fn lower_field_inits(store: NodeStore, inits: List<FieldInit>) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(lower_expr(store, init.value.node), init.value.line, init.value.col),
-        // The lowered value is a NEW tree with no arena row (F1b dual
-        // convention) — the original id would point at the pre-lowering row.
-        value_id: none,
+        value_id: lower_expr_id(store, init.value_id),
     })
 }
 
@@ -586,7 +583,7 @@ fn construct_param_list(store: NodeStore, params: List<ParamEntry>) -> Expr {
     mut i = 0
     while i < params.length {
         let p = params[i]
-        let entry_lit = struct_lit_3("@std::avrac::core::ParamEntry",
+        let entry_lit = struct_lit_3(store, "@std::avrac::core::ParamEntry",
                                      "name", string_lit_expr(p.name),
                                      "vtype", construct_param_vtype(store, p.vtype),
                                      "ty_id", Expr.None)
@@ -596,30 +593,31 @@ fn construct_param_list(store: NodeStore, params: List<ParamEntry>) -> Expr {
     listlit_of(store, elems)
 }
 
-/// Synthetic field-init for the struct-literal builders: dummy span and a
-/// null value row — a constructed literal is a NEW tree with no arena rows.
-fn synth_init(k: string, v: Expr) -> FieldInit {
-    FieldInit { name: k, value: sexpr_dummy(v), value_id: none }
+/// Synthetic field-init for the struct-literal builders. B-final F4: the
+/// constructed value `v` is allocated as a fresh arena leaf and referenced by
+/// its `value_id` — the boxed `value` slot is gone.
+fn synth_init(store: NodeStore, k: string, v: Expr) -> FieldInit {
+    FieldInit { name: k, value_id: store.exprs.add_leaf(v) }
 }
 
 /// Build a two-field struct-literal Expr `Type { k1: v1, k2: v2 }`.
 /// Centralises the `Expr.StructLit(type_name, List<FieldInit> { ... })`
 /// construction used by every `construct_*_list` below for the inner
 /// per-entry struct literal.
-fn struct_lit_2(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -> Expr {
+fn struct_lit_2(store: NodeStore, type_name: string, k1: string, v1: Expr, k2: string, v2: Expr) -> Expr {
     mut inits: List<FieldInit> = []
-    inits.push(synth_init(k1, v1))
-    inits.push(synth_init(k2, v2))
+    inits.push(synth_init(store, k1, v1))
+    inits.push(synth_init(store, k2, v2))
     Expr.StructLit(type_name, inits)
 }
 
 /// Three-field sister to `struct_lit_2`. Wider literals build their init
 /// list directly over `struct_lit` + `synth_init`.
-fn struct_lit_3(type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k3: string, v3: Expr) -> Expr {
+fn struct_lit_3(store: NodeStore, type_name: string, k1: string, v1: Expr, k2: string, v2: Expr, k3: string, v3: Expr) -> Expr {
     mut inits: List<FieldInit> = []
-    inits.push(synth_init(k1, v1))
-    inits.push(synth_init(k2, v2))
-    inits.push(synth_init(k3, v3))
+    inits.push(synth_init(store, k1, v1))
+    inits.push(synth_init(store, k2, v2))
+    inits.push(synth_init(store, k3, v3))
     Expr.StructLit(type_name, inits)
 }
 
@@ -703,12 +701,12 @@ fn construct_match_arm(store: NodeStore, arm: MatchArm) -> Expr {
     let guard_expr = if arm.guard != null { construct_sexpr(store, arm.guard!) } else { Expr.None }
     let body_expr = construct_sexpr(store, arm.body)
     mut inits: List<FieldInit> = []
-    inits.push(synth_init("pattern", pattern_expr))
-    inits.push(synth_init("guard", guard_expr))
-    inits.push(synth_init("body", body_expr))
-    inits.push(synth_init("pattern_id", Expr.None))
-    inits.push(synth_init("guard_id", Expr.None))
-    inits.push(synth_init("body_id", Expr.None))
+    inits.push(synth_init(store, "pattern", pattern_expr))
+    inits.push(synth_init(store, "guard", guard_expr))
+    inits.push(synth_init(store, "body", body_expr))
+    inits.push(synth_init(store, "pattern_id", Expr.None))
+    inits.push(synth_init(store, "guard_id", Expr.None))
+    inits.push(synth_init(store, "body_id", Expr.None))
     Expr.StructLit("@std::avrac::core::MatchArm", inits)
 }
 
@@ -786,7 +784,7 @@ fn list_concat_call(store: NodeStore, left: Expr, right: Expr) -> Expr {
 /// arena rows until its consumer's pass migrates (the F1a dual-field
 /// convention).
 fn construct_annotation(store: NodeStore, a: Annotation) -> Expr {
-    struct_lit_3("@std::avrac::core::Annotation",
+    struct_lit_3(store, "@std::avrac::core::Annotation",
         "name", string_lit_expr(a.name),
         "args", construct_expr_list(store, a.args),
         "arg_ids", Expr.None)
@@ -815,7 +813,7 @@ fn construct_type_param_list(store: NodeStore, tp: List<TypeParamEntry>) -> Expr
     mut i = 0
     while i < tp.length {
         let e = tp[i]
-        let struct_lit = struct_lit_2("@std::avrac::core::TypeParamEntry",
+        let struct_lit = struct_lit_2(store, "@std::avrac::core::TypeParamEntry",
             "name", string_lit_expr(e.name),
             "bounds", string_lit_expr(e.bounds))
         elems.push(sexpr_dummy(struct_lit))
@@ -840,7 +838,7 @@ fn construct_field_list(store: NodeStore, fields: List<FieldEntry>) -> Expr {
         // post-resolve 2-arg @expand macros receive fields with real
         // types so they can introspect variants without needing a
         // separate resolver query per field.
-        let struct_lit = struct_lit_2("@std::avrac::core::FieldEntry",
+        let struct_lit = struct_lit_2(store, "@std::avrac::core::FieldEntry",
             "name", string_lit_expr(e.name),
             "resolved", construct_value_type(store, e.resolved))
         elems.push(sexpr_dummy(struct_lit))
@@ -859,7 +857,7 @@ fn construct_variant_list(store: NodeStore, variants: List<Variant>) -> Expr {
     mut i = 0
     while i < variants.length {
         let v = variants[i]
-        let struct_lit = struct_lit_2("@std::avrac::core::Variant",
+        let struct_lit = struct_lit_2(store, "@std::avrac::core::Variant",
             "name", string_lit_expr(v.name),
             "fields", construct_field_list(store, v.fields))
         elems.push(sexpr_dummy(struct_lit))
@@ -877,7 +875,7 @@ fn construct_comp_config_pair_list(store: NodeStore, list: List<CompConfigPair>)
     mut i = 0
     while i < list.length {
         let pair = list[i]
-        let struct_lit = struct_lit_2("@std::avrac::core::CompConfigPair",
+        let struct_lit = struct_lit_2(store, "@std::avrac::core::CompConfigPair",
             "key", string_lit_expr(pair.key),
             "value", construct_expr(store, pair.value))
         elems.push(sexpr_dummy(struct_lit))
@@ -1025,10 +1023,13 @@ fn construct_field_init_list(store: NodeStore, list: List<FieldInit>) -> Expr {
     mut i = 0
     while i < list.length {
         let init = list[i]
-        let struct_lit = struct_lit_3("@std::avrac::core::FieldInit",
+        // B-final F4: FieldInit is now {name, value_id} — reconstruct the value
+        // sub-tree and re-ingest it to a fresh id at expand time via the
+        // `synth_expr_id` shim (the same mechanism Block/EnumCtor use for their
+        // flipped id payloads).
+        let struct_lit = struct_lit_2(store, "@std::avrac::core::FieldInit",
             "name", string_lit_expr(init.name),
-            "value", construct_sexpr(store, init.value),
-            "value_id", Expr.None)
+            "value_id", construct_expr_id(store, init.value_id))
         elems.push(sexpr_dummy(struct_lit))
         i = i + 1
     }

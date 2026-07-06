@@ -888,12 +888,13 @@ impl Parser {
             mut inits: List<FieldInit> = []
             mut ci = 0
             while ci < header_count {
-                inits.push(FieldInit { name: col_names[ci], value: cells[ci], value_id: cell_ids[ci] })
+                inits.push(FieldInit { name: col_names[ci], value_id: cell_ids[ci] })
                 ci = ci + 1
             }
-            // Row StructLit: one ExprRef per FieldInit value, in column order.
+            // Row StructLit: a leaf — B-final F4 FieldInit values are opaque ids
+            // (carried in `inits[i].value_id`, not walked), like Block/ListLit.
             let row_node = Expr.StructLit(row_type, inits)
-            row_ids.push(self.alloc_expr(row_node, byte_span_none(), self.edges_of_ids(cell_ids)))
+            row_ids.push(self.alloc_leaf(row_node))
         }
         self.cell_mode = saved_cell_mode
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
@@ -1269,7 +1270,7 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_expr(Expr.StructLit("~" + var_name, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids)))
+                return .Ok(self.alloc_leaf(Expr.StructLit("~" + var_name, parsed.inits)))
             }
             let target = self.parse_unary()?
             return .Ok(self.alloc_leaf(Expr.Splice(target)))
@@ -1296,9 +1297,9 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
                 return .Err("parse error")
             }
-            // Flipped With.obj is an ExprId scalar (walker-opaque) — no subject
-            // edge; only the field-init overrides' children, exactly like StructLit.
-            eid = self.alloc_expr(Expr.With(eid, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids))
+            // B-final F4: With.obj is a walker-opaque ExprId and the override
+            // values are opaque value_ids — a leaf, like StructLit/Block.
+            eid = self.alloc_leaf(Expr.With(eid, parsed.inits))
         }
         .Ok(eid)
     }
@@ -1675,7 +1676,7 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_expr(Expr.StructLit(name, parsed.inits), byte_span_none(), self.edges_of_ids(parsed.ids)))
+                return .Ok(self.alloc_leaf(Expr.StructLit(name, parsed.inits)))
             }
             // Tagged template: `tag`template with ${expr}`
             // Desugars to: tag(desugar_template(raw))

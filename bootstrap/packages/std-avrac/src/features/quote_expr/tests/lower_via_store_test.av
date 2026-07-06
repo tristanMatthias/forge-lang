@@ -68,7 +68,7 @@ spec "lower_quotes_via_store: arena rows cover struct-embedded positions" {
     }
     then "a quote ONLY inside a struct-lit field init is found and lowered" {
         let store = new_node_store(build_line_index(""))
-        let inits: List<FieldInit> = [FieldInit { name: "f", value: sexpr_at(quote_num(store), 2, 3, "") }]
+        let inits: List<FieldInit> = [FieldInit { name: "f", value_id: store.exprs.add_leaf(quote_num(store)) }]
         let pw = program_of(Expr.StructLit("P", inits), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))
             && render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) != render_stmt_list(pw.store, pw.stmts)

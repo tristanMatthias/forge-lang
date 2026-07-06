@@ -646,6 +646,6 @@ fn desugar_when_arms(store: NodeStore, arms: List<WhenArm>, sigs: List<FnSig>) -
 fn desugar_field_inits(store: NodeStore, inits: List<FieldInit>, sigs: List<FnSig>) -> List<FieldInit> {
     list_map(inits, (init: FieldInit) -> FieldInit {
         name: init.name,
-        value: sexpr(desugar_expr(store, init.value.node, sigs), init.value.line, init.value.col),
+        value_id: desugar_expr_id(store, init.value_id, sigs),
     })
 }

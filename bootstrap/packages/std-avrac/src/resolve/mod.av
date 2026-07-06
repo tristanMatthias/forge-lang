@@ -582,7 +582,7 @@ export fn resolve_field_init_list(r: Resolver, inits: List<FieldInit>) -> Resolv
     mut i = 0
     while i < inits.length {
         if res.had_error { return res }
-        res = resolve_expr(res, inits[i].value.node)
+        res = resolve_expr(res, res.nodes.exprs.get(inits[i].value_id))
         i = i + 1
     }
     res

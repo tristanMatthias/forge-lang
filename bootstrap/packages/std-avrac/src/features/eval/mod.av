@@ -1966,7 +1966,7 @@ fn eval_struct_lit(runtime: Runtime, type_name: string, inits: List<FieldInit>) 
     mut i = 0
     while i < inits.length {
         let init = inits[i]
-        let r = eval_expr(current, init.value.node)
+        let r = eval_expr(current, current.nodes.exprs.get(init.value_id))
         if r.had_error {
             return StepResult {
                 runtime: r.runtime,
@@ -2834,13 +2834,13 @@ fn list_value_to_field_init_list(store: NodeStore, v: Value) -> Result<List<Fiel
     for entry in v.list_payload {
         if entry.kind != "struct" { return .Err("decode: field-init not a struct") }
         let name = struct_field_string(entry, "name")
-        mut value_expr: Expr = Expr.None
+        mut vid = ExprId(0)
         for f in entry.struct_payload {
-            if f.name == "value" {
-                value_expr = value_to_expr_node(store, f.value)?
+            if f.name == "value_id" {
+                vid = value_to_expr_id(store, f.value)?
             }
         }
-        out.push(FieldInit { name, value: sexpr_dummy(value_expr) })
+        out.push(FieldInit { name, value_id: vid })
     }
     .Ok(out)
 }
