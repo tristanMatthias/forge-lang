@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sexpr_dummy, sstmt_dummy, type_short_name}
+use core.{Stmt, SStmt, Expr, SExpr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sstmt_dummy, type_short_name}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to, synth_expr_id, synth_stmt_id, synth_stmt_ids}
 use diagnostics.{Span}
 
@@ -175,8 +175,8 @@ fn build_one_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm 
     let body = arm_body(bindings, parent_name)
     MatchArm {
         pattern: pat,
-        guard: null,
-        body: sexpr_dummy(body),
+        guard_id: null,
+        body_id: synth_expr_id(body),
     }
 }
 
@@ -908,7 +908,7 @@ fn build_all_children_spanned_arms(variants: List<Variant>, parent_name: string,
         let bindings = classify_variant_crosstype(v, parent_name, ctx)
         let pat = pattern_for_cross(v.name, bindings)
         let body = all_spanned_arm_body(bindings)
-        arms.push(MatchArm { pattern: pat, guard: null, body: sexpr_dummy(body) })
+        arms.push(MatchArm { pattern: pat, guard_id: null, body_id: synth_expr_id(body) })
     }
     arms
 }
@@ -1117,7 +1117,7 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
         // boundary representation (spine §14.1) — mirrors the `__no_kind_` poison.
         let no_args: List<ExprId> = []
         let poison = wc_call(Expr.Ident("__avra_wc_unsupported_multiple_var_slots__${parent_name}_${v.name}"), no_args)
-        return MatchArm { pattern: pat, guard: null, body: sexpr_dummy(poison) }
+        return MatchArm { pattern: pat, guard_id: null, body_id: synth_expr_id(poison) }
     }
     let before = wc_singles_before_var(bindings)
     let after = wc_singles_after_var(bindings)
@@ -1150,7 +1150,7 @@ fn build_with_children_arm(v: Variant, parent_name: string, ctx: ResolverCtx) ->
         }
         i = i + 1
     }
-    MatchArm { pattern: pat, guard: null, body: sexpr_dummy(Expr.EnumCtor(parent_name, v.name, args)) }
+    MatchArm { pattern: pat, guard_id: null, body_id: synth_expr_id(Expr.EnumCtor(parent_name, v.name, args)) }
 }
 
 @comptime
@@ -1370,8 +1370,8 @@ fn build_map_arm(v: Variant, parent_name: string, ctx: ResolverCtx) -> MatchArm 
     let body = map_arm_body(v.name, parent_name, bindings)
     MatchArm {
         pattern: pat,
-        guard: null,
-        body: sexpr_dummy(body),
+        guard_id: null,
+        body_id: synth_expr_id(body),
     }
 }
 

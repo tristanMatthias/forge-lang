@@ -1670,11 +1670,12 @@ fn rewrite_match_arms(ctx: NameCtx, arms: List<MatchArm>) -> List<MatchArm> {
         let arm = arms[i]
         let rp = rewrite_pattern(ctx, arm.pattern)
         let arm_ctx = bind_pattern_ctx(ctx, rp)
-        let new_guard = if arm.guard != null {
-            sexpr_at(rewrite_expr(arm_ctx, arm.guard!.node), arm.guard!.line, arm.guard!.col, arm.guard!.file)
+        let new_guard_id = if arm.guard_id != null {
+            rewrite_expr_id(arm_ctx, arm.guard_id!)
         } else { null }
-        let new_body = sexpr_at(rewrite_expr(arm_ctx, arm.body.node), arm.body.line, arm.body.col, arm.body.file)
-        out.push(MatchArm { pattern: rp, guard: new_guard, body: new_body })
+        // Pattern is rewritten to `rp`, so `pattern_id` must track the NEW
+        // pattern — preserving the pre-resolve id would mis-point the dual.
+        out.push(MatchArm { pattern: rp, pattern_id: ctx.nodes.pats.add_leaf(rp), guard_id: new_guard_id, body_id: rewrite_expr_id(arm_ctx, arm.body_id) })
         i = i + 1
     }
     out
@@ -1895,10 +1896,10 @@ fn collect_used_paths_match_arms(store: NodeStore, arms: List<MatchArm>, acc: Li
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.guard != null {
-            out = collect_used_paths_expr(store, arm.guard!.node, out)
+        if arm.guard_id != null {
+            out = collect_used_paths_expr(store, store.exprs.get(arm.guard_id!), out)
         }
-        out = collect_used_paths_expr(store, arm.body.node, out)
+        out = collect_used_paths_expr(store, store.exprs.get(arm.body_id), out)
         i = i + 1
     }
     out

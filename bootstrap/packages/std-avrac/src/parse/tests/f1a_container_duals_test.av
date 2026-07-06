@@ -1,12 +1,13 @@
 // WHY: B-final F1a/F4 — the walker-opaque containers (WhenArm, SelectArm,
 // MatchArm, Annotation, CompConfig) hold their child exprs/stmts as arena ids.
-// Containers still mid-migration (SelectArm, MatchArm, Annotation, CompConfig)
-// carry DUAL fields — a nullable id beside the boxed child — and these specs
-// pin that on the PARSE path the id is present and `store.get(id)` renders
+// Containers still mid-migration (SelectArm, Annotation, CompConfig) carry
+// DUAL fields — a nullable id beside the boxed child — and these specs pin
+// that on the PARSE path the id is present and `store.get(id)` renders
 // identically to the boxed half (the agreement that lets consumers migrate off
 // the boxed halves one at a time without drift). Fully-flipped containers
-// (WhenArm — F4c) have dropped the boxed half entirely; their specs verify the
-// id is present and resolves to the EXACT expected node.
+// (WhenArm — F4c; MatchArm guard/body — F4b) have dropped the boxed half
+// entirely; their specs verify the id is present and resolves to the EXACT
+// expected node. MatchArm's pattern stays dual — only its guard/body flipped.
 
 use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
 use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
@@ -223,30 +224,36 @@ spec "F4: struct-literal field inits carry a resolved value_id (boxed value reti
     }
 }
 
-// ── F1c: MatchArm pattern/guard/body duals ──
+// ── F1c: MatchArm pattern dual + arena-only guard/body (F4b) ──
 
-fn match_arm_duals_mirror() -> bool {
+fn match_arm_ids_resolve() -> bool {
     let probe = parse_expression_native_probe("match x { 1 if g -> a, _ -> b }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .MatchExpr(_, arms) -> {
             if arms.length != 2 { return false }
+            // pattern stays dual: the id resolves to the same render as the
+            // boxed pattern half.
             for arm in arms {
                 if arm.pattern_id == none { return false }
                 if render_pattern(probe.store, probe.store.pats.get(arm.pattern_id!)) != render_pattern(probe.store, arm.pattern) { return false }
-                if arm.body_id == none { return false }
-                if render_expr(probe.store, probe.store.exprs.get(arm.body_id!)) != render_expr(probe.store, arm.body.node) { return false }
             }
+            // B-final F4b: guard/body are arena-only (boxed halves gone). Verify
+            // each id resolves to its EXACT expr — a miswired/swapped id renders
+            // differently, so exact-match keeps the coverage the boxed-vs-id
+            // equality used to give.
+            if render_expr(probe.store, probe.store.exprs.get(arms[0].body_id)) != render_expr(probe.store, Expr.Ident("a")) { return false }
+            if render_expr(probe.store, probe.store.exprs.get(arms[1].body_id)) != render_expr(probe.store, Expr.Ident("b")) { return false }
             let guarded = arms[0]
-            if guarded.guard_id == none || guarded.guard == none { return false }
-            if render_expr(probe.store, probe.store.exprs.get(guarded.guard_id!)) != render_expr(probe.store, guarded.guard!.node) { return false }
-            arms[1].guard_id == none && arms[1].guard == none
+            if guarded.guard_id == none { return false }
+            if render_expr(probe.store, probe.store.exprs.get(guarded.guard_id!)) != render_expr(probe.store, Expr.Ident("g")) { return false }
+            arms[1].guard_id == none
         }
         _ -> false
     }
 }
 
-fn quote_arm_duals_mirror() -> bool {
+fn quote_arm_ids_resolve() -> bool {
     let probe = parse_expression_native_probe("quote arm { 1 if g -> 2 }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
@@ -254,11 +261,10 @@ fn quote_arm_duals_mirror() -> bool {
             .MatchExpr(_, arms) -> {
                 if arms.length != 1 { return false }
                 let arm = arms[0]
-                if arm.pattern_id == none || arm.guard_id == none || arm.body_id == none { return false }
-                if arm.guard == none { return false }
+                if arm.pattern_id == none || arm.guard_id == none { return false }
                 if render_pattern(probe.store, probe.store.pats.get(arm.pattern_id!)) != render_pattern(probe.store, arm.pattern) { return false }
-                if render_expr(probe.store, probe.store.exprs.get(arm.guard_id!)) != render_expr(probe.store, arm.guard!.node) { return false }
-                render_expr(probe.store, probe.store.exprs.get(arm.body_id!)) == render_expr(probe.store, arm.body.node)
+                if render_expr(probe.store, probe.store.exprs.get(arm.guard_id!)) != render_expr(probe.store, Expr.Ident("g")) { return false }
+                render_expr(probe.store, probe.store.exprs.get(arm.body_id)) == render_expr(probe.store, Expr.Number("2"))
             }
             _ -> false
         }
@@ -266,7 +272,7 @@ fn quote_arm_duals_mirror() -> bool {
     }
 }
 
-fn unguarded_quote_arm_guard_dual_null() -> bool {
+fn unguarded_quote_arm_guard_null() -> bool {
     let probe = parse_expression_native_probe("quote arm { 1 -> 2 }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
@@ -274,8 +280,8 @@ fn unguarded_quote_arm_guard_dual_null() -> bool {
             .MatchExpr(_, arms) -> {
                 if arms.length != 1 { return false }
                 let arm = arms[0]
-                arm.guard == none && arm.guard_id == none
-                    && arm.pattern_id != none && arm.body_id != none
+                arm.guard_id == none && arm.pattern_id != none
+                    && render_expr(probe.store, probe.store.exprs.get(arm.body_id)) == render_expr(probe.store, Expr.Number("2"))
             }
             _ -> false
         }
@@ -294,9 +300,13 @@ fn table_arm_pattern_dual_mirrors() -> bool {
                 let arm = arms[0]
                 if arm.pattern_id == none { return false }
                 if render_pattern(r.store, r.store.pats.get(arm.pattern_id!)) != render_pattern(r.store, arm.pattern) { return false }
-                // The MapLit body is synthesized table glue — no native row
-                // until that producer converts; the guard slot doesn't exist.
-                arm.body_id == none && arm.guard_id == none
+                // The body is synthesized table glue — a MapLit of the row's
+                // cells — carried in body_id; table rows have no guard slot.
+                if arm.guard_id != none { return false }
+                match r.store.exprs.get(arm.body_id) {
+                    .MapLit(_) -> true
+                    _ -> false
+                }
             }
             _ -> false
         }
@@ -304,24 +314,24 @@ fn table_arm_pattern_dual_mirrors() -> bool {
     }
 }
 
-spec "F1c duals: match arms carry pattern/guard/body rows" {
+spec "F1c: match arms carry a dual pattern + arena-only guard/body ids" {
     given "a guarded and a wildcard arm parsed through the native probe" {
-        then "pattern_id and body_id are always present and render identically" {
-            match_arm_duals_mirror()
+        then "pattern_id mirrors the boxed pattern; body/guard ids resolve exactly" {
+            match_arm_ids_resolve()
         }
     }
     given "a quote arm with a guard" {
-        then "the envelope's single arm carries all three rows" {
-            quote_arm_duals_mirror()
+        then "the envelope's single arm carries pattern/guard/body ids" {
+            quote_arm_ids_resolve()
         }
     }
     given "a quote arm without a guard" {
-        then "guard_id stays null while pattern/body rows are present" {
-            unguarded_quote_arm_guard_dual_null()
+        then "guard_id stays null while the body id resolves to its expr" {
+            unguarded_quote_arm_guard_null()
         }
     }
     given "a match table row" {
-        then "the pattern row is real; the synthesized MapLit body stays null" {
+        then "the pattern row is real; the synthesized MapLit body rides body_id" {
             table_arm_pattern_dual_mirrors()
         }
     }

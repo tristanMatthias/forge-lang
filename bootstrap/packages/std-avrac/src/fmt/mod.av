@@ -265,8 +265,8 @@ fn fmt_pattern(store: NodeStore, p: Pattern) -> string {
 fn fmt_match_arms(store: NodeStore, arms: List<MatchArm>, depth: int) -> string {
     let ind = fmt_indent(depth)
     list_map(arms, (arm: MatchArm) -> {
-        let guard_str = if arm.guard != null { " if ${fmt_expr(store, arm.guard!.node)}" } else { "" }
-        "${ind}${fmt_pattern(store, arm.pattern)}${guard_str} -> ${fmt_expr(store, arm.body.node)}"
+        let guard_str = if arm.guard_id != null { " if ${fmt_expr(store, store.exprs.get(arm.guard_id!))}" } else { "" }
+        "${ind}${fmt_pattern(store, arm.pattern)}${guard_str} -> ${fmt_expr(store, store.exprs.get(arm.body_id))}"
     }).join("\n")
 }
 

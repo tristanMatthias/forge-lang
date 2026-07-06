@@ -60,7 +60,7 @@ spec "lower_quotes_via_store: equivalence with the boxed scan" {
 spec "lower_quotes_via_store: arena rows cover struct-embedded positions" {
     then "a quote ONLY inside a match-arm body is found and lowered" {
         let store = new_node_store(build_line_index(""))
-        let arm = MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_at(quote_num(store), 2, 3, "") }
+        let arm = MatchArm { pattern: Pattern.Wildcard, guard_id: null, body_id: store.exprs.add_leaf(quote_num(store)) }
         let arms: List<MatchArm> = [arm]
         let pw = program_of(Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("x")), arms), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))
@@ -75,7 +75,7 @@ spec "lower_quotes_via_store: arena rows cover struct-embedded positions" {
     }
     then "a quote ONLY inside a guarded arm's guard is found and lowered" {
         let store = new_node_store(build_line_index(""))
-        let arm = MatchArm { pattern: Pattern.Wildcard, guard: sexpr_at(quote_num(store), 2, 1, ""), body: sexpr_at(Expr.Number("1"), 2, 5, "") }
+        let arm = MatchArm { pattern: Pattern.Wildcard, guard_id: store.exprs.add_leaf(quote_num(store)), body_id: store.exprs.add_leaf(Expr.Number("1")) }
         let arms: List<MatchArm> = [arm]
         let pw = program_of(Expr.MatchExpr(store.exprs.add_leaf(Expr.Ident("x")), arms), store)
         render_stmt_list(pw.store, lower_quotes_via_store(pw.stmts, pw.store)) == render_stmt_list(pw.store, lower_quotes(pw.stmts, pw.store))

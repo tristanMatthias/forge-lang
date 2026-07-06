@@ -383,51 +383,37 @@ export fn wc_run(scs: List<SpannedChild>, before: int, after: int) -> List<Spann
 
 // ── Struct-embedded child helpers (y5um.3 / spine §14.1) ──
 //
-// A `MatchArm` is a plain struct holding node children the derive walker can't
-// reach through its Self/wrapper-of-Self classification (a bare `Pattern`, an
-// optional `SExpr` guard, and an `SExpr` body). These hand-written extract +
-// rebuild helpers teach the arena to cover them: `match_arm_children_spanned`
-// flattens the arm list into the cross-type child run (in field order: pattern,
-// guard?, body — the same order the reconstruct consumes), and
-// `rebuild_match_arms` inverts it. The rebuild takes the ORIGINAL arm list for
-// SHAPE (arm count + per-arm guard presence — the flat run has no boundary
-// marker, and guard optionality makes per-arm arity variable) and pulls each
-// node VALUE + span from the run, mirroring how reconstruct already carries a
-// node's un-walked struct fields through from the stored node.
+// B-final F4b: a `MatchArm` is a MIXED struct — `pattern` is the one walked
+// child the derive walker can't reach through its Self/wrapper-of-Self
+// classification, while `guard_id`/`body_id` are opaque arena `ExprId`s carried
+// structurally (never walked). These hand-written extract + rebuild helpers
+// teach the arena to cover the pattern: `match_arm_children_spanned` flattens
+// the arm list into the cross-type child run (one pattern per arm), and
+// `rebuild_match_arms` inverts it, taking the ORIGINAL arm list for SHAPE (arm
+// count) and pulling each pattern VALUE + span from the run while carrying the
+// opaque `pattern_id`/`guard_id`/`body_id` through unchanged.
 
-/// Flatten a `List<MatchArm>` into cross-type spanned children, per arm in field
-/// order: the bare `pattern` (position 0 ⇒ span_none), the 0-or-1 `guard` at its
-/// SExpr wrapper's (line, col), then the `body` at its wrapper's (line, col).
+/// Flatten a `List<MatchArm>` into cross-type spanned children: one child per
+/// arm — the bare `pattern` (position 0 ⇒ span_none). Guard/body are opaque
+/// `ExprId`s and are NOT walked.
 export fn match_arm_children_spanned(arms: List<MatchArm>) -> List<SpannedChild> {
+    // B-final F4b: MatchArm is a MIXED node — the pattern is still a walked
+    // child, but guard/body are now walker-opaque `ExprId` scalars carried
+    // structurally. Each arm contributes exactly ONE spanned child (its pattern).
     mut out: List<SpannedChild> = []
     for arm in arms {
         out.push(spanned_child(AnyNode.AnyPat(arm.pattern), 0, 0))
-        if arm.guard != none {
-            out.push(spanned_child(AnyNode.AnyExpr(arm.guard!.node), arm.guard!.line, arm.guard!.col))
-        }
-        out.push(spanned_child(AnyNode.AnyExpr(arm.body.node), arm.body.line, arm.body.col))
     }
     out
 }
 
-/// Rebuild a `List<MatchArm>` from `run` (the flattened child slice produced by
-/// `match_arm_children_spanned`), using `original` only for shape: each arm's
-/// guard-presence and the arm count. Values + spans come from `run`, consumed in
-/// the same field order. A faithfully-ingested tree round-trips identically.
+/// Rebuild a `List<MatchArm>`. B-final F4b: guard/body are opaque `ExprId`s
+/// carried from `original`; only the pattern is walked, so `run` has exactly one
+/// child per arm (the pattern). A faithfully-ingested tree round-trips identically.
 export fn rebuild_match_arms(original: List<MatchArm>, run: List<SpannedChild>) -> List<MatchArm> {
     mut out: List<MatchArm> = []
-    mut i = 0
-    for arm in original {
-        let pattern = unspan_pat(run[i])
-        i = i + 1
-        mut guard: SExpr? = null
-        if arm.guard != none {
-            guard = respan_sexpr(run[i])
-            i = i + 1
-        }
-        let body = respan_sexpr(run[i])
-        i = i + 1
-        out.push(MatchArm { pattern, guard, body })
+    for (i, arm) in original.enumerate() {
+        out.push(MatchArm { pattern: unspan_pat(run[i]), pattern_id: arm.pattern_id, guard_id: arm.guard_id, body_id: arm.body_id })
     }
     out
 }
@@ -618,21 +604,21 @@ export fn is_gensym_name(name: string) -> bool {
 
 // `List<MatchArm>` replaces the retired `enum MatchArmList`. Arm
 // order matters: match exhaustiveness uses first-match-wins, so
-// every walker iterates source-order. Body is an SExpr —
-// single-expression arms are common, and a brace block is itself an
-// `Expr.Block`. Optional `guard` adds an `if` condition that must
-// hold for the arm to fire.
+// every walker iterates source-order. Guard/body are arena `ExprId`s:
+// `body_id` is required (a single-expression arm, or a brace block that
+// is itself an `Expr.Block`), and the nullable `guard_id` adds an `if`
+// condition that must hold for the arm to fire. The pattern is dual —
+// both the walked child and the `pattern_id` metadata.
 export type MatchArm = {
     pattern: Pattern,
-    guard: SExpr?,
-    body: SExpr,
-    // B-final F1c dual fields (NULLABLE, null = no arena row yet — the F1a
-    // container convention): the rows backing pattern/guard/body. The
-    // parser populates them; transforms leave them null until their pass
-    // migrates. The boxed halves die at F4.
+    // B-final F4b: guard/body fully flipped to arena ids — the boxed
+    // `guard: SExpr?` / `body: SExpr` are gone. Consumers read the exprs via
+    // `store.exprs.get(*_id)`. `guard_id` stays nullable (an unguarded arm has
+    // none); `body_id` is non-null. `pattern` + `pattern_id` stay dual —
+    // F4b flips guard/body only; the pattern is a walked child.
     pattern_id: PatId?,
     guard_id: ExprId?,
-    body_id: ExprId?,
+    body_id: ExprId,
 }
 
 /// Type parameter list — used on generic declarations
@@ -2974,8 +2960,8 @@ export fn render_pattern_list(store: NodeStore, pats: List<PatId>) -> string {
 export fn render_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> string {
     if arms.length == 0 { return "()" }
     "(${list_map(arms, (arm: MatchArm) -> {
-        let guard_str = if arm.guard != null { " if ${render_expr(store, arm.guard!.node)}" } else { "" }
-        "${render_pattern(store, arm.pattern)}${guard_str} -> ${render_expr(store, arm.body.node)}"
+        let guard_str = if arm.guard_id != null { " if ${render_expr_id(store, arm.guard_id!)}" } else { "" }
+        "${render_pattern(store, arm.pattern)}${guard_str} -> ${render_expr_id(store, arm.body_id)}"
     }).join("; ")})"
 }
 

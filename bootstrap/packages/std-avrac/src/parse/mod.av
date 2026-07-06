@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
@@ -2423,34 +2423,27 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
         let pat_id = self.parse_pattern_or()?
         let pattern = self.pat_of(pat_id)
-        mut guard: SExpr? = none
         mut guard_id = ExprId(0)
         mut has_guard = false
         if self.check(Tk.KwIf) {
             self.advance()
-            let g_id = self.parse_expression()?
-            guard = sexpr(self.expr_of(g_id), self.current_line, self.current_column)
-            guard_id = g_id
+            guard_id = self.parse_expression()?
             has_guard = true
         }
         if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return .Err("parse error") }
         let body_id = self.parse_expression()?
-        let body_se = sexpr(self.expr_of(body_id), self.current_line, self.current_column)
         if self.check(Tk.Comma) { self.advance() }
         if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return .Err("parse error") }
         let arm_guard_id: ExprId? = if has_guard { guard_id } else { none }
-        let arm = MatchArm { pattern, guard, body: body_se, pattern_id: pat_id, guard_id: arm_guard_id, body_id }
+        let arm = MatchArm { pattern, pattern_id: pat_id, guard_id: arm_guard_id, body_id }
         let arms: List<MatchArm> = [arm]
-        // The synthetic envelope's subject is now a real `ExprId` (a leaf `Expr.None`
-        // row), so the node is well-formed — the flipped `subject: ExprId` is a
-        // walker-opaque scalar, so it records NO edge. The lowering pass ignores
-        // `subject` anyway (`extract_single_match_arm` matches `.MatchExpr(_, arms)`).
-        // Edges in walker order: the arm's pattern, guard (only when present), body —
-        // `match_arm_children_spanned`'s flattening.
+        // The synthetic envelope's subject is a real `ExprId` (a leaf `Expr.None`
+        // row) — a walker-opaque scalar, so it records NO edge. B-final F4b:
+        // MatchArm is a MIXED node whose only walked child is the pattern; guard/
+        // body are opaque `ExprId`s carried structurally — so `match_arm_children_
+        // spanned` flattens to just the pattern.
         let subject_id = self.alloc_leaf(Expr.None)
-        mut edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
-        if has_guard { edges.push(NodeRef.ExprRef(guard_id)) }
-        edges.push(NodeRef.ExprRef(body_id))
+        let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
         .Ok(self.alloc_expr(Expr.MatchExpr(subject_id, arms), byte_span_none(), edges))
     }
 

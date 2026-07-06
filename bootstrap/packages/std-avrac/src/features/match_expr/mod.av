@@ -123,8 +123,8 @@ fn eval_match_arms(rt: Runtime, subject: Value, arms: List<MatchArm>) -> StepRes
         let scoped = enter_scope(current_rt)
         let attempt = try_match_pattern(scoped, arm.pattern, subject)
         if attempt.matched {
-            if arm.guard != null {
-                let guard_result = eval_expr(attempt.runtime, arm.guard!.node)
+            if arm.guard_id != null {
+                let guard_result = eval_expr(attempt.runtime, attempt.runtime.nodes.exprs.get(arm.guard_id!))
                 if step_had_error(guard_result) {
                     let _exited = exit_scope(step_runtime(guard_result))
                     return guard_result
@@ -134,10 +134,10 @@ fn eval_match_arms(rt: Runtime, subject: Value, arms: List<MatchArm>) -> StepRes
                     i = i + 1
                     continue
                 }
-                let body_result = eval_match_body(step_runtime(guard_result), arm.body)
+                let body_result = eval_match_body(step_runtime(guard_result), arm.body_id)
                 return finalize_arm_result(body_result)
             }
-            let body_result = eval_match_body(attempt.runtime, arm.body)
+            let body_result = eval_match_body(attempt.runtime, arm.body_id)
             return finalize_arm_result(body_result)
         }
         current_rt = exit_scope(attempt.runtime)
@@ -176,10 +176,11 @@ fn finalize_arm_result(body_result: StepResult) -> StepResult {
 /// `Expr.Block` (multi-stmt body, e.g. `{ return Stmt.Foo() }`),
 /// route through `execute_stmt` so `return` statements flip
 /// `is_return` and propagate up.
-fn eval_match_body(rt: Runtime, body: SExpr) -> StepResult {
-    match body.node {
+fn eval_match_body(rt: Runtime, body_id: ExprId) -> StepResult {
+    let body = rt.nodes.exprs.get(body_id)
+    match body {
         .Block(stmts) -> execute_stmt(rt, Stmt.Block(stmts))
-        _ -> eval_expr(rt, body.node)
+        _ -> eval_expr(rt, body)
     }
 }
 

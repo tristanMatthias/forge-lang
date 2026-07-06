@@ -98,7 +98,7 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
 /// result type).
 fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
     ctx.position(body_bb)
-    let br = ctx.emit(env, arm.body.node)?
+    let br = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
     ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
     ctx.position(next_bb)
     ok_match_ty(emit_value_ty(br))
@@ -127,16 +127,16 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
             if pattern_is_optional_present(p) {
                 let name = pattern_optional_binding(p)
                 arm_env = if name != "" { ctx.bind(env, name, v, inner) } else { env }
-                if arm.guard != null {
-                    let gr = ctx.emit(arm_env, arm.guard!.node)?
+                if arm.guard_id != null {
+                    let gr = ctx.emit(arm_env, ctx.nodes.exprs.get(arm.guard_id!))?
                     ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_sg"), body_bb, next_bb)
                 } else {
                     ctx.br(body_bb)
                     is_catch_all = true
                 }
             } else if p is .Wildcard {
-                if arm.guard != null {
-                    let gr = ctx.emit(env, arm.guard!.node)?
+                if arm.guard_id != null {
+                    let gr = ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!))?
                     ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_swg"), body_bb, next_bb)
                 } else {
                     ctx.br(body_bb)
@@ -144,11 +144,11 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
                 }
             } else if is_literal_pattern(ctx, p) {
                 let cmp = emit_literal_cmp(ctx, subj, p)
-                if arm.guard != null {
+                if arm.guard_id != null {
                     let lit_bb = ctx.bb("optm_lit")
                     ctx.cond_br(cmp, lit_bb, next_bb)
                     ctx.position(lit_bb)
-                    let gr = ctx.emit(env, arm.guard!.node)?
+                    let gr = ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!))?
                     ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_lg"), body_bb, next_bb)
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
@@ -186,8 +186,8 @@ fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>
             let body_bb = ctx.bb("optm_none_body")
             let next_bb = ctx.bb("optm_none_next")
             mut is_catch_all = false
-            if arm.guard != null {
-                let gr = ctx.emit(env, arm.guard!.node)?
+            if arm.guard_id != null {
+                let gr = ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!))?
                 ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_ng"), body_bb, next_bb)
             } else {
                 ctx.br(body_bb)
@@ -281,7 +281,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let body = arm.body
+        let body = ctx.nodes.exprs.get(arm.body_id)
         let result_for_arm = match arm.pattern {
             .TypePattern(type_name, binding) -> {
                 let arm_bb = ctx.bb("union_arm")
@@ -293,8 +293,8 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(type_name))
                 let extracted = emit_union_extract(ctx, subj_val, member_ty)
                 let arm_env = ctx.bind(env, binding, extracted.value, member_ty)
-                if arm.guard != null {
-                    match ctx.emit(arm_env, arm.guard!.node) {
+                if arm.guard_id != null {
+                    match ctx.emit(arm_env, ctx.nodes.exprs.get(arm.guard_id!)) {
                         .Err(msg) -> return err_match_ty(msg)
                         .Ok(guard_r) -> {
                             let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
@@ -304,7 +304,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                         }
                     }
                 }
-                match ctx.emit(arm_env, body.node) {
+                match ctx.emit(arm_env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
                         ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
@@ -316,7 +316,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
             .Wildcard -> {
                 // Wildcard matches everything — emit body directly,
                 // no branch needed. Subsequent arms are unreachable.
-                match ctx.emit(env, body.node) {
+                match ctx.emit(env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
                         ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
@@ -342,7 +342,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(vname))
                 let extracted = emit_union_extract(ctx, subj_val, member_ty)
                 let arm_env = if binding != "_" { ctx.bind(env, binding, extracted.value, member_ty) } else { env }
-                match ctx.emit(arm_env, body.node) {
+                match ctx.emit(arm_env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
                         ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
@@ -430,8 +430,8 @@ fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, s
         let arm_env = bind_pattern_payload(ctx, env, arm.pattern, st_ty, subj_ptr, variants)
         // Guard: if present, check condition; if false, skip to
         // the next arm via `next_bb`.
-        if arm.guard != null {
-            match ctx.emit(arm_env, arm.guard!.node) {
+        if arm.guard_id != null {
+            match ctx.emit(arm_env, ctx.nodes.exprs.get(arm.guard_id!)) {
                 .Err(msg) -> return err_match_ty(msg)
                 .Ok(guard_r) -> {
                     let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
@@ -441,8 +441,8 @@ fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, s
                 }
             }
         }
-        ctx.cov_match_arm(arm.body.line)
-        let body_ty = match ctx.emit(arm_env, arm.body.node) {
+        ctx.cov_match_arm(ctx.nodes.expr_linecol(arm.body_id).line)
+        let body_ty = match ctx.emit(arm_env, ctx.nodes.exprs.get(arm.body_id)) {
             .Err(msg) -> return err_match_ty(msg)
             .Ok(body_result) -> {
                 ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
@@ -867,12 +867,12 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
 
         if is_literal_pattern(ctx, arm.pattern) {
             let cmp = emit_literal_cmp(ctx, subj, arm.pattern)
-            if arm.guard != null {
+            if arm.guard_id != null {
                 // Literal + guard: both must hold.
                 let lit_pass_bb = ctx.bb("lit_guard")
                 ctx.cond_br(cmp, lit_pass_bb, next_bb)
                 ctx.position(lit_pass_bb)
-                match ctx.emit(env, arm.guard!.node) {
+                match ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!)) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(guard_r) -> {
                         let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
@@ -883,9 +883,9 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
                 ctx.cond_br(cmp, body_bb, next_bb)
             }
         } else if arm.pattern is .Wildcard {
-            if arm.guard != null {
+            if arm.guard_id != null {
                 // Guarded wildcard: if guard { body } else { next arm }.
-                match ctx.emit(env, arm.guard!.node) {
+                match ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!)) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(guard_r) -> {
                         let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
@@ -905,7 +905,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
         }
 
         ctx.position(body_bb)
-        let body_ty = match ctx.emit(env, arm.body.node) {
+        let body_ty = match ctx.emit(env, ctx.nodes.exprs.get(arm.body_id)) {
             .Err(msg) -> return err_match_ty(msg)
             .Ok(body_r) -> {
                 ctx.store_br_if_open(emit_value_ptr(body_r), result_slot, merge_bb)

@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map, list_concat}
 
@@ -359,8 +359,9 @@ fn stamp_block_tail(store: NodeStore, body: List<SStmt>, sname: string) -> List<
 fn stamp_table_match_arms(store: NodeStore, arms: List<MatchArm>, sname: string) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> MatchArm {
         pattern: arm.pattern,
-        guard: arm.guard,
-        body: sexpr(stamp_table_rows(store, arm.body.node, sname), arm.body.line, arm.body.col),
+        pattern_id: arm.pattern_id,
+        guard_id: arm.guard_id,
+        body_id: store.reexpr(stamp_table_rows(store, store.exprs.get(arm.body_id), sname), arm.body_id),
     })
 }
 
@@ -620,13 +621,14 @@ fn desugar_expr_list_ids(store: NodeStore, list: List<ExprId>, sigs: List<FnSig>
 /// in canonical form.
 fn desugar_match_arms(store: NodeStore, arms: List<MatchArm>, sigs: List<FnSig>) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> {
-        let new_guard = if arm.guard != null {
-            sexpr(desugar_expr(store, arm.guard!.node, sigs), arm.guard!.line, arm.guard!.col)
+        let new_guard_id = if arm.guard_id != null {
+            desugar_expr_id(store, arm.guard_id!, sigs)
         } else { null }
         MatchArm {
             pattern: arm.pattern,
-            guard: new_guard,
-            body: sexpr(desugar_expr(store, arm.body.node, sigs), arm.body.line, arm.body.col),
+            pattern_id: arm.pattern_id,
+            guard_id: new_guard_id,
+            body_id: desugar_expr_id(store, arm.body_id, sigs),
         }
     })
 }

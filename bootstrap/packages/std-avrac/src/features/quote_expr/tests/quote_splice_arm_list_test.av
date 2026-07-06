@@ -38,3 +38,43 @@ spec "quote: ~arms splices a List<MatchArm> into match-arm position" {
         out.contains("200")
     }
 }
+
+// B-final F4b regression: a spliced arm whose BODY is `none` (`Expr.None`)
+// must round-trip through the reconstruct/decode path. The reconstructor
+// reifies the body via `construct_expr_id` (the id-typed synth shim), and the
+// decoder must NOT treat an `Expr.None` body_id as an absent slot — else the
+// arm decodes as "match arm missing body" and the @expand fails to compile.
+// The marker prints only if the @expand decode succeeded, so it fails cleanly
+// on regression. (The marker leads the block to stay clear of an unrelated
+// nullable-match-in-arg-position typeck limitation.)
+spec "quote: a spliced arm with a `none` body decodes (Expr.None is a valid body)" {
+    then "the none-bodied arm reconstructs + decodes through @expand" {
+        let out = write_fixture_and_run("/tmp/avra_quote_splice_none_body_test.av",
+            "use @std.avrac.core.{Stmt, SStmt, MatchArm}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_none_arm() -> List<MatchArm> {\n" +
+            "    let a1 = quote arm { 1 -> none }\n" +
+            "    [a1]\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_none_main() -> List<SStmt> {\n" +
+            "    let arms = make_none_arm()\n" +
+            "    quote stmts {\n" +
+            "        println(\"none-body-arm-decoded\")\n" +
+            "        let v = 2\n" +
+            "        let r: int? = match v {\n" +
+            "            ~arms\n" +
+            "            _ -> 7\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_none_main)\n" +
+            "fn placeholder2() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("none-body-arm-decoded")
+    }
+}

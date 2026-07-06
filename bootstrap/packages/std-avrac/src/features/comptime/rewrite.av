@@ -205,11 +205,10 @@ fn rewrite_match_arms(arms: List<MatchArm>, reg: CompTimeRegistry) -> List<Match
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        let new_guard = if arm.guard != null {
-            sexpr(rewrite_expr(arm.guard!.node, reg), arm.guard!.line, arm.guard!.col)
+        let new_guard_id = if arm.guard_id != null {
+            rewrite_expr_id(arm.guard_id!, reg)
         } else { null }
-        let new_body = sexpr(rewrite_expr(arm.body.node, reg), arm.body.line, arm.body.col)
-        out.push(MatchArm { pattern: arm.pattern, guard: new_guard, body: new_body })
+        out.push(MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: rewrite_expr_id(arm.body_id, reg) })
         i = i + 1
     }
     out

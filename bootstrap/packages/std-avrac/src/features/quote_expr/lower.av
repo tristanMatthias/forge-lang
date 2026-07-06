@@ -199,8 +199,8 @@ fn any_quote_in_match_arms(store: NodeStore, arms: List<MatchArm>) -> bool {
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
-        if arm.guard != null && any_quote_in_expr(store, arm.guard!.node) { return true }
-        if any_quote_in_expr(store, arm.body.node) { return true }
+        if arm.guard_id != null && any_quote_in_expr(store, store.exprs.get(arm.guard_id!)) { return true }
+        if any_quote_in_expr(store, store.exprs.get(arm.body_id)) { return true }
         i = i + 1
     }
     false
@@ -327,20 +327,12 @@ fn lower_expr_list_ids(store: NodeStore, ids: List<ExprId>) -> List<ExprId> {
 /// silently fails to fire.
 fn lower_match_arms(store: NodeStore, arms: List<MatchArm>) -> List<MatchArm> {
     list_map(arms, (arm: MatchArm) -> {
-        let lowered_body = sexpr(lower_expr(store, arm.body.node), arm.body.line, arm.body.col)
-        let lowered_guard = if arm.guard == null { null } else {
-            let g = arm.guard!
-            sexpr(lower_expr(store, g.node), g.line, g.col)
-        }
-        // The lowered arm is a NEW tree with no arena rows (F1b dual
-        // convention) — the original ids would point at pre-lowering rows.
+        let lowered_guard_id = if arm.guard_id == null { null } else { lower_expr_id(store, arm.guard_id!) }
         MatchArm {
             pattern: arm.pattern,
-            guard: lowered_guard,
-            body: lowered_body,
-            pattern_id: none,
-            guard_id: none,
-            body_id: none,
+            pattern_id: arm.pattern_id,
+            guard_id: lowered_guard_id,
+            body_id: lower_expr_id(store, arm.body_id),
         }
     })
 }
@@ -405,14 +397,10 @@ fn extract_single_match_arm(body: Expr) -> MatchArm? {
 }
 
 fn construct_match_arm_null(store: NodeStore) -> Expr {
-    let body_expr = Expr.None
     construct_match_arm(store, MatchArm {
         pattern: Pattern.Wildcard,
-        guard: null,
-        body: sexpr_dummy(body_expr),
-        pattern_id: none,
         guard_id: none,
-        body_id: none,
+        body_id: store.exprs.add_leaf(Expr.None),
     })
 }
 
@@ -690,23 +678,26 @@ fn construct_pattern_list(store: NodeStore, patterns: List<PatId>) -> Expr {
     listlit_of(store, elems)
 }
 
-/// Build an Expr that, when evaluated, produces a `MatchArm` AST
-/// value. Emits `Expr.StructLit("MatchArm", { pattern, guard, body })`
-/// — guard is null when the source had no `if` guard, otherwise the
-/// constructed SExpr. The dual id fields are emitted as explicit nulls:
-/// the constructed arm is a NEW synthetic tree with no arena rows —
-/// re-ingest allocates them when the spliced AST re-enters a store.
+/// Build an Expr that, when evaluated, produces a `MatchArm` AST value.
+/// Emits `Expr.StructLit("MatchArm", { pattern, pattern_id, guard_id, body_id })`.
+/// `pattern_id` is the `Expr.None` sentinel (the constructed arm is a NEW
+/// synthetic tree whose pattern row is allocated on re-ingest); guard_id/body_id
+/// are reified through `construct_expr_id` (see the inline comment below).
 fn construct_match_arm(store: NodeStore, arm: MatchArm) -> Expr {
+    // B-final F4b: guard/body are arena ids, so reify them through the
+    // `synth_expr_id` shim (`construct_expr_id`) — that types the generated
+    // `guard_id`/`body_id` inits as `ExprId`, exactly what the decoder's
+    // `value_to_expr_id` re-ingests (the same round-trip `EnumCtor.args` uses).
+    // An absent guard reifies as the `Expr.None` sentinel the decoder reads as
+    // "no guard".
     let pattern_expr = construct_pattern(store, arm.pattern)
-    let guard_expr = if arm.guard != null { construct_sexpr(store, arm.guard!) } else { Expr.None }
-    let body_expr = construct_sexpr(store, arm.body)
+    let guard_expr = if arm.guard_id != null { construct_expr_id(store, arm.guard_id!) } else { Expr.None }
+    let body_expr = construct_expr_id(store, arm.body_id)
     mut inits: List<FieldInit> = []
     inits.push(synth_init(store, "pattern", pattern_expr))
-    inits.push(synth_init(store, "guard", guard_expr))
-    inits.push(synth_init(store, "body", body_expr))
     inits.push(synth_init(store, "pattern_id", Expr.None))
-    inits.push(synth_init(store, "guard_id", Expr.None))
-    inits.push(synth_init(store, "body_id", Expr.None))
+    inits.push(synth_init(store, "guard_id", guard_expr))
+    inits.push(synth_init(store, "body_id", body_expr))
     Expr.StructLit("@std::avrac::core::MatchArm", inits)
 }
 
@@ -717,10 +708,10 @@ fn construct_match_arm(store: NodeStore, arm: MatchArm) -> Expr {
 /// target directly, and the whole result is wired together via
 /// `list_concat` calls.
 ///
-/// qa6i probe 2: `~target` in match-arm position lands here as a
-/// sentinel `MatchArm { pattern: TypePattern("__quote_splice_arms__", ""),
-/// body: Splice(target) }` produced by `parse_match_arm_list` when
-/// inside a quote.
+/// A `~target` in match-arm position lands here as a sentinel
+/// `MatchArm { pattern: TypePattern("__quote_splice_arms__", ""),
+/// body_id: <Splice(target) row> }` produced by `parse_match_arm_list`
+/// when inside a quote.
 fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
     mut result_opt: Expr? = null
     mut current_seg: List<SExpr> = []
@@ -731,8 +722,7 @@ fn construct_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> Expr {
         if is_sentinel {
             let seg_lit = listlit_of(store, current_seg)
             result_opt = if result_opt == null { seg_lit } else { list_concat_call(store, result_opt!, seg_lit) }
-            let splice_body = arm.body
-            let splice_target = extract_splice_target(store, splice_body.node)
+            let splice_target = extract_splice_target(store, store.exprs.get(arm.body_id))
             result_opt = list_concat_call(store, result_opt!, splice_target)
             current_seg = []
         } else {

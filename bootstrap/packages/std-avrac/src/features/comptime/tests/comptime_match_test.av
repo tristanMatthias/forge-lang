@@ -23,9 +23,9 @@ fn ts() -> NodeStore {
 // }`
 fn mk_int_match_fn(ws: NodeStore) -> CompTimeFn {
     mut arms: List<MatchArm> = []
-    arms.push(MatchArm { pattern: Pattern.LitInt(0), guard: null, body: sexpr_dummy(Expr.Number("100")) })
-    arms.push(MatchArm { pattern: Pattern.LitInt(1), guard: null, body: sexpr_dummy(Expr.Number("200")) })
-    arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(Expr.Number("999")) })
+    arms.push(MatchArm { pattern: Pattern.LitInt(0), guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("100")) })
+    arms.push(MatchArm { pattern: Pattern.LitInt(1), guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("200")) })
+    arms.push(MatchArm { pattern: Pattern.Wildcard, guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("999")) })
     let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("x")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
@@ -89,9 +89,9 @@ spec "ty5v: match on integer literal patterns" {
 // }`
 fn mk_string_match_fn(ws: NodeStore) -> CompTimeFn {
     mut arms: List<MatchArm> = []
-    arms.push(MatchArm { pattern: Pattern.LitString("one"), guard: null, body: sexpr_dummy(Expr.Number("1")) })
-    arms.push(MatchArm { pattern: Pattern.LitString("two"), guard: null, body: sexpr_dummy(Expr.Number("2")) })
-    arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(Expr.Number("0")) })
+    arms.push(MatchArm { pattern: Pattern.LitString("one"), guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("1")) })
+    arms.push(MatchArm { pattern: Pattern.LitString("two"), guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("2")) })
+    arms.push(MatchArm { pattern: Pattern.Wildcard, guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("0")) })
     let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("s")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
@@ -147,8 +147,8 @@ fn mk_unwrap_fn(ws: NodeStore) -> CompTimeFn {
     let none_bindings: List<ParamEntry> = []
     let none_pat = Pattern.Variant("None", none_bindings)
     mut arms: List<MatchArm> = []
-    arms.push(MatchArm { pattern: some_pat, guard: null, body: sexpr_dummy(Expr.Ident("x")) })
-    arms.push(MatchArm { pattern: none_pat, guard: null, body: sexpr_dummy(Expr.Number("0")) })
+    arms.push(MatchArm { pattern: some_pat, guard_id: null, body_id: ws.exprs.add_leaf(Expr.Ident("x")) })
+    arms.push(MatchArm { pattern: none_pat, guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("0")) })
     let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("arg")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
@@ -193,8 +193,8 @@ fn mk_or_pattern_fn(ws: NodeStore) -> CompTimeFn {
     let blue_pat = Pattern.Variant("Blue", no_bindings)
     let or_pat = Pattern.Or(ws.pats.add_leaf(red_pat), ws.pats.add_leaf(green_pat))
     mut arms: List<MatchArm> = []
-    arms.push(MatchArm { pattern: or_pat, guard: null, body: sexpr_dummy(Expr.Number("1")) })
-    arms.push(MatchArm { pattern: blue_pat, guard: null, body: sexpr_dummy(Expr.Number("2")) })
+    arms.push(MatchArm { pattern: or_pat, guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("1")) })
+    arms.push(MatchArm { pattern: blue_pat, guard_id: null, body_id: ws.exprs.add_leaf(Expr.Number("2")) })
     let return_expr = ws.exprs.add_leaf(Expr.MatchExpr(ws.exprs.add_leaf(Expr.Ident("c")), arms))
     let body: List<StmtId> = [ws.stmts.add_leaf(Stmt.Return(return_expr))]
     CompTimeFn {
@@ -243,8 +243,8 @@ fn mk_match_stmt_with_return_fn(ws: NodeStore) -> CompTimeFn {
     let arm_wild_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(ws.exprs.add_leaf(Expr.Number("99"))))]
     let arm_wild_block = Expr.Block(ws.rows_of(arm_wild_stmts))
     mut arms: List<MatchArm> = []
-    arms.push(MatchArm { pattern: Pattern.LitInt(0), guard: null, body: sexpr_dummy(arm0_block) })
-    arms.push(MatchArm { pattern: Pattern.Wildcard, guard: null, body: sexpr_dummy(arm_wild_block) })
+    arms.push(MatchArm { pattern: Pattern.LitInt(0), guard_id: null, body_id: ws.exprs.add_leaf(arm0_block) })
+    arms.push(MatchArm { pattern: Pattern.Wildcard, guard_id: null, body_id: ws.exprs.add_leaf(arm_wild_block) })
     let subj = ws.exprs.add_leaf(Expr.Ident("x"))
     let body: List<StmtId> = [
         ws.stmts.add_leaf(Stmt.Match(subj, arms)),
