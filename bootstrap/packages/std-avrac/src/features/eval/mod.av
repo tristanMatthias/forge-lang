@@ -2459,6 +2459,17 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
     mut pat_opt: Pattern? = null
     mut guard_opt: SExpr? = null
     mut body_opt: SExpr? = null
+    // B-final F4b PHASE 1 — dual-tolerant decode. A flipped MatchArm value
+    // (F4b phase 2 / the fully-migrated shape) carries `guard_id`/`body_id`
+    // and drops the boxed `guard`/`body`. The id-typed slot carries the Expr
+    // node itself (the `synth_expr_id` comptime identity), so `value_to_expr_id`
+    // decodes + re-ingests it into `store`. We PREFER the ids when present and
+    // materialise the boxed view so this decoder keeps producing a valid
+    // still-dual MatchArm; the boxed halves remain the fallback for values
+    // that only carry them. This is what teaches the next seed to decode the
+    // id shape before phase 2 removes the boxed fields.
+    mut guard_id_opt: ExprId? = null
+    mut body_id_opt: ExprId? = null
     for f in v.struct_payload {
         match f.name {
             "pattern" -> {
@@ -2488,12 +2499,36 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
                     .Err(_) -> {}
                 }
             }
+            "guard_id" -> {
+                // Absent guard is the None/absent sentinel; otherwise the slot
+                // carries the guard Expr node (synth_expr_id identity).
+                if !variant_is_optional_absent(f.value.enum_variant) {
+                    match value_to_expr_id(store, f.value) {
+                        .Ok(gid) -> guard_id_opt = gid
+                        .Err(_) -> {}
+                    }
+                }
+            }
+            "body_id" -> {
+                match value_to_expr_id(store, f.value) {
+                    .Ok(bid) -> body_id_opt = bid
+                    .Err(_) -> {}
+                }
+            }
             _ -> { /* ignore unknown fields */ }
         }
     }
     if pat_opt == none { return .Err("decode: match arm missing pattern") }
+    // Prefer the flipped ids: when a value carries `body_id`/`guard_id` but not
+    // the boxed half, materialise the boxed view from the arena row.
+    if body_id_opt != none && body_opt == none {
+        body_opt = sexpr_dummy(store.exprs.get(body_id_opt!))
+    }
+    if guard_id_opt != none && guard_opt == none {
+        guard_opt = sexpr_dummy(store.exprs.get(guard_id_opt!))
+    }
     if body_opt == none { return .Err("decode: match arm missing body") }
-    .Ok(MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt! })
+    .Ok(MatchArm { pattern: pat_opt!, guard: guard_opt, body: body_opt!, guard_id: guard_id_opt, body_id: body_id_opt })
 }
 
 fn value_to_pattern(store: NodeStore, v: Value) -> Result<Pattern, string> {
