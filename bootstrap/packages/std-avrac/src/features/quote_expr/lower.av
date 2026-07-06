@@ -678,12 +678,11 @@ fn construct_pattern_list(store: NodeStore, patterns: List<PatId>) -> Expr {
     listlit_of(store, elems)
 }
 
-/// Build an Expr that, when evaluated, produces a `MatchArm` AST
-/// value. Emits `Expr.StructLit("MatchArm", { pattern, guard, body })`
-/// — guard is null when the source had no `if` guard, otherwise the
-/// constructed SExpr. The dual id fields are emitted as explicit nulls:
-/// the constructed arm is a NEW synthetic tree with no arena rows —
-/// re-ingest allocates them when the spliced AST re-enters a store.
+/// Build an Expr that, when evaluated, produces a `MatchArm` AST value.
+/// Emits `Expr.StructLit("MatchArm", { pattern, pattern_id, guard_id, body_id })`.
+/// `pattern_id` is the `Expr.None` sentinel (the constructed arm is a NEW
+/// synthetic tree whose pattern row is allocated on re-ingest); guard_id/body_id
+/// are reified through `construct_expr_id` (see the inline comment below).
 fn construct_match_arm(store: NodeStore, arm: MatchArm) -> Expr {
     // B-final F4b: guard/body are arena ids, so reify them through the
     // `synth_expr_id` shim (`construct_expr_id`) — that types the generated
