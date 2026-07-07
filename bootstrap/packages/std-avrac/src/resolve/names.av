@@ -791,7 +791,7 @@ export type ResolverState = {
 /// originals.
 export fn register_decls(stmts: List<SStmt>, store: NodeStore) -> ResolverState {
     let tree = build_module_tree(store, stmts, "", ModuleNode.End)
-    let graph = build_graph_from_stmts(store, stmts)
+    let graph = build_graph_from_stmts(store, store.rows_of(stmts))
     let use_result = resolve_use_aliases(store, stmts, tree, graph)
     let global_index_list = build_global_index_from_graph(graph.all_items)
     let global_index = global_item_reg_build(global_index_list)
