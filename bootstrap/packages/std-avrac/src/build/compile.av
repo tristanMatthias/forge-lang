@@ -77,7 +77,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     // next to every `@marshal type T` so the resolver sees the type
     // AND its methods in the same pass. Zero-cost when no
     // @marshal annotation exists (early-out).
-    let with_marshal = target.store.sstmts_of(derive_marshal(target.store.rows_of(comp.stmts), target.store))
+    let with_marshal = derive_marshal(target.store.rows_of(comp.stmts), target.store)
     // Option C pipeline: macro-introduced decls register before
     // scope validation runs. Single source of truth in
     // features/comptime/expand_macro.av.

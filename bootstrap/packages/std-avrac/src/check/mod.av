@@ -79,7 +79,7 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
     }
     // Option C pipeline: macro-introduced decls register before
     // scope validation runs.
-    let named = resolve_and_expand_program(comp.stmts, parsed.store)
+    let named = resolve_and_expand_program(parsed.store.rows_of(comp.stmts), parsed.store)
     if named.had_error {
         let empty_stmts: List<SStmt> = []
         return TypecheckSourceResult { bag: bag_merge(comp.bag, named.bag), stmts: empty_stmts, type_reg: named.type_reg, store: parsed.store }
