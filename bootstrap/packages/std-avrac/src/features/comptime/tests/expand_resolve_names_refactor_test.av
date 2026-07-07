@@ -48,6 +48,6 @@ spec "qa6i: resolve_names == resolve_names_pre_expand + manual halves" {
         // Re-run rewrite_uses with the pre-expand state — this is
         // the same composition the pipeline-fix uses post-expand.
         let rewritten = rewrite_uses(pre.stmts, pre.state)
-        render_all(ws_a, monolithic.stmts) == render_all(ws_b, rewritten)
+        render_all(ws_a, ws_a.sstmts_of(monolithic.stmts)) == render_all(ws_b, rewritten)
     }
 }
