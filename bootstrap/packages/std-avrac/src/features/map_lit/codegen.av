@@ -1,7 +1,7 @@
 // WHY: codegen for map literals {"key": value, ...} and map operations.
 // Maps are backed by the C-runtime avra_map_*_cstr functions.
 
-use core.{Expr, SExpr, ExprId, VarBinding, ValueType}
+use core.{Expr, ExprId, VarBinding, ValueType}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_single_arg}
 
@@ -37,7 +37,7 @@ fn insert_map_entries(ctx: Ctx, env: List<VarBinding>, entries: List<ExprId>, ma
 /// Dispatch a method call on a Map value. Maps method names to
 /// the corresponding `avra_map_*_cstr` runtime call. Unknown
 /// methods produce a "not implemented" error.
-export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     match method {
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
@@ -62,10 +62,10 @@ export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, me
 /// Codegen for `map.set(key, val)`. Two-arg variant — emits
 /// both, casts the key to ptr, and forwards to `avra_map_set_cstr`.
 /// Returns the map unchanged so the call chains.
-fn emit_map_set(ctx: Ctx, env: List<VarBinding>, map: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_map_set(ctx: Ctx, env: List<VarBinding>, map: ptr, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("map.set expects 2 arguments: key and value") }
-    let key_r = ctx.emit(env, args[0].node)?
-    let val_r = ctx.emit(env, args[1].node)?
+    let key_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+    let val_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
     let key_ptr = ctx.to_ptr(key_r.value, "set_key")
     ctx.call("avra_map_set_cstr", [map, key_ptr, val_r.value])
     ok_emit(map, .Map(.Str, val_r.ty))

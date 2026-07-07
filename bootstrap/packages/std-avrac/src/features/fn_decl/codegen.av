@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.{Expr, SExpr, Stmt, StmtId, ParamEntry, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_render_full, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown, vtype_is_unsigned_int, vtype_is_signed_narrow_int, avra_llvm_set_linkonce_odr}
+use core.{Expr, Stmt, StmtId, ParamEntry, VarBinding, env_lookup, ValueType, stmt_unwrap, field_index_of, find_annotation, vtype_closure_captures, vtype_render_full, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_bytes, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_struct_name, vtype_trait_name, vtype_is_unknown, vtype_is_unsigned_int, vtype_is_signed_narrow_int, avra_llvm_set_linkonce_odr}
 use codegen.{cg_newtype_vtype_lookup}
 use core.{method_mangled_name, type_registry_id_for, type_registry_name_for, is_result_enum_name, is_result_shaped_enum}
 use codegen.{Ctx, EmitValue, ok_emit, ok_emit, ok_stmt, err_emit, err_stmt, trait_decl_has}
@@ -295,7 +295,7 @@ use codegen.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, strip_quote
 /// generic call → monomorphized name; closure value → indirect.
 /// Built-in helpers (panic, string conversions, etc.) are
 /// short-circuited here too.
-export fn emit_call(ctx: Ctx, env: List<VarBinding>, callee: Expr, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_call(ctx: Ctx, env: List<VarBinding>, callee: Expr, args: List<ExprId>) -> Result<EmitValue, string> {
     match callee {
         .Ident(name) -> emit_call_named(ctx, env, name, args)
         .QualifiedIdent(path) -> emit_call_named(ctx, env, path, args)
@@ -324,7 +324,7 @@ export fn emit_call(ctx: Ctx, env: List<VarBinding>, callee: Expr, args: List<SE
 /// names to the matching `avra_str_*` runtime call; methods
 /// with codegen-side implementations (concat, substring, replace,
 /// equality) route to their dedicated emitters.
-fn emit_string_method(ctx: Ctx, env: List<VarBinding>, str_val: ptr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_string_method(ctx: Ctx, env: List<VarBinding>, str_val: ptr, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     match method {
         "length" -> {
             let str_ptr = ctx.to_ptr(str_val, "len_arg")
@@ -376,7 +376,7 @@ fn emit_string_method(ctx: Ctx, env: List<VarBinding>, str_val: ptr, method: str
 /// Dispatch a method call on a bytes receiver. Mirrors emit_string_method
 /// but routes to the avra_bytes_* runtime helpers and types the result
 /// as ValueType.Bytes / .Int / .Str as appropriate.
-fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     match method {
         "length" -> {
             let bp = ctx.to_ptr(bytes_val, "bytes_self")
@@ -400,8 +400,8 @@ fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: st
             if args.length < 2 {
                 return err_emit("bytes.slice expects 2 args, got ${string(args.length)}")
             }
-            let s_r = ctx.emit(env, args[0].node)?
-            let e_r = ctx.emit(env, args[1].node)?
+            let s_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+            let e_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
             ok_emit(ctx.call("avra_bytes_slice", [bp, s_r.value, e_r.value]), .Bytes)
         }
         "to_string" -> {
@@ -418,7 +418,7 @@ fn emit_bytes_method(ctx: Ctx, env: List<VarBinding>, bytes_val: ptr, method: st
 /// traits → trait-vtable dispatch, structs/enums → mangled
 /// inherent-method call. Falls back to plain by-name call for
 /// unknown receivers.
-export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     let r = ctx.emit_member(env, obj)?
     emit_method_on_value(ctx, env, r, method, args)
 }
@@ -427,7 +427,7 @@ export fn emit_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: s
 /// emit_method_call so the optional method chain (`obj?.m(args)`) can call
 /// the method on the UNWRAPPED receiver through the same dispatch (str/bytes/
 /// list/map/Task/trait/newtype/struct/enum), instead of a `?.`-specific path.
-export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     if vtype_is_str(r.ty) {
         return emit_string_method(ctx, env, r.value, method, args)
     }
@@ -534,12 +534,12 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     ok_emit(result, ret_ty)
 }
 
-/// Emit the first argument from a `List<SExpr>`. Errors when the
+/// Emit the first argument from a `List<ExprId>`. Errors when the
 /// list is empty so callers can surface a clean "expected N
 /// arguments, got 0" diagnostic.
-export fn emit_first_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_first_arg(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("expected argument") }
-    ctx.emit(env, args[0].node)
+    ctx.emit(env, ctx.nodes.exprs.get(args[0]))
 }
 
 /// Codegen for a direct call to a named function. Resolves the
@@ -553,7 +553,7 @@ export fn emit_first_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> 
 /// `emit_optional_unwrap` is identity (the value already IS the inner
 /// pointer). The result type is the non-optional inner. Caller is asserting
 /// non-`none` (strict non-null gating / flow-narrowing will enforce this statically).
-fn emit_force_unwrap(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_force_unwrap(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     let r = emit_single_arg(ctx, env, args)?
     if vtype_is_optional(r.ty) {
         let inner = vtype_strip_optional(r.ty)
@@ -563,7 +563,7 @@ fn emit_force_unwrap(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Resu
     ok_emit(r.value, r.ty)
 }
 
-export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: List<ExprId>) -> Result<EmitValue, string> {
     // Built-in functions — dispatched by name.
     match name {
         "println"            -> return emit_println(ctx, env, args)
@@ -615,9 +615,9 @@ export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: L
 /// Supports int (snprintf into a 32-byte buffer), float
 /// (`avra_float_to_string`), bool (literal "true"/"false"),
 /// and pre-stringified strings (passthrough).
-export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("string() expects 1 arg") }
-    let r = ctx.emit(env, args[0].node)?
+    let r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     let display_dispatch = emit_display_dispatch(ctx, r)
     if display_dispatch != null { return ok_emit(display_dispatch!, .Str) }
     let sname = vtype_struct_name(r.ty)
@@ -725,28 +725,28 @@ fn emit_int_to_string_inner(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitVal
 // avra_format_float(float_val, spec_str) → str
 /// Codegen for `format_float(value, fmt)` — calls
 /// `avra_format_float` with the user-supplied printf-style format.
-fn emit_format_float(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_format_float(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("avra_format_float() expects 2 args") }
-    let val_r = ctx.emit(env, args[0].node)?
-    let spec_r = ctx.emit(env, args[1].node)?
+    let val_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+    let spec_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
     let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
     let result = ctx.call("avra_format_float", [val_r.value, spec_ptr])
     ok_emit(result, .Str)
 }
 
 // avra_format_int(int_val, spec_str) → str
-fn emit_format_int(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_format_int(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("avra_format_int() expects 2 args") }
-    let val_r = ctx.emit(env, args[0].node)?
-    let spec_r = ctx.emit(env, args[1].node)?
+    let val_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+    let spec_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
     let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
     let result = ctx.call("avra_format_int", [val_r.value, spec_ptr])
     ok_emit(result, .Str)
 }
 
-export fn emit_string_to_int(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_string_to_int(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("int() expects 1 arg") }
-    let r = ctx.emit(env, args[0].node)?
+    let r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     if vtype_eq(r.ty, .Float) { return ok_emit(ctx.fptosi(r.value, "f2i"), .Int) }
     if vtype_eq(r.ty, .Int) || vtype_eq(r.ty, .Bool) { return ok_emit(r.value, .Int) }
     if vtype_is_unsigned_int(r.ty) {
@@ -759,9 +759,9 @@ export fn emit_string_to_int(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>)
     ok_emit(ctx.call("avra_parse_int", [str_ptr]), .Int)
 }
 
-export fn emit_string_to_float(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_string_to_float(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("float() expects 1 arg") }
-    let r = ctx.emit(env, args[0].node)?
+    let r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     if vtype_eq(r.ty, .Float) { return ok_emit(r.value, .Float) }
     if vtype_is_str(r.ty) {
         let str_ptr = ctx.to_ptr(r.value, "f_parse_arg")
@@ -771,9 +771,9 @@ export fn emit_string_to_float(ctx: Ctx, env: List<VarBinding>, args: List<SExpr
     ok_emit(ctx.cast_to(ctx.sitofp(r.value, "i2f"), .Float), .Float)
 }
 
-export fn emit_panic(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_panic(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("panic() expects 1 argument") }
-    let r = ctx.emit(env, args[0].node)?
+    let r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     let prefix = ctx.global_str("panic: ", ".panic_prefix")
     let msg = emit_concat(ctx, prefix, r.value)?
     ctx.call("avra_eprintln", [ctx.to_ptr(msg.value, "panic_msg")])
@@ -781,9 +781,9 @@ export fn emit_panic(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Resu
     ok_emit(ctx.i64(0), .Int)
 }
 
-fn emit_newtype_ctor(ctx: Ctx, env: List<VarBinding>, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_newtype_ctor(ctx: Ctx, env: List<VarBinding>, name: string, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("${name}() expects 1 argument") }
-    let r = ctx.emit(env, args[0].node)?
+    let r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     let inner_ty = ctx.resolve_codegen_vtype(cg_newtype_vtype_lookup(ctx.newtypes, name))
     ok_emit(r.value, .Newtype(name, inner_ty, type_registry_id_for(ctx.type_reg, name)))
 }

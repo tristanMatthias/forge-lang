@@ -2,7 +2,7 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, SExpr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
+use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
@@ -55,7 +55,7 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
         if vtype_is_optional(decl) {
             match initializer {
                 .EnumCtor(tn, variant, args) if tn == "" && variant_is_optional_ctor(variant, args.length) -> {
-                    let r = emit_optional_ctor_value(emit_ctx, env, variant, emit_ctx.nodes.sexprs_of(args), decl)?
+                    let r = emit_optional_ctor_value(emit_ctx, env, variant, args, decl)?
                     return ok_stmt(ctx.bind(env, name, r.value, decl))
                 }
                 _ -> {}
@@ -91,7 +91,7 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
         if elem_trait != "" {
             match initializer {
                 .ListLit(elements) -> {
-                    let boxed_list = emit_trait_boxed_list(ctx, env, ctx.nodes.sexprs_of(elements), elem_trait)?
+                    let boxed_list = emit_trait_boxed_list(ctx, env, elements, elem_trait)?
                     return ok_stmt(ctx.bind(env, name, boxed_list, var_ty))
                 }
                 _ -> {
@@ -182,7 +182,7 @@ fn resolve_concrete_name(ty: ValueType) -> string {
 /// boxed as a trait object before being pushed. Used for
 /// `let xs: List<Trait> = [c1, c2]` so callers see one type at
 /// runtime even when the elements have different concrete types.
-fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, trait_name: string) -> Result<ptr, string> {
+fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>, trait_name: string) -> Result<ptr, string> {
     let arr = ctx.array_new()
     push_boxed_elements(ctx, env, arr, elements, trait_name)
 }
@@ -190,10 +190,10 @@ fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>,
 /// Recursive worker for `emit_trait_boxed_list`. Emits each
 /// element, boxes it for the trait when its type is concrete,
 /// and pushes the result onto `arr`.
-fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: List<SExpr>, trait_name: string) -> Result<ptr, string> {
+fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: List<ExprId>, trait_name: string) -> Result<ptr, string> {
     mut i = 0
     while i < elements.length {
-        let r = ctx.emit(env, elements[i].node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?
         let concrete_name = resolve_concrete_name(r.ty)
         let boxed = if concrete_name != "" {
             box_for_trait(ctx, r.value, trait_name, concrete_name)

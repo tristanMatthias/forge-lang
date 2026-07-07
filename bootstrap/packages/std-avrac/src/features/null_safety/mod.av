@@ -159,7 +159,7 @@ fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Resu
 /// Codegen hook for `OptionalMethodCall`. Forwards to emit_optional_method_call.
 fn optional_method_call_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, ctx.nodes.sexprs_of(args))
+        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, args)
         _ -> err_emit("expected OptionalMethodCall")
     }
 }

@@ -128,7 +128,7 @@ export fn emit_optional_chain(ctx: Ctx, env: List<VarBinding>, obj: Expr, field:
 /// emit_optional_chain, but the present branch calls the method on the
 /// unwrapped receiver via the shared emit_method_on_value. None receiver
 /// short-circuits to `none`; the result wraps to the method return's `U?`.
-export fn emit_optional_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_optional_method_call(ctx: Ctx, env: List<VarBinding>, obj: Expr, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     let is_null = if ctx.is_ptr_value(r.value) {
         ctx.eq(r.value, ctx.zero_for(ValueType.Str), "omc_null")

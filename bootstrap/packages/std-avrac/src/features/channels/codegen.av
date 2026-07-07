@@ -58,11 +58,11 @@ export fn channel_slot_out(ctx: Ctx, slot: ptr, elem: ValueType) -> ptr {
 /// Method-call dispatch for a Channel<elem> receiver. Hooked from
 /// `emit_method_call` (mirrors the Task arm). `ch_val` is the
 /// emitted channel handle; `elem` its element type.
-export fn emit_channel_method_call(ctx: Ctx, env: List<VarBinding>, ch_val: ptr, elem: ValueType, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_channel_method_call(ctx: Ctx, env: List<VarBinding>, ch_val: ptr, elem: ValueType, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     match method {
         "send" -> {
             if args.length != 1 { return err_emit("channel send takes exactly one value") }
-            let a = ctx.emit(env, args[0].node)?
+            let a = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
             // Ownership: the value outlives the sender's scope — the
             // receiver's scope owns this +1.
             if vtype_is_ptr_type(a.ty) { let _ = ctx.rc_retain(a.value) }

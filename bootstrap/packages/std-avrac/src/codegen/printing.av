@@ -1,6 +1,6 @@
 // WHY: codegen for println/eprintln builtins.
 
-use core.{Expr, SExpr, VarBinding, ValueType, vtype_is_str, vtype_eq}
+use core.{Expr, VarBinding, ValueType, vtype_is_str, vtype_eq}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_concat}
 use codegen.{strip_quotes}
@@ -9,10 +9,10 @@ use codegen.{strip_quotes}
 /// to `avra_float_to_string`; everything else gets snprintf'd as a
 /// signed integer into a 32-byte buffer. Union-typed args are
 /// rejected — caller must `match` first.
-export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("eprintln() expects 1 arg") }
     let se = args[0]
-    let r = ctx.emit(env, se.node)?
+    let r = ctx.emit(env, ctx.nodes.exprs.get(se))?
     if r.ty is .Union {
         return err_emit("cannot print union type directly — use `match` to extract the value first")
     }
@@ -40,16 +40,16 @@ export fn emit_eprintln(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> R
 /// shape: pulls the string text out in the inner match arm directly,
 /// because re-binding `text` through any extra layer clobbers the
 /// payload (see TECH_DEBT.md #11 — host miscompilation).
-export fn emit_println(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_println(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("println expects 1 argument") }
     let se = args[0]
-    let print_ptr = match se.node {
+    let print_ptr = match ctx.nodes.exprs.get(se) {
         .String(text) -> {
             let inner = strip_quotes(text)
             ctx.global_str(inner, ".str")
         }
         _ -> {
-            let r = ctx.emit(env, se.node)?
+            let r = ctx.emit(env, ctx.nodes.exprs.get(se))?
             if r.ty is .Union {
                 return err_emit("cannot print union type directly — use `match` to extract the value first")
             }
