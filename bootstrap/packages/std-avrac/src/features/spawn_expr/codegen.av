@@ -48,17 +48,7 @@ fn emit_spawn(ctx: Ctx, env: List<VarBinding>, body_id: ExprId) -> Result<EmitVa
 /// flow + bodies) contains a `spawn` expression. Used by
 /// `emit_function_body` to decide whether to allocate a structured-
 /// concurrency task group up front.
-export fn stmts_has_spawn(store: NodeStore, stmts: List<SStmt>) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        if stmt_has_spawn(store, stmts[i].node) { return true }
-        i = i + 1
-    }
-    false
-}
-
-/// Row-list twin for flipped bodies.
-fn stmt_ids_have_spawn(store: NodeStore, ids: List<StmtId>) -> bool {
+export fn stmts_has_spawn(store: NodeStore, ids: List<StmtId>) -> bool {
     for id in ids {
         if stmt_has_spawn(store, store.stmts.get(id)) { return true }
     }
@@ -74,7 +64,7 @@ fn stmt_has_spawn(store: NodeStore, st: Stmt) -> bool {
         .Let(_, _, e) -> expr_has_spawn(store, store.exprs.get(e))
         .Mut(_, _, e) -> expr_has_spawn(store, store.exprs.get(e))
         .Const(_, _, e) -> expr_has_spawn(store, store.exprs.get(e))
-        .Block(body) -> stmt_ids_have_spawn(store, body)
+        .Block(body) -> stmts_has_spawn(store, body)
         .If(cond, then_b, else_b) -> {
             if expr_has_spawn(store, store.exprs.get(cond)) { return true }
             if stmt_has_spawn(store, store.stmts.get(then_b)) { return true }
@@ -85,8 +75,8 @@ fn stmt_has_spawn(store: NodeStore, st: Stmt) -> bool {
         .ForIn(_, coll, body) -> expr_has_spawn(store, store.exprs.get(coll)) || stmt_has_spawn(store, store.stmts.get(body))
         .Match(subj, arms) -> expr_has_spawn(store, store.exprs.get(subj)) || arms_have_spawn(store, arms)
         .Annotated(_, inner) -> stmt_has_spawn(store, store.stmts.get(inner))
-        .Impl(_, methods) -> stmt_ids_have_spawn(store, methods)
-        .Parallel(body) -> stmt_ids_have_spawn(store, body)
+        .Impl(_, methods) -> stmts_has_spawn(store, methods)
+        .Parallel(body) -> stmts_has_spawn(store, body)
         _ -> false
     }
 }
@@ -107,7 +97,7 @@ fn arms_have_spawn(store: NodeStore, arms: List<MatchArm>) -> bool {
 fn expr_has_spawn(store: NodeStore, ex: Expr) -> bool {
     match ex {
         .Spawn(_) -> true
-        .Block(stmts) -> stmt_ids_have_spawn(store, stmts)
+        .Block(stmts) -> stmts_has_spawn(store, stmts)
         .Call(callee, args) -> expr_has_spawn(store, store.exprs.get(callee)) || exprs_have_spawn(store, args)
         .Binary(l, _, r) -> expr_has_spawn(store, store.exprs.get(l)) || expr_has_spawn(store, store.exprs.get(r))
         .Unary(_, e) -> expr_has_spawn(store, store.exprs.get(e))

@@ -1,6 +1,5 @@
 // WHY: emits spec test runtime calls for spec/given/then blocks.
 
-use core.{sstmt_dummy}
 use codegen.{err_stmt, ok_stmt, StmtResult}
 use codegen.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
@@ -96,7 +95,7 @@ fn emit_spec_single(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<List<
         let sr = spec_emit_stmt(ctx, env, stmt)?
         return ok_stmt(sr.env)
     }
-    let wrapped: List<SStmt> = [sstmt_dummy(stmt)]
+    let wrapped: List<StmtId> = [ctx.nodes.stmts.add_leaf(stmt)]
     emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
     ok_stmt(env)
 }

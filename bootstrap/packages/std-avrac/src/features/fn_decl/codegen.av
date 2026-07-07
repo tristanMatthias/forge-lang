@@ -30,21 +30,21 @@ use features.spawn_expr.{stmts_has_spawn}
 /// The LLVM declaration from `declare_functions` stays as a
 /// declare-only; the linker resolves the call against the producer's
 /// pre-built .o. See `fn_belongs_to_lib_pkg` for the ownership rule.
-export fn emit_function_bodies(ctx: Ctx, stmts: List<SStmt>) -> Result<List<VarBinding>, string> {
+export fn emit_function_bodies(ctx: Ctx, stmts: List<StmtId>) -> Result<List<VarBinding>, string> {
     let empty_e: List<VarBinding> = []
     mut i = 0
     while i < stmts.length {
-        let ss = stmts[i]
+        let node = ctx.nodes.stmts.get(stmts[i])
         // Skip body emission for fns marked `@external_unit` —
         // their compiled code lives in another unit's .o that the
         // linker resolves at final link time.
-        let is_external = find_annotation(ctx.nodes, ss.node, "external_unit") != null
+        let is_external = find_annotation(ctx.nodes, node, "external_unit") != null
         // Mono-produced specializations get `linkonce_odr` linkage: every
         // consuming .o that monomorphizes the same `list_filter<T>` emits
         // a copy, and only `linkonce_odr` lets the linker dedup them
         // instead of erroring on duplicate symbols.
-        let is_mono_spec = find_annotation(ctx.nodes, ss.node, "mono_spec") != null
-        let inner = match stmt_unwrap(ctx.nodes, ss.node) {
+        let is_mono_spec = find_annotation(ctx.nodes, node, "mono_spec") != null
+        let inner = match stmt_unwrap(ctx.nodes, node) {
             .Function(name, _, params, _, body) -> {
                 avra_ice_push_fn(name)
                 let r = if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
@@ -60,12 +60,12 @@ export fn emit_function_bodies(ctx: Ctx, stmts: List<SStmt>) -> Result<List<VarB
                 avra_ice_pop_fn()
                 r
             }
-            .Impl(_, methods) -> emit_function_bodies(ctx, ctx.nodes.sstmts_of(methods))
+            .Impl(_, methods) -> emit_function_bodies(ctx, methods)
             .Module(_, body) -> {
                 if is_external {
                     ok_stmt(empty_e)
                 } else {
-                    emit_function_bodies(ctx, ctx.nodes.sstmts_of(body))
+                    emit_function_bodies(ctx, body)
                 }
             }
             _ -> ok_stmt(empty_e)
@@ -107,9 +107,6 @@ fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
 /// Adds an implicit return at the end when the last statement
 /// didn't terminate.
 export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, body_ids: List<StmtId>) -> Result<List<VarBinding>, string> {
-    // Boundary bridge: the body machinery (escape analysis, spawn scan,
-    // block loop) still consumes positioned wrappers until F4.
-    let body = ctx.nodes.sstmts_of(body_ids)
     let fn_val = ctx.get_fn(name)
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")
@@ -119,12 +116,12 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
 
     mut body_cg = ctx.with_fn(fn_val, name)
     body_cg.cov_fn_entry()
-    body_cg.rc_releasable = analyze_releasable(ctx.nodes, body)
+    body_cg.rc_releasable = analyze_releasable(ctx.nodes, body_ids)
 
     // Structured concurrency (spec Axis 18.7): if the function body
     // contains spawn expressions, create a task group so all spawned
     // tasks are automatically awaited when the scope exits.
-    if stmts_has_spawn(ctx.nodes, body) {
+    if stmts_has_spawn(ctx.nodes, body_ids) {
         body_cg.task_group = body_cg.call("avra_task_group_new", [])
     }
 
@@ -139,7 +136,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
 
     // Use the function's return type for the default block value.
     let ret_ty = body_cg.fn_ret(name)
-    let br = emit_block_loop_ctx(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
+    let br = emit_block_loop_ctx(body_cg, env, body_ids, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
         // Structured concurrency: await all spawned tasks before cleanup.
         if body_cg.task_group != null {
