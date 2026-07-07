@@ -292,7 +292,7 @@ fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFil
         return Result.Err("error parsing ${path}")
     }
     let empty_loaded: List<string> = []
-    let mod_resolved = resolve_module_files(parsed.stmts!, modules_dirname(path), empty_loaded, store)
+    let mod_resolved = resolve_module_files(store.rows_of(parsed.stmts!), modules_dirname(path), empty_loaded, store)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }

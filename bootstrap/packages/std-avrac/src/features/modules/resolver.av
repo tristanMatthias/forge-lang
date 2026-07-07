@@ -391,7 +391,14 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
-export fn resolve_module_files(stmts: List<SStmt>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
+export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
+    // B-final: the pass boundary is arena-id-native — the desugared program
+    // vector arrives as `List<StmtId>` (the flipped desugar_program upstream
+    // hands ids straight in). The module-resolution machinery (17 helpers,
+    // `resolve_module_files_inner` and friends) is still `List<SStmt>`-shaped,
+    // so we bridge once at the boundary via `sstmts_of`; the
+    // `ModListResult.stmts` exit stays `List<SStmt>` until those helpers migrate.
+    let stmts = store.sstmts_of(ids)
     let empty_stack: List<string> = []
     let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
