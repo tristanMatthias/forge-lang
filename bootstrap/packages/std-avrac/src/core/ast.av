@@ -1266,17 +1266,7 @@ fn collect_id_zero_names_vtypes(ts: List<ValueType>, out: List<string>) -> List<
 /// nested module body. The post-resolve AST should land at ~0
 /// id-zero nominals once T6.B lands the resolver/typeck threading;
 /// anything > 0 surfaces a resolver gap for T6.C to assert against.
-export fn count_id_zero_nominals_stmts(store: NodeStore, stmts: List<SStmt>) -> int {
-    mut total = 0
-    mut i = 0
-    while i < stmts.length {
-        total = total + count_id_zero_nominals_stmt(store, stmts[i].node)
-        i = i + 1
-    }
-    total
-}
-
-fn count_id_zero_nominals_stmt_ids(store: NodeStore, ids: List<StmtId>) -> int {
+export fn count_id_zero_nominals_stmt_ids(store: NodeStore, ids: List<StmtId>) -> int {
     mut total = 0
     for id in ids { total = total + count_id_zero_nominals_stmt(store, store.stmts.get(id)) }
     total
@@ -1321,17 +1311,7 @@ fn count_id_zero_in_params(params: List<ParamEntry>) -> int {
 /// Detail-mode walker: collect the first id=0 nominal names found
 /// across the AST so a probe consumer can rank which names dominate
 /// (type-param placeholders like `T` vs real resolver gaps).
-export fn collect_id_zero_names_stmts(store: NodeStore, stmts: List<SStmt>, out: List<string>) -> List<string> {
-    mut acc = out
-    mut i = 0
-    while i < stmts.length {
-        acc = collect_id_zero_names_stmt(store, stmts[i].node, acc)
-        i = i + 1
-    }
-    acc
-}
-
-fn collect_id_zero_names_stmt_ids(store: NodeStore, ids: List<StmtId>, out: List<string>) -> List<string> {
+export fn collect_id_zero_names_stmt_ids(store: NodeStore, ids: List<StmtId>, out: List<string>) -> List<string> {
     mut acc = out
     for id in ids { acc = collect_id_zero_names_stmt(store, store.stmts.get(id), acc) }
     acc
@@ -1374,25 +1354,15 @@ fn collect_id_zero_names_params(params: List<ParamEntry>, out: List<string>) -> 
     acc
 }
 
-/// T6.C: walk a `List<SStmt>` re-stamping every nominal ValueType slot
+/// T6.C: walk a `List<StmtId>` re-stamping every nominal ValueType slot
 /// whose id was 0 with its registry id. After this pass, vtype_eq's
 /// nominal arms can drop the name-fallback because every name that's
 /// in the registry comes with the matching id. Slots whose name
 /// isn't registered (type-param placeholders, builtins) stay at 0.
-export fn stamp_ids_stmts(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistry) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        out.push(sstmt_at(stamp_ids_stmt(store, ss.node, reg), ss.line, ss.col, ss.file))
-        i = i + 1
-    }
-    out
-}
-
-/// Stamp a flipped `List<StmtId>` body: each rebuilt child is a NEW
-/// arena row (transforms allocate; rows are immutable). Exported for the
-/// arena-id-native `typecheck_program` (F4e).
+/// Each rebuilt child is a NEW arena row (transforms allocate; rows are
+/// immutable) allocated via `restmt` so it inherits the source row's
+/// position/span/provenance. Exported for the arena-id-native
+/// `typecheck_program` (F4e).
 export fn stamp_ids_stmt_ids(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<StmtId> {
     mut out: List<StmtId> = []
     // `restmt` (not a bare `add_leaf`) so each rewritten row inherits the

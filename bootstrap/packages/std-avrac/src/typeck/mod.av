@@ -15,7 +15,7 @@ use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{variant_is_optional_present, variant_is_optional_absent}
-use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts, stamp_ids_stmt_ids}
+use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, collect_id_zero_names_stmt_ids, stamp_ids_stmt_ids}
 use core.{exit}
 use core.{avra_process_env_get}
 use list_ops.{list_push_copy, list_any, list_map}
@@ -1160,7 +1160,7 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // instead of the exact-name fallback. Residual id=0 nominals after
     // the stamp pass are type-param placeholders (T, U, S, …) —
     // legitimately id=0 because they aren't registered types.
-    let stamped_stmts = stamp_ids_stmts(store, store.sstmts_of(ids), type_reg)
+    let stamped_ids = stamp_ids_stmt_ids(store, ids, type_reg)
     // Unconditional invariant assertion: any id=0 nominal whose name
     // IS in the registry is a stamp-pass leak — codegen would fall
     // back to slower name lookup AND id-based equality would
@@ -1170,7 +1170,7 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // a future ValueType variant added without registry plumbing)
     // fails compilation deterministically instead of corrupting
     // codegen silently.
-    let tc0 = report_stamp_leaks(tc0_pre, stamped_stmts, type_reg)
+    let tc0 = report_stamp_leaks(tc0_pre, stamped_ids, type_reg)
     // Pass 1: collect declarations (types, enums, functions). The
     // single walk is order-sensitive — a Function whose return type
     // references an enum declared later in the AST will be registered
@@ -1225,9 +1225,9 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
 /// Type-param placeholders (T, U, S, …) are NOT registered, so they
 /// stay id=0 and don't appear here. This function exclusively
 /// surfaces registered-name leaks.
-export fn unstamped_registered_nominals(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistry) -> List<string> {
+export fn unstamped_registered_nominals(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<string> {
     let empty: List<string> = []
-    let id_zero_names = collect_id_zero_names_stmts(store, stmts, empty)
+    let id_zero_names = collect_id_zero_names_stmt_ids(store, ids, empty)
     mut out: List<string> = []
     mut i = 0
     while i < id_zero_names.length {
@@ -1244,8 +1244,8 @@ export fn unstamped_registered_nominals(store: NodeStore, stmts: List<SStmt>, re
 /// id=0 leak fails compilation deterministically — the alternative
 /// is silent codegen corruption (name-based fallback lookup) and
 /// id-based equality mis-comparison.
-fn report_stamp_leaks(tc: TC, stamped: List<SStmt>, reg: TypeRegistry) -> TC {
-    let leaks = unstamped_registered_nominals(tc.nodes, stamped, reg)
+fn report_stamp_leaks(tc: TC, stamped_ids: List<StmtId>, reg: TypeRegistry) -> TC {
+    let leaks = unstamped_registered_nominals(tc.nodes, stamped_ids, reg)
     if leaks.length == 0 { return tc }
     mut cur = tc
     mut i = 0
