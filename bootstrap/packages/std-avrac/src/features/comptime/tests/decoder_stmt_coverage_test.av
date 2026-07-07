@@ -21,7 +21,7 @@ use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 spec "@comptime decoder: Stmt.ForIn roundtrips through the macro pipeline" {
     then "macro emitting `for x in [a,b,c] { println(x) }` compiles + runs" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_decoder_stmt_coverage_test.av", 
-            "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr, ExprId, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr, ExprId}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "\n" +
             "@comptime\n" +

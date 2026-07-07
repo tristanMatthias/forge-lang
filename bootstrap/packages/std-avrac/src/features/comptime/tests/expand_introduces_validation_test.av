@@ -34,7 +34,7 @@ fn run_capture(source: string) -> string {
 spec "@expand: introduces-vs-decls divergence emits a warning" {
     then "phantom name in introduces surfaces a stderr warning, real decl still works" {
         let out = run_capture(
-            "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
