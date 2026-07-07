@@ -20,9 +20,9 @@ use list_ops.{list_map}
 
 // ── Public entry ──
 
-/// Walk every statement and expression in `stmts`, replacing each
+/// Walk every statement and expression under `ids`, replacing each
 /// `Expr.Quote` node with an AST-construction expression that evaluates
-/// to the captured AST. Returns a new List<SStmt>.
+/// to the captured AST. Returns a new `List<StmtId>`.
 ///
 /// Fast-path: most files contain zero `quote { ... }` expressions, so
 /// a non-allocating presence scan up-front lets the rewrite walker
@@ -31,24 +31,25 @@ use list_ops.{list_map}
 /// O(N) traversal — accepted in exchange for the common-case win
 /// where we never allocate a single new Stmt/Expr node.
 ///
-/// Callers that hold the parse-time NodeStore for `stmts` should prefer
-/// `lower_quotes_via_store` (flat arena scan). This boxed entry remains for
-/// storeless callers (in-process check, the incremental build path) and for
-/// trees merged from more than one parse (sibling-file loading) — its scan
-/// and the arena scan must stay presence-equivalent (spec-guarded).
+/// This RECURSIVE-scan entry walks the actual statement tree, so it stays
+/// correct for trees merged from more than one parse (sibling-file loading),
+/// where the store holds more than just this program. Callers whose store was
+/// ingested from exactly this program should prefer `lower_quotes_via_store`
+/// (flat arena scan) — the two scans must stay presence-equivalent
+/// (spec-guarded).
 export fn lower_quotes(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
     if !any_quote_in_stmt_ids(store, ids) { return ids }
     lower_stmt_ids(store, ids)
 }
 
-/// `lower_quotes` for a caller that already holds the parse-time `NodeStore`
-/// for `stmts` (the arena `parse_or_fail` builds). The presence scan becomes a
-/// FLAT pass over the expr arena — no recursion, no tree walk: every Expr in
-/// the program (including those embedded in match arms and struct-field
+/// `lower_quotes` for a caller whose `store` was ingested from exactly this
+/// program's `ids` (the arena `parse_or_fail` builds). The presence scan
+/// becomes a FLAT pass over the expr arena — no recursion, no tree walk: every
+/// Expr in the program (including those embedded in match arms and struct-field
 /// inits) is a row, so "any quote?" is one linear read of dense rows. Strictly
-/// covers at least the positions the boxed scan reaches; the lowering itself
-/// is unchanged. ONLY valid when `store` was ingested from these exact
-/// `stmts` — a store from a superset/subset tree (e.g. after sibling-file
+/// covers at least the positions the recursive scan reaches; the lowering
+/// itself is unchanged. ONLY valid when `store` was ingested from this exact
+/// program — a store from a superset/subset tree (e.g. after sibling-file
 /// merging) would scan the wrong program; such callers use `lower_quotes`.
 export fn lower_quotes_via_store(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
     if !store_has_quote(store) { return ids }
