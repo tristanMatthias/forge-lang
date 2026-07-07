@@ -65,8 +65,8 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
         let empty_stmts: List<SStmt> = []
         return TypecheckSourceResult { bag: parsed.bag, stmts: empty_stmts, type_reg: type_registry_new(), store: parsed.store }
     }
-    let post_quote = lower_quotes(parsed.stmts!, parsed.store)
-    let desugared = parsed.store.sstmts_of(desugar_program(parsed.store.rows_of(post_quote), parsed.store))
+    let post_quote = lower_quotes(parsed.store.rows_of(parsed.stmts!), parsed.store)
+    let desugared = parsed.store.sstmts_of(desugar_program(post_quote, parsed.store))
     // typecheck_source intentionally skips file-based module loading,
     // so the synthesized Result is needed for in-process tests that
     // don't import stdlib. inject_intrinsics is a no-op when the
