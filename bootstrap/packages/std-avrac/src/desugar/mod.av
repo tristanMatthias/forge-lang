@@ -134,17 +134,17 @@ fn stamp_call_arg_tables(store: NodeStore, callee: Expr, args: List<ExprId>, sig
 /// see it. Putting the synthesized decl at the global scope also
 /// fixes ticket xks4 (resolver mis-qualification of `Result` inside
 /// trait impls).
-export fn inject_intrinsics(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    mut out = stmts
+export fn inject_intrinsics(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    mut out = ids
     // Inject each intrinsic enum the program doesn't already declare.
     // Guarded independently so a program that declares one (e.g. the
     // self-hosting compiler declares Result in error_propagation) still
     // receives the other.
     if !program_declares_enum(store, out, "Option") {
-        out = list_concat([sstmt_dummy(synthesize_option_enum())], out)
+        out = list_concat([store.stmts.add_leaf(synthesize_option_enum())], out)
     }
     if !program_declares_enum(store, out, "Result") {
-        out = list_concat([sstmt_dummy(synthesize_result_enum())], out)
+        out = list_concat([store.stmts.add_leaf(synthesize_result_enum())], out)
     }
     out
 }
@@ -189,11 +189,9 @@ fn synthesize_option_enum() -> Stmt {
 /// True when a top-level `EnumDecl` named `target` exists in the
 /// program (or any nested Module). Used to skip Result injection
 /// when the user has already declared it.
-fn program_declares_enum(store: NodeStore, stmts: List<SStmt>, target: string) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        if stmt_declares_enum(store, stmt_unwrap(store, stmts[i].node), target) { return true }
-        i = i + 1
+fn program_declares_enum(store: NodeStore, ids: List<StmtId>, target: string) -> bool {
+    for id in ids {
+        if stmt_declares_enum(store, stmt_unwrap(store, store.stmts.get(id)), target) { return true }
     }
     false
 }
