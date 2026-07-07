@@ -146,7 +146,12 @@ fn loaded_has(paths: List<string>, path: string) -> bool {
 /// @field had_error     — 1 when resolution failed.
 /// @field error_message — diagnostic when `had_error` is set.
 export type ModListResult = {
-    stmts: List<SStmt>,
+    // B-final: the resolved program vector is arena-id-native — the flipped
+    // inject_intrinsics downstream takes ids straight. The resolver's internal
+    // machinery is still `List<SStmt>`-shaped, so each ModListResult
+    // construction materialises via `rows_of` and each internal read of a
+    // `.stmts` that feeds an SStmt walker bridges back via `sstmts_of`.
+    stmts: List<StmtId>,
     loaded: List<string>,
     had_error: int,
     error_message: string,
@@ -392,17 +397,17 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
 export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
-    // B-final: the pass boundary is arena-id-native — the desugared program
-    // vector arrives as `List<StmtId>` (the flipped desugar_program upstream
-    // hands ids straight in). The module-resolution machinery (17 helpers,
-    // `resolve_module_files_inner` and friends) is still `List<SStmt>`-shaped,
-    // so we bridge once at the boundary via `sstmts_of`; the
-    // `ModListResult.stmts` exit stays `List<SStmt>` until those helpers migrate.
+    // B-final: BOTH boundaries are arena-id-native — the desugared vector
+    // arrives as ids and the `ModListResult.stmts` exit leaves as ids (the
+    // flipped inject_intrinsics downstream takes them straight). The internal
+    // machinery (17 helpers) is still `List<SStmt>`-shaped, so it bridges at
+    // every boundary: `sstmts_of` on entry / on each `.stmts` read feeding an
+    // SStmt walker, `rows_of` on each ModListResult construction.
     let stmts = store.sstmts_of(ids)
     let empty_stack: List<string> = []
     let inner = resolve_module_files_inner(stmts, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
-    let split = hoist_package_modules(store, inner.stmts)
+    let split = hoist_package_modules(store, store.sstmts_of(inner.stmts))
     // Dedup hoisted package wrappers by qualified name. Without this,
     // a program that imports two sibling sub-packages of the same
     // scope (e.g. cli/main imports @std.json directly while @std.avrac
@@ -413,7 +418,7 @@ export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<stri
     // forge-crafting-intepreters-dnq4.
     let deduped = dedup_modules(store, split.packages)
     ModListResult {
-        stmts: list_concat(deduped, split.body),
+        stmts: store.rows_of(list_concat(deduped, split.body)),
         loaded: inner.loaded,
         had_error: false,
         error_message: "",
@@ -455,7 +460,7 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>, store: Node
         let parsed = parse_program_source_shared(source, path, store)
         if parsed.had_error || parsed.stmts == null {
             return ModListResult {
-                stmts: acc,
+                stmts: store.rows_of(acc),
                 loaded: acc_loaded,
                 had_error: true,
                 error_message: "error in `${path}`: ${parsed.error_message}",
@@ -465,7 +470,7 @@ export fn resolve_dir_module_body(dir: string, loaded: List<string>, store: Node
         acc = list_concat(acc, parsed.stmts!)
     }
     acc = list_concat(acc, synthesize_subdir_module_decls(store, dir))
-    ModListResult { stmts: acc, loaded: acc_loaded, had_error: false, error_message: "" }
+    ModListResult { stmts: store.rows_of(acc), loaded: acc_loaded, had_error: false, error_message: "" }
 }
 
 /// Synthesize bare `Stmt.Module(<name>, [])` decls for every
@@ -844,13 +849,14 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
                 merged.push(out[a])
                 a = a + 1
             }
+            let pkg_res_ss = store.sstmts_of(pkg_res.stmts)
             mut b = 0
-            while b < pkg_res.stmts.length {
-                merged.push(pkg_res.stmts[b])
+            while b < pkg_res_ss.length {
+                merged.push(pkg_res_ss[b])
                 b = b + 1
             }
             return ModListResult {
-                stmts: merged,
+                stmts: store.rows_of(merged),
                 loaded: pkg_res.loaded,
                 had_error: false,
                 error_message: "",
@@ -858,13 +864,13 @@ fn resolve_module_files_inner(stmts: List<SStmt>, dir: string, loaded: List<stri
         }
         let head = resolve_module_stmt(ss.node, dir, cur_loaded, stack, store)
         if head.had_error {
-            let empty: List<SStmt> = []
+            let empty: List<StmtId> = []
             return ModListResult { stmts: empty, loaded: head.loaded, had_error: true, error_message: head.error_message }
         }
         cur_loaded = head.loaded
         out.push(sstmt_at(head.stmt, ss.line, ss.col, ss.file))
     }
-    ModListResult { stmts: out, loaded: cur_loaded, had_error: false, error_message: "" }
+    ModListResult { stmts: store.rows_of(out), loaded: cur_loaded, had_error: false, error_message: "" }
 }
 
 /// Pull the use-path string out of a `Use` statement, peeling
@@ -888,12 +894,12 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     let pkg_mod = package_module_name(use_path)
     let packages_dir = find_packages_dir(dir)
     if packages_dir == "" {
-        let empty: List<SStmt> = []
+        let empty: List<StmtId> = []
         return ModListResult { stmts: empty, loaded, had_error: true, error_message: "cannot resolve package `${pkg_mod}`: no packages/ directory found in path" }
     }
     let pkg_file = resolve_package_path(pkg_mod, packages_dir)
     if pkg_file == "" {
-        let empty: List<SStmt> = []
+        let empty: List<StmtId> = []
         return ModListResult { stmts: empty, loaded, had_error: true, error_message: "package `${pkg_mod}` not found" }
     }
     if loaded_has(loaded, pkg_file) {
@@ -901,13 +907,14 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
         let rest = resolve_module_files_inner(next, dir, loaded, stack, store)
         if rest.had_error { return rest }
         mut combined: List<SStmt> = [ss]
+        let rest_ss = store.sstmts_of(rest.stmts)
         mut bi = 0
-        while bi < rest.stmts.length {
-            combined.push(rest.stmts[bi])
+        while bi < rest_ss.length {
+            combined.push(rest_ss[bi])
             bi = bi + 1
         }
         return ModListResult {
-            stmts: combined,
+            stmts: store.rows_of(combined),
             loaded: rest.loaded,
             had_error: false,
             error_message: "",
@@ -949,7 +956,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
         // discovery (g2eo) attribute decls correctly.
         let parsed = parse_program_source_shared(pkg_source, pkg_file, store)
         if parsed.had_error || parsed.stmts == null {
-            let empty: List<SStmt> = []
+            let empty: List<StmtId> = []
             return ModListResult { stmts: empty, loaded: new_loaded, had_error: true, error_message: "error in package `${pkg_mod}`: ${parsed.error_message}" }
         }
         parsed.stmts!
@@ -966,7 +973,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     let pkg_dir_load = if !take_meta_fast_path && !pkg_decls_present {
         resolve_dir_module_body(pkg_dir, new_loaded, store)
     } else {
-        let empty: List<SStmt> = []
+        let empty: List<StmtId> = []
         ModListResult { stmts: empty, loaded: new_loaded, had_error: false, error_message: "" }
     }
     if pkg_dir_load.had_error {
@@ -981,7 +988,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // submodule that contributed to the cached unit.
     let empty_subdir: List<SStmt> = []
     let pkg_subdir_decls = if take_meta_fast_path { empty_subdir } else { synthesize_subdir_module_decls_filtered(store, pkg_dir, pkg_stmts) }
-    let pkg_combined_stmts = list_concat(list_concat(pkg_stmts, pkg_dir_load.stmts), pkg_subdir_decls)
+    let pkg_combined_stmts = list_concat(list_concat(pkg_stmts, store.sstmts_of(pkg_dir_load.stmts)), pkg_subdir_decls)
     let resolved = resolve_module_files_inner(pkg_combined_stmts, pkg_dir, pkg_dir_load.loaded, stack, store)
     if resolved.had_error { return resolved }
     // Create a nested module structure: @std → cli → {body}
@@ -998,7 +1005,7 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     // entirely, this upfront pass can be removed in favour of the
     // graph's lazy resolution.
     let pkg_qual = "@${scope_name}.${pkg_name}"
-    let qualified_body = qualify_uses_recursively(store, resolved.stmts, pkg_qual)
+    let qualified_body = qualify_uses_recursively(store, store.sstmts_of(resolved.stmts), pkg_qual)
     let inner_mod = Stmt.Module(pkg_name, store.rows_of(qualified_body))
     let outer_body: List<SStmt> = [sstmt_at(inner_mod, ss.line, ss.col, ss.file)]
     let outer_mod = Stmt.Module("@${scope_name}", store.rows_of(outer_body))
@@ -1007,13 +1014,14 @@ fn resolve_package_use_and_continue(ss: SStmt, next: List<SStmt>, dir: string, l
     if rest.had_error { return rest }
     // Emit: [module_decl, use_stmt, ...rest]
     mut emitted: List<SStmt> = [sstmt_at(outer_mod, ss.line, ss.col, ss.file), ss]
+    let rest_ss = store.sstmts_of(rest.stmts)
     mut ri = 0
-    while ri < rest.stmts.length {
-        emitted.push(rest.stmts[ri])
+    while ri < rest_ss.length {
+        emitted.push(rest_ss[ri])
         ri = ri + 1
     }
     ModListResult {
-        stmts: emitted,
+        stmts: store.rows_of(emitted),
         loaded: rest.loaded,
         had_error: false,
         error_message: "",
@@ -1073,7 +1081,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
             let pkg_qual_dot = name.replace("::", ".")
-            let qualified_body = qualify_uses_recursively(store, resolved.stmts, pkg_qual_dot)
+            let qualified_body = qualify_uses_recursively(store, store.sstmts_of(resolved.stmts), pkg_qual_dot)
             ModStmtResult { stmt: Stmt.Module(name, store.rows_of(qualified_body)), loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Module(name, _) -> {
@@ -1095,11 +1103,11 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
                     return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
                 }
                 let new_stack = list_push_copy(stack, dir_only)
-                let resolved = resolve_module_files_inner(dir_load.stmts, dir_only, dir_load.loaded, new_stack, store)
+                let resolved = resolve_module_files_inner(store.sstmts_of(dir_load.stmts), dir_only, dir_load.loaded, new_stack, store)
                 if resolved.had_error {
                     return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
                 }
-                return ModStmtResult { stmt: Stmt.Module(name, store.rows_of(resolved.stmts)), loaded: resolved.loaded, had_error: false, error_message: "" }
+                return ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
             }
             if mod_path == "" {
                 return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
@@ -1184,13 +1192,13 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             let dir_load = if dir_mode && is_subdir_form && !take_meta && !mod_decls_present {
                 resolve_dir_module_body(mod_dir, new_loaded, store)
             } else {
-                let empty: List<SStmt> = []
+                let empty: List<StmtId> = []
                 ModListResult { stmts: empty, loaded: new_loaded, had_error: false, error_message: "" }
             }
             if dir_load.had_error {
                 return ModStmtResult { stmt, loaded: dir_load.loaded, had_error: true, error_message: dir_load.error_message }
             }
-            let combined_stmts = list_concat(mod_stmts, dir_load.stmts)
+            let combined_stmts = list_concat(mod_stmts, store.sstmts_of(dir_load.stmts))
             let post_dir_loaded = dir_load.loaded
             let resolved = resolve_module_files_inner(combined_stmts, mod_dir, post_dir_loaded, new_stack, store)
             if resolved.had_error {
@@ -1200,7 +1208,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             // came from metadata, so codegen knows to declare-only
             // (no __init_<name> body, no per-fn body — those live in
             // the producer's compiled .o which the linker resolves).
-            let module_stmt = Stmt.Module(name, store.rows_of(resolved.stmts))
+            let module_stmt = Stmt.Module(name, resolved.stmts)
             let final_stmt = if take_meta {
                 let ext_annots: List<Annotation> = [Annotation { name: "external_unit", arg_ids: [] }]
                 Stmt.Annotated(ext_annots, store.stmts.add_leaf(module_stmt))

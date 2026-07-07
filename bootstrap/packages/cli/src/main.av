@@ -3842,7 +3842,7 @@ fn main() {
             // Inject intrinsics AFTER module resolution so stdlib's
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
-            let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store)
@@ -3875,7 +3875,7 @@ fn main() {
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(parsed_prog.store.rows_of(parsed_stmts), entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
+            let named = resolve_names(parsed_prog.store.sstmts_of(mod_resolved.stmts), parsed_prog.store)
             render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
             println("no auto-fixes available")
             return
@@ -3906,7 +3906,7 @@ fn main() {
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store)
@@ -3925,7 +3925,7 @@ fn main() {
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
+            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store)
@@ -4121,7 +4121,7 @@ fn main() {
                 if dir_load.had_error {
                     parsed_stmts
                 } else {
-                    concat_stmt_lists(parsed_stmts, dir_load.stmts)
+                    concat_stmt_lists(parsed_stmts, parsed_prog.store.sstmts_of(dir_load.stmts))
                 }
             } else {
                 parsed_stmts
@@ -4157,7 +4157,7 @@ fn main() {
         // program_declares_enum scan sees stdlib's Result (now inline)
         // and skips synthesizing a duplicate. Cleanup of the earlier
         // dkfa `is_intrinsic_name` hack.
-        let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
+        let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
         // g2eo Phase A: per-module compile filter. Marks every Module
         // wrapper outside `target_module` as @external_unit so codegen
         // emits forward-refs, not bodies. Runs after resolve so the
