@@ -23,6 +23,13 @@ export fn rewrite_program(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SSt
     rewrite_stmt_list(stmts, reg)
 }
 
+/// The arena-id-native twin of `rewrite_program` (F4e): folds each root
+/// `StmtId` row and returns fresh `List<StmtId>` rows — the input arena
+/// rows are never mutated. Used by the id-native `run_comptime`.
+export fn rewrite_program_ids(ids: List<StmtId>, reg: CompTimeRegistry) -> List<StmtId> {
+    rewrite_stmt_ids(ids, reg)
+}
+
 // ── Statement walker ──
 
 fn rewrite_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {

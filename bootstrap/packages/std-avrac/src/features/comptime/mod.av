@@ -21,7 +21,7 @@
 use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
 use core.{NodeStore, StmtId}
 use features.eval.{Runtime, runtime_new, execute_stmt}
-use features.comptime.{rewrite_program}
+use features.comptime.{rewrite_program_ids}
 use parse.{parse_body_source}
 
 // String → int hashmap, same C-runtime primitive resolve/names + module_graph
@@ -44,10 +44,10 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 ///
 /// Fast path: when the program has no @comptime fns we short-circuit
 /// without walking the AST at all.
-export fn run_comptime(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    let reg = collect_comptime_fns(stmts, store)
-    if reg.fns.length == 0 { return stmts }
-    rewrite_program(stmts, reg)
+export fn run_comptime(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    let reg = collect_comptime_fns_ids(ids, store)
+    if reg.fns.length == 0 { return ids }
+    rewrite_program_ids(ids, reg)
 }
 
 /// Construct a fresh empty registry — no comptime fns, blank runtime,
@@ -122,6 +122,22 @@ export type CompTimeRegistry = {
 export fn collect_comptime_fns(stmts: List<SStmt>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns(store, stmts, [])
     prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
+}
+
+/// Arena-id-native twin of `collect_comptime_fns` (F4e): scans the root
+/// `List<StmtId>` for @comptime fns, recursing into module bodies via the
+/// shared `gather_from_stmt`. Used by the id-native `run_comptime`.
+fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
+    let fns = gather_fns_ids(store, ids, [])
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
+}
+
+/// Id-native twin of `gather_fns`: walks the root rows, sharing the
+/// per-statement `gather_from_stmt` (which already reads store rows).
+fn gather_fns_ids(store: NodeStore, ids: List<StmtId>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
+    mut fns = acc
+    for id in ids { fns = gather_from_stmt(store, store.stmts.get(id), fns) }
+    fns
 }
 
 /// Internal: walk `stmts`, append matching @comptime fns to the

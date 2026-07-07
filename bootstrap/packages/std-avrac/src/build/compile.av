@@ -86,7 +86,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
         render_bag("", target.diag_filename, named.bag)
         return Result.Err(named.error_message)
     }
-    let post_comptime = run_comptime(named.stmts, target.store)
+    let post_comptime = target.store.sstmts_of(run_comptime(target.store.rows_of(named.stmts), target.store))
     let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, target.store)
     let _ = guard_bag(tc_result.bag, target.diag_filename, "type check failed")?
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, target.store)
