@@ -11,40 +11,23 @@
 // sites in packages/cli/src/main.av between resolve_names and
 // typecheck_program.
 
-use core.{Stmt, SStmt, sstmt_at, Expr, SExpr, sexpr, FieldInit, MatchArm, WhenArm, SelectArm, StmtId, ExprId}
+use core.{Stmt, Expr, FieldInit, MatchArm, WhenArm, SelectArm, StmtId, ExprId}
 use features.comptime.{CompTimeRegistry, try_fold_call}
 
 // ── Public entry ──
 
-/// Walk every statement and expression in `stmts`, replacing each
-/// foldable @comptime call with its evaluated literal. Returns a
-/// new List<SStmt> — the input AST is never mutated.
-export fn rewrite_program(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
-    rewrite_stmt_list(stmts, reg)
-}
-
-/// The arena-id-native twin of `rewrite_program` (F4e): folds each root
-/// `StmtId` row and returns fresh `List<StmtId>` rows — the input arena
-/// rows are never mutated. Used by the id-native `run_comptime`.
+/// Walk every statement and expression in `ids`, replacing each foldable
+/// @comptime call with its evaluated literal. Folds each root `StmtId`
+/// row and returns fresh `List<StmtId>` rows — the input arena rows are
+/// never mutated. Used by the id-native `run_comptime`.
 export fn rewrite_program_ids(ids: List<StmtId>, reg: CompTimeRegistry) -> List<StmtId> {
     rewrite_stmt_ids(ids, reg)
 }
 
 // ── Statement walker ──
 
-fn rewrite_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        out.push(sstmt_at(rewrite_stmt(ss.node, reg), ss.line, ss.col, ss.file))
-        i = i + 1
-    }
-    out
-}
-
-/// The flipped-body twin of `rewrite_stmt_list`: rewrites each row
-/// and allocates the result against the original's span + position.
+/// Rewrites each row and allocates the result against the original's
+/// span + position.
 fn rewrite_stmt_ids(ids: List<StmtId>, reg: CompTimeRegistry) -> List<StmtId> {
     mut out: List<StmtId> = []
     for id in ids { out.push(rewrite_stmt_id(id, reg)) }
@@ -182,17 +165,6 @@ fn walk_expr(expr: Expr, reg: CompTimeRegistry) -> Expr {
 fn rewrite_expr_list_ids(ids: List<ExprId>, reg: CompTimeRegistry) -> List<ExprId> {
     mut out: List<ExprId> = []
     for id in ids { out.push(rewrite_expr_id(id, reg)) }
-    out
-}
-
-fn rewrite_expr_list(list: List<SExpr>, reg: CompTimeRegistry) -> List<SExpr> {
-    mut out: List<SExpr> = []
-    mut i = 0
-    while i < list.length {
-        let se = list[i]
-        out.push(sexpr(rewrite_expr(se.node, reg), se.line, se.col))
-        i = i + 1
-    }
     out
 }
 
