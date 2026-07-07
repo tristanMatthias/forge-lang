@@ -296,7 +296,7 @@ fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFil
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
-    let split = split_package_modules(store, mod_resolved.stmts)
+    let split = split_package_modules(store, store.sstmts_of(mod_resolved.stmts))
     Result.Ok(AssembledFile {
         mod_name: basename_no_ext(path),
         packages: split.packages,
