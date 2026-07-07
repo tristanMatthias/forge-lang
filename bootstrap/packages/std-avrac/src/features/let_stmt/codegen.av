@@ -40,7 +40,7 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
         if vtype_is_list(decl) && vtype_is_optional(vtype_list_elem(decl)) {
             match initializer {
                 .ListLit(elements) -> {
-                    let boxed = emit_list_lit_expected(ctx, env, ctx.nodes.sexprs_of(elements), vtype_list_elem(decl))?
+                    let boxed = emit_list_lit_expected(ctx, env, elements, vtype_list_elem(decl))?
                     return ok_stmt(ctx.bind(env, name, boxed.value, decl))
                 }
                 _ -> {}

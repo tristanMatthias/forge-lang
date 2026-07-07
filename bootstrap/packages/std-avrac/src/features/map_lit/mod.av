@@ -54,7 +54,7 @@ fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// forwards to `emit_map_lit`.
 fn map_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .MapLit(entries) -> emit_map_lit(ctx, env, ctx.nodes.sexprs_of(entries))
+        .MapLit(entries) -> emit_map_lit(ctx, env, entries)
         _ -> err_emit("expected MapLit")
     }
 }

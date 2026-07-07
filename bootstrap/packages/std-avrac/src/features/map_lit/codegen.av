@@ -1,14 +1,14 @@
 // WHY: codegen for map literals {"key": value, ...} and map operations.
 // Maps are backed by the C-runtime avra_map_*_cstr functions.
 
-use core.{Expr, SExpr, VarBinding, ValueType}
+use core.{Expr, SExpr, ExprId, VarBinding, ValueType}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_single_arg}
 
 /// Codegen for `{k: v, k: v, ...}`. Allocates a fresh
 /// `avra_map_new_cstr` and inserts every entry via
 /// `insert_map_entries`. Result type is `Map`.
-export fn emit_map_lit(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_map_lit(ctx: Ctx, env: List<VarBinding>, entries: List<ExprId>) -> Result<EmitValue, string> {
     let map = ctx.call("avra_map_new_cstr", [])
     insert_map_entries(ctx, env, entries, map)
 }
@@ -17,13 +17,13 @@ export fn emit_map_lit(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>) ->
 /// pair and pushing it into `map` via `avra_map_set_cstr`. Errors
 /// on dangling keys (odd number of entries — means the parser
 /// produced malformed input).
-fn insert_map_entries(ctx: Ctx, env: List<VarBinding>, entries: List<SExpr>, map: ptr) -> Result<EmitValue, string> {
+fn insert_map_entries(ctx: Ctx, env: List<VarBinding>, entries: List<ExprId>, map: ptr) -> Result<EmitValue, string> {
     mut i = 0
     mut val_ty: ValueType = .Unknown
     while i < entries.length {
-        let key_r = ctx.emit(env, entries[i].node)?
+        let key_r = ctx.emit(env, ctx.nodes.exprs.get(entries[i]))?
         if i + 1 >= entries.length { return err_emit("map literal has key without value") }
-        let val_r = ctx.emit(env, entries[i + 1].node)?
+        let val_r = ctx.emit(env, ctx.nodes.exprs.get(entries[i + 1]))?
         // Pin the literal's value type from the FIRST entry, matching the
         // type checker (map_lit_check_expr) so the emitted Map<string, V>
         // type agrees across phases.

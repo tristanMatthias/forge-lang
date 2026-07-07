@@ -1,7 +1,7 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime avra_array_* functions.
 
-use core.{Expr, SExpr, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
+use core.{Expr, SExpr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce, box_into_list}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
@@ -18,12 +18,12 @@ fn lit_is_none(e: Expr) -> bool { e is .None }
 /// pointer-niche reprs) so a later unwrap sees a real optional, not a raw
 /// scalar reinterpreted as a box pointer. `emit_optional_coerce` is a no-op
 /// for `none` (stays null) and for already-optional values (no double-box).
-export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>) -> Result<EmitValue, string> {
     if elements.length == 0 { return ok_emit(ctx.array_new(), .List(.Unknown)) }
     mut has_none = false
     mut n = 0
     while n < elements.length {
-        if lit_is_none(elements[n].node) { has_none = true }
+        if lit_is_none(ctx.nodes.exprs.get(elements[n])) { has_none = true }
         n = n + 1
     }
     // A literal mixing `none` with present values is a `List<T?>`: emit all
@@ -32,12 +32,12 @@ export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) 
         return emit_list_lit_expected(ctx, env, elements, .Optional(.Unknown))
     }
     let arr = ctx.array_new()
-    let first_r = ctx.emit(env, elements[0].node)?
+    let first_r = ctx.emit(env, ctx.nodes.exprs.get(elements[0]))?
     ctx.array_push(arr, first_r.value)
     let elem_ty = first_r.ty
     mut i = 1
     while i < elements.length {
-        let r = ctx.emit(env, elements[i].node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?
         ctx.array_push(arr, r.value)
         i = i + 1
     }
@@ -49,11 +49,11 @@ export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) 
 /// a `none`-bearing literal via `.Optional(.Unknown)`). Emits each element,
 /// then boxes via the shared `box_into_list` — the one list-of-optional box
 /// loop. `expected_elem` is the optional element type (`.Optional(inner)`).
-export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, expected_elem: ValueType) -> Result<EmitValue, string> {
+export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>, expected_elem: ValueType) -> Result<EmitValue, string> {
     mut vals: List<EmitValue> = []
     mut i = 0
     while i < elements.length {
-        vals.push(ctx.emit(env, elements[i].node)?)
+        vals.push(ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?)
         i = i + 1
     }
     box_into_list(ctx, vals, expected_elem)

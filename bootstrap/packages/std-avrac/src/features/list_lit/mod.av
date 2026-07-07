@@ -39,7 +39,7 @@ fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// forwards to `emit_list_lit`.
 fn list_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .ListLit(elements) -> emit_list_lit(ctx, env, ctx.nodes.sexprs_of(elements))
+        .ListLit(elements) -> emit_list_lit(ctx, env, elements)
         _ -> err_emit("expected ListLit")
     }
 }
