@@ -31,31 +31,33 @@ use core.{NodeStore}
 /// Fast-path: when no `@marshal` annotation is present, returns
 /// the input unchanged (matches the expand_macros zero-cost
 /// pattern).
-export fn derive_marshal(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    if !any_marshal_annotation(store, stmts) { return stmts }
-    walk(store, stmts)
+export fn derive_marshal(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    if !any_marshal_annotation(store, ids) { return ids }
+    walk(store, ids)
 }
 
-fn walk(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn walk(store: NodeStore, ids: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
+    while i < ids.length {
+        let id = ids[i]
         // Module bodies host TypeDecls too — recurse so a
         // `@marshal type T` declared inside a submodule still
         // gets its impl synthesised. Match on the PEELED node so
         // annotated module wrappers (e.g. the test assembler's
         // @deferred_init) stay transparent, and rebuild inside
         // the original annotation layers so the wrapper survives.
-        match stmt_unwrap(store, ss.node) {
+        // Module bodies are already `List<StmtId>`, so the recursion
+        // stays arena-native — no sstmts_of/rows_of round-trip.
+        match stmt_unwrap(store, store.stmts.get(id)) {
             .Module(name, body) -> {
-                let walked = walk(store, store.sstmts_of(body))
-                let new_mod = rewrap_annotations(store, ss.node, Stmt.Module(name, store.rows_of(walked)))
-                out.push(sstmt_dummy(new_mod))
+                let walked = walk(store, body)
+                let new_mod = rewrap_annotations(store, store.stmts.get(id), Stmt.Module(name, walked))
+                out.push(store.stmts.add_leaf(new_mod))
             }
             _ -> {
-                out.push(ss)
-                let derived = derive_for(store, ss.node)
+                out.push(id)
+                let derived = store.rows_of(derive_for(store, store.stmts.get(id)))
                 mut di = 0
                 while di < derived.length {
                     out.push(derived[di])
@@ -70,14 +72,14 @@ fn walk(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
 
 // ── Annotation detection ──
 
-fn any_marshal_annotation(store: NodeStore, stmts: List<SStmt>) -> bool {
+fn any_marshal_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
     mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        if has_marshal(store, ss.node) { return true }
-        match stmt_unwrap(store, ss.node) {
+    while i < ids.length {
+        let id = ids[i]
+        if has_marshal(store, store.stmts.get(id)) { return true }
+        match stmt_unwrap(store, store.stmts.get(id)) {
             .Module(_, body) -> {
-                if any_marshal_annotation(store, store.sstmts_of(body)) { return true }
+                if any_marshal_annotation(store, body) { return true }
             }
             _ -> {}
         }

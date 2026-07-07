@@ -323,7 +323,7 @@ fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: Node
 /// Returns the NameResolveResult so the caller can continue
 /// with run_comptime → typecheck.
 fn marshal_and_resolve_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
-    let with_marshal = derive_marshal(stmts, store)
+    let with_marshal = store.sstmts_of(derive_marshal(store.rows_of(stmts), store))
     let named = resolve_and_expand_program(with_marshal, store)
     render_bag_if_nonempty(ctx, named.bag)
     if named.had_error { fail(named.error_message) }
