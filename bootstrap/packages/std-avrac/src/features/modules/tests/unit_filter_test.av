@@ -90,7 +90,7 @@ fn uft_filter_siblings() -> UftFiltered {
         uft_module_with_files(ws, "features", ["packages/std-avrac/src/features/closures/mod.av"]),
         uft_module_with_files(ws, "build", ["packages/std-avrac/src/build/cache.av"]),
     ])
-    UftFiltered { stmts: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
+    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
 }
 
 spec "filter_to_target_unit: target module stays plain, others marked external" {
@@ -117,7 +117,7 @@ fn uft_filter_mixed() -> UftFiltered {
             "packages/std-avrac/src/core/ast.av",
         ]),
     ])
-    UftFiltered { stmts: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
+    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
 }
 
 spec "filter_to_target_unit: any-file-in-target keeps the whole module" {
@@ -134,7 +134,7 @@ fn uft_filter_nested() -> UftFiltered {
     let features_inner = uft_module_with_files(ws, "features", ["packages/std-avrac/src/features/closures/mod.av"])
     let avrac_body = uft_list_of([core_inner, features_inner])
     let prog = uft_list_of([sstmt_dummy(Stmt.Module("avrac", ws.rows_of(avrac_body)))])
-    UftFiltered { stmts: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
+    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
 }
 
 fn uft_outer_avrac_inner_at(f: UftFiltered, idx: int) -> SStmt {
@@ -169,7 +169,7 @@ fn uft_filter_empty() -> UftFiltered {
     let ws = uft_store()
     let empty_body: List<StmtId> = []
     let prog = uft_list_of([sstmt_dummy(Stmt.Module("placeholder", empty_body))])
-    UftFiltered { stmts: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
+    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
 }
 
 spec "filter_to_target_unit: empty body modules are not touched" {

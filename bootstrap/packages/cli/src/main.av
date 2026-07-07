@@ -4162,11 +4162,8 @@ fn main() {
         // wrapper outside `target_module` as @external_unit so codegen
         // emits forward-refs, not bodies. Runs after resolve so the
         // filter has the full module tree to inspect.
-        // filter_to_target_unit is still List<SStmt>-shaped, so bracket it
-        // with sstmts_of/rows_of — a transitional seam adapter absorbed when
-        // that modules helper flips to arena ids.
         let post_filter_stmts = if target_module != "" {
-            parsed_prog.store.rows_of(filter_to_target_unit(parsed_prog.store, parsed_prog.store.sstmts_of(with_intrinsics), target_module))
+            filter_to_target_unit(parsed_prog.store, with_intrinsics, target_module)
         } else {
             with_intrinsics
         }

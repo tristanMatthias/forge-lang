@@ -100,12 +100,19 @@ fn annotate_external(store: NodeStore, ss: SStmt) -> SStmt {
 /// got loaded — shouldn't happen post-resolve, but guard anyway)
 /// are not modified: making them external would be a no-op since
 /// codegen already emits nothing for empty bodies.
-export fn filter_to_target_unit(store: NodeStore, stmts: List<SStmt>, target_prefix: string) -> List<SStmt> {
+/// B-final: the pass boundary is arena-id-native — the program vector
+/// arrives and leaves as `List<StmtId>` (the flipped inject_intrinsics /
+/// expand_components pipeline hands ids straight through). The core walker
+/// `filter_inner_wrapped` is still `List<SStmt>`-shaped, so we bridge once
+/// at the boundary via `sstmts_of` (in) / `rows_of` (out) — the exact
+/// `rows_of ∘ filter ∘ sstmts_of` the caller used to spell inline.
+export fn filter_to_target_unit(store: NodeStore, ids: List<StmtId>, target_prefix: string) -> List<StmtId> {
+    let stmts = store.sstmts_of(ids)
     let debug = avra_process_env_get("AVRA_FILTER_DEBUG") != ""
     if debug {
         let _ = dump_top_level(store, stmts, "  ")
     }
-    filter_inner_wrapped(store, stmts, target_prefix, debug)
+    store.rows_of(filter_inner_wrapped(store, stmts, target_prefix, debug))
 }
 
 fn dump_top_level(store: NodeStore, stmts: List<SStmt>, indent: string) -> int {
