@@ -30,7 +30,7 @@ fn run_capture(source: string) -> string {
 spec "so07.3 / T3: typeck blames the macro on synthetic-fn errors" {
     then "diagnostic surfaces `@expand(bad_macro)` when the macro emits a bad fn" {
         let out = run_capture(
-            "use @std.avrac.core.{Stmt, ValueType, ParamEntry, TypeParamEntry, SStmt, sstmt_dummy}\n" +
+            "use @std.avrac.core.{Stmt, ValueType, ParamEntry, TypeParamEntry}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
@@ -39,9 +39,9 @@ spec "so07.3 / T3: typeck blames the macro on synthetic-fn errors" {
             "fn bad_macro(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
             "    let empty_tp: List<TypeParamEntry> = []\n" +
             "    let empty_params: List<ParamEntry> = []\n" +
-            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Number(\"42\"))))]\n" +
+            "    let body: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Number(\"42\")))]\n" +
             "    let bad_fn = Stmt.Function(\"introduced_bad\", empty_tp, empty_params, ValueType.Str, synth_stmt_ids(body))\n" +
-            "    let decls: List<SStmt> = [sstmt_dummy(target.stmt), sstmt_dummy(bad_fn)]\n" +
+            "    let decls: List<Stmt> = [target.stmt, bad_fn]\n" +
             "    let no_introduces: List<DeclSymbol> = []\n" +
             "    ResolvedDecls {\n" +
             "        decls,\n" +

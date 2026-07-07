@@ -22,7 +22,7 @@
 //   MacroProvenance fields — macro_name, target_canonical,
 //     target_source_span.
 
-use core.{Stmt, SStmt, SExpr}
+use core.{Stmt, SExpr}
 use diagnostics.{Span}
 
 /// Macro-facing view of the `@expand(...)` annotation. Its `args` are a
@@ -42,7 +42,7 @@ export type AnnotatedDecl = {
 }
 
 export type ResolvedDecls = {
-    decls: List<SStmt>,
+    decls: List<Stmt>,
     introduces: List<DeclSymbol>,
     provenance: MacroProvenance,
 }

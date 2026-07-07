@@ -26,7 +26,7 @@
 // code — an internal invariant violation, reported and aborted with
 // the same exit(99) convention as avra_match_unreachable.
 
-use core.{ExprId, StmtId, Stmt, SStmt, Expr, exit}
+use core.{ExprId, StmtId, Stmt, Expr, exit}
 
 /// Compiled-path guard shared by every shim body.
 fn synth_shim_unreachable(name: string) {
@@ -46,8 +46,11 @@ export fn synth_stmt_id(s: Stmt) -> StmtId {
     StmtId(0)
 }
 
-/// Id view of a statement list — comptime-only identity shim.
-export fn synth_stmt_ids(body: List<SStmt>) -> List<StmtId> {
+/// Id view of a statement list — comptime-only identity shim. Takes
+/// bare `Stmt` nodes (matching `synth_stmt_id`/`synth_expr_id`); the
+/// eval intercept is an identity, and the Value→AST decoder allocates
+/// the real `StmtId` rows when the macro's return value is spliced.
+export fn synth_stmt_ids(body: List<Stmt>) -> List<StmtId> {
     synth_shim_unreachable("synth_stmt_ids")
     []
 }
