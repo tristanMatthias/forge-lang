@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
@@ -3522,7 +3522,7 @@ fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
 
 /// Inspect the first element of a list literal and return its
 /// inferred type; falls back to `Unknown` for an empty list.
-/// Used by `annotate_sexpr`'s ListLit fast-path so `[1, 2, 3]`
+/// Used by `annotate_expr_stamped`'s ListLit fast-path so `[1, 2, 3]`
 /// types as `List<int>` instead of `List<unknown>`. A literal mixing in a
 /// `none` is `List<T?>` — re-wrap so the fast-path agrees with `emit_list_lit`.
 fn tc_first_elem_ty(tc: TC, elements: List<ExprId>) -> ValueType {
@@ -4148,11 +4148,9 @@ fn annotate_expr_id(tc: TC, id: ExprId) -> ExprId {
 fn annotate_select_arms(tc: TC, arms: List<SelectArm>) -> List<SelectArm> {
     mut out: List<SelectArm> = []
     for arm in arms {
-        // F4d: annotate the arena chan/body ids and stamp the chan's resolved
+        // Annotate the arena chan/body ids and stamp the chan's resolved
         // type into `arg_tys` (mirrors annotate_match_arms).
-        let chan_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.chan_id))
-        let new_chan_id = tc.nodes.reexpr(chan_ann.node, arm.chan_id)
-        tc.nodes.set_arg_ty(new_chan_id, chan_ann.ty)
+        let new_chan_id = annotate_expr_stamped(tc, arm.chan_id)
         let elem = match check_expr(tc, tc.nodes.exprs.get(arm.chan_id)).ty {
             .Channel(e) -> e
             _ -> ValueType.Unknown
@@ -4267,11 +4265,15 @@ fn method_to_free_fn_call(tc: TC, callee: ExprId, args: List<ExprId>) -> Expr? {
     }
 }
 
-/// Run `check_expr` on `se.node`, write the inferred type back to
-/// `se.ty`, and recurse into the inner Expr.
-fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
+/// Annotate one expr row: recurse into the inner Expr tree, compute the
+/// row's inferred type, allocate the rewritten row (inheriting `id`'s span),
+/// and record the type in the arena's `arg_tys` side-table — the id-native
+/// successor of the boxed `SExpr.ty` slot the monomorphizer reads via
+/// `arg_ty_of`. Returns the new row id.
+fn annotate_expr_stamped(tc: TC, id: ExprId) -> ExprId {
+    let node = tc.nodes.exprs.get(id)
     // Annotate the inner expression tree (recurse into sub-expressions)
-    let annotated_node = annotate_expr(tc, se.node)
+    let annotated_node = annotate_expr(tc, node)
     // Stamp this SExpr's type — fast path for common expressions avoids
     // re-running check_expr (which would double-check the entire subtree).
     let ty = match annotated_node {
@@ -4296,7 +4298,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                 let rec = fn_type_get(tc.fns, name)
                 tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
             }
-            _ -> check_expr(tc, se.node).ty
+            _ -> check_expr(tc, node).ty
         }
         // Struct/Enum constructors. A generic struct literal carries
         // its inferred type args so a downstream `s.value`
@@ -4306,7 +4308,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
             if name != "" {
                 let empty_args: List<ValueType> = []
                 ValueType.Enum(name, empty_args, 0)
-            } else { check_expr(tc, se.node).ty }
+            } else { check_expr(tc, node).ty }
         }
         .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
         .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, entries))
@@ -4352,11 +4354,11 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let sname = vtype_struct_name(base_ty)
                 if sname == "" {
-                    check_expr(tc, se.node).ty
+                    check_expr(tc, node).ty
                 } else {
                     let field_ty = field_type_lookup(struct_type_lookup(tc.structs, sname), fname)
                     if vtype_is_unknown(field_ty) {
-                        check_expr(tc, se.node).ty
+                        check_expr(tc, node).ty
                     } else {
                         // Specialise a generic field type to the receiver
                         // instance's type args (`Box<int>.val` → int).
@@ -4364,7 +4366,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                     }
                 }
             }
-            _ -> check_expr(tc, se.node).ty
+            _ -> check_expr(tc, node).ty
         }
         // kkgf: Index on a bare ident — common pattern is `xs[i]`
         // where xs is a List. Falls back when base type isn't a
@@ -4374,25 +4376,27 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let elem_ty = vtype_list_elem(base_ty)
                 if vtype_is_unknown(elem_ty) {
-                    check_expr(tc, se.node).ty
+                    check_expr(tc, node).ty
                 } else {
                     elem_ty
                 }
             }
-            _ -> check_expr(tc, se.node).ty
+            _ -> check_expr(tc, node).ty
         }
         // Try unwraps a Result; the unwrapped success type matches
         // the inner expression's type only when the parser desugar
         // pass has already lowered it. For now this stays in the
         // fallback so we don't regress error-propagation typeck.
         // Fallback: re-run check_expr for complex expressions
-        _ -> check_expr(tc, se.node).ty
+        _ -> check_expr(tc, node).ty
     }
-    sexpr_typed(annotated_node, se.line, se.col, ty)
+    let new_id = tc.nodes.reexpr(annotated_node, id)
+    tc.nodes.set_arg_ty(new_id, ty)
+    new_id
 }
 
 /// Cheap one-step type lookup on a bare Expr that mirrors the
-/// fast-path table in annotate_sexpr but without recursing into
+/// fast-path table in annotate_expr_stamped but without recursing into
 /// sub-expressions. Used by leaves that just forward (Grouping).
 fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
     match e {
@@ -4409,19 +4413,15 @@ fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
     }
 }
 
-/// Annotate a flipped `List<ExprId>` (call/collection args). Reuses
-/// `annotate_sexpr` so each arg's inferred type
-/// is computed EXACTLY as the boxed path did, then records it on the arena via
-/// `set_arg_ty` (keyed by the post-`reexpr` row) so the monomorphizer — which
-/// materializes args back to `SExpr` via `sexprs_of` — reads the same `.ty` it
-/// read pre-flip. This is what keeps the args flip byte-identical.
+/// Annotate a flipped `List<ExprId>` (call/collection args). Each arg's
+/// inferred type is computed by `annotate_expr_stamped`, which records it on
+/// the arena via `set_arg_ty` (keyed by the post-`reexpr` row) so the
+/// monomorphizer — which reads a resolved arg type via `arg_ty_of` — sees the
+/// same type it read pre-flip. This is what keeps the args flip byte-identical.
 fn annotate_expr_list_ids(tc: TC, ids: List<ExprId>) -> List<ExprId> {
     mut out: List<ExprId> = []
     for id in ids {
-        let annotated = annotate_sexpr(tc, tc.nodes.sexpr_of(id))
-        let new_id = tc.nodes.reexpr(annotated.node, id)
-        tc.nodes.set_arg_ty(new_id, annotated.ty)
-        out.push(new_id)
+        out.push(annotate_expr_stamped(tc, id))
     }
     out
 }
@@ -4433,47 +4433,33 @@ fn annotate_match_arms(tc: TC, arms: List<MatchArm>) -> List<MatchArm> {
     // the arena `arg_tys` side-table (id-based successor of `SExpr.ty`).
     list_map(arms, (arm: MatchArm) -> {
         let new_guard_id = if arm.guard_id != null {
-            let g_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.guard_id!))
-            let gid = tc.nodes.reexpr(g_ann.node, arm.guard_id!)
-            tc.nodes.set_arg_ty(gid, g_ann.ty)
-            gid
+            annotate_expr_stamped(tc, arm.guard_id!)
         } else { null }
-        let b_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.body_id))
-        let new_body_id = tc.nodes.reexpr(b_ann.node, arm.body_id)
-        tc.nodes.set_arg_ty(new_body_id, b_ann.ty)
+        let new_body_id = annotate_expr_stamped(tc, arm.body_id)
         MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: new_body_id }
     })
 }
 
-/// Map `annotate_sexpr` over each `List<FieldInit>` value.
+/// Map `annotate_expr_stamped` over each `List<FieldInit>` value.
 fn annotate_field_inits(tc: TC, inits: List<FieldInit>) -> List<FieldInit> {
-    // B-final F4: annotate the value's node and stamp its resolved type into
-    // the arena's `arg_tys` side-table (keyed by the value_id) — the id-based
-    // successor of the boxed `SExpr.ty` slot that mono reads via `arg_ty_of`.
+    // Annotate the value's node and stamp its resolved type into the arena's
+    // `arg_tys` side-table (keyed by the value_id) — the id-based successor of
+    // the boxed `SExpr.ty` slot that mono reads via `arg_ty_of`.
     list_map(inits, (init: FieldInit) -> {
-        let annotated = annotate_sexpr(tc, tc.nodes.sexpr_of(init.value_id))
-        let new_id = tc.nodes.reexpr(annotated.node, init.value_id)
-        tc.nodes.set_arg_ty(new_id, annotated.ty)
-        FieldInit { name: init.name, value_id: new_id }
+        FieldInit { name: init.name, value_id: annotate_expr_stamped(tc, init.value_id) }
     })
 }
 
-/// Walk every `when` arm, annotating cond + body SExprs.
+/// Walk every `when` arm, annotating cond + body exprs.
 fn annotate_when_arms(tc: TC, arms: List<WhenArm>) -> List<WhenArm> {
-    // B-final F4c: annotate cond/body nodes and stamp their resolved types into
-    // the arena `arg_tys` side-table (keyed by id) — id-based successor of the
-    // boxed `SExpr.ty` slot.
+    // Annotate cond/body nodes and stamp their resolved types into the arena
+    // `arg_tys` side-table (keyed by id) — id-based successor of the boxed
+    // `SExpr.ty` slot.
     list_map(arms, (arm: WhenArm) -> {
         let new_cond_id = if arm.cond_id != null {
-            let c_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.cond_id!))
-            let cid = tc.nodes.reexpr(c_ann.node, arm.cond_id!)
-            tc.nodes.set_arg_ty(cid, c_ann.ty)
-            cid
+            annotate_expr_stamped(tc, arm.cond_id!)
         } else { null }
-        let b_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.body_id))
-        let new_body_id = tc.nodes.reexpr(b_ann.node, arm.body_id)
-        tc.nodes.set_arg_ty(new_body_id, b_ann.ty)
-        WhenArm { cond_id: new_cond_id, body_id: new_body_id }
+        WhenArm { cond_id: new_cond_id, body_id: annotate_expr_stamped(tc, arm.body_id) }
     })
 }
 
