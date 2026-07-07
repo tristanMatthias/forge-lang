@@ -981,7 +981,15 @@ fn build_resolver_ctx(handle: int) -> Value {
 /// against post-resolve stmts gives the eval the right AST in one
 /// shot; collecting against raw stmts would force a second walk to
 /// re-rewrite the plan's stmts.
-export fn resolve_and_expand_program(stmts: List<SStmt>, store: NodeStore) -> NameResolveResult {
+///
+/// B-final: the pass boundary is arena-id-native — the program vector
+/// arrives as `List<StmtId>` (the flipped derive_marshal upstream hands
+/// ids straight in, no seam adapter). The resolver/expansion helpers are
+/// still `List<SStmt>`-shaped (none has an id twin yet), so we bridge
+/// once at the boundary via `sstmts_of`; the `NameResolveResult.stmts`
+/// exit stays `List<SStmt>` until those helpers migrate.
+export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> NameResolveResult {
+    let stmts = store.sstmts_of(ids)
     let pre = resolve_names_pre_expand(stmts, store)
     if pre.had_error == 1 {
         return validate_scopes_after_expand(pre.stmts, pre.state)
