@@ -26,7 +26,7 @@ export fn extract_lang_corpus(project_dir: string) -> List<Sym> {
     if content == "" { return [] }
     let parsed = parse_program_source(content)
     if parsed.had_error || parsed.stmts == null { return [] }
-    extract_from_ast(parsed.store, parsed.stmts!, "target/lang.av")
+    extract_from_ast(parsed.store, parsed.store.rows_of(parsed.stmts!), "target/lang.av")
 }
 
 /// `extract_lang_corpus`, narrowed to the F-coded error consts
