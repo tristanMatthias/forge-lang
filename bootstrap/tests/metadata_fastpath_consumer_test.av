@@ -1,0 +1,40 @@
+// Metadata FAST-PATH consumer guard (forge-crafting-intepreters-7hx3).
+//
+// Compiles a consumer that imports a producer package's full public
+// surface (struct + enum + fns + const) with AVRA_USE_METADATA=1 forced
+// inline, so the resolver takes `take_meta_fast_path` over the dep —
+// synthesize_unit_body -> stamp_stub_spans -> resolve the stubs instead
+// of parsing source. Asserts the fast path fires AND the consumer build
+// completes without crashing or emitting malformed stubs.
+//
+// This is the net diff-test structurally CANNOT provide (it only compiles
+// from source, never the fast path) and that the per-file runner masks
+// (it silently degrades to the slow path when an @std pre-build fails).
+// A synthesis bug on this path shipped a cold-tree SIGSEGV once (the
+// reverted F4d.8 metadata_synthesize flip); this guard makes a recurrence
+// a hard test failure. Mutation-verified: breaking stamp_stub_spans flips
+// `fastpath_consumer_build_rc_zero` + `consumer_ll_emitted` to FAIL.
+//
+// The fixture builds isolated packages under /tmp (not shared @std
+// state), so its stdout caches normally.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn fastpath_run_fixture() -> string {
+    cached_fixture_run("tests/metadata_fastpath_consumer_fixtures/sample.av")
+}
+
+spec "metadata fast-path: a consumer compiles correctly against synthesized dep stubs (7hx3)" {
+    then "the producer's .meta.bin is pre-built (the fast path has stubs to read)" {
+        fastpath_run_fixture().contains("PROBE producer_meta_pre_built: ok")
+    }
+    then "the fast path is actually taken, not silently degraded to a source parse" {
+        fastpath_run_fixture().contains("PROBE fastpath_actually_taken: ok")
+    }
+    then "the consumer build does NOT crash resolving the synthesized surface" {
+        fastpath_run_fixture().contains("PROBE fastpath_consumer_build_rc_zero: ok")
+    }
+    then "the consumer entry .ll is emitted (fast-path compile ran to completion)" {
+        fastpath_run_fixture().contains("PROBE consumer_ll_emitted: ok")
+    }
+}

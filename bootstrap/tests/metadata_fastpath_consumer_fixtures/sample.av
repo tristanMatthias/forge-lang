@@ -1,0 +1,101 @@
+// Fixture: the metadata FAST-PATH consumer guard (forge-crafting-intepreters-7hx3).
+//
+// WHY this exists: diff-test compiles everything FROM SOURCE, so it
+// never takes the resolver's `take_meta_fast_path` (read a dep's
+// .meta.bin -> synthesize_unit_body -> stamp_stub_spans -> resolve the
+// stubs instead of parsing). And the per-file test runner DEGRADES to
+// whole-program shards when an @std pre-build fails — a [warn], not a
+// failure — so a fast-path crash disables the path run-wide and every
+// other fixture then compiles via the slow path and passes. A synthesis
+// bug on the fast path was therefore invisible to BOTH nets and shipped
+// a cold-tree SIGSEGV (the reverted F4d.8 metadata_synthesize flip).
+//
+// This fixture closes that gap deterministically: it builds a producer
+// package with a RICH exported surface (struct + enum + two fns, one
+// matching the enum + a const), then compiles a consumer that USES the
+// whole surface with AVRA_USE_METADATA=1 forced INLINE in the build
+// command — so the fast path fires regardless of the ambient/degraded
+// test-runner env. If synthesize/stamp/resolve of that surface crashes
+// or emits malformed stubs, the consumer build returns non-zero and the
+// probe FAILs. The entry .ll is removed first (18z8) so a crashed child
+// that left a stale artifact can't masquerade as success.
+
+use @std.avrac.features.modules.{package_meta_path_for}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_file_exists(path: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let root = "/tmp/avra_7hx3_fastpath"
+    avra_shell_exec("rm -rf ${root}")
+    // Layout under packages/ so the resolver's `/packages/` package-dir
+    // discovery succeeds; the std-cli sentinel keeps the cwd-relative
+    // probe happy (mirrors build_auto_use_metadata_fixtures).
+    avra_shell_exec("mkdir -p ${root}/packages/test-geo/src ${root}/packages/test-app/src ${root}/packages/std-cli/src")
+    avra_shell_exec("printf 'export fn _placeholder() -> int { 0 }\\n' > ${root}/packages/std-cli/src/cli.av")
+
+    // Producer: a RICH public surface — struct type, enum type, two fns
+    // (one matching the enum), and a const. This stresses every arm of
+    // synthesize_unit_body (insert_types / insert_fns / insert_consts +
+    // the nested-module trie), which is where the reverted flip broke.
+    avra_shell_exec("printf '[package]\\nname = \"@test/geo\"\\nversion = \"0.1.0\"\\n[lib]\\nname = \"geo\"\\npath = \"src/geo.av\"\\n' > ${root}/packages/test-geo/avra.toml")
+    let geo = "${root}/packages/test-geo/src/geo.av"
+    avra_shell_exec("printf 'export type Point = { x: int, y: int }\\n' > ${geo}")
+    avra_shell_exec("printf 'export enum Shape { Circle(radius: int), Square(side: int) }\\n' >> ${geo}")
+    avra_shell_exec("printf 'export fn point_sum(p: Point) -> int { p.x + p.y }\\n' >> ${geo}")
+    avra_shell_exec("printf 'export fn shape_area(s: Shape) -> int { match s { .Circle(r) -> r * r * 3, .Square(w) -> w * w } }\\n' >> ${geo}")
+    avra_shell_exec("printf 'export const GEO_TAG: int = 42\\n' >> ${geo}")
+
+    // Consumer: imports and USES the whole surface, so resolve + typeck
+    // must process every synthesized stub (types, enum, fn sigs, const).
+    avra_shell_exec("printf '[package]\\nname = \"@test/app\"\\nversion = \"0.1.0\"\\n[bin]\\nname = \"app\"\\npath = \"src/main.av\"\\n[dependencies]\\n\"@test/geo\" = { path = \"../test-geo\" }\\n' > ${root}/packages/test-app/avra.toml")
+    let appmain = "${root}/packages/test-app/src/main.av"
+    avra_shell_exec("printf 'use @test.geo.{Point, Shape, point_sum, shape_area, GEO_TAG}\\n' > ${appmain}")
+    avra_shell_exec("printf 'fn main() -> int {\\n' >> ${appmain}")
+    avra_shell_exec("printf '  let p = Point { x: 3, y: 4 }\\n' >> ${appmain}")
+    avra_shell_exec("printf '  let s = Shape.Circle(2)\\n' >> ${appmain}")
+    avra_shell_exec("printf '  point_sum(p) + shape_area(s) + GEO_TAG\\n' >> ${appmain}")
+    avra_shell_exec("printf '}\\n' >> ${appmain}")
+
+    let pwd = avra_process_env_get("PWD")
+    let bs2 = "${pwd}/build/bs2"
+
+    // Build the consumer with the fast path FORCED inline. --emit_metadata
+    // pre-builds the dep's .meta.bin; AVRA_USE_METADATA=1 (explicit, so it
+    // can't be unset by a degraded ambient env) makes the root compile's
+    // resolver take take_meta_fast_path over the dep — the exact
+    // synthesize_unit_body -> stamp_stub_spans -> resolve path under test.
+    // Remove the entry .ll first (18z8): a crashed child that leaves a
+    // stale .ll must not read as success.
+    avra_shell_exec("rm -f ${appmain}.ll /tmp/avra_7hx3_deps.txt")
+    let rc = avra_shell_exec_status("cd ${root}/packages/test-app && AVRA_USE_METADATA=1 AVRA_DEPS_OUT=/tmp/avra_7hx3_deps.txt ${bs2} build --emit_metadata > /tmp/avra_7hx3_build.log 2>&1")
+
+    // The producer's .meta.bin was pre-built (the fast path has something
+    // to read).
+    probe("producer_meta_pre_built", avra_selfhost_file_exists(package_meta_path_for("${root}/packages/test-geo")) != 0)
+
+    // The consumer build did NOT crash. This is the core guard: the
+    // reverted flip SIGSEGV'd right here (raw StmtId deref'd as an SStmt
+    // pointer while resolving the synthesized dep surface).
+    probe("fastpath_consumer_build_rc_zero", rc == 0)
+
+    // The fast path was actually TAKEN (not silently degraded to a source
+    // parse): record_meta_dep stamps the dep into AVRA_DEPS_OUT only on
+    // the fast path.
+    let taken = avra_shell_exec_status("test -s /tmp/avra_7hx3_deps.txt && grep -q geo /tmp/avra_7hx3_deps.txt")
+    probe("fastpath_actually_taken", taken == 0)
+
+    // The consumer entry .ll was (re)generated — proof the fast-path
+    // compile ran to completion and emitted code for the surface it
+    // synthesized, rather than a crashed child leaving nothing.
+    probe("consumer_ll_emitted", avra_selfhost_file_exists("${appmain}.ll") != 0)
+
+    0
+}
