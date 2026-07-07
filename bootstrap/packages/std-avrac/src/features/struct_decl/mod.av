@@ -159,7 +159,7 @@ fn field_access_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Codegen hook for `EnumCtor`. Forwards to `emit_enum_ctor`.
 fn enum_ctor_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, ctx.nodes.sexprs_of(args))
+        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
         _ -> err_emit("expected EnumCtor")
     }
 }
