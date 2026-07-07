@@ -650,6 +650,10 @@ impl NodeStore {
     /// replacement for reading `SStmt.from_macro`, from the sparse provenance
     /// side-table.
     fn is_from_macro(self, id: StmtId) -> bool { self.provenance.has(id) }
+    /// Mark a statement row as macro-introduced (§14.3) — the id-native
+    /// replacement for `sstmt_mark_from_macro`, recorded in the sparse
+    /// provenance side-table so `is_from_macro` reads it back.
+    fn mark_from_macro(self, id: StmtId) { self.provenance.set(id, true) }
     /// The positioned `SStmt` views of a flipped `List<StmtId>` body — the
     /// list twin of `sstmt_of`, for consumers handing a whole body to an
     /// un-migrated `List<SStmt>` API.

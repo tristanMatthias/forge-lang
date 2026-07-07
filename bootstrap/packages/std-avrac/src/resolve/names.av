@@ -47,7 +47,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SStmt, Variant, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, Variant, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
@@ -883,9 +883,9 @@ fn rewrite_macro_stmts(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
 /// — additive, not a fresh rebuild. Avoids re-running
 /// `resolve_use_aliases` (which would re-emit any pre-existing
 /// import diagnostics and double-bag them).
-export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> ResolverState {
+export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> ResolverState {
     mut new_items: List<GraphItem> = []
-    collect_macro_items(state.nodes, stmts, "", new_items)
+    collect_macro_items(state.nodes, ids, "", new_items)
     if new_items.length == 0 { return state }
 
     // Augment graph.all_items by appending the new entries.
@@ -915,17 +915,17 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     }
 }
 
-fn collect_macro_items(store: NodeStore, stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
+fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>) {
     mut out = acc
-    for ss in stmts {
-        match ss.node {
+    for id in ids {
+        match store.stmts.get(id) {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
-                collect_macro_items(store, store.sstmts_of(body), inner_path, out)
+                collect_macro_items(store, body, inner_path, out)
             }
             _ -> {
-                if ss.from_macro {
-                    collect_macro_item_from_stmt(store, ss.node, mod_path, out)
+                if store.is_from_macro(id) {
+                    collect_macro_item_from_stmt(store, store.stmts.get(id), mod_path, out)
                 }
             }
         }

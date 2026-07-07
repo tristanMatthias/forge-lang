@@ -41,7 +41,7 @@
 // mapping; each ComponentBlock instance routes through M with the
 // block as the Stmt arg.
 
-use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, sstmt_mark_from_macro, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
+use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
@@ -86,9 +86,9 @@ extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_ca
 /// the full eval pass. current_module is set to "" for now — the
 /// per-site tracking required to fill it accurately lives in
 /// later work (see step 5 limitations in the handoff doc).
-export fn populate_resolver_data(state: ResolverState, stmts: List<SStmt>) {
+export fn populate_resolver_data(state: ResolverState, ids: List<StmtId>) {
     avra_rd_clear()
-    populate_resolver_data_into(state, stmts)
+    populate_resolver_data_into(state, ids)
 }
 
 /// Append into the resolver-data layer WITHOUT clearing first. Used
@@ -99,7 +99,7 @@ export fn populate_resolver_data(state: ResolverState, stmts: List<SStmt>) {
 /// cause: SStmt / SExpr were registered by the initial populate
 /// then wiped on the first macro splice, so the next iter's
 /// derive_walker invocation saw null.
-fn populate_resolver_data_into(state: ResolverState, stmts: List<SStmt>) {
+fn populate_resolver_data_into(state: ResolverState, ids: List<StmtId>) {
     avra_rd_set_current_module("")
     for a in state.aliases {
         avra_rd_add_alias(a.short_name, a.canonical)
@@ -107,18 +107,17 @@ fn populate_resolver_data_into(state: ResolverState, stmts: List<SStmt>) {
     for g in state.graph.all_items {
         avra_rd_add_global(g.short_name, g.canonical)
     }
-    populate_type_fields(state.nodes, stmts, "")
+    populate_type_fields(state.nodes, ids, "")
 }
 
-fn populate_type_fields(store: NodeStore, stmts: List<SStmt>, mod_path: string) {
-    for ss in stmts {
+fn populate_type_fields(store: NodeStore, ids: List<StmtId>, mod_path: string) {
+    for id in ids {
         // stmt_unwrap strips every Annotated layer. Most type decls
         // in std-avrac are `@export type Foo = {...}` so without the
-        // unwrap they'd never reach the .TypeDecl arm. so07.7.1
-        // root cause: SStmt / SExpr were silently absent from the
-        // resolver-data registry, so ctx_lookup_type from @comptime
-        // macros (derive_walker's wrapper-list discovery) saw null.
-        register_type_decl(store, stmt_unwrap(store, ss.node), mod_path)
+        // unwrap they'd never reach the .TypeDecl arm — the resolver-data
+        // registry would then be missing the type, so ctx_lookup_type from
+        // a @comptime macro (derive_walker's wrapper-list discovery) sees null.
+        register_type_decl(store, stmt_unwrap(store, store.stmts.get(id)), mod_path)
     }
 }
 
@@ -188,7 +187,7 @@ export type ExpandTarget = {
 /// stmts pointer is carried through unchanged — pre-resolve walks
 /// don't mutate the AST.
 export type ExpandPlan = {
-    stmts: List<SStmt>,
+    stmts: List<StmtId>,
     targets: List<ExpandTarget>,
     comp_macros: List<CompMacroEntry>,
 }
@@ -198,7 +197,7 @@ export type ExpandPlan = {
 /// Returns the plan unmodified — no macro is invoked here. Lets
 /// `resolve_names` run between collect and eval so that the macro
 /// bodies (which themselves call helper fns) see resolved names.
-export fn expand_macros_collect(store: NodeStore, stmts: List<SStmt>) -> ExpandPlan {
+export fn expand_macros_collect(store: NodeStore, stmts: List<StmtId>) -> ExpandPlan {
     let comp_macros = collect_component_macros(store, stmts)
     let targets = collect_expand_targets(store, stmts)
     ExpandPlan { stmts, targets, comp_macros }
@@ -210,20 +209,22 @@ export fn plan_has_work(plan: ExpandPlan) -> bool {
     plan.targets.length > 0 || plan.comp_macros.length > 0
 }
 
-fn collect_expand_targets(store: NodeStore, stmts: List<SStmt>) -> List<ExpandTarget> {
+fn collect_expand_targets(store: NodeStore, ids: List<StmtId>) -> List<ExpandTarget> {
     mut acc: List<ExpandTarget> = []
-    for ss in stmts {
-        let inner = stmt_unwrap(store, ss.node)
+    for id in ids {
+        let node = store.stmts.get(id)
+        let inner = stmt_unwrap(store, node)
         match inner {
-            .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(store, store.sstmts_of(body)))
+            .Module(_, body) -> acc = list_concat(acc, collect_expand_targets(store, body))
             _ -> {
-                if has_expand_annotation(store, ss.node) {
-                    let name = expand_target_name(store, ss.node)
+                if has_expand_annotation(store, node) {
+                    let name = expand_target_name(store, node)
                     if name != "" {
+                        let p = store.stmt_pos(id)
                         acc = acc.push(ExpandTarget {
-                            source_file: ss.file,
-                            source_line: ss.line,
-                            source_col: ss.col,
+                            source_file: p.file,
+                            source_line: p.line,
+                            source_col: p.col,
                             macro_name: name,
                         })
                     }
@@ -241,7 +242,7 @@ fn collect_expand_targets(store: NodeStore, stmts: List<SStmt>) -> List<ExpandTa
 /// surfaces F-coded diagnostics through the same path as the rest of
 /// the compiler.
 export type ExpandResult = {
-    stmts: List<SStmt>,
+    stmts: List<StmtId>,
     bag: DiagnosticBag,
     origins: List<MacroFnOrigin>,
 }
@@ -268,7 +269,7 @@ export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) 
 /// Re-populates the resolver-data layer between iterations so a
 /// later-iteration macro can see names introduced by an earlier
 /// iteration via `ctx_qualify_ident` / `ctx_lookup_type`.
-fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> ExpandResult {
+fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> ExpandResult {
     mut current = stmts
     mut current_state = state
     mut bag = bag_new()
@@ -283,7 +284,9 @@ fn expand_macros_fixpoint(stmts: List<SStmt>, initial_comp_macros: List<CompMacr
             current_state = register_macro_decls(current_state, current)
             populate_resolver_data(current_state, current)
         }
-        let reg = collect_comptime_fns(current, state.nodes)
+        // collect_comptime_fns' registry scan is still `List<SStmt>`-shaped;
+        // bridge the id vector for it until that scan migrates.
+        let reg = collect_comptime_fns(state.nodes.sstmts_of(current), state.nodes)
         let walked = expand_stmt_list(current, reg, comp_macros, current_state, "")
         current = walked.out
         current_state = walked.state
@@ -316,10 +319,11 @@ fn comp_macro_lookup(m: List<CompMacroEntry>, comp_name: string) -> string {
 
 /// Walk the AST, finding every `@expand(macro) component name { ... }`
 /// declaration and recording its (name → macro_fn) pair.
-fn collect_component_macros(store: NodeStore, stmts: List<SStmt>) -> List<CompMacroEntry> {
+fn collect_component_macros(store: NodeStore, ids: List<StmtId>) -> List<CompMacroEntry> {
     mut acc: List<CompMacroEntry> = []
-    for ss in stmts {
-        let inner = stmt_unwrap(store, ss.node)
+    for id in ids {
+        let node = store.stmts.get(id)
+        let inner = stmt_unwrap(store, node)
         // ComponentDefs can live inside Module wrappers (e.g.
         // `component command implements Runnable {}` declared
         // in @std/cli's cli.av lands wrapped under
@@ -328,10 +332,10 @@ fn collect_component_macros(store: NodeStore, stmts: List<SStmt>) -> List<CompMa
         // is empty for any def behind a module boundary, so
         // instance dispatch silently skips them.
         match inner {
-            .Module(_, body) -> acc = list_concat(acc, collect_component_macros(store, store.sstmts_of(body)))
+            .Module(_, body) -> acc = list_concat(acc, collect_component_macros(store, body))
             _ -> {
-                let macro_name = comp_macro_for(store, ss.node)
-                let comp_name = component_def_name(store, ss.node)
+                let macro_name = comp_macro_for(store, node)
+                let comp_name = component_def_name(store, node)
                 if macro_name != "" && comp_name != "" {
                     acc = acc.push(CompMacroEntry { comp_name, macro_name })
                 }
@@ -375,12 +379,13 @@ fn component_def_name(store: NodeStore, stmt: Stmt) -> string {
 /// agree, otherwise the walker is never invoked and a present @expand
 /// silently slips past, leading to F9999 'undefined method T.children'
 /// downstream when callers try to use the would-be-derived method.
-export fn any_expand_annotation(store: NodeStore, stmts: List<SStmt>) -> bool {
-    for ss in stmts {
-        if has_expand_annotation(store, ss.node) { return true }
-        match stmt_unwrap(store, ss.node) {
+export fn any_expand_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
+    for id in ids {
+        let node = store.stmts.get(id)
+        if has_expand_annotation(store, node) { return true }
+        match stmt_unwrap(store, node) {
             .Module(_, body) -> {
-                if any_expand_annotation(store, store.sstmts_of(body)) { return true }
+                if any_expand_annotation(store, body) { return true }
             }
             _ -> {}
         }
@@ -395,22 +400,23 @@ fn has_expand_annotation(store: NodeStore, stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
+fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
     let store = in_state.nodes
-    mut out: List<SStmt> = []
+    mut out: List<StmtId> = []
     mut current_state = in_state
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
-    for ss in stmts {
-        let inner = stmt_unwrap(store, ss.node)
+    for id in ids {
+        let node = store.stmts.get(id)
+        let inner = stmt_unwrap(store, node)
         // vez6.8.5: a ComponentDef with @expand only REGISTERS
         // the macro for its instances. The def itself drops
         // out of the output — there's no template-style expansion
         // for the def, only per-instance dispatch.
         match inner {
             .ComponentDef(_, _, _, _, _, _) -> {
-                if !has_expand_annotation(store, ss.node) {
-                    out.push(ss)
+                if !has_expand_annotation(store, node) {
+                    out.push(id)
                 }
             }
             .ComponentBlock(comp_name, _, _, _) -> {
@@ -425,15 +431,16 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
                     // Pass the same stmt for both invoke_macro args —
                     // build_annotation_value falls back to a name-only
                     // annotation when find_annotation returns null.
-                    let invoked = invoke_macro(ss.node, inst_macro, reg, ss.line, ss.col, ss.file, current_module, ss.node)
+                    let p = store.stmt_pos(id)
+                    let invoked = invoke_macro(node, inst_macro, reg, p.line, p.col, p.file, current_module, node)
                     bag = bag_merge(bag, invoked.bag)
                     origins = list_concat(origins, invoked.origins)
-                    splice_expansion(out, ss, invoked.replacement)
+                    splice_expansion(store, out, id, invoked.replacement)
                     if invoked.replacement != null {
                         current_state = register_and_repopulate(current_state, invoked.replacement!, current_module)
                     }
                 } else {
-                    out.push(ss)
+                    out.push(id)
                 }
             }
             // Module bodies have to be walked too — without this,
@@ -446,30 +453,30 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
             // intact for downstream resolve/typeck.
             .Module(mod_name, body) -> {
                 let child_module = type_qualified_name(current_module, mod_name)
-                let sub = expand_stmt_list(store.sstmts_of(body), reg, comp_macros, current_state, child_module)
+                let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
                 origins = list_concat(origins, sub.origins)
-                // The match subject was stmt_unwrap(ss.node) —
-                // rebuild the module INSIDE the original Annotated
-                // layers, or a wrapped module (e.g. the test
-                // assembler's @deferred_init) silently loses its
+                // The match subject was stmt_unwrap(node) — rebuild the module
+                // INSIDE the original Annotated layers, or a wrapped module (e.g.
+                // the test assembler's @deferred_init) silently loses its
                 // annotations here and codegen auto-runs its init.
-                let new_stmt = rewrap_annotations(store, ss.node, Stmt.Module(mod_name, store.rows_of(sub.out)))
-                out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
+                let new_stmt = rewrap_annotations(store, node, Stmt.Module(mod_name, sub.out))
+                out.push(store.restmt(new_stmt, id))
             }
             _ -> {
-                if has_expand_annotation(store, ss.node) {
+                if has_expand_annotation(store, node) {
                     avra_rd_set_current_module(current_module)
-                    let attempt = try_expand_one(store, ss.node, reg, ss.line, ss.col, ss.file, current_module)
+                    let p = store.stmt_pos(id)
+                    let attempt = try_expand_one(store, node, reg, p.line, p.col, p.file, current_module)
                     bag = bag_merge(bag, attempt.bag)
                     origins = list_concat(origins, attempt.origins)
-                    splice_expansion(out, ss, attempt.replacement)
+                    splice_expansion(store, out, id, attempt.replacement)
                     if attempt.replacement != null {
                         current_state = register_and_repopulate(current_state, attempt.replacement!, current_module)
                     }
                 } else {
-                    out.push(ss)
+                    out.push(id)
                 }
             }
         }
@@ -485,7 +492,7 @@ fn expand_stmt_list(stmts: List<SStmt>, reg: CompTimeRegistry, comp_macros: List
 /// introduced name (doc step 4.4 / test 7), and merges `bag` so
 /// every iteration's diagnostics surface in the final result.
 type WalkerOut = {
-    out: List<SStmt>,
+    out: List<StmtId>,
     state: ResolverState,
     bag: DiagnosticBag,
     origins: List<MacroFnOrigin>,
@@ -500,7 +507,7 @@ type WalkerOut = {
 /// merge the bag and act on the null/non-null replacement without
 /// losing diagnostics on the failure path.
 type ExpandAttempt = {
-    replacement: List<SStmt>?,
+    replacement: List<StmtId>?,
     bag: DiagnosticBag,
     origins: List<MacroFnOrigin>,
 }
@@ -523,16 +530,15 @@ fn expand_fail(code: DiagCode, message: string, span: Span) -> ExpandAttempt {
 /// newly-introduced top-level decls and re-populate the C-side
 /// resolver-data layer so subsequent ctx_* queries from later macros
 /// in the same iter see the new names.
-fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>, current_module: string) -> ResolverState {
-    mut tagged: List<SStmt> = []
-    for ss in spliced { tagged.push(sstmt_mark_from_macro(ss)) }
-    let new_state = register_macro_decls(state, tagged)
-    // Additive: keeps everything the initial populate registered,
-    // adds the new aliases/globals/types from `tagged`. The clear-
-    // and-rebuild dance the prior code did (calling the public
-    // populate_resolver_data) wiped types other macros in the same
-    // iter still needed (so07.7.1 root cause).
-    populate_resolver_data_into(new_state, tagged)
+fn register_and_repopulate(state: ResolverState, spliced: List<StmtId>, current_module: string) -> ResolverState {
+    let store = state.nodes
+    for id in spliced { store.mark_from_macro(id) }
+    let new_state = register_macro_decls(state, spliced)
+    // Additive: keeps everything the initial populate registered, adds the
+    // new aliases/globals/types from `spliced`. The clear-and-rebuild dance
+    // the prior code did (calling the public populate_resolver_data) wiped
+    // types other macros in the same iter still needed (so07.7.1 root cause).
+    populate_resolver_data_into(new_state, spliced)
     // populate_resolver_data_into overwrote current_module to "";
     // restore the per-site value so subsequent ctx_current_module
     // calls keep returning the right module.
@@ -544,15 +550,18 @@ fn register_and_repopulate(state: ResolverState, spliced: List<SStmt>, current_m
 /// spliced stmt gets `from_macro = true` so the partial re-resolve
 /// in `resolve_and_expand_program` walks them (step 4 of the
 /// expand-pipeline doc — Option C).
-fn splice_expansion(out: List<SStmt>, ss: SStmt, replacement: List<SStmt>?) {
+fn splice_expansion(store: NodeStore, out: List<StmtId>, id: StmtId, replacement: List<StmtId>?) {
     mut acc = out
     if replacement != null {
-        for r in replacement! { acc.push(sstmt_mark_from_macro(r)) }
+        for r in replacement! {
+            store.mark_from_macro(r)
+            acc.push(r)
+        }
     } else {
         // Expansion failed — keep the original stmt so downstream
         // stages surface the issue (resolve / typeck will emit a
         // diagnostic against the unexpanded @expand annotation).
-        acc.push(ss)
+        acc.push(id)
     }
 }
 
@@ -693,7 +702,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
                 ))
             }
         }
-        return expand_ok(reg.runtime.nodes, out, bag, macro_name, line, col, file)
+        return expand_ok(reg.runtime.nodes, reg.runtime.nodes.rows_of(out), bag, macro_name, line, col, file)
     }
     // Try List<SStmt> — what `quote stmts { ... }` produces.
     // value_to_stmt_list returns Err when v isn't a list, so this is
@@ -704,7 +713,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
             for ss in as_list {
                 out.push(sstmt_at(ss.node, line, col, file))
             }
-            return expand_ok(reg.runtime.nodes, out, bag_new(), macro_name, line, col, file)
+            return expand_ok(reg.runtime.nodes, reg.runtime.nodes.rows_of(out), bag_new(), macro_name, line, col, file)
         }
         .Err(_) -> {}
     }
@@ -719,7 +728,7 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     }
     mut single: List<SStmt> = []
     single.push(sstmt_at(decoded, line, col, file))
-    expand_ok(reg.runtime.nodes, single, bag_new(), macro_name, line, col, file)
+    expand_ok(reg.runtime.nodes, reg.runtime.nodes.rows_of(single), bag_new(), macro_name, line, col, file)
 }
 
 /// Successful ExpandAttempt constructor. Builds the macro-origin
@@ -727,21 +736,21 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
 /// can blame the macro on errors against the synthesised fns) and
 /// wraps the canonical ExpandAttempt shape so the 3 decode arms in
 /// `invoke_macro` collapse to a single line.
-fn expand_ok(store: NodeStore, replacement: List<SStmt>, bag: DiagnosticBag, macro_name: string, line: int, col: int, file: string) -> ExpandAttempt {
+fn expand_ok(store: NodeStore, replacement: List<StmtId>, bag: DiagnosticBag, macro_name: string, line: int, col: int, file: string) -> ExpandAttempt {
     let origins = build_origins(store, replacement, macro_name, line, col, file)
     ExpandAttempt { replacement, bag, origins }
 }
 
-/// Build a `MacroFnOrigin` entry per Function-shape SStmt in `spliced`.
+/// Build a `MacroFnOrigin` entry per Function-shape decl in `spliced`.
 /// `(line, col, file)` describe the `@expand(macro_name)` annotation
 /// site in the user's source; typeck's `tc_report_at` uses both the
 /// macro name and span to retag diagnostics emitted against the
 /// synthesised fns. so07.3 (T3 Phase 1).
-fn build_origins(store: NodeStore, spliced: List<SStmt>, macro_name: string, line: int, col: int, file: string) -> List<MacroFnOrigin> {
+fn build_origins(store: NodeStore, spliced: List<StmtId>, macro_name: string, line: int, col: int, file: string) -> List<MacroFnOrigin> {
     mut out: List<MacroFnOrigin> = []
     let site = span_at(0, 0, line, col, file)
-    for ss in spliced {
-        let name = decl_name_of(store, ss.node)
+    for id in spliced {
+        let name = decl_name_of(store, store.stmts.get(id))
         if name != "" {
             out.push(MacroFnOrigin { fn_name: name, macro_name, expand_site: site })
         }
@@ -982,30 +991,26 @@ fn build_resolver_ctx(handle: int) -> Value {
 /// shot; collecting against raw stmts would force a second walk to
 /// re-rewrite the plan's stmts.
 ///
-/// B-final: the pass boundary is arena-id-native — the program vector
-/// arrives as `List<StmtId>` (the flipped derive_marshal upstream hands
-/// ids straight in, no seam adapter). The resolver/expansion helpers are
-/// still `List<SStmt>`-shaped (none has an id twin yet), so we bridge
-/// once at the boundary via `sstmts_of`; the `NameResolveResult.stmts`
-/// exit stays `List<SStmt>` until those helpers migrate.
+/// The whole resolve + expand pipeline is arena-id-native: the program
+/// vector arrives as `List<StmtId>` and threads through resolve, collect,
+/// eval, splice, and re-resolve as ids. The only residual `List<SStmt>`
+/// hop is the comptime-registry scan (`collect_comptime_fns`) and the
+/// eval-Value decoders, bridged locally until those migrate.
 export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> NameResolveResult {
     let pre = resolve_names_pre_expand(ids, store)
     if pre.had_error == 1 {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    let plan = expand_macros_collect(store, store.sstmts_of(pre.stmts))
+    let plan = expand_macros_collect(store, pre.stmts)
     if !plan_has_work(plan) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
     let handle = avra_resolver_ctx_push(pre.state)
-    populate_resolver_data(pre.state, store.sstmts_of(pre.stmts))
+    populate_resolver_data(pre.state, pre.stmts)
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
     let post_state = register_macro_decls(pre.state, expanded.stmts)
-    // rewrite_uses_macro_only + validate_scopes_after_expand are arena-id-native;
-    // this file's expansion machinery is still `List<SStmt>`-shaped, so
-    // materialise the expanded wrappers into rows once at the boundary.
-    let rewritten = rewrite_uses_macro_only(store.rows_of(expanded.stmts), post_state)
+    let rewritten = rewrite_uses_macro_only(expanded.stmts, post_state)
     let validated = validate_scopes_after_expand(rewritten, post_state)
     // Fold @expand-time diagnostics into the program-level bag so the
     // unified renderer surfaces F4xxx codes through the same path as
