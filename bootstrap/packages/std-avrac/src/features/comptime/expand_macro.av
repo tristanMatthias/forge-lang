@@ -41,11 +41,11 @@
 // mapping; each ComponentBlock instance routes through M with the
 // block as the Stmt arg.
 
-use core.{Stmt, SStmt, Expr, SExpr, ValueType, sstmt_at, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
+use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
-use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt, value_to_stmt_list}
+use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
@@ -681,9 +681,10 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
     let as_rd = value_to_resolved_decls(reg.runtime.nodes, v)
     if as_rd != null {
         let rd = as_rd!
-        mut out: List<SStmt> = []
-        for ss in rd.decls {
-            out.push(sstmt_at(ss.node, line, col, file))
+        mut out: List<StmtId> = []
+        for id in rd.decls {
+            reg.runtime.nodes.set_stmt_pos(id, line, col, file)
+            out.push(id)
         }
         // Validate `.introduces` against `.decls` per doc step 4.4
         // ("Register result.introduces with the existing registry").
@@ -702,23 +703,22 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
                 ))
             }
         }
-        return expand_ok(reg.runtime.nodes, reg.runtime.nodes.rows_of(out), bag, macro_name, line, col, file)
+        return expand_ok(reg.runtime.nodes, out, bag, macro_name, line, col, file)
     }
-    // Try List<SStmt> — what `quote stmts { ... }` produces.
-    // value_to_stmt_list returns Err when v isn't a list, so this is
+    // Try a list of stmts — what `quote stmts { ... }` produces.
+    // list_value_to_stmt_id_list returns Err when v isn't a list, so this is
     // the cheap dispatch.
-    match value_to_stmt_list(reg.runtime.nodes, v) {
+    match list_value_to_stmt_id_list(reg.runtime.nodes, v) {
         .Ok(as_list) -> {
-            mut out: List<SStmt> = []
-            for ss in as_list {
-                out.push(sstmt_at(ss.node, line, col, file))
+            for id in as_list {
+                reg.runtime.nodes.set_stmt_pos(id, line, col, file)
             }
-            return expand_ok(reg.runtime.nodes, reg.runtime.nodes.rows_of(out), bag_new(), macro_name, line, col, file)
+            return expand_ok(reg.runtime.nodes, as_list, bag_new(), macro_name, line, col, file)
         }
         .Err(_) -> {}
     }
     // Fall back to single Stmt — `quote stmt { ... }` macros.
-    let decoded = match value_to_stmt(reg.runtime.nodes, v) {
+    let decoded = match value_to_stmt_id(reg.runtime.nodes, v) {
         .Ok(s) -> s
         .Err(_) -> return expand_fail(
             DiagCode.ExpandUndecodableReturn,
@@ -726,9 +726,9 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
             span
         )
     }
-    mut single: List<SStmt> = []
-    single.push(sstmt_at(decoded, line, col, file))
-    expand_ok(reg.runtime.nodes, reg.runtime.nodes.rows_of(single), bag_new(), macro_name, line, col, file)
+    reg.runtime.nodes.set_stmt_pos(decoded, line, col, file)
+    let single: List<StmtId> = [decoded]
+    expand_ok(reg.runtime.nodes, single, bag_new(), macro_name, line, col, file)
 }
 
 /// Successful ExpandAttempt constructor. Builds the macro-origin
@@ -759,13 +759,13 @@ fn build_origins(store: NodeStore, spliced: List<StmtId>, macro_name: string, li
 }
 
 /// Decoded payload of a ResolvedDecls struct value.
-/// - decls: the actual SStmts to splice
+/// - decls: the arena rows of the decls to splice
 /// - introduces: the names the macro promised to introduce; the
 ///   compiler validates these against the spliced decls and emits
 ///   a warning if they diverge. Provenance is informational and
 ///   ignored at this layer.
 type ResolvedDeclsPayload = {
-    decls: List<SStmt>,
+    decls: List<StmtId>,
     introduces: List<string>,
 }
 
@@ -786,7 +786,7 @@ fn value_to_resolved_decls(store: NodeStore, v: Value) -> ResolvedDeclsPayload? 
         if f.name == "introduces" { introduces_v = f.value }
     }
     if decls_v == null { return null }
-    let decls = match value_to_stmt_list(store, decls_v!) {
+    let decls = match list_value_to_stmt_id_list(store, decls_v!) {
         .Ok(d) -> d
         .Err(_) -> return null
     }
@@ -812,12 +812,12 @@ fn decl_symbol_names(v: Value) -> List<string> {
     out
 }
 
-/// Collect the short_name from every decl in a List<SStmt>. Used to
-/// validate ResolvedDecls.introduces against ResolvedDecls.decls.
-fn collect_decl_names(store: NodeStore, decls: List<SStmt>) -> List<string> {
+/// Collect the short_name from every decl row. Used to validate
+/// ResolvedDecls.introduces against ResolvedDecls.decls.
+fn collect_decl_names(store: NodeStore, decls: List<StmtId>) -> List<string> {
     mut out: List<string> = []
-    for ss in decls {
-        let name = decl_name_of(store, ss.node)
+    for id in decls {
+        let name = decl_name_of(store, store.stmts.get(id))
         if name != "" { out.push(name) }
     }
     out

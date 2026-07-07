@@ -654,6 +654,12 @@ impl NodeStore {
     /// replacement for `sstmt_mark_from_macro`, recorded in the sparse
     /// provenance side-table so `is_from_macro` reads it back.
     fn mark_from_macro(self, id: StmtId) { self.provenance.set(id, true) }
+    /// Stamp an explicit source position on a synthesised statement row — the
+    /// id-native replacement for `sstmt_at`, used to give a decoded @expand
+    /// result the macro-splice site so diagnostics point at the call.
+    fn set_stmt_pos(self, id: StmtId, line: int, col: int, file: string) {
+        self.stmts.record_pos(id, SrcPos { line, col, file })
+    }
     /// The positioned `SStmt` views of a flipped `List<StmtId>` body — the
     /// list twin of `sstmt_of`, for consumers handing a whole body to an
     /// un-migrated `List<SStmt>` API.
