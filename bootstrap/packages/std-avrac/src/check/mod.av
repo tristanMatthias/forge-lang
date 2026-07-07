@@ -84,7 +84,7 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
         let empty_stmts: List<SStmt> = []
         return TypecheckSourceResult { bag: bag_merge(comp.bag, named.bag), stmts: empty_stmts, type_reg: named.type_reg, store: parsed.store }
     }
-    let post_comptime = run_comptime(named.stmts, parsed.store)
+    let post_comptime = parsed.store.sstmts_of(run_comptime(parsed.store.rows_of(named.stmts), parsed.store))
     let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed.store)
     if bag_has_errors(tc_result.bag) {
         return TypecheckSourceResult { bag: tc_result.bag, stmts: tc_result.stmts, type_reg: named.type_reg, store: parsed.store }
