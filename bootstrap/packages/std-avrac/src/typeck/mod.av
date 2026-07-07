@@ -15,7 +15,7 @@ use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{variant_is_optional_present, variant_is_optional_absent}
-use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts}
+use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts, stamp_ids_stmt_ids}
 use core.{exit}
 use core.{avra_process_env_get}
 use list_ops.{list_push_copy, list_any, list_map}
@@ -1139,7 +1139,7 @@ export type TypeCheckResult = {
 /// passes: pre-pass `collect_decls` registers types/fns; main
 /// `check_stmts` walks the AST inferring + checking types;
 /// `annotate_*` writes the inferred types back into SExpr.ty.
-export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TypeCheckResult {
+export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TypeCheckResult {
     avra_ice_phase("typeck")
     // Per-pass wall-clock timings — emitted to stderr at the end
     // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
@@ -1157,7 +1157,7 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     // instead of the exact-name fallback. Residual id=0 nominals after
     // the stamp pass are type-param placeholders (T, U, S, …) —
     // legitimately id=0 because they aren't registered types.
-    let stamped_stmts = stamp_ids_stmts(store, stmts, type_reg)
+    let stamped_stmts = stamp_ids_stmts(store, store.sstmts_of(ids), type_reg)
     // Unconditional invariant assertion: any id=0 nominal whose name
     // IS in the registry is a stamp-pass leak — codegen would fall
     // back to slower name lookup AND id-based equality would
@@ -1175,21 +1175,22 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     // proper ValueType.Enum(name). Run a SECOND collect pass against
     // the now-complete registry to upgrade ret-type residue from the
     // first walk. Tracked under forge-crafting-intepreters-dnq4.
-    let tc_first = collect_decls(tc0, stmts)
+    let tc_first = collect_decls(tc0, store.sstmts_of(ids))
     let tc1 = tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
     let t_collect = avra_uptime_ms()
     // Pass 2: check + annotate in one traversal.
-    // check_stmts validates types and accumulates errors in TC.bag.
-    // annotate_stmts stamps resolved types onto SExpr.ty (calls check_expr
-    // internally for annotation, but since check_stmts already caught errors,
-    // the annotation pass just extracts types without re-reporting).
-    let tc2 = check_stmts(tc1, stmts)
+    // check_stmt_ids validates types and accumulates errors in TC.bag.
+    // annotate_stmt_ids stamps resolved types onto the expr rows (calls
+    // check_expr internally for annotation, but since check_stmt_ids already
+    // caught errors, the annotation pass just extracts types without
+    // re-reporting).
+    let tc2 = check_stmt_ids(tc1, ids)
     let t_check = avra_uptime_ms()
     // Pass 2.5: naming convention warnings
-    let tc3 = check_naming_conventions(tc2, stmts)
+    let tc3 = check_naming_stmt_ids(tc2, ids)
     let t_naming = avra_uptime_ms()
     // Pass 3: annotate AST — uses fast paths for leaf expressions
-    let annotated = annotate_stmts(tc3, stmts)
+    let annotated = annotate_stmt_ids(tc3, ids)
     let t_annotate = avra_uptime_ms()
     if timings_on {
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms check=${string(t_check - t_collect)}ms naming=${string(t_naming - t_check)}ms annotate=${string(t_annotate - t_naming)}ms total=${string(t_annotate - t_start)}ms")
@@ -1201,8 +1202,11 @@ export fn typecheck_program(stmts: List<SStmt>, type_reg: TypeRegistry, macro_or
     // Stamping AFTER annotation keeps the typeck-internal registries
     // unchanged while still letting downstream stages see the
     // resolved ids.
-    let stamped_final = stamp_ids_stmts(tc3.nodes, annotated, type_reg)
-    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
+    let stamped_final = stamp_ids_stmt_ids(tc3.nodes, annotated, type_reg)
+    // TypeCheckResult.stmts stays List<SStmt> until the mono/codegen seam
+    // flips — one sstmts_of adapter here keeps every downstream consumer
+    // (monomorphize + the check result structs) untouched.
+    TypeCheckResult { stmts: tc3.nodes.sstmts_of(stamped_final), had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
 
 /// Names of registered nominals (struct/enum/newtype) that still
@@ -4050,19 +4054,6 @@ fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
     tc_bind(tc, name, declared_ty)
 }
 
-/// Walk a List<SStmt>, returning a copy with every contained SExpr's
-/// `.ty` field filled in.
-fn annotate_stmts(tc: TC, stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut cur = tc
-    for ss in stmts {
-        let new_stmt = annotate_stmt(cur, ss.node)
-        out.push(sstmt_at(new_stmt, ss.line, ss.col, ss.file))
-        cur = annotate_scope_step(cur, ss.node)
-    }
-    out
-}
-
 /// Thread the annotate scope across one statement: bindings flow into
 /// their successors' lookups (shared by the wrapped and row walks).
 fn annotate_scope_step(cur: TC, node: Stmt) -> TC {
@@ -4079,7 +4070,8 @@ fn annotate_scope_step(cur: TC, node: Stmt) -> TC {
     }
 }
 
-/// Row-list twin of `annotate_stmts`: rewritten rows re-allocate,
+/// Annotate the program's root rows — the id-native annotation walk
+/// (`typecheck_program` pass 3): rewritten rows re-allocate,
 /// inheriting positions.
 fn annotate_stmt_ids(tc: TC, ids: List<StmtId>) -> List<StmtId> {
     mut out: List<StmtId> = []
@@ -4577,17 +4569,8 @@ fn naming_warn(tc: TC, msg: string) -> TC {
     tc with { bag: bag_report(tc.bag, d) }
 }
 
-/// Walk every top-level statement and apply the per-decl naming-
-/// convention check.
-fn check_naming_conventions(tc: TC, stmts: List<SStmt>) -> TC {
-    mut cur = tc
-    for ss in stmts {
-        cur = check_naming_stmt(cur, ss.node)
-    }
-    cur
-}
-
-/// Per-stmt branch of `check_naming_conventions`. Each declaration
+/// Per-stmt branch of the naming-convention check (driven by the
+/// id-native `check_naming_stmt_ids` root walk). Each declaration
 /// kind has its own expected case (PascalCase for types/enums/
 /// traits, snake_case for fns/lets, SCREAMING_SNAKE for consts).
 fn check_naming_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {

@@ -1391,8 +1391,9 @@ export fn stamp_ids_stmts(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistr
 }
 
 /// Stamp a flipped `List<StmtId>` body: each rebuilt child is a NEW
-/// arena row (transforms allocate; rows are immutable).
-fn stamp_ids_stmt_ids(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<StmtId> {
+/// arena row (transforms allocate; rows are immutable). Exported for the
+/// arena-id-native `typecheck_program` (F4e).
+export fn stamp_ids_stmt_ids(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<StmtId> {
     mut out: List<StmtId> = []
     // `restmt` (not a bare `add_leaf`) so each rewritten row inherits the
     // source row's position column + span + provenance — a bare `add_leaf`
