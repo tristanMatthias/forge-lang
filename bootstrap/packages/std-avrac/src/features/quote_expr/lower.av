@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
 
@@ -154,14 +154,6 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
     }
 }
 
-fn any_quote_in_expr_list(store: NodeStore, list: List<SExpr>) -> bool {
-    mut i = 0
-    while i < list.length {
-        if any_quote_in_expr(store, list[i].node) { return true }
-        i = i + 1
-    }
-    false
-}
 
 /// The id twin of `any_quote_in_expr_list` (mirrors `any_quote_in_stmt_ids`):
 /// scan a flipped `List<ExprId>` for a nested quote by resolving each id in
@@ -297,10 +289,6 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .Splice(target) -> .Splice(lower_expr_id(store, target))
         _ -> expr
     }
-}
-
-fn lower_expr_list(store: NodeStore, list: List<SExpr>) -> List<SExpr> {
-    list_map(list, (se: SExpr) -> sexpr(lower_expr(store, se.node), se.line, se.col))
 }
 
 /// Lower quotes over a flipped `List<ExprId>` (call args) — the id twin of

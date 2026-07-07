@@ -11,22 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Stmt, Expr, CompConfigPair, StmtId, NodeStore}
-
-/// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
-/// macro authors handle component-block introspection without deep
-/// pattern matching when they iterate a parent's children.
-///
-/// @field comp_name — the registered component name (e.g. "flag")
-/// @field instance  — the user-supplied instance name (e.g. "verbose")
-/// @field config    — config pairs supplied at the call site
-/// @field body      — the block body's rows (arena ids, F3a)
-export type ComponentBlockView = {
-    comp_name: string,
-    instance: string,
-    config: List<CompConfigPair>,
-    body: List<StmtId>,
-}
+use core.{Expr, CompConfigPair, StmtId, NodeStore}
 
 // ── Function lookup ──
 
@@ -68,37 +53,6 @@ export fn find_fn_body(store: NodeStore, body: List<StmtId>, fn_name: string) ->
     find_fn(store, body, fn_name).body
 }
 
-// ── Component-block children ──
-
-/// Every direct ComponentBlock child of `body`. Top-level only —
-/// does not recurse into nested instantiations.
-export fn all_children(body: List<SStmt>) -> List<ComponentBlockView> {
-    children_matching(body, "")
-}
-
-/// Every direct ComponentBlock child whose comp_name matches
-/// `comp_name`. Empty `comp_name` returns all children
-/// (i.e. `all_children` is the unfiltered case).
-export fn children_of_type(body: List<SStmt>, comp_name: string) -> List<ComponentBlockView> {
-    children_matching(body, comp_name)
-}
-
-/// Internal: single walk over `body`, collecting ComponentBlocks.
-/// `filter_name == ""` means "no filter — include everything".
-fn children_matching(body: List<SStmt>, filter_name: string) -> List<ComponentBlockView> {
-    mut out: List<ComponentBlockView> = []
-    for ss in body {
-        match ss.node {
-            .ComponentBlock(cn, inst, cfg, b) -> {
-                if filter_name == "" || cn == filter_name {
-                    out.push(ComponentBlockView { comp_name: cn, instance: inst, config: cfg, body: b })
-                }
-            }
-            _ -> {}
-        }
-    }
-    out
-}
 
 // ── Config-pair lookup ──
 
