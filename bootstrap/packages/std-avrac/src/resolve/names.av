@@ -749,7 +749,11 @@ fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<Al
 /// `typecheck_program` so synthetic fns can blame their macro in
 /// diagnostics (so07.3 / T3).
 export type NameResolveResult = {
-    stmts: List<SStmt>,
+    // B-final: the post-resolve program vector is arena-id-native — the next
+    // pass (run_comptime) takes ids straight. `validate_scopes_after_expand`
+    // materialises it via `rows_of`; metadata consumers that still want
+    // wrappers bridge back with `sstmts_of`.
+    stmts: List<StmtId>,
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
@@ -1023,7 +1027,7 @@ export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     let no_origins: List<MacroFnOrigin> = []
     NameResolveResult {
-        stmts: stmts,
+        stmts: state.nodes.rows_of(stmts),
         had_error: has_errors,
         error_message: if has_errors {
             if resolved.had_error { resolved.error_message } else { "module resolution errors" }

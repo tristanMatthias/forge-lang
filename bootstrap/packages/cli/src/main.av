@@ -3845,7 +3845,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
             let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
@@ -3909,7 +3909,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
             println(fmt_stmt_list(parsed_prog.store, parsed_prog.store.sstmts_of(post_comptime), 0))
             return
         }
@@ -3928,7 +3928,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
             let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
@@ -4177,7 +4177,7 @@ fn main() {
         // Comptime fold: replace `@comptime` calls with their literal results.
         // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
-        let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
+        let post_comptime = run_comptime(named.stmts, parsed_prog.store)
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
         let t_typeck = avra_uptime_ms()
@@ -4219,7 +4219,7 @@ fn main() {
                 basename_no_ext(cpath)
             }
             let fp = bytes_from_hex(sha256_hex(csource))
-            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
+            let unit_meta = extract_unit_metadata(unit_name, fp, parsed_prog.store.sstmts_of(named.stmts), parsed_prog.store)
             // 2wfp: when compiling a real package (avra.toml present),
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
@@ -4246,8 +4246,9 @@ fn main() {
             // Entry-point file is skipped (its meta.bin is the
             // whole-unit slice consumers expect).
             if per_file_metadata {
-                let files = collect_source_files(parsed_prog.store, named.stmts)
-                emit_per_file_metas(files, named.stmts, unit_name, cpath, parsed_prog.store)
+                let named_ss = parsed_prog.store.sstmts_of(named.stmts)
+                let files = collect_source_files(parsed_prog.store, named_ss)
+                emit_per_file_metas(files, named_ss, unit_name, cpath, parsed_prog.store)
             }
         }
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
@@ -4276,7 +4277,7 @@ fn main() {
         // import-graph reachability instead of filesystem find.
         // Decoupled from --emit_metadata so it's usable on its own.
         if list_files_path != "" {
-            let files = collect_source_files(parsed_prog.store, named.stmts)
+            let files = collect_source_files(parsed_prog.store, parsed_prog.store.sstmts_of(named.stmts))
             mut buf = ""
             mut fi = 0
             while fi < files.length {
