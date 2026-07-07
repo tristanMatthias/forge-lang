@@ -306,8 +306,8 @@ fn stop_after_matches(stop_after: string, stage: string) -> bool {
 /// Returns the post-expand stmt list on success; fails the process
 /// (after rendering F4100 diagnostics) when the validator found
 /// schema mismatches.
-fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: NodeStore) -> List<SStmt> {
-    let comp = expand_components(stmts, store)
+fn expand_components_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeStore) -> List<StmtId> {
+    let comp = expand_components(ids, store)
     if bag_has_errors(comp.bag) {
         render_bag_ctx(ctx, comp.bag)
         fail("component validation failed")
@@ -322,8 +322,8 @@ fn expand_components_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: Node
 /// repeated immediately after `expand_components_or_fail`.
 /// Returns the NameResolveResult so the caller can continue
 /// with run_comptime → typecheck.
-fn marshal_and_resolve_or_fail(stmts: List<SStmt>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
-    let with_marshal = derive_marshal(store.rows_of(stmts), store)
+fn marshal_and_resolve_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
+    let with_marshal = derive_marshal(ids, store)
     let named = resolve_and_expand_program(with_marshal, store)
     render_bag_if_nonempty(ctx, named.bag)
     if named.had_error { fail(named.error_message) }
@@ -3842,7 +3842,7 @@ fn main() {
             // Inject intrinsics AFTER module resolution so stdlib's
             // Result is visible to program_declares_enum — avoids
             // synthesizing a duplicate that dkfa would flag.
-            let with_intrinsics = parsed_prog.store.sstmts_of(inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store))
+            let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
@@ -3906,7 +3906,7 @@ fn main() {
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = parsed_prog.store.sstmts_of(inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store))
+            let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
@@ -3925,7 +3925,7 @@ fn main() {
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = parsed_prog.store.sstmts_of(inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store))
+            let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(parsed_prog.store.rows_of(named.stmts), parsed_prog.store)
@@ -4157,13 +4157,16 @@ fn main() {
         // program_declares_enum scan sees stdlib's Result (now inline)
         // and skips synthesizing a duplicate. Cleanup of the earlier
         // dkfa `is_intrinsic_name` hack.
-        let with_intrinsics = parsed_prog.store.sstmts_of(inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store))
+        let with_intrinsics = inject_intrinsics(parsed_prog.store.rows_of(mod_resolved.stmts), parsed_prog.store)
         // g2eo Phase A: per-module compile filter. Marks every Module
         // wrapper outside `target_module` as @external_unit so codegen
         // emits forward-refs, not bodies. Runs after resolve so the
         // filter has the full module tree to inspect.
+        // filter_to_target_unit is still List<SStmt>-shaped, so bracket it
+        // with sstmts_of/rows_of — a transitional seam adapter absorbed when
+        // that modules helper flips to arena ids.
         let post_filter_stmts = if target_module != "" {
-            filter_to_target_unit(parsed_prog.store, with_intrinsics, target_module)
+            parsed_prog.store.rows_of(filter_to_target_unit(parsed_prog.store, parsed_prog.store.sstmts_of(with_intrinsics), target_module))
         } else {
             with_intrinsics
         }

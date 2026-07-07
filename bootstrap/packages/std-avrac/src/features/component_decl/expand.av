@@ -23,7 +23,7 @@ use list_ops.{list_concat, list_map}
 /// (F4100). Callers (check_source / build_binary / cli/main.av)
 /// render bag through the unified renderer.
 export type ComponentExpandResult = {
-    stmts: List<SStmt>,
+    stmts: List<StmtId>,
     bag: DiagnosticBag,
 }
 
@@ -42,14 +42,23 @@ export type ComponentExpandResult = {
 /// `expand_stmt_list` rebuilt the entire stmt tree even when there
 /// was nothing to expand (4szi.1 perf pass — every check_source /
 /// `bs2 check` call runs this).
-export fn expand_components(stmts: List<SStmt>, store: NodeStore) -> ComponentExpandResult {
+/// B-final: the pass boundary is arena-id-native — the program vector
+/// arrives as `List<StmtId>` (the flipped inject_intrinsics upstream hands
+/// ids straight in) and leaves as `List<StmtId>` (derive_marshal downstream
+/// takes ids). The registry scan / validator / splicer are all still
+/// `List<SStmt>`-shaped (none has an id twin), so we bridge once at the
+/// boundary via `sstmts_of`; the empty-registry fast-path returns the
+/// original `ids` unchanged (identity), and the spliced path materialises
+/// the rebuilt `List<SStmt>` back to rows via `rows_of`.
+export fn expand_components(ids: List<StmtId>, store: NodeStore) -> ComponentExpandResult {
+    let stmts = store.sstmts_of(ids)
     let reg = collect_component_defs(store, stmts)
-    if reg.length == 0 { return ComponentExpandResult { stmts, bag: bag_new() } }
+    if reg.length == 0 { return ComponentExpandResult { stmts: ids, bag: bag_new() } }
     let bag = validate_component_tree(store, stmts, reg)
     let empty_slots: List<ChildrenSlot> = []
     let root = CompNestCtx { parent_var: "", parent_name: "", parent_children: empty_slots }
     let spliced = expand_stmt_list(store, stmts, reg, root)
-    ComponentExpandResult { stmts: spliced, bag }
+    ComponentExpandResult { stmts: store.rows_of(spliced), bag }
 }
 
 // ── Component definition registry ──
