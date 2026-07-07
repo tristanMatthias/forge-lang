@@ -20,11 +20,13 @@ use list_ops.{list_map, list_concat}
 
 // ── Public API ──
 
-/// Top-level desugar entry. Walks the statement list rewriting
-/// expression-level sugar (`assert`, `dbg`, `todo`, `unreachable`,
-/// `min`, `max`, list comprehensions). Idempotent. Rewritten children
-/// allocate fresh rows via the store's transform allocators
-/// (`restmt`/`reexpr`), inheriting the source rows' positions.
+/// Top-level desugar entry. Walks the program's root statement rows
+/// (`List<StmtId>`) rewriting expression-level sugar (`assert`, `dbg`,
+/// `todo`, `unreachable`, `min`, `max`, list comprehensions).
+/// Idempotent. Rewritten children allocate fresh rows via the store's
+/// transform allocators (`restmt`/`reexpr`), inheriting the source
+/// rows' positions. This is an arena-id-native pass (F4e): callers
+/// thread `List<StmtId>` in and out via the store.
 ///
 /// **Intrinsic injection moved out of this entry point** — call
 /// `inject_intrinsics` AFTER `resolve_module_files` so the
@@ -33,14 +35,15 @@ use list_ops.{list_map, list_concat}
 /// duplicate. Each caller does:
 ///   parse → lower_quotes → desugar_program → resolve_module_files
 ///                                          → inject_intrinsics → ...
-export fn desugar_program(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
+export fn desugar_program(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
     // Collect top-level / module fn signatures up front so call-argument
     // table inference (`f(table { ... })`) can pin the row type from the
     // matching parameter's declared `List<Row>` type. Param vtypes are
     // already populated by the parser (type_expr_to_vtype), so this works
     // pre-resolve. (c080 fn-arg inference.)
-    let sigs = collect_fn_sigs(store, stmts)
-    desugar_stmt_list(store, stmts, sigs)
+    let no_sigs: List<FnSig> = []
+    let sigs = collect_fn_sigs_stmt_ids(store, ids, no_sigs)
+    desugar_stmt_ids(store, ids, sigs)
 }
 
 /// A function's name paired with its declared parameter types. Used only
@@ -51,16 +54,8 @@ type FnSig = { name: string, params: List<ValueType> }
 /// level, inside modules, inside impls, and under annotations. Methods
 /// are keyed by their bare name; a same-named free fn would shadow, but
 /// table args to methods are rare and fall back to the explicit form.
-fn collect_fn_sigs(store: NodeStore, stmts: List<SStmt>) -> List<FnSig> {
-    mut out: List<FnSig> = []
-    mut i = 0
-    while i < stmts.length {
-        out = collect_fn_sigs_stmt(store, stmts[i].node, out)
-        i = i + 1
-    }
-    out
-}
-
+/// The root walk is `collect_fn_sigs_stmt_ids` (id-native, F4e); this
+/// per-stmt helper recurses into nested module/impl bodies.
 fn collect_fn_sigs_stmt(store: NodeStore, stmt: Stmt, acc: List<FnSig>) -> List<FnSig> {
     match stmt {
         .Function(name, _, params, _, _) -> {
@@ -217,13 +212,6 @@ fn stmt_declares_enum(store: NodeStore, s: Stmt, target: string) -> bool {
 }
 
 // ── Statement desugaring ──
-
-/// Map `desugar_stmt` over every element of a `List<SStmt>`, preserving
-/// span info on each rewritten node. `sigs` threads fn signatures for
-/// call-argument table inference.
-fn desugar_stmt_list(store: NodeStore, stmts: List<SStmt>, sigs: List<FnSig>) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt_at(desugar_stmt(store, ss.node, sigs), ss.line, ss.col, ss.file))
-}
 
 /// Desugar a flipped `List<StmtId>` body: each rewritten child is a
 /// fresh row inheriting the original's position (`restmt`).
