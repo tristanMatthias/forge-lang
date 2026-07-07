@@ -79,7 +79,7 @@ fn main() -> int {
     let mod_resolved = resolve_module_files(resolved_top.store.rows_of(resolved_top.stmts!), entry_dir, empty, resolved_top.store)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
-    let files = collect_source_files(resolved_top.store, resolved_top.store.sstmts_of(mod_resolved.stmts))
+    let files = collect_source_files(resolved_top.store, mod_resolved.stmts)
     let count = files.length
     // We expect both top.av AND foo.av in the discovered list — top
     // was parsed via parse_program_source_at, foo via the resolver's

@@ -763,7 +763,7 @@ fn render_unit_chain(units: List<Unit>) -> string {
 // contents), extracts a per-file UnitMetadata slice, and writes it to
 // `<file>.meta.bin`. Entry-point file is skipped — its sidecar is
 // the whole-unit slice consumers expect, written upstream.
-fn emit_per_file_metas(files: List<string>, stmts: List<SStmt>, unit_name: string, entry_path: string, store: NodeStore) {
+fn emit_per_file_metas(files: List<string>, stmts: List<StmtId>, unit_name: string, entry_path: string, store: NodeStore) {
     mut i = 0
     while i < files.length {
         let file_path = files[i]
@@ -4219,7 +4219,7 @@ fn main() {
                 basename_no_ext(cpath)
             }
             let fp = bytes_from_hex(sha256_hex(csource))
-            let unit_meta = extract_unit_metadata(unit_name, fp, parsed_prog.store.sstmts_of(named.stmts), parsed_prog.store)
+            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             // 2wfp: when compiling a real package (avra.toml present),
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
@@ -4246,9 +4246,8 @@ fn main() {
             // Entry-point file is skipped (its meta.bin is the
             // whole-unit slice consumers expect).
             if per_file_metadata {
-                let named_ss = parsed_prog.store.sstmts_of(named.stmts)
-                let files = collect_source_files(parsed_prog.store, named_ss)
-                emit_per_file_metas(files, named_ss, unit_name, cpath, parsed_prog.store)
+                let files = collect_source_files(parsed_prog.store, named.stmts)
+                emit_per_file_metas(files, named.stmts, unit_name, cpath, parsed_prog.store)
             }
         }
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
@@ -4277,7 +4276,7 @@ fn main() {
         // import-graph reachability instead of filesystem find.
         // Decoupled from --emit_metadata so it's usable on its own.
         if list_files_path != "" {
-            let files = collect_source_files(parsed_prog.store, parsed_prog.store.sstmts_of(named.stmts))
+            let files = collect_source_files(parsed_prog.store, named.stmts)
             mut buf = ""
             mut fi = 0
             while fi < files.length {

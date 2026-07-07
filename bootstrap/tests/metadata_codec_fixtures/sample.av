@@ -744,7 +744,7 @@ fn main() -> int {
 
     let ext_stmts: List<SStmt> = [s_type, s_fn, s_const, s_const_int, s_extern]
 
-    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts, ext_store)
+    let extracted = extract_unit_metadata("@ext", ext_fp, ext_store.rows_of(ext_stmts), ext_store)
     let ex_types: List<TypeDeclEntry> = extracted.types
     let ex_fns: List<FnDeclEntry> = extracted.fns
     let ex_consts: List<ConstDeclEntry> = extracted.consts
@@ -896,7 +896,7 @@ fn main() -> int {
         sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, synth_store.add_expr_leaf(Expr.String("\"42\"")))),
     ]
 
-    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, synth_store)
+    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_store.rows_of(synth_stmts), synth_store)
     // synthesize_unit_stmts allocates its output rows into this store, so
     // read the synthesized Module/fn/const back through it.
     let synth_out_store = new_node_store(build_line_index(""))
