@@ -3,7 +3,7 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.{Stmt, SStmt, sstmt, sstmt_at, Annotation, NodeStore}
+use core.{Stmt, Annotation, NodeStore, SrcPos}
 use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, synthesize_unit_body, stamp_stub_spans}
@@ -147,11 +147,9 @@ fn loaded_has(paths: List<string>, path: string) -> bool {
 /// @field error_message — diagnostic when `had_error` is set.
 export type ModListResult = {
     // B-final: the resolved program vector is arena-id-native, and so is the
-    // resolver's recursive core — every `.stmts` field here is produced and
-    // consumed as ids. The lone remaining `List<SStmt>` seam is the
-    // hoist/dedup post-processing tail (shared with test_runner), which the
-    // public `resolve_module_files` bridges into via `sstmts_of` and back out
-    // of via `rows_of`.
+    // whole resolver — every `.stmts` field here is produced and consumed as
+    // ids. The only boxed input left is the parser's own `parsed.stmts!`,
+    // bridged into arena rows via `rows_of` at each read.
     stmts: List<StmtId>,
     loaded: List<string>,
     had_error: int,
@@ -398,17 +396,15 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
 export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
-    // B-final: the recursive resolver core is arena-id-native end to end —
-    // the desugared program arrives as ids, every internal walk threads
-    // ids, and the `ModListResult.stmts` exit leaves as ids. The only
-    // remaining `List<SStmt>` seam is the hoist/dedup post-processing tail
-    // (`hoist_package_modules` + `dedup_modules`), which the test_runner
-    // pass shares and which flips with it; the resolver bridges into that
-    // tail via `sstmts_of` and back via `rows_of`.
+    // B-final: the whole resolver is arena-id-native end to end — the
+    // desugared program arrives as ids, every internal walk (including the
+    // hoist/dedup post-processing tail) threads ids, and the
+    // `ModListResult.stmts` exit leaves as ids. No `List<SStmt>` bridge
+    // remains on this path.
     let empty_stack: List<string> = []
     let inner = resolve_module_files_inner(ids, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
-    let split = hoist_package_modules(store, store.sstmts_of(inner.stmts))
+    let split = hoist_package_modules(store, inner.stmts)
     // Dedup hoisted package wrappers by qualified name. Without this,
     // a program that imports two sibling sub-packages of the same
     // scope (e.g. cli/main imports @std.json directly while @std.avrac
@@ -419,7 +415,7 @@ export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<stri
     // forge-crafting-intepreters-dnq4.
     let deduped = dedup_modules(store, split.packages)
     ModListResult {
-        stmts: store.rows_of(list_concat(deduped, split.body)),
+        stmts: list_concat(deduped, split.body),
         loaded: inner.loaded,
         had_error: false,
         error_message: "",
@@ -572,25 +568,25 @@ fn stmts_have_mod_decl(store: NodeStore, stmts: List<StmtId>) -> bool {
 /// pass through in place.
 ///
 /// Tracking ticket: forge-crafting-intepreters-dnq4.
-export fn dedup_modules(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
+export fn dedup_modules(store: NodeStore, stmts: List<StmtId>) -> List<StmtId> {
     flatten_groups(store, group_by_module_name(store, stmts))
 }
 
 /// One slot in the dedup intermediate. `Group(name, body, line, col)`
-/// accumulates a Module by qualified name; `Pass(ss)` carries a
+/// accumulates a Module by qualified name; `Pass(id)` carries a
 /// non-Module statement through in source order. Replaces the prior
 /// 3-variant `ModGroupList` cons-list (lkze.10).
 enum ModGroupItem {
     /// Accumulated Module group: every `Module(name, …)` with the
-    /// same `name` folds into one entry. The first SStmt to emit a
+    /// same `name` folds into one entry. The first row to emit a
     /// given name owns `line`/`col` so diagnostics still reference
     /// a real source location after merging.
-    Group(name: string, body: List<SStmt>, line: int, col: int)
+    Group(name: string, body: List<StmtId>, line: int, col: int)
     /// Pass-through for non-Module statements that must keep their
     /// original list position relative to neighbouring Modules
     /// (e.g. an extern declaration sitting between two package
     /// wrappers should not be reordered after dedup).
-    Pass(stmt: SStmt)
+    Pass(stmt: StmtId)
 }
 
 /// Walk `stmts`, building a `List<ModGroupItem>` that merges every
@@ -599,12 +595,15 @@ enum ModGroupItem {
 /// the inner group-name scan, which is O(unique-modules-seen) per
 /// step — fine because dedup runs on the small program-root list,
 /// not on bodies.
-fn group_by_module_name(store: NodeStore, stmts: List<SStmt>) -> List<ModGroupItem> {
+fn group_by_module_name(store: NodeStore, stmts: List<StmtId>) -> List<ModGroupItem> {
     mut acc: List<ModGroupItem> = []
-    for ss in stmts {
-        match ss.node {
-            .Module(name, body) -> mod_group_merge(acc, name, store.sstmts_of(body), ss.line, ss.col)
-            _ -> acc.push(ModGroupItem.Pass(ss))
+    for id in stmts {
+        match store.stmts.get(id) {
+            .Module(name, body) -> {
+                let pos = store.stmt_pos(id)
+                mod_group_merge(acc, name, body, pos.line, pos.col)
+            }
+            _ -> acc.push(ModGroupItem.Pass(id))
         }
     }
     acc
@@ -613,9 +612,9 @@ fn group_by_module_name(store: NodeStore, stmts: List<SStmt>) -> List<ModGroupIt
 /// Either append a fresh group at the tail or fold `body` into the
 /// existing group's accumulated body when `name` already appears.
 /// First occurrence's `line`/`col` win — later merges keep content
-/// but lose span identity (fine: inner SStmts retain their own
+/// but lose span identity (fine: inner rows retain their own
 /// spans). Mutates `acc` in place.
-fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<SStmt>, line: int, col: int) {
+fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<StmtId>, line: int, col: int) {
     mut local = acc
     for (i, item) in local.enumerate() {
         match item {
@@ -640,20 +639,21 @@ fn mod_group_merge(acc: List<ModGroupItem>, name: string, body: List<SStmt>, lin
 /// bodies leaves duplicate stmts with identical (file, line, col)
 /// tuples — span-equality means they're literally the same source
 /// position, so dropping the duplicate is safe.
-fn flatten_groups(store: NodeStore, items: List<ModGroupItem>) -> List<SStmt> {
-    mut acc: List<SStmt> = []
+fn flatten_groups(store: NodeStore, items: List<ModGroupItem>) -> List<StmtId> {
+    mut acc: List<StmtId> = []
     mut i = 0
     while i < items.length {
         match items[i] {
             .Group(name, body, line, col) -> {
                 // Hoisted package wrappers are virtual scopes — no
                 // source file owns them — so file="" is correct
-                // here. Body stmts retain their own SStmt.file from
+                // here. Body rows retain their own source file from
                 // the original parse.
-                let merged = sstmt(Stmt.Module(name, store.rows_of(dedup_modules(store, dedup_by_span(body)))), line, col)
+                let merged = store.stmts.add_leaf(Stmt.Module(name, dedup_modules(store, dedup_by_span(store, body))))
+                store.stmts.record_pos(merged, SrcPos { line: line, col: col, file: "" })
                 acc.push(merged)
             }
-            .Pass(ss) -> acc.push(ss)
+            .Pass(id) -> acc.push(id)
         }
         i = i + 1
     }
@@ -666,26 +666,26 @@ fn flatten_groups(store: NodeStore, items: List<ModGroupItem>) -> List<SStmt> {
 /// is precise (no risk of dropping distinct decls that happen to
 /// share a name across files). Stmts with empty file (synthesized,
 /// no source location) are always kept.
-fn dedup_by_span(stmts: List<SStmt>) -> List<SStmt> {
-    mut acc: List<SStmt> = []
+fn dedup_by_span(store: NodeStore, stmts: List<StmtId>) -> List<StmtId> {
+    mut acc: List<StmtId> = []
     mut seen: List<string> = []
     mut idx = 0
     while idx < stmts.length {
-        let ss = stmts[idx]
+        let id = stmts[idx]
         idx = idx + 1
-        if ss.file == "" {
-            acc.push(ss)
+        let pos = store.stmt_pos(id)
+        if pos.file == "" {
+            acc.push(id)
             continue
         }
-        let key = "${ss.file}:${ss.line}:${ss.col}"
+        let key = "${pos.file}:${pos.line}:${pos.col}"
         if list_contains_str(seen, key) { continue }
         seen.push(key)
-        acc.push(ss)
+        acc.push(id)
     }
     acc
 }
 
-/// Helper: collect linked List<SStmt> into List<SStmt> for indexed walk.
 /// Buckets produced by `hoist_package_modules`: every `@`-prefixed
 /// `Module` lives in `packages`, the rest in `body`. The two get
 /// concatenated to put package wrappers at the program root.
@@ -695,8 +695,8 @@ fn dedup_by_span(stmts: List<SStmt>) -> List<SStmt> {
 /// stitches a single program from all their bodies plus a deduped
 /// packages list).
 export type HoistSplit = {
-    packages: List<SStmt>,
-    body: List<SStmt>,
+    packages: List<StmtId>,
+    body: List<StmtId>,
 }
 
 /// Walk the resolved stmt list and pull every `@`-prefixed Module
@@ -707,28 +707,28 @@ export type HoistSplit = {
 /// Recurses into both `@`-prefixed and regular Module bodies so a
 /// sub-package wrapper that landed inside another package (e.g.
 /// `@std.lsp` inside `@std.avrac.indexer`) also reaches the root.
-export fn hoist_package_modules(store: NodeStore, stmts: List<SStmt>) -> HoistSplit {
-    mut packages: List<SStmt> = []
-    mut body: List<SStmt> = []
-    for ss in stmts {
-        match ss.node {
+export fn hoist_package_modules(store: NodeStore, stmts: List<StmtId>) -> HoistSplit {
+    mut packages: List<StmtId> = []
+    mut body: List<StmtId> = []
+    for id in stmts {
+        match store.stmts.get(id) {
             .Module(name, mbody) if name.length > 0 && name[0] == "@" -> {
-                let inner = hoist_package_modules(store, store.sstmts_of(mbody))
-                let cleaned = sstmt_at(Stmt.Module(name, store.rows_of(inner.body)), ss.line, ss.col, ss.file)
+                let inner = hoist_package_modules(store, mbody)
+                let cleaned = store.restmt(Stmt.Module(name, inner.body), id)
                 for p in inner.packages { packages.push(p) }
                 packages.push(cleaned)
             }
             .Module(name, mbody) -> {
-                let inner = hoist_package_modules(store, store.sstmts_of(mbody))
+                let inner = hoist_package_modules(store, mbody)
                 if has_no_packages(inner) {
-                    body.push(ss)
+                    body.push(id)
                 } else {
-                    let cleaned = sstmt_at(Stmt.Module(name, store.rows_of(inner.body)), ss.line, ss.col, ss.file)
+                    let cleaned = store.restmt(Stmt.Module(name, inner.body), id)
                     for p in inner.packages { packages.push(p) }
                     body.push(cleaned)
                 }
             }
-            _ -> body.push(ss)
+            _ -> body.push(id)
         }
     }
     HoistSplit { packages, body }
@@ -737,7 +737,7 @@ export fn hoist_package_modules(store: NodeStore, stmts: List<SStmt>) -> HoistSp
 /// True iff the inner hoist split produced no @-prefixed modules
 /// to lift. Used to short-circuit the rebuild of regular Module
 /// nodes when nothing inside them needed hoisting — the original
-/// SStmt can pass through verbatim, preserving span identity.
+/// row can pass through by id, preserving span identity.
 fn has_no_packages(split: HoistSplit) -> bool {
     split.packages.length == 0
 }
