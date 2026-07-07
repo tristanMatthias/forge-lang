@@ -7,7 +7,7 @@
 
 use @std.avrac.parse.{parse_expression_native_probe, parse_program_source}
 use @std.avrac.core.{Expr, Pattern, render_pattern, NodeStore}
-use @std.avrac.fmt.{fmt_stmt_list}
+use @std.avrac.fmt.{fmt_stmt_ids}
 
 /// Parse a match expression and render its first arm's pattern through
 /// the store — the flip means rendering MUST resolve ids to reproduce
@@ -51,7 +51,7 @@ spec "F2: nested-variant patterns carry id children that render faithfully" {
 fn fmt_of(source: string) -> string {
     let r = parse_program_source(source)
     if r.had_error != 0 || r.stmts == null { return "<parse error>" }
-    fmt_stmt_list(r.store, r.stmts!, 0)
+    fmt_stmt_ids(r.store, r.store.rows_of(r.stmts!), 0)
 }
 
 spec "F2: fmt resolves pattern ids back to surface text" {

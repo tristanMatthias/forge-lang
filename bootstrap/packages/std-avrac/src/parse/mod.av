@@ -248,7 +248,7 @@ export fn parse_program_source_shared(source: string, file: string, store: NodeS
     parser.parse_file_program()
 }
 
-/// Parse a fn-body source rendered by `fmt_stmt_list`. The body is
+/// Parse a fn-body source rendered by `fmt_stmt_ids`. The body is
 /// wrapped in a synthetic fn declaration so `parse_program_source`
 /// sees a complete program; the wrapper's body stmts are returned.
 /// Used by the metadata roundtrip (eager for generic bodies, lazy

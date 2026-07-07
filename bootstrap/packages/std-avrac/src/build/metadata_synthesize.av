@@ -318,7 +318,7 @@ fn lookup_generic_body(bodies: List<GenericBodyEntry>, qn: string) -> string {
 }
 
 /// Re-parse a generic-body source slice into a List<StmtId>. The
-/// producer wrote it via `fmt_stmt_list(body, 0)`, which renders a
+/// producer wrote it via `fmt_stmt_ids(body, 0)`, which renders a
 /// brace-less list of statements. We wrap in a placeholder fn so
 /// the program parser has a complete top-level to chew on, then
 fn insert_consts(store: NodeStore, trie: SubMod, xs: List<ConstDeclEntry>, unit_name: string) -> SubMod {

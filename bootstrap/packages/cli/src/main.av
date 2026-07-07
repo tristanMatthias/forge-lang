@@ -57,7 +57,7 @@ use @std.process.{bytes_reader, bytes_builder}
 use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
-use @std.avrac.fmt.{fmt_stmt_list}
+use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
@@ -3884,7 +3884,7 @@ fn main() {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
             let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
-            println(fmt_stmt_list(parsed_fmt.store, parsed_fmt.stmts, 0))
+            println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.store.rows_of(parsed_fmt.stmts), 0))
             return
         }
         "expand" -> {
@@ -3893,7 +3893,7 @@ fn main() {
             // `@comptime` calls produced. Pipeline runs parse →
             // lower_quotes → desugar → resolve_module_files →
             // expand_components → resolve_names → expand_macros →
-            // run_comptime, then formats with fmt_stmt_list.
+            // run_comptime, then formats with fmt_stmt_ids.
             //
             // The output is valid Avra source that compiles to the
             // same program as the original — the P7 (visible magic)
@@ -3910,7 +3910,7 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store)
-            println(fmt_stmt_list(parsed_prog.store, parsed_prog.store.sstmts_of(post_comptime), 0))
+            println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
             return
         }
         "test" -> {
