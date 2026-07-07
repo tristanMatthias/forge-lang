@@ -47,7 +47,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}

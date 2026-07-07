@@ -4,7 +4,7 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, BinOp, ValueType, SStmt, sstmt_dummy, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, Expr, BinOp, ValueType, SStmt, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 use diagnostics.{DiagCode}

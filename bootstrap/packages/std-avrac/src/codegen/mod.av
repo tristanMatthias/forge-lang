@@ -6,7 +6,7 @@
 // indexing/helpers/escape/cycles auto-load as siblings, surface flat at
 // `codegen.{...}`.
 
-use core.{Expr, Pattern, SExpr, SStmt, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
+use core.{Expr, Pattern, SExpr, SStmt, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}

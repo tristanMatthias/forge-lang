@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, SExpr, sexpr_dummy, SStmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, StmtId, ExprId, SrcPos, byte_span_none}
+use core.{Stmt, Expr, SExpr, SStmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, StmtId, ExprId, SrcPos, byte_span_none}
 use parse.{Parser, StmtListIds}
 use core.{Tk}
 use core.{register_component_name}

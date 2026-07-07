@@ -55,7 +55,7 @@
 // are seed-gated — the wrapper is the additive equivalent (and the
 // side-table value type).
 
-use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild, strip_spans, SStmt, sstmt_at}
+use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild, strip_spans, SStmt}
 use core.{ExprId, StmtId, PatId, TypeId}
 use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index, SrcPos, src_pos_none}

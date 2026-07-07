@@ -10,7 +10,7 @@
 // self.__parent → parent accumulator variable
 // self.__parent_name → parent instance name string
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation, vtype_struct}
+use core.{Expr, Stmt, SExpr, SStmt, sexpr, sstmt, sstmt_at, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation, vtype_struct}
 use core.{NodeStore, StmtId, ExprId}
 use core.{has_fn, find_fn_body}
 use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, bag_merge, diag_error, span_at}
