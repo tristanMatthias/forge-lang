@@ -903,7 +903,7 @@ fn main() -> int {
     let synth_back = synthesize_unit_stmts(synth_meta, synth_out_store)
 
     // The top of synth_back should be Stmt.Module("@synth", body).
-    let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_out_store, synth_back[0].node) } else { Stmt.NoOp }
+    let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_back[0])) } else { Stmt.NoOp }
     probe("synth_top_is_module",
         match synth_top {
             .Module(name, _) -> name == "@synth"

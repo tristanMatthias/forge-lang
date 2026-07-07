@@ -183,20 +183,20 @@ spec "P4 extractor: generic_bodies population" {
 // re-parsed body (instead of the empty-body extern-wrapped stub the
 // pre-P5 path used for every fn).
 use @std.avrac.build.{synthesize_unit_body}
-use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, SStmt, Stmt, stmt_unwrap}
+use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, Stmt, stmt_unwrap}
 
-/// Walk a (possibly Module-wrapped) List<SStmt> and find the first
+/// Walk a (possibly Module-wrapped) List<StmtId> and find the first
 /// `Function(name)` node, returning its body. Returns an empty list
 /// on miss. Recurses into Module bodies because the synthesizer wraps
 /// decls under their qualified-name path (e.g. unit_name → @std::test).
-fn first_fn_body(store: NodeStore, stmts: List<SStmt>, name: string) -> List<StmtId> {
+fn first_fn_body(store: NodeStore, stmts: List<StmtId>, name: string) -> List<StmtId> {
     mut i = 0
     while i < stmts.length {
-        let ss = stmts[i]
-        match stmt_unwrap(store, ss.node) {
+        let id = stmts[i]
+        match stmt_unwrap(store, store.stmts.get(id)) {
             .Function(n, _, _, _, body) if n == name -> return body
             .Module(_, body) -> {
-                let found = first_fn_body(store, store.sstmts_of(body), name)
+                let found = first_fn_body(store, body, name)
                 if found.length > 0 { return found }
             }
             _ -> {}

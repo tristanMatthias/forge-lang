@@ -932,13 +932,12 @@ fn resolve_package_use_and_continue(id: StmtId, next: List<StmtId>, dir: string,
     let take_meta_fast_path = use_meta && meta_path != "" && metadata_file_exists(meta_path)
     emit_progress_start(pkg_file)
     let pkg_t_start = avra_uptime_ms()
-    // Both branches produce a still-boxed `List<SStmt>` (metadata synthesis
-    // and the parser have not flipped yet), bridged into arena rows here at
-    // the producer boundary so the rest of the walk is id-native.
+    // Metadata synthesis is now id-native; the parse still emits a boxed
+    // `List<SStmt>`, bridged into arena rows at that producer boundary.
     let pkg_stmts = if take_meta_fast_path {
         record_meta_dep(pkg_file)
         let m = metadata_read(meta_path)
-        store.rows_of(stamp_stub_spans(store, synthesize_unit_body(m, store), meta_path))
+        stamp_stub_spans(store, synthesize_unit_body(m, store), meta_path)
     } else {
         let pkg_source = avra_selfhost_read_file(pkg_file)
         // The parse stamps each row's `file` at the package's entry-point
@@ -1129,13 +1128,12 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: List<string>, stack: Lis
             let take_meta = use_meta && meta_path != "" && metadata_file_exists(meta_path)
             emit_progress_start(mod_path)
             let mod_t_start = avra_uptime_ms()
-            // Both branches emit a still-boxed `List<SStmt>`; bridge into
-            // arena rows here at the producer boundary (metadata synthesis
-            // and the parser have not flipped yet).
+            // Metadata synthesis is now id-native; the parse still emits a
+            // boxed `List<SStmt>`, bridged into arena rows at that boundary.
             let mod_stmts = if take_meta {
                 record_meta_dep(mod_path)
                 let m = metadata_read(meta_path)
-                store.rows_of(stamp_stub_spans(store, synthesize_unit_body(m, store), meta_path))
+                stamp_stub_spans(store, synthesize_unit_body(m, store), meta_path)
             } else {
                 let mod_source = avra_selfhost_read_file(mod_path)
                 // The parse stamps every row's `file` with `mod_path`.

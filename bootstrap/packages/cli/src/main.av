@@ -75,7 +75,7 @@ use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source}
-use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
+use @std.avrac.core.{render_expr, render_stmt_list, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
@@ -3803,10 +3803,10 @@ fn main() {
             }
             println("// metadata for unit `${m.unit_name}`")
             println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
-            // Metadata-synthesized decls carry no pattern ids — an empty
-            // store satisfies the renderer without ever being read.
+            // Synthesis allocates the reconstructed decls into this fresh
+            // store; the id-native renderer reads them straight back out.
             let show_store = new_node_store(build_line_index(""))
-            println(render_stmt_list(show_store, synthesize_unit_stmts(m, show_store)))
+            println(render_stmt_ids(show_store, synthesize_unit_stmts(m, show_store)))
             return
         }
         "eval" -> {
