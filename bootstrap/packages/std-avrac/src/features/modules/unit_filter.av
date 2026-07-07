@@ -18,7 +18,7 @@
 //
 // Tracking: forge-crafting-intepreters-g2eo Phase A.
 
-use core.{Stmt, SStmt, StmtId, NodeStore, Annotation, SExpr, sstmt_at, avra_process_env_get}
+use core.{Stmt, StmtId, NodeStore, Annotation, avra_process_env_get}
 
 /// Returns true iff any decl reachable from `body` carries a source
 /// file whose path starts with `target_prefix`. Recurses into nested
@@ -64,19 +64,20 @@ fn stmt_reaches_target(store: NodeStore, stmt: Stmt, target_prefix: string, debu
     }
 }
 
-/// Attach `@external_unit` to a SStmt's inner Stmt. If the stmt is
+/// Attach `@external_unit` to a statement's inner Stmt. If the stmt is
 /// already wrapped in `Stmt.Annotated`, fold the new annotation in
 /// alongside the existing ones — preserves the original annotations
 /// (e.g. `@export` on items inside the module body don't apply here,
 /// but `@annotated` chains on the Module itself would).
-fn annotate_external(store: NodeStore, ss: SStmt) -> SStmt {
+fn annotate_external(store: NodeStore, id: StmtId) -> StmtId {
     // Prepend `@external_unit` to whatever annotation list already
     // wraps the stmt — preserves the original cons-prepend semantics
     // for stmts that came in pre-Annotated, and starts a fresh
-    // single-entry list for bare stmts.
+    // single-entry list for bare stmts. Allocates the new Annotated
+    // row against the source row's span/position via `restmt`.
     mut combined: List<Annotation> = []
     combined.push(Annotation { name: "external_unit", arg_ids: [] })
-    let inner_id = match ss.node {
+    let inner_id = match store.stmts.get(id) {
         .Annotated(annots, inner) -> {
             mut i = 0
             while i < annots.length {
@@ -85,9 +86,9 @@ fn annotate_external(store: NodeStore, ss: SStmt) -> SStmt {
             }
             inner
         }
-        _ -> store.rows_of([ss])[0]
+        _ -> id
     }
-    sstmt_at(Stmt.Annotated(combined, inner_id), ss.line, ss.col, ss.file)
+    store.restmt(Stmt.Annotated(combined, inner_id), id)
 }
 
 /// Walk `stmts` and rewrite each top-level `Stmt.Module(name, body)`:
@@ -100,30 +101,27 @@ fn annotate_external(store: NodeStore, ss: SStmt) -> SStmt {
 /// got loaded — shouldn't happen post-resolve, but guard anyway)
 /// are not modified: making them external would be a no-op since
 /// codegen already emits nothing for empty bodies.
-/// B-final: the pass boundary is arena-id-native — the program vector
-/// arrives and leaves as `List<StmtId>` (the flipped inject_intrinsics /
-/// expand_components pipeline hands ids straight through). The core walker
-/// `filter_inner_wrapped` is still `List<SStmt>`-shaped, so we bridge once
-/// at the boundary via `sstmts_of` (in) / `rows_of` (out) — the exact
-/// `rows_of ∘ filter ∘ sstmts_of` the caller used to spell inline.
+/// B-final: the pass boundary is arena-id-native and so is the core
+/// walker — the program vector arrives and leaves as `List<StmtId>`
+/// (the flipped inject_intrinsics / expand_components pipeline hands ids
+/// straight through), and `filter_inner_wrapped` now filters ids in
+/// place: kept rows pass through by id, rewritten rows re-allocate
+/// against their source span via `restmt`.
 export fn filter_to_target_unit(store: NodeStore, ids: List<StmtId>, target_prefix: string) -> List<StmtId> {
-    let stmts = store.sstmts_of(ids)
     let debug = avra_process_env_get("AVRA_FILTER_DEBUG") != ""
     if debug {
-        let _ = dump_top_level(store, stmts, "  ")
+        let _ = dump_top_level(store, ids, "  ")
     }
-    store.rows_of(filter_inner_wrapped(store, stmts, target_prefix, debug))
+    filter_inner_wrapped(store, ids, target_prefix, debug)
 }
 
-fn dump_top_level(store: NodeStore, stmts: List<SStmt>, indent: string) -> int {
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        match ss.node {
+fn dump_top_level(store: NodeStore, ids: List<StmtId>, indent: string) -> int {
+    for id in ids {
+        match store.stmts.get(id) {
             .Module(name, body) -> {
                 eprintln("[dump] ${indent}Module(${name}) [body_empty=${body.length == 0}]")
                 if body.length != 0 {
-                    let _ = dump_top_level(store, store.sstmts_of(body), indent + "  ")
+                    let _ = dump_top_level(store, body, indent + "  ")
                 }
             }
             .Annotated(_, inner) -> match store.stmts.get(inner) {
@@ -132,61 +130,45 @@ fn dump_top_level(store: NodeStore, stmts: List<SStmt>, indent: string) -> int {
             }
             _ -> {}
         }
-        i = i + 1
     }
     0
 }
 
-fn filter_inner_wrapped(store: NodeStore, stmts: List<SStmt>, target_prefix: string, debug: bool) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let head = match ss.node {
+fn filter_inner_wrapped(store: NodeStore, ids: List<StmtId>, target_prefix: string, debug: bool) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids {
+        let head = match store.stmts.get(id) {
             .Module(name, body) -> {
                 if body_has_file_under(store, body, target_prefix) {
                     if debug { eprintln("[filter] keep Module ${name}") }
-                    let inner = filter_body_ids(store, body, target_prefix, debug)
-                    sstmt_at(Stmt.Module(name, inner), ss.line, ss.col, ss.file)
+                    let inner = filter_inner_wrapped(store, body, target_prefix, debug)
+                    store.restmt(Stmt.Module(name, inner), id)
                 } else if body.length != 0 {
                     if debug { eprintln("[filter] external Module ${name}") }
-                    annotate_external(store, ss)
+                    annotate_external(store, id)
                 } else {
                     if debug { eprintln("[filter] empty-body Module ${name}") }
-                    ss
+                    id
                 }
             }
             .Annotated(annots, inner) -> match store.stmts.get(inner) {
                 .Module(name, body) -> {
                     if body_has_file_under(store, body, target_prefix) {
                         if debug { eprintln("[filter] keep Annotated Module ${name}") }
-                        let inner_filtered = filter_body_ids(store, body, target_prefix, debug)
-                        sstmt_at(Stmt.Annotated(annots, store.restmt(Stmt.Module(name, inner_filtered), inner)), ss.line, ss.col, ss.file)
+                        let inner_filtered = filter_inner_wrapped(store, body, target_prefix, debug)
+                        store.restmt(Stmt.Annotated(annots, store.restmt(Stmt.Module(name, inner_filtered), inner)), id)
                     } else if body.length != 0 {
                         if debug { eprintln("[filter] external Annotated Module ${name}") }
-                        annotate_external(store, ss)
+                        annotate_external(store, id)
                     } else {
-                        ss
+                        id
                     }
                 }
-                _ -> ss
+                _ -> id
             }
-            _ -> ss
+            _ -> id
         }
         out.push(head)
-        i = i + 1
-    }
-    out
-}
-
-/// Body-rows twin of `filter_inner_wrapped`: filter a flipped
-/// `List<StmtId>` body, re-allocating only the rows the walk rewrote
-/// (kept rows pass through by id).
-fn filter_body_ids(store: NodeStore, body: List<StmtId>, target_prefix: string, debug: bool) -> List<StmtId> {
-    mut out: List<StmtId> = []
-    for id in body {
-        let filtered = filter_inner_wrapped(store, [store.sstmt_of(id)], target_prefix, debug)
-        out.push(store.restmt(filtered[0].node, id))
     }
     out
 }
