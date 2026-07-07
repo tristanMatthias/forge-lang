@@ -87,7 +87,7 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
     let post_comptime = run_comptime(named.stmts, parsed.store)
     let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed.store)
     if bag_has_errors(tc_result.bag) {
-        return TypecheckSourceResult { bag: tc_result.bag, stmts: tc_result.stmts, type_reg: named.type_reg, store: parsed.store }
+        return TypecheckSourceResult { bag: tc_result.bag, stmts: parsed.store.sstmts_of(tc_result.stmts), type_reg: named.type_reg, store: parsed.store }
     }
     // Monomorphize so where-clause / trait-bound errors that only
     // surface during specialisation land in the bag. Merge with the
@@ -95,7 +95,7 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed.store)
     TypecheckSourceResult {
         bag: bag_merge(tc_result.bag, mono.bag),
-        stmts: tc_result.stmts,
+        stmts: parsed.store.sstmts_of(tc_result.stmts),
         type_reg: named.type_reg,
         store: parsed.store,
     }

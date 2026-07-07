@@ -2785,7 +2785,7 @@ fn rewrite_struct_lit_with_expected(name: string, inits: List<FieldInit>, expect
 ///
 /// @field stmts — the program with generics specialised away.
 /// @field bag   — diagnostics accumulated during monomorphization.
-export type MonoResult = { stmts: List<SStmt>, bag: DiagnosticBag }
+export type MonoResult = { stmts: List<StmtId>, bag: DiagnosticBag }
 
 /// Short names declared by two-or-more DISTINCT generic struct/enum decls
 /// living in different modules. The mangle qualifies the base by module only
@@ -2826,9 +2826,15 @@ fn compute_ambig_short_names(regs: GenRegs) -> List<string> {
 /// rewrites every reference to use the mangled names. Iterates
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
-export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>, store: NodeStore) -> MonoResult {
+export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, store: NodeStore) -> MonoResult {
+    // B-final: both pass boundaries are arena-id-native — typecheck hands ids
+    // in, codegen takes ids out. The monomorphizer's walkers are still
+    // `List<SStmt>`-shaped, so we bridge at the boundary: `sstmts_of` on the way
+    // in, and the specialised result materialises back to rows via `rows_of`
+    // (pass-through returns hand the original `ids` straight back).
+    let stmts = store.sstmts_of(ids)
     let regs0 = collect_generics(stmts, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
-    if !has_generics(regs0) { return MonoResult { stmts, bag: bag_new() } }
+    if !has_generics(regs0) { return MonoResult { stmts: ids, bag: bag_new() } }
     // Resolve the short-name collisions ONCE up front so every pass mangles
     // colliding instances module-qualified and the rest by short name (see
     // `GenRegs.ambig` / `mangle_base`). Threaded via `regs` like every registry.
@@ -2837,14 +2843,14 @@ export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>, st
     // Pass 2: collect partial type args (enums merge across constructors)
     let collected = collect_inst_stmts(stmts, regs, CollectState { insts: [], bag: bag_new(), line: 0, col: 0, trait_impls })
     if bag_has_errors(collected.bag) {
-        return MonoResult { stmts, bag: collected.bag }
+        return MonoResult { stmts: ids, bag: collected.bag }
     }
 
     // Merge partial entries across function scopes before finalizing.
     let merged = merge_across_scopes(collected.insts)
     let finalized = finalize_insts(merged, regs, collected.bag, trait_impls)
     if bag_has_errors(finalized.bag) {
-        return MonoResult { stmts, bag: finalized.bag }
+        return MonoResult { stmts: ids, bag: finalized.bag }
     }
 
     // Transitive monomorphization: specializations may contain nested
@@ -2855,7 +2861,7 @@ export fn monomorphize(stmts: List<SStmt>, trait_impls: List<TraitImplEntry>, st
 
     let rewritten = rewrite_stmts(stmts, regs, converged.all_insts)
     let rewritten_specs = rewrite_stmts(converged.all_specs, regs, converged.all_insts)
-    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: converged.bag }
+    MonoResult { stmts: store.rows_of(prepend_stmts(rewritten_specs, rewritten)), bag: converged.bag }
 }
 
 /// Per-iteration output of `mono_converge`. Carries the
