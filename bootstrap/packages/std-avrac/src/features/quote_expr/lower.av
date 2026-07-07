@@ -1204,13 +1204,15 @@ fn construct_stmt_list(store: NodeStore, list: List<SStmt>) -> Expr {
 }
 
 /// The flipped-body twin of `construct_stmt_list`: resolves each row
-/// and emits the span-wrapped constructor list, wrapped in the
+/// and emits the bare `Stmt` constructor list, wrapped in the
 /// `synth_stmt_ids` id shim so the generated `List<StmtId>` payload
-/// slot type-checks (see `construct_stmt_id`).
+/// slot type-checks (see `construct_stmt_id`). Each element is a bare
+/// `Stmt` constructor — `synth_stmt_ids` takes `List<Stmt>`, so no
+/// per-element span wrapper is needed (the shim is an eval identity).
 fn construct_stmt_ids(store: NodeStore, ids: List<StmtId>) -> Expr {
     mut elems: List<Expr> = []
     for id in ids {
-        elems.push(sstmt_dummy_call(store, construct_stmt(store, store.stmts.get(id))))
+        elems.push(construct_stmt(store, store.stmts.get(id)))
     }
     synth_shim_call(store, "synth_stmt_ids", listlit_of(store, elems))
 }

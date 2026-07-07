@@ -14,7 +14,7 @@ use @std.avrac.test_runner.{write_fixture_and_run}
 spec "@expand: 2-arg macro can return ResolvedDecls" {
     then "decls in the returned struct are spliced into the parent scope" {
         let out = write_fixture_and_run("/tmp/avra_expand_resolved_decls_return_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
+            "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "use @std.avrac.diagnostics.{Span}\n" +
             "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
@@ -23,9 +23,9 @@ spec "@expand: 2-arg macro can return ResolvedDecls" {
             "fn build_via_resolved_decls(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
             "    let empty_params: List<ParamEntry> = []\n" +
             "    let empty_tp: List<TypeParamEntry> = []\n" +
-            "    let body: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Number(\"42\"))))]\n" +
+            "    let body: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Number(\"42\")))]\n" +
             "    let fn_decl = Stmt.Function(\"_rd_emitted\", empty_tp, empty_params, ValueType.Int, synth_stmt_ids(body))\n" +
-            "    let decls: List<SStmt> = [sstmt_dummy(fn_decl)]\n" +
+            "    let decls: List<Stmt> = [fn_decl]\n" +
             "    let introduces: List<DeclSymbol> = [\n" +
             "        DeclSymbol { name: \"_rd_emitted\", kind: DeclKind.Function, canonical_path: \"_rd_emitted\" }\n" +
             "    ]\n" +

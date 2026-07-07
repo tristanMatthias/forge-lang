@@ -21,13 +21,13 @@ use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 spec "@comptime decoder: Stmt.ForIn roundtrips through the macro pipeline" {
     then "macro emitting `for x in [a,b,c] { println(x) }` compiles + runs" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_decoder_stmt_coverage_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, ParamEntry, TypeParamEntry, ValueType, Expr, ExprId, SExpr, sexpr_dummy, sstmt_dummy}\n" +
+            "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr, ExprId, SExpr, sexpr_dummy}\n" +
             "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
             "\n" +
             "@comptime\n" +
             "fn emit_iter() -> Stmt {\n" +
             "    let print_args: List<ExprId> = [synth_expr_id(Expr.Ident(\"x\"))]\n" +
-            "    let body_stmts: List<SStmt> = [sstmt_dummy(Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), print_args))))]\n" +
+            "    let body_stmts: List<Stmt> = [Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), print_args)))]\n" +
             "    let loop_body = Stmt.Block(synth_stmt_ids(body_stmts))\n" +
             "    let list_elems: List<ExprId> = [\n" +
             "        synth_expr_id(Expr.String(\"\\\"alpha\\\"\")),\n" +
@@ -38,7 +38,7 @@ spec "@comptime decoder: Stmt.ForIn roundtrips through the macro pipeline" {
             "    let for_stmt = Stmt.ForIn(\"x\", synth_expr_id(list_lit), synth_stmt_id(loop_body))\n" +
             "    let empty_params: List<ParamEntry> = []\n" +
             "    let empty_tp: List<TypeParamEntry> = []\n" +
-            "    let body: List<SStmt> = [sstmt_dummy(for_stmt)]\n" +
+            "    let body: List<Stmt> = [for_stmt]\n" +
             "    Stmt.Function(\"_emit_iter\", empty_tp, empty_params, ValueType.Void, synth_stmt_ids(body))\n" +
             "}\n" +
             "\n" +

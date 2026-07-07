@@ -16,7 +16,7 @@
 //      method name) so codegen's dot-notation dispatch finds it
 //      via the standard method-lookup path.
 
-use core.{Stmt, SStmt, Expr, SExpr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, sstmt_dummy, type_short_name}
+use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant, FieldEntry, BinOp, type_short_name}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, ResolvedType, ctx_lookup_type, ctx_unwrap_path_to, synth_expr_id, synth_stmt_id, synth_stmt_ids}
 use diagnostics.{Span}
 
@@ -63,15 +63,15 @@ export fn derive_walker(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecl
     let map_arms = build_map_arms(view.variants, view.name, ctx)
     let map_fn = build_map_fn(map_arms, view.name)
 
-    let decls: List<SStmt> = [
-        sstmt_dummy(target.stmt),
-        sstmt_dummy(children_fn),
-        sstmt_dummy(all_children_spanned_fn),
-        sstmt_dummy(with_children_fn),
-        sstmt_dummy(visit_fn),
-        sstmt_dummy(any_fn),
-        sstmt_dummy(find_fn),
-        sstmt_dummy(map_fn),
+    let decls: List<Stmt> = [
+        target.stmt,
+        children_fn,
+        all_children_spanned_fn,
+        with_children_fn,
+        visit_fn,
+        any_fn,
+        find_fn,
+        map_fn,
     ]
     let children_mangled = "${view.name}__children"
     let all_children_spanned_mangled = "${view.name}__all_children_spanned"
@@ -121,7 +121,7 @@ fn unwrap_enum_decl(s: Stmt) -> EnumView {
 /// user code, not a missing decl from a silent macro failure.
 @comptime
 fn failsafe_decls(target: AnnotatedDecl) -> ResolvedDecls {
-    let decls: List<SStmt> = [sstmt_dummy(target.stmt)]
+    let decls: List<Stmt> = [target.stmt]
     let no_syms: List<DeclSymbol> = []
     let provenance = MacroProvenance {
         macro_name: "derive_walker",
@@ -613,9 +613,9 @@ fn build_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     // annotation survives the synth roundtrip.
     let empty_elems: List<ExprId> = []
     let typed_empty = Stmt.Let(empty_binding_name(), ret_ty, synth_expr_id(Expr.ListLit(empty_elems)))
-    let body: List<SStmt> = [
-        sstmt_dummy(typed_empty),
-        sstmt_dummy(Stmt.Expr(synth_expr_id(match_expr))),
+    let body: List<Stmt> = [
+        typed_empty,
+        Stmt.Expr(synth_expr_id(match_expr)),
     ]
     Stmt.Function("${enum_name}__children", empty_tp, params, ret_ty, synth_stmt_ids(body))
 }
@@ -940,9 +940,9 @@ fn build_all_children_spanned_fn(arms: List<MatchArm>, enum_name: string) -> Stm
     let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
     let empty_elems: List<ExprId> = []
     let typed_empty = Stmt.Let(all_spanned_empty_binding_name(), ret_ty, synth_expr_id(Expr.ListLit(empty_elems)))
-    let body: List<SStmt> = [
-        sstmt_dummy(typed_empty),
-        sstmt_dummy(Stmt.Expr(synth_expr_id(match_expr))),
+    let body: List<Stmt> = [
+        typed_empty,
+        Stmt.Expr(synth_expr_id(match_expr)),
     ]
     Stmt.Function("${enum_name}__all_children_spanned", empty_tp, params, ret_ty, synth_stmt_ids(body))
 }
@@ -1176,7 +1176,7 @@ fn build_with_children_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let params: List<ParamEntry> = [self_param, kids_param]
     let empty_tp: List<TypeParamEntry> = []
     let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
-    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(synth_expr_id(match_expr)))]
+    let body: List<Stmt> = [Stmt.Expr(synth_expr_id(match_expr))]
     Stmt.Function("${enum_name}__with_children", empty_tp, params, self_ty, synth_stmt_ids(body))
 }
 
@@ -1213,11 +1213,11 @@ fn build_visit_fn(enum_name: string) -> Stmt {
     let children_call = wc_call(ident_field_access("self", "children"), no_call_args)
     let visit_args: List<ExprId> = [synth_expr_id(Expr.Ident("f"))]
     let visit_call = Stmt.Expr(synth_expr_id(wc_call(ident_field_access("c", "visit"), visit_args)))
-    let for_body_stmts: List<SStmt> = [sstmt_dummy(visit_call)]
+    let for_body_stmts: List<Stmt> = [visit_call]
     let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
     let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
 
-    let body: List<SStmt> = [sstmt_dummy(f_call), sstmt_dummy(for_loop)]
+    let body: List<Stmt> = [f_call, for_loop]
     Stmt.Function("${enum_name}__visit", empty_tp, params, ValueType.Void, synth_stmt_ids(body))
 }
 
@@ -1247,7 +1247,7 @@ fn build_any_fn(enum_name: string) -> Stmt {
     // if pred(self) { return true }
     let pred_args_self: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
     let pred_call_self = wc_call(Expr.Ident("pred"), pred_args_self)
-    let return_true_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Bool("true"))))]
+    let return_true_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Bool("true")))]
     let return_true_block = Stmt.Block(synth_stmt_ids(return_true_stmts))
     let if_pred_self = Stmt.If(synth_expr_id(pred_call_self), synth_stmt_id(return_true_block), null)
 
@@ -1256,20 +1256,20 @@ fn build_any_fn(enum_name: string) -> Stmt {
     let children_call = wc_call(ident_field_access("self", "children"), no_call_args)
     let any_args: List<ExprId> = [synth_expr_id(Expr.Ident("pred"))]
     let c_any_call = wc_call(ident_field_access("c", "any"), any_args)
-    let inner_return_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Bool("true"))))]
+    let inner_return_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Bool("true")))]
     let inner_return_block = Stmt.Block(synth_stmt_ids(inner_return_stmts))
     let if_c_any = Stmt.If(synth_expr_id(c_any_call), synth_stmt_id(inner_return_block), null)
-    let for_body_stmts: List<SStmt> = [sstmt_dummy(if_c_any)]
+    let for_body_stmts: List<Stmt> = [if_c_any]
     let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
     let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
 
     // trailing `false` so the fn returns it when nothing matched
     let false_return = Stmt.Return(synth_expr_id(Expr.Bool("false")))
 
-    let body: List<SStmt> = [
-        sstmt_dummy(if_pred_self),
-        sstmt_dummy(for_loop),
-        sstmt_dummy(false_return),
+    let body: List<Stmt> = [
+        if_pred_self,
+        for_loop,
+        false_return,
     ]
     Stmt.Function("${enum_name}__any", empty_tp, params, ValueType.Bool, synth_stmt_ids(body))
 }
@@ -1305,7 +1305,7 @@ fn build_find_fn(enum_name: string) -> Stmt {
     // if pred(self) { return self }
     let pred_args_self: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
     let pred_call_self = wc_call(Expr.Ident("pred"), pred_args_self)
-    let return_self_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Ident("self"))))]
+    let return_self_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Ident("self")))]
     let return_self_block = Stmt.Block(synth_stmt_ids(return_self_stmts))
     let if_pred_self = Stmt.If(synth_expr_id(pred_call_self), synth_stmt_id(return_self_block), null)
 
@@ -1319,12 +1319,12 @@ fn build_find_fn(enum_name: string) -> Stmt {
     let c_find_call = wc_call(ident_field_access("c", "find"), find_args)
     let let_r = Stmt.Let("r", self_ty, synth_expr_id(c_find_call))
     let r_not_null = Expr.Binary(synth_expr_id(Expr.Ident("r")), BinOp.Ne, synth_expr_id(Expr.None))
-    let return_r_stmts: List<SStmt> = [sstmt_dummy(Stmt.Return(synth_expr_id(Expr.Ident("r"))))]
+    let return_r_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Ident("r")))]
     let return_r_block = Stmt.Block(synth_stmt_ids(return_r_stmts))
     let if_r_not_null = Stmt.If(synth_expr_id(r_not_null), synth_stmt_id(return_r_block), null)
-    let for_body_stmts: List<SStmt> = [
-        sstmt_dummy(let_r),
-        sstmt_dummy(if_r_not_null),
+    let for_body_stmts: List<Stmt> = [
+        let_r,
+        if_r_not_null,
     ]
     let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
     let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
@@ -1332,10 +1332,10 @@ fn build_find_fn(enum_name: string) -> Stmt {
     // trailing `null` — no descendant matched
     let null_return = Stmt.Return(synth_expr_id(Expr.None))
 
-    let body: List<SStmt> = [
-        sstmt_dummy(if_pred_self),
-        sstmt_dummy(for_loop),
-        sstmt_dummy(null_return),
+    let body: List<Stmt> = [
+        if_pred_self,
+        for_loop,
+        null_return,
     ]
     Stmt.Function("${enum_name}__find", empty_tp, params, self_ty, synth_stmt_ids(body))
 }
@@ -1513,6 +1513,6 @@ fn build_map_fn(arms: List<MatchArm>, enum_name: string) -> Stmt {
     let params: List<ParamEntry> = [self_param, f_param]
     let empty_tp: List<TypeParamEntry> = []
     let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
-    let body: List<SStmt> = [sstmt_dummy(Stmt.Expr(synth_expr_id(match_expr)))]
+    let body: List<Stmt> = [Stmt.Expr(synth_expr_id(match_expr))]
     Stmt.Function("${enum_name}__map", empty_tp, params, self_ty, synth_stmt_ids(body))
 }
