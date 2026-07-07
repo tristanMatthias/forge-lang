@@ -1129,7 +1129,10 @@ fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
 /// diagnostic bag, and the trait-impl registry (consumed later by
 /// the monomorphizer for trait-bound monomorphisation).
 export type TypeCheckResult = {
-    stmts: List<SStmt>,
+    // B-final: the post-typecheck program vector is arena-id-native.
+    // monomorphize takes ids straight; the check result structs bridge
+    // back to wrappers with `sstmts_of`.
+    stmts: List<StmtId>,
     had_error: int,
     bag: DiagnosticBag,
     trait_impls: List<TraitImplEntry>,
@@ -1203,10 +1206,9 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // unchanged while still letting downstream stages see the
     // resolved ids.
     let stamped_final = stamp_ids_stmt_ids(tc3.nodes, annotated, type_reg)
-    // TypeCheckResult.stmts stays List<SStmt> until the mono/codegen seam
-    // flips — one sstmts_of adapter here keeps every downstream consumer
-    // (monomorphize + the check result structs) untouched.
-    TypeCheckResult { stmts: tc3.nodes.sstmts_of(stamped_final), had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
+    // The post-stamp vector is already `List<StmtId>` — hand it out
+    // directly; monomorphize (id-native at its boundary) takes it straight.
+    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
 
 /// Names of registered nominals (struct/enum/newtype) that still

@@ -505,7 +505,11 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
 /// Compile a program to LLVM IR and write the result to disk.
 /// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
 /// you don't want a file on disk.
-export fn compile_program(stmts: List<SStmt>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
+export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
+    // B-final: codegen's boundary is arena-id-native (the flipped monomorphize
+    // hands ids in). `codegen_program` and its emitters are still SStmt-shaped,
+    // so bridge once here via `sstmts_of`.
+    let stmts = store.sstmts_of(ids)
     match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg, library, store) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
@@ -536,7 +540,8 @@ export fn compile_and_jit(stmts: List<SStmt>, type_reg: TypeRegistry, store: Nod
 /// Compile and emit a native object file directly. Skips the IR-on-
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.
-export fn codegen_and_emit_object(stmts: List<SStmt>, output_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    let stmts = store.sstmts_of(ids)
     match codegen_program(stmts, false, false, "", type_reg, false, store) {
         .Ok(ctx) -> {
             let result = avra_llvm_emit_object(ctx.module, output_path)
@@ -557,7 +562,8 @@ export fn codegen_and_emit_object(stmts: List<SStmt>, output_path: string, type_
 ///
 /// `source_file` is recorded in the `.covmap.tsv` that the codegen
 /// pass writes alongside the IR.
-export fn codegen_and_emit_ir_cov(stmts: List<SStmt>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore) -> Result<int, string> {
+export fn codegen_and_emit_ir_cov(ids: List<StmtId>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore) -> Result<int, string> {
+    let stmts = store.sstmts_of(ids)
     match codegen_program(stmts, false, true, source_file, type_reg, false, store) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(ir_path)
