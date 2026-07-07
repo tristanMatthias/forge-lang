@@ -44,7 +44,7 @@
 use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
-use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns, stmt_to_value}
+use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
@@ -284,9 +284,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
             current_state = register_macro_decls(current_state, current)
             populate_resolver_data(current_state, current)
         }
-        // collect_comptime_fns' registry scan is still `List<SStmt>`-shaped;
-        // bridge the id vector for it until that scan migrates.
-        let reg = collect_comptime_fns(state.nodes.sstmts_of(current), state.nodes)
+        let reg = collect_comptime_fns_ids(current, state.nodes)
         let walked = expand_stmt_list(current, reg, comp_macros, current_state, "")
         current = walked.out
         current_state = walked.state
@@ -993,9 +991,9 @@ fn build_resolver_ctx(handle: int) -> Value {
 ///
 /// The whole resolve + expand pipeline is arena-id-native: the program
 /// vector arrives as `List<StmtId>` and threads through resolve, collect,
-/// eval, splice, and re-resolve as ids. The only residual `List<SStmt>`
-/// hop is the comptime-registry scan (`collect_comptime_fns`) and the
-/// eval-Value decoders, bridged locally until those migrate.
+/// eval, splice, re-resolve, and the comptime-registry scan as ids. The
+/// macro-return decoders route Values straight to rows via the id-native
+/// eval decoders, so this file no longer touches `List<SStmt>`.
 export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> NameResolveResult {
     let pre = resolve_names_pre_expand(ids, store)
     if pre.had_error == 1 {

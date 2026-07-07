@@ -126,8 +126,9 @@ export fn collect_comptime_fns(stmts: List<SStmt>, store: NodeStore) -> CompTime
 
 /// Arena-id-native twin of `collect_comptime_fns` (F4e): scans the root
 /// `List<StmtId>` for @comptime fns, recursing into module bodies via the
-/// shared `gather_from_stmt`. Used by the id-native `run_comptime`.
-fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
+/// shared `gather_from_stmt`. Used by the id-native `run_comptime` and the
+/// @expand fixpoint's per-iteration registry rebuild.
+export fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns_ids(store, ids, [])
     prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
 }
