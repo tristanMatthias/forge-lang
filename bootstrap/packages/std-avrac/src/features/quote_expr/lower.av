@@ -482,22 +482,22 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         .Unary(op, r) -> expr_ctor(store, "Unary", two_args(construct_unop(store, op), construct_expr_id(store, r)))
         .Logical(l, op, r) -> expr_ctor(store, "Logical", three_args(construct_expr_id(store, l), construct_logicop(store, op), construct_expr_id(store, r)))
         .Grouping(inner) -> expr_ctor(store, "Grouping", one_arg(construct_expr_id(store, inner)))
-        .Call(callee, args) -> expr_ctor(store, "Call", two_args(construct_expr_id(store, callee), construct_expr_ids(store, store.sexprs_of(args))))
+        .Call(callee, args) -> expr_ctor(store, "Call", two_args(construct_expr_id(store, callee), construct_expr_ids(store, args)))
         .FieldAccess(obj, field) -> expr_ctor(store, "FieldAccess", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
         .Index(obj, idx) -> expr_ctor(store, "Index", two_args(construct_expr_id(store, obj), construct_expr_id(store, idx)))
         .IfExpr(c, t, el) -> expr_ctor(store, "IfExpr", three_args(construct_expr_id(store, c), construct_expr_id(store, t), construct_expr_id(store, el)))
-        .Tuple(elements) -> expr_ctor(store, "Tuple", one_arg(construct_expr_ids(store, store.sexprs_of(elements))))
-        .ListLit(elements) -> expr_ctor(store, "ListLit", one_arg(construct_expr_ids(store, store.sexprs_of(elements))))
+        .Tuple(elements) -> expr_ctor(store, "Tuple", one_arg(construct_expr_ids(store, elements)))
+        .ListLit(elements) -> expr_ctor(store, "ListLit", one_arg(construct_expr_ids(store, elements)))
         .NullCoalesce(l, r) -> expr_ctor(store, "NullCoalesce", two_args(construct_expr_id(store, l), construct_expr_id(store, r)))
         .OptionalChain(obj, field) -> expr_ctor(store, "OptionalChain", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
-        .OptionalMethodCall(obj, method, args) -> expr_ctor(store, "OptionalMethodCall", three_args(construct_expr_id(store, obj), string_lit_expr(method), construct_expr_ids(store, store.sexprs_of(args))))
+        .OptionalMethodCall(obj, method, args) -> expr_ctor(store, "OptionalMethodCall", three_args(construct_expr_id(store, obj), string_lit_expr(method), construct_expr_ids(store, args)))
         .Try(inner) -> expr_ctor(store, "Try", one_arg(construct_expr_id(store, inner)))
         .FloatLit(v) -> expr_ctor(store, "FloatLit", string_arg(v))
         .StructLit(name, inits) -> expr_ctor(store, "StructLit", two_args(name_or_splice(store, name), construct_field_init_list(store, inits)))
-        .EnumCtor(type_name, variant, args) -> expr_ctor(store, "EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_ids(store, store.sexprs_of(args))))
-        .MapLit(entries) -> expr_ctor(store, "MapLit", one_arg(construct_expr_ids(store, store.sexprs_of(entries))))
+        .EnumCtor(type_name, variant, args) -> expr_ctor(store, "EnumCtor", three_args(string_lit_expr(type_name), string_lit_expr(variant), construct_expr_ids(store, args)))
+        .MapLit(entries) -> expr_ctor(store, "MapLit", one_arg(construct_expr_ids(store, entries)))
         .IsCheck(subj, vname) -> expr_ctor(store, "IsCheck", two_args(construct_expr_id(store, subj), string_lit_expr(vname)))
-        .InCheck(needle, items) -> expr_ctor(store, "InCheck", two_args(construct_expr_id(store, needle), construct_expr_ids(store, store.sexprs_of(items))))
+        .InCheck(needle, items) -> expr_ctor(store, "InCheck", two_args(construct_expr_id(store, needle), construct_expr_ids(store, items)))
         .Slice(obj, start, end) -> expr_ctor(store, "Slice", three_args(construct_expr_id(store, obj), construct_expr_id(store, start), construct_expr_id(store, end)))
         .TupleIndex(obj, idx) -> expr_ctor(store, "TupleIndex", two_args(construct_expr_id(store, obj), Expr.Number(string(idx))))
         .With(obj, overrides) -> expr_ctor(store, "With", two_args(construct_expr_id(store, obj), construct_field_init_list(store, overrides)))
@@ -1136,10 +1136,10 @@ fn listlit_of(store: NodeStore, elems: List<Expr>) -> Expr {
 /// `synth_expr_id` PER ELEMENT (never a whole-list shim), so the pinned seed —
 /// which compiles this reconstructor but never evals it — needs no new eval
 /// intercept. Decoded by `list_value_to_expr_id_list` in eval.
-fn construct_expr_ids(store: NodeStore, list: List<SExpr>) -> Expr {
+fn construct_expr_ids(store: NodeStore, list: List<ExprId>) -> Expr {
     mut elems: List<Expr> = []
-    for se in list {
-        elems.push(synth_shim_call(store, "synth_expr_id", construct_expr(store, se.node)))
+    for id in list {
+        elems.push(construct_expr_id(store, id))
     }
     listlit_of(store, elems)
 }
