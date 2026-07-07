@@ -3,7 +3,7 @@
 // `features.select_stmt.{...}`. Sibling exports are in scope without
 // explicit self-imports.
 use core.{feature_new, Feature}
-use typeck.{check_expr, check_stmts, tc_enter, tc_exit, tc_bind}
+use typeck.{check_expr, check_stmt_ids, tc_enter, tc_exit, tc_bind}
 
 /// Resolver hook for `select`. Forwards to `resolve_select_arms`
 /// which walks each channel expression and arm body.
@@ -31,7 +31,7 @@ fn select_check(tc: TC, stmt: Stmt) -> TC {
                 }
                 let inner = tc_enter(c.tc)
                 let bound = tc_bind(inner, arm.binding, elem)
-                let after = check_stmts(bound, bound.nodes.sstmts_of(arm.body_ids))
+                let after = check_stmt_ids(bound, arm.body_ids)
                 cur = tc_exit(after)
                 i = i + 1
             }
