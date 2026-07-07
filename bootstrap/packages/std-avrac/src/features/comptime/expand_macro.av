@@ -989,21 +989,23 @@ fn build_resolver_ctx(handle: int) -> Value {
 /// once at the boundary via `sstmts_of`; the `NameResolveResult.stmts`
 /// exit stays `List<SStmt>` until those helpers migrate.
 export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> NameResolveResult {
-    let stmts = store.sstmts_of(ids)
-    let pre = resolve_names_pre_expand(stmts, store)
+    let pre = resolve_names_pre_expand(ids, store)
     if pre.had_error == 1 {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    let plan = expand_macros_collect(store, pre.stmts)
+    let plan = expand_macros_collect(store, store.sstmts_of(pre.stmts))
     if !plan_has_work(plan) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
     let handle = avra_resolver_ctx_push(pre.state)
-    populate_resolver_data(pre.state, pre.stmts)
+    populate_resolver_data(pre.state, store.sstmts_of(pre.stmts))
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
     let post_state = register_macro_decls(pre.state, expanded.stmts)
-    let rewritten = rewrite_uses_macro_only(expanded.stmts, post_state)
+    // rewrite_uses_macro_only + validate_scopes_after_expand are arena-id-native;
+    // this file's expansion machinery is still `List<SStmt>`-shaped, so
+    // materialise the expanded wrappers into rows once at the boundary.
+    let rewritten = rewrite_uses_macro_only(store.rows_of(expanded.stmts), post_state)
     let validated = validate_scopes_after_expand(rewritten, post_state)
     // Fold @expand-time diagnostics into the program-level bag so the
     // unified renderer surfaces F4xxx codes through the same path as

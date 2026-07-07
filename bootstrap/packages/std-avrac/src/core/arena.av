@@ -646,6 +646,10 @@ impl NodeStore {
     fn reexpr(self, node: Expr, from: ExprId) -> ExprId {
         self.exprs.add(node, NodeEdges { refs: [] }, self.exprs.span_of(from))
     }
+    /// True when a statement row was macro-introduced (§14.3) — the id-native
+    /// replacement for reading `SStmt.from_macro`, from the sparse provenance
+    /// side-table.
+    fn is_from_macro(self, id: StmtId) -> bool { self.provenance.has(id) }
     /// The positioned `SStmt` views of a flipped `List<StmtId>` body — the
     /// list twin of `sstmt_of`, for consumers handing a whole body to an
     /// un-migrated `List<SStmt>` API.
