@@ -1020,14 +1020,15 @@ export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreE
 /// Returns a full `NameResolveResult` so call sites can keep their
 /// existing bag-handling path unchanged after the split.
 export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState) -> NameResolveResult {
-    let resolved = resolve_program(stmts, state.nodes)
+    let ids = state.nodes.rows_of(stmts)
+    let resolved = resolve_program(ids, state.nodes)
     let used = collect_used_paths_stmts(state.nodes, stmts, [])
     let unused_bag = check_unused_imports(state.aliases, used)
     let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     let no_origins: List<MacroFnOrigin> = []
     NameResolveResult {
-        stmts: state.nodes.rows_of(stmts),
+        stmts: ids,
         had_error: has_errors,
         error_message: if has_errors {
             if resolved.had_error { resolved.error_message } else { "module resolution errors" }

@@ -563,14 +563,6 @@ impl NodeStore {
         }
         ids
     }
-    /// Register `node` as a top-level root WITHOUT ingesting its subtree or a
-    /// span — the shallow, source-free counterpart of `ingest_stmt`. No child
-    /// edges and `byte_span_none()`, so no `LineIndex` is consulted and no span
-    /// is fabricated. `get(id)` returns the boxed node whose inline children a
-    /// consumer still walks directly. Used by `ingest_roots_spanless`.
-    fn add_root_shallow(self, node: Stmt) -> StmtId {
-        self.stmts.add(node, NodeEdges { refs: [] }, byte_span_none())
-    }
     /// Record the parser's already-allocated top-level statements as this
     /// store's roots: stamp each root row with the same conservative span
     /// the walker-ingest test oracle derives (`conservative_root_span` — one
@@ -853,21 +845,6 @@ export fn ingest_program(stmts: List<SStmt>, source: string) -> NodeStore {
         if s.from_macro { provenance.set(root_id, true) }
     }
     store with { roots, provenance }
-}
-
-/// Ingest ONLY the top-level statements as arena roots — no subtrees, no spans,
-/// no source. For consumers that read root nodes by `StmtId` but take source
-/// positions from elsewhere (the resolver reads them from the boxed `SStmt`
-/// wrapper), there is nothing to build a real `LineIndex` from, so no span is
-/// fabricated — every root records `byte_span_none()` (contrast `ingest_program`,
-/// which derives spans from `source`; feeding it `""` would stamp invalid spans).
-/// `roots` is in source order (one per `SStmt`), so `stmts.get(roots[k])` returns
-/// `stmts[k].node` verbatim; the consumer still walks that node's inline children.
-export fn ingest_roots_spanless(stmts: List<SStmt>) -> NodeStore {
-    let store = new_node_store(build_line_index(""))
-    mut roots: List<StmtId> = []
-    for s in stmts { roots.push(store.add_root_shallow(s.node)) }
-    store with { roots }
 }
 
 /// Assemble the top-level `List<SStmt>` from the store's roots — the shared spine
