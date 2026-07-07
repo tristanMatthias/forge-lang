@@ -29,7 +29,7 @@ fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// which infers the element type from the entries.
 fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .ListLit(elements) -> check_list_lit(tc, tc.nodes.sexprs_of(elements))
+        .ListLit(elements) -> check_list_lit(tc, elements)
         _ -> tc_er(tc, .Unknown)
     }
 }

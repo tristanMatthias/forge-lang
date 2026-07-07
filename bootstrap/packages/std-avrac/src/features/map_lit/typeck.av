@@ -1,6 +1,6 @@
 // WHY: type checking for map method calls + map-literal value-type checking.
 
-use core.{SExpr, ValueType, vtype_render_full}
+use core.{ExprId, ValueType, vtype_render_full}
 use typeck.{TC, ExprResult, tc_er, check_expr_list_types, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 
@@ -28,7 +28,7 @@ export fn check_map_method(tc: TC, method: string) -> ExprResult {
 /// is rejected — closing 63wu. Construction is memory-safe regardless via the
 /// mono gap-fill; this is the clean diagnostic. An empty literal adopts
 /// `expected_value`.
-export fn check_map_lit_with_expected(tc: TC, entries: List<SExpr>, expected_value: ValueType) -> ExprResult {
+export fn check_map_lit_with_expected(tc: TC, entries: List<ExprId>, expected_value: ValueType) -> ExprResult {
     if entries.length == 0 { return tc_er(tc, ValueType.Map(ValueType.Str, expected_value)) }
     let lr = check_expr_list_types(tc, entries)
     let after = check_map_values_against(lr.tc, lr.types, expected_value)

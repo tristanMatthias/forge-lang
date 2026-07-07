@@ -179,7 +179,7 @@ fn enum_ctor_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .EnumCtor(type_name, variant, args) -> {
-            let checked = check_expr_list(tc, tc.nodes.sexprs_of(args))
+            let checked = check_expr_list(tc, args)
             let resolved_name = if type_name == "" { tc_enum_find_by_variant(tc.enums, variant) } else { type_name }
             let empty_args: List<ValueType> = []
             tc_er(checked, .Enum(resolved_name, empty_args, 0))

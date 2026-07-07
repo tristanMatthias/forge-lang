@@ -36,7 +36,7 @@ fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MapLit(entries) -> {
-            let lr = check_expr_list_types(tc, tc.nodes.sexprs_of(entries))
+            let lr = check_expr_list_types(tc, entries)
             // entries = [k0, v0, k1, v1, ...]; pin V from the first value.
             let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
             // Reject a heterogeneous literal even WITHOUT an annotation: every

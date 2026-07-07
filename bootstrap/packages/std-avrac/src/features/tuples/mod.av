@@ -64,7 +64,7 @@ fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Tuple(elements) -> {
-            let pair = check_expr_list_types(tc, tc.nodes.sexprs_of(elements))
+            let pair = check_expr_list_types(tc, elements)
             tc_er(pair.tc, .Tuple(pair.types))
         }
         _ -> tc_er(tc, .Unknown)

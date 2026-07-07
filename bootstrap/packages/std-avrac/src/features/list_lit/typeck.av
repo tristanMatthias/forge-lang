@@ -1,13 +1,13 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, SExpr, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
+use core.{Expr, ExprId, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list_types, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
 /// (caller infers from context); non-empty literals pin the element
 /// type from the first element and check the rest against it.
-export fn check_list_lit(tc: TC, elements: List<SExpr>) -> ExprResult {
+export fn check_list_lit(tc: TC, elements: List<ExprId>) -> ExprResult {
     check_list_lit_with_expected(tc, elements, .Unknown)
 }
 
@@ -16,7 +16,7 @@ export fn check_list_lit(tc: TC, elements: List<SExpr>) -> ExprResult {
 /// Non-empty literals infer bottom-up from the first element; arm
 /// unification then handles the broader assignment via vtype_assignable.
 /// so07.4 (T4).
-export fn check_list_lit_with_expected(tc: TC, elements: List<SExpr>, expected_elem: ValueType) -> ExprResult {
+export fn check_list_lit_with_expected(tc: TC, elements: List<ExprId>, expected_elem: ValueType) -> ExprResult {
     if elements.length == 0 { return tc_er(tc, .List(expected_elem)) }
     let lr = check_expr_list_types(tc, elements)
     // An element whose layout is incompatible with the expected element type must
@@ -43,7 +43,7 @@ export fn check_list_lit_with_expected(tc: TC, elements: List<SExpr>, expected_e
 /// special-cased: result is `List<Ret>` where `Ret` is inferred
 /// from the lambda body. Unknown methods return `.Unknown` so the
 /// codegen path can surface them as errors.
-export fn check_list_method(tc: TC, elem: ValueType, method: string, args: List<SExpr>) -> ExprResult {
+export fn check_list_method(tc: TC, elem: ValueType, method: string, args: List<ExprId>) -> ExprResult {
     match method {
         "length" or "len"                          -> tc_er(tc, .Int)
         "reduce"                                   -> tc_er(tc, .Unknown)
@@ -70,18 +70,18 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: List<
 /// type-checking the argument expression and reading its element
 /// type. With no argument, B is left Unknown (codegen reports the
 /// arity error).
-fn check_zip(tc: TC, elem: ValueType, args: List<SExpr>) -> ExprResult {
+fn check_zip(tc: TC, elem: ValueType, args: List<ExprId>) -> ExprResult {
     if args.length == 0 { return tc_er(tc, vtype_pair_list(elem, .Unknown)) }
-    let o = check_expr(tc, args[0].node)
+    let o = check_expr(tc, tc.nodes.exprs.get(args[0]))
     tc_er(o.tc, vtype_pair_list(elem, vtype_list_elem(o.ty)))
 }
 
 /// Walk into a `map(lambda)` argument and recover the lambda's
 /// return type by entering a fresh scope with its single param
 /// bound to the list's element type, then checking the body.
-fn tc_infer_lambda_ret(tc: TC, args: List<SExpr>, elem_ty: ValueType) -> ValueType {
+fn tc_infer_lambda_ret(tc: TC, args: List<ExprId>, elem_ty: ValueType) -> ValueType {
     if args.length == 0 { return .Unknown }
-    match args[0].node {
+    match tc.nodes.exprs.get(args[0]) {
         .Lambda(params, body) -> {
             let inner = tc_enter(tc)
             let with_params = if params.length == 0 { inner } else { tc_bind(inner, params[0].name, elem_ty) }

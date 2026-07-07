@@ -33,7 +33,7 @@ fn in_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .InCheck(needle, items) -> {
             let s = check_expr(tc, tc.nodes.exprs.get(needle))
-            let s2 = check_expr_list(s.tc, tc.nodes.sexprs_of(items))
+            let s2 = check_expr_list(s.tc, items)
             tc_er(s2, .Bool)
         }
         _ -> tc_er(tc, .Unknown)

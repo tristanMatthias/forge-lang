@@ -185,7 +185,7 @@ fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn optional_method_call_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .OptionalMethodCall(obj, method, args) -> {
-            let r = check_method_call(tc, tc.nodes.exprs.get(obj), method, tc.nodes.sexprs_of(args))
+            let r = check_method_call(tc, tc.nodes.exprs.get(obj), method, args)
             if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
             tc_er(r.tc, vtype_wrap_optional(r.ty))
         }
