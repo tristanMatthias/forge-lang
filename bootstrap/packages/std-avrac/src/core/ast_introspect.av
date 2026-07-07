@@ -11,7 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Stmt, Expr, CompConfigPair, StmtId}
+use core.{Stmt, Expr, CompConfigPair, StmtId, NodeStore}
 
 /// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
 /// macro authors handle component-block introspection without deep
@@ -43,9 +43,9 @@ export type DeclLookup = {
 /// Find a top-level fn declaration by name in `body`. Single walk
 /// — `has_fn` and `find_fn_body` are O(1) wrappers over this. Returns
 /// `{found: false, body: End}` on miss.
-export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
-    for ss in body {
-        match ss.node {
+export fn find_fn(store: NodeStore, body: List<StmtId>, fn_name: string) -> DeclLookup {
+    for id in body {
+        match store.stmts.get(id) {
             .Function(name, _, _, _, fn_body) -> {
                 if name == fn_name { return DeclLookup { found: true, body: fn_body } }
             }
@@ -57,15 +57,15 @@ export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
 }
 
 /// True when `body` contains a top-level fn named `fn_name`.
-export fn has_fn(body: List<SStmt>, fn_name: string) -> bool {
-    find_fn(body, fn_name).found
+export fn has_fn(store: NodeStore, body: List<StmtId>, fn_name: string) -> bool {
+    find_fn(store, body, fn_name).found
 }
 
 /// Body of the fn named `fn_name`, or `End` when missing. Pair with
 /// `has_fn` (or use `find_fn` directly) to distinguish "no fn" from
 /// "fn with empty body" without two walks.
-export fn find_fn_body(body: List<SStmt>, fn_name: string) -> List<StmtId> {
-    find_fn(body, fn_name).body
+export fn find_fn_body(store: NodeStore, body: List<StmtId>, fn_name: string) -> List<StmtId> {
+    find_fn(store, body, fn_name).body
 }
 
 // ── Component-block children ──
