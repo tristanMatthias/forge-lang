@@ -14,15 +14,15 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_at, sstmt_dummy, Expr, SExpr, sexpr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, sexpr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
 
 // ── Public entry ──
 
-/// Walk every statement and expression in `stmts`, replacing each
+/// Walk every statement and expression under `ids`, replacing each
 /// `Expr.Quote` node with an AST-construction expression that evaluates
-/// to the captured AST. Returns a new List<SStmt>.
+/// to the captured AST. Returns a new `List<StmtId>`.
 ///
 /// Fast-path: most files contain zero `quote { ... }` expressions, so
 /// a non-allocating presence scan up-front lets the rewrite walker
@@ -31,28 +31,29 @@ use list_ops.{list_map}
 /// O(N) traversal — accepted in exchange for the common-case win
 /// where we never allocate a single new Stmt/Expr node.
 ///
-/// Callers that hold the parse-time NodeStore for `stmts` should prefer
-/// `lower_quotes_via_store` (flat arena scan). This boxed entry remains for
-/// storeless callers (in-process check, the incremental build path) and for
-/// trees merged from more than one parse (sibling-file loading) — its scan
-/// and the arena scan must stay presence-equivalent (spec-guarded).
-export fn lower_quotes(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    if !any_quote_in_stmt_list(store, stmts) { return stmts }
-    lower_stmt_list(store, stmts)
+/// This RECURSIVE-scan entry walks the actual statement tree, so it stays
+/// correct for trees merged from more than one parse (sibling-file loading),
+/// where the store holds more than just this program. Callers whose store was
+/// ingested from exactly this program should prefer `lower_quotes_via_store`
+/// (flat arena scan) — the two scans must stay presence-equivalent
+/// (spec-guarded).
+export fn lower_quotes(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    if !any_quote_in_stmt_ids(store, ids) { return ids }
+    lower_stmt_ids(store, ids)
 }
 
-/// `lower_quotes` for a caller that already holds the parse-time `NodeStore`
-/// for `stmts` (the arena `parse_or_fail` builds). The presence scan becomes a
-/// FLAT pass over the expr arena — no recursion, no tree walk: every Expr in
-/// the program (including those embedded in match arms and struct-field
+/// `lower_quotes` for a caller whose `store` was ingested from exactly this
+/// program's `ids` (the arena `parse_or_fail` builds). The presence scan
+/// becomes a FLAT pass over the expr arena — no recursion, no tree walk: every
+/// Expr in the program (including those embedded in match arms and struct-field
 /// inits) is a row, so "any quote?" is one linear read of dense rows. Strictly
-/// covers at least the positions the boxed scan reaches; the lowering itself
-/// is unchanged. ONLY valid when `store` was ingested from these exact
-/// `stmts` — a store from a superset/subset tree (e.g. after sibling-file
+/// covers at least the positions the recursive scan reaches; the lowering
+/// itself is unchanged. ONLY valid when `store` was ingested from this exact
+/// program — a store from a superset/subset tree (e.g. after sibling-file
 /// merging) would scan the wrong program; such callers use `lower_quotes`.
-export fn lower_quotes_via_store(stmts: List<SStmt>, store: NodeStore) -> List<SStmt> {
-    if !store_has_quote(store) { return stmts }
-    lower_stmt_list(store, stmts)
+export fn lower_quotes_via_store(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    if !store_has_quote(store) { return ids }
+    lower_stmt_ids(store, ids)
 }
 
 /// True iff any `Expr.Quote` row exists in the store's expr arena. The
@@ -69,18 +70,9 @@ fn store_has_quote(store: NodeStore) -> bool {
 
 // ── Fast-path: non-allocating presence scan ──
 
-/// True iff any Expr.Quote node appears anywhere in `stmts`.
-/// Walks the same shape as lower_stmt_list but allocates nothing.
-fn any_quote_in_stmt_list(store: NodeStore, stmts: List<SStmt>) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        if any_quote_in_stmt(store, stmts[i].node) { return true }
-        i = i + 1
-    }
-    false
-}
-
-/// The flipped-body twin of `any_quote_in_stmt_list`.
+/// True iff any `Expr.Quote` row appears anywhere under `ids`. Walks the
+/// same shape as `lower_stmt_ids` but allocates nothing — the fast-path
+/// guard `lower_quotes` uses to skip a program with no quotes.
 fn any_quote_in_stmt_ids(store: NodeStore, ids: List<StmtId>) -> bool {
     for id in ids {
         if any_quote_in_stmt(store, store.stmts.get(id)) { return true }
@@ -208,12 +200,9 @@ fn any_quote_in_match_arms(store: NodeStore, arms: List<MatchArm>) -> bool {
 
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──
 
-fn lower_stmt_list(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
-    list_map(stmts, (ss: SStmt) -> sstmt_at(lower_stmt(store, ss.node), ss.line, ss.col, ss.file))
-}
-
-/// The flipped-body twin of `lower_stmt_list`: lowers each row and
-/// allocates the result against the original's span + position.
+/// Lower every root statement row: each rewritten child is a fresh row
+/// inheriting the original's span + position (`restmt`, via
+/// `lower_stmt_id`). Arena-id-native (F4e).
 fn lower_stmt_ids(store: NodeStore, ids: List<StmtId>) -> List<StmtId> {
     mut out: List<StmtId> = []
     for id in ids { out.push(lower_stmt_id(store, id)) }
