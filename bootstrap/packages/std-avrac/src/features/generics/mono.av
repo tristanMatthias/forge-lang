@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{Expr, SExpr, sexpr, Stmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
@@ -1140,18 +1140,8 @@ fn rewrite_field_types(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst
 
 /// Pass 1 entry: walk the AST collecting every generic decl
 /// into the `GenRegs` registries. Recurses into modules.
-fn collect_generics(stmts: List<SStmt>, regs: GenRegs) -> GenRegs {
-    mut cur = regs
-    mut i = 0
-    while i < stmts.length {
-        cur = collect_generic_stmt(stmts[i].node, cur)
-        i = i + 1
-    }
-    cur
-}
-
-/// Registry collector over a flipped `List<StmtId>` body (module
-/// bodies) — resolves each row and dispatches per-statement.
+/// Registry collector over a `List<StmtId>` body — resolves each
+/// row and dispatches per-statement. The Pass-1 entry.
 fn collect_generics_ids(ids: List<StmtId>, regs: GenRegs) -> GenRegs {
     mut cur = regs
     for id in ids { cur = collect_generic_stmt(cur.store.stmts.get(id), cur) }
@@ -1210,22 +1200,9 @@ fn has_generics(regs: GenRegs) -> bool {
 /// @field trait_impls  — registered trait impls, for bound checks.
 type CollectState = { insts: List<Inst>, bag: DiagnosticBag, line: int, col: int, trait_impls: List<TraitImplEntry> }
 
-/// Pass 2 entry: walk a List<SStmt> collecting instantiation
-/// requests at every call / constructor site.
-fn collect_inst_stmts(stmts: List<SStmt>, regs: GenRegs, st: CollectState) -> CollectState {
-    mut cur = st
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        cur = collect_inst_stmt(ss.node, regs, cur with { line: ss.line, col: ss.col })
-        i = i + 1
-    }
-    cur
-}
-
-/// Instantiation collector over a flipped `List<StmtId>` body —
-/// resolves each row and threads its recorded position so
-/// diagnostics keep pointing at source.
+/// Pass 2 entry: walk a `List<StmtId>` collecting instantiation
+/// requests at every call / constructor site — resolves each row and
+/// threads its recorded position so diagnostics keep pointing at source.
 fn collect_inst_stmt_ids(ids: List<StmtId>, regs: GenRegs, st: CollectState) -> CollectState {
     mut cur = st
     for id in ids {
@@ -1290,7 +1267,7 @@ fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectSta
     while i < arms.length {
         let arm = arms[i]
         let after_ch = collect_inst_expr(regs.store.exprs.get(arm.chan_id), regs, cur)
-        cur = collect_inst_stmts(regs.store.sstmts_of(arm.body_ids), regs, after_ch)
+        cur = collect_inst_stmt_ids(arm.body_ids, regs, after_ch)
         i = i + 1
     }
     cur
@@ -1766,7 +1743,7 @@ fn specialize_method(store: NodeStore, mangled_type: string, method: Stmt, ta_ex
 /// instantiation, producing `MangledType__method` functions. Builds the
 /// extended type-args once: the struct's own bindings (`ta`) plus the
 /// synthetic struct-name binding that rewrites `self`/struct references.
-fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<SStmt> {
+fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<StmtId> {
     let entries = generic_impls_for(impls, orig_type)
     if entries.length == 0 { return [] }
     // Copy `ta` (don't mutate the shared inst bindings) and append the
@@ -1776,13 +1753,13 @@ fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig
     while a < ta.length { ta_ext.push(ta[a])  a = a + 1 }
     ta_ext.push(TypeArg { param_name: orig_type, concrete_vt: vtype_struct(mangled_type, 0) })
 
-    mut out: List<SStmt> = []
+    mut out: List<StmtId> = []
     mut i = 0
     while i < entries.length {
         let methods = entries[i].methods
         mut m = 0
         while m < methods.length {
-            out.push(sstmt_dummy(specialize_method(store, mangled_type, store.stmts.get(methods[m]), ta_ext)))
+            out.push(store.stmts.add_leaf(specialize_method(store, mangled_type, store.stmts.get(methods[m]), ta_ext)))
             m = m + 1
         }
         i = i + 1
@@ -1794,8 +1771,8 @@ fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig
 /// inst in `insts`. Calls `specialize_fn` / `specialize_enum`
 /// / `specialize_struct` based on which registry the inst's
 /// origin name lives in.
-fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
     while i < insts.length {
         let e = insts[i]
@@ -1805,16 +1782,16 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
         let fn_e = generic_fn_lookup(regs.fns, name)
         if fn_e != null {
             let fe = fn_e!
-            out.push(sstmt(specialize_fn(regs.store, mangled, fe.params, fe.ret_vt, fe.body, ta, name), 0, 0))
+            out.push(regs.store.stmts.add_leaf(specialize_fn(regs.store, mangled, fe.params, fe.ret_vt, fe.body, ta, name)))
         } else {
             // A generic TYPE — emit its specialised decl, then (shared below) its
             // impl methods. Enum and struct are mutually exclusive on a name.
             let enum_e = generic_enum_lookup(regs.enums, name)
             let struct_e = generic_struct_lookup(regs.structs, name)
             if enum_e != null {
-                out.push(sstmt(specialize_enum(mangled, enum_e!.variants, ta), 0, 0))
+                out.push(regs.store.stmts.add_leaf(specialize_enum(mangled, enum_e!.variants, ta)))
             } else if struct_e != null {
-                out.push(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0))
+                out.push(regs.store.stmts.add_leaf(specialize_struct(mangled, struct_e!.fields, ta)))
             }
             // Both kinds also need each of their impl methods specialised onto
             // THIS instantiation — otherwise `value.method()` has no concrete
@@ -2387,23 +2364,8 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
 
 // ── Pass 4: Rewrite call sites and remove generic declarations ──
 
-/// Map `rewrite_stmt` over a List<SStmt>.
-fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        if !is_generic_decl(regs.store, ss.node) && !is_generic_impl(ss.node, regs) {
-            out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
-        }
-        i = i + 1
-    }
-    out
-}
-
-/// The flipped-body twin of `rewrite_stmts`: drops generic decls /
-/// generic impls and re-allocates each rewritten row against the
-/// original's span + position.
+/// Pass 4 entry: drop generic decls / generic impls and re-allocate
+/// each rewritten row against the original's span + position.
 fn rewrite_stmt_ids(ids: List<StmtId>, regs: GenRegs, insts: List<Inst>) -> List<StmtId> {
     mut out: List<StmtId> = []
     for id in ids {
@@ -2790,13 +2752,12 @@ fn compute_ambig_short_names(regs: GenRegs) -> List<string> {
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
 export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, store: NodeStore) -> MonoResult {
-    // B-final: both pass boundaries are arena-id-native — typecheck hands ids
-    // in, codegen takes ids out. The monomorphizer's walkers are still
-    // `List<SStmt>`-shaped, so we bridge at the boundary: `sstmts_of` on the way
-    // in, and the specialised result materialises back to rows via `rows_of`
-    // (pass-through returns hand the original `ids` straight back).
-    let stmts = store.sstmts_of(ids)
-    let regs0 = collect_generics(stmts, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
+    // B-final: the monomorphizer's STATEMENT walkers are arena-id-native end
+    // to end — typecheck hands ids in, collect/generate/rewrite thread ids,
+    // and codegen takes the resulting rows out. (The type-arg INFERENCE side
+    // still reads the boxed `SExpr` view of call args via `sexprs_of` — a
+    // separate seam that flips with the expr-value work.)
+    let regs0 = collect_generics_ids(ids, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
     if !has_generics(regs0) { return MonoResult { stmts: ids, bag: bag_new() } }
     // Resolve the short-name collisions ONCE up front so every pass mangles
     // colliding instances module-qualified and the rest by short name (see
@@ -2804,7 +2765,7 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
     let regs = regs0 with { ambig: compute_ambig_short_names(regs0) }
 
     // Pass 2: collect partial type args (enums merge across constructors)
-    let collected = collect_inst_stmts(stmts, regs, CollectState { insts: [], bag: bag_new(), line: 0, col: 0, trait_impls })
+    let collected = collect_inst_stmt_ids(ids, regs, CollectState { insts: [], bag: bag_new(), line: 0, col: 0, trait_impls })
     if bag_has_errors(collected.bag) {
         return MonoResult { stmts: ids, bag: collected.bag }
     }
@@ -2822,9 +2783,9 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
     let initial_specs = generate_specializations(finalized.insts, regs)
     let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0, trait_impls)
 
-    let rewritten = rewrite_stmts(stmts, regs, converged.all_insts)
-    let rewritten_specs = rewrite_stmts(converged.all_specs, regs, converged.all_insts)
-    MonoResult { stmts: store.rows_of(prepend_stmts(rewritten_specs, rewritten)), bag: converged.bag }
+    let rewritten = rewrite_stmt_ids(ids, regs, converged.all_insts)
+    let rewritten_specs = rewrite_stmt_ids(converged.all_specs, regs, converged.all_insts)
+    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: converged.bag }
 }
 
 /// Per-iteration output of `mono_converge`. Carries the
@@ -2833,15 +2794,15 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
 /// @field all_insts — every inst seen across iterations.
 /// @field all_specs — every emitted specialisation AST node.
 /// @field bag       — accumulated diagnostics.
-type ConvergeResult = { all_insts: List<Inst>, all_specs: List<SStmt>, bag: DiagnosticBag }
+type ConvergeResult = { all_insts: List<Inst>, all_specs: List<StmtId>, bag: DiagnosticBag }
 
 /// Iteration step of the monomorphization fixed-point. Walks
 /// the freshly-emitted specialisations looking for further
 /// instantiations they need; recurses until no new insts get
 /// added. `depth` is bounded to prevent runaway recursion.
-fn mono_converge(new_specs: List<SStmt>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<SStmt>, b: DiagnosticBag, depth: int, ti: List<TraitImplEntry>) -> ConvergeResult {
+fn mono_converge(new_specs: List<StmtId>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<StmtId>, b: DiagnosticBag, depth: int, ti: List<TraitImplEntry>) -> ConvergeResult {
     if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
-    let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
+    let trans = collect_inst_stmt_ids(new_specs, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
     let trans_final = finalize_insts(trans.insts, regs, trans.bag, ti)
     // Drop insts whose mangled name is already in all_insts — a recursive
     // generic call inside a spec body re-derives the same inst the outer
@@ -2874,10 +2835,10 @@ fn drop_already_known(candidates: List<Inst>, known: List<Inst>) -> List<Inst> {
     out
 }
 
-/// Concatenate two List<SStmt>s. Specialisations get prepended to
+/// Concatenate two `List<StmtId>`s. Specialisations get prepended to
 /// the original program so generated decls precede their uses.
-fn prepend_stmts(prefix: List<SStmt>, rest: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn prepend_stmts(prefix: List<StmtId>, rest: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
     while i < prefix.length {
         out.push(prefix[i])
