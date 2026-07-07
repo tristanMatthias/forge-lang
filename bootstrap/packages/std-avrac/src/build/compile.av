@@ -70,14 +70,14 @@ fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Re
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let post_quote = lower_quotes(target.store.rows_of(target.program), target.store)
     let desugared = desugar_program(post_quote, target.store)
-    let with_intrinsics = target.store.sstmts_of(inject_intrinsics(desugared, target.store))
+    let with_intrinsics = inject_intrinsics(desugared, target.store)
     let comp = expand_components(with_intrinsics, target.store)
     let _ = guard_bag(comp.bag, target.diag_filename, "component validation failed")?
     // @marshal derive: synthesise `impl T { to_bytes; from_bytes }`
     // next to every `@marshal type T` so the resolver sees the type
     // AND its methods in the same pass. Zero-cost when no
     // @marshal annotation exists (early-out).
-    let with_marshal = derive_marshal(target.store.rows_of(comp.stmts), target.store)
+    let with_marshal = derive_marshal(comp.stmts, target.store)
     // Option C pipeline: macro-introduced decls register before
     // scope validation runs. Single source of truth in
     // features/comptime/expand_macro.av.
