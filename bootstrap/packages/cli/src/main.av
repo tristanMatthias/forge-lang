@@ -3835,7 +3835,7 @@ fn main() {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
             let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
-            let desugared = parsed_prog.store.sstmts_of(desugar_program(post_quote, parsed_prog.store))
+            let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
@@ -3873,7 +3873,7 @@ fn main() {
             let parsed_prog = parse_or_fail(source, ctx)
             let parsed_stmts = parsed_prog.stmts
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
+            let mod_resolved = resolve_module_files(parsed_prog.store.rows_of(parsed_stmts), entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
             render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
@@ -3902,7 +3902,7 @@ fn main() {
             let parsed_prog = parse_or_fail(source, ctx)
             let parsed_stmts = parsed_prog.stmts
             let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
-            let desugared = parsed_prog.store.sstmts_of(desugar_program(post_quote, parsed_prog.store))
+            let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
@@ -3921,7 +3921,7 @@ fn main() {
             let parsed_prog = parse_or_fail(source, ctx)
             let parsed_stmts = parsed_prog.stmts
             let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
-            let desugared = parsed_prog.store.sstmts_of(desugar_program(post_quote, parsed_prog.store))
+            let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
@@ -4144,7 +4144,7 @@ fn main() {
         // here is gone.
         let post_quote_stmts = lower_quotes_via_store(parsed_prog.store.rows_of(pre_desugar_stmts), parsed_prog.store)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
-        let desugared = parsed_prog.store.sstmts_of(desugar_program(post_quote_stmts, parsed_prog.store))
+        let desugared = desugar_program(post_quote_stmts, parsed_prog.store)
         let t_desugar = avra_uptime_ms()
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
