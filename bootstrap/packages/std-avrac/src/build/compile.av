@@ -69,7 +69,7 @@ fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Re
 
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let post_quote = lower_quotes(target.program, target.store)
-    let desugared = desugar_program(post_quote, target.store)
+    let desugared = target.store.sstmts_of(desugar_program(target.store.rows_of(post_quote), target.store))
     let with_intrinsics = inject_intrinsics(desugared, target.store)
     let comp = expand_components(with_intrinsics, target.store)
     let _ = guard_bag(comp.bag, target.diag_filename, "component validation failed")?
