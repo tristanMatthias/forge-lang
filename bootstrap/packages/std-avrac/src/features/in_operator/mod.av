@@ -1,6 +1,6 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.in_operator.{...}`
 use core.{feature_new, Feature, ExprId}
-use resolve.{resolve_expr, resolve_expr_list}
+use resolve.{resolve_expr, resolve_expr_list_ids}
 use features.in_operator.codegen.{emit_in_check}
 use typeck.{check_expr, check_expr_list, tc_er}
 
@@ -21,7 +21,7 @@ fn in_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .InCheck(needle, items) -> {
             let r2 = resolve_expr(r, r.nodes.exprs.get(needle))
-            resolve_expr_list(r2, r.nodes.sexprs_of(items))
+            resolve_expr_list_ids(r2, items)
         }
         _ -> r
     }

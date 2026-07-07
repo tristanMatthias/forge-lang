@@ -3,7 +3,7 @@
 // is in scope without a self-import.
 use codegen.{err_emit}
 use core.{feature_new, Feature, ValueType}
-use resolve.{resolve_expr_list}
+use resolve.{resolve_expr_list_ids}
 use typeck.{check_expr_list_types, tc_er}
 
 /// Register the `{k: v, k: v}` map literal feature. Wires up
@@ -22,7 +22,7 @@ export fn map_lit_feature() -> Feature {
 /// expression in the entries list.
 fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .MapLit(entries) -> resolve_expr_list(r, r.nodes.sexprs_of(entries))
+        .MapLit(entries) -> resolve_expr_list_ids(r, entries)
         _ -> r
     }
 }

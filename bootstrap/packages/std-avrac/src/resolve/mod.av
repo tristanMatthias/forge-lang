@@ -6,7 +6,7 @@
 // dir-as-module (g2eo.1): names.av auto-loads as a sibling, surfaces
 // flat at `resolve.{...}`.
 
-use core.{Expr, FieldInit, ParamEntry, Pattern, SExpr, SStmt, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
+use core.{Expr, FieldInit, ParamEntry, Pattern, SStmt, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ingest_roots_spanless}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy, span_new, span_at}
 use core.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
@@ -346,20 +346,6 @@ fn lookup_fn(fns: List<string>, name: string) -> bool {
     false
 }
 
-/// Walk a List<SStmt>, threading the Resolver through each stmt.
-/// Updates `source_line` / `source_col` per stmt for accurate
-/// diagnostics.
-export fn resolve_stmt_list(r: Resolver, stmts: List<SStmt>) -> Resolver {
-    mut res = r
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        res = resolve_stmt(res with { source_line: ss.line, source_col: ss.col, source_file: ss.file }, ss.node)
-        i = i + 1
-    }
-    res
-}
-
 /// Resolve a single statement. Each variant gets its own arm — most
 /// just walk into sub-expressions; the binding statements
 /// (`let`/`mut`/`const`/`Function`) declare names in scope.
@@ -588,20 +574,7 @@ export fn resolve_field_init_list(r: Resolver, inits: List<FieldInit>) -> Resolv
     res
 }
 
-/// Resolve every Expr in a list, threading the Resolver through.
-export fn resolve_expr_list(r: Resolver, exprs: List<SExpr>) -> Resolver {
-    mut res = r
-    mut i = 0
-    while i < exprs.length {
-        if res.had_error { return res }
-        res = resolve_expr(res, exprs[i].node)
-        i = i + 1
-    }
-    res
-}
-
-/// Resolve every Expr behind a flipped `List<ExprId>` (call args) —
-/// the id twin of `resolve_expr_list`.
+/// Resolve every Expr behind a flipped `List<ExprId>` (call args).
 export fn resolve_expr_list_ids(r: Resolver, ids: List<ExprId>) -> Resolver {
     mut res = r
     mut i = 0
