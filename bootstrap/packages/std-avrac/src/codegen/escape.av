@@ -134,6 +134,8 @@ fn single_pass_stmt(store: NodeStore, stmt: Stmt, set: List<string>) -> List<str
         .AssocType(_, _) -> set
         .ComponentDef(_, _, _, _, _, _) -> set
         .ComponentBlock(_, _, _, _) -> set
+        .Error -> set
+        .Missing -> set
     }
 }
 
@@ -241,6 +243,8 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Bool(_) -> set
         .None -> set
         .QualifiedIdent(_) -> set
+        .Error -> set
+        .Missing -> set
     }
 }
 
@@ -356,6 +360,8 @@ fn count_allocating_in_stmt_single(store: NodeStore, stmt: Stmt) -> int {
         .AssocType(_, _) -> 0
         .ComponentDef(_, _, _, _, _, _) -> 0
         .ComponentBlock(_, _, _, _) -> 0
+        .Error -> 0
+        .Missing -> 0
     }
 }
 
@@ -412,6 +418,8 @@ export fn is_arena_eligible(store: NodeStore, body: Stmt) -> bool {
         .ForIn(_, _, _) -> false
         .ComponentDef(_, _, _, _, _, _) -> false
         .ComponentBlock(_, _, _, _) -> false
+        .Error -> false
+        .Missing -> false
     }
 }
 

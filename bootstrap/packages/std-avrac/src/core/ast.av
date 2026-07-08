@@ -2079,6 +2079,15 @@ export enum Expr {
     /// instead, so the same `~` token is overloaded by context.
     /// Phase 4 (vez6.4) of Components V2.
     Splice(target: ExprId)
+    /// Error placeholder — the parser emits this on a syntax error and
+    /// resyncs (spine §14.5) so a broken source still yields a partial
+    /// tree. The diagnostic + bad span live in the arena's error
+    /// side-table, keyed by this node's id; the variant carries no payload.
+    Error
+    /// A required child slot the parser could not fill (e.g. a missing
+    /// operand). Distinct from `Error` (a whole malformed construct):
+    /// `Missing` marks an absent-but-required position.
+    Missing
 }
 
 /// Avra statement AST. Anything that doesn't produce a value lowers
@@ -2175,6 +2184,15 @@ export enum Stmt {
     ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: List<StmtId>)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: List<StmtId>)
+    /// Error placeholder — the parser emits this on a syntax error and
+    /// resyncs (spine §14.5) so a broken source still yields a partial
+    /// tree. The diagnostic + bad span live in the arena's error
+    /// side-table, keyed by this node's id; the variant carries no payload.
+    Error
+    /// A required statement the parser could not fill. Distinct from
+    /// `Error` (a whole malformed construct): `Missing` marks an
+    /// absent-but-required position.
+    Missing
 }
 
 /// When arm: one branch `cond -> body` or `else -> body` (cond is
@@ -2626,6 +2644,8 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         .Isolated(body) -> "(isolated ${render_expr(store, store.exprs.get(body))})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr_id(store, body)})"
         .Splice(target) -> "(splice ${render_expr(store, store.exprs.get(target))})"
+        .Error -> "(error)"
+        .Missing -> "(missing)"
     }
 }
 
@@ -2726,6 +2746,8 @@ export fn render_stmt(store: NodeStore, stmt: Stmt) -> string {
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
         .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_ids(store, body)})"
         .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_ids(store, body)})"
+        .Error -> "(error)"
+        .Missing -> "(missing)"
     }
 }
 

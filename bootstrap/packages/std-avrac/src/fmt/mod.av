@@ -81,6 +81,8 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Isolated(body) -> "isolated ${fmt_expr(store, store.exprs.get(body))}"
         .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(store, store.exprs.get(body))}" } else { "quote ${kind} ${fmt_expr(store, store.exprs.get(body))}" }
         .Splice(target) -> "~${fmt_expr(store, store.exprs.get(target))}"
+        .Error -> "(error)"
+        .Missing -> "(missing)"
     }
 }
 
@@ -169,6 +171,8 @@ export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
         .ComponentDef(name, params, _, _, _, body) -> "${ind}component ${name}(${fmt_param_list_comma(params)}) {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
         .ComponentBlock(comp, inst, _, body) -> "${ind}${comp} ${inst} {\n${fmt_stmt_ids(store, body, depth + 1)}\n${ind}}"
+        .Error -> "${ind}(error)"
+        .Missing -> "${ind}(missing)"
     }
 }
 
