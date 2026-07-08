@@ -1,0 +1,39 @@
+// ps3t.3.4 Phase A — the error-tolerant-parse node variants exist and are
+// handled by the renderers (spine §14.5). `Expr.Error`/`Stmt.Error` mark a
+// whole malformed construct; `Expr.Missing`/`Stmt.Missing` mark a
+// required-but-absent slot. The parser does not produce them yet (Phase B);
+// these specs pin that the variants exist and render as placeholders so a
+// partial tree over broken source is always printable.
+
+use @std.avrac.core.{Expr, Stmt, NodeStore, new_node_store, build_line_index, render_expr, render_stmt}
+use @std.avrac.fmt.{fmt_expr, fmt_stmt}
+
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
+spec "error/missing node variants render as placeholders" {
+    given "the S-expression renderer (render_expr / render_stmt)" {
+        then "Expr.Error renders (error)" {
+            render_expr(ts(), Expr.Error) == "(error)"
+        }
+        then "Expr.Missing renders (missing)" {
+            render_expr(ts(), Expr.Missing) == "(missing)"
+        }
+        then "Stmt.Error renders (error)" {
+            render_stmt(ts(), Stmt.Error) == "(error)"
+        }
+        then "Stmt.Missing renders (missing)" {
+            render_stmt(ts(), Stmt.Missing) == "(missing)"
+        }
+    }
+    given "the source formatter (fmt_expr / fmt_stmt)" {
+        then "fmt_expr on Expr.Error yields the error placeholder" {
+            fmt_expr(ts(), Expr.Error) == "(error)"
+        }
+        then "fmt_stmt on Stmt.Missing yields the missing placeholder" {
+            // fmt_stmt indents by depth; at depth 0 the indent is empty.
+            fmt_stmt(ts(), Stmt.Missing, 0) == "(missing)"
+        }
+    }
+}
