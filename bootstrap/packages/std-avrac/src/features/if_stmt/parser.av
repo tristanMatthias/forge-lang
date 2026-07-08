@@ -5,7 +5,7 @@
 // binding nothing can invalidate (the sound Rust/Zig model) — no new AST,
 // no codegen.
 
-use core.{Stmt, Expr, BinOp, ValueType, SStmt, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, Expr, BinOp, ValueType, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
 use list_ops.{list_concat}
 use parse.{Parser}
 use diagnostics.{DiagCode}

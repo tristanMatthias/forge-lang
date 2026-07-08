@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, ValueType, SExpr, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full}
+use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot}
 use diagnostics.{DiagCode}
 

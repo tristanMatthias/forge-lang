@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.{Stmt, Expr, FieldEntry, FieldInit, SExpr, sexpr, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype, NodeRef, byte_span_none, ExprId}
+use core.{Stmt, Expr, FieldEntry, FieldInit, TypeParamEntry, TypeExpr, ValueType, type_expr_to_vtype, NodeRef, byte_span_none, ExprId}
 use parse.{Parser, FieldInitIds}
 use core.{Tk}
 
