@@ -624,21 +624,6 @@ impl NodeStore {
         self.pats.truncate_to(m.pats)
         self.types.truncate_to(m.types)
     }
-
-    // ── reconstruct: rebuild the boxed tree from arena EDGES (B1) ──
-    //
-    // The inverse of ingest: given a node id, rebuild its boxed node from its
-    // EDGE ids (not the stored boxed children) recursively, via the derive-
-    // generated `with_children`. SCOPE: edges cover every WALKER-REACHABLE child;
-    // children embedded in plain structs (a match arm's pattern/guard/body, a
-    // field-init's value, a param's type) are NOT walked, so they have no edge and
-    // `with_children` carries them through from the stored node unchanged. Within
-    // that scope the edges are a faithful representation — the boxed-view shim the
-    // id-children rep flip stands on (descending into the struct carriers is the
-    // rep-flip step proper, not this shim). Each child arrives as a `SpannedChild`
-    // carrying the (line, col) recovered from the span side-table, so
-    // `with_children` rebuilds SExpr/SStmt wrappers with their position.
-
 }
 
 /// Construct an empty store carrying `lines` (the per-file LineIndex used to
