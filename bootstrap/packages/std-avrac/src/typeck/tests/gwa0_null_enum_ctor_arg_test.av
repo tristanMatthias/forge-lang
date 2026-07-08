@@ -1,0 +1,31 @@
+// Regression for gwa0: a bare `null` literal passed directly as an enum-ctor
+// argument for a NULLABLE field must type-check — it lowers to Option's absent
+// case, exactly as it does through a variable or in a struct literal. Before the
+// fix, the bare-null enum-ctor-arg path typed the literal as `void` and
+// false-reported F1000 ("expects int?, got void").
+//
+// The constructors live in TOP-LEVEL fns (always type-checked, independent of
+// the spec-body gate) so this file fails to COMPILE without the fix — that is
+// the regression guard.
+
+enum Box { Empty, Full(n: int?, tag: string?) }
+
+/// Bare null for a nullable field alongside a present value.
+fn make_full(n: int?) -> Box { Box.Full(n, null) }
+/// Bare null for BOTH nullable fields.
+fn make_both_null() -> Box { Box.Full(null, null) }
+
+spec "null literal as an enum-ctor arg for nullable fields (gwa0)" {
+    then "both nullable fields accept a bare null" {
+        match make_both_null() {
+            .Empty -> false
+            .Full(n, t) -> n == null && t == null
+        }
+    }
+    then "a present value works alongside a null in the same ctor" {
+        match make_full(5) {
+            .Empty -> false
+            .Full(n, t) -> n == 5 && t == null
+        }
+    }
+}
