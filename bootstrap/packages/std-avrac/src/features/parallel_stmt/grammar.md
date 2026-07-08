@@ -73,7 +73,7 @@ re-raised at the join point.
 
 ## Pipeline placement
 
-- Parser produces `Stmt.Parallel(body: List<SStmt>)`.
+- Parser produces `Stmt.Parallel(body: List<StmtId>)`.
 - Resolve walks each body statement in the enclosing scope.
 - Type-check accepts any statement-typed body.
 - Codegen lowers in `features/parallel_stmt/codegen.av` — one

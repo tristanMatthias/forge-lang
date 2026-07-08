@@ -53,7 +53,7 @@ equal to `x`.
 
 ## Pipeline placement
 
-- Parser produces `Expr.InCheck(needle, items: List<SExpr>)`.
+- Parser produces `Expr.InCheck(needle: ExprId, items: List<ExprId>)`.
 - Resolve walks the needle and every item.
 - Type-check unifies all item types with the needle's type;
   mismatches surface as the same diagnostic any `==` mismatch
