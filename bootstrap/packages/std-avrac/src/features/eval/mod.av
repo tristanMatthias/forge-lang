@@ -1,7 +1,7 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
+use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
 use core.{NodeStore, PatId, StmtId, ExprId}
 use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation}
 use core.{Registry, build_registry}
@@ -330,7 +330,7 @@ export fn execute_program_source(source: string) -> EvalResult {
             error_message: parsed.error_message,
         }
     }
-    execute_program_stmts(parsed.store.sstmts_of(parsed.ids!), parsed.store)
+    execute_program_stmts(parsed.ids!, parsed.store)
 }
 
 /// Same as `execute_program_source` but takes pre-parsed
@@ -338,8 +338,8 @@ export fn execute_program_source(source: string) -> EvalResult {
 /// upstream (cmd_run via parse_or_fail) avoid a second parse
 /// and still surface F-coded parse errors through the unified
 /// rendering pipeline.
-export fn execute_program_stmts(stmts: List<SStmt>, store: NodeStore) -> EvalResult {
-    finish_result(execute_stmt_list(runtime_new(store), stmts))
+export fn execute_program_stmts(ids: List<StmtId>, store: NodeStore) -> EvalResult {
+    finish_result(execute_stmt_ids(runtime_new(store), ids))
 }
 
 /// Render an integer as its canonical decimal text. Strips a
@@ -649,21 +649,8 @@ fn assign_binding(bindings: List<Binding>, name: string, value: Value) -> Assign
 /// Walk a statement list. Stops as soon as any step errors or
 /// signals an early return. Returns the last step's result so
 /// the final value of a block flows out naturally.
-fn execute_stmt_list(runtime: Runtime, stmts: List<SStmt>) -> StepResult {
-    if stmts.length == 0 { return ok_result(runtime, value_null()) }
-    mut cur = ok_result(runtime, value_null())
-    mut i = 0
-    while i < stmts.length {
-        cur = execute_stmt(cur.runtime, stmts[i].node)
-        if cur.had_error || cur.is_return { return cur }
-        i = i + 1
-    }
-    cur
-}
-
-/// The flipped-body twin of `execute_stmt_list`: walks a
-/// `List<StmtId>` body, resolving each row through the runtime's
-/// node store.
+/// Walk a `List<StmtId>` body, resolving each row through the runtime's
+/// node store and executing it in order; stops on error or return.
 export fn execute_stmt_ids(runtime: Runtime, ids: List<StmtId>) -> StepResult {
     if ids.length == 0 { return ok_result(runtime, value_null()) }
     mut cur = ok_result(runtime, value_null())

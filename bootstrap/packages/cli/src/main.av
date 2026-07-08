@@ -3857,8 +3857,9 @@ fn main() {
             // a parse error in cmd_run would print only a bare one-line
             // message ("parse error at L:C: …") with no diagnostic frame.
             let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
-            let parsed_stmts = parsed_prog.stmts
-            let result = execute_program_stmts(parsed_stmts, parsed_prog.store)
+            // ParsedProgram still serves a boxed program; materialise it into
+            // arena rows for the id-native evaluator (dies with the ParsedProgram flip).
+            let result = execute_program_stmts(parsed_prog.store.rows_of(parsed_prog.stmts), parsed_prog.store)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }
