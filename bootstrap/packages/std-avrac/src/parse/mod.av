@@ -59,13 +59,10 @@ export type ProgramParseResult = {
     store: NodeStore,
 }
 
-/// One parse of a paren/bracket-bounded argument list, surfaced both ways:
-/// `wrapped` is the boxed view (it-sugar applied, position-wrapped exactly
-/// as the boxed chain always did) for embedding in a parent's payload;
-/// `ids` are the arena rows backing each element, in the same order, for
-/// the parent's edge list.
+/// One parse of a paren/bracket-bounded argument list: `ids` are the arena
+/// rows backing each element (it-sugar applied), in source order, for the
+/// parent's edge list.
 export type ArgListIds = {
-    wrapped: List<SExpr>,
     ids: List<ExprId>,
 }
 
@@ -316,12 +313,10 @@ fn expr_is_upper_ident(e: Expr) -> bool {
 /// parsing). `(x, y) -> ...` parses the parens as expressions first,
 /// then reinterprets the Ident names as parameter names once `->`
 /// is seen.
-fn exprs_to_params(exprs: List<SExpr>) -> List<ParamEntry> {
+fn exprs_to_params(store: NodeStore, ids: List<ExprId>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
-    mut i = 0
-    while i < exprs.length {
-        let se = exprs[i]
-        let name = match se.node {
+    for id in ids {
+        let name = match store.exprs.get(id) {
             .Ident(n) -> n
             .QualifiedIdent(n) -> n
             _ -> "_"
@@ -329,7 +324,6 @@ fn exprs_to_params(exprs: List<SExpr>) -> List<ParamEntry> {
         // No type syntax exists in this position (the typed-lambda path goes
         // through parse_param_list) — no type was written, so no row backs it.
         out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
-        i = i + 1
     }
     out
 }
@@ -1516,13 +1510,6 @@ impl Parser {
         .Ok(rid)
     }
 
-    /// Boxed-only view of an arg list, for feature parsers not yet
-    /// flowing ids (annotation args now flow ids via parse_arg_list_ids).
-    fn parse_arg_list(self) -> Result<List<SExpr>, string> {
-        let parsed = self.parse_arg_list_ids()?
-        .Ok(parsed.wrapped)
-    }
-
     fn parse_arg_list_ids(self) -> Result<ArgListIds, string> {
         // Inside a paren-bounded arg list we're unambiguously not
         // at a sibling pattern position, so re-enable `.field`
@@ -1535,10 +1522,9 @@ impl Parser {
     }
 
     fn parse_arg_list_ids_inner(self) -> Result<ArgListIds, string> {
-        mut out: List<SExpr> = []
         mut ids: List<ExprId> = []
         if self.check(Tk.RightParen) {
-            return .Ok(ArgListIds { wrapped: out, ids: ids })
+            return .Ok(ArgListIds { ids: ids })
         }
         mut keep_going = true
         while keep_going {
@@ -1548,26 +1534,18 @@ impl Parser {
             // `it` parameter sugar: only wrap if allow_it_sugar is set
             // (method calls like .map/.filter set this, regular function
             // calls do not, preventing double-wrapping in `f(it)` inside
-            // `.map(f(it))`).
-            let expr = if self.allow_it_sugar {
+            // `.map(f(it))`). Flipped Lambda.body is an ExprId scalar — the
+            // body row IS the structure, so the lambda is a walker leaf.
+            if self.allow_it_sugar {
                 match raw_expr {
-                    .Lambda(_, _) -> raw_expr
+                    .Lambda(_, _) -> {}
                     _ -> {
                         if expr_contains_it(self.store, raw_expr) {
-                            // Flipped Lambda.body is an ExprId scalar — the body row
-                            // IS the structure, so the lambda is a walker leaf.
-                            let wrapped = wrap_in_it_lambda(raw_id)
-                            eid = self.alloc_leaf(wrapped)
-                            wrapped
-                        } else {
-                            raw_expr
+                            eid = self.alloc_leaf(wrap_in_it_lambda(raw_id))
                         }
                     }
                 }
-            } else {
-                raw_expr
             }
-            out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
             ids.push(eid)
             if self.check(Tk.Comma) {
                 self.advance()
@@ -1576,7 +1554,7 @@ impl Parser {
                 keep_going = false
             }
         }
-        .Ok(ArgListIds { wrapped: out, ids: ids })
+        .Ok(ArgListIds { ids: ids })
     }
 
     /// B1: primary productions hand back a typed id — the node (and its
@@ -1722,9 +1700,9 @@ impl Parser {
                 // as names (scalar ParamEntry data); their parsed rows orphan.
                 if self.check(Tk.Arrow) {
                     self.advance()
-                    mut combined: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
-                    for w in rest.wrapped { combined.push(w) }
-                    let params = exprs_to_params(combined)
+                    mut combined_ids: List<ExprId> = [expr]
+                    for tid in rest.ids { combined_ids.push(tid) }
+                    let params = exprs_to_params(self.store, combined_ids)
                     let body = self.parse_lambda_body()?
                     return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
                 }
@@ -1738,8 +1716,8 @@ impl Parser {
             // (x) -> expr  is a single-param lambda
             if self.check(Tk.Arrow) {
                 self.advance()
-                let one: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
-                let params = exprs_to_params(one)
+                let one: List<ExprId> = [expr]
+                let params = exprs_to_params(self.store, one)
                 let body = self.parse_lambda_body()?
                 return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
             }
@@ -1763,8 +1741,8 @@ impl Parser {
             // comp flows directly into the list_comp feature instead of
             // getting a spurious ListLit wrapper that downstream passes
             // would have to special-case — the comp's own row is returned.
-            if elements.wrapped.length == 1 {
-                match elements.wrapped[0].node {
+            if elements.ids.length == 1 {
+                match self.store.exprs.get(elements.ids[0]) {
                     .ListComp(_, _, _, _) -> return .Ok(elements.ids[0])
                     _ -> {}
                 }
@@ -1925,7 +1903,6 @@ impl Parser {
 
     fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
         // After the first comma in a tuple. Parse remaining elements.
-        mut out: List<SExpr> = []
         mut ids: List<ExprId> = []
         mut keep_going = true
         while keep_going {
@@ -1933,7 +1910,6 @@ impl Parser {
                 keep_going = false
             } else {
                 let eid = self.parse_expression()?
-                out.push(sexpr_at(self.expr_of(eid), self.current_line, self.current_column, self.file))
                 ids.push(eid)
                 if self.check(Tk.Comma) {
                     self.advance()
@@ -1942,7 +1918,7 @@ impl Parser {
                 }
             }
         }
-        .Ok(ArgListIds { wrapped: out, ids: ids })
+        .Ok(ArgListIds { ids: ids })
     }
 
     fn parse_block_expression(self) -> Result<ExprId, string> {
