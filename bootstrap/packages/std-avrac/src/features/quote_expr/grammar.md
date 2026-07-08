@@ -58,7 +58,7 @@ render_stmt(s) == "(let x:<unknown> 5)"
 `stmts`-quote captures multiple stmts:
 
 ```avra
-let sl: List<SStmt> = quote stmts {
+let sl: List<StmtId> = quote stmts {
     let a = 1
     let b = 2
 }
@@ -104,5 +104,5 @@ host-language.
 | (none)   | expression       | `Expr`          |
 | `stmt`   | statement        | `Stmt`          |
 | `decl`   | statement        | `Stmt`          |
-| `stmts`  | statement list   | `List<SStmt>`   |
+| `stmts`  | statement list   | `List<StmtId>`  |
 | `type`   | type expression  | `ValueType`     |

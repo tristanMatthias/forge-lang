@@ -53,7 +53,7 @@ inline (i64 for primitives, ptr for heap-allocated types).
 
 ## Pipeline placement
 
-- Parser produces `Expr.ListLit(elements: List<SExpr>)`.
+- Parser produces `Expr.ListLit(elements: List<ExprId>)`.
 - Resolve walks every element expression.
 - Type-check unifies element types — first non-Unknown element
   pins `T`; subsequent elements must be assignable to `T`.

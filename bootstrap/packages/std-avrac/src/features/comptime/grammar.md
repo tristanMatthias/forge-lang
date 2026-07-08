@@ -85,7 +85,8 @@ parse → resolve_module_files → expand_components → derive_marshal
   resolved names because eval needs the registry to invoke
   helper fns inside the macro.
 - **expand_macros_eval** evaluates each captured macro, splices
-  results, and tags every spliced SStmt with `from_macro: true`.
+  results, and tags every spliced statement with `from_macro`
+  provenance (recorded in the arena side-table, keyed by `StmtId`).
   Runs to fixpoint (cap 16 iters) so a macro emitting another
   `@expand(...)` site expands transitively. Hitting the cap
   `exit(1)`s with a clean diagnostic.
