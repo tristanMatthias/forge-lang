@@ -32,27 +32,38 @@
 // `type_content_hash` would fingerprint an arena nothing writes to, so it lands
 // with the type-flattening work that first populates TypeArena — tracked on the
 // ps3t.3.5 ticket, not silently dropped.
+//
+// KIND DISCRIMINATOR. The render alone is NOT a total structural identity across
+// arenas: distinct node kinds can render to the same string — `Expr.Number("5")`
+// and `Pattern.LitInt(5)` both render `"5"`; `Expr.Ident("_")` and
+// `Pattern.Wildcard` both render `"_"`. Per-arena interning never compares across
+// arenas, so this is harmless today — but §15.3's end-state is ONE
+// content-addressed id space where an id IS its content-hash, and there two
+// different kinds MUST hash apart. So each hash tags its render with a one-char
+// arena discriminator (`E:`/`S:`/`P:`) before hashing — cheap now, and correct
+// for the unified space later.
 
 use core.{NodeStore, ExprId, StmtId, PatId, render_expr_id, render_stmt_id, render_pat_id}
 use core.{content_id_for}
 
 /// Structural content fingerprint of the expression subtree rooted at `id`:
 /// stable across spans / positions (the render is span-free), equal for
-/// structurally-identical subtrees, and distinct for different structure
+/// structurally-identical subtrees, distinct for different structure, and
+/// distinct across node kinds (the `E:` arena tag — see KIND DISCRIMINATOR)
 /// (modulo the negligible FNV-1a-64 truncation collision the content-addressed
 /// TypeId scheme also accepts — interning resolves it with a content-compare).
 export fn expr_content_hash(store: NodeStore, id: ExprId) -> int {
-    content_id_for(render_expr_id(store, id))
+    content_id_for("E:" + render_expr_id(store, id))
 }
 
 /// Structural content fingerprint of the statement subtree rooted at `id`.
 /// See `expr_content_hash`.
 export fn stmt_content_hash(store: NodeStore, id: StmtId) -> int {
-    content_id_for(render_stmt_id(store, id))
+    content_id_for("S:" + render_stmt_id(store, id))
 }
 
 /// Structural content fingerprint of the pattern subtree rooted at `id`.
 /// See `expr_content_hash`.
 export fn pat_content_hash(store: NodeStore, id: PatId) -> int {
-    content_id_for(render_pat_id(store, id))
+    content_id_for("P:" + render_pat_id(store, id))
 }

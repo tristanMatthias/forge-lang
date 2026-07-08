@@ -90,4 +90,20 @@ spec "content hash: structural, span-free (ps3t.3.5)" {
         let ob = store.add_pat(Pattern.Or(b1, b2), byte_span(50, 56), [NodeRef.PatRef(b1), NodeRef.PatRef(b2)])
         pat_content_hash(store, oa) != pat_content_hash(store, ob)
     }
+    // Cross-kind: nodes from different arenas that render to the SAME string must
+    // still hash apart (the arena discriminator). Without it, Expr.Number("5")
+    // and Pattern.LitInt(5) both render "5" and would collide — a latent bug once
+    // §15.3 unifies all ids into one content-addressed space.
+    then "different node KINDS with identical render hash apart (Expr.Number 5 vs Pattern.LitInt 5)" {
+        let store = ts()
+        let e = store.add_expr(Expr.Number("5"), byte_span(0, 1), [])
+        let p = store.add_pat(Pattern.LitInt(5), byte_span(0, 1), [])
+        expr_content_hash(store, e) != pat_content_hash(store, p)
+    }
+    then "Expr.Ident(_) and Pattern.Wildcard both render \"_\" yet hash apart" {
+        let store = ts()
+        let e = store.add_expr(Expr.Ident("_"), byte_span(0, 1), [])
+        let p = store.add_pat(Pattern.Wildcard, byte_span(0, 1), [])
+        expr_content_hash(store, e) != pat_content_hash(store, p)
+    }
 }
