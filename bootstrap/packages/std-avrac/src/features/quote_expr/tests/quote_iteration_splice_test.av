@@ -4,11 +4,11 @@
 // Per the handoff doc, an inline `~for item in items { quote stmt
 // { ... ~item ... } }` syntax is NOT supported. The agreed
 // alternative is the "build the list outside, return it directly"
-// convention: a @comptime fn returning `List<SStmt>` constructs
+// convention: a @comptime fn returning `List<StmtId>` constructs
 // each statement via `quote stmt { ... }` and pushes the result
 // into the output list. The @expand pipeline accepts a
-// `List<SStmt>` return as a multi-stmt splice (commit 98e32334),
-// so the caller gets the same effect without any new lowering.
+// `List<StmtId>` return as a multi-stmt splice, so the caller gets
+// the same effect without any new lowering.
 //
 // Note: the comptime eval's `for x in list { ... }` stmt handler
 // is not implemented yet (separate gap), so this test exercises
@@ -19,16 +19,17 @@ extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "quote: iteration-style splice via list-return convention" {
-    then "@comptime fn returning List<SStmt> splices each entry as a sibling stmt" {
-        let out = write_fixture_and_run("/tmp/avra_quote_iteration_splice_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
+    then "@comptime fn returning List<StmtId> splices each entry as a sibling stmt" {
+        let out = write_fixture_and_run("/tmp/avra_quote_iteration_splice_test.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
             "\n" +
             "@comptime\n" +
-            "fn build() -> List<SStmt> {\n" +
+            "fn build() -> List<StmtId> {\n" +
             "    let s1 = quote stmt { println(\"a\") }\n" +
             "    let s2 = quote stmt { println(\"b\") }\n" +
             "    let s3 = quote stmt { println(\"c\") }\n" +
-            "    [sstmt_dummy(s1), sstmt_dummy(s2), sstmt_dummy(s3)]\n" +
+            "    [synth_stmt_id(s1), synth_stmt_id(s2), synth_stmt_id(s3)]\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +
