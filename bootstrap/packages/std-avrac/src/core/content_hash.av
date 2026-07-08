@@ -1,0 +1,69 @@
+// WHY: L1 hash-consing content fingerprint (ps3t.3.5 / spine §14.4, §15.2). A
+// node's STRUCTURAL identity is its content — variant + literal payloads +
+// child-hashes — with spans / provenance / analysis EXCLUDED (those live in
+// side-tables keyed by id, so re-spanning or re-annotating never busts sharing).
+// This is the content-hash PRIMITIVE: a stable fingerprint over a node's
+// subtree, hashed with the same FNV-1a-64 (`content_id_for`) the type registry
+// already uses for content-addressed ids — "one hash story across nodes and
+// types" (§15.2).
+//
+// FORM. §15.2's scheme is "variant + literal payloads + child-hashes"
+// (recursive, bottom-up, deterministic). We realize it as the FNV-1a-64 of the
+// node's SPAN-FREE structural render (`render_*_id`): render is position-free
+// and recurses child CONTENT, so FNV(render(a)) == FNV(render(b)) iff a and b
+// are structurally identical — exactly §15.2's equivalence, and exactly
+// span-exclusion (a re-spanned node renders the same). §14.4's "child ids" form
+// is the SAME thing once interning makes ids content-addressed (§15.3: an id IS
+// its content-hash); before interning, ids are sequential, so the recursive
+// (render) form is the correct one for structural equality. The O(1) child-ids
+// form is the follow-up optimization wired ALONGSIDE interning.
+//
+// STAGED (§14.6 step 4). This is the primitive + its contract test ONLY.
+// Interning in `alloc()` (the memory-sharing dedup) is a SEPARATE increment,
+// gated on first making the occurrence-dependent side-tables (`arg_tys`,
+// `provenance`) dedup-safe — see the ps3t.3.5 ticket. Nothing calls this yet, so
+// adding it changes no behavior: byte-identical.
+//
+// ARENA COVERAGE. One hash per node arena that a pass actually populates:
+// Expr, Stmt, and Pattern (the pats arena is written by resolve/eval/parse).
+// The fourth arena (§14.1), TypeArena, has NO producer yet — no pass calls
+// `types.add`, so ValueTypes still live inline in Expr/Stmt payloads (and thus
+// already contribute to those nodes' hashes via the render). A standalone
+// `type_content_hash` would fingerprint an arena nothing writes to, so it lands
+// with the type-flattening work that first populates TypeArena — tracked on the
+// ps3t.3.5 ticket, not silently dropped.
+//
+// KIND DISCRIMINATOR. The render alone is NOT a total structural identity across
+// arenas: distinct node kinds can render to the same string — `Expr.Number("5")`
+// and `Pattern.LitInt(5)` both render `"5"`; `Expr.Ident("_")` and
+// `Pattern.Wildcard` both render `"_"`. Per-arena interning never compares across
+// arenas, so this is harmless today — but §15.3's end-state is ONE
+// content-addressed id space where an id IS its content-hash, and there two
+// different kinds MUST hash apart. So each hash tags its render with a one-char
+// arena discriminator (`E:`/`S:`/`P:`) before hashing — cheap now, and correct
+// for the unified space later.
+
+use core.{NodeStore, ExprId, StmtId, PatId, render_expr_id, render_stmt_id, render_pat_id}
+use core.{content_id_for}
+
+/// Structural content fingerprint of the expression subtree rooted at `id`:
+/// stable across spans / positions (the render is span-free), equal for
+/// structurally-identical subtrees, distinct for different structure, and
+/// distinct across node kinds (the `E:` arena tag — see KIND DISCRIMINATOR)
+/// (modulo the negligible FNV-1a-64 truncation collision the content-addressed
+/// TypeId scheme also accepts — interning resolves it with a content-compare).
+export fn expr_content_hash(store: NodeStore, id: ExprId) -> int {
+    content_id_for("E:" + render_expr_id(store, id))
+}
+
+/// Structural content fingerprint of the statement subtree rooted at `id`.
+/// See `expr_content_hash`.
+export fn stmt_content_hash(store: NodeStore, id: StmtId) -> int {
+    content_id_for("S:" + render_stmt_id(store, id))
+}
+
+/// Structural content fingerprint of the pattern subtree rooted at `id`.
+/// See `expr_content_hash`.
+export fn pat_content_hash(store: NodeStore, id: PatId) -> int {
+    content_id_for("P:" + render_pat_id(store, id))
+}

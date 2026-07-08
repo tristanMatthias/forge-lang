@@ -2762,6 +2762,12 @@ export fn render_stmt_id(store: NodeStore, id: StmtId) -> string {
     render_stmt(store, store.stmts.get(id))
 }
 
+/// Render a pat arena row (see `render_expr_id`) — the id-resolving sibling of
+/// `render_expr_id`/`render_stmt_id` for the third live node arena.
+export fn render_pat_id(store: NodeStore, id: PatId) -> string {
+    render_pattern(store, store.pats.get(id))
+}
+
 /// Render a flipped `List<StmtId>` body — the id twin of `render_stmt_list`.
 export fn render_stmt_ids(store: NodeStore, ids: List<StmtId>) -> string {
     list_map(ids, (id: StmtId) -> render_stmt(store, store.stmts.get(id))).join("\n")
