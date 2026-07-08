@@ -897,10 +897,19 @@ fn main() -> int {
     ]
 
     let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, synth_store)
+    // Route synthesis through a .meta.bin disk round-trip so the stubs are
+    // built from DECODED metadata — exactly the resolver fast path (read a
+    // peer's .meta.bin -> synthesize), the surface the reverted
+    // metadata_synthesize flip shipped WRONG output on. extract->synthesize
+    // alone skips the encode/decode the fast path always does.
+    avra_shell_exec("rm -f /tmp/avra_synth_fidelity.meta.bin")
+    let synth_wrc = metadata_write("/tmp/avra_synth_fidelity.meta.bin", synth_meta)
+    probe("synth_meta_disk_roundtrip", synth_wrc == 1 && metadata_file_exists("/tmp/avra_synth_fidelity.meta.bin"))
+    let synth_meta_disk = metadata_read("/tmp/avra_synth_fidelity.meta.bin")
     // synthesize_unit_stmts allocates its output rows into this store, so
     // read the synthesized Module/fn/const back through it.
     let synth_out_store = new_node_store(build_line_index(""))
-    let synth_back = synthesize_unit_stmts(synth_meta, synth_out_store)
+    let synth_back = synthesize_unit_stmts(synth_meta_disk, synth_out_store)
 
     // The top of synth_back should be Stmt.Module("@synth", body).
     let synth_top = if synth_back.length > 0 { stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_back[0])) } else { Stmt.NoOp }
@@ -952,6 +961,37 @@ fn main() -> int {
         if synth_body.length > 2 {
             match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[2])) {
                 .Const(name, _, _) -> name == "BUILD"
+                _ -> false
+            }
+        } else { false })
+
+    // The probes above check the stubs' SHAPE + names; these check their
+    // SIGNATURES survive synthesis. The reverted flip compiled cleanly but
+    // produced WRONG stubs — a field / return / const type silently corrupted,
+    // which the shape probes miss. Assert the signatures structurally so such a
+    // corruption is a hard FAIL, not a shipped bug (F4d.8 bug-2 net).
+    probe("synth_typedecl_field_faithful",
+        if synth_body.length > 0 {
+            match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[0])) {
+                .TypeDecl(_, _, fields) ->
+                    fields.length == 1 && fields[0].name == "x" && vtype_eq(fields[0].resolved, ValueType.Int)
+                _ -> false
+            }
+        } else { false })
+
+    probe("synth_fn_sig_faithful",
+        if synth_body.length > 1 {
+            match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[1])) {
+                .Function(_, _, params, ret_vt, _) ->
+                    params.length == 0 && vtype_eq(ret_vt, ValueType.Str)
+                _ -> false
+            }
+        } else { false })
+
+    probe("synth_const_type_faithful",
+        if synth_body.length > 2 {
+            match stmt_unwrap(synth_out_store, synth_out_store.stmts.get(synth_body[2])) {
+                .Const(_, vt, _) -> vtype_eq(vt, ValueType.Str)
                 _ -> false
             }
         } else { false })
