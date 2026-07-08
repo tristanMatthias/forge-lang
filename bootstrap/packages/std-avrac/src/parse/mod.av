@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SStmt, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
@@ -848,21 +848,19 @@ impl Parser {
         self.cell_mode = true
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
             let row_line = self.current_line
-            mut cells: List<SExpr> = []
             mut cell_ids: List<ExprId> = []
             while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
                 // parse_bitwise_xor stops before `|`, so the column
                 // separator is never swallowed as a bitwise-or operand.
                 let val_id = self.parse_bitwise_xor()?
-                cells.push(sexpr_at(self.expr_of(val_id), self.current_line, self.current_column, self.file))
                 cell_ids.push(val_id)
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
-            if cells.length != header_count {
+            if cell_ids.length != header_count {
                 self.cell_mode = saved_cell_mode
-                self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
+                self.set_error("table row has ${string(cell_ids.length)} cell(s) but the header declares ${string(header_count)} column(s)")
                 return .Err("parse error")
             }
             mut inits: List<FieldInit> = []
