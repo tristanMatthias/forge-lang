@@ -198,14 +198,20 @@ impl Parser {
             // The wrap is stmt-bearing, so it bridges at its boundary.
             mut body_id = ExprId(0)
             if self.check(Tk.KwReturn) {
+                // Capture the `return` keyword's position BEFORE parsing the
+                // expression, which advances the cursor past it. Stamping the
+                // synthesized return row with the post-advance cursor would
+                // point a field-access null-trap at the delimiter/next token
+                // instead of the `return`.
+                let ret_line = self.current_line
+                let ret_col = self.current_column
                 self.advance()
                 let rv_id = self.parse_expression()?
                 // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf).
-                // Allocate the synthesized return row directly and stamp the
-                // source position (file "") — the return's field-access
-                // null-traps embed that same source line.
+                // Allocate the synthesized return row directly and stamp it
+                // with the `return` position + originating file.
                 let ret_id = self.store.stmts.add_leaf(Stmt.Return(rv_id))
-                self.store.set_stmt_pos(ret_id, self.current_line, self.current_column, "")
+                self.store.set_stmt_pos(ret_id, ret_line, ret_col, self.file)
                 let body_stmts: List<StmtId> = [ret_id]
                 body_id = self.alloc_leaf(Expr.Block(body_stmts))
             } else {
