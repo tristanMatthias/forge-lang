@@ -145,7 +145,6 @@ impl Parser {
         // `Foo { name: name }` so the value defaults to an
         // `Expr.Ident(name)` when the `:` is absent.
         mut out: List<FieldInit> = []
-        mut ids: List<ExprId> = []
         while !self.check(Tk.RightBrace) {
             let name = self.consume_identifier("expected field name")?
             mut value = Expr.Ident(name)
@@ -157,9 +156,8 @@ impl Parser {
                 value_id = self.alloc_leaf(value)
             }
             out.push(FieldInit { name, value_id })
-            ids.push(value_id)
             if self.check(Tk.Comma) { self.advance() }
         }
-        .Ok(FieldInitIds { inits: out, ids: ids })
+        .Ok(FieldInitIds { inits: out })
     }
 }

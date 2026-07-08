@@ -2404,17 +2404,9 @@ fn list_value_to_match_arm_list(store: NodeStore, v: Value) -> Result<List<Match
 
 fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
     if v.kind != "struct" { return .Err("decode: match arm not a struct") }
-    // B-final F4b — the MatchArm TYPE is id-only (`guard_id`/`body_id`); the
-    // boxed `guard`/`body` fields are gone. This decoder stays tolerant of BOTH
-    // value shapes for the seed-migration window, and always produces ids:
-    //   - id shape: the slot carries the Expr node itself (the `synth_expr_id`
-    //     comptime identity), decoded by `value_to_expr_id`;
-    //   - boxed shape: a `guard`/`body` Expr node is re-ingested via `add_leaf`.
-    // A real id wins; a boxed half only fills an unset slot. The dual value
-    // tolerance is REQUIRED both directions: the pinned seed's derive_walker
-    // emits ids, while the previous compiler source this compiler must still
-    // build (the diff-test selfhost oracle) emits the boxed shape. It can be
-    // dropped once the seed train advances past this flip (boxed macros gone).
+    // The MatchArm TYPE is id-only (`guard_id`/`body_id`). Each decoded
+    // slot carries the Expr node itself (the `synth_expr_id` comptime
+    // identity), which `value_to_expr_id` turns into an arena id.
     mut pat_opt: Pattern? = null
     mut guard_id_opt: ExprId? = null
     mut body_id_opt: ExprId? = null
@@ -2438,33 +2430,10 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
             }
             "body_id" -> {
                 // Always decode: a body is required, and `Expr.None` (variant
-                // "None") is a legitimate body — do NOT treat it as absent. A
-                // boxed-shape value that left `body_id` unset decodes to `.Err`
-                // here (a null slot is not an Expr), leaving the `body` fallback
-                // to fill it.
+                // "None") is a legitimate body — do NOT treat it as absent.
                 match value_to_expr_id(store, f.value) {
                     .Ok(bid) -> body_id_opt = bid
                     .Err(_) -> {}
-                }
-            }
-            "guard" -> {
-                // Boxed fallback (previous-shape value): re-ingest the guard as an
-                // arena leaf, but only if no real `guard_id` filled the slot.
-                if guard_id_opt == none && !variant_is_optional_absent(f.value.enum_variant) {
-                    match value_to_expr_id(store, f.value) {
-                        .Ok(gid) -> guard_id_opt = gid
-                        .Err(_) -> {}
-                    }
-                }
-            }
-            "body" -> {
-                // Boxed fallback: re-ingest the body as an arena leaf unless a
-                // real `body_id` already filled the slot.
-                if body_id_opt == none {
-                    match value_to_expr_id(store, f.value) {
-                        .Ok(bid) -> body_id_opt = bid
-                        .Err(_) -> {}
-                    }
                 }
             }
             _ -> { /* ignore unknown fields */ }
@@ -2472,8 +2441,8 @@ fn value_to_match_arm(store: NodeStore, v: Value) -> Result<MatchArm, string> {
     }
     if pat_opt == none { return .Err("decode: match arm missing pattern") }
     if body_id_opt == none { return .Err("decode: match arm missing body") }
-    // Keep the mixed-node dual: pattern rides both the boxed slot and a fresh
-    // arena row, so a decoded arm matches the parser's pattern/pattern_id shape.
+    // The arm carries the pattern both as a Pattern value and a fresh arena
+    // row (pattern_id), matching the parser's pattern/pattern_id shape.
     .Ok(MatchArm { pattern: pat_opt!, pattern_id: store.pats.add_leaf(pat_opt!), guard_id: guard_id_opt, body_id: body_id_opt! })
 }
 
