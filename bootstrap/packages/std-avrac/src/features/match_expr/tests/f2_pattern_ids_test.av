@@ -50,8 +50,8 @@ spec "F2: nested-variant patterns carry id children that render faithfully" {
 
 fn fmt_of(source: string) -> string {
     let r = parse_program_source(source)
-    if r.had_error != 0 || r.stmts == null { return "<parse error>" }
-    fmt_stmt_ids(r.store, r.store.rows_of(r.stmts!), 0)
+    if r.had_error != 0 || r.ids == null { return "<parse error>" }
+    fmt_stmt_ids(r.store, r.ids!, 0)
 }
 
 spec "F2: fmt resolves pattern ids back to surface text" {

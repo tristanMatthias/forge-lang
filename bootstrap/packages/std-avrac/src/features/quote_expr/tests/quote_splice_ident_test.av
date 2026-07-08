@@ -10,9 +10,9 @@ use @std.avrac.parse.{parse_program_source}
 // Helper: extract the first stmt out of a parsed program for shape checks.
 fn first_stmt(src: string) -> Stmt? {
     let parsed = parse_program_source(src)
-    if parsed.had_error || parsed.stmts == null { return null }
-    let ss = parsed.stmts!
-    if ss.length == 0 { null } else { ss[0].node }
+    if parsed.had_error || parsed.ids == null { return null }
+    let ids = parsed.ids!
+    if ids.length == 0 { null } else { parsed.store.stmts.get(ids[0]) }
 }
 
 spec "swgx: parser accepts ~ident in type-decl name slot inside quote" {
