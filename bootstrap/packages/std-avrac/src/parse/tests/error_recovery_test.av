@@ -1,0 +1,279 @@
+// ps3t.3.4 Phase B — error-tolerant parsing (spine §14.5). When a statement
+// fails to parse, the parser no longer aborts the whole file at the first
+// error: it records the diagnostic, drops a `Stmt.Error` placeholder into the
+// tree to mark where the break was, resynchronizes to the next statement
+// boundary, and keeps going. A broken file therefore yields a PARTIAL tree
+// (valid siblings preserved) plus ALL of its errors — the foundation for the
+// daemon / LSP / LLM story where a half-typed buffer must still parse.
+//
+// These specs pin: (1) the tree carries `Stmt.Error` at each break; (2) valid
+// statements interleaved with the breaks survive intact; (3) a well-formed
+// program never constructs an error node (the run-equivalence side of the M3
+// gate — recovery is invisible on valid input); (4) the forward-progress guard
+// keeps recovery terminating even when the error fires on a sync token that
+// consumes nothing.
+
+use @std.avrac.core.{Stmt, StmtId, render_expr}
+use @std.avrac.parse.{parse_program_source}
+
+// Shared broken sources. `then` blocks are lambdas that can't capture a
+// spec-local `let`, but a top-level fn resolves fine — so the fixtures live
+// here instead of being repeated inline at every assertion.
+
+/// Two malformed bindings (`)` where a value is expected) bracketing two
+/// well-formed ones: parses to [Error, Let b, Error, Let d].
+fn src_two_broken_two_valid() -> string { "let a = )\nlet b = 5\nlet c = )\nlet d = 7\n" }
+
+/// Stray sync tokens (`then`/`given` outside a spec) ahead of a valid binding —
+/// the forward-progress-guard fixture.
+fn src_stray_syncs() -> string { "then\ngiven\nlet ok = 1\n" }
+
+/// A function body with a malformed then a well-formed binding — the block
+/// (`stop_at_right_brace`) recovery fixture.
+fn src_fn_body_break() -> string { "fn f() {\n    let a = )\n    let b = 5\n}\n" }
+
+/// A malformed statement two blocks deep (broken binding inside an `if` inside a
+/// `fn`) — recovery must reach every nesting level, since each block re-enters
+/// the same statement-list loop.
+fn src_nested_break() -> string { "fn f() {\n    if true {\n        let a = )\n        let b = 2\n    }\n}\n" }
+
+/// A binding missing its required name slot (`let = 5`) ahead of a valid one —
+/// a different `parse_declaration` failure mode than a bad initializer, still
+/// recovered the same way.
+fn src_missing_slot() -> string { "let = 5\nlet ok = 9\n" }
+
+/// Count `Stmt.Error` placeholders among a program's top-level rows.
+/// -1 signals the parser handed back no roots at all (never expected here —
+/// recovery always produces a root list).
+fn top_error_count(source: string) -> int {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return -1 }
+    mut n = 0
+    for id in parsed.ids! {
+        match parsed.store.stmts.get(id) {
+            .Error -> { n = n + 1 }
+            _ -> {}
+        }
+    }
+    n
+}
+
+/// Total top-level rows (error placeholders + real statements).
+fn top_stmt_count(source: string) -> int {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return -1 }
+    parsed.ids!.length
+}
+
+/// True when the n-th top-level row is a `let name = <init>` whose initializer
+/// renders as `expect` — proves a valid sibling survived recovery uncorrupted.
+fn nth_let_inits_to(source: string, n: int, name: string, expect: string) -> bool {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return false }
+    if n < 0 || n >= parsed.ids!.length { return false }
+    match parsed.store.stmts.get(parsed.ids![n]) {
+        .Let(nm, _, init) ->
+            nm == name && render_expr(parsed.store, parsed.store.exprs.get(init)) == expect
+        _ -> false
+    }
+}
+
+/// True when the n-th top-level row is a `Stmt.Error` placeholder.
+fn nth_is_error(source: string, n: int) -> bool {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return false }
+    if n < 0 || n >= parsed.ids!.length { return false }
+    match parsed.store.stmts.get(parsed.ids![n]) {
+        .Error -> true
+        _ -> false
+    }
+}
+
+/// Count `Stmt.Error` placeholders inside the FIRST top-level function's body —
+/// exercises the block recovery path (`parse_statement_list_ids(true)`), which
+/// most real code travels. Negative sentinels flag an unexpected top shape.
+fn fn_body_error_count(source: string) -> int {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return -1 }
+    if parsed.ids!.length == 0 { return -2 }
+    match parsed.store.stmts.get(parsed.ids![0]) {
+        .Function(_, _, _, _, body) -> {
+            mut n = 0
+            for id in body {
+                match parsed.store.stmts.get(id) {
+                    .Error -> { n = n + 1 }
+                    _ -> {}
+                }
+            }
+            n
+        }
+        _ -> -3
+    }
+}
+
+/// True when the n-th statement of the first function's body is `let name`.
+fn fn_body_nth_is_let(source: string, n: int, name: string) -> bool {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return false }
+    if parsed.ids!.length == 0 { return false }
+    match parsed.store.stmts.get(parsed.ids![0]) {
+        .Function(_, _, _, _, body) -> {
+            if n < 0 || n >= body.length { return false }
+            match parsed.store.stmts.get(body[n]) {
+                .Let(nm, _, _) -> nm == name
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
+/// A program of `n` malformed bindings, one per line. Drives the stress /
+/// termination spec: recovery must chew through many consecutive errors and
+/// still return, one Error node per line.
+fn many_broken(n: int) -> string {
+    mut s = ""
+    mut i = 0
+    while i < n {
+        s = s + "let v = )\n"
+        i = i + 1
+    }
+    s
+}
+
+/// Count `Stmt.Error` placeholders ANYWHERE in the arena (any nesting depth) by
+/// scanning the flat row list — recovery must reach blocks nested arbitrarily
+/// deep, and the arena is the depth-agnostic place to prove it.
+fn total_error_nodes(source: string) -> int {
+    let parsed = parse_program_source(source)
+    mut n = 0
+    mut i = 1
+    while i <= parsed.store.stmts.count() {
+        match parsed.store.stmts.get(StmtId(i)) {
+            .Error -> { n = n + 1 }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    n
+}
+
+/// True when the FIRST top-level Error node carries a bad-span in the arena's
+/// span side-table starting at byte `lo` and covering a non-empty region
+/// (`hi > lo`) — the §14.5 "bad-span lives in a side-table" contract.
+fn first_error_span_is(source: string, lo: int) -> bool {
+    let parsed = parse_program_source(source)
+    if parsed.ids == null { return false }
+    mut ok = false
+    mut done = false
+    for id in parsed.ids! {
+        if !done {
+            match parsed.store.stmts.get(id) {
+                .Error -> {
+                    let sp = parsed.store.stmts.span_of(id)
+                    ok = sp.lo == lo && sp.hi > sp.lo
+                    done = true
+                }
+                _ -> {}
+            }
+        }
+    }
+    ok
+}
+
+// Pre-Phase-B this aborted at the first `)`; now it reports both breaks and the
+// tree is [Error, Let b, Error, Let d].
+spec "the parser recovers from a statement error and keeps parsing" {
+    given "a top-level file with two malformed and two well-formed statements" {
+        then "every malformed statement leaves an Error placeholder (not just the first)" {
+            top_error_count(src_two_broken_two_valid()) == 2
+        }
+        then "the partial tree keeps all four rows — errors do not swallow siblings" {
+            top_stmt_count(src_two_broken_two_valid()) == 4
+        }
+        then "the break points are the 1st and 3rd rows" {
+            nth_is_error(src_two_broken_two_valid(), 0) && nth_is_error(src_two_broken_two_valid(), 2)
+        }
+        then "the valid `let b = 5` between the breaks survives with its initializer" {
+            nth_let_inits_to(src_two_broken_two_valid(), 1, "b", "5")
+        }
+        then "the trailing valid `let d = 7` after the last break survives" {
+            nth_let_inits_to(src_two_broken_two_valid(), 3, "d", "7")
+        }
+        then "the first Error node records a bad-span from the malformed statement's start" {
+            // `let a = )` begins at byte 0; the span runs to the resync point.
+            first_error_span_is(src_two_broken_two_valid(), 0)
+        }
+    }
+}
+
+spec "recovery is invisible on well-formed input" {
+    given "a program with no parse errors" {
+        then "no Error placeholder is ever constructed" {
+            top_error_count("let a = 1\nlet b = 2\n") == 0
+        }
+        then "the tree holds exactly the real statements" {
+            top_stmt_count("let a = 1\nlet b = 2\n") == 2
+        }
+    }
+}
+
+// `then` / `given` outside a spec block are sync tokens the declaration parser
+// rejects without consuming — without the guard, `synchronize` would park on
+// them and the loop would spin. The guard forces one token so recovery drains
+// the strays and still reaches the trailing binding.
+spec "the forward-progress guard keeps recovery terminating" {
+    given "stray sync tokens ahead of a valid binding" {
+        then "each stray token yields an Error placeholder" {
+            top_error_count(src_stray_syncs()) == 2
+        }
+        then "the trailing `let ok = 1` is still parsed" {
+            nth_let_inits_to(src_stray_syncs(), 2, "ok", "1")
+        }
+    }
+}
+
+// The block recovery path (`stop_at_right_brace = true`) — most statements
+// live inside a block, so recovery must work there identically.
+spec "recovery works inside a block body, not only at the top level" {
+    given "a function whose body has a malformed then a well-formed binding" {
+        then "the broken statement leaves one Error placeholder in the body" {
+            fn_body_error_count(src_fn_body_break()) == 1
+        }
+        then "the well-formed `let b` after the break survives in the body" {
+            fn_body_nth_is_let(src_fn_body_break(), 1, "b")
+        }
+    }
+    given "a malformed binding nested two blocks deep (inside `if` inside `fn`)" {
+        then "recovery reaches the innermost block — exactly one Error node in the tree" {
+            total_error_nodes(src_nested_break()) == 1
+        }
+    }
+}
+
+// Degenerate inputs must terminate cleanly rather than hang or crash.
+spec "recovery handles degenerate inputs without spinning" {
+    given "an empty source" {
+        then "the tree has no statements and no errors" {
+            top_stmt_count("") == 0 && top_error_count("") == 0
+        }
+    }
+    given "a binding truncated at end-of-file (`let x =` then EOF)" {
+        then "the dangling construct becomes a single Error placeholder" {
+            top_error_count("let x =\n") == 1
+        }
+    }
+    given "a long run of consecutive malformed statements" {
+        then "recovery drains all 50 and returns one Error node per line" {
+            top_error_count(many_broken(50)) == 50
+        }
+    }
+    given "a statement missing a required slot (`let = 5`, no binding name)" {
+        then "the malformed statement recovers to a single Error placeholder" {
+            top_error_count(src_missing_slot()) == 1
+        }
+        then "the following well-formed `let ok = 9` still parses" {
+            nth_let_inits_to(src_missing_slot(), 1, "ok", "9")
+        }
+    }
+}
