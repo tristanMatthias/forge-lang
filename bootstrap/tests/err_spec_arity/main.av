@@ -13,3 +13,9 @@ spec "arity gating in spec bodies" {
         three(1, "hi") == 2
     }
 }
+
+// A top-level `fn main` marks this file as a fixture, not a discoverable test:
+// discover_tests filters `!has_top_main`, so the runner never bundles/compiles
+// it directly (it MUST NOT — it intentionally fails to compile). It is only ever
+// compiled on demand by err_spec_arity_test.av via `bs2 check`.
+fn main() {}
