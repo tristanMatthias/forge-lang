@@ -75,8 +75,8 @@ use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source}
-use @std.avrac.core.{render_expr, render_stmt_list, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, reconstruct_program, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{render_expr, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -236,10 +236,9 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     // (roots, store) and reads nodes/positions/provenance straight from the
     // arena; there is no boxed serving step (`program_from_store` retired).
     let store = parsed.store
-    let file = if root_ids.length > 0 { store.stmt_pos(root_ids[0]).file } else { "" }
-    // AVRA_L1_INGEST surfaces the arena diagnostics + the EDGE round-trip fidelity
-    // probe (`reconstruct_program` ≅ parse output via render-equality). Debug-only
-    // and noisy, so gated; the canonical serve-path above runs unconditionally.
+    // AVRA_L1_INGEST surfaces the parser's arena diagnostics (node counts,
+    // span side-table). Debug-only and noisy, so gated; the canonical
+    // serve-path above runs unconditionally.
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
         if store.stmts.count() > 0 {
@@ -249,8 +248,6 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
             println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")
         }
         println(l1_sidetable_summary(store))
-        let recon_faithful = render_stmt_list(store, reconstruct_program(store, file)) == render_stmt_list(store, store.sstmts_of(root_ids))
-        println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
     }
     ParsedProgram { ids: root_ids, store }
 }

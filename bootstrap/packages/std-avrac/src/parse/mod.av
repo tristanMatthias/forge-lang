@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SStmt, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
@@ -44,10 +44,6 @@ export type ProgramParseResult = {
     // the parsed statements as flipped children (the module resolver filling
     // `Stmt.Module` bodies) take their ids from here.
     ids: List<StmtId>?,
-    // Boxed view of `ids`, derived on demand via `sstmts_of` — the parser no
-    // longer builds a parallel wrapper list. Kept for consumers not yet
-    // migrated to ids; dies with the rest of the boxed surface at F4f.
-    stmts: List<SStmt>?,
     had_error: int,
     error_message: string,
     bag: DiagnosticBag,
@@ -598,7 +594,6 @@ impl Parser {
             .Ok(s) -> s
             .Err(_) -> return ProgramParseResult {
                 ids: null,
-                stmts: null,
                 had_error: self.had_error,
                 error_message: self.error_message,
                 bag: self.bag,
@@ -610,7 +605,6 @@ impl Parser {
             self.set_error("expected end of input")
             return ProgramParseResult {
                 ids: null,
-                stmts: null,
                 had_error: true,
                 error_message: self.error_message,
                 bag: self.bag,
@@ -630,7 +624,6 @@ impl Parser {
 
         ProgramParseResult {
             ids: parsed.ids,
-            stmts: self.store.sstmts_of(parsed.ids),
             had_error: self.had_error,
             error_message: self.error_message,
             bag: self.bag,
