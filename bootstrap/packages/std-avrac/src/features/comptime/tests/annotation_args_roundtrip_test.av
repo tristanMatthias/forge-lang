@@ -22,7 +22,7 @@ spec "AnnotatedDecl.annotation.args: round-trips Ident + String + Number" {
             "    mut kinds = \"count=\" + string(n)\n" +
             "    mut i = 0\n" +
             "    while i < n {\n" +
-            "        let k = match d.annotation.args[i].node {\n" +
+            "        let k = match d.annotation.args[i] {\n" +
             "            .Ident(name) -> \"Ident:\" + name\n" +
             "            .QualifiedIdent(path) -> \"QualifiedIdent:\" + path\n" +
             "            .String(text) -> \"String\"\n" +

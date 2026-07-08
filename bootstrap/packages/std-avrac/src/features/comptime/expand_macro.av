@@ -849,11 +849,11 @@ fn first_arg_ident(store: NodeStore, ids: List<ExprId>?) -> string {
 ///   - canonical_path: qualified path to the decl (mod::name)
 ///
 /// `annotation.args` is populated from the actual @expand(...)
-/// annotation on the original wrapped stmt — each arg encoded as an
-/// SExpr Value with Expr.Ident / Expr.QualifiedIdent / Expr.String
-/// payload. Other Expr kinds in the annotation args land as
-/// Expr.None Values; the macro can match on the Expr.kind to
-/// dispatch. The args list is empty when the @expand call had no
+/// annotation on the original wrapped stmt — each arg encoded as its
+/// Expr Value (Expr.Ident / Expr.QualifiedIdent / Expr.String / …).
+/// Other Expr kinds in the annotation args land as Expr.None Values;
+/// the macro can match on each Expr directly to dispatch. The args
+/// list is empty when the @expand call had no
 /// args (which the parser prevents for `@expand` — there's always
 /// at least the macro identifier).
 fn build_annotated_decl(stmt_v: Value, decl_name: string, current_module: string, original_stmt: Stmt, runtime: Runtime) -> Value {
@@ -882,28 +882,13 @@ fn build_annotation_value(stmt: Stmt, runtime: Runtime) -> Value {
     mut args_values: List<Value> = []
     if found != null && found!.arg_ids != none {
         for id in found!.arg_ids! {
-            args_values.push(build_arg_sexpr_value(runtime.nodes.exprs.get(id), runtime))
+            args_values.push(build_expr_value(runtime.nodes.exprs.get(id), runtime))
         }
     }
     mut ann_fields: List<StructField> = []
     ann_fields.push(struct_field("name", value_string("expand")))
     ann_fields.push(struct_field("args", value_list(args_values)))
     value_struct("@std::avrac::features::comptime::macro_types::MacroAnnotation", ann_fields)
-}
-
-/// Wrap an Expr in an SExpr Value carrier — {node, line, col, ty, file}.
-/// Used to encode each @expand annotation arg into the runtime
-/// `List<SExpr>` exposed to the macro via AnnotatedDecl.annotation.args.
-/// Source-position fields are stubbed (0/0/"") because the walker
-/// doesn't propagate the annotation's per-arg span to invoke_macro.
-fn build_arg_sexpr_value(e: Expr, runtime: Runtime) -> Value {
-    mut sexpr_fields: List<StructField> = []
-    sexpr_fields.push(struct_field("node", build_expr_value(e, runtime)))
-    sexpr_fields.push(struct_field("line", value_number("0")))
-    sexpr_fields.push(struct_field("col", value_number("0")))
-    sexpr_fields.push(struct_field("ty", build_value_type_unknown()))
-    sexpr_fields.push(struct_field("file", value_string("")))
-    value_struct("@std::avrac::core::SExpr", sexpr_fields)
 }
 
 /// Encode an Expr as a runtime Value by reusing lower.av's
@@ -921,11 +906,6 @@ fn build_expr_value(e: Expr, runtime: Runtime) -> Value {
         return value_enum("@std::avrac::core::Expr", "None", empty)
     }
     step_value(result)
-}
-
-fn build_value_type_unknown() -> Value {
-    let empty: List<Value> = []
-    value_enum("@std::avrac::core::ValueType", "Unknown", empty)
 }
 
 /// Extract the decl name from a (possibly unwrapped) Stmt — the name
