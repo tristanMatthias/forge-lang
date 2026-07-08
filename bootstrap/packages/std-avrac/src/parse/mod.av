@@ -276,8 +276,8 @@ export fn parse_body_source(source: string, store: NodeStore) -> List<StmtId> {
 /// Interleave header names and values into a flat alternating list:
 /// `[k1, k2]` + `[v1, v2]` → `[k1, v1, k2, v2]`. MapLit expects this
 /// flat shape; table-literal parsing produces it.
-export fn table_zip_entries(headers: List<SExpr>, values: List<SExpr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
+export fn table_zip_entries(headers: List<ExprId>, values: List<ExprId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
     let n = if headers.length < values.length { headers.length } else { values.length }
     mut i = 0
     while i < n {

@@ -6,8 +6,8 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.av)
 //   related:                features/match_expr/codegen.av, core.ast.{Pattern, MatchArm}
 
-use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, SExpr, SStmt, sexpr, sstmt, pattern_optional_present, pattern_optional_absent}
-use core.{NodeRef, ExprId, PatId, byte_span_none}
+use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, pattern_optional_present, pattern_optional_absent}
+use core.{NodeRef, ExprId, StmtId, PatId, byte_span_none}
 use parse.{Parser, table_zip_entries}
 use core.{Tk}
 
@@ -60,7 +60,7 @@ impl Parser {
     // Desugars each row to a match arm returning a MapLit.
     fn parse_match_table_arms(self) -> Result<List<MatchArm>, string> {
         // Parse header row: identifiers separated by |
-        mut headers: List<SExpr> = []
+        mut headers: List<ExprId> = []
         mut header_count = 0
         let header_line = self.current_line
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
@@ -69,7 +69,7 @@ impl Parser {
                 self.advance()
                 // Wrap in quotes so strip_quotes in codegen produces the correct key
                 let quoted_col = "\"${col}\""
-                headers.push(sexpr(Expr.String(quoted_col), self.current_line, self.current_column))
+                headers.push(self.alloc_leaf(Expr.String(quoted_col)))
                 header_count = header_count + 1
                 if self.check(Tk.Pipe) { self.advance() }
             } else {
@@ -79,7 +79,7 @@ impl Parser {
         let empty_arms: List<MatchArm> = []
         if header_count < 2 { return .Ok(empty_arms) }
         // Skip the first header (pattern column) by copying from index 1
-        mut value_headers: List<SExpr> = []
+        mut value_headers: List<ExprId> = []
         mut hi = 1
         while hi < headers.length {
             value_headers.push(headers[hi])
@@ -90,7 +90,7 @@ impl Parser {
         self.parse_match_table_rows(value_headers, value_count)
     }
 
-    fn parse_match_table_rows(self, headers: List<SExpr>, value_count: int) -> Result<List<MatchArm>, string> {
+    fn parse_match_table_rows(self, headers: List<ExprId>, value_count: int) -> Result<List<MatchArm>, string> {
         // Source-order loop appending each row's match arm directly
         // into a growable `List<MatchArm>` — arm order matters
         // (first-match-wins).
@@ -105,20 +105,17 @@ impl Parser {
             self.allow_dot_postfix = saved_dot
             if self.check(Tk.Pipe) { self.advance() }
             // Parse values — one per column, stopping at | separators
-            mut vals: List<SExpr> = []
+            mut vals: List<ExprId> = []
             mut i = 0
             while i < value_count {
                 if self.check(Tk.RightBrace) { break }
-                // B1 interim glue: parse_primary returns a typed id; read the
-                // boxed node back until this producer converts.
                 let val_id = self.parse_primary()?
-                let val = self.store.exprs.get(val_id)
-                vals.push(sexpr(val, self.current_line, self.current_column))
+                vals.push(val_id)
                 i = i + 1
                 if self.check(Tk.Pipe) { self.advance() }
             }
             let map_entries = table_zip_entries(headers, vals)
-            let body = Expr.MapLit(self.store.ingest_sexpr_recipe(map_entries))
+            let body = Expr.MapLit(map_entries)
             let table_body_id = self.alloc_leaf(body)
             if self.check(Tk.Comma) { self.advance() }
             out.push(MatchArm {
@@ -204,11 +201,13 @@ impl Parser {
                 self.advance()
                 let rv_id = self.parse_expression()?
                 // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf).
-                // Ingest the synthesized return via `rows_of` so the row keeps
-                // the position the boxed `sstmt` wrapper carried (file "") — the
-                // return's field-access null-traps embed that same source line.
-                let body_stmts: List<SStmt> = [sstmt(Stmt.Return(rv_id), self.current_line, self.current_column)]
-                body_id = self.alloc_leaf(Expr.Block(self.store.rows_of(body_stmts)))
+                // Allocate the synthesized return row directly and stamp the
+                // source position (file "") — the return's field-access
+                // null-traps embed that same source line.
+                let ret_id = self.store.stmts.add_leaf(Stmt.Return(rv_id))
+                self.store.set_stmt_pos(ret_id, self.current_line, self.current_column, "")
+                let body_stmts: List<StmtId> = [ret_id]
+                body_id = self.alloc_leaf(Expr.Block(body_stmts))
             } else {
                 body_id = self.parse_expression()?
             }
