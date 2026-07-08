@@ -75,11 +75,13 @@ fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, req
 }
 
 /// True when `stmts` contains an `AssocType(name, …)` entry with
-/// a resolved (non-Unknown) right-hand side.
+/// a resolved (non-Unknown) right-hand side. Peels `Annotated`
+/// wrappers (like the sibling `impl_has_method`) so an annotated
+/// `type Item = …` still registers as present.
 fn impl_has_assoc_type(store: NodeStore, stmts: List<StmtId>, name: string) -> bool {
     mut i = 0
     while i < stmts.length {
-        match store.stmts.get(stmts[i]) {
+        match stmt_unwrap(store, store.stmts.get(stmts[i])) {
             .AssocType(n, ty_vt) if n == name && !vtype_is_unknown(ty_vt) -> return true
             _ -> {}
         }

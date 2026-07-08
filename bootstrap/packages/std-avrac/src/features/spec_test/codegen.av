@@ -67,8 +67,8 @@ fn emit_then_block(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr, fi
 
 /// Walk a spec/given body emitting each child statement. Threads
 /// the List<VarBinding> through so `let` bindings flow into later arms.
-/// Updates `ctx.source_file` / `ctx.source_line` from each SStmt
-/// so the reporter records the correct location for each `then`
+/// Updates `ctx.source_file` / `ctx.source_line` from each stmt's
+/// arena position so the reporter records the correct location for each `then`
 /// arm — the outer codegen walker only updates ctx at top-level
 /// stmt boundaries, but `then` arms are nested inside `spec` /
 /// `given` bodies and need their own per-stmt update.
@@ -79,7 +79,7 @@ fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, body: List<StmtId>) -> Resul
         let id = body[i]
         let pos = ctx.nodes.stmt_pos(id)
         let line_ctx = ctx with { source_line: pos.line, source_file: pos.file }
-        cur_env = emit_spec_single(line_ctx, cur_env, ctx.nodes.stmts.get(id))?
+        cur_env = emit_spec_single(line_ctx, cur_env, id)?
         i = i + 1
     }
     ok_stmt(cur_env)
@@ -90,12 +90,16 @@ fn emit_spec_stmts(ctx: Ctx, env: List<VarBinding>, body: List<StmtId>) -> Resul
 /// StmtResult is unwrapped back to a List<VarBinding>. Anything else (regular
 /// `let`, `mut`, function calls inside `given`) is wrapped and
 /// emitted as a normal block-loop statement.
-fn emit_spec_single(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<List<VarBinding>, string> {
+fn emit_spec_single(ctx: Ctx, env: List<VarBinding>, id: StmtId) -> Result<List<VarBinding>, string> {
+    let stmt = ctx.nodes.stmts.get(id)
     if is_spec_arm(stmt) {
         let sr = spec_emit_stmt(ctx, env, stmt)?
         return ok_stmt(sr.env)
     }
-    let wrapped: List<StmtId> = [ctx.nodes.stmts.add_leaf(stmt)]
+    // Reuse the original arena id — it already carries the source
+    // position, so a diagnostic from a plain `let`/call inside a
+    // `given` block reports the real location, not line 0.
+    let wrapped: List<StmtId> = [id]
     emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
     ok_stmt(env)
 }
