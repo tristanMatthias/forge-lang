@@ -14,6 +14,7 @@ export fn spec_feature() -> Feature {
         stmt_tag: Stmt.SpecBlock("", empty_body),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: spec_resolve_stmt,
+        check_stmt: spec_check_stmt,
         eval_stmt: spec_eval_stmt,
         decl_keyword: "kw_spec",
         parse_decl: (p: Parser) -> p.parse_spec_block(),
@@ -28,6 +29,7 @@ export fn given_feature() -> Feature {
         stmt_tag: Stmt.GivenBlock("", empty_body),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: given_resolve_stmt,
+        check_stmt: given_check_stmt,
         eval_stmt: given_eval_stmt,
     }
 }
@@ -40,6 +42,7 @@ export fn then_feature() -> Feature {
         stmt_tag: Stmt.ThenBlock("", ExprId(0)),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: then_resolve_stmt,
+        check_stmt: then_check_stmt,
         eval_stmt: then_eval_stmt,
     }
 }
