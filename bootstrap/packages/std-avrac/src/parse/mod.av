@@ -1527,6 +1527,9 @@ impl Parser {
             // body row IS the structure, so the lambda is a walker leaf.
             if self.allow_it_sugar {
                 match raw_expr {
+                    // Already a lambda — leave it; wrapping a lambda in an
+                    // `it`-lambda would double-bind. (Statement-position match:
+                    // the only effect is the `_` arm's `eid` reassignment.)
                     .Lambda(_, _) -> {}
                     _ -> {
                         if expr_contains_it(self.store, raw_expr) {
