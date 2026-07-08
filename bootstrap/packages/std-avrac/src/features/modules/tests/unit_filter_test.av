@@ -6,29 +6,28 @@
 // build small in-memory ASTs and assert on the post-filter shape.
 //
 // F3a: Module bodies are `List<StmtId>` rows whose file attribution
-// lives in the store's pos column (stamped by `rows_of`), so every
-// probe threads the store its program was built in.
+// lives in the store's pos column, so every probe threads the store
+// its program was built in.
 
-use @std.avrac.core.{NodeStore, StmtId, Stmt, SStmt, Annotation, ParamEntry, ValueType, sstmt_at, sstmt_dummy, new_node_store, build_line_index}
+use @std.avrac.core.{NodeStore, StmtId, Stmt, Annotation, ParamEntry, ValueType, new_node_store, build_line_index}
 use @std.avrac.features.modules.{filter_to_target_unit}
 
-/// A filtered program + the store its rows live in.
-type UftFiltered = { stmts: List<SStmt>, store: NodeStore }
+/// A filtered program (its root rows) + the store its rows live in.
+type UftFiltered = { ids: List<StmtId>, store: NodeStore }
 
 fn uft_store() -> NodeStore {
     new_node_store(build_line_index(""))
 }
 
-/// Build a `Stmt.Function` SStmt anchored at `file` so the filter
-/// has a position-column file to compare against. Body is empty — we
-/// never codegen these test fixtures, only inspect their structure.
-fn uft_fn_in_file(name: string, file: string) -> SStmt {
+/// Build a `Stmt.Function` row anchored at `file` so the filter has a
+/// position-column file to compare against. Body is empty — we never
+/// codegen these test fixtures, only inspect their structure.
+fn uft_fn_in_file(ws: NodeStore, name: string, file: string) -> StmtId {
     let empty_p: List<ParamEntry> = []
     let empty_body: List<StmtId> = []
-    sstmt_at(
-        Stmt.Function(name, .End, empty_p, ValueType.Unknown, empty_body),
-        1, 1, file,
-    )
+    let id = ws.stmts.add_leaf(Stmt.Function(name, .End, empty_p, ValueType.Unknown, empty_body))
+    ws.set_stmt_pos(id, 1, 1, file)
+    id
 }
 
 fn uft_annotation_has(annots: List<Annotation>, target: string) -> bool {
@@ -40,8 +39,8 @@ fn uft_annotation_has(annots: List<Annotation>, target: string) -> bool {
     false
 }
 
-fn uft_is_external_module(ws: NodeStore, ss: SStmt, expected_name: string) -> bool {
-    match ss.node {
+fn uft_is_external_module(ws: NodeStore, id: StmtId, expected_name: string) -> bool {
+    match ws.stmts.get(id) {
         .Annotated(annots, inner) -> {
             let has_ext = uft_annotation_has(annots, "external_unit")
             let name_ok = match ws.stmts.get(inner) {
@@ -54,76 +53,71 @@ fn uft_is_external_module(ws: NodeStore, ss: SStmt, expected_name: string) -> bo
     }
 }
 
-fn uft_is_module(ss: SStmt, expected_name: string) -> bool {
-    match ss.node {
+fn uft_is_module(ws: NodeStore, id: StmtId, expected_name: string) -> bool {
+    match ws.stmts.get(id) {
         .Module(n, _) -> n == expected_name
         _ -> false
     }
 }
 
-fn uft_nth(stmts: List<SStmt>, idx: int) -> SStmt {
-    if idx < 0 || idx >= stmts.length { return sstmt_dummy(Stmt.NoOp()) }
-    stmts[idx]
+fn uft_nth(ws: NodeStore, ids: List<StmtId>, idx: int) -> StmtId {
+    if idx < 0 || idx >= ids.length { return ws.stmts.add_leaf(Stmt.NoOp()) }
+    ids[idx]
 }
 
-fn uft_list_of(items: List<SStmt>) -> List<SStmt> {
-    items
-}
-
-/// A Module whose body rows are stamped with `files` in the pos
-/// column — `rows_of` is the write bridge that records them.
-fn uft_module_with_files(ws: NodeStore, name: string, files: List<string>) -> SStmt {
-    mut body_items: List<SStmt> = []
+/// A Module whose body rows are stamped with `files` in the pos column.
+fn uft_module_with_files(ws: NodeStore, name: string, files: List<string>) -> StmtId {
+    mut body_items: List<StmtId> = []
     mut i = 0
     while i < files.length {
-        body_items.push(uft_fn_in_file("f${i}", files[i]))
+        body_items.push(uft_fn_in_file(ws, "f${i}", files[i]))
         i = i + 1
     }
-    sstmt_dummy(Stmt.Module(name, ws.rows_of(body_items)))
+    ws.stmts.add_leaf(Stmt.Module(name, body_items))
 }
 
 /// Three sibling Modules, one per directory. Filter targets core/.
 fn uft_filter_siblings() -> UftFiltered {
     let ws = uft_store()
-    let prog = uft_list_of([
+    let prog: List<StmtId> = [
         uft_module_with_files(ws, "core", ["packages/std-avrac/src/core/ast.av"]),
         uft_module_with_files(ws, "features", ["packages/std-avrac/src/features/closures/mod.av"]),
         uft_module_with_files(ws, "build", ["packages/std-avrac/src/build/cache.av"]),
-    ])
-    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
+    ]
+    UftFiltered { ids: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
 }
 
 spec "filter_to_target_unit: target module stays plain, others marked external" {
     then "core stays as plain Module (target hit)" {
         let f = uft_filter_siblings()
-        uft_is_module(uft_nth(f.stmts, 0), "core")
+        uft_is_module(f.store, uft_nth(f.store, f.ids, 0), "core")
     }
     then "features gets @external_unit (no file in target)" {
         let f = uft_filter_siblings()
-        uft_is_external_module(f.store, uft_nth(f.stmts, 1), "features")
+        uft_is_external_module(f.store, uft_nth(f.store, f.ids, 1), "features")
     }
     then "build gets @external_unit (no file in target)" {
         let f = uft_filter_siblings()
-        uft_is_external_module(f.store, uft_nth(f.stmts, 2), "build")
+        uft_is_external_module(f.store, uft_nth(f.store, f.ids, 2), "build")
     }
 }
 
 /// Module body has files from two dirs, one of them target.
 fn uft_filter_mixed() -> UftFiltered {
     let ws = uft_store()
-    let prog = uft_list_of([
+    let prog: List<StmtId> = [
         uft_module_with_files(ws, "mixed", [
             "packages/std-avrac/src/typeck/mod.av",
             "packages/std-avrac/src/core/ast.av",
         ]),
-    ])
-    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
+    ]
+    UftFiltered { ids: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
 }
 
 spec "filter_to_target_unit: any-file-in-target keeps the whole module" {
     then "the mixed module is kept (any-file-in-target wins)" {
         let f = uft_filter_mixed()
-        uft_is_module(uft_nth(f.stmts, 0), "mixed")
+        uft_is_module(f.store, uft_nth(f.store, f.ids, 0), "mixed")
     }
 }
 
@@ -132,30 +126,30 @@ fn uft_filter_nested() -> UftFiltered {
     let ws = uft_store()
     let core_inner = uft_module_with_files(ws, "core", ["packages/std-avrac/src/core/ast.av"])
     let features_inner = uft_module_with_files(ws, "features", ["packages/std-avrac/src/features/closures/mod.av"])
-    let avrac_body = uft_list_of([core_inner, features_inner])
-    let prog = uft_list_of([sstmt_dummy(Stmt.Module("avrac", ws.rows_of(avrac_body)))])
-    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
+    let avrac_body: List<StmtId> = [core_inner, features_inner]
+    let prog: List<StmtId> = [ws.stmts.add_leaf(Stmt.Module("avrac", avrac_body))]
+    UftFiltered { ids: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
 }
 
-fn uft_outer_avrac_inner_at(f: UftFiltered, idx: int) -> SStmt {
-    let outer = uft_nth(f.stmts, 0)
-    match outer.node {
+fn uft_outer_avrac_inner_at(f: UftFiltered, idx: int) -> StmtId {
+    let outer = uft_nth(f.store, f.ids, 0)
+    match f.store.stmts.get(outer) {
         .Module(_, body) -> {
-            if idx < 0 || idx >= body.length { return sstmt_dummy(Stmt.NoOp()) }
-            f.store.sstmt_of(body[idx])
+            if idx < 0 || idx >= body.length { return f.store.stmts.add_leaf(Stmt.NoOp()) }
+            body[idx]
         }
-        _ -> sstmt_dummy(Stmt.NoOp())
+        _ -> f.store.stmts.add_leaf(Stmt.NoOp())
     }
 }
 
 spec "filter_to_target_unit: nested modules also get filtered" {
     then "outer avrac wrapper is kept (target reachable inside)" {
         let f = uft_filter_nested()
-        uft_is_module(uft_nth(f.stmts, 0), "avrac")
+        uft_is_module(f.store, uft_nth(f.store, f.ids, 0), "avrac")
     }
     then "inside avrac, core stays plain" {
         let f = uft_filter_nested()
-        uft_is_module(uft_outer_avrac_inner_at(f, 0), "core")
+        uft_is_module(f.store, uft_outer_avrac_inner_at(f, 0), "core")
     }
     then "inside avrac, features goes external" {
         let f = uft_filter_nested()
@@ -168,13 +162,13 @@ spec "filter_to_target_unit: nested modules also get filtered" {
 fn uft_filter_empty() -> UftFiltered {
     let ws = uft_store()
     let empty_body: List<StmtId> = []
-    let prog = uft_list_of([sstmt_dummy(Stmt.Module("placeholder", empty_body))])
-    UftFiltered { stmts: ws.sstmts_of(filter_to_target_unit(ws, ws.rows_of(prog), "packages/std-avrac/src/core/")), store: ws }
+    let prog: List<StmtId> = [ws.stmts.add_leaf(Stmt.Module("placeholder", empty_body))]
+    UftFiltered { ids: filter_to_target_unit(ws, prog, "packages/std-avrac/src/core/"), store: ws }
 }
 
 spec "filter_to_target_unit: empty body modules are not touched" {
     then "the empty Module stays plain" {
         let f = uft_filter_empty()
-        uft_is_module(uft_nth(f.stmts, 0), "placeholder")
+        uft_is_module(f.store, uft_nth(f.store, f.ids, 0), "placeholder")
     }
 }

@@ -1,25 +1,26 @@
 // docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test.
 // Verifies a @expand macro can introduce multiple sibling decls
 // in a single splice — a type plus an impl referencing it. Uses
-// the List<SStmt> return form so the @expand pipeline drops both
+// the List<StmtId> return form so the @expand pipeline drops both
 // decls into the parent scope as siblings.
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "qa6i: @expand macro can introduce multiple sibling decls" {
     then "macro-emitted TypeDecl + Impl land as siblings and the impl method is callable" {
-        let out = write_fixture_and_run("/tmp/avra_expand_multi_decl_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, sstmt_dummy}\n" +
+        let out = write_fixture_and_run("/tmp/avra_expand_multi_decl_test.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
             "\n" +
             "@comptime\n" +
-            "fn build() -> List<SStmt> {\n" +
+            "fn build() -> List<StmtId> {\n" +
             "    let s1 = quote stmt { type Wrap = { v: int } }\n" +
             "    let s2 = quote stmt {\n" +
             "        impl Wrap {\n" +
             "            fn doubled(self) -> int { self.v + self.v }\n" +
             "        }\n" +
             "    }\n" +
-            "    [sstmt_dummy(s1), sstmt_dummy(s2)]\n" +
+            "    [synth_stmt_id(s1), synth_stmt_id(s2)]\n" +
             "}\n" +
             "\n" +
             "@expand(build)\n" +
