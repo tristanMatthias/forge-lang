@@ -269,12 +269,12 @@ type AssembledFile = {
 fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFile, string> {
     let content = avra_selfhost_read_file(path)
     let parsed = parse_program_source_shared(content, path, store)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
         return Result.Err("error parsing ${path}")
     }
     let empty_loaded: List<string> = []
-    let mod_resolved = resolve_module_files(store.rows_of(parsed.stmts!), modules_dirname(path), empty_loaded, store)
+    let mod_resolved = resolve_module_files(parsed.ids!, modules_dirname(path), empty_loaded, store)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
@@ -313,9 +313,8 @@ fn load_support_stmts(path: string, store: NodeStore) -> List<StmtId> {
     if avra_selfhost_file_exists(path) == 0 { return empty }
     let rsrc = avra_selfhost_read_file(path)
     let rparsed = parse_program_source_shared(rsrc, path, store)
-    if rparsed.had_error || rparsed.stmts == null { return empty }
-    // Parse still emits boxed rows; bridge into the arena.
-    store.rows_of(rparsed.stmts!)
+    if rparsed.had_error || rparsed.ids == null { return empty }
+    rparsed.ids!
 }
 
 /// Synthetic test-bundle entry point:

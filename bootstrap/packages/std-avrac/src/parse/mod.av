@@ -265,10 +265,10 @@ export fn parse_body_source(source: string, store: NodeStore) -> List<StmtId> {
     let wrapped = "fn __avra_body_source_wrapper() {\n" + source + "\n}"
     let parsed = parse_program_source_shared(wrapped, "", store)
     if parsed.had_error == 1 { return empty }
-    if parsed.stmts == null { return empty }
-    let ss = parsed.stmts!
-    if ss.length == 0 { return empty }
-    match stmt_unwrap(store, ss[0].node) {
+    if parsed.ids == null { return empty }
+    let root_ids = parsed.ids!
+    if root_ids.length == 0 { return empty }
+    match stmt_unwrap(store, store.stmts.get(root_ids[0])) {
         .Function(_, _, _, _, body) -> body
         _ -> empty
     }

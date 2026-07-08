@@ -222,13 +222,13 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext)
 /// the caller continues from there.
 fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     let parsed = parse_program_source(source)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) {
             render_bag_ctx(ctx, parsed.bag)
         }
         fail(parsed.error_message)
     }
-    let stmts = parsed.stmts!
+    let root_ids = parsed.ids!
     // B1: the parser IS the arena producer. Every production allocated its row
     // (typed-id edges in walker order + byte-offset span side-tables + provenance)
     // during the parse itself, and the top-level rows were recorded as roots —
@@ -242,7 +242,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     // pinned by the parity battery (parse/tests/b1_native_stmt_test.av), which
     // keeps `ingest_program` alive as its test oracle.
     let store = parsed.store
-    let file = if stmts.length > 0 { stmts[0].file } else { "" }
+    let file = if root_ids.length > 0 { store.stmt_pos(root_ids[0]).file } else { "" }
     // AVRA_L1_INGEST surfaces the arena diagnostics + the EDGE round-trip fidelity
     // probe (`reconstruct_program` ≅ parse output via render-equality). Debug-only
     // and noisy, so gated; the canonical serve-path above runs unconditionally.
@@ -255,7 +255,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
             println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")
         }
         println(l1_sidetable_summary(store))
-        let recon_faithful = render_stmt_list(store, reconstruct_program(store, file)) == render_stmt_list(store, stmts)
+        let recon_faithful = render_stmt_list(store, reconstruct_program(store, file)) == render_stmt_list(store, store.sstmts_of(root_ids))
         println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
     }
     ParsedProgram { stmts: program_from_store(store, file), store }

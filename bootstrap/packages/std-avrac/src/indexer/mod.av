@@ -479,10 +479,10 @@ export fn run_lsp_server(project_dir: string) {
         let content = avra_selfhost_read_file(path)
         if content == "" { continue }
         let parsed = parse_program_source(content)
-        if parsed.had_error || parsed.stmts == null { continue }
+        if parsed.had_error || parsed.ids == null { continue }
         let rel = relativise(path, project_dir)
-        let file_syms = extract_from_ast(parsed.store, parsed.store.rows_of(parsed.stmts!), rel)
-        let file_calls = extract_calls_from_ast(parsed.store, parsed.store.rows_of(parsed.stmts!), rel)
+        let file_syms = extract_from_ast(parsed.store, parsed.ids!, rel)
+        let file_calls = extract_calls_from_ast(parsed.store, parsed.ids!, rel)
         g = graph_extend(g, file_syms)
         for e in file_calls { calls.push(e) }
     }
@@ -545,8 +545,8 @@ export fn extract_project_syms_cached(project_dir: string, force_rebuild: bool) 
         let content = avra_selfhost_read_file(path)
         if content == "" { continue }
         let parsed = parse_program_source(content)
-        if parsed.had_error || parsed.stmts == null { continue }
-        let file_syms = extract_from_ast_at(parsed.store, parsed.store.rows_of(parsed.stmts!), rel)
+        if parsed.had_error || parsed.ids == null { continue }
+        let file_syms = extract_from_ast_at(parsed.store, parsed.ids!, rel)
         let mtime = avra_file_mtime(path)
         state = cache_add_file(state, rel, mtime, file_syms)
     }

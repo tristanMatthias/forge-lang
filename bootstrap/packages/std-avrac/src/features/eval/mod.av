@@ -323,14 +323,14 @@ export fn eval_parsed_expression(expr: Expr, store: NodeStore) -> EvalResult {
 /// `execute_program_stmts` instead to avoid a redundant parse.
 export fn execute_program_source(source: string) -> EvalResult {
     let parsed = parse_program_source(source)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return EvalResult {
             value: null,
             had_error: true,
             error_message: parsed.error_message,
         }
     }
-    execute_program_stmts(parsed.stmts!, parsed.store)
+    execute_program_stmts(parsed.store.sstmts_of(parsed.ids!), parsed.store)
 }
 
 /// Same as `execute_program_source` but takes pre-parsed

@@ -103,7 +103,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     let pr = module_graph_add_package_root(module_graph_new(), entry_file)
     let content = avra_selfhost_read_file(entry_file)
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return BuildGraphResult {
             graph: pr.graph,
             uses: [],
@@ -114,7 +114,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     let entry_dir = modules_dirname(entry_file)
     // The entry file is the program root — canonical path "".
     let g_canon = module_graph_set_canonical(pr.graph, "", pr.mod_id)
-    walk_stmts(parsed.store, g_canon, parsed.store.rows_of(parsed.stmts!), pr.mod_id, pr.pkg_id, "", entry_dir, [])
+    walk_stmts(parsed.store, g_canon, parsed.ids!, pr.mod_id, pr.pkg_id, "", entry_dir, [])
 }
 
 // ── Internal walker ──────────────────────────────────────────────────
@@ -219,14 +219,14 @@ fn walk_mod_decl(g: ModuleGraph, name: string, parent_id: int, pkg_id: int, cano
     // Parse + recurse.
     let content = avra_selfhost_read_file(mod_path)
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return BuildGraphResult {
             graph: g_canon, uses, had_error: 1,
             error_message: "parse error in module `${name}` (${mod_path}): ${parsed.error_message}",
         }
     }
     let mod_dir = modules_dirname(mod_path)
-    walk_stmts(parsed.store, g_canon, parsed.store.rows_of(parsed.stmts!), added.id, pkg_id, child_canon, mod_dir, uses)
+    walk_stmts(parsed.store, g_canon, parsed.ids!, added.id, pkg_id, child_canon, mod_dir, uses)
 }
 
 /// Handle a `use X.Y.{Z}` statement. Classifies the path:
@@ -328,7 +328,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
     let g_canon = module_graph_set_canonical(pr.graph, pkg_canon, pr.mod_id)
     let content = avra_selfhost_read_file(pkg_file)
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return EnsurePackageResult {
             graph: g_canon, pkg_id: pr.pkg_id,
             had_error: 1,
@@ -336,7 +336,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
         }
     }
     let pkg_dir = modules_dirname(pkg_file)
-    let walked = walk_stmts(parsed.store, g_canon, parsed.store.rows_of(parsed.stmts!), pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, [])
+    let walked = walk_stmts(parsed.store, g_canon, parsed.ids!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, [])
     EnsurePackageResult {
         graph: walked.graph, pkg_id: pr.pkg_id,
         had_error: walked.had_error, error_message: walked.error_message,

@@ -61,11 +61,11 @@ export type TypecheckSourceResult = {
 /// best post-typecheck shape obtainable from the inputs.
 export fn typecheck_source(source: string) -> TypecheckSourceResult {
     let parsed = parse_program_source(source)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         let empty_stmts: List<StmtId> = []
         return TypecheckSourceResult { bag: parsed.bag, stmts: empty_stmts, type_reg: type_registry_new(), store: parsed.store }
     }
-    let post_quote = lower_quotes(parsed.store.rows_of(parsed.stmts!), parsed.store)
+    let post_quote = lower_quotes(parsed.ids!, parsed.store)
     let desugared = desugar_program(post_quote, parsed.store)
     // typecheck_source intentionally skips file-based module loading,
     // so the synthesized Result is needed for in-process tests that
