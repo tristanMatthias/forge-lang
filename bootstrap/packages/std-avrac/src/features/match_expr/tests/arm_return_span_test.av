@@ -1,0 +1,46 @@
+// WHY: a bare `return expr` match arm lowers to a synthesized `Stmt.Return`
+// wrapped in an `Expr.Block`. Its source position must be stamped at the
+// `return` keyword — captured BEFORE `parse_expression()` advances the cursor
+// past the expression. Stamping it with the post-advance cursor pointed a
+// field-access null-trap in the body at the delimiter / next arm instead of
+// the `return`. These specs pin that the Return row carries the return's line.
+
+use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.core.{Expr, NodeStore}
+
+/// Parse a match expression and return the source line stamped on the first
+/// arm's synthesized `Stmt.Return` (its body is an `Expr.Block` of one stmt).
+/// -1 on parse error / unexpected shape.
+fn first_arm_return_line(source: string) -> int {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return -1 }
+    match probe.store.exprs.get(probe.root) {
+        .MatchExpr(_, arms) -> {
+            if arms.length == 0 { return -2 }
+            match probe.store.exprs.get(arms[0].body_id) {
+                .Block(stmts) -> {
+                    if stmts.length == 0 { return -3 }
+                    probe.store.stmt_pos(stmts[0]).line
+                }
+                _ -> -4
+            }
+        }
+        _ -> -5
+    }
+}
+
+spec "match-arm `return expr` stamps the Return at the return keyword" {
+    given "a literal-pattern `return` arm on line 2" {
+        then "the Return carries line 2 (the return), not the following token's line" {
+            // Line 1: `match n {`
+            // Line 2: `    1 -> return y`   <- the `return` keyword lives here
+            // Line 3: `    _ -> 0`          <- the cursor lands here after parsing `y`
+            first_arm_return_line("match n {\n    1 -> return y\n    _ -> 0\n}") == 2
+        }
+    }
+    given "the same arm shifted down by a blank line (return on line 3)" {
+        then "the Return tracks its own line, not a fixed offset" {
+            first_arm_return_line("match n {\n\n    1 -> return y\n    _ -> 0\n}") == 3
+        }
+    }
+}

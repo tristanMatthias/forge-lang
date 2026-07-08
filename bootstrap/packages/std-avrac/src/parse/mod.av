@@ -61,13 +61,11 @@ export type ArgListIds = {
     ids: List<ExprId>,
 }
 
-/// One parse of a struct-literal field-init list, surfaced both ways:
-/// `inits` is the boxed view (shorthand expanded, position-wrapped exactly
-/// as always); `ids` are the arena rows backing each field VALUE, in field
-/// order, for the parent's edge list.
+/// One parse of a struct-literal field-init list. `inits` are the parsed
+/// field initializers with shorthand expanded; each carries its value's
+/// arena id in `value_id`.
 export type FieldInitIds = {
     inits: List<FieldInit>,
-    ids: List<ExprId>,
 }
 
 /// Running state of the template-desugar fold — the boxed concatenation
