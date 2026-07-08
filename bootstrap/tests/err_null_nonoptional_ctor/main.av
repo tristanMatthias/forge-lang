@@ -1,0 +1,9 @@
+// Fixture for err_null_nonoptional_ctor_test (gwa0 precision guard): the gwa0
+// fix accepts a bare `null` for an OPTIONAL enum-ctor field, but a `null` into a
+// NON-optional field is still a real error and must stay gated as F1000. This
+// guards against the fix over-broadening (dropping the `vtype_is_optional`
+// condition would silently accept null into a scalar slot — a wild store).
+enum E { A, C(n: int) }
+
+fn bad() -> E { E.C(null) }
+fn main() { let _ = bad() }
