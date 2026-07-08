@@ -15,7 +15,7 @@ use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, Logic
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
-use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span_none, expr_ref_id, SrcPos}
+use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -638,10 +638,34 @@ impl Parser {
             }
             let stmt_line = self.current_line
             let stmt_col = self.current_column
+            // Byte offset of this statement's first token. Doubles as the
+            // forward-progress watermark below (the lexer stamps `current_start`
+            // per token and only advances it, so equality means "consumed
+            // nothing") and as the `lo` of the error node's bad-span.
+            let stmt_start_byte = self.current_start
             let sid = match self.parse_declaration() {
                 .Ok(s) -> s
                 .Err(_) -> {
+                    // Error-tolerant parse (spine §14.5): the diagnostic is
+                    // already in the bag; resync to the next statement boundary
+                    // and drop a `Stmt.Error` placeholder spanning the malformed
+                    // text, so a broken file yields a PARTIAL tree + ALL errors
+                    // (not just the first) and a walker can find the bad region
+                    // via the arena's span side-table.
                     self.synchronize()
+                    // Forward-progress guard: `synchronize` returns immediately
+                    // when the cursor is already parked on a sync token, and a
+                    // parse error can fire before consuming anything (e.g. a
+                    // stray `then` at top level). If the whole iteration moved
+                    // the cursor nowhere, force one token so recovery can't spin.
+                    if self.current_start == stmt_start_byte && !self.check(Tk.Eof) {
+                        self.advance()
+                    }
+                    // Span the bad region [statement start, resync point); the
+                    // pos column still homes the human (line, col, file).
+                    let eid = self.alloc_stmt(Stmt.Error, byte_span(stmt_start_byte, self.current_start), [])
+                    self.store.stmts.record_pos(eid, SrcPos { line: stmt_line, col: stmt_col, file: self.file })
+                    ids.push(eid)
                     continue
                 }
             }
