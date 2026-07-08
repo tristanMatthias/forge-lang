@@ -75,8 +75,8 @@ use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source}
-use @std.avrac.core.{render_expr, render_stmt_list, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{render_expr, render_stmt_list, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, reconstruct_program, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -229,18 +229,12 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
         fail(parsed.error_message)
     }
     let root_ids = parsed.ids!
-    // B1: the parser IS the arena producer. Every production allocated its row
-    // (typed-id edges in walker order + byte-offset span side-tables + provenance)
-    // during the parse itself, and the top-level rows were recorded as roots —
-    // there is no separate ingest walk. The program is served FROM that store via
-    // `program_from_store` (stored roots, line/col recomputed from the span
-    // side-table on demand, `from_macro` restored from provenance), byte-identical
-    // to the direct parse output (diff-test is the oracle): passes are unchanged.
-    // `program_from_store` (not the edge-rebuilt `reconstruct_program`) is used
-    // here because it keeps each NESTED wrapper's `from_macro`, which the edge
-    // round-trip flattens. Serve-path equivalence with the retired ingest walk is
-    // pinned by the parity battery (parse/tests/b1_native_stmt_test.av), which
-    // keeps `ingest_program` alive as its test oracle.
+    // B-final: the parser IS the arena producer. Every production allocated its
+    // row (typed-id edges in walker order + byte-offset span side-tables +
+    // provenance) during the parse itself, and the top-level rows were recorded
+    // as roots. The program is those roots — every downstream pass takes
+    // (roots, store) and reads nodes/positions/provenance straight from the
+    // arena; there is no boxed serving step (`program_from_store` retired).
     let store = parsed.store
     let file = if root_ids.length > 0 { store.stmt_pos(root_ids[0]).file } else { "" }
     // AVRA_L1_INGEST surfaces the arena diagnostics + the EDGE round-trip fidelity
@@ -258,7 +252,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
         let recon_faithful = render_stmt_list(store, reconstruct_program(store, file)) == render_stmt_list(store, store.sstmts_of(root_ids))
         println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
     }
-    ParsedProgram { stmts: program_from_store(store, file), store }
+    ParsedProgram { ids: root_ids, store }
 }
 
 /// What `parse_or_fail` hands back: the boxed program (served from the arena)
@@ -267,7 +261,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
 /// scan). The store was built during the parse of exactly these `stmts` — a
 /// caller that merges in statements parsed elsewhere (sibling-file loading)
 /// must not scan the store as if it covered the merged program.
-type ParsedProgram = { stmts: List<SStmt>, store: NodeStore }
+type ParsedProgram = { ids: List<StmtId>, store: NodeStore }
 
 /// Same shape as parse_or_fail but for the expression parser.
 /// Used by cmd_expr / cmd_eval — both want F-code rendering on a
@@ -1259,9 +1253,9 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
             i = i + 1
             continue
         }
-        // Per-mod target prefix: substring match against SStmt.file
-        // values, which the resolver stores relative to the cwd of the
-        // invoking compile. Running `bs2 compile` from `project_dir`
+        // Per-mod target prefix: substring match against each row's
+        // recorded source file, which the resolver stores relative to the
+        // cwd of the invoking compile. Running `bs2 compile` from `project_dir`
         // makes paths look like `src/<sub>/foo.av`, so the target
         // prefix matches exactly.
         let target = "src/${sub_name}/"
@@ -2621,11 +2615,11 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
 /// Parse AVRA_LIB_OBJS into a list of .o paths. Colon-separated for
 /// shell-pipeline-friendliness (mirrors PATH / LD_LIBRARY_PATH).
 /// Empty / unset env var → empty list.
-/// Concatenate two List<SStmt> values, preserving order. Used by the
+/// Concatenate two List<StmtId> bodies, preserving order. Used by the
 /// --module_path compile path to append dir-as-module siblings to
 /// the entry file's parsed body before wrapping in Stmt.Module.
-fn concat_stmt_lists(left: List<SStmt>, right: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn concat_stmt_lists(left: List<StmtId>, right: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
     while i < left.length {
         out.push(left[i])
@@ -3789,12 +3783,12 @@ fn main() {
         }
         "program" -> {
             let parsed_p = parse_or_fail(source, render_ctx(false, source, path))
-            println(render_stmt_list(parsed_p.store, parsed_p.stmts))
+            println(render_stmt_ids(parsed_p.store, parsed_p.ids))
             return
         }
         "metadata_show" -> {
             // xtvc consumer-side smoke: read a .meta.bin from disk,
-            // synthesize the List<SStmt>, and print it. Same renderer
+            // synthesize the arena rows, and print them. Same renderer
             // `program` uses — round-trippable through the eyes.
             if !file_exists(path) { fail("error: file not found: ${path}") }
             let m = metadata_read(path)
@@ -3828,13 +3822,13 @@ fn main() {
             let ctx = render_ctx(check_json, check_source, check_path)
 
             let parsed_prog = parse_or_fail(check_source, ctx)
-            let parsed_stmts = parsed_prog.stmts
+            let parsed_stmts = parsed_prog.ids
             let check_dir = modules_dirname(check_path)
             let check_pkg = load_package_config(check_dir)
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
@@ -3857,9 +3851,7 @@ fn main() {
             // a parse error in cmd_run would print only a bare one-line
             // message ("parse error at L:C: …") with no diagnostic frame.
             let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
-            // ParsedProgram still serves a boxed program; materialise it into
-            // arena rows for the id-native evaluator (dies with the ParsedProgram flip).
-            let result = execute_program_stmts(parsed_prog.store.rows_of(parsed_prog.stmts), parsed_prog.store)
+            let result = execute_program_stmts(parsed_prog.ids, parsed_prog.store)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }
@@ -3872,9 +3864,9 @@ fn main() {
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
             let ctx = render_ctx(false, source, path)
             let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.stmts
+            let parsed_stmts = parsed_prog.ids
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed_prog.store.rows_of(parsed_stmts), entry_dir, empty_loaded_list(), parsed_prog.store)
+            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
             let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
             render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
@@ -3885,7 +3877,7 @@ fn main() {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
             let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
-            println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.store.rows_of(parsed_fmt.stmts), 0))
+            println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.ids, 0))
             return
         }
         "expand" -> {
@@ -3901,8 +3893,8 @@ fn main() {
             // promise made tangible.
             let ctx = render_ctx(false, source, path)
             let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.stmts
-            let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
+            let parsed_stmts = parsed_prog.ids
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
@@ -3920,8 +3912,8 @@ fn main() {
             // and report the output path for linking and execution.
             let ctx = render_ctx(false, source, path)
             let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.stmts
-            let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
+            let parsed_stmts = parsed_prog.ids
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
@@ -4080,7 +4072,7 @@ fn main() {
         let ctx = render_ctx(json_output, csource, cpath)
 
         let parsed_prog = parse_or_fail(csource, ctx)
-        let parsed_stmts = parsed_prog.stmts
+        let parsed_stmts = parsed_prog.ids
         let t_parse = avra_uptime_ms()
         if stop_after_matches(stop_after, "parse") { return }
         // 2f54: when --module_path is set, wrap the parsed body in a
@@ -4122,12 +4114,12 @@ fn main() {
                 if dir_load.had_error {
                     parsed_stmts
                 } else {
-                    concat_stmt_lists(parsed_stmts, parsed_prog.store.sstmts_of(dir_load.stmts))
+                    concat_stmt_lists(parsed_stmts, dir_load.stmts)
                 }
             } else {
                 parsed_stmts
             }
-            let one: List<SStmt> = [sstmt_dummy(Stmt.Module(module_path, parsed_prog.store.rows_of(body_with_siblings)))]
+            let one: List<StmtId> = [parsed_prog.store.stmts.add_leaf(Stmt.Module(module_path, body_with_siblings))]
             one
         } else {
             parsed_stmts
@@ -4143,7 +4135,7 @@ fn main() {
         // single-store invariant), so the flat store scan sees their
         // quotes too — the boxed fallback the pre-F0 pipeline needed
         // here is gone.
-        let post_quote_stmts = lower_quotes_via_store(parsed_prog.store.rows_of(pre_desugar_stmts), parsed_prog.store)
+        let post_quote_stmts = lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
         let desugared = desugar_program(post_quote_stmts, parsed_prog.store)
         let t_desugar = avra_uptime_ms()
