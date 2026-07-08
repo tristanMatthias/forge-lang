@@ -157,7 +157,7 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
 
 /// The id twin of `any_quote_in_expr_list` (mirrors `any_quote_in_stmt_ids`):
 /// scan a flipped `List<ExprId>` for a nested quote by resolving each id in
-/// place — keeps this presence check allocation-free (no `sexprs_of` wrapper).
+/// place — keeps this presence check allocation-free (reads rows directly).
 fn any_quote_in_expr_id_list(store: NodeStore, ids: List<ExprId>) -> bool {
     for id in ids {
         if any_quote_in_expr(store, store.exprs.get(id)) { return true }
@@ -326,7 +326,7 @@ fn lower_field_inits(store: NodeStore, inits: List<FieldInit>) -> List<FieldInit
 /// Dispatch on the quote kind keyword to produce the right AST type.
 /// Default `expr` constructs an Expr. `stmt` extracts the single Stmt
 /// inside the body block and constructs it. `stmts` constructs the
-/// whole `List<SStmt>`. `decl` is currently an alias for `stmt` since
+/// whole `List<StmtId>`. `decl` is currently an alias for `stmt` since
 /// decls in Avra are Stmts. `type` recognizes primitive type names
 /// (int / bool / float / string / bytes / void) by Ident shape —
 /// generic types and structural type expressions need a parser path
@@ -461,7 +461,7 @@ fn unwrap_quote_body(store: NodeStore, body: Expr) -> Expr {
 /// the Expr.Number variant carrying a string-literal arg "5".
 ///
 /// Covers all leaf + structural variants needed for `quote { expr }`.
-/// Block / MatchExpr / StructLit need `List<SStmt>` / `List<FieldInit>`
+/// Block / MatchExpr / StructLit need `List<StmtId>` / `List<FieldInit>`
 /// / `List<MatchArm>` constructors — landing in the next slice driven
 /// by tests that need them. Other variants pass through unchanged for
 /// now; downstream stages will see the raw AST and surface the missing
@@ -1017,7 +1017,7 @@ fn construct_field_init_list(store: NodeStore, list: List<FieldInit>) -> Expr {
 /// Build an `Expr.String` whose runtime arg-after-strip_quotes is
 /// exactly `s`. Codegen unwraps one outer quote pair, so we wrap with
 /// exactly one. Used both bare and via `string_arg(s)` (which wraps
-/// the result in a one-element `List<SExpr>` for ctor() args).
+/// the result in a one-element `List<ExprId>` for ctor() args).
 ///
 /// For inputs whose `s` ALREADY contains source-form quotes (parser's
 /// Expr.String.value), the same wrap is correct: the runtime value
@@ -1349,7 +1349,7 @@ fn op_variant_name_logic(op: LogicOp) -> string {
 
 // ── Constructor-call helpers ──
 
-/// One-element `List<SExpr>` wrapping `string_lit_expr(s)` — the
+/// One-element `List<ExprId>` wrapping `string_lit_expr(s)` — the
 /// string-arg form for ctor() invocations. Both ident-like inputs
 /// and parser-form String.value (already-quoted) inputs round-trip
 /// through this wrap; see `string_lit_expr` for why one wrap suffices.

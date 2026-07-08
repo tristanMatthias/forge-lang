@@ -36,8 +36,8 @@ export type ParseResult = {
 }
 
 /// Output of `parse_program_source`. Same shape as ParseResult but
-/// carries a `List<SStmt>` plus the full DiagnosticBag so later passes
-/// can render multi-error messages.
+/// carries the top-level statement rows (`List<StmtId>`) plus the full
+/// DiagnosticBag so later passes can render multi-error messages.
 export type ProgramParseResult = {
     // The top-level statements as arena rows (F3a). Null on a parse error.
     // A shared-store sub-parse doesn't record roots, so consumers that embed
@@ -49,9 +49,8 @@ export type ProgramParseResult = {
     bag: DiagnosticBag,
     // The parser's NATIVE arena (B1): every parsed node has a row; on a
     // clean parse the top-level statements are recorded as `roots` with
-    // conservative spans + provenance. This is the store `parse_or_fail`
-    // serves the program from (`program_from_store`) — the canonical
-    // producer on the compile path.
+    // conservative spans + provenance. `parse_or_fail` serves the program
+    // directly from these roots — the canonical producer on the compile path.
     store: NodeStore,
 }
 
@@ -614,10 +613,9 @@ impl Parser {
 
         // Record the top-level rows as the native store's roots (entry
         // parses only — a shared-store sub-parse's statements merge into the
-        // entry tree as children, never as program roots). Same conservative
-        // spans + provenance as the walker-ingest oracle, via the shared
-        // helper. This is what makes `program_from_store(store)` serve the
-        // program from the PARSER's own arena.
+        // entry tree as children, never as program roots). Conservative
+        // spans + provenance ride the store's side-tables. This is what lets
+        // `parse_or_fail` serve the program from the PARSER's own arena roots.
         if self.records_roots != 0 {
             self.store.record_roots(parsed.ids, self.source.length)
         }

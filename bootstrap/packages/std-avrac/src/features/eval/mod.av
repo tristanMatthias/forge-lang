@@ -1872,7 +1872,7 @@ type ArgEvalResult = {
     error_message: string,
 }
 
-/// Recursively evaluate each `List<SExpr>` arg, threading the
+/// Recursively evaluate each `List<ExprId>` arg, threading the
 /// runtime through. Used by `eval_enum_ctor` and any future arg-list eval.
 fn eval_args_to_values(runtime: Runtime, args: List<ExprId>) -> ArgEvalResult {
     mut acc: List<Value> = []
@@ -2545,7 +2545,7 @@ fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>,
 
 /// Decode a list Value into flipped `List<ExprId>` rows (call args). Each arg
 /// allocates a fresh leaf row (no recorded arg type — the ty=Unknown decode a
-/// boxed `sexpr_dummy` recipe used to produce before ingestion).
+/// arg rows were produced before the arena-id flip).
 fn list_value_to_expr_id_list(store: NodeStore, v: Value) -> Result<List<ExprId>, string> {
     if v.kind != "list" { return .Err("decode: expr list not a list") }
     mut out: List<ExprId> = []
@@ -2756,7 +2756,7 @@ fn annotation_arg_ids_of(store: NodeStore, entry: Value) -> List<ExprId> {
         }
     }
     // Boxed fallback: decode the "args" value (pre-flip / base-source shape)
-    // straight to rows — byte-identical to ingesting a `sexpr_dummy` recipe.
+    // straight to arena rows.
     let empty: List<ExprId> = []
     decode_or(struct_field_expr_ids(store, entry, "args"), empty)
 }
