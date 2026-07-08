@@ -66,15 +66,15 @@ export fn extract_project_corpus(dir: string) -> DocsCorpus {
         let content = avra_selfhost_read_file(path)
         if content == "" { continue }
         let parsed = parse_program_source(content)
-        if parsed.had_error || parsed.stmts == null {
+        if parsed.had_error || parsed.ids == null {
             // Tooling shouldn't fail on a syntactically broken
             // source file; the compiler's primary error path will
             // surface the parse error in its own time.
             continue
         }
         let rel = relativise(path, dir)
-        let file_syms = extract_from_ast_at(parsed.store, parsed.stmts!, rel)
-        let file_calls = extract_calls_from_ast_at(parsed.store, parsed.stmts!, rel)
+        let file_syms = extract_from_ast_at(parsed.store, parsed.ids!, rel)
+        let file_calls = extract_calls_from_ast_at(parsed.store, parsed.ids!, rel)
         for s in file_syms { syms.push(s) }
         for c in file_calls { calls.push(c) }
     }
@@ -1045,7 +1045,7 @@ export fn run_doctests(docs: List<Sym>) -> bool {
 fn doctest_check(source: string) -> bool {
     let wrapped = wrap_doctest_source(source)
     let parsed = parse_program_source(wrapped)
-    !parsed.had_error && parsed.stmts != null
+    !parsed.had_error && parsed.ids != null
 }
 
 /// Wrap a bare-expression doctest source in a synthetic main fn so

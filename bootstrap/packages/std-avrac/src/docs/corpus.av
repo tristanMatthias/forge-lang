@@ -25,8 +25,8 @@ export fn extract_lang_corpus(project_dir: string) -> List<Sym> {
     let content = avra_selfhost_read_file(path)
     if content == "" { return [] }
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null { return [] }
-    extract_from_ast(parsed.store, parsed.stmts!, "target/lang.av")
+    if parsed.had_error || parsed.ids == null { return [] }
+    extract_from_ast(parsed.store, parsed.ids!, "target/lang.av")
 }
 
 /// `extract_lang_corpus`, narrowed to the F-coded error consts

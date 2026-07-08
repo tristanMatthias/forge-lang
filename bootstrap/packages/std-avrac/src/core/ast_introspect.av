@@ -11,22 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Stmt, Expr, CompConfigPair, StmtId}
-
-/// Flat-struct view over a `Stmt.ComponentBlock` payload. Lets
-/// macro authors handle component-block introspection without deep
-/// pattern matching when they iterate a parent's children.
-///
-/// @field comp_name — the registered component name (e.g. "flag")
-/// @field instance  — the user-supplied instance name (e.g. "verbose")
-/// @field config    — config pairs supplied at the call site
-/// @field body      — the block body's rows (arena ids, F3a)
-export type ComponentBlockView = {
-    comp_name: string,
-    instance: string,
-    config: List<CompConfigPair>,
-    body: List<StmtId>,
-}
+use core.{Expr, CompConfigPair, StmtId, NodeStore}
 
 // ── Function lookup ──
 
@@ -43,9 +28,9 @@ export type DeclLookup = {
 /// Find a top-level fn declaration by name in `body`. Single walk
 /// — `has_fn` and `find_fn_body` are O(1) wrappers over this. Returns
 /// `{found: false, body: End}` on miss.
-export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
-    for ss in body {
-        match ss.node {
+export fn find_fn(store: NodeStore, body: List<StmtId>, fn_name: string) -> DeclLookup {
+    for id in body {
+        match store.stmts.get(id) {
             .Function(name, _, _, _, fn_body) -> {
                 if name == fn_name { return DeclLookup { found: true, body: fn_body } }
             }
@@ -57,48 +42,17 @@ export fn find_fn(body: List<SStmt>, fn_name: string) -> DeclLookup {
 }
 
 /// True when `body` contains a top-level fn named `fn_name`.
-export fn has_fn(body: List<SStmt>, fn_name: string) -> bool {
-    find_fn(body, fn_name).found
+export fn has_fn(store: NodeStore, body: List<StmtId>, fn_name: string) -> bool {
+    find_fn(store, body, fn_name).found
 }
 
 /// Body of the fn named `fn_name`, or `End` when missing. Pair with
 /// `has_fn` (or use `find_fn` directly) to distinguish "no fn" from
 /// "fn with empty body" without two walks.
-export fn find_fn_body(body: List<SStmt>, fn_name: string) -> List<StmtId> {
-    find_fn(body, fn_name).body
+export fn find_fn_body(store: NodeStore, body: List<StmtId>, fn_name: string) -> List<StmtId> {
+    find_fn(store, body, fn_name).body
 }
 
-// ── Component-block children ──
-
-/// Every direct ComponentBlock child of `body`. Top-level only —
-/// does not recurse into nested instantiations.
-export fn all_children(body: List<SStmt>) -> List<ComponentBlockView> {
-    children_matching(body, "")
-}
-
-/// Every direct ComponentBlock child whose comp_name matches
-/// `comp_name`. Empty `comp_name` returns all children
-/// (i.e. `all_children` is the unfiltered case).
-export fn children_of_type(body: List<SStmt>, comp_name: string) -> List<ComponentBlockView> {
-    children_matching(body, comp_name)
-}
-
-/// Internal: single walk over `body`, collecting ComponentBlocks.
-/// `filter_name == ""` means "no filter — include everything".
-fn children_matching(body: List<SStmt>, filter_name: string) -> List<ComponentBlockView> {
-    mut out: List<ComponentBlockView> = []
-    for ss in body {
-        match ss.node {
-            .ComponentBlock(cn, inst, cfg, b) -> {
-                if filter_name == "" || cn == filter_name {
-                    out.push(ComponentBlockView { comp_name: cn, instance: inst, config: cfg, body: b })
-                }
-            }
-            _ -> {}
-        }
-    }
-    out
-}
 
 // ── Config-pair lookup ──
 

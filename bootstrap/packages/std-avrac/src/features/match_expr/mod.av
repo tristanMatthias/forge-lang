@@ -6,7 +6,7 @@ use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy, value_is_enumish}
 use features.eval.{step_runtime, step_value, step_had_error, step_is_return, step_error_message}
-use core.{Pattern, MatchArm, ParamEntry, SExpr, Expr, Stmt}
+use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
@@ -172,7 +172,7 @@ fn finalize_arm_result(body_result: StepResult) -> StepResult {
     ok_result(exited, step_value(body_result))
 }
 
-/// Evaluate an arm body. Bodies are SExpr; when the body is an
+/// Evaluate an arm body. The body is an expression id; when it is an
 /// `Expr.Block` (multi-stmt body, e.g. `{ return Stmt.Foo() }`),
 /// route through `execute_stmt` so `return` statements flip
 /// `is_return` and propagate up.

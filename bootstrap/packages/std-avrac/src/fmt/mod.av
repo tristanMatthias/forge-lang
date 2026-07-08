@@ -4,10 +4,10 @@
 // (codemod previews, error reporting, doc-comment scaffolding).
 //
 // Pure: no argv, no I/O, no globals. Takes an AST node, returns a string.
-// Public entry point is `fmt_stmt_list(store, stmts, 0)`.
+// Public entry point is `fmt_stmt_ids(store, stmts, 0)`.
 
 use core.{
-    Expr, SExpr, Stmt, StmtId, ExprId, NodeStore, ParamEntry,
+    Expr, Stmt, StmtId, ExprId, NodeStore, ParamEntry,
     FieldInit, FieldEntry,
     Variant, Pattern, MatchArm, WhenArm, Annotation,
     binop_str, unop_str, logicop_str,
@@ -59,7 +59,7 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .With(obj, overrides) -> "${fmt_expr(store, store.exprs.get(obj))} with { ${fmt_field_init_list(store, overrides)} }"
         .ListLit(elements) -> "[${fmt_expr_ids_comma(store, elements)}]"
         .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(store, store.exprs.get(body))}"
-        .MapLit(entries) -> "{ ${fmt_map_entries(store, store.sexprs_of(entries))} }"
+        .MapLit(entries) -> "{ ${fmt_map_entries(store, entries)} }"
         .FloatLit(v) -> v
         .Slice(obj, start, end) -> "${fmt_expr(store, store.exprs.get(obj))}[${fmt_expr(store, store.exprs.get(start))}..${fmt_expr(store, store.exprs.get(end))}]"
         .IsCheck(subject, vname) -> "${fmt_expr(store, store.exprs.get(subject))} is .${vname}"
@@ -172,13 +172,9 @@ export fn fmt_stmt(store: NodeStore, ss: Stmt, depth: int) -> string {
     }
 }
 
-/// Public entry point — render a top-level statement list. Each
-/// statement gets one source line, joined with `\n`.
-export fn fmt_stmt_list(store: NodeStore, stmts: List<SStmt>, depth: int) -> string {
-    list_map(stmts, (ss: SStmt) -> fmt_stmt(store, ss.node, depth)).join("\n")
-}
-
-/// Row-list twin of `fmt_stmt_list` for flipped `List<StmtId>` bodies.
+/// Public entry point — render a statement list (each statement on one
+/// source line, joined with `\n`). Also the internal renderer for every
+/// nested `List<StmtId>` body (blocks, fn/impl/trait/module bodies).
 export fn fmt_stmt_ids(store: NodeStore, ids: List<StmtId>, depth: int) -> string {
     list_map(ids, (id: StmtId) -> fmt_stmt(store, store.stmts.get(id), depth)).join("\n")
 }
@@ -291,19 +287,19 @@ fn fmt_annotation_list(annots: List<Annotation>, depth: int) -> string {
 /// Render map-literal entries — flat `key: val, key: val` form.
 /// Map AST stores keys and values as alternating elements; this
 /// walks them pairwise.
-fn fmt_map_entries(store: NodeStore, entries: List<SExpr>) -> string {
+fn fmt_map_entries(store: NodeStore, entries: List<ExprId>) -> string {
     mut out = ""
     mut i = 0
     while i < entries.length {
-        let key_se = entries[i]
+        let key_id = entries[i]
         if i + 1 >= entries.length {
             if out != "" { out = out + ", " }
-            out = out + fmt_expr(store, key_se.node)
+            out = out + fmt_expr(store, store.exprs.get(key_id))
             i = i + 1
         } else {
-            let val_se = entries[i + 1]
+            let val_id = entries[i + 1]
             if out != "" { out = out + ", " }
-            out = out + "${fmt_expr(store, key_se.node)}: ${fmt_expr(store, val_se.node)}"
+            out = out + "${fmt_expr(store, store.exprs.get(key_id))}: ${fmt_expr(store, store.exprs.get(val_id))}"
             i = i + 2
         }
     }

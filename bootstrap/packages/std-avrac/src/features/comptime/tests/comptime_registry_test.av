@@ -1,8 +1,8 @@
 // Phase 2 of Components V2 (vez6.2): exercise the @comptime fn
 // registry — discovery, lookup, recursion into Module bodies.
 
-use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, Stmt, SStmt, sstmt_dummy, ParamEntry, ValueType, TypeParamEntry, Annotation, SExpr}
-use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime_fns, comptime_lookup, comptime_has}
+use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, Stmt, ParamEntry, ValueType, TypeParamEntry, Annotation}
+use @std.avrac.features.comptime.{CompTimeRegistry, CompTimeFn, collect_comptime_fns_ids, comptime_lookup, comptime_has}
 
 fn ts() -> NodeStore {
     new_node_store(build_line_index(""))
@@ -26,55 +26,56 @@ fn mk_annotated_fn(ws: NodeStore, annot_name: string, fn_name: string) -> Stmt {
 }
 
 // `[@comptime fn add() {}, @inline fn other() {}, @comptime fn mul() {}]`
-fn sample_program(ws: NodeStore) -> List<SStmt> {
+fn sample_program(ws: NodeStore) -> List<StmtId> {
     [
-        sstmt_dummy(mk_annotated_fn(ws, "comptime", "add")),
-        sstmt_dummy(mk_annotated_fn(ws, "inline", "other")),
-        sstmt_dummy(mk_annotated_fn(ws, "comptime", "mul")),
+        ws.stmts.add_leaf(mk_annotated_fn(ws, "comptime", "add")),
+        ws.stmts.add_leaf(mk_annotated_fn(ws, "inline", "other")),
+        ws.stmts.add_leaf(mk_annotated_fn(ws, "comptime", "mul")),
     ]
 }
 
-spec "comptime.collect_comptime_fns" {
+spec "comptime.collect_comptime_fns_ids" {
     then "finds 2 @comptime fns and skips @inline" {
         let ws = ts()
-        collect_comptime_fns(sample_program(ws), ws).fns.length == 2
+        collect_comptime_fns_ids(sample_program(ws), ws).fns.length == 2
     }
     then "first registered is `add`" {
         let ws = ts()
-        collect_comptime_fns(sample_program(ws), ws).fns[0].name == "add"
+        collect_comptime_fns_ids(sample_program(ws), ws).fns[0].name == "add"
     }
     then "second registered is `mul`" {
         let ws = ts()
-        collect_comptime_fns(sample_program(ws), ws).fns[1].name == "mul"
+        collect_comptime_fns_ids(sample_program(ws), ws).fns[1].name == "mul"
     }
     then "empty program yields empty registry" {
-        let empty: List<SStmt> = []
-        collect_comptime_fns(empty, ts()).fns.length == 0
+        let empty: List<StmtId> = []
+        collect_comptime_fns_ids(empty, ts()).fns.length == 0
     }
     then "non-annotated fns ignored" {
+        let ws = ts()
         let empty_tp: List<TypeParamEntry> = []
         let empty_body: List<StmtId> = []
-        let plain: List<SStmt> = [
-            sstmt_dummy(Stmt.Function("plain", empty_tp, mk_empty_params(), ValueType.Int, empty_body)),
+        let plain: List<StmtId> = [
+            ws.stmts.add_leaf(Stmt.Function("plain", empty_tp, mk_empty_params(), ValueType.Int, empty_body)),
         ]
-        collect_comptime_fns(plain, ts()).fns.length == 0
+        collect_comptime_fns_ids(plain, ws).fns.length == 0
     }
 }
 
 spec "comptime.comptime_lookup" {
     then "finds registered fn" {
         let ws = ts()
-        let reg = collect_comptime_fns(sample_program(ws), ws)
+        let reg = collect_comptime_fns_ids(sample_program(ws), ws)
         comptime_lookup(reg, "add") != null
     }
     then "returns null for unknown" {
         let ws = ts()
-        let reg = collect_comptime_fns(sample_program(ws), ws)
+        let reg = collect_comptime_fns_ids(sample_program(ws), ws)
         comptime_lookup(reg, "missing") == null
     }
     then "comptime_has reflects lookup" {
         let ws = ts()
-        let reg = collect_comptime_fns(sample_program(ws), ws)
+        let reg = collect_comptime_fns_ids(sample_program(ws), ws)
         comptime_has(reg, "mul") && !comptime_has(reg, "missing")
     }
 }
@@ -83,8 +84,8 @@ spec "comptime registry recurses into Module bodies" {
     then "finds @comptime fns inside a Module wrapper" {
         let ws = ts()
         let inner: List<StmtId> = [ws.stmts.add_leaf(mk_annotated_fn(ws, "comptime", "nested"))]
-        let prog: List<SStmt> = [sstmt_dummy(Stmt.Module("foo", inner))]
-        let reg = collect_comptime_fns(prog, ws)
+        let prog: List<StmtId> = [ws.stmts.add_leaf(Stmt.Module("foo", inner))]
+        let reg = collect_comptime_fns_ids(prog, ws)
         reg.fns.length == 1 && reg.fns[0].name == "nested"
     }
 }

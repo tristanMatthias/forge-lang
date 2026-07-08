@@ -12,21 +12,20 @@ use @std.avrac.features.modules.{
     synthesize_subdir_module_decls,
     synthesize_subdir_module_decls_filtered,
 }
-use @std.avrac.core.{Stmt, SStmt, StmtId, NodeStore, new_node_store, build_line_index, sstmt_dummy}
+use @std.avrac.core.{Stmt, StmtId, NodeStore, new_node_store, build_line_index}
 
 fn probe(name: string, ok: bool) {
     let tag = if ok { "ok" } else { "FAIL" }
     println("PROBE ${name}: ${tag}")
 }
 
-// Walk the synthesized stmts and produce a comma-joined list of the
+// Walk the synthesized rows and produce a comma-joined list of the
 // Module names found. Lets the test assert exactly what got synthesized.
-fn module_names(stmts: List<SStmt>) -> string {
+fn module_names(store: NodeStore, ids: List<StmtId>) -> string {
     mut out = ""
     mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        let name = match ss.node {
+    while i < ids.length {
+        let name = match store.stmts.get(ids[i]) {
             .Module(n, _) -> n
             _ -> ""
         }
@@ -38,8 +37,8 @@ fn module_names(stmts: List<SStmt>) -> string {
     out
 }
 
-fn count_stmts(stmts: List<SStmt>) -> int {
-    stmts.length
+fn count_stmts(ids: List<StmtId>) -> int {
+    ids.length
 }
 
 fn main() -> int {
@@ -62,7 +61,7 @@ fn main() -> int {
     // ── unfiltered ─────────────────────────────────────────────
     let all = synthesize_subdir_module_decls(store, root)
     probe("unfiltered_count_3", count_stmts(all) == 3)
-    let names_all = module_names(all)
+    let names_all = module_names(store, all)
     probe("unfiltered_has_sub_a", names_all.contains("sub_a"))
     probe("unfiltered_has_sub_b", names_all.contains("sub_b"))
     probe("unfiltered_has_sub_c", names_all.contains("sub_c"))
@@ -70,27 +69,27 @@ fn main() -> int {
     let empty_body: List<StmtId> = []
 
     // ── filtered: one subdir already declared ──────────────────
-    let existing_one: List<SStmt> = [
-        sstmt_dummy(Stmt.Module("sub_a", empty_body)),
+    let existing_one: List<StmtId> = [
+        store.stmts.add_leaf(Stmt.Module("sub_a", empty_body)),
     ]
     let some = synthesize_subdir_module_decls_filtered(store, root, existing_one)
     probe("filtered_one_count_2", count_stmts(some) == 2)
-    let names_some = module_names(some)
+    let names_some = module_names(store, some)
     probe("filtered_one_skip_sub_a", !names_some.contains("sub_a"))
     probe("filtered_one_keeps_sub_b", names_some.contains("sub_b"))
     probe("filtered_one_keeps_sub_c", names_some.contains("sub_c"))
 
     // ── filtered: ALL subdirs declared → empty result ──────────
-    let existing_all: List<SStmt> = [
-        sstmt_dummy(Stmt.Module("sub_a", empty_body)),
-        sstmt_dummy(Stmt.Module("sub_b", empty_body)),
-        sstmt_dummy(Stmt.Module("sub_c", empty_body)),
+    let existing_all: List<StmtId> = [
+        store.stmts.add_leaf(Stmt.Module("sub_a", empty_body)),
+        store.stmts.add_leaf(Stmt.Module("sub_b", empty_body)),
+        store.stmts.add_leaf(Stmt.Module("sub_c", empty_body)),
     ]
     let filtered_all = synthesize_subdir_module_decls_filtered(store, root, existing_all)
     probe("filtered_all_count_0", count_stmts(filtered_all) == 0)
 
     // ── filtered: missing-dir is empty ─────────────────────────
-    let empty_existing: List<SStmt> = []
+    let empty_existing: List<StmtId> = []
     let nodir = synthesize_subdir_module_decls_filtered(store, "/tmp/avra_dirmod_synth_does_not_exist_xx", empty_existing)
     probe("missing_dir_count_0", count_stmts(nodir) == 0)
 

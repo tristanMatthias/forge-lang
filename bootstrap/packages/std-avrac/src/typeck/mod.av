@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SExpr, SStmt, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, sexpr_typed, sstmt, sstmt_at, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
@@ -15,7 +15,7 @@ use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name}
 use core.{variant_is_optional_present, variant_is_optional_absent}
-use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, count_id_zero_nominals_stmts, collect_id_zero_names_stmts, stamp_ids_stmts, stamp_ids_stmt_ids}
+use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, collect_id_zero_names_stmt_ids, stamp_ids_stmt_ids}
 use core.{exit}
 use core.{avra_process_env_get}
 use list_ops.{list_push_copy, list_any, list_map}
@@ -225,7 +225,7 @@ fn fn_type_get(fns: FnTypeReg, name: string) -> FnTypeFound {
 
 
 /// Length of an arg list. Inlined to keep the import surface tight.
-fn tc_count_args(list: List<SExpr>) -> int {
+fn tc_count_args(list: List<ExprId>) -> int {
     list.length
 }
 
@@ -1108,13 +1108,13 @@ fn tc_check_variant_types(tc: TC, variants: List<Variant>, scope_tp: List<TypePa
 /// method body is compiled into each impl that inherits it, and a required
 /// signature is the contract every impl must match — both claim a layout, so
 /// a bare generic in a trait method's params/return is gated like a free fn's.
-fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
+fn tc_check_trait_method_sigs(tc: TC, methods: List<StmtId>) -> TC {
     mut cur = tc
-    for ss in methods {
+    for id in methods {
         // A trait method with a body parses to `Function`; a body-less required
         // signature parses to `ExternFn` (see trait_decl/parser.av). Gate both,
         // with the method's own type params in scope.
-        cur = match stmt_unwrap(tc.nodes, ss.node) {
+        cur = match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
             .Function(_, mtp, params, ret_vt, _) -> tc_check_signature_arity(cur, params, ret_vt, mtp)
             .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(cur, params, ret_vt)
             _ -> cur
@@ -1129,9 +1129,8 @@ fn tc_check_trait_method_sigs(tc: TC, methods: List<SStmt>) -> TC {
 /// diagnostic bag, and the trait-impl registry (consumed later by
 /// the monomorphizer for trait-bound monomorphisation).
 export type TypeCheckResult = {
-    // B-final: the post-typecheck program vector is arena-id-native.
-    // monomorphize takes ids straight; the check result structs bridge
-    // back to wrappers with `sstmts_of`.
+    // B-final: the post-typecheck program vector is arena-id-native;
+    // monomorphize (also id-native) takes the ids straight.
     stmts: List<StmtId>,
     had_error: int,
     bag: DiagnosticBag,
@@ -1140,8 +1139,9 @@ export type TypeCheckResult = {
 
 /// Top-level entry: run the type-checker over `stmts`. Three
 /// passes: pre-pass `collect_decls` registers types/fns; main
-/// `check_stmts` walks the AST inferring + checking types;
-/// `annotate_*` writes the inferred types back into SExpr.ty.
+/// `check_stmt_ids` walks the AST inferring + checking types;
+/// `annotate_*` writes the inferred types back into the arena's
+/// `arg_tys` side-table.
 export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TypeCheckResult {
     avra_ice_phase("typeck")
     // Per-pass wall-clock timings — emitted to stderr at the end
@@ -1160,7 +1160,7 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // instead of the exact-name fallback. Residual id=0 nominals after
     // the stamp pass are type-param placeholders (T, U, S, …) —
     // legitimately id=0 because they aren't registered types.
-    let stamped_stmts = stamp_ids_stmts(store, store.sstmts_of(ids), type_reg)
+    let stamped_ids = stamp_ids_stmt_ids(store, ids, type_reg)
     // Unconditional invariant assertion: any id=0 nominal whose name
     // IS in the registry is a stamp-pass leak — codegen would fall
     // back to slower name lookup AND id-based equality would
@@ -1170,7 +1170,7 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // a future ValueType variant added without registry plumbing)
     // fails compilation deterministically instead of corrupting
     // codegen silently.
-    let tc0 = report_stamp_leaks(tc0_pre, stamped_stmts, type_reg)
+    let tc0 = report_stamp_leaks(tc0_pre, stamped_ids, type_reg)
     // Pass 1: collect declarations (types, enums, functions). The
     // single walk is order-sensitive — a Function whose return type
     // references an enum declared later in the AST will be registered
@@ -1178,7 +1178,7 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // proper ValueType.Enum(name). Run a SECOND collect pass against
     // the now-complete registry to upgrade ret-type residue from the
     // first walk. Tracked under forge-crafting-intepreters-dnq4.
-    let tc_first = collect_decls(tc0, store.sstmts_of(ids))
+    let tc_first = collect_decls(tc0, ids)
     let tc1 = tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
     let t_collect = avra_uptime_ms()
     // Pass 2: check + annotate in one traversal.
@@ -1225,9 +1225,9 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
 /// Type-param placeholders (T, U, S, …) are NOT registered, so they
 /// stay id=0 and don't appear here. This function exclusively
 /// surfaces registered-name leaks.
-export fn unstamped_registered_nominals(store: NodeStore, stmts: List<SStmt>, reg: TypeRegistry) -> List<string> {
+export fn unstamped_registered_nominals(store: NodeStore, ids: List<StmtId>, reg: TypeRegistry) -> List<string> {
     let empty: List<string> = []
-    let id_zero_names = collect_id_zero_names_stmts(store, stmts, empty)
+    let id_zero_names = collect_id_zero_names_stmt_ids(store, ids, empty)
     mut out: List<string> = []
     mut i = 0
     while i < id_zero_names.length {
@@ -1244,8 +1244,8 @@ export fn unstamped_registered_nominals(store: NodeStore, stmts: List<SStmt>, re
 /// id=0 leak fails compilation deterministically — the alternative
 /// is silent codegen corruption (name-based fallback lookup) and
 /// id-based equality mis-comparison.
-fn report_stamp_leaks(tc: TC, stamped: List<SStmt>, reg: TypeRegistry) -> TC {
-    let leaks = unstamped_registered_nominals(tc.nodes, stamped, reg)
+fn report_stamp_leaks(tc: TC, stamped_ids: List<StmtId>, reg: TypeRegistry) -> TC {
+    let leaks = unstamped_registered_nominals(tc.nodes, stamped_ids, reg)
     if leaks.length == 0 { return tc }
     mut cur = tc
     mut i = 0
@@ -1341,13 +1341,14 @@ fn is_duplicate_type_name(cur: TC, name: string) -> bool {
         || is_duplicate_decl(cur.union_aliases.idx, name)
 }
 
-fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
+fn collect_decls(tc: TC, stmts: List<StmtId>) -> TC {
     mut cur = tc
-    for ss in stmts {
-        cur = match stmt_unwrap(tc.nodes, ss.node) {
+    for id in stmts {
+        let pos = tc.nodes.stmt_pos(id)
+        cur = match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
             .TypeDecl(name, tp, fields) -> {
                 if is_duplicate_type_name(cur, name) {
-                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", pos.line, pos.col, name.length)
                 } else {
                     let resolved = tc_resolve_type_operator(fields, cur.structs)
                     cur with { structs: struct_type_reg_register(cur.structs, name, tp, resolved) }
@@ -1355,7 +1356,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             .NewtypeDecl(name, inner_vt) -> {
                 if is_duplicate_type_name(cur, name) {
-                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", pos.line, pos.col, name.length)
                 } else {
                     let inner_ty = resolve_vtype(cur, inner_vt)
                     let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
@@ -1367,14 +1368,14 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             .UnionAliasDecl(name, type_vt) -> {
                 if is_duplicate_type_name(cur, name) {
-                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", pos.line, pos.col, name.length)
                 } else {
                     cur with { union_aliases: union_alias_reg_register(cur.union_aliases, name, type_vt) }
                 }
             }
             .ShapeDecl(name, fields) -> {
                 if is_duplicate_type_name(cur, name) {
-                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", ss.line, ss.col, name.length)
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate type declaration `${name}`", pos.line, pos.col, name.length)
                 } else {
                     cur with {
                         structs: struct_type_reg_register(cur.structs, name, empty_type_params(), fields),
@@ -1384,7 +1385,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
             }
             .EnumDecl(name, tp, variants) -> {
                 if is_duplicate_type_name(cur, name) {
-                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", ss.line, ss.col, name.length)
+                    tc_report_at(cur, DiagCode.DuplicateDecl, "duplicate enum declaration `${name}`", pos.line, pos.col, name.length)
                 } else {
                     cur with { enums: enum_type_reg_register(cur.enums, name, tp, variants) }
                 }
@@ -1401,7 +1402,7 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                 if prior.found && prior.is_extern {
                     tc_report_at(cur, DiagCode.DuplicateDecl,
                         "`${name}` is already declared as an extern fn; a normal fn cannot reuse that name",
-                        ss.line, ss.col, name.length)
+                        pos.line, pos.col, name.length)
                 } else {
                     cur with { fns: fn_type_reg_register(cur.fns, name, tp, params, final_ret, false) }
                 }
@@ -1422,11 +1423,11 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     // the extern carve-out and skip the collection→scalar check.
                     tc_report_at(cur, DiagCode.DuplicateDecl,
                         "extern `${name}` conflicts with a prior normal fn of the same name",
-                        ss.line, ss.col, name.length)
+                        pos.line, pos.col, name.length)
                 } else if prior.found && !extern_sig_matches(prior, params, final_ret) {
                     tc_report_at(cur, DiagCode.DuplicateDecl,
                         "extern `${name}` redeclared with a conflicting signature: ${render_extern_sig(params, final_ret)} (previously ${render_extern_sig(prior.params, prior.ret_ty)})",
-                        ss.line, ss.col, name.length)
+                        pos.line, pos.col, name.length)
                 } else {
                     cur with { fns: fn_type_reg_register(cur.fns, name, empty_type_params(), params, final_ret, true) }
                 }
@@ -1438,13 +1439,13 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
                     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
                     let with_trait = cur with { trait_impls: list_push_copy(cur.trait_impls, TraitImplEntry { trait_name, type_name }) }
                     // Collect associated type definitions: `type Item = ConcreteType`
-                    collect_impl_assoc_types(with_trait, type_name, tc.nodes.sstmts_of(methods))
+                    collect_impl_assoc_types(with_trait, type_name, methods)
                 } else { cur }
-                collect_decls(with_impl, tc.nodes.sstmts_of(methods))
+                collect_decls(with_impl, methods)
             }
-            .Module(_, body) -> collect_decls(cur, tc.nodes.sstmts_of(body))
+            .Module(_, body) -> collect_decls(cur, body)
             .TraitDecl(name, methods) -> cur with {
-                traits: trait_registry_register(cur.traits, name, collect_method_names_from_stmts(tc.nodes.sstmts_of(methods)), collect_assoc_types_from_stmts(tc.nodes.sstmts_of(methods)))
+                traits: trait_registry_register(cur.traits, name, collect_method_names_from_stmts(tc.nodes, methods), collect_assoc_types_from_stmts(tc.nodes, methods))
             }
             _ -> cur
         }
@@ -1456,10 +1457,10 @@ fn collect_decls(tc: TC, stmts: List<SStmt>) -> TC {
 // `type Item = ConcreteType` → store "TypeName.Item" → ConcreteType vtype in assoc_type_defs.
 /// Walk an impl block to register its `type AssocName = Concrete`
 /// definitions into `tc.assoc_type_defs`.
-fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<SStmt>) -> TC {
+fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: List<StmtId>) -> TC {
     mut cur = tc
-    for ss in stmts {
-        cur = match ss.node {
+    for id in stmts {
+        cur = match tc.nodes.stmts.get(id) {
             .AssocType(name, ty_vt) -> {
                 if !vtype_is_unknown(ty_vt) {
                     let key = "${type_name}.${name}"
@@ -1510,21 +1511,10 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 
 // ── Pass 2: Statement checking ──
 
-/// Type-check every statement in a list, threading the TC.
-export fn check_stmts(tc: TC, stmts: List<SStmt>) -> TC {
-    mut cur = lint_index_loops(tc, stmts)
-    for ss in stmts {
-        avra_ice_at(ss.file, ss.line, ss.col)
-        let with_pos = cur with { current_line: ss.line, current_col: ss.col }
-        cur = check_stmt(with_pos, ss.node)
-    }
-    cur
-}
-
-/// Row-list twin of `check_stmts` for flipped bodies — positions come
-/// from the store's position column.
+/// Type-check every statement in a flipped body, threading the TC.
+/// Positions come from the store's position column.
 export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
-    mut cur = lint_index_loops(tc, tc.nodes.sstmts_of(ids))
+    mut cur = lint_index_loops(tc, ids)
     for id in ids {
         let pos = tc.nodes.stmt_pos(id)
         avra_ice_at(pos.file, pos.line, pos.col)
@@ -1578,16 +1568,9 @@ fn lint_sig_or(a: LintSig, b: LintSig) -> LintSig {
 
 /// Fold the signals over a list of expressions (call args, tuple /
 /// list elements, …).
-fn lint_scan_sexprs(store: NodeStore, xs: List<SExpr>, coll: string) -> LintSig {
+fn lint_scan_sexprs(store: NodeStore, xs: List<ExprId>, coll: string) -> LintSig {
     mut acc = lint_sig_none()
-    for x in xs { acc = lint_sig_or(acc, lint_scan_expr(store, x.node, coll)) }
-    acc
-}
-
-/// Fold the signals over a statement list (block body).
-fn lint_scan_sstmts(store: NodeStore, xs: List<SStmt>, coll: string) -> LintSig {
-    mut acc = lint_sig_none()
-    for x in xs { acc = lint_sig_or(acc, lint_scan_stmt(store, x.node, coll)) }
+    for id in xs { acc = lint_sig_or(acc, lint_scan_expr(store, store.exprs.get(id), coll)) }
     acc
 }
 
@@ -1598,7 +1581,7 @@ fn lint_scan_stmt_ids(store: NodeStore, ids: List<StmtId>, coll: string) -> Lint
     acc
 }
 
-/// Fold the signals over match arms (guard + body, both SExpr).
+/// Fold the signals over match arms (guard + body, both expression ids).
 fn lint_scan_arms(store: NodeStore, arms: List<MatchArm>, coll: string) -> LintSig {
     mut acc = lint_sig_none()
     for a in arms {
@@ -1632,27 +1615,27 @@ fn lint_scan_expr(store: NodeStore, e: Expr, coll: string) -> LintSig {
         .Unary(_, right) -> lint_scan_expr(store, store.exprs.get(right), coll)
         .Binary(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .Logical(left, _, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
-        .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
-        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
+        .Call(callee, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, args, coll))
+        .GenericCall(callee, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(callee), coll), lint_scan_sexprs(store, args, coll))
         .FieldAccess(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
-        .EnumCtor(_, _, args) -> lint_scan_sexprs(store, store.sexprs_of(args), coll)
+        .EnumCtor(_, _, args) -> lint_scan_sexprs(store, args, coll)
         .Block(body) -> lint_scan_stmt_ids(store, body, coll)
         .MatchExpr(subject, arms) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(subject), coll), lint_scan_arms(store, arms, coll))
         .FieldAssign(obj, _, value) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_expr(store, store.exprs.get(value), coll))
         .IfExpr(c, t, el) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(c), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(t), coll), lint_scan_expr(store, store.exprs.get(el), coll)))
         .NullCoalesce(left, right) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(left), coll), lint_scan_expr(store, store.exprs.get(right), coll))
         .OptionalChain(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
-        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_sexprs(store, store.sexprs_of(args), coll))
+        .OptionalMethodCall(obj, _, args) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_scan_sexprs(store, args, coll))
         .Try(inner) -> lint_scan_expr(store, store.exprs.get(inner), coll)
-        .Tuple(els) -> lint_scan_sexprs(store, store.sexprs_of(els), coll)
+        .Tuple(els) -> lint_scan_sexprs(store, els, coll)
         .TupleIndex(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
         .With(obj, _) -> lint_scan_expr(store, store.exprs.get(obj), coll)
-        .ListLit(els) -> lint_scan_sexprs(store, store.sexprs_of(els), coll)
+        .ListLit(els) -> lint_scan_sexprs(store, els, coll)
         .Lambda(_, body) -> lint_scan_expr(store, store.exprs.get(body), coll)
-        .MapLit(entries) -> lint_scan_sexprs(store, store.sexprs_of(entries), coll)
+        .MapLit(entries) -> lint_scan_sexprs(store, entries, coll)
         .Slice(obj, start, end) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(obj), coll), lint_sig_or(lint_scan_expr(store, store.exprs.get(start), coll), lint_scan_expr(store, store.exprs.get(end), coll)))
         .IsCheck(subject, _) -> lint_scan_expr(store, store.exprs.get(subject), coll)
-        .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(needle), coll), lint_scan_sexprs(store, store.sexprs_of(items), coll))
+        .InCheck(needle, items) -> lint_sig_or(lint_scan_expr(store, store.exprs.get(needle), coll), lint_scan_sexprs(store, items, coll))
         _ -> lint_sig_none()
     }
 }
@@ -1748,14 +1731,14 @@ fn lint_step_count(store: NodeStore, s: Stmt) -> LintStep {
 /// `for (i, x) in xs.enumerate()` replaces. Always on — a structural AST
 /// walk (not a string heuristic). Element-only loops, string scans,
 /// stride-N walks, and multi-step counters are deliberately untouched.
-fn lint_index_loops(tc: TC, stmts: List<SStmt>) -> TC {
+fn lint_index_loops(tc: TC, stmts: List<StmtId>) -> TC {
     mut cur = tc
-    for (k, ss) in stmts.enumerate() {
+    for (k, id) in stmts.enumerate() {
         if k + 1 < stmts.length {
-            match ss.node {
+            match tc.nodes.stmts.get(id) {
                 .Mut(name, _, init) -> {
                     if name == "i" && lint_expr_is_zero(tc.nodes.exprs.get(init)) {
-                        match stmts[k + 1].node {
+                        match tc.nodes.stmts.get(stmts[k + 1]) {
                             .While(cond, body) -> {
                                 let coll = lint_index_guard_coll(tc.nodes, tc.nodes.exprs.get(cond))
                                 if coll != "" && vtype_is_list(type_lookup(cur.types, coll)) {
@@ -2224,7 +2207,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after = check_stmt_ids(tc, methods)
             // Check trait conformance if this is `impl Trait for Type`
             // impl_name is "Trait:Type" or just "Type"
-            check_trait_conformance(after, impl_name, tc.nodes.sstmts_of(methods))
+            check_trait_conformance(after, impl_name, methods)
         }
         .Module(_, body) -> check_stmt_ids(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, tc.nodes.stmts.get(inner))
@@ -2242,7 +2225,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         // `declare` and coerces call args against — also a layout-determining
         // position, so a bare generic there is gated like any other.
         .ExternFn(_, params, ret_vt) -> tc_check_signature_arity_top(tc, params, ret_vt)
-        .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, tc.nodes.sstmts_of(methods))
+        .TraitDecl(_, methods) -> tc_check_trait_method_sigs(tc, methods)
         // .If / .While / .For / .ForIn / .Defer / .Match /
         // .LetDestructure: deferred to feature handlers (if_check_stmt,
         // while_check, for_check, for_in_check, defer_check,
@@ -2395,7 +2378,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         // these bindings, a `return (msg, o.expand_site)` after
         // `let o = origins[0]` sees `o` as Unknown — the return-check
         // pass re-runs check_expr (it doesn't trust the annotate
-        // pass's SExpr.ty) but reuses the input TC verbatim, so
+        // pass's inferred arg types) but reuses the input TC verbatim, so
         // locals declared mid-block fall out of scope.
         .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
         .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
@@ -2476,10 +2459,10 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // errors inside the literal surface too; `reject_literal_into_value_scalar`
         // then rejects only the value-scalar slot (a non-scalar pointer slot like
         // `string` is a nominal mismatch handled elsewhere, not a layout one).
-        .ListLit(elements) -> reject_literal_into_value_scalar(check_list_lit_with_expected(tc, tc.nodes.sexprs_of(elements), vtype_list_elem(exp)), exp, "list")
-        .MapLit(entries) -> reject_literal_into_value_scalar(check_map_lit_with_expected(tc, tc.nodes.sexprs_of(entries), vtype_map_value(exp)), exp, "map")
+        .ListLit(elements) -> reject_literal_into_value_scalar(check_list_lit_with_expected(tc, elements, vtype_list_elem(exp)), exp, "list")
+        .MapLit(entries) -> reject_literal_into_value_scalar(check_map_lit_with_expected(tc, entries, vtype_map_value(exp)), exp, "map")
         .Call(callee, args) -> {
-            let r = check_call_with_expected(tc, tc.nodes.exprs.get(callee), tc.nodes.sexprs_of(args), exp)
+            let r = check_call_with_expected(tc, tc.nodes.exprs.get(callee), args, exp)
             // The call result meets the expected type. Route through the no-int
             // gate (generic-arg + collection→scalar): the fn-side of the hole
             // (`let b: Box<string> = make_box_int()`, `let x: int = make_list()`).
@@ -2521,12 +2504,11 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
         // route through the same layout gate. (`exp` is the optional-stripped
         // expected, so `.Some(x)` into a declared enum still resolves.)
         .EnumCtor(tn, variant, args) if tn == "" -> {
-            let sargs = tc.nodes.sexprs_of(args)
-            let after = check_expr_list(tc, sargs)
+            let after = check_expr_list(tc, args)
             match exp {
                 .Enum(en, _, _) if en != "" -> {
-                    let gated = tc_check_enum_ctor_args(after, en, variant, sargs)
-                    let result_args = tc_infer_enum_ctor_type_args(gated, en, variant, sargs)
+                    let gated = tc_check_enum_ctor_args(after, en, variant, args)
+                    let result_args = tc_infer_enum_ctor_type_args(gated, en, variant, args)
                     let rty = ValueType.Enum(en, result_args, 0)
                     tc_er(check_assign_layout_no_int(gated, rty, exp, "expression"), rty)
                 }
@@ -2541,8 +2523,8 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // so it must fall through to the scalar rejection below — else
                     // `let x: int? = .W(Box{val:9})` smuggles a `Wrap` enum into the
                     // optional-stripped `int` cell.
-                    .Optional(inner) if sargs.length == 1 && variant_is_optional_present(variant) -> {
-                        let aty = tc_arg_concrete_ty(after, sargs[0])
+                    .Optional(inner) if args.length == 1 && variant_is_optional_present(variant) -> {
+                        let aty = tc_arg_concrete_ty(after, args[0])
                         tc_er(check_assign_layout_no_int(after, aty, inner, "expression"), expected)
                     }
                     // `.None` is the empty optional — valid for ANY `T?`, with no
@@ -2551,7 +2533,7 @@ export fn check_expr_expected(tc: TC, expr: Expr, expected: ValueType) -> ExprRe
                     // optional-stripped `int` cell reads as value-scalar). The
                     // payload-carrying `.Some` is the only OTHER ctor the optional
                     // accepts; everything else is a wild store and falls through.
-                    .Optional(_) if variant_is_optional_absent(variant) && sargs.length == 0 -> tc_er(after, expected)
+                    .Optional(_) if variant_is_optional_absent(variant) && args.length == 0 -> tc_er(after, expected)
                     _ -> {
                         // A subjectless ctor `.${variant}(…)` is an enum value —
                         // always the pointer-represented {tag,payload} — so into a
@@ -2624,8 +2606,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, .Bool)
         }
         .Grouping(inner) -> check_expr(tc, tc.nodes.exprs.get(inner))
-        .Call(callee, args) -> check_call(tc, tc.nodes.exprs.get(callee), tc.nodes.sexprs_of(args))
-        .GenericCall(callee, type_args, args) -> check_generic_call(tc, tc.nodes.exprs.get(callee), type_args, tc.nodes.sexprs_of(args))
+        .Call(callee, args) -> check_call(tc, tc.nodes.exprs.get(callee), args)
+        .GenericCall(callee, type_args, args) -> check_generic_call(tc, tc.nodes.exprs.get(callee), type_args, args)
         .Index(obj, idx) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let i = check_expr(o.tc, tc.nodes.exprs.get(idx))
@@ -2651,7 +2633,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let elem_ty = vtype_list_elem(o.ty)
             tc_er(i.tc, elem_ty)
         }
-        .Block(body) -> check_block(tc, tc.nodes.sstmts_of(body))
+        .Block(body) -> check_block(tc, body)
         .Slice(obj, start, end) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let s = check_expr(o.tc, tc.nodes.exprs.get(start))
@@ -2680,13 +2662,12 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         // falling through to Unknown. Mirrors how StructLit is
         // handled by the struct_decl feature hook.
         .EnumCtor(tn, variant, args) -> {
-            let sargs = tc.nodes.sexprs_of(args)
-            let after_args = check_expr_list(tc, sargs)
+            let after_args = check_expr_list(tc, args)
             if tn == "" { return tc_er(after_args, .Unknown) }
-            let gated = tc_check_enum_ctor_args(after_args, tn, variant, sargs)
+            let gated = tc_check_enum_ctor_args(after_args, tn, variant, args)
             // enwi: carry the type-args inferred from the payload (Wrap<int>, not
             // Wrap<?>) so a mismatched binding annotation is caught downstream.
-            let result_args = tc_infer_enum_ctor_type_args(gated, tn, variant, sargs)
+            let result_args = tc_infer_enum_ctor_type_args(gated, tn, variant, args)
             tc_er(gated, ValueType.Enum(tn, result_args, 0))
         }
         // Parens-less `EnumType.Variant` parses as
@@ -2724,12 +2705,12 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 
 /// Verify that each arg passed to a shape-typed parameter has all
 /// the required fields (width-subtype check).
-fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<SExpr>) -> TC {
+fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> TC {
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
     while i < limit {
-        let arg_ty = check_expr(cur, args[i].node).ty
+        let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = tc_check_shape_compat(cur, vtype_display(params[i].vtype), arg_ty)
         i = i + 1
     }
@@ -2740,14 +2721,14 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<SExpr>) -> T
 /// Verify newtype-wrapped arguments: a `UserId` param doesn't
 /// accept a bare `UUID` — the wrapper has to be explicit at the
 /// call site.
-fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<SExpr>, is_extern: bool) -> TC {
+fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<ExprId>, is_extern: bool) -> TC {
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
     while i < limit {
         let p = params[i]
         let param_ty = resolve_vtype(cur, p.vtype)
-        let arg_ty = check_expr(cur, args[i].node).ty
+        let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         if param_ty is .Newtype {
             if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Unknown) {
                 let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
@@ -2774,11 +2755,11 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
 
 // Extract the first argument's type. Safe to call after check_expr_list
 // because re-deriving an expression's type is idempotent (no new bindings).
-/// Infer the type of the first argument in a `List<SExpr>`, or
+/// Infer the type of the first argument in a `List<ExprId>`, or
 /// Void when the list is empty. Used by newtype-ctor inference.
-fn tc_first_arg_type(tc: TC, args: List<SExpr>) -> ValueType {
+fn tc_first_arg_type(tc: TC, args: List<ExprId>) -> ValueType {
     if args.length == 0 { return ValueType.Void }
-    check_expr(tc, args[0].node).ty
+    check_expr(tc, tc.nodes.exprs.get(args[0])).ty
 }
 
 /// Canonical registry identity of a nominal ValueType, else 0 (non-nominal, or
@@ -2793,51 +2774,19 @@ fn tc_nominal_id(tc: TC, t: ValueType) -> int {
     type_registry_id_for(tc.type_reg, n)
 }
 
-/// 703y bridge (one direction): true when `spanned` is specifically the AST
-/// span wrapper SExpr/SStmt whose `node` field canonically IS `bare_ty` — the
-/// spanned-of-bare relationship (SExpr = `{ node: Expr, … }`, SStmt =
-/// `{ node: Stmt, … }`). Restricted to those two exact wrappers so it can't
-/// bridge an unrelated `{ node: T }` user struct.
-fn tc_is_spanned_of(tc: TC, spanned: ValueType, bare_ty: ValueType) -> bool {
-    let sn = vtype_struct_name(spanned)
-    if sn == "" { return false }
-    // Only the two AST span wrappers bridge: SExpr = { node: Expr, … },
-    // SStmt = { node: Stmt, … }. Gating on the exact wrapper type — not merely
-    // "has a field named `node`" — is what keeps an unrelated user struct
-    // `{ node: Inner }` from masking a genuine nominal payload mismatch. The
-    // field name `node` is ordinary; the previous check bridged ANY struct that
-    // happened to have one, silently accepting a wrong-shaped value through it.
-    let short = type_short_name(sn)
-    if short != "SExpr" && short != "SStmt" { return false }
-    let node_ty = field_type_lookup(struct_type_lookup(tc.structs, sn), "node")
-    let nid = tc_nominal_id(tc, node_ty)
-    nid != 0 && nid == tc_nominal_id(tc, bare_ty)
-}
-
-/// True when `a0`/`f0` are a spanned/bare pair EITHER way — a spanned wrapper
-/// flowing into a bare-declared slot (SExpr→Expr) OR a bare value flowing into a
-/// spanned-declared slot (Stmt→SStmt, e.g. the quote machinery's Stmt.Annotated
-/// payload). Both occur in the compiler's own code while the 703y span migration
-/// is in flight; bridging keeps the nominal gate from flagging them until that
-/// migration unifies the bare/spanned types. Transitional — remove with 703y.
-fn tc_bridges_span(tc: TC, a0: ValueType, f0: ValueType) -> bool {
-    tc_is_spanned_of(tc, a0, f0) || tc_is_spanned_of(tc, f0, a0)
-}
 
 /// pyly: a value of one registered nominal flowing into a DIFFERENT registered
 /// nominal field — `Other` into an `Inner` field. Both ptr-represented (the
 /// scalar-repr check already passed) with no generic-arg shells, but distinct
 /// canonical types → a wrong-shaped value read through the field's slot. Skips
 /// unregistered names / type-params (id 0), the SAME canonical type under
-/// representation drift (fid == aid), legitimately-assignable values, and the
-/// 703y bare-vs-spanned bridge.
+/// representation drift (fid == aid), and legitimately-assignable values.
 fn tc_nominal_payload_mismatch(tc: TC, f0: ValueType, a0: ValueType) -> bool {
     let fid = tc_nominal_id(tc, f0)
     let aid = tc_nominal_id(tc, a0)
     if fid == 0 || aid == 0 { return false }
     if fid == aid { return false }
     if vtype_assignable(a0, f0) { return false }
-    if tc_bridges_span(tc, a0, f0) { return false }
     true
 }
 
@@ -2849,7 +2798,7 @@ fn tc_nominal_payload_mismatch(tc: TC, f0: ValueType, a0: ValueType) -> bool {
 /// fields whose declared type mentions one of the enum's type params (those
 /// bind via inference) and Unknown types on either side. Mirrors
 /// tc_check_newtype_ctor's safe predicate.
-fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr>) -> TC {
+fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprId>) -> TC {
     if !enum_type_has(tc.enums, tn) { return tc }
     let v = variant_find(enum_type_variants(tc.enums, tn), variant)
     if v == null { return tc }
@@ -2860,7 +2809,7 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
     let limit = if fields.length < args.length { fields.length } else { args.length }
     while i < limit {
         let fty = resolve_vtype(cur, fields[i].resolved)
-        let aty = check_expr(cur, args[i].node).ty
+        let aty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         let skip = vtype_is_unknown(fty) || vtype_is_unknown(aty) || vtype_mentions_typeparam(fty, tp)
         if !skip {
             // Representation-class check: a value scalar (int/bool/float)
@@ -2926,7 +2875,7 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<SExpr
 // is byte-identical and it merely adds rejections for invalid programs (deep
 // Struct-in-container payloads like `List<Box<T>>` now bind, since g97x landed
 // the arm in the shared unifier).
-fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<SExpr>) -> List<ValueType> {
+fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<ExprId>) -> List<ValueType> {
     let tp = enum_type_params(tc.enums, tn)
     if tp.length == 0 { return [] }
     let v = variant_find(enum_type_variants(tc.enums, tn), variant)
@@ -3112,7 +3061,7 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
 /// caller is expected to have already gated on `rec.found` (or to
 /// pass a `found=true` record in its happy path), so this body never
 /// re-walks the FnTypeEntry chain — that's the kkgf hot-path saving.
-fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTypeFound) -> ExprResult {
+fn tc_check_fn_call_with(checked: TC, name: string, args: List<ExprId>, rec: FnTypeFound) -> ExprResult {
     tc_check_fn_call_with_expected(checked, name, args, rec, ValueType.Unknown)
 }
 
@@ -3121,7 +3070,7 @@ fn tc_check_fn_call_with(checked: TC, name: string, args: List<SExpr>, rec: FnTy
 /// expected type). Threaded to tc_subst_generic_ret_with_expected so
 /// generic fns whose only T-constraint comes from the return position
 /// resolve cleanly (so07.7.15).
-fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<SExpr>, rec: FnTypeFound, expected: ValueType) -> ExprResult {
+fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>, rec: FnTypeFound, expected: ValueType) -> ExprResult {
     let expected_param_count = rec.params.length
     let actual = tc_count_args(args)
     if expected_param_count != actual {
@@ -3162,7 +3111,7 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<SExpr>, 
 /// Gated by AVRA_STRICT_ARGS at the call site so the default build
 /// stays quiet; turn on for refactor sessions that need fail-fast on
 /// silent ptr-shape coercions.
-fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>) -> TC {
+fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>) -> TC {
     mut cur_tc = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
@@ -3210,7 +3159,7 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
 /// chain `let xs = generic_call(); other_generic_call(xs)` loses
 /// the inner type at the `let` boundary and the second call's
 /// type-arg can't be inferred.
-fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
+fn tc_subst_generic_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_ty: ValueType) -> ValueType {
     tc_subst_generic_ret_with_expected(tc, tp, params, args, ret_ty, ValueType.Unknown)
 }
 
@@ -3284,7 +3233,7 @@ fn subst_param_types(params: List<ParamEntry>, bindings: List<TypeArg>) -> List<
     out
 }
 
-fn tc_subst_generic_method_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType) -> ValueType {
+fn tc_subst_generic_method_ret(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_ty: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     if params.length == 0 { return ret_ty }
     tc_subst_generic_ret(tc, tp, method_params_without_self(params), args, ret_ty)
@@ -3321,7 +3270,7 @@ fn tc_fill_unresolved_typeargs(tp: List<TypeParamEntry>, base: List<TypeArg>, fi
     out
 }
 
-fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_ty: ValueType, expected: ValueType) -> ValueType {
+fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_ty: ValueType, expected: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
     let arg_bindings = tc_infer_type_args(tc, tp, params, args, empty)
@@ -3344,7 +3293,7 @@ fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: 
 /// its concrete arg type. Args whose typeck-annotated `.ty` is
 /// Unknown fall back to `tc_infer_lit_ty` so literal `[1,2,3]` and
 /// bare lambdas still contribute bindings.
-fn tc_infer_type_args(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
+fn tc_infer_type_args(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, acc: List<TypeArg>) -> List<TypeArg> {
     mut cur_acc = acc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
@@ -3459,11 +3408,13 @@ fn tc_unify_lists(tp: List<TypeParamEntry>, params: List<ValueType>, args: List<
 /// `Int`, not `T`). Falls back to a literal-shape inference for
 /// list / lambda literals so call sites without surrounding
 /// annotations still bind their inner types.
-fn tc_arg_concrete_ty(tc: TC, arg: SExpr) -> ValueType {
-    if !vtype_is_unknown(arg.ty) { return arg.ty }
-    let r = check_expr(tc, arg.node)
+fn tc_arg_concrete_ty(tc: TC, id: ExprId) -> ValueType {
+    let aty = tc.nodes.arg_ty_of(id)
+    if !vtype_is_unknown(aty) { return aty }
+    let node = tc.nodes.exprs.get(id)
+    let r = check_expr(tc, node)
     if !vtype_is_unknown(r.ty) { return r.ty }
-    tc_infer_lit_ty(tc.nodes, arg.node)
+    tc_infer_lit_ty(tc.nodes, node)
 }
 
 /// Lightweight literal-shape inference for arg types when typeck
@@ -3481,7 +3432,7 @@ fn tc_infer_lit_ty(store: NodeStore, e: Expr) -> ValueType {
             ValueType.Enum(tn, empty_args, 0)
         }
         .Grouping(inner) -> tc_infer_lit_ty(store, store.exprs.get(inner))
-        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(store, store.sexprs_of(elements)))
+        .ListLit(elements) -> ValueType.List(tc_infer_list_elem(store, elements))
         .Lambda(params, _) -> ValueType.FnTyped(tc_param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
@@ -3490,10 +3441,10 @@ fn tc_infer_lit_ty(store: NodeStore, e: Expr) -> ValueType {
 /// True when any element of a list literal is the `none` absence literal.
 /// Such a list is `List<T?>`, not `List<T>` — the codegen boxes its present
 /// elements into the tagged-optional repr, so the inferred type must agree.
-fn list_lit_has_none(elements: List<SExpr>) -> bool {
+fn list_lit_has_none(store: NodeStore, elements: List<ExprId>) -> bool {
     mut i = 0
     while i < elements.length {
-        if elements[i].node is .None { return true }
+        if store.exprs.get(elements[i]) is .None { return true }
         i = i + 1
     }
     false
@@ -3501,27 +3452,27 @@ fn list_lit_has_none(elements: List<SExpr>) -> bool {
 
 /// Wrap a known, non-optional element type in `Optional` when the literal
 /// mixes in a `none`. Keeps inference consistent with `emit_list_lit`.
-fn list_lit_optionalize(elements: List<SExpr>, base: ValueType) -> ValueType {
+fn list_lit_optionalize(store: NodeStore, elements: List<ExprId>, base: ValueType) -> ValueType {
     if vtype_is_unknown(base) { return base }
     if vtype_is_optional(base) { return base }
-    if list_lit_has_none(elements) { ValueType.Optional(base) } else { base }
+    if list_lit_has_none(store, elements) { ValueType.Optional(base) } else { base }
 }
 
-fn tc_infer_list_elem(store: NodeStore, elements: List<SExpr>) -> ValueType {
+fn tc_infer_list_elem(store: NodeStore, elements: List<ExprId>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
     // Pin the inner type from the first present element (a leading `none`
     // carries no type), then re-wrap in `T?` when a `none` is present.
     mut base = ValueType.Unknown
     mut i = 0
     while i < elements.length {
-        if !(elements[i].node is .None) {
-            base = tc_infer_lit_ty(store, elements[i].node)
+        if !(store.exprs.get(elements[i]) is .None) {
+            base = tc_infer_lit_ty(store, store.exprs.get(elements[i]))
             i = elements.length
         } else {
             i = i + 1
         }
     }
-    list_lit_optionalize(elements, base)
+    list_lit_optionalize(store, elements, base)
 }
 
 fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
@@ -3539,12 +3490,12 @@ fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
 
 /// Inspect the first element of a list literal and return its
 /// inferred type; falls back to `Unknown` for an empty list.
-/// Used by `annotate_sexpr`'s ListLit fast-path so `[1, 2, 3]`
+/// Used by `annotate_expr_stamped`'s ListLit fast-path so `[1, 2, 3]`
 /// types as `List<int>` instead of `List<unknown>`. A literal mixing in a
 /// `none` is `List<T?>` — re-wrap so the fast-path agrees with `emit_list_lit`.
-fn tc_first_elem_ty(tc: TC, elements: List<SExpr>) -> ValueType {
+fn tc_first_elem_ty(tc: TC, elements: List<ExprId>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
-    list_lit_optionalize(elements, tc_expr_or_lit_ty(tc, elements[0].node))
+    list_lit_optionalize(tc.nodes, elements, tc_expr_or_lit_ty(tc, tc.nodes.exprs.get(elements[0])))
 }
 
 /// Type of an expr node, falling back to literal-shape inference when the
@@ -3558,9 +3509,9 @@ fn tc_expr_or_lit_ty(tc: TC, node: Expr) -> ValueType {
 /// First map VALUE type for quick `MapLit` typing — the value analog of
 /// `tc_first_elem_ty`. entries = [k0, v0, k1, v1, ...] so the first value
 /// is at index 1; empty literals are `Unknown`.
-fn tc_first_map_value_ty(tc: TC, entries: List<SExpr>) -> ValueType {
+fn tc_first_map_value_ty(tc: TC, entries: List<ExprId>) -> ValueType {
     if entries.length < 2 { return ValueType.Unknown }
-    tc_expr_or_lit_ty(tc, entries[1].node)
+    tc_expr_or_lit_ty(tc, tc.nodes.exprs.get(entries[1]))
 }
 
 /// Substitute every T occurrence in `ty` with the binding from
@@ -3620,7 +3571,7 @@ export fn tc_infer_struct_type_args(tc: TC, name: string, inits: List<FieldInit>
     for init in inits {
         let fdecl = resolve_vtype(tc, field_type_lookup(fields, init.name))
         if !vtype_is_unknown(fdecl) {
-            let vty = tc_arg_concrete_ty(tc, tc.nodes.sexpr_of(init.value_id))
+            let vty = tc_arg_concrete_ty(tc, init.value_id)
             acc = tc_unify(tps, fdecl, vty, acc)
         }
     }
@@ -3637,7 +3588,7 @@ export fn tc_struct_lit_vtype(tc: TC, name: string, inits: List<FieldInit>) -> V
 /// Type-check a `Call` expression. Routes to `check_method_call`
 /// for `obj.method(args)`, otherwise falls through to
 /// `tc_check_fn_call_with` after resolving the callee name.
-fn check_call(tc: TC, callee: Expr, args: List<SExpr>) -> ExprResult {
+fn check_call(tc: TC, callee: Expr, args: List<ExprId>) -> ExprResult {
     check_call_with_expected(tc, callee, args, ValueType.Unknown)
 }
 
@@ -3647,7 +3598,7 @@ fn check_call(tc: TC, callee: Expr, args: List<SExpr>) -> ExprResult {
 /// Unknown. The W1 derive_walker rewrite emits GenericCall to make
 /// mono's inference unambiguous; this path now matches by carrying
 /// the user-supplied bindings through tc_subst_vtype on ret_ty.
-fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<SExpr>) -> ExprResult {
+fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<ExprId>) -> ExprResult {
     let name = match callee {
         .Ident(n) -> n
         .QualifiedIdent(n) -> n
@@ -3684,7 +3635,7 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<
 /// Bidirectional variant — accepts the caller's expected return type
 /// and threads it through tc_check_fn_call_with_expected so generic
 /// inference can pull type-args from the return position (so07.7.15).
-fn check_call_with_expected(tc: TC, callee: Expr, args: List<SExpr>, expected: ValueType) -> ExprResult {
+fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: ValueType) -> ExprResult {
     match callee {
         .Ident(name) -> {
             // For `string(arg)` we need the typed arg list so we can
@@ -3761,7 +3712,7 @@ fn check_collection_value_arg(tc: TC, arg_types: List<ValueType>, method: string
     check_assign_layout(tc, arg_types[idx], elem, "`${method}` value")
 }
 
-export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>) -> ExprResult {
+export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId>) -> ExprResult {
     let o = check_expr(tc, obj)
     let ca = check_expr_list_types(o.tc, args)
     let checked_args = ca.tc
@@ -3892,7 +3843,7 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<SExpr>
 /// Type-check a block as an expression — the block's value is
 /// the value of its last statement (when that's an Expr stmt) or
 /// Void otherwise.
-fn check_block(tc: TC, stmts: List<SStmt>) -> ExprResult {
+fn check_block(tc: TC, stmts: List<StmtId>) -> ExprResult {
     let inner = tc_enter(tc)
     let pair = check_block_stmts(inner, stmts)
     let after = tc_exit(pair.tc)
@@ -3901,23 +3852,25 @@ fn check_block(tc: TC, stmts: List<SStmt>) -> ExprResult {
 
 /// Implementation of `check_block` — walks every stmt, returning
 /// the last one's value type as the block's type.
-fn check_block_stmts(tc: TC, stmts: List<SStmt>) -> ExprResult {
+fn check_block_stmts(tc: TC, stmts: List<StmtId>) -> ExprResult {
     if stmts.length == 0 { return tc_er(tc, .Void) }
     mut cur = tc
     mut i = 0
     let last = stmts.length - 1
     while i < last {
-        avra_ice_at(stmts[i].file, stmts[i].line, stmts[i].col)
-        cur = check_stmt(cur, stmts[i].node)
+        let pos = tc.nodes.stmt_pos(stmts[i])
+        avra_ice_at(pos.file, pos.line, pos.col)
+        cur = check_stmt(cur, tc.nodes.stmts.get(stmts[i]))
         i = i + 1
     }
     // Last statement — its type is the block's type
-    let ss = stmts[last]
-    avra_ice_at(ss.file, ss.line, ss.col)
-    match ss.node {
+    let id = stmts[last]
+    let lpos = tc.nodes.stmt_pos(id)
+    avra_ice_at(lpos.file, lpos.line, lpos.col)
+    match tc.nodes.stmts.get(id) {
         .Expr(e) -> check_expr(cur, tc.nodes.exprs.get(e))
         _ -> {
-            let checked = check_stmt(cur, ss.node)
+            let checked = check_stmt(cur, tc.nodes.stmts.get(id))
             tc_er(checked, .Void)
         }
     }
@@ -3928,10 +3881,10 @@ fn check_block_stmts(tc: TC, stmts: List<SStmt>) -> ExprResult {
 /// Type-check every expression in `exprs` for side effects only —
 /// drops the inferred types. Use `check_expr_list_types` when the
 /// caller needs the resulting type list.
-export fn check_expr_list(tc: TC, exprs: List<SExpr>) -> TC {
+export fn check_expr_list(tc: TC, exprs: List<ExprId>) -> TC {
     mut current = tc
-    for se in exprs {
-        current = check_expr(current, se.node).tc
+    for id in exprs {
+        current = check_expr(current, current.nodes.exprs.get(id)).tc
     }
     current
 }
@@ -3989,7 +3942,7 @@ fn infer_arg_for_display(tc: TC, expr: Expr) -> ValueType {
 /// the bag. The codegen-level check in fn_decl/codegen.av stays
 /// as a backstop, but emitting here gives the user a proper
 /// typecheck-coded diagnostic instead of an F9999 (ICE).
-fn display_check_arg(tc: TC, types: List<ValueType>, args: List<SExpr>) -> TC {
+fn display_check_arg(tc: TC, types: List<ValueType>, args: List<ExprId>) -> TC {
     let arg_ty = if types.length > 0 { types[0] } else { ValueType.Unknown }
     // Fallback when check_expr returned Unknown (a separate
     // let-binding inference gap drops enum-typed locals to
@@ -3997,7 +3950,7 @@ fn display_check_arg(tc: TC, types: List<ValueType>, args: List<SExpr>) -> TC {
     // catch the common shape). The right long-term fix is
     // tightening the let-binding inference.
     let resolved_ty = if vtype_is_unknown(arg_ty) {
-        if args.length > 0 { infer_arg_for_display(tc, args[0].node) } else { arg_ty }
+        if args.length > 0 { infer_arg_for_display(tc, tc.nodes.exprs.get(args[0])) } else { arg_ty }
     } else {
         arg_ty
     }
@@ -4014,8 +3967,8 @@ fn display_check_arg(tc: TC, types: List<ValueType>, args: List<SExpr>) -> TC {
     if lookup.found { return tc }
     // No display method — emit F1003 with the first arg's span.
     let span = if args.length > 0 {
-        let se = args[0]
-        span_new(0, 0, se.line, se.col)
+        let lc = tc.nodes.expr_linecol(args[0])
+        span_new(0, 0, lc.line, lc.col)
     } else {
         span_dummy()
     }
@@ -4025,11 +3978,11 @@ fn display_check_arg(tc: TC, types: List<ValueType>, args: List<SExpr>) -> TC {
     tc with { bag: bag_report(tc.bag, diag_error(DiagCode.MissingDisplay, msg, span)) }
 }
 
-export fn check_expr_list_types(tc: TC, exprs: List<SExpr>) -> ExprListResult {
+export fn check_expr_list_types(tc: TC, exprs: List<ExprId>) -> ExprListResult {
     mut cur_tc = tc
     mut types: List<ValueType> = []
-    for se in exprs {
-        let r = check_expr(cur_tc, se.node)
+    for id in exprs {
+        let r = check_expr(cur_tc, cur_tc.nodes.exprs.get(id))
         cur_tc = r.tc
         types.push(r.ty)
     }
@@ -4163,11 +4116,9 @@ fn annotate_expr_id(tc: TC, id: ExprId) -> ExprId {
 fn annotate_select_arms(tc: TC, arms: List<SelectArm>) -> List<SelectArm> {
     mut out: List<SelectArm> = []
     for arm in arms {
-        // F4d: annotate the arena chan/body ids and stamp the chan's resolved
+        // Annotate the arena chan/body ids and stamp the chan's resolved
         // type into `arg_tys` (mirrors annotate_match_arms).
-        let chan_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.chan_id))
-        let new_chan_id = tc.nodes.reexpr(chan_ann.node, arm.chan_id)
-        tc.nodes.set_arg_ty(new_chan_id, chan_ann.ty)
+        let new_chan_id = annotate_expr_stamped(tc, arm.chan_id)
         let elem = match check_expr(tc, tc.nodes.exprs.get(arm.chan_id)).ty {
             .Channel(e) -> e
             _ -> ValueType.Unknown
@@ -4282,11 +4233,15 @@ fn method_to_free_fn_call(tc: TC, callee: ExprId, args: List<ExprId>) -> Expr? {
     }
 }
 
-/// Run `check_expr` on `se.node`, write the inferred type back to
-/// `se.ty`, and recurse into the inner Expr.
-fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
+/// Annotate one expr row: recurse into the inner Expr tree, compute the
+/// row's inferred type, allocate the rewritten row (inheriting `id`'s span),
+/// and record the type in the arena's `arg_tys` side-table — the id-native
+/// successor of the boxed `SExpr.ty` slot the monomorphizer reads via
+/// `arg_ty_of`. Returns the new row id.
+fn annotate_expr_stamped(tc: TC, id: ExprId) -> ExprId {
+    let node = tc.nodes.exprs.get(id)
     // Annotate the inner expression tree (recurse into sub-expressions)
-    let annotated_node = annotate_expr(tc, se.node)
+    let annotated_node = annotate_expr(tc, node)
     // Stamp this SExpr's type — fast path for common expressions avoids
     // re-running check_expr (which would double-check the entire subtree).
     let ty = match annotated_node {
@@ -4305,13 +4260,13 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .Call(callee, args) -> match tc.nodes.exprs.get(callee) {
             .Ident(name) -> {
                 let rec = fn_type_get(tc.fns, name)
-                tc_subst_generic_ret(tc, rec.tp, rec.params, tc.nodes.sexprs_of(args), rec.ret_ty)
+                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
             }
             .QualifiedIdent(name) -> {
                 let rec = fn_type_get(tc.fns, name)
-                tc_subst_generic_ret(tc, rec.tp, rec.params, tc.nodes.sexprs_of(args), rec.ret_ty)
+                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
             }
-            _ -> check_expr(tc, se.node).ty
+            _ -> check_expr(tc, node).ty
         }
         // Struct/Enum constructors. A generic struct literal carries
         // its inferred type args so a downstream `s.value`
@@ -4321,15 +4276,15 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
             if name != "" {
                 let empty_args: List<ValueType> = []
                 ValueType.Enum(name, empty_args, 0)
-            } else { check_expr(tc, se.node).ty }
+            } else { check_expr(tc, node).ty }
         }
-        .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, tc.nodes.sexprs_of(elements)))
-        .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, tc.nodes.sexprs_of(entries)))
+        .ListLit(elements) -> ValueType.List(tc_first_elem_ty(tc, elements))
+        .MapLit(entries) -> ValueType.Map(ValueType.Str, tc_first_map_value_ty(tc, entries))
         // Build the tuple type from the already-annotated elements'
         // stamped `.ty` (annotate_expr recursed into them). Typing the
         // literal as an empty Tuple lost the element types, which broke
         // structural type-param inference through a tuple-typed param/field.
-        .Tuple(elems) -> ValueType.Tuple(list_map(tc.nodes.sexprs_of(elems), (e: SExpr) -> e.ty))
+        .Tuple(elems) -> ValueType.Tuple(list_map(elems, (e: ExprId) -> tc.nodes.arg_ty_of(e)))
         // Lambda body type needs a real check — fall through. Cheap
         // because annotate_expr already walked the body recursively.
         .Lambda(params, body) -> ValueType.FnTyped(tc_param_types(params), check_expr(tc, tc.nodes.exprs.get(body)).ty)
@@ -4367,11 +4322,11 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let sname = vtype_struct_name(base_ty)
                 if sname == "" {
-                    check_expr(tc, se.node).ty
+                    check_expr(tc, node).ty
                 } else {
                     let field_ty = field_type_lookup(struct_type_lookup(tc.structs, sname), fname)
                     if vtype_is_unknown(field_ty) {
-                        check_expr(tc, se.node).ty
+                        check_expr(tc, node).ty
                     } else {
                         // Specialise a generic field type to the receiver
                         // instance's type args (`Box<int>.val` → int).
@@ -4379,7 +4334,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                     }
                 }
             }
-            _ -> check_expr(tc, se.node).ty
+            _ -> check_expr(tc, node).ty
         }
         // kkgf: Index on a bare ident — common pattern is `xs[i]`
         // where xs is a List. Falls back when base type isn't a
@@ -4389,25 +4344,27 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
                 let base_ty = type_lookup(tc.types, obj_name)
                 let elem_ty = vtype_list_elem(base_ty)
                 if vtype_is_unknown(elem_ty) {
-                    check_expr(tc, se.node).ty
+                    check_expr(tc, node).ty
                 } else {
                     elem_ty
                 }
             }
-            _ -> check_expr(tc, se.node).ty
+            _ -> check_expr(tc, node).ty
         }
         // Try unwraps a Result; the unwrapped success type matches
         // the inner expression's type only when the parser desugar
         // pass has already lowered it. For now this stays in the
         // fallback so we don't regress error-propagation typeck.
         // Fallback: re-run check_expr for complex expressions
-        _ -> check_expr(tc, se.node).ty
+        _ -> check_expr(tc, node).ty
     }
-    sexpr_typed(annotated_node, se.line, se.col, ty)
+    let new_id = tc.nodes.reexpr(annotated_node, id)
+    tc.nodes.set_arg_ty(new_id, ty)
+    new_id
 }
 
 /// Cheap one-step type lookup on a bare Expr that mirrors the
-/// fast-path table in annotate_sexpr but without recursing into
+/// fast-path table in annotate_expr_stamped but without recursing into
 /// sub-expressions. Used by leaves that just forward (Grouping).
 fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
     match e {
@@ -4424,19 +4381,15 @@ fn annotate_sexpr_ty(tc: TC, e: Expr) -> ValueType {
     }
 }
 
-/// Annotate a flipped `List<ExprId>` (call/collection args). Reuses
-/// `annotate_sexpr` so each arg's inferred type
-/// is computed EXACTLY as the boxed path did, then records it on the arena via
-/// `set_arg_ty` (keyed by the post-`reexpr` row) so the monomorphizer — which
-/// materializes args back to `SExpr` via `sexprs_of` — reads the same `.ty` it
-/// read pre-flip. This is what keeps the args flip byte-identical.
+/// Annotate a flipped `List<ExprId>` (call/collection args). Each arg's
+/// inferred type is computed by `annotate_expr_stamped`, which records it on
+/// the arena via `set_arg_ty` (keyed by the post-`reexpr` row) so the
+/// monomorphizer — which reads a resolved arg type via `arg_ty_of` — sees the
+/// same type it read pre-flip. This is what keeps the args flip byte-identical.
 fn annotate_expr_list_ids(tc: TC, ids: List<ExprId>) -> List<ExprId> {
     mut out: List<ExprId> = []
     for id in ids {
-        let annotated = annotate_sexpr(tc, tc.nodes.sexpr_of(id))
-        let new_id = tc.nodes.reexpr(annotated.node, id)
-        tc.nodes.set_arg_ty(new_id, annotated.ty)
-        out.push(new_id)
+        out.push(annotate_expr_stamped(tc, id))
     }
     out
 }
@@ -4448,47 +4401,33 @@ fn annotate_match_arms(tc: TC, arms: List<MatchArm>) -> List<MatchArm> {
     // the arena `arg_tys` side-table (id-based successor of `SExpr.ty`).
     list_map(arms, (arm: MatchArm) -> {
         let new_guard_id = if arm.guard_id != null {
-            let g_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.guard_id!))
-            let gid = tc.nodes.reexpr(g_ann.node, arm.guard_id!)
-            tc.nodes.set_arg_ty(gid, g_ann.ty)
-            gid
+            annotate_expr_stamped(tc, arm.guard_id!)
         } else { null }
-        let b_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.body_id))
-        let new_body_id = tc.nodes.reexpr(b_ann.node, arm.body_id)
-        tc.nodes.set_arg_ty(new_body_id, b_ann.ty)
+        let new_body_id = annotate_expr_stamped(tc, arm.body_id)
         MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: new_body_id }
     })
 }
 
-/// Map `annotate_sexpr` over each `List<FieldInit>` value.
+/// Map `annotate_expr_stamped` over each `List<FieldInit>` value.
 fn annotate_field_inits(tc: TC, inits: List<FieldInit>) -> List<FieldInit> {
-    // B-final F4: annotate the value's node and stamp its resolved type into
-    // the arena's `arg_tys` side-table (keyed by the value_id) — the id-based
-    // successor of the boxed `SExpr.ty` slot that mono reads via `arg_ty_of`.
+    // Annotate the value's node and stamp its resolved type into the arena's
+    // `arg_tys` side-table (keyed by the value_id) — the id-based successor of
+    // the boxed `SExpr.ty` slot that mono reads via `arg_ty_of`.
     list_map(inits, (init: FieldInit) -> {
-        let annotated = annotate_sexpr(tc, tc.nodes.sexpr_of(init.value_id))
-        let new_id = tc.nodes.reexpr(annotated.node, init.value_id)
-        tc.nodes.set_arg_ty(new_id, annotated.ty)
-        FieldInit { name: init.name, value_id: new_id }
+        FieldInit { name: init.name, value_id: annotate_expr_stamped(tc, init.value_id) }
     })
 }
 
-/// Walk every `when` arm, annotating cond + body SExprs.
+/// Walk every `when` arm, annotating cond + body exprs.
 fn annotate_when_arms(tc: TC, arms: List<WhenArm>) -> List<WhenArm> {
-    // B-final F4c: annotate cond/body nodes and stamp their resolved types into
-    // the arena `arg_tys` side-table (keyed by id) — id-based successor of the
-    // boxed `SExpr.ty` slot.
+    // Annotate cond/body nodes and stamp their resolved types into the arena
+    // `arg_tys` side-table (keyed by id) — id-based successor of the boxed
+    // `SExpr.ty` slot.
     list_map(arms, (arm: WhenArm) -> {
         let new_cond_id = if arm.cond_id != null {
-            let c_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.cond_id!))
-            let cid = tc.nodes.reexpr(c_ann.node, arm.cond_id!)
-            tc.nodes.set_arg_ty(cid, c_ann.ty)
-            cid
+            annotate_expr_stamped(tc, arm.cond_id!)
         } else { null }
-        let b_ann = annotate_sexpr(tc, tc.nodes.sexpr_of(arm.body_id))
-        let new_body_id = tc.nodes.reexpr(b_ann.node, arm.body_id)
-        tc.nodes.set_arg_ty(new_body_id, b_ann.ty)
-        WhenArm { cond_id: new_cond_id, body_id: new_body_id }
+        WhenArm { cond_id: new_cond_id, body_id: annotate_expr_stamped(tc, arm.body_id) }
     })
 }
 

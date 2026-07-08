@@ -1,10 +1,14 @@
-// Phase 1 of Components V2 (vez6.1): exercise the new public AST
+// Phase 1 of Components V2 (vez6.1): exercise the public AST
 // introspection helpers in core/ast_introspect.av. Builds a small
-// AST by hand, then checks that the helpers find what's there and
-// don't find what's not.
+// AST body by hand (arena rows), then checks that the helpers find
+// what's there and don't find what's not.
 
-use @std.avrac.core.{Stmt, SStmt, StmtId, sstmt_dummy, Expr, CompConfigPair, ParamEntry, ValueType, TypeParamEntry}
-use @std.avrac.core.{has_fn, find_fn_body, children_of_type, all_children, config_lookup, config_has}
+use @std.avrac.core.{Stmt, StmtId, NodeStore, new_node_store, build_line_index, Expr, CompConfigPair, ParamEntry, ValueType, TypeParamEntry}
+use @std.avrac.core.{has_fn, find_fn_body, config_lookup, config_has}
+
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
 
 // Build a fn-decl statement for testing.
 fn mk_fn(name: string) -> Stmt {
@@ -14,34 +18,34 @@ fn mk_fn(name: string) -> Stmt {
     Stmt.Function(name, empty_tp, empty_p, ValueType.Void, empty_body)
 }
 
-// Build a ComponentBlock for testing.
-fn mk_block(comp: string, inst: string) -> Stmt {
-    let empty: List<CompConfigPair> = []
-    let empty_body: List<StmtId> = []
-    Stmt.ComponentBlock(comp, inst, empty, empty_body)
-}
-
-// `let body = [fn run() {}, fn drop() {}, flag a {}, flag b {}, arg target {}]`
-fn sample_body() -> List<SStmt> {
+// `let body = [fn run() {}, fn drop() {}]` as arena rows in `store`.
+fn sample_body(store: NodeStore) -> List<StmtId> {
     [
-        sstmt_dummy(mk_fn("run")),
-        sstmt_dummy(mk_fn("drop")),
-        sstmt_dummy(mk_block("flag", "a")),
-        sstmt_dummy(mk_block("flag", "b")),
-        sstmt_dummy(mk_block("arg", "target")),
+        store.stmts.add_leaf(mk_fn("run")),
+        store.stmts.add_leaf(mk_fn("drop")),
     ]
 }
 
 spec "ast_introspect.has_fn" {
     given "a body with run + drop fns" {
-        then "finds run" { has_fn(sample_body(), "run") }
-        then "finds drop" { has_fn(sample_body(), "drop") }
-        then "doesn't find missing fn" { !has_fn(sample_body(), "missing") }
+        then "finds run" {
+            let store = ts()
+            has_fn(store, sample_body(store), "run")
+        }
+        then "finds drop" {
+            let store = ts()
+            has_fn(store, sample_body(store), "drop")
+        }
+        then "doesn't find missing fn" {
+            let store = ts()
+            !has_fn(store, sample_body(store), "missing")
+        }
     }
     given "an empty body" {
         then "finds nothing" {
-            let empty: List<SStmt> = []
-            !has_fn(empty, "anything")
+            let store = ts()
+            let empty: List<StmtId> = []
+            !has_fn(store, empty, "anything")
         }
     }
 }
@@ -49,42 +53,12 @@ spec "ast_introspect.has_fn" {
 spec "ast_introspect.find_fn_body" {
     given "a body with named fns" {
         then "returns empty for the (empty) run body" {
-            find_fn_body(sample_body(), "run").length == 0
+            let store = ts()
+            find_fn_body(store, sample_body(store), "run").length == 0
         }
         then "returns empty when fn is missing" {
-            find_fn_body(sample_body(), "missing").length == 0
-        }
-    }
-}
-
-spec "ast_introspect.children_of_type" {
-    given "a body with two flag and one arg child" {
-        then "finds 2 flag children" {
-            children_of_type(sample_body(), "flag").length == 2
-        }
-        then "finds 1 arg child" {
-            children_of_type(sample_body(), "arg").length == 1
-        }
-        then "finds 0 nonexistent children" {
-            children_of_type(sample_body(), "nope").length == 0
-        }
-        then "returns flag instances in source order" {
-            children_of_type(sample_body(), "flag")[0].instance == "a"
-        }
-        then "second flag is 'b'" {
-            children_of_type(sample_body(), "flag")[1].instance == "b"
-        }
-    }
-}
-
-spec "ast_introspect.all_children" {
-    given "a mixed body" {
-        then "returns 3 component-block children (2 flag + 1 arg)" {
-            all_children(sample_body()).length == 3
-        }
-        then "skips non-ComponentBlock statements (the fn decls)" {
-            // Body has 5 stmts (2 fns + 3 blocks); only 3 blocks counted.
-            all_children(sample_body()).length == 3
+            let store = ts()
+            find_fn_body(store, sample_body(store), "missing").length == 0
         }
     }
 }

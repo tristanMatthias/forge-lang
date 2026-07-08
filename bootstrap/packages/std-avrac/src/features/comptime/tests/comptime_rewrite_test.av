@@ -3,8 +3,8 @@
 // folded literal. Builds small ASTs by hand, runs rewrite_program_ids,
 // asserts the output AST matches the expected post-fold shape.
 
-use @std.avrac.core.{NodeStore, StmtId, ExprId, new_node_store, build_line_index, Stmt, SStmt, Expr, SExpr, sexpr_dummy, sstmt_dummy, ParamEntry, ValueType, TypeParamEntry, BinOp, Annotation}
-use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, rewrite_program_ids, collect_comptime_fns, comptime_registry_new}
+use @std.avrac.core.{NodeStore, StmtId, ExprId, new_node_store, build_line_index, Stmt, Expr, ParamEntry, ValueType, TypeParamEntry, BinOp, Annotation}
+use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, rewrite_program_ids, collect_comptime_fns_ids, comptime_registry_new}
 
 /// Fresh empty store for inline-AST probes — F2 renderers resolve
 /// flipped pattern ids through it (never read for id-free nodes).
@@ -37,7 +37,7 @@ fn mk_add_decl(ws: NodeStore) -> Stmt {
 
 // Helpers to build call exprs. Post-flip the callee is an ExprId and
 // the args are `List<ExprId>` — both allocated into `ws`, the SAME
-// store `collect_comptime_fns`/`rewrite_program_ids` resolve ids through.
+// store `collect_comptime_fns_ids`/`rewrite_program_ids` resolve ids through.
 fn mk_call(ws: NodeStore, name: string, args: List<ExprId>) -> Expr {
     Expr.Call(ws.exprs.add_leaf(Expr.Ident(name)), args)
 }
@@ -68,12 +68,12 @@ fn number_text_of(e: Expr) -> string {
 }
 
 // Build a program: [@comptime fn add(...) {...}, let z = add(2, 3)]
-fn program_with_call(ws: NodeStore) -> List<SStmt> {
+fn program_with_call(ws: NodeStore) -> List<StmtId> {
     let call_args = args2(ws, Expr.Number("2"), Expr.Number("3"))
     let let_stmt = Stmt.Let("z", ValueType.Unknown, ws.exprs.add_leaf(mk_call(ws, "add", call_args)))
     [
-        sstmt_dummy(mk_add_decl(ws)),
-        sstmt_dummy(let_stmt),
+        ws.stmts.add_leaf(mk_add_decl(ws)),
+        ws.stmts.add_leaf(let_stmt),
     ]
 }
 
@@ -81,19 +81,19 @@ spec "comptime.rewrite_program_ids: folds top-level call" {
     then "let z = add(2, 3) becomes let z = 5 after rewrite" {
         let ws = ts()
         let prog = program_with_call(ws)
-        let reg = collect_comptime_fns(prog, ws)
-        let rewritten = rewrite_program_ids(ws.rows_of(prog), reg)
+        let reg = collect_comptime_fns_ids(prog, ws)
+        let rewritten = rewrite_program_ids(prog, reg)
         // Position 1 is the let stmt (position 0 is the @comptime fn).
         let init = let_init_of(ws, nth_stmt(ws, rewritten, 1))
         init != null && number_text_of(init!) == "5"
     }
     then "non-call expressions are unchanged" {
         let ws = ts()
-        let prog: List<SStmt> = [
-            sstmt_dummy(Stmt.Let("x", ValueType.Unknown, ws.exprs.add_leaf(Expr.Number("42")))),
+        let prog: List<StmtId> = [
+            ws.stmts.add_leaf(Stmt.Let("x", ValueType.Unknown, ws.exprs.add_leaf(Expr.Number("42")))),
         ]
-        let reg = collect_comptime_fns(prog, ws)
-        let rewritten = rewrite_program_ids(ws.rows_of(prog), reg)
+        let reg = collect_comptime_fns_ids(prog, ws)
+        let rewritten = rewrite_program_ids(prog, reg)
         let init = let_init_of(ws, nth_stmt(ws, rewritten, 0))
         init != null && number_text_of(init!) == "42"
     }
@@ -102,9 +102,9 @@ spec "comptime.rewrite_program_ids: folds top-level call" {
         let ws = ts()
         let call_args = args2(ws, Expr.Number("2"), Expr.Number("3"))
         let let_stmt = Stmt.Let("z", ValueType.Unknown, ws.exprs.add_leaf(mk_call(ws, "plain_fn", call_args)))
-        let prog: List<SStmt> = [sstmt_dummy(let_stmt)]
+        let prog: List<StmtId> = [ws.stmts.add_leaf(let_stmt)]
         let reg = comptime_registry_new(ws)
-        let rewritten = rewrite_program_ids(ws.rows_of(prog), reg)
+        let rewritten = rewrite_program_ids(prog, reg)
         let init = let_init_of(ws, nth_stmt(ws, rewritten, 0))
         // Should still be a Call, not a Number.
         match init! {
@@ -120,12 +120,12 @@ spec "comptime.rewrite_program_ids: bottom-up folds nested calls" {
         let inner = mk_call(ws, "add", args2(ws, Expr.Number("1"), Expr.Number("2")))
         let outer = mk_call(ws, "add", args2(ws, inner, Expr.Number("3")))
         let let_stmt = Stmt.Let("z", ValueType.Unknown, ws.exprs.add_leaf(outer))
-        let prog: List<SStmt> = [
-            sstmt_dummy(mk_add_decl(ws)),
-            sstmt_dummy(let_stmt),
+        let prog: List<StmtId> = [
+            ws.stmts.add_leaf(mk_add_decl(ws)),
+            ws.stmts.add_leaf(let_stmt),
         ]
-        let reg = collect_comptime_fns(prog, ws)
-        let rewritten = rewrite_program_ids(ws.rows_of(prog), reg)
+        let reg = collect_comptime_fns_ids(prog, ws)
+        let rewritten = rewrite_program_ids(prog, reg)
         let init = let_init_of(ws, nth_stmt(ws, rewritten, 1))
         init != null && number_text_of(init!) == "6"
     }
@@ -140,12 +140,12 @@ spec "comptime.rewrite_program_ids: descends into fn bodies" {
         let empty_tp2: List<TypeParamEntry> = []
         let empty_p: List<ParamEntry> = []
         let outer_fn = Stmt.Function("outer", empty_tp2, empty_p, ValueType.Int, outer_body)
-        let prog: List<SStmt> = [
-            sstmt_dummy(mk_add_decl(ws)),
-            sstmt_dummy(outer_fn),
+        let prog: List<StmtId> = [
+            ws.stmts.add_leaf(mk_add_decl(ws)),
+            ws.stmts.add_leaf(outer_fn),
         ]
-        let reg = collect_comptime_fns(prog, ws)
-        let rewritten = rewrite_program_ids(ws.rows_of(prog), reg)
+        let reg = collect_comptime_fns_ids(prog, ws)
+        let rewritten = rewrite_program_ids(prog, reg)
         // After rewrite: outer's body should be `return 5`.
         let outer_after = nth_stmt(ws, rewritten, 1)
         match outer_after {

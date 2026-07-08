@@ -57,7 +57,7 @@ use @std.process.{bytes_reader, bytes_builder}
 use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
-use @std.avrac.fmt.{fmt_stmt_list}
+use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
@@ -75,8 +75,8 @@ use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source}
-use @std.avrac.core.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, SStmt, Expr, sstmt_dummy}
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, program_from_store, reconstruct_program, StmtId, l1_sidetable_summary}
+use @std.avrac.core.{render_expr, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
@@ -222,30 +222,23 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext)
 /// the caller continues from there.
 fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     let parsed = parse_program_source(source)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) {
             render_bag_ctx(ctx, parsed.bag)
         }
         fail(parsed.error_message)
     }
-    let stmts = parsed.stmts!
-    // B1: the parser IS the arena producer. Every production allocated its row
-    // (typed-id edges in walker order + byte-offset span side-tables + provenance)
-    // during the parse itself, and the top-level rows were recorded as roots —
-    // there is no separate ingest walk. The program is served FROM that store via
-    // `program_from_store` (stored roots, line/col recomputed from the span
-    // side-table on demand, `from_macro` restored from provenance), byte-identical
-    // to the direct parse output (diff-test is the oracle): passes are unchanged.
-    // `program_from_store` (not the edge-rebuilt `reconstruct_program`) is used
-    // here because it keeps each NESTED wrapper's `from_macro`, which the edge
-    // round-trip flattens. Serve-path equivalence with the retired ingest walk is
-    // pinned by the parity battery (parse/tests/b1_native_stmt_test.av), which
-    // keeps `ingest_program` alive as its test oracle.
+    let root_ids = parsed.ids!
+    // B-final: the parser IS the arena producer. Every production allocated its
+    // row (typed-id edges in walker order + byte-offset span side-tables +
+    // provenance) during the parse itself, and the top-level rows were recorded
+    // as roots. The program is those roots — every downstream pass takes
+    // (roots, store) and reads nodes/positions/provenance straight from the
+    // arena; there is no boxed serving step (`program_from_store` retired).
     let store = parsed.store
-    let file = if stmts.length > 0 { stmts[0].file } else { "" }
-    // AVRA_L1_INGEST surfaces the arena diagnostics + the EDGE round-trip fidelity
-    // probe (`reconstruct_program` ≅ parse output via render-equality). Debug-only
-    // and noisy, so gated; the canonical serve-path above runs unconditionally.
+    // AVRA_L1_INGEST surfaces the parser's arena diagnostics (node counts,
+    // span side-table). Debug-only and noisy, so gated; the canonical
+    // serve-path above runs unconditionally.
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
         if store.stmts.count() > 0 {
@@ -255,19 +248,17 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
             println("[l1-ingest] last stmt span [${string(sp.lo)},${string(sp.hi)}) line ${string(lc.line)} col ${string(lc.col)}")
         }
         println(l1_sidetable_summary(store))
-        let recon_faithful = render_stmt_list(store, reconstruct_program(store, file)) == render_stmt_list(store, stmts)
-        println("[l1-reconstruct] faithful=${if recon_faithful { "y" } else { "n" }}")
     }
-    ParsedProgram { stmts: program_from_store(store, file), store }
+    ParsedProgram { ids: root_ids, store }
 }
 
-/// What `parse_or_fail` hands back: the boxed program (served from the arena)
-/// plus the parser's own `NodeStore`, so early passes can read the arena
-/// instead of re-walking the boxed tree (first consumer: the quote presence
-/// scan). The store was built during the parse of exactly these `stmts` — a
-/// caller that merges in statements parsed elsewhere (sibling-file loading)
-/// must not scan the store as if it covered the merged program.
-type ParsedProgram = { stmts: List<SStmt>, store: NodeStore }
+/// What `parse_or_fail` hands back: the program's top-level statement
+/// ids plus the parser's own `NodeStore`, so early passes read the
+/// arena directly (first consumer: the quote presence scan). The store
+/// was built during the parse of exactly these `ids` — a caller that
+/// merges in statements parsed elsewhere (sibling-file loading) must
+/// not scan the store as if it covered the merged program.
+type ParsedProgram = { ids: List<StmtId>, store: NodeStore }
 
 /// Same shape as parse_or_fail but for the expression parser.
 /// Used by cmd_expr / cmd_eval — both want F-code rendering on a
@@ -763,7 +754,7 @@ fn render_unit_chain(units: List<Unit>) -> string {
 // contents), extracts a per-file UnitMetadata slice, and writes it to
 // `<file>.meta.bin`. Entry-point file is skipped — its sidecar is
 // the whole-unit slice consumers expect, written upstream.
-fn emit_per_file_metas(files: List<string>, stmts: List<SStmt>, unit_name: string, entry_path: string, store: NodeStore) {
+fn emit_per_file_metas(files: List<string>, stmts: List<StmtId>, unit_name: string, entry_path: string, store: NodeStore) {
     mut i = 0
     while i < files.length {
         let file_path = files[i]
@@ -1259,9 +1250,9 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
             i = i + 1
             continue
         }
-        // Per-mod target prefix: substring match against SStmt.file
-        // values, which the resolver stores relative to the cwd of the
-        // invoking compile. Running `bs2 compile` from `project_dir`
+        // Per-mod target prefix: substring match against each row's
+        // recorded source file, which the resolver stores relative to the
+        // cwd of the invoking compile. Running `bs2 compile` from `project_dir`
         // makes paths look like `src/<sub>/foo.av`, so the target
         // prefix matches exactly.
         let target = "src/${sub_name}/"
@@ -2621,11 +2612,11 @@ fn compile_test_unit_to(inputs: BuildInputs, test_paths: List<string>, args: Tes
 /// Parse AVRA_LIB_OBJS into a list of .o paths. Colon-separated for
 /// shell-pipeline-friendliness (mirrors PATH / LD_LIBRARY_PATH).
 /// Empty / unset env var → empty list.
-/// Concatenate two List<SStmt> values, preserving order. Used by the
+/// Concatenate two List<StmtId> bodies, preserving order. Used by the
 /// --module_path compile path to append dir-as-module siblings to
 /// the entry file's parsed body before wrapping in Stmt.Module.
-fn concat_stmt_lists(left: List<SStmt>, right: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn concat_stmt_lists(left: List<StmtId>, right: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
     while i < left.length {
         out.push(left[i])
@@ -3789,12 +3780,12 @@ fn main() {
         }
         "program" -> {
             let parsed_p = parse_or_fail(source, render_ctx(false, source, path))
-            println(render_stmt_list(parsed_p.store, parsed_p.stmts))
+            println(render_stmt_ids(parsed_p.store, parsed_p.ids))
             return
         }
         "metadata_show" -> {
             // xtvc consumer-side smoke: read a .meta.bin from disk,
-            // synthesize the List<SStmt>, and print it. Same renderer
+            // synthesize the arena rows, and print them. Same renderer
             // `program` uses — round-trippable through the eyes.
             if !file_exists(path) { fail("error: file not found: ${path}") }
             let m = metadata_read(path)
@@ -3803,10 +3794,10 @@ fn main() {
             }
             println("// metadata for unit `${m.unit_name}`")
             println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
-            // Metadata-synthesized decls carry no pattern ids — an empty
-            // store satisfies the renderer without ever being read.
+            // Synthesis allocates the reconstructed decls into this fresh
+            // store; the id-native renderer reads them straight back out.
             let show_store = new_node_store(build_line_index(""))
-            println(render_stmt_list(show_store, synthesize_unit_stmts(m, show_store)))
+            println(render_stmt_ids(show_store, synthesize_unit_stmts(m, show_store)))
             return
         }
         "eval" -> {
@@ -3828,13 +3819,13 @@ fn main() {
             let ctx = render_ctx(check_json, check_source, check_path)
 
             let parsed_prog = parse_or_fail(check_source, ctx)
-            let parsed_stmts = parsed_prog.stmts
+            let parsed_stmts = parsed_prog.ids
             let check_dir = modules_dirname(check_path)
             let check_pkg = load_package_config(check_dir)
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
@@ -3857,8 +3848,7 @@ fn main() {
             // a parse error in cmd_run would print only a bare one-line
             // message ("parse error at L:C: …") with no diagnostic frame.
             let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
-            let parsed_stmts = parsed_prog.stmts
-            let result = execute_program_stmts(parsed_stmts, parsed_prog.store)
+            let result = execute_program_stmts(parsed_prog.ids, parsed_prog.store)
             if result.had_error || result.value == null {
                 fail(result.error_message)
             }
@@ -3871,11 +3861,11 @@ fn main() {
             // For v1.0: no auto-fixes are implemented yet, so we just report that.
             let ctx = render_ctx(false, source, path)
             let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.stmts
+            let parsed_stmts = parsed_prog.ids
             let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed_prog.store.rows_of(parsed_stmts), entry_dir, empty_loaded_list(), parsed_prog.store)
+            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
             fail_on_module_resolve_error(mod_resolved, ctx)
-            let named = resolve_names(parsed_prog.store.sstmts_of(mod_resolved.stmts), parsed_prog.store)
+            let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
             render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
             println("no auto-fixes available")
             return
@@ -3884,7 +3874,7 @@ fn main() {
             // Ticket c5w: code formatter (spec Axis 27.1).
             // Avra syntax.
             let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
-            println(fmt_stmt_list(parsed_fmt.store, parsed_fmt.stmts, 0))
+            println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.ids, 0))
             return
         }
         "expand" -> {
@@ -3893,15 +3883,15 @@ fn main() {
             // `@comptime` calls produced. Pipeline runs parse →
             // lower_quotes → desugar → resolve_module_files →
             // expand_components → resolve_names → expand_macros →
-            // run_comptime, then formats with fmt_stmt_list.
+            // run_comptime, then formats with fmt_stmt_ids.
             //
             // The output is valid Avra source that compiles to the
             // same program as the original — the P7 (visible magic)
             // promise made tangible.
             let ctx = render_ctx(false, source, path)
             let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.stmts
-            let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
+            let parsed_stmts = parsed_prog.ids
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
@@ -3910,7 +3900,7 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store)
-            println(fmt_stmt_list(parsed_prog.store, parsed_prog.store.sstmts_of(post_comptime), 0))
+            println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
             return
         }
         "test" -> {
@@ -3919,8 +3909,8 @@ fn main() {
             // and report the output path for linking and execution.
             let ctx = render_ctx(false, source, path)
             let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.stmts
-            let post_quote = lower_quotes_via_store(parsed_prog.store.rows_of(parsed_stmts), parsed_prog.store)
+            let parsed_stmts = parsed_prog.ids
+            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
             let desugared = desugar_program(post_quote, parsed_prog.store)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
@@ -4079,7 +4069,7 @@ fn main() {
         let ctx = render_ctx(json_output, csource, cpath)
 
         let parsed_prog = parse_or_fail(csource, ctx)
-        let parsed_stmts = parsed_prog.stmts
+        let parsed_stmts = parsed_prog.ids
         let t_parse = avra_uptime_ms()
         if stop_after_matches(stop_after, "parse") { return }
         // 2f54: when --module_path is set, wrap the parsed body in a
@@ -4121,12 +4111,12 @@ fn main() {
                 if dir_load.had_error {
                     parsed_stmts
                 } else {
-                    concat_stmt_lists(parsed_stmts, parsed_prog.store.sstmts_of(dir_load.stmts))
+                    concat_stmt_lists(parsed_stmts, dir_load.stmts)
                 }
             } else {
                 parsed_stmts
             }
-            let one: List<SStmt> = [sstmt_dummy(Stmt.Module(module_path, parsed_prog.store.rows_of(body_with_siblings)))]
+            let one: List<StmtId> = [parsed_prog.store.stmts.add_leaf(Stmt.Module(module_path, body_with_siblings))]
             one
         } else {
             parsed_stmts
@@ -4142,7 +4132,7 @@ fn main() {
         // single-store invariant), so the flat store scan sees their
         // quotes too — the boxed fallback the pre-F0 pipeline needed
         // here is gone.
-        let post_quote_stmts = lower_quotes_via_store(parsed_prog.store.rows_of(pre_desugar_stmts), parsed_prog.store)
+        let post_quote_stmts = lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
         let desugared = desugar_program(post_quote_stmts, parsed_prog.store)
         let t_desugar = avra_uptime_ms()
@@ -4184,7 +4174,7 @@ fn main() {
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return }
         // Monomorphize: replace generic declarations with concrete specializations.
-        // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
+        // Uses the type-annotated AST from typeck so inference reads each node's resolved type.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
         let t_mono = avra_uptime_ms()
         render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
@@ -4219,7 +4209,7 @@ fn main() {
                 basename_no_ext(cpath)
             }
             let fp = bytes_from_hex(sha256_hex(csource))
-            let unit_meta = extract_unit_metadata(unit_name, fp, parsed_prog.store.sstmts_of(named.stmts), parsed_prog.store)
+            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             // 2wfp: when compiling a real package (avra.toml present),
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
@@ -4246,9 +4236,8 @@ fn main() {
             // Entry-point file is skipped (its meta.bin is the
             // whole-unit slice consumers expect).
             if per_file_metadata {
-                let named_ss = parsed_prog.store.sstmts_of(named.stmts)
-                let files = collect_source_files(parsed_prog.store, named_ss)
-                emit_per_file_metas(files, named_ss, unit_name, cpath, parsed_prog.store)
+                let files = collect_source_files(parsed_prog.store, named.stmts)
+                emit_per_file_metas(files, named.stmts, unit_name, cpath, parsed_prog.store)
             }
         }
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
@@ -4277,7 +4266,7 @@ fn main() {
         // import-graph reachability instead of filesystem find.
         // Decoupled from --emit_metadata so it's usable on its own.
         if list_files_path != "" {
-            let files = collect_source_files(parsed_prog.store, parsed_prog.store.sstmts_of(named.stmts))
+            let files = collect_source_files(parsed_prog.store, named.stmts)
             mut buf = ""
             mut fi = 0
             while fi < files.length {

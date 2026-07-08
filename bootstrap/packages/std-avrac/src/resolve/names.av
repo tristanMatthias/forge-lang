@@ -47,7 +47,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, SExpr, SStmt, Variant, sexpr, sexpr_at, sexpr_dummy, sstmt, sstmt_at, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, Variant, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
@@ -228,12 +228,10 @@ fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
 
 /// Root entry for module tree construction. Recurses on every
 /// `Stmt.Module`, building children + sibling links.
-fn build_module_tree(store: NodeStore, stmts: List<SStmt>, parent_path: string, tree: ModuleNode) -> ModuleNode {
+fn build_module_tree(store: NodeStore, ids: List<StmtId>, parent_path: string, tree: ModuleNode) -> ModuleNode {
     mut cur = tree
-    mut i = 0
-    while i < stmts.length {
-        cur = build_tree_from_stmt(store, stmts[i].node, parent_path, cur)
-        i = i + 1
+    for id in ids {
+        cur = build_tree_from_stmt(store, store.stmts.get(id), parent_path, cur)
     }
     cur
 }
@@ -245,11 +243,10 @@ fn build_tree_from_stmt(store: NodeStore, stmt: Stmt, parent_path: string, tree:
     match stmt {
         .Module(name, body) -> {
             let mod_path = type_qualified_name(parent_path, name)
-            let wrapped = store.sstmts_of(body)
             // Collect items in this module
-            let items = collect_module_items(store, wrapped, mod_path)
+            let items = collect_module_items(store, body, mod_path)
             // Recursively build tree for nested modules
-            let children = build_module_tree(store, wrapped, mod_path, ModuleNode.End)
+            let children = build_module_tree(store, body, mod_path, ModuleNode.End)
             // Add this module to the tree
             ModuleNode.Node(name, mod_path, items, children, tree)
         }
@@ -264,12 +261,10 @@ fn build_tree_from_stmt(store: NodeStore, stmt: Stmt, parent_path: string, tree:
 /// the resulting list preserves source order (matching the
 /// previous cons-list which was built head-first by walking the
 /// tail recursively).
-fn collect_module_items(store: NodeStore, stmts: List<SStmt>, mod_path: string) -> List<ModuleItemEntry> {
+fn collect_module_items(store: NodeStore, ids: List<StmtId>, mod_path: string) -> List<ModuleItemEntry> {
     mut out: List<ModuleItemEntry> = []
-    mut i = 0
-    while i < stmts.length {
-        collect_item_from_stmt(store, stmts[i].node, mod_path, false, out)
-        i = i + 1
+    for id in ids {
+        collect_item_from_stmt(store, store.stmts.get(id), mod_path, false, out)
     }
     out
 }
@@ -395,8 +390,8 @@ fn annotation_has_export(annotations: List<Annotation>) -> bool {
 
 /// Top-level entry for use-alias resolution: process every `use`
 /// statement, building an AliasEntry list keyed off short names.
-fn resolve_use_aliases(store: NodeStore, stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
-    resolve_use_aliases_in(store, stmts, tree, graph, "")
+fn resolve_use_aliases(store: NodeStore, ids: List<StmtId>, tree: ModuleNode, graph: ModuleGraph) -> UseResult {
+    resolve_use_aliases_in(store, ids, tree, graph, "")
 }
 
 /// Resolve `use` statements relative to a current module path.
@@ -408,22 +403,24 @@ fn resolve_use_aliases(store: NodeStore, stmts: List<SStmt>, tree: ModuleNode, g
 /// say `use core.{...}` and have it resolve to the sibling
 /// `@std.avrac.core.runtime` rather than failing because no such
 /// module exists at the program root.
-fn resolve_use_aliases_in(store: NodeStore, stmts: List<SStmt>, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
+fn resolve_use_aliases_in(store: NodeStore, ids: List<StmtId>, tree: ModuleNode, graph: ModuleGraph, current_module: string) -> UseResult {
     // Walk in reverse so accumulator semantics match the original
     // head-recursive cons-cell walk (which built the result on the
     // way back up the recursion).
     mut acc = UseResult { aliases: [], bag: bag_new() }
-    mut i = stmts.length - 1
+    mut i = ids.length - 1
     while i >= 0 {
-        let ss = stmts[i]
-        let unwrapped = match ss.node {
+        let id = ids[i]
+        let node = store.stmts.get(id)
+        let unwrapped = match node {
             .Annotated(_, inner) -> store.stmts.get(inner)
-            _ -> ss.node
+            _ -> node
         }
         acc = match unwrapped {
             .Use(mod_path, names) -> {
                 let canonical_path = dots_to_colons(mod_path)
-                let sp = span_at(0, 0, ss.line, ss.col, ss.file)
+                let p = store.stmt_pos(id)
+                let sp = span_at(0, 0, p.line, p.col, p.file)
                 // Graph is the source of truth for path resolution;
                 // each module's canonical path was captured at
                 // construction so the ancestor walk runs as a chain
@@ -621,12 +618,10 @@ fn concat_type_params(a: List<TypeParamEntry>, b: List<TypeParamEntry>) -> List<
 /// — declared_type_name qualifies them only DURING the rewrite — so the
 /// qualified key is computed here from the module path; an already-qualified
 /// name (re-resolve passes) is stored as-is with its short tail.
-fn collect_type_decl_tps(store: NodeStore, stmts: List<SStmt>, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
+fn collect_type_decl_tps(store: NodeStore, ids: List<StmtId>, mod_path: string, out_ref: List<TypeDeclTpEntry>) {
     mut out = out_ref
-    mut i = 0
-    while i < stmts.length {
-        collect_type_decl_tp_stmt(store, stmts[i].node, mod_path, out)
-        i = i + 1
+    for id in ids {
+        collect_type_decl_tp_stmt(store, store.stmts.get(id), mod_path, out)
     }
 }
 
@@ -635,7 +630,7 @@ fn collect_type_decl_tp_stmt(store: NodeStore, stmt: Stmt, mod_path: string, out
     match stmt {
         .TypeDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
         .EnumDecl(name, tp, _) -> { if tp.length > 0 { out.push(type_decl_tp_entry(mod_path, name, tp)) } }
-        .Module(name, body) -> collect_type_decl_tps(store, store.sstmts_of(body), type_qualified_name(mod_path, name), out)
+        .Module(name, body) -> collect_type_decl_tps(store, body, type_qualified_name(mod_path, name), out)
         .Annotated(_, inner) -> collect_type_decl_tp_stmt(store, store.stmts.get(inner), mod_path, out)
         _ -> {}
     }
@@ -749,10 +744,9 @@ fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<Al
 /// `typecheck_program` so synthetic fns can blame their macro in
 /// diagnostics (so07.3 / T3).
 export type NameResolveResult = {
-    // B-final: the post-resolve program vector is arena-id-native — the next
-    // pass (run_comptime) takes ids straight. `validate_scopes_after_expand`
-    // materialises it via `rows_of`; metadata consumers that still want
-    // wrappers bridge back with `sstmts_of`.
+    // The post-resolve program vector is arena-id-native — the next pass
+    // (run_comptime) takes ids straight, reading each node's position
+    // and payload from the shared store.
     stmts: List<StmtId>,
     had_error: int,
     error_message: string,
@@ -789,10 +783,10 @@ export type ResolverState = {
 /// pipeline can rebuild the decl context after macro expansion
 /// without re-running the use-site rewrite over already-resolved
 /// originals.
-export fn register_decls(stmts: List<SStmt>, store: NodeStore) -> ResolverState {
-    let tree = build_module_tree(store, stmts, "", ModuleNode.End)
-    let graph = build_graph_from_stmts(store, stmts)
-    let use_result = resolve_use_aliases(store, stmts, tree, graph)
+export fn register_decls(ids: List<StmtId>, store: NodeStore) -> ResolverState {
+    let tree = build_module_tree(store, ids, "", ModuleNode.End)
+    let graph = build_graph_from_stmts(store, ids)
+    let use_result = resolve_use_aliases(store, ids, tree, graph)
     let global_index_list = build_global_index_from_graph(graph.all_items)
     let global_index = global_item_reg_build(global_index_list)
     let reg = type_registry_new()
@@ -811,9 +805,9 @@ export fn register_decls(stmts: List<SStmt>, store: NodeStore) -> ResolverState 
 /// rewrites each Ident / type name to its canonical qualified form
 /// using the supplied `ResolverState`. Pure: returns a new stmt list,
 /// does not modify `stmts`.
-export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+export fn rewrite_uses(ids: List<StmtId>, state: ResolverState) -> List<StmtId> {
     mut tps: List<TypeDeclTpEntry> = []
-    collect_type_decl_tps(state.nodes, stmts, "", tps)
+    collect_type_decl_tps(state.nodes, ids, "", tps)
     let ctx = NameCtx {
         tree: state.tree,
         graph: state.graph,
@@ -826,7 +820,7 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
         type_params: [],
         type_decl_tps: tps,
     }
-    rewrite_stmt_list(ctx, stmts)
+    rewrite_stmt_ids(ctx, ids)
 }
 
 /// Partial re-resolve (step 4 of expand-pipeline doc): walks `stmts`
@@ -838,9 +832,9 @@ export fn rewrite_uses(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> 
 /// at quote-time with bare Idents that must be requalified against
 /// the post-expand registry. Recurses into Module bodies so a
 /// spliced fn inside a user module still gets rewritten.
-export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> List<SStmt> {
+export fn rewrite_uses_macro_only(ids: List<StmtId>, state: ResolverState) -> List<StmtId> {
     mut tps: List<TypeDeclTpEntry> = []
-    collect_type_decl_tps(state.nodes, stmts, "", tps)
+    collect_type_decl_tps(state.nodes, ids, "", tps)
     let ctx = NameCtx {
         tree: state.tree,
         graph: state.graph,
@@ -853,24 +847,24 @@ export fn rewrite_uses_macro_only(stmts: List<SStmt>, state: ResolverState) -> L
         type_params: [],
         type_decl_tps: tps,
     }
-    rewrite_macro_stmts(ctx, stmts)
+    rewrite_macro_stmts(ctx, ids)
 }
 
-fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    for ss in stmts {
-        if ss.from_macro {
-            out.push(ss with { node: rewrite_stmt(ctx, ss.node) })
+fn rewrite_macro_stmts(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in ids {
+        if ctx.nodes.is_from_macro(id) {
+            out.push(ctx.nodes.restmt(rewrite_stmt(ctx, ctx.nodes.stmts.get(id)), id))
         } else {
             // Descend into Module bodies so spliced stmts nested
             // inside a Module wrapper are still picked up.
-            match ss.node {
+            match ctx.nodes.stmts.get(id) {
                 .Module(name, body) -> {
                     let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name) }
-                    let new_body = rewrite_macro_stmts(mod_ctx, ctx.nodes.sstmts_of(body))
-                    out.push(ss with { node: Stmt.Module(name, ctx.nodes.rows_of(new_body)) })
+                    let new_body = rewrite_macro_stmts(mod_ctx, body)
+                    out.push(ctx.nodes.restmt(Stmt.Module(name, new_body), id))
                 }
-                _ -> out.push(ss)
+                _ -> out.push(id)
             }
         }
     }
@@ -889,9 +883,9 @@ fn rewrite_macro_stmts(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
 /// — additive, not a fresh rebuild. Avoids re-running
 /// `resolve_use_aliases` (which would re-emit any pre-existing
 /// import diagnostics and double-bag them).
-export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> ResolverState {
+export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> ResolverState {
     mut new_items: List<GraphItem> = []
-    collect_macro_items(state.nodes, stmts, "", new_items)
+    collect_macro_items(state.nodes, ids, "", new_items)
     if new_items.length == 0 { return state }
 
     // Augment graph.all_items by appending the new entries.
@@ -921,17 +915,17 @@ export fn register_macro_decls(state: ResolverState, stmts: List<SStmt>) -> Reso
     }
 }
 
-fn collect_macro_items(store: NodeStore, stmts: List<SStmt>, mod_path: string, acc: List<GraphItem>) {
+fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>) {
     mut out = acc
-    for ss in stmts {
-        match ss.node {
+    for id in ids {
+        match store.stmts.get(id) {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
-                collect_macro_items(store, store.sstmts_of(body), inner_path, out)
+                collect_macro_items(store, body, inner_path, out)
             }
             _ -> {
-                if ss.from_macro {
-                    collect_macro_item_from_stmt(store, ss.node, mod_path, out)
+                if store.is_from_macro(id) {
+                    collect_macro_item_from_stmt(store, store.stmts.get(id), mod_path, out)
                 }
             }
         }
@@ -985,7 +979,7 @@ fn collect_macro_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, 
 /// pipeline can splice macro-emitted decls and re-run `register_decls`
 /// over the spliced AST before scope validation runs.
 export type PreExpandResolve = {
-    stmts: List<SStmt>,
+    stmts: List<StmtId>,
     state: ResolverState,
     had_error: int,
     error_message: string,
@@ -1000,9 +994,9 @@ export type PreExpandResolve = {
 /// scope-validation runs over the call sites that reference it.
 /// Splitting the two halves lets `cli/main.av` interleave
 /// `expand_macros` between them.
-export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreExpandResolve {
-    let state = register_decls(stmts, store)
-    let rewritten = rewrite_uses(stmts, state)
+export fn resolve_names_pre_expand(ids: List<StmtId>, store: NodeStore) -> PreExpandResolve {
+    let state = register_decls(ids, store)
+    let rewritten = rewrite_uses(ids, state)
     let has_errors = bag_has_errors(state.bag)
     PreExpandResolve {
         stmts: rewritten,
@@ -1019,15 +1013,15 @@ export fn resolve_names_pre_expand(stmts: List<SStmt>, store: NodeStore) -> PreE
 ///
 /// Returns a full `NameResolveResult` so call sites can keep their
 /// existing bag-handling path unchanged after the split.
-export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState) -> NameResolveResult {
-    let resolved = resolve_program(stmts, state.nodes)
-    let used = collect_used_paths_stmts(state.nodes, stmts, [])
+export fn validate_scopes_after_expand(ids: List<StmtId>, state: ResolverState) -> NameResolveResult {
+    let resolved = resolve_program(ids, state.nodes)
+    let used = collect_used_paths_stmt_ids(state.nodes, ids, [])
     let unused_bag = check_unused_imports(state.aliases, used)
     let merged_bag = bag_merge(bag_merge(state.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     let no_origins: List<MacroFnOrigin> = []
     NameResolveResult {
-        stmts: state.nodes.rows_of(stmts),
+        stmts: ids,
         had_error: has_errors,
         error_message: if has_errors {
             if resolved.had_error { resolved.error_message } else { "module resolution errors" }
@@ -1044,24 +1038,12 @@ export fn validate_scopes_after_expand(stmts: List<SStmt>, state: ResolverState)
 /// imports. Composed from `resolve_names_pre_expand` and
 /// `validate_scopes_after_expand`; pipelines that interleave
 /// `expand_macros` call the halves directly.
-export fn resolve_names(stmts: List<SStmt>, store: NodeStore) -> NameResolveResult {
-    let pre = resolve_names_pre_expand(stmts, store)
+export fn resolve_names(ids: List<StmtId>, store: NodeStore) -> NameResolveResult {
+    let pre = resolve_names_pre_expand(ids, store)
     validate_scopes_after_expand(pre.stmts, pre.state)
 }
 
 // ── Statement rewriting ──
-
-/// Rewrite every stmt in a list, threading the NameCtx through.
-fn rewrite_stmt_list(ctx: NameCtx, stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        out.push(sstmt_at(rewrite_stmt(ctx, ss.node), ss.line, ss.col, ss.file))
-        i = i + 1
-    }
-    out
-}
 
 /// Rewrite an expression row: resolve, qualify, re-allocate (fresh
 /// row inherits the original's span).
@@ -1112,7 +1094,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Match(subject, arms) -> .Match(rewrite_expr_id(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
             let mod_path = type_qualified_name(ctx.current_module, name)
-            let mod_uses = resolve_use_aliases_in(ctx.nodes, ctx.nodes.sstmts_of(body), ctx.tree, ctx.graph, mod_path)
+            let mod_uses = resolve_use_aliases_in(ctx.nodes, body, ctx.tree, ctx.graph, mod_path)
             Stmt.Module(name, rewrite_stmt_ids(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
         .TypeDecl(name, tp, fields) -> {
@@ -1761,19 +1743,7 @@ fn used_has(set: List<string>, path: string) -> bool {
 }
 
 // Collect all QualifiedIdent paths from the rewritten AST.
-/// Walk a List<SStmt>, accumulating every QualifiedIdent path the
-/// rewrite pass emitted.
-fn collect_used_paths_stmts(store: NodeStore, stmts: List<SStmt>, acc: List<string>) -> List<string> {
-    mut cur = acc
-    mut i = 0
-    while i < stmts.length {
-        cur = collect_used_paths_stmt(store, stmts[i].node, cur)
-        i = i + 1
-    }
-    cur
-}
-
-/// Per-stmt branch of `collect_used_paths_stmts`.
+/// Per-stmt branch of `collect_used_paths_stmt_ids`.
 fn collect_used_paths_stmt(store: NodeStore, stmt: Stmt, acc: List<string>) -> List<string> {
     match stmt {
         .Expr(e) -> collect_used_paths_expr(store, store.exprs.get(e), acc)

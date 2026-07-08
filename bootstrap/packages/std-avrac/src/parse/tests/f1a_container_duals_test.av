@@ -8,11 +8,11 @@
 // ValueType/TypeId dual).
 
 use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
-use @std.avrac.core.{Expr, Stmt, SStmt, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
+use @std.avrac.core.{Expr, Stmt, StmtId, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
 
 /// Dig the first statement of the first fn's body out of a served program.
-fn first_body_stmt(store: NodeStore, stmts: List<SStmt>) -> Stmt {
-    match stmt_unwrap(store, stmts[0].node) {
+fn first_body_stmt(store: NodeStore, stmts: List<StmtId>) -> Stmt {
+    match stmt_unwrap(store, store.stmts.get(stmts[0])) {
         .Function(_, _, _, _, body) -> stmt_unwrap(store, store.stmts.get(body[0]))
         _ -> Stmt.NoOp
     }
@@ -56,8 +56,8 @@ fn when_conds_mirror() -> bool {
 fn select_arm_mirrors() -> bool {
     let src = "fn f(c: Channel<int>) -> int {\n    select {\n        v <- c -> {\n            handle(v)\n            log(v)\n        }\n    }\n    0\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match first_body_stmt(r.store, r.stmts!) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match first_body_stmt(r.store, r.ids!) {
         .Select(arms) -> {
             if arms.length != 1 { return false }
             let arm = arms[0]
@@ -76,8 +76,8 @@ fn select_arm_mirrors() -> bool {
 fn annotation_args_mirror() -> bool {
     let src = "@limit(3 + 4, name)\nfn f() -> int { 1 }\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match r.stmts![0].node {
+    if r.had_error != 0 || r.ids == null { return false }
+    match r.store.stmts.get(r.ids![0]) {
         .Annotated(annots, _) -> {
             if annots.length != 1 { return false }
             let a = annots[0]
@@ -96,8 +96,8 @@ fn annotation_args_mirror() -> bool {
 fn doc_annotation_mirrors() -> bool {
     let src = "/// adds one\nfn inc(x: int) -> int { x + 1 }\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match r.stmts![0].node {
+    if r.had_error != 0 || r.ids == null { return false }
+    match r.store.stmts.get(r.ids![0]) {
         .Annotated(annots, _) -> {
             let a = annots[0]
             if a.arg_ids == none || a.arg_ids!.length != 1 { return false }
@@ -110,8 +110,8 @@ fn doc_annotation_mirrors() -> bool {
 fn comp_config_mirrors() -> bool {
     let src = "component counter {\n    config {\n        start: int = 5\n        label: string\n    }\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match stmt_unwrap(r.store, r.stmts![0].node) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.ids![0])) {
         .ComponentDef(_, _, config, _, _, _) -> {
             if config.length != 2 { return false }
             let with_default = config[0]
@@ -170,8 +170,8 @@ spec "F1a duals: component config rows carry type + default ids" {
 fn field_init_duals_mirror() -> bool {
     let src = "fn f() -> int {\n    let p = P { x: 1 + 2, y }\n    0\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match first_body_stmt(r.store, r.stmts!) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match first_body_stmt(r.store, r.ids!) {
         .Let(_, _, init) -> match r.store.exprs.get(init) {
             .StructLit(_, inits) -> {
                 if inits.length != 2 { return false }
@@ -190,8 +190,8 @@ fn field_init_duals_mirror() -> bool {
 fn table_row_field_duals_mirror() -> bool {
     let src = "fn f() -> int {\n    let rows = table {\n        a | b\n        1 | 2\n    }\n    0\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match first_body_stmt(r.store, r.stmts!) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match first_body_stmt(r.store, r.ids!) {
         .Let(_, _, init) -> match r.store.exprs.get(init) {
             .ListLit(rows) -> match r.store.exprs.get(rows[0]) {
                 .StructLit(_, inits) -> {
@@ -289,8 +289,8 @@ fn unguarded_quote_arm_guard_null() -> bool {
 fn table_arm_pattern_dual_mirrors() -> bool {
     let src = "fn f(s: int) -> int {\n    let r = match s table {\n        pattern | label\n        1 | \"one\"\n    }\n    0\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match first_body_stmt(r.store, r.stmts!) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match first_body_stmt(r.store, r.ids!) {
         .Let(_, _, init) -> match r.store.exprs.get(init) {
             .MatchExpr(_, arms) -> {
                 if arms.length != 1 { return false }
@@ -339,8 +339,8 @@ spec "F1c: match arms carry a dual pattern + arena-only guard/body ids" {
 fn fn_param_duals_mirror() -> bool {
     let src = "fn add(x: int, y) -> int { x }\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match stmt_unwrap(r.store, r.stmts![0].node) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.ids![0])) {
         .Function(_, _, params, _, _) -> {
             if params.length != 2 { return false }
             // x carries the written annotation; y carries the Int default —
@@ -358,8 +358,8 @@ fn fn_param_duals_mirror() -> bool {
 fn method_self_param_dual_mirrors() -> bool {
     let src = "type P = { x: int }\nimpl P {\n    fn get(self) -> int { 1 }\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match stmt_unwrap(r.store, r.stmts![1].node) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.ids![1])) {
         .Impl(_, methods) -> match stmt_unwrap(r.store, r.store.stmts.get(methods[0])) {
             .Function(_, _, params, _, _) -> {
                 if params.length != 1 { return false }
@@ -401,8 +401,8 @@ fn untyped_lambda_param_duals_null() -> bool {
 fn name_list_param_duals_null() -> bool {
     let src = "fn f() -> int {\n    let (a, b) = t\n    0\n}\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match first_body_stmt(r.store, r.stmts!) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match first_body_stmt(r.store, r.ids!) {
         .LetDestructure(names, _) -> {
             names.length == 2 && names[0].ty_id == none && names[1].ty_id == none
         }
@@ -413,8 +413,8 @@ fn name_list_param_duals_null() -> bool {
 fn use_name_list_duals_null() -> bool {
     let src = "use @std.avrac.core.{Expr, Stmt}\nfn f() -> int { 0 }\n"
     let r = parse_program_source(src)
-    if r.had_error != 0 || r.stmts == null { return false }
-    match stmt_unwrap(r.store, r.stmts![0].node) {
+    if r.had_error != 0 || r.ids == null { return false }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.ids![0])) {
         .Use(_, names) -> {
             names.length == 2 && names[0].ty_id == none && names[1].ty_id == none
         }

@@ -1,7 +1,7 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime avra_array_* functions.
 
-use core.{Expr, SExpr, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
+use core.{Expr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce, box_into_list}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
@@ -18,12 +18,12 @@ fn lit_is_none(e: Expr) -> bool { e is .None }
 /// pointer-niche reprs) so a later unwrap sees a real optional, not a raw
 /// scalar reinterpreted as a box pointer. `emit_optional_coerce` is a no-op
 /// for `none` (stays null) and for already-optional values (no double-box).
-export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>) -> Result<EmitValue, string> {
     if elements.length == 0 { return ok_emit(ctx.array_new(), .List(.Unknown)) }
     mut has_none = false
     mut n = 0
     while n < elements.length {
-        if lit_is_none(elements[n].node) { has_none = true }
+        if lit_is_none(ctx.nodes.exprs.get(elements[n])) { has_none = true }
         n = n + 1
     }
     // A literal mixing `none` with present values is a `List<T?>`: emit all
@@ -32,12 +32,12 @@ export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) 
         return emit_list_lit_expected(ctx, env, elements, .Optional(.Unknown))
     }
     let arr = ctx.array_new()
-    let first_r = ctx.emit(env, elements[0].node)?
+    let first_r = ctx.emit(env, ctx.nodes.exprs.get(elements[0]))?
     ctx.array_push(arr, first_r.value)
     let elem_ty = first_r.ty
     mut i = 1
     while i < elements.length {
-        let r = ctx.emit(env, elements[i].node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?
         ctx.array_push(arr, r.value)
         i = i + 1
     }
@@ -49,11 +49,11 @@ export fn emit_list_lit(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) 
 /// a `none`-bearing literal via `.Optional(.Unknown)`). Emits each element,
 /// then boxes via the shared `box_into_list` — the one list-of-optional box
 /// loop. `expected_elem` is the optional element type (`.Optional(inner)`).
-export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>, expected_elem: ValueType) -> Result<EmitValue, string> {
+export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>, expected_elem: ValueType) -> Result<EmitValue, string> {
     mut vals: List<EmitValue> = []
     mut i = 0
     while i < elements.length {
-        vals.push(ctx.emit(env, elements[i].node)?)
+        vals.push(ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?)
         i = i + 1
     }
     box_into_list(ctx, vals, expected_elem)
@@ -63,14 +63,14 @@ export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List
 /// against `(acc_ty, elem_ty)` so generic-typed reducers see the
 /// correct types inside the body. Hands the closure to
 /// `avra_array_reduce`.
-export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr, args: List<SExpr>, elem_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr, args: List<ExprId>, elem_ty: ValueType) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("reduce expects 2 arguments: initial value and function") }
-    let se_init = args[0]
-    let se_fn = args[1]
-    let init_r = ctx.emit(env, se_init.node)?
+    let init_id = args[0]
+    let fn_id = args[1]
+    let init_r = ctx.emit(env, ctx.nodes.exprs.get(init_id))?
     // Reduce fn takes (acc, elem) — acc type from init, elem from list
     mut fn_r = EmitValue { value: ctx.i64(0), ty: .Int }
-    match se_fn.node {
+    match ctx.nodes.exprs.get(fn_id) {
         .Lambda(params, body) -> {
             mut reduce_param_types: List<ValueType> = []
             reduce_param_types.push(init_r.ty)
@@ -78,7 +78,7 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr,
             fn_r = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), reduce_param_types)?
         }
         _ -> {
-            fn_r = ctx.emit(env, se_fn.node)?
+            fn_r = ctx.emit(env, ctx.nodes.exprs.get(fn_id))?
         }
     }
     let result = ctx.call("avra_array_reduce", [list_val, init_r.value, fn_r.value])
@@ -89,7 +89,7 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr,
 /// to the appropriate `avra_array_*` runtime call (or, for
 /// higher-order methods, builds a typed lambda first). Unknown
 /// methods produce a "not implemented" error.
-export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, list_ty: ValueType, method: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, list_ty: ValueType, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
     match method {
         "length" or "len" -> return ok_emit(ctx.array_len(list_val), .Int)
         "push" -> {
@@ -167,8 +167,8 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
         "insert" -> {
             let elem_ty = vtype_list_elem(list_ty)
             if args.length < 2 { return err_emit("list.insert expects 2 arguments: index and value") }
-            let idx_r = ctx.emit(env, args[0].node)?
-            let val_r = ctx.emit(env, args[1].node)?
+            let idx_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+            let val_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
             // Box a present scalar into the list's `T?` element type (see push).
             let ins = emit_optional_coerce(ctx, val_r, elem_ty)
             ctx.call("avra_array_insert", [list_val, idx_r.value, ins.value])
@@ -199,20 +199,20 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
 /// Codegen for `list.slice(start, end)`. Emits both bounds and
 /// hands them to `avra_array_slice`. Result type matches the
 /// input — slicing a `List<T>` produces a `List<T>`.
-fn emit_list_slice(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueType, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_list_slice(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueType, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("list.slice expects 2 arguments: start and end") }
-    let start_r = ctx.emit(env, args[0].node)?
-    let end_r = ctx.emit(env, args[1].node)?
+    let start_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+    let end_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
     ok_emit(ctx.call("avra_array_slice", [list, start_r.value, end_r.value]), list_ty)
 }
 
 /// Codegen for `list.set(idx, val)`. Emits both args and forwards
 /// to `avra_array_set`. Returns the list (so the call chains). The value is
 /// boxed into the list's `T?` element type (see push) before storing.
-fn emit_list_set(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueType, args: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_list_set(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueType, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("list.set expects 2 arguments: index and value") }
-    let idx_r = ctx.emit(env, args[0].node)?
-    let val_r = ctx.emit(env, args[1].node)?
+    let idx_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+    let val_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
     let stored = emit_optional_coerce(ctx, val_r, vtype_list_elem(list_ty))
     ctx.call("avra_array_set", [list, idx_r.value, stored.value])
     ok_emit(list, list_ty)

@@ -1,10 +1,10 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
-use core.{Expr, Stmt, ValueType, VarBinding, SStmt, stmt_unwrap}
+use core.{Expr, Stmt, StmtId, ValueType, VarBinding, stmt_unwrap}
 use codegen.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_if_optional_canon, emit_cond_truthy}
 use core.{ValueType}
-use codegen.{emit_expr, emit_stmt, emit_stmt_list}
+use codegen.{emit_expr, emit_stmt}
 use features.match_expr.{emit_match_expr}
 use features.if_stmt.{narrow_env_for_is}
 use core.{avra_covmap_next_branch_id}
@@ -31,7 +31,7 @@ fn err_br(msg: string) -> Result<BlockResult, string> {
 /// block's value is the value of the LAST statement when that stmt
 /// is a `.Expr`; everything else (return, let, while, ...) yields
 /// i64 0. Non-tail statements run for their side effects.
-export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<EmitValue, string> {
+export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>) -> Result<EmitValue, string> {
     emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
 }
 
@@ -42,7 +42,7 @@ export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -
 export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmt {
         .Expr(e) -> ctx.emit(env, ctx.nodes.exprs.get(e))
-        .Block(body) -> emit_block_expr(ctx, env, ctx.nodes.sstmts_of(body))
+        .Block(body) -> emit_block_expr(ctx, env, body)
         .Match(subject, arms) -> emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)
         .If(condition, then_branch, else_branch) -> {
             let else_s: Stmt? = if else_branch != null { ctx.nodes.stmts.get(else_branch!) } else { null }
@@ -66,7 +66,7 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val:
             ok_br(r.value, r.ty, ctx, env)
         }
         .Block(body) -> {
-            let r = emit_block_loop_ctx(ctx, env, ctx.nodes.sstmts_of(body), ctx.i64(0), .Unknown)?
+            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Unknown)?
             ok_br(r.value, r.ty, r.ctx, r.env)
         }
         .Match(subject, arms) -> {
@@ -134,30 +134,32 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr
 /// every non-tail stmt runs via `emit_stmt`; the tail stmt runs via
 /// `emit_stmt_as_value` so the block produces a value. Tracks
 /// `source_line` for accurate diagnostics and coverage.
-export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     if stmts.length == 0 { return ok_emit(last_val, last_ty) }
     mut cur_ctx = ctx
     mut cur_env = env
     mut i = 0
     let last = stmts.length - 1
     while i < last {
-        let ss = stmts[i]
-        let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
-        let sr = emit_stmt(line_ctx, cur_env, ss.node)?
+        let sid = stmts[i]
+        let pos = cur_ctx.nodes.stmt_pos(sid)
+        let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
+        let sr = emit_stmt(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid))?
         cur_ctx = sr.ctx
         cur_env = sr.env
         i = i + 1
     }
-    let ss = stmts[last]
-    let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
-    emit_stmt_as_value(line_ctx, cur_env, ss.node, last_val, last_ty)
+    let sid = stmts[last]
+    let pos = cur_ctx.nodes.stmt_pos(sid)
+    let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
+    emit_stmt_as_value(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid), last_val, last_ty)
 }
 
 /// `emit_block_loop` but returns BlockResult so callers see the
 /// final `Ctx` (with accumulated defers). Used by features whose
 /// emission needs to react to ctx changes inside the block (defer
 /// stack mutations, RC pushes, etc.).
-export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     if stmts.length == 0 {
         let e: List<VarBinding> = []
         return ok_br(last_val, last_ty, ctx, e)
@@ -167,14 +169,16 @@ export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt
     mut i = 0
     let last = stmts.length - 1
     while i < last {
-        let ss = stmts[i]
-        let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
-        let sr = emit_stmt(line_ctx, cur_env, ss.node)?
+        let sid = stmts[i]
+        let pos = cur_ctx.nodes.stmt_pos(sid)
+        let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
+        let sr = emit_stmt(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid))?
         cur_ctx = sr.ctx
         cur_env = sr.env
         i = i + 1
     }
-    let ss = stmts[last]
-    let line_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
-    emit_stmt_as_value_ctx(line_ctx, cur_env, ss.node, last_val, last_ty)
+    let sid = stmts[last]
+    let pos = cur_ctx.nodes.stmt_pos(sid)
+    let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
+    emit_stmt_as_value_ctx(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid), last_val, last_ty)
 }

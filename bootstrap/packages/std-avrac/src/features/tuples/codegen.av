@@ -8,7 +8,7 @@
 // so that tuple indexing can return the correct element type
 // (critical for match on enum tuple elements).
 
-use core.{Expr, SExpr, ParamEntry, VarBinding, env_extend, ValueType, vtype_tuple_at}
+use core.{Expr, ExprId, ParamEntry, VarBinding, env_extend, ValueType, vtype_tuple_at}
 use codegen.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
 
 /// Sugar for an i64-typed tuple slot load — wraps `ctx.load_slot`
@@ -24,7 +24,7 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base,
 /// and forwards to `emit_tuple_inner`.
 export fn emit_tuple(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Tuple(elements) -> emit_tuple_inner(ctx, env, ctx.nodes.sexprs_of(elements))
+        .Tuple(elements) -> emit_tuple_inner(ctx, env, elements)
         _ -> err_emit("expected Tuple")
     }
 }
@@ -33,12 +33,12 @@ export fn emit_tuple(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emit
 /// each i64 slot with the corresponding element. Returns an
 /// `EmitValue` typed as `Tuple<T0, T1, ...>` so downstream
 /// consumers see the precise element types.
-fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>) -> Result<EmitValue, string> {
     let count = elements.length
     let buf = ctx.arena_alloc(ctx.i64(count * 8))
     mut types_acc: List<ValueType> = []
-    for (i, el) in elements.enumerate() {
-        let r = ctx.emit(env, el.node)?
+    for (i, id) in elements.enumerate() {
+        let r = ctx.emit(env, ctx.nodes.exprs.get(id))?
         tuple_store(ctx, buf, i, r.value)
         types_acc.push(r.ty)
     }

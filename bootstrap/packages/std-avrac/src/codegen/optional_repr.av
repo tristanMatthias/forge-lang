@@ -20,7 +20,7 @@
 // none-check / unwrap of an optional routes through these primitives so the
 // niche-vs-boxed choice lives in exactly one place (`optional_repr_tagged`).
 
-use core.{ValueType, VarBinding, SExpr, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_is_value_scalar, vtype_eq, variant_is_optional_present}
+use core.{ValueType, VarBinding, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_is_value_scalar, vtype_eq, variant_is_optional_present}
 use codegen.{Ctx, EmitValue, ok_emit}
 
 /// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
@@ -47,9 +47,9 @@ export fn emit_optional_none(ctx: Ctx) -> ptr {
 /// ICEs (or binds a same-named user enum). Here the slot type is known, so the
 /// optional repr is chosen directly. The caller guarantees `slot_ty` is optional
 /// and `variant` is the present (1-arg) / absent (0-arg) ctor.
-export fn emit_optional_ctor_value(ctx: Ctx, env: List<VarBinding>, variant: string, args: List<SExpr>, slot_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_optional_ctor_value(ctx: Ctx, env: List<VarBinding>, variant: string, args: List<ExprId>, slot_ty: ValueType) -> Result<EmitValue, string> {
     if variant_is_optional_present(variant) {
-        let pv = ctx.emit(env, args[0].node)?
+        let pv = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
         return ok_emit(emit_optional_some(ctx, vtype_strip_optional(slot_ty), pv.value), slot_ty)
     }
     ok_emit(emit_optional_none(ctx), slot_ty)

@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr_at, sstmt, sstmt_at, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
@@ -36,13 +36,12 @@ export type ParseResult = {
 }
 
 /// Output of `parse_program_source`. Same shape as ParseResult but
-/// carries a `List<SStmt>` plus the full DiagnosticBag so later passes
-/// can render multi-error messages.
+/// carries the top-level statement rows (`List<StmtId>`) plus the full
+/// DiagnosticBag so later passes can render multi-error messages.
 export type ProgramParseResult = {
-    stmts: List<SStmt>?,
-    // The arena rows backing `stmts`, in the same order (F3a): a shared-
-    // store sub-parse doesn't record roots, so consumers that embed the
-    // parsed statements as flipped children (the module resolver filling
+    // The top-level statements as arena rows (F3a). Null on a parse error.
+    // A shared-store sub-parse doesn't record roots, so consumers that embed
+    // the parsed statements as flipped children (the module resolver filling
     // `Stmt.Module` bodies) take their ids from here.
     ids: List<StmtId>?,
     had_error: int,
@@ -50,19 +49,15 @@ export type ProgramParseResult = {
     bag: DiagnosticBag,
     // The parser's NATIVE arena (B1): every parsed node has a row; on a
     // clean parse the top-level statements are recorded as `roots` with
-    // conservative spans + provenance. This is the store `parse_or_fail`
-    // serves the program from (`program_from_store`) — the canonical
-    // producer on the compile path.
+    // conservative spans + provenance. `parse_or_fail` serves the program
+    // directly from these roots — the canonical producer on the compile path.
     store: NodeStore,
 }
 
-/// One parse of a paren/bracket-bounded argument list, surfaced both ways:
-/// `wrapped` is the boxed view (it-sugar applied, position-wrapped exactly
-/// as the boxed chain always did) for embedding in a parent's payload;
-/// `ids` are the arena rows backing each element, in the same order, for
-/// the parent's edge list.
+/// One parse of a paren/bracket-bounded argument list: `ids` are the arena
+/// rows backing each element (it-sugar applied), in source order, for the
+/// parent's edge list.
 export type ArgListIds = {
-    wrapped: List<SExpr>,
     ids: List<ExprId>,
 }
 
@@ -80,12 +75,11 @@ export type FieldInitIds = {
 /// empty fold from a real first segment).
 type TemplateFold = { have: bool, result: Expr, result_id: ExprId }
 
-/// One parse of a statement list, surfaced both ways: `wrapped` is the boxed
-/// spanned view (`sstmt_at` at the same positions as always) for embedding in
-/// a parent's payload; `ids` are the arena rows backing each statement, in
-/// the same order, for the parent's edge list (or the store's roots).
+/// One parse of a statement list: `ids` are the arena rows backing each
+/// statement, in source order, for the parent's edge list (or the store's
+/// roots). Each row carries its own (line, col, file) in the store's
+/// position column, recorded during the parse.
 export type StmtListIds = {
-    wrapped: List<SStmt>,
     ids: List<StmtId>,
 }
 
@@ -238,9 +232,8 @@ export fn parse_program_source_at(source: string, file: string) -> ProgramParseR
 /// invariant, so every node the pipeline later walks has a row in the
 /// one program store (the template-sub-parser precedent, generalized).
 /// Does NOT record roots: the parsed statements become children of the
-/// entry program's tree. Positions ride the boxed wrappers (each SStmt
-/// carries `file`); sub-parse rows carry byte_span_none() until
-/// per-node file/span lands (B-final F4).
+/// entry program's tree. Positions ride the arena rows — each node is
+/// stamped with its source `file` and span as the parser allocates it.
 export fn parse_program_source_shared(source: string, file: string, store: NodeStore) -> ProgramParseResult {
     mut parser = parser_new_with_file(source, file)
     parser.store = store
@@ -248,7 +241,7 @@ export fn parse_program_source_shared(source: string, file: string, store: NodeS
     parser.parse_file_program()
 }
 
-/// Parse a fn-body source rendered by `fmt_stmt_list`. The body is
+/// Parse a fn-body source rendered by `fmt_stmt_ids`. The body is
 /// wrapped in a synthetic fn declaration so `parse_program_source`
 /// sees a complete program; the wrapper's body stmts are returned.
 /// Used by the metadata roundtrip (eager for generic bodies, lazy
@@ -265,10 +258,10 @@ export fn parse_body_source(source: string, store: NodeStore) -> List<StmtId> {
     let wrapped = "fn __avra_body_source_wrapper() {\n" + source + "\n}"
     let parsed = parse_program_source_shared(wrapped, "", store)
     if parsed.had_error == 1 { return empty }
-    if parsed.stmts == null { return empty }
-    let ss = parsed.stmts!
-    if ss.length == 0 { return empty }
-    match stmt_unwrap(store, ss[0].node) {
+    if parsed.ids == null { return empty }
+    let root_ids = parsed.ids!
+    if root_ids.length == 0 { return empty }
+    match stmt_unwrap(store, store.stmts.get(root_ids[0])) {
         .Function(_, _, _, _, body) -> body
         _ -> empty
     }
@@ -277,8 +270,8 @@ export fn parse_body_source(source: string, store: NodeStore) -> List<StmtId> {
 /// Interleave header names and values into a flat alternating list:
 /// `[k1, k2]` + `[v1, v2]` → `[k1, v1, k2, v2]`. MapLit expects this
 /// flat shape; table-literal parsing produces it.
-export fn table_zip_entries(headers: List<SExpr>, values: List<SExpr>) -> List<SExpr> {
-    mut out: List<SExpr> = []
+export fn table_zip_entries(headers: List<ExprId>, values: List<ExprId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
     let n = if headers.length < values.length { headers.length } else { values.length }
     mut i = 0
     while i < n {
@@ -314,12 +307,10 @@ fn expr_is_upper_ident(e: Expr) -> bool {
 /// parsing). `(x, y) -> ...` parses the parens as expressions first,
 /// then reinterprets the Ident names as parameter names once `->`
 /// is seen.
-fn exprs_to_params(exprs: List<SExpr>) -> List<ParamEntry> {
+fn exprs_to_params(store: NodeStore, ids: List<ExprId>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
-    mut i = 0
-    while i < exprs.length {
-        let se = exprs[i]
-        let name = match se.node {
+    for id in ids {
+        let name = match store.exprs.get(id) {
             .Ident(n) -> n
             .QualifiedIdent(n) -> n
             _ -> "_"
@@ -327,7 +318,6 @@ fn exprs_to_params(exprs: List<SExpr>) -> List<ParamEntry> {
         // No type syntax exists in this position (the typed-lambda path goes
         // through parse_param_list) — no type was written, so no row backs it.
         out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
-        i = i + 1
     }
     out
 }
@@ -517,8 +507,8 @@ export fn parser_new(source: string) -> Parser {
 }
 
 /// Construct a Parser with explicit source-file attribution. Stamps
-/// every SStmt/SExpr emitted by this parser with `file` so downstream
-/// diagnostics can cite the originating file even after bundling.
+/// every statement and expression row this parser allocates with `file`
+/// so downstream diagnostics can cite the originating file even after bundling.
 export fn parser_new_with_file(source: string, file: string) -> Parser {
     mut parser = Parser {
         source,
@@ -601,7 +591,6 @@ impl Parser {
         let parsed = match self.parse_statement_list_ids(false) {
             .Ok(s) -> s
             .Err(_) -> return ProgramParseResult {
-                stmts: null,
                 ids: null,
                 had_error: self.had_error,
                 error_message: self.error_message,
@@ -613,7 +602,6 @@ impl Parser {
         if !self.check(Tk.Eof) {
             self.set_error("expected end of input")
             return ProgramParseResult {
-                stmts: null,
                 ids: null,
                 had_error: true,
                 error_message: self.error_message,
@@ -624,16 +612,14 @@ impl Parser {
 
         // Record the top-level rows as the native store's roots (entry
         // parses only — a shared-store sub-parse's statements merge into the
-        // entry tree as children, never as program roots). Same conservative
-        // spans + provenance as the walker-ingest oracle, via the shared
-        // helper. This is what makes `program_from_store(store)` serve the
-        // program from the PARSER's own arena.
+        // entry tree as children, never as program roots). Conservative
+        // spans + provenance ride the store's side-tables. This is what lets
+        // `parse_or_fail` serve the program from the PARSER's own arena roots.
         if self.records_roots != 0 {
-            self.store.record_roots(parsed.wrapped, parsed.ids, self.source.length)
+            self.store.record_roots(parsed.ids, self.source.length)
         }
 
         ProgramParseResult {
-            stmts: parsed.wrapped,
             ids: parsed.ids,
             had_error: self.had_error,
             error_message: self.error_message,
@@ -642,19 +628,11 @@ impl Parser {
         }
     }
 
-    /// Boxed-only view of a statement list, for callers that don't record
-    /// edges yet.
-    fn parse_statement_list(self, stop_at_right_brace: int) -> Result<List<SStmt>, string> {
-        let parsed = self.parse_statement_list_ids(stop_at_right_brace)?
-        .Ok(parsed.wrapped)
-    }
-
     fn parse_statement_list_ids(self, stop_at_right_brace: int) -> Result<StmtListIds, string> {
-        mut out: List<SStmt> = []
         mut ids: List<StmtId> = []
         while true {
-            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(StmtListIds { wrapped: out, ids: ids }) }
-            if self.check(Tk.Eof) { return .Ok(StmtListIds { wrapped: out, ids: ids }) }
+            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(StmtListIds { ids: ids }) }
+            if self.check(Tk.Eof) { return .Ok(StmtListIds { ids: ids }) }
             if !stop_at_right_brace && self.check(Tk.RightBrace) {
                 self.report(DiagCode.MismatchedBrace, "unexpected `}`")
                 self.advance()
@@ -673,10 +651,9 @@ impl Parser {
             // bodies have no wrapper to carry (line, col, file), so the
             // store row is the position's home now.
             self.store.stmts.record_pos(sid, SrcPos { line: stmt_line, col: stmt_col, file: self.file })
-            out.push(sstmt_at(self.stmt_of(sid), stmt_line, stmt_col, self.file))
             ids.push(sid)
         }
-        .Ok(StmtListIds { wrapped: out, ids: ids })
+        .Ok(StmtListIds { ids: ids })
     }
 
     fn parse_declaration(self) -> Result<StmtId, string> {
@@ -861,21 +838,19 @@ impl Parser {
         self.cell_mode = true
         while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
             let row_line = self.current_line
-            mut cells: List<SExpr> = []
             mut cell_ids: List<ExprId> = []
             while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
                 // parse_bitwise_xor stops before `|`, so the column
                 // separator is never swallowed as a bitwise-or operand.
                 let val_id = self.parse_bitwise_xor()?
-                cells.push(sexpr_at(self.expr_of(val_id), self.current_line, self.current_column, self.file))
                 cell_ids.push(val_id)
                 if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
-            if cells.length != header_count {
+            if cell_ids.length != header_count {
                 self.cell_mode = saved_cell_mode
-                self.set_error("table row has ${string(cells.length)} cell(s) but the header declares ${string(header_count)} column(s)")
+                self.set_error("table row has ${string(cell_ids.length)} cell(s) but the header declares ${string(header_count)} column(s)")
                 return .Err("parse error")
             }
             mut inits: List<FieldInit> = []
@@ -1523,13 +1498,6 @@ impl Parser {
         .Ok(rid)
     }
 
-    /// Boxed-only view of an arg list, for feature parsers not yet
-    /// flowing ids (annotation args now flow ids via parse_arg_list_ids).
-    fn parse_arg_list(self) -> Result<List<SExpr>, string> {
-        let parsed = self.parse_arg_list_ids()?
-        .Ok(parsed.wrapped)
-    }
-
     fn parse_arg_list_ids(self) -> Result<ArgListIds, string> {
         // Inside a paren-bounded arg list we're unambiguously not
         // at a sibling pattern position, so re-enable `.field`
@@ -1542,10 +1510,9 @@ impl Parser {
     }
 
     fn parse_arg_list_ids_inner(self) -> Result<ArgListIds, string> {
-        mut out: List<SExpr> = []
         mut ids: List<ExprId> = []
         if self.check(Tk.RightParen) {
-            return .Ok(ArgListIds { wrapped: out, ids: ids })
+            return .Ok(ArgListIds { ids: ids })
         }
         mut keep_going = true
         while keep_going {
@@ -1555,26 +1522,21 @@ impl Parser {
             // `it` parameter sugar: only wrap if allow_it_sugar is set
             // (method calls like .map/.filter set this, regular function
             // calls do not, preventing double-wrapping in `f(it)` inside
-            // `.map(f(it))`).
-            let expr = if self.allow_it_sugar {
+            // `.map(f(it))`). Flipped Lambda.body is an ExprId scalar — the
+            // body row IS the structure, so the lambda is a walker leaf.
+            if self.allow_it_sugar {
                 match raw_expr {
-                    .Lambda(_, _) -> raw_expr
+                    // Already a lambda — leave it; wrapping a lambda in an
+                    // `it`-lambda would double-bind. (Statement-position match:
+                    // the only effect is the `_` arm's `eid` reassignment.)
+                    .Lambda(_, _) -> {}
                     _ -> {
                         if expr_contains_it(self.store, raw_expr) {
-                            // Flipped Lambda.body is an ExprId scalar — the body row
-                            // IS the structure, so the lambda is a walker leaf.
-                            let wrapped = wrap_in_it_lambda(raw_id)
-                            eid = self.alloc_leaf(wrapped)
-                            wrapped
-                        } else {
-                            raw_expr
+                            eid = self.alloc_leaf(wrap_in_it_lambda(raw_id))
                         }
                     }
                 }
-            } else {
-                raw_expr
             }
-            out.push(sexpr_at(expr, self.current_line, self.current_column, self.file))
             ids.push(eid)
             if self.check(Tk.Comma) {
                 self.advance()
@@ -1583,7 +1545,7 @@ impl Parser {
                 keep_going = false
             }
         }
-        .Ok(ArgListIds { wrapped: out, ids: ids })
+        .Ok(ArgListIds { ids: ids })
     }
 
     /// B1: primary productions hand back a typed id — the node (and its
@@ -1729,9 +1691,9 @@ impl Parser {
                 // as names (scalar ParamEntry data); their parsed rows orphan.
                 if self.check(Tk.Arrow) {
                     self.advance()
-                    mut combined: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
-                    for w in rest.wrapped { combined.push(w) }
-                    let params = exprs_to_params(combined)
+                    mut combined_ids: List<ExprId> = [expr]
+                    for tid in rest.ids { combined_ids.push(tid) }
+                    let params = exprs_to_params(self.store, combined_ids)
                     let body = self.parse_lambda_body()?
                     return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
                 }
@@ -1745,8 +1707,8 @@ impl Parser {
             // (x) -> expr  is a single-param lambda
             if self.check(Tk.Arrow) {
                 self.advance()
-                let one: List<SExpr> = [sexpr_at(self.expr_of(expr), self.current_line, self.current_column, self.file)]
-                let params = exprs_to_params(one)
+                let one: List<ExprId> = [expr]
+                let params = exprs_to_params(self.store, one)
                 let body = self.parse_lambda_body()?
                 return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
             }
@@ -1770,8 +1732,8 @@ impl Parser {
             // comp flows directly into the list_comp feature instead of
             // getting a spurious ListLit wrapper that downstream passes
             // would have to special-case — the comp's own row is returned.
-            if elements.wrapped.length == 1 {
-                match elements.wrapped[0].node {
+            if elements.ids.length == 1 {
+                match self.store.exprs.get(elements.ids[0]) {
                     .ListComp(_, _, _, _) -> return .Ok(elements.ids[0])
                     _ -> {}
                 }
@@ -1932,7 +1894,6 @@ impl Parser {
 
     fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
         // After the first comma in a tuple. Parse remaining elements.
-        mut out: List<SExpr> = []
         mut ids: List<ExprId> = []
         mut keep_going = true
         while keep_going {
@@ -1940,7 +1901,6 @@ impl Parser {
                 keep_going = false
             } else {
                 let eid = self.parse_expression()?
-                out.push(sexpr_at(self.expr_of(eid), self.current_line, self.current_column, self.file))
                 ids.push(eid)
                 if self.check(Tk.Comma) {
                     self.advance()
@@ -1949,7 +1909,7 @@ impl Parser {
                 }
             }
         }
-        .Ok(ArgListIds { wrapped: out, ids: ids })
+        .Ok(ArgListIds { ids: ids })
     }
 
     fn parse_block_expression(self) -> Result<ExprId, string> {

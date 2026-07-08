@@ -19,7 +19,7 @@
 
 use @std.avrac.check.{typecheck_source}
 use @std.avrac.typeck.{unstamped_registered_nominals}
-use @std.avrac.core.{count_id_zero_nominals_stmts}
+use @std.avrac.core.{count_id_zero_nominals_stmt_ids}
 
 spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
     then "minimal struct-using fixture has no registered-name leaks" {
@@ -65,6 +65,6 @@ spec "typeck id-stamp pass: no registered nominal escapes with id=0" {
         // counter accidentally fires on Int / Bool / Str (none of
         // which are nominals).
         let r = typecheck_source("fn main() -> int { 0 }\n")
-        count_id_zero_nominals_stmts(r.store, r.stmts) == 0
+        count_id_zero_nominals_stmt_ids(r.store, r.stmts) == 0
     }
 }

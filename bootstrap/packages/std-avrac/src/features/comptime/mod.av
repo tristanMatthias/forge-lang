@@ -18,7 +18,7 @@
 //
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
-use core.{Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
+use core.{Stmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
 use core.{NodeStore, StmtId}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program_ids}
@@ -61,7 +61,7 @@ export fn comptime_registry_new(store: NodeStore) -> CompTimeRegistry {
 /// Seed `reg.runtime` with every comptime fn AND build the name → index
 /// hashmap. Returns a new registry — pure with respect to the input.
 /// Idempotent: re-preparing rebuilds from `reg.fns`, fine but wasteful.
-/// Callers usually go through `collect_comptime_fns` which returns a
+/// Callers usually go through `collect_comptime_fns_ids` which returns a
 /// fully-prepared registry.
 export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
     // Reseed from the registry's own runtime — the store rides along.
@@ -98,7 +98,7 @@ export type CompTimeFn = {
 /// Registry of every `@comptime` fn discovered in the program,
 /// plus a pre-built evaluator Runtime AND a name → index hashmap
 /// for O(1) lookup at call sites. Built once per compile by
-/// `collect_comptime_fns`; folding reuses everything across every
+/// `collect_comptime_fns_ids`; folding reuses everything across every
 /// call site — no per-call-site setup work.
 ///
 /// @field fns        — every @comptime fn, in source order.
@@ -112,27 +112,19 @@ export type CompTimeRegistry = {
 
 // ── Discovery ──
 
-/// Walk a program's statement list and collect every fn carrying
-/// the `@comptime` annotation into a fully-prepared `CompTimeRegistry`.
-/// The returned registry's runtime is seeded; callers fold immediately
-/// without a separate `prepare_runtime` step.
-///
-/// Recurses into Module bodies so package-internal comptime fns are
-/// found. Pure: doesn't mutate the AST.
-export fn collect_comptime_fns(stmts: List<SStmt>, store: NodeStore) -> CompTimeRegistry {
-    let fns = gather_fns(store, stmts, [])
-    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
-}
-
-/// Arena-id-native twin of `collect_comptime_fns` (F4e): scans the root
-/// `List<StmtId>` for @comptime fns, recursing into module bodies via the
-/// shared `gather_from_stmt`. Used by the id-native `run_comptime`.
-fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
+/// Scan a program's root `List<StmtId>` and collect every fn carrying the
+/// `@comptime` annotation into a fully-prepared `CompTimeRegistry`. The
+/// returned registry's runtime is seeded; callers fold immediately without
+/// a separate `prepare_runtime` step. Recurses into Module bodies (via the
+/// shared `gather_from_stmt`) so package-internal comptime fns are found.
+/// Pure: doesn't mutate the AST. Used by the id-native `run_comptime` and
+/// the @expand fixpoint's per-iteration registry rebuild.
+export fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns_ids(store, ids, [])
     prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
 }
 
-/// Id-native twin of `gather_fns`: walks the root rows, sharing the
+/// Walks the root rows, sharing the
 /// per-statement `gather_from_stmt` (which already reads store rows).
 fn gather_fns_ids(store: NodeStore, ids: List<StmtId>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
     mut fns = acc
@@ -140,22 +132,7 @@ fn gather_fns_ids(store: NodeStore, ids: List<StmtId>, acc: List<CompTimeFn>) ->
     fns
 }
 
-/// Internal: walk `stmts`, append matching @comptime fns to the
-/// running accumulator. Recurses into Module bodies. Threading the
-/// accumulator through the recursion avoids the per-Module list-copy
-/// that an outer-merge approach would do.
-fn gather_fns(store: NodeStore, stmts: List<SStmt>, acc: List<CompTimeFn>) -> List<CompTimeFn> {
-    mut fns = acc
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        fns = gather_from_stmt(store, ss.node, fns)
-        i = i + 1
-    }
-    fns
-}
-
-/// Per-statement half of `gather_fns`: register the stmt if it's an
+/// Per-statement half of `gather_fns_ids`: register the stmt if it's an
 /// @comptime fn, then recurse into a Module body's rows.
 fn gather_from_stmt(store: NodeStore, stmt: Stmt, acc: List<CompTimeFn>) -> List<CompTimeFn> {
     mut fns = acc
@@ -230,7 +207,7 @@ export fn comptime_has(reg: CompTimeRegistry, name: string) -> bool {
 // metadata_synthesize.av. When a consumer loads std-avrac (or any
 // package shipping @comptime fns) from `.meta.bin`, the synthesizer
 // stashes the body source string here keyed by the fn's qualified
-// name. The consumer's `collect_comptime_fns` finds the empty-body
+// name. The consumer's `collect_comptime_fns_ids` finds the empty-body
 // stub (the metadata synthesizes `@comptime fn foo(...) {}`), and
 // the first `comptime_lookup_lazy` call rehydrates it from the
 // stash. Subsequent lookups hit the populated registry.

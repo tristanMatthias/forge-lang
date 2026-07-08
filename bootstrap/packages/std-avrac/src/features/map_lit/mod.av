@@ -3,7 +3,7 @@
 // is in scope without a self-import.
 use codegen.{err_emit}
 use core.{feature_new, Feature, ValueType}
-use resolve.{resolve_expr_list}
+use resolve.{resolve_expr_list_ids}
 use typeck.{check_expr_list_types, tc_er}
 
 /// Register the `{k: v, k: v}` map literal feature. Wires up
@@ -22,7 +22,7 @@ export fn map_lit_feature() -> Feature {
 /// expression in the entries list.
 fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .MapLit(entries) -> resolve_expr_list(r, r.nodes.sexprs_of(entries))
+        .MapLit(entries) -> resolve_expr_list_ids(r, entries)
         _ -> r
     }
 }
@@ -36,7 +36,7 @@ fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MapLit(entries) -> {
-            let lr = check_expr_list_types(tc, tc.nodes.sexprs_of(entries))
+            let lr = check_expr_list_types(tc, entries)
             // entries = [k0, v0, k1, v1, ...]; pin V from the first value.
             let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
             // Reject a heterogeneous literal even WITHOUT an annotation: every
@@ -54,7 +54,7 @@ fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// forwards to `emit_map_lit`.
 fn map_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .MapLit(entries) -> emit_map_lit(ctx, env, ctx.nodes.sexprs_of(entries))
+        .MapLit(entries) -> emit_map_lit(ctx, env, entries)
         _ -> err_emit("expected MapLit")
     }
 }

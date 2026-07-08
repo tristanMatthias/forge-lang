@@ -1,9 +1,9 @@
 // WHY: eval types shared across features. Actual tree-walk
 // evaluator lives in features/eval/mod.av.
 
-use core.{Expr, Stmt, ValueType, ParamEntry, SExpr, SStmt, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
+use core.{Expr, Stmt, ValueType, ParamEntry, FieldInit, render_expr, variant_is_optional_absent, FORCE_UNWRAP_FN}
 use core.{NodeStore, PatId, StmtId, ExprId}
-use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation, sexpr_dummy, sstmt_dummy}
+use core.{BinOp, UnOp, LogicOp, Pattern, MatchArm, TypeParamEntry, FieldEntry, CompConfigPair, Variant, Annotation}
 use core.{Registry, build_registry}
 use list_ops.{list_contains_str}
 
@@ -323,14 +323,14 @@ export fn eval_parsed_expression(expr: Expr, store: NodeStore) -> EvalResult {
 /// `execute_program_stmts` instead to avoid a redundant parse.
 export fn execute_program_source(source: string) -> EvalResult {
     let parsed = parse_program_source(source)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return EvalResult {
             value: null,
             had_error: true,
             error_message: parsed.error_message,
         }
     }
-    execute_program_stmts(parsed.stmts!, parsed.store)
+    execute_program_stmts(parsed.ids!, parsed.store)
 }
 
 /// Same as `execute_program_source` but takes pre-parsed
@@ -338,8 +338,8 @@ export fn execute_program_source(source: string) -> EvalResult {
 /// upstream (cmd_run via parse_or_fail) avoid a second parse
 /// and still surface F-coded parse errors through the unified
 /// rendering pipeline.
-export fn execute_program_stmts(stmts: List<SStmt>, store: NodeStore) -> EvalResult {
-    finish_result(execute_stmt_list(runtime_new(store), stmts))
+export fn execute_program_stmts(ids: List<StmtId>, store: NodeStore) -> EvalResult {
+    finish_result(execute_stmt_ids(runtime_new(store), ids))
 }
 
 /// Render an integer as its canonical decimal text. Strips a
@@ -396,14 +396,12 @@ export fn eval_fn_with_resolved_args(runtime: Runtime, params: List<ParamEntry>,
 /// literal — caller treats null as "can't fold, leave the call alone".
 /// Replaces an explicit `all_args_literal` pre-check + per-arg
 /// `eval_expr` round-trip.
-export fn literal_args_to_values(args: List<SExpr>) -> List<Value>? {
+export fn literal_args_to_values(store: NodeStore, ids: List<ExprId>) -> List<Value>? {
     mut out: List<Value> = []
-    mut i = 0
-    while i < args.length {
-        let v_opt = literal_expr_to_value(args[i].node)
+    for id in ids {
+        let v_opt = literal_expr_to_value(store.exprs.get(id))
         if v_opt == none { return none }
         out.push(v_opt!)
-        i = i + 1
     }
     out
 }
@@ -649,21 +647,8 @@ fn assign_binding(bindings: List<Binding>, name: string, value: Value) -> Assign
 /// Walk a statement list. Stops as soon as any step errors or
 /// signals an early return. Returns the last step's result so
 /// the final value of a block flows out naturally.
-fn execute_stmt_list(runtime: Runtime, stmts: List<SStmt>) -> StepResult {
-    if stmts.length == 0 { return ok_result(runtime, value_null()) }
-    mut cur = ok_result(runtime, value_null())
-    mut i = 0
-    while i < stmts.length {
-        cur = execute_stmt(cur.runtime, stmts[i].node)
-        if cur.had_error || cur.is_return { return cur }
-        i = i + 1
-    }
-    cur
-}
-
-/// The flipped-body twin of `execute_stmt_list`: walks a
-/// `List<StmtId>` body, resolving each row through the runtime's
-/// node store.
+/// Walk a `List<StmtId>` body, resolving each row through the runtime's
+/// node store and executing it in order; stops on error or return.
 export fn execute_stmt_ids(runtime: Runtime, ids: List<StmtId>) -> StepResult {
     if ids.length == 0 { return ok_result(runtime, value_null()) }
     mut cur = ok_result(runtime, value_null())
@@ -852,7 +837,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
         .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
         .None -> ok_result(runtime, value_null())
-        .EnumCtor(type_name, variant, args) -> eval_enum_ctor(runtime, type_name, variant, runtime.nodes.sexprs_of(args))
+        .EnumCtor(type_name, variant, args) -> eval_enum_ctor(runtime, type_name, variant, args)
         .Ident(name) -> {
             let result = lookup_binding(runtime.bindings, name)
             if result.found {
@@ -917,12 +902,12 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         // the comptime decoder can read AST list / struct payloads
         // directly. lower.av emits Expr.ListLit + Expr.StructLit
         // for AST list / struct payloads.
-        .ListLit(elems) -> eval_list_lit(runtime, runtime.nodes.sexprs_of(elems))
+        .ListLit(elems) -> eval_list_lit(runtime, elems)
         .StructLit(type_name, inits) -> eval_struct_lit(runtime, type_name, inits)
         .Unary(op, right) -> eval_unary(runtime, op, runtime.nodes.exprs.get(right))
         .Binary(left, op, right) -> eval_binary(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
         .Logical(left, op, right) -> eval_logical(runtime, runtime.nodes.exprs.get(left), op, runtime.nodes.exprs.get(right))
-        .Call(callee, args) -> eval_call(runtime, runtime.nodes.exprs.get(callee), runtime.nodes.sexprs_of(args))
+        .Call(callee, args) -> eval_call(runtime, runtime.nodes.exprs.get(callee), args)
         .QualifiedIdent(path) -> {
             let fn_result = lookup_function(runtime.functions, path)
             if fn_result.found {
@@ -1019,12 +1004,12 @@ type EvalArgsResult = {
 /// Evaluate every expression in `args` left-to-right, threading
 /// the runtime through each call. Bails on first error. Source
 /// order is preserved by .push — no reverse pass needed.
-fn eval_arg_list(runtime: Runtime, args: List<SExpr>) -> EvalArgsResult {
+fn eval_arg_list(runtime: Runtime, args: List<ExprId>) -> EvalArgsResult {
     mut current = runtime
     mut values: List<Value> = []
     mut i = 0
     while i < args.length {
-        let result = eval_expr(current, args[i].node)
+        let result = eval_expr(current, runtime.nodes.exprs.get(args[i]))
         if result.had_error {
             return EvalArgsResult {
                 runtime: result.runtime,
@@ -1065,22 +1050,8 @@ fn count_params(params: List<ParamEntry>) -> int {
 /// arity, and dispatches: builtins go through `call_builtin`,
 /// user functions enter a fresh scope, bind params, run the
 /// body, and pop the scope on exit.
-fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
+fn eval_call(runtime: Runtime, callee: Expr, args: List<ExprId>) -> StepResult {
     // vez6.6.4: special-case the AST-construction wrappers from
-    // @std::avrac::core. lower_quotes emits sexpr_dummy / sstmt_dummy
-    // calls around every payload so the resulting AST carries proper
-    // SExpr / SStmt span carriers; at comptime eval those span fields
-    // are unused (line/col are 0) so we can pass the inner argument
-    // straight through. Without this, evaluating a quote-built body
-    // would error on the unresolved fn name. Auto-registering every
-    // pure @std::avrac::core fn would be cleaner but requires the
-    // typechecker to distinguish pure from impure helpers — tracked
-    // as the second half of vez6.6.4 (auto-register).
-    let span_passthrough = call_is_span_wrapper(callee)
-    if span_passthrough {
-        return eval_span_wrapper_passthrough(runtime, args)
-    }
-
     // qa6i probe 2: list_concat is used by the quote lowerer's
     // arm-list splice (~arms in match-arm position) to merge a
     // runtime-spliced list into the surrounding arms. Pure list
@@ -1108,7 +1079,7 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<SExpr>) -> StepResult {
     // decoder consumes, so the call passes its argument straight
     // through, exactly like the span wrappers above.
     if call_is_synth_shim(callee) {
-        return eval_span_wrapper_passthrough(runtime, args)
+        return eval_shim_passthrough(runtime, args)
     }
 
     // List built-in methods (`xs.push(x)`, etc.). Macros constructing
@@ -1431,31 +1402,13 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
     error_result(runtime, "unknown builtin `${name}`")
 }
 
-/// True when `callee` is a QualifiedIdent for one of the std-core
-/// span wrappers (sexpr_dummy / sstmt_dummy / sexpr / sexpr_at /
-/// sstmt / sstmt_at). At comptime eval these are pass-through —
-/// the resulting Value carries no span info, just the inner AST.
-fn call_is_span_wrapper(callee: Expr) -> bool {
-    match callee {
-        .QualifiedIdent(path) -> {
-            path == "@std::avrac::core::sexpr_dummy"
-                || path == "@std::avrac::core::sstmt_dummy"
-                || path == "@std::avrac::core::sexpr"
-                || path == "@std::avrac::core::sexpr_at"
-                || path == "@std::avrac::core::sstmt"
-                || path == "@std::avrac::core::sstmt_at"
-        }
-        _ -> false
-    }
-}
-
-/// Evaluate the FIRST argument of a span-wrapper call and return it
-/// as the call's value. Span-wrapper signatures all take the inner
-/// AST node as their first arg; remaining args are line/col/file
-/// metadata that comptime eval doesn't need to track.
-fn eval_span_wrapper_passthrough(runtime: Runtime, args: List<SExpr>) -> StepResult {
-    if args.length == 0 { return error_result(runtime, "span-wrapper call needs at least one argument") }
-    eval_expr(runtime, args[0].node)
+/// Evaluate the FIRST argument of an id-shim call and return it as the
+/// call's value. The synth_* shims (synth_expr_id / synth_stmt_id /
+/// synth_stmt_ids) are node→id converters that are IDENTITIES in Value
+/// space, so eval passes the inner boxed-node Value straight through.
+fn eval_shim_passthrough(runtime: Runtime, args: List<ExprId>) -> StepResult {
+    if args.length == 0 { return error_result(runtime, "id-shim call needs at least one argument") }
+    eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
 }
 
 /// True when `callee` is the qualified path to the standard
@@ -1547,7 +1500,7 @@ extern fn avra_rd_type_field_type(type_id: int, idx: int) -> string
 /// lookup_type, qualify_ident, unwrap_path_to — all read from the
 /// C-side resolver-data layer populated by expand_macro.av before
 /// each macro invocation.
-fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<SExpr>) -> StepResult {
+fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<ExprId>) -> StepResult {
     let args_result = eval_arg_list(runtime, args)
     if args_result.had_error != 0 {
         return error_result(args_result.runtime, args_result.error_message)
@@ -1774,12 +1727,12 @@ fn build_resolved_type(canonical: string, kind_str: string, fields: List<Value>)
 /// `eval_list_method` for string-specific operations the @comptime
 /// macros need (substring, contains, etc.). Returns null when the
 /// method is unknown so the dispatcher falls through.
-fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: List<SExpr>) -> StepResult? {
+fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: List<ExprId>) -> StepResult? {
     if method == "substring" {
         if args.length != 2 { return error_result(runtime, "string.substring expects 2 arguments") }
-        let s_r = eval_expr(runtime, args[0].node)
+        let s_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
         if s_r.had_error { return s_r }
-        let e_r = eval_expr(s_r.runtime, args[1].node)
+        let e_r = eval_expr(s_r.runtime, runtime.nodes.exprs.get(args[1]))
         if e_r.had_error { return e_r }
         let start = parse_num(s_r.value.number_text)
         let end = parse_num(e_r.value.number_text)
@@ -1796,7 +1749,7 @@ fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: Li
     // straight to the runtime method on str_val.text.
     if method == "contains" || method == "starts_with" || method == "ends_with" {
         if args.length != 1 { return error_result(runtime, "string.${method} expects 1 argument") }
-        let arg_r = eval_expr(runtime, args[0].node)
+        let arg_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
         if arg_r.had_error { return arg_r }
         let s = str_val.text
         let needle = arg_r.value.text
@@ -1806,7 +1759,7 @@ fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: Li
     }
     if method == "index_of" {
         if args.length != 1 { return error_result(runtime, "string.index_of expects 1 argument") }
-        let arg_r = eval_expr(runtime, args[0].node)
+        let arg_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
         if arg_r.had_error { return arg_r }
         return ok_result(arg_r.runtime, value_number(string(str_val.text.index_of(arg_r.value.text))))
     }
@@ -1820,19 +1773,19 @@ fn eval_string_method(runtime: Runtime, str_val: Value, method: string, args: Li
     }
     if method == "replace" {
         if args.length != 2 { return error_result(runtime, "string.replace expects 2 arguments") }
-        let needle_r = eval_expr(runtime, args[0].node)
+        let needle_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
         if needle_r.had_error { return needle_r }
-        let repl_r = eval_expr(needle_r.runtime, args[1].node)
+        let repl_r = eval_expr(needle_r.runtime, runtime.nodes.exprs.get(args[1]))
         if repl_r.had_error { return repl_r }
         return ok_result(repl_r.runtime, value_string(str_val.text.replace(needle_r.value.text, repl_r.value.text)))
     }
     null
 }
 
-fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: List<SExpr>) -> StepResult? {
+fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: List<ExprId>) -> StepResult? {
     if method == "push" {
         if args.length != 1 { return error_result(runtime, "list.push expects 1 argument") }
-        let arg_r = eval_expr(runtime, args[0].node)
+        let arg_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
         if arg_r.had_error { return arg_r }
         mut new_payload: List<Value> = []
         for v in list_val.list_payload { new_payload = new_payload.push(v) }
@@ -1855,7 +1808,7 @@ fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: Lis
     // ryvy: zip -> list of (a, b) pairs, truncated to the shorter input.
     if method == "zip" {
         if args.length != 1 { return error_result(runtime, "list.zip expects 1 argument") }
-        let arg_r = eval_expr(runtime, args[0].node)
+        let arg_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
         if arg_r.had_error { return arg_r }
         if arg_r.value.kind != "list" { return error_result(arg_r.runtime, "list.zip expects a list argument") }
         mut pairs: List<Value> = []
@@ -1867,11 +1820,11 @@ fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: Lis
     null
 }
 
-fn eval_list_concat(runtime: Runtime, args: List<SExpr>) -> StepResult {
+fn eval_list_concat(runtime: Runtime, args: List<ExprId>) -> StepResult {
     if args.length != 2 { return error_result(runtime, "list_concat expects 2 arguments") }
-    let a_result = eval_expr(runtime, args[0].node)
+    let a_result = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
     if a_result.had_error { return a_result }
-    let b_result = eval_expr(a_result.runtime, args[1].node)
+    let b_result = eval_expr(a_result.runtime, runtime.nodes.exprs.get(args[1]))
     if b_result.had_error { return b_result }
     let a_val = a_result.value
     let b_val = b_result.value
@@ -1889,7 +1842,7 @@ fn eval_list_concat(runtime: Runtime, args: List<SExpr>) -> StepResult {
 /// resulting payload. Phase 6 of Components V2 (vez6.6.4) — needed
 /// so a comptime fn body can return a constructed AST value via
 /// `quote stmt { ... }` (which lowers to nested EnumCtors).
-fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: List<SExpr>) -> StepResult {
+fn eval_enum_ctor(runtime: Runtime, type_name: string, variant: string, args: List<ExprId>) -> StepResult {
     let evaluated = eval_args_to_values(runtime, args)
     if evaluated.had_error {
         return StepResult {
@@ -1919,14 +1872,14 @@ type ArgEvalResult = {
     error_message: string,
 }
 
-/// Recursively evaluate each `List<SExpr>` arg, threading the
+/// Recursively evaluate each `List<ExprId>` arg, threading the
 /// runtime through. Used by `eval_enum_ctor` and any future arg-list eval.
-fn eval_args_to_values(runtime: Runtime, args: List<SExpr>) -> ArgEvalResult {
+fn eval_args_to_values(runtime: Runtime, args: List<ExprId>) -> ArgEvalResult {
     mut acc: List<Value> = []
     mut rt = runtime
     mut i = 0
     while i < args.length {
-        let r = eval_expr(rt, args[i].node)
+        let r = eval_expr(rt, runtime.nodes.exprs.get(args[i]))
         if r.had_error {
             return ArgEvalResult { runtime: r.runtime, values: [], had_error: true, error_message: r.error_message }
         }
@@ -1941,7 +1894,7 @@ fn eval_args_to_values(runtime: Runtime, args: List<SExpr>) -> ArgEvalResult {
 /// threading the runtime through, and wrap the result list in a
 /// kind="list" Value. fwyx — replaces the previous value_null()
 /// stub so the comptime decoder can read AST list payloads.
-fn eval_list_lit(runtime: Runtime, elems: List<SExpr>) -> StepResult {
+fn eval_list_lit(runtime: Runtime, elems: List<ExprId>) -> StepResult {
     let evaluated = eval_args_to_values(runtime, elems)
     if evaluated.had_error {
         return StepResult {
@@ -2253,11 +2206,6 @@ fn value_to_value_type_node(v: Value) -> Result<ValueType, string> {
     enum_value_to_value_type(v)
 }
 
-/// Decode a Value carrying a `List<SStmt>` back into a real
-/// `List<SStmt>` AST value.
-export fn value_to_stmt_list(store: NodeStore, v: Value) -> Result<List<SStmt>, string> {
-    list_value_to_stmt_list(store, v)
-}
 
 /// Decode a Value to a Stmt and allocate it as a store row — the
 /// flipped-payload decoder step (F3a; generalizes the F2 pattern
@@ -2595,14 +2543,9 @@ fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>,
     .Ok(out)
 }
 
-fn list_value_to_expr_list(store: NodeStore, v: Value) -> Result<List<SExpr>, string> {
-    if v.kind != "list" { return .Err("decode: expr list not a list") }
-    list_value_to_expr_list_at(store, v.list_payload, 0)
-}
-
-/// Decode a list Value into flipped `List<ExprId>` rows (call args) — the id
-/// twin of `list_value_to_expr_list`. Each arg allocates a fresh leaf row (no
-/// recorded arg type, matching the old `sexpr_dummy` ty=Unknown decode).
+/// Decode a list Value into flipped `List<ExprId>` rows (call args).
+/// Each arg is added as a fresh leaf row with no recorded arg type
+/// (decoded macro-return args carry ty=Unknown until inference runs).
 fn list_value_to_expr_id_list(store: NodeStore, v: Value) -> Result<List<ExprId>, string> {
     if v.kind != "list" { return .Err("decode: expr list not a list") }
     mut out: List<ExprId> = []
@@ -2618,17 +2561,6 @@ fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {
     for entry in v.list_payload {
         if entry.kind != "string" { return .Err("decode: non-string in string list") }
         out.push(entry.text)
-    }
-    .Ok(out)
-}
-
-fn list_value_to_expr_list_at(store: NodeStore, items: List<Value>, i: int) -> Result<List<SExpr>, string> {
-    mut out: List<SExpr> = []
-    mut j = i
-    while j < items.length {
-        let inner = value_to_expr_node(store, items[j])?
-        out.push(sexpr_dummy(inner))
-        j = j + 1
     }
     .Ok(out)
 }
@@ -2823,14 +2755,16 @@ fn annotation_arg_ids_of(store: NodeStore, entry: Value) -> List<ExprId> {
             }
         }
     }
-    // Boxed fallback: re-ingest the "args" value (pre-flip / base-source shape).
-    store.ingest_sexpr_recipe(decode_or(struct_field_expr_list(store, entry, "args"), []))
+    // Boxed fallback: decode the "args" value (pre-flip / base-source shape)
+    // straight to arena rows.
+    let empty: List<ExprId> = []
+    decode_or(struct_field_expr_ids(store, entry, "args"), empty)
 }
 
-fn struct_field_expr_list(store: NodeStore, v: Value, name: string) -> Result<List<SExpr>, string> {
+fn struct_field_expr_ids(store: NodeStore, v: Value, name: string) -> Result<List<ExprId>, string> {
     if v.kind != "struct" { return .Err("decode: not a struct") }
     for f in v.struct_payload {
-        if f.name == name { return list_value_to_expr_list(store, f.value) }
+        if f.name == name { return list_value_to_expr_id_list(store, f.value) }
     }
     .Err("decode: field `${name}` not found")
 }
@@ -3074,12 +3008,3 @@ fn number_value_to_int(v: Value) -> int {
     avra_selfhost_string_to_int(v.number_text)
 }
 
-fn list_value_to_stmt_list(store: NodeStore, v: Value) -> Result<List<SStmt>, string> {
-    if v.kind != "list" { return .Err("decode: stmt list not a list") }
-    mut out: List<SStmt> = []
-    for entry in v.list_payload {
-        let inner = value_to_stmt(store, entry)?
-        out.push(sstmt_dummy(inner))
-    }
-    .Ok(out)
-}

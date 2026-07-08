@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, SExpr, SStmt, StmtId, NodeStore, stmt_unwrap}
+use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 use list_ops.{list_push_copy}
 
@@ -41,17 +41,17 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(store: NodeStore, body: List<SStmt>) -> List<string> {
+export fn analyze_releasable(store: NodeStore, body: List<StmtId>) -> List<string> {
     let empty: List<string> = []
-    single_pass_escape(store, body, empty)
+    single_pass_escape_ids(store, body, empty)
 }
 
 /// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
 /// blocks have no bindings to release; otherwise descend into the
-/// inner List<SStmt>.
+/// inner `List<StmtId>`.
 export fn analyze_releasable_expr(store: NodeStore, body: Expr) -> List<string> {
     match body {
-        .Block(stmts) -> analyze_releasable(store, store.sstmts_of(stmts))
+        .Block(stmts) -> analyze_releasable(store, stmts)
         _ -> {
             let empty: List<string> = []
             empty
@@ -59,19 +59,8 @@ export fn analyze_releasable_expr(store: NodeStore, body: Expr) -> List<string> 
     }
 }
 
-/// Single-pass escape analysis worker. Walks `stmts` left-to-right,
+/// Single-pass escape analysis worker. Walks `ids` left-to-right,
 /// folding `single_pass_stmt` over the running List<string>.
-fn single_pass_escape(store: NodeStore, stmts: List<SStmt>, set: List<string>) -> List<string> {
-    mut cur = set
-    mut i = 0
-    while i < stmts.length {
-        cur = single_pass_stmt(store, stmts[i].node, cur)
-        i = i + 1
-    }
-    cur
-}
-
-/// Row-list twin for flipped bodies.
 fn single_pass_escape_ids(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
     mut cur = set
     for id in ids { cur = single_pass_stmt(store, store.stmts.get(id), cur) }

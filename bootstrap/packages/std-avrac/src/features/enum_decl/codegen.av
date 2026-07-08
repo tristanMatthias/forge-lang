@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.{SExpr, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name}
+use core.{ExprId, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.{type_registry_id_for, variant_payload_name, vtype_strip_optional}
 use codegen.{needs_optional_box, emit_optional_some}
@@ -13,7 +13,7 @@ use codegen.{needs_optional_box, emit_optional_some}
 /// payload struct. The leading-dot form uses arity-aware lookup
 /// so two enums with same-named variants of different arity
 /// don't collide.
-export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, variant: string, args: List<ExprId>) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
     // Use arity-aware lookup to disambiguate variants with the same
     // name but different field counts.
@@ -79,10 +79,10 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
 /// storing it at the right slot via `ctx.store_slot`. Used as
 /// the lightweight path; `fill_enum_payload_typed` is the GEP-
 /// based variant when the payload struct type is known.
-fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
-    for (i, arg) in args.enumerate() {
+fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
+    for (i, id) in args.enumerate() {
         let slot = idx + i
-        let r = ctx.emit(env, arg.node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(id))?
         let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
         // Box a present value-inner arg into a `T?` field (guarded).
         let v = if needs_optional_box(r.ty, fld_ty) {
@@ -99,10 +99,10 @@ fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: 
 /// type. Lets `store_field` truncate / cast each value to its
 /// declared field type so packed bool / float fields don't get
 /// clobbered.
-fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
-    for (i, arg) in args.enumerate() {
+fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
+    for (i, id) in args.enumerate() {
         let slot = idx + i
-        let r = ctx.emit(env, arg.node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(id))?
         let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
         let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
         // Box a present value-inner arg into a `T?` field (guarded).

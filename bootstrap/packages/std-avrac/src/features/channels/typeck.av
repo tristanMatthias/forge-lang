@@ -38,7 +38,7 @@ export fn channel_check(tc: TC, expr: Expr) -> ExprResult {
 /// Method typing for a Channel<elem> receiver. Called from
 /// `check_method_call`'s receiver dispatch (mirrors how List routes
 /// to `check_list_method`).
-export fn check_channel_method(tc: TC, elem: ValueType, method: string, args: List<SExpr>) -> ExprResult {
+export fn check_channel_method(tc: TC, elem: ValueType, method: string, args: List<ExprId>) -> ExprResult {
     match method {
         "send" -> {
             if args.length != 1 {
@@ -46,7 +46,7 @@ export fn check_channel_method(tc: TC, elem: ValueType, method: string, args: Li
                     "channel send takes exactly one value, got ${string(args.length)}")
                 return tc_er(t1, .Void)
             }
-            let a = check_expr(tc, args[0].node)
+            let a = check_expr(tc, tc.nodes.exprs.get(args[0]))
             if !vtype_eq(a.ty, elem) && !(a.ty is .Unknown) && !(elem is .Unknown) {
                 let t1 = tc_report(a.tc, DiagCode.TypeMismatch,
                     "channel element type mismatch: this channel carries ${vtype_display(elem)}, got ${vtype_display(a.ty)}")

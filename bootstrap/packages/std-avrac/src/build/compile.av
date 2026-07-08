@@ -24,10 +24,10 @@ use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_l
 
 /// Inputs for build_binary. The caller owns assembly (parse +
 /// resolve_module_files + any test-specific wrapping) and passes the
-/// final List<SStmt>; this module owns everything from quote-lowering
+/// final List<StmtId>; this module owns everything from quote-lowering
 /// through linked binary.
 export type CompileTarget = {
-    program: List<SStmt>,
+    program: List<StmtId>,
     bin_path: string,           // final linked binary location
     project_dir: string,        // for runtime.o, llvm_wrapper.o
     diag_filename: string,      // displayed in error diagnostics
@@ -68,7 +68,7 @@ fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Re
 }
 
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
-    let post_quote = lower_quotes(target.store.rows_of(target.program), target.store)
+    let post_quote = lower_quotes(target.program, target.store)
     let desugared = desugar_program(post_quote, target.store)
     let with_intrinsics = inject_intrinsics(desugared, target.store)
     let comp = expand_components(with_intrinsics, target.store)

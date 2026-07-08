@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, SStmt, field_list_has, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, field_list_has, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use core.{NodeStore, StmtId}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
@@ -12,7 +12,7 @@ use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
-use codegen.{emit_expr, emit_stmt, emit_stmt_list}
+use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
@@ -53,7 +53,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// pass — extern decls, structs, enums, globals, functions, release
 /// fns — and finally emits user function bodies and top-level
 /// statements.
-fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
+fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
@@ -506,11 +506,7 @@ fn codegen_program(stmts: List<SStmt>, debug_null_checks: bool, coverage: bool, 
 /// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
 /// you don't want a file on disk.
 export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
-    // B-final: codegen's boundary is arena-id-native (the flipped monomorphize
-    // hands ids in). `codegen_program` and its emitters are still SStmt-shaped,
-    // so bridge once here via `sstmts_of`.
-    let stmts = store.sstmts_of(ids)
-    match codegen_program(stmts, debug_null_checks, coverage, source_file, type_reg, library, store) {
+    match codegen_program(ids, debug_null_checks, coverage, source_file, type_reg, library, store) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
             ctx.dispose()
@@ -526,7 +522,7 @@ export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_che
 /// Compile and JIT-execute a program in-process. The JIT engine
 /// takes ownership of the LLVM module, so we deliberately don't
 /// dispose `ctx`. Returns the program's exit code.
-export fn compile_and_jit(stmts: List<SStmt>, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+export fn compile_and_jit(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
     match codegen_program(stmts, false, false, "", type_reg, false, store) {
         .Ok(ctx) -> {
             // JIT engine takes ownership of the module — don't dispose ctx
@@ -541,8 +537,7 @@ export fn compile_and_jit(stmts: List<SStmt>, type_reg: TypeRegistry, store: Nod
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.
 export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    let stmts = store.sstmts_of(ids)
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(ids, false, false, "", type_reg, false, store) {
         .Ok(ctx) -> {
             let result = avra_llvm_emit_object(ctx.module, output_path)
             ctx.dispose()
@@ -563,8 +558,7 @@ export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_r
 /// `source_file` is recorded in the `.covmap.tsv` that the codegen
 /// pass writes alongside the IR.
 export fn codegen_and_emit_ir_cov(ids: List<StmtId>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore) -> Result<int, string> {
-    let stmts = store.sstmts_of(ids)
-    match codegen_program(stmts, false, true, source_file, type_reg, false, store) {
+    match codegen_program(ids, false, true, source_file, type_reg, false, store) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(ir_path)
             ctx.dispose()
@@ -671,7 +665,7 @@ fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fiel
 /// resolves each field's type (possibly referencing other structs),
 /// fills the LLVM body, and registers the resolved fields. The
 /// two-pass shape lets fields forward-reference any struct.
-fn declare_structs(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<SStmt>, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
+fn declare_structs(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<StmtId>, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
     forward_declare_all_structs(store, ctx, stmts)
     fill_and_register_structs(store, ctx, i64t, i1t, dt, pt, stmts, nts, uas, reg)
 }
@@ -679,14 +673,14 @@ fn declare_structs(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt:
 /// Pass 1 of `declare_structs`. Walks the AST and creates an opaque
 /// LLVM named struct type for every `type` and `shape` declaration.
 /// Recurses into modules.
-fn forward_declare_all_structs(store: NodeStore, ctx: ptr, stmts: List<SStmt>) {
+fn forward_declare_all_structs(store: NodeStore, ctx: ptr, stmts: List<StmtId>) {
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        match stmt_unwrap(store, ss.node) {
+        match stmt_unwrap(store, store.stmts.get(ss)) {
             .TypeDecl(name, _, _) -> { avra_llvm_struct_create_named(ctx, name) }
             .ShapeDecl(name, _) -> { avra_llvm_struct_create_named(ctx, name) }
-            .Module(_, body) -> forward_declare_all_structs(store, ctx, store.sstmts_of(body))
+            .Module(_, body) -> forward_declare_all_structs(store, ctx, body)
             _ -> {}
         }
         i = i + 1
@@ -697,7 +691,7 @@ fn forward_declare_all_structs(store: NodeStore, ctx: ptr, stmts: List<SStmt>) {
 /// resolves field types via `resolve_field_list`, fills the LLVM
 /// body with the lowered types, and appends a registry entry. Also
 /// applies the `__without`/`__only` row operators on `type` decls.
-fn fill_and_register_structs(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<SStmt>, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
+fn fill_and_register_structs(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<StmtId>, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
     fill_and_register_structs_ext(store, ctx, i64t, i1t, dt, pt, stmts, nts, uas, reg, false)
 }
 
@@ -706,12 +700,12 @@ fn fill_and_register_structs(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt
 /// registered with `external=true` get a `__release_TypeName` decl
 /// (so call sites still link) but no body is emitted in this unit
 /// (g2eo Phase A: per-module compile filter).
-fn fill_and_register_structs_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<SStmt>, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg, external: bool) -> StructReg {
+fn fill_and_register_structs_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<StmtId>, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg, external: bool) -> StructReg {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let stmt = stmt_unwrap(store, ss.node)
+        let stmt = stmt_unwrap(store, store.stmts.get(ss))
         cur = match stmt {
             .TypeDecl(name, _, fields) -> {
                 let op_fields = resolve_type_operator(fields, cur)
@@ -744,8 +738,8 @@ fn fill_and_register_structs_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr
             .UnionAliasDecl(_, _) -> cur
             .NewtypeDecl(_, _) -> cur
             .Module(_, body) -> {
-                let mod_external = external || (find_annotation(store, ss.node, "external_unit") != null)
-                fill_and_register_structs_ext(store, ctx, i64t, i1t, dt, pt, store.sstmts_of(body), nts, uas, cur, mod_external)
+                let mod_external = external || (find_annotation(store, store.stmts.get(ss), "external_unit") != null)
+                fill_and_register_structs_ext(store, ctx, i64t, i1t, dt, pt, body, nts, uas, cur, mod_external)
             }
             _ -> cur
         }
@@ -819,12 +813,12 @@ fn const_initializer_for(store: NodeStore, init: Expr, llvm_ty: ptr, i64t: ptr, 
 
 /// Walk the AST collecting every top-level `let` / `mut` / `const`
 /// and emit an LLVM global for it. Recurses into modules.
-fn declare_globals(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: List<SStmt>, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
+fn declare_globals(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: List<StmtId>, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let stmt = stmt_unwrap(store, ss.node)
+        let stmt = stmt_unwrap(store, store.stmts.get(ss))
         cur = match stmt {
             .Let(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, cur)
             .Mut(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, cur)
@@ -835,7 +829,7 @@ fn declare_globals(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: 
             // C `const int` does — value is in .data at load time,
             // no init function needed.
             .Const(name, ty_vt, init) -> declare_one_const_global(store, m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, store.exprs.get(init), cur)
-            .Module(_, body) -> declare_globals(store, m, ctx, i64t, i1t, dt, pt, structs, enums, store.sstmts_of(body), cur)
+            .Module(_, body) -> declare_globals(store, m, ctx, i64t, i1t, dt, pt, structs, enums, body, cur)
             _ -> cur
         }
         i = i + 1
@@ -870,7 +864,7 @@ fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum
 /// it creates the outer `{tag, payload}` named struct, declares the
 /// per-variant payload structs via `declare_variant_payloads`, and
 /// appends the resolved variants to the enum registry.
-fn declare_enums(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<SStmt>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg) -> EnumReg {
+fn declare_enums(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<StmtId>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg) -> EnumReg {
     declare_enums_ext(store, ctx, i64t, i1t, dt, pt, stmts, structs, nts, uas, reg, false)
 }
 
@@ -879,12 +873,12 @@ fn declare_enums(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: p
 /// `@external_unit` Module are registered with `external=true` so
 /// their `__release_EnumName` body is skipped during emit (g2eo
 /// Phase A: per-module compile filter).
-fn declare_enums_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<SStmt>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg, external: bool) -> EnumReg {
+fn declare_enums_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: List<StmtId>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg, external: bool) -> EnumReg {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let stmt = stmt_unwrap(store, ss.node)
+        let stmt = stmt_unwrap(store, store.stmts.get(ss))
         cur = match stmt {
             .EnumDecl(name, _, variants) -> {
                 // Enum outer layout: {i64 tag, ptr payload}
@@ -901,8 +895,8 @@ fn declare_enums_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, p
                 enum_reg_register_full(cur, name, resolved_variants, external)
             }
             .Module(_, body) -> {
-                let mod_external = external || (find_annotation(store, ss.node, "external_unit") != null)
-                declare_enums_ext(store, ctx, i64t, i1t, dt, pt, store.sstmts_of(body), structs, nts, uas, cur, mod_external)
+                let mod_external = external || (find_annotation(store, store.stmts.get(ss), "external_unit") != null)
+                declare_enums_ext(store, ctx, i64t, i1t, dt, pt, body, structs, nts, uas, cur, mod_external)
             }
             _ -> cur
         }
@@ -1276,14 +1270,14 @@ fn emit_release_functions(ctx: Ctx, cycles: List<string>) {
 /// Walk the AST building the trait registry. Each `trait Foo {...}`
 /// adds a `(name, methods)` entry; trait methods are collected via
 /// `collect_trait_fn_names`. Recurses into modules.
-fn collect_trait_decls(store: NodeStore, stmts: List<SStmt>, reg: TraitDeclReg) -> TraitDeclReg {
+fn collect_trait_decls(store: NodeStore, stmts: List<StmtId>, reg: TraitDeclReg) -> TraitDeclReg {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        cur = match stmt_unwrap(store, ss.node) {
-            .TraitDecl(name, methods) -> trait_decl_reg_register(cur, name, collect_trait_fn_names(store, store.sstmts_of(methods)))
-            .Module(_, body) -> collect_trait_decls(store, store.sstmts_of(body), cur)
+        cur = match stmt_unwrap(store, store.stmts.get(ss)) {
+            .TraitDecl(name, methods) -> trait_decl_reg_register(cur, name, collect_trait_fn_names(store, methods))
+            .Module(_, body) -> collect_trait_decls(store, body, cur)
             _ -> cur
         }
         i = i + 1
@@ -1295,10 +1289,10 @@ fn collect_trait_decls(store: NodeStore, stmts: List<SStmt>, reg: TraitDeclReg) 
 /// Both `extern fn` (signature only) and `fn` (default impl) count
 /// as trait methods. Walks the list start-to-end (List.push appends,
 /// so order is preserved naturally).
-fn collect_trait_fn_names(store: NodeStore, stmts: List<SStmt>) -> List<TraitMethodMeta> {
+fn collect_trait_fn_names(store: NodeStore, stmts: List<StmtId>) -> List<TraitMethodMeta> {
     mut out: List<TraitMethodMeta> = []
     for ss in stmts {
-        match stmt_unwrap(store, ss.node) {
+        match stmt_unwrap(store, store.stmts.get(ss)) {
             .ExternFn(name, _, ret_vt) -> out = out.push(TraitMethodMeta { name, ret_vt })
             .Function(name, _, _, ret_vt, _) -> out = out.push(TraitMethodMeta { name, ret_vt })
             _ -> {}
@@ -1309,14 +1303,14 @@ fn collect_trait_fn_names(store: NodeStore, stmts: List<SStmt>) -> List<TraitMet
 
 /// Walk the AST collecting every `type Foo = Bar` newtype decl into
 /// the codegen newtype registry. Recurses into modules.
-fn collect_newtypes(store: NodeStore, stmts: List<SStmt>, reg: CgNewtypeReg) -> CgNewtypeReg {
+fn collect_newtypes(store: NodeStore, stmts: List<StmtId>, reg: CgNewtypeReg) -> CgNewtypeReg {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        cur = match stmt_unwrap(store, ss.node) {
+        cur = match stmt_unwrap(store, store.stmts.get(ss)) {
             .NewtypeDecl(name, inner_vt) -> cg_newtype_reg_register(cur, name, inner_vt)
-            .Module(_, body) -> collect_newtypes(store, store.sstmts_of(body), cur)
+            .Module(_, body) -> collect_newtypes(store, body, cur)
             _ -> cur
         }
         i = i + 1
@@ -1326,14 +1320,14 @@ fn collect_newtypes(store: NodeStore, stmts: List<SStmt>, reg: CgNewtypeReg) -> 
 
 /// Walk the AST collecting every `type Foo = A | B | C` union alias
 /// into the codegen union-alias registry. Recurses into modules.
-fn collect_union_aliases(store: NodeStore, stmts: List<SStmt>, reg: CgUnionAliasReg) -> CgUnionAliasReg {
+fn collect_union_aliases(store: NodeStore, stmts: List<StmtId>, reg: CgUnionAliasReg) -> CgUnionAliasReg {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        cur = match stmt_unwrap(store, ss.node) {
+        cur = match stmt_unwrap(store, store.stmts.get(ss)) {
             .UnionAliasDecl(name, type_vt) -> cg_union_alias_reg_register(cur, name, type_vt)
-            .Module(_, body) -> collect_union_aliases(store, store.sstmts_of(body), cur)
+            .Module(_, body) -> collect_union_aliases(store, body, cur)
             _ -> cur
         }
         i = i + 1
@@ -1444,12 +1438,12 @@ fn resolve_fn_ret(store: NodeStore, regs: TypeRegs, traits: TraitDeclReg, rvt: V
 /// registries, builds the function-type, and registers the return
 /// ValueType in `FnRetTypes`. Aborts on duplicate function names.
 /// Recurses into impl blocks and modules.
-fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, regs: TypeRegs, traits: TraitDeclReg, stmts: List<SStmt>, reg: FnRetTypes, type_reg: TypeRegistry) -> FnRetTypes {
+fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, regs: TypeRegs, traits: TraitDeclReg, stmts: List<StmtId>, reg: FnRetTypes, type_reg: TypeRegistry) -> FnRetTypes {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let stmt = stmt_unwrap(store, ss.node)
+        let stmt = stmt_unwrap(store, store.stmts.get(ss))
         cur = match stmt {
             .Function(name, _, params, rvt, body) -> {
                 let resolved_params = resolve_param_list(params, regs)
@@ -1481,8 +1475,8 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 avra_llvm_add_function(m, name, fn_type)
                 fn_ret_types_register(cur, name, ret_vt)
             }
-            .Impl(_, methods) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, store.sstmts_of(methods), cur, type_reg)
-            .Module(_, body) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, store.sstmts_of(body), cur, type_reg)
+            .Impl(_, methods) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, methods, cur, type_reg)
+            .Module(_, body) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, body, cur, type_reg)
             _ -> cur
         }
         i = i + 1
@@ -1506,15 +1500,15 @@ fn params_to_type_list(params: List<ParamEntry>) -> List<ValueType> {
 /// Walk the AST collecting every function's parameter type list
 /// into a `List<FnParamMeta>` registry. Used by call sites to coerce
 /// arguments to declared param types. Recurses into impls + modules.
-fn collect_fn_params(store: NodeStore, stmts: List<SStmt>, reg: List<FnParamMeta>) -> List<FnParamMeta> {
+fn collect_fn_params(store: NodeStore, stmts: List<StmtId>, reg: List<FnParamMeta>) -> List<FnParamMeta> {
     mut cur = reg
     for ss in stmts {
-        match stmt_unwrap(store, ss.node) {
+        match stmt_unwrap(store, store.stmts.get(ss)) {
             .Function(name, _, params, _, _) -> {
                 cur = cur.push(FnParamMeta { name, params: params_to_type_list(params) })
             }
-            .Impl(_, methods) -> cur = collect_fn_params(store, store.sstmts_of(methods), cur)
-            .Module(_, body) -> cur = collect_fn_params(store, store.sstmts_of(body), cur)
+            .Impl(_, methods) -> cur = collect_fn_params(store, methods, cur)
+            .Module(_, body) -> cur = collect_fn_params(store, body, cur)
             _ -> {}
         }
     }
@@ -1527,14 +1521,15 @@ fn collect_fn_params(store: NodeStore, stmts: List<SStmt>, reg: List<FnParamMeta
 /// that holds the module-body code, then injects a call to it from
 /// the wrapper so module-level effects (spec blocks, globals) run
 /// in declaration order.
-fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result<List<VarBinding>, string> {
+fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>) -> Result<List<VarBinding>, string> {
     mut cur_ctx = ctx
     mut cur_env = env
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
-        let tl_ctx = cur_ctx with { source_line: ss.line, source_file: ss.file }
-        let stmt = stmt_unwrap(cur_ctx.nodes, ss.node)
+        let pos = cur_ctx.nodes.stmt_pos(ss)
+        let tl_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
+        let stmt = stmt_unwrap(cur_ctx.nodes, cur_ctx.nodes.stmts.get(ss))
         match stmt {
             .Function(_, _, _, _, _) -> {}
             .Module(name, body) -> {
@@ -1542,13 +1537,13 @@ fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result
                 // its __init_<name> body lives in the producer's
                 // compiled .o. Declare the init fn (so the call
                 // resolves at link time) but skip body emit.
-                let is_external = find_annotation(cur_ctx.nodes, ss.node, "external_unit") != null
+                let is_external = find_annotation(cur_ctx.nodes, cur_ctx.nodes.stmts.get(ss), "external_unit") != null
                 // @deferred_init synthesizes __init_<name> but
                 // skips the top-level auto-call — an explicit caller
                 // (the in-process test runner dispatching units across
                 // worker threads) invokes it instead. Generic codegen
                 // contract, same mechanism family as @external_unit.
-                let is_deferred = find_annotation(cur_ctx.nodes, ss.node, "deferred_init") != null
+                let is_deferred = find_annotation(cur_ctx.nodes, cur_ctx.nodes.stmts.get(ss), "deferred_init") != null
                 let init_name = "__init_${name}"
                 if is_external {
                     let init_params = avra_llvm_type_array_new(0)
@@ -1586,7 +1581,7 @@ fn emit_top_level(ctx: Ctx, env: List<VarBinding>, stmts: List<SStmt>) -> Result
                     // Without this, increments emitted in the body inherit the
                     // previous fn's cov_next_id and overflow a [0 x i64] array.
                     init_ctx.cov_fn_entry()
-                    let new_env = emit_top_level(init_ctx, cur_env, cur_ctx.nodes.sstmts_of(body))?
+                    let new_env = emit_top_level(init_ctx, cur_env, body)?
 
                     // Flush output buffer and terminate init function
                     let final_bb = avra_llvm_get_insert_block(cur_ctx.builder)

@@ -7,16 +7,15 @@
 //   1. the PARSER is a native producer: a parsed program's statement
 //      payloads are live rows in the parse store, resolvable by id;
 //   2. the pos column carries (line, col, file) for body elements —
-//      the wrapper's old job — including across the read/write
-//      bridges (`rows_of` stamps, `sstmt_of`/`sstmts_of` read back);
+//      the wrapper's old job — stamped by `row_at` (in tests) or the
+//      parser and read back through `stmt_pos`;
 //   3. transform allocators (`restmt`/`reexpr`) inherit the source
 //      row's span + position, so a rewritten child keeps pointing at
 //      the original source;
-//   4. provenance (`from_macro`) rides the bridges unchanged.
+//   4. provenance (`from_macro`) rides the arena row unchanged.
 
-use @std.avrac.core.{NodeStore, StmtId, ExprId, Stmt, SStmt, Expr, ValueType, SrcPos,
-                     ParamEntry, TypeParamEntry, TypeRegistry, type_registry_new, stamp_ids_stmts,
-                     new_node_store, build_line_index, sstmt_at, render_stmt, render_expr}
+use @std.avrac.core.{NodeStore, Stmt, Expr, ValueType,
+                     new_node_store, build_line_index, render_stmt, render_expr}
 use @std.avrac.parse.{parse_program_source}
 
 fn ws() -> NodeStore {
@@ -26,14 +25,14 @@ fn ws() -> NodeStore {
 spec "F3a: the parser produces flipped payloads as live rows" {
     then "a parsed `let` carries an ExprId that resolves to its initializer" {
         let parsed = parse_program_source("let x = 41\n")
-        parsed.stmts != null && match parsed.stmts![0].node {
+        parsed.ids != null && match parsed.store.stmts.get(parsed.ids![0]) {
             .Let(n, _, init) -> n == "x" && render_expr(parsed.store, parsed.store.exprs.get(init)) == "41"
             _ -> false
         }
     }
     then "a parsed fn body is a List<StmtId> whose rows resolve in the parse store" {
         let parsed = parse_program_source("fn f() -> int {\n    let y = 1\n    y\n}\n")
-        parsed.stmts != null && match parsed.stmts![0].node {
+        parsed.ids != null && match parsed.store.stmts.get(parsed.ids![0]) {
             .Function(_, _, _, _, body) ->
                 body.length == 2 && match parsed.store.stmts.get(body[0]) {
                     .Let(n, _, _) -> n == "y"
@@ -44,7 +43,7 @@ spec "F3a: the parser produces flipped payloads as live rows" {
     }
     then "a parsed `if` resolves its cond and branch rows by id" {
         let parsed = parse_program_source("fn g() {\n    if true {\n        return\n    }\n}\n")
-        parsed.stmts != null && match parsed.stmts![0].node {
+        parsed.ids != null && match parsed.store.stmts.get(parsed.ids![0]) {
             .Function(_, _, _, _, body) -> match parsed.store.stmts.get(body[0]) {
                 .If(cond, then_b, else_b) ->
                     render_expr(parsed.store, parsed.store.exprs.get(cond)) == "true"
@@ -60,32 +59,26 @@ spec "F3a: the parser produces flipped payloads as live rows" {
 spec "F3a: the pos column carries body-element positions with file attribution" {
     then "a parsed body element's stmt_pos reports its own line, not the fn's" {
         let parsed = parse_program_source("fn f() {\n    let z = 9\n}\n")
-        parsed.stmts != null && match parsed.stmts![0].node {
+        parsed.ids != null && match parsed.store.stmts.get(parsed.ids![0]) {
             .Function(_, _, _, _, body) -> parsed.store.stmt_pos(body[0]).line == 2
             _ -> false
         }
     }
-    then "rows_of stamps (line, col, file); sstmt_of reads them back" {
+    then "set_stmt_pos stamps (line, col, file); stmt_pos reads them back" {
         let store = ws()
-        let ids = store.rows_of([sstmt_at(Stmt.Break, 7, 3, "probe.av")])
-        let back = store.sstmt_of(ids[0])
-        back.line == 7 && back.col == 3 && back.file == "probe.av"
-            && match back.node { .Break -> true  _ -> false }
-    }
-    then "sstmts_of rebuilds a whole body's positioned views in order" {
-        let store = ws()
-        let ids = store.rows_of([sstmt_at(Stmt.Break, 1, 1, "a.av"), sstmt_at(Stmt.Continue, 2, 5, "b.av")])
-        let views = store.sstmts_of(ids)
-        views.length == 2
-            && views[0].line == 1 && views[0].file == "a.av"
-            && views[1].col == 5 && views[1].file == "b.av"
+        let id = store.stmts.add_leaf(Stmt.Break)
+        store.set_stmt_pos(id, 7, 3, "probe.av")
+        let p = store.stmt_pos(id)
+        p.line == 7 && p.col == 3 && p.file == "probe.av"
+            && match store.stmts.get(id) { .Break -> true  _ -> false }
     }
 }
 
 spec "F3a: transform allocators inherit position and span from the source row" {
     then "restmt keeps the original row's recorded position" {
         let store = ws()
-        let orig = store.rows_of([sstmt_at(Stmt.Break, 4, 2, "t.av")])[0]
+        let orig = store.stmts.add_leaf(Stmt.Break)
+        store.set_stmt_pos(orig, 4, 2, "t.av")
         let rewritten = store.restmt(Stmt.Continue, orig)
         let p = store.stmt_pos(rewritten)
         p.line == 4 && p.col == 2 && p.file == "t.av"
@@ -100,13 +93,13 @@ spec "F3a: transform allocators inherit position and span from the source row" {
     }
 }
 
-spec "F3a: provenance rides the read/write bridges" {
-    then "a from_macro wrapper round-trips through rows_of → sstmt_of" {
+spec "F3a: provenance rides the row side-table" {
+    then "a macro-marked row reads back via is_from_macro; an unmarked one doesn't" {
         let store = ws()
-        let tagged = SStmt { node: Stmt.Break, line: 1, col: 1, file: "m.av", from_macro: true }
-        let plain = SStmt { node: Stmt.NoOp, line: 2, col: 1, file: "m.av", from_macro: false }
-        let ids = store.rows_of([tagged, plain])
-        store.sstmt_of(ids[0]).from_macro && !store.sstmt_of(ids[1]).from_macro
+        let tagged = store.stmts.add_leaf(Stmt.Break)
+        store.mark_from_macro(tagged)
+        let plain = store.stmts.add_leaf(Stmt.NoOp)
+        store.is_from_macro(tagged) && !store.is_from_macro(plain)
     }
 }
 
@@ -116,26 +109,5 @@ spec "F3a: render resolves flipped payloads through the store" {
         let init = store.exprs.add_leaf(Expr.Number("5"))
         let rendered = render_stmt(store, Stmt.Let("x", ValueType.Int, init))
         rendered.contains("5") && rendered.contains("x")
-    }
-}
-
-// 07po regression: the typeck id-stamp pass rebuilds every fn-body row.
-// It must inherit the source row's pos column (via `restmt`), not drop it
-// (a bare `add_leaf`), or codegen emits `source_line=0` into null-deref /
-// coverage calls and the compiler diverges from base in diff-test.
-spec "F3a: stamp_ids_stmts preserves fn-body statement positions" {
-    then "a body statement stamped at line 7 still reads line 7 after stamping" {
-        let store = ws()
-        let body_expr = store.exprs.add_leaf(Expr.Number("1"))
-        let body_ids = store.rows_of([sstmt_at(Stmt.Expr(body_expr), 7, 3, "f.av")])
-        let empty_p: List<ParamEntry> = []
-        let empty_tp: List<TypeParamEntry> = []
-        let fn_ss = sstmt_at(Stmt.Function("main", empty_tp, empty_p, ValueType.Void, body_ids), 1, 1, "f.av")
-        let reg = type_registry_new()
-        let stamped = stamp_ids_stmts(store, [fn_ss], reg)
-        match stamped[0].node {
-            .Function(_, _, _, _, sbody) -> sbody.length == 1 && store.stmt_pos(sbody[0]).line == 7
-            _ -> false
-        }
     }
 }

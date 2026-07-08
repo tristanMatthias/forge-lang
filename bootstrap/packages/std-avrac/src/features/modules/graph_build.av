@@ -24,7 +24,7 @@
 // exercised by the diff-harness spec test in this ticket and by the
 // cutover in y4n1.8.
 
-use core.{NodeStore, Stmt, SStmt, SExpr, Expr, ParamEntry, ValueType, Annotation}
+use core.{NodeStore, Stmt, StmtId, Expr, ParamEntry, ValueType, Annotation}
 use core.{
     ModuleGraph, ModuleGraphNode, ResolvedPath,
     StringInterner, InternResult,
@@ -103,7 +103,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     let pr = module_graph_add_package_root(module_graph_new(), entry_file)
     let content = avra_selfhost_read_file(entry_file)
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return BuildGraphResult {
             graph: pr.graph,
             uses: [],
@@ -114,7 +114,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
     let entry_dir = modules_dirname(entry_file)
     // The entry file is the program root — canonical path "".
     let g_canon = module_graph_set_canonical(pr.graph, "", pr.mod_id)
-    walk_stmts(parsed.store, g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, "", entry_dir, [])
+    walk_stmts(parsed.store, g_canon, parsed.ids!, pr.mod_id, pr.pkg_id, "", entry_dir, [])
 }
 
 // ── Internal walker ──────────────────────────────────────────────────
@@ -127,7 +127,7 @@ export fn build_module_graph(entry_file: string) -> BuildGraphResult {
 /// `parent_id` is the ModuleId currently being populated (the file
 /// these stmts came from). `pkg_id` is its package. `dir` is the
 /// directory of `parent_id`'s source file — used for sibling lookup.
-fn walk_stmts(store: NodeStore, g: ModuleGraph, stmts: List<SStmt>, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+fn walk_stmts(store: NodeStore, g: ModuleGraph, stmts: List<StmtId>, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
     mut cur_g = g
     mut cur_uses = uses
     mut i = 0
@@ -150,12 +150,12 @@ fn walk_stmts(store: NodeStore, g: ModuleGraph, stmts: List<SStmt>, parent_id: i
 ///                            and attributes don't affect resolution.
 ///   - everything else     → no-op (decls become items at y4n1.8;
 ///                            for now we only build structure).
-fn walk_stmt(store: NodeStore, g: ModuleGraph, ss: SStmt, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
-    match ss.node {
+fn walk_stmt(store: NodeStore, g: ModuleGraph, id: StmtId, parent_id: int, pkg_id: int, canon: string, dir: string, uses: List<UseEdge>) -> BuildGraphResult {
+    match store.stmts.get(id) {
         .Module(name, body) -> walk_mod_decl(g, name, parent_id, pkg_id, canon, dir, uses)
         .Use(path, names) -> walk_use_stmt(g, path, names, parent_id, pkg_id, dir, uses)
         .Annotated(_, inner) -> {
-            walk_stmt(store, g, store.sstmt_of(inner), parent_id, pkg_id, canon, dir, uses)
+            walk_stmt(store, g, inner, parent_id, pkg_id, canon, dir, uses)
         }
         // Top-level decls register as items in this module so name
         // resolution can look them up by ItemId. We only allocate ids;
@@ -219,14 +219,14 @@ fn walk_mod_decl(g: ModuleGraph, name: string, parent_id: int, pkg_id: int, cano
     // Parse + recurse.
     let content = avra_selfhost_read_file(mod_path)
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return BuildGraphResult {
             graph: g_canon, uses, had_error: 1,
             error_message: "parse error in module `${name}` (${mod_path}): ${parsed.error_message}",
         }
     }
     let mod_dir = modules_dirname(mod_path)
-    walk_stmts(parsed.store, g_canon, parsed.stmts!, added.id, pkg_id, child_canon, mod_dir, uses)
+    walk_stmts(parsed.store, g_canon, parsed.ids!, added.id, pkg_id, child_canon, mod_dir, uses)
 }
 
 /// Handle a `use X.Y.{Z}` statement. Classifies the path:
@@ -328,7 +328,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
     let g_canon = module_graph_set_canonical(pr.graph, pkg_canon, pr.mod_id)
     let content = avra_selfhost_read_file(pkg_file)
     let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         return EnsurePackageResult {
             graph: g_canon, pkg_id: pr.pkg_id,
             had_error: 1,
@@ -336,7 +336,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
         }
     }
     let pkg_dir = modules_dirname(pkg_file)
-    let walked = walk_stmts(parsed.store, g_canon, parsed.stmts!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, [])
+    let walked = walk_stmts(parsed.store, g_canon, parsed.ids!, pr.mod_id, pr.pkg_id, pkg_canon, pkg_dir, [])
     EnsurePackageResult {
         graph: walked.graph, pkg_id: pr.pkg_id,
         had_error: walked.had_error, error_message: walked.error_message,
@@ -366,7 +366,7 @@ fn ensure_package_loaded(g: ModuleGraph, use_path: string, dir: string) -> Ensur
 /// Returned graph is "anchored at the program root" — there's no
 /// package allocation here because the AST already encodes packages
 /// as wrapped Modules with `@`-prefixed names.
-export fn build_graph_from_stmts(store: NodeStore, stmts: List<SStmt>) -> ModuleGraph {
+export fn build_graph_from_stmts(store: NodeStore, stmts: List<StmtId>) -> ModuleGraph {
     let g0 = module_graph_new()
     // Allocate the root module with file="" — it represents the
     // program root, not any specific source file.
@@ -375,11 +375,11 @@ export fn build_graph_from_stmts(store: NodeStore, stmts: List<SStmt>) -> Module
     walk_ast_stmts(store, g1, stmts, root.id, "")
 }
 
-fn walk_ast_stmts(store: NodeStore, g: ModuleGraph, stmts: List<SStmt>, parent_id: int, canon: string) -> ModuleGraph {
+fn walk_ast_stmts(store: NodeStore, g: ModuleGraph, stmts: List<StmtId>, parent_id: int, canon: string) -> ModuleGraph {
     mut cur = g
     mut i = 0
     while i < stmts.length {
-        cur = walk_ast_stmt(store, cur, stmts[i].node, parent_id, canon)
+        cur = walk_ast_stmt(store, cur, store.stmts.get(stmts[i]), parent_id, canon)
         i = i + 1
     }
     cur
@@ -399,12 +399,12 @@ fn walk_ast_stmt_with_export(store: NodeStore, g: ModuleGraph, stmt: Stmt, paren
             let child_canon = if canon == "" { name } else { "${canon}::${name}" }
             let existing = module_graph_find_by_canonical(g, child_canon)
             if existing != ID_NONE {
-                walk_ast_stmts(store, g, store.sstmts_of(body), existing, child_canon)
+                walk_ast_stmts(store, g, body, existing, child_canon)
             } else {
                 let added = module_graph_add(g, "", parent_id, 0)
                 let linked = module_graph_link_child(added.graph, parent_id, name, added.id)
                 let g_canon = module_graph_set_canonical(linked, child_canon, added.id)
-                walk_ast_stmts(store, g_canon, store.sstmts_of(body), added.id, child_canon)
+                walk_ast_stmts(store, g_canon, body, added.id, child_canon)
             }
         }
         .Annotated(annots, inner) -> {

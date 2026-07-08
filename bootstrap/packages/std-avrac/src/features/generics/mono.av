@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.{Expr, SExpr, sexpr, sstmt, sstmt_at, Stmt, SStmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
+use core.{Expr, Stmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
@@ -515,17 +515,17 @@ fn mangle_arg_list(args: List<ValueType>, ambig: List<string>) -> string {
 }
 
 
-// ── Type reading (from typeck-annotated SExpr.ty) ──
+// ── Type reading (from the typeck-annotated `arg_tys` side-table) ──
 
 /// Infer concrete type-args for an enum / struct constructor
 /// by pairing the declared field types with the arg
 /// expressions and binding any T params that appear.
-fn infer_from_fields(tp: List<TypeParamEntry>, fields: List<FieldEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_fields(store: NodeStore, tp: List<TypeParamEntry>, fields: List<FieldEntry>, args: List<ExprId>, acc: List<TypeArg>) -> List<TypeArg> {
     mut out = acc
     let n = if fields.length < args.length { fields.length } else { args.length }
     mut i = 0
     while i < n {
-        out = unify_param(tp, fields[i].resolved, args[i].ty, out)
+        out = unify_param(tp, fields[i].resolved, store.arg_ty_of(args[i]), out)
         i = i + 1
     }
     out
@@ -642,27 +642,32 @@ fn unify_type_lists(tp: List<TypeParamEntry>, params: List<ValueType>, args: Lis
 // so monomorphization can still resolve generic type parameters.
 /// Best-effort static type inference for an argument
 /// expression. Used during type-arg inference at call sites.
-fn arg_concrete_ty(regs: GenRegs, arg: SExpr) -> ValueType {
-    if !vtype_is_unknown(arg.ty) {
+fn arg_concrete_ty(regs: GenRegs, id: ExprId) -> ValueType {
+    // The typeck-inferred arg type lives in the arena `arg_tys` side-table
+    // (keyed by the arg's ExprId) — the id-based successor of the boxed
+    // `SExpr.ty` slot.
+    let ty = regs.store.arg_ty_of(id)
+    let node = regs.store.exprs.get(id)
+    if !vtype_is_unknown(ty) {
         // A generic enum-ctor literal is stamped `Enum(name, [], 0)` by
         // typeck (empty type-arg list), so its inner type params never bind
         // through unify_param. Re-infer its type args structurally from the
         // ctor payload (zuzv). Same handling for a parenthesised ctor.
-        match arg.node {
+        match node {
             .EnumCtor(tn, _, _) if tn != "" -> {
-                let lit = infer_lit_ty(regs, arg.node)
+                let lit = infer_lit_ty(regs, node)
                 if !vtype_is_unknown(lit) { return lit }
-                return arg.ty
+                return ty
             }
             .Grouping(_) -> {
-                let lit = infer_lit_ty(regs, arg.node)
+                let lit = infer_lit_ty(regs, node)
                 if !vtype_is_unknown(lit) { return lit }
-                return arg.ty
+                return ty
             }
-            _ -> return arg.ty
+            _ -> return ty
         }
     }
-    infer_lit_ty(regs, arg.node)
+    infer_lit_ty(regs, node)
 }
 
 /// Map a literal expression to its ValueType (Int / Bool /
@@ -688,12 +693,12 @@ fn infer_lit_ty(regs: GenRegs, e: Expr) -> ValueType {
                 let empty: List<ValueType> = []
                 ValueType.Enum(tn, empty, 0)
             } else {
-                let ta = resolve_enum_type_args(ee!.tp, ee!.variants, variant, regs.store.sexprs_of(ctor_args))
+                let ta = resolve_enum_type_args(regs.store, ee!.tp, ee!.variants, variant, ctor_args)
                 ValueType.Enum(tn, type_args_in_order(ee!.tp, ta), 0)
             }
         }
         .Grouping(inner) -> infer_lit_ty(regs, regs.store.exprs.get(inner))
-        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, regs.store.sexprs_of(elements)))
+        .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, elements))
         .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
         _ -> ValueType.Unknown
     }
@@ -717,7 +722,7 @@ fn type_args_in_order(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> List<Value
 /// Pick the first element's inferred type as the list's element
 /// type. Empty / all-unknown lists fall back to Unknown — the
 /// monomorphizer then reports F1002 and the user adds a turbofish.
-fn infer_list_elem_ty(regs: GenRegs, elements: List<SExpr>) -> ValueType {
+fn infer_list_elem_ty(regs: GenRegs, elements: List<ExprId>) -> ValueType {
     if elements.length == 0 { return ValueType.Unknown }
     let t = arg_concrete_ty(regs, elements[0])
     if vtype_is_unknown(t) { ValueType.Unknown } else { t }
@@ -741,7 +746,7 @@ fn param_types(params: List<ParamEntry>) -> List<ValueType> {
 /// generic constructors (`List<T>`, `Task<T>`, `fn(T) -> U`) so
 /// type params nested inside them are bound from the call's
 /// concrete arg types.
-fn infer_from_params(regs: GenRegs, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_params(regs: GenRegs, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, acc: List<TypeArg>) -> List<TypeArg> {
     mut out = acc
     mut i = 0
     let n = if params.length < args.length { params.length } else { args.length }
@@ -777,7 +782,7 @@ fn fill_unresolved_typeargs(tp: List<TypeParamEntry>, base: List<TypeArg>, fill:
     out
 }
 
-fn infer_from_params_with_expected(regs: GenRegs, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
+fn infer_from_params_with_expected(regs: GenRegs, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_vt: ValueType, expected: ValueType, acc: List<TypeArg>) -> List<TypeArg> {
     let arg_ta = infer_from_params(regs, tp, params, args, acc)
     if vtype_is_unknown(expected) { return arg_ta }
     // Fill-only: unify ret_vt against expected into a fresh acc, then fill only the
@@ -976,10 +981,10 @@ fn explicit_to_type_args(tp: List<TypeParamEntry>, names: List<string>) -> List<
 
 /// Infer enum-constructor type-args from the variant's
 /// declared field types and the constructor call's args.
-fn resolve_enum_type_args(tp: List<TypeParamEntry>, variants: List<Variant>, variant: string, args: List<SExpr>) -> List<TypeArg> {
+fn resolve_enum_type_args(store: NodeStore, tp: List<TypeParamEntry>, variants: List<Variant>, variant: string, args: List<ExprId>) -> List<TypeArg> {
     let vl = variant_lookup(variants, variant)
     let empty: List<TypeArg> = []
-    infer_from_fields(tp, vl.fields, args, empty)
+    infer_from_fields(store, tp, vl.fields, args, empty)
 }
 
 /// Rewrite a type-name string by replacing every generic
@@ -1140,18 +1145,8 @@ fn rewrite_field_types(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst
 
 /// Pass 1 entry: walk the AST collecting every generic decl
 /// into the `GenRegs` registries. Recurses into modules.
-fn collect_generics(stmts: List<SStmt>, regs: GenRegs) -> GenRegs {
-    mut cur = regs
-    mut i = 0
-    while i < stmts.length {
-        cur = collect_generic_stmt(stmts[i].node, cur)
-        i = i + 1
-    }
-    cur
-}
-
-/// Registry collector over a flipped `List<StmtId>` body (module
-/// bodies) — resolves each row and dispatches per-statement.
+/// Registry collector over a `List<StmtId>` body — resolves each
+/// row and dispatches per-statement. The Pass-1 entry.
 fn collect_generics_ids(ids: List<StmtId>, regs: GenRegs) -> GenRegs {
     mut cur = regs
     for id in ids { cur = collect_generic_stmt(cur.store.stmts.get(id), cur) }
@@ -1210,22 +1205,9 @@ fn has_generics(regs: GenRegs) -> bool {
 /// @field trait_impls  — registered trait impls, for bound checks.
 type CollectState = { insts: List<Inst>, bag: DiagnosticBag, line: int, col: int, trait_impls: List<TraitImplEntry> }
 
-/// Pass 2 entry: walk a List<SStmt> collecting instantiation
-/// requests at every call / constructor site.
-fn collect_inst_stmts(stmts: List<SStmt>, regs: GenRegs, st: CollectState) -> CollectState {
-    mut cur = st
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        cur = collect_inst_stmt(ss.node, regs, cur with { line: ss.line, col: ss.col })
-        i = i + 1
-    }
-    cur
-}
-
-/// Instantiation collector over a flipped `List<StmtId>` body —
-/// resolves each row and threads its recorded position so
-/// diagnostics keep pointing at source.
+/// Pass 2 entry: walk a `List<StmtId>` collecting instantiation
+/// requests at every call / constructor site — resolves each row and
+/// threads its recorded position so diagnostics keep pointing at source.
 fn collect_inst_stmt_ids(ids: List<StmtId>, regs: GenRegs, st: CollectState) -> CollectState {
     mut cur = st
     for id in ids {
@@ -1290,7 +1272,7 @@ fn collect_inst_select_arms(arms: List<SelectArm>, regs: GenRegs, st: CollectSta
     while i < arms.length {
         let arm = arms[i]
         let after_ch = collect_inst_expr(regs.store.exprs.get(arm.chan_id), regs, cur)
-        cur = collect_inst_stmts(regs.store.sstmts_of(arm.body_ids), regs, after_ch)
+        cur = collect_inst_stmt_ids(arm.body_ids, regs, after_ch)
         i = i + 1
     }
     cur
@@ -1336,16 +1318,15 @@ fn collect_inst_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, st
 fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .Call(callee, args) -> {
-            let margs = regs.store.sexprs_of(args)
-            let s = collect_inst_exprs(margs, regs, st)
+            let s = collect_inst_exprs(args, regs, st)
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, margs, fn_e!.ret_vt, expected, regs, s) } else { s }
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, regs, s) } else { s }
                 }
                 .QualifiedIdent(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
-                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, margs, fn_e!.ret_vt, expected, regs, s) } else { s }
+                    if fn_e != null { try_add_fn_inst_with_expected(name, fn_e!.tp, fn_e!.params, args, fn_e!.ret_vt, expected, regs, s) } else { s }
                 }
                 _ -> collect_inst_expr(regs.store.exprs.get(callee), regs, s)
             }
@@ -1370,7 +1351,7 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
 fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .GenericCall(callee, type_names, args) -> {
-            let s = collect_inst_exprs(regs.store.sexprs_of(args), regs, st)
+            let s = collect_inst_exprs(args, regs, st)
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
@@ -1384,8 +1365,7 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
             }
         }
         .EnumCtor(tn, variant, args) -> {
-            let margs = regs.store.sexprs_of(args)
-            try_add_enum_inst(tn, variant, margs, regs, collect_inst_exprs(margs, regs, st))
+            try_add_enum_inst(tn, variant, args, regs, collect_inst_exprs(args, regs, st))
         }
         .StructLit(name, inits) ->
             try_add_struct_inst(name, inits, regs, collect_inst_field_inits(inits, regs, st))
@@ -1427,9 +1407,9 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .Lambda(_, body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .Block(body) -> collect_inst_stmt_ids(body, regs, st)
         .MatchExpr(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(regs.store.exprs.get(subj), regs, st))
-        .ListLit(elems) -> collect_inst_exprs(regs.store.sexprs_of(elems), regs, st)
-        .Tuple(elems) -> collect_inst_exprs(regs.store.sexprs_of(elems), regs, st)
-        .MapLit(entries) -> collect_inst_exprs(regs.store.sexprs_of(entries), regs, st)
+        .ListLit(elems) -> collect_inst_exprs(elems, regs, st)
+        .Tuple(elems) -> collect_inst_exprs(elems, regs, st)
+        .MapLit(entries) -> collect_inst_exprs(entries, regs, st)
         .ListComp(body, _, coll, filter) -> {
             let s1 = collect_inst_expr(regs.store.exprs.get(body), regs, st)
             let s2 = collect_inst_expr(regs.store.exprs.get(coll), regs, s1)
@@ -1441,9 +1421,9 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .Slice(obj, start, end) -> collect_inst_expr(regs.store.exprs.get(end), regs, collect_inst_expr(regs.store.exprs.get(start), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st)))
         .TupleIndex(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         .IsCheck(subj, _) -> collect_inst_expr(regs.store.exprs.get(subj), regs, st)
-        .InCheck(needle, items) -> collect_inst_exprs(regs.store.sexprs_of(items), regs, collect_inst_expr(regs.store.exprs.get(needle), regs, st))
+        .InCheck(needle, items) -> collect_inst_exprs(items, regs, collect_inst_expr(regs.store.exprs.get(needle), regs, st))
         .OptionalChain(obj, _) -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
-        .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(regs.store.sexprs_of(args), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
+        .OptionalMethodCall(obj, _, args) -> collect_inst_exprs(args, regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
         .Spawn(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .ChannelNew(_, capacity) -> {
             if capacity == null { st } else { collect_inst_expr(regs.store.exprs.get(capacity!), regs, st) }
@@ -1472,13 +1452,14 @@ fn collect_inst_when_arms(arms: List<WhenArm>, regs: GenRegs, st: CollectState) 
     acc
 }
 
-/// Map `collect_inst_expr` over a `List<SExpr>`.
-fn collect_inst_exprs(exprs: List<SExpr>, regs: GenRegs, st: CollectState) -> CollectState {
+/// Map `collect_inst_expr` over a `List<ExprId>` (call/ctor args).
+fn collect_inst_exprs(ids: List<ExprId>, regs: GenRegs, st: CollectState) -> CollectState {
     mut acc = st
     mut i = 0
-    while i < exprs.length {
-        let se = exprs[i]
-        acc = collect_inst_expr(se.node, regs, acc with { line: se.line, col: se.col })
+    while i < ids.length {
+        let id = ids[i]
+        let lc = regs.store.expr_linecol(id)
+        acc = collect_inst_expr(regs.store.exprs.get(id), regs, acc with { line: lc.line, col: lc.col })
         i = i + 1
     }
     acc
@@ -1544,7 +1525,7 @@ fn add_resolved_inst(name: string, tp: List<TypeParamEntry>, ta: List<TypeArg>, 
 /// Add (or merge) a generic-fn instantiation inferred from
 /// the call args. Falls back to `merge_partial` so partial
 /// info from one call site can complete another's bindings.
-fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, regs: GenRegs, st: CollectState) -> CollectState {
+fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, regs: GenRegs, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, tp, infer_from_params(regs, tp, params, args, empty_ta), regs.ambig, st)
 }
@@ -1555,7 +1536,7 @@ fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEnt
 /// `expected` to harvest extra bindings for type params that
 /// only appear in the return position. Mirror of the typeck-side
 /// `tc_subst_generic_ret_with_expected` (so07.7.15).
-fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<SExpr>, ret_vt: ValueType, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_vt: ValueType, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, tp, infer_from_params_with_expected(regs, tp, params, args, ret_vt, expected, empty_ta), regs.ambig, st)
 }
@@ -1563,11 +1544,11 @@ fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params:
 /// Add (or merge) a generic-enum instantiation inferred from
 /// a constructor call. Looks up the variant's fields in the
 /// generic enum registry and infers from there.
-fn try_add_enum_inst(tn: string, variant: string, args: List<SExpr>, regs: GenRegs, st: CollectState) -> CollectState {
+fn try_add_enum_inst(tn: string, variant: string, args: List<ExprId>, regs: GenRegs, st: CollectState) -> CollectState {
     let e = generic_enum_lookup(regs.enums, tn)
     if e == null { return st }
     let entry = e!
-    st with { insts: merge_partial(tn, resolve_enum_type_args(entry.tp, entry.variants, variant, args), st.insts) }
+    st with { insts: merge_partial(tn, resolve_enum_type_args(regs.store, entry.tp, entry.variants, variant, args), st.insts) }
 }
 
 /// Add (or merge) a generic-struct instantiation inferred
@@ -1602,8 +1583,9 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
     let empty_tp: List<TypeParamEntry> = []
     // Substitute body, then rewrite self-recursive `orig_name(...)` calls
     // in the spec body to the mangled name. Without this the Pass-4
-    // rewriter can't infer the type args (substitute_expr_list drops
-    // SExpr.ty) and mangles them to "" → "Type__fn__" undefined.
+    // rewriter can't infer the type args (substitute_expr_list_ids emits
+    // fresh rows with no arg-type side-table entry) and mangles them
+    // to "" → "Type__fn__" undefined.
     let subst_body = substitute_stmt_ids(store, body, ta)
     let final_body = rename_self_calls_stmt_ids(store, subst_body, orig_name, mangled)
     let fn_stmt = Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, final_body)
@@ -1618,9 +1600,9 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
 
 /// Walk a substituted spec body and rewrite every self-recursive
 /// `orig_name(...)` call to `mangled(...)`. Needed because mono's
-/// pass-4 rewriter infers type args from SExpr.ty, and
-/// substitute_expr_list drops the .ty annotation — so the recursive
-/// call gets mangled to "Type__fn__" (empty slug) and codegen fails
+/// pass-4 rewriter infers type args from the arena arg-type side-table,
+/// and substitute_expr_list_ids emits fresh rows without those entries —
+/// so the recursive call gets mangled to "Type__fn__" (empty slug) and codegen fails
 /// with `undefined function`. We know the spec's type args here, so
 /// the rewrite is unambiguous. Allocates each rewritten row as a fresh
 /// row inheriting the source row's span + position via `restmt`.
@@ -1766,7 +1748,7 @@ fn specialize_method(store: NodeStore, mangled_type: string, method: Stmt, ta_ex
 /// instantiation, producing `MangledType__method` functions. Builds the
 /// extended type-args once: the struct's own bindings (`ta`) plus the
 /// synthetic struct-name binding that rewrites `self`/struct references.
-fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<SStmt> {
+fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig_type: string, mangled_type: string, ta: List<TypeArg>) -> List<StmtId> {
     let entries = generic_impls_for(impls, orig_type)
     if entries.length == 0 { return [] }
     // Copy `ta` (don't mutate the shared inst bindings) and append the
@@ -1776,13 +1758,13 @@ fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig
     while a < ta.length { ta_ext.push(ta[a])  a = a + 1 }
     ta_ext.push(TypeArg { param_name: orig_type, concrete_vt: vtype_struct(mangled_type, 0) })
 
-    mut out: List<SStmt> = []
+    mut out: List<StmtId> = []
     mut i = 0
     while i < entries.length {
         let methods = entries[i].methods
         mut m = 0
         while m < methods.length {
-            out.push(sstmt_dummy(specialize_method(store, mangled_type, store.stmts.get(methods[m]), ta_ext)))
+            out.push(store.stmts.add_leaf(specialize_method(store, mangled_type, store.stmts.get(methods[m]), ta_ext)))
             m = m + 1
         }
         i = i + 1
@@ -1794,8 +1776,8 @@ fn specialize_impl_methods(store: NodeStore, impls: List<GenericImplEntry>, orig
 /// inst in `insts`. Calls `specialize_fn` / `specialize_enum`
 /// / `specialize_struct` based on which registry the inst's
 /// origin name lives in.
-fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
     while i < insts.length {
         let e = insts[i]
@@ -1805,16 +1787,16 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<SStmt> {
         let fn_e = generic_fn_lookup(regs.fns, name)
         if fn_e != null {
             let fe = fn_e!
-            out.push(sstmt(specialize_fn(regs.store, mangled, fe.params, fe.ret_vt, fe.body, ta, name), 0, 0))
+            out.push(regs.store.stmts.add_leaf(specialize_fn(regs.store, mangled, fe.params, fe.ret_vt, fe.body, ta, name)))
         } else {
             // A generic TYPE — emit its specialised decl, then (shared below) its
             // impl methods. Enum and struct are mutually exclusive on a name.
             let enum_e = generic_enum_lookup(regs.enums, name)
             let struct_e = generic_struct_lookup(regs.structs, name)
             if enum_e != null {
-                out.push(sstmt(specialize_enum(mangled, enum_e!.variants, ta), 0, 0))
+                out.push(regs.store.stmts.add_leaf(specialize_enum(mangled, enum_e!.variants, ta)))
             } else if struct_e != null {
-                out.push(sstmt(specialize_struct(mangled, struct_e!.fields, ta), 0, 0))
+                out.push(regs.store.stmts.add_leaf(specialize_struct(mangled, struct_e!.fields, ta)))
             }
             // Both kinds also need each of their impl methods specialised onto
             // THIS instantiation — otherwise `value.method()` has no concrete
@@ -2354,14 +2336,13 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
     match expr {
         .Call(callee, args) -> {
             let new_args = rewrite_expr_list_ids(args, regs, insts)
-            let margs = regs.store.sexprs_of(args)
             let empty_ta: List<TypeArg> = []
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, margs, fe.ret_vt, expected, empty_ta), regs.ambig))), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2370,7 +2351,7 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, margs, fe.ret_vt, expected, empty_ta), regs.ambig))), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params_with_expected(regs, fe.tp, fe.params, args, fe.ret_vt, expected, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2387,23 +2368,8 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
 
 // ── Pass 4: Rewrite call sites and remove generic declarations ──
 
-/// Map `rewrite_stmt` over a List<SStmt>.
-fn rewrite_stmts(stmts: List<SStmt>, regs: GenRegs, insts: List<Inst>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        if !is_generic_decl(regs.store, ss.node) && !is_generic_impl(ss.node, regs) {
-            out.push(sstmt_at(rewrite_stmt(ss.node, regs, insts), ss.line, ss.col, ss.file))
-        }
-        i = i + 1
-    }
-    out
-}
-
-/// The flipped-body twin of `rewrite_stmts`: drops generic decls /
-/// generic impls and re-allocates each rewritten row against the
-/// original's span + position.
+/// Pass 4 entry: drop generic decls / generic impls and re-allocate
+/// each rewritten row against the original's span + position.
 fn rewrite_stmt_ids(ids: List<StmtId>, regs: GenRegs, insts: List<Inst>) -> List<StmtId> {
     mut out: List<StmtId> = []
     for id in ids {
@@ -2507,14 +2473,13 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
     match expr {
         .Call(callee, args) -> {
             let new_args = rewrite_expr_list_ids(args, regs, insts)
-            let margs = regs.store.sexprs_of(args)
             let empty_ta: List<TypeArg> = []
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, margs, empty_ta), regs.ambig))), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, args, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2523,7 +2488,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
                     let fn_e = generic_fn_lookup(regs.fns, name)
                     if fn_e != null {
                         let fe = fn_e!
-                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, margs, empty_ta), regs.ambig))), new_args)
+                        Expr.Call(regs.store.exprs.add_leaf(Expr.Ident(mangle_name_ordered(name, fe.tp, infer_from_params(regs, fe.tp, fe.params, args, empty_ta), regs.ambig))), new_args)
                     } else {
                         Expr.Call(callee, new_args)
                     }
@@ -2684,8 +2649,8 @@ fn rewrite_field_inits(inits: List<FieldInit>, regs: GenRegs, insts: List<Inst>)
 /// Compute the mangled enum name for a constructor call site
 /// from its arg-inferred `List<TypeArg>`. Falls back to existing
 /// inst entries when site-local inference can't fully resolve.
-fn mangle_enum_at_site(tn: string, variant: string, tp: List<TypeParamEntry>, variants: List<Variant>, args: List<SExpr>, insts: List<Inst>) -> string {
-    let partial = resolve_enum_type_args(tp, variants, variant, args)
+fn mangle_enum_at_site(store: NodeStore, tn: string, variant: string, tp: List<TypeParamEntry>, variants: List<Variant>, args: List<ExprId>, insts: List<Inst>) -> string {
+    let partial = resolve_enum_type_args(store, tp, variants, variant, args)
     let result = inst_mangled_compatible(insts, tn, partial)
     // If compatible match failed (returned raw name), fall back to any entry
     // for this generic. Better to use a potentially wrong instantiation than
@@ -2698,11 +2663,10 @@ fn mangle_enum_at_site(tn: string, variant: string, tp: List<TypeParamEntry>, va
 /// the inferred type-args.
 fn rewrite_enum_ctor(tn: string, variant: string, args: List<ExprId>, regs: GenRegs, insts: List<Inst>) -> Expr {
     let new_args = rewrite_expr_list_ids(args, regs, insts)
-    let margs = regs.store.sexprs_of(args)
     let e = generic_enum_lookup(regs.enums, tn)
     if e == null { return Expr.EnumCtor(tn, variant, new_args) }
     let entry = e!
-    Expr.EnumCtor(mangle_enum_at_site(tn, variant, entry.tp, entry.variants, margs, insts), variant, new_args)
+    Expr.EnumCtor(mangle_enum_at_site(regs.store, tn, variant, entry.tp, entry.variants, args, insts), variant, new_args)
 }
 
 /// Variant of `inst_mangled` that prefers the inst whose
@@ -2790,13 +2754,11 @@ fn compute_ambig_short_names(regs: GenRegs) -> List<string> {
 /// to a fixed point so transitively-required specialisations
 /// are pulled in.
 export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, store: NodeStore) -> MonoResult {
-    // B-final: both pass boundaries are arena-id-native — typecheck hands ids
-    // in, codegen takes ids out. The monomorphizer's walkers are still
-    // `List<SStmt>`-shaped, so we bridge at the boundary: `sstmts_of` on the way
-    // in, and the specialised result materialises back to rows via `rows_of`
-    // (pass-through returns hand the original `ids` straight back).
-    let stmts = store.sstmts_of(ids)
-    let regs0 = collect_generics(stmts, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
+    // B-final: the monomorphizer is arena-id-native end to end — typecheck
+    // hands ids in, collect/infer/generate/rewrite all thread ids (the type-arg
+    // inference reads each arg's typeck-inferred type from the `arg_tys`
+    // side-table via `store.arg_ty_of(id)`), and codegen takes the rows out.
+    let regs0 = collect_generics_ids(ids, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
     if !has_generics(regs0) { return MonoResult { stmts: ids, bag: bag_new() } }
     // Resolve the short-name collisions ONCE up front so every pass mangles
     // colliding instances module-qualified and the rest by short name (see
@@ -2804,7 +2766,7 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
     let regs = regs0 with { ambig: compute_ambig_short_names(regs0) }
 
     // Pass 2: collect partial type args (enums merge across constructors)
-    let collected = collect_inst_stmts(stmts, regs, CollectState { insts: [], bag: bag_new(), line: 0, col: 0, trait_impls })
+    let collected = collect_inst_stmt_ids(ids, regs, CollectState { insts: [], bag: bag_new(), line: 0, col: 0, trait_impls })
     if bag_has_errors(collected.bag) {
         return MonoResult { stmts: ids, bag: collected.bag }
     }
@@ -2822,9 +2784,9 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
     let initial_specs = generate_specializations(finalized.insts, regs)
     let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0, trait_impls)
 
-    let rewritten = rewrite_stmts(stmts, regs, converged.all_insts)
-    let rewritten_specs = rewrite_stmts(converged.all_specs, regs, converged.all_insts)
-    MonoResult { stmts: store.rows_of(prepend_stmts(rewritten_specs, rewritten)), bag: converged.bag }
+    let rewritten = rewrite_stmt_ids(ids, regs, converged.all_insts)
+    let rewritten_specs = rewrite_stmt_ids(converged.all_specs, regs, converged.all_insts)
+    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: converged.bag }
 }
 
 /// Per-iteration output of `mono_converge`. Carries the
@@ -2833,15 +2795,15 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
 /// @field all_insts — every inst seen across iterations.
 /// @field all_specs — every emitted specialisation AST node.
 /// @field bag       — accumulated diagnostics.
-type ConvergeResult = { all_insts: List<Inst>, all_specs: List<SStmt>, bag: DiagnosticBag }
+type ConvergeResult = { all_insts: List<Inst>, all_specs: List<StmtId>, bag: DiagnosticBag }
 
 /// Iteration step of the monomorphization fixed-point. Walks
 /// the freshly-emitted specialisations looking for further
 /// instantiations they need; recurses until no new insts get
 /// added. `depth` is bounded to prevent runaway recursion.
-fn mono_converge(new_specs: List<SStmt>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<SStmt>, b: DiagnosticBag, depth: int, ti: List<TraitImplEntry>) -> ConvergeResult {
+fn mono_converge(new_specs: List<StmtId>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<StmtId>, b: DiagnosticBag, depth: int, ti: List<TraitImplEntry>) -> ConvergeResult {
     if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
-    let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
+    let trans = collect_inst_stmt_ids(new_specs, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
     let trans_final = finalize_insts(trans.insts, regs, trans.bag, ti)
     // Drop insts whose mangled name is already in all_insts — a recursive
     // generic call inside a spec body re-derives the same inst the outer
@@ -2874,10 +2836,10 @@ fn drop_already_known(candidates: List<Inst>, known: List<Inst>) -> List<Inst> {
     out
 }
 
-/// Concatenate two List<SStmt>s. Specialisations get prepended to
+/// Concatenate two `List<StmtId>`s. Specialisations get prepended to
 /// the original program so generated decls precede their uses.
-fn prepend_stmts(prefix: List<SStmt>, rest: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn prepend_stmts(prefix: List<StmtId>, rest: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     mut i = 0
     while i < prefix.length {
         out.push(prefix[i])

@@ -1,6 +1,6 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, SExpr, VarBinding, ValueType, SStmt, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
@@ -12,9 +12,9 @@ use core.{vtype_strip_optional, vtype_is_list, vtype_is_optional, vtype_list_ele
 /// Emit a single-argument call helper. Returns the first argument's
 /// EmitValue or an error when the list is empty. Used by built-in
 /// methods like `print` that take exactly one expression.
-export fn emit_single_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_single_arg(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("expected 1 argument, got 0") }
-    ctx.emit(env, args[0].node)
+    ctx.emit(env, ctx.nodes.exprs.get(args[0]))
 }
 
 /// Drop the leading and trailing quote characters from a string
@@ -31,11 +31,11 @@ export fn strip_quotes(s: string) -> string {
 /// Fill an LLVM value array with the SSA results of a list of
 /// expressions, in order. No type coercion — for that, see
 /// `fill_arg_array_boxing`.
-export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
     mut i = 0
     let n = args.length
     while i < n {
-        let r = ctx.emit(env, args[i].node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(args[i]))?
         ctx.value_array_set(arr, idx + i, r.value)
         i = i + 1
     }
@@ -47,7 +47,7 @@ export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<S
 /// inside the closure; concrete values are boxed for `dyn Trait`
 /// parameters; concrete values are wrapped for union-typed
 /// parameters. The full call-site coercion pipeline.
-export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
+export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<ExprId>, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
     let n = args.length
     mut i = 0
     while i < n {
@@ -56,7 +56,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
         // When a Lambda arg is passed to a function expecting a typed fn param,
         // compile the lambda with the expected param types so enum matching works.
         mut r = EmitValue { value: ctx.i64(0), ty: .Int }
-        match se.node {
+        match ctx.nodes.exprs.get(se) {
             .Lambda(params, body) -> {
                 let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
                 let lambda_types = vtype_fn_params(fn_vt)
@@ -72,19 +72,18 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
                 let pvt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
                 if vtype_is_list(pvt) && vtype_is_optional(vtype_list_elem(pvt)) {
                     mut vals: List<EmitValue> = []
-                    let els = ctx.nodes.sexprs_of(elements)
                     mut j = 0
-                    while j < els.length {
-                        vals.push(ctx.emit(env, els[j].node)?)
+                    while j < elements.length {
+                        vals.push(ctx.emit(env, ctx.nodes.exprs.get(elements[j]))?)
                         j = j + 1
                     }
                     r = box_into_list(ctx, vals, vtype_list_elem(pvt))?
                 } else {
-                    r = ctx.emit(env, se.node)?
+                    r = ctx.emit(env, ctx.nodes.exprs.get(se))?
                 }
             }
             _ -> {
-                r = ctx.emit(env, se.node)?
+                r = ctx.emit(env, ctx.nodes.exprs.get(se))?
             }
         }
         // Check if the parameter type is a trait and the argument is concrete

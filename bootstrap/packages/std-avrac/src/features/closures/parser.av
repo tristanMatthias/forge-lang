@@ -3,7 +3,7 @@
 //   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
 // `parse_lambda_body` handles lambda body parsing (block or single expression).
 
-use core.{NodeStore, Expr, SExpr, SStmt, Stmt, ParamEntry, ValueType, ExprId}
+use core.{NodeStore, Expr, Stmt, StmtId, ParamEntry, ValueType, ExprId}
 use parse.{Parser}
 use core.{Tk}
 use list_ops.{list_any}
@@ -17,23 +17,23 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
         .Binary(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .Unary(_, r) -> expr_contains_it(store, store.exprs.get(r))
         .Logical(l, _, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
-        .Call(callee, args) -> expr_contains_it(store, store.exprs.get(callee)) || expr_list_contains_it(store, store.sexprs_of(args))
+        .Call(callee, args) -> expr_contains_it(store, store.exprs.get(callee)) || expr_list_contains_it(store, args)
         .Grouping(inner) -> expr_contains_it(store, store.exprs.get(inner))
         .IfExpr(c, t, e) -> expr_contains_it(store, store.exprs.get(c)) || expr_contains_it(store, store.exprs.get(t)) || expr_contains_it(store, store.exprs.get(e))
-        .Block(stmts) -> stmt_list_contains_it(store, store.sstmts_of(stmts))
+        .Block(stmts) -> stmt_list_contains_it(store, stmts)
         .Index(obj, idx) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(idx))
         .FieldAccess(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .FieldAssign(obj, _, val) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(val))
         .Assign(_, val) -> expr_contains_it(store, store.exprs.get(val))
         .NullCoalesce(l, r) -> expr_contains_it(store, store.exprs.get(l)) || expr_contains_it(store, store.exprs.get(r))
         .OptionalChain(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
-        .OptionalMethodCall(obj, _, args) -> expr_contains_it(store, store.exprs.get(obj)) || expr_list_contains_it(store, store.sexprs_of(args))
+        .OptionalMethodCall(obj, _, args) -> expr_contains_it(store, store.exprs.get(obj)) || expr_list_contains_it(store, args)
         .Try(inner) -> expr_contains_it(store, store.exprs.get(inner))
-        .Tuple(elems) -> expr_list_contains_it(store, store.sexprs_of(elems))
+        .Tuple(elems) -> expr_list_contains_it(store, elems)
         .TupleIndex(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
         .With(obj, _) -> expr_contains_it(store, store.exprs.get(obj))
-        .ListLit(elems) -> expr_list_contains_it(store, store.sexprs_of(elems))
-        .MapLit(entries) -> expr_list_contains_it(store, store.sexprs_of(entries))
+        .ListLit(elems) -> expr_list_contains_it(store, elems)
+        .MapLit(entries) -> expr_list_contains_it(store, entries)
         .Slice(obj, s, e) -> expr_contains_it(store, store.exprs.get(obj)) || expr_contains_it(store, store.exprs.get(s)) || expr_contains_it(store, store.exprs.get(e))
         .MatchExpr(subj, _) -> expr_contains_it(store, store.exprs.get(subj))
         .Catch(inner, _, body, _, _) -> expr_contains_it(store, store.exprs.get(inner)) || expr_contains_it(store, store.exprs.get(body))
@@ -41,16 +41,16 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
     }
 }
 
-/// Map `expr_contains_it` over a `List<SExpr>`.
-export fn expr_list_contains_it(store: NodeStore, list: List<SExpr>) -> bool {
-    list_any(list, (se: SExpr) -> expr_contains_it(store, se.node))
+/// Map `expr_contains_it` over an expression-id list.
+export fn expr_list_contains_it(store: NodeStore, ids: List<ExprId>) -> bool {
+    list_any(ids, (id: ExprId) -> expr_contains_it(store, store.exprs.get(id)))
 }
 
 /// Map `expr_contains_it` over the expression payload of every
 /// statement. Block bodies need this so an `it` reference deep
 /// inside a `let`-init or `return` triggers the lambda wrap.
-export fn stmt_list_contains_it(store: NodeStore, list: List<SStmt>) -> bool {
-    list_any(list, (ss: SStmt) -> stmt_contains_it(store, ss.node))
+export fn stmt_list_contains_it(store: NodeStore, ids: List<StmtId>) -> bool {
+    list_any(ids, (id: StmtId) -> stmt_contains_it(store, store.stmts.get(id)))
 }
 
 /// Per-statement `it`-presence check. Pulled out of the inline

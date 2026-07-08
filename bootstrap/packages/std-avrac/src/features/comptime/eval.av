@@ -17,7 +17,7 @@
 // fold path (Value → construct-expression source form) and the
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
-use core.{Expr, SExpr, sexpr_dummy, Stmt, FieldInit, NodeStore}
+use core.{Expr, ExprId, Stmt, FieldInit, NodeStore}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind, value_to_stmt}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
 use features.quote_expr.{construct_stmt}
@@ -47,7 +47,7 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
                 .Ident(name) -> {
                     let fn_def_opt = comptime_lookup_lazy(reg, name)
                     if fn_def_opt == none { return none }
-                    let arg_values_opt = literal_args_to_values(reg.runtime.nodes.sexprs_of(args))
+                    let arg_values_opt = literal_args_to_values(reg.runtime.nodes, args)
                     if arg_values_opt == none { return none }
                     fold_call(reg, fn_def_opt!, arg_values_opt!)
                 }
@@ -137,7 +137,7 @@ fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
             } else {
                 let args_opt = payload_to_args(store, v.enum_payload, 0)
                 if args_opt == none { return none }
-                Expr.EnumCtor(v.enum_type, v.enum_variant, store.ingest_sexpr_recipe(args_opt!))
+                Expr.EnumCtor(v.enum_type, v.enum_variant, args_opt!)
             }
         }
         // fwyx: a list Value reconstructs as Expr.ListLit, mirroring
@@ -145,7 +145,7 @@ fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
         "list" -> {
             let elems_opt = payload_to_args(store, v.list_payload, 0)
             if elems_opt == none { return none }
-            Expr.ListLit(store.ingest_sexpr_recipe(elems_opt!))
+            Expr.ListLit(elems_opt!)
         }
         // fwyx: a struct Value reconstructs as Expr.StructLit, mirroring
         // the struct_lit_2 output (every FieldInit recurses).
@@ -162,17 +162,17 @@ fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
     }
 }
 
-/// Convert a payload List<Value> into a `List<SExpr>` whose elements
-/// reconstruct each value at runtime. Each value is wrapped via
-/// `sexpr_dummy` — same as `lower_quotes` does when it builds
-/// construct-expression payloads.
-fn payload_to_args(store: NodeStore, payload: List<Value>, i: int) -> List<SExpr>? {
-    mut out: List<SExpr> = []
+/// Convert a payload List<Value> into the arena rows whose elements
+/// reconstruct each value at runtime. `value_to_construct_expr` yields an
+/// Expr whose own children are already ids, so a leaf row per element
+/// suffices (identical to ingesting a `sexpr_dummy` recipe).
+fn payload_to_args(store: NodeStore, payload: List<Value>, i: int) -> List<ExprId>? {
+    mut out: List<ExprId> = []
     mut j = i
     while j < payload.length {
         let inner_opt = value_to_construct_expr(store, payload[j])
         if inner_opt == none { return none }
-        out.push(sexpr_dummy(inner_opt!))
+        out.push(store.exprs.add_leaf(inner_opt!))
         j = j + 1
     }
     out

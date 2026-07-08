@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, SExpr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -96,7 +96,7 @@ fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
         .Unary(_, r) -> expr_assigns(store, store.exprs.get(r), target)
         .Logical(l, _, r) -> expr_assigns(store, store.exprs.get(l), target) || expr_assigns(store, store.exprs.get(r), target)
         .Grouping(inner) -> expr_assigns(store, store.exprs.get(inner), target)
-        .Call(callee, args) -> expr_assigns(store, store.exprs.get(callee), target) || expr_list_assigns(store, store.sexprs_of(args), target)
+        .Call(callee, args) -> expr_assigns(store, store.exprs.get(callee), target) || expr_list_assigns(store, args, target)
         .Block(body) -> stmt_id_list_assigns(store, body, target)
         .IfExpr(c, t, e) -> expr_assigns(store, store.exprs.get(c), target) || expr_assigns(store, store.exprs.get(t), target) || expr_assigns(store, store.exprs.get(e), target)
         .Lambda(_, body) -> expr_assigns(store, store.exprs.get(body), target)
@@ -104,21 +104,11 @@ fn expr_assigns(store: NodeStore, expr: Expr, target: string) -> bool {
     }
 }
 
-/// True when any element of a `List<SExpr>` assigns to `target`.
-fn expr_list_assigns(store: NodeStore, list: List<SExpr>, target: string) -> bool {
+/// True when any element of a `List<ExprId>` assigns to `target`.
+fn expr_list_assigns(store: NodeStore, list: List<ExprId>, target: string) -> bool {
     mut i = 0
     while i < list.length {
-        if expr_assigns(store, list[i].node, target) { return true }
-        i = i + 1
-    }
-    false
-}
-
-/// True when any statement in `stmts` assigns to `target`.
-fn stmt_list_assigns(store: NodeStore, stmts: List<SStmt>, target: string) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        if stmt_assigns(store, stmts[i].node, target) { return true }
+        if expr_assigns(store, store.exprs.get(list[i]), target) { return true }
         i = i + 1
     }
     false
@@ -191,7 +181,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         }
         .Call(callee, args) -> {
             find_captures(store, store.exprs.get(callee), params, env, captures)
-            find_captures_list(store, store.sexprs_of(args), params, env, captures)
+            find_captures_list(store, args, params, env, captures)
         }
         .Grouping(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
         .IfExpr(c, t, e) -> {
@@ -209,7 +199,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(subj), params, env, captures)
             find_captures_arms(store, arms, params, env, captures)
         }
-        .EnumCtor(_, _, args) -> find_captures_list(store, store.sexprs_of(args), params, env, captures)
+        .EnumCtor(_, _, args) -> find_captures_list(store, args, params, env, captures)
         .StructLit(_, inits) -> find_captures_field_inits(store, inits, params, env, captures)
         .FieldAccess(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .FieldAssign(obj, _, val) -> {
@@ -221,9 +211,9 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
             find_captures(store, store.exprs.get(r), params, env, captures)
         }
         .Try(inner) -> find_captures(store, store.exprs.get(inner), params, env, captures)
-        .ListLit(elems) -> find_captures_list(store, store.sexprs_of(elems), params, env, captures)
-        .Tuple(elems) -> find_captures_list(store, store.sexprs_of(elems), params, env, captures)
-        .MapLit(entries) -> find_captures_list(store, store.sexprs_of(entries), params, env, captures)
+        .ListLit(elems) -> find_captures_list(store, elems, params, env, captures)
+        .Tuple(elems) -> find_captures_list(store, elems, params, env, captures)
+        .MapLit(entries) -> find_captures_list(store, entries, params, env, captures)
         .With(obj, inits) -> {
             // Walk both obj AND field initialisers — closure that
             // uses `bag with { f: outer_var }` must capture outer_var.
@@ -238,12 +228,12 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         .IsCheck(subj, _) -> find_captures(store, store.exprs.get(subj), params, env, captures)
         .InCheck(needle, items) -> {
             find_captures(store, store.exprs.get(needle), params, env, captures)
-            find_captures_list(store, store.sexprs_of(items), params, env, captures)
+            find_captures_list(store, items, params, env, captures)
         }
         .OptionalChain(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .OptionalMethodCall(obj, _, args) -> {
             find_captures(store, store.exprs.get(obj), params, env, captures)
-            find_captures_list(store, store.sexprs_of(args), params, env, captures)
+            find_captures_list(store, args, params, env, captures)
         }
         .TupleIndex(obj, _) -> find_captures(store, store.exprs.get(obj), params, env, captures)
         .ListComp(body, var, coll, filter) -> {
@@ -262,7 +252,7 @@ fn find_captures(store: NodeStore, expr: Expr, params: List<ParamEntry>, env: Li
         .When(arms) -> find_captures_when_arms(store, arms, params, env, captures)
         .GenericCall(callee, _, args) -> {
             find_captures(store, store.exprs.get(callee), params, env, captures)
-            find_captures_list(store, store.sexprs_of(args), params, env, captures)
+            find_captures_list(store, args, params, env, captures)
         }
         // Spawn/Isolated/Quote/Splice/Lambda were missing — closure
         // bodies that wrap their work in any of these would silently
@@ -315,12 +305,12 @@ fn find_captures_when_arms(store: NodeStore, arms: List<WhenArm>, params: List<P
     }
 }
 
-/// Recurse `find_captures` across a `List<SExpr>` — call args,
+/// Recurse `find_captures` across a `List<ExprId>` — call args,
 /// list literals, etc.
-fn find_captures_list(store: NodeStore, exprs: List<SExpr>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
+fn find_captures_list(store: NodeStore, exprs: List<ExprId>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
     mut i = 0
     while i < exprs.length {
-        find_captures(store, exprs[i].node, params, env, captures)
+        find_captures(store, store.exprs.get(exprs[i]), params, env, captures)
         i = i + 1
     }
 }
@@ -385,30 +375,6 @@ fn find_captures_stmt_ids(store: NodeStore, ids: List<StmtId>, params: List<Para
     }
 }
 
-/// Walk a List<SStmt> collecting captures via
-/// `find_captures_stmt_body`.
-fn find_captures_stmts(store: NodeStore, stmts: List<SStmt>, params: List<ParamEntry>, env: List<VarBinding>, captures: List<Capture>) {
-    mut cur_params = params
-    mut i = 0
-    while i < stmts.length {
-        let ss = stmts[i]
-        // Process this statement for captures using the shared handler.
-        find_captures_stmt_body(store, ss.node, cur_params, env, captures)
-        // If this statement binds a local name, add it to params so subsequent
-        // uses of the name won't be treated as captures from the outer scope.
-        let extra: ParamEntry? = match ss.node {
-            .Let(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
-            .Mut(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
-            .Const(name, _, _) -> ParamEntry { name: name, vtype: ValueType.Unknown }
-            .For(vname, _, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
-            .ForIn(vname, _, _) -> ParamEntry { name: vname, vtype: ValueType.Unknown }
-            _ -> null
-        }
-        if extra != null { cur_params = copy_params_with(cur_params, extra!) }
-        i = i + 1
-    }
-}
-
 // ── Parameter type inference ──
 //
 // When a lambda has no explicit parameter types (the common case), we
@@ -460,8 +426,8 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
         }
         .Unary(_, inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Grouping(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .Call(callee, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(ctx.nodes.sexprs_of(args), ctx, env, captures, params)
-        .GenericCall(callee, _, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(ctx.nodes.sexprs_of(args), ctx, env, captures, params)
+        .Call(callee, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
+        .GenericCall(callee, _, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
         .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
         .Index(obj, idx) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(idx), ctx, env, captures, params)
         .IfExpr(c, t, e) -> has_float_ident(ctx.nodes.exprs.get(c), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(t), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(e), ctx, env, captures, params)
@@ -473,11 +439,11 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<C
     }
 }
 
-/// Map `has_float_ident` over a `List<SExpr>`.
-fn has_float_ident_list(exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+/// Map `has_float_ident` over a `List<ExprId>`.
+fn has_float_ident_list(exprs: List<ExprId>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     mut i = 0
     while i < exprs.length {
-        if has_float_ident(exprs[i].node, ctx, env, captures, params) { return true }
+        if has_float_ident(ctx.nodes.exprs.get(exprs[i]), ctx, env, captures, params) { return true }
         i = i + 1
     }
     false
@@ -502,9 +468,9 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<Var
         .Unary(_, inner) -> param_used_with_float(param_name, ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Grouping(inner) -> param_used_with_float(param_name, ctx.nodes.exprs.get(inner), ctx, env, captures, params)
         .Call(callee, args) -> {
-            param_used_with_float(param_name, ctx.nodes.exprs.get(callee), ctx, env, captures, params) || param_used_with_float_list(param_name, ctx.nodes.sexprs_of(args), ctx, env, captures, params)
+            param_used_with_float(param_name, ctx.nodes.exprs.get(callee), ctx, env, captures, params) || param_used_with_float_list(param_name, args, ctx, env, captures, params)
         }
-        .Block(stmts) -> param_used_with_float_stmts(param_name, ctx.nodes.sstmts_of(stmts), ctx, env, captures, params)
+        .Block(stmts) -> param_used_with_float_stmts(param_name, stmts, ctx, env, captures, params)
         .IfExpr(c, t, e) -> {
             param_used_with_float(param_name, ctx.nodes.exprs.get(c), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(t), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
         }
@@ -512,11 +478,11 @@ fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<Var
     }
 }
 
-/// Map `param_used_with_float` over a `List<SExpr>`.
-fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+/// Map `param_used_with_float` over a `List<ExprId>`.
+fn param_used_with_float_list(param_name: string, exprs: List<ExprId>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     mut i = 0
     while i < exprs.length {
-        if param_used_with_float(param_name, exprs[i].node, ctx, env, captures, params) { return true }
+        if param_used_with_float(param_name, ctx.nodes.exprs.get(exprs[i]), ctx, env, captures, params) { return true }
         i = i + 1
     }
     false
@@ -524,10 +490,10 @@ fn param_used_with_float_list(param_name: string, exprs: List<SExpr>, ctx: Ctx, 
 
 /// Map `param_used_with_float` through a statement list,
 /// recursing into expression payloads + nested bodies.
-fn param_used_with_float_stmts(param_name: string, stmts: List<SStmt>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
+fn param_used_with_float_stmts(param_name: string, stmts: List<StmtId>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
     mut i = 0
     while i < stmts.length {
-        let found = match stmts[i].node {
+        let found = match ctx.nodes.stmts.get(stmts[i]) {
             .Expr(e) -> param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
             .Return(e) -> param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
             .Let(_, _, init) -> param_used_with_float(param_name, ctx.nodes.exprs.get(init), ctx, env, captures, params)
@@ -726,12 +692,12 @@ fn push_captured_values(ctx: Ctx, captures: List<Capture>, arr: ptr) {
 /// using the heuristic. Used by higher-order list methods
 /// (`map`, `filter`, …) that know their callback's expected
 /// param types.
-export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExpr>, param_types: List<ValueType>) -> Result<EmitValue, string> {
+export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>, param_types: List<ValueType>) -> Result<EmitValue, string> {
     if args.length == 0 { return err_emit("expected 1 argument, got 0") }
     let se = args[0]
-    match se.node {
+    match ctx.nodes.exprs.get(se) {
         .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), param_types)
-        _ -> ctx.emit(env, se.node)
+        _ -> ctx.emit(env, ctx.nodes.exprs.get(se))
     }
 }
 
@@ -741,7 +707,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<SExp
 /// closure pointer from the alloca and dispatches via
 /// `emit_closure_call` (which handles env-pointer prepend +
 /// arity coercion).
-export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name: string, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name: string, args: List<ExprId>) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(alloca, name)
     let local = env_lookup(env, name)
     let ret_ty = vtype_fn_ret(local.ty)
@@ -761,7 +727,7 @@ export fn emit_indirect_call(ctx: Ctx, env: List<VarBinding>, alloca: ptr, name:
 /// Same as `emit_indirect_call` but loads the closure pointer
 /// from a top-level global instead of a local alloca. Used when
 /// a fn is exported as a `mut` global.
-export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global: ptr, name: string, args: List<SExpr>, ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global: ptr, name: string, args: List<ExprId>, ty: ValueType) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(global, name)
     let ret_ty = vtype_fn_ret(ty)
     if vtype_is_closure(ty) {
@@ -780,7 +746,7 @@ export fn emit_indirect_call_from_global(ctx: Ctx, env: List<VarBinding>, global
 /// pointer from slot 1 of the closure array, builds the arg
 /// array (prepending captured values when `num_captures > 0`),
 /// and calls via `avra_closure_call_N` for the right arity.
-fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: List<SExpr>, num_captures: int) -> Result<EmitValue, string> {
+fn emit_closure_call(ctx: Ctx, env: List<VarBinding>, closure_val: ptr, args: List<ExprId>, num_captures: int) -> Result<EmitValue, string> {
     // Closure array layout: [TAG, fn_ptr, cap1, cap2, ...]
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
     let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
@@ -835,7 +801,7 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
 /// Indirect call where the caller already has the closure as an
 /// SSA i64 and knows the expected return type. Skips the
 /// alloca-load step and dispatches straight through.
-export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>, ret_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<ExprId>, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
     ok_emit(r.value, ret_ty)
 }
@@ -843,7 +809,7 @@ export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr,
 /// Variant of `emit_closure_call` for callers that already have
 /// the SSA i64 and know both the capture count and return type.
 /// Saves a load and types the result for the caller.
-export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
+export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<ExprId>, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
     ok_emit(r.value, ret_ty)
 }
@@ -851,7 +817,7 @@ export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, 
 /// Indirect call against an i64-shaped closure value when the
 /// caller doesn't yet know the expected return type. Used in
 /// generic call paths where typing is deferred.
-export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<SExpr>) -> Result<EmitValue, string> {
+export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<ExprId>) -> Result<EmitValue, string> {
     // Indirect call for values with unknown closure status at compile time.
     // This happens when a fn returns a closure but the return type says
     // Fn/FnTyped (the type system can't distinguish bare ptrs from
@@ -866,30 +832,30 @@ export fn emit_indirect_call_value(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr,
         return ok_emit(ctx.call("avra_closure_call_0", [fn_i64]), .Int)
     }
     if user_arg_count == 1 {
-        let a0 = ctx.emit(env, args[0].node)?
+        let a0 = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
         return ok_emit(ctx.call("avra_closure_call_1", [fn_i64, a0.value]), .Int)
     }
     if user_arg_count == 2 {
-        let a0 = ctx.emit(env, args[0].node)?
-        let a1 = ctx.emit(env, args[1].node)?
+        let a0 = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+        let a1 = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
         return ok_emit(ctx.call("avra_closure_call_2", [fn_i64, a0.value, a1.value]), .Int)
     }
     if user_arg_count == 3 {
-        let a0 = ctx.emit(env, args[0].node)?
-        let a1 = ctx.emit(env, args[1].node)?
-        let a2 = ctx.emit(env, args[2].node)?
+        let a0 = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
+        let a1 = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
+        let a2 = ctx.emit(env, ctx.nodes.exprs.get(args[2]))?
         return ok_emit(ctx.call("avra_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]), .Int)
     }
     err_emit("indirect calls with ${string(user_arg_count)} args not yet supported")
 }
 
-/// Walk a `List<SExpr>` emitting each arg into successive slots of
+/// Walk a `List<ExprId>` emitting each arg into successive slots of
 /// `arr`. Lambda call paths use this to pack user-supplied
 /// arguments into the value array passed to
 /// `avra_closure_call_N`.
-fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<SExpr>, idx: int) -> Result<EmitValue, string> {
+fn fill_lambda_args(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
     for (i, arg) in args.enumerate() {
-        let r = ctx.emit(env, arg.node)?
+        let r = ctx.emit(env, ctx.nodes.exprs.get(arg))?
         ctx.value_array_set(arr, idx + i, r.value)
     }
     ok_emit(null_ptr_val(), .Void)

@@ -3,7 +3,7 @@
 // + check_list_lit are in scope without self-imports.
 use codegen.{err_emit}
 use core.{feature_new, Feature}
-use resolve.{resolve_expr_list}
+use resolve.{resolve_expr_list_ids}
 use typeck.{tc_er}
 
 /// Register the `[a, b, c]` list literal feature. Wires up
@@ -20,7 +20,7 @@ export fn list_lit_feature() -> Feature {
 /// Resolver hook for `ListLit`. Walks every element expression.
 fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .ListLit(elements) -> resolve_expr_list(r, r.nodes.sexprs_of(elements))
+        .ListLit(elements) -> resolve_expr_list_ids(r, elements)
         _ -> r
     }
 }
@@ -29,7 +29,7 @@ fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 /// which infers the element type from the entries.
 fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .ListLit(elements) -> check_list_lit(tc, tc.nodes.sexprs_of(elements))
+        .ListLit(elements) -> check_list_lit(tc, elements)
         _ -> tc_er(tc, .Unknown)
     }
 }
@@ -39,7 +39,7 @@ fn list_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// forwards to `emit_list_lit`.
 fn list_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .ListLit(elements) -> emit_list_lit(ctx, env, ctx.nodes.sexprs_of(elements))
+        .ListLit(elements) -> emit_list_lit(ctx, env, elements)
         _ -> err_emit("expected ListLit")
     }
 }

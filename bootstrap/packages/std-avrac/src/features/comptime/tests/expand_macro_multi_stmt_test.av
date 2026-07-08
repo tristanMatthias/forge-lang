@@ -17,10 +17,10 @@ const MAIN_HEADER: string = "fn " + "main()"
 spec "multi-stmt @expand splices a List<Stmt> into the parent decl list" {
     then "macro returning quote stmts emits BOTH println sites" {
         let out = write_fixture_and_run("/tmp/avra_expand_macro_multi_stmt_test.av", 
-            "use @std.avrac.core.{SStmt}\n" +
+            "use @std.avrac.core.{StmtId}\n" +
             "\n" +
             "@comptime\n" +
-            "fn make_two_prints() -> List<SStmt> {\n" +
+            "fn make_two_prints() -> List<StmtId> {\n" +
             "    return quote stmts {\n" +
             "        println(\"alpha\")\n" +
             "        println(\"beta\")\n" +

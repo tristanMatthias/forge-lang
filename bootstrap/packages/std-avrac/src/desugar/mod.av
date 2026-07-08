@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, SExpr, SStmt, sexpr_dummy, sstmt, sstmt_at, sstmt_dummy, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
+use core.{Expr, Stmt, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map, list_concat}
 
@@ -294,7 +294,7 @@ fn lower_table_rows(store: NodeStore, expr: Expr, expected: ValueType) -> Expr {
 fn stamp_table_rows(store: NodeStore, expr: Expr, sname: string) -> Expr {
     match expr {
         .ListLit(rows) -> .ListLit(stamp_table_row_list(store, rows, sname))
-        .Block(body) -> .Block(store.rows_of(stamp_block_tail(store, store.sstmts_of(body), sname)))
+        .Block(body) -> .Block(stamp_block_tail(store, body, sname))
         .IfExpr(c, t, e) -> .IfExpr(c, store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(t), sname)), store.exprs.add_leaf(stamp_table_rows(store, store.exprs.get(e), sname)))
         .MatchExpr(subj, arms) -> .MatchExpr(subj, stamp_table_match_arms(store, arms, sname))
         .When(arms) -> .When(stamp_table_when_arms(store, arms, sname))
@@ -321,20 +321,20 @@ fn stamp_table_row(row: Expr, sname: string) -> Expr {
 }
 
 /// Stamp the tail (last) statement of a block when it is an expression.
-fn stamp_block_tail(store: NodeStore, body: List<SStmt>, sname: string) -> List<SStmt> {
+fn stamp_block_tail(store: NodeStore, body: List<StmtId>, sname: string) -> List<StmtId> {
     let n = body.length
     if n == 0 { return body }
-    mut out: List<SStmt> = []
+    mut out: List<StmtId> = []
     mut i = 0
     while i < n {
-        let ss = body[i]
+        let id = body[i]
         if i == n - 1 {
-            match ss.node {
-                .Expr(e) -> out.push(sstmt_at(Stmt.Expr(store.reexpr(stamp_table_rows(store, store.exprs.get(e), sname), e)), ss.line, ss.col, ss.file))
-                _ -> out.push(ss)
+            match store.stmts.get(id) {
+                .Expr(e) -> out.push(store.restmt(Stmt.Expr(store.reexpr(stamp_table_rows(store, store.exprs.get(e), sname), e)), id))
+                _ -> out.push(id)
             }
         } else {
-            out.push(ss)
+            out.push(id)
         }
         i = i + 1
     }
@@ -477,12 +477,12 @@ fn desugar_dbg(store: NodeStore, args: List<ExprId>) -> Expr {
         store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("string")), string_args))
     )
     let println_args: List<ExprId> = [store.exprs.add_leaf(print_arg)]
-    let body: List<SStmt> = [
-        sstmt(Stmt.Let("__dbg", ValueType.Unknown, store.exprs.add_leaf(val)), 0, 0),
-        sstmt(Stmt.Expr(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("println")), println_args))), 0, 0),
-        sstmt(Stmt.Expr(store.exprs.add_leaf(Expr.Ident("__dbg"))), 0, 0),
+    let body: List<StmtId> = [
+        store.stmts.add_leaf(Stmt.Let("__dbg", ValueType.Unknown, store.exprs.add_leaf(val))),
+        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("println")), println_args)))),
+        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Ident("__dbg")))),
     ]
-    Expr.Block(store.rows_of(body))
+    Expr.Block(body)
 }
 
 /// Rewrite `todo()` / `todo("message")` into a `panic` with a
@@ -527,12 +527,12 @@ fn desugar_min_max(store: NodeStore, args: List<ExprId>, is_min: int) -> Expr {
         store.exprs.add_leaf(Expr.Ident("__a")),
         store.exprs.add_leaf(Expr.Ident("__b"))
     )
-    let body: List<SStmt> = [
-        sstmt(Stmt.Let("__a", ValueType.Unknown, store.exprs.add_leaf(a_val)), 0, 0),
-        sstmt(Stmt.Let("__b", ValueType.Unknown, store.exprs.add_leaf(b_val)), 0, 0),
-        sstmt(Stmt.Expr(store.exprs.add_leaf(pick)), 0, 0),
+    let body: List<StmtId> = [
+        store.stmts.add_leaf(Stmt.Let("__a", ValueType.Unknown, store.exprs.add_leaf(a_val))),
+        store.stmts.add_leaf(Stmt.Let("__b", ValueType.Unknown, store.exprs.add_leaf(b_val))),
+        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(pick))),
     ]
-    Expr.Block(store.rows_of(body))
+    Expr.Block(body)
 }
 
 // ── Generic expression walker ──

@@ -11,29 +11,29 @@
 //      the presence scan missed a position, lowering skipped, and the
 //      un-lowered Quote crashed eval later).
 
-use @std.avrac.core.{Expr, Stmt, SStmt, StmtId, NodeStore, MatchArm, FieldInit, Pattern, ValueType, sexpr_at, sstmt_at, render_stmt_list, new_node_store, build_line_index, byte_span_none}
+use @std.avrac.core.{Expr, Stmt, StmtId, NodeStore, MatchArm, FieldInit, Pattern, ValueType, render_stmt_ids, new_node_store, build_line_index, byte_span_none}
 use @std.avrac.features.quote_expr.{lower_quotes, lower_quotes_via_store}
 
-/// A program + the store its rows live in. F3a: the Let's initializer
-/// is an ExprId, so the expr subtree is ingested into the store FIRST
-/// — which is also exactly what makes the flat store scan see it.
-type ProgramWithStore = { stmts: List<SStmt>, store: NodeStore }
+/// A program (its root rows) + the store its rows live in. F3a: the Let's
+/// initializer is an ExprId, so the expr subtree is ingested into the store
+/// FIRST — which is also exactly what makes the flat store scan see it.
+type ProgramWithStore = { ids: List<StmtId>, store: NodeStore }
 
 /// Render the program after lowering through the FLAT store scan. F4e:
-/// `lower_quotes*` are arena-id-native, so the program's roots are
-/// ingested to `List<StmtId>` and the lowered rows read back for render.
+/// `lower_quotes*` are arena-id-native — the roots lower to `List<StmtId>`
+/// which render directly.
 fn lowered_via_store(pw: ProgramWithStore) -> string {
-    render_stmt_list(pw.store, pw.store.sstmts_of(lower_quotes_via_store(pw.store.rows_of(pw.stmts), pw.store)))
+    render_stmt_ids(pw.store, lower_quotes_via_store(pw.ids, pw.store))
 }
 
 /// Render the program after lowering through the recursive tree scan.
 fn lowered_tree(pw: ProgramWithStore) -> string {
-    render_stmt_list(pw.store, pw.store.sstmts_of(lower_quotes(pw.store.rows_of(pw.stmts), pw.store)))
+    render_stmt_ids(pw.store, lower_quotes(pw.ids, pw.store))
 }
 
 /// Render the program unchanged (the fast-path / no-rewrite baseline).
 fn rendered_input(pw: ProgramWithStore) -> string {
-    render_stmt_list(pw.store, pw.stmts)
+    render_stmt_ids(pw.store, pw.ids)
 }
 
 /// One top-level `let q = <expr>` statement as a program, ingested into the
@@ -42,7 +42,9 @@ fn rendered_input(pw: ProgramWithStore) -> string {
 /// scan resolves through.
 fn program_of(e: Expr, store: NodeStore) -> ProgramWithStore {
     let init = store.ingest_expr(e, byte_span_none())
-    ProgramWithStore { stmts: [sstmt_at(Stmt.Let("q", ValueType.Unknown, init), 1, 1, "")], store }
+    let sid = store.stmts.add_leaf(Stmt.Let("q", ValueType.Unknown, init))
+    store.set_stmt_pos(sid, 1, 1, "")
+    ProgramWithStore { ids: [sid], store }
 }
 
 /// `quote { 5 }` with its body ingested into `store` — the flipped `Quote.body`

@@ -1,7 +1,7 @@
 // WHY: parses map literal expressions `{ "key": value, ... }`.
 // is_map_literal does lookahead to disambiguate map literals from blocks.
 
-use core.{Expr, SExpr, sexpr, ExprId, byte_span_none}
+use core.{Expr, ExprId, byte_span_none}
 use parse.{Parser, ArgListIds}
 use core.{Tk}
 
@@ -88,7 +88,6 @@ impl Parser {
 
     // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
     fn parse_map_entries(self) -> Result<ArgListIds, string> {
-        mut out: List<SExpr> = []
         mut ids: List<ExprId> = []
         mut keep_going = true
         while keep_going {
@@ -97,8 +96,6 @@ impl Parser {
                 return .Err("parse error")
             }
             let value_id = self.parse_expression()?
-            out.push(sexpr(self.expr_of(key_id), self.current_line, self.current_column))
-            out.push(sexpr(self.expr_of(value_id), self.current_line, self.current_column))
             ids.push(key_id)
             ids.push(value_id)
             if self.check(Tk.Comma) {
@@ -108,6 +105,6 @@ impl Parser {
                 keep_going = false
             }
         }
-        .Ok(ArgListIds { wrapped: out, ids: ids })
+        .Ok(ArgListIds { ids: ids })
     }
 }

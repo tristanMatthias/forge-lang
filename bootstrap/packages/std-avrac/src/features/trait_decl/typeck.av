@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.{Stmt, SStmt, NodeStore, vtype_is_unknown, stmt_unwrap}
+use core.{StmtId, NodeStore, vtype_is_unknown, stmt_unwrap}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.{method_mangled_name}
@@ -30,7 +30,7 @@ export fn find_trait_separator(name: string) -> int {
 /// method on the trait is implemented; (c) every required
 /// associated type is provided. Inherent impls (no `Trait:`
 /// prefix) bypass conformance checks.
-export fn check_trait_conformance(tc: TC, impl_name: string, methods: List<SStmt>) -> TC {
+export fn check_trait_conformance(tc: TC, impl_name: string, methods: List<StmtId>) -> TC {
     let colon_idx = find_trait_separator(impl_name)
     if colon_idx < 0 { return tc }
 
@@ -61,12 +61,12 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: List<SStmt
 /// impl block defines a matching `type Name = ...` entry. Missing
 /// associated types surface as F1000 with a message that names
 /// both the trait and the implementing type.
-fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: List<string>, impl_stmts: List<SStmt>) -> TC {
+fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: List<string>, impl_stmts: List<StmtId>) -> TC {
     mut current = tc
     mut i = 0
     while i < required.length {
         let name = required[i]
-        if !impl_has_assoc_type(impl_stmts, name) {
+        if !impl_has_assoc_type(tc.nodes, impl_stmts, name) {
             current = tc_report(current, DiagCode.TypeMismatch, "trait `${trait_name}` requires associated type `${name}` but `${type_name}` does not define it")
         }
         i = i + 1
@@ -75,11 +75,13 @@ fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, req
 }
 
 /// True when `stmts` contains an `AssocType(name, …)` entry with
-/// a resolved (non-Unknown) right-hand side.
-fn impl_has_assoc_type(stmts: List<SStmt>, name: string) -> bool {
+/// a resolved (non-Unknown) right-hand side. Peels `Annotated`
+/// wrappers (like the sibling `impl_has_method`) so an annotated
+/// `type Item = …` still registers as present.
+fn impl_has_assoc_type(store: NodeStore, stmts: List<StmtId>, name: string) -> bool {
     mut i = 0
     while i < stmts.length {
-        match stmts[i].node {
+        match stmt_unwrap(store, store.stmts.get(stmts[i])) {
             .AssocType(n, ty_vt) if n == name && !vtype_is_unknown(ty_vt) -> return true
             _ -> {}
         }
@@ -92,7 +94,7 @@ fn impl_has_assoc_type(stmts: List<SStmt>, name: string) -> bool {
 /// supplies a function with the same name (after method-mangling)
 /// and matching arity. Each missing method or arity mismatch
 /// emits its own F1000 diagnostic so users see the full picture.
-fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: List<TraitMethod>, impl_methods: List<SStmt>) -> TC {
+fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: List<TraitMethod>, impl_methods: List<StmtId>) -> TC {
     mut current = tc
     mut i = 0
     while i < required.length {
@@ -114,10 +116,10 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
 
 /// Look up a method by mangled name and return its parameter
 /// count, or -1 when not found.
-fn impl_method_param_count(store: NodeStore, methods: List<SStmt>, name: string) -> int {
+fn impl_method_param_count(store: NodeStore, methods: List<StmtId>, name: string) -> int {
     mut i = 0
     while i < methods.length {
-        match stmt_unwrap(store, methods[i].node) {
+        match stmt_unwrap(store, store.stmts.get(methods[i])) {
             .Function(fn_name, _, params, _, _) if fn_name == name -> return params.length
             _ -> {}
         }
@@ -130,10 +132,10 @@ fn impl_method_param_count(store: NodeStore, methods: List<SStmt>, name: string)
 /// (mangled) name. Walks `Annotated` wrappers transparently so
 /// methods carrying `@external_unit` (synthesised from metadata.bin
 /// for cross-unit impls — 9ixv) still register as present.
-fn impl_has_method(store: NodeStore, methods: List<SStmt>, name: string) -> bool {
+fn impl_has_method(store: NodeStore, methods: List<StmtId>, name: string) -> bool {
     mut i = 0
     while i < methods.length {
-        match stmt_unwrap(store, methods[i].node) {
+        match stmt_unwrap(store, store.stmts.get(methods[i])) {
             .Function(fn_name, _, _, _, _) if fn_name == name -> return true
             _ -> {}
         }
@@ -145,11 +147,11 @@ fn impl_has_method(store: NodeStore, methods: List<SStmt>, name: string) -> bool
 /// Walk a trait body and produce the method-signature list of every
 /// `extern fn` (the trait's required signatures). Default-
 /// implemented methods don't count — only the abstract ones.
-export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMethod> {
+export fn collect_method_names_from_stmts(store: NodeStore, stmts: List<StmtId>) -> List<TraitMethod> {
     mut out: List<TraitMethod> = []
     mut i = 0
     while i < stmts.length {
-        match stmts[i].node {
+        match store.stmts.get(stmts[i]) {
             .ExternFn(name, params, _) -> {
                 out.push(TraitMethod { name: name, param_count: params.length })
             }
@@ -162,11 +164,11 @@ export fn collect_method_names_from_stmts(stmts: List<SStmt>) -> List<TraitMetho
 
 /// Walk a trait body and produce the list of every `type Name`
 /// declaration (associated types — spec Axis 2).
-export fn collect_assoc_types_from_stmts(stmts: List<SStmt>) -> List<string> {
+export fn collect_assoc_types_from_stmts(store: NodeStore, stmts: List<StmtId>) -> List<string> {
     mut out: List<string> = []
     mut i = 0
     while i < stmts.length {
-        match stmts[i].node {
+        match store.stmts.get(stmts[i]) {
             .AssocType(name, _) -> { out.push(name) }
             _ -> {}
         }

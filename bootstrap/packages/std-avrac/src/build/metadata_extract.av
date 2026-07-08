@@ -6,7 +6,7 @@
 // Tracked under forge-crafting-intepreters-iinq.
 
 use core.{NodeStore, StmtId,
-    Stmt, SStmt, sstmt_at, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
+    Stmt, Expr, FieldEntry, Variant, TypeParamEntry, ValueType,
     Annotation, stmt_unwrap,
 }
 use build.metadata.{
@@ -49,7 +49,7 @@ fn empty_acc(store: NodeStore) -> ExtractAcc {
 // qualify every symbol (so the same fn `add` in a different module
 // gets a distinct sym_id). `fingerprint` is the 32-byte sha256 of
 // the source set, computed by the build driver upstream.
-export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: List<SStmt>, store: NodeStore) -> UnitMetadata {
+export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: List<StmtId>, store: NodeStore) -> UnitMetadata {
     // When the source is already wrapped in `Module(unit_name, body)`
     // (the lib path with --module_path), descend into body to avoid
     // double-prefixing qns (e.g. `@std::avrac::@std::avrac::core::X`).
@@ -91,7 +91,7 @@ export fn extract_unit_metadata(unit_name: string, fingerprint: bytes, stmts: Li
 /// stable across all per-file slices so consumers see byte-identical
 /// qns whether they load the package's whole-unit metadata or the
 /// per-file slice.
-export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: List<SStmt>, store: NodeStore) -> UnitMetadata {
+export fn extract_per_file_metadata(unit_name: string, target_file: string, fingerprint: bytes, stmts: List<StmtId>, store: NodeStore) -> UnitMetadata {
     let inner = unwrap_outer_unit_module(store, stmts, unit_name)
     let acc = walk_stmts_for_file(empty_acc(store), inner, unit_name, false, false, target_file)
     UnitMetadata {
@@ -109,7 +109,7 @@ export fn extract_per_file_metadata(unit_name: string, target_file: string, fing
     }
 }
 
-fn walk_stmts_for_file(acc: ExtractAcc, stmts: List<SStmt>, current_module: string, exported: bool, is_comptime: bool, target_file: string) -> ExtractAcc {
+fn walk_stmts_for_file(acc: ExtractAcc, stmts: List<StmtId>, current_module: string, exported: bool, is_comptime: bool, target_file: string) -> ExtractAcc {
     mut cur = acc
     mut i = 0
     while i < stmts.length {
@@ -119,30 +119,29 @@ fn walk_stmts_for_file(acc: ExtractAcc, stmts: List<SStmt>, current_module: stri
     cur
 }
 
-fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported: bool, is_comptime: bool, target_file: string) -> ExtractAcc {
-    match ss.node {
+fn walk_ss_for_file(acc: ExtractAcc, id: StmtId, current_module: string, exported: bool, is_comptime: bool, target_file: string) -> ExtractAcc {
+    match acc.nodes.stmts.get(id) {
         // Module wraps are structural — always recurse, regardless of
-        // SStmt.file. The wrap's file marks where the `mod foo` decl
-        // lived; the body's own SStmts carry foo.av's path.
+        // the row's file. The wrap's file marks where the `mod foo`
+        // decl lived; the body's own rows carry foo.av's path.
         .Module(name, body) -> {
             let sub_path = qualify(current_module, name)
-            walk_stmts_for_file(acc, acc.nodes.sstmts_of(body), sub_path, false, false, target_file)
+            walk_stmts_for_file(acc, body, sub_path, false, false, target_file)
         }
-        // Annotated transparently delegates. The Annotated SStmt's
-        // file matches the inner stmt's file (parser stamps both),
-        // so the gating happens at the inner stmt's recursion.
+        // Annotated transparently delegates. The Annotated row's file
+        // matches the inner stmt's file (parser stamps both), so the
+        // gating happens at the inner stmt's recursion.
         // 9p1d: sticky `@comptime` — fn body must ride the roundtrip
         // so consumers can invoke the macro via `@expand`.
         .Annotated(annots, inner) -> {
             let is_export = exported || annotation_has_export(annots)
             let is_comp = is_comptime || annotation_has(annots, "comptime")
-            let inner_ss = acc.nodes.sstmt_of(inner)
-            walk_ss_for_file(acc, inner_ss, current_module, is_export, is_comp, target_file)
+            walk_ss_for_file(acc, inner, current_module, is_export, is_comp, target_file)
         }
         // Leaf decl: gate on file match.
         _ -> {
-            if ss.file == target_file {
-                walk_stmt(acc, ss.node, current_module, exported, is_comptime)
+            if acc.nodes.stmts.pos_of(id).file == target_file {
+                walk_stmt(acc, acc.nodes.stmts.get(id), current_module, exported, is_comptime)
             } else {
                 acc
             }
@@ -155,27 +154,26 @@ fn walk_ss_for_file(acc: ExtractAcc, ss: SStmt, current_module: string, exported
 // the resolver prepended for `use @pkg` paths. When no such wrap
 // exists the source is treated as a flat unit, returning `stmts`
 // unchanged so the legacy single-file path still works.
-fn unwrap_outer_unit_module(store: NodeStore, stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
+fn unwrap_outer_unit_module(store: NodeStore, stmts: List<StmtId>, unit_name: string) -> List<StmtId> {
     if unit_name == "" { return stmts }
     let body = find_unit_module_body(store, stmts, unit_name)
     if body.length == 0 { return stmts }
     body
 }
 
-fn find_unit_module_body(store: NodeStore, stmts: List<SStmt>, unit_name: string) -> List<SStmt> {
+fn find_unit_module_body(store: NodeStore, stmts: List<StmtId>, unit_name: string) -> List<StmtId> {
     mut i = 0
     while i < stmts.length {
-        let ss = stmts[i]
-        let inner = stmt_unwrap(store, ss.node)
+        let inner = stmt_unwrap(store, store.stmts.get(stmts[i]))
         match inner {
             .Module(name, body) -> {
-                if name == unit_name { return store.sstmts_of(body) }
+                if name == unit_name { return body }
             }
             _ -> {}
         }
         i = i + 1
     }
-    let empty: List<SStmt> = []
+    let empty: List<StmtId> = []
     empty
 }
 
@@ -240,11 +238,11 @@ fn extract_inherent_methods(store: NodeStore, methods: List<StmtId>) -> List<Met
     out
 }
 
-fn walk_stmts(acc: ExtractAcc, stmts: List<SStmt>, current_module: string, exported: bool, is_comptime: bool) -> ExtractAcc {
+fn walk_stmts(acc: ExtractAcc, stmts: List<StmtId>, current_module: string, exported: bool, is_comptime: bool) -> ExtractAcc {
     mut cur = acc
     mut i = 0
     while i < stmts.length {
-        cur = walk_stmt(cur, stmts[i].node, current_module, exported, is_comptime)
+        cur = walk_stmt(cur, acc.nodes.stmts.get(stmts[i]), current_module, exported, is_comptime)
         i = i + 1
     }
     cur
@@ -291,7 +289,7 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
         }
         .Module(name, body) -> {
             let sub_path = qualify(current_module, name)
-            walk_stmts(acc, acc.nodes.sstmts_of(body), sub_path, false, false)
+            walk_stmts(acc, body, sub_path, false, false)
         }
         .TypeDecl(name, type_params, fields) -> {
             let qn = qualify(current_module, name)
@@ -632,20 +630,21 @@ fn strip_quotes(quoted: string) -> string {
 //
 // Used today only by tests; the build driver picks it up under g2eo.
 
-export fn collect_source_files(store: NodeStore, stmts: List<SStmt>) -> List<string> {
+export fn collect_source_files(store: NodeStore, stmts: List<StmtId>) -> List<string> {
     mut acc: List<string> = []
     walk_files(store, stmts, acc)
 }
 
-fn walk_files(store: NodeStore, stmts: List<SStmt>, acc: List<string>) -> List<string> {
+fn walk_files(store: NodeStore, stmts: List<StmtId>, acc: List<string>) -> List<string> {
     mut local = acc
     mut i = 0
     while i < stmts.length {
-        let ss = stmts[i]
-        if ss.file != "" && !files_contain(local, ss.file) {
-            local.push(ss.file)
+        let id = stmts[i]
+        let file = store.stmts.pos_of(id).file
+        if file != "" && !files_contain(local, file) {
+            local.push(file)
         }
-        local = walk_files_in_stmt(store, ss.node, local)
+        local = walk_files_in_stmt(store, store.stmts.get(id), local)
         i = i + 1
     }
     local
@@ -661,7 +660,7 @@ fn walk_files(store: NodeStore, stmts: List<SStmt>, acc: List<string>) -> List<s
 // public-surface walk.
 fn walk_files_in_stmt(store: NodeStore, stmt: Stmt, acc: List<string>) -> List<string> {
     match stmt {
-        .Module(_, body) -> walk_files(store, store.sstmts_of(body), acc)
+        .Module(_, body) -> walk_files(store, body, acc)
         .Annotated(_, inner) -> walk_files_in_stmt(store, store.stmts.get(inner), acc)
         _ -> acc
     }

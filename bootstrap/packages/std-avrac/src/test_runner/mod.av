@@ -1,6 +1,6 @@
 // WHY: Pure-AST helpers for assembling a synthetic test program from a
 // set of `_test.av` source files. Used by the `avra test` driver to
-// stitch each test file into one List<SStmt>, hoist package modules so
+// stitch each test file into one List<StmtId>, hoist package modules so
 // each @std package appears only once, and prepend the externs the
 // test harness binds against.
 //
@@ -9,10 +9,8 @@
 // reuse them to build a test program.
 
 use core.{
-    Stmt, SStmt, ParamEntry, ValueType, TypeParamEntry,
-    Expr, SExpr, Annotation, FieldInit,
-    sstmt_dummy, sstmt_at,
-    sexpr_dummy,
+    Stmt, ParamEntry, ValueType, TypeParamEntry,
+    Expr, Annotation, FieldInit,
     avra_shell_exec,
     avra_selfhost_file_exists,
     avra_selfhost_read_file,
@@ -49,33 +47,13 @@ extern fn avra_test_toolchain_fp_set(fp: string)
 extern fn avra_file_lock_exclusive(path: string) -> int
 extern fn avra_file_unlock(fd: int)
 
-/// Drop every `extern fn` declaration from the list.
-///
-/// Test files re-import the extern declarations the runtime supplies
-/// (`avra_test_*`); when we then concatenate the file's body into a
-/// shared program, those externs would collide with the canonical
-/// set we prepend in `prepend_test_externs`. Stripping them once on
-/// each test file keeps a single declaration of each runtime hook in
-/// the assembled program.
-export fn strip_externs(stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    for ss in stmts {
-        match ss.node {
-            .ExternFn(_, _, _) -> {}
-            _ -> out.push(ss)
-        }
-    }
-    out
-}
-
 // ── AST builder mini-DSL ────────────────────────────────────────────
 //
 // `prepend_test_externs` and `build_guarded_spec_call` both compose
 // nested cons-chains by hand. The helpers below hide that ceremony so
 // the call sites read top-to-bottom in declaration order rather than
-// inside-out. They're test_runner-local because they bake in
-// dummy-span metadata (`sstmt_dummy` / `sexpr_dummy`); other AST
-// consumers may want real spans.
+// inside-out. They're test_runner-local because they allocate
+// dummy-span leaf rows; other AST consumers may want real spans.
 
 /// Single extern declaration row. Drives `prepend_test_externs`'s
 /// table-driven prepend loop so the runtime contract reads as a
@@ -85,10 +63,10 @@ type RuntimeExtern = { name: string, params: List<ParamEntry>, ret: ValueType }
 /// Convert `List<RuntimeExtern>` into prepended `ExternFn` stmts in
 /// declaration order. Builds a fresh List with externs first, then
 /// the existing stmts.
-fn prepend_externs(stmts: List<SStmt>, decls: List<RuntimeExtern>) -> List<SStmt> {
-    mut out: List<SStmt> = []
+fn prepend_externs(store: NodeStore, stmts: List<StmtId>, decls: List<RuntimeExtern>) -> List<StmtId> {
+    mut out: List<StmtId> = []
     for d in decls {
-        out.push(sstmt_dummy(Stmt.ExternFn(d.name, d.params, d.ret)))
+        out.push(store.stmts.add_leaf(Stmt.ExternFn(d.name, d.params, d.ret)))
     }
     for s in stmts {
         out.push(s)
@@ -157,8 +135,8 @@ fn guard_extern_params() -> List<ParamEntry> {
 
 /// Cons-prepend the runtime extern table onto a freshly-assembled
 /// test program. See `test_runtime_externs` for the full contract.
-export fn prepend_test_externs(stmts: List<SStmt>) -> List<SStmt> {
-    prepend_externs(stmts, test_runtime_externs())
+export fn prepend_test_externs(store: NodeStore, stmts: List<StmtId>) -> List<StmtId> {
+    prepend_externs(store, stmts, test_runtime_externs())
 }
 
 // ── hkms.3 wrap: spec → guarded call site ──────────────────────────
@@ -190,12 +168,12 @@ export fn prepend_test_externs(stmts: List<SStmt>) -> List<SStmt> {
 /// nested inside fn bodies (no realistic use today, but cheap to keep
 /// untouched) compile as before, since their crash would already be
 /// scoped to the enclosing fn call.
-export fn wrap_specs_with_guard(store: NodeStore, stmts: List<SStmt>) -> List<SStmt> {
-    mut out: List<SStmt> = []
-    for ss in stmts {
-        let rewritten = match ss.node {
-            .SpecBlock(name, _) -> build_guarded_spec_call(store, ss, name)
-            _ -> ss
+export fn wrap_specs_with_guard(store: NodeStore, stmts: List<StmtId>) -> List<StmtId> {
+    mut out: List<StmtId> = []
+    for id in stmts {
+        let rewritten = match store.stmts.get(id) {
+            .SpecBlock(name, _) -> build_guarded_spec_call(store, id, name)
+            _ -> id
         }
         out.push(rewritten)
     }
@@ -211,31 +189,35 @@ export fn wrap_specs_with_guard(store: NodeStore, stmts: List<SStmt>) -> List<SS
 /// clean name. File path is freshly wrapped in quotes for the same
 /// round-trip. The body Lambda returns int (per the extern's
 /// `body: fn() -> int` signature) via the trailing `0`.
-fn build_guarded_spec_call(store: NodeStore, orig: SStmt, spec_name_lex: string) -> SStmt {
-    let body_stmts: List<SStmt> = [
-        sstmt_dummy(orig.node),
-        sstmt_dummy(Stmt.Expr(store.exprs.add_leaf(Expr.Number("0")))),
+fn build_guarded_spec_call(store: NodeStore, orig: StmtId, spec_name_lex: string) -> StmtId {
+    let opos = store.stmt_pos(orig)
+    // Block body = [the original SpecBlock node, `0`]. The SpecBlock row
+    // is re-leafed so the guarded call fully owns the top-level slot.
+    let body: List<StmtId> = [
+        store.stmts.add_leaf(store.stmts.get(orig)),
+        store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Number("0")))),
     ]
     let empty_p: List<ParamEntry> = []
-    // Flipped Lambda.body is an ExprId — ingest the block leaf. Flipped
-    // Expr.Block holds List<StmtId>, so ingest the synthesized rows.
-    let body_lambda = Expr.Lambda(empty_p, store.exprs.add_leaf(Expr.Block(store.rows_of(body_stmts))))
+    // Lambda.body is an ExprId; Expr.Block holds List<StmtId>.
+    let body_lambda = Expr.Lambda(empty_p, store.exprs.add_leaf(Expr.Block(body)))
     let args: List<ExprId> = [
         store.exprs.add_leaf(Expr.String(spec_name_lex)),
-        store.exprs.add_leaf(Expr.String("\"" + orig.file + "\"")),
-        store.exprs.add_leaf(Expr.Number(string(orig.line))),
+        store.exprs.add_leaf(Expr.String("\"" + opos.file + "\"")),
+        store.exprs.add_leaf(Expr.Number(string(opos.line))),
         store.exprs.add_leaf(body_lambda),
     ]
     let call = Expr.Call(store.exprs.add_leaf(Expr.Ident("avra_test_run_spec_guarded")), args)
-    sstmt_at(Stmt.Expr(store.exprs.add_leaf(call)), orig.line, orig.col, orig.file)
+    // Re-allocate against the original SpecBlock row so the call keeps
+    // its span/position.
+    store.restmt(Stmt.Expr(store.exprs.add_leaf(call)), orig)
 }
 
 /// Outcome of splitting a stmt list into hoistable package modules
 /// and the per-test body. The runner uses this to keep each
 /// `@std::pkg` module unique across the assembled program.
 export type PackageSplit = {
-    packages: List<SStmt>,
-    body: List<SStmt>,
+    packages: List<StmtId>,
+    body: List<StmtId>,
 }
 
 /// Collect every `@`-prefixed `Module` from the stmt list and
@@ -244,7 +226,7 @@ export type PackageSplit = {
 /// need to import `features.modules.resolver` directly. Both
 /// implementations agreed on the recursive walk — sharing the
 /// canonical one removes a second copy that would have drifted.
-export fn split_package_modules(store: NodeStore, stmts: List<SStmt>) -> PackageSplit {
+export fn split_package_modules(store: NodeStore, stmts: List<StmtId>) -> PackageSplit {
     let h = hoist_package_modules(store, stmts)
     PackageSplit { packages: h.packages, body: h.body }
 }
@@ -271,8 +253,8 @@ export fn test_runner_path(project_dir: string) -> string {
 /// caller can dedup them across the whole program in one pass.
 type AssembledFile = {
     mod_name: string,
-    packages: List<SStmt>,
-    wrapped_body: List<SStmt>,
+    packages: List<StmtId>,
+    wrapped_body: List<StmtId>,
 }
 
 /// Parse + resolve-module-files + hoist + spec-wrap one test file.
@@ -287,16 +269,16 @@ type AssembledFile = {
 fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFile, string> {
     let content = avra_selfhost_read_file(path)
     let parsed = parse_program_source_shared(content, path, store)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
         return Result.Err("error parsing ${path}")
     }
     let empty_loaded: List<string> = []
-    let mod_resolved = resolve_module_files(store.rows_of(parsed.stmts!), modules_dirname(path), empty_loaded, store)
+    let mod_resolved = resolve_module_files(parsed.ids!, modules_dirname(path), empty_loaded, store)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
-    let split = split_package_modules(store, store.sstmts_of(mod_resolved.stmts))
+    let split = split_package_modules(store, mod_resolved.stmts)
     Result.Ok(AssembledFile {
         mod_name: basename_no_ext(path),
         packages: split.packages,
@@ -312,13 +294,13 @@ fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFil
 /// a (broken) test program; the missing reporter fns surface as
 /// "undefined name" diagnostics in the codegen pass, which is the
 /// signal we want when something is wrong with the install.
-fn load_reporter_stmts(project_dir: string, store: NodeStore) -> List<SStmt> {
+fn load_reporter_stmts(project_dir: string, store: NodeStore) -> List<StmtId> {
     load_support_stmts(test_reporter_path(project_dir), store)
 }
 
 /// The in-process parallel runner, inlined right after the
 /// reporter so the synthesized main's `run_test_suite` resolves.
-fn load_runner_stmts(project_dir: string, store: NodeStore) -> List<SStmt> {
+fn load_runner_stmts(project_dir: string, store: NodeStore) -> List<StmtId> {
     load_support_stmts(test_runner_path(project_dir), store)
 }
 
@@ -326,13 +308,13 @@ fn load_runner_stmts(project_dir: string, store: NodeStore) -> List<SStmt> {
 /// empty list on missing/parse-failure keeps the caller producing a
 /// (broken) program whose missing names surface as resolve
 /// diagnostics — the right signal for a damaged install.
-fn load_support_stmts(path: string, store: NodeStore) -> List<SStmt> {
-    let empty: List<SStmt> = []
+fn load_support_stmts(path: string, store: NodeStore) -> List<StmtId> {
+    let empty: List<StmtId> = []
     if avra_selfhost_file_exists(path) == 0 { return empty }
     let rsrc = avra_selfhost_read_file(path)
     let rparsed = parse_program_source_shared(rsrc, path, store)
-    if rparsed.had_error || rparsed.stmts == null { return empty }
-    rparsed.stmts!
+    if rparsed.had_error || rparsed.ids == null { return empty }
+    rparsed.ids!
 }
 
 /// Synthetic test-bundle entry point:
@@ -346,24 +328,24 @@ fn load_support_stmts(path: string, store: NodeStore) -> List<SStmt> {
 /// is not auto-called); the runner dispatches the units across
 /// worker threads. Cons-prepended onto the rest of the assembled
 /// program so the declaration lands first in the rendered AST.
-fn synth_test_main(store: NodeStore, mod_names: List<string>) -> SStmt {
+fn synth_test_main(store: NodeStore, mod_names: List<string>) -> StmtId {
     let empty_args_ids: List<ExprId> = []
-    mut unit_lits: List<SExpr> = []
+    mut unit_lits: List<ExprId> = []
     for mod_name in mod_names {
         let inits: List<FieldInit> = [
             FieldInit { name: "name", value_id: store.exprs.add_leaf(Expr.String("\"${mod_name}\"")) },
             FieldInit { name: "run", value_id: store.exprs.add_leaf(Expr.Ident("__init_${mod_name}")) },
         ]
-        unit_lits.push(sexpr_dummy(Expr.StructLit("TestUnit", inits)))
+        unit_lits.push(store.exprs.add_leaf(Expr.StructLit("TestUnit", inits)))
     }
     let body: List<StmtId> = [
         store.stmts.add_leaf(Stmt.Expr(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("run_test_suite")),
-            [store.exprs.add_leaf(Expr.ListLit(store.ingest_sexpr_recipe(unit_lits)))])))),
+            [store.exprs.add_leaf(Expr.ListLit(unit_lits))])))),
         store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident("test_render_summary")), empty_args_ids)))),
     ]
     let empty_tp: List<TypeParamEntry> = []
     let empty_p: List<ParamEntry> = []
-    sstmt_dummy(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
+    store.stmts.add_leaf(Stmt.Function("main", empty_tp, empty_p, ValueType.Int, body))
 }
 
 /// `extern fn __init_<mod>() -> int` rows for every deferred test
@@ -386,7 +368,7 @@ fn unit_init_externs(mod_names: List<string>) -> List<RuntimeExtern> {
 /// Returned program layout (top-to-bottom): runtime externs,
 /// reporter fns, deduped @std/* packages, per-file test modules,
 /// synthesised `fn main`.
-export fn assemble_test_program(test_paths: List<string>, project_dir: string, store: NodeStore) -> Result<List<SStmt>, string> {
+export fn assemble_test_program(test_paths: List<string>, project_dir: string, store: NodeStore) -> Result<List<StmtId>, string> {
     if test_paths.length == 0 { return Result.Err("no spec test files found") }
 
     // hkms.1.1 perf pass: iterate test_paths in REVERSE and push so
@@ -400,8 +382,8 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
     // mod_group_merge), so changing this loop's order would shift
     // the merged module bodies' element order and break the
     // bs2≡bs3 selfhost fixed point.
-    mut packages: List<SStmt> = []
-    mut modules: List<SStmt> = []
+    mut packages: List<StmtId> = []
+    mut modules: List<StmtId> = []
     mut mod_names: List<string> = []
     mut i = test_paths.length - 1
     while i >= 0 {
@@ -411,8 +393,8 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
         // __init_<mod> without the top-level auto-call; the runner
         // invokes the units across worker threads.
         let deferred: List<Annotation> = [Annotation { name: "deferred_init", arg_ids: [] }]
-        modules.push(sstmt_dummy(Stmt.Annotated(deferred,
-            store.stmts.add_leaf(Stmt.Module(a.mod_name, store.rows_of(a.wrapped_body))))))
+        modules.push(store.stmts.add_leaf(Stmt.Annotated(deferred,
+            store.stmts.add_leaf(Stmt.Module(a.mod_name, a.wrapped_body)))))
         mod_names.push(a.mod_name)
         i = i - 1
     }
@@ -420,7 +402,7 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
     let body = list_concat(load_reporter_stmts(project_dir, store),
                list_concat(load_runner_stmts(project_dir, store),
                list_concat(dedup_modules(store, packages), modules)))
-    let with_unit_externs = prepend_externs(prepend_test_externs(body), unit_init_externs(mod_names))
+    let with_unit_externs = prepend_externs(store, prepend_test_externs(store, body), unit_init_externs(mod_names))
     let program = list_concat([synth_test_main(store, mod_names)], with_unit_externs)
     Result.Ok(program)
 }

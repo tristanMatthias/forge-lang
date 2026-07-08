@@ -3,13 +3,13 @@
 
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_binary}
-use core.{Expr, SExpr, BinOp, VarBinding}
+use core.{Expr, ExprId, BinOp, VarBinding}
 
 /// Codegen entry for `x in [a, b, c]`. Pattern-matches the
 /// `InCheck` AST node and forwards to `emit_in_items`.
 export fn emit_in_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .InCheck(needle, items) -> emit_in_items(ctx, env, ctx.nodes.exprs.get(needle), ctx.nodes.sexprs_of(items))
+        .InCheck(needle, items) -> emit_in_items(ctx, env, ctx.nodes.exprs.get(needle), items)
         _ -> err_emit("expected InCheck")
     }
 }
@@ -17,11 +17,11 @@ export fn emit_in_check(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<E
 /// Expand `x in [a, b, c]` into `x == a || x == b || x == c` by
 /// folding `BinOp.Eq` over the items list with bitwise-or. Uses
 /// the regular binary emitter so enum/string equality work.
-fn emit_in_items(ctx: Ctx, env: List<VarBinding>, needle: Expr, items: List<SExpr>) -> Result<EmitValue, string> {
+fn emit_in_items(ctx: Ctx, env: List<VarBinding>, needle: Expr, items: List<ExprId>) -> Result<EmitValue, string> {
     if items.length == 0 { return ok_emit(ctx.i64(0), .Int) }
     mut acc = ctx.i64(0)
-    for (i, item) in items.enumerate() {
-        let cmp = emit_binary(ctx, env, needle, BinOp.Eq, item.node)?
+    for (i, id) in items.enumerate() {
+        let cmp = emit_binary(ctx, env, needle, BinOp.Eq, ctx.nodes.exprs.get(id))?
         if i == 0 {
             acc = cmp.value
         } else {

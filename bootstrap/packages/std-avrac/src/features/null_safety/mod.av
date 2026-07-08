@@ -159,7 +159,7 @@ fn optional_chain_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Resu
 /// Codegen hook for `OptionalMethodCall`. Forwards to emit_optional_method_call.
 fn optional_method_call_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, ctx.nodes.sexprs_of(args))
+        .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, args)
         _ -> err_emit("expected OptionalMethodCall")
     }
 }
@@ -185,7 +185,7 @@ fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn optional_method_call_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .OptionalMethodCall(obj, method, args) -> {
-            let r = check_method_call(tc, tc.nodes.exprs.get(obj), method, tc.nodes.sexprs_of(args))
+            let r = check_method_call(tc, tc.nodes.exprs.get(obj), method, args)
             if vtype_is_unknown(r.ty) || vtype_is_optional(r.ty) { return r }
             tc_er(r.tc, vtype_wrap_optional(r.ty))
         }

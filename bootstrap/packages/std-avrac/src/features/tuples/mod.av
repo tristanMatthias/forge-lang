@@ -2,7 +2,7 @@
 // flat at `features.tuples.{...}`.
 use core.{vtype_tuple_at}
 use core.{feature_new, Feature, ExprId}
-use resolve.{resolve_expr, resolve_expr_list}
+use resolve.{resolve_expr, resolve_expr_list_ids}
 use typeck.{check_expr, check_expr_list_types, tc_er}
 use features.eval.{Runtime, StepResult, Value, eval_expr, ok_result, error_result, value_list}
 
@@ -27,8 +27,8 @@ fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
         .Tuple(elements) -> {
             mut vals: List<Value> = []
             mut cur = rt
-            for el in rt.nodes.sexprs_of(elements) {
-                let r = eval_expr(cur, el.node)
+            for el in elements {
+                let r = eval_expr(cur, rt.nodes.exprs.get(el))
                 if r.had_error { return r }
                 cur = r.runtime
                 vals = vals.push(r.value)
@@ -54,7 +54,7 @@ export fn tuple_index_feature() -> Feature {
 /// Resolver hook for `Tuple` literals. Walks every element.
 fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {
-        .Tuple(elements) -> resolve_expr_list(r, r.nodes.sexprs_of(elements))
+        .Tuple(elements) -> resolve_expr_list_ids(r, elements)
         _ -> r
     }
 }
@@ -64,7 +64,7 @@ fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Tuple(elements) -> {
-            let pair = check_expr_list_types(tc, tc.nodes.sexprs_of(elements))
+            let pair = check_expr_list_types(tc, elements)
             tc_er(pair.tc, .Tuple(pair.types))
         }
         _ -> tc_er(tc, .Unknown)
