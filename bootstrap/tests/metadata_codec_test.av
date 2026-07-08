@@ -329,6 +329,26 @@ spec "metadata codec: UnitMetadata → StmtList synthesizer (xtvc)" {
     }
 }
 
+// F4d.8 bug-2 net: synthesis runs on metadata that survived a .meta.bin disk
+// round-trip (the resolver fast path), and the stubs' SIGNATURES — not just
+// their shape — must be faithful. The reverted metadata_synthesize flip
+// compiled cleanly but produced wrong output; these are the assertions that
+// would have caught it.
+spec "metadata fast-path synthesis is signature-faithful through a disk round-trip (F4d.8)" {
+    then "the synthesized metadata survives a .meta.bin write+read" {
+        metadata_run_fixture().contains("PROBE synth_meta_disk_roundtrip: ok")
+    }
+    then "a struct field keeps its name AND type (x: int), not just the decl shape" {
+        metadata_run_fixture().contains("PROBE synth_typedecl_field_faithful: ok")
+    }
+    then "a fn keeps its arity AND return type (() -> str), not just its name" {
+        metadata_run_fixture().contains("PROBE synth_fn_sig_faithful: ok")
+    }
+    then "a const keeps its declared type (: str)" {
+        metadata_run_fixture().contains("PROBE synth_const_type_faithful: ok")
+    }
+}
+
 spec "metadata codec: file IO (write+read round-trip)" {
     then "metadata_write returns 1 on success" {
         metadata_run_fixture().contains("PROBE io_write_returns_1: ok")
