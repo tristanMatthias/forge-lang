@@ -47,7 +47,7 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
                 .Ident(name) -> {
                     let fn_def_opt = comptime_lookup_lazy(reg, name)
                     if fn_def_opt == none { return none }
-                    let arg_values_opt = literal_args_to_values(reg.runtime.nodes.sexprs_of(args))
+                    let arg_values_opt = literal_args_to_values(reg.runtime.nodes, args)
                     if arg_values_opt == none { return none }
                     fold_call(reg, fn_def_opt!, arg_values_opt!)
                 }
