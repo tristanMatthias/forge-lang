@@ -4,7 +4,7 @@
 // produces a runtime Stmt value the @expand pass can extract.
 
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, SExpr, sexpr_dummy, Stmt, SStmt, ValueType}
-use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, value_to_stmt_list}
+use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, list_value_to_stmt_id_list}
 
 /// Fresh empty store for inline-AST probes — F2 renderers resolve
 /// flipped pattern ids through it (never read for id-free nodes).
@@ -153,7 +153,7 @@ fn let_shape_text(ws: NodeStore, s: Result<Stmt, string>) -> string {
 }
 
 fn is_stmt_list_end(v: Value) -> bool {
-    match value_to_stmt_list(ts(), v) {
+    match list_value_to_stmt_id_list(ts(), v) {
         .Ok(l) -> l.length == 0
         .Err(_) -> false
     }
@@ -192,7 +192,7 @@ spec "vez6.6.4: value_to_stmt decodes Stmt enum Values" {
     }
 }
 
-spec "vez6.6.4: value_to_stmt_list decodes a list of stmt values" {
+spec "vez6.6.4: list_value_to_stmt_id_list decodes a list of stmt values" {
     then "empty Expr.ListLit decodes to an empty List<SStmt>" {
         let store = ts()
         let e = Expr.ListLit(store.ingest_sexpr_recipe(empty_args()))
