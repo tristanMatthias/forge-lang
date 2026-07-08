@@ -285,13 +285,13 @@ spec "B1: StoreMark truncation rolls back speculative allocation" {
 // aware `all_children_spanned()` carries each wrapper's (line, col), which
 // `child_span` lifts into a real (zero-width) byte-offset span. These specs
 // pin: a single-wrapper child, a wrapper-LIST child, the bare-vs-wrapped split
-// within one node, and the end-to-end path through `ingest_program`.
+// within one node, and the end-to-end path through `ingest_stmt`.
 
 spec "F3a: a flipped Block body row carries its position column" {
-    then "rows_of records (line, col, file); stmt_pos reads it back; no child edge" {
+    then "row_at records (line, col, file); stmt_pos reads it back; no child edge" {
         // The SStmt wrapper died with the flip — a Block body element's
         // position now lives in the StmtArena's dense pos column, stamped
-        // by the write bridge (rows_of) or the parser. The ingest treats
+        // by `row_at` or the parser. The ingest treats
         // the id payload as a scalar, so the Block records no stmt edge.
         let store = new_node_store(build_line_index("aaaa\nbbbb\ncccc\n"))
         let body = [row_at(store, Stmt.Break, 2, 3, "f.av")]

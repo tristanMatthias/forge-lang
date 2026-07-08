@@ -15,15 +15,15 @@
 // originally carried (ps3t.3.6 dogfood: the spine §14.3 consolidation). Build an
 // empty arena with `new_{expr,stmt,pat,type}_arena()`.
 //
-// ADDITIVE (bootstrap window, §14.6 step 1): lands ALONGSIDE the existing
-// SExpr/SStmt; changes no variant and adds no surface syntax. The data-oriented
-// end-state — nodes literally holding child *ids* (Binary(ExprId,op,ExprId)),
+// Introduced additively (bootstrap window, §14.6 step 1) alongside the
+// since-retired SExpr/SStmt wrappers; it is now the sole node representation.
+// The data-oriented end-state — nodes literally holding child *ids* (Binary(ExprId,op,ExprId)),
 // the compiler PASSES reading from here instead of the pointer-tree, and
 // diagnostics rendering via span_of(id) + to_linecol (retiring the on-node
 // .line/.col) — is the seed-gated pass migration that §14.6 stages AFTER this
 // foundation (tickets ps3t.3.7 + per-pass work). Concretely for §14.2: this
 // foundation records REAL byte-offset spans for the top-level statements (whose
-// position the parser preserves on the SStmt wrapper) AND, via the span-aware
+// position the parser preserves on each row) AND, via the span-aware
 // `all_children_spanned()` walker (A2), for every WRAPPED nested node — the
 // children that ride an SExpr/SStmt wrapper (call/ctor args, list/tuple/map
 // elems, block/fn/impl/… bodies, Annotated.inner). Truly BARE children (a
@@ -391,8 +391,8 @@ export fn new_type_arena() -> TypeArena {
 /// replacement for the boxed pointer-tree, plus the file's `LineIndex` so a
 /// node's (line, col) can be recomputed on demand from its span (§14.2) —
 /// the only place line/col is derived once the pass migration lands. Built
-/// natively by the parser during the parse (the canonical producer); the
-/// walker-driven `ingest_program` builds one only as the parity-test oracle.
+/// natively by the parser during the parse — the canonical, and now only,
+/// producer.
 /// The four arenas' row counts at a moment in time — a speculative-parse
 /// snapshot handle (B1). Taken with `NodeStore.mark()`, rolled back with
 /// `NodeStore.truncate_to_mark()`.
@@ -405,23 +405,23 @@ export type NodeStore = {
     types: TypeArena,
     lines: LineIndex,
     // The top-level statement ids, in source order — the program's entry
-    // points into the StmtArena. `ingest_program` records them (the returned
-    // root id of each top-level ingest); `program_from_store` reads them back.
+    // points into the StmtArena. The parser records them as it finishes each
+    // top-level statement; downstream passes read them back off `roots`.
     // Without these the arena has no "where does the program start" handle.
     roots: List<StmtId>,
-    // Per-node provenance (§14.3): the StmtIds whose source `SStmt` carried
+    // Per-node provenance (§14.3): the StmtIds whose source node carried
     // `from_macro = true`. Recorded SPARSELY — only macro-introduced nodes get
     // an entry, so the table is empty for an ordinary program. The presence of
     // an id IS the fact (`from_macro`), read via `.has`, so the reverse shim
     // restores provenance instead of flattening every node to non-macro.
     provenance: SparseTable<StmtId, bool>,
-    // Per-arg inferred types (F3b). When a Call arg flips from `SExpr` to
-    // `ExprId` it loses the `SExpr.ty` typeck annotation the monomorphizer
-    // reads for generic instantiation (`infer_from_params`). `annotate` records
-    // each arg's inferred type here keyed by its (post-annotate) `ExprId`, and
-    // `sexprs_of` reads it back so the materialized `SExpr` carries the same
-    // `.ty`. Sparse — only annotated call args get an entry. This is the arena
-    // home the inferred type moves to when `SExpr` dies at F4.
+    // Per-arg inferred types (F3b). A bare `ExprId` Call arg has no inline
+    // `.ty` slot, but the monomorphizer needs each arg's typeck-inferred type
+    // for generic instantiation (`infer_from_params`). `annotate` records it
+    // here keyed by the arg's (post-annotate) `ExprId`, and the monomorphizer
+    // reads it back via `arg_ty_of`. Sparse — only annotated call args get an
+    // entry. This is the arena home for what used to live on the boxed arg's
+    // `.ty` field.
     arg_tys: SparseTable<ExprId, ValueType>,
 }
 
@@ -477,10 +477,9 @@ impl NodeStore {
     /// via the file's LineIndex. A BARE child (`line < 1`, e.g. a Binary operand,
     /// a Grouping/If sub-expr, any Pattern/ValueType child — no wrapper carries
     /// its offset) records the synthesised-node sentinel. The end byte (extent)
-    /// is deferred to the parser-builds-arena step (B): a wrapper exposes only a
-    /// START position, so the span is zero-width [lo, lo) here — a real caret
-    /// position, the same end-byte residual the top-level conservative extent
-    /// carries in `ingest_program`.
+    /// is deferred: a wrapper exposes only a START position, so the span is
+    /// zero-width [lo, lo) here — a real caret position. The parser fills the
+    /// full extent when it stamps the node natively.
     fn child_span(self, sc: SpannedChild) -> ByteSpan {
         if sc.line < 1 { return byte_span_none() }
         let lo = self.lines.offset_of(sc.line, sc.col)

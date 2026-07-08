@@ -785,7 +785,7 @@ fn construct_annotation_list(store: NodeStore, annots: List<Annotation>) -> Expr
 /// `TypeParamEntry { name, bounds }`; the result is an `Expr.ListLit`
 /// so codegen materializes a real list at runtime.
 fn construct_type_param_list(store: NodeStore, tp: List<TypeParamEntry>) -> Expr {
-    // Walk source order, pushing each struct-literal SExpr into the
+    // Walk source order, pushing each struct-literal Expr into the
     // ListLit element list.
     mut elems: List<Expr> = []
     mut i = 0
@@ -1111,14 +1111,12 @@ fn is_ident_char(c: string) -> bool {
     (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
 }
 
-/// Build an `Expr.ListLit` from a boxed `SExpr` recipe, ingesting each
-/// element into the arena so the node carries the `List<ExprId>` payload
-/// the flipped `ListLit` variant now holds. `ListLit` is the quote
-/// machinery's universal list container, so every construction funnels
-/// through here — the id twin of the old bare `Expr.ListLit(elems)`.
-/// Ingest a recipe of raw Exprs into arena rows (span-less leaves that still
-/// walk their boxed children — matching the retired `ingest_sexpr_recipe`), so
-/// the quote builders assemble `List<Expr>` directly with no SExpr wrapper.
+/// Ingest a recipe of raw Exprs into arena rows (span-less leaves that
+/// still walk their boxed children — matching the retired
+/// `ingest_sexpr_recipe`), returning the `List<ExprId>` payload the
+/// flipped `ListLit` and the other id-native variants now hold. Every
+/// quote-machinery list construction funnels through here, so the
+/// builders can assemble `List<Expr>` directly and hand it off.
 fn ingest_exprs(store: NodeStore, exprs: List<Expr>) -> List<ExprId> {
     mut ids: List<ExprId> = []
     for e in exprs { ids.push(store.ingest_expr(e, byte_span_none())) }

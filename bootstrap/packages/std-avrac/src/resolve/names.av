@@ -745,8 +745,8 @@ fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<Al
 /// diagnostics (so07.3 / T3).
 export type NameResolveResult = {
     // The post-resolve program vector is arena-id-native — the next pass
-    // (run_comptime) takes ids straight. Metadata consumers that still want
-    // boxed wrappers bridge back with `sstmts_of`.
+    // (run_comptime) takes ids straight, reading each node's position
+    // and payload from the shared store.
     stmts: List<StmtId>,
     had_error: int,
     error_message: string,

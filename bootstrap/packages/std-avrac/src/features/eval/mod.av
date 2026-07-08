@@ -2543,9 +2543,9 @@ fn list_value_to_pattern_list(store: NodeStore, v: Value) -> Result<List<PatId>,
     .Ok(out)
 }
 
-/// Decode a list Value into flipped `List<ExprId>` rows (call args). Each arg
-/// allocates a fresh leaf row (no recorded arg type — the ty=Unknown decode a
-/// arg rows were produced before the arena-id flip).
+/// Decode a list Value into flipped `List<ExprId>` rows (call args).
+/// Each arg is added as a fresh leaf row with no recorded arg type
+/// (decoded macro-return args carry ty=Unknown until inference runs).
 fn list_value_to_expr_id_list(store: NodeStore, v: Value) -> Result<List<ExprId>, string> {
     if v.kind != "list" { return .Err("decode: expr list not a list") }
     mut out: List<ExprId> = []

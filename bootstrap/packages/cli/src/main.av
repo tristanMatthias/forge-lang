@@ -252,12 +252,12 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     ParsedProgram { ids: root_ids, store }
 }
 
-/// What `parse_or_fail` hands back: the boxed program (served from the arena)
-/// plus the parser's own `NodeStore`, so early passes can read the arena
-/// instead of re-walking the boxed tree (first consumer: the quote presence
-/// scan). The store was built during the parse of exactly these `stmts` — a
-/// caller that merges in statements parsed elsewhere (sibling-file loading)
-/// must not scan the store as if it covered the merged program.
+/// What `parse_or_fail` hands back: the program's top-level statement
+/// ids plus the parser's own `NodeStore`, so early passes read the
+/// arena directly (first consumer: the quote presence scan). The store
+/// was built during the parse of exactly these `ids` — a caller that
+/// merges in statements parsed elsewhere (sibling-file loading) must
+/// not scan the store as if it covered the merged program.
 type ParsedProgram = { ids: List<StmtId>, store: NodeStore }
 
 /// Same shape as parse_or_fail but for the expression parser.
@@ -4174,7 +4174,7 @@ fn main() {
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return }
         // Monomorphize: replace generic declarations with concrete specializations.
-        // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
+        // Uses the type-annotated AST from typeck so inference reads each node's resolved type.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
         let t_mono = avra_uptime_ms()
         render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")

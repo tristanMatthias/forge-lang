@@ -172,7 +172,7 @@ fn finalize_arm_result(body_result: StepResult) -> StepResult {
     ok_result(exited, step_value(body_result))
 }
 
-/// Evaluate an arm body. Bodies are SExpr; when the body is an
+/// Evaluate an arm body. The body is an expression id; when it is an
 /// `Expr.Block` (multi-stmt body, e.g. `{ return Stmt.Foo() }`),
 /// route through `execute_stmt` so `return` statements flip
 /// `is_return` and propagate up.

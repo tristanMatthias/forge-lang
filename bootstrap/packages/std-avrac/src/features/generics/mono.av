@@ -1583,8 +1583,9 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
     let empty_tp: List<TypeParamEntry> = []
     // Substitute body, then rewrite self-recursive `orig_name(...)` calls
     // in the spec body to the mangled name. Without this the Pass-4
-    // rewriter can't infer the type args (substitute_expr_list drops
-    // SExpr.ty) and mangles them to "" → "Type__fn__" undefined.
+    // rewriter can't infer the type args (substitute_expr_list_ids emits
+    // fresh rows with no arg-type side-table entry) and mangles them
+    // to "" → "Type__fn__" undefined.
     let subst_body = substitute_stmt_ids(store, body, ta)
     let final_body = rename_self_calls_stmt_ids(store, subst_body, orig_name, mangled)
     let fn_stmt = Stmt.Function(mangled, empty_tp, substitute_params(params, ta), concrete_ret_vt, final_body)
@@ -1599,9 +1600,9 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
 
 /// Walk a substituted spec body and rewrite every self-recursive
 /// `orig_name(...)` call to `mangled(...)`. Needed because mono's
-/// pass-4 rewriter infers type args from SExpr.ty, and
-/// substitute_expr_list drops the .ty annotation — so the recursive
-/// call gets mangled to "Type__fn__" (empty slug) and codegen fails
+/// pass-4 rewriter infers type args from the arena arg-type side-table,
+/// and substitute_expr_list_ids emits fresh rows without those entries —
+/// so the recursive call gets mangled to "Type__fn__" (empty slug) and codegen fails
 /// with `undefined function`. We know the spec's type args here, so
 /// the rewrite is unambiguous. Allocates each rewritten row as a fresh
 /// row inheriting the source row's span + position via `restmt`.

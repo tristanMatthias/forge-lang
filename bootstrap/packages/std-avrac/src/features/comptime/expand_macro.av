@@ -14,9 +14,9 @@
 // The eval phase walks the AST; for each Stmt wrapped in
 // `@expand(M)`:
 //   1. Looks up M in the comptime registry built by
-//      `collect_comptime_fns`.
+//      `collect_comptime_fns_ids`.
 //   2. Dispatches on M's arity:
-//        - 0 args: invoke; macro returns Stmt or List<SStmt> or
+//        - 0 args: invoke; macro returns Stmt or List<StmtId> or
 //          ResolvedDecls (latter decoded via value_to_resolved_decls).
 //        - 1 arg:  invoke with the wrapped (unwrapped) Stmt boxed
 //          via stmt_to_value.
@@ -25,7 +25,7 @@
 //          decl's canonical_path. ResolverCtx is an opaque handle
 //          the macro uses to call ctx_* (current_module / lookup_type
 //          / qualify_ident / fresh_ident / unwrap_path_to).
-//   3. Tags every spliced SStmt with `from_macro = true` so the
+//   3. Tags every spliced statement with `from_macro = true` so the
 //      partial re-resolve walks only the new decls.
 //   4. After each splice, register_and_repopulate augments the
 //      live ResolverState + refreshes the C-side resolver-data
@@ -96,8 +96,8 @@ export fn populate_resolver_data(state: ResolverState, ids: List<StmtId>) {
 /// wipe types registered by the initial populate call (which would
 /// leave the second-and-later macros in the same fixpoint iter
 /// unable to ctx_lookup_type any pre-existing type). so07.7.1 root
-/// cause: SStmt / SExpr were registered by the initial populate
-/// then wiped on the first macro splice, so the next iter's
+/// cause: types registered by the initial populate were wiped on
+/// the first macro splice, so the next iter's
 /// derive_walker invocation saw null.
 fn populate_resolver_data_into(state: ResolverState, ids: List<StmtId>) {
     avra_rd_set_current_module("")
@@ -249,7 +249,7 @@ export type ExpandResult = {
 
 /// Phase 2 (post-resolve): walk the stmt list, invoke every macro
 /// captured in the plan, splice results back in. Tags every spliced
-/// SStmt with `from_macro: true` so the partial re-resolve in
+/// statement with `from_macro: true` so the partial re-resolve in
 /// `resolve_and_expand_program` walks only the new decls. Runs a
 /// fixpoint loop so that macro-emitted `@expand` sites expand
 /// transitively. Cap at 16 iterations — a self-referential macro
@@ -499,7 +499,7 @@ type WalkerOut = {
 /// Internal carrier for a single macro-expansion attempt. `replacement`
 /// is the spliced statements on success or null on any failure;
 /// `bag` collects any diagnostics produced; `origins` is the
-/// MacroFnOrigin entries (one per spliced Function-shape SStmt) so
+/// MacroFnOrigin entries (one per spliced Function-shape statement) so
 /// downstream typeck can blame the macro on errors against the
 /// synthesized fns. Returned as a record so the walker can both
 /// merge the bag and act on the null/non-null replacement without
@@ -589,7 +589,7 @@ fn try_expand_one(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, line: int
 /// macro / which step failed.
 ///
 /// Multi-stmt support: macros built via `quote stmts { ... }` return
-/// `List<SStmt>`, decoded via value_to_stmt_list. This lets a single
+/// `List<StmtId>`, decoded via list_value_to_stmt_id_list. This lets a single
 /// `@expand` site emit N sibling declarations (e.g. the original
 /// type + an impl block + a top-level helper fn) without forcing
 /// macros into the singleton-Stmt straightjacket. Marshal and other

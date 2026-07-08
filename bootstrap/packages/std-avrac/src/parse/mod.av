@@ -232,9 +232,8 @@ export fn parse_program_source_at(source: string, file: string) -> ProgramParseR
 /// invariant, so every node the pipeline later walks has a row in the
 /// one program store (the template-sub-parser precedent, generalized).
 /// Does NOT record roots: the parsed statements become children of the
-/// entry program's tree. Positions ride the boxed wrappers (each SStmt
-/// carries `file`); sub-parse rows carry byte_span_none() until
-/// per-node file/span lands (B-final F4).
+/// entry program's tree. Positions ride the arena rows — each node is
+/// stamped with its source `file` and span as the parser allocates it.
 export fn parse_program_source_shared(source: string, file: string, store: NodeStore) -> ProgramParseResult {
     mut parser = parser_new_with_file(source, file)
     parser.store = store
@@ -508,8 +507,8 @@ export fn parser_new(source: string) -> Parser {
 }
 
 /// Construct a Parser with explicit source-file attribution. Stamps
-/// every SStmt/SExpr emitted by this parser with `file` so downstream
-/// diagnostics can cite the originating file even after bundling.
+/// every statement and expression row this parser allocates with `file`
+/// so downstream diagnostics can cite the originating file even after bundling.
 export fn parser_new_with_file(source: string, file: string) -> Parser {
     mut parser = Parser {
         source,

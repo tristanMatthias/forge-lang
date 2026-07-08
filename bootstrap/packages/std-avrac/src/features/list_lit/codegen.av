@@ -65,12 +65,12 @@ export fn emit_list_lit_expected(ctx: Ctx, env: List<VarBinding>, elements: List
 /// `avra_array_reduce`.
 export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr, args: List<ExprId>, elem_ty: ValueType) -> Result<EmitValue, string> {
     if args.length < 2 { return err_emit("reduce expects 2 arguments: initial value and function") }
-    let se_init = args[0]
-    let se_fn = args[1]
-    let init_r = ctx.emit(env, ctx.nodes.exprs.get(se_init))?
+    let init_id = args[0]
+    let fn_id = args[1]
+    let init_r = ctx.emit(env, ctx.nodes.exprs.get(init_id))?
     // Reduce fn takes (acc, elem) — acc type from init, elem from list
     mut fn_r = EmitValue { value: ctx.i64(0), ty: .Int }
-    match ctx.nodes.exprs.get(se_fn) {
+    match ctx.nodes.exprs.get(fn_id) {
         .Lambda(params, body) -> {
             mut reduce_param_types: List<ValueType> = []
             reduce_param_types.push(init_r.ty)
@@ -78,7 +78,7 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr,
             fn_r = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), reduce_param_types)?
         }
         _ -> {
-            fn_r = ctx.emit(env, ctx.nodes.exprs.get(se_fn))?
+            fn_r = ctx.emit(env, ctx.nodes.exprs.get(fn_id))?
         }
     }
     let result = ctx.call("avra_array_reduce", [list_val, init_r.value, fn_r.value])

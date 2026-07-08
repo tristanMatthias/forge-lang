@@ -148,8 +148,8 @@ fn loaded_has(paths: List<string>, path: string) -> bool {
 export type ModListResult = {
     // B-final: the resolved program vector is arena-id-native, and so is the
     // whole resolver — every `.stmts` field here is produced and consumed as
-    // ids. The only boxed input left is the parser's own `parsed.stmts!`,
-    // bridged into arena rows via `rows_of` at each read.
+    // ids, read from the shared arena store; nothing on this path holds a
+    // boxed statement tree.
     stmts: List<StmtId>,
     loaded: List<string>,
     had_error: int,

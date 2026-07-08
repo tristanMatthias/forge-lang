@@ -291,7 +291,7 @@ export fn rebuild_match_arms(original: List<MatchArm>, run: List<SpannedChild>) 
 }
 
 /// Flatten a `List<FieldInit>` into cross-type spanned children: each init's
-/// `value` (an Expr) at its SExpr wrapper's (line, col). The `name` is a scalar,
+/// `value` (an Expr) at its recorded (line, col). The `name` is a scalar,
 /// not a node child — exactly one child per init. The FieldInit analogue of
 /// `match_arm_children_spanned`.
 export fn field_init_children_spanned(_inits: List<FieldInit>) -> List<SpannedChild> {
@@ -310,7 +310,7 @@ export fn rebuild_field_inits(original: List<FieldInit>, _run: List<SpannedChild
     original
 }
 
-// `enum ExprList` retired in lkze.9 #18 — `List<SExpr>` everywhere.
+// `enum ExprList` retired in lkze.9 #18 — `List<ExprId>` everywhere.
 // `enum ParamList` retired in lkze.9 #19 — `List<ParamEntry>` everywhere.
 
 // `List<FieldEntry>` replaces the retired `enum FieldList`. Used as
@@ -1126,7 +1126,7 @@ fn collect_id_zero_names_vtypes(ts: List<ValueType>, out: List<string>) -> List<
     acc
 }
 
-/// Walk a List<SStmt> counting nominal types with id=0 across every
+/// Walk a List<StmtId> counting nominal types with id=0 across every
 /// Let / Mut / Const annotation, function param + return type, and
 /// nested module body. The post-resolve AST should land at ~0
 /// id-zero nominals once T6.B lands the resolver/typeck threading;
@@ -2410,7 +2410,7 @@ fn strip_quotes(s: string) -> string {
     }
 }
 
-// `enum StmtList` retired in lkze.9 #20 — `List<SStmt>` everywhere.
+// `enum StmtList` retired in lkze.9 #20 — `List<StmtId>` everywhere.
 
 // `List<VarBinding>` replaces the retired `enum VarEnv`. The variable
 // environment is threaded through codegen as a flat growable list — each

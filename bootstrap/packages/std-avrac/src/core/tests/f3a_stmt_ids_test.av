@@ -7,12 +7,12 @@
 //   1. the PARSER is a native producer: a parsed program's statement
 //      payloads are live rows in the parse store, resolvable by id;
 //   2. the pos column carries (line, col, file) for body elements —
-//      the wrapper's old job — including across the read/write
-//      bridges (`rows_of` stamps, `sstmt_of`/`sstmts_of` read back);
+//      the wrapper's old job — stamped by `row_at` (in tests) or the
+//      parser and read back through `stmt_pos`;
 //   3. transform allocators (`restmt`/`reexpr`) inherit the source
 //      row's span + position, so a rewritten child keeps pointing at
 //      the original source;
-//   4. provenance (`from_macro`) rides the bridges unchanged.
+//   4. provenance (`from_macro`) rides the arena row unchanged.
 
 use @std.avrac.core.{NodeStore, Stmt, Expr, ValueType,
                      new_node_store, build_line_index, render_stmt, render_expr}

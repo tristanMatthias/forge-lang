@@ -1581,7 +1581,7 @@ fn lint_scan_stmt_ids(store: NodeStore, ids: List<StmtId>, coll: string) -> Lint
     acc
 }
 
-/// Fold the signals over match arms (guard + body, both SExpr).
+/// Fold the signals over match arms (guard + body, both expression ids).
 fn lint_scan_arms(store: NodeStore, arms: List<MatchArm>, coll: string) -> LintSig {
     mut acc = lint_sig_none()
     for a in arms {
@@ -2378,7 +2378,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         // these bindings, a `return (msg, o.expand_site)` after
         // `let o = origins[0]` sees `o` as Unknown — the return-check
         // pass re-runs check_expr (it doesn't trust the annotate
-        // pass's SExpr.ty) but reuses the input TC verbatim, so
+        // pass's inferred arg types) but reuses the input TC verbatim, so
         // locals declared mid-block fall out of scope.
         .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
         .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, tc.nodes.exprs.get(init))
