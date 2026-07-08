@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, SStmt, sstmt_dummy, Expr, SExpr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{Stmt, Expr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
 
@@ -336,12 +336,12 @@ fn dispatch_quote_kind(store: NodeStore, kind: string, body: Expr) -> Expr {
         let single = extract_single_stmt(store, body)
         if single != null { return construct_stmt(store, single!) }
         // Block has 0 or 2+ statements — fall back to constructing
-        // the List<SStmt> as if `stmts` was used. The user gets a
+        // the List<StmtId> as if `stmts` was used. The user gets a
         // list instead of a Stmt, which surfaces the mismatch.
-        return construct_stmt_list(store, extract_stmt_list(store, body))
+        return construct_stmt_ids(store, extract_stmt_ids(body))
     }
     if kind == "stmts" {
-        return construct_stmt_list(store, extract_stmt_list(store, body))
+        return construct_stmt_ids(store, extract_stmt_ids(body))
     }
     if kind == "type" {
         return construct_value_type_from_body(store, body)
@@ -420,12 +420,12 @@ fn extract_single_stmt(store: NodeStore, body: Expr) -> Stmt? {
     }
 }
 
-/// Extract the List<SStmt> from a Block; otherwise empty.
-fn extract_stmt_list(store: NodeStore, body: Expr) -> List<SStmt> {
+/// Extract the Block's statement rows (`List<StmtId>`); otherwise empty.
+fn extract_stmt_ids(body: Expr) -> List<StmtId> {
     match body {
-        .Block(stmts) -> store.sstmts_of(stmts)
+        .Block(stmts) -> stmts
         _ -> {
-            let empty: List<SStmt> = []
+            let empty: List<StmtId> = []
             empty
         }
     }
@@ -477,7 +477,7 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         }
         .Ident(name) -> expr_ctor(store, "Ident", string_arg(name))
         .QualifiedIdent(path) -> expr_ctor(store, "QualifiedIdent", string_arg(path))
-        .Assign(name, value) -> expr_ctor(store, "Assign", two_args(sexpr_dummy_call(store, string_lit_expr(name)), construct_expr_id(store, value)))
+        .Assign(name, value) -> expr_ctor(store, "Assign", two_args(string_lit_expr(name), construct_expr_id(store, value)))
         .Binary(l, op, r) -> expr_ctor(store, "Binary", three_args(construct_expr_id(store, l), construct_binop(store, op), construct_expr_id(store, r)))
         .Unary(op, r) -> expr_ctor(store, "Unary", two_args(construct_unop(store, op), construct_expr_id(store, r)))
         .Logical(l, op, r) -> expr_ctor(store, "Logical", three_args(construct_expr_id(store, l), construct_logicop(store, op), construct_expr_id(store, r)))
@@ -1144,45 +1144,11 @@ fn construct_expr_ids(store: NodeStore, list: List<ExprId>) -> Expr {
     listlit_of(store, elems)
 }
 
-/// `sexpr_dummy(arg)` as a Call expression. Helper for constructing
-/// SExpr values at runtime without introducing struct-literal concerns.
-/// Uses QualifiedIdent so the lowered AST round-trips through resolve
-/// without needing the test file to import sexpr_dummy.
-fn sexpr_dummy_call(store: NodeStore, arg: Expr) -> Expr {
-    Expr.Call(
-        store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::core::sexpr_dummy")),
-        [store.exprs.add_leaf(arg)]
-    )
-}
-
-/// `sstmt_dummy(arg)` as a Call expression — sister to sexpr_dummy_call
-/// for SStmt construction. Used when wrapping a runtime Stmt value in
-/// the spanned carrier required by `List<SStmt>` entries.
-fn sstmt_dummy_call(store: NodeStore, arg: Expr) -> Expr {
-    Expr.Call(
-        store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::core::sstmt_dummy")),
-        [store.exprs.add_leaf(arg)]
-    )
-}
-
 // ── Statement construction (vez6.3.9) ──
 
-/// Build an Expr that, when evaluated, produces a `List<SStmt>` AST value.
-/// Mirrors construct_expr_list / construct_field_init_list shape:
-/// emits `Expr.ListLit([construct_sstmt(store, s0), construct_sstmt(store, s1), ...])`.
-fn construct_stmt_list(store: NodeStore, list: List<SStmt>) -> Expr {
-    mut elems: List<Expr> = []
-    mut i = 0
-    while i < list.length {
-        elems.push(construct_sstmt(store, list[i]))
-        i = i + 1
-    }
-    listlit_of(store, elems)
-}
-
-/// The flipped-body twin of `construct_stmt_list`: resolves each row
-/// and emits the bare `Stmt` constructor list, wrapped in the
-/// `synth_stmt_ids` id shim so the generated `List<StmtId>` payload
+/// Build an Expr that, when evaluated, produces a `List<StmtId>` AST value.
+/// Resolves each row and emits the bare `Stmt` constructor list, wrapped
+/// in the `synth_stmt_ids` id shim so the generated `List<StmtId>` payload
 /// slot type-checks (see `construct_stmt_id`). Each element is a bare
 /// `Stmt` constructor — `synth_stmt_ids` takes `List<Stmt>`, so no
 /// per-element span wrapper is needed (the shim is an eval identity).
@@ -1208,20 +1174,15 @@ fn construct_expr_id(store: NodeStore, id: ExprId) -> Expr {
     synth_shim_call(store, "synth_expr_id", construct_expr(store, store.exprs.get(id)))
 }
 
-/// A call to a synth_* id shim around `arg` — the generated-code twin
-/// of `sstmt_dummy_call`, fully qualified so the eval intercept's
-/// last-segment match and the compiled resolver both find it.
+/// A call to a synth_* id shim around `arg` — the generated-code carrier
+/// that wraps a bare constructed node so the id-payload slot type-checks.
+/// Fully qualified so the eval intercept's last-segment match and the
+/// compiled resolver both find it.
 fn synth_shim_call(store: NodeStore, name: string, arg: Expr) -> Expr {
     Expr.Call(
         store.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::features::comptime::${name}")),
         [store.exprs.add_leaf(arg)]
     )
-}
-
-/// Build an Expr that, when evaluated, produces an SStmt wrapping the
-/// runtime value of `ss.node`.
-fn construct_sstmt(store: NodeStore, ss: SStmt) -> Expr {
-    sstmt_dummy_call(store, construct_stmt(store, ss.node))
 }
 
 /// Build an Expr that, when evaluated, produces a Stmt AST value

@@ -16,10 +16,10 @@ use @std.avrac.test_runner.{write_fixture_and_run}
 spec "splice into impl-target and struct-literal name positions" {
     then "impl Trait for ~name: generated impl dispatches at runtime" {
         let out = write_fixture_and_run("/tmp/avra_splice_impl_target_test.av",
-            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
             "trait Greeter { fn greet(self) -> int }\n" +
             "@comptime\n" +
-            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "fn gen(s: Stmt) -> List<StmtId> {\n" +
             "    let nm = \"Gen_A\"\n" +
             "    quote stmts {\n" +
             "        type ~nm = { a: int }\n" +
@@ -39,9 +39,9 @@ spec "splice into impl-target and struct-literal name positions" {
 
     then "~name { ... }: struct-literal constructor name splices to the type" {
         let out = write_fixture_and_run("/tmp/avra_splice_struct_lit_test.av",
-            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
             "@comptime\n" +
-            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "fn gen(s: Stmt) -> List<StmtId> {\n" +
             "    let nm = \"Gen_B\"\n" +
             "    quote stmts {\n" +
             "        type ~nm = { a: int }\n" +
@@ -58,10 +58,10 @@ spec "splice into impl-target and struct-literal name positions" {
 
     then "combined: per-instance type + impl + factory in one macro" {
         let out = write_fixture_and_run("/tmp/avra_splice_combined_test.av",
-            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
             "trait Runner { fn run(self) -> int }\n" +
             "@comptime\n" +
-            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "fn gen(s: Stmt) -> List<StmtId> {\n" +
             "    let nm = \"Command_build\"\n" +
             "    quote stmts {\n" +
             "        type ~nm = { code: int }\n" +
@@ -87,10 +87,10 @@ spec "splice into impl-target and struct-literal name positions" {
         // at the first `_`. If the boundary scan were wrong, the generated
         // method name would be malformed and dispatch would fail.
         let out = write_fixture_and_run("/tmp/avra_splice_underscore_test.av",
-            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
             "trait Runner3 { fn run(self) -> int }\n" +
             "@comptime\n" +
-            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "fn gen(s: Stmt) -> List<StmtId> {\n" +
             "    let cmd_ty = \"Cmd_With_Underscores\"\n" +
             "    quote stmts {\n" +
             "        type ~cmd_ty = { code: int }\n" +
@@ -108,10 +108,10 @@ spec "splice into impl-target and struct-literal name positions" {
 
     then "non-splice names still round-trip as plain literals (no regression)" {
         let out = write_fixture_and_run("/tmp/avra_splice_literal_test.av",
-            "use @std.avrac.core.{Stmt, SStmt}\n" +
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
             "trait Greeter2 { fn greet(self) -> int }\n" +
             "@comptime\n" +
-            "fn gen(s: Stmt) -> List<SStmt> {\n" +
+            "fn gen(s: Stmt) -> List<StmtId> {\n" +
             "    quote stmts {\n" +
             "        type Plain = { a: int }\n" +
             "        impl Greeter2 for Plain { fn greet(self) -> int { self.a } }\n" +

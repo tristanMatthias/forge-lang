@@ -9,7 +9,7 @@ use @std.avrac.test_runner.{write_fixture_and_run}
 spec "quote: ~arms splices a List<MatchArm> into match-arm position" {
     then "spliced arms fire at runtime" {
         let out = write_fixture_and_run("/tmp/avra_quote_splice_arm_list_test.av", 
-            "use @std.avrac.core.{Stmt, SStmt, MatchArm}\n" +
+            "use @std.avrac.core.{Stmt, StmtId, MatchArm}\n" +
             "\n" +
             "@comptime\n" +
             "fn make_arms() -> List<MatchArm> {\n" +
@@ -19,7 +19,7 @@ spec "quote: ~arms splices a List<MatchArm> into match-arm position" {
             "}\n" +
             "\n" +
             "@comptime\n" +
-            "fn build_main() -> List<SStmt> {\n" +
+            "fn build_main() -> List<StmtId> {\n" +
             "    let arms = make_arms()\n" +
             "    quote stmts {\n" +
             "        let v = 2\n" +
@@ -50,7 +50,7 @@ spec "quote: ~arms splices a List<MatchArm> into match-arm position" {
 spec "quote: a spliced arm with a `none` body decodes (Expr.None is a valid body)" {
     then "the none-bodied arm reconstructs + decodes through @expand" {
         let out = write_fixture_and_run("/tmp/avra_quote_splice_none_body_test.av",
-            "use @std.avrac.core.{Stmt, SStmt, MatchArm}\n" +
+            "use @std.avrac.core.{Stmt, StmtId, MatchArm}\n" +
             "\n" +
             "@comptime\n" +
             "fn make_none_arm() -> List<MatchArm> {\n" +
@@ -59,7 +59,7 @@ spec "quote: a spliced arm with a `none` body decodes (Expr.None is a valid body
             "}\n" +
             "\n" +
             "@comptime\n" +
-            "fn build_none_main() -> List<SStmt> {\n" +
+            "fn build_none_main() -> List<StmtId> {\n" +
             "    let arms = make_none_arm()\n" +
             "    quote stmts {\n" +
             "        println(\"none-body-arm-decoded\")\n" +
