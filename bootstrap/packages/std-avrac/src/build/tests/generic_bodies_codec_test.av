@@ -132,8 +132,8 @@ use @std.avrac.build.{extract_unit_metadata}
 fn extract_from_source(unit: string, src: string) -> List<GenericBodyEntry> {
     let parsed = parse_program_source(src)
     if parsed.had_error == 1 { return [] }
-    if parsed.stmts == null { return [] }
-    let m = extract_unit_metadata(unit, fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+    if parsed.ids == null { return [] }
+    let m = extract_unit_metadata(unit, fp32(), parsed.ids!, parsed.store)
     m.generic_bodies
 }
 
@@ -219,7 +219,7 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
         // through fmt → metadata → parse.
         let parsed = parse_program_source(
             "export fn id<T>(x: T) -> T {\n    return x\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
         let ws = ts()
         let synth = synthesize_unit_body(m, ws)
         let body = first_fn_body(ws, synth, "id")
@@ -228,7 +228,7 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
     then "non-generic exported fn still gets empty body + @external_unit" {
         let parsed = parse_program_source(
             "export fn plain(x: int) -> int {\n    return x + 1\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
         let ws = ts()
         let synth = synthesize_unit_body(m, ws)
         let body = first_fn_body(ws, synth, "plain")
@@ -255,16 +255,16 @@ fn ts() -> NodeStore {
 fn extract_inherent_impl_count(src: string) -> int {
     let parsed = parse_program_source(src)
     if parsed.had_error == 1 { return -1 }
-    if parsed.stmts == null { return -1 }
-    let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+    if parsed.ids == null { return -1 }
+    let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
     m.inherent_impls.length
 }
 
 fn first_inherent_method_count(src: string) -> int {
     let parsed = parse_program_source(src)
     if parsed.had_error == 1 { return -1 }
-    if parsed.stmts == null { return -1 }
-    let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+    if parsed.ids == null { return -1 }
+    let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
     if m.inherent_impls.length == 0 { return 0 }
     m.inherent_impls[0].methods.length
 }
@@ -286,13 +286,13 @@ spec "bd8n: inherent impl metadata round-trip" {
         // only the no-trait form lands in inherent_impls.
         let parsed = parse_program_source(
             "trait Counter { fn tick(self) -> int }\ntype Foo = { n: int }\nimpl Counter for Foo {\n    fn tick(self) -> int { return self.n }\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
         m.inherent_impls.length == 0 && m.impls.length == 1
     }
     then "codec round-trip preserves inherent impl bytes-identical" {
         let parsed = parse_program_source(
             "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
         let w = writer_new()
         w.unit(m)
         let r = reader_new(w.finish())
@@ -304,7 +304,7 @@ spec "bd8n: inherent impl metadata round-trip" {
     then "synthesized inherent impl appears in unit body" {
         let parsed = parse_program_source(
             "type Foo = { x: int }\nimpl Foo {\n    fn id(self) -> int { return self.x }\n}")
-        let m = extract_unit_metadata("@std::test", fp32(), parsed.store.rows_of(parsed.stmts!), parsed.store)
+        let m = extract_unit_metadata("@std::test", fp32(), parsed.ids!, parsed.store)
         let ws = ts()
         let synth = synthesize_unit_body(m, ws)
         // The synthesizer wraps the impl block under the type's

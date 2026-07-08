@@ -34,7 +34,7 @@ fn sample_program(ws: NodeStore) -> List<StmtId> {
     ]
 }
 
-spec "comptime.collect_comptime_fns" {
+spec "comptime.collect_comptime_fns_ids" {
     then "finds 2 @comptime fns and skips @inline" {
         let ws = ts()
         collect_comptime_fns_ids(sample_program(ws), ws).fns.length == 2

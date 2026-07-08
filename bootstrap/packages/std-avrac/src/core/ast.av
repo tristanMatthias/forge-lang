@@ -6,67 +6,14 @@ use core.{ExprId, StmtId, PatId, TypeId}
 use list_ops.{list_map, list_any}
 use features.walker.{derive_walker}
 
-// ── Spanned wrappers ──
+// ── Node-list wrapper helpers ──
 //
-// Every Expr / Stmt in the AST is wrapped in a span carrier so error
-// messages and the LSP can point at the originating source range
-// without an out-of-band side-table. Carriers also park the inferred
-// ValueType (SExpr only) so passes can read types without a separate
-// annotation layer.
+// AST children now live as arena ids (ExprId / StmtId), so the parser no
+// longer wraps Expr / Stmt in a span carrier — positions ride the store's
+// side-tables. These generic `.node`-projecting helpers remain for
+// @derive(Walker)-generated code over any user wrapper struct `W` whose
+// `.node` field projects to a parent enum.
 
-/// Spanned expression. `line`/`col` are 1-based source coordinates;
-/// `ty` is the inferred ValueType (Unknown until typecheck runs);
-/// `file` is the source file path (empty for synthesised nodes).
-/// Carrying `file` per-node lets diagnostics in multi-file bundles
-/// (test runner, future incremental compilation) cite the
-/// originating file rather than a `<bundle>` placeholder.
-export type SExpr = { node: Expr, line: int, col: int, ty: ValueType, file: string }
-
-/// Spanned statement. Mirrors SExpr but without the cached type —
-/// statements have no result value to track.
-///
-/// `from_macro` is set by the splicer when an `@expand` macro
-/// produced this stmt. The partial re-resolve pass walks only
-/// `from_macro == true` entries — newly-introduced names go through
-/// `register_decls` + `rewrite_uses` post-expand without re-walking
-/// every hand-written decl. Per
-/// `docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md` step 4.
-export type SStmt = { node: Stmt, line: int, col: int, file: string, from_macro: bool }
-
-/// Build an SExpr at a known source position. File defaults to "" —
-/// use `sexpr_at` when the source file is known.
-export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown, file: "" } }
-
-/// Build an SExpr at a known source position with explicit file.
-export fn sexpr_at(e: Expr, line: int, col: int, file: string) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown, file } }
-
-/// Build an SExpr with no source position. Used by passes that
-/// synthesise nodes (desugar, monomorphizer) where line/col would be
-/// misleading.
-export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Unknown, file: "" } }
-
-/// Build a fully-annotated SExpr. Used by the typechecker to attach
-/// a known type without mutating the existing wrapper.
-export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty, file: "" } }
-
-/// Build an SStmt at a known source position. File defaults to "".
-/// `from_macro` defaults to false — the macro splicer flips this on
-/// post-construction via `sstmt_mark_from_macro`.
-export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col, file: "", from_macro: false } }
-
-/// Build an SStmt at a known source position with explicit file.
-export fn sstmt_at(s: Stmt, line: int, col: int, file: string) -> SStmt { SStmt { node: s, line, col, file, from_macro: false } }
-
-/// Build an SStmt with no source position. Same caveats as
-/// `sexpr_dummy` — synthesised nodes only.
-export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0, file: "", from_macro: false } }
-
-/// Unwrap a List<SStmt> into a List<Stmt> by projecting each entry's
-/// `.node` field. derive_walker emits calls to this from generated
-/// Type__children() variants whose payload is `List<SStmt>` —
-/// Block / Module / Function / SpecBlock / ThenBlock / GivenBlock /
-/// TraitDecl / Match.
-///
 /// Generic unwrap for any spanned-wrapper `W` whose `.node` field
 /// projects to type `T`. SStmt → Stmt, SExpr → Expr both ride this
 /// shape. `T` is inferred at the call site from the caller's
@@ -139,14 +86,6 @@ export fn map_node_opt<W, T>(x: W?, f: fn(T) -> T) -> W? {
 
 export fn map_node<W, T>(x: W, f: fn(T) -> T) -> W {
     x with { node: f(x.node) }
-}
-
-export fn unwrap_sstmt_list(xs: List<SStmt>) -> List<Stmt> {
-    unwrap_node_list(xs)
-}
-
-export fn unwrap_sexpr_list(xs: List<SExpr>) -> List<Expr> {
-    unwrap_node_list(xs)
 }
 
 /// A child node as a boxed AST node, BEFORE the arena assigns it an id — the
@@ -237,58 +176,6 @@ export fn spanned_bare_list(ns: List<AnyNode>) -> List<SpannedChild> {
     out
 }
 
-/// A single `SExpr` wrapper child carrying its real (line, col).
-export fn spanned_one_sexpr(w: SExpr) -> List<SpannedChild> {
-    [spanned_child(AnyNode.AnyExpr(w.node), w.line, w.col)]
-}
-
-/// A single `SStmt` wrapper child carrying its real (line, col).
-export fn spanned_one_sstmt(w: SStmt) -> List<SpannedChild> {
-    [spanned_child(AnyNode.AnyStmt(w.node), w.line, w.col)]
-}
-
-/// A `List<SExpr>` wrapper list → spanned children, each at its wrapper's
-/// (line, col) — the span-preserving sibling of `box_expr_list` (which would
-/// lose the positions by unwrapping `.node` first).
-export fn box_sexpr_list_spanned(xs: List<SExpr>) -> List<SpannedChild> {
-    mut out: List<SpannedChild> = []
-    for x in xs { out.push(spanned_child(AnyNode.AnyExpr(x.node), x.line, x.col)) }
-    out
-}
-
-/// A `List<SStmt>` wrapper list → spanned children, each at its wrapper's
-/// (line, col). Span-preserving sibling of `box_stmt_list`.
-export fn box_sstmt_list_spanned(xs: List<SStmt>) -> List<SpannedChild> {
-    mut out: List<SpannedChild> = []
-    for x in xs { out.push(spanned_child(AnyNode.AnyStmt(x.node), x.line, x.col)) }
-    out
-}
-
-/// A nullable single `SExpr?` wrapper → 0-or-1 spanned children at the
-/// wrapper's (line, col). The span-preserving sibling of `unwrap_node_opt`.
-export fn node_opt_spanned_sexpr(x: SExpr?) -> List<SpannedChild> {
-    mut out: List<SpannedChild> = []
-    if x != none { out.push(spanned_child(AnyNode.AnyExpr(x!.node), x!.line, x!.col)) }
-    out
-}
-
-/// A nullable single `SStmt?` wrapper → 0-or-1 spanned children at the
-/// wrapper's (line, col). Span-preserving sibling of `unwrap_node_opt`.
-export fn node_opt_spanned_sstmt(x: SStmt?) -> List<SpannedChild> {
-    mut out: List<SpannedChild> = []
-    if x != none { out.push(spanned_child(AnyNode.AnyStmt(x!.node), x!.line, x!.col)) }
-    out
-}
-
-/// Project the bare `AnyNode`s out of a spanned-child list, order preserved —
-/// the position-free view of `all_children_spanned()`, for @std callers that
-/// only need the node set (e.g. the arena kind-tag probes).
-export fn strip_spans(scs: List<SpannedChild>) -> List<AnyNode> {
-    mut out: List<AnyNode> = []
-    for sc in scs { out.push(sc.node) }
-    out
-}
-
 // ── Inverse-walker helpers (B1 / spine §14.1) ──
 //
 // The dual of the `box_*` / `spanned_*` family above: rebuild a variant's
@@ -321,12 +208,6 @@ export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -
 /// Unbox a single bare `ValueType` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
 export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(t) -> t  _ -> ValueType.Trait("__wc_kind_mismatch", 0) } }
 
-/// Rebuild a single `SExpr` wrapper child from its node + recovered (line, col).
-export fn respan_sexpr(sc: SpannedChild) -> SExpr { sexpr_at(unspan_expr(sc), sc.line, sc.col, "") }
-/// Rebuild a single `SStmt` wrapper child (from_macro=false, file=""; the
-/// reconstruct driver patches both back onto top-level roots — see the header).
-export fn respan_sstmt(sc: SpannedChild) -> SStmt { sstmt_at(unspan_stmt(sc), sc.line, sc.col, "") }
-
 /// Unbox a bare `Expr` list slot (the whole run, in order).
 export fn unspan_expr_list(scs: List<SpannedChild>) -> List<Expr> { list_map(scs, (sc: SpannedChild) -> unspan_expr(sc)) }
 /// Unbox a bare `Stmt` list slot.
@@ -336,20 +217,11 @@ export fn unspan_pat_list(scs: List<SpannedChild>) -> List<Pattern> { list_map(s
 /// Unbox a bare `ValueType` list slot.
 export fn unspan_type_list(scs: List<SpannedChild>) -> List<ValueType> { list_map(scs, (sc: SpannedChild) -> unspan_type(sc)) }
 
-/// Rebuild a `List<SExpr>` wrapper-list slot, each from node + recovered span.
-export fn respan_sexpr_list(scs: List<SpannedChild>) -> List<SExpr> { list_map(scs, (sc: SpannedChild) -> respan_sexpr(sc)) }
-/// Rebuild a `List<SStmt>` wrapper-list slot.
-export fn respan_sstmt_list(scs: List<SpannedChild>) -> List<SStmt> { list_map(scs, (sc: SpannedChild) -> respan_sstmt(sc)) }
-
 /// A bare `Self?` optional slot: the run is 0-or-1 spanned children.
 export fn unspan_expr_opt(scs: List<SpannedChild>) -> Expr? { if scs.length > 0 { unspan_expr(scs[0]) } else { null } }
 export fn unspan_stmt_opt(scs: List<SpannedChild>) -> Stmt? { if scs.length > 0 { unspan_stmt(scs[0]) } else { null } }
 export fn unspan_pat_opt(scs: List<SpannedChild>) -> Pattern? { if scs.length > 0 { unspan_pat(scs[0]) } else { null } }
 export fn unspan_type_opt(scs: List<SpannedChild>) -> ValueType? { if scs.length > 0 { unspan_type(scs[0]) } else { null } }
-
-/// A `Wrapper<Self>?` optional slot: 0-or-1 rebuilt wrapper.
-export fn respan_sexpr_opt(scs: List<SpannedChild>) -> SExpr? { if scs.length > 0 { respan_sexpr(scs[0]) } else { null } }
-export fn respan_sstmt_opt(scs: List<SpannedChild>) -> SStmt? { if scs.length > 0 { respan_sstmt(scs[0]) } else { null } }
 
 /// The contiguous `[lo, hi)` run of a spanned-child list — the one variable-arity
 /// slot's children (a node-list or an optional). `with_children` computes the
@@ -436,13 +308,6 @@ export fn field_init_children_spanned(_inits: List<FieldInit>) -> List<SpannedCh
 /// other `rebuild_*` helpers for a uniform reconstruct surface.
 export fn rebuild_field_inits(original: List<FieldInit>, _run: List<SpannedChild>) -> List<FieldInit> {
     original
-}
-
-/// Stamp `from_macro = true` on a spliced SStmt. The expand_macros
-/// pass calls this after invoking a macro so the post-expand partial
-/// re-resolve knows which entries to walk.
-export fn sstmt_mark_from_macro(ss: SStmt) -> SStmt {
-    ss with { from_macro: true }
 }
 
 // `enum ExprList` retired in lkze.9 #18 — `List<SExpr>` everywhere.
@@ -2420,12 +2285,6 @@ export fn stmt_unwrap(store: NodeStore, s: Stmt) -> Stmt {
 // continuation). Centralised here so both consumers share one
 // definition.
 
-/// True when a statement list ends in a divergent statement.
-export fn stmts_diverges(store: NodeStore, stmts: List<SStmt>) -> bool {
-    if stmts.length == 0 { return false }
-    stmt_diverges(store, stmt_unwrap(store, stmts[stmts.length - 1].node))
-}
-
 /// Id-list twin of `stmts_diverges` for flipped `List<StmtId>` bodies
 /// (Stmt.Block and friends resolve their rows here).
 export fn stmt_ids_diverge(store: NodeStore, ids: List<StmtId>) -> bool {
@@ -2939,12 +2798,6 @@ export fn render_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> strin
         let guard_str = if arm.guard_id != null { " if ${render_expr_id(store, arm.guard_id!)}" } else { "" }
         "${render_pattern(store, arm.pattern)}${guard_str} -> ${render_expr_id(store, arm.body_id)}"
     }).join("; ")})"
-}
-
-/// Render a `List<SStmt>` as an S-expression sequence — convenient
-/// for `render_stmt` recursion on Block bodies.
-export fn render_stmt_list(store: NodeStore, stmts: List<SStmt>) -> string {
-    list_map(stmts, (ss: SStmt) -> render_stmt(store, ss.node)).join("\n")
 }
 
 // ── Token kinds ──

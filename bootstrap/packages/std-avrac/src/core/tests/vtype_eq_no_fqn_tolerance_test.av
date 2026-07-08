@@ -6,8 +6,8 @@
 // real id OR a canonical name, and equality is exact in both arms.
 //
 // Why this test observes the fix: pre-T6.D, nominal_names_match's
-// suffix tolerance made `Struct("SStmt", 0)` and
-// `Struct("@std::avrac::core::SStmt", 0)` compare equal. After
+// suffix tolerance made `Struct("Widget", 0)` and
+// `Struct("@std::avrac::core::Widget", 0)` compare equal. After
 // T6.D, that's a real mismatch — the bare name is treated as a
 // distinct (unregistered) nominal. Restoring the helper would
 // flip the assertions back to passing.
@@ -16,8 +16,8 @@ use @std.avrac.core.{vtype_eq, ValueType, vtype_struct}
 
 spec "T6.D: vtype_eq drops bare-vs-FQN tolerance" {
     then "Struct bare name and FQN at id=0 are NOT equal" {
-        let short =vtype_struct("SStmt", 0)
-        let fqn = vtype_struct("@std::avrac::core::SStmt", 0)
+        let short =vtype_struct("Widget", 0)
+        let fqn = vtype_struct("@std::avrac::core::Widget", 0)
         !vtype_eq(short, fqn)
     }
     then "Trait bare name and FQN at id=0 are NOT equal" {

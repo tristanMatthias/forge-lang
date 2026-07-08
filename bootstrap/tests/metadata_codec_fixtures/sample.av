@@ -23,9 +23,9 @@ use @std.avrac.build.{
 }
 use @std.avrac.core.{
     NodeStore, new_node_store, build_line_index,
-    Stmt, SStmt, StmtId, Expr, SExpr, TypeParamEntry,
+    Stmt, StmtId, Expr, TypeParamEntry,
     ValueType, FieldEntry, Variant, ParamEntry,
-    Annotation, vtype_eq, vtype_struct, sstmt_dummy, stmt_unwrap, find_annotation,
+    Annotation, vtype_eq, vtype_struct, stmt_unwrap, find_annotation,
 }
 use @std.avrac.build.{extract_unit_metadata}
 use @std.avrac.build.{synthesize_unit_stmts}
@@ -717,7 +717,7 @@ fn main() -> int {
     mut pt_fields_ast: List<FieldEntry> = []
     pt_fields_ast.push(FieldEntry { name: "x", resolved: ValueType.Int })
     let empty_tp_pt: List<TypeParamEntry> = []
-    let s_type = sstmt_dummy(Stmt.TypeDecl("Pt", empty_tp_pt, pt_fields_ast))
+    let s_type = ext_store.stmts.add_leaf(Stmt.TypeDecl("Pt", empty_tp_pt, pt_fields_ast))
 
     // export fn add(a: int, b: int) -> int { ... }  (body irrelevant for extraction)
     let add_params_ast: List<ParamEntry> = [
@@ -727,24 +727,24 @@ fn main() -> int {
     let empty_tp_add: List<TypeParamEntry> = []
     let empty_body_fn: List<StmtId> = []
     let s_fn_inner = Stmt.Function("add", empty_tp_add, add_params_ast, ValueType.Int, empty_body_fn)
-    let s_fn_inner_id = ext_store.rows_of([sstmt_dummy(s_fn_inner)])[0]
+    let s_fn_inner_id = ext_store.stmts.add_leaf(s_fn_inner)
     let exp_annots: List<Annotation> = [Annotation { name: "export", arg_ids: [] }]
-    let s_fn = sstmt_dummy(Stmt.Annotated(exp_annots, s_fn_inner_id))
+    let s_fn = ext_store.stmts.add_leaf(Stmt.Annotated(exp_annots, s_fn_inner_id))
 
     // const VERSION: string = "1.0" — the initializer is an ExprId row,
     // so allocate the literal into the store and reference it by id.
-    let s_const = sstmt_dummy(Stmt.Const("VERSION", ValueType.Str, ext_store.add_expr_leaf(Expr.String("\"1.0\""))))
+    let s_const = ext_store.stmts.add_leaf(Stmt.Const("VERSION", ValueType.Str, ext_store.add_expr_leaf(Expr.String("\"1.0\""))))
 
     // const N: int = 42
-    let s_const_int = sstmt_dummy(Stmt.Const("N", ValueType.Int, ext_store.add_expr_leaf(Expr.Number("42"))))
+    let s_const_int = ext_store.stmts.add_leaf(Stmt.Const("N", ValueType.Int, ext_store.add_expr_leaf(Expr.Number("42"))))
 
     // extern fn host_now() -> int
     let extern_params: List<ParamEntry> = []
-    let s_extern = sstmt_dummy(Stmt.ExternFn("host_now", extern_params, ValueType.Int))
+    let s_extern = ext_store.stmts.add_leaf(Stmt.ExternFn("host_now", extern_params, ValueType.Int))
 
-    let ext_stmts: List<SStmt> = [s_type, s_fn, s_const, s_const_int, s_extern]
+    let ext_stmts: List<StmtId> = [s_type, s_fn, s_const, s_const_int, s_extern]
 
-    let extracted = extract_unit_metadata("@ext", ext_fp, ext_store.rows_of(ext_stmts), ext_store)
+    let extracted = extract_unit_metadata("@ext", ext_fp, ext_stmts, ext_store)
     let ex_types: List<TypeDeclEntry> = extracted.types
     let ex_fns: List<FnDeclEntry> = extracted.fns
     let ex_consts: List<ConstDeclEntry> = extracted.consts
@@ -889,14 +889,14 @@ fn main() -> int {
     let empty_tp_synth: List<TypeParamEntry> = []
     let empty_greet_body: List<StmtId> = []
     let greet_fn = Stmt.Function("greet", empty_tp_synth, [], ValueType.Str, empty_greet_body)
-    let greet_fn_id = synth_store.rows_of([sstmt_dummy(greet_fn)])[0]
-    let synth_stmts: List<SStmt> = [
-        sstmt_dummy(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
-        sstmt_dummy(Stmt.Annotated(greet_annots, greet_fn_id)),
-        sstmt_dummy(Stmt.Const("BUILD", ValueType.Str, synth_store.add_expr_leaf(Expr.String("\"42\"")))),
+    let greet_fn_id = synth_store.stmts.add_leaf(greet_fn)
+    let synth_stmts: List<StmtId> = [
+        synth_store.stmts.add_leaf(Stmt.TypeDecl("Cell", empty_tp_synth, synth_fields)),
+        synth_store.stmts.add_leaf(Stmt.Annotated(greet_annots, greet_fn_id)),
+        synth_store.stmts.add_leaf(Stmt.Const("BUILD", ValueType.Str, synth_store.add_expr_leaf(Expr.String("\"42\"")))),
     ]
 
-    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_store.rows_of(synth_stmts), synth_store)
+    let synth_meta = extract_unit_metadata("@synth", avra_bytes_make(32), synth_stmts, synth_store)
     // synthesize_unit_stmts allocates its output rows into this store, so
     // read the synthesized Module/fn/const back through it.
     let synth_out_store = new_node_store(build_line_index(""))
