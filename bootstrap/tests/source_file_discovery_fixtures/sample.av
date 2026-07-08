@@ -48,7 +48,7 @@ fn main() -> int {
     let parsed = parse_program_source(top_src)
     probe("parse_succeeded", !parsed.had_error)
 
-    let stmts_opt = parsed.stmts
+    let stmts_opt = parsed.ids
     if stmts_opt == null {
         probe("stmts_present", false)
         return 1
@@ -71,12 +71,12 @@ fn main() -> int {
     // SStmt.file properly during the foo.av re-parse.
     use @std.avrac.core.{avra_selfhost_read_file}
     let resolved_top = parse_program_source_at(avra_selfhost_read_file(top_path), top_path)
-    if resolved_top.stmts == null {
+    if resolved_top.ids == null {
         probe("resolver_input_valid", false)
         return 1
     }
     let empty: List<string> = []
-    let mod_resolved = resolve_module_files(resolved_top.store.rows_of(resolved_top.stmts!), entry_dir, empty, resolved_top.store)
+    let mod_resolved = resolve_module_files(resolved_top.ids!, entry_dir, empty, resolved_top.store)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let files = collect_source_files(resolved_top.store, mod_resolved.stmts)

@@ -3,7 +3,7 @@
 
 // Imports resolved by bootstrap's module-qualified name resolution.
 
-use core.{sstmt, sstmt_at, byte_span_none, SrcPos}
+use core.{byte_span_none, SrcPos}
 use core.{Tk}
 use parse.{StmtListIds}
 impl Parser {
@@ -25,7 +25,6 @@ impl Parser {
     }
 
     fn parse_spec_body(self) -> StmtListIds {
-        mut out: List<SStmt> = []
         mut ids: List<StmtId> = []
         while !(self.current_kind in [Tk.RightBrace, Tk.Eof]) {
             let line = self.current_line
@@ -40,13 +39,12 @@ impl Parser {
             }
             let sid = match stmt_res {
                 .Ok(s) -> s
-                .Err(_) -> return StmtListIds { wrapped: out, ids: ids }
+                .Err(_) -> return StmtListIds { ids: ids }
             }
             self.store.stmts.record_pos(sid, SrcPos { line: line, col: col, file: self.file })
-            out.push(sstmt_at(self.stmt_of(sid), line, col, self.file))
             ids.push(sid)
         }
-        StmtListIds { wrapped: out, ids: ids }
+        StmtListIds { ids: ids }
     }
 
     fn parse_given_block(self) -> Result<StmtId, string> {

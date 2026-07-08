@@ -7,7 +7,7 @@
 // in the parser's feature registry. Subsequent code can use `name instance { ... }`
 // without the `component` keyword — single-pass, no ambiguity.
 
-use core.{Stmt, Expr, SExpr, SStmt, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, StmtId, ExprId, SrcPos, byte_span_none}
+use core.{Stmt, Expr, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, StmtId, ExprId, SrcPos, byte_span_none}
 use parse.{Parser, StmtListIds}
 use core.{Tk}
 use core.{register_component_name}
@@ -284,8 +284,7 @@ impl Parser {
             let sid = self.parse_declaration()?
             self.push_body_elem(ids, sid, line, col)
         }
-        let no_wrapped: List<SStmt> = []
-        .Ok(StmtListIds { wrapped: no_wrapped, ids: ids })
+        .Ok(StmtListIds { ids: ids })
     }
 
     /// Append a body-element row, stamping its position column (the F3a
@@ -522,7 +521,6 @@ impl Parser {
             let sid = self.parse_declaration()?
             self.push_body_elem(ids, sid, line, col)
         }
-        let no_wrapped: List<SStmt> = []
-        .Ok(StmtListIds { wrapped: no_wrapped, ids: ids })
+        .Ok(StmtListIds { ids: ids })
     }
 }

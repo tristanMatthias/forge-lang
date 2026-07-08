@@ -64,7 +64,7 @@ fn main() -> int {
     let top_path = "${root}/top.av"
     let foo_path = "${root}/foo.av"
     let parsed = parse_program_source_at(avra_selfhost_read_file(top_path), top_path)
-    if parsed.had_error || parsed.stmts == null {
+    if parsed.had_error || parsed.ids == null {
         probe("parse_succeeded", false)
         return 1
     }
@@ -72,7 +72,7 @@ fn main() -> int {
 
     let entry_dir = modules_dirname(top_path)
     let empty: List<string> = []
-    let mod_resolved = resolve_module_files(parsed.store.rows_of(parsed.stmts!), entry_dir, empty, parsed.store)
+    let mod_resolved = resolve_module_files(parsed.ids!, entry_dir, empty, parsed.store)
     probe("resolver_succeeded", !mod_resolved.had_error)
 
     let fp = avra_bytes_make(32)

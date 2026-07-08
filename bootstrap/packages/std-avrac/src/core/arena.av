@@ -564,17 +564,30 @@ impl NodeStore {
         ids
     }
     /// Record the parser's already-allocated top-level statements as this
-    /// store's roots: stamp each root row with the same conservative span
-    /// the walker-ingest test oracle derives (`conservative_root_span` — one
-    /// shared implementation, so both producers are byte-identical) and
-    /// mirror macro provenance. `stmts[k]` is the spanned wrapper of the row
-    /// `ids[k]`; both lists come from one `parse_statement_list_ids` pass.
-    fn record_roots(self, stmts: List<SStmt>, ids: List<StmtId>, source_len: int) {
-        for (k, s) in stmts.enumerate() {
-            let sp = conservative_root_span(self.lines, stmts, k, source_len)
-            if !byte_span_is_none(sp) { self.stmts.spans.set(ids[k], sp) }
-            self.roots.push(ids[k])
-            if s.from_macro { self.provenance.set(ids[k], true) }
+    /// store's roots: stamp each root row with a conservative extent span
+    /// (from the row's stamped (line, col) up to the next source-bearing
+    /// root's start, else `source_len`; a synthesised row gets the sentinel)
+    /// — the same rule `conservative_root_span` applies for the walker-ingest
+    /// test oracle, read here from the rows' own position column via `stmt_pos`.
+    fn record_roots(self, ids: List<StmtId>, source_len: int) {
+        for (k, id) in ids.enumerate() {
+            let p = self.stmt_pos(id)
+            let sp = if p.line < 1 {
+                byte_span_none()
+            } else {
+                let lo = self.lines.offset_of(p.line, p.col)
+                mut next = k + 1
+                while next < ids.length && self.stmt_pos(ids[next]).line < 1 { next = next + 1 }
+                let hi = if next < ids.length {
+                    let np = self.stmt_pos(ids[next])
+                    self.lines.offset_of(np.line, np.col)
+                } else {
+                    source_len
+                }
+                byte_span(lo, hi)
+            }
+            if !byte_span_is_none(sp) { self.stmts.spans.set(id, sp) }
+            self.roots.push(id)
         }
     }
     /// Recursively ingest a `Pattern` subtree (see `ingest_expr`).
