@@ -3,6 +3,7 @@
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
 use core.{ExprId, StmtId, PatId, TypeId}
+use core.{content_id_for}
 use list_ops.{list_map, list_any}
 use features.walker.{derive_walker}
 
@@ -842,7 +843,7 @@ fn vtype_is_nominal(t: ValueType) -> bool {
 /// content ids are FNV-1a-64 folded into i64 and are frequently negative,
 /// so callers must test `!= 0`, never `> 0`.
 fn vtype_nominal_id(t: ValueType) -> int {
-    match t {
+    let stored = match t {
         .Struct(_, _, id) -> id
         .Enum(_, _, id) -> id
         .Newtype(_, _, id) -> id
@@ -850,6 +851,17 @@ fn vtype_nominal_id(t: ValueType) -> int {
         .NarrowedEnum(_, _, id) -> id
         _ -> 0
     }
+    if stored != 0 { return stored }
+    // Pre-resolve (unstamped, id == 0) fallback: the registration id IS
+    // `content_id_for(FQN)` by construction (type_registry_register), so
+    // computing it from the name here yields the SAME identity a later stamp
+    // assigns. This lets `vtype_eq` compare nominal identity by integer id
+    // alone — no id-else-name straddle — without depending on stamp ordering:
+    // two unstamped `Struct("Foo")` reconcile via `content_id_for("Foo")`
+    // exactly as they used to via the raw string, and a stamped/unstamped mix
+    // agrees because the stored id already equals `content_id_for(name)`.
+    let fqn = vtype_nominal_fqn(t)
+    if fqn == "" { 0 } else { content_id_for(fqn) }
 }
 
 /// The narrowed variant of a NarrowedEnum, "" for every other type. The
@@ -892,8 +904,8 @@ fn newtype_inners_eq(a: ValueType, b: ValueType) -> bool {
 
 /// Strict ValueType equality. Two types are equal when they have the same
 /// shape AND the same nominal identity — matched by content-addressed
-/// TypeId when both sides are stamped (the common, post-resolve case),
-/// falling back to the fully-qualified name only pre-resolve. Use
+/// TypeId (`vtype_nominal_id`: the stored id when stamped, else the same id
+/// recomputed from the FQN), so the comparison is id-only in every case. Use
 /// `vtype_assignable` for the broader "can A be passed where B is
 /// expected" check.
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
@@ -916,14 +928,16 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     // equal (24yd), which op3w's Struct/Enum-only string compare missed.
     // Generic args are intentionally ignored (the id keys on the bare name);
     // arg layout is checked separately (generic_args_layout_conflict).
-    // NarrowedEnum keeps its variant discriminator on top. Pre-resolve, when
-    // either side is unstamped (id == 0), we fall back to the FQN string — the
-    // only place a string identity remains, and only until stamp_ids_vtype runs.
+    // NarrowedEnum keeps its variant discriminator on top. Pre-resolve, an
+    // unstamped side (id == 0) has its id recomputed from the FQN inside
+    // `vtype_nominal_id` (the id IS `content_id_for(FQN)`), so the compare is
+    // id-only here too — no FQN-string straddle, no dependence on stamp order.
     if vtype_is_nominal(a) && vtype_is_nominal(b) {
-        let id1 = vtype_nominal_id(a)
-        let id2 = vtype_nominal_id(b)
-        let same = if id1 != 0 && id2 != 0 { id1 == id2 } else { vtype_nominal_fqn(a) == vtype_nominal_fqn(b) }
-        if !same { return false }
+        // Id-only nominal identity: `vtype_nominal_id` resolves the
+        // content-addressed id (stored when stamped, computed from the FQN
+        // when not), so equality is a single integer compare — the FQN-string
+        // fallback straddle is gone.
+        if vtype_nominal_id(a) != vtype_nominal_id(b) { return false }
         // Same nominal: a NarrowedEnum still differs by its narrowed variant,
         // and two Newtypes by their inner type. Both short-circuit cheaply.
         return vtype_nominal_variant(a) == vtype_nominal_variant(b) && newtype_inners_eq(a, b)
