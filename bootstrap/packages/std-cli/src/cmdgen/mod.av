@@ -14,32 +14,26 @@
 // "Trait:Type" name form the parser uses.
 //
 // SCOPE: generates `type Command_<inst>` + `impl Runnable for
-// Command_<inst>` with name()/run(). The run body is the declared
-// flag/arg accessor bindings (a `flag x {}` → `let x =
+// Command_<inst>` with name()/run(). The run body is the accessor
+// bindings — the command's own `flag x {}` / `arg y {}` children plus
+// the parent cli's global flags (a `flag x {}` → `let x =
 // @std::cli::result_has_flag(args, "x")`, an `arg y {}` → `let y =
 // @std::cli::result_get_arg(args, "y")`, callees emitted fully qualified
-// so they resolve without the consumer importing them) followed by the
-// user's run body verbatim. Registration (`@expand(expand_command)
-// component command`) is deferred to vez6.12: packages/cli/src/main.av
-// still defines `component command` inline, so registering it in the lib
-// would double-register. Ships as an exported @comptime fn; consumers /
-// tests attach it via @expand themselves. Still TODO for full §4.2
-// parity: config fields (`description`) on the generated type + parent
-// (cli) global-flag inheritance — landing with expand_cli.
+// so they resolve without the consumer importing them) — followed by the
+// user's run body verbatim. These macros ship as exported @comptime fns;
+// consumers / tests attach them via `@expand` themselves rather than the
+// lib pre-registering `@expand(expand_command) component command`,
+// because packages/cli/src/main.av still declares `component command`
+// inline and a lib registration would double-register (that migration is
+// its own follow-up). Config fields (`description` on the generated type,
+// from the block's `config` pairs) are the remaining gap to full design
+// §4.2 parity.
 //
 // Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
 
 use @std.avrac.core.{Stmt, Expr, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldEntry, FieldInit}
 use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
 
-/// Expand a `command <inst> { flag…/arg… fn run(args: CliResult) -> int
-/// { … } }` instance into `[type Command_<inst>, impl Runnable for
-/// Command_<inst>]`. The generated `run` prepends one accessor binding
-/// per declared `flag`/`arg` child (`let <flag> =
-/// @std::cli::result_has_flag(args, "<flag>")`, `let <arg> =
-/// @std::cli::result_get_arg(args, "<arg>")`) then carries the user's run
-/// body verbatim; `name` returns the instance's `name` field. Emits names
-/// (`Runnable`, `CliResult`) that resolve in the consumer's scope.
 /// One accessor binding: `let <name>: <vtype> = <callee_fqn>(args,
 /// "<name>")`. Shared by flags (result_has_flag / bool), args
 /// (result_get_arg / string), and inherited global flags. The callee is
@@ -146,6 +140,11 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     return [type_decl, impl_stmt]
 }
 
+/// Expand a standalone `command <inst> { flag…/arg… fn run(args:
+/// CliResult) -> int { … } }` instance into `[type Command_<inst>, impl
+/// Runnable for Command_<inst>]` — the `@expand(expand_command)` entry
+/// point. Delegates to build_command_decls with no inherited global
+/// flags; only expand_cli threads a parent cli's globals into a command.
 @comptime
 export fn expand_command(s: Stmt) -> List<Stmt> {
     let no_globals: List<string> = []
