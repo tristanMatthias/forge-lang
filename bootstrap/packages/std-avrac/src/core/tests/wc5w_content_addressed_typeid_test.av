@@ -112,3 +112,27 @@ spec "wc5w: vtype_eq compares nominal identity by content id, kind-agnostic (24y
           && !vtype_eq_deep(ValueType.List(ValueType.Fn(ValueType.Int)), ValueType.List(ValueType.Fn(ValueType.Str)))
     }
 }
+
+spec "vtype_eq nominal identity is id-only, including the unstamped path" {
+    // A nominal type's registration id IS content_id_for(FQN), so an unstamped
+    // (id == 0, pre-resolve) slot resolves its identity by computing that hash
+    // from the name — making vtype_eq a single integer compare with no
+    // id-else-name string straddle. These pin that the id==0 path is content-
+    // addressed, NOT a wildcard, and reconciles with a stamped counterpart.
+    then "two UNSTAMPED structs of the same name are equal" {
+        let no_args: List<ValueType> = []
+        vtype_eq(ValueType.Struct("@m::Foo", no_args, 0), ValueType.Struct("@m::Foo", no_args, 0))
+    }
+    then "two UNSTAMPED structs of DIFFERENT names are NOT equal — id 0 is not a wildcard" {
+        let no_args: List<ValueType> = []
+        !vtype_eq(ValueType.Struct("@m::Foo", no_args, 0), ValueType.Struct("@m::Bar", no_args, 0))
+    }
+    then "an UNSTAMPED struct reconciles with a STAMPED one of the same name (no straddle)" {
+        let no_args: List<ValueType> = []
+        vtype_eq(ValueType.Struct("@m::Foo", no_args, 0), ValueType.Struct("@m::Foo", no_args, content_id_for("@m::Foo")))
+    }
+    then "an UNSTAMPED newtype and an UNSTAMPED struct of the same name reconcile kind-agnostically" {
+        let no_args: List<ValueType> = []
+        vtype_eq(ValueType.Newtype("@m::Foo", ValueType.Int, 0), ValueType.Struct("@m::Foo", no_args, 0))
+    }
+}
