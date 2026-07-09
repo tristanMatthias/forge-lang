@@ -1,0 +1,44 @@
+// WHY: @comptime AST-introspection helpers for Components V2 macro
+// authors. A macro registered via @expand on a component receives the
+// component-block Stmt for each instantiation; these helpers read the
+// raw material an expansion needs to synthesise per-instance types and
+// trait impls.
+//
+// Built on the synth_deref_* READ shims (features/comptime/synth.av):
+// the children a macro receives sit in a `body: List<StmtId>` whose
+// rows are materialised as boxed, matchable Stmt Values but typed as
+// arena ids — synth_deref_stmt re-types each `StmtId → Stmt` so it can
+// be `match`-ed.
+//
+// Each helper is `@comptime`: a @comptime macro may only call other
+// @comptime fns, so these must carry the annotation to be callable
+// during expansion.
+//
+// Directory-as-module (g2eo.1): exports surface at
+// `@std.cli.introspect.{...}`.
+
+use @std.avrac.core.{Stmt}
+use @std.avrac.features.comptime.{synth_deref_stmt}
+
+/// Every direct child component-block of `s` whose component name is
+/// `comp_name` — e.g. all `flag …` blocks inside a `command …`. Each
+/// body row is dereferenced through the arena via synth_deref_stmt.
+@comptime
+export fn comp_children(s: Stmt, comp_name: string) -> List<Stmt> {
+    mut out: List<Stmt> = []
+    match s {
+        .ComponentBlock(_, _, _, body) -> {
+            for id in body {
+                let child = synth_deref_stmt(id)
+                match child {
+                    .ComponentBlock(cn, _, _, _) -> {
+                        if cn == comp_name { out.push(child) }
+                    }
+                    _ -> {}
+                }
+            }
+        }
+        _ -> {}
+    }
+    out
+}

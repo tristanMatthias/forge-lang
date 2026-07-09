@@ -1,0 +1,86 @@
+// Tests the @comptime introspection helpers (component/mod.av) end to
+// end: a macro imports comp_children and branches on how many `flag`
+// children a `cmd` instance declared. Proves the helper compiles, is
+// callable cross-module from a @comptime macro, and reads the arena-id
+// children correctly.
+//
+// `bs2 expand` echoes the macro's own source (both branch markers once
+// each), then appends the winning branch once more — so the chosen
+// marker appears exactly one more time than the other. All top-level
+// names are `ch_`/`CH_`-prefixed to avoid cross-shard fn/const clashes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const CH_MAIN: string = "fn " + "main()"
+const CH_TWO: string = "COMP-HELPERS-two-flags"
+const CH_OTHER: string = "COMP-HELPERS-other-count"
+
+/// Count non-overlapping occurrences of `needle` in `haystack`.
+fn ch_count(haystack: string, needle: string) -> int {
+    let hl = haystack.length
+    let nl = needle.length
+    if nl == 0 { return 0 }
+    mut n = 0
+    mut i = 0
+    while i + nl <= hl {
+        if haystack.substring(i, i + nl) == needle {
+            n = n + 1
+            i = i + nl
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
+
+fn ch_expand(flag_lines: string) -> string {
+    let path = "/tmp/avra_comp_helpers_test.av"
+    write_fixture(path,
+        "use @std.avrac.core.{Stmt}\n" +
+        "use @std.cli.introspect.{comp_children}\n" +
+        "\n" +
+        "@comptime\n" +
+        "fn count_flags(s: Stmt) -> Stmt {\n" +
+        "    let flags = comp_children(s, \"flag\")\n" +
+        "    match flags.length {\n" +
+        "        2 -> return quote stmt { println(\"" + CH_TWO + "\") }\n" +
+        "        _ -> return quote stmt { println(\"" + CH_OTHER + "\") }\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        "component flag {\n" +
+        "}\n" +
+        "\n" +
+        "@expand(count_flags)\n" +
+        "component cmd {\n" +
+        "}\n" +
+        "\n" +
+        "cmd build {\n" +
+        flag_lines +
+        "}\n" +
+        "\n" +
+        CH_MAIN + " {\n" +
+        "}\n")
+    // Compile the fixture FROM SOURCE: clear the test shard's
+    // metadata-stub env vars so std-cli's @comptime helper *bodies*
+    // are available to the evaluator. Under the shard's default
+    // AVRA_USE_METADATA path std-cli is stubbed to symbols-only, so a
+    // cross-package @comptime call (comp_children) evaluates to null —
+    // the open cross-package-macro gap tracked separately. A real
+    // `avra` compile of this fixture (clean env, as here) resolves the
+    // helper body and expands correctly.
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+// One source-compiled case (each fixture rebuilds std from source —
+// the only path that carries std-cli's cross-package @comptime bodies
+// today, ~20s). The count assertion is already discriminating: it only
+// holds if comp_children counted exactly the two `flag` children and
+// the macro branched on that, not on a hardcoded result.
+spec "comp_children reads matching child component-blocks (cross-module @comptime helper)" {
+    then "two flag children → the two-flags branch fires" {
+        let out = ch_expand("    flag a {}\n    flag b {}\n")
+        ch_count(out, CH_TWO) == ch_count(out, CH_OTHER) + 1
+    }
+}
