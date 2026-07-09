@@ -1317,10 +1317,19 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
             return local_qn
         }
     }
-    let canonical = global_item_lookup(ctx.global_index, type_name)
-    if canonical != "" { return canonical }
+    // An explicit `use` import (alias) is authoritative for THIS file, so it must
+    // win over the global item index — a flat, first-write-wins simple-name map
+    // shared across every module in the compilation unit. Without this ordering,
+    // two sibling modules that each own a same-named type (e.g. one imports core's
+    // `NodeRef` enum, another declares a file-local `type NodeRef = int`) collide
+    // in the global index; whichever registered first claims the slot and shadows
+    // the other file's reference, mis-qualifying it to the wrong module. Consulting
+    // the file's own import first mirrors value-identifier resolution
+    // (`rewrite_ident`), which is already import-first with no global fallback.
     let alias = alias_lookup(ctx.aliases, type_name)
     if alias != "" { return alias }
+    let canonical = global_item_lookup(ctx.global_index, type_name)
+    if canonical != "" { return canonical }
     if ctx.current_module != "" {
         return type_qualified_name(ctx.current_module, type_name)
     }

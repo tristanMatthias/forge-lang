@@ -1,0 +1,45 @@
+// WHY: an explicit `use` import must resolve a type name against THAT import,
+// even when a sibling module in the same compilation unit owns a same-named
+// file-local type. The resolver's global item index is a flat, first-write-wins
+// simple-name map shared across every module in the unit, so two modules that
+// each own a `NodeRef` collide in it — whichever registered first claims the
+// slot. `resolve_type_in_ctx` used to consult that global index BEFORE the
+// file's own `use` alias, so an importing module's `NodeRef.Variant` ctor
+// mis-qualified to the sibling's newtype namespace and codegen failed with
+// `undefined enum type <sibling>::NodeRef` (xvv5 — surfaced as a batched-shard
+// "1 shard failed to compile" flake; the type-name analog of zo1a's fn leak).
+//
+// This test IMPORTS the enum `NodeRef` from `xvv5_collision_defs` and constructs
+// `NodeRef.Ref(..)` (the site that regressed), while `xvv5_collision_newtype`
+// pulls a same-named file-local newtype into the same unit to seed the global
+// collision. The fix makes the file's own `use` import win over the global
+// index, so the ctor resolves to the imported enum.
+
+mod xvv5_collision_defs
+mod xvv5_collision_newtype
+
+use xvv5_collision_defs.{NodeRef}
+use xvv5_collision_newtype.{seed_roundtrip}
+
+/// Construct the imported enum's `Ref` variant. Pre-fix this ctor's `NodeRef`
+/// resolved through the shared global index (which the sibling newtype may own)
+/// instead of this module's `use` import — an enum ctor pointing at a newtype.
+fn make() -> NodeRef { NodeRef.Ref(7) }
+fn unwrap(n: NodeRef) -> int {
+    match n {
+        .Ref(v) -> v
+        .Nil -> 0 - 1
+    }
+}
+
+spec "an explicit import wins over a colliding sibling type (xvv5)" {
+    then "the imported enum's ctor resolves to the enum, not the sibling newtype" {
+        unwrap(make()) == 7
+    }
+    then "the imported enum's nil variant round-trips too" {
+        unwrap(NodeRef.Nil) == 0 - 1
+    }
+    then "the sibling module's same-named newtype still constructs and unwraps" {
+        seed_roundtrip(42) == 42
+    }
+}
