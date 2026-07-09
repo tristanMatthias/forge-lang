@@ -83,6 +83,7 @@ fn ad_src() -> string {
     "    println(\"I=\" + string(toy.run_argv([\"build\", \"--glob\"])))\n" +
     "    println(\"J=\" + string(toy.run_argv([\"pack\", \"--outfile=result\"])))\n" +
     "    println(\"K=\" + string(toy.run_argv([\"pack\"])))\n" +
+    "    println(\"M=\" + string(toy.run_argv([\"build\", \"--help\"])))\n" +
     "}\n" +
     "\n" +
     "fn ad_empty() -> List<string> {\n" +
@@ -160,5 +161,17 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
         // exercises the option accessor + `--key=value` classification path.
         let out = ad_run()
         out.contains("J=6") && out.contains("K=0")
+    }
+    then "`<command> --help` prints that command's usage from its schema, exit 0" {
+        // `["build", "--help"]` — `--help` after a matched command prints
+        // build's per-command usage (NOT rejected as an unknown flag, NOT
+        // the run body): its declared flags (`--verbose`, inherited
+        // `--glob`) and its positional arg (`target`), read from the
+        // self-describing accessors. Returns 0. The `--verbose` FLAGS entry
+        // and `target` ARGS entry appear only in this per-command help.
+        let out = ad_run()
+        out.contains("M=0")
+            && out.contains("--verbose")
+            && out.contains("target")
     }
 }

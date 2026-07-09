@@ -169,6 +169,13 @@ impl App {
                     tokens.push(argv[i])
                     i = i + 1
                 }
+                // `<cmd> --help` prints the command's own usage (its
+                // flags/args/options + description) rather than parsing
+                // `--help` as an undeclared flag.
+                if tokens_have_help(tokens) {
+                    cmd_print_help(self, cmd)
+                    return 0
+                }
                 let parsed = parse_tokens(first, flag_defs_for(cmd.flag_names()),
                                           option_defs_for(cmd.option_names()),
                                           arg_defs_for(cmd.arg_names()), tokens)
@@ -250,6 +257,38 @@ fn app_print_help(app: App) {
     println("COMMANDS:")
     for cmd in app.commands {
         println("  ${cmd.name()}  ${cmd.description()}")
+    }
+}
+
+/// True iff `--help` or `-h` appears among a command's argv tokens.
+fn tokens_have_help(tokens: List<string>) -> bool {
+    for t in tokens {
+        if t == "--help" || t == "-h" { return true }
+    }
+    false
+}
+
+/// Per-command `--help`: the command's name + description, then its
+/// declared flags, options, and positional args (from the self-describing
+/// Runnable accessors). Only non-empty sections are printed.
+fn cmd_print_help(app: App, cmd: dyn Runnable) {
+    println("${app.name} ${cmd.name()}  ${cmd.description()}")
+    println("")
+    println("USAGE:")
+    println("  ${app.name} ${cmd.name()} [flags] [options] [args]")
+    print_named_section("FLAGS:", "--", cmd.flag_names())
+    print_named_section("OPTIONS:", "--", cmd.option_names())
+    print_named_section("ARGS:", "", cmd.arg_names())
+}
+
+/// Print a `header` followed by one `<prefix><name>` line per name.
+/// Nothing is printed when `names` is empty, so empty sections vanish.
+fn print_named_section(header: string, prefix: string, names: List<string>) {
+    if names.length == 0 { return }
+    println("")
+    println(header)
+    for n in names {
+        println("  ${prefix}${n}")
     }
 }
 
