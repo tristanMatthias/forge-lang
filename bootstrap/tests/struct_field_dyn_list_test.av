@@ -1,0 +1,75 @@
+// WHY: a struct-literal field of type List<dyn Trait> initialised with an inline
+// list of concrete struct literals must box each element into a trait object. The
+// let-annotation path (`let xs: List<dyn T> = [..]`) boxed correctly, but the
+// struct-field-init path stored the raw structs, so a later trait-method call read
+// a garbage vtable and segfaulted at a tiny address like 0x13 (966j). The fix
+// threads the field's declared trait element type into the list-literal elements,
+// via the shared codegen/helpers.av `emit_trait_boxed_list` (also used by the let
+// path). Each case dispatches through the boxed vtable and asserts the exact
+// output; a raw-stored struct would crash before producing any.
+
+trait SfdlRunnable {
+    fn sfdl_name(self) -> string
+}
+type SfdlFoo = { name: string, code: int }
+impl SfdlRunnable for SfdlFoo {
+    fn sfdl_name(self) -> string { self.name }
+}
+type SfdlBar = { name: string, tag: int }
+impl SfdlRunnable for SfdlBar {
+    fn sfdl_name(self) -> string { "bar:" + self.name }
+}
+type SfdlCli = { name: string, commands: List<dyn SfdlRunnable> }
+
+fn sfdl_inline() -> string {
+    avra_test_capture_start()
+    // The 966j case: inline list of concrete structs in a List<dyn Trait> field.
+    let c = SfdlCli { name: "avra", commands: [SfdlFoo { name: "build", code: 11 }, SfdlBar { name: "test", tag: 22 }] }
+    for cmd in c.commands {
+        println(cmd.sfdl_name())
+    }
+    println("n=" + string(c.commands.length))
+    avra_test_capture_stop()
+}
+
+fn sfdl_single() -> string {
+    avra_test_capture_start()
+    let c = SfdlCli { name: "solo", commands: [SfdlFoo { name: "only", code: 1 }] }
+    for cmd in c.commands { println(cmd.sfdl_name()) }
+    avra_test_capture_stop()
+}
+
+fn sfdl_preboxed() -> string {
+    avra_test_capture_start()
+    // Control: the ticket's working alternative — a pre-boxed `let` assigned to
+    // the field. Must keep working after the fix (byte-identical let path).
+    let cmds: List<dyn SfdlRunnable> = [SfdlFoo { name: "x", code: 9 }, SfdlBar { name: "y", tag: 8 }]
+    let c = SfdlCli { name: "pre", commands: cmds }
+    for cmd in c.commands { println(cmd.sfdl_name()) }
+    avra_test_capture_stop()
+}
+
+fn sfdl_empty() -> string {
+    avra_test_capture_start()
+    // Boundary: an empty inline list still routes through the boxing path (zero
+    // elements to box) and yields an empty, iterable list.
+    let c = SfdlCli { name: "none", commands: [] }
+    println("n=" + string(c.commands.length))
+    for cmd in c.commands { println(cmd.sfdl_name()) }
+    avra_test_capture_stop()
+}
+
+spec "struct-field List<dyn Trait> inline init boxes elements (966j)" {
+    then "inline mixed-type list dispatches correctly (was a SIGSEGV)" {
+        sfdl_inline() == "build\nbar:test\nn=2"
+    }
+    then "inline single-element list dispatches" {
+        sfdl_single() == "only"
+    }
+    then "pre-boxed let assigned to the field still works (control)" {
+        sfdl_preboxed() == "x\nbar:y"
+    }
+    then "an empty inline list yields a length-0 iterable field" {
+        sfdl_empty() == "n=0"
+    }
+}

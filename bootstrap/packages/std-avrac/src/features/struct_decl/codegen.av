@@ -1,11 +1,11 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup, render_expr}
+use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, render_expr}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use codegen.{emit_optional_coerce}
+use codegen.{emit_optional_coerce, emit_trait_boxed_list}
 
 /// Codegen for `Foo { x: 1, y: 2 }`. Allocates the struct's
 /// LLVM type via the arena (or reuses a Copy-type stack slot when
@@ -55,17 +55,36 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
         let init = inits[i]
         let idx = field_index_of(fields, init.name)
         if idx < 0 { return err_emit("unknown field `${init.name}`") }
-        mut r = ctx.emit(env, ctx.nodes.exprs.get(init.value_id))?
         let fld_ty = ctx.resolve_field_type(fields, init.name)
-        let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
-        // Optional box/unbox into the field's slot (no-op when neither applies).
-        r = emit_optional_coerce(ctx, r, fld_ty)
-        // Union wrapping: if field type is union and value is a concrete member
-        if needs_union_wrap(r.ty, fld_ty) {
-            let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
-            ctx.store_field(wrapped.value, gep, fld_ty)
-        } else {
-            ctx.store_field(r.value, gep, fld_ty)
+        let init_expr = ctx.nodes.exprs.get(init.value_id)
+        // A `List<dyn Trait>` field initialised by an inline list literal must box
+        // each concrete element into a trait object, mirroring the let-annotation
+        // path (`let xs: List<dyn T> = [..]`) — otherwise the raw structs are
+        // stored and a later trait-method call reads a garbage vtable (966j).
+        // Assigning a pre-boxed list variable falls through to the generic emit
+        // below (it is already a List of trait objects). The field GEP is computed
+        // AFTER the value is emitted in each arm, preserving the original
+        // emit-then-GEP instruction order.
+        let elem_trait = if vtype_is_list(fld_ty) { vtype_trait_name(vtype_list_elem(fld_ty)) } else { "" }
+        match init_expr {
+            .ListLit(elements) if elem_trait != "" -> {
+                let boxed = emit_trait_boxed_list(ctx, env, elements, elem_trait)?
+                let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+                ctx.store_field(boxed, gep, fld_ty)
+            }
+            _ -> {
+                mut r = ctx.emit(env, init_expr)?
+                let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+                // Optional box/unbox into the field's slot (no-op when neither applies).
+                r = emit_optional_coerce(ctx, r, fld_ty)
+                // Union wrapping: if field type is union and value is a concrete member
+                if needs_union_wrap(r.ty, fld_ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
+                    ctx.store_field(wrapped.value, gep, fld_ty)
+                } else {
+                    ctx.store_field(r.value, gep, fld_ty)
+                }
+            }
         }
         i = i + 1
     }
