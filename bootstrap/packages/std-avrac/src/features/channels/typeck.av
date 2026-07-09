@@ -6,7 +6,7 @@
 //   - `ch.recv()` → T? (null ⇔ closed and drained).
 //   - `ch.close()` → void, idempotent.
 
-use typeck.{check_expr, tc_er, tc_report}
+use typeck.{check_expr, tc_er, tc_report, tc_gate_expr_type_arg}
 use features.channels.{channel_methods_help}
 use core.{vtype_eq, vtype_display}
 use diagnostics.{DiagCode}
@@ -17,13 +17,21 @@ use diagnostics.{DiagCode}
 export fn channel_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .ChannelNew(elem, capacity) -> {
+            // The element is an explicit type argument in expression position,
+            // so it faces the same F1004 totality rule as a signature
+            // annotation: a bare generic (`channel<GenOpt>(1)` where
+            // `enum GenOpt<T>`) would otherwise reach mono with no layout and
+            // pick one by first-match. Gate it up front so the diagnostic lands
+            // regardless of the nullable/capacity checks below; an in-scope
+            // param (`channel<T>()` inside `fn f<T>()`) is exempt.
+            let tcg = tc_gate_expr_type_arg(tc, elem)
             if elem is .Optional {
-                let t1 = tc_report(tc, DiagCode.TypeMismatch,
+                let t1 = tc_report(tcg, DiagCode.TypeMismatch,
                     "channel element type cannot be nullable — `recv()` returns `T?` where null means closed-and-drained, which a nullable element would shadow")
                 return tc_er(t1, .Channel(elem))
             }
-            if capacity == null { return tc_er(tc, .Channel(elem)) }
-            let c = check_expr(tc, tc.nodes.exprs.get(capacity!))
+            if capacity == null { return tc_er(tcg, .Channel(elem)) }
+            let c = check_expr(tcg, tc.nodes.exprs.get(capacity!))
             if !vtype_eq(c.ty, .Int) {
                 let t1 = tc_report(c.tc, DiagCode.TypeMismatch,
                     "channel capacity must be an int, got ${vtype_display(c.ty)} — absent = unbounded, 0 = rendezvous, N > 0 = bounded")

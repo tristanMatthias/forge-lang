@@ -53,6 +53,12 @@ fn worker(work: Channel<string>) { ... }
   closed-and-drained signal, which a nullable element would shadow
   (typecheck error F1000).
 - `send` arguments must match `T` exactly (F1000).
+- `T` must be a fully-applied type. A bare generic element —
+  `channel<GenOpt>(1)` where `enum GenOpt<T>` — determines no layout,
+  so it is rejected before codegen (F1004, the totality rule) rather
+  than picking one instantiation by first-match. An in-scope type
+  parameter (`channel<T>()` inside `fn f<T>()`) is fully applied at
+  each instantiation and stays exempt.
 - Every word-repr `T` works: int, bool, float, string, structs,
   enums, lists — ptr-backed elements are retained on send and owned
   by the receiver's scope.
