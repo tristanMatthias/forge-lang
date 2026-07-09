@@ -16,8 +16,9 @@ use features.walker.{derive_walker}
 // `.node` field projects to a parent enum.
 
 /// Generic unwrap for any spanned-wrapper `W` whose `.node` field
-/// projects to type `T`. SStmt → Stmt, SExpr → Expr both ride this
-/// shape. `T` is inferred at the call site from the caller's
+/// projects to type `T` — the retired AST `SStmt`/`SExpr` wrappers were
+/// the original such `W`; it now serves any @derive(Walker) wrapper.
+/// `T` is inferred at the call site from the caller's
 /// expected return type (so07.7.15 + so07.7.16 bidirectional
 /// generic-call inference: typeck stamps T from the let/return
 /// position; mono harvests it via the expected-aware collect +
@@ -30,11 +31,12 @@ export fn unwrap_node_list<W, T>(xs: List<W>) -> List<T> {
 
 /// Span-preserving sibling of `unwrap_node_list`: map `f` over each
 /// spanned wrapper's `.node` while keeping the wrapper's line/col/file
-/// intact via a `with` update. SExpr → SExpr, SStmt → SStmt ride this
-/// shape. `T` (the `.node` type) is inferred from `f`'s signature; `W`
-/// is the wrapper. derive_walker's generated `Type__map` emits calls to
-/// this for `List<SExpr>` / `List<SStmt>` payloads so a one-level map
-/// descends into wrapper-list children too — without losing the spans
+/// intact via a `with` update. `T` (the `.node` type) is inferred from
+/// `f`'s signature; `W` is the wrapper. derive_walker's generated
+/// `Type__map` emits calls to this for any wrapper-list payload (the
+/// retired `List<SExpr>` / `List<SStmt>` were the original ones) so a
+/// one-level map descends into wrapper-list children too — without
+/// losing the spans
 /// the parent context owns. Mirrors unwrap_node_list's generic `.node`
 /// projection (proven monomorphizable) plus a `with` rewrap.
 export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
@@ -45,18 +47,18 @@ export fn map_node_list<W, T>(xs: List<W>, f: fn(T) -> T) -> List<W> {
 
 /// Single-node sibling of `map_node_list`: apply `f` to one spanned
 /// wrapper's `.node` while preserving the wrapper's line/col/file via a
-/// `with` update. SExpr → SExpr, SStmt → SStmt ride this shape.
-/// derive_walker's generated `Type__map` emits calls to this for a
-/// single `SExpr` / `SStmt` payload (the `WrapperOfSelf` field kind), so
+/// `with` update. derive_walker's generated `Type__map` emits calls to
+/// this for a single wrapper payload — the `WrapperOfSelf` field kind
+/// (the retired single `SExpr` / `SStmt` payloads were the original), so
 /// a one-level map descends into single-wrapper children without the
 /// parent losing the span it owns. `T` (the `.node` type) is inferred
 /// from `f`'s signature; `W` is the wrapper.
 // ── Optional (`T?`) walker helpers ──
 // derive_walker emits calls to these for nullable single children
-// (`Self?` and `Wrapper<Self>?`, e.g. `else_branch: SStmt?`). They are
-// none-guarded: an absent child contributes nothing to `children()` and
-// stays absent under `map()`; a present child is descended into. This is
-// what lets a nullable single spanned child (`If.else_branch` as `SStmt?`)
+// (`Self?` and `Wrapper<Self>?` fields on any @derive(Walker) wrapper).
+// They are none-guarded: an absent child contributes nothing to
+// `children()` and stays absent under `map()`; a present child is
+// descended into. This is what lets a nullable single spanned child
 // walk and rewrite mechanically.
 
 /// `Self?` → 0-or-1-element child list. Absent ⇒ empty.
