@@ -1,0 +1,53 @@
+// WHY: a string literal that crosses the macro boundary (constructed in a
+// `quote` body, encoded to a comptime Value, then decoded back to an Expr for
+// splicing) must round-trip WITHOUT gaining a spurious quote pair. The decode
+// (`enum_value_to_expr`'s String arm) used to re-wrap the already-quoted
+// parser-form value in a SECOND quote pair; codegen's strip_quotes removed only
+// one, so `println("hello")` printed `"hello"` at runtime instead of `hello`
+// (102g). The fix makes String decode use `head.text` directly, uniform with
+// Number/Bool/Ident.
+//
+// This complements quote_iteration_splice (single-char literals) with multi-char
+// and multi-word literals — a double-wrap corrupts those identically, and this is
+// the exact decode path the macro read/re-emit consumers (vez6.11 expand_command)
+// depend on. Each case asserts the unquoted value appears AND that the old
+// double-quoted form is absent.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "a quote-constructed string literal round-trips unquoted (102g)" {
+    then "a multi-char literal prints without surrounding quotes" {
+        let out = write_fixture_and_run("/tmp/avra_quote_string_multichar_test.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let s = quote stmt { println(\"hello\") }\n" +
+            "    [synth_stmt_id(s)]\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("hello") && !out.contains("\"hello\"")
+    }
+    then "a multi-word literal (with an interior space) prints without quotes" {
+        let out = write_fixture_and_run("/tmp/avra_quote_string_multiword_test.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let s = quote stmt { println(\"foo bar\") }\n" +
+            "    [synth_stmt_id(s)]\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("foo bar") && !out.contains("\"foo bar\"")
+    }
+}

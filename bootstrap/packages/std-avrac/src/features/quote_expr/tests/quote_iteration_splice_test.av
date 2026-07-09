@@ -26,9 +26,9 @@ spec "quote: iteration-style splice via list-return convention" {
             "\n" +
             "@comptime\n" +
             "fn build() -> List<StmtId> {\n" +
-            "    let s1 = quote stmt { println(\"a\") }\n" +
-            "    let s2 = quote stmt { println(\"b\") }\n" +
-            "    let s3 = quote stmt { println(\"c\") }\n" +
+            "    let s1 = quote stmt { println(\"alpha\") }\n" +
+            "    let s2 = quote stmt { println(\"beta\") }\n" +
+            "    let s3 = quote stmt { println(\"gamma\") }\n" +
             "    [synth_stmt_id(s1), synth_stmt_id(s2), synth_stmt_id(s3)]\n" +
             "}\n" +
             "\n" +
@@ -36,6 +36,13 @@ spec "quote: iteration-style splice via list-return convention" {
             "fn placeholder() {}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("\"a\"") && out.contains("\"b\"") && out.contains("\"c\"")
+        // Post-102g: a quote-CONSTRUCTED string literal round-trips through the
+        // macro boundary WITHOUT gaining a spurious quote pair, so `println("alpha")`
+        // prints `alpha`, not `"alpha"`. Assert each spliced value printed AND that
+        // the old double-quoted form is gone — the double-wrap is exactly what this
+        // fixture used to (wrongly) assert. Distinctive words (not single chars)
+        // keep the check clean of the toolchain's build-diagnostic noise.
+        out.contains("alpha") && out.contains("beta") && out.contains("gamma")
+            && !out.contains("\"alpha\"") && !out.contains("\"beta\"") && !out.contains("\"gamma\"")
     }
 }
