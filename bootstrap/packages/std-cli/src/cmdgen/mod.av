@@ -91,13 +91,14 @@ fn global_shadowed(gname: string, flag_names: List<string>, arg_names: List<stri
     name_in(flag_names, gname) || name_in(arg_names, gname) || name_in(option_names, gname)
 }
 
-/// A `@std::cli::FlagDef { name: "--<n>", short: "", description: "" }`
-/// literal (name dashed so the classifier matches `--<n>` on argv). Shorts
-/// are a follow-up (5az8) — read from the leaf's config then.
+/// A `@std::cli::FlagDef { name: "--<n>", short: <short>, description: "" }`
+/// literal (name dashed so the classifier matches `--<n>` on argv). `short`
+/// is the flag leaf's `short "…"` config value (e.g. `"-v"`), or the empty
+/// string when unset — the parser's `flag_canonical_name` accepts either spelling.
 @comptime
-fn flagdef_lit(name: string) -> ExprId {
+fn flagdef_lit(name: string, short: ExprId) -> ExprId {
     let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
-    let sh = FieldInit { name: "short", value_id: str_lit("") }
+    let sh = FieldInit { name: "short", value_id: short }
     let d = FieldInit { name: "description", value_id: str_lit("") }
     synth_expr_id(Expr.StructLit("@std::cli::FlagDef", [n, sh, d]))
 }
@@ -113,34 +114,31 @@ fn argdef_lit(name: string) -> ExprId {
 }
 
 /// A `@std::cli::OptionDef { name: "--<n>", short: "", description: "",
-/// default_val: "" }` literal. Defaults are a follow-up (5az8).
+/// default_val: <default> }` literal. `default_val` is the option leaf's
+/// `default "…"` config value (used to pre-fill the parsed option when the
+/// user omits it — see `init_option_defaults`), or the empty string when
+/// unset.
 @comptime
-fn optiondef_lit(name: string) -> ExprId {
+fn optiondef_lit(name: string, default_val: ExprId) -> ExprId {
     let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
     let sh = FieldInit { name: "short", value_id: str_lit("") }
     let d = FieldInit { name: "description", value_id: str_lit("") }
-    let dv = FieldInit { name: "default_val", value_id: str_lit("") }
+    let dv = FieldInit { name: "default_val", value_id: default_val }
     synth_expr_id(Expr.StructLit("@std::cli::OptionDef", [n, sh, d, dv]))
 }
 
 /// A `@std::cli::CommandSpec { name, description, flags, args, options }`
-/// literal — the command's identity + parse schema as DATA. `flag_names` are
-/// already the deduped own+inherited set (see command_flag_names). The def
-/// lists are built inline (loops of single-ExprId `*def_lit` calls) so no
-/// list-returning helper is invoked.
+/// literal — the command's identity + parse schema as DATA. The `*_defs` are
+/// already-built `FlagDef`/`ArgDef`/`OptionDef` literal ExprIds (carrying each
+/// leaf's `short` / `default` config), assembled by `build_command_gen` where
+/// the leaf configs are in scope; this fn just wraps them in the spec.
 @comptime
-fn command_spec_lit(name: string, desc: ExprId, flag_names: List<string>, arg_names: List<string>, option_names: List<string>) -> ExprId {
-    mut flag_elems: List<ExprId> = []
-    for f in flag_names { flag_elems.push(flagdef_lit(f)) }
-    mut arg_elems: List<ExprId> = []
-    for a in arg_names { arg_elems.push(argdef_lit(a)) }
-    mut opt_elems: List<ExprId> = []
-    for o in option_names { opt_elems.push(optiondef_lit(o)) }
+fn command_spec_lit(name: string, desc: ExprId, flag_defs: List<ExprId>, arg_defs: List<ExprId>, opt_defs: List<ExprId>) -> ExprId {
     let f_name = FieldInit { name: "name", value_id: str_lit(name) }
     let f_desc = FieldInit { name: "description", value_id: desc }
-    let f_flags = FieldInit { name: "flags", value_id: synth_expr_id(Expr.ListLit(flag_elems)) }
-    let f_args = FieldInit { name: "args", value_id: synth_expr_id(Expr.ListLit(arg_elems)) }
-    let f_opts = FieldInit { name: "options", value_id: synth_expr_id(Expr.ListLit(opt_elems)) }
+    let f_flags = FieldInit { name: "flags", value_id: synth_expr_id(Expr.ListLit(flag_defs)) }
+    let f_args = FieldInit { name: "args", value_id: synth_expr_id(Expr.ListLit(arg_defs)) }
+    let f_opts = FieldInit { name: "options", value_id: synth_expr_id(Expr.ListLit(opt_defs)) }
     synth_expr_id(Expr.StructLit("@std::cli::CommandSpec", [f_name, f_desc, f_flags, f_args, f_opts]))
 }
 
@@ -176,14 +174,19 @@ type CommandGen = {
 /// + `impl Runnable for Command_<inst> { fn run(self, args) { <accessor
 /// bindings> <user run body> } }`, plus the paired `Subcommand` literal.
 /// `extra_flags` are the parent cli's global flag names, inherited into the
-/// run bindings + schema (deduped). Single body-walk.
+/// run bindings + schema (deduped); `extra_flag_defs` are those same globals'
+/// pre-built `FlagDef` literals (index-aligned with `extra_flags`), carrying
+/// each global's `short` — threaded in because a command can't see the
+/// cli-level flag configs. Single body-walk.
 @comptime
-fn build_command_gen(s: Stmt, extra_flags: List<string>) -> CommandGen {
+fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<ExprId>) -> CommandGen {
     mut inst = ""
     mut run_body: List<Stmt> = []
     mut flag_names: List<string> = []
     mut arg_names: List<string> = []
     mut option_names: List<string> = []
+    mut flag_shorts: List<ExprId> = []
+    mut option_defaults: List<ExprId> = []
     mut desc = str_lit("")
     match s {
         .ComponentBlock(_, instance, cfg, body) -> {
@@ -199,10 +202,16 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>) -> CommandGen {
                             }
                         }
                     }
-                    .ComponentBlock(cn, cinst, _, _) -> {
-                        if cn == "flag" { flag_names.push(cinst) }
+                    .ComponentBlock(cn, cinst, ccfg, _) -> {
+                        if cn == "flag" {
+                            flag_names.push(cinst)
+                            flag_shorts.push(config_value_or_empty(ccfg, "short"))
+                        }
                         if cn == "arg" { arg_names.push(cinst) }
-                        if cn == "option" { option_names.push(cinst) }
+                        if cn == "option" {
+                            option_names.push(cinst)
+                            option_defaults.push(config_value_or_empty(ccfg, "default"))
+                        }
                     }
                     _ -> {}
                 }
@@ -249,9 +258,35 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>) -> CommandGen {
     let marker_field = FieldEntry { name: "marker", resolved: ValueType.Int }
     let type_decl = Stmt.TypeDecl(tn, empty_tp, [marker_field])
 
+    // Build the schema def lists. The flag defs mirror `all_flags` EXACTLY
+    // (globals-not-shadowed first, then own) so the CommandSpec's flags stay in
+    // lockstep with the run bindings — but carry each flag's `short` (globals
+    // from the threaded pre-built defs, own from the walk-collected shorts).
+    mut schema_flag_defs: List<ExprId> = []
+    mut gi = 0
+    while gi < extra_flags.length {
+        if !global_shadowed(extra_flags[gi], flag_names, arg_names, option_names) {
+            schema_flag_defs.push(extra_flag_defs[gi])
+        }
+        gi = gi + 1
+    }
+    mut fi = 0
+    while fi < flag_names.length {
+        schema_flag_defs.push(flagdef_lit(flag_names[fi], flag_shorts[fi]))
+        fi = fi + 1
+    }
+    mut arg_defs: List<ExprId> = []
+    for aname in arg_names { arg_defs.push(argdef_lit(aname)) }
+    mut opt_defs: List<ExprId> = []
+    mut oi = 0
+    while oi < option_names.length {
+        opt_defs.push(optiondef_lit(option_names[oi], option_defaults[oi]))
+        oi = oi + 1
+    }
+
     // The Subcommand literal: schema (CommandSpec, from the SAME collected
-    // names) paired with a fresh behaviour instance.
-    let spec_expr = command_spec_lit(inst, desc, all_flags, arg_names, option_names)
+    // data) paired with a fresh behaviour instance.
+    let spec_expr = command_spec_lit(inst, desc, schema_flag_defs, arg_defs, opt_defs)
     let subcommand = subcommand_lit(inst, spec_expr)
 
     CommandGen { decls: [type_decl, impl_stmt], subcommand: subcommand }
@@ -265,7 +300,8 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>) -> CommandGen {
 @comptime
 export fn expand_command(s: Stmt) -> List<Stmt> {
     let no_globals: List<string> = []
-    return build_command_gen(s, no_globals).decls
+    let no_global_defs: List<ExprId> = []
+    return build_command_gen(s, no_globals, no_global_defs).decls
 }
 
 /// A `@std::cli::Subcommand { meta: <spec>, body: Command_<inst>{ marker: 0 } }`
@@ -294,6 +330,7 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut app_desc = str_lit("")
     mut app_ver = str_lit("")
     mut global_flags: List<string> = []
+    mut global_flag_defs: List<ExprId> = []
     mut sub_lits: List<ExprId> = []
 
     match s {
@@ -303,12 +340,17 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
             app_ver = config_value_or_empty(cliconfig, "version")
             // First pass over the cli's direct children: collect global flags
             // (a `flag <g> {}` in the cli block is inherited into every command,
-            // so every command's schema needs them).
+            // so every command's schema needs them). Capture each global's
+            // FlagDef (with its `short`) here where the cli-level config is in
+            // scope, index-aligned with the names.
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
-                    .ComponentBlock(cn, cinst, _, _) -> {
-                        if cn == "flag" { global_flags.push(cinst) }
+                    .ComponentBlock(cn, cinst, gcfg, _) -> {
+                        if cn == "flag" {
+                            global_flags.push(cinst)
+                            global_flag_defs.push(flagdef_lit(cinst, config_value_or_empty(gcfg, "short")))
+                        }
                     }
                     _ -> {}
                 }
@@ -322,7 +364,7 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
                 match child {
                     .ComponentBlock(cn, _, _, _) -> {
                         if cn == "command" {
-                            let gen = build_command_gen(child, global_flags)
+                            let gen = build_command_gen(child, global_flags, global_flag_defs)
                             for d in gen.decls { out.push(d) }
                             sub_lits.push(gen.subcommand)
                         }

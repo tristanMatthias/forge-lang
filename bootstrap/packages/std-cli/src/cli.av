@@ -488,17 +488,20 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
 
     for arg in tokens {
         if arg.starts_with("--") || (arg.starts_with("-") && arg.length > 1) {
-            // Check if it's a flag
-            if is_flag_match(flags, arg) {
-                parsed_flags.push(ParsedFlag { name: strip_dashes(arg), value: true })
+            // Check if it's a flag — record under its canonical (long) name so
+            // a `-v` short and a `--verbose` long both set `verbose`.
+            let fcanon = flag_canonical_name(flags, arg)
+            if fcanon != "" {
+                parsed_flags.push(ParsedFlag { name: fcanon, value: true })
             }
             // Check if it's an option with = (--key=value)
             else if arg.contains("=") {
                 let eq_idx = arg.index_of("=")
                 let key = arg.substring(0, eq_idx)
                 let val = arg.substring(eq_idx + 1, arg.length)
-                if is_option_match(options, key) {
-                    parsed_options = set_option(parsed_options, strip_dashes(key), val)
+                let ocanon = option_canonical_name(options, key)
+                if ocanon != "" {
+                    parsed_options = set_option(parsed_options, ocanon, val)
                 } else {
                     error = "unknown option: ${key}"
                 }
@@ -528,26 +531,33 @@ fn strip_dashes(s: string) -> string {
     else { s }
 }
 
-/// True iff `arg` exactly matches some flag's `--name` or `-short`.
-fn is_flag_match(flags: List<FlagDef>, arg: string) -> bool {
+/// The canonical (long, dash-stripped) name of the flag that `arg` matches —
+/// by either its `--name` or `-short` spelling — or "" when no flag matches.
+/// A flag is always RECORDED under this canonical name, so `result_has_flag`
+/// (which the generated run bodies call by long name) resolves it regardless
+/// of which spelling the user typed (`-v` and `--verbose` both set `verbose`).
+fn flag_canonical_name(flags: List<FlagDef>, arg: string) -> string {
     mut i = 0
     while i < flags.length {
         let f = flags[i]
-        if f.name == arg || (f.short != "" && f.short == arg) { return true }
+        if f.name == arg || (f.short != "" && f.short == arg) { return strip_dashes(f.name) }
         i = i + 1
     }
-    false
+    ""
 }
 
-/// True iff `arg` exactly matches some option's `--name` or `-short`.
-fn is_option_match(options: List<OptionDef>, arg: string) -> bool {
+/// The canonical (long, dash-stripped) name of the option that `arg` matches
+/// — by either its `--name` or `-short` spelling — or "" when none. Mirrors
+/// `flag_canonical_name`: an option is recorded (and defaulted) under this
+/// name, so `result_get_option` resolves it whichever spelling was typed.
+fn option_canonical_name(options: List<OptionDef>, arg: string) -> string {
     mut i = 0
     while i < options.length {
         let o = options[i]
-        if o.name == arg || (o.short != "" && o.short == arg) { return true }
+        if o.name == arg || (o.short != "" && o.short == arg) { return strip_dashes(o.name) }
         i = i + 1
     }
-    false
+    ""
 }
 
 /// Zero-indexed lookup into an arg list — null when out of range.
