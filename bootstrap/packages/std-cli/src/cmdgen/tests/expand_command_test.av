@@ -131,7 +131,8 @@ fn eg_expand_cli_globals() -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
-// Expand a `cli` with one command carrying a `description "…"` config.
+// Expand a `cli` carrying its own `description`/`version` config plus one
+// command with a `description "…"` config.
 fn eg_expand_cli_config() -> string {
     let path = "/tmp/avra_expand_cli_config_test.av"
     write_fixture(path,
@@ -144,6 +145,8 @@ fn eg_expand_cli_config() -> string {
         "component command implements Runnable {}\n" +
         "\n" +
         "cli avra {\n" +
+        "    description \"APP_DESC_MK\"\n" +
+        "    version \"7.7.7\"\n" +
         "    command build {\n" +
         "        description \"DESC_MARKER_Q\"\n" +
         "        fn run(args: CliResult) -> int { return 1 }\n" +
@@ -210,5 +213,14 @@ spec "expand_cli stamps a command's description config onto its instance (Compon
         // ctor — the cli block (with its config) is consumed by @expand.
         let out = eg_expand_cli_config()
         out.contains("description: \"DESC_MARKER_Q\"")
+    }
+    then "the cli's own description/version config is stamped onto the App" {
+        // The cli block declares `description "APP_DESC_MK"` / `version
+        // "7.7.7"`; expand_cli reads them and stamps them into the App
+        // builder's `App { … }`. These markers appear only in the
+        // generated App ctor (the cli block is consumed by @expand).
+        let out = eg_expand_cli_config()
+        out.contains("description: \"APP_DESC_MK\"")
+            && out.contains("version: \"7.7.7\"")
     }
 }

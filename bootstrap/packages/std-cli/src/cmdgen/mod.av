@@ -192,13 +192,18 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut global_flags: List<string> = []
     mut cmd_children: List<Stmt> = []
     mut cmd_descs: List<ExprId> = []
-    // Pass 1: collect the cli's global flags AND its command children,
-    // reading each command's `description` config alongside its name so
-    // the two lists stay index-aligned. Globals must be known before any
-    // command is generated, so command generation waits for pass 2.
+    mut app_desc = synth_expr_id(Expr.String("\"\""))
+    mut app_ver = synth_expr_id(Expr.String("\"\""))
+    // Pass 1: collect the cli's own description/version config, its global
+    // flags, AND its command children, reading each command's `description`
+    // config alongside its name so the two lists stay index-aligned.
+    // Globals must be known before any command is generated, so command
+    // generation waits for pass 2.
     match s {
-        .ComponentBlock(_, instance, _, body) -> {
+        .ComponentBlock(_, instance, cliconfig, body) -> {
             inst = instance
+            app_desc = config_value_or_empty(cliconfig, "description")
+            app_ver = config_value_or_empty(cliconfig, "version")
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
@@ -252,8 +257,8 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
         ci = ci + 1
     }
     let f_name = FieldInit { name: "name", value_id: synth_expr_id(Expr.String("\"" + inst + "\"")) }
-    let f_desc = FieldInit { name: "description", value_id: synth_expr_id(Expr.String("\"\"")) }
-    let f_ver = FieldInit { name: "version", value_id: synth_expr_id(Expr.String("\"\"")) }
+    let f_desc = FieldInit { name: "description", value_id: app_desc }
+    let f_ver = FieldInit { name: "version", value_id: app_ver }
     let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.ListLit(elems)) }
     let app_lit = synth_expr_id(Expr.StructLit("App", [f_name, f_desc, f_ver, f_cmds]))
     let ret = Stmt.Return(app_lit)
