@@ -1,0 +1,139 @@
+// WHY: The metadata FAST PATH — a producer emits `<pkg>.meta.bin` + a `.o`, and a
+// consumer compiled with AVRA_USE_METADATA=1 + AVRA_LIB_OBJS reads that meta.bin,
+// emits EXTERN `declare`s for the package's fns, and links against the producer
+// `.o` — had ZERO regression coverage. diff-test (the compiler's other oracle) only
+// ever COMPILES FROM SOURCE, so it never exercises consume-via-metadata; the whole
+// per-file test runner's OOM-avoidance depends on this path, yet nothing tested it.
+//
+// That blind spot let a synthesis-tail refactor (nicknamed "F4d.8" below) ship a
+// metadata fast path that both (1) CRASHED the resolver (a synthesized `List<StmtId>` deref'd
+// as `List<SStmt>` through an if-expr branch — SIGSEGV on a cold tree) and (2)
+// produced WRONG stub output (the metadata_codec fixture went 145/145 -> 0/145), all
+// MASKED because the crash DEGRADED the path out of the pipeline and no test consumed
+// a package's full surface through it.
+//
+// This guard drives the REAL producer -> consumer -> link -> run pipeline end to end
+// and uses the SOURCE-INLINED slow path as the ORACLE (the same "match a trusted
+// reference build" philosophy as diff-test, but reaching the consume path diff-test
+// can't): the fast-path binary's stdout must byte-match the slow-path binary's. A
+// wrong stub (bug 2) diverges the output; a resolver crash (bug 1) empties it —
+// either turns the assertion red. It also asserts the consumer GENUINELY consumed via
+// metadata (an extern `declare`, not an inlined `define`), so the oracle can't
+// false-pass by both sides silently inlining. HARD fail, no degradation — the REDO
+// prerequisite for reattempting the F4d.8 flip.
+//
+// std-json is the producer: a real @std package (so @std package resolution engages)
+// with a broad surface — strings + the `map_chars` fn-pointer closure
+// (json_str -> json_escape), lists (json_array), a struct-backed map (JsonPair via
+// json_pairs/json_pair_add), serialization (json_object), and parse-back
+// (json_extract_int). Wrong-stub codegen on any of those diverges the output.
+//
+// The producer build touches the SHARED packages/std-json/build cache, but that write
+// is idempotent + atomic (cache_publish staging + atomic_obj_llc_cmd), so a concurrent
+// shard build is benign. The whole pipeline runs through raw avra_shell_exec (never the
+// fixture-stdout cache), so it always re-probes and no transient FAIL is ever frozen.
+
+use @std.avrac.build.{llvm_prefix_dir, atomic_obj_llc_cmd, link_objects, default_link_options}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file, avra_getpid}
+
+// A consumer program calling a broad slice of std-json. Written to a temp file and
+// compiled twice — once via the metadata fast path, once inlined from source. The
+// mangled fast-path symbol for `json_str` (asserted below) proves metadata engaged.
+const CONSUMER_SRC: string = "use @std.json.{json_str, json_array, json_object, json_pairs, json_pair_add, json_extract_int, json_escape}\nfn main() {\n    let s = json_str(\"hi\")\n    let esc = json_escape(\"a\\\"b\")\n    let arr = json_array([json_str(\"x\"), json_str(\"y\")])\n    let pairs = json_pair_add(json_pairs(), \"n\", \"42\")\n    let obj = json_object(pairs)\n    let back = json_extract_int(obj, \"n\")\n    println(\"MFPGUARD|\" + s + \"|\" + esc + \"|\" + arr + \"|\" + obj + \"|\" + string(back) + \"|END\")\n}\n"
+
+// The mangled name a `use @std.json` symbol takes in emitted IR: `@std::json::json_str`
+// with `@`->`$40` and `::`->`$3A$3A`. On the fast path it appears as an extern
+// `declare`; inlined, as a `define`. Distinguishing the two is how we prove the fast
+// path actually engaged rather than silently falling back to inlining.
+const MANGLED_JSON_STR: string = "$40std$3A$3Ajson$3A$3Ajson_str"
+
+fn llc_bin() -> string { "${llvm_prefix_dir()}/bin/llc" }
+
+/// Compile one consumer `.av` under `env_prefix` (metadata-on for the fast path,
+/// stripped for the slow oracle), llc it to an object, link it — its own object first,
+/// then `extra_objs` (the producer `.o` on the fast path) plus the C helpers — and
+/// return the linked binary's stdout. Artifacts land at `slot`.{o,bin,_llc.log}; the
+/// `.ll` is left in place so the caller can inspect it for the extern-declare proof.
+fn compile_llc_link_run(av: string, env_prefix: string, extra_objs: List<string>, slot: string, pid: int) -> string {
+    let _ = avra_shell_exec_status("${env_prefix} ./build/bs2 compile '${av}' >/dev/null 2>&1")
+    let obj = "${slot}.o"
+    let _ = avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O2", "${av}.ll", obj, "${slot}_llc.log", pid))
+    mut objs = [obj]
+    for e in extra_objs { objs.push(e) }
+    let bin = "${slot}.bin"
+    let _ = link_objects(objs, "build/runtime.o", "build/llvm_wrapper.o", bin, default_link_options())
+    avra_shell_exec("'${bin}' 2>&1")
+}
+
+/// The end-to-end result: both binaries' stdout plus whether the fast consumer's IR
+/// proves it consumed via metadata (extern declare, no inline define).
+type GuardResult = {
+    fast_out: string,
+    slow_out: string,
+    used_metadata: bool,
+}
+
+/// Build std-json as a producer (.meta.bin + .o), compile the consumer both ways,
+/// link + run each, and report the outputs. CWD is the bootstrap root (the suite's
+/// convention), so `./build/bs2`, `build/runtime.o`, and @std package resolution all
+/// resolve relative to it.
+fn run_guard() -> GuardResult {
+    let pid = avra_getpid()
+    let dir = "/tmp/avra_mfpguard_${string(pid)}"
+    let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+
+    // 1. PRODUCER: build std-json's lib -> packages/std-json/src/json.av.ll +
+    //    build/cache/meta/<fp>/unit.meta.bin. Idempotent and atomically cached.
+    let _ = avra_shell_exec_status(
+        "(cd packages/std-json && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='@std::json' ../../build/bs2 build --lib --emit_metadata) >/dev/null 2>&1")
+
+    // 2. PRODUCER .o (atomic llc) — the fn bodies the fast consumer links against.
+    let prod_o = "${dir}/std-json.o"
+    let _ = avra_shell_exec_status(
+        atomic_obj_llc_cmd(llc_bin(), "-O2", "packages/std-json/src/json.av.ll", prod_o, "${dir}/prod_llc.log", pid))
+
+    // 3. Two identical consumer sources: one for the FAST (metadata) path, one for the
+    //    SLOW (source-inlined) oracle — separate files so the fast .ll survives for the
+    //    extern-declare inspection below.
+    let fast_av = "${dir}/consumer_fast.av"
+    let slow_av = "${dir}/consumer_slow.av"
+    let _ = avra_selfhost_write_file(fast_av, CONSUMER_SRC)
+    let _ = avra_selfhost_write_file(slow_av, CONSUMER_SRC)
+
+    // 4. FAST consumer (metadata mode + producer .o): reads the .meta.bin, emits EXTERN
+    //    declares for std-json's fns, links against prod_o.
+    let fast_out = compile_llc_link_run(fast_av,
+        "AVRA_USE_METADATA=1 AVRA_LIB_OBJS='${prod_o}' AVRA_LIB_PKG_ROOT='@std::json'", [prod_o], "${dir}/fast", pid)
+
+    // The fast consumer's IR MUST declare json_str extern (no inline define) — proof
+    // the metadata path engaged, so the oracle match below can't false-pass by both
+    // sides silently inlining a broken stub identically.
+    let fast_ll = avra_selfhost_read_file("${fast_av}.ll")
+    let used_metadata = fast_ll.contains("declare ptr @\"${MANGLED_JSON_STR}\"")
+        && !fast_ll.contains("define ptr @\"${MANGLED_JSON_STR}\"")
+
+    // 5. SLOW consumer (the oracle): strip AVRA_USE_METADATA/AVRA_LIB_OBJS from the
+    //    inherited test-runner env so std-json is INLINED from source — without the
+    //    strip the "slow" compile inherits the runner's metadata mode and emits externs
+    //    it then can't link (no producer .o on this side). Same env-strip the
+    //    no-metadata fixture helpers use.
+    let slow_out = compile_llc_link_run(slow_av,
+        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT", [], "${dir}/slow", pid)
+
+    let _ = avra_shell_exec("rm -rf '${dir}'")
+    GuardResult { fast_out: fast_out, slow_out: slow_out, used_metadata: used_metadata }
+}
+
+spec "metadata fast path: a consumer built via .meta.bin matches the source-inlined build (F4d.8 guard)" {
+    then "fast-path stdout is complete, byte-matches the inlined oracle, and metadata genuinely engaged" {
+        let r = run_guard()
+        // (a) the fast path actually consumed via metadata (extern, not inlined),
+        r.used_metadata
+            // (b) its stdout is complete and well-formed (both markers present, so a
+            //     crashed empty==empty can't false-pass),
+            && r.fast_out.contains("MFPGUARD|") && r.fast_out.contains("|END")
+            // (c) and byte-matches the source-inlined oracle. A wrong stub (F4d.8 bug 2)
+            //     diverges this; a resolver crash (bug 1) empties fast_out — either red.
+            && r.fast_out == r.slow_out
+    }
+}
