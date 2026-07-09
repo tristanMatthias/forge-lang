@@ -1,0 +1,21 @@
+// Regression for the 6y4y design decision: F1005 gates only NON-NULLABLE missing
+// fields. A nullable (`T?`) field may be omitted from a full literal — it
+// defaults to its natural absent value, null. `make` below omits the nullable
+// `note`, so this file would FAIL TO COMPILE if the gate wrongly required
+// nullable fields — that is the mutation guard. (The negative case — a missing
+// NON-nullable field → F1005 — lives in tests/err_missing_struct_field_test.av.)
+type Rec = { id: int, note: string?, count: int }
+
+/// A nullable field (`note`) omitted; every non-nullable field supplied.
+fn make() -> Rec { Rec { id: 7, count: 3 } }
+
+spec "F1005: a nullable field may be omitted from a struct literal (6y4y)" {
+    then "the omitted nullable field defaults to null" {
+        let r = make()
+        r.id == 7 && r.count == 3 && r.note == null
+    }
+    then "a full literal supplying every field also works" {
+        let r = Rec { id: 1, note: "hi", count: 2 }
+        r.note == "hi" && r.id == 1
+    }
+}
