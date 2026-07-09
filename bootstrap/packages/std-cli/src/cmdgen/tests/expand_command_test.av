@@ -83,6 +83,42 @@ fn eg_expand_flags() -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
+// Expand a command whose run method uses the `run() { … }` METHOD
+// SHORTHAND (component_decl §4.1) — empty parens + block, no explicit
+// signature — alongside a `flag vq {}` sibling. This is the
+// disambiguation the parser's `peek_after_ident_is_empty_call_block`
+// lookahead performs: `flag vq {}` (ident + `{`, no parens) is a child
+// block; `run() { … }` (ident + `()` + `{`) is the method. Both must be
+// identified for the generated run to carry BOTH the `vq` accessor
+// binding (flag sibling → child) AND the shorthand's body (run() {} →
+// method). A self-contained local macro can't cover this — splicing a
+// multi-child block's body trips the comptime-eval gap (rmzs); only
+// expand_command's wrap-in-generated-fn construction sidesteps it.
+fn eg_expand_shorthand() -> string {
+    let path = "/tmp/avra_expand_command_shorthand_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult}\n" +
+        "use @std.cli.cmdgen.{expand_command}\n" +
+        "\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {\n" +
+        "}\n" +
+        "component flag {\n" +
+        "}\n" +
+        "\n" +
+        "command build {\n" +
+        "    flag vq {}\n" +
+        "    run() {\n" +
+        "        if vq { return 24601 }\n" +
+        "        return 5\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
 /// Count non-overlapping occurrences of `needle` in `haystack`.
 fn eg_count(haystack: string, needle: string) -> int {
     let hl = haystack.length
@@ -184,6 +220,23 @@ spec "expand_command generates a per-instance type + Runnable impl (Components V
         let out = eg_expand_flags()
         out.contains("result_has_flag(args, \"xflagq\")")
             && out.contains("result_get_arg(args, \"yargq\")")
+    }
+    then "the run() method shorthand is read as the run method, disambiguated from a flag sibling" {
+        // `command build { flag vq {} run() { … } }` uses the `run() { … }`
+        // METHOD SHORTHAND (no explicit `fn run(args) -> int` signature)
+        // next to a `flag vq {}` child. The parser must route the two
+        // differently: `flag vq {}` → child (→ `result_has_flag(args,
+        // "vq")` binding), `run() { … }` → method (→ the body's `24601`).
+        // Both substrings appear ONLY in the expansion (the macro splices
+        // the flag name via `"\"" + fname + "\""`, never this literal; the
+        // distinctive `24601` lives only in the carried run body; the
+        // source block is consumed by @expand). If `flag vq {}` were
+        // misparsed as a method, no `vq` binding would exist; if `run() {}`
+        // were misparsed as a child, `24601` wouldn't reach the run method.
+        let out = eg_expand_shorthand()
+        out.contains("result_has_flag(args, \"vq\")")
+            && out.contains("24601")
+            && out.contains("Command_build__run")
     }
 }
 

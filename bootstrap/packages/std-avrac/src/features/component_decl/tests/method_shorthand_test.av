@@ -3,11 +3,23 @@
 // { run() { … } }`), not a `name()` call statement followed by an orphan
 // block. The parser (component_decl/parser.av parse_comp_block_body) emits
 // it as a nullary `Stmt.Function` so an @expand macro can read the body
-// and inject the real signature.
+// and inject the real signature — the disambiguator (`peek_after_ident_
+// is_empty_call_block`) commits to the method branch only on the full
+// `ident ( ) {` shape.
 //
 // This exercises the parse end-to-end: a macro reads the `run` method's
 // body via the synth_deref read shims and re-emits it, and the body runs.
 // The marker prints iff `run() { … }` parsed as a readable method.
+//
+// The COMPLEMENT — that the disambiguator still identifies `run() { … }`
+// as the method when a SIBLING child (`flag x {}`) shares the block — is
+// covered in std-cli's `expand_command_test` ("run() shorthand alongside
+// a flag sibling"), through the real `expand_command`. It can't live here:
+// (1) a self-contained local macro that splices a multi-child block's body
+// trips the comptime-evaluator foundation gap (F4005/F4006, ticket rmzs) —
+// only `expand_command`'s wrap-in-generated-fn construction sidesteps it;
+// (2) this is a std-avrac test, and std-cli depends on std-avrac, so
+// importing `@std.cli` here would be a layering cycle.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture_and_run}
@@ -53,25 +65,5 @@ spec "component method shorthand: `name() { body }` parses as a readable method"
             "\n" +
             "fn main() {}\n")
         out.contains("RUN_SHORTHAND_OK")
-    }
-    then "a `name()` call statement (no trailing block) is NOT treated as a method" {
-        // The disambiguator keys on the trailing `{`. A bare `noop()`
-        // call inside the block must still parse as a call statement (it
-        // runs at instantiation), leaving the run() method intact.
-        let out = write_fixture_and_run("/tmp/avra_method_shorthand_call_test.av",
-            "fn noop() { println(\"CALL_RAN\") }\n" +
-            MS_MACRO +
-            "\n" +
-            "@expand(ms_take_run)\n" +
-            "component command {}\n" +
-            "\n" +
-            "command build {\n" +
-            "    run() {\n" +
-            "        println(\"METHOD_RAN\")\n" +
-            "    }\n" +
-            "}\n" +
-            "\n" +
-            "fn main() {}\n")
-        out.contains("METHOD_RAN")
     }
 }
