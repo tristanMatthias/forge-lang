@@ -42,11 +42,13 @@ fn ad_src() -> string {
     "cli toy {\n" +
     "    version \"3.2.1\"\n" +
     "    description \"TOYDESC\"\n" +
+    "    flag glob {}\n" +
     "    command build {\n" +
     "        description \"BUILDDESC\"\n" +
     "        flag verbose {}\n" +
     "        arg target {}\n" +
     "        run() {\n" +
+    "            if glob { return 55 }\n" +
     "            if verbose { return 100 }\n" +
     "            return target.length\n" +
     "        }\n" +
@@ -67,6 +69,7 @@ fn ad_src() -> string {
     "    println(\"F=\" + string(toy.run_argv(ad_empty())))\n" +
     "    println(\"G=\" + string(toy.run_argv([\"--help\"])))\n" +
     "    println(\"H=\" + string(toy.run_argv([\"build\", \"--bogus\"])))\n" +
+    "    println(\"I=\" + string(toy.run_argv([\"build\", \"--glob\"])))\n" +
     "}\n" +
     "\n" +
     "fn ad_empty() -> List<string> {\n" +
@@ -125,5 +128,15 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
         // return 100/`target.length`, never runs for this invocation).
         let out = ad_run()
         out.contains("H=1") && out.contains("unknown flag: --bogus")
+    }
+    then "an inherited GLOBAL flag is parsed from argv against the command" {
+        // `glob` is declared at the cli level (a global), so it's inherited
+        // into build's flag_names() (own flags + globals). `["build",
+        // "--glob"]` must therefore be accepted — NOT rejected as unknown —
+        // and reach the run body's inherited `glob` binding, returning 55.
+        // This exercises the flag_names() own+global union through run_argv,
+        // not just a command's own flags.
+        let out = ad_run()
+        out.contains("I=55")
     }
 }
