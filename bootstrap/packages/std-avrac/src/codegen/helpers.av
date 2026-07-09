@@ -1,6 +1,6 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, ExprId, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
@@ -145,5 +145,34 @@ export fn stmts_last_expr(store: NodeStore, body: List<StmtId>) -> Expr {
         .Return(e) -> store.exprs.get(e)
         _ -> .None
     }
+}
+
+/// Emit a `List<dyn Trait>` from a list literal, boxing each concrete element
+/// into a trait object so a later trait-method call reads a real vtable instead
+/// of a raw struct. Shared by every position that threads a declared trait
+/// element type into a list literal: the `let xs: List<Trait> = [...]` binding
+/// and the struct-field `Foo { xs: [...] }` init (966j). A non-concrete element
+/// (already a trait object, or an unknown type) is pushed as-is.
+export fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>, trait_name: string) -> Result<ptr, string> {
+    let arr = ctx.array_new()
+    push_boxed_elements(ctx, env, arr, elements, trait_name)
+}
+
+/// Recursive worker for `emit_trait_boxed_list`: emit each element, box it for
+/// the trait when its type is concrete, and push the result onto `arr`.
+fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: List<ExprId>, trait_name: string) -> Result<ptr, string> {
+    mut i = 0
+    while i < elements.length {
+        let r = ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?
+        let concrete_name = resolve_concrete_type_name(r.ty)
+        let boxed = if concrete_name != "" {
+            box_for_trait(ctx, r.value, trait_name, concrete_name)
+        } else {
+            r.value
+        }
+        ctx.array_push(arr, boxed)
+        i = i + 1
+    }
+    .Ok(arr)
 }
 

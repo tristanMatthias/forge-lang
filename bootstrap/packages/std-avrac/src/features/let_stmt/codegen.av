@@ -2,13 +2,13 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
+use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
-use features.trait_decl.{box_for_trait}
+use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.list_lit.{emit_list_lit_expected}
-use codegen.{emit_optional_coerce, emit_optional_ctor_value}
+use codegen.{emit_optional_coerce, emit_optional_ctor_value, emit_trait_boxed_list}
 use diagnostics.{DiagCode}
 
 /// Codegen for `let / mut / const name = init`. Handles four
@@ -77,7 +77,7 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
     // Trait boxing: `let d: Trait = concrete_value`
     let trait_name = vtype_trait_name(var_ty)
     if trait_name != "" {
-        let concrete_name = resolve_concrete_name(r.ty)
+        let concrete_name = resolve_concrete_type_name(r.ty)
         if concrete_name != "" {
             let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
             return ok_stmt(ctx.bind(env, name, obj_i64, var_ty))
@@ -167,44 +167,6 @@ fn try_copy_for_struct(ctx: Ctx, name: string, ty_vt: ValueType, sname: string) 
     CopyTarget { active: false, alloca_ptr: n }
 }
 
-/// Pull the concrete type name from a `Struct(name)` or
-/// `Enum(name)` ValueType. Returns "" for everything else —
-/// caller falls back to no-op boxing.
-fn resolve_concrete_name(ty: ValueType) -> string {
-    let s = vtype_struct_name(ty)
-    if s != "" { return s }
-    let e = vtype_enum_name(ty)
-    if e != "" { return e }
-    ""
-}
-
-/// Build a `List<Trait>` list-literal where each element gets
-/// boxed as a trait object before being pushed. Used for
-/// `let xs: List<Trait> = [c1, c2]` so callers see one type at
-/// runtime even when the elements have different concrete types.
-fn emit_trait_boxed_list(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>, trait_name: string) -> Result<ptr, string> {
-    let arr = ctx.array_new()
-    push_boxed_elements(ctx, env, arr, elements, trait_name)
-}
-
-/// Recursive worker for `emit_trait_boxed_list`. Emits each
-/// element, boxes it for the trait when its type is concrete,
-/// and pushes the result onto `arr`.
-fn push_boxed_elements(ctx: Ctx, env: List<VarBinding>, arr: ptr, elements: List<ExprId>, trait_name: string) -> Result<ptr, string> {
-    mut i = 0
-    while i < elements.length {
-        let r = ctx.emit(env, ctx.nodes.exprs.get(elements[i]))?
-        let concrete_name = resolve_concrete_name(r.ty)
-        let boxed = if concrete_name != "" {
-            box_for_trait(ctx, r.value, trait_name, concrete_name)
-        } else {
-            // Already boxed or unknown type — push as-is
-            r.value
-        }
-        ctx.array_push(arr, boxed)
-        i = i + 1
-    }
-    .Ok(arr)
-}
-
+// resolve_concrete_name / emit_trait_boxed_list / push_boxed_elements moved to
+// codegen/helpers.av (shared with the struct-field List<dyn Trait> init path, 966j).
 // build_vtable and push_vtable_entries removed — use box_for_trait from codegen/mod.av
