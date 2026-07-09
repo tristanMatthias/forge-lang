@@ -1,0 +1,8 @@
+// Helper module for `type_import_beats_global_collision_test.av`: OWNS an enum
+// named `NodeRef`. The importing test module constructs `NodeRef.Ref(..)` from
+// THIS enum via `use`, so its ctor must resolve here — not to the same-named
+// file-local newtype in `xvv5_collision_newtype.av`. See the test's WHY header.
+export enum NodeRef {
+    Ref(v: int)
+    Nil
+}

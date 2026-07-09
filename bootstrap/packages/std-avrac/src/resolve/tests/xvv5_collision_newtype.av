@@ -1,0 +1,9 @@
+// Helper module for `type_import_beats_global_collision_test.av`: OWNS a
+// file-local newtype named `NodeRef` — the collision seed. Pulling this module
+// into the same compilation unit as `xvv5_collision_defs` (which owns an enum
+// `NodeRef`) makes both register the simple name `NodeRef` in the resolver's
+// flat, first-write-wins global item index. That is exactly the state that used
+// to shadow the test module's `use` import (xvv5). This module's own use of the
+// newtype is protected by local-declaration resolution, so it stays correct.
+export type NodeRef = int
+export fn seed_roundtrip(x: int) -> int { NodeRef(x).raw() }
