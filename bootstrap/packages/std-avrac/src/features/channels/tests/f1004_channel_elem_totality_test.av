@@ -1,0 +1,98 @@
+// WHY: negative-path spec for the F1004 totality gate on a channel's ELEMENT
+// type — an explicit type argument written in EXPRESSION position.
+//
+// `channel<T>(cap)` carries its element type as a `ValueType` on
+// `Expr.ChannelNew`, so a bare generic element (`channel<GenOpt>(1)` where
+// `enum GenOpt<T>`) is the same under-determined-type hazard as a bare generic
+// in a signature annotation: it reaches monomorphization with no unique layout,
+// and codegen would otherwise pick one by first-match — the silent wrong-layout
+// / segfault class. The typeck feature hook `channel_check` gates the element
+// through `tc_gate_expr_type_arg`, which resolves it and applies the same F1004
+// rule against the enclosing scope's type params (so an in-scope param like
+// `channel<T>()` inside `fn f<T>()` stays exempt).
+//
+// Fixtures compile real programs through `bs2 compile` and assert the F-code in
+// captured output (or `__AVRA_COMPILE_OK__` for the positive controls). Each
+// error case is paired with a fully-applied control so the gate is proven to
+// fire on the under-application specifically — not on channels generally.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn chan_compile_out(source: string) -> string {
+    let path = "/tmp/avra_chan_totality.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a bare generic channel element type is rejected (F1004)" {
+    then "a bare generic-enum ELEMENT is F1004" {
+        let out = chan_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let ch = channel<GenOpt>(1) }")
+        out.contains("F1004")
+    }
+    then "the fully-applied element compiles (positive control)" {
+        let out = chan_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let ch = channel<GenOpt<int>>(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic-struct ELEMENT is F1004" {
+        let out = chan_compile_out("type Box<T> = { val: T }
+fn main() { let ch = channel<Box>(1) }")
+        out.contains("F1004")
+    }
+    then "a bare generic UNBOUNDED channel (no capacity) is still F1004" {
+        // The gate must fire before the `capacity == null` early return, so an
+        // unbounded `channel<GenOpt>()` is caught exactly like a bounded one.
+        let out = chan_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let ch = channel<GenOpt>() }")
+        out.contains("F1004")
+    }
+    then "a two-param generic given ONE argument is F1004" {
+        let out = chan_compile_out("type Pair<A, B> = { a: A, b: B }
+fn main() { let ch = channel<Pair<int>>(1) }")
+        out.contains("F1004")
+    }
+    then "both type arguments compiles (positive control)" {
+        let out = chan_compile_out("type Pair<A, B> = { a: A, b: B }
+fn main() { let ch = channel<Pair<int, int>>(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "the channel element gate does not over-fire" {
+    then "a concrete int element compiles" {
+        let out = chan_compile_out("fn main() { let ch = channel<int>(1)  ch.send(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a non-generic struct element compiles (only generics are gated)" {
+        let out = chan_compile_out("type Msg = { id: int }
+fn main() { let ch = channel<Msg>(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an in-scope type param element compiles — `channel<T>()` inside `fn f<T>()`" {
+        // `T` is `make`'s type parameter, concrete at each instantiation, so the
+        // gate must treat it as in-scope and NOT flag it — the key regression
+        // guard for threading the enclosing scope's type params into the check.
+        let out = chan_compile_out("fn make<T>(seed: T) { let ch = channel<T>() }
+fn main() { make(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an in-scope type param NESTED in the element compiles — `channel<List<T>>()`" {
+        let out = chan_compile_out("fn make<T>(seed: T) { let ch = channel<List<T>>() }
+fn main() { make(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a type param that SHADOWS a declared generic type is not flagged" {
+        // `channel<T>()` inside `fn make<T>()` — `T` is the fn's type param, even
+        // though a generic `type T<U>` is declared at top level. The element gate
+        // must treat the element `T` as the in-scope param, not the shadowed
+        // nominal (it would otherwise false-positive F1004 on valid code). This is
+        // the regression guard proving the enclosing scope's type params reach the
+        // element check — an empty scope would wrongly flag this.
+        let out = chan_compile_out("type T<U> = { value: U }
+fn make<T>(seed: T) { let ch = channel<T>() }
+fn main() { make(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

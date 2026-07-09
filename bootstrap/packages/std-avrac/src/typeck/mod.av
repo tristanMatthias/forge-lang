@@ -638,6 +638,14 @@ type TC = {
     current_fn: string,
     current_line: int,
     current_col: int,
+    // The enclosing function's type parameters, in scope while its body
+    // is checked. Set on `.Function` entry (alongside `current_fn`) so a
+    // type argument written in EXPRESSION position — a `channel<T>` element
+    // or a turbofish arg — can exempt an in-scope param `T` from the F1004
+    // totality gate, exactly as a signature annotation does. Empty outside
+    // any function; like `current_fn`, overwritten fresh by each `.Function`
+    // (a stale param name never collides with a declared generic type name).
+    current_scope_tp: List<TypeParamEntry>,
     traits: TraitRegistry,
     trait_impls: List<TraitImplEntry>,
     assoc_type_defs: List<AssocTypeEntry>,
@@ -713,6 +721,7 @@ fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: Nod
         current_fn: "",
         current_line: 0,
         current_col: 0,
+        current_scope_tp: empty_type_params(),
         traits: trait_registry_new(),
         trait_impls: empty_impls,
         assoc_type_defs: empty_assoc,
@@ -1039,6 +1048,21 @@ fn tc_check_type_applied_list(tc: TC, types: List<ValueType>, scope_tp: List<Typ
     mut cur = tc
     for t in types { cur = tc_check_type_applied(cur, t, scope_tp) }
     cur
+}
+
+/// Apply the F1004 totality gate to a type argument written in EXPRESSION
+/// position — a `channel<T>` element type or a generic-call turbofish arg.
+/// These are the same under-determined-type hazard as a bare generic in a
+/// signature annotation (a bare `GenOpt` reaches mono with no layout, risking
+/// the first-match wrong-layout segfault), reached through a different surface.
+/// The value is resolved first (so a `Struct` shell upgrades to its real
+/// nominal) and checked against the enclosing scope's type params, so a
+/// legitimately in-scope param — `channel<T>(1)` inside `fn f<T>()` — is
+/// exempt. Feature check hooks call this instead of threading scope type
+/// params themselves; `Unknown` carries no layout claim and is skipped.
+export fn tc_gate_expr_type_arg(tc: TC, vt: ValueType) -> TC {
+    if vtype_is_unknown(vt) { return tc }
+    tc_check_type_applied(tc, resolve_vtype(tc, vt), tc.current_scope_tp)
 }
 
 /// Report F1004 when a declared generic (`decl_tps.length > 0`) is given fewer
@@ -2195,7 +2219,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .Function(name, tp, params, ret_vt, body) -> {
             avra_ice_push_fn(name)
-            let inner = tc_enter(tc) with { current_fn: name }
+            let inner = tc_enter(tc) with { current_fn: name, current_scope_tp: tp }
             let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
             let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
