@@ -177,15 +177,13 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
 /// A builder fn (not a top-level `let <inst> = App { … }`) because a
 /// top-level let bound to a struct is mis-typed at a later top-level
 /// method call (design § Non-goals). Inside the builder's function
-/// scope the App dispatches correctly. The command boxes are bound
-/// through a typed local first — `let cmds: List<dyn Runnable> =
-/// [Command_<c> { name: "<c>" }, …]` — because a `List<dyn Trait>`
-/// STRUCT FIELD does not box its inline element literals (bug 966j);
-/// the `List<dyn Runnable>` let-annotation does. A `flag <g> {}` declared
-/// directly in the cli block is a GLOBAL flag, inherited into every
-/// command's run bindings (design §4.2 parent_chain_flags). Each
-/// command's `description "…"` config is stamped onto its instance
-/// (`Command_<c> { name, description }`).
+/// scope the App dispatches correctly; the command struct literals are
+/// spliced inline into the `App`'s `List<dyn Runnable>` field, boxing to
+/// `dyn Runnable` at the field init. A `flag <g> {}` declared directly in
+/// the cli block is a GLOBAL flag, inherited into every command's run
+/// bindings (design §4.2 parent_chain_flags). Each command's
+/// `description "…"` config is stamped onto its instance (`Command_<c> {
+/// name, description }`).
 @comptime
 export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut inst = ""
@@ -236,8 +234,13 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     let empty_pe: List<ParamEntry> = []
     let app_vt = ValueType.Struct("App", empty_vt, 0)
 
-    // Body stmt 1: let cmds: List<dyn Runnable> = [Command_<c> { name:
-    // "<c>" }, …]  (the 966j-workaround typed local that boxes each elem).
+    // Body: return App { name: "<inst>", description: "", version: "",
+    //   commands: [Command_<c> { name: "<c>", description: "…" }, …] }
+    // The command struct literals are spliced INLINE into the `List<dyn
+    // Runnable>` field — each boxes to `dyn Runnable` at the field init.
+    // (This once needed a pre-boxed typed local because a `List<dyn
+    // Trait>` struct field didn't box its inline elements; that codegen
+    // bug, 966j, is now fixed upstream, so the inline form suffices.)
     mut elems: List<ExprId> = []
     mut ci = 0
     while ci < cmd_names.length {
@@ -248,19 +251,14 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
         elems.push(synth_expr_id(Expr.StructLit(tn, [name_init, desc_init])))
         ci = ci + 1
     }
-    let dyn_run = ValueType.Trait("Runnable", 0)
-    let cmds_let = Stmt.Let("cmds", ValueType.List(dyn_run), synth_expr_id(Expr.ListLit(elems)))
-
-    // Body stmt 2: return App { name: "<inst>", description: "",
-    //                           version: "", commands: cmds }
     let f_name = FieldInit { name: "name", value_id: synth_expr_id(Expr.String("\"" + inst + "\"")) }
     let f_desc = FieldInit { name: "description", value_id: synth_expr_id(Expr.String("\"\"")) }
     let f_ver = FieldInit { name: "version", value_id: synth_expr_id(Expr.String("\"\"")) }
-    let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.Ident("cmds")) }
+    let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.ListLit(elems)) }
     let app_lit = synth_expr_id(Expr.StructLit("App", [f_name, f_desc, f_ver, f_cmds]))
     let ret = Stmt.Return(app_lit)
 
-    let builder = Stmt.Function(inst, empty_tp2, empty_pe, app_vt, synth_stmt_ids([cmds_let, ret]))
+    let builder = Stmt.Function(inst, empty_tp2, empty_pe, app_vt, synth_stmt_ids([ret]))
     out.push(builder)
 
     out
