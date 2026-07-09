@@ -12,6 +12,7 @@ use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.{init_features}
 use typeck.{tc_er}
+use features.eval.{value_null}
 
 // C-side helpers
 extern fn avra_expr_tag(expr: int) -> int
@@ -86,11 +87,11 @@ fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
 fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
 /// Eval no-op for expressions — error step ("no eval_expr handler").
 fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_expr handler" }
+    StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_expr handler" }
 }
 /// Eval no-op for statements — error step ("no eval_stmt handler").
 fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_stmt handler" }
+    StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
 /// Parser no-op — returns null so the parser falls back to the
 /// in-tree dispatch when no feature claims this keyword.
