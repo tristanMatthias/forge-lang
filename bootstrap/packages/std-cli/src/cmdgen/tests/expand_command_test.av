@@ -1,0 +1,71 @@
+// End-to-end test for the expand_command @comptime macro (cmdgen/mod.av):
+// a `command build { fn run(args: CliResult) -> int { … } }` instance,
+// with @expand(expand_command) registered on the command component,
+// expands into `type Command_build` + a `Runnable` impl for it,
+// carrying the user's run body.
+//
+// The macro builds those decls by DIRECT construction. `@expand`
+// CONSUMES the `command build { … }` instance (it is replaced by the
+// expansion, not echoed), so `type Command_build`, `Command_build__run`
+// (the Type__method-mangled run method), `Runnable:Command_build` (the
+// impl target), and the distinctive body value all appear ONLY in the
+// expansion — each a clean, non-vacuous assertion.
+//
+// Why `Runnable:Command_build` and not the pretty `impl Runnable for
+// Command_build`: the generated impl is a `Stmt.Impl("Runnable:" + tn,
+// …)`, and the trait resolves to the qualified `@std::cli::Runnable`, so
+// the packed "Trait:Type" name becomes `@std::cli::Runnable:Command_build`
+// — and render_stmt naively splits on the FIRST ':', mis-rendering it as
+// `impl @std for :cli::Runnable:Command_build` (the stringly-typed
+// Stmt.Impl smell, ticket nlnd). The mangle is cosmetic — the impl
+// typechecks, links, and dispatches through `dyn Runnable` correctly
+// (verified by hand via `make run`: `dyn-run` returns the user body). We
+// assert on the `Runnable:Command_build` substring, which survives the
+// mangle, rather than the broken pretty form.
+//
+// Compiled FROM SOURCE (clean env) so @std.cli.cmdgen's @comptime body is
+// available cross-package (the metadata-stub path can't carry it — znl0).
+// All top-level names are `eg_`-prefixed to avoid cross-shard clashes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+const EG_MAIN: string = "fn " + "main()"
+
+fn eg_expand(run_body: string) -> string {
+    let path = "/tmp/avra_expand_command_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult}\n" +
+        "use @std.cli.cmdgen.{expand_command}\n" +
+        "\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {\n" +
+        "}\n" +
+        "\n" +
+        "command build {\n" +
+        "    fn run(args: CliResult) -> int {\n" +
+        "        " + run_body + "\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+spec "expand_command generates a per-instance type + Runnable impl (Components V2 core)" {
+    then "command build expands to type Command_build + a Runnable impl for it" {
+        let out = eg_expand("return 42")
+        out.contains("type Command_build")
+            && out.contains("Command_build__run")
+            && out.contains("Runnable:Command_build")
+    }
+    then "the user's run body is carried into the generated run method" {
+        // A distinctive body value that only the generated run can carry
+        // (the source `command build` block is consumed by @expand, so
+        // this value appears solely inside the generated run method).
+        let out = eg_expand("return 31337")
+        out.contains("31337")
+            && out.contains("Command_build__run")
+    }
+}

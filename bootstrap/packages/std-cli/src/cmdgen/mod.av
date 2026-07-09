@@ -1,0 +1,83 @@
+// WHY: the @comptime macro that expands a `command <inst> { fn run(...)
+// { ... } }` component instance into a per-instance `type Command_<inst>`
+// plus a `Runnable` trait impl, so a cli's `List<dyn Runnable>` dispatch
+// can call it. This is the load-bearing per-instance trait-impl
+// generation the whole Components V2 declarative layer is built on.
+//
+// Built by DIRECT AST construction, NOT the design's §4.2 quote-splice
+// form: repeating statement-splice (`~body`) and computed-value splice
+// both hit F4006, and calling two sequential list-building @comptime
+// helpers hits F4005 (the comptime-foundation gaps, rmzs). Direct
+// construction (the derive_walker pattern — Stmt.Function/Impl/TypeDecl
+// + synth_stmt_ids) plus reading the instance in a SINGLE body-walk
+// sidestep all three. `Stmt.Impl` encodes a trait impl as the
+// "Trait:Type" name form the parser uses.
+//
+// SCOPE: MVP — the type, the impl, and name()/run() carrying the user's
+// run body verbatim. Flag/arg let-bindings (result_has_flag / get_arg
+// bound as run-body locals) are the next increment. Registration
+// (`@expand(expand_command) component command`) is deferred to vez6.12:
+// packages/cli/src/main.av still defines `component command` inline, so
+// registering it in the lib would double-register. Ships as an exported
+// @comptime fn; consumers/tests attach it via @expand themselves.
+//
+// Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
+
+use @std.avrac.core.{Stmt, Expr, ValueType, ParamEntry, TypeParamEntry, FieldEntry}
+use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
+
+/// Expand a `command <inst> { … fn run(args: CliResult) -> int { … } }`
+/// instance into `[type Command_<inst>, impl Runnable for Command_<inst>]`.
+/// The generated `run` carries the user's run body verbatim; `name`
+/// returns the instance's `name` field. Emits names (`Runnable`,
+/// `CliResult`) that resolve in the consumer's scope.
+@comptime
+export fn expand_command(s: Stmt) -> List<Stmt> {
+    // Single body-walk: read the instance name and the run method body
+    // in ONE pass (calling two list-returning @comptime helpers in
+    // sequence trips the evaluator — rmzs gap 3).
+    mut inst = ""
+    mut run_body: List<Stmt> = []
+    match s {
+        .ComponentBlock(_, instance, _, body) -> {
+            inst = instance
+            for id in body {
+                match synth_deref_stmt(id) {
+                    .Function(fname, _, _, _, fbody) -> {
+                        if fname == "run" {
+                            for bid in fbody {
+                                run_body.push(synth_deref_stmt(bid))
+                            }
+                        }
+                    }
+                    _ -> {}
+                }
+            }
+        }
+        _ -> {}
+    }
+
+    let tn = "Command_" + inst
+    let empty_vt: List<ValueType> = []
+    let empty_tp: List<TypeParamEntry> = []
+    let self_ty = ValueType.Struct(tn, empty_vt, 0)
+    let cli_ty = ValueType.Struct("CliResult", empty_vt, 0)
+    let self_p = ParamEntry { name: "self", vtype: self_ty }
+
+    // fn name(self) -> string { return self.name }
+    let ret_name = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "name")))
+    let name_fn = Stmt.Function("name", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_name]))
+
+    // fn run(self, args: CliResult) -> int { <user run body> }
+    let args_p = ParamEntry { name: "args", vtype: cli_ty }
+    let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(run_body))
+
+    // impl Runnable for Command_<inst> { name; run }  ("Trait:Type" form)
+    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn]))
+
+    // type Command_<inst> = { name: string }
+    let name_field = FieldEntry { name: "name", resolved: ValueType.Str }
+    let type_decl = Stmt.TypeDecl(tn, empty_tp, [name_field])
+
+    return [type_decl, impl_stmt]
+}
